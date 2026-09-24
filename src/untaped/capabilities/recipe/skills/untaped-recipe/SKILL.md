@@ -101,7 +101,8 @@ no control flow in recipes, and no state or inventory.
 - Emit kinds: `apply` → `recipe.apply_outcome` (one row per target);
   `validate` → `recipe.check`; `test` → `recipe.test`; `hook run` →
   `recipe.hook_run`; `list`/`get` → `recipe.recipe`, `recipe.hook`,
-  `recipe.pack`; `add` → `recipe.add_outcome`; `remove` →
+  `recipe.pack`; `add` → `recipe.add_outcome`; `sync` →
+  `recipe.sync_outcome`; `remove` →
   `recipe.remove_outcome`; `backup` → `recipe.backup`.
 - `recipe.apply_outcome` rows carry absolute `target_path`, `action`,
   `files_changed`, `warnings` (a list: accumulated `helpers.warn(...)`
@@ -122,6 +123,14 @@ no control flow in recipes, and no state or inventory.
   The row's `action` is `created`, or `updated` for a `--force` reinstall.
   The pack must load and contain a `uv.lock`. Reinstalling needs `--force`, which still refuses to
   overwrite a library copy with local edits unless `--discard-edits` is added.
+  A local path source is recorded as an absolute path.
+- `sync <pack>...` or `sync --all` re-fetches each installed pack from its
+  recorded source and `--rev` (a branch or tag moves forward). Packs whose
+  content would change are listed and need confirmation or `--yes`
+  (`--dry-run` previews); rows carry `action` `updated`, `unchanged` or
+  `planned`. A pack with local edits in the library fails unless
+  `--discard-edits` is passed; a failed pack prints `error: PACK: ...`, the
+  others still sync, and the command exits 1.
 - `list [--packs|--hooks]`, `get <ref>`, `edit <ref>`, `remove <pack>` operate
   on the unified library. `list --hooks` and `get` cover built-ins such as
   `yaml_edit` (marked `(builtin)`; not editable). `remove` is destructive,

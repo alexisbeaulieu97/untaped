@@ -654,6 +654,7 @@ def test_unified_remove_destructive_gating_and_yes(
 def test_cli_emit_kinds_are_the_surviving_pack_unification_set() -> None:
     allowed = {
         "recipe.add_outcome",
+        "recipe.sync_outcome",
         "recipe.apply_outcome",
         "recipe.remove_outcome",
         "recipe.backup",

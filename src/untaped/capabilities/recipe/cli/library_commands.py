@@ -1,9 +1,9 @@
-"""Library commands: ``add``, ``list``, ``get``, ``validate``, ``remove``, ``edit``."""
+"""Library commands: ``add``, ``sync``, ``list``, ``get``, ``validate``, ``remove``, ``edit``."""
 
 from __future__ import annotations
 
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -37,6 +37,7 @@ from untaped.capabilities.recipe.infrastructure.pack_store import (
     fetch_pack_source,
     is_git_url,
     local_edits_message,
+    pack_content_hash,
     validate_pack,
 )
 from untaped.capability_api import (
@@ -51,9 +52,11 @@ from untaped.capability_api import (
     echo,
     emit,
     finish,
+    not_found,
     plural,
     q,
     render_rows,
+    resolve_each,
     run_editor,
 )
 
@@ -64,15 +67,25 @@ _EMPTY_LIBRARY_HINT = (
 
 
 class PackOutcomeRecord(OutcomeRecord):
-    """An installed pack's ``add``/``remove`` result.
+    """An installed pack's ``add``/``sync``/``remove`` result.
 
-    Kinds ``recipe.add_outcome`` (``action``: ``created``/``updated``) and
-    ``recipe.remove_outcome`` (``removed``, or ``planned`` with --dry-run).
+    Kinds ``recipe.add_outcome`` (``action``: ``created``/``updated``),
+    ``recipe.sync_outcome`` (``updated``/``unchanged``, or ``planned`` with
+    --dry-run) and ``recipe.remove_outcome`` (``removed``, or ``planned``).
     """
 
     name: str
     source: str | None = None
     rev: str | None = None
+
+
+@dataclass(frozen=True)
+class _SyncPlan:
+    """An installed pack and its freshly fetched source tree."""
+
+    pack: InstalledPack
+    source_dir: Path
+    changed: bool
 
 
 @dataclass(frozen=True)
@@ -128,10 +141,13 @@ def add_command(
     with report_config_errors(), tempfile.TemporaryDirectory() as temp_root:
         if rev is not None and not is_git_url(source):
             raise UsageError("--rev is only valid for git URL sources")
+        if not is_git_url(source):
+            # Record where the pack came from, not where the shell happened to be.
+            source = str(Path(source).expanduser().absolute())
         source_dir = (
             fetch_pack_source(source, rev=rev, dest=Path(temp_root) / "pack")
             if is_git_url(source)
-            else Path(source).expanduser()
+            else Path(source)
         )
         manifest = read_pack_manifest(source_dir)
         # Validate before printing the pack summary: error output leads, and
@@ -159,6 +175,158 @@ def add_command(
             rev=rev,
         )
         emit(record.model_dump(), fmt=fmt, columns=columns, kind="recipe.add_outcome")
+
+
+def sync_command(
+    names: Annotated[
+        list[str] | None,
+        Parameter(help="Installed pack names (or pass --all).", negative=""),
+    ] = None,
+    /,
+    *,
+    all_packs: Annotated[
+        bool, Parameter(name="--all", negative="", help="Sync every installed pack.")
+    ] = False,
+    discard_edits: Annotated[
+        bool,
+        Parameter(
+            name="--discard-edits",
+            negative="",
+            help="Overwrite local edits made to the library copy.",
+        ),
+    ] = False,
+    yes: YesOption = False,
+    dry_run: DryRunOption = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Re-fetch installed packs from their recorded source and rev.
+
+    Packs whose content would change are listed and confirmed first; the rest
+    report ``unchanged``.
+    """
+    with report_config_errors(), tempfile.TemporaryDirectory() as temp_root:
+        library = PackLibrary(library_root=library_root())
+        selected = _sync_selection(library, names or [], all_packs=all_packs)
+        plans, fetch_failed = resolve_each(
+            list(selected),
+            _as_config_error(
+                lambda name: _fetch_for_sync(
+                    library, selected[name], Path(temp_root), discard_edits=discard_edits
+                )
+            ),
+        )
+        outcome = batch_apply(
+            [plan for plan in plans if plan.changed],
+            _as_config_error(
+                lambda plan: _install_for_sync(library, plan, discard_edits=discard_edits)
+            ),
+            verb="sync",
+            noun="pack",
+            label=lambda plan: plan.pack.name,
+            describe=lambda plan: _sync_row(plan, action="planned"),
+            ui=recipe_ui(),
+            destructive=True,
+            assume_yes=yes,
+            preview_only=dry_run,
+            preview=_sync_preview,
+        )
+        if outcome.cancelled:
+            finish(outcome)
+        synced = {plan.pack.name for plan, _ in outcome.results}
+        rows = [
+            _sync_row(plan, action=action)
+            for plan in plans
+            if (action := _sync_action(plan, synced=synced, dry_run=dry_run))
+        ]
+        rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.sync_outcome")
+        if rendered:
+            echo(rendered)
+        finish(fetch_failed or outcome.any_failed)
+
+
+def _sync_selection(
+    library: PackLibrary, names: list[str], *, all_packs: bool
+) -> dict[str, InstalledPack]:
+    """The installed packs ``sync`` acts on, by name: the named ones, or all with ``--all``."""
+    if bool(names) == all_packs:
+        raise UsageError("name the packs to sync, or pass --all (not both)")
+    installed = {pack.name: pack for pack in library.packs()}
+    if all_packs:
+        return {name: installed[name] for name in sorted(installed)}
+    for name in names:
+        if name not in installed:
+            raise ConfigError(not_found("pack", name, known=sorted(installed)))
+    return {name: installed[name] for name in names}
+
+
+def _as_config_error[T, R](action: Callable[[T], R]) -> Callable[[T], R]:
+    """Wrap ``action`` so its expected library errors are per-item ``ConfigError``s."""
+
+    def wrapped(item: T) -> R:
+        try:
+            return action(item)
+        except (ValueError, OSError) as exc:
+            raise ConfigError(str(exc)) from exc
+
+    return wrapped
+
+
+def _install_for_sync(library: PackLibrary, plan: _SyncPlan, *, discard_edits: bool) -> None:
+    library.add(
+        plan.source_dir,
+        source=plan.pack.source,
+        rev=plan.pack.rev or None,
+        name=plan.pack.name,
+        force=True,
+        discard_edits=discard_edits,
+    )
+
+
+def _sync_preview(rows: Sequence[dict[str, object]]) -> None:
+    echo(f"About to sync {plural(len(rows), 'pack')}:", err=True)
+    for row in rows:
+        at = f"@{row['rev']}" if row["rev"] else ""
+        echo(f"  - {row['name']} from {row['source']}{at}", err=True)
+
+
+def _sync_action(plan: _SyncPlan, *, synced: set[str], dry_run: bool) -> str | None:
+    """The outcome ``action`` of one fetched pack; ``None`` when its install failed."""
+    if not plan.changed:
+        return "unchanged"
+    if dry_run:
+        return "planned"
+    return "updated" if plan.pack.name in synced else None
+
+
+def _fetch_for_sync(
+    library: PackLibrary, pack: InstalledPack, temp_root: Path, *, discard_edits: bool
+) -> _SyncPlan:
+    """Fetch ``pack``'s recorded source and tell whether installing it changes files."""
+    if not pack.source:
+        raise ValueError("no recorded source; reinstall the pack with `untaped recipe add`")
+    if is_git_url(pack.source):
+        source_dir = fetch_pack_source(
+            pack.source, rev=pack.rev or None, dest=temp_root / pack.name
+        )
+    else:
+        source_dir = Path(pack.source).expanduser()
+        if not source_dir.is_dir():
+            raise ValueError(f"pack source not found: {pack.source}")
+    validate_pack(source_dir, read_pack_manifest(source_dir))
+    changed = pack_content_hash(source_dir) != pack_content_hash(pack.root)
+    if changed and not discard_edits and library.local_edits(pack.name):
+        raise ValueError(local_edits_message(pack.name))
+    return _SyncPlan(pack=pack, source_dir=source_dir, changed=changed)
+
+
+def _sync_row(plan: _SyncPlan, *, action: str) -> dict[str, object]:
+    return PackOutcomeRecord(
+        name=plan.pack.name,
+        action=action,
+        source=plan.pack.source,
+        rev=plan.pack.rev or None,
+    ).model_dump()
 
 
 def list_command(
