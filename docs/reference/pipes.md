@@ -108,7 +108,8 @@ write nothing and print their outcome with `action` `planned`.
 |---|---|
 | `jira whoami` | `jira.user` |
 | `jira issues get`, `issues search`, `issues assigned` | `jira.issue` |
-| `jira issues create`, `patch`, `comment`, `transition` | `jira.issue_outcome` |
+| `jira issues create`, `patch`, `comment`, `transition`, `links create` | `jira.issue_outcome` |
+| `jira issues comments list` | `jira.comment` |
 | `jira issues transitions` | `jira.transition` |
 | `jira projects list`, `projects get` | `jira.project` |
 | `jira boards list` | `jira.board` |

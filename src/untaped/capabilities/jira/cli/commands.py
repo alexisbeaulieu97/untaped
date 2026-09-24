@@ -15,7 +15,10 @@ from untaped.capabilities.jira.domain import (
     JiraIssueSearchFilters,
     browse_url,
     build_issue_payload,
+    build_link_payload,
+    build_transition_payload,
 )
+from untaped.capabilities.jira.errors import JiraError
 from untaped.capability_api import (
     ColumnsOption,
     DryRunOption,
@@ -87,6 +90,33 @@ IssueKeysArgument = Annotated[
     list[str] | None,
     Parameter(help="Issue keys or ids (or pass --stdin).", negative=""),
 ]
+# Default table columns: a compact row per issue, a detail view for one issue
+# (comments get their own table), and a comment table.
+ISSUE_TABLE_COLUMNS = [
+    "key",
+    "issue_type",
+    "status",
+    "priority",
+    "assignee",
+    "summary",
+    "updated_at",
+]
+ISSUE_DETAIL_COLUMNS = [
+    "key",
+    "summary",
+    "issue_type",
+    "status",
+    "resolution",
+    "priority",
+    "assignee",
+    "reporter",
+    "labels",
+    "created_at",
+    "updated_at",
+    "url",
+    "description",
+]
+COMMENT_TABLE_COLUMNS = ["issue_key", "author", "created_at", "body"]
 # Pipe records that carry an issue ``key`` a consumer can act on.
 ISSUE_KINDS = frozenset({"jira.issue", "jira.issue_outcome"})
 OUTCOME_KIND = "jira.issue_outcome"
@@ -99,6 +129,8 @@ issues_app = create_app(name="issues", help="Manage Jira issues.")
 projects_app = create_app(name="projects", help="Look up Jira projects.")
 boards_app = create_app(name="boards", help="Look up Jira Software boards.")
 sprints_app = create_app(name="sprints", help="Look up Jira Software sprints.")
+comments_app = create_app(name="comments", help="Read issue comments.")
+links_app = create_app(name="links", help="Link issues to each other.")
 
 
 @app.command(name="whoami")
@@ -122,11 +154,15 @@ def issue_get_command(
     keys: IssueKeysArgument = None,
     /,
     *,
+    comments: Annotated[
+        bool,
+        Parameter(name="--comments", negative="", help="Also fetch every comment."),
+    ] = False,
     stdin: StdinOption = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Fetch one or more issues."""
+    """Fetch one or more issues, with their description and optionally comments."""
 
     from untaped.capabilities.jira.application import GetIssue  # noqa: PLC0415
 
@@ -136,13 +172,43 @@ def issue_get_command(
         )
         single = not stdin and len(resolved) == 1
         with open_client() as (client, ui), ui.progress("Fetching issues…"):
-            get_issue = GetIssue(client)
+            get_issue = GetIssue(client, comments=comments)
             if single:
                 rows, any_failed = [get_issue(resolved[0])], False
             else:
                 rows, any_failed = resolve_each(resolved, get_issue)
+        if fmt == "table" and columns is None:
+            columns = ISSUE_DETAIL_COLUMNS if single else ISSUE_TABLE_COLUMNS
         emit(rows[0] if single else rows, fmt=fmt, columns=columns, kind="jira.issue")
+        if comments and fmt == "table":
+            emit(
+                [comment for row in rows for comment in row.comments or []],
+                fmt=fmt,
+                columns=COMMENT_TABLE_COLUMNS,
+                kind="jira.comment",
+                empty="No comments found.",
+            )
         finish(any_failed)
+
+
+@comments_app.command(name="list")
+def comment_list_command(
+    key: IssueKeyArgument,
+    /,
+    *,
+    limit: LimitOption = None,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """List the comments of one issue, oldest first."""
+
+    from untaped.capabilities.jira.application import ListComments  # noqa: PLC0415
+
+    with report_errors():
+        with open_client() as (client, ui), ui.progress("Fetching comments…"):
+            rows = ListComments(client)(key, limit=limit)
+        table_columns = columns or (COMMENT_TABLE_COLUMNS if fmt == "table" else None)
+        emit(rows, fmt=fmt, columns=table_columns, kind="jira.comment", empty="No comments found.")
 
 
 @issues_app.command(name="search")
@@ -221,6 +287,19 @@ def _nonblank_jql(jql: str | None) -> str | None:
     if not stripped:
         raise UsageError("--jql must not be blank")
     return stripped
+
+
+def _username(assignee: str) -> str:
+    """``assignee`` itself, or the authenticated user's name for ``@me`` (one GET)."""
+    if assignee != "@me":
+        return assignee
+    from untaped.capabilities.jira.application import WhoAmI  # noqa: PLC0415
+
+    with open_client() as (client, ui), ui.progress("Fetching authenticated user…"):
+        name = WhoAmI(client)().name
+    if not name:
+        raise JiraError("the authenticated Jira user has no username")
+    return name
 
 
 def _show_request(method: str, path: str, body: object) -> None:
@@ -315,6 +394,13 @@ def issue_patch_command(
     description: Annotated[
         str | None, Parameter(name="--description", help="New issue description text.")
     ] = None,
+    assignee: Annotated[
+        str | None,
+        Parameter(name="--assignee", help="Assign to this username, or @me for yourself."),
+    ] = None,
+    unassign: Annotated[
+        bool, Parameter(name="--unassign", negative="", help="Remove the assignee.")
+    ] = False,
     set_fields: SetOption = None,
     set_json: SetJsonOption = None,
     yes: YesOption = False,
@@ -322,7 +408,7 @@ def issue_patch_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Update fields of one issue from flags and an optional Jira-shaped body file."""
+    """Update fields of one issue (including its assignee) from flags or a body file."""
 
     from untaped.capabilities.jira.application import PatchIssue  # noqa: PLC0415
 
@@ -336,11 +422,17 @@ def issue_patch_command(
             fields=parse_kv_pairs(set_fields, flag="--set"),
             json_fields=parse_json_pairs(set_json, flag="--set-json"),
         )
-        if not payload.get("fields") and not payload.get("update"):
+        if assignee is not None and unassign:
+            raise_usage("pass either --assignee or --unassign, not both")
+        if unassign:
+            payload["fields"]["assignee"] = None
+        if not payload.get("fields") and not payload.get("update") and assignee is None:
             raise_usage(
-                "nothing to update: pass --summary, --description, --set, --set-json, "
-                "or a --body-file with fields/update"
+                "nothing to update: pass --summary, --description, --assignee, --unassign, "
+                "--set, --set-json, or a --body-file with fields/update"
             )
+        if assignee is not None:
+            payload["fields"]["assignee"] = {"name": _username(assignee)}
         path = f"{settings.api_prefix}/issue/{key}"
         if dry_run:
             _show_request("PUT", path, payload)
@@ -429,6 +521,13 @@ def issue_transition_command(
     *,
     to: Annotated[str | None, Parameter(name="--to", help="Transition name.")] = None,
     transition_id: Annotated[str | None, Parameter(name="--id", help="Transition id.")] = None,
+    comment: Annotated[
+        str | None, Parameter(name="--comment", help="Add this comment with the transition.")
+    ] = None,
+    resolution: Annotated[
+        str | None,
+        Parameter(name="--resolution", help="Set this resolution (e.g. Fixed, Done)."),
+    ] = None,
     stdin: StdinOption = False,
     yes: YesOption = False,
     dry_run: DryRunOption = False,
@@ -462,12 +561,14 @@ def issue_transition_command(
                     _show_request(
                         "POST",
                         f"{settings.api_prefix}/issue/{row['key']}/transitions",
-                        {"transition": {"id": row["transition_id"]}},
+                        build_transition_payload(
+                            str(row["transition_id"]), comment=comment, resolution=resolution
+                        ),
                     )
 
             outcome = batch_apply(
                 plans,
-                lambda plan: transition(*plan),
+                lambda plan: transition(*plan, comment=comment, resolution=resolution),
                 verb="transition",
                 noun="issue",
                 label=lambda plan: plan[0],
@@ -498,6 +599,44 @@ def issue_transition_command(
         else:
             emit(rows, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
         finish(resolve_failed or outcome.any_failed)
+
+
+@links_app.command(name="create")
+def link_create_command(
+    key: IssueKeyArgument,
+    link_type: Annotated[str, Parameter(help="Link type name (e.g. Blocks, Relates).")],
+    other: Annotated[str, Parameter(help="Issue key the first issue links to.")],
+    /,
+    *,
+    yes: YesOption = False,
+    dry_run: DryRunOption = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Link KEY to OTHER, read as "KEY <outward phrase> OTHER" (OPS-1 Blocks OPS-2)."""
+
+    from untaped.capabilities.jira.application import LinkIssues  # noqa: PLC0415
+
+    with report_errors():
+        settings = current_jira_settings()
+        path = f"{settings.api_prefix}/issueLink"
+        payload = build_link_payload(key, link_type, other)
+        if dry_run:
+            _show_request("POST", path, payload)
+            planned = IssueOutcome(
+                action="planned",
+                key=key,
+                url=browse_url(settings.base_url, key),
+                link_type=link_type,
+                linked_key=other,
+            )
+            emit(planned, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
+            return
+        with open_client() as (client, ui):
+            _confirm_request(ui, verb="link", method="POST", path=path, body=payload, yes=yes)
+            with ui.progress("Linking issues…"):
+                row = LinkIssues(client, base_url=settings.base_url)(key, link_type, other)
+        emit(row, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
 
 
 @projects_app.command(name="list")
@@ -604,6 +743,8 @@ def sprint_list_command(
         )
 
 
+issues_app.command(comments_app, name="comments")
+issues_app.command(links_app, name="links")
 app.command(issues_app, name="issues")
 app.command(projects_app, name="projects")
 app.command(boards_app, name="boards")
