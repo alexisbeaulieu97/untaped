@@ -19,6 +19,10 @@ class JiraIssueReader(Protocol):
 
     def search_issues(self, jql: str, *, limit: int | None = None) -> Iterator[dict[str, Any]]: ...
 
+    def list_comments(
+        self, issue_key: str, *, limit: int | None = None
+    ) -> Iterator[dict[str, Any]]: ...
+
 
 class JiraIssueWriter(Protocol):
     """Issue mutation contract."""
@@ -29,13 +33,15 @@ class JiraIssueWriter(Protocol):
 
     def add_comment(self, issue_key: str, body: str) -> dict[str, Any]: ...
 
+    def create_link(self, payload: dict[str, Any]) -> None: ...
+
 
 class JiraTransitionService(Protocol):
     """Issue workflow transition contract."""
 
     def list_transitions(self, issue_key: str) -> list[dict[str, Any]]: ...
 
-    def transition_issue(self, issue_key: str, transition_id: str) -> None: ...
+    def transition_issue(self, issue_key: str, payload: dict[str, Any]) -> None: ...
 
 
 class JiraLookupService(Protocol):

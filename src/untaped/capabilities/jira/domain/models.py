@@ -77,8 +77,44 @@ class IssueResult(BaseModel):
         return {**data, **patch}
 
 
+class CommentResult(BaseModel):
+    """One issue comment (``jira.comment``)."""
+
+    model_config = _ROW_CONFIG
+
+    id: str
+    issue_key: str = ""
+    author: str = ""
+    created_at: UtcTimestamp | None = None
+    updated_at: UtcTimestamp | None = None
+    body: str = ""
+    api_url: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _flatten_jira_comment(cls, data: Any) -> Any:
+        """Flatten a raw Jira comment (nested ``author``, ``created``, ``self``)."""
+        if not isinstance(data, dict):
+            return data
+        raw = {"self", "created", "updated"} & data.keys() or isinstance(data.get("author"), dict)
+        if not raw:
+            return data
+        patch = {
+            "id": str(data.get("id") or ""),
+            "author": _display_name(data.get("author")),
+            "created_at": _timestamp(data.get("created")),
+            "updated_at": _timestamp(data.get("updated")),
+            "body": _text(data.get("body")),
+            "api_url": _api_url(data),
+        }
+        return {**data, **patch}
+
+
 class IssueDetailResult(IssueResult):
-    """One issue with the extra fields shown by ``issues get``."""
+    """One issue with the extra fields shown by ``issues get``.
+
+    ``comments`` is ``None`` unless ``issues get --comments`` fetched them.
+    """
 
     issue_type: str = ""
     priority: str = ""
@@ -87,6 +123,7 @@ class IssueDetailResult(IssueResult):
     created_at: UtcTimestamp | None = None
     resolution: str = ""
     description: str = ""
+    comments: list[CommentResult] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -227,7 +264,7 @@ class IssueOutcome(OutcomeRecord):
     """The result of one issue mutation (``jira.issue_outcome``).
 
     ``action`` is ``created``, ``updated``, ``commented``, ``transitioned``,
-    or ``planned`` under ``--dry-run`` (where a new issue has no ``key`` yet).
+    ``linked``, or ``planned`` under ``--dry-run`` (where a new issue has no ``key`` yet).
     """
 
     key: str | None = None
@@ -236,6 +273,8 @@ class IssueOutcome(OutcomeRecord):
     api_url: str | None = None
     transition_id: str | None = None
     comment_id: str | None = None
+    link_type: str | None = None
+    linked_key: str | None = None
 
 
 class TransitionResult(BaseModel):

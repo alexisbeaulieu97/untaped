@@ -2,6 +2,7 @@
 
 from untaped.capabilities.jira.domain.models import (
     BoardResult,
+    CommentResult,
     IssueDetailResult,
     IssueOutcome,
     IssueResult,
@@ -11,11 +12,16 @@ from untaped.capabilities.jira.domain.models import (
     TransitionResult,
     browse_url,
 )
-from untaped.capabilities.jira.domain.payloads import build_issue_payload
+from untaped.capabilities.jira.domain.payloads import (
+    build_issue_payload,
+    build_link_payload,
+    build_transition_payload,
+)
 from untaped.capabilities.jira.domain.search import JiraIssueSearchFilters
 
 __all__ = [
     "BoardResult",
+    "CommentResult",
     "IssueDetailResult",
     "IssueOutcome",
     "IssueResult",
@@ -26,4 +32,6 @@ __all__ = [
     "TransitionResult",
     "browse_url",
     "build_issue_payload",
+    "build_link_payload",
+    "build_transition_payload",
 ]

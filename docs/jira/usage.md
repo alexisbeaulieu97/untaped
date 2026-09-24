@@ -32,6 +32,8 @@ untaped jira issues assigned --status 'In Progress' --sprint 'openSprints()'
 untaped jira issues search --project OPS --text "certificate" --limit 20
 untaped jira issues search --jql 'project = OPS AND labels = infra ORDER BY created DESC'
 untaped jira issues get OPS-123 OPS-124
+untaped jira issues get OPS-123 --comments
+untaped jira issues comments list OPS-123
 ```
 
 - `issues assigned` always starts from `jira.assigned_jql`. `--jql` and the
@@ -43,7 +45,15 @@ untaped jira issues get OPS-123 OPS-124
   `openSprints()`, `futureSprints()`, `closedSprints()`.
 - Search rows carry `key`, `summary`, `status`, `assignee`, `updated_at`,
   `url` and `api_url`. `issues get` adds `issue_type`, `priority`, `reporter`,
-  `labels`, `created_at`, `resolution` and `description`.
+  `labels`, `created_at`, `resolution`, `description` and `comments`.
+- The `issues get` table shows one issue as a detail view and several issues
+  as a compact table (`key`, `issue_type`, `status`, `priority`, `assignee`,
+  `summary`, `updated_at`); `--columns` picks others.
+- `issues get --comments` also fetches every comment. The table lists them
+  after the issues; JSON and YAML nest them under `comments` (otherwise
+  `null`). `issues comments list KEY` prints only the comments, as
+  `jira.comment` records (`id`, `issue_key`, `author`, `created_at`,
+  `updated_at`, `body`, `api_url`).
 
 ## Change issues
 
@@ -57,11 +67,15 @@ untaped jira issues create --project OPS --issue-type Task \
 
 untaped jira issues patch OPS-123 --summary "Rotate the API and web certificates"
 untaped jira issues patch OPS-123 --set-json 'labels=["infra","tls"]' --dry-run
+untaped jira issues patch OPS-123 --assignee @me
+untaped jira issues patch OPS-123 --unassign
 
 untaped jira issues comment OPS-123 --body "Rotated on staging."
 git log -1 --format=%B | untaped jira issues comment OPS-123 --yes
 ```
 
+- `--assignee USER` assigns the issue (`@me` is you); `--unassign` clears the
+  assignee.
 - `--set KEY=VALUE` sets a string field; `--set-json KEY=JSON` sets any field
   from JSON. Both repeat.
 - `issues create --template FILE` and `issues patch --body-file FILE` start
@@ -74,9 +88,12 @@ git log -1 --format=%B | untaped jira issues comment OPS-123 --yes
 untaped jira issues transitions OPS-123
 untaped jira issues transition OPS-123 --to "Done"
 untaped jira issues transition OPS-123 OPS-124 --id 31 --yes
+untaped jira issues transition OPS-123 --to Done --resolution Fixed --comment "Shipped in 1.2."
 ```
 
-Pass exactly one of `--to NAME` or `--id ID`. Several keys are transitioned in
+Pass exactly one of `--to NAME` or `--id ID`. `--resolution NAME` sets the
+resolution (many Done screens require one) and `--comment TEXT` adds a comment
+in the same request. Several keys are transitioned in
 one batch; each failed key prints `error: KEY: ...` and the command exits 1.
 
 Transition every issue of a search:
@@ -85,6 +102,16 @@ Transition every issue of a search:
 untaped jira issues search --project OPS --status 'In Review' --format pipe \
   | untaped jira issues transition --stdin --to Done --dry-run
 ```
+
+### Links
+
+```bash
+untaped jira issues links create OPS-123 Blocks OPS-124 --dry-run
+```
+
+`links create KEY TYPE OTHER` reads as "KEY *outward phrase* OTHER": the
+example makes OPS-123 block OPS-124. `TYPE` is the link type name (`Blocks`,
+`Relates`, `Duplicate`, ...).
 
 ## Projects, boards and sprints
 
@@ -101,7 +128,8 @@ untaped jira sprints list --board-id 42 --state active,future
 |---|---|
 | `whoami` | `jira.user` |
 | `issues get`, `issues search`, `issues assigned` | `jira.issue` |
-| `issues create`, `patch`, `comment`, `transition` | `jira.issue_outcome` (`action`: `created`, `updated`, `commented`, `transitioned` or `planned`) |
+| `issues create`, `patch`, `comment`, `transition`, `links create` | `jira.issue_outcome` (`action`: `created`, `updated`, `commented`, `transitioned`, `linked` or `planned`) |
+| `issues comments list` | `jira.comment` |
 | `issues transitions` | `jira.transition` |
 | `projects list`, `projects get` | `jira.project` |
 | `boards list` | `jira.board` |

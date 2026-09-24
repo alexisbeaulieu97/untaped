@@ -182,6 +182,7 @@ WRITES = {
         "POST",
         "/issue/ABC-1/transitions",
     ),
+    "link": (["issues", "links", "create", "ABC-1", "Blocks", "ABC-2"], "POST", "/issueLink"),
 }
 
 

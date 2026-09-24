@@ -13,6 +13,7 @@ from untaped.capabilities.jira.application.ports import (
 )
 from untaped.capabilities.jira.domain import (
     BoardResult,
+    CommentResult,
     IssueDetailResult,
     IssueOutcome,
     IssueResult,
@@ -22,6 +23,8 @@ from untaped.capabilities.jira.domain import (
     SprintResult,
     TransitionResult,
     browse_url,
+    build_link_payload,
+    build_transition_payload,
 )
 from untaped.capabilities.jira.errors import JiraTransitionError
 from untaped.capability_api import UsageError, not_found, q
@@ -38,13 +41,30 @@ class WhoAmI:
 
 
 class GetIssue:
-    """Fetch one issue by key or id."""
+    """Fetch one issue by key or id, optionally with all of its comments."""
+
+    def __init__(self, client: JiraIssueReader, *, comments: bool = False) -> None:
+        self._client = client
+        self._comments = comments
+
+    def __call__(self, issue_key: str) -> IssueDetailResult:
+        issue = IssueDetailResult.model_validate(self._client.get_issue(issue_key))
+        if not self._comments:
+            return issue
+        return issue.model_copy(update={"comments": ListComments(self._client)(issue.key)})
+
+
+class ListComments:
+    """List the comments of one issue, oldest first."""
 
     def __init__(self, client: JiraIssueReader) -> None:
         self._client = client
 
-    def __call__(self, issue_key: str) -> IssueDetailResult:
-        return IssueDetailResult.model_validate(self._client.get_issue(issue_key))
+    def __call__(self, issue_key: str, *, limit: int | None = None) -> list[CommentResult]:
+        return [
+            CommentResult.model_validate({**comment, "issue_key": issue_key})
+            for comment in self._client.list_comments(issue_key, limit=limit)
+        ]
 
 
 class SearchIssues:
@@ -110,6 +130,24 @@ class AddComment:
         )
 
 
+class LinkIssues:
+    """Link two issues with a named link type."""
+
+    def __init__(self, client: JiraIssueWriter, *, base_url: str | None = None) -> None:
+        self._client = client
+        self._base_url = base_url
+
+    def __call__(self, issue_key: str, link_type: str, other_key: str) -> IssueOutcome:
+        self._client.create_link(build_link_payload(issue_key, link_type, other_key))
+        return IssueOutcome(
+            action="linked",
+            key=issue_key,
+            url=browse_url(self._base_url, issue_key),
+            link_type=link_type,
+            linked_key=other_key,
+        )
+
+
 class ListTransitions:
     """List available workflow transitions for one issue."""
 
@@ -147,8 +185,16 @@ class TransitionIssue:
         self.check_selector(transition_id, transition_name)
         return transition_id or self._resolve_transition_name(issue_key, transition_name or "")
 
-    def __call__(self, issue_key: str, transition_id: str) -> IssueOutcome:
-        self._client.transition_issue(issue_key, transition_id)
+    def __call__(
+        self,
+        issue_key: str,
+        transition_id: str,
+        *,
+        comment: str | None = None,
+        resolution: str | None = None,
+    ) -> IssueOutcome:
+        payload = build_transition_payload(transition_id, comment=comment, resolution=resolution)
+        self._client.transition_issue(issue_key, payload)
         return IssueOutcome(
             action="transitioned",
             key=issue_key,
