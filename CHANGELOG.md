@@ -7,6 +7,10 @@ mutations. Items marked **behavior change** alter output, exit codes, or
 defaults.
 
 - Core
+  - Fixed: root options (`--profile`, `--verbose`/`-v`, `--quiet`/`-q`)
+    placed between command names, as in `untaped github --profile work
+    whoami`, failed with "Unknown command". They now work before, between
+    and after command names at any depth.
   - Fixed: `untaped --help | head` (help into a closed pipe) exited 1 through
     Rich's broken-pipe handler. It now exits 0 quietly, like data commands.
 
