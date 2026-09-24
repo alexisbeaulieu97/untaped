@@ -7,7 +7,6 @@ from typing import Annotated
 from cyclopts import App, Parameter
 
 from untaped.capabilities.workspace.application import (
-    EditWorkspace,
     ListWorkspaces,
     ShellInit,
     ShowWorkspace,
@@ -22,12 +21,10 @@ from untaped.capabilities.workspace.domain import Workspace, WorkspaceSummaryRow
 from untaped.capabilities.workspace.infrastructure import (
     WorkspaceRegistryRepository,
     YamlManifestRepository,
-    editor_runner,
     resolve_editor_argv,
 )
 from untaped.capability_api import (
     ColumnsOption,
-    ConfigError,
     FormatOption,
     StdinOption,
     deprecated_alias,
@@ -37,6 +34,7 @@ from untaped.capability_api import (
     read_identifiers,
     report_errors,
     resolve_each,
+    run_editor,
 )
 
 
@@ -143,10 +141,7 @@ def edit_command(
     """Open the workspace directory in your editor."""
     with report_errors():
         ws = resolve_workspace(workspace, path)
-        argv = resolve_editor_argv(editor)
-        rc = EditWorkspace(runner=editor_runner)(ws, argv=argv)
-        if rc != 0:
-            raise ConfigError(f"editor exited with status {rc}")
+        run_editor(ws.path, argv=None if editor is None else resolve_editor_argv(editor))
 
 
 def _workspace_row(w: Workspace) -> dict[str, object]:

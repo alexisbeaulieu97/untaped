@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import shlex
-import subprocess
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -59,19 +56,6 @@ def hook_startup_notice(ui: UiContext) -> Callable[[Path], None]:
         ui.message("info", f"preparing hook environment for {project_root}...")
 
     return notice
-
-
-def edit_path(path: Path) -> None:
-    """Open a path in the user's configured terminal editor."""
-    editor = shlex.split(os.environ.get("VISUAL") or os.environ.get("EDITOR") or "")
-    if not editor:
-        raise ConfigError("set $VISUAL or $EDITOR to use edit")
-    try:
-        subprocess.run([*editor, str(path)], check=True)
-    except FileNotFoundError as exc:
-        raise ConfigError(f"editor not found: {editor[0]}") from exc
-    except subprocess.CalledProcessError as exc:
-        raise ConfigError(f"editor exited with status {exc.returncode}") from exc
 
 
 @contextmanager

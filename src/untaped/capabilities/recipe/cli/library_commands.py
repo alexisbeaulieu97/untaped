@@ -15,7 +15,7 @@ from untaped.capabilities.recipe.application.files import read_recipe_file
 from untaped.capabilities.recipe.application.resolution import existing_path_hint
 from untaped.capabilities.recipe.builtins.registry import BUILTIN_HOOKS
 from untaped.capabilities.recipe.cli._context import recipe_ui
-from untaped.capabilities.recipe.cli.common import edit_path, library_root, report_config_errors
+from untaped.capabilities.recipe.cli.common import library_root, report_config_errors
 from untaped.capabilities.recipe.cli.detail import (
     hook_detail,
     pack_detail,
@@ -54,6 +54,7 @@ from untaped.capability_api import (
     plural,
     q,
     render_rows,
+    run_editor,
 )
 
 _EMPTY_LIBRARY_HINT = (
@@ -365,11 +366,11 @@ def edit_command(ref_text: Annotated[str, Parameter(help="Pack, recipe, or hook 
             )
         assert target.pack is not None
         if target.recipe is not None:
-            edit_path(target.pack.root / target.recipe.path)
+            run_editor(target.pack.root / target.recipe.path)
         elif target.hook is not None:
-            edit_path(hook_module_file(target.pack.root, target.hook.module))
+            run_editor(hook_module_file(target.pack.root, target.hook.module))
         else:
-            edit_path(target.pack.root / "pyproject.toml")
+            run_editor(target.pack.root / "pyproject.toml")
 
 
 def _resolve_target(library: PackLibrary, ref_text: str) -> _ResolvedTarget:
