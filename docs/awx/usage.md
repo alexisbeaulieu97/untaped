@@ -464,7 +464,7 @@ The old `apply --stdin --set ...` overlay interface is removed; use
 `--continue-on-error` opts into best effort. There are no compatibility aliases.
 
 These spellings were renamed and keep working with a deprecation warning
-until 7.0:
+until 8.0:
 
 | Old | New |
 |---|---|

@@ -20,7 +20,7 @@ variable shown.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `log_level` | string | `INFO` | `UNTAPED_LOG_LEVEL` | Deprecated and ignored (removed in 7.0); `untaped doctor` warns when set. |
+| `log_level` | string | `INFO` | `UNTAPED_LOG_LEVEL` | Deprecated and ignored (removed in 8.0); `untaped doctor` warns when set. |
 | `http.ca_bundle` | path (optional) | unset | `UNTAPED_HTTP__CA_BUNDLE` | PEM file of extra CA certificates to trust instead of the OS trust store. |
 | `http.verify_ssl` | boolean | `true` | `UNTAPED_HTTP__VERIFY_SSL` | Verify TLS certificates. `false` disables all certificate checks. |
 | `http.verify_hostname` | boolean | `true` | `UNTAPED_HTTP__VERIFY_HOSTNAME` | Check the certificate host name. `false` keeps chain validation. |

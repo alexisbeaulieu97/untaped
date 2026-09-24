@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 7.0.0
+
+Major cleanup release. Scripts should read **Upgrading** (under the UX
+conventions notes below) first: exit codes, confirmations, record kinds and
+some flags changed. Renamed commands and flags keep hidden, warning aliases
+until 8.0.
 
 Cleanup phase 6: performance and features. Items marked **behavior change**
 alter output, exit codes, or defaults.
@@ -124,7 +129,7 @@ output, exit codes, or defaults.
     before.
   - Deprecated: the root `log_level` setting (and `UNTAPED_LOG_LEVEL`) never
     had an effect. `untaped doctor` now reports a `warn` row when it is set;
-    it will be removed in 7.0.
+    it will be removed in 8.0.
   - `untaped.capability_api` exports `AbsolutePath`, the field type of
     `TargetRecord.target_path`, so records can re-declare it first.
 - workspace
@@ -366,7 +371,7 @@ messages, flags, confirmations and records (see `docs/conventions.md`).
   `--yes`.
 - Renamed commands and flags (`jira me`, `recipe check`, `awx save`,
   `--repo-stdin`, `--concurrency`, ...) keep hidden deprecated aliases that
-  print one warning each and go away in 7.0.
+  print one warning each and go away in 8.0.
 - Record kinds and fields are renamed: root kinds are `untaped.*`, mutation
   results are `<cap>.<verb>_outcome` with an `action` field, jira fields are
   snake_case with `*_at` UTC timestamps, file records carry an absolute
