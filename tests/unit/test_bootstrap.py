@@ -252,11 +252,59 @@ def test_profile_option_resolves_in_any_position(_isolated_config: Path) -> None
     _write_config(_isolated_config, "profiles:\n  work:\n    ext:\n      token: WT\n")
     calls: list[str] = []
     root = bootstrap.build_root_app(builtins=(), externals=[_ext_external(calls)])
-    for argv in (["--profile", "work", "ext", "who"], ["ext", "who", "--profile", "work"]):
+    for argv in (
+        ["--profile", "work", "ext", "who"],
+        ["ext", "--profile", "work", "who"],
+        ["ext", "--profile=work", "who"],
+        ["ext", "who", "--profile", "work"],
+    ):
         result = CliInvoker().invoke(root.meta, argv)
         assert result.exit_code == 0, result.output
         assert result.stdout.strip() == "WT"
     assert profile_override() is None
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["-q", "--profile", "work", "ext", "grp", "who"],
+        ["ext", "-q", "--profile", "work", "grp", "who"],
+        ["ext", "grp", "--quiet", "--profile", "work", "who"],
+        ["ext", "--profile", "work", "grp", "who", "-q"],
+    ],
+)
+def test_root_options_apply_between_nested_command_names(
+    _isolated_config: Path, argv: list[str]
+) -> None:
+    _write_config(_isolated_config, "profiles:\n  work:\n    ext:\n      token: WT\n")
+
+    def body() -> None:
+        echo(f"{app_context().section('ext', _ExtProfile).token} quiet={is_quiet()}")
+
+    ext = create_app(name="ext", help="ext capability.")
+    grp = create_app(name="grp", help="A nested group.")
+    grp.command(body, name="who")
+    ext.command(grp, name="grp")
+    root = bootstrap.build_root_app(builtins=(), externals=[_external(_spec("ext", ext), [])])
+
+    result = CliInvoker().invoke(root.meta, argv)
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "WT quiet=True"
+    assert profile_override() is None
+    assert not is_quiet()
+
+
+def test_root_option_after_a_lazy_builtin_name_is_not_a_command(
+    _isolated_config: Path,
+) -> None:
+    root = bootstrap.build_root_app()
+
+    result = CliInvoker().invoke(root.meta, ["workspace", "--profile", "nope", "list"])
+
+    assert result.exit_code == 1
+    assert "Unknown command" not in result.stderr
+    assert "'nope'" in result.stderr
 
 
 def test_root_options_reset_after_invocation(_isolated_config: Path) -> None:

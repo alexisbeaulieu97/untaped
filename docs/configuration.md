@@ -147,8 +147,11 @@ then the schema default.
 
 ## Profiles
 
-`--profile` is a root option and is position-independent. It applies to the
-root management commands and to a capability invocation for one process:
+`--profile` is a root option and is position-independent: it can go before the
+capability, between command names (`untaped github --profile work whoami`), or
+after the command. The same holds for `--verbose`/`-v` and `--quiet`/`-q`. It
+applies to the root management commands and to a capability invocation for one
+process:
 
 ```bash
 untaped profile list
