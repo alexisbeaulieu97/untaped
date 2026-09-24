@@ -13,6 +13,12 @@ defaults.
     and after command names at any depth.
   - Fixed: `untaped --help | head` (help into a closed pipe) exited 1 through
     Rich's broken-pipe handler. It now exits 0 quietly, like data commands.
+- awx
+  - **Behavior change:** `jobs events` and `jobs logs` with several ids print
+    one json/yaml array instead of one document per job. Event and log rows
+    carry the job id as `job` (first in the default json/yaml event columns;
+    log rows are `{job, line}`, and `raw`/`table` still show the line).
+    `--follow --format json` still streams NDJSON.
 
 Correctness and safety fixes from a whole-codebase review. Items marked
 **behavior change** alter output, exit codes, or defaults.

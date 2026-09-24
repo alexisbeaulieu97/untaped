@@ -128,6 +128,10 @@ come from a closed set:
   as `2026-01-02T03:04:05Z`.
 - Use native booleans, `null` and lists in records. Do not use glyphs such as
   `✓` or `—` as data.
+- `--format json` and `--format yaml` print one document per invocation: an
+  array for a collection (even when it spans several ids), a mapping for a
+  single record. `pipe` and `raw` print one line per record. Only a live
+  stream (`--follow`) prints json as one object per line (NDJSON).
 
 ## Enforcement
 

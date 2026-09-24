@@ -277,6 +277,12 @@ untaped awx jobs events 101 --kind inventory_update
 untaped awx jobs logs 101 --kind project_update
 ```
 
+`jobs events` and `jobs logs` accept several ids (or `--stdin`) and drain them
+in order with a `[<id>]` breadcrumb on stderr. Without `--follow`,
+`--format json` or `yaml` prints one array holding every job's rows, and each
+row names its `job`. With `--follow`, json streams one object per line
+(NDJSON) as rows arrive.
+
 `jobs list` shows the newest 20 executions by default; pass `--limit N` for a
 different count or `--limit 0` for every record. `<kind> list --limit N` stops
 paging once N records are read. `--limit 0` means no limit on every awx list.
