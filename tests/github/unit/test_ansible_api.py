@@ -2,15 +2,13 @@
 
 Proves the closed surface of ``untaped.capabilities.github.ansible``:
 every name the ansible capability may import, pinned identical to its
-canonical implementation, with the client-operation, inventory,
-settings, and result/error contracts ansible relies on exercised
-through fakes — no ansible code, no network.
+canonical implementation, plus the client signatures ansible calls.
+Their behaviour is tested with the owning modules.
 """
 
 from __future__ import annotations
 
 import inspect
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -35,8 +33,6 @@ from untaped.capabilities.github.ansible import (
     is_global_github_failure,
     normalize_team_scopes,
 )
-from untaped.errors import UntapedError
-from untaped.settings import get_settings, register_profile_settings
 
 EXPECTED_ALL = [
     "BatchRepoRefsFailure",
@@ -129,104 +125,14 @@ def test_client_covers_ansible_reader_operations() -> None:
     assert default_branch["chunk_size"].kind is inspect.Parameter.KEYWORD_ONLY
 
 
-class _StubInventoryService:
-    """Minimal ``GithubRepositoryInventoryService`` double."""
-
-    def get_repository(self, owner: str, repo: str) -> dict[str, Any]:
-        return {
-            "full_name": f"{owner}/{repo}",
-            "clone_url": f"https://github.com/{owner}/{repo}.git",
-            "default_branch": "main",
-        }
-
-    def list_org_repos(self, org: str) -> Iterator[dict[str, Any]]:
-        yield {"full_name": f"{org}/a", "default_branch": "main"}
-        yield {"full_name": f"{org}/b", "default_branch": "dev"}
-
-    def list_team_repos(self, org: str, team_slug: str) -> Iterator[dict[str, Any]]:
-        assert team_slug == "core"
-        yield {"full_name": f"{org}/b", "default_branch": "dev"}
-        yield {"full_name": f"{org}/c", "default_branch": "main"}
-
-
-def test_inventory_expansion_contract() -> None:
-    scope = RepositoryInventoryScope(
-        orgs=("acme",),
-        teams=normalize_team_scopes(["core"], orgs=("acme",)),
-        repos=("acme/explicit",),
-    )
-    items = ResolveRepositoryInventory(_StubInventoryService())(scope)
-    assert [item.full_name for item in items] == [
-        "acme/a",
-        "acme/b",
-        "acme/c",
-        "acme/explicit",
-    ]
-    row = items[0].model_dump()
-    assert row["full_name"] == "acme/a"
-    assert row["default_branch"] == "main"
-
-
-def test_team_scope_normalization_contract() -> None:
-    assert normalize_team_scopes(["core"], orgs=("acme",)) == (TeamScope(org="acme", slug="core"),)
-    assert normalize_team_scopes(["acme/core"]) == (TeamScope(org="acme", slug="core"),)
-
-
-def test_graphql_error_kind_contract() -> None:
-    exc = GithubGraphqlError("limited", kind="rate_limited")
-    assert isinstance(exc, UntapedError)
-    assert exc.kind == "rate_limited"
-
-
-def test_batch_refs_result_shape() -> None:
-    result = BatchRepoRefsResult(
-        repos=(
-            RepoRefs(
-                full_name="acme/a",
-                default_branch="main",
-                refs=(RepoRef(kind="heads", name="main", sha="abc123"),),
-            ),
-        ),
-        missing=("acme/gone",),
-        failures=(BatchRepoRefsFailure(full_name="acme/flaky", reason="boom", kind="transport"),),
-        rate_limit_cost=2,
-        rate_limit_remaining=10,
-    )
-    (repo_refs,) = result.repos
-    assert repo_refs.full_name == "acme/a"
-    assert [(ref.kind, ref.name, ref.sha) for ref in repo_refs.refs] == [
-        ("heads", "main", "abc123")
-    ]
-    assert result.missing == ("acme/gone",)
-    assert result.failures[0].full_name == "acme/flaky"
-    assert result.rate_limit_remaining == 10
-    assert result.rate_limit_cost == 2
-    assert result.rate_limit_reset_at is None
-
-
-def test_settings_contract() -> None:
-    assert set(GithubSettings.model_fields) == {
-        "base_url",
-        "token",
-        "token_command",
-        "corpus_path",
-        "sweep",
-    }
-    assert GithubSettings().token is None
-
-
 def test_github_settings_reads_the_active_github_section(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = tmp_path / "config.yml"
     cfg.write_text("profiles:\n  default:\n    github:\n      token: ghp_test\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    register_profile_settings("github", GithubSettings)
-    get_settings.cache_clear()
-    try:
-        settings = github_settings()
-    finally:
-        get_settings.cache_clear()
+
+    settings = github_settings()
 
     assert isinstance(settings, GithubSettings)
     assert settings.token is not None

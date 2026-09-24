@@ -48,7 +48,7 @@ class ResolveRepositoryInventory:
     def __call__(self, scope: RepositoryInventoryScope) -> tuple[RepositoryInventoryItem, ...]:
         explicit: dict[str, RepositoryInventoryItem] = {}
         for full_name in scope.repos:
-            owner, repo = _split_repo(full_name)
+            owner, repo = split_full_name(full_name)
             try:
                 item = _inventory_item(
                     self._service.get_repository(owner, repo),
@@ -73,7 +73,8 @@ class ResolveRepositoryInventory:
         return tuple(rows[name] for name in sorted(rows))
 
 
-def _split_repo(value: str) -> tuple[str, str]:
+def split_full_name(value: str) -> tuple[str, str]:
+    """Split ``owner/name``; anything else is an :class:`UntapedError`."""
     owner, sep, repo = value.partition("/")
     if not sep or not owner or not repo or "/" in repo:
         raise UntapedError(f"repository must be owner/name: {value!r}")

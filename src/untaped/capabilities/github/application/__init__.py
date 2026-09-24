@@ -6,9 +6,7 @@ from untaped.capabilities.github.application.inventory import (
 )
 from untaped.capabilities.github.application.ports import (
     GitCorpus,
-    GithubMeService,
     GithubRepoListService,
-    GithubRepositoryInventoryService,
     GithubSearchService,
     GithubTeamService,
 )
@@ -34,9 +32,7 @@ __all__ = [
     "CleanCorpus",
     "CorpusSyncOptions",
     "GitCorpus",
-    "GithubMeService",
     "GithubRepoListService",
-    "GithubRepositoryInventoryService",
     "GithubSearchService",
     "GithubTeamService",
     "ListRepos",
