@@ -2,7 +2,8 @@
 
 import hashlib
 import shutil
-from collections.abc import Mapping
+import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -29,6 +30,24 @@ _dependency_name = dependency_name
 _normalize_package_name = normalize_package_name
 _project_metadata = project_metadata
 _requirement_specifier = requirement_specifier
+
+# GitHub's release list and PyPI's CDN-cached simple index lag writes by a few
+# seconds; poll with backoff (2+4+8+16+32 = 62s) before calling a write lost.
+_VISIBILITY_ATTEMPTS = 6
+_VISIBILITY_FIRST_DELAY = 2.0
+_sleep: Callable[[float], None] = time.sleep
+
+
+def wait_for[T](probe: Callable[[], T | None]) -> T | None:
+    """Return ``probe()`` once it is not ``None``, retrying with backoff; else ``None``."""
+    delay = _VISIBILITY_FIRST_DELAY
+    for attempt in range(_VISIBILITY_ATTEMPTS):
+        value = probe()
+        if value is not None or attempt == _VISIBILITY_ATTEMPTS - 1:
+            return value
+        _sleep(delay)
+        delay *= 2
+    return None
 
 
 class PublicationState(StrEnum):
@@ -411,7 +430,9 @@ def _inspect_github_prefix(
     candidate: ReleaseCandidate, *, transport: PublicationTransport
 ) -> tuple[GitHubRelease, set[str]]:
     """Inspect the exact release/tag/asset prefix shared by every transition."""
-    release = _require_release(transport.inspect_github_release(tag=candidate.tag), candidate)
+    release = _require_release(
+        wait_for(lambda: transport.inspect_github_release(tag=candidate.tag)), candidate
+    )
     _verify_release_identity(
         release,
         candidate,
@@ -476,7 +497,13 @@ def _require_index_prefix(
     transport: PublicationTransport,
 ) -> None:
     """Require one exact index prefix after a trusted upload or on resume."""
-    actual = transport.inspect_index(index=index, candidate=candidate)
+
+    def complete() -> Mapping[str, str] | None:
+        actual = transport.inspect_index(index=index, candidate=candidate)
+        return actual if actual is not None and actual.keys() >= expected.keys() else None
+
+    expected = candidate.artifact_hashes
+    actual = wait_for(complete) or transport.inspect_index(index=index, candidate=candidate)
     _require_exact_hash_map(actual, candidate.artifact_hashes, f"{index} files")
 
 

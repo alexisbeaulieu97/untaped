@@ -62,6 +62,9 @@ Rules:
 - After `release.yml` exists on `main`, later TestPyPI rehearsals may target a
   reviewed release branch via the dispatch `ref`.
 - Production PyPI must run from `refs/heads/main`; the workflow fails otherwise.
+- Visibility checks right after a write (the new GitHub draft, the uploaded
+  index files) poll with backoff for about a minute, because GitHub's release
+  list and PyPI's CDN-cached simple index lag writes by a few seconds.
 - Candidate identity and the package manifest are checked before any remote
   mutation. Build/test/local smoke run in a read-only job.
 - A production run creates or resumes a GitHub draft targeted at the exact
