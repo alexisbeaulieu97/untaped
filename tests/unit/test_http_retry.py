@@ -56,7 +56,7 @@ def test_transient_failure_is_retried_then_succeeds(
             side_effect=[first, httpx.Response(200, json={"ok": True})]
         )
         with HttpClient(base_url="https://example.com", retry=policy) as client:
-            assert client.request(method, "/x").json() == {"ok": True}
+            assert getattr(client, method.lower())("/x").json() == {"ok": True}
     assert route.call_count == 2
     assert len(no_sleep) == 1
 
@@ -94,7 +94,7 @@ def test_failure_is_not_retried(
             HttpClient(base_url="https://example.com", retry=client_policy) as client,
             pytest.raises(error),
         ):
-            client.request(method, "/x", **per_call)  # type: ignore[arg-type]
+            getattr(client, method.lower())("/x", **per_call)
     assert route.call_count == 1
     assert no_sleep == []
 
