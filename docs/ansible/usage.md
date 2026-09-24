@@ -71,9 +71,44 @@ untaped ansible graph acme/base-role --org acme --upstream --refresh
 | `--ref REF` | Branch, tag or SHA of the target. |
 | `--depth N\|unlimited` | Traversal depth. Default 3. |
 | `--format tree\|mermaid\|json`, `--out FILE` | Output shape and destination. |
+| `--contains OWNER/REPO`, `--stdin` | Report the roots whose downstream graph contains a repository (below). |
 
 Conflicting flags (two directions, or two of `--refresh`/`--cached`/`--live`)
 exit 2.
+
+## Find which roots contain a repository
+
+`--contains OWNER/REPO` (repeatable) turns `graph` into a search over many
+roots: it walks each root's downstream graph and prints one row per node of a
+wanted repository, and nothing for roots that never reach it. Give one root
+as `TARGET`, or many through `--stdin`:
+
+```bash
+printf 'acme/site@main\nacme/app@v2.1.0\nacme/tools\n' \
+  | untaped ansible graph --stdin --contains acme/base-role --source platform
+untaped awx job-templates list --organization Default --with-scm --format pipe \
+  | untaped ansible graph --stdin --contains acme/base-role --source platform
+```
+
+Stdin carries either bare `owner/repo@ref` lines (the ref is optional; a Git
+URL or alias is also accepted, without a ref) or `--format pipe` records. A
+record names its repository in `scm_url`, `repo_url`, `repo` or `full_name`
+and its ref in `effective_scm_ref` or `ref`; an empty or missing ref means the
+default branch, and every cached ref of that root is walked.
+
+Each row (`ansible.dependency_match`) has `root_repo`, `root_ref`, the matched
+`repo`, `declared_ref` (the ref string exactly as declared on the edge that
+reaches it, or `null` when unpinned, never interpreted), `declared_in` (the
+dependency file) and `path` (the shortest path from the root, as node
+labels). A repository reached through two different declared refs gives two
+rows. `--depth`, `--source`, inline selectors and `--refresh`/`--cached`/`--live`
+apply as for a single graph; each root's graph warnings are printed on stderr
+prefixed with the root.
+
+This mode is downstream only (`--upstream` and `--both` are usage errors) and
+prints `--format table` (default), `json` or `pipe`; `tree`, `mermaid` and
+`--out` stay with the single-target graph. `--stdin` requires `--contains`,
+and `--ref`/`--target-repo` apply only to `TARGET`.
 
 ## Manage sources
 
@@ -123,7 +158,8 @@ Aliases apply when a source is refreshed; run `source refresh` afterwards.
 - A malformed or templated dependency file is skipped with a warning; it
   never fails the graph.
 
-`graph` does not support `--format pipe`. The `source` and `alias` commands
+`graph` supports `--format pipe` only with `--contains`
+(`ansible.dependency_match`). The `source` and `alias` commands
 do (`ansible.source`, `ansible.source_status`, `ansible.alias`, and the
 `ansible.source_outcome` and `ansible.alias_outcome` results).
 
