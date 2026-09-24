@@ -27,7 +27,6 @@ from untaped.capabilities.awx.domain.outcomes import JobCancelOutcome, JobRelaun
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
-    OperationCancelledError,
     UntapedError,
     echo,
     emit,
@@ -162,13 +161,11 @@ def _label(kind: str, id_: int | None, name: str | None) -> str:
 
 
 def _confirm(ctx: AwxContext, *, verb: str, count: int, yes: bool) -> None:
-    confirmed = ctx.progress_ui().confirm_action(
+    ctx.progress_ui().confirm_or_cancel(
         f"{verb.capitalize()} {plural(count, 'job')}?",
         assume_yes=yes,
         refusal=f"{verb} requires --yes or --dry-run when not interactive",
     )
-    if not confirmed:
-        raise OperationCancelledError
 
 
 def _cancel_plan(kind: str, record: dict[str, Any]) -> JobCancelOutcome:

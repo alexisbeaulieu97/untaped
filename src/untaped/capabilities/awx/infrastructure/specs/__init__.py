@@ -48,18 +48,12 @@ sort in ``apply_ordering.topological_sort`` uses this order as its tie-breaker."
 __all__ = [
     "ALL_SPECS",
     "CREDENTIAL_SPEC",
-    "CREDENTIAL_TYPE_SPEC",
-    "EXECUTION_ENVIRONMENT_SPEC",
     "GROUP_SPEC",
     "HOST_SPEC",
-    "INSTANCE_GROUP_SPEC",
     "INVENTORY_SOURCE_SPEC",
     "INVENTORY_SPEC",
     "JOB_TEMPLATE_SPEC",
-    "LABEL_SPEC",
-    "ORGANIZATION_SPEC",
     "PROJECT_SPEC",
     "SCHEDULE_SPEC",
     "UNIVERSAL_READ_ONLY",
-    "WORKFLOW_JOB_TEMPLATE_SPEC",
 ]

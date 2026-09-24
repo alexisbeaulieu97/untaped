@@ -11,22 +11,13 @@ from untaped.capabilities.awx.cli._action_runner import (
     validate_wait_timeout,
 )
 from untaped.capabilities.awx.cli._mutation_runner import validate_controls
-from untaped.capabilities.awx.cli._selection import select_resources
+from untaped.capabilities.awx.cli._selection import SELECTION_DEFAULTS, SelectionOptions
 from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.options import (
-    AllOption,
-    ByIdOption,
     ContinueOption,
     DryRunOption,
-    FilterOption,
-    InventoryOption,
-    InventoryOrganizationOption,
     NamesArgument,
-    OrganizationOption,
     ParallelOption,
-    ParentOption,
-    SearchOption,
-    StdinOption,
     WaitTimeoutOption,
     YesOption,
 )
@@ -40,15 +31,7 @@ def _add_sync(app: App, spec: AwxResourceSpec) -> None:
         names: NamesArgument = None,
         /,
         *,
-        stdin: StdinOption = False,
-        by_id: ByIdOption = False,
-        search: SearchOption = None,
-        filter_: FilterOption = None,
-        all_: AllOption = False,
-        organization: OrganizationOption = None,
-        inventory: InventoryOption = None,
-        inventory_organization: InventoryOrganizationOption = None,
-        parent: ParentOption = None,
+        selection: SelectionOptions = SELECTION_DEFAULTS,
         dry_run: DryRunOption = False,
         yes: YesOption = False,
         continue_on_error: ContinueOption = False,
@@ -73,21 +56,7 @@ def _add_sync(app: App, spec: AwxResourceSpec) -> None:
         with report_errors():
             parallel = validate_controls(yes=yes, dry_run=dry_run, parallel=parallel)
             with open_context() as ctx:
-                selected = select_resources(
-                    ctx,
-                    spec,
-                    names,
-                    stdin=stdin,
-                    by_id=by_id,
-                    filters=filter_,
-                    search=search,
-                    all_=all_,
-                    require_explicit=True,
-                    organization=organization,
-                    inventory=inventory,
-                    inventory_organization=inventory_organization,
-                    parent=parent,
-                )
+                selected = selection.select(ctx, spec, names)
                 run_action_selection(
                     ctx,
                     spec,
@@ -96,8 +65,7 @@ def _add_sync(app: App, spec: AwxResourceSpec) -> None:
                     dry_run=dry_run,
                     yes=yes,
                     # Mass or multi-target selections preview and confirm first.
-                    confirm=len(selected) > 1
-                    or bool(stdin or all_ or filter_ or search is not None),
+                    confirm=len(selected) > 1 or selection.mass,
                     parallel=parallel,
                     continue_on_error=continue_on_error,
                     wait=wait,

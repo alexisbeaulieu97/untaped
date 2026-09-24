@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from untaped.capabilities.awx.domain import ActionSpec, FkRef
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
+from untaped.capabilities.awx.infrastructure.specs._support import UNIVERSAL_READ_ONLY
 
 INVENTORY_SPEC = AwxResourceSpec(
     kind="Inventory",
@@ -25,13 +26,7 @@ INVENTORY_SPEC = AwxResourceSpec(
     structured_text_fields=("variables", "source_vars"),
     apply_strategy="inventory",
     read_only_fields=(
-        "id",
-        "created",
-        "modified",
-        "summary_fields",
-        "related",
-        "type",
-        "url",
+        *UNIVERSAL_READ_ONLY,
         "total_hosts",
         "hosts_with_active_failures",
         "total_groups",

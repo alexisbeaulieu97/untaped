@@ -6,11 +6,14 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from untaped.capabilities.awx.application import BatchMutationEngine, prepare_apply_file
-from untaped.capabilities.awx.cli._mutation_runner import run_mutation_plan
+from untaped.capabilities.awx.cli._mutation_runner import (
+    WriteControls,
+    run_mutation_plan,
+)
 from untaped.capabilities.awx.cli.context import AwxContext
 from untaped.capabilities.awx.domain import Resource
 from untaped.capabilities.awx.infrastructure.yaml_io import read_resource_files
-from untaped.capability_api import ConfigError, OutputFormat
+from untaped.capability_api import ConfigError
 
 
 def build_mutation_engine(
@@ -30,13 +33,8 @@ def build_mutation_engine(
 def _with_default_organization(ctx: AwxContext, doc: Resource) -> Resource:
     """Scope org-less documents of org-scoped kinds by ``awx.default_organization``.
 
-    Selection and ``awx test`` already scope this way; without it an apply
-    would match a same-named resource in whichever organization held one.
-    With no default, a name found in several organizations stays ambiguous.
-
-    An explicit ``metadata.organization`` (a name, or ``null`` for an
-    org-less record such as a global workflow template) is never filled, and
-    a ``spec.organization`` name is the identity when metadata omits one.
+    Selection scopes the same way. An explicit ``metadata.organization`` (even
+    ``null``) is kept; a ``spec.organization`` name is the identity otherwise.
     """
     if "organization" not in ctx.catalog.get(doc.kind).identity_keys:
         return doc
@@ -58,15 +56,9 @@ def _with_default_organization(ctx: AwxContext, doc: Resource) -> Resource:
 def run_apply(
     ctx: AwxContext,
     file: Path,
+    controls: WriteControls,
     *,
-    yes: bool,
-    dry_run: bool = False,
-    continue_on_error: bool = False,
-    allow_unverified: bool = False,
-    fmt: OutputFormat = "table",
-    columns: list[str] | None = None,
     kind_filter: str | None = None,
-    parallel: int = 1,
 ) -> None:
     """Prepare once, confirm once, execute the same complete batch."""
 
@@ -86,17 +78,6 @@ def run_apply(
                 )
         return [_with_default_organization(ctx, doc) for _source, doc in docs]
 
-    engine = build_mutation_engine(ctx, allow_unverified=allow_unverified)
+    engine = build_mutation_engine(ctx, allow_unverified=controls.allow_unverified)
     plan = prepare_apply_file(engine, reader, file, catalog=ctx.catalog, fk=ctx.fk)
-    run_mutation_plan(
-        ctx,
-        engine,
-        plan,
-        yes=yes,
-        dry_run=dry_run,
-        continue_on_error=continue_on_error,
-        parallel=parallel,
-        allow_unverified=allow_unverified,
-        fmt=fmt,
-        columns=columns,
-    )
+    run_mutation_plan(ctx, engine, plan, controls)
