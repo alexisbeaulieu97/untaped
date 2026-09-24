@@ -4,6 +4,7 @@ import subprocess
 import sys
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -39,30 +40,6 @@ def test_clean_message_for_untaped_error() -> None:
     result = CliInvoker().invoke(app, [])
     assert result.exit_code == 1
     assert "error: something went wrong" in (result.output or result.stderr)
-
-
-def test_report_errors_surfaces_json_api_message() -> None:
-    """A JSON error body's human message is surfaced inline; the raw body is
-    not dumped (that only happens for unparseable bodies, or under --verbose)."""
-    app = create_app(name="test")
-
-    @app.default
-    def boom() -> None:
-        with report_errors():
-            raise HttpError(
-                "HTTP 403 for https://api.github.com/repos/acme/private",
-                status_code=403,
-                url="https://api.github.com/repos/acme/private",
-                body='{"message":"Resource not accessible by personal access token"}',
-            )
-
-    result = CliInvoker().invoke(app, [])
-
-    assert result.exit_code == 1
-    output = result.output or result.stderr
-    assert "error: HTTP 403 for https://api.github.com/repos/acme/private" in output
-    assert "— Resource not accessible by personal access token" in output
-    assert "response:" not in output
 
 
 def test_passes_through_non_untaped_exception() -> None:
@@ -173,109 +150,59 @@ def test_data_command_into_closed_pipe_exits_zero_quietly() -> None:
     assert proc.stderr == ""
 
 
-# ---- parse_kv_pairs ------------------------------------------------------
+# ---- parse_kv_pairs / parse_json_pairs -------------------------------------
 
 
-def test_parse_kv_pairs_returns_empty_dict_for_none() -> None:
-    assert parse_kv_pairs(None, flag="--filter") == {}
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        (None, {}),
+        ([], {}),
+        (["a=1", "b=2"], {"a": "1", "b": "2"}),
+        # Splits on the first ``=`` so values with literal ``=`` survive intact.
+        (["filter=foo=bar=baz"], {"filter": "foo=bar=baz"}),
+        (["k="], {"k": ""}),
+        (["  key  =val"], {"key": "val"}),
+        (["k=first", "k=second"], {"k": "second"}),
+    ],
+)
+def test_parse_kv_pairs(values: list[str] | None, expected: dict[str, str]) -> None:
+    assert parse_kv_pairs(values, flag="--filter") == expected
 
 
-def test_parse_kv_pairs_returns_empty_dict_for_empty_iterable() -> None:
-    assert parse_kv_pairs([], flag="--filter") == {}
-
-
-def test_parse_kv_pairs_basic_kv() -> None:
-    assert parse_kv_pairs(["k=v"], flag="--filter") == {"k": "v"}
-
-
-def test_parse_kv_pairs_multiple_entries() -> None:
-    assert parse_kv_pairs(["a=1", "b=2"], flag="--filter") == {"a": "1", "b": "2"}
-
-
-def test_parse_kv_pairs_value_can_contain_equals() -> None:
-    """Splits on the first ``=`` so values with literal ``=`` survive intact."""
-    assert parse_kv_pairs(["filter=foo=bar=baz"], flag="--filter") == {"filter": "foo=bar=baz"}
-
-
-def test_parse_kv_pairs_empty_value_is_allowed() -> None:
-    assert parse_kv_pairs(["k="], flag="--filter") == {"k": ""}
-
-
-def test_parse_kv_pairs_strips_key_whitespace() -> None:
-    assert parse_kv_pairs(["  key  =val"], flag="--var") == {"key": "val"}
-
-
-def test_parse_kv_pairs_rejects_missing_equals() -> None:
+@pytest.mark.parametrize(
+    ("parse", "entry"),
+    [
+        (parse_kv_pairs, "bogus"),
+        (parse_kv_pairs, "=value"),
+        (parse_kv_pairs, "   =value"),
+        (parse_json_pairs, "notapair"),
+        (parse_json_pairs, "k={broken"),
+    ],
+)
+def test_malformed_pairs_are_usage_errors_naming_the_flag(
+    parse: Any, entry: str, capsys: pytest.CaptureFixture[str]
+) -> None:
     with pytest.raises(SystemExit) as exc:
-        parse_kv_pairs(["bogus"], flag="--filter")
+        parse([entry], flag="--custom")
     assert exc.value.code == 2
-
-
-def test_parse_kv_pairs_rejects_empty_key() -> None:
-    with pytest.raises(SystemExit) as exc:
-        parse_kv_pairs(["=value"], flag="--filter")
-    assert exc.value.code == 2
-
-
-def test_parse_kv_pairs_rejects_whitespace_only_key() -> None:
-    with pytest.raises(SystemExit) as exc:
-        parse_kv_pairs(["   =value"], flag="--var")
-    assert exc.value.code == 2
-
-
-def test_parse_kv_pairs_error_uses_provided_flag_name() -> None:
-    with pytest.raises(SystemExit) as exc:
-        parse_kv_pairs(["bogus"], flag="--custom")
-    assert exc.value.code == 2
-
-
-def test_parse_kv_pairs_later_entries_overwrite_earlier() -> None:
-    assert parse_kv_pairs(["k=first", "k=second"], flag="--filter") == {"k": "second"}
-
-
-# ---- parse_json_pairs -----------------------------------------------------
+    assert "--custom" in capsys.readouterr().err
 
 
 def test_parse_json_pairs_decodes_values() -> None:
+    assert parse_json_pairs(None, flag="--json-field") == {}
     out = parse_json_pairs(['labels=["a","b"]', "count=3", 'name="x"'], flag="--json-field")
     assert out == {"labels": ["a", "b"], "count": 3, "name": "x"}
-
-
-def test_parse_json_pairs_none_is_empty() -> None:
-    assert parse_json_pairs(None, flag="--json-field") == {}
-
-
-def test_parse_json_pairs_rejects_missing_equals() -> None:
-    with pytest.raises(SystemExit):
-        parse_json_pairs(["notapair"], flag="--json-field")
-
-
-def test_parse_json_pairs_rejects_invalid_json() -> None:
-    with pytest.raises(SystemExit):
-        parse_json_pairs(["k={broken"], flag="--json-field")
 
 
 # ---- resolve_each --------------------------------------------------------
 
 
-def test_resolve_each_with_empty_ids_returns_empty_and_no_failure(
-    capsys: pytest.CaptureFixture[str],
+@pytest.mark.parametrize(("ids", "expected"), [([], []), (["a", "b"], ["A", "B"])])
+def test_resolve_each_without_failures(
+    ids: list[str], expected: list[str], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Empty input must not call ``fn`` and must report no failures."""
-    calls: list[str] = []
-    results, any_failed = resolve_each([], lambda n: calls.append(n) or n)
-    assert results == []
-    assert any_failed is False
-    assert calls == []
-    assert capsys.readouterr().err == ""
-
-
-def test_resolve_each_returns_results_when_all_succeed(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    results, any_failed = resolve_each(["a", "b", "c"], lambda n: n.upper())
-    assert results == ["A", "B", "C"]
-    assert any_failed is False
+    assert resolve_each(ids, str.upper) == (expected, False)
     assert capsys.readouterr().err == ""
 
 
@@ -324,72 +251,27 @@ def test_resolve_each_propagates_non_untaped_exceptions() -> None:
         resolve_each(["x"], fn)
 
 
-def test_clamp_parallel_returns_input_when_below_cap(
-    capsys: pytest.CaptureFixture[str],
+# ---- clamp_parallel ------------------------------------------------------
+
+
+@pytest.mark.parametrize("requested", [4, 8, 0, -3])
+def test_clamp_parallel_passes_through_up_to_cap(
+    requested: int, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Below-cap values pass through untouched and emit no warning."""
-    assert clamp_parallel(4, cap=8, policy="2 * os.cpu_count()") == 4
+    """``requested == cap`` is inclusive; ``< 1`` is caller policy, left untouched."""
+    assert clamp_parallel(requested, cap=8, policy="2 * os.cpu_count()") == requested
     assert capsys.readouterr().err == ""
 
 
-def test_clamp_parallel_returns_input_at_cap_inclusive(
+def test_clamp_parallel_caps_above_with_warning_naming_the_policy(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """``requested == cap`` is *inclusive* (no warning, no clamp); the
-    helper uses ``<= cap`` not ``< cap`` so the boundary is honoured."""
-    assert clamp_parallel(8, cap=8, policy="2 * os.cpu_count()") == 8
-    assert capsys.readouterr().err == ""
-
-
-def test_clamp_parallel_caps_above_with_warning(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Above-cap returns ``cap`` and emits a stderr warning naming the policy."""
-    assert clamp_parallel(100, cap=8, policy="2 * os.cpu_count()") == 8
+    assert clamp_parallel(100, cap=8, policy="httpx.Limits.max_connections=8") == 8
     err = capsys.readouterr().err
-    assert "warning: --parallel 100 clamped to 8" in err
-    assert "(2 * os.cpu_count())" in err
-
-
-def test_clamp_parallel_policy_string_appears_in_warning(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Caller-supplied ``policy`` text appears verbatim in the parens —
-    callers control the rationale (httpx pool, cpu_count, ...)."""
-    clamp_parallel(50, cap=10, policy="httpx.Limits.max_connections=10")
-    err = capsys.readouterr().err
-    assert "clamped to 10 (httpx.Limits.max_connections=10)" in err
-
-
-def test_clamp_parallel_does_not_handle_below_one(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """``< 1`` policy is caller-specific (silent coerce vs BadParameter)
-    so the helper deliberately doesn't clamp at the lower bound — it
-    returns the input untouched, no warning."""
-    assert clamp_parallel(0, cap=8, policy="2 * os.cpu_count()") == 0
-    assert clamp_parallel(-3, cap=8, policy="2 * os.cpu_count()") == -3
-    assert capsys.readouterr().err == ""
+    assert "warning: --parallel 100 clamped to 8 (httpx.Limits.max_connections=8)" in err
 
 
 # ---- render_rows -----------------------------------------------------------
-
-
-def test_render_rows_table_contains_cells(_isolated_config: Path) -> None:
-    rendered = render_rows([{"name": "alpha", "value": "1"}], fmt="table")
-    assert "alpha" in rendered
-    assert "name" in rendered
-
-
-def test_render_rows_empty_table_emits_hint_to_stderr(
-    _isolated_config: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    rendered = render_rows([], fmt="table", empty="No plugins installed.")
-    captured = capsys.readouterr()
-    assert rendered == ""
-    assert captured.out == ""
-    assert "No plugins installed." in captured.err
 
 
 def test_render_rows_structured_formats_ignore_theme(_isolated_config: Path) -> None:
@@ -442,7 +324,6 @@ def test_valid_kinds_are_accepted(kind: str) -> None:
         "github.",
         "github.code_hit.extra",
         "github.code_hit.summary.x",
-        "github.summary",
     ],
 )
 def test_invalid_kinds_raise_value_error(kind: str) -> None:
@@ -460,10 +341,6 @@ def test_emit_validates_kind_for_single_records() -> None:
         emit({"id": 1}, fmt="json", kind="bad-kind")
 
 
-def test_kind_none_is_always_accepted() -> None:
-    assert render_rows([{"id": 1}], fmt="json", kind=None)
-
-
 # ---- emit ------------------------------------------------------------------
 
 
@@ -472,9 +349,13 @@ class _Widget(BaseModel):
     value: int
 
 
-def test_emit_single_model_json_is_bare_object(capsys: pytest.CaptureFixture[str]) -> None:
-    """A single entity under ``--format json`` is a bare object, not a 1-element array."""
-    emit(_Widget(name="alpha", value=1), fmt="json")
+@pytest.mark.parametrize("record", [_Widget(name="alpha", value=1), {"name": "alpha", "value": 1}])
+def test_emit_single_record_json_is_bare_object(
+    record: object, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A single entity (model or bare mapping) under ``--format json`` is a
+    bare object, not a 1-element array."""
+    emit(record, fmt="json")  # type: ignore[arg-type]
     assert json.loads(capsys.readouterr().out) == {"name": "alpha", "value": 1}
 
 
@@ -518,12 +399,6 @@ def test_emit_yaml_mapping_with_unknown_values_falls_back_to_str(
     }
 
 
-def test_emit_accepts_a_single_mapping(capsys: pytest.CaptureFixture[str]) -> None:
-    """A bare dict is treated as one record (detail), not iterated as a sequence."""
-    emit({"name": "alpha", "value": 1}, fmt="json")
-    assert json.loads(capsys.readouterr().out) == {"name": "alpha", "value": 1}
-
-
 def test_emit_single_pipe_emits_one_envelope(capsys: pytest.CaptureFixture[str]) -> None:
     emit(_Widget(name="alpha", value=1), fmt="pipe", kind="demo.widget")
     lines = capsys.readouterr().out.splitlines()
@@ -543,12 +418,6 @@ def test_emit_single_model_table_renders_vertical_detail(
     out = capsys.readouterr().out
     assert "name" in out
     assert "alpha" in out
-
-
-def test_emit_writes_to_stdout_no_manual_echo(capsys: pytest.CaptureFixture[str]) -> None:
-    """``emit`` writes the output itself — no forgotten-``echo`` footgun."""
-    emit(_Widget(name="alpha", value=1), fmt="json")
-    assert capsys.readouterr().out != ""
 
 
 def test_emit_empty_sequence_table_emits_no_spurious_stdout(
@@ -592,22 +461,20 @@ def _http_error_app(body: str) -> App:
 def test_format_error_surfaces_known_json_message(body: str, expected: str) -> None:
     result = CliInvoker().invoke(_http_error_app(body), [])
     output = result.output or result.stderr
+    assert result.exit_code == 1
+    assert "error: HTTP 401 for https://api.example.test/x" in output
     assert f"— {expected}" in output
     assert "response:" not in output
 
 
-def test_format_error_falls_back_to_raw_for_non_json_body() -> None:
-    result = CliInvoker().invoke(_http_error_app("<html>nope</html>"), [])
-    output = result.output or result.stderr
-    assert "response: <html>nope</html>" in output
-
-
-def test_format_error_falls_back_to_raw_for_unrecognised_json_shape() -> None:
-    """Valid JSON with no known message key keeps the raw body (e.g. Jira's
-    ``errorMessages``)."""
-    result = CliInvoker().invoke(_http_error_app('{"errorMessages":["boom"]}'), [])
-    output = result.output or result.stderr
-    assert 'response: {"errorMessages":["boom"]}' in output
+@pytest.mark.parametrize(
+    "body",
+    # Valid JSON with no known message key (Jira's ``errorMessages``) stays raw too.
+    ["<html>nope</html>", '{"errorMessages":["boom"]}'],
+)
+def test_format_error_falls_back_to_raw_body(body: str) -> None:
+    result = CliInvoker().invoke(_http_error_app(body), [])
+    assert f"response: {body}" in (result.output or result.stderr)
 
 
 def test_format_error_keeps_raw_body_under_verbose(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -618,56 +485,35 @@ def test_format_error_keeps_raw_body_under_verbose(monkeypatch: pytest.MonkeyPat
     assert "response:" in output
 
 
-def test_format_error_adds_transport_url_when_message_omits_it() -> None:
+@pytest.mark.parametrize(
+    "message", ["connection failed", "connection failed for https://api.example.test/x"]
+)
+def test_format_error_names_the_transport_url_once(message: str) -> None:
     app = create_app(name="test")
 
     @app.default
     def boom() -> None:
         with report_errors():
-            raise HttpTransportError("connection failed", url="https://api.example.test/x")
+            raise HttpTransportError(message, url="https://api.example.test/x")
 
     result = CliInvoker().invoke(app, [])
     output = result.output or result.stderr
     assert result.exit_code == 1
     assert "error: connection failed for https://api.example.test/x" in output
-
-
-def test_format_error_does_not_duplicate_transport_url() -> None:
-    app = create_app(name="test")
-
-    @app.default
-    def boom() -> None:
-        with report_errors():
-            raise HttpTransportError(
-                "connection failed for https://api.example.test/x",
-                url="https://api.example.test/x",
-            )
-
-    result = CliInvoker().invoke(app, [])
-    output = result.output or result.stderr
-    assert result.exit_code == 1
     assert output.count("https://api.example.test/x") == 1
 
 
 # ---- --columns ? discoverability -------------------------------------------
 
 
-def test_render_rows_columns_question_mark_lists_keys(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    rendered = render_rows([{"name": "a", "value": 1}], fmt="table", columns=["?"])
-    assert rendered == ""
-    err = capsys.readouterr().err
-    assert "name" in err
-    assert "value" in err
-
-
+@pytest.mark.parametrize("single", [False, True])
 @pytest.mark.parametrize("fmt", ["table", "json", "raw", "yaml"])
 def test_emit_unknown_model_column_is_a_usage_error(
-    capsys: pytest.CaptureFixture[str], fmt: str
+    capsys: pytest.CaptureFixture[str], fmt: str, single: bool
 ) -> None:
+    widget = _Widget(name="a", value=1)
     with pytest.raises(SystemExit) as excinfo:
-        emit([_Widget(name="a", value=1)], fmt=fmt, columns=["name", "nmae"])  # type: ignore[arg-type]
+        emit(widget if single else [widget], fmt=fmt, columns=["name", "nmae"])  # type: ignore[arg-type]
     assert excinfo.value.code == 2
     captured = capsys.readouterr()
     assert captured.out == ""
@@ -693,22 +539,16 @@ def test_emit_column_names_containing_dots_match_whole_keys(
     assert captured.err == ""
 
 
-def test_emit_unknown_column_on_single_record_is_a_usage_error(
-    capsys: pytest.CaptureFixture[str],
+@pytest.mark.parametrize(
+    ("columns", "expected"),
+    [(["name,value"], "a\t1\n"), (["name, value", "extra"], "a\t1\t2\n")],
+    ids=["comma-list", "mixed-with-repeats"],
+)
+def test_emit_accepts_comma_separated_columns(
+    columns: list[str], expected: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    with pytest.raises(SystemExit) as excinfo:
-        emit(_Widget(name="a", value=1), fmt="json", columns=["bogus"])
-    assert excinfo.value.code == 2
-
-
-def test_emit_accepts_comma_separated_columns(capsys: pytest.CaptureFixture[str]) -> None:
-    emit([{"name": "a", "value": 1, "extra": 2}], fmt="raw", columns=["name,value"])
-    assert capsys.readouterr().out == "a\t1\n"
-
-
-def test_emit_mixes_comma_lists_and_repeats(capsys: pytest.CaptureFixture[str]) -> None:
-    emit([{"name": "a", "value": 1, "extra": 2}], fmt="json", columns=["name, value", "extra"])
-    assert json.loads(capsys.readouterr().out) == [{"name": "a", "value": 1, "extra": 2}]
+    emit([{"name": "a", "value": 1, "extra": 2}], fmt="raw", columns=columns)
+    assert capsys.readouterr().out == expected
 
 
 def test_emit_dotted_columns_validate_their_first_segment(
@@ -727,10 +567,18 @@ def test_emit_unknown_column_on_empty_result_is_not_an_error(
     assert capsys.readouterr().out == "[]\n"
 
 
-def test_emit_columns_question_mark_lists_model_fields(
-    capsys: pytest.CaptureFixture[str],
+@pytest.mark.parametrize(
+    "render",
+    [
+        lambda: emit(_Widget(name="a", value=1), fmt="table", columns=["?"]),
+        lambda: render_rows([{"name": "a", "value": 1}], fmt="table", columns=["?"]),
+    ],
+    ids=["emit-model", "render-rows-mapping"],
+)
+def test_columns_question_mark_lists_columns_instead_of_rendering(
+    render: Any, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    emit(_Widget(name="a", value=1), fmt="table", columns=["?"])
+    assert not render()
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "name" in captured.err

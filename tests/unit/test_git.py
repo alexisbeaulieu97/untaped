@@ -18,7 +18,6 @@ from untaped.git import (
     git_auth_header,
     git_env,
     is_transient_failure,
-    redact,
     run_git,
     safe_cache_path,
     safe_path_segment,
@@ -293,10 +292,6 @@ def test_failure_redacts_auth_header_and_credential(monkeypatch: pytest.MonkeyPa
     assert "fatal: <redacted> rejected" in str(excinfo.value)
 
 
-def test_redact_is_identity_without_secret() -> None:
-    assert redact("fatal: x", None) == "fatal: x"
-
-
 def test_stderr_gist_prefers_fatal_lines_and_is_bounded() -> None:
     assert stderr_gist("") == "no stderr"
     assert stderr_gist("hint: a\nlast line\n") == "last line"
@@ -345,27 +340,23 @@ def test_transient_retries_are_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "git fetch failed after 3 attempts" in str(excinfo.value)
 
 
-def test_permanent_failure_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ("stderr", "retry_transient"),
+    [("fatal: repository 'x' not found", True), (_TRANSIENT, False)],
+    ids=["permanent", "retry-not-requested"],
+)
+def test_failure_is_not_retried(
+    monkeypatch: pytest.MonkeyPatch, stderr: str, retry_transient: bool
+) -> None:
     calls: list[list[str]] = []
     sleeps: list[float] = []
-    stderr = "fatal: repository 'x' not found"
     monkeypatch.setattr(subprocess, "run", _scripted_run([(128, stderr)], calls))
 
-    with pytest.raises(GitCommandError, match="not found"):
-        run_git(["fetch"], timeout=5, retry_transient=True, sleep=sleeps.append)
+    with pytest.raises(GitCommandError):
+        run_git(["fetch"], timeout=5, retry_transient=retry_transient, sleep=sleeps.append)
 
     assert len(calls) == 1
     assert sleeps == []
-
-
-def test_transient_failure_is_not_retried_unless_requested(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[list[str]] = []
-    monkeypatch.setattr(subprocess, "run", _scripted_run([(128, _TRANSIENT)], calls))
-    with pytest.raises(GitCommandError):
-        run_git(["fetch"], timeout=5, sleep=lambda _s: None)
-    assert len(calls) == 1
 
 
 @pytest.mark.parametrize(

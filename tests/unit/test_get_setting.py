@@ -31,38 +31,81 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     get_settings.cache_clear()
 
 
-def test_get_returns_default_profile_source_for_scoped_value(_isolate_settings: Path) -> None:
-    # The profiles layout is the default, so a core profile-scoped field like
-    # ``log_level`` is only effective under ``profiles.default``; the resolved
-    # source names the ``default`` profile.
-    _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
-
-    entry = GetSetting(SettingsFileRepository())("log_level")
-
-    assert entry.key == "log_level"
-    assert entry.value == "DEBUG"
-    assert entry.default == "INFO"
-    assert entry.source.label == "profile:default"
-    assert entry.profile == "default"
-
-
-def test_get_profile_setting_returns_effective_value_source_and_profile(
+@pytest.mark.parametrize(
+    ("config", "key", "value", "default", "source", "profile"),
+    [
+        # Profile-scoped fields are only effective under ``profiles.<name>``;
+        # the resolved source names the profile that supplied the value.
+        (
+            "profiles:\n  default:\n    log_level: DEBUG\n",
+            "log_level",
+            "DEBUG",
+            "INFO",
+            "profile:default",
+            "default",
+        ),
+        (
+            "profiles:\n  default:\n    log_level: INFO\n"
+            "  stage:\n    log_level: DEBUG\nactive: stage\n",
+            "log_level",
+            "DEBUG",
+            "INFO",
+            "profile:stage",
+            "stage",
+        ),
+        (
+            "profiles:\n  default:\n    ui:\n      theme: classic\n",
+            "ui.theme",
+            "classic",
+            "default",
+            "profile:default",
+            "default",
+        ),
+        ("", "ui.theme", "default", "default", "default", None),
+        (
+            "profiles:\n  default:\n    ui:\n      color_roles:\n        error: red\n",
+            "ui.color_roles",
+            {"error": "red"},
+            {},
+            "profile:default",
+            "default",
+        ),
+        (
+            "profiles:\n  default:\n    http:\n      verify_ssl: false\n",
+            "http.verify_ssl",
+            False,
+            True,
+            "profile:default",
+            "default",
+        ),
+        ("", "http.verify_ssl", True, True, "default", None),
+    ],
+    ids=[
+        "default-profile",
+        "active-profile",
+        "ui",
+        "ui-default",
+        "ui-mapping",
+        "http",
+        "http-default",
+    ],
+)
+def test_get_returns_effective_value_default_source_and_profile(
     _isolate_settings: Path,
+    config: str,
+    key: str,
+    value: object,
+    default: object,
+    source: str,
+    profile: str | None,
 ) -> None:
-    _isolate_settings.write_text(
-        "profiles:\n"
-        "  default:\n    log_level: INFO\n"
-        "  stage:\n    log_level: DEBUG\n"
-        "active: stage\n"
-    )
+    _isolate_settings.write_text(config)
 
-    entry = GetSetting(SettingsFileRepository())("log_level")
+    entry = GetSetting(SettingsFileRepository())(key)
 
-    assert entry.key == "log_level"
-    assert entry.value == "DEBUG"
-    assert entry.default == "INFO"
-    assert entry.source.label == "profile:stage"
-    assert entry.profile == "stage"
+    assert (entry.key, entry.value, entry.default) == (key, value, default)
+    assert entry.source.label == source
+    assert entry.profile == profile
 
 
 def test_get_honours_environment_override(
@@ -80,82 +123,27 @@ def test_get_honours_environment_override(
     assert entry.profile is None
 
 
-def test_get_redacts_secret_by_default(_isolate_settings: Path) -> None:
+@pytest.mark.parametrize(
+    ("key", "reveal", "value", "default"),
+    [
+        ("demo.token", False, "***", None),
+        ("demo.token", True, "secret-token", None),
+        # A secret *default* follows the same reveal gate.
+        ("demo.default_token", False, "***", "***"),
+        ("demo.default_token", True, "default-secret", "default-secret"),
+    ],
+)
+def test_get_secrets_follow_the_reveal_gate(
+    _isolate_settings: Path, key: str, reveal: bool, value: str, default: str | None
+) -> None:
     _isolate_settings.write_text("profiles:\n  default:\n    demo:\n      token: secret-token\n")
 
-    entry = GetSetting(SettingsFileRepository())("demo.token")
+    entry = GetSetting(SettingsFileRepository())(key, reveal_secrets=reveal)
 
-    assert entry.value == "***"
-
-
-def test_get_show_secrets_reveals_secret(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("profiles:\n  default:\n    demo:\n      token: secret-token\n")
-
-    entry = GetSetting(SettingsFileRepository())("demo.token", reveal_secrets=True)
-
-    assert entry.value == "secret-token"
-
-
-def test_get_secret_default_follows_reveal_gate(_isolate_settings: Path) -> None:
-    hidden = GetSetting(SettingsFileRepository())("demo.default_token")
-    assert hidden.value == "***"
-    assert hidden.default == "***"
-
-    revealed = GetSetting(SettingsFileRepository())("demo.default_token", reveal_secrets=True)
-    assert revealed.value == "default-secret"
-    assert revealed.default == "default-secret"
+    assert entry.value == value
+    assert entry.default == default
 
 
 def test_get_unknown_profile_setting_is_rejected(_isolate_settings: Path) -> None:
     with pytest.raises(ConfigError, match="unknown setting"):
         GetSetting(SettingsFileRepository())("plugins.tool.spec")
-
-
-def test_get_ui_setting_from_profile(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("profiles:\n  default:\n    ui:\n      theme: classic\n")
-
-    entry = GetSetting(SettingsFileRepository())("ui.theme")
-
-    assert entry.key == "ui.theme"
-    assert entry.value == "classic"
-    assert entry.default == "default"
-    assert entry.source.label == "profile:default"
-    assert entry.profile == "default"
-
-
-def test_get_ui_setting_uses_schema_default(_isolate_settings: Path) -> None:
-    entry = GetSetting(SettingsFileRepository())("ui.theme")
-
-    assert entry.value == "default"
-    assert entry.default == "default"
-    assert entry.source.label == "default"
-
-
-def test_get_returns_dict_shaped_ui_settings_as_mappings(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text(
-        "profiles:\n  default:\n    ui:\n      color_roles:\n        error: red\n"
-    )
-
-    entry = GetSetting(SettingsFileRepository())("ui.color_roles")
-
-    assert entry.value == {"error": "red"}
-    assert entry.default == {}
-    assert entry.source.label == "profile:default"
-
-
-def test_get_http_setting_from_profile(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("profiles:\n  default:\n    http:\n      verify_ssl: false\n")
-
-    entry = GetSetting(SettingsFileRepository())("http.verify_ssl")
-
-    assert entry.key == "http.verify_ssl"
-    assert entry.value is False
-    assert entry.source.label == "profile:default"
-    assert entry.profile == "default"
-
-
-def test_get_http_setting_uses_schema_default(_isolate_settings: Path) -> None:
-    entry = GetSetting(SettingsFileRepository())("http.verify_ssl")
-
-    assert entry.value is True
-    assert entry.source.label == "default"
