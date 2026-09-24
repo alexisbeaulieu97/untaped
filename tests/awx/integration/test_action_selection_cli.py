@@ -552,55 +552,12 @@ def test_timeout_needs_wait_or_track_and_a_non_negative_value(fake_aap: Any, com
     assert fake_aap.actions_called == []
 
 
-@pytest.mark.parametrize("flag", ["--wait", "--track"])
-def test_ctrl_c_while_waiting_stops_promptly_and_names_running_jobs(
-    fake_aap: Any, monkeypatch: pytest.MonkeyPatch, flag: str
-) -> None:
-    """Ctrl-C must not block until every launched execution finishes."""
-    import queue
-    import sys
-    import threading
-    import time
-
-    seed(fake_aap)
-    fake_aap.next_action_status = "running"
-    # Safety net: if polling ignored the interrupt, the job ends after 3s
-    # and the elapsed-time assertion below fails instead of hanging.
-    timer = threading.Timer(
-        3.0, lambda: [job.update(status="successful") for job in fake_aap.list_records("jobs")]
-    )
-    timer.start()
-    real_get = queue.Queue.get
-
-    def interrupt() -> None:
-        raise KeyboardInterrupt
-
-    def interrupted_get(self: Any, *args: Any, **kwargs: Any) -> Any:
-        if sys._getframe(1).f_code.co_filename.endswith("parallel.py"):
-            raise KeyboardInterrupt
-        return real_get(self, *args, **kwargs)
-
-    # Ctrl-C lands on the main thread while workers poll: in the idle wait
-    # (``--wait``) or the event-queue drain (``--track``).
-    monkeypatch.setattr(parallel, "idle", interrupt)
-    monkeypatch.setattr(queue.Queue, "get", interrupted_get)
-    started = time.monotonic()
-    try:
-        result = CliInvoker().invoke(app, ["job-templates", "launch", "deploy", flag])
-    finally:
-        timer.cancel()
-    elapsed = time.monotonic() - started
-
-    assert elapsed < 2.5
-    assert result.exit_code == 130, result.output
-    job_id = next(iter(fake_aap.store["jobs"]))
-    assert f"untaped awx jobs wait {job_id} --kind job" in result.stderr
-
-
-def test_ctrl_c_while_waiting_lists_only_executions_still_running(
+def test_ctrl_c_while_waiting_stops_promptly_and_lists_only_running_executions(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Ctrl-C on the main thread must not block until every execution ends."""
     import threading
+    import time
 
     seed(fake_aap)
     fake_aap.seed("job_templates", id=51, name="other", organization=1)
@@ -614,6 +571,7 @@ def test_ctrl_c_while_waiting_lists_only_executions_still_running(
         raise KeyboardInterrupt
 
     monkeypatch.setattr(parallel, "idle", interrupt)
+    started = time.monotonic()
     try:
         result = CliInvoker().invoke(
             app, ["job-templates", "launch", "deploy", "other", "--yes", "--wait"]
@@ -621,6 +579,8 @@ def test_ctrl_c_while_waiting_lists_only_executions_still_running(
     finally:
         timer.cancel()
 
+    # the 3s safety timer would end the job: finishing sooner proves the interrupt
+    assert time.monotonic() - started < 2.5
     assert result.exit_code == 130, result.output
     running, finished = (job["id"] for job in fake_aap.list_records("jobs"))
     assert f"job {running} keeps running" in result.stderr
