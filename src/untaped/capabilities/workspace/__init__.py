@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.capabilities.workspace.settings import WorkspaceSettings, WorkspaceState
-from untaped.capability_api import CapabilitySpec, SkillAsset
+from untaped.capability_api import CapabilitySpec, SkillAsset, executable_check
 
 if TYPE_CHECKING:
     from cyclopts import App
@@ -38,5 +38,5 @@ SPEC = CapabilitySpec(
             description="Use the built-in `untaped workspace` capability for local git workspaces.",
         ),
     ),
-    doctor_checks=(),
+    doctor_checks=(executable_check("workspace.git", "git", purpose="workspace commands"),),
 )

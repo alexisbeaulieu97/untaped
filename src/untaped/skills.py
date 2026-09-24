@@ -172,6 +172,49 @@ def install_skills(
     return results
 
 
+_MARKER = ".untaped-skill.json"
+_IGNORED_PARTS = ("__pycache__",)
+
+
+def outdated_skills(
+    skills: Mapping[str, InstallableSkill], *, project_dir: Path | None = None
+) -> list[Path]:
+    """Return installed skill directories whose files differ from the packaged source.
+
+    Looks in the global codex/claude skill roots and, with ``project_dir``,
+    that directory's local roots. Only directories carrying the untaped
+    install marker count; hand-made skills with the same name are ignored.
+    """
+    roots = [
+        _codex_destination(SkillInstallScope.global_, project_root=None).root,
+        _claude_destination(SkillInstallScope.global_, project_root=None).root,
+    ]
+    if project_dir is not None:
+        local = SkillInstallScope.local
+        roots.append(_codex_destination(local, project_root=project_dir).root)
+        roots.append(_claude_destination(local, project_root=project_dir).root)
+    stale: list[Path] = []
+    for root in dict.fromkeys(roots):
+        for name, spec in sorted(skills.items()):
+            installed = root / name
+            if not (installed / _MARKER).is_file() or not spec.source.is_dir():
+                continue
+            if _tree_bytes(installed) != _tree_bytes(spec.source):
+                stale.append(installed)
+    return stale
+
+
+def _tree_bytes(root: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+        and path.name != _MARKER
+        and path.suffix != ".pyc"
+        and not any(part in _IGNORED_PARTS for part in path.relative_to(root).parts)
+    }
+
+
 def _selected_skill_names(
     skills: Mapping[str, InstallableSkill],
     skill_names: list[str],
@@ -285,7 +328,7 @@ def _install_skill(
             staged_skill,
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
         )
-        staged_skill.joinpath(".untaped-skill.json").write_text(
+        staged_skill.joinpath(_MARKER).write_text(
             json.dumps(
                 {
                     "install_root": str(target_destination.root),

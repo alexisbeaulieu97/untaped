@@ -497,17 +497,20 @@ def get_config_section[T: BaseModel](section: str, model_cls: type[T]) -> T:
     """Return one typed settings section, building a one-off model if needed.
 
     Only ``section`` (plus its own state section) is validated, so an invalid
-    sibling section never breaks an unrelated capability.
+    sibling section never breaks an unrelated capability. A token-bearing
+    section gets its token fallbacks applied (:func:`untaped.auth.resolve_token`).
     """
     settings_cls: type[Settings] | None = None
     if section not in _CONFIG_REGISTRY.profile_sections:
         settings_cls = _build_settings_model({section: model_cls}, _CONFIG_REGISTRY.state_sections)
+    from untaped.auth import resolve_token  # noqa: PLC0415
+
     value = load_settings_section(section, settings_cls)
     if isinstance(value, model_cls):
-        return value
+        return resolve_token(value, section=section)
     if isinstance(value, BaseModel):
-        return model_cls.model_validate(value.model_dump())
-    return model_cls.model_validate(value)
+        return resolve_token(model_cls.model_validate(value.model_dump()), section=section)
+    return resolve_token(model_cls.model_validate(value), section=section)
 
 
 def _build_settings_model(

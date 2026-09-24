@@ -12,7 +12,7 @@ Use this skill when the user wants an agent to operate the `untaped awx` CLI for
 - The command is `untaped awx`. It ships with the unified `untaped` CLI (no separate install).
 - Settings live under `profiles.<name>.awx`: `base_url`, `token`, `api_prefix`, `default_organization`, and `page_size`.
 - AAP uses the default `awx.api_prefix` of `/api/controller/v2/`; upstream AWX users usually set `/api/v2/`.
-- Use `untaped config set awx.token --prompt` or `--stdin` for tokens.
+- Use `untaped config set awx.token --prompt` or `--stdin` for tokens, or set `awx.token_command` to an argv list that prints the token.
 - Run `untaped awx ping` before a workflow when the profile or controller may be stale; it also checks the token via `/me/` and reports the authenticated `user`.
 
 ## Resource and selection patterns

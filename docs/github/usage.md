@@ -18,6 +18,12 @@ For GitHub Enterprise Server, point the API at your host first:
 untaped config set github.base_url https://github.example.com/api/v3
 ```
 
+To keep the token out of `config.yml`, reuse the GitHub CLI's login instead
+(`untaped config set github.token_command '["gh", "auth", "token"]'`), or
+export `GH_TOKEN` or `GITHUB_TOKEN`. `github.token` wins over
+`github.token_command`, which wins over the variables; see
+[Tokens](../configuration.md#tokens).
+
 A rejected token (HTTP 401) fails with a hint to run `config set github.token`.
 `sweep` and `cache` run `git`, so Git must be on your `PATH`.
 
@@ -25,6 +31,7 @@ A rejected token (HTTP 401) fails with a hint to run `config set github.token`.
 |---|---|---|
 | `github.base_url` | `https://api.github.com` | API URL. |
 | `github.token` | unset | Token for the API and for Git fetches. |
+| `github.token_command` | unset | Command (argv list) that prints the token when `github.token` is unset. |
 | `github.corpus_path` | `~/.untaped/github-corpus` | Where `sweep` keeps its Git copies. |
 | `github.sweep.max_age_seconds` | `3600` | `sweep` refreshes cached copies older than this. |
 | `github.sweep.sync_concurrency` | `12` | Default `sweep --parallel`. |

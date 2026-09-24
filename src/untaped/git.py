@@ -15,7 +15,9 @@ from __future__ import annotations
 import base64
 import functools
 import hashlib
+import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -66,6 +68,9 @@ _REPO_REDIRECT_ENV = (
 _BATCH_SSH_COMMAND = "ssh -o BatchMode=yes"
 _GIST_LIMIT = 300
 _REDACTED = "<redacted>"
+_LOG = logging.getLogger("untaped.git")
+# ``scheme://user[:password]@``: the whole userinfo can be a token.
+_URL_USERINFO = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.\-]*://)[^/@\s]+@")
 
 
 class GitCommandError(UntapedError):
@@ -265,6 +270,7 @@ def run_git(
             ceiling=ceiling,
         )
         for attempt in range(1, max(attempts, 1) + 1):
+            started = time.monotonic()
             try:
                 completed = subprocess.run(
                     [git_path, *argv],
@@ -289,6 +295,7 @@ def run_git(
                 stdout=_as_bytes(completed.stdout) if capture else b"",
                 stderr=redact(_as_bytes(completed.stderr).decode(errors="replace"), auth_header),
             )
+            _log_run(argv, cwd, result.returncode, started, auth_header)
             if result.returncode == 0:
                 return result
             if retry_transient and attempt < attempts and is_transient_failure(result.stderr):
@@ -314,6 +321,29 @@ def redact(value: str, auth_header: str | None) -> str:
     if len(credential) >= 8:
         value = value.replace(credential, _REDACTED)
     return value
+
+
+def _log_run(
+    argv: Sequence[str],
+    cwd: Path | None,
+    returncode: int,
+    started: float,
+    auth_header: str | None,
+) -> None:
+    """Debug-log one git run: argv with credentials masked, cwd, exit status, time."""
+    if not _LOG.isEnabledFor(logging.DEBUG):
+        return
+    shown = " ".join(_URL_USERINFO.sub(r"\g<scheme>***@", redact(arg, auth_header)) for arg in argv)
+    elapsed_ms = (time.monotonic() - started) * 1000
+    where = f" in {cwd}" if cwd is not None else ""
+    _LOG.debug(
+        "git %s%s -> exit %d (%.0f ms)%s",
+        shown,
+        where,
+        returncode,
+        elapsed_ms,
+        " [auth header]" if auth_header else "",
+    )
 
 
 def stderr_gist(stderr: str) -> str:

@@ -235,6 +235,15 @@ The shared runtime helpers are exported from the same module:
   `HttpStatusError`, `HttpTransportError`, `first_validation_error`, and
   `ExitCode`.
 - Message wording: `plural`, `q`, `not_found`, `hint`, `summary`.
+- Tokens: declare `token_sources: ClassVar[TokenSources] =
+  TokenSources(env=(...))` and a `token_command: TokenCommand = None` field
+  beside `token` on your profile model. `app_context().section(...)` and
+  `get_config_section` then fill an unset `token` from `token_command` (run
+  lazily, once per process) and then from the listed environment variables.
+  See [Tokens](configuration.md#tokens).
+- Doctor checks: `connection_check(id, section=...)` reports the resolved
+  `base_url` and token source; `executable_check(id, program, purpose=...)`
+  warns when a program is not on `PATH`.
 - Records: `OutcomeRecord`, `TargetRecord`, `CheckRecord`, and the
   `UtcTimestamp` and `AbsolutePath` field types.
 - Settings and context: `get_config_section`, `get_core_settings`,

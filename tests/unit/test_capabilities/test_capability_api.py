@@ -126,6 +126,10 @@ EXPECTED_ALL = [
     "read_records",
     "read_stdin_input",
     "summary",
+    "TokenCommand",
+    "TokenSources",
+    "connection_check",
+    "executable_check",
 ]
 
 #: Canonical defining module for each additive helper.
@@ -179,6 +183,10 @@ ADDITIVE_SOURCES = {
     "read_records": "untaped.stdin",
     "read_stdin_input": "untaped.stdin",
     "summary": "untaped.messages",
+    "TokenCommand": "untaped.auth",
+    "TokenSources": "untaped.auth",
+    "connection_check": "untaped.doctor_checks",
+    "executable_check": "untaped.doctor_checks",
 }
 
 

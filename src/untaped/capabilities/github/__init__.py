@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.capabilities.github.settings import GithubSettings
-from untaped.capability_api import CapabilitySpec, SkillAsset
+from untaped.capability_api import CapabilitySpec, SkillAsset, connection_check, executable_check
 
 if TYPE_CHECKING:
     from cyclopts import App
@@ -42,5 +42,8 @@ SPEC = CapabilitySpec(
             description="Use the built-in `untaped github` capability for GitHub workflows.",
         ),
     ),
-    doctor_checks=(),
+    doctor_checks=(
+        connection_check("github.connection", section="github"),
+        executable_check("github.git", "git", purpose="`untaped github sweep`"),
+    ),
 )

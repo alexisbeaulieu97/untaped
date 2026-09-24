@@ -205,7 +205,13 @@ def test_batch_refs_result_shape() -> None:
 
 
 def test_settings_contract() -> None:
-    assert set(GithubSettings.model_fields) == {"base_url", "token", "corpus_path", "sweep"}
+    assert set(GithubSettings.model_fields) == {
+        "base_url",
+        "token",
+        "token_command",
+        "corpus_path",
+        "sweep",
+    }
     assert GithubSettings().token is None
 
 
