@@ -582,7 +582,7 @@ def test_ctrl_c_while_waiting_stops_promptly_and_names_running_jobs(
 
     # Ctrl-C lands on the main thread while workers poll: in the idle wait
     # (``--wait``) or the event-queue drain (``--track``).
-    monkeypatch.setattr(parallel, "_idle", interrupt)
+    monkeypatch.setattr(parallel, "idle", interrupt)
     monkeypatch.setattr(queue.Queue, "get", interrupted_get)
     started = time.monotonic()
     try:
@@ -613,7 +613,7 @@ def test_ctrl_c_while_waiting_lists_only_executions_still_running(
     def interrupt() -> None:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(parallel, "_idle", interrupt)
+    monkeypatch.setattr(parallel, "idle", interrupt)
     try:
         result = CliInvoker().invoke(
             app, ["job-templates", "launch", "deploy", "other", "--yes", "--wait"]
