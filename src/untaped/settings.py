@@ -131,6 +131,7 @@ class Settings(_SettingsSources):
     """Base settings class; concrete aggregate models are built dynamically."""
 
     log_level: str = "INFO"
+    """Deprecated and ignored; ``untaped doctor`` warns when set. Removed in 7.0."""
     http: HttpSettings = Field(default_factory=HttpSettings)
     ui: UiSettings = Field(default_factory=UiSettings)
 

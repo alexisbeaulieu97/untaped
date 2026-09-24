@@ -12,6 +12,7 @@ capability check that returns ``DoctorResult(..., warn=True)``.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,6 +57,10 @@ from untaped.theme import UiSettings, resolve_theme
 _PASS = "pass"
 _FAIL = "fail"
 _WARN = "warn"
+_LOG_LEVEL_DEPRECATED = (
+    "log_level is deprecated and has no effect (removed in 7.0); "
+    "run `untaped config unset log_level` or drop UNTAPED_LOG_LEVEL"
+)
 
 
 @dataclass(frozen=True)
@@ -258,6 +263,10 @@ def _core_row(
             resolve_verify(value)
     except ConfigError as exc:
         return _row("settings", shell.name, _FAIL, title, str(exc))
+    if field == "log_level" and (
+        effective.get(field) is not None or os.environ.get("UNTAPED_LOG_LEVEL")
+    ):
+        return _row("settings", shell.name, _WARN, title, _LOG_LEVEL_DEPRECATED)
     return _row("settings", shell.name, _PASS, title, "settings OK")
 
 
