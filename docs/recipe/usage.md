@@ -80,6 +80,8 @@ sandbox. Inspect a pack before you trust it (`recipe get`, `recipe validate`,
 ```bash
 untaped recipe add https://github.com/acme/untaped-recipes.git --rev v1.2.0
 untaped recipe add ./my-pack --name acme --force
+untaped recipe sync --all --dry-run
+untaped recipe sync acme
 untaped recipe list --packs
 untaped recipe get acme/editorconfig
 untaped recipe validate
@@ -89,6 +91,13 @@ untaped recipe remove acme --yes
 
 - A pack must contain a `uv.lock`. Reinstalling needs `--force`; local edits
   to the installed copy also need `--discard-edits`.
+- `recipe sync PACK...` or `recipe sync --all` re-fetches packs from the
+  source and `--rev` recorded at install (a branch or tag moves forward; a
+  local path source is re-read). Packs whose files would change are listed
+  and confirmed first (`--yes` skips the question, `--dry-run` only lists
+  them); the rest report `unchanged`. Local edits to an installed copy need
+  `--discard-edits`.
+- `recipe add` records a local path source as an absolute path.
 - Packs are installed under `recipe.library_root`.
 - `recipe validate` checks the whole library, or one pack, recipe or path,
   without importing hook code.

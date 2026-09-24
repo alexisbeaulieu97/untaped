@@ -178,6 +178,7 @@ output.
 | `recipe apply` | `recipe.apply_outcome` |
 | `recipe list`, `recipe get` | `recipe.recipe`, `recipe.hook` or `recipe.pack` |
 | `recipe add` | `recipe.add_outcome` |
+| `recipe sync` | `recipe.sync_outcome` |
 | `recipe remove` | `recipe.remove_outcome` |
 | `recipe validate` | `recipe.check` |
 | `recipe test` | `recipe.test` |
