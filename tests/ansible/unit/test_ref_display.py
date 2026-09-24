@@ -26,21 +26,30 @@ def test_sort_ref_displays_prioritizes_default_branch_then_other_branches() -> N
 
 
 def test_sort_ref_displays_orders_semver_tags_newest_first() -> None:
-    refs = (
-        RefDisplay("release", kind="tags"),
-        RefDisplay("v2.0.0-alpha.2", kind="tags"),
-        RefDisplay("v1.10.0", kind="tags"),
-        RefDisplay("v2.0.0", kind="tags"),
-        RefDisplay("v2.0.0-alpha.10", kind="tags"),
-        RefDisplay("v2.0.0-rc.1", kind="tags"),
-        RefDisplay("v1.2", kind="tags"),
-    )
+    # SemVer precedence: numeric prerelease identifiers sort below
+    # alphanumeric ones, numerically among themselves, and a longer
+    # prerelease with an equal prefix sorts higher. Non-semver tags go last.
+    names = [
+        "release",
+        "v2.0.0-alpha.2",
+        "v1.10.0",
+        "v2.0.0",
+        "v2.0.0-alpha.10",
+        "v2.0.0-rc.1",
+        "v1.2",
+        "v2.0.0-alpha",
+        "v2.0.0-alpha.beta",
+        "v2.0.0-1",
+    ]
 
-    assert [ref.name for ref in sort_ref_displays(refs)] == [
+    assert [ref.name for ref in sort_ref_displays([RefDisplay(n, kind="tags") for n in names])] == [
         "v2.0.0",
         "v2.0.0-rc.1",
+        "v2.0.0-alpha.beta",
         "v2.0.0-alpha.10",
         "v2.0.0-alpha.2",
+        "v2.0.0-alpha",
+        "v2.0.0-1",
         "v1.10.0",
         "release",
         "v1.2",
