@@ -121,6 +121,23 @@ class JobRelaunchOutcome(OutcomeRecord):
     detail: str | None = None
 
 
+class CopyOutcome(OutcomeRecord):
+    """One ``copy`` row: the new resource (``id``, ``name``) and its source.
+
+    ``kind`` is the resource kind (``JobTemplate``), so ``patch --stdin`` on
+    that kind selects the copy by ``id``. ``action`` is ``planned`` or
+    ``created``; ``not_carried`` lists what AWX reported it would not copy.
+    """
+
+    id: int | None = None
+    name: str
+    source_id: int
+    kind: str
+    action: str
+    not_carried: list[str] = Field(default_factory=list)
+    detail: str | None = None
+
+
 class DeleteReceipt(BaseModel):
     """A successful DELETE acknowledges removal or asynchronous acceptance."""
 

@@ -17,6 +17,12 @@
     defaults become `$encrypted$`. Applying an export as a new template drops
     those placeholders with a warning instead of refusing the create.
     `preserved_secrets` names the path `survey_spec.spec.*[type=password].default`.
+  - New `job-templates copy SOURCE --name NEW` and `workflow-templates copy`
+    copy one template through AWX's `copy/` endpoint. They refuse a name
+    already used in the source's scope, or `can_copy: false`, before any
+    write; warn about what AWX will not copy; and emit `awx.copy_outcome`,
+    which `--stdin` selection of the same kind (for example `patch --stdin`)
+    accepts. `copy` joins the conventions' write verbs.
 
 ## 7.1.0
 

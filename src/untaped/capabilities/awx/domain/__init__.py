@@ -5,6 +5,7 @@ from untaped.capabilities.awx.domain.job import Job, JobEvent
 from untaped.capabilities.awx.domain.outcomes import (
     ApplyOutcome,
     BatchResult,
+    CopyOutcome,
     FieldChange,
     SaveOutcome,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "ApplyOutcome",
     "BatchResult",
     "CommandName",
+    "CopyOutcome",
     "FieldChange",
     "FkRef",
     "IdentityRef",

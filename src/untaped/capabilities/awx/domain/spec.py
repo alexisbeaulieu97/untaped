@@ -27,6 +27,7 @@ CommandName = Literal[
     "save",
     "apply",
     "delete",
+    "copy",
 ]
 """Commands the CLI factory may wire for a kind.
 

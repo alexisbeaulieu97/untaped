@@ -15,6 +15,7 @@ from collections.abc import Callable
 from cyclopts import App
 
 from untaped.capabilities.awx.cli._apply import _add_apply
+from untaped.capabilities.awx.cli._copy import _add_copy
 from untaped.capabilities.awx.cli._delete import _add_delete
 from untaped.capabilities.awx.cli._edit import _add_edit
 from untaped.capabilities.awx.cli._get import _add_get
@@ -48,6 +49,8 @@ def make_resource_app(spec: AwxResourceSpec) -> App:
         _add_edit(app, spec)
     if "delete" in spec.commands:
         _add_delete(app, spec)
+    if "copy" in spec.commands:
+        _add_copy(app, spec)
     for action in spec.actions:
         builder = ACTION_BUILDERS.get(action.name)
         if builder is not None:
