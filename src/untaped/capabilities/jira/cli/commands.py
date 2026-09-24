@@ -46,6 +46,7 @@ from untaped.capability_api import (
 )
 
 if TYPE_CHECKING:
+    from untaped.capabilities.jira.domain import IssueDetailResult
     from untaped.capabilities.jira.infrastructure import JiraClient
     from untaped.capability_api import OutputFormat
 
@@ -115,6 +116,7 @@ ISSUE_DETAIL_COLUMNS = [
     "created_at",
     "updated_at",
     "url",
+    "links",
     "description",
 ]
 COMMENT_TABLE_COLUMNS = ["issue_key", "author", "created_at", "body"]
@@ -180,7 +182,10 @@ def issue_get_command(
                 rows, any_failed = resolve_each(resolved, get_issue)
         if fmt == "table" and columns is None:
             columns = ISSUE_DETAIL_COLUMNS if single else ISSUE_TABLE_COLUMNS
-        emit(rows[0] if single else rows, fmt=fmt, columns=columns, kind="jira.issue")
+        if single and fmt == "table":
+            emit(_detail_view(rows[0]), fmt=fmt, columns=columns, kind="jira.issue")
+        else:
+            emit(rows[0] if single else rows, fmt=fmt, columns=columns, kind="jira.issue")
         if comments and fmt == "table":
             emit(
                 [comment for row in rows for comment in row.comments or []],
@@ -190,6 +195,17 @@ def issue_get_command(
                 empty="No comments found.",
             )
         finish(any_failed)
+
+
+def _detail_view(row: IssueDetailResult) -> dict[str, object]:
+    """The detail table's record: one readable line per link instead of raw dicts."""
+    return {
+        **row.model_dump(mode="json"),
+        "links": "\n".join(
+            f"{link.relation or link.type} {link.key} ({link.status}): {link.summary}"
+            for link in row.links
+        ),
+    }
 
 
 @comments_app.command(name="list")
