@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from typing import TYPE_CHECKING, TextIO
 
-from untaped.errors import ConfigError, UsageError
+from untaped.errors import ConfigError, OperationCancelledError, UsageError
 from untaped.messages import plural
 from untaped.progress import ProgressHandle, progress_reporter
 from untaped.prompts import (
@@ -214,6 +214,27 @@ class UiContext:
             return True
         with self.terminal(refusal=refusal):
             return self.confirm(message, default=default)
+
+    def confirm_or_cancel(
+        self,
+        message: str,
+        *,
+        assume_yes: bool = False,
+        refusal: str = "confirmation requires --yes when not interactive",
+        preview: Callable[[], None] | None = None,
+    ) -> None:
+        """:meth:`confirm_action` that raises :class:`OperationCancelledError` on a decline.
+
+        ``preview`` (optional) prints what is about to happen once a terminal
+        is secured, right before the prompt; ``assume_yes`` skips both.
+        """
+        if assume_yes:
+            return
+        with self.terminal(refusal=refusal):
+            if preview is not None:
+                preview()
+            if not self.confirm(message):
+                raise OperationCancelledError
 
     @contextmanager
     def terminal(

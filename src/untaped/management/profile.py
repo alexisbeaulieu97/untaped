@@ -23,7 +23,6 @@ from untaped.cli import (
     report_errors,
 )
 from untaped.config_schema import redact_secrets, secret_field_paths
-from untaped.errors import OperationCancelledError
 from untaped.messages import q
 from untaped.profile.models import Profile, ProfileDeletePreview, ProfileOutcome
 from untaped.profile.repository import ProfileFileRepository
@@ -228,8 +227,12 @@ def _delete_command(
         if dry_run:
             _show_delete_preview(preview)
         else:
-            if not yes:
-                _confirm_delete(preview)
+            ui_context(strict=False).confirm_or_cancel(
+                f"Delete profile {q(preview.name)}?",
+                assume_yes=yes,
+                refusal="profile delete requires --yes when not interactive",
+                preview=lambda: _show_delete_preview(preview),
+            )
             delete_profile(name)
             ui_context(strict=False).success(f"deleted profile: {name}")
         outcome = ProfileOutcome(name=name, action="planned" if dry_run else "deleted")
@@ -254,14 +257,6 @@ def _rename_command(
             name=new_name, previous_name=old_name, action="planned" if dry_run else "renamed"
         )
         emit(outcome, fmt=fmt, columns=columns, kind=_PROFILE_OUTCOME)
-
-
-def _confirm_delete(preview: ProfileDeletePreview) -> None:
-    ui = ui_context(strict=False)
-    with ui.terminal(refusal="profile delete requires --yes when not interactive"):
-        _show_delete_preview(preview)
-        if not ui.confirm(f"Delete profile {q(preview.name)}?"):
-            raise OperationCancelledError
 
 
 def _show_delete_preview(preview: ProfileDeletePreview) -> None:

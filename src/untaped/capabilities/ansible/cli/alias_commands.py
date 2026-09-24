@@ -13,7 +13,6 @@ from untaped.capability_api import (
     ColumnsOption,
     DryRunOption,
     FormatOption,
-    OperationCancelledError,
     UiContext,
     UntapedError,
     UsageError,
@@ -97,13 +96,11 @@ def alias_remove_command(
             raise UntapedError(not_found("alias", alias, known=sorted(entries)))
         ui = app_context().ui(strict=False)
         if not dry_run:
-            confirmed = ui.confirm_action(
+            ui.confirm_or_cancel(
                 f"Remove alias {q(alias)} -> {repo}?",
                 assume_yes=yes,
                 refusal="alias remove requires --yes when not interactive",
             )
-            if not confirmed:
-                raise OperationCancelledError
             aliases.remove(alias)
         emit(
             AliasOutcome(

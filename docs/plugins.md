@@ -255,8 +255,8 @@ The shared runtime helpers are exported from the same module:
   `parse_envelope_line`, `PipeEnvelope`.
 - Files and state: `atomic_write`, `read_structured_file`, `unified_diff_text`,
   `StateCollection`, `StateMap`.
-- UI: `UiContext` (including `success`, `styled`, `confirm_action` and
-  `terminal`), `ui_context`, `ProgressHandle`, `PromptChoice`.
+- UI: `UiContext` (including `success`, `styled`, `confirm_action`,
+  `confirm_or_cancel` and `terminal`), `ui_context`, `ProgressHandle`, `PromptChoice`.
 - Batches and concurrency: `batch_apply`, `BatchOutcome`, `finish`,
   `bounded_map`.
 
@@ -356,8 +356,8 @@ it as `target_path: AbsolutePath` so it leads the output.
 
 Gate destructive batches with `batch_apply(..., destructive=True,
 assume_yes=yes)` and pass its outcome to `finish()`. A single confirmation uses
-`ui.confirm_action(message, assume_yes=yes, refusal="<verb> requires --yes when
-not interactive")`. When stdin carries piped data, both prompt on the
+`ui.confirm_or_cancel(message, assume_yes=yes, refusal="<verb> requires --yes
+when not interactive")`, which raises the decline for you. When stdin carries piped data, both prompt on the
 controlling terminal. With no terminal they exit 2. A decline prints
 `cancelled; no changes made` and exits 1. In tests,
 `untaped.testing.invoke_cli(..., terminal=True, prompt_backend=...)` simulates
