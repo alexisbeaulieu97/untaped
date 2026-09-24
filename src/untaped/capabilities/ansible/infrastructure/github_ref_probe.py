@@ -12,7 +12,7 @@ response is still reported as per-repo missing/inaccessible.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Literal
 
 from untaped.capabilities.ansible.domain.payloads import (
     GitRef,
@@ -25,31 +25,13 @@ from untaped.capabilities.github.ansible import GithubGraphqlError
 from untaped.capability_api import HttpError, UntapedError, bounded_map
 
 if TYPE_CHECKING:
+    from untaped.capabilities.ansible.application.ports import BatchRepoRefsClient
     from untaped.capabilities.github.ansible import BatchRepoRefsResult
 
 ALL_REFS_GRAPHQL_CHUNK_SIZE = 50
 DEFAULT_BRANCH_GRAPHQL_CHUNK_SIZE = 100
 _MISSING_REASON = "repository not found or inaccessible on GitHub"
 TRANSIENT_REF_PROBE_FAILURE_PREFIX = "transient ref probe failed: "
-
-
-class _BatchRepoRefsClient(Protocol):
-    """The slice of ``untaped.capabilities.github.ansible.GithubClient`` the probe needs."""
-
-    def batch_repo_refs(
-        self,
-        repos: Sequence[str],
-        *,
-        kinds: Sequence[str] = ("heads", "tags"),
-        chunk_size: int = 50,
-    ) -> BatchRepoRefsResult: ...
-
-    def batch_default_branch_refs(
-        self,
-        repos: Sequence[str],
-        *,
-        chunk_size: int = 200,
-    ) -> BatchRepoRefsResult: ...
 
 
 class GithubRefProbe:
@@ -63,7 +45,7 @@ class GithubRefProbe:
 
     def __init__(
         self,
-        github: _BatchRepoRefsClient,
+        github: BatchRepoRefsClient,
         *,
         concurrency: int = 8,
         chunk_size: int = ALL_REFS_GRAPHQL_CHUNK_SIZE,

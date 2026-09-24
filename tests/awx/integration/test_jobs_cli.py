@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from untaped.capabilities.awx.cli import app
+from untaped.capabilities.awx.cli import app, parallel
 from untaped.capabilities.awx.infrastructure.job_monitor import PollingJobMonitor
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker
@@ -523,7 +523,7 @@ def test_launch_track_one_failed_exits_one_and_logs_both(
     The ``next_action_status`` override is one-shot, so ``deploy-a``
     (first launch) ends ``failed`` and ``deploy-b`` defaults back to
     ``successful``. ``failed`` is a terminal status — no exception is
-    raised — so the failure flows through ``_drain_parallel`` into
+    raised — so the failure flows through ``drain_parallel`` into
     ``jobs`` and the post-loop ``any(j.status != "successful")`` block
     triggers ``exit 1``.
     """
@@ -544,18 +544,17 @@ def test_launch_wait_parallel_returns_results_in_launch_order(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """``--wait`` (no ``--track``) for two templates exercises
-    ``_wait_parallel``. The collected ``jobs`` list must be in launch
+    ``wait_parallel``. The collected ``jobs`` list must be in launch
     order so the table-output rows mirror the user-supplied ``ids``.
 
     ``WatchJob`` is patched with a stub that returns the input ``Job``
     after a small delay; the slow path (``deploy-a``) finishes after
     the fast path (``deploy-b``) but the result list still puts
-    ``deploy-a`` first because ``_wait_parallel`` walks ``futures`` in
+    ``deploy-a`` first because ``wait_parallel`` walks ``futures`` in
     launch order before calling ``result()``.
     """
     import time
 
-    from untaped.capabilities.awx.cli import _parallel
     from untaped.capabilities.awx.domain import Job
 
     _seed_two_jts(fake_aap)
@@ -572,7 +571,7 @@ def test_launch_wait_parallel_returns_results_in_launch_order(
                 time.sleep(0.05)
             return job.model_copy(update={"status": "successful"})
 
-    monkeypatch.setattr(_parallel, "WatchJob", _StubWatch)
+    monkeypatch.setattr(parallel, "WatchJob", _StubWatch)
 
     result = CliInvoker().invoke(
         app,
@@ -696,6 +695,16 @@ def test_jobs_wait_stdin_honours_execution_kind_from_pipe(fake_aap: Any) -> None
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
     assert [(row["id"], row["kind"]) for row in rows] == [(77, "workflow_job"), (42, "job")]
+
+
+@pytest.mark.parametrize("command", ["get", "events", "logs", "wait"])
+def test_jobs_stdin_rejects_records_of_another_kind(fake_aap: Any, command: str) -> None:
+    """Host ids piped into a jobs command never pass as job ids."""
+    envelope = json.dumps({"untaped": "1", "kind": "awx.host", "record": {"id": 42}})
+    result = CliInvoker().invoke(app, ["jobs", command, "--stdin"], input=envelope + "\n")
+    assert result.exit_code == 2, result.output
+    assert "record kind 'awx.host' is not accepted here" in result.stderr
+    assert not fake_aap.router.calls
 
 
 @pytest.mark.parametrize(("args", "expected"), [([], 20), (["--limit", "0"], 25)])

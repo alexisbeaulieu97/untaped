@@ -14,6 +14,20 @@ BatchRepoRefsFailureKind = Literal["server_error", "transport"]
 """Retryable per-repo failure class from a batched GraphQL ref probe."""
 
 
+def _with_aliases(data: Any, *, repo: bool = False) -> Any:
+    """Derive ``url`` from ``html_url`` (and ``repo`` from ``full_name``).
+
+    ``url`` always mirrors ``html_url``: the raw GitHub payload's own ``url``
+    is the API link, which must not leak into the web-URL field.
+    """
+    if not isinstance(data, dict):
+        return data
+    patch: dict[str, Any] = {"url": data.get("html_url")}
+    if repo and not data.get("repo"):
+        patch["repo"] = data.get("full_name", "")
+    return {**data, **patch}
+
+
 class GithubUser(BaseModel):
     """Authenticated GitHub user as returned by ``GET /user``."""
 
@@ -42,6 +56,13 @@ class RepoResult(BaseModel):
     fork: bool = False
     private: bool = False
     updated_at: str | None = None
+    repo: str = ""
+    url: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _aliases(cls, data: Any) -> Any:
+        return _with_aliases(data, repo=True)
 
 
 class RepoListResult(BaseModel):
@@ -58,6 +79,13 @@ class RepoListResult(BaseModel):
     private: bool = False
     archived: bool = False
     fork: bool = False
+    repo: str = ""
+    url: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _aliases(cls, data: Any) -> Any:
+        return _with_aliases(data, repo=True)
 
 
 class CodeResult(BaseModel):
@@ -76,6 +104,12 @@ class CodeResult(BaseModel):
     html_url: str
     repo: str = ""
     repository: dict[str, Any] = Field(default_factory=dict)
+    url: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _url(cls, data: Any) -> Any:
+        return _with_aliases(data)
 
     @model_validator(mode="before")
     @classmethod
@@ -146,6 +180,12 @@ class IssueResult(BaseModel):
     repository_url: str
     user_login: str | None = None
     is_pull_request: bool = False
+    url: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _url(cls, data: Any) -> Any:
+        return _with_aliases(data)
 
     @model_validator(mode="before")
     @classmethod
@@ -185,6 +225,12 @@ class UserResult(BaseModel):
     login: str
     type: str
     html_url: str
+    url: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _url(cls, data: Any) -> Any:
+        return _with_aliases(data)
 
 
 class RepoRef(BaseModel):

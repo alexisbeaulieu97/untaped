@@ -5,7 +5,8 @@ inventory, client operations, reference probing, settings, and result/error
 types. The closed :data:`__all__` keeps that boundary explicit.
 
 The exported types cover repository inventory, GitHub client operations,
-reference-probe results, settings, and GitHub error classification.
+reference-probe results, settings (and :func:`github_settings` to read them),
+and GitHub error classification.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from untaped.capabilities.github.domain.models import (
 )
 from untaped.capabilities.github.infrastructure.github_client import GithubClient
 from untaped.capabilities.github.settings import GithubSettings
+from untaped.capability_api import get_config_section
 
 __all__ = [
     "BatchRepoRefsFailure",
@@ -43,6 +45,16 @@ __all__ = [
     "RepositoryInventoryScope",
     "ResolveRepositoryInventory",
     "TeamScope",
+    "github_settings",
     "is_global_github_failure",
     "normalize_team_scopes",
 ]
+
+
+def github_settings() -> GithubSettings:
+    """Return the active profile's ``github`` settings (token, base URL, corpus).
+
+    Ansible calls this instead of reading the ``github`` config section itself,
+    so the GitHub capability stays the only reader of its section.
+    """
+    return get_config_section("github", GithubSettings)

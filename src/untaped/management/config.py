@@ -26,7 +26,6 @@ from untaped.cli import (
     ColumnsOption,
     FormatOption,
     create_app,
-    echo,
     emit,
     report_errors,
 )
@@ -131,12 +130,15 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
         columns: ColumnsOption = None,
         show_secrets: Annotated[
             bool,
-            Parameter(name="--show-secrets", help="Reveal secret values instead of `***`."),
+            Parameter(
+                name="--show-secrets", negative="", help="Reveal secret values instead of `***`."
+            ),
         ] = False,
         all_profiles: Annotated[
             bool,
             Parameter(
                 name="--all-profiles",
+                negative="",
                 help="Show one row per (profile, key) instead of the resolved view.",
             ),
         ] = False,
@@ -152,7 +154,9 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
         fmt: FormatOption = "raw",
         show_secrets: Annotated[
             bool,
-            Parameter(name="--show-secrets", help="Reveal secret values instead of `***`."),
+            Parameter(
+                name="--show-secrets", negative="", help="Reveal secret values instead of `***`."
+            ),
         ] = False,
     ) -> None:
         """Print one effective scalar setting value."""
@@ -172,10 +176,13 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
             ),
         ] = None,
         stdin: Annotated[
-            bool, Parameter(name="--stdin", help="Read the value from stdin.")
+            bool, Parameter(name="--stdin", negative="", help="Read the value from stdin.")
         ] = False,
         prompt: Annotated[
-            bool, Parameter(name="--prompt", help="Prompt for the value using the setting type.")
+            bool,
+            Parameter(
+                name="--prompt", negative="", help="Prompt for the value using the setting type."
+            ),
         ] = False,
     ) -> None:
         """Persist ``section.key = value`` (validated against the schema)."""
@@ -219,10 +226,12 @@ def _list(
         else:
             list_settings = ListSettings(repo)
             entries = list_settings(reveal_secrets=show_secrets)
-            for section, error in list_settings.errors.items():
-                echo(f"warning: section {section!r} is invalid: {error}", err=True)
+            ui = ui_context(strict=False)
+            for error in list_settings.errors.values():
+                # The error already names the section (or env var) and file.
+                ui.message("warning", f"{error} (its keys show unvalidated values)")
         rows = [setting_entry_row(e, human=fmt in ("table", "raw")) for e in entries]
-        emit(rows, fmt=fmt, columns=columns)
+        emit(rows, fmt=fmt, columns=columns, kind="untaped.setting")
 
 
 def _get(ctx: RootConfigContext, key: str, *, fmt: OutputFormat, show_secrets: bool) -> None:
@@ -230,7 +239,12 @@ def _get(ctx: RootConfigContext, key: str, *, fmt: OutputFormat, show_secrets: b
         resolved = ctx.resolve_key(key)
         entry = GetSetting(SettingsFileRepository())(resolved, reveal_secrets=show_secrets)
         columns = ["value"] if fmt == "raw" else None
-        emit(setting_entry_row(entry, human=fmt in ("table", "raw")), fmt=fmt, columns=columns)
+        emit(
+            setting_entry_row(entry, human=fmt in ("table", "raw")),
+            fmt=fmt,
+            columns=columns,
+            kind="untaped.setting",
+        )
 
 
 def _set(
@@ -250,7 +264,7 @@ def _set(
         )
         profile = repo.set_value(resolved, resolved_value, profile=target_profile)
         message = f"set {resolved} in profile {profile} (config: {resolve_config_path()})"
-        ui_context(strict=False).message("success", message)
+        ui_context(strict=False).success(message)
 
 
 def _unset(ctx: RootConfigContext, key: str, *, target_profile: str | None) -> None:
@@ -260,7 +274,7 @@ def _unset(ctx: RootConfigContext, key: str, *, target_profile: str | None) -> N
         ui = ui_context(strict=False)
         where = f"in profile {profile}"
         if removed:
-            ui.message("success", f"unset {resolved} {where}")
+            ui.success(f"unset {resolved} {where}")
         else:
             ui.message("info", f"{resolved} was not set {where}")
 

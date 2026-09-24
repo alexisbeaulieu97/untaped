@@ -31,7 +31,7 @@ _EXPECTED_COMMAND_FUNCTIONS: dict[str, set[str]] = {
     },
     "ux_commands.py": {
         "list_command",
-        "show_command",
+        "get_command",
         "path_command",
         "shell_init_command",
         "edit_command",

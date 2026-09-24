@@ -5,35 +5,26 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Protocol
+from typing import TYPE_CHECKING
+
+from untaped.capabilities.recipe.errors import RecipeError
+
+if TYPE_CHECKING:
+    from jinja2 import Environment, Template
 
 MAX_DERIVED_VALUE_LENGTH = 8192
 MAX_DERIVED_VALUE_DEPTH = 64
 UNRESOLVED = object()
 
 
-class _RenderableTemplate(Protocol):
-    """Rendered template protocol for lazy Jinja loading."""
-
-    def render(self, *args: object, **kwargs: object) -> object: ...
-
-
-class _JinjaEnvironment(Protocol):
-    """Minimal Jinja environment protocol used by input derivation."""
-
-    def parse(self, source: str) -> Any: ...
-
-    def from_string(self, source: str) -> _RenderableTemplate: ...
-
-
 @dataclass(frozen=True)
 class CompiledInputSource:
     """One ordered set of compiled input source candidates."""
 
-    templates: tuple[_RenderableTemplate, ...]
+    templates: tuple[Template, ...]
 
 
-class InputSourceError(ValueError):
+class InputSourceError(RecipeError, ValueError):
     """Raised when an input source cannot be compiled or rendered safely."""
 
 
@@ -60,7 +51,7 @@ def derive_input_value(
 
     for template in source.templates:
         try:
-            value = template.render(**context)
+            value: object = template.render(**context)
         except UndefinedError:
             continue
         except (TemplateError, ArithmeticError) as exc:
@@ -74,14 +65,14 @@ def derive_input_value(
 
 
 @lru_cache(maxsize=1024)
-def _compile_template(expression: str) -> _RenderableTemplate:
+def _compile_template(expression: str) -> Template:
     env = _jinja_env()
     _validate_template_ast(env, expression)
     return env.from_string(expression)
 
 
 @lru_cache(maxsize=1)
-def _jinja_env() -> _JinjaEnvironment:
+def _jinja_env() -> Environment:
     from jinja2 import StrictUndefined  # noqa: PLC0415
     from jinja2.nativetypes import NativeCodeGenerator, native_concat  # noqa: PLC0415
     from jinja2.sandbox import SandboxedEnvironment  # noqa: PLC0415
@@ -97,7 +88,7 @@ def _jinja_env() -> _JinjaEnvironment:
     return env
 
 
-def _validate_template_ast(env: _JinjaEnvironment, expression: str) -> None:
+def _validate_template_ast(env: Environment, expression: str) -> None:
     from jinja2 import nodes  # noqa: PLC0415
 
     parsed = env.parse(expression)

@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from untaped.capabilities.awx.application._secret_paths import replace_at, values_at
+from untaped.capabilities.awx.application.secret_paths import replace_at, values_at
 from untaped.capabilities.awx.domain import ApplyOutcome, FieldChange, ResourceSpec
 
 REDACTED = "<redacted>"

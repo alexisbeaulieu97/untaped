@@ -1,28 +1,33 @@
 """``list`` builder for the spec-driven CLI factory."""
 
+from __future__ import annotations
+
+from collections.abc import Sequence
 from contextlib import nullcontext
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
 from untaped.capabilities.awx.application.mutation_values import redact_value
-from untaped.capabilities.awx.cli._context import open_context
-from untaped.capabilities.awx.cli._names import flatten_fks
-from untaped.capabilities.awx.cli._pipe import pipe_kind_for_spec
 from untaped.capabilities.awx.cli._selection import select_resources
+from untaped.capabilities.awx.cli.context import open_context
+from untaped.capabilities.awx.cli.names import flatten_fks
 from untaped.capabilities.awx.cli.options import (
     AllOption,
     ByIdOption,
     InventoryOption,
     InventoryOrganizationOption,
+    NamesArgument,
     OrganizationOption,
     ParentOption,
     StdinOption,
 )
+from untaped.capabilities.awx.cli.pipe import pipe_kind_for_spec
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
+    OutputFormat,
     emit,
     raise_usage,
     report_errors,
@@ -32,7 +37,8 @@ from untaped.capability_api import (
 def _add_list(app: App, spec: AwxResourceSpec) -> None:
     @app.command(name="list")
     def list_command(
-        names: list[str] | None = None,
+        names: NamesArgument = None,
+        /,
         *,
         all_: AllOption = False,
         parent: ParentOption = None,
@@ -50,6 +56,7 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
                     "organization__name=Default --filter name__icontains=deploy."
                 ),
                 consume_multiple=False,
+                negative="",
             ),
         ] = None,
         limit: Annotated[
@@ -104,7 +111,8 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
             records = [item.record for item in selected]
             if limit is not None:
                 records = records[:limit]
-        cols = list(columns) if columns else list(spec.list_columns)
+        # Default columns shape the human views; json/yaml/pipe keep full records.
+        cols = list(columns) if columns else _default_list_columns(fmt, spec.list_columns)
         if with_names:
             # Pass ``cols`` so display-only FK columns (e.g. Host's
             # ``inventory``, which lives in ``read_only_fields`` rather
@@ -112,3 +120,8 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
             records = flatten_fks(records, spec, columns=cols)
         records = [redact_value(record, spec.secret_paths) for record in records]
         emit(records, fmt=fmt, columns=cols, kind=pipe_kind_for_spec(spec), empty=False)
+
+
+def _default_list_columns(fmt: OutputFormat, default_cols: Sequence[str]) -> list[str] | None:
+    """``list`` projects its default columns for ``table`` and ``raw`` only."""
+    return list(default_cols) if fmt in {"table", "raw"} else None

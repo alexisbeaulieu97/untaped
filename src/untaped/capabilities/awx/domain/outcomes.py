@@ -7,9 +7,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.capabilities.awx.domain.envelope import Resource
+from untaped.capability_api import OutcomeRecord
 
 ApplyAction = Literal[
-    "preview",
+    "planned",
     "created",
     "updated",
     "unchanged",
@@ -32,13 +33,13 @@ class FieldChange(BaseModel):
     """Optional annotation, e.g. ``preserved existing secret``."""
 
 
-class ApplyOutcome(BaseModel):
-    """The result of applying a single :class:`Resource`."""
+class ApplyOutcome(OutcomeRecord):
+    """The result of applying a single :class:`Resource`.
 
-    # Frozen so phase 2's rewrites must produce a new instance (via
-    # `model_copy(update=...)`) instead of mutating one shared across
-    # workers.
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    Frozen (via :class:`OutcomeRecord`) so phase 2's rewrites must produce a
+    new instance (``model_copy(update=...)``) instead of mutating one shared
+    across workers.
+    """
 
     kind: str
     name: str

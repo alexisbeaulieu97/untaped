@@ -226,7 +226,7 @@ def test_bare_write_lands_under_default_profile(
     repo = SettingsFileRepository()
 
     # Targeting a profile that doesn't exist is the guardrail that survives.
-    with pytest.raises(ConfigError, match="does not exist"):
+    with pytest.raises(ConfigError, match="profile not found"):
         repo.set_value("log_level", "DEBUG", profile="prod")
 
     # A bare write resolves to the default profile and persists there.

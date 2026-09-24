@@ -5,27 +5,30 @@ Also owns ``default_get_columns`` — the public helper shared with
 projects records the same way as factory-built ``get``.
 """
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
 from untaped.capabilities.awx.application.mutation_values import redact_value
-from untaped.capabilities.awx.cli._context import open_context
-from untaped.capabilities.awx.cli._names import flatten_fks
-from untaped.capabilities.awx.cli._pipe import pipe_kind_for_spec
 from untaped.capabilities.awx.cli._selection import select_resources
+from untaped.capabilities.awx.cli.context import open_context
+from untaped.capabilities.awx.cli.names import flatten_fks
 from untaped.capabilities.awx.cli.options import (
     AllOption,
     ByIdOption,
     FilterOption,
     InventoryOption,
     InventoryOrganizationOption,
+    NamesArgument,
     OrganizationOption,
     ParentOption,
     SearchOption,
     StdinOption,
 )
+from untaped.capabilities.awx.cli.pipe import pipe_kind_for_spec
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capability_api import (
     ColumnsOption,
@@ -40,7 +43,8 @@ from untaped.capability_api import (
 def _add_get(app: App, spec: AwxResourceSpec) -> None:
     @app.command(name="get")
     def get_command(
-        names: Annotated[list[str] | None, Parameter(help=f"{spec.kind} name(s).")] = None,
+        names: NamesArgument = None,
+        /,
         *,
         search: SearchOption = None,
         filter_: FilterOption = None,
@@ -59,7 +63,7 @@ def _add_get(app: App, spec: AwxResourceSpec) -> None:
                 help="Replace FK ids with names from summary_fields.",
             ),
         ] = False,
-        fmt: FormatOption = "yaml",
+        fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
         """Fetch one or more resources by name, or by explicit AWX id."""

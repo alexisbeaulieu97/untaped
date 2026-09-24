@@ -47,7 +47,7 @@ WarnFn = Callable[[str], None]
 def _noop_warn(_msg: str) -> None: ...
 
 
-class FkResolver:
+class HttpFkResolver:
     def __init__(
         self,
         repo: ResourceClient,

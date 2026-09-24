@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from untaped.capabilities.recipe.domain.pack import (
     InstalledPack,
@@ -12,6 +12,39 @@ from untaped.capabilities.recipe.domain.pack import (
     RecipeEntry,
 )
 from untaped.capabilities.recipe.domain.plan import HookDebugResult, Verdict
+
+if TYPE_CHECKING:
+    from untaped.capabilities.recipe.infrastructure.hook_resolver import UvHookRef
+    from untaped.capabilities.recipe.infrastructure.hook_worker_client import (
+        HookWorkerCallResult,
+    )
+
+
+class PromptFunc(Protocol):
+    """Prompt callback used by interactive input resolution."""
+
+    def __call__(
+        self,
+        message: str,
+        *,
+        sensitive: bool,
+        default: object | None = None,
+        required: bool = True,
+    ) -> object: ...
+
+
+class HookWorkerPort(Protocol):
+    """Request/response transport for external hook execution."""
+
+    def request(
+        self,
+        ref: UvHookRef,
+        payload: dict[str, object],
+        *,
+        diagnostic_limit: int | None = ...,
+        settle_seconds: float = ...,
+    ) -> HookWorkerCallResult:
+        """Send one hook request and return the validated result plus diagnostics."""
 
 
 class HookExecutorPort(Protocol):
@@ -71,7 +104,7 @@ class PackLibraryPort(Protocol):
 
 
 class PackInspectorPort(Protocol):
-    """File-backed hook-project checks used by ``check``."""
+    """File-backed hook-project checks used by ``validate``."""
 
     def read_hook_project(self, project_root: Path) -> PackManifest:
         """Read a local hook project's manifest (absent tables are empty)."""

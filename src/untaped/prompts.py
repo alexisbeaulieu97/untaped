@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, TextIO, TypeVar
 
-from untaped.errors import ConfigError
+from untaped.errors import ConfigError, PromptInterruptedError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -81,6 +81,39 @@ def reset_prompt_backend_override(token: Token[PromptBackend | None]) -> None:
     _backend_override.reset(token)
 
 
+_CONTROLLING_TERMINAL = "/dev/tty"
+
+_terminal_override: ContextVar[Callable[[], TextIO] | None] = ContextVar(
+    "untaped_terminal_override", default=None
+)
+
+
+def open_controlling_terminal() -> TextIO:
+    """Open the process's controlling terminal for prompting.
+
+    Used when stdin carries piped data, so a confirmation can still reach
+    the user. Raises :class:`OSError` when there is no controlling terminal
+    (CI, cron, detached sessions). The test harness installs an override via
+    :func:`set_terminal_override` so tests never touch the real terminal.
+    """
+    override = _terminal_override.get()
+    if override is not None:
+        return override()
+    return open(_CONTROLLING_TERMINAL, encoding="utf-8")
+
+
+def set_terminal_override(
+    opener: Callable[[], TextIO] | None,
+) -> Token[Callable[[], TextIO] | None]:
+    """Install a controlling-terminal opener override; returns the reset token."""
+    return _terminal_override.set(opener)
+
+
+def reset_terminal_override(token: Token[Callable[[], TextIO] | None]) -> None:
+    """Undo :func:`set_terminal_override`."""
+    _terminal_override.reset(token)
+
+
 class PromptToolkitPromptBackend:
     """prompt_toolkit-backed implementation for interactive terminals."""
 
@@ -97,9 +130,12 @@ class PromptToolkitPromptBackend:
 
     def confirm(self, message: str, *, default: bool) -> bool:
         suffix = " [Y/n]: " if default else " [y/N]: "
-        default_text = "y" if default else "n"
         while True:
-            answer = self._prompt(f"{message}{suffix}", default=default_text).strip().lower()
+            # The buffer starts empty (Enter takes the default): a pre-filled
+            # "n" would turn a typed "y" into "ny" and re-prompt.
+            answer = self._prompt(f"{message}{suffix}", default="").strip().lower()
+            if not answer:
+                return default
             if answer in {"y", "yes"}:
                 return True
             if answer in {"n", "no"}:
@@ -247,8 +283,14 @@ def prompt_style_from_roles(color_roles: dict[str, str]) -> Style:
 
 
 def handle_prompt_exception(exc: BaseException) -> ConfigError:
-    """Convert terminal prompt cancellation into a user-facing config error."""
-    if isinstance(exc, (EOFError, KeyboardInterrupt)):
+    """Convert terminal prompt cancellation into a user-facing config error.
+
+    Ctrl-D (``EOFError``) cancels with exit ``1``; Ctrl-C becomes a
+    :class:`PromptInterruptedError`, which exits ``130`` like any interrupt.
+    """
+    if isinstance(exc, KeyboardInterrupt):
+        return PromptInterruptedError("prompt cancelled")
+    if isinstance(exc, EOFError):
         return ConfigError("prompt cancelled")
     if isinstance(exc, ConfigError):
         return exc

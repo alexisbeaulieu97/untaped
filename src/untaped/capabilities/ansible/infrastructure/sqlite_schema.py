@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 
 from untaped.capabilities.ansible.errors import DependencyIndexError
-from untaped.capability_api import echo
+from untaped.capability_api import ui_context
 
 # Version 4 added lowercase ``*_repo_key`` columns: GitHub repo ids are
 # case-insensitive, and repo joins compare these keys with BINARY collation so
@@ -121,11 +121,11 @@ def ensure_schema(db: sqlite3.Connection, path: Path) -> None:
         )
     if version != 0 or _has_tables(db):
         _drop_tables(db)
-        echo(
-            f"warning: rebuilt the outdated dependency index at {path} (schema version "
+        ui_context(strict=False).message(
+            "warning",
+            f"rebuilt the outdated dependency index at {path} (schema version "
             f"{version}, expected {SCHEMA_VERSION}); re-run "
             "'untaped ansible source refresh <name>' for each saved source",
-            err=True,
         )
     # Table creation and the version stamp must be one atomic unit: a crash
     # between them would leave a version-0 database that already has tables,

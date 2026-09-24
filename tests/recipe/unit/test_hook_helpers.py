@@ -3,23 +3,22 @@
 from __future__ import annotations
 
 import ast
+import inspect
 import re
 import sys
 from pathlib import Path
 
 import pytest
 
-from untaped.capabilities.recipe import hook_worker
-from untaped.capabilities.recipe._worker import helpers as helpers_module
-from untaped.capabilities.recipe._worker.helpers import HookHelpers, render_template
 from untaped.capabilities.recipe.domain import templates
+from untaped.capabilities.recipe.hook_worker import HookHelpers, render_template
 
-HELPERS_FILE = Path(helpers_module.__file__)
+HELPERS_FILE = Path(inspect.getfile(HookHelpers))
 
 
 def test_one_renderer_serves_domain_and_hooks() -> None:
     assert templates.render_template is render_template
-    assert hook_worker.HookHelpers is HookHelpers
+    assert Path(inspect.getfile(render_template)) == HELPERS_FILE
 
 
 def test_render_template_replaces_defined_inputs() -> None:

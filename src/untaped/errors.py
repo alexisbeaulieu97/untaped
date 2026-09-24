@@ -1,19 +1,81 @@
-"""Base exception hierarchy for untaped."""
+"""Base exception hierarchy and process exit codes for untaped.
+
+Every user-facing failure is an :class:`UntapedError`; its ``exit_code`` is
+what :func:`untaped.cli.report_errors` exits with, so the exit-code contract
+(:class:`ExitCode`) lives next to the exceptions that select it.
+"""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from enum import IntEnum
+from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
     from pydantic import ValidationError
 
 
+class ExitCode(IntEnum):
+    """The suite's process exit codes (one meaning each)."""
+
+    OK = 0
+    """Success."""
+    FAILURE = 1
+    """Runtime failure, a failed item, or a declined confirmation."""
+    USAGE = 2
+    """Bad invocation, detected before any side effect."""
+    PREDICATE = 3
+    """A predicate hit: ``--check`` drift, ``--fail-on-match``, ``--strict``."""
+    INTERRUPTED = 130
+    """Interrupted (Ctrl-C), including at a prompt."""
+
+
 class UntapedError(Exception):
-    """Root of the untaped exception hierarchy."""
+    """Root of the untaped exception hierarchy.
+
+    ``exit_code`` is the process exit code :func:`untaped.cli.report_errors`
+    uses for this error class (``1`` unless a subclass says otherwise).
+    """
+
+    exit_code: ClassVar[int] = ExitCode.FAILURE
 
 
 class ConfigError(UntapedError):
     """Raised when configuration is missing, malformed, or invalid."""
+
+
+class UsageError(UntapedError):
+    """Raised when a command is invoked wrongly; exits ``2``.
+
+    Use it for problems detectable from the command line alone, before any
+    side effect: conflicting or out-of-range flags, a missing required
+    selection, an unknown column, "requires ``--yes`` when not interactive".
+    Everything that depends on configuration or remote state stays a
+    :class:`ConfigError` or another :class:`UntapedError` (exit ``1``).
+    """
+
+    exit_code: ClassVar[int] = ExitCode.USAGE
+
+
+class OperationCancelledError(UntapedError):
+    """Raised when the user declines a confirmation; exits ``1``.
+
+    The default message is the suite's standard decline line, so callers
+    raise it bare: ``raise OperationCancelledError``.
+    """
+
+    def __init__(self, message: str = "cancelled; no changes made") -> None:
+        super().__init__(message)
+
+
+class PromptInterruptedError(ConfigError):
+    """Raised when a prompt is interrupted with Ctrl-C; exits ``130``.
+
+    It stays a :class:`ConfigError` (its historical type) so callers that
+    already handle prompt cancellation keep working; only the exit code says
+    "interrupted".
+    """
+
+    exit_code: ClassVar[int] = ExitCode.INTERRUPTED
 
 
 class HttpError(UntapedError):

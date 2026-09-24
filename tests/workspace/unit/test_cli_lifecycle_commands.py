@@ -218,7 +218,7 @@ def test_forget_prune_keeps_loose_files_and_warns(tmp_path: Path) -> None:
     assert "notes.md" in forget.stderr
 
 
-def test_forget_prune_decline_exits_zero_without_mutation(tmp_path: Path) -> None:
+def test_forget_prune_decline_exits_one_without_mutation(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "scratch", "--path", str(target)])
@@ -230,7 +230,8 @@ def test_forget_prune_decline_exits_zero_without_mutation(tmp_path: Path) -> Non
         interactive=True,
         prompt_backend=backend,
     )
-    assert forget.exit_code == 0, forget.output
+    assert forget.exit_code == 1, forget.output
+    assert "cancelled; no changes made" in forget.stderr
     assert backend.calls == [("confirm", "Continue?")]
     assert str(target.resolve()) in forget.output  # preview names the directory
     assert "aborted" not in forget.output
@@ -248,7 +249,7 @@ def test_forget_prune_requires_yes_when_non_interactive(
 
     forget = runner.invoke(app, ["forget", "scratch", "--prune"])
 
-    assert forget.exit_code == 1
+    assert forget.exit_code == 2
     assert "--yes" in forget.output
     assert target.is_dir()
     listed = runner.invoke(app, ["list", "--format", "raw", "--columns", "name"])

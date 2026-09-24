@@ -16,7 +16,7 @@ from untaped.capabilities.workspace.domain import (
     StatusEntry,
     Workspace,
 )
-from untaped.capabilities.workspace.errors import GitError, ManifestError, UnmatchedRepoFilter
+from untaped.capabilities.workspace.errors import GitError, ManifestError, UnmatchedRepoFilterError
 
 
 class WorkspaceStatus:
@@ -46,17 +46,20 @@ class WorkspaceStatus:
             raise
         repos, unmatched = select_repos(manifest, only)
         if unmatched:
-            raise UnmatchedRepoFilter(unmatched)
+            raise UnmatchedRepoFilterError(unmatched)
         return [self._row_for(workspace, repo) for repo in repos]
 
     def _row_for(self, workspace: Workspace, repo: Repo) -> StatusEntry:
         local = workspace.path / repo.name
         if not self._fs.is_dir(local):
-            return StatusEntry(workspace=workspace.name, repo=repo.name, cloned=False)
+            return StatusEntry(
+                workspace=workspace.name, repo=repo.name, target_path=local, cloned=False
+            )
         if not self._fs.exists(local / ".git"):
             return StatusEntry(
                 workspace=workspace.name,
                 repo=repo.name,
+                target_path=local,
                 cloned=False,
                 detail=NOT_A_GIT_REPOSITORY,
             )
@@ -68,12 +71,14 @@ class WorkspaceStatus:
             return StatusEntry(
                 workspace=workspace.name,
                 repo=repo.name,
+                target_path=local,
                 cloned=True,
                 detail=f"status failed: {exc}",
             )
         return StatusEntry(
             workspace=workspace.name,
             repo=repo.name,
+            target_path=local,
             cloned=True,
             branch=status.branch,
             ahead=status.ahead,
@@ -87,6 +92,7 @@ def _unavailable_row(workspace: Workspace, exc: ManifestError) -> StatusEntry:
     return StatusEntry(
         workspace=workspace.name,
         repo="",
+        target_path=workspace.path,
         action="unavailable",
         detail=f"workspace manifest unavailable: {exc}",
         cloned=False,

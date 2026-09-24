@@ -93,7 +93,7 @@ def test_set_rejects_unknown_key(_isolate_settings: Path) -> None:
 
 def test_set_rejects_unknown_target_profile(_isolate_settings: Path) -> None:
     """The default profiles layout creates only ``default``; an unknown target is rejected."""
-    with pytest.raises(ConfigError, match="does not exist") as excinfo:
+    with pytest.raises(ConfigError, match="profile not found") as excinfo:
         SetSetting(SettingsFileRepository())("log_level", "DEBUG", profile="prod")
     assert "prod" in str(excinfo.value)
     assert "untaped-profile" not in str(excinfo.value)
@@ -213,7 +213,7 @@ def test_unset_rejects_unknown_target_profile(_isolate_settings: Path) -> None:
     """Explicit-profile ``unset`` rejects an unknown profile like ``set`` does."""
     original = "profiles:\n  default:\n    log_level: DEBUG\n"
     _isolate_settings.write_text(original)
-    with pytest.raises(ConfigError, match="does not exist") as excinfo:
+    with pytest.raises(ConfigError, match="profile not found") as excinfo:
         UnsetSetting(SettingsFileRepository())("log_level", profile="ghost")
     assert "ghost" in str(excinfo.value)
     assert "untaped-profile" not in str(excinfo.value)

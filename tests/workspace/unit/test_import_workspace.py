@@ -12,11 +12,11 @@ bootstrapper).
 from pathlib import Path
 
 from untaped.capabilities.workspace.application import ImportWorkspace, WorkspaceBootstrapper
-from untaped.capabilities.workspace.infrastructure import ManifestRepository
+from untaped.capabilities.workspace.infrastructure import YamlManifestRepository
 from workspace.conftest import StubRegistry
 
 
-def _import(repo: ManifestRepository, reg: StubRegistry) -> ImportWorkspace:
+def _import(repo: YamlManifestRepository, reg: StubRegistry) -> ImportWorkspace:
     return ImportWorkspace(repo, WorkspaceBootstrapper(repo, reg))
 
 
@@ -33,7 +33,7 @@ repos:
     )
     dest = tmp_path / "ws-imported"
 
-    repo = ManifestRepository()
+    repo = YamlManifestRepository()
     reg = StubRegistry()
     result = _import(repo, reg)(src, path=dest, name="imported")
     assert result.workspace.name == "imported"
@@ -61,7 +61,7 @@ repos:
 """
     )
     dest = tmp_path / "ws-imported"
-    result = _import(ManifestRepository(), StubRegistry())(src, path=dest)
+    result = _import(YamlManifestRepository(), StubRegistry())(src, path=dest)
     assert result.repos == ("svc-a", "beta")
 
 
@@ -72,7 +72,7 @@ def test_import_prefers_loaded_manifest_name_over_dirname(tmp_path: Path) -> Non
     src = tmp_path / "m.yml"
     src.write_text("name: from-manifest\nrepos: []\n")
     dest = tmp_path / "auto"
-    repo = ManifestRepository()
+    repo = YamlManifestRepository()
     _import(repo, StubRegistry())(src, path=dest)
     assert repo.read(dest).name == "from-manifest"
 
@@ -81,6 +81,6 @@ def test_import_falls_back_to_dirname_when_manifest_has_no_name(tmp_path: Path) 
     src = tmp_path / "m.yml"
     src.write_text("repos: []\n")
     dest = tmp_path / "auto"
-    repo = ManifestRepository()
+    repo = YamlManifestRepository()
     _import(repo, StubRegistry())(src, path=dest)
     assert repo.read(dest).name == "auto"

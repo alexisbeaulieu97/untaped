@@ -144,3 +144,17 @@ def test_whoami_rejects_blank_token(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     result = CliInvoker().invoke(app, ["whoami"])
     assert result.exit_code != 0
     assert "token" in str(result.exception) or "token" in result.output
+
+
+def test_whoami_rejected_token_hints_at_setting_a_new_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/user").mock(return_value=httpx.Response(401, json={"message": "Bad"}))
+        result = CliInvoker().invoke(app, ["whoami", "--format", "json"])
+
+    assert result.exit_code == 1
+    assert "error: GitHub rejected the configured token (HTTP 401)" in result.stderr
+    assert "hint: run `untaped config set github.token --prompt`" in result.stderr

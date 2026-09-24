@@ -23,16 +23,17 @@ def emit_isolated(
     *,
     fmt: OutputFormat,
     columns: list[str] | None,
+    kind: str | None = None,
 ) -> None:
     """Render row data without letting invalid settings block the output."""
     try:
-        emit(rows, fmt=fmt, columns=columns)
+        emit(rows, fmt=fmt, columns=columns, kind=kind)
     except ConfigError:
         # Settings are broken (this is often what the caller reports): the
         # themed render above raised before writing anything, so retry with
         # the default theme instead of failing the listing.
         ui = ui_context(strict=False)
-        rendered = ui.collection(rows, fmt=fmt, columns=columns)
+        rendered = ui.collection(rows, fmt=fmt, columns=columns, kind=kind)
         if rendered:
             echo(rendered)
 

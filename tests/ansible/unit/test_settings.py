@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from untaped.capabilities.ansible.settings import (
     DEFAULT_DEPENDENCY_PATHS,
     AnsibleSettings,
+    AnsibleState,
     SourceDefinition,
 )
 
@@ -91,3 +92,13 @@ def test_ansible_settings_validate_ref_scan_and_git_options() -> None:
         AnsibleSettings(source_refresh_repo_batch_size=0)
     with pytest.raises(ValidationError, match="source_refresh_rate_limit_floor"):
         AnsibleSettings(source_refresh_rate_limit_floor=-1)
+
+
+def test_profile_and_state_models_are_frozen() -> None:
+    settings = AnsibleSettings()
+    state = AnsibleState()
+
+    with pytest.raises(ValidationError, match="frozen"):
+        settings.stale_after = 1  # type: ignore[misc]
+    with pytest.raises(ValidationError, match="frozen"):
+        state.aliases = {}  # type: ignore[misc]

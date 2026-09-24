@@ -1,32 +1,36 @@
 """Export complete fixed selections as portable resource documents."""
 
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.capabilities.awx.cli._context import open_context
-from untaped.capabilities.awx.cli._save_runner import run_save_selection
 from untaped.capabilities.awx.cli._selection import select_resources
+from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.options import (
     AllOption,
     ByIdOption,
     FilterOption,
     InventoryOption,
     InventoryOrganizationOption,
+    NamesArgument,
     OrganizationOption,
     ParentOption,
     SearchOption,
     StdinOption,
 )
+from untaped.capabilities.awx.cli.save_runner import run_save_selection
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capability_api import ColumnsOption, FormatOption, raise_usage, report_errors
 
 
 def _add_save(app: App, spec: AwxResourceSpec) -> None:
-    @app.command(name="save")
-    def save_command(
-        names: list[str] | None = None,
+    @app.command(name="export")
+    def export_command(
+        names: NamesArgument = None,
+        /,
         *,
         stdin: StdinOption = False,
         by_id: ByIdOption = False,
@@ -44,7 +48,7 @@ def _add_save(app: App, spec: AwxResourceSpec) -> None:
         fmt: FormatOption = "yaml",
         columns: ColumnsOption = None,
     ) -> None:
-        """Save a fixed selection into one portable YAML document batch."""
+        """Export a fixed selection as one portable YAML document batch."""
         if not names and not stdin and not filter_ and search is None and not all_:
             raise_usage("provide names, --stdin, filters/search, or --all")
         with report_errors(), open_context() as ctx:

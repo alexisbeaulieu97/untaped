@@ -77,7 +77,7 @@ def test_source_show_pipe_tags_envelope_with_kind(tmp_path: Path, monkeypatch) -
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     get_settings.cache_clear()
 
-    result = CliInvoker().invoke(app, ["source", "show", "prod", "--format", "pipe"])
+    result = CliInvoker().invoke(app, ["source", "get", "prod", "--format", "pipe"])
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip())

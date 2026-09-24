@@ -58,7 +58,7 @@ def test_job_templates_save_translates_fks(fake_aap: Any, tmp_path: Path) -> Non
         app,
         [
             "job-templates",
-            "save",
+            "export",
             "deploy",
             "--out",
             str(out),
@@ -78,7 +78,7 @@ def test_job_templates_save_translates_fks(fake_aap: Any, tmp_path: Path) -> Non
 
 def _save_to(out: str) -> Any:
     return CliInvoker().invoke(
-        app, ["job-templates", "save", "deploy", "--organization", "Default", f"--out={out}"]
+        app, ["job-templates", "export", "deploy", "--organization", "Default", f"--out={out}"]
     )
 
 
@@ -141,7 +141,7 @@ def test_job_templates_save_emits_credentials_from_sub_endpoint(fake_aap: Any) -
     fake_aap.memberships[("job_templates", 30, "credentials")] = {40, 41}
 
     result = CliInvoker().invoke(
-        app, ["job-templates", "save", "deploy", "--organization", "Default"]
+        app, ["job-templates", "export", "deploy", "--organization", "Default"]
     )
 
     assert result.exit_code == 0, result.output
@@ -157,7 +157,7 @@ def test_job_templates_save_default_yaml_round_trips(fake_aap: Any) -> None:
     would wrap in a top-level list and silently break it."""
     _seed_basic(fake_aap)
     result = CliInvoker().invoke(
-        app, ["job-templates", "save", "deploy", "--organization", "Default"]
+        app, ["job-templates", "export", "deploy", "--organization", "Default"]
     )
     assert result.exit_code == 0, result.output
     doc = yaml.safe_load(result.stdout)
@@ -172,7 +172,7 @@ def test_job_templates_save_apply_round_trips_string_extra_vars(
     _seed_basic(fake_aap)
     fake_aap.get_record("job_templates", 30)["extra_vars"] = "answer: 42\n"
     save_result = CliInvoker().invoke(
-        app, ["job-templates", "save", "deploy", "--organization", "Default"]
+        app, ["job-templates", "export", "deploy", "--organization", "Default"]
     )
     assert save_result.exit_code == 0, save_result.output
     saved = tmp_path / "jt.yml"
@@ -192,7 +192,7 @@ def test_job_templates_save_format_json_emits_envelope(fake_aap: Any) -> None:
     _seed_basic(fake_aap)
     result = CliInvoker().invoke(
         app,
-        ["job-templates", "save", "deploy", "--organization", "Default", "--format", "json"],
+        ["job-templates", "export", "deploy", "--organization", "Default", "--format", "json"],
     )
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout)
@@ -210,7 +210,7 @@ def test_job_templates_save_format_raw_emits_kind(fake_aap: Any) -> None:
     default-column contract. For a Resource that's ``kind``."""
     _seed_basic(fake_aap)
     result = CliInvoker().invoke(
-        app, ["job-templates", "save", "deploy", "--organization", "Default", "--format", "raw"]
+        app, ["job-templates", "export", "deploy", "--organization", "Default", "--format", "raw"]
     )
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "JobTemplate"
@@ -218,9 +218,9 @@ def test_job_templates_save_format_raw_emits_kind(fake_aap: Any) -> None:
 
 def test_credentials_have_no_save_or_apply(fake_aap: Any) -> None:
     """Credential is read-only — its sub-app should not expose save/apply."""
-    result = CliInvoker().invoke(app, ["credentials", "save", "x"])
+    result = CliInvoker().invoke(app, ["credentials", "export", "x"])
     assert result.exit_code != 0
-    assert "save" in result.output.lower()
+    assert "export" in result.output.lower()
 
 
 def test_save_kind_org_scopes_inventory_child_kind(fake_aap: Any, tmp_path: Path) -> None:
@@ -262,7 +262,7 @@ def test_save_kind_org_scopes_inventory_child_kind(fake_aap: Any, tmp_path: Path
     out_dir = tmp_path / "backup"
     result = CliInvoker().invoke(
         app,
-        ["save", "--kind", "hosts", "--org", "Default", "--out-dir", str(out_dir)],
+        ["export", "--kind", "hosts", "--org", "Default", "--out-dir", str(out_dir)],
     )
 
     assert result.exit_code == 0, result.output
@@ -282,7 +282,7 @@ def test_save_kind_accepts_cli_name(seeded_default_org: Any, tmp_path: Path) -> 
     )
     out_dir = tmp_path / "backup"
     result = CliInvoker().invoke(
-        app, ["save", "--out-dir", str(out_dir), "--kind", "job-templates"]
+        app, ["export", "--out-dir", str(out_dir), "--kind", "job-templates"]
     )
     assert result.exit_code == 0, result.output
     assert (out_dir / "JobTemplate__Default__deploy.yml").exists()
@@ -300,7 +300,9 @@ def test_save_kind_accepts_domain_kind(seeded_default_org: Any, tmp_path: Path) 
         playbook="a.yml",
     )
     out_dir = tmp_path / "backup"
-    result = CliInvoker().invoke(app, ["save", "--out-dir", str(out_dir), "--kind", "JobTemplate"])
+    result = CliInvoker().invoke(
+        app, ["export", "--out-dir", str(out_dir), "--kind", "JobTemplate"]
+    )
     assert result.exit_code == 0, result.output
     assert (out_dir / "JobTemplate__Default__deploy.yml").exists()
 
@@ -309,7 +311,7 @@ def test_save_kind_rejects_unknown_kind(fake_aap: Any, tmp_path: Path) -> None:
     """Neither ``by_cli_name`` nor ``get`` can resolve a bogus kind —
     the second arm of ``_resolve_kind`` re-raises."""
     out_dir = tmp_path / "backup"
-    result = CliInvoker().invoke(app, ["save", "--out-dir", str(out_dir), "--kind", "Bogus"])
+    result = CliInvoker().invoke(app, ["export", "--out-dir", str(out_dir), "--kind", "Bogus"])
     assert result.exit_code != 0
     output = result.output + (result.stderr or "")
     assert "Bogus" in output
@@ -331,7 +333,7 @@ def test_save_kind_print_paths_legacy_shape(seeded_default_org: Any, tmp_path: P
     result = CliInvoker().invoke(
         app,
         [
-            "save",
+            "export",
             "--out-dir",
             str(out_dir),
             "--kind",
@@ -362,7 +364,7 @@ def test_save_kind_default_emits_yaml_envelope_on_stdout(
     )
     out_dir = tmp_path / "backup"
     result = CliInvoker().invoke(
-        app, ["save", "--out-dir", str(out_dir), "--kind", "job-templates"]
+        app, ["export", "--out-dir", str(out_dir), "--kind", "job-templates"]
     )
     assert result.exit_code == 0, result.output
     docs = [d for d in yaml.safe_load_all(result.stdout) if d is not None]
@@ -385,7 +387,7 @@ def test_job_templates_save_format_with_out_still_writes_yaml_file(
         app,
         [
             "job-templates",
-            "save",
+            "export",
             "deploy",
             "--out",
             str(out),
@@ -418,7 +420,7 @@ def test_workflow_save_emits_partial_warning(seeded_default_org: Any, tmp_path: 
         app,
         [
             "workflow-templates",
-            "save",
+            "export",
             "pipeline",
             "--out",
             str(out),

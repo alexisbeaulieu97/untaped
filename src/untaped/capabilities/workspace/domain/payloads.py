@@ -12,6 +12,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from untaped.capabilities.workspace.domain.manifest import WorkspaceManifest
+from untaped.capability_api import OutcomeRecord, TargetRecord
 
 
 class DiscoveredRepo(BaseModel):
@@ -55,14 +56,17 @@ class BareCacheEntry(BaseModel):
     created: bool
 
 
-class WorkspaceDetailRow(BaseModel):
-    """One data row for ``workspace show`` output."""
+class WorkspaceSummaryRow(BaseModel):
+    """The single ``workspace get`` row of a workspace with no repos.
 
-    model_config = ConfigDict(frozen=True)
+    Emitted as ``workspace.repo.summary``: like every ``.summary`` row it
+    carries no ``target_path``, so filesystem consumers can skip it.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     workspace: str
     path: str
-    target_path: str | None = None
     default_branch: str | None
     repo_count: int
     repo: str
@@ -71,28 +75,73 @@ class WorkspaceDetailRow(BaseModel):
     target_branch: str | None
 
 
-class BranchChange(BaseModel):
-    """Manifest branch metadata changed by ``workspace branch`` commands."""
+class WorkspaceDetailRow(TargetRecord):
+    """One repo row of ``workspace get`` output; ``target_path`` is the clone directory."""
 
-    model_config = ConfigDict(frozen=True)
+    workspace: str
+    path: str
+    default_branch: str | None
+    repo_count: int
+    repo: str
+    url: str
+    repo_branch: str | None
+    target_branch: str | None
+
+
+class BranchChange(OutcomeRecord):
+    """Manifest branch metadata changed by ``workspace branch`` commands."""
 
     workspace: str
     repo: str | None
     branch: str | None
+    action: str = "updated"
 
 
-BranchApplyAction = Literal["checkout", "up-to-date", "skip", "failed", "unmatched"]
+class WorkspaceOutcome(OutcomeRecord, TargetRecord):
+    """One row of ``workspace init`` / ``workspace forget`` output.
+
+    ``action`` is ``created`` (init), ``forgotten`` or ``pruned`` (forget);
+    ``target_path`` is the workspace directory.
+    """
+
+    name: str
+    action: str
+
+
+class RepoAddOutcome(OutcomeRecord, TargetRecord):
+    """One row of ``workspace add`` output; ``target_path`` is the clone directory."""
+
+    workspace: str
+    repo: str
+    url: str
+    branch: str | None
+    action: str = "added"
+
+
+class RepoRemoveOutcome(OutcomeRecord):
+    """One row of ``workspace remove`` output.
+
+    ``repo`` is the identifier as given for ``planned`` (``--dry-run``)
+    rows and the manifest name for ``removed`` rows; ``pruned`` says
+    whether the local clone is (or would be) deleted as well.
+    """
+
+    workspace: str
+    repo: str
+    action: str
+    pruned: bool
+
+
+BranchApplyAction = Literal["checked_out", "unchanged", "skipped", "failed", "unmatched"]
 """What ``workspace branch apply`` did or refused to do for one repo.
 
-``skip`` is an intentional refusal; ``failed`` means a fetch, status, or
+``skipped`` is an intentional refusal; ``failed`` means a fetch, status, or
 checkout attempt errored.
 """
 
 
-class BranchApplyOutcome(BaseModel):
+class BranchApplyOutcome(OutcomeRecord, TargetRecord):
     """One row of ``workspace branch apply`` output."""
-
-    model_config = ConfigDict(frozen=True)
 
     repo: str
     workspace: str

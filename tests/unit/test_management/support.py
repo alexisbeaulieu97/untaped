@@ -138,13 +138,14 @@ def check(
     check_id: str,
     *,
     ok: bool = True,
+    warn: bool = False,
     detail: str = "all good",
     title: str = "check",
 ) -> DoctorCheck:
     """Return a doctor-check double reporting a fixed outcome."""
 
     def _run(_ctx: object) -> DoctorResult:
-        return DoctorResult(id=check_id, ok=ok, detail=detail)
+        return DoctorResult(id=check_id, ok=ok, detail=detail, warn=warn)
 
     return DoctorCheck(id=check_id, title=title, run=_run)  # type: ignore[arg-type]
 

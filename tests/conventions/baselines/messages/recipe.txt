@@ -1,0 +1,5 @@
+# Known violations of the messages convention check for 'recipe'.
+# This list may only shrink: fix an entry and delete its line.
+# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
+src/untaped/capabilities/recipe/_worker/hook_worker.py::sys-stdin::sys.stdin
+src/untaped/capabilities/recipe/_worker/hook_worker.py::sys-stdin::sys.stdin

@@ -6,9 +6,9 @@ collision raises → manifests.write → registry.register) that
 to. The per-use-case tests retain only their payload-specific
 assertions.
 
-Workspace-dir creation is owned by ``ManifestRepository.write`` — the
+Workspace-dir creation is owned by ``YamlManifestRepository.write`` — the
 bootstrapper itself never mkdirs, so these tests use the real
-``ManifestRepository`` (the only stubbable seam was the now-removed
+``YamlManifestRepository`` (the only stubbable seam was the now-removed
 ``Filesystem`` dep). The exception: tests that *would* see a manifest
 collision on the real adapter use ``StubManifests`` to seed it.
 """
@@ -20,7 +20,7 @@ import pytest
 from untaped.capabilities.workspace.application import WorkspaceBootstrapper
 from untaped.capabilities.workspace.domain import ManifestDefaults, Workspace, WorkspaceManifest
 from untaped.capabilities.workspace.errors import RegistryError, WorkspaceError
-from untaped.capabilities.workspace.infrastructure import ManifestRepository
+from untaped.capabilities.workspace.infrastructure import YamlManifestRepository
 from workspace.conftest import StubManifests, StubRegistry
 
 
@@ -34,7 +34,7 @@ def test_canonicalises_path_and_registers_at_resolved_path(tmp_path: Path) -> No
     and verify the registry sees the resolved form.
     """
     registry = StubRegistry()
-    boot = WorkspaceBootstrapper(ManifestRepository(), registry)
+    boot = WorkspaceBootstrapper(YamlManifestRepository(), registry)
 
     nested = tmp_path / "outer" / "inner" / ".." / "leaf"
     workspace = boot(nested, build_manifest=lambda n: _manifest(n))
@@ -45,7 +45,7 @@ def test_canonicalises_path_and_registers_at_resolved_path(tmp_path: Path) -> No
 
 
 def test_derives_name_from_canonical_name_when_caller_omits_name(tmp_path: Path) -> None:
-    manifests = ManifestRepository()
+    manifests = YamlManifestRepository()
     boot = WorkspaceBootstrapper(manifests, StubRegistry())
 
     ws_dir = tmp_path / "from-dirname"
@@ -79,7 +79,7 @@ def test_raises_when_manifest_already_exists(tmp_path: Path) -> None:
 
 def test_raises_when_registry_already_has_name_without_writing(tmp_path: Path) -> None:
     registry = StubRegistry([Workspace(name="prod", path=tmp_path / "elsewhere")])
-    boot = WorkspaceBootstrapper(ManifestRepository(), registry)
+    boot = WorkspaceBootstrapper(YamlManifestRepository(), registry)
 
     with pytest.raises(WorkspaceError, match="name already registered: 'prod'"):
         boot(tmp_path / "new", build_manifest=lambda n: _manifest(n), name="prod")
@@ -92,7 +92,7 @@ def test_rolls_back_new_manifest_when_register_fails(tmp_path: Path) -> None:
         def register(self, *, name: str, path: Path) -> Workspace:
             raise RegistryError("config locked")
 
-    boot = WorkspaceBootstrapper(ManifestRepository(), _FailingRegistry())
+    boot = WorkspaceBootstrapper(YamlManifestRepository(), _FailingRegistry())
 
     with pytest.raises(RegistryError, match="config locked"):
         boot(tmp_path / "new", build_manifest=lambda n: _manifest(n), name="prod")
@@ -112,14 +112,14 @@ def test_raises_when_registry_already_has_path(tmp_path: Path) -> None:
 
 def test_workspace_dir_created_as_side_effect_of_manifest_write(tmp_path: Path) -> None:
     """The bootstrapper does not mkdir the workspace dir itself —
-    ``ManifestRepository.write`` owns that side effect. Pin it: the
+    ``YamlManifestRepository.write`` owns that side effect. Pin it: the
     workspace dir doesn't pre-exist, and after the use case returns,
     both the dir and ``untaped.yml`` are present.
     """
     ws_dir = tmp_path / "prod"
     assert not ws_dir.exists()
 
-    boot = WorkspaceBootstrapper(ManifestRepository(), StubRegistry())
+    boot = WorkspaceBootstrapper(YamlManifestRepository(), StubRegistry())
     boot(ws_dir, build_manifest=lambda n: _manifest(n))
 
     assert ws_dir.is_dir()
@@ -130,7 +130,7 @@ def test_writes_built_manifest_and_returns_registered_workspace(tmp_path: Path) 
     """Happy path: ``build_manifest(ws_name)``'s return value gets
     written and the use case returns the ``Workspace`` produced by
     ``registry.register``."""
-    manifests = ManifestRepository()
+    manifests = YamlManifestRepository()
     registry = StubRegistry()
     boot = WorkspaceBootstrapper(manifests, registry)
 
@@ -148,7 +148,7 @@ def test_writes_built_manifest_and_returns_registered_workspace(tmp_path: Path) 
 
 
 def test_explicit_name_overrides_canonical_dirname(tmp_path: Path) -> None:
-    manifests = ManifestRepository()
+    manifests = YamlManifestRepository()
     boot = WorkspaceBootstrapper(manifests, StubRegistry())
 
     ws_dir = tmp_path / "dirname"
@@ -214,7 +214,7 @@ def test_bootstrap_writes_and_registers_with_canonical_inputs(tmp_path: Path) ->
     the path or re-validating the inputs. Adopt uses this to avoid the
     triple canonicalisation that previously bracketed every adopt.
     """
-    manifests = ManifestRepository()
+    manifests = YamlManifestRepository()
     registry = StubRegistry()
     boot = WorkspaceBootstrapper(manifests, registry)
 

@@ -151,7 +151,7 @@ def test_list_packs_keeps_empty_library_message(tmp_path: Path) -> None:
 
 
 def test_show_builtin_hook_renders_detail(tmp_path: Path) -> None:
-    result = CliInvoker().invoke(app, ["show", "yaml_edit", "--format", "json"])
+    result = CliInvoker().invoke(app, ["get", "yaml_edit", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     detail = json.loads(result.stdout)
@@ -161,7 +161,7 @@ def test_show_builtin_hook_renders_detail(tmp_path: Path) -> None:
 
 
 def test_check_builtin_hook_renders_pass_row(tmp_path: Path) -> None:
-    result = CliInvoker().invoke(app, ["check", "yaml_edit", "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", "yaml_edit", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
@@ -177,7 +177,7 @@ def test_check_builtin_hook_renders_pass_row(tmp_path: Path) -> None:
 
 
 def test_check_without_ref_does_not_enumerate_builtins(tmp_path: Path) -> None:
-    result = CliInvoker().invoke(app, ["check", "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == []
@@ -189,7 +189,7 @@ def test_check_prefers_library_pack_over_builtin(tmp_path: Path) -> None:
     _write_pack(source, manifest_name="yaml_edit", recipes={"playbook": "recipes/playbook.yml"})
     _install_pack(source, name="yaml_edit")
 
-    result = CliInvoker().invoke(app, ["check", "yaml_edit", "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", "yaml_edit", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
@@ -210,7 +210,7 @@ def test_check_prefers_library_recipe_over_builtin(tmp_path: Path) -> None:
     _write_pack(source, manifest_name="shadow", recipes={"yaml_edit": "recipes/yaml.yml"})
     _install_pack(source)
 
-    result = CliInvoker().invoke(app, ["check", "yaml_edit", "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", "yaml_edit", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
@@ -225,7 +225,7 @@ def test_check_prefers_library_recipe_over_builtin(tmp_path: Path) -> None:
 
 
 def test_check_unknown_bare_ref_keeps_recipe_miss(tmp_path: Path) -> None:
-    result = CliInvoker().invoke(app, ["check", "not_a_builtin", "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", "not_a_builtin", "--format", "json"])
 
     assert result.exit_code == 1
     assert "recipe not found: not_a_builtin" in result.stderr
@@ -241,7 +241,7 @@ def test_show_prefers_library_hook_over_builtin(tmp_path: Path) -> None:
     )
     _install_pack(source)
 
-    result = CliInvoker().invoke(app, ["show", "yaml_edit", "--format", "json"])
+    result = CliInvoker().invoke(app, ["get", "yaml_edit", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["module"] == "shadow_pack.hooks.yaml_edit"
@@ -259,8 +259,8 @@ def test_unified_show_pack_and_recipe(tmp_path: Path) -> None:
     _write_pack(source, manifest_name="ansible", recipes={"playbook": "recipes/playbook.yml"})
     _install_pack(source)
 
-    pack = CliInvoker().invoke(app, ["show", "ansible", "--format", "json"])
-    recipe = CliInvoker().invoke(app, ["show", "ansible/playbook", "--format", "json"])
+    pack = CliInvoker().invoke(app, ["get", "ansible", "--format", "json"])
+    recipe = CliInvoker().invoke(app, ["get", "ansible/playbook", "--format", "json"])
 
     assert pack.exit_code == 0, pack.output
     assert json.loads(pack.stdout)["name"] == "ansible"
@@ -279,7 +279,7 @@ def test_unified_check_pack_validates_recipe_hook_exports(tmp_path: Path) -> Non
     )
     _install_pack(source)
 
-    result = CliInvoker().invoke(app, ["check", "ansible", "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", "ansible", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)[0]["status"] == "pass"
@@ -292,7 +292,7 @@ def test_check_flags_orphaned_tests_directories(tmp_path: Path) -> None:
     (source / "tests" / "renamed" / "old" / "given").mkdir(parents=True)
     _install_pack(source)
 
-    result = CliInvoker().invoke(app, ["check", "ansible", "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", "ansible", "--format", "json"])
 
     assert result.exit_code == 1, result.output
     row = json.loads(result.stdout)[0]
@@ -317,7 +317,7 @@ def test_check_reports_stale_lockfile_for_hook_pack(
         raise ValueError(f"lockfile is stale — run 'uv lock' in {project_root}")
 
     monkeypatch.setattr("untaped.capabilities.recipe.infrastructure.pack_files.check_lock", _stale)
-    result = CliInvoker().invoke(app, ["check", "ansible", "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", "ansible", "--format", "json"])
 
     assert result.exit_code == 1, result.output
     row = json.loads(result.stdout)[0]
@@ -346,7 +346,7 @@ def test_check_probes_lock_freshness_once_per_project(
         "untaped.capabilities.recipe.infrastructure.pack_files.check_lock", probed.append
     )
 
-    result = CliInvoker().invoke(app, ["check", "ansible", "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", "ansible", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert len(probed) == 1
@@ -364,7 +364,7 @@ def test_check_skips_lock_probe_for_hookless_pack(
         "untaped.capabilities.recipe.infrastructure.pack_files.check_lock", probed.append
     )
 
-    result = CliInvoker().invoke(app, ["check", "plain", "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", "plain", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert probed == []
@@ -377,8 +377,8 @@ def test_check_hookless_pack_without_lock_passes_pack_ref_and_library(tmp_path: 
     installed = library_root() / "packs" / "plain"
     (installed / "uv.lock").unlink()
 
-    pack_ref = CliInvoker().invoke(app, ["check", "plain", "--format", "json"])
-    library = CliInvoker().invoke(app, ["check", "--format", "json"])
+    pack_ref = CliInvoker().invoke(app, ["validate", "plain", "--format", "json"])
+    library = CliInvoker().invoke(app, ["validate", "--format", "json"])
 
     assert pack_ref.exit_code == 0, pack_ref.output
     assert library.exit_code == 0, library.output
@@ -402,7 +402,7 @@ def test_check_hookless_recipe_ref_without_lock_passes(tmp_path: Path) -> None:
     installed = library_root() / "packs" / "plain"
     (installed / "uv.lock").unlink()
 
-    result = CliInvoker().invoke(app, ["check", "plain/ok", "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", "plain/ok", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -420,7 +420,7 @@ def test_check_hookless_explicit_project_without_lock_passes(tmp_path: Path) -> 
     _write_pack(source, manifest_name="plain", recipes={"ok": "recipes/ok.yml"})
     (source / "uv.lock").unlink()
 
-    result = CliInvoker().invoke(app, ["check", str(source), "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", str(source), "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -447,7 +447,7 @@ def test_check_hook_pack_without_lock_keeps_pack_error_exact(tmp_path: Path) -> 
     installed = library_root() / "packs" / "ansible"
     (installed / "uv.lock").unlink()
 
-    result = CliInvoker().invoke(app, ["check", "ansible", "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", "ansible", "--format", "json"])
 
     assert result.exit_code == 1, result.output
     assert json.loads(result.stdout)[0]["error"] == f"pack project is missing uv.lock: {installed}"
@@ -467,7 +467,7 @@ def test_check_without_ref_reports_library_reconcile_and_pack_rows(tmp_path: Pat
         recipes={"playbook": "recipes/playbook.yml"},
     )
 
-    result = CliInvoker().invoke(app, ["check", "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", "--format", "json"])
 
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
@@ -485,7 +485,7 @@ def test_check_without_ref_healthy_library_exits_zero(tmp_path: Path) -> None:
     _write_pack(source, manifest_name="ansible", recipes={"playbook": "recipes/playbook.yml"})
     _install_pack(source)
 
-    result = CliInvoker().invoke(app, ["check", "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -507,7 +507,7 @@ def test_library_miss_hints_at_existing_path(
     monkeypatch.chdir(tmp_path)
     (tmp_path / "demo").mkdir()
 
-    result = CliInvoker().invoke(app, ["show", "demo"])
+    result = CliInvoker().invoke(app, ["get", "demo"])
 
     assert result.exit_code == 1
     assert "recipe not found: demo" in result.stderr
@@ -521,7 +521,7 @@ def test_library_miss_without_matching_path_keeps_plain_error(
 ) -> None:
     monkeypatch.chdir(tmp_path)
 
-    result = CliInvoker().invoke(app, ["show", "demo"])
+    result = CliInvoker().invoke(app, ["get", "demo"])
 
     assert result.exit_code == 1
     assert "recipe not found: demo" in result.stderr
@@ -587,7 +587,7 @@ def test_missing_explicit_recipe_path_reports_guard_for_apply_and_check(
     expected = "recipe file not found: nope.yml"
 
     apply_result = CliInvoker().invoke(app, ["apply", "./nope.yml", str(target), "--yes"])
-    check_result = CliInvoker().invoke(app, ["check", "./nope.yml", "--format", "json"])
+    check_result = CliInvoker().invoke(app, ["validate", "./nope.yml", "--format", "json"])
 
     assert apply_result.exit_code == 1
     assert check_result.exit_code == 1
@@ -641,7 +641,6 @@ def test_unified_remove_destructive_gating_and_yes(
     source = tmp_path / "source"
     _write_pack(source, manifest_name="ansible", recipes={"playbook": "recipes/playbook.yml"})
     _install_pack(source)
-    monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: False)
 
     refused = CliInvoker().invoke(app, ["remove", "ansible"])
     removed = CliInvoker().invoke(app, ["remove", "ansible", "--yes"])
@@ -654,7 +653,9 @@ def test_unified_remove_destructive_gating_and_yes(
 
 def test_cli_emit_kinds_are_the_surviving_pack_unification_set() -> None:
     allowed = {
-        "recipe.outcome",
+        "recipe.add_outcome",
+        "recipe.apply_outcome",
+        "recipe.remove_outcome",
         "recipe.backup",
         "recipe.hook_run",
         "recipe.recipe",
@@ -696,7 +697,7 @@ def test_list_skips_unparsable_pack_with_warning(tmp_path: Path) -> None:
 def test_check_reports_error_row_for_unparsable_pack(tmp_path: Path) -> None:
     _install_good_and_broken_packs(tmp_path)
 
-    result = CliInvoker().invoke(app, ["check", "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", "--format", "json"])
 
     rows = {row["pack"]: row for row in json.loads(result.stdout)}
     assert rows["good"]["status"] == "pass"
@@ -710,9 +711,9 @@ def test_check_reports_error_row_for_unparsable_pack(tmp_path: Path) -> None:
 def test_resolution_ignores_unparsable_pack_unless_named(tmp_path: Path) -> None:
     _install_good_and_broken_packs(tmp_path)
 
-    shown = CliInvoker().invoke(app, ["show", "playbook", "--format", "json"])
-    named = CliInvoker().invoke(app, ["show", "broken"])
-    qualified = CliInvoker().invoke(app, ["show", "broken/other"])
+    shown = CliInvoker().invoke(app, ["get", "playbook", "--format", "json"])
+    named = CliInvoker().invoke(app, ["get", "broken"])
+    qualified = CliInvoker().invoke(app, ["get", "broken/other"])
 
     assert shown.exit_code == 0, shown.output
     assert json.loads(shown.stdout)["ref"] == "good/playbook"
@@ -741,7 +742,7 @@ def test_missing_recipe_path_with_unsafe_basename_reports_not_found(
 
 
 def test_show_unsafe_ref_reports_not_found(tmp_path: Path) -> None:
-    result = CliInvoker().invoke(app, ["show", "foo bar"])
+    result = CliInvoker().invoke(app, ["get", "foo bar"])
 
     assert result.exit_code == 1
     assert "not found: foo bar" in result.stderr
@@ -781,6 +782,6 @@ def test_list_empty_library_hint_only_in_table_format(tmp_path: Path) -> None:
     as_json = CliInvoker().invoke(app, ["list", "--format", "json"])
 
     assert table.exit_code == 0, table.output
-    assert "untaped recipe new pack NAME" in table.stderr
+    assert "untaped recipe init pack NAME" in table.stderr
     assert as_json.exit_code == 0, as_json.output
     assert "no packs installed" not in as_json.stderr

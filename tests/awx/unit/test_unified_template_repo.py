@@ -1,4 +1,4 @@
-"""Unit tests for :class:`UnifiedTemplateRepository`.
+"""Unit tests for :class:`HttpUnifiedTemplateRepository`.
 
 The adapter is two methods — alphabetical list pagination through
 ``unified_job_templates/`` and a bulk ``?id__in=…`` lookup. Tests stub
@@ -12,7 +12,9 @@ from typing import Any, cast
 
 from untaped.capabilities.awx.application.ports import RawHttpResourceClient
 from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
-from untaped.capabilities.awx.infrastructure.unified_template_repo import UnifiedTemplateRepository
+from untaped.capabilities.awx.infrastructure.unified_template_repo import (
+    HttpUnifiedTemplateRepository,
+)
 
 
 class _FakeClient:
@@ -75,7 +77,7 @@ class _FakeClient:
 
 def test_list_walks_unified_job_templates_endpoint() -> None:
     client = _FakeClient(list_pages=[{"id": 1, "name": "deploy"}])
-    repo = UnifiedTemplateRepository(cast(RawHttpResourceClient, client))
+    repo = HttpUnifiedTemplateRepository(cast(RawHttpResourceClient, client))
     out = list(repo.list(params={"order_by": "name"}, limit=10))
     assert [r["id"] for r in out] == [1]
     path, params, limit = client.paginate_calls[0]
@@ -86,7 +88,7 @@ def test_list_walks_unified_job_templates_endpoint() -> None:
 
 def test_list_passes_none_params_through() -> None:
     client = _FakeClient()
-    repo = UnifiedTemplateRepository(cast(RawHttpResourceClient, client))
+    repo = HttpUnifiedTemplateRepository(cast(RawHttpResourceClient, client))
     list(repo.list())
     _, params, limit = client.paginate_calls[0]
     # Alphabetical by default: ``-id`` would interleave four kinds' timelines.
@@ -106,7 +108,7 @@ def test_get_by_ids_uses_id_in_filter() -> None:
             {"id": 2, "name": "build"},
         ]
     )
-    repo = UnifiedTemplateRepository(cast(RawHttpResourceClient, client))
+    repo = HttpUnifiedTemplateRepository(cast(RawHttpResourceClient, client))
     out = list(repo.get_by_ids(ids=["1", "2"]))
     assert [r["id"] for r in out] == [1, 2]
     path, params, limit = client.paginate_calls[0]
@@ -122,7 +124,7 @@ def test_get_by_ids_empty_list_short_circuits() -> None:
     collection. Defense in depth: the use case also short-circuits, but
     the adapter holds the line for any future caller."""
     client = _FakeClient(list_pages=[])
-    repo = UnifiedTemplateRepository(cast(RawHttpResourceClient, client))
+    repo = HttpUnifiedTemplateRepository(cast(RawHttpResourceClient, client))
     out = list(repo.get_by_ids(ids=[]))
     assert out == []
     assert client.paginate_calls == []

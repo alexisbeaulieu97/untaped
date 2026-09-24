@@ -82,11 +82,17 @@ class DoctorCheck:
 
 @dataclass(frozen=True)
 class DoctorResult:
-    """Outcome of one doctor-check body (spec §3)."""
+    """Outcome of one doctor-check body (spec §3).
+
+    ``ok=False`` is a failed row (doctor exits 1). ``ok=True`` with
+    ``warn=True`` is a ``warn`` row: worth attention (a deprecated setting,
+    say) but not a failure, so doctor still exits 0.
+    """
 
     id: str
     ok: bool
     detail: str
+    warn: bool = False
 
 
 @dataclass(frozen=True)

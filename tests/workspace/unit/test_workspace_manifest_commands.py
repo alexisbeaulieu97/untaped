@@ -15,7 +15,7 @@ from untaped.capabilities.workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped.capabilities.workspace.errors import UnmatchedRepoFilter, WorkspaceError
+from untaped.capabilities.workspace.errors import UnmatchedRepoFilterError, WorkspaceError
 from workspace.conftest import StubFilesystem, StubGit, StubManifests
 
 
@@ -31,7 +31,7 @@ def test_show_workspace_returns_repo_detail_rows(tmp_path: Path) -> None:
 
     rows = ShowWorkspace(StubManifests({workspace.path: manifest}))(workspace)
 
-    assert [row.model_dump() for row in rows] == [
+    assert [row.model_dump(mode="json") for row in rows] == [
         {
             "workspace": "prod",
             "path": str(workspace.path),
@@ -61,11 +61,10 @@ def test_show_workspace_returns_summary_row_for_empty_manifest(tmp_path: Path) -
     workspace = Workspace(name="empty", path=tmp_path / "empty")
     rows = ShowWorkspace(StubManifests({workspace.path: WorkspaceManifest()}))(workspace)
 
-    assert [row.model_dump() for row in rows] == [
+    assert [row.model_dump(mode="json") for row in rows] == [
         {
             "workspace": "empty",
             "path": str(workspace.path),
-            "target_path": None,
             "default_branch": None,
             "repo_count": 0,
             "repo": "",
@@ -83,8 +82,18 @@ def test_set_and_unset_default_branch_writes_manifest(tmp_path: Path) -> None:
     set_change = SetWorkspaceBranch(manifests)(workspace, branch="main")
     unset_change = UnsetWorkspaceBranch(manifests)(workspace)
 
-    assert set_change.model_dump() == {"workspace": "prod", "repo": None, "branch": "main"}
-    assert unset_change.model_dump() == {"workspace": "prod", "repo": None, "branch": None}
+    assert set_change.model_dump() == {
+        "workspace": "prod",
+        "repo": None,
+        "branch": "main",
+        "action": "updated",
+    }
+    assert unset_change.model_dump() == {
+        "workspace": "prod",
+        "repo": None,
+        "branch": None,
+        "action": "updated",
+    }
     assert manifests.read(workspace.path).defaults.branch is None
 
 
@@ -101,8 +110,14 @@ def test_set_and_unset_repo_branch_writes_manifest(tmp_path: Path) -> None:
         "workspace": "prod",
         "repo": "api",
         "branch": "develop",
+        "action": "updated",
     }
-    assert unset_change.model_dump() == {"workspace": "prod", "repo": "api", "branch": None}
+    assert unset_change.model_dump() == {
+        "workspace": "prod",
+        "repo": "api",
+        "branch": None,
+        "action": "updated",
+    }
     assert manifests.read(workspace.path).repos[0].branch is None
 
 
@@ -139,12 +154,13 @@ def test_apply_workspace_branch_checks_out_clean_repo_to_default_branch(tmp_path
         workspace
     )
 
-    assert [row.model_dump() for row in outcomes] == [
+    assert [row.model_dump(mode="json") for row in outcomes] == [
         {
+            "target_path": str(local),
+            "action": "checked_out",
             "repo": "api",
             "workspace": "prod",
             "target_branch": "develop",
-            "action": "checkout",
             "detail": "from main",
         }
     ]
@@ -171,7 +187,7 @@ def test_apply_workspace_branch_reports_up_to_date_when_already_on_target(
         workspace
     )
 
-    assert outcomes[0].action == "up-to-date"
+    assert outcomes[0].action == "unchanged"
     assert outcomes[0].detail == "already on develop"
     assert ("checkout", "api", "develop") not in git.events
 
@@ -194,7 +210,7 @@ def test_apply_workspace_branch_repo_override_wins_over_default(tmp_path: Path) 
     )
 
     assert outcomes[0].target_branch == "release"
-    assert outcomes[0].action == "checkout"
+    assert outcomes[0].action == "checked_out"
     assert ("checkout", "api", "release") in git.events
 
 
@@ -210,7 +226,7 @@ def test_apply_workspace_branch_skips_repo_without_target_branch(tmp_path: Path)
         workspace
     )
 
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "skipped"
     assert outcomes[0].detail == "no target branch"
     assert git.events == []
 
@@ -229,12 +245,12 @@ def test_apply_workspace_branch_skips_missing_local_clone(tmp_path: Path) -> Non
 
     outcomes = ApplyWorkspaceBranch(manifests, git, fs=StubFilesystem())(workspace)
 
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "skipped"
     assert outcomes[0].detail == "not cloned"
     assert git.events == []
 
 
-@pytest.mark.parametrize(("create", "action"), [(False, "skip"), (True, "checkout")])
+@pytest.mark.parametrize(("create", "action"), [(False, "skipped"), (True, "checked_out")])
 def test_apply_workspace_branch_only_creates_unknown_branch_when_asked(
     tmp_path: Path, create: bool, action: str
 ) -> None:
@@ -276,7 +292,7 @@ def test_apply_workspace_branch_skips_dir_without_git_metadata(tmp_path: Path) -
         workspace
     )
 
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "skipped"
     assert outcomes[0].detail == "not a git repository"
     assert git.events == []
 
@@ -298,7 +314,7 @@ def test_apply_workspace_branch_skips_dirty_repo(tmp_path: Path) -> None:
         workspace
     )
 
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "skipped"
     assert outcomes[0].detail == "dirty working tree"
     assert ("fetch", "api") in git.events
     assert ("checkout", "api", "develop") not in git.events
@@ -321,7 +337,7 @@ def test_apply_workspace_branch_skips_diverged_repo(tmp_path: Path) -> None:
         workspace
     )
 
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "skipped"
     assert outcomes[0].detail == "diverged from origin"
     assert ("checkout", "api", "develop") not in git.events
 
@@ -402,7 +418,7 @@ def test_apply_workspace_branch_errors_on_unknown_repo(tmp_path: Path) -> None:
     workspace = Workspace(name="prod", path=tmp_path / "prod")
     manifests = StubManifests({workspace.path: WorkspaceManifest()})
 
-    with pytest.raises(UnmatchedRepoFilter, match="ghost") as excinfo:
+    with pytest.raises(UnmatchedRepoFilterError, match="ghost") as excinfo:
         ApplyWorkspaceBranch(manifests, StubGit(), fs=StubFilesystem())(workspace, repo="ghost")
     assert excinfo.value.unmatched == ("ghost",)
 

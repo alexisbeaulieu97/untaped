@@ -1,65 +1,53 @@
 """One complete preview and confirmation gate for prepared AWX mutations."""
 
-from collections.abc import Iterator
-from contextlib import ExitStack, contextmanager
+from __future__ import annotations
 
 from untaped.capabilities.awx.application.mutation_engine import BatchMutationEngine
 from untaped.capabilities.awx.application.mutation_types import MutationPlan
-from untaped.capabilities.awx.cli._context import AwxContext
+from untaped.capabilities.awx.cli.context import AwxContext
 from untaped.capabilities.awx.cli.format import format_scope, format_value, outcome_rows
 from untaped.capabilities.awx.domain import ApplyOutcome
 from untaped.capability_api import (
-    ConfigError,
+    OperationCancelledError,
     OutputFormat,
-    UiContext,
+    UsageError,
     clamp_parallel,
     echo,
     emit,
     finish,
+    plural,
 )
 
 
 def validate_controls(
     *, yes: bool, dry_run: bool, allow_unverified: bool = False, parallel: int = 1
 ) -> int:
-    """Validate write authorization controls before reading or writing targets."""
-    if yes and dry_run:
-        raise ConfigError("--yes and --dry-run are mutually exclusive")
-    if allow_unverified and not yes:
-        raise ConfigError("--allow-unverified requires --yes")
-    if parallel < 1:
-        raise ConfigError("--parallel must be >= 1")
+    """Validate write authorization controls before reading or writing targets.
+
+    ``--dry-run`` wins over ``--yes``; ``--parallel`` is already ``>= 1``
+    (``ParallelOption``) and is capped here.
+    """
+    if allow_unverified and not yes and not dry_run:
+        raise UsageError("--allow-unverified requires --yes")
     return clamp_parallel(parallel, cap=10, policy="httpx.Limits.max_connections=10")
 
 
-@contextmanager
-def prompt_ui(ctx: AwxContext) -> Iterator[UiContext]:
-    """Use the controlling terminal independently of consumed pipeline input."""
-    ui = ctx.progress_ui()
-    if ui.stdin.isatty():
-        yield ui
-        return
-    with ExitStack() as stack:
-        try:
-            terminal = stack.enter_context(open("/dev/tty", encoding="utf-8"))
-        except OSError as exc:
-            raise ConfigError("confirmation requires a terminal; use --yes or --dry-run") from exc
-        original = ui.stdin
-        try:
-            ui.stdin = terminal
-            yield ui
-        finally:
-            ui.stdin = original
-
-
 def confirm_batch(ctx: AwxContext, *, count: int, verb: str, yes: bool, dry_run: bool) -> bool:
-    """Confirm once, with No as the default; the caller has already previewed."""
+    """Confirm once, with No as the default; the caller has already previewed.
+
+    Returns ``False`` when there is nothing to write (``--dry-run`` or an
+    empty batch); a declined prompt raises :class:`OperationCancelledError`.
+    """
     if dry_run or count == 0:
         return False
-    if yes:
-        return True
-    with prompt_ui(ctx) as ui:
-        return ui.confirm(f"{verb.capitalize()} {count} resource(s)?", default=False)
+    confirmed = ctx.progress_ui().confirm_action(
+        f"{verb.capitalize()} {plural(count, 'resource')}?",
+        assume_yes=yes,
+        refusal=f"{verb} requires --yes or --dry-run when not interactive",
+    )
+    if not confirmed:
+        raise OperationCancelledError
+    return True
 
 
 def emit_outcomes(
@@ -112,8 +100,6 @@ def preview_and_execute(
         outcomes = engine.execute(
             plan, continue_on_error=continue_on_error, parallel=parallel
         ).outcomes
-    elif changed and not dry_run:
-        echo("Cancelled; no changes written.", err=True)
     return outcomes
 
 

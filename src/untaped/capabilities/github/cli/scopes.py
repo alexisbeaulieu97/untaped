@@ -7,11 +7,16 @@ from typing import Annotated
 from cyclopts import Parameter
 
 from untaped.capabilities.github.application.scopes import TeamScope, normalize_team_scopes
-from untaped.capability_api import ConfigError
+from untaped.capability_api import UsageError
+
+REPO_KINDS = frozenset({"github.repo", "github.repo_hit", "github.sweep_repo"})
+"""Pipe record kinds whose ``full_name`` names a repository for ``--stdin``."""
 
 OrgOption = Annotated[
     list[str] | None,
-    Parameter(name="--org", help="GitHub org scope. Repeatable.", consume_multiple=False),
+    Parameter(
+        name="--org", help="GitHub org scope. Repeatable.", consume_multiple=False, negative=""
+    ),
 ]
 TeamOption = Annotated[
     list[str] | None,
@@ -19,6 +24,7 @@ TeamOption = Annotated[
         name="--team",
         help="Team ORG/SLUG, or SLUG with exactly one --org. Repeatable.",
         consume_multiple=False,
+        negative="",
     ),
 ]
 
@@ -30,4 +36,4 @@ def parse_team_scopes(
     try:
         return normalize_team_scopes(values, orgs=orgs)
     except ValueError as exc:
-        raise ConfigError("--team must be ORG/SLUG unless exactly one --org is provided") from exc
+        raise UsageError("--team must be ORG/SLUG unless exactly one --org is provided") from exc

@@ -1,0 +1,9 @@
+# Known violations of the help_tree convention check for 'workspace'.
+# This list may only shrink: fix an entry and delete its line.
+# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
+workspace adopt::verb::adopt
+workspace foreach::verb::foreach
+workspace forget::verb::forget
+workspace import::verb::import
+workspace path::verb::path
+workspace shell-init::verb::shell-init

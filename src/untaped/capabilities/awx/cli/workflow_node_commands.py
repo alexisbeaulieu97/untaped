@@ -7,21 +7,23 @@ and CRUD assumptions don't apply to a nested sub-collection of a
 specific workflow.
 """
 
+from __future__ import annotations
+
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
 from untaped.capabilities.awx.application import ListWorkflowNodes
-from untaped.capabilities.awx.cli._context import open_context, scope_for_command
-from untaped.capabilities.awx.cli._pipe import id_field_for
+from untaped.capabilities.awx.cli.context import open_context, scope_for_command
 from untaped.capabilities.awx.cli.options import ByIdOption, OrganizationOption, resolve_max_depth
+from untaped.capabilities.awx.cli.pipe import id_field_for, pipe_kind_for_spec
 from untaped.capabilities.awx.domain import WorkflowNode, WorkflowNodeType
 from untaped.capabilities.awx.infrastructure.specs.workflow import WORKFLOW_JOB_TEMPLATE_SPEC
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
     UntapedError,
-    echo,
+    deprecated_alias,
     emit,
     finish,
     parse_kv_pairs,
@@ -41,13 +43,14 @@ def register_nodes_command(parent: App) -> None:
             list[str] | None,
             Parameter(
                 help=(
-                    "Workflow name(s) — one or more, or omit and pass "
+                    "Workflow names (one or more), or omit them and pass "
                     "``--stdin``. Pass ``--by-id`` to resolve AWX ids "
                     "instead. Multiple roots concatenate their node trees "
                     "in the order given."
                 ),
             ),
         ] = None,
+        /,
         *,
         stdin: Annotated[
             bool,
@@ -67,7 +70,7 @@ def register_nodes_command(parent: App) -> None:
         recursive: Annotated[
             bool,
             Parameter(
-                name=["--recursive", "-r"],
+                name="--recursive",
                 negative="",
                 help=(
                     "Expand sub-workflows: every node whose referenced "
@@ -105,6 +108,7 @@ def register_nodes_command(parent: App) -> None:
                 name="--filter",
                 help="Server-side filter, KEY=VALUE (repeatable). Passed verbatim to AWX.",
                 consume_multiple=False,
+                negative="",
             ),
         ] = None,
         fmt: FormatOption = "table",
@@ -120,13 +124,14 @@ def register_nodes_command(parent: App) -> None:
                 list(identifiers or []),
                 stdin=stdin,
                 id_field=id_field_for(WORKFLOW_JOB_TEMPLATE_SPEC, by_id=by_id),
+                accept_kinds={pipe_kind_for_spec(WORKFLOW_JOB_TEMPLATE_SPEC)},
             )
             filters = parse_kv_pairs(filter_, flag="--filter")
             scope = scope_for_command(ctx, organization, WORKFLOW_JOB_TEMPLATE_SPEC)
             use = ListWorkflowNodes(
                 ctx.workflow_nodes,
                 ctx.repo,
-                warn=lambda msg: echo(f"warning: {msg}", err=True),
+                warn=lambda msg: ctx.progress_ui().message("warning", msg),
             )
             # ``resolve_each`` doesn't fit: its ``Callable[[str], R]``
             # interface maps each id to a single record, but ``nodes``
@@ -144,7 +149,7 @@ def register_nodes_command(parent: App) -> None:
                         )
                     )
                 except UntapedError as exc:
-                    echo(f"warning: {root}: {exc}", err=True)
+                    ctx.progress_ui().message("warning", f"{root}: {exc}")
                     any_failed = True
         if type_ is not None:
             nodes = [n for n in nodes if n.type == type_]
@@ -152,3 +157,5 @@ def register_nodes_command(parent: App) -> None:
         cols = list(columns) if columns else list(_DEFAULT_COLUMNS)
         emit(rows, fmt=fmt, columns=cols, kind="awx.workflow_node")
         finish(any_failed)
+
+    deprecated_alias(parent["nodes"], "-r", "--recursive")

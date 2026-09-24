@@ -1,0 +1,8 @@
+# Known violations of the help_tree convention check for 'jira'.
+# This list may only shrink: fix an entry and delete its line.
+# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
+jira issues assigned::verb::assigned
+jira issues comment::verb::comment
+jira issues search::verb::search
+jira issues transition::verb::transition
+jira issues transitions::verb::transitions

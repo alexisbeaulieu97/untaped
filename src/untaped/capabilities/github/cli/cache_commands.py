@@ -11,37 +11,50 @@ from untaped.capabilities.github.application import (
     RepositoryInventoryScope,
 )
 from untaped.capabilities.github.cli._client import open_client
-from untaped.capabilities.github.cli._scopes import OrgOption
 from untaped.capabilities.github.domain import CorpusRepoResult
 from untaped.capabilities.github.settings import GithubSettings
 from untaped.capability_api import (
     ColumnsOption,
-    ConfigError,
+    DryRunOption,
     FormatOption,
+    OutputFormat,
+    UsageError,
+    YesOption,
     app_context,
     batch_apply,
     create_app,
     echo,
     emit,
     finish,
+    plural,
     report_errors,
 )
 
 RepoOption = Annotated[
     list[str] | None,
-    Parameter(name="--repo", help="Repository owner/name. Repeatable.", consume_multiple=False),
+    Parameter(
+        name="--repo",
+        help="Repository OWNER/NAME. Repeatable.",
+        consume_multiple=False,
+        negative="",
+    ),
 ]
 AllOption = Annotated[
     bool,
-    Parameter(name="--all", negative="", help="Clean every cached repository."),
+    Parameter(name="--all", negative="", help="Select every cached repository."),
 ]
 PruneOption = Annotated[
     bool,
     Parameter(name="--prune", negative="", help="Clean departed or archived repos in scope."),
 ]
-YesOption = Annotated[
-    bool,
-    Parameter(name=["--yes", "-y"], negative="", help="Confirm destructive clean operations."),
+FilterOrgOption = Annotated[
+    list[str] | None,
+    Parameter(
+        name="--org",
+        help="Only cached repositories owned by this org. Repeatable.",
+        consume_multiple=False,
+        negative="",
+    ),
 ]
 
 app = create_app(name="cache", help="Inspect and manage the local Git corpus cache.")
@@ -70,67 +83,167 @@ def status_command(
         _status_summary(rows)
 
 
+@app.command(name="delete")
+def delete_command(
+    repos: Annotated[
+        list[str] | None,
+        Parameter(help="Cached repositories (OWNER/NAME) to delete.", negative=""),
+    ] = None,
+    /,
+    *,
+    all_repos: AllOption = False,
+    org: FilterOrgOption = None,
+    yes: YesOption = False,
+    dry_run: DryRunOption = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Delete cached repositories from the managed local corpus."""
+    with report_errors():
+        names = tuple(repos or ())
+        if names and all_repos:
+            raise UsageError("pass REPO arguments or --all, not both")
+        if not names and not all_repos:
+            raise UsageError("cache delete requires REPO arguments or --all")
+        _delete(
+            _select(names, all_repos=all_repos, prune=False, org=org),
+            yes=yes,
+            dry_run=dry_run,
+            fmt=fmt,
+            columns=columns,
+        )
+
+
+@app.command(name="prune")
+def prune_command(
+    *,
+    org: Annotated[
+        list[str] | None,
+        Parameter(
+            name="--org",
+            help="Org whose departed or archived cached repos to delete. Repeatable; required.",
+            consume_multiple=False,
+            negative="",
+        ),
+    ] = None,
+    yes: YesOption = False,
+    dry_run: DryRunOption = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Delete cached repositories that left or were archived in their org."""
+    with report_errors():
+        if not org:
+            raise UsageError("cache prune requires --org")
+        _delete(
+            _select((), all_repos=False, prune=True, org=org),
+            yes=yes,
+            dry_run=dry_run,
+            fmt=fmt,
+            columns=columns,
+        )
+
+
 @app.command(name="clean")
 def clean_command(
     *,
     repo: RepoOption = None,
     all_repos: AllOption = False,
     prune: PruneOption = False,
-    org: OrgOption = None,
+    org: FilterOrgOption = None,
     yes: YesOption = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Remove repositories from the managed local corpus."""
+    """Deprecated: use ``cache delete`` or ``cache prune``; removed in 7.0."""
+    with report_errors():
+        app_context().ui(strict=False).message(
+            "warning",
+            "`cache clean` is deprecated and will be removed in 7.0; "
+            "use `cache delete` or `cache prune`",
+        )
+        repos = tuple(repo or ())
+        _require_one_clean_mode(repos=repos, all_repos=all_repos, prune=prune)
+        if prune and not org:
+            raise UsageError("cache clean --prune requires --org")
+        _delete(
+            _select(repos, all_repos=all_repos, prune=prune, org=org),
+            yes=yes,
+            dry_run=False,
+            fmt=fmt,
+            columns=columns,
+        )
+
+
+def _select(
+    repos: tuple[str, ...],
+    *,
+    all_repos: bool,
+    prune: bool,
+    org: list[str] | None,
+) -> tuple[CorpusRepoResult, ...]:
+    """Pick the cached repositories an explicit list, ``--all`` or a prune selects."""
     from untaped.capabilities.github.application import (  # noqa: PLC0415
-        CleanCorpus,
         ResolveRepositoryInventory,
     )
     from untaped.capabilities.github.infrastructure import GitCorpusCache  # noqa: PLC0415
 
-    with report_errors():
-        repos = tuple(repo or ())
-        _require_one_clean_mode(repos=repos, all_repos=all_repos, prune=prune)
-        settings = app_context().section("github", GithubSettings)
-        corpus = GitCorpusCache()
-        cached = _in_orgs(corpus.list_repos(root=settings.corpus_path), orgs=tuple(org or ()))
-        if prune:
-            with open_client() as (client, ui), ui.progress("Resolving repository inventory…"):
-                live = ResolveRepositoryInventory(client)(_prune_scope(org=org))
-            selected = _departed_or_archived(cached, live)
-        elif all_repos:
-            selected = cached
-        else:
-            requested = {name.casefold() for name in repos}
-            selected = tuple(row for row in cached if row.repo.casefold() in requested)
+    settings = app_context().section("github", GithubSettings)
+    cached = _in_orgs(GitCorpusCache().list_repos(root=settings.corpus_path), orgs=tuple(org or ()))
+    if prune:
+        with open_client() as (client, ui), ui.progress("Resolving repository inventory…"):
+            live = ResolveRepositoryInventory(client)(
+                RepositoryInventoryScope(orgs=tuple(org or ()))
+            )
+        return _departed_or_archived(cached, live)
+    if all_repos:
+        return cached
+    requested = {name.casefold() for name in repos}
+    return tuple(row for row in cached if row.repo.casefold() in requested)
 
-        cleaner = CleanCorpus(corpus)
-        ui = app_context().ui(strict=False)
-        outcome = batch_apply(
-            selected,
-            lambda row: cleaner(root=settings.corpus_path, repo=row),
-            verb="delete",
-            noun="cached GitHub repo",
-            label=lambda row: row.repo,
-            describe=lambda row: {"repo": row.repo, "ref": row.ref, "path": row.path},
-            ui=ui,
-            destructive=True,
-            assume_yes=yes,
-        )
-        rows = [removed.model_dump() for _, removed in outcome.results]
-        emit(
-            rows,
-            fmt=fmt,
-            columns=columns,
-            kind="github.corpus_repo",
-            empty="No matching repositories were cached.",
-        )
-        finish(outcome)
+
+def _delete(
+    selected: tuple[CorpusRepoResult, ...],
+    *,
+    yes: bool,
+    dry_run: bool,
+    fmt: OutputFormat,
+    columns: list[str] | None,
+) -> None:
+    """Confirm, then delete ``selected`` from the corpus and emit the removed rows."""
+    from untaped.capabilities.github.application import CleanCorpus  # noqa: PLC0415
+    from untaped.capabilities.github.infrastructure import GitCorpusCache  # noqa: PLC0415
+
+    ctx = app_context()
+    settings = ctx.section("github", GithubSettings)
+    cleaner = CleanCorpus(GitCorpusCache())
+    outcome = batch_apply(
+        selected,
+        lambda row: cleaner(root=settings.corpus_path, repo=row),
+        verb="delete",
+        noun="cached GitHub repo",
+        label=lambda row: row.repo,
+        describe=lambda row: {"repo": row.repo, "ref": row.ref, "path": row.path},
+        ui=ctx.ui(strict=False),
+        destructive=True,
+        assume_yes=yes,
+        preview_only=dry_run,
+    )
+    removed = selected if dry_run else tuple(row for _, row in outcome.results)
+    emit(
+        [row.model_dump() for row in removed],
+        fmt=fmt,
+        columns=columns,
+        kind="github.corpus_repo",
+        empty="No matching repositories were cached.",
+    )
+    finish(outcome)
 
 
 @app.command(name="worktree")
 def worktree_command(
-    repo: Annotated[str, Parameter(help="Repository owner/name.")],
+    repo: Annotated[str, Parameter(help="Repository OWNER/NAME.")],
+    /,
     *,
     ref: Annotated[str | None, Parameter(name="--ref", help="Cached ref to materialize.")] = None,
     fmt: FormatOption = "table",
@@ -158,11 +271,12 @@ def _status_summary(rows: tuple[CorpusRepoResult, ...]) -> None:
     dates = sorted(row.fetched_at for row in rows if row.fetched_at)
     if dates:
         echo(
-            f"Cache: {len(rows)} repos, {total} bytes, oldest {dates[0]}, newest {dates[-1]}",
+            f"Cache: {plural(len(rows), 'repo')}, {total} bytes, "
+            f"oldest {dates[0]}, newest {dates[-1]}",
             err=True,
         )
     else:
-        echo(f"Cache: {len(rows)} repos, {total} bytes, oldest n/a, newest n/a", err=True)
+        echo(f"Cache: {plural(len(rows), 'repo')}, {total} bytes, oldest n/a, newest n/a", err=True)
 
 
 def _require_one_clean_mode(
@@ -173,14 +287,7 @@ def _require_one_clean_mode(
 ) -> None:
     selected = sum(bool(value) for value in (repos, all_repos, prune))
     if selected != 1:
-        raise ConfigError("cache clean requires exactly one of --repo, --all, or --prune")
-
-
-def _prune_scope(*, org: list[str] | None) -> RepositoryInventoryScope:
-    orgs = tuple(org or ())
-    if not orgs:
-        raise ConfigError("cache clean --prune requires --org")
-    return RepositoryInventoryScope(orgs=orgs)
+        raise UsageError("cache clean requires exactly one of --repo, --all, or --prune")
 
 
 def _in_orgs(

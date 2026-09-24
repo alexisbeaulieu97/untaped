@@ -6,8 +6,8 @@ import pytest
 from untaped.capabilities.workspace.application import WorkspaceResolver
 from untaped.capabilities.workspace.domain import WorkspaceManifest
 from untaped.capabilities.workspace.infrastructure import (
-    ManifestRepository,
     WorkspaceRegistryRepository,
+    YamlManifestRepository,
 )
 from untaped.capability_api import ConfigError
 from untaped.settings import get_settings
@@ -17,7 +17,7 @@ from workspace.conftest import empty_manifest
 def _resolver() -> WorkspaceResolver:
     return WorkspaceResolver(
         registry=WorkspaceRegistryRepository(),
-        manifests=ManifestRepository(),
+        manifests=YamlManifestRepository(),
     )
 
 
@@ -32,7 +32,7 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
 
 def _make_workspace(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
-    ManifestRepository().write(path, empty_manifest())
+    YamlManifestRepository().write(path, empty_manifest())
     return path
 
 
@@ -66,14 +66,14 @@ def test_resolve_by_path_unregistered_falls_back_to_dirname_when_manifest_has_no
 
 
 def test_resolve_by_path_unregistered_prefers_manifest_name(_isolate: Path, tmp_path: Path) -> None:
-    """Round-trip via the real ``ManifestRepository``: a manifest with
+    """Round-trip via the real ``YamlManifestRepository``: a manifest with
     ``name: bar`` at directory ``foo/`` resolves to ``Workspace.name
     == "bar"``. Pins the precedence end-to-end so a regression that
     affects only the disk-touching path can't slip past the stub tests.
     """
     ws_dir = tmp_path / "foo"
     ws_dir.mkdir()
-    ManifestRepository().write(ws_dir, WorkspaceManifest(name="bar"))
+    YamlManifestRepository().write(ws_dir, WorkspaceManifest(name="bar"))
     found = _resolver().resolve(path=ws_dir)
     assert found.name == "bar"
     assert found.path == ws_dir.resolve()

@@ -21,26 +21,29 @@ factory bakes in CRUD assumptions and identity-based ``get`` that this
 virtual collection cannot satisfy.
 """
 
+from __future__ import annotations
+
 from typing import Annotated
 
 from cyclopts import Parameter
 
 from untaped.capabilities.awx.application import GetUnifiedTemplate
-from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._get import default_get_columns
+from untaped.capabilities.awx.cli.context import open_context
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
-    OutputFormat,
     create_app,
     echo,
     emit,
     finish,
     parse_kv_pairs,
+    q,
     raise_usage,
     read_identifiers,
     render_rows,
     report_errors,
+    ui_context,
 )
 
 app = create_app(
@@ -77,6 +80,7 @@ def list_command(
             name="--filter",
             help="Server-side filter, KEY=VALUE (repeatable). Forwarded verbatim to AWX.",
             consume_multiple=False,
+            negative="",
         ),
     ] = None,
     limit: Annotated[
@@ -117,39 +121,43 @@ def get_command(
         list[str] | None,
         Parameter(
             help=(
-                "Numeric Unified Job Template id(s). Names are not unique across kinds — "
+                "Numeric Unified Job Template ids. Names are not unique across kinds, so "
                 "use the per-kind sub-app for name lookup."
             ),
         ),
     ] = None,
+    /,
     *,
     stdin: Annotated[
         bool,
         Parameter(name="--stdin", negative="", help="Read numeric ids from stdin (one per line)."),
     ] = False,
-    fmt: Annotated[OutputFormat, Parameter(name=["--format", "-f"])] = "yaml",
+    fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Fetch one or more Unified Job Templates by numeric id."""
     records: list[dict[str, object]] = []
     missing: list[str] = []
     with report_errors(), open_context() as ctx:
-        identifiers = read_identifiers(list(ids or []), stdin=stdin, id_field="id")
+        identifiers = read_identifiers(
+            list(ids or []), stdin=stdin, id_field="id", accept_kinds={"awx.unified_template"}
+        )
         for raw in identifiers:
             if not raw.isdecimal():
                 # Fast-fail before hitting AWX so the error message is
                 # specifically about the id-only contract instead of a
                 # vague 404.
                 raise_usage(
-                    f"unified-templates get is id-only ({raw!r} isn't a number); "
-                    "names are not unique across kinds — use the per-kind sub-app "
-                    "for name lookup.",
+                    f"unified-templates get takes numeric ids ({q(raw)} is not a number); "
+                    "names are not unique across kinds, so use the per-kind sub-app "
+                    "for name lookup",
                 )
         if not identifiers:
             return
         records, missing = GetUnifiedTemplate(ctx.ujts)(ids=identifiers)
+    ui = ui_context(strict=False)
     for raw in missing:
-        echo(f"error: {raw}: not found", err=True)
+        ui.message("error", f"{raw}: not found")
     if records:
         cols = list(columns) if columns else default_get_columns(fmt, _DEFAULT_LIST_COLUMNS)
         emit(records, fmt=fmt, columns=cols, kind="awx.unified_template")

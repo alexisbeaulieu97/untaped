@@ -13,8 +13,8 @@ import pytest
 
 from untaped.capabilities.ansible.application.refresh_git_index import (
     RefreshGitSourceIndex,
-    _repo_candidate,
-    _source_refresh_fingerprint,
+    repo_candidate,
+    source_refresh_fingerprint,
 )
 from untaped.capabilities.ansible.domain.payloads import (
     CachedRef,
@@ -949,11 +949,11 @@ def test_resumed_refresh_can_complete_with_later_failures_after_prior_success(
 def test_source_refresh_fingerprint_is_order_invariant_for_repos() -> None:
     source = SourceDefinition(name="prod", orgs=["acme"])
     repos = [
-        _repo_candidate({"full_name": "acme/a"}, fallback=None),
-        _repo_candidate({"full_name": "acme/b"}, fallback=None),
+        repo_candidate({"full_name": "acme/a"}, fallback=None),
+        repo_candidate({"full_name": "acme/b"}, fallback=None),
     ]
 
-    first = _source_refresh_fingerprint(
+    first = source_refresh_fingerprint(
         source,
         repos=repos,
         paths_fingerprint="paths",
@@ -963,7 +963,7 @@ def test_source_refresh_fingerprint_is_order_invariant_for_repos() -> None:
         fetch_depth=1,
         blob_filter=True,
     )
-    second = _source_refresh_fingerprint(
+    second = source_refresh_fingerprint(
         source,
         repos=list(reversed(repos)),
         paths_fingerprint="paths",
@@ -1162,7 +1162,7 @@ def test_git_refresh_reads_sqlite_metadata_safely_while_fetching_concurrently(
 
 
 def test_repo_candidate_does_not_guess_main_when_default_branch_is_missing() -> None:
-    candidate = _repo_candidate({"full_name": "acme/site"}, fallback=None)
+    candidate = repo_candidate({"full_name": "acme/site"}, fallback=None)
 
     assert candidate.default_branch == "HEAD"
 

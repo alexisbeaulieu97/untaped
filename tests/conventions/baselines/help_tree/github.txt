@@ -1,0 +1,10 @@
+# Known violations of the help_tree convention check for 'github'.
+# This list may only shrink: fix an entry and delete its line.
+# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
+github cache clean::verb::clean
+github cache worktree::verb::worktree
+github search code::verb::code
+github search issues::verb::issues
+github search repos::verb::repos
+github search users::verb::users
+github sweep::verb::sweep

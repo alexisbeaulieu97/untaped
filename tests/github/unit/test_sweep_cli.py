@@ -12,6 +12,7 @@ import httpx
 import pytest
 import respx
 
+from untaped.bootstrap import build_root_app
 from untaped.capabilities.github.cli import app
 from untaped.capabilities.github.domain import (
     CorpusFreshness,
@@ -21,7 +22,7 @@ from untaped.capabilities.github.domain import (
 )
 from untaped.capabilities.github.settings import GithubSettings
 from untaped.settings import get_settings, register_profile_settings
-from untaped.testing import CliInvoker
+from untaped.testing import CliInvoker, invoke_cli
 
 
 @pytest.fixture(autouse=True)
@@ -228,7 +229,7 @@ def test_invalid_pattern_errors_before_sync(
         mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=[]))
         result = CliInvoker().invoke(app, ["sweep", "--org", "acme", "--grep", "["])
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2
     assert "--grep '['" in result.output
     assert "brackets" in result.output or "regular expression" in result.output
     assert mock.calls == []
@@ -244,7 +245,7 @@ def test_invalid_path_errors_before_sync(tmp_path: Path, monkeypatch: pytest.Mon
             ["sweep", "--org", "acme", "--grep", "needle", "--path", ":(badmagic)foo"],
         )
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2
     assert "--path ':(badmagic)foo'" in result.output
     assert "Invalid pathspec magic" in result.output
     assert mock.calls == []
@@ -257,7 +258,7 @@ def test_path_without_content_suggests_has_file(
 
     result = CliInvoker().invoke(app, ["sweep", "--org", "acme", "--path", "src/**"])
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2
     assert "use --has-file" in result.output
 
 
@@ -279,8 +280,8 @@ def test_parallel_must_be_positive(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         ["sweep", "--repo", "acme/api", "--has-file", "README.md", "--parallel", "0"],
     )
 
-    assert result.exit_code != 0
-    assert "--parallel must be positive" in result.output
+    assert result.exit_code == 2
+    assert "--parallel" in result.output
 
 
 def test_exit_code_matrix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -305,7 +306,7 @@ def test_exit_code_matrix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
         )
         fail_on_match = CliInvoker().invoke(
             app,
-            ["sweep", "--org", "acme", "--grep", "needle", "--sync", "--fail-on-match"],
+            ["sweep", "--org", "acme", "--grep", "needle", "--refresh", "--fail-on-match"],
         )
 
     missing = _repo("acme/api", source, clone_url=(tmp_path / "missing").as_uri())
@@ -321,9 +322,51 @@ def test_exit_code_matrix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
         )
 
     assert clean.exit_code == 0, clean.output
-    assert fail_on_match.exit_code == 1, fail_on_match.output
+    assert fail_on_match.exit_code == 3, fail_on_match.output
     assert unscanned_default.exit_code == 0, unscanned_default.output
-    assert unscanned_strict.exit_code == 1, unscanned_strict.output
+    assert unscanned_strict.exit_code == 3, unscanned_strict.output
+
+
+def test_sweep_old_flag_spellings_are_deprecated_aliases(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    root = build_root_app(externals=[])
+
+    cached = invoke_cli(
+        root, ["github", "sweep", "--org", "acme", "--grep", "x", "-w", "--no-sync"]
+    )
+    refreshed = invoke_cli(root, ["github", "sweep", "--org", "acme", "--grep", "[", "--sync"])
+
+    assert cached.exit_code == 1, cached.output
+    assert "`-w` is deprecated" in cached.stderr
+    assert "`--no-sync` is deprecated" in cached.stderr
+    assert "corpus has no repos in scope; run without --cached" in cached.stderr
+    assert refreshed.exit_code == 2, refreshed.output
+    assert "`--sync` is deprecated" in refreshed.stderr
+
+
+def test_sweep_stdin_rejects_records_of_another_kind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    envelope = json.dumps({"untaped": "1", "kind": "github.code", "record": {"repo": "a/b"}})
+
+    result = CliInvoker().invoke(
+        app, ["sweep", "--stdin", "--grep", "needle"], input=f"{envelope}\n"
+    )
+
+    assert result.exit_code == 2, result.output
+    assert "github.code" in result.stderr
+
+
+def test_sweep_requires_a_scope(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+
+    result = CliInvoker().invoke(app, ["sweep", "--grep", "needle"])
+
+    assert result.exit_code == 2, result.output
+    assert "sweep requires --org, --team, --repo, or --stdin" in result.stderr
 
 
 def test_stdin_full_names_enter_scope(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -458,14 +501,14 @@ def test_content_modifiers_reach_validation_and_corpus(
             "sweep",
             "--repo",
             "acme/api",
-            "--no-sync",
+            "--cached",
             "--grep",
             "needle",
             "--path",
             "README.md",
             "-i",
             "-F",
-            "-w",
+            "--word-regexp",
             "--format",
             "json",
         ],
@@ -497,7 +540,7 @@ def test_missing_explicit_repo_is_unscanned_and_strict_fails(
     assert lenient.exit_code == 0, lenient.output
     assert [row["full_name"] for row in json.loads(lenient.stdout)] == ["acme/api"]
     assert "warning: unscanned acme/gone" in lenient.stderr
-    assert strict.exit_code == 1, strict.output
+    assert strict.exit_code == 3, strict.output
 
 
 def test_failed_refresh_warns_that_cached_copy_was_scanned(
@@ -512,7 +555,7 @@ def test_failed_refresh_warns_that_cached_copy_was_scanned(
         mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=listing))
         first = CliInvoker().invoke(app, args)
         shutil.rmtree(source)
-        refreshed = CliInvoker().invoke(app, [*args, "--sync"])
+        refreshed = CliInvoker().invoke(app, [*args, "--refresh"])
 
     assert first.exit_code == 0, first.output
     assert refreshed.exit_code == 0, refreshed.output
@@ -551,7 +594,7 @@ def test_branch_and_tag_with_same_name_are_both_swept(
                 "needle",
                 "--show",
                 "matches",
-                "--no-sync",
+                "--cached",
                 "--format",
                 "json",
             ],

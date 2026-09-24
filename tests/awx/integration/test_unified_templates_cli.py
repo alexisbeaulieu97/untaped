@@ -181,7 +181,7 @@ def test_get_rejects_non_decimal_identifier(fake_aap: Any) -> None:
     _seed_all_kinds(fake_aap)
     result = CliInvoker().invoke(app, ["unified-templates", "get", "deploy-app"])
     assert result.exit_code != 0
-    assert "id-only" in result.output
+    assert "takes numeric ids" in result.output
 
 
 def test_get_table_mode_falls_back_to_default_columns(fake_aap: Any) -> None:
