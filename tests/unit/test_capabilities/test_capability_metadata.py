@@ -18,7 +18,6 @@ running SDK version.
 
 from __future__ import annotations
 
-import dataclasses
 import tomllib
 from importlib import metadata as importlib_metadata
 from pathlib import Path
@@ -30,10 +29,8 @@ from untaped.capabilities.registry import (
     VALID_REASONS,
     ProviderRef,
     QuarantineRecord,
-    check_builtin_metadata,
     compose,
 )
-from untaped.errors import ConfigError
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -43,26 +40,6 @@ VALID_BUILTIN_REF = ProviderRef(
     entry_point="",
     api_requires=(1.0, 2.0),
 )
-
-
-def test_builtin_ref_valid_passes() -> None:
-    check_builtin_metadata(VALID_BUILTIN_REF)
-
-
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("kind", "external"),
-        ("distribution", "example-dist"),
-        ("entry_point", "module:provider"),
-        ("api_requires", (1.0, 1.0)),
-        ("api_requires", (2.0, 3.0)),
-    ],
-)
-def test_builtin_ref_violation_is_fatal(field: str, value: object) -> None:
-    ref = dataclasses.replace(VALID_BUILTIN_REF, **{field: value})
-    with pytest.raises(ConfigError, match="bad-metadata"):
-        check_builtin_metadata(ref)
 
 
 def test_builtin_commit_carries_builtin_ref() -> None:

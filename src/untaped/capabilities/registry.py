@@ -254,11 +254,6 @@ class ExternalProvider:
     are captured at discovery via :mod:`importlib.metadata` without importing
     provider code (spec §7.2); the §7.3 listing reports
     ``distribution_version`` for externals.
-
-    Rationale (Wave 1.2 round 2): the former mapping-loader ``loader_fields``
-    gate was removed as YAGNI — no producer ever populated it
-    (``discover_external_providers`` never set it), so its check was
-    unreachable on the real path.
     """
 
     distribution: str
@@ -472,20 +467,6 @@ def discover_external_providers(
     return tuple(found)
 
 
-def check_builtin_metadata(ref: ProviderRef) -> None:
-    """Verify the §7.1 built-in invariants; a mismatch is an SDK bug."""
-    if (
-        ref.kind != "built-in"
-        or ref.distribution != _BUILTIN_DISTRIBUTION
-        or ref.entry_point != ""
-        or tuple(ref.api_requires) != _BUILTIN_API_REQUIRES
-    ):
-        raise _Quarantine(
-            "bad-metadata",
-            f"built-in provider ref breaks §7.1 invariants: {ref!r}",
-        )
-
-
 class _CompositionState:
     """Mutable accumulation of one composition run (shell + committed providers)."""
 
@@ -659,32 +640,13 @@ def compose(
             # A built-in declaring ``help`` is mounted lazily: its factory
             # runs (and is validated) only when its command is dispatched.
             staged = None if spec.help is not None else _check_factory(spec)
-            check_builtin_metadata(
-                ProviderRef(
-                    kind="built-in",
-                    distribution=_BUILTIN_DISTRIBUTION,
-                    entry_point="",
-                    api_requires=_BUILTIN_API_REQUIRES,
-                )
-            )
         except _Quarantine as failed:
             raise ConfigError(
                 f"built-in capability {spec.name!r} failed validation "
                 f"[{failed.reason}]: {failed.detail}"
             ) from None
-        capabilities.append(
-            _commit(
-                spec,
-                ProviderRef(
-                    kind="built-in",
-                    distribution=_BUILTIN_DISTRIBUTION,
-                    entry_point="",
-                    api_requires=_BUILTIN_API_REQUIRES,
-                ),
-                state,
-                staged,
-            )
-        )
+        builtin_ref = ProviderRef("built-in", _BUILTIN_DISTRIBUTION, "", _BUILTIN_API_REQUIRES)
+        capabilities.append(_commit(spec, builtin_ref, state, staged))
     ordered = sorted(externals, key=lambda candidate: (candidate.distribution, candidate.name))
     for candidate in ordered:
         try:

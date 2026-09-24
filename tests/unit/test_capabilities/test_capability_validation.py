@@ -22,10 +22,8 @@ from untaped.capabilities.registry import (
     CapabilitySpec,
     DoctorCheck,
     ExternalProvider,
-    ProviderRef,
     SkillAsset,
     check_api_range,
-    check_builtin_metadata,
     compose,
 )
 from untaped.errors import ConfigError
@@ -517,23 +515,3 @@ def test_bad_metadata_empty_distribution() -> None:
     (record,) = result.quarantine
     assert record.reason == "bad-metadata"
     assert record.distribution == "unknown"
-
-
-def test_builtin_metadata_helper_accepts_valid_ref() -> None:
-    check_builtin_metadata(
-        ProviderRef(
-            kind="built-in", distribution="untaped", entry_point="", api_requires=(1.0, 2.0)
-        )
-    )
-
-
-def test_builtin_metadata_helper_rejects_bad_ref() -> None:
-    with pytest.raises(ConfigError, match="bad-metadata"):
-        check_builtin_metadata(
-            ProviderRef(
-                kind="external",
-                distribution="evil",
-                entry_point="m:a",
-                api_requires=(1.0, 2.0),
-            )
-        )

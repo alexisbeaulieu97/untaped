@@ -264,7 +264,6 @@ def test_registry_internals_are_not_exported() -> None:
         "QuarantineRecord",
         "VALID_REASONS",
         "check_api_range",
-        "check_builtin_metadata",
     ):
         assert name not in capi.__all__
         assert not hasattr(capi, name), name
