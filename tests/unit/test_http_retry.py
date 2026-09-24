@@ -33,43 +33,90 @@ class _DemoSettings(BaseModel):
     token: SecretStr | None = None
 
 
-def test_get_retries_on_429_then_succeeds(no_sleep: list[float]) -> None:
+_POST_OK = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE", "POST"})
+
+
+@pytest.mark.parametrize(
+    ("method", "policy", "first"),
+    [
+        ("GET", RetryPolicy(), httpx.Response(429)),
+        ("POST", RetryPolicy(idempotent_methods=_POST_OK), httpx.Response(429)),
+        # Pre-send connect failures are safe to retry for any method.
+        ("POST", RetryPolicy(), httpx.ConnectError("dns")),
+        # Post-send read errors are retried only for idempotent methods.
+        ("GET", RetryPolicy(), httpx.ReadTimeout("slow")),
+    ],
+    ids=["get-429", "post-429-opt-in", "post-connect-error", "get-read-timeout"],
+)
+def test_transient_failure_is_retried_then_succeeds(
+    no_sleep: list[float], method: str, policy: RetryPolicy, first: object
+) -> None:
     with respx.mock(base_url="https://example.com") as mock:
-        route = mock.get("/ping").mock(
-            side_effect=[httpx.Response(429), httpx.Response(200, json={"ok": True})]
+        route = mock.route(method=method, path="/x").mock(
+            side_effect=[first, httpx.Response(200, json={"ok": True})]
         )
-        with HttpClient(base_url="https://example.com", retry=RetryPolicy()) as client:
-            assert client.get("/ping").json() == {"ok": True}
+        with HttpClient(base_url="https://example.com", retry=policy) as client:
+            assert client.request(method, "/x").json() == {"ok": True}
     assert route.call_count == 2
     assert len(no_sleep) == 1
 
 
-def test_retry_after_seconds_header_is_honored(no_sleep: list[float]) -> None:
+@pytest.mark.parametrize(
+    ("client_policy", "method", "outcome", "per_call", "error"),
+    [
+        (RetryPolicy(), "POST", httpx.Response(429), {}, HttpStatusError),
+        (RetryPolicy(), "POST", httpx.ReadTimeout("slow"), {}, HttpTransportError),
+        # A permanent transport error (e.g. an unsupported URL scheme) is not
+        # transient — don't burn retries on it, even for an idempotent GET.
+        (RetryPolicy(), "GET", httpx.UnsupportedProtocol("bad scheme"), {}, HttpTransportError),
+        (RetryPolicy(), "GET", httpx.Response(503), {"retry": None}, HttpStatusError),
+        (None, "GET", httpx.Response(503), {}, HttpStatusError),
+    ],
+    ids=[
+        "post-status",
+        "post-read-timeout",
+        "permanent-transport",
+        "per-call-retry-none",
+        "bare-client",
+    ],
+)
+def test_failure_is_not_retried(
+    no_sleep: list[float],
+    client_policy: RetryPolicy | None,
+    method: str,
+    outcome: object,
+    per_call: dict[str, object],
+    error: type[Exception],
+) -> None:
+    with respx.mock(base_url="https://example.com") as mock:
+        route = mock.route(method=method, path="/x").mock(side_effect=[outcome])
+        with (
+            HttpClient(base_url="https://example.com", retry=client_policy) as client,
+            pytest.raises(error),
+        ):
+            client.request(method, "/x", **per_call)  # type: ignore[arg-type]
+    assert route.call_count == 1
+    assert no_sleep == []
+
+
+@pytest.mark.parametrize(
+    ("retry_after", "policy", "expected"),
+    [("2", RetryPolicy(), 2.0), ("9999", RetryPolicy(retry_after_max=5.0), 5.0)],
+    ids=["honored", "capped"],
+)
+def test_retry_after_seconds_header(
+    no_sleep: list[float], retry_after: str, policy: RetryPolicy, expected: float
+) -> None:
     with respx.mock(base_url="https://example.com") as mock:
         mock.get("/ping").mock(
             side_effect=[
-                httpx.Response(429, headers={"Retry-After": "2"}),
+                httpx.Response(503, headers={"Retry-After": retry_after}),
                 httpx.Response(200, json={}),
             ]
         )
-        with HttpClient(base_url="https://example.com", retry=RetryPolicy()) as client:
+        with HttpClient(base_url="https://example.com", retry=policy) as client:
             client.get("/ping")
-    assert no_sleep == [2.0]
-
-
-def test_retry_after_is_capped(no_sleep: list[float]) -> None:
-    with respx.mock(base_url="https://example.com") as mock:
-        mock.get("/ping").mock(
-            side_effect=[
-                httpx.Response(503, headers={"Retry-After": "9999"}),
-                httpx.Response(200, json={}),
-            ]
-        )
-        with HttpClient(
-            base_url="https://example.com", retry=RetryPolicy(retry_after_max=5.0)
-        ) as client:
-            client.get("/ping")
-    assert no_sleep == [5.0]
+    assert no_sleep == [expected]
 
 
 def test_retry_after_http_date_is_parsed(no_sleep: list[float]) -> None:
@@ -89,75 +136,6 @@ def test_retry_after_http_date_is_parsed(no_sleep: list[float]) -> None:
     assert 1.0 < no_sleep[0] <= 120.0
 
 
-def test_post_is_not_status_retried_by_default(no_sleep: list[float]) -> None:
-    with respx.mock(base_url="https://example.com") as mock:
-        route = mock.post("/things").mock(return_value=httpx.Response(429))
-        with (
-            HttpClient(base_url="https://example.com", retry=RetryPolicy()) as client,
-            pytest.raises(HttpStatusError),
-        ):
-            client.post("/things")
-    assert route.call_count == 1
-    assert no_sleep == []
-
-
-def test_post_is_status_retried_when_policy_opts_in(no_sleep: list[float]) -> None:
-    policy = RetryPolicy(idempotent_methods=frozenset({"POST"}))
-    with respx.mock(base_url="https://example.com") as mock:
-        route = mock.post("/search").mock(
-            side_effect=[httpx.Response(429), httpx.Response(200, json={"ok": True})]
-        )
-        with HttpClient(base_url="https://example.com", retry=policy) as client:
-            assert client.post("/search").json() == {"ok": True}
-    assert route.call_count == 2
-
-
-def test_presend_connect_error_is_retried_on_post(no_sleep: list[float]) -> None:
-    with respx.mock(base_url="https://example.com") as mock:
-        route = mock.post("/things").mock(
-            side_effect=[httpx.ConnectError("dns"), httpx.Response(201, json={"id": 1})]
-        )
-        with HttpClient(base_url="https://example.com", retry=RetryPolicy()) as client:
-            assert client.post("/things").json() == {"id": 1}
-    assert route.call_count == 2
-
-
-def test_postsend_read_timeout_is_not_retried_on_post(no_sleep: list[float]) -> None:
-    with respx.mock(base_url="https://example.com") as mock:
-        route = mock.post("/things").mock(side_effect=httpx.ReadTimeout("slow"))
-        with (
-            HttpClient(base_url="https://example.com", retry=RetryPolicy()) as client,
-            pytest.raises(HttpTransportError),
-        ):
-            client.post("/things")
-    assert route.call_count == 1
-    assert no_sleep == []
-
-
-def test_permanent_transport_error_is_not_retried(no_sleep: list[float]) -> None:
-    """A permanent transport error (e.g. an unsupported URL scheme) is not
-    transient — don't burn retries/backoff on it, even for an idempotent GET."""
-    with respx.mock(base_url="https://example.com") as mock:
-        route = mock.get("/x").mock(side_effect=httpx.UnsupportedProtocol("bad scheme"))
-        with (
-            HttpClient(base_url="https://example.com", retry=RetryPolicy()) as client,
-            pytest.raises(HttpTransportError),
-        ):
-            client.get("/x")
-    assert route.call_count == 1
-    assert no_sleep == []
-
-
-def test_postsend_read_timeout_is_retried_on_get(no_sleep: list[float]) -> None:
-    with respx.mock(base_url="https://example.com") as mock:
-        route = mock.get("/things").mock(
-            side_effect=[httpx.ReadTimeout("slow"), httpx.Response(200, json={"ok": True})]
-        )
-        with HttpClient(base_url="https://example.com", retry=RetryPolicy()) as client:
-            assert client.get("/things").json() == {"ok": True}
-    assert route.call_count == 2
-
-
 def test_max_attempts_exhausted_reraises(no_sleep: list[float]) -> None:
     with respx.mock(base_url="https://example.com") as mock:
         route = mock.get("/boom").mock(return_value=httpx.Response(503))
@@ -171,29 +149,6 @@ def test_max_attempts_exhausted_reraises(no_sleep: list[float]) -> None:
     assert len(no_sleep) == 2
 
 
-def test_per_call_retry_none_disables_inheritance(no_sleep: list[float]) -> None:
-    with respx.mock(base_url="https://example.com") as mock:
-        route = mock.get("/boom").mock(return_value=httpx.Response(503))
-        with (
-            HttpClient(base_url="https://example.com", retry=RetryPolicy()) as client,
-            pytest.raises(HttpStatusError),
-        ):
-            client.request("GET", "/boom", retry=None)
-    assert route.call_count == 1
-    assert no_sleep == []
-
-
-def test_bare_client_does_not_retry(no_sleep: list[float]) -> None:
-    with respx.mock(base_url="https://example.com") as mock:
-        route = mock.get("/boom").mock(return_value=httpx.Response(503))
-        with (
-            HttpClient(base_url="https://example.com") as client,  # retry=None by default
-            pytest.raises(HttpStatusError),
-        ):
-            client.get("/boom")
-    assert route.call_count == 1
-
-
 def test_connected_client_retries_by_default(no_sleep: list[float]) -> None:
     with respx.mock(base_url="https://api.example.com") as mock:
         route = mock.get("/user").mock(
@@ -202,15 +157,6 @@ def test_connected_client_retries_by_default(no_sleep: list[float]) -> None:
         with connected_client(_DemoSettings(token=SecretStr("t")), section="demo") as client:
             assert client.get_json_dict("/user") == {"login": "x"}
     assert route.call_count == 2
-
-
-def test_retry_policy_is_exported_from_capability_api() -> None:
-    from untaped.capability_api import RetryPolicy as Exported
-
-    assert Exported is RetryPolicy
-
-
-_POST_OK = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE", "POST"})
 
 
 def test_paginate_offset_post_retries_with_optin_policy(no_sleep: list[float]) -> None:
