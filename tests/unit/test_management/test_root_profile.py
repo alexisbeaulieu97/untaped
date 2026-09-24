@@ -174,3 +174,68 @@ def test_list_table_keeps_the_check_mark(_isolated_config: Path) -> None:
         app, ["list", "--format", "raw", "--columns", "name", "--columns", "active"]
     )
     assert "prod\t✓" in result.stdout.splitlines()
+
+
+# ── outcome records and --dry-run ────────────────────────────────────────────
+
+
+def _outcome(app, args: list[str]) -> dict[str, object]:
+    result = CliInvoker().invoke(app, [*args, "--format", "json"])
+    assert result.exit_code == 0, result.output
+    return json.loads(result.stdout)
+
+
+def test_create_emits_outcome_and_dry_run_writes_nothing(app, _isolated_config: Path) -> None:
+    _seed(_isolated_config)
+    planned = _outcome(app, ["create", "qa", "--copy-from", "stage", "--dry-run"])
+    assert planned == {
+        "name": "qa",
+        "previous_name": None,
+        "copied_from": "stage",
+        "action": "planned",
+    }
+    assert "qa" not in read_config_dict(_isolated_config)["profiles"]
+    assert _outcome(app, ["create", "qa"])["action"] == "created"
+    assert "qa" in read_config_dict(_isolated_config)["profiles"]
+
+    again = CliInvoker().invoke(app, ["create", "qa", "--dry-run"])
+    assert again.exit_code == 1
+    assert "already exists" in again.stderr
+
+
+def test_rename_emits_outcome_and_dry_run_writes_nothing(app, _isolated_config: Path) -> None:
+    _seed(_isolated_config)
+    planned = _outcome(app, ["rename", "stage", "staging", "--dry-run"])
+    assert planned["action"] == "planned"
+    assert "stage" in read_config_dict(_isolated_config)["profiles"]
+    renamed = _outcome(app, ["rename", "stage", "staging"])
+    assert (renamed["name"], renamed["previous_name"], renamed["action"]) == (
+        "staging",
+        "stage",
+        "renamed",
+    )
+
+
+def test_delete_dry_run_previews_without_confirming_or_deleting(
+    app, _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed(_isolated_config)
+    monkeypatch.setattr("sys.stdin", TtyStringIO())
+    result = invoke_cli(app, ["delete", "stage", "--dry-run", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["action"] == "planned"
+    assert "top-level keys: log_level" in result.stderr
+    assert "stage" in read_config_dict(_isolated_config)["profiles"]
+
+
+def test_delete_dry_run_still_refuses_the_active_profile(app, _isolated_config: Path) -> None:
+    _seed(_isolated_config)
+    result = CliInvoker().invoke(app, ["delete", "prod", "--dry-run"])
+    assert result.exit_code == 1
+    assert "active" in result.stderr
+
+
+def test_delete_emits_a_deleted_outcome(app, _isolated_config: Path) -> None:
+    _seed(_isolated_config)
+    assert _outcome(app, ["delete", "stage", "--yes"])["action"] == "deleted"
+    assert "stage" not in read_config_dict(_isolated_config)["profiles"]
