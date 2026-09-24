@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, SecretStr
+from pydantic_core import to_jsonable_python
 
-from untaped.config_schema import FieldDescriptor, redact_url_password
+from untaped.config_schema import (
+    FieldDescriptor,
+    redact_nested_url_passwords,
+    redact_url_password,
+)
 
 
 @dataclass(frozen=True)
@@ -74,7 +80,12 @@ def setting_entry_row(entry: SettingEntry, *, human: bool) -> dict[str, object]:
 
 
 def _human(value: object) -> str:
-    return UNSET_GLYPH if value is None else str(value)
+    if value is None:
+        return UNSET_GLYPH
+    if isinstance(value, dict | list):
+        # Compact JSON: readable, and valid input for ``config set``.
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
 
 
 def display_value(descriptor: FieldDescriptor, value: Any, *, reveal_secrets: bool) -> object:
@@ -91,6 +102,9 @@ def display_value(descriptor: FieldDescriptor, value: Any, *, reveal_secrets: bo
         return value if reveal_secrets else redact_url_password(value)
     if isinstance(value, bool | int | float):
         return value
+    if descriptor.is_collection:
+        native = to_jsonable_python(value)
+        return native if reveal_secrets else redact_nested_url_passwords(native)
     return str(value)
 
 

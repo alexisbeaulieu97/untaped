@@ -13,6 +13,12 @@ defaults.
     and after command names at any depth.
   - Fixed: `untaped --help | head` (help into a closed pipe) exited 1 through
     Rich's broken-pipe handler. It now exits 0 quietly, like data commands.
+  - Mapping and list settings (`ui.symbols`, `ui.color_roles`,
+    `ansible.dependency_paths`) show up in `config list/get` (compact JSON in
+    table/raw, native values in json/yaml/pipe). `config set KEY VALUE` takes
+    their whole value as JSON or YAML, validated against the setting's type,
+    and `config unset` removes the whole key. They were "unknown setting"
+    before.
 - awx
   - **Behavior change:** `jobs events` and `jobs logs` with several ids print
     one json/yaml array instead of one document per job. Event and log rows

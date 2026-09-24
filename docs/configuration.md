@@ -210,6 +210,7 @@ untaped config unset awx.token --target-profile prod
 untaped config set ui.theme quiet
 untaped config set http.verify_ssl false
 untaped config set log_level DEBUG
+untaped config set ui.symbols '{"ok": "✓", "fail": "✗"}'
 untaped config edit
 ```
 
@@ -221,6 +222,14 @@ parsing it as YAML. String and secret settings store the input verbatim, so
 strings; an invalid value is rejected before anything is written. For an
 optional non-string setting, the literal `null` stores an explicit null; a
 string setting stores `null` as text. To clear a value, use `config unset`.
+
+Mapping and list settings (`ui.symbols`, `ui.color_roles`,
+`ansible.dependency_paths`) take the whole value as JSON or YAML
+(`'{"ok": "✓"}'` or `'{ok: ✓}'`), validated against the setting's type;
+`config set` replaces the stored value and `config unset` removes the whole
+key. `config get` and `config list` print such a value as compact JSON in
+table and raw output and as a native mapping or list in `json`, `yaml` and
+`pipe`.
 
 Reads and writes validate only the section a key belongs to, so one invalid
 value (for example a typo in `jira.page_size`) never blocks `config get`,
