@@ -953,8 +953,8 @@ def test_foreach_unknown_repo_filter_exits_before_running_command(
 
     result = runner.invoke(app, ["foreach", "echo ok", "--workspace", "prod", "--repo", "ghost"])
 
-    assert result.exit_code != 0
-    assert "ghost" in result.output
+    assert result.exit_code == 1
+    assert "1 unknown repo identifier for --repo: ghost" in result.stderr
     assert calls == []
 
 
