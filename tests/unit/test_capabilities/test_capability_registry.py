@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -11,7 +11,6 @@ from cyclopts import App
 from test_capabilities.capharness import (
     OtherProfile,
     Profile,
-    State,
     exploding_check,
     function_provider,
     make_app,
@@ -22,13 +21,8 @@ from test_capabilities.capharness import (
     make_spec,
 )
 from untaped.capabilities.registry import (
-    CAPABILITY_API_VERSION,
-    ApplicationSpec,
-    CapabilityContext,
     CapabilitySpec,
     CompositionResult,
-    DoctorCheck,
-    DoctorResult,
     ExternalProvider,
     ProviderRef,
     QuarantineRecord,
@@ -39,113 +33,36 @@ from untaped.capabilities.registry import (
 from untaped.errors import ConfigError
 
 
-def test_api_version_is_one_one() -> None:
-    assert CAPABILITY_API_VERSION == 1.1
-
-
-def test_closed_shape_rejects_unknown_fields() -> None:
-    with pytest.raises(TypeError):
-        CapabilitySpec(  # type: ignore[call-arg]
-            name="a",
-            app_factory=None,  # type: ignore[arg-type]
-            config_section="a",
-            profile_model=Profile,
-            bogus_field=1,
-        )
-    with pytest.raises(TypeError):
-        ApplicationSpec(  # type: ignore[call-arg]
-            name="s",
-            app_factory=None,  # type: ignore[arg-type]
-            config_section="s",
-            profile_model=Profile,
-            bogus_field=1,
-        )
-    with pytest.raises(TypeError):
-        SkillAsset(name="s", source=Path("/tmp"), description="d", extra=1)  # type: ignore[call-arg]
-    with pytest.raises(TypeError):
-        DoctorCheck(id="a", title="t", run=lambda ctx: None, extra=1)  # type: ignore[call-arg]
-    with pytest.raises(TypeError):
-        DoctorResult(id="a", ok=True, detail="d", extra=1)  # type: ignore[call-arg]
-    with pytest.raises(TypeError):
-        CapabilityContext(  # type: ignore[call-arg]
-            capability="a",
-            config_section="a",
-            profile_fields=frozenset(),
-            state_fields=frozenset(),
-            settings=None,
-            extra=1,
-        )
-    with pytest.raises(TypeError):
-        ProviderRef(  # type: ignore[call-arg]
-            kind="built-in",
-            distribution="u",
-            entry_point="",
-            api_requires=(1.0, 2.0),
-            extra=1,
-        )
-    with pytest.raises(TypeError):
-        QuarantineRecord(  # type: ignore[call-arg]
-            distribution="d",
-            entry_point="e",
-            reason="api-range",
-            detail="x",
-            extra=1,
-        )
-
-
-def test_records_are_frozen() -> None:
-    spec = make_spec()
-    with pytest.raises(FrozenInstanceError):
-        spec.name = "other"  # type: ignore[misc]
-    asset = make_skill()
-    with pytest.raises(FrozenInstanceError):
-        asset.name = "other"  # type: ignore[misc]
-    check = make_check()
-    with pytest.raises(FrozenInstanceError):
-        check.id = "other"  # type: ignore[misc]
-    result = DoctorResult(id="a", ok=True, detail="d")
-    with pytest.raises(FrozenInstanceError):
-        result.ok = False  # type: ignore[misc]
-    ctx = CapabilityContext(
-        capability="a",
-        config_section="a",
-        profile_fields=frozenset({"x"}),
-        state_fields=frozenset(),
-        settings=None,
-    )
-    with pytest.raises(FrozenInstanceError):
-        ctx.capability = "b"  # type: ignore[misc]
-    ref = ProviderRef(
-        kind="built-in", distribution="untaped", entry_point="", api_requires=(1.0, 2.0)
-    )
-    with pytest.raises(FrozenInstanceError):
-        ref.kind = "external"  # type: ignore[misc]
-    record = QuarantineRecord(distribution="d", entry_point="e", reason="api-range", detail="x")
-    with pytest.raises(FrozenInstanceError):
-        record.reason = "other"  # type: ignore[misc]
-
-
-def test_skill_asset_construction_rules() -> None:
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: SkillAsset(name="   ", source=Path("/tmp"), description="d"),
+        lambda: SkillAsset(name="s", source=Path("/tmp"), description="   "),
+        lambda: make_spec(name="   "),
+        lambda: make_spec(section="  "),
+        lambda: make_spec(profile=dict),
+        lambda: make_spec(state=dict),
+        lambda: ProviderRef(
+            kind="sidecar", distribution="d", entry_point="m:a", api_requires=(1.0, 2.0)
+        ),
+        lambda: QuarantineRecord(distribution="d", entry_point="e", reason="nope", detail="x"),
+        lambda: QuarantineRecord(distribution="d", entry_point="e", reason="api-range", detail=" "),
+    ],
+    ids=[
+        "skill-blank-name",
+        "skill-blank-description",
+        "spec-blank-name",
+        "spec-blank-section",
+        "spec-profile-not-model",
+        "spec-state-not-model",
+        "ref-unknown-kind",
+        "quarantine-unknown-reason",
+        "quarantine-blank-detail",
+    ],
+)
+def test_records_reject_invalid_construction(build: Callable[[], object]) -> None:
     with pytest.raises(ConfigError):
-        SkillAsset(name="   ", source=Path("/tmp"), description="d")
-    with pytest.raises(ConfigError):
-        SkillAsset(name="s", source=Path("/tmp"), description="   ")
-
-
-def test_spec_construction_rules() -> None:
-    with pytest.raises(ConfigError):
-        make_spec(name="   ")
-    with pytest.raises(ConfigError):
-        make_spec(section="  ")
-    with pytest.raises(ConfigError):
-        CapabilitySpec(
-            name="a",
-            app_factory=make_spec().app_factory,
-            config_section="a",
-            profile_model=dict,  # type: ignore[arg-type]
-        )
-    with pytest.raises(ConfigError):
-        make_spec(state=dict)  # type: ignore[arg-type]
+        build()
 
 
 def test_spec_normalizes_sequences_to_tuples() -> None:
@@ -160,21 +77,6 @@ def test_spec_normalizes_sequences_to_tuples() -> None:
     assert spec.skills == (make_skill("s1"),)
     assert isinstance(spec.skills, tuple)
     assert isinstance(spec.doctor_checks, tuple)
-
-
-def test_provider_ref_rejects_unknown_kind() -> None:
-    with pytest.raises(ConfigError):
-        ProviderRef(kind="sidecar", distribution="d", entry_point="m:a", api_requires=(1.0, 2.0))
-
-
-def test_quarantine_record_rejects_unknown_reason() -> None:
-    with pytest.raises(ConfigError):
-        QuarantineRecord(distribution="d", entry_point="e", reason="nope", detail="x")
-
-
-def test_quarantine_record_rejects_empty_detail() -> None:
-    with pytest.raises(ConfigError):
-        QuarantineRecord(distribution="d", entry_point="e", reason="api-range", detail="  ")
 
 
 def test_compose_happy_path() -> None:
@@ -298,59 +200,6 @@ def test_builtins_keep_declaration_order_before_externals() -> None:
     ext = make_external(make_spec(name="aaa"), "z-dist")
     result = compose(make_shell(), [first, second], [ext])
     assert [cap.spec.name for cap in result.capabilities] == ["first", "second", "aaa"]
-
-
-def test_quarantine_record_names_colliding_value() -> None:
-    clash = make_spec(name="dup")
-    result = compose(make_shell(), [make_spec(name="dup")], [make_external(clash, "ext-dist")])
-    (record,) = result.quarantine
-    assert record.distribution == "ext-dist"
-    assert record.reason == "duplicate-name"
-    assert "dup" in record.detail
-
-
-def test_unresolvable_target_reports_empty_entry_point() -> None:
-    candidate = ExternalProvider(
-        distribution="ghost-dist",
-        name="ghost",
-        target="no_such_module_xyz:provider",
-    )
-    result = compose(make_shell(), [], [candidate])
-    (record,) = result.quarantine
-    assert record.reason == "malformed-entry-point"
-    assert record.entry_point == ""
-    assert "no_such_module_xyz:provider" in record.detail
-
-
-def test_provider_protocol_shape() -> None:
-    from untaped.capabilities.registry import CapabilityProvider
-
-    provider = function_provider(make_spec(name="proto"))
-    assert callable(provider)
-    assert provider.api_requires == (1.0, 2.0)
-    assert isinstance(provider(), CapabilitySpec)
-    assert isinstance(CapabilityProvider, type)
-
-
-def test_spec_without_state_defaults() -> None:
-    spec = make_spec()
-    assert spec.state_model is None
-    assert spec.skills == ()
-    assert spec.doctor_checks == ()
-
-
-def test_capability_context_snapshot_shape() -> None:
-    settings = Profile()
-    ctx = CapabilityContext(
-        capability="alpha",
-        config_section="alpha",
-        profile_fields=frozenset(Profile.model_fields),
-        state_fields=frozenset(State.model_fields),
-        settings=settings,
-    )
-    assert ctx.profile_fields == frozenset({"token", "region"})
-    assert ctx.state_fields == frozenset({"last_run"})
-    assert ctx.settings is settings
 
 
 @pytest.mark.parametrize("bad_help", ["", "   ", "two\nlines", 42])

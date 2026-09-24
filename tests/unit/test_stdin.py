@@ -1,6 +1,5 @@
 import io
 import json
-from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,6 +16,7 @@ from untaped.stdin import (
     read_stdin_text,
     resolve_text_input,
 )
+from untaped.testing import TtyStringIO
 
 
 def _feed(payload: str) -> object:
@@ -29,32 +29,14 @@ def _env(record: dict[str, object], kind: str | None = "github.repo") -> str:
     return json.dumps({PIPE_MARKER_KEY: "1", "kind": kind, "record": record})
 
 
-@pytest.fixture
-def fake_stdin() -> Iterator[None]:
-    with patch("sys.stdin") as mock:
-        yield mock
-
-
-def test_returns_empty_when_tty(fake_stdin: object) -> None:
-    import sys
-
-    sys.stdin.isatty.return_value = True  # type: ignore[attr-defined]
+def test_read_stdin_is_empty_on_tty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.stdin", TtyStringIO("never read"))
     assert read_stdin() == []
 
 
-def test_reads_newline_separated_values() -> None:
-    payload = "alpha\nbeta\n\ngamma\n"
-    fake = io.StringIO(payload)
-    fake.isatty = lambda: False  # type: ignore[method-assign]
-    with patch("sys.stdin", fake):
+def test_read_stdin_strips_and_skips_blank_lines() -> None:
+    with _feed("  alpha  \n\tbeta\t\n\ngamma\n"):
         assert read_stdin() == ["alpha", "beta", "gamma"]
-
-
-def test_strips_whitespace() -> None:
-    fake = io.StringIO("  one  \n\ttwo\t\n")
-    fake.isatty = lambda: False  # type: ignore[method-assign]
-    with patch("sys.stdin", fake):
-        assert read_stdin() == ["one", "two"]
 
 
 # ---- read_records ----------------------------------------------------------
@@ -68,79 +50,59 @@ def test_read_records_parses_envelopes() -> None:
     assert [e.kind for e in envs] == ["github.repo", "github.repo"]
 
 
-def test_read_records_empty_raises() -> None:
-    with _feed(""), pytest.raises(ConfigError, match="no records received on stdin"):
+@pytest.mark.parametrize(
+    ("payload", "error"),
+    [
+        ("", "no records received on stdin"),
+        (_env({"x": 1}) + "\nnot json\n", "line 2: invalid JSON"),
+        ('{"foo": 1}\n', "line 1: not an untaped pipe record"),
+    ],
+)
+def test_read_records_errors(payload: str, error: str) -> None:
+    with _feed(payload), pytest.raises(ConfigError, match=error):
         read_records()
 
 
-def test_read_records_malformed_line_is_line_precise() -> None:
-    payload = _env({"x": 1}) + "\nnot json\n"
-    with _feed(payload), pytest.raises(ConfigError, match="line 2: invalid JSON"):
-        read_records()
+# ---- read_identifiers ------------------------------------------------------
 
 
-def test_read_records_non_envelope_line_raises() -> None:
-    with (
-        _feed('{"foo": 1}\n'),
-        pytest.raises(ConfigError, match="line 1: not an untaped pipe record"),
-    ):
-        read_records()
+@pytest.mark.parametrize(
+    ("payload", "id_field", "expected"),
+    [
+        (
+            _env({"full_name": "a/b"}) + "\n" + _env({"full_name": "c/d"}),
+            "full_name",
+            ["a/b", "c/d"],
+        ),
+        (_env({"id": 123}), "id", ["123"]),
+        ("a/b\nc/d\n", None, ["a/b", "c/d"]),
+        # 123 (int) and "untaped" (str) parse as JSON but aren't marker-dicts → bare.
+        ('123\n"untaped"\n', None, ["123", '"untaped"']),
+    ],
+    ids=["envelope", "envelope-non-string-id", "bare", "bare-scalar-json"],
+)
+def test_read_identifiers(payload: str, id_field: str | None, expected: list[str]) -> None:
+    with _feed(payload + "\n"):
+        assert read_identifiers([], stdin=True, id_field=id_field) == expected
 
 
-# ---- read_identifiers: envelope mode ---------------------------------------
-
-
-def test_read_identifiers_envelope_mode_extracts_id_field() -> None:
-    payload = _env({"full_name": "a/b"}) + "\n" + _env({"full_name": "c/d"}) + "\n"
-    with _feed(payload):
-        assert read_identifiers([], stdin=True, id_field="full_name") == ["a/b", "c/d"]
-
-
-def test_read_identifiers_envelope_requires_id_field() -> None:
-    with _feed(_env({"full_name": "a/b"}) + "\n"), pytest.raises(ConfigError, match="pipe format"):
-        read_identifiers([], stdin=True)
-
-
-def test_read_identifiers_envelope_missing_field_is_line_precise() -> None:
-    payload = _env({"full_name": "a/b"}) + "\n" + _env({"other": "x"}) + "\n"
-    with (
-        _feed(payload),
-        pytest.raises(ConfigError, match="line 2: record 'full_name' is missing or null"),
-    ):
-        read_identifiers([], stdin=True, id_field="full_name")
-
-
-def test_read_identifiers_envelope_blank_field_rejected() -> None:
-    with (
-        _feed(_env({"full_name": "   "}) + "\n"),
-        pytest.raises(ConfigError, match="line 1: record 'full_name' is blank"),
-    ):
-        read_identifiers([], stdin=True, id_field="full_name")
-
-
-def test_read_identifiers_envelope_coerces_non_string_id() -> None:
-    with _feed(_env({"id": 123}) + "\n"):
-        assert read_identifiers([], stdin=True, id_field="id") == ["123"]
-
-
-# ---- read_identifiers: bare mode, back-compat, detection -------------------
-
-
-def test_read_identifiers_bare_lines_backward_compat() -> None:
-    with _feed("a/b\nc/d\n"):
-        assert read_identifiers([], stdin=True) == ["a/b", "c/d"]
-
-
-def test_read_identifiers_bare_scalar_json_is_not_envelope() -> None:
-    # 123 (int) and "untaped" (str) parse as JSON but aren't marker-dicts → bare.
-    with _feed('123\n"untaped"\n'):
-        assert read_identifiers([], stdin=True) == ["123", '"untaped"']
-
-
-def test_read_identifiers_mixed_bare_then_envelope_raises() -> None:
-    payload = "a/b\n" + _env({"full_name": "c/d"}) + "\n"
-    with _feed(payload), pytest.raises(ConfigError, match="mixed bare/envelope input on stdin"):
-        read_identifiers([], stdin=True, id_field="full_name")
+@pytest.mark.parametrize(
+    ("payload", "id_field", "error"),
+    [
+        (_env({"full_name": "a/b"}), None, "pipe format"),
+        (
+            _env({"full_name": "a/b"}) + "\n" + _env({"other": "x"}),
+            "full_name",
+            "line 2: record 'full_name' is missing or null",
+        ),
+        (_env({"full_name": "   "}), "full_name", "line 1: record 'full_name' is blank"),
+        ("a/b\n" + _env({"full_name": "c/d"}), "full_name", "mixed bare/envelope input on stdin"),
+    ],
+    ids=["no-id-field", "missing-field", "blank-field", "mixed"],
+)
+def test_read_identifiers_errors(payload: str, id_field: str | None, error: str) -> None:
+    with _feed(payload + "\n"), pytest.raises(ConfigError, match=error):
+        read_identifiers([], stdin=True, id_field=id_field)
 
 
 # ---- accepted kinds ---------------------------------------------------------
@@ -191,42 +153,26 @@ def test_read_stdin_input_names_what_was_expected_when_empty() -> None:
 # ---- raw text input --------------------------------------------------------
 
 
-def test_read_stdin_text_preserves_interior_newlines(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("sys.stdin", io.StringIO("line one\n\nline three\n"))
-    assert read_stdin_text() == "line one\n\nline three"
-
-
-def test_read_stdin_text_trims_exactly_one_trailing_newline(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("stdin", "expected"),
+    [
+        (io.StringIO("line one\n\nline three\n"), "line one\n\nline three"),
+        # Exactly one trailing newline (LF or CRLF) is trimmed.
+        (io.StringIO("x\n\n"), "x\n"),
+        (io.StringIO("x\r\n"), "x"),
+        (TtyStringIO("never read"), ""),
+    ],
+    ids=["interior-newlines", "one-trailing-newline", "crlf", "tty"],
+)
+def test_read_stdin_text(
+    stdin: io.StringIO, expected: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("sys.stdin", io.StringIO("x\n\n"))
-    assert read_stdin_text() == "x\n"
+    monkeypatch.setattr("sys.stdin", stdin)
+    assert read_stdin_text() == expected
 
 
-def test_read_stdin_text_handles_crlf_tail(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("sys.stdin", io.StringIO("x\r\n"))
-    assert read_stdin_text() == "x"
-
-
-def test_read_stdin_text_is_empty_on_tty(monkeypatch: pytest.MonkeyPatch) -> None:
-    from untaped.testing import TtyStringIO
-
-    monkeypatch.setattr("sys.stdin", TtyStringIO("never read"))
-    assert read_stdin_text() == ""
-
-
-def test_resolve_text_input_flag_wins(tmp_path: Path) -> None:
+def test_resolve_text_input_flag_wins() -> None:
     assert resolve_text_input(value="inline", file=None) == "inline"
-
-
-def test_resolve_text_input_sources_are_keyword_only() -> None:
-    with pytest.raises(TypeError):
-        resolve_text_input("inline", None)
-
-
-def test_resolve_text_input_empty_flag_is_config_error() -> None:
-    with pytest.raises(ConfigError, match="no body provided"):
-        resolve_text_input(value="", file=None)
 
 
 def test_resolve_text_input_rejects_flag_plus_file(tmp_path: Path) -> None:
@@ -236,23 +182,15 @@ def test_resolve_text_input_rejects_flag_plus_file(tmp_path: Path) -> None:
         resolve_text_input(value="inline", file=f)
 
 
-def test_resolve_text_input_reads_file_trimming_terminal_newline(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [(b"from file\n", "from file"), (b"one\r\ntwo\r\n", "one\r\ntwo")],
+    ids=["trims-terminal-newline", "newlines-verbatim"],
+)
+def test_resolve_text_input_reads_file(tmp_path: Path, content: bytes, expected: str) -> None:
     f = tmp_path / "body.txt"
-    f.write_text("from file\n", encoding="utf-8")
-    assert resolve_text_input(value=None, file=f) == "from file"
-
-
-def test_resolve_text_input_empty_file_is_config_error(tmp_path: Path) -> None:
-    f = tmp_path / "body.txt"
-    f.write_text("", encoding="utf-8")
-    with pytest.raises(ConfigError, match="no body provided"):
-        resolve_text_input(value=None, file=f)
-
-
-def test_resolve_text_input_reads_file_newlines_verbatim(tmp_path: Path) -> None:
-    f = tmp_path / "body.txt"
-    f.write_bytes(b"one\r\ntwo\r\n")
-    assert resolve_text_input(value=None, file=f) == "one\r\ntwo"
+    f.write_bytes(content)
+    assert resolve_text_input(value=None, file=f) == expected
 
 
 def test_resolve_text_input_falls_back_to_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -260,11 +198,14 @@ def test_resolve_text_input_falls_back_to_stdin(monkeypatch: pytest.MonkeyPatch)
     assert resolve_text_input(value=None, file=None) == "piped body"
 
 
-def test_resolve_text_input_empty_everything_is_config_error(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("source", ["flag", "file", "stdin"])
+def test_resolve_text_input_empty_body_is_config_error(
+    source: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from untaped.testing import TtyStringIO
-
+    f = tmp_path / "body.txt"
+    f.write_text("", encoding="utf-8")
     monkeypatch.setattr("sys.stdin", TtyStringIO())
     with pytest.raises(ConfigError, match="no body provided"):
-        resolve_text_input(value=None, file=None)
+        resolve_text_input(
+            value="" if source == "flag" else None, file=f if source == "file" else None
+        )
