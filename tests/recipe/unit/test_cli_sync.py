@@ -11,6 +11,7 @@ import pytest
 import untaped.capabilities.recipe.cli.library_commands as library_commands
 from untaped.capabilities.recipe.cli import app
 from untaped.capabilities.recipe.cli.common import library_root
+from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
 from untaped.testing import CliInvoker, ScriptedPromptBackend, invoke_cli
 
 pytestmark = pytest.mark.usefixtures("isolate_config")
@@ -203,3 +204,22 @@ def test_sync_unknown_pack_fails(tmp_path: Path) -> None:
 
     assert result.exit_code == 1, result.output
     assert "pack not found: 'ghost'" in result.stderr
+
+
+def test_sync_refuses_a_legacy_relative_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_pack(tmp_path / "alpha", name="alpha")
+    # Older installs recorded a local source as typed, relative to the shell.
+    PackLibrary(library_root=library_root()).add(
+        tmp_path / "alpha", source="alpha", rev=None, name="alpha", force=False
+    )
+    elsewhere = tmp_path / "elsewhere"
+    _write_pack(elsewhere / "alpha", name="alpha", body=_CHANGED)
+    monkeypatch.chdir(elsewhere)
+
+    result = invoke_cli(app, ["sync", "alpha", "--yes"])
+
+    assert result.exit_code == 1, result.output
+    assert "recorded source 'alpha' is a relative path" in result.stderr
+    assert _installed_recipe("alpha").read_text() != _CHANGED

@@ -37,6 +37,7 @@ from untaped.capability_api import (
     finish,
     parse_json_pairs,
     parse_kv_pairs,
+    q,
     raise_usage,
     read_identifiers,
     read_structured_file,
@@ -621,6 +622,9 @@ def link_create_command(
         settings = current_jira_settings()
         path = f"{settings.api_prefix}/issueLink"
         payload = build_link_payload(key, link_type, other)
+        if dry_run or not yes:
+            # The REST field names read backwards; say the direction in words.
+            echo(f"reads as: {key} <outward phrase of {q(link_type)}> {other}", err=True)
         if dry_run:
             _show_request("POST", path, payload)
             planned = IssueOutcome(

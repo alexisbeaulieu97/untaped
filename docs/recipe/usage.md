@@ -97,7 +97,9 @@ untaped recipe remove acme --yes
   and confirmed first (`--yes` skips the question, `--dry-run` only lists
   them); the rest report `unchanged`. Local edits to an installed copy need
   `--discard-edits`.
-- `recipe add` records a local path source as an absolute path.
+- `recipe add` records a local path source as an absolute path. `recipe sync`
+  refuses a pack recorded with a relative path (older installs); re-add it
+  with `recipe add PATH --force`.
 - Packs are installed under `recipe.library_root`.
 - `recipe validate` checks the whole library, or one pack, recipe or path,
   without importing hook code.

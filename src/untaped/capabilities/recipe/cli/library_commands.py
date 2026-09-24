@@ -311,6 +311,13 @@ def _fetch_for_sync(
         )
     else:
         source_dir = Path(pack.source).expanduser()
+        if not source_dir.is_absolute():
+            # Older installs recorded the path as typed; resolving it against
+            # today's working directory could install a different pack.
+            raise ValueError(
+                f"recorded source {q(pack.source)} is a relative path; "
+                "reinstall the pack with `untaped recipe add --force`"
+            )
         if not source_dir.is_dir():
             raise ValueError(f"pack source not found: {pack.source}")
     validate_pack(source_dir, read_pack_manifest(source_dir))

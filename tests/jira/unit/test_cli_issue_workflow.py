@@ -299,3 +299,11 @@ def test_links_create_posts_an_issue_link() -> None:
         "Blocks",
         "ABC-2",
     )
+
+
+def test_links_create_dry_run_states_the_direction_in_words() -> None:
+    result = invoke_cli(app, ["issues", "links", "create", "ABC-1", "Blocks", "ABC-2", "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    assert "reads as: ABC-1 <outward phrase of 'Blocks'> ABC-2" in result.stderr
+    assert "POST /rest/api/2/issueLink" in result.stderr
