@@ -101,15 +101,8 @@ def _add_get(app: App, spec: AwxResourceSpec) -> None:
 
 
 def default_get_columns(fmt: OutputFormat, default_cols: Sequence[str]) -> list[str] | None:
-    """Default column projection for ``get`` commands.
-
-    Table needs a projection — a full AWX record (50+ fields) renders as
-    an unreadable wall. raw stays one-column-per-line so pipelines that
-    do ``get --format raw | …`` keep their established shape; yaml/json
-    keep the full record so users can inspect every field. Reused by
-    ``unified-templates get`` so the polymorphic browser shares the
-    same logic without duplicating it.
-    """
+    """Project a table to the spec's list columns (a full AWX record is a wall);
+    raw keeps its first-key default and yaml/json keep every field."""
     if fmt == "table":
         return list(default_cols)
     return None
