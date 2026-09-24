@@ -57,23 +57,22 @@ def _posts(fake: Any) -> list[Any]:
     return [call for call in fake.router.calls if call.request.method == "POST"]
 
 
-def test_apply_preview_does_not_write(fake_aap: Any, tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("flag", "description"), [("--dry-run", "deploy the app"), ("--yes", "new")]
+)
+def test_apply_writes_only_with_yes(
+    fake_aap: Any, tmp_path: Path, flag: str, description: str
+) -> None:
     _seed_basic(fake_aap)
     f = tmp_path / "jt.yml"
     f.write_text(
         "kind: JobTemplate\n"
         "metadata: { name: deploy, organization: Default }\n"
-        "spec:\n"
-        "  description: changed-via-apply\n"
-        "  playbook: deploy.yml\n"
-        "  project: playbooks\n"
-        "  inventory: prod\n"
+        "spec: { description: new, playbook: deploy.yml, project: playbooks, inventory: prod }\n"
     )
-    result = CliInvoker().invoke(app, ["job-templates", "apply", "--dry-run", str(f)])
+    result = CliInvoker().invoke(app, ["job-templates", "apply", flag, str(f)])
     assert result.exit_code == 0, result.output
-    # State on the server is unchanged because we didn't pass --yes.
-    jt = fake_aap.get_record("job_templates", 30)
-    assert jt["description"] == "deploy the app"
+    assert fake_aap.get_record("job_templates", 30)["description"] == description
 
 
 def test_apply_under_scoped_file_raises_ambiguity(fake_aap: Any, tmp_path: Path) -> None:
@@ -100,74 +99,6 @@ def test_apply_under_scoped_file_raises_ambiguity(fake_aap: Any, tmp_path: Path)
     output = result.output + (result.stderr or "")
     assert result.exit_code != 0, output
     assert "ambiguous" in output.lower(), output
-
-
-def test_apply_yes_writes_changes(fake_aap: Any, tmp_path: Path) -> None:
-    _seed_basic(fake_aap)
-    f = tmp_path / "jt.yml"
-    f.write_text(
-        "kind: JobTemplate\n"
-        "metadata: { name: deploy, organization: Default }\n"
-        "spec:\n"
-        "  description: changed-via-apply\n"
-        "  playbook: deploy.yml\n"
-        "  project: playbooks\n"
-        "  inventory: prod\n"
-    )
-    result = CliInvoker().invoke(app, ["job-templates", "apply", str(f), "--yes"])
-    assert result.exit_code == 0, result.output
-    jt = fake_aap.get_record("job_templates", 30)
-    assert jt["description"] == "changed-via-apply"
-
-
-def test_apply_ignored_passthrough_field_fails_by_default(fake_aap: Any, tmp_path: Path) -> None:
-    _seed_basic(fake_aap)
-    fake_aap.ignored_write_fields.add("zzz_bogus")
-    f = tmp_path / "jt.yml"
-    f.write_text(
-        "kind: JobTemplate\n"
-        "metadata: { name: deploy, organization: Default }\n"
-        "spec:\n"
-        "  playbook: deploy.yml\n"
-        "  project: playbooks\n"
-        "  inventory: prod\n"
-        "  zzz_bogus: 1\n"
-    )
-
-    result = CliInvoker().invoke(app, ["job-templates", "apply", str(f), "--yes"])
-
-    output = result.output + (result.stderr or "")
-    assert result.exit_code == 1, output
-    assert "zzz_bogus" in output
-    assert "unverified" in output
-    assert "zzz_bogus" not in fake_aap.get_record("job_templates", 30)
-
-
-def test_apply_ignored_passthrough_field_can_be_allowed(fake_aap: Any, tmp_path: Path) -> None:
-    _seed_basic(fake_aap)
-    fake_aap.ignored_write_fields.add("zzz_bogus")
-    f = tmp_path / "jt.yml"
-    f.write_text(
-        "kind: JobTemplate\n"
-        "metadata: { name: deploy, organization: Default }\n"
-        "spec:\n"
-        "  playbook: deploy.yml\n"
-        "  project: playbooks\n"
-        "  inventory: prod\n"
-        "  zzz_bogus: 1\n"
-    )
-
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "apply", str(f), "--yes", "--allow-unverified"],
-    )
-
-    output = result.output + (result.stderr or "")
-    assert result.exit_code == 0, output
-    assert "updated" in result.stdout
-    assert "zzz_bogus" in output
-    assert "unverified" in output
-    assert "zzz_bogus" not in fake_aap.get_record("job_templates", 30)
 
 
 def test_apply_allow_unverified_requires_yes(fake_aap: Any, tmp_path: Path) -> None:

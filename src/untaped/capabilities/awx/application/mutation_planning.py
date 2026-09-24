@@ -27,7 +27,6 @@ from untaped.capabilities.awx.application.mutation_types import (
 )
 from untaped.capabilities.awx.application.mutation_values import (
     redact_outcome,
-    redact_value,
     semantic_equal,
 )
 from untaped.capabilities.awx.application.ports import (
@@ -377,7 +376,6 @@ class MutationPlanner:
                     _identity=copy.deepcopy(identity),
                     _scope=scope_from_identity(identity),
                     _payload=copy.deepcopy(body.payload),
-                    _presentation_payload=redact_value(body.payload, spec.secret_paths),
                     _existing=copy.deepcopy(existing_record)
                     if existing_record is not None
                     else None,

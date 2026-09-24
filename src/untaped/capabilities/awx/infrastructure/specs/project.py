@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from untaped.capabilities.awx.domain import ActionSpec, FkRef
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
+from untaped.capabilities.awx.infrastructure.specs._support import UNIVERSAL_READ_ONLY
 
 PROJECT_SPEC = AwxResourceSpec(
     kind="Project",
@@ -30,13 +31,7 @@ PROJECT_SPEC = AwxResourceSpec(
         "timeout",
     ),
     read_only_fields=(
-        "id",
-        "created",
-        "modified",
-        "summary_fields",
-        "related",
-        "type",
-        "url",
+        *UNIVERSAL_READ_ONLY,
         "scm_revision",
         "status",
         "last_job_run",

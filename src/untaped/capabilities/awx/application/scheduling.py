@@ -109,15 +109,15 @@ class Schedule:
                 on_abort=abort,
                 # Always on worker threads (even serially): Ctrl-C then lands
                 # in the main thread's wait, so in-flight requests finish.
-                while_running=_idle,
+                while_running=idle,
             )
         except KeyboardInterrupt:
             raise ScheduleInterruptedError(dict(results)) from None
         return results
 
 
-def _idle() -> None:
-    return None
+def idle() -> None:
+    """A no-op ``while_running`` that keeps even one item on a worker thread."""
 
 
 def _dependency_order(dependencies: Sequence[Sequence[int]]) -> list[int]:

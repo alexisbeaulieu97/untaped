@@ -1,4 +1,11 @@
-"""End-to-end CLI tests for AWX resource list/get flows."""
+"""End-to-end CLI tests for AWX resource list/get flows.
+
+Seeded catalog (organization 1 ``Default`` unless noted): projects 10
+``playbooks``, 11 ``ops``, 99 ``10`` and 100 ``11``; inventory 20 ``prod``;
+job templates 30 ``deploy`` (project 10, inventory 20, credentials ssh/vault,
+with summary fields), 31 ``alpha`` (no summary fields), 32 ``beta``, and
+``shared`` twice: 33 in ``Default`` and 34 in ``Other``.
+"""
 
 from __future__ import annotations
 
@@ -16,24 +23,22 @@ from untaped.testing import CliInvoker
 pytestmark = pytest.mark.integration
 
 
-def _seed_basic(fake: Any) -> None:
-    fake.seed("organizations", id=1, name="Default", description="")
-    fake.seed(
-        "projects",
-        id=10,
-        name="playbooks",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    fake.seed(
-        "inventories",
-        id=20,
-        name="prod",
-        organization=1,
-        organization_name="Default",
-        kind="",
-    )
+@pytest.fixture
+def catalog(seeded_default_org: Any) -> Any:
+    fake = seeded_default_org
+    fake.seed("organizations", id=2, name="Other")
+    for id_, name in ((10, "playbooks"), (11, "ops"), (99, "10"), (100, "11")):
+        fake.seed(
+            "projects",
+            id=id_,
+            name=name,
+            organization=1,
+            organization_name="Default",
+            scm_type="git",
+        )
+    fake.seed("inventories", id=20, name="prod", organization=1, organization_name="Default")
+    fake.seed("credentials", id=40, name="ssh", organization=1, organization_name="Default")
+    fake.seed("credentials", id=41, name="vault", organization=1, organization_name="Default")
     fake.seed(
         "job_templates",
         id=30,
@@ -41,34 +46,146 @@ def _seed_basic(fake: Any) -> None:
         organization=1,
         organization_name="Default",
         project=10,
-        project_name="playbooks",
         inventory=20,
-        inventory_name="prod",
+        credentials=[40, 41],
         playbook="deploy.yml",
         description="deploy the app",
-        last_job_status="successful",
-        webhook_key="$encrypted$",
+        summary_fields={
+            "organization": {"id": 1, "name": "Default"},
+            "project": {"id": 10, "name": "playbooks"},
+            "inventory": {"id": 20, "name": "prod"},
+            "credentials": [{"id": 40, "name": "ssh"}, {"id": 41, "name": "vault"}],
+        },
     )
+    for id_, name, org, org_name in (
+        (31, "alpha", 1, "Default"),
+        (32, "beta", 1, "Default"),
+        (33, "shared", 1, "Default"),
+        (34, "shared", 2, "Other"),
+    ):
+        fake.seed("job_templates", id=id_, name=name, organization=org, organization_name=org_name)
+    return fake
 
 
-def _flag_in_help(flag: str, help_text: str) -> bool:
-    """True iff ``flag`` appears as a complete flag, not as a longer flag prefix."""
-    return re.search(rf"{re.escape(flag)}\b", help_text) is not None
+def _raw(*args: str, columns: tuple[str, ...] = ("name",), input: str | None = None) -> Any:
+    flags = [f"--columns={column}" for column in columns]
+    return CliInvoker().invoke(app, [*args, "--format", "raw", *flags], input=input)
 
 
-def test_job_templates_list(fake_aap: Any) -> None:
-    _seed_basic(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "list", "--format", "raw", "--columns", "name"],
-    )
+_JT = ("job-templates",)
+_DEPLOY = ("--filter", "name=deploy")
+
+
+@pytest.mark.parametrize(
+    ("args", "columns", "input", "expected"),
+    [
+        ((*_JT, "list"), ("name",), None, ["alpha", "beta", "deploy", "shared", "shared"]),
+        # FK columns hold ids for piping; --with-names swaps in summary names
+        ((*_JT, "list", *_DEPLOY), ("project", "inventory"), None, ["10\t20"]),
+        ((*_JT, "list", *_DEPLOY, "--with-names"), ("project", "inventory"), None,
+         ["playbooks\tprod"]),
+        ((*_JT, "get", "deploy", "--with-names"), ("credentials",), None, ["ssh, vault"]),
+        # a degraded record without summary fields keeps the id
+        ((*_JT, "get", "alpha", "--with-names"), ("organization",), None, ["1"]),
+        ((*_JT, "list", *_DEPLOY), ("name", "summary_fields.project.name"), None,
+         ["deploy\tplaybooks"]),
+        ((*_JT, "get", "deploy"), ("playbook",), None, ["deploy.yml"]),
+        ((*_JT, "get", "alpha", "beta"), ("name",), None, ["alpha", "beta"]),
+        ((*_JT, "get", "--stdin"), ("name",), "alpha\nbeta\n", ["alpha", "beta"]),
+        ((*_JT, "list", "--stdin"), ("name",), "alpha\nbeta\n", ["alpha", "beta"]),
+        ((*_JT, "list", "--stdin", "--with-names"), ("project",), "deploy\n", ["playbooks"]),
+        # names are the default, even all-digit ones; ids need --by-id
+        (("projects", "get", "--by-id", "10"), ("name",), None, ["playbooks"]),
+        (("projects", "list", "--stdin", "--by-id"), ("name",), "10\n11\n", ["ops", "playbooks"]),
+        (("projects", "get", "10", "--organization", "Default"), ("id",), None, ["99"]),
+        (("projects", "get", "--stdin", "--organization", "Default"), ("id",), "10\n11\n",
+         ["100", "99"]),
+        (("projects", "get", "playbooks", "11"), ("name",), None, ["11", "playbooks"]),
+        (("projects", "list", "--stdin", "--organization", "Default"), ("id",),
+         "playbooks\n11\n", ["10", "100"]),
+        # --organization (alias --org) scopes a name found in several organizations
+        ((*_JT, "get", "shared", "--organization", "Default"), ("id",), None, ["33"]),
+        ((*_JT, "get", "shared", "--org", "Other"), ("id",), None, ["34"]),
+        (("projects", "list", "--limit", "0"), ("name",), None, ["10", "11", "ops", "playbooks"]),
+    ],
+)  # fmt: skip
+def test_read_selection(
+    catalog: Any, args: tuple[str, ...], columns: tuple[str, ...], input: str | None,
+    expected: list[str],
+) -> None:  # fmt: skip
+    result = _raw(*args, columns=columns, input=input)
     assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "deploy"
+    assert sorted(result.stdout.strip().splitlines()) == expected
+
+
+@pytest.mark.parametrize(
+    ("args", "input", "exit_code", "message"),
+    [
+        # ``isdigit()`` accepts ``²`` but ``int()`` does not: a clean miss, no traceback
+        (("projects", "get", "²", "--organization", "Default"), None, 1, "error"),
+        # an explicit organization constrains an id lookup too
+        (("projects", "get", "--by-id", "10", "--organization", "Other"), None, 1, ""),
+        (("projects", "get", "--stdin", "--by-id"), "10\nops\n", 1, "numeric"),
+        (("projects", "get", "--stdin", "--by-id"), "10\n9999\n", 1, "9999"),
+        # an incomplete selection emits nothing, not the rows that resolved
+        ((*_JT, "get", "--stdin"), "alpha\nghost\n", 1, "ghost"),
+        ((*_JT, "list", "--stdin"), "alpha\nghost\n", 1, "ghost"),
+        (("projects", "list", "--stdin"), "missing-a\nmissing-b\n", 1, "missing-a"),
+        (("projects", "list", "--stdin"), "", 1, "error: no identifiers received on stdin"),
+        ((*_JT, "get", "alpha", "--stdin"), "beta\n", 2, "stdin"),
+        ((*_JT, "list", "--stdin", "--search", "foo"), "alpha\n", 2,
+         "selection sources are exclusive"),
+        ((*_JT, "list", "--stdin", "--filter", "name=alpha"), "alpha\n", 2,
+         "selection sources are exclusive"),
+        # no silent first match for a name found in several organizations
+        ((*_JT, "get", "shared"), None, 1, "ambiguous"),
+    ],
+)  # fmt: skip
+def test_read_selection_failures_emit_nothing(
+    catalog: Any, args: tuple[str, ...], input: str | None, exit_code: int, message: str
+) -> None:
+    result = _raw(*args, input=input)
+    assert result.exit_code == exit_code, result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert result.stdout.strip() == ""
+    assert message in result.stderr
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["job-templates", "get", "deploy", "--organization", "Default"],
+        ["job-templates", "get", "deploy", "--format", "table"],
+        ["jobs", "get", "501"],
+        ["unified-templates", "get", "5"],
+    ],
+)
+def test_get_defaults_to_table_of_list_columns(catalog: Any, args: list[str]) -> None:
+    """A full AWX record (50+ fields) as a table is noise: ``get`` projects."""
+    catalog.seed("jobs", id=501, name="deploy", status="successful", related={})
+    catalog.seed("unified_job_templates", id=5, name="deploy", type="job_template", related={})
+
+    result = CliInvoker().invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    assert "deploy" in result.stdout
+    assert "related:" not in result.stdout
+    assert "summary_fields" not in result.stdout
+    assert not result.stdout.lstrip().startswith(("-", "{", "["))
+
+
+def test_structured_and_raw_formats_keep_their_shapes(catalog: Any) -> None:
+    """json keeps every field; raw without --columns keeps one first-key column."""
+    listed = CliInvoker().invoke(app, ["job-templates", "list", *_DEPLOY, "--format", "json"])
+    assert listed.exit_code == 0, listed.output
+    assert json.loads(listed.stdout)[0]["description"] == "deploy the app"
+    got = CliInvoker().invoke(app, ["job-templates", "get", "deploy", "--format", "raw"])
+    assert got.exit_code == 0, got.output
+    assert got.stdout.strip() == "30"
 
 
 def test_job_templates_list_table_honours_global_ui_collection_view(
-    fake_aap: Any,
-    aap_config: Path,
+    catalog: Any, aap_config: Path
 ) -> None:
     aap_config.write_text(
         """
@@ -83,7 +200,6 @@ def test_job_templates_list_table_honours_global_ui_collection_view(
         """
     )
     get_settings.cache_clear()
-    _seed_basic(fake_aap)
 
     result = CliInvoker().invoke(app, ["job-templates", "list", "--format", "table"])
 
@@ -94,8 +210,7 @@ def test_job_templates_list_table_honours_global_ui_collection_view(
 
 
 def test_job_templates_list_raw_ignores_unknown_global_ui_theme(
-    fake_aap: Any,
-    aap_config: Path,
+    catalog: Any, aap_config: Path
 ) -> None:
     aap_config.write_text(
         """
@@ -110,12 +225,8 @@ def test_job_templates_list_raw_ignores_unknown_global_ui_theme(
         """
     )
     get_settings.cache_clear()
-    _seed_basic(fake_aap)
 
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "list", "--format", "raw", "--columns", "name"],
-    )
+    result = _raw("job-templates", "list", *_DEPLOY)
 
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "deploy"
@@ -123,948 +234,31 @@ def test_job_templates_list_raw_ignores_unknown_global_ui_theme(
 
 
 def test_job_templates_list_rejects_command_local_profile_flag(
-    fake_aap: Any,
-    aap_config: Path,
+    catalog: Any, aap_config: Path
 ) -> None:
-    """Profile selection is built into the SDK.
-
-    Factory-built commands do not expose a local ``--profile``, so
-    passing one directly to the tool app is an unknown-option error
-    (exit 2), and the config file is left untouched.
-    """
-    aap_config.write_text(
-        """
-        profiles:
-          default:
-            awx:
-              base_url: https://aap.example.com
-              token: default-token
-              api_prefix: /api/v2/
-        """
-    )
+    """Profile selection is a root option: a command-local ``--profile`` is an
+    unknown option (exit 2) and leaves the config file untouched."""
     original = aap_config.read_text()
-    _seed_basic(fake_aap)
-
-    result = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "list",
-            "--profile",
-            "stage",
-            "--format",
-            "raw",
-            "--columns",
-            "name",
-        ],
-    )
-
+    result = _raw("job-templates", "list", "--profile", "stage")
     assert result.exit_code == 2, result.output
     assert aap_config.read_text() == original
 
 
-def test_list_with_names_flips_fk_ids_to_names(seeded_default_org: Any) -> None:
-    """``--with-names`` swaps FK columns from numeric ids to the names
-    AWX returns under ``summary_fields``. Without the flag, the column
-    holds the raw id (the FK-piping shape)."""
-    seeded_default_org.seed(
-        "projects",
-        id=10,
-        name="playbooks",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    seeded_default_org.seed(
-        "inventories",
-        id=20,
-        name="prod",
-        organization=1,
-        organization_name="Default",
-        kind="",
-    )
-    seeded_default_org.seed(
-        "job_templates",
-        id=30,
-        name="deploy",
-        organization=1,
-        organization_name="Default",
-        project=10,
-        project_name="playbooks",
-        inventory=20,
-        inventory_name="prod",
-        playbook="a.yml",
-        summary_fields={
-            "organization": {"id": 1, "name": "Default"},
-            "project": {"id": 10, "name": "playbooks"},
-            "inventory": {"id": 20, "name": "prod"},
-        },
-    )
-    raw_default = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "list",
-            "--format",
-            "raw",
-            "--columns",
-            "project",
-            "--columns",
-            "inventory",
-        ],
-    )
-    assert raw_default.exit_code == 0, raw_default.output
-    assert raw_default.stdout.strip() == "10\t20"
-
-    raw_named = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "list",
-            "--with-names",
-            "--format",
-            "raw",
-            "--columns",
-            "project",
-            "--columns",
-            "inventory",
-        ],
-    )
-    assert raw_named.exit_code == 0, raw_named.output
-    assert raw_named.stdout.strip() == "playbooks\tprod"
-
-
-def test_list_with_names_handles_multi_fk(seeded_default_org: Any) -> None:
-    """Multi-valued FKs (credentials) become a list of names."""
-    seeded_default_org.seed(
-        "credentials", id=30, name="ssh", organization=1, organization_name="Default"
-    )
-    seeded_default_org.seed(
-        "credentials", id=31, name="vault", organization=1, organization_name="Default"
-    )
-    seeded_default_org.seed(
-        "job_templates",
-        id=10,
-        name="deploy",
-        organization=1,
-        organization_name="Default",
-        playbook="a.yml",
-        credentials=[30, 31],
-        summary_fields={
-            "organization": {"id": 1, "name": "Default"},
-            "credentials": [
-                {"id": 30, "name": "ssh"},
-                {"id": 31, "name": "vault"},
-            ],
-        },
-    )
-    result = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "list",
-            "--with-names",
-            "--format",
-            "raw",
-            "--columns",
-            "credentials",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    # Scalar lists render comma-separated for raw/table.
-    assert result.stdout.strip() == "ssh, vault"
-
-
-def test_list_with_names_falls_back_to_id_when_summary_missing(seeded_default_org: Any) -> None:
-    """If summary_fields is absent (degraded server response), the row
-    keeps the raw id rather than disappearing or rendering empty."""
-    seeded_default_org.seed(
-        "job_templates",
-        id=10,
-        name="deploy",
-        organization=1,
-        organization_name="Default",
-        playbook="a.yml",
-        # No summary_fields seeded.
-    )
-    result = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "list",
-            "--with-names",
-            "--format",
-            "raw",
-            "--columns",
-            "organization",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "1"
-
-
-def test_list_dotted_columns_resolve_summary_fields(seeded_default_org: Any) -> None:
-    """``--columns summary_fields.project.name`` works without --with-names —
-    the dotted accessor traverses nested dicts in the row."""
-    seeded_default_org.seed(
-        "job_templates",
-        id=10,
-        name="deploy",
-        organization=1,
-        organization_name="Default",
-        playbook="a.yml",
-        project=20,
-        summary_fields={"project": {"id": 20, "name": "playbooks"}},
-    )
-    result = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "list",
-            "--format",
-            "raw",
-            "--columns",
-            "name",
-            "--columns",
-            "summary_fields.project.name",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "deploy\tplaybooks"
-
-
-def test_get_format_table_defaults_to_list_columns(fake_aap: Any) -> None:
-    """``get --format table`` without ``--columns`` must project to the
-    spec's list_columns. Rendering the full AWX record (50+ fields with
-    nested dicts stringified) is unreadable noise."""
-    _seed_basic(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "get", "deploy", "--organization", "Default", "--format", "table"],
-    )
-    assert result.exit_code == 0, result.output
-    # list_columns for JT is ("id", "name") — minimal default. No noisy
-    # columns like "summary_fields" or "related" should appear.
-    assert "summary_fields" not in result.stdout
-    assert "related" not in result.stdout
-    assert "deploy" in result.stdout
-
-
-@pytest.mark.parametrize(
-    "args",
-    [
-        ["job-templates", "get", "deploy", "--organization", "Default"],
-        ["jobs", "get", "501"],
-        ["unified-templates", "get", "5"],
-    ],
-)
-def test_get_defaults_to_table(fake_aap: Any, args: list[str]) -> None:
-    """Every ``get`` renders the default table unless ``--format`` says otherwise."""
-    _seed_basic(fake_aap)
-    fake_aap.seed("jobs", id=501, name="deploy", status="successful", related={})
-    fake_aap.seed("unified_job_templates", id=5, name="deploy", type="job_template", related={})
-
-    result = CliInvoker().invoke(app, args)
-
-    assert result.exit_code == 0, result.output
-    assert "deploy" in result.stdout
-    assert "related:" not in result.stdout
-    assert not result.stdout.lstrip().startswith(("-", "{", "["))
-
-
-def test_list_structured_formats_keep_full_records(fake_aap: Any) -> None:
-    """Default columns shape table/raw only; json keeps every field."""
-    _seed_basic(fake_aap)
-    result = CliInvoker().invoke(app, ["job-templates", "list", "--format", "json"])
-    assert result.exit_code == 0, result.output
-    record = json.loads(result.stdout)[0]
-    assert record["playbook"] == "deploy.yml"
-    assert record["description"] == "deploy the app"
-
-
-def test_get_format_raw_keeps_first_key_default(fake_aap: Any) -> None:
-    """``get --format raw`` without ``--columns`` must keep
-    the row renderer's first-key behavior so pipelines like
-    ``get --stdin --format raw | …`` retain their established shape."""
-    _seed_basic(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "get", "deploy", "--organization", "Default", "--format", "raw"],
-    )
-    assert result.exit_code == 0, result.output
-    # Single line, single column — not a tab-separated multi-column wall.
-    assert "\t" not in result.stdout.strip()
-    assert "\n" not in result.stdout.strip()
-
-
-def test_get_with_names_translates_fks(fake_aap: Any) -> None:
-    """``get --with-names`` works the same way as on list."""
-    _seed_basic(fake_aap)
-    # Inject summary_fields so the translation has data to read.
-    fake_aap.get_record("job_templates", 30)["summary_fields"] = {
-        "organization": {"id": 1, "name": "Default"},
-        "project": {"id": 10, "name": "playbooks"},
-        "inventory": {"id": 20, "name": "prod"},
-    }
-    result = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "get",
-            "deploy",
-            "--organization",
-            "Default",
-            "--with-names",
-            "--format",
-            "raw",
-            "--columns",
-            "project",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "playbooks"
-
-
-def test_job_templates_get(fake_aap: Any) -> None:
-    _seed_basic(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "get",
-            "deploy",
-            "--organization",
-            "Default",
-            "--format",
-            "raw",
-            "--columns",
-            "playbook",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "deploy.yml"
-
-
-def test_get_accepts_multiple_positional_names(seeded_default_org: Any) -> None:
-    """Identifier-taking commands must support repeated positionals so users
-    can fetch several resources in one call and pipe the rendered rows."""
-    seeded_default_org.seed(
-        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
-    )
-    seeded_default_org.seed(
-        "job_templates", id=11, name="beta", organization=1, organization_name="Default"
-    )
-    result = CliInvoker().invoke(
-        app, ["job-templates", "get", "alpha", "beta", "--format", "raw", "--columns", "name"]
-    )
-    assert result.exit_code == 0, result.output
-    assert "alpha" in result.stdout
-    assert "beta" in result.stdout
-
-
-def test_get_reads_names_from_stdin(seeded_default_org: Any) -> None:
-    """`list ... | get --stdin` is the documented pipeline shape."""
-    seeded_default_org.seed(
-        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
-    )
-    seeded_default_org.seed(
-        "job_templates", id=11, name="beta", organization=1, organization_name="Default"
-    )
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "get", "--stdin", "--format", "raw", "--columns", "name"],
-        input="alpha\nbeta\n",
-    )
-    assert result.exit_code == 0, result.output
-    assert "alpha" in result.stdout
-    assert "beta" in result.stdout
-
-
-def test_get_by_id_accepts_numeric_id_positional(seeded_default_org: Any) -> None:
-    """Explicit ``--by-id`` keeps the FK-piping id lookup path available.
-
-    Lets users pipe FK columns straight into another resource's `get`:
-    `job-templates list --columns project --format raw | projects get --stdin --by-id`.
-    """
-    seeded_default_org.seed(
-        "projects",
-        id=10,
-        name="playbooks",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    result = CliInvoker().invoke(
-        app,
-        ["projects", "get", "--by-id", "10", "--format", "raw", "--columns", "name"],
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "playbooks"
-
-
-def test_get_treats_unicode_non_decimal_digit_as_name(seeded_default_org: Any) -> None:
-    """``isdigit()`` matches Unicode digits like ``²`` that ``int()`` rejects.
-    Those identifiers must take the name-lookup path so the user sees a
-    clean ``error: <id>: not found`` (or a hit on a literally-named
-    resource) instead of an unhandled ``ValueError`` traceback."""
-    result = CliInvoker().invoke(
-        app,
-        ["projects", "get", "²", "--organization", "Default", "--format", "raw"],
-    )
-    # Name lookup miss → per-item error line + exit 1, no traceback.
-    assert result.exit_code == 1
-    assert result.exception is None or isinstance(result.exception, SystemExit)
-    output = result.output + (result.stderr or "")
-    assert "error" in output
-
-
-def test_get_defaults_to_name_lookup_for_all_digit_names(seeded_default_org: Any) -> None:
-    """All-digit resource names are first-class: default lookup is by name."""
-    # A project whose name is "10" — and a different project with id 10.
-    seeded_default_org.seed(
-        "projects",
-        id=99,
-        name="10",  # all-digit name
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    seeded_default_org.seed(
-        "projects",
-        id=10,
-        name="playbooks",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    result = CliInvoker().invoke(
-        app,
-        [
-            "projects",
-            "get",
-            "10",
-            "--organization",
-            "Default",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "99"
-
-
-def test_get_by_id_validates_organization_scope(fake_aap: Any) -> None:
-    """An explicitly supplied organization constrains an ID lookup too."""
-    fake_aap.seed("organizations", id=1, name="Org-A")
-    fake_aap.seed("organizations", id=2, name="Org-B")
-    fake_aap.seed(
-        "projects",
-        id=10,
-        name="playbooks",
-        organization=2,
-        organization_name="Org-B",
-        scm_type="git",
-    )
-    result = CliInvoker().invoke(
-        app,
-        [
-            "projects",
-            "get",
-            "--by-id",
-            "10",
-            "--organization",
-            "Org-A",  # wrong org, must reject
-            "--format",
-            "raw",
-            "--columns",
-            "name",
-        ],
-    )
-    assert result.exit_code != 0, result.output
-    assert result.stdout.strip() == ""
-
-
-def test_get_stdin_defaults_to_name_lookup_for_all_lines(seeded_default_org: Any) -> None:
-    """Default stdin batches treat every line as a name, even all digits."""
-    seeded_default_org.seed(
-        "projects",
-        id=99,
-        name="10",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    seeded_default_org.seed(
-        "projects",
-        id=100,
-        name="11",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    result = CliInvoker().invoke(
-        app,
-        [
-            "projects",
-            "get",
-            "--stdin",
-            "--organization",
-            "Default",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-        input="10\n11\n",
-    )
-    assert result.exit_code == 0, result.output
-    assert set(result.stdout.split()) == {"99", "100"}
-
-
-def test_get_stdin_by_id_rejects_non_numeric_lines(seeded_default_org: Any) -> None:
-    """``--by-id`` is a batch mode: every line must be an id."""
-    seeded_default_org.seed(
-        "projects",
-        id=10,
-        name="playbooks",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    result = CliInvoker().invoke(
-        app,
-        ["projects", "get", "--stdin", "--by-id", "--format", "raw", "--columns", "name"],
-        input="10\nops\n",
-    )
-    assert result.exit_code == 1
-    assert result.stdout.strip() == ""
-    assert "ops" in (result.stderr or result.output)
-    assert "numeric" in (result.stderr or result.output)
-
-
-def test_get_batches_default_to_all_names(seeded_default_org: Any) -> None:
-    """Default batches do not mix per-token modes; every identifier is a name."""
-    seeded_default_org.seed(
-        "projects",
-        id=10,
-        name="playbooks",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    seeded_default_org.seed(
-        "projects",
-        id=99,
-        name="11",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    result = CliInvoker().invoke(
-        app,
-        [
-            "projects",
-            "get",
-            "playbooks",
-            "11",
-            "--organization",
-            "Default",
-            "--format",
-            "raw",
-            "--columns",
-            "name",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert "playbooks" in result.stdout
-    assert "11" in result.stdout
-
-
-def test_get_by_missing_id_reports_error(seeded_default_org: Any) -> None:
-    """A missing numeric id must surface as a per-item error and a
-    non-zero exit, just like a missing name does."""
-    seeded_default_org.seed(
-        "projects",
-        id=10,
-        name="playbooks",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    result = CliInvoker().invoke(
-        app,
-        ["projects", "get", "--stdin", "--by-id", "--format", "raw", "--columns", "name"],
-        input="10\n9999\n",
-    )
-    assert result.exit_code != 0
-    # Successful lookup still reaches stdout.
-    assert result.stdout == ""
-    # The missing id surfaces on stderr.
-    assert "9999" in (result.output + (result.stderr or ""))
-
-
-def test_get_rejects_mixed_positional_and_stdin(seeded_default_org: Any) -> None:
-    seeded_default_org.seed(
-        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
-    )
-    result = CliInvoker().invoke(app, ["job-templates", "get", "alpha", "--stdin"], input="beta\n")
-    assert result.exit_code != 0
-    # Confirm the failure is the intentional mutually-exclusive rejection,
-    # not a crash bubbling up an unrelated exception.
-    assert "stdin" in (result.output + (result.stderr or "")).lower()
-
-
-def test_list_reads_names_from_stdin(seeded_default_org: Any) -> None:
-    """`list --stdin` consumes newline-separated names — same identifier
-    semantics as `get --stdin`, but rendered through `list`'s tabular
-    columns view rather than the per-record yaml/json of `get`."""
-    seeded_default_org.seed(
-        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
-    )
-    seeded_default_org.seed(
-        "job_templates", id=11, name="beta", organization=1, organization_name="Default"
-    )
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "list", "--stdin", "--format", "raw", "--columns", "name"],
-        input="alpha\nbeta\n",
-    )
-    assert result.exit_code == 0, result.output
-    assert "alpha" in result.stdout
-    assert "beta" in result.stdout
-
-
-def test_list_stdin_by_id_reads_ids(seeded_default_org: Any) -> None:
-    """``list --stdin --by-id`` keeps the id-piping shape explicit."""
-    seeded_default_org.seed(
-        "projects",
-        id=10,
-        name="playbooks",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    seeded_default_org.seed(
-        "projects",
-        id=11,
-        name="ops",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    result = CliInvoker().invoke(
-        app,
-        ["projects", "list", "--stdin", "--by-id", "--format", "raw", "--columns", "name"],
-        input="10\n11\n",
-    )
-    assert result.exit_code == 0, result.output
-    assert "playbooks" in result.stdout
-    assert "ops" in result.stdout
-
-
-def test_list_stdin_all_failed_exits_one_and_suppresses_empty_stdout(
-    seeded_default_org: Any,
-) -> None:
-    """When every piped identifier 404s, the command exits 1 and stays
-    silent on stdout — per-id errors went to stderr; emitting an empty
-    ``[]`` would be redundant noise for the all-failed batch. The
-    non-stdin path still emits ``[]`` (pinned by
-    ``test_list_empty_result_still_renders_in_non_stdin_mode``)."""
-    result = CliInvoker().invoke(
-        app,
-        ["projects", "list", "--stdin", "--format", "json"],
-        input="missing-a\nmissing-b\n",
-    )
-    assert result.exit_code != 0
-    assert result.stdout.strip() == ""
-    err = (result.output or "") + (result.stderr or "")
-    assert "missing-a" in err
-
-
-def test_list_empty_result_still_renders_in_non_stdin_mode(seeded_default_org: Any) -> None:
-    """A regular `list` with zero matches must still emit a valid
-    document for the chosen format so pipelines (``| jq '.[]'`` etc.)
-    don't break on no-result queries. The ``--stdin`` path is the only
-    one allowed to suppress empty stdout (its per-id errors went to
-    stderr)."""
-    result = CliInvoker().invoke(
-        app,
-        ["projects", "list", "--filter", "name=does-not-exist", "--format", "json"],
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "[]"
-
-
-def test_list_stdin_empty_is_an_error(seeded_default_org: Any) -> None:
-    """An explicitly empty stdin selection is the core "no identifiers" error."""
-    result = CliInvoker().invoke(
-        app,
-        ["projects", "list", "--stdin"],
-        input="",
-    )
-    assert result.exit_code == 1
-    assert "error: no identifiers received on stdin" in result.stderr
-
-
-@pytest.mark.parametrize(
-    "extra",
-    [["--search", "foo"], ["--filter", "name=alpha"]],
-)
-def test_list_stdin_rejects_server_filter_flags(seeded_default_org: Any, extra: list[str]) -> None:
-    """`--stdin` is identifier-based lookup; server filtering knobs are a
-    different mode. Combining them is rejected up front."""
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "list", "--stdin", *extra],
-        input="alpha\n",
-    )
-    assert result.exit_code != 0
-    output = result.output + (result.stderr or "")
-    assert "selection sources are exclusive" in output
-
-
-def test_list_stdin_rejects_incomplete_selection(seeded_default_org: Any) -> None:
-    """The shared resolver rejects an incomplete selection before output."""
-    seeded_default_org.seed(
-        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
-    )
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "list", "--stdin", "--format", "raw", "--columns", "name"],
-        input="alpha\nghost\n",
-    )
-    assert result.exit_code != 0
-    assert result.stdout == ""
-    assert "ghost" in (result.output + (result.stderr or ""))
-
-
-def test_list_stdin_renders_table_format(seeded_default_org: Any) -> None:
-    """Default `--format` (table) under `--stdin` produces the same
-    tabular columns view `list` normally renders — the user-visible
-    promise of "tabular semantics for a known set"."""
-    seeded_default_org.seed(
-        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
-    )
-    seeded_default_org.seed(
-        "job_templates", id=11, name="beta", organization=1, organization_name="Default"
-    )
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "list", "--stdin"],
-        input="alpha\nbeta\n",
-    )
-    assert result.exit_code == 0, result.output
-    assert "alpha" in result.stdout
-    assert "beta" in result.stdout
-
-
-def test_list_stdin_with_names_flips_fks(seeded_default_org: Any) -> None:
-    """`--with-names` flattens FK ids to names under `--stdin` just like
-    it does under the existing filter-based `list` path."""
-    seeded_default_org.seed(
-        "projects",
-        id=10,
-        name="playbooks",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    seeded_default_org.seed(
-        "job_templates",
-        id=30,
-        name="deploy",
-        organization=1,
-        organization_name="Default",
-        project=10,
-        project_name="playbooks",
-        playbook="a.yml",
-        summary_fields={
-            "organization": {"id": 1, "name": "Default"},
-            "project": {"id": 10, "name": "playbooks"},
-        },
-    )
-    result = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "list",
-            "--stdin",
-            "--with-names",
-            "--format",
-            "raw",
-            "--columns",
-            "project",
-        ],
-        input="deploy\n",
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "playbooks"
-
-
-def test_list_stdin_defaults_to_name_lookup_for_all_lines(seeded_default_org: Any) -> None:
-    """A `list --stdin` default batch treats every line as a name."""
-    seeded_default_org.seed(
-        "projects",
-        id=10,
-        name="playbooks",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    seeded_default_org.seed(
-        "projects",
-        id=99,
-        name="11",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    result = CliInvoker().invoke(
-        app,
-        [
-            "projects",
-            "list",
-            "--stdin",
-            "--organization",
-            "Default",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-        input="playbooks\n11\n",
-    )
-    assert result.exit_code == 0, result.output
-    assert set(result.stdout.split()) == {"10", "99"}
-
-
-def test_get_without_scope_raises_when_name_is_ambiguous(fake_aap: Any) -> None:
-    """A name that exists in multiple orgs must raise (no silent first-match)."""
-    fake_aap.seed("organizations", id=1, name="Org-A")
-    fake_aap.seed("organizations", id=2, name="Org-B")
-    fake_aap.seed("job_templates", id=10, name="deploy", organization=1, organization_name="Org-A")
-    fake_aap.seed("job_templates", id=11, name="deploy", organization=2, organization_name="Org-B")
-
-    result = CliInvoker().invoke(app, ["job-templates", "get", "deploy"])
-    assert result.exit_code != 0
-    output = result.output + (result.stderr or "")
-    assert "ambiguous" in output.lower(), output
-
-
-def test_get_with_scope_resolves_unambiguously(fake_aap: Any) -> None:
-    """Adding the missing scope removes the ambiguity."""
-    fake_aap.seed("organizations", id=1, name="Org-A")
-    fake_aap.seed("organizations", id=2, name="Org-B")
-    fake_aap.seed("job_templates", id=10, name="deploy", organization=1, organization_name="Org-A")
-    fake_aap.seed("job_templates", id=11, name="deploy", organization=2, organization_name="Org-B")
-
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "get", "deploy", "--organization", "Org-A", "--format", "json"],
-    )
-    assert result.exit_code == 0, result.output
-
-
-def test_get_accepts_org_alias_for_name_scope(fake_aap: Any) -> None:
-    """``--org`` is the ergonomic alias for the common org-scope lookup."""
-    fake_aap.seed("organizations", id=1, name="Org-A")
-    fake_aap.seed("organizations", id=2, name="Org-B")
-    fake_aap.seed("job_templates", id=10, name="deploy", organization=1, organization_name="Org-A")
-    fake_aap.seed("job_templates", id=11, name="deploy", organization=2, organization_name="Org-B")
-
-    result = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "get",
-            "deploy",
-            "--org",
-            "Org-B",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "11"
-
-
-def test_get_stdin_rejects_incomplete_selection(seeded_default_org: Any) -> None:
-    """An incomplete multi-name selection fails before emitting any records."""
-    seeded_default_org.seed(
-        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
-    )
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "get", "--stdin", "--format", "raw", "--columns", "name"],
-        input="alpha\nghost\n",
-    )
-    assert result.exit_code != 0
-    # No selected rows are emitted when any requested name fails.
-    assert result.stdout == ""
-    assert "ghost" in (result.output + (result.stderr or ""))
-
-
-def test_scope_aliases_are_advertised_on_generated_commands() -> None:
-    runner = CliInvoker()
-
-    org_scoped_commands = [
-        ["job-templates", "get", "--help"],
-        ["job-templates", "list", "--help"],
-        ["job-templates", "export", "--help"],
-        ["job-templates", "delete", "--help"],
-        ["projects", "sync", "--help"],
-    ]
-    for args in org_scoped_commands:
-        result = runner.invoke(app, args)
-        assert result.exit_code == 0, result.output
-        assert _flag_in_help("--organization", result.output), args
-        assert _flag_in_help("--org", result.output), args
-
-
-def test_list_empty_guides_with_stderr_hint(fake_aap: Any) -> None:
-    # Nothing seeded for this kind → empty list → guiding hint on stderr,
-    # stdout stays clean.
-    result = CliInvoker().invoke(app, ["job-templates", "list"])
-
-    assert result.exit_code == 0, result.output
-    assert result.stdout == ""
-    assert "No matching" in result.stderr
-    assert "found" in result.stderr
-
-
-def test_list_empty_json_stays_pipe_clean(fake_aap: Any) -> None:
-    result = CliInvoker().invoke(app, ["job-templates", "list", "--format", "json"])
-
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "[]"
-    assert "No matching" in result.stderr
-
-
-def test_list_reports_progress_on_stderr(fake_aap: Any) -> None:
-    _seed_basic(fake_aap)
-    result = CliInvoker().invoke(
-        app, ["job-templates", "list", "--format", "raw", "--columns", "name"]
-    )
-
+def test_list_reports_progress_on_stderr(catalog: Any) -> None:
+    result = _raw("job-templates", "list", *_DEPLOY)
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "deploy"
     assert "Loading" in result.stderr
-    assert "Loading" not in result.stdout
 
 
-def test_list_limit_zero_means_no_limit(fake_aap: Any) -> None:
-    fake_aap.seed("organizations", id=1, name="Default")
-    for index in range(3):
-        fake_aap.seed("projects", id=100 + index, name=f"p{index}", organization=1)
-    result = CliInvoker().invoke(
-        app, ["projects", "list", "--limit", "0", "--format", "raw", "--columns", "name"]
-    )
+@pytest.mark.parametrize(("fmt", "stdout"), [("table", ""), ("json", "[]")])
+def test_empty_list_guides_on_stderr_and_keeps_stdout_pipe_clean(
+    fake_aap: Any, fmt: str, stdout: str
+) -> None:
+    result = CliInvoker().invoke(app, ["job-templates", "list", "--format", fmt])
     assert result.exit_code == 0, result.output
-    assert result.stdout.split() == ["p0", "p1", "p2"]
+    assert result.stdout.strip() == stdout
+    assert "No matching" in result.stderr
 
 
 def test_list_limit_stops_paging_early(fake_aap: Any) -> None:
@@ -1072,9 +266,7 @@ def test_list_limit_stops_paging_early(fake_aap: Any) -> None:
     fake_aap.seed("organizations", id=1, name="Default")
     for index in range(450):
         fake_aap.seed("projects", id=100 + index, name=f"p{index}", organization=1)
-    result = CliInvoker().invoke(
-        app, ["projects", "list", "--limit", "2", "--format", "raw", "--columns", "name"]
-    )
+    result = _raw("projects", "list", "--limit", "2")
     assert result.exit_code == 0, result.output
     assert result.stdout.split() == ["p0", "p1"]
     pages = [
@@ -1083,3 +275,20 @@ def test_list_limit_stops_paging_early(fake_aap: Any) -> None:
         if call.request.method == "GET" and call.request.url.path.endswith("/projects/")
     ]
     assert len(pages) == 1
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["job-templates", "get"],
+        ["job-templates", "list"],
+        ["job-templates", "export"],
+        ["job-templates", "delete"],
+        ["projects", "sync"],
+    ],
+)
+def test_scope_aliases_are_advertised_on_generated_commands(command: list[str]) -> None:
+    result = CliInvoker().invoke(app, [*command, "--help"])
+    assert result.exit_code == 0, result.output
+    for flag in ("--organization", "--org"):
+        assert re.search(rf"{re.escape(flag)}\b", result.output), flag

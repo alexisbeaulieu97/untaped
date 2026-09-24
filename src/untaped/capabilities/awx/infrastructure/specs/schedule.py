@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from untaped.capabilities.awx.domain import FkRef
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
+from untaped.capabilities.awx.infrastructure.specs._support import UNIVERSAL_READ_ONLY
 
 SCHEDULE_SPEC = AwxResourceSpec(
     kind="Schedule",
@@ -35,13 +36,7 @@ SCHEDULE_SPEC = AwxResourceSpec(
         "execution_environment",
     ),
     read_only_fields=(
-        "id",
-        "created",
-        "modified",
-        "summary_fields",
-        "related",
-        "type",
-        "url",
+        *UNIVERSAL_READ_ONLY,
         "last_run",
         "next_run",
         "dtstart",

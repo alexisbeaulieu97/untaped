@@ -81,7 +81,9 @@ def test_secret_values_are_redacted_in_plan_presentation() -> None:
         ]
     )
     assert "new-secret" not in repr(plan)
-    assert plan.operations[0].presentation_payload["webhook_key"] == "<redacted>"
+    preview = plan.operations[0].preview
+    assert "new-secret" not in repr(preview)
+    assert [change.field for change in preview.changes] == ["webhook_key"]
 
 
 def test_planned_fk_reference_does_not_confuse_negative_literal_values() -> None:

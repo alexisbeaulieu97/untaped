@@ -11,37 +11,18 @@ from cyclopts import App, Parameter
 from untaped.capabilities.awx.application import SaveResource
 from untaped.capabilities.awx.application.apply_planner import unrecognized_fields
 from untaped.capabilities.awx.cli._apply_runner import build_mutation_engine
-from untaped.capabilities.awx.cli._mutation_runner import run_mutation_plan, validate_controls
-from untaped.capabilities.awx.cli._selection import select_resources
-from untaped.capabilities.awx.cli.context import open_context
-from untaped.capabilities.awx.cli.options import (
-    AllOption,
-    ByIdOption,
-    ContinueOption,
-    DryRunOption,
-    FilterOption,
-    InventoryOption,
-    InventoryOrganizationOption,
-    NamesArgument,
-    OrganizationOption,
-    ParallelOption,
-    ParentOption,
-    SearchOption,
-    StdinOption,
-    UnverifiedOption,
-    YesOption,
+from untaped.capabilities.awx.cli._mutation_runner import (
+    CONTROL_DEFAULTS,
+    WriteControls,
+    run_mutation_plan,
 )
+from untaped.capabilities.awx.cli._selection import SELECTION_DEFAULTS, SelectionOptions
+from untaped.capabilities.awx.cli.context import open_context
+from untaped.capabilities.awx.cli.options import NamesArgument
 from untaped.capabilities.awx.cli.patch_values import build_patch, parse_set_pairs
 from untaped.capabilities.awx.domain import Resource
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
-from untaped.capability_api import (
-    ColumnsOption,
-    ConfigError,
-    FormatOption,
-    plural,
-    raise_usage,
-    report_errors,
-)
+from untaped.capability_api import ConfigError, plural, raise_usage, report_errors
 
 
 def _add_patch(app: App, spec: AwxResourceSpec) -> None:
@@ -50,15 +31,7 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
         names: NamesArgument = None,
         /,
         *,
-        stdin: StdinOption = False,
-        by_id: ByIdOption = False,
-        search: SearchOption = None,
-        filter_: FilterOption = None,
-        all_: AllOption = False,
-        organization: OrganizationOption = None,
-        inventory: InventoryOption = None,
-        inventory_organization: InventoryOrganizationOption = None,
-        parent: ParentOption = None,
+        selection: SelectionOptions = SELECTION_DEFAULTS,
         set_: Annotated[
             list[str] | None,
             Parameter(
@@ -83,21 +56,12 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
                 help="Send field names this tool does not know (default: reject as typos).",
             ),
         ] = False,
-        yes: YesOption = False,
-        dry_run: DryRunOption = False,
-        continue_on_error: ContinueOption = False,
-        parallel: ParallelOption = 1,
-        allow_unverified: UnverifiedOption = False,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
+        controls: WriteControls = CONTROL_DEFAULTS,
     ) -> None:
         """Replace specified fields on an existing selection, with one confirmation."""
-        if not names and not stdin and not filter_ and search is None and not all_:
-            raise_usage("provide names, --stdin, filters/search, or --all")
+        selection.require_source(names)
         with report_errors():
-            parallel = validate_controls(
-                yes=yes, dry_run=dry_run, allow_unverified=allow_unverified, parallel=parallel
-            )
+            controls = controls.validated()
             overlay = build_patch(set_, patch_file)
             if not overlay:
                 raise ConfigError("provide --set and/or --patch-file with at least one field")
@@ -112,21 +76,7 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
                     + "; fix the spelling or pass --allow-unknown-fields"
                 )
             with open_context() as ctx:
-                selected = select_resources(
-                    ctx,
-                    spec,
-                    names,
-                    stdin=stdin,
-                    by_id=by_id,
-                    filters=filter_,
-                    search=search,
-                    all_=all_,
-                    require_explicit=True,
-                    organization=organization,
-                    inventory=inventory,
-                    inventory_organization=inventory_organization,
-                    parent=parent,
-                )
+                selected = selection.select(ctx, spec, names)
                 saver = SaveResource(ctx.repo, ctx.fk)
                 resources = [
                     Resource(
@@ -137,20 +87,9 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
                     )
                     for item in selected
                 ]
-                engine = build_mutation_engine(ctx, allow_unverified=allow_unverified)
+                engine = build_mutation_engine(ctx, allow_unverified=controls.allow_unverified)
                 plan = engine.prepare(resources, mode="patch", existing=selected)
-                run_mutation_plan(
-                    ctx,
-                    engine,
-                    plan,
-                    yes=yes,
-                    dry_run=dry_run,
-                    continue_on_error=continue_on_error,
-                    parallel=parallel,
-                    allow_unverified=allow_unverified,
-                    fmt=fmt,
-                    columns=columns,
-                )
+                run_mutation_plan(ctx, engine, plan, controls)
 
 
 def _likely_typos(spec: AwxResourceSpec, overlay: dict[str, object]) -> list[tuple[str, str]]:
