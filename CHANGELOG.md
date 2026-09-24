@@ -13,6 +13,11 @@ defaults.
     and after command names at any depth.
   - Fixed: `untaped --help | head` (help into a closed pipe) exited 1 through
     Rich's broken-pipe handler. It now exits 0 quietly, like data commands.
+  - `config set/unset` and `profile create/delete/rename` take `--format`,
+    `--columns` and `--dry-run`, and print `untaped.setting_outcome` /
+    `untaped.profile_outcome` records (table by default) after the existing
+    stderr message. `--dry-run` validates and writes nothing; `profile delete
+    --dry-run` shows the preview without prompting.
   - Mapping and list settings (`ui.symbols`, `ui.color_roles`,
     `ansible.dependency_paths`) show up in `config list/get` (compact JSON in
     table/raw, native values in json/yaml/pipe). `config set KEY VALUE` takes

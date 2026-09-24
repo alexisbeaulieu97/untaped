@@ -8,6 +8,7 @@ in ``profiles.<target>``.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from typing import Any
 
 import yaml
@@ -122,7 +123,9 @@ class SettingsFileRepository:
     def env_value_for(self, descriptor: FieldDescriptor) -> str | None:
         return os.environ.get(self.env_var_for(descriptor))
 
-    def set_value(self, key: str, raw_value: str, *, profile: str | None = None) -> str:
+    def set_value(
+        self, key: str, raw_value: str, *, profile: str | None = None, dry_run: bool = False
+    ) -> str:
         """Validate ``raw_value`` against the key's type, then persist.
 
         The raw string is validated against the leaf's annotation (lax mode:
@@ -130,7 +133,7 @@ class SettingsFileRepository:
         secret fields keep the exact input. Only the key's own section is
         re-validated, so an unrelated invalid section never blocks a repair.
         Returns the resolved target profile name so callers can report where
-        the write landed.
+        the write landed. ``dry_run`` validates the same way but writes nothing.
         """
         descriptor = self.descriptor(key)
         value = _coerce_value(key, descriptor, raw_value)
@@ -147,17 +150,20 @@ class SettingsFileRepository:
                     f"invalid value for {key!r}: {first_validation_error(exc)}"
                 ) from exc
 
-        mutate_config(_apply)
-        # ``mutate_config`` always runs ``_apply``, which sets ``resolved`` from
+        _run(_apply, dry_run=dry_run)
+        # ``_run`` always runs ``_apply``, which sets ``resolved`` from
         # ``write_profile`` (always a profile name).
         assert resolved is not None
         return resolved
 
-    def unset_value(self, key: str, *, profile: str | None = None) -> tuple[bool, str]:
+    def unset_value(
+        self, key: str, *, profile: str | None = None, dry_run: bool = False
+    ) -> tuple[bool, str]:
         """Remove ``key`` from the resolved write scope.
 
-        Returns ``(removed, target)``. An explicit ``--target-profile`` the
-        layout cannot satisfy raises ``ConfigError``. Removing a key that
+        Returns ``(removed, target)``; under ``dry_run`` ``removed`` says
+        whether it would be removed and nothing is written. An explicit
+        ``--target-profile`` the layout cannot satisfy raises ``ConfigError``. Removing a key that
         simply isn't set in the resolved scope is a no-op
         (``removed=False``).
         """
@@ -183,7 +189,7 @@ class SettingsFileRepository:
                     f"{first_validation_error(exc)}"
                 ) from exc
 
-        mutate_config(_apply)
+        _run(_apply, dry_run=dry_run)
         # ``write_profile`` (run inside ``_apply``, before the early return) always
         # sets ``resolved`` to a profile name.
         assert resolved is not None
@@ -204,6 +210,14 @@ class SettingsFileRepository:
         """
         effective = active_settings_layout().effective(data, profile=profile)
         validate_settings_section(effective, descriptor.path[0], self._profile_model())
+
+
+def _run(apply: Callable[[dict[str, Any]], None], *, dry_run: bool) -> None:
+    """Apply a config mutation, or run it on an in-memory copy for a dry run."""
+    if dry_run:
+        apply(read_config_dict())
+    else:
+        mutate_config(apply)
 
 
 def _coerce_value(key: str, descriptor: FieldDescriptor, raw_value: str) -> Any:

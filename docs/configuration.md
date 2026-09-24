@@ -162,8 +162,9 @@ untaped profile show prod --show-secrets
 untaped profile use prod
 untaped profile create stage
 untaped profile create stage --copy-from default
+untaped profile delete stage --dry-run
 untaped profile delete stage --yes
-untaped profile rename stage staging
+untaped profile rename stage staging --format json
 
 untaped --profile stage config list
 untaped config list --profile stage
@@ -186,6 +187,13 @@ reported on stderr, so it is safe in a prompt or pipeline:
 echo "[$(untaped profile current 2>/dev/null)] $ "
 ```
 
+`profile create`, `delete` and `rename` print an `untaped.profile_outcome`
+record (`name`, `previous_name`, `copied_from`, `action`) in any `--format`;
+`action` is `created`, `deleted`, `renamed`, or `planned` under `--dry-run`,
+which checks the change and writes nothing. `profile delete` confirms first
+(pass `--yes` without a terminal); `--dry-run` shows the preview without
+prompting.
+
 `default` is created automatically by the first setting write. Other profiles
 must exist before a write targets them.
 
@@ -207,6 +215,7 @@ untaped config set github.token --prompt
 printf '%s\n' "$GITHUB_TOKEN" | untaped config set github.token --stdin
 untaped config set awx.base_url https://aap.example.com --target-profile default
 untaped config unset awx.token --target-profile prod
+untaped config set http.timeout 60 --dry-run --format json
 untaped config set ui.theme quiet
 untaped config set http.verify_ssl false
 untaped config set log_level DEBUG
@@ -222,6 +231,12 @@ parsing it as YAML. String and secret settings store the input verbatim, so
 strings; an invalid value is rejected before anything is written. For an
 optional non-string setting, the literal `null` stores an explicit null; a
 string setting stores `null` as text. To clear a value, use `config unset`.
+
+`config set` and `config unset` print an `untaped.setting_outcome` record
+(`key`, `profile`, `action`) in any `--format`; the value itself is never
+echoed. `action` is `updated` for a set, `deleted` or `unchanged` for an unset,
+and `planned` under `--dry-run`, which validates the value and target profile
+without writing.
 
 Mapping and list settings (`ui.symbols`, `ui.color_roles`,
 `ansible.dependency_paths`) take the whole value as JSON or YAML

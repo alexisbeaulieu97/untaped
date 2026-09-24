@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from untaped.records import OutcomeRecord
+
 
 @dataclass(frozen=True)
 class Profile:
@@ -30,6 +32,19 @@ class ProfileDeletePreview:
 
     name: str
     top_level_keys: tuple[str, ...]
+
+
+class ProfileOutcome(OutcomeRecord):
+    """The result of ``profile create/delete/rename`` (``untaped.profile_outcome``).
+
+    ``action`` is ``created``, ``deleted``, ``renamed``, or ``planned`` under
+    ``--dry-run``. ``previous_name`` is set by ``rename`` and ``copied_from``
+    by ``create --copy-from``.
+    """
+
+    name: str
+    previous_name: str | None = None
+    copied_from: str | None = None
 
 
 def _count_leaves(data: dict[str, Any]) -> int:

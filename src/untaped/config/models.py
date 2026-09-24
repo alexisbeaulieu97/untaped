@@ -15,6 +15,7 @@ from untaped.config_schema import (
     redact_nested_url_passwords,
     redact_url_password,
 )
+from untaped.records import OutcomeRecord
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,18 @@ class SettingEntry(BaseModel):
     source: Source
     profile: str | None = None
     """Set in ``--all-profiles`` mode to name the profile owning this row."""
+
+
+class SettingOutcome(OutcomeRecord):
+    """The result of ``config set``/``unset`` (kind ``untaped.setting_outcome``).
+
+    ``action`` is ``updated`` (set), ``deleted`` or ``unchanged`` (unset), or
+    ``planned`` under ``--dry-run``. The value is never echoed: it may be a
+    secret.
+    """
+
+    key: str
+    profile: str
 
 
 UNSET_GLYPH = "—"

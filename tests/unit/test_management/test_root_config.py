@@ -8,6 +8,7 @@ and bare keys are NEVER implicitly expanded to a capability section.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -287,3 +288,48 @@ def test_set_preserves_comments_and_key_order(_isolated_config: Path) -> None:
         "      token: keep  # rotate monthly\n"
         "      base_url: https://ghe.example\n"
     )
+
+
+# ── outcome records and --dry-run ────────────────────────────────────────────
+
+
+def _json(result: object) -> object:
+    return json.loads(result.stdout)  # type: ignore[attr-defined]
+
+
+def test_set_emits_a_setting_outcome(_isolated_config: Path) -> None:
+    app = _config_app()
+    result = CliInvoker().invoke(app, ["set", "github.token", "ghp_x", "-f", "json"])  # type: ignore[arg-type]
+    assert result.exit_code == 0, result.output
+    assert _json(result) == {"key": "github.token", "profile": "default", "action": "updated"}
+    assert "ghp_x" not in result.stdout
+
+
+def test_set_dry_run_validates_without_writing(_isolated_config: Path) -> None:
+    app = _config_app()
+    result = CliInvoker().invoke(  # type: ignore[arg-type]
+        app, ["set", "jira.timeout", "12", "--dry-run", "-f", "json"]
+    )
+    assert result.exit_code == 0, result.output
+    assert _json(result) == {"key": "jira.timeout", "profile": "default", "action": "planned"}
+    assert not _isolated_config.exists()
+
+    invalid = CliInvoker().invoke(app, ["set", "jira.timeout", "soon", "--dry-run"])  # type: ignore[arg-type]
+    assert invalid.exit_code == 1
+    assert "invalid value for 'jira.timeout'" in invalid.stderr
+
+
+def test_unset_emits_deleted_unchanged_and_planned(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    github:\n      mode: 'on'\n")
+    app = _config_app()
+
+    def unset(*extra: str) -> object:
+        result = CliInvoker().invoke(app, ["unset", "github.mode", "-f", "json", *extra])  # type: ignore[arg-type]
+        assert result.exit_code == 0, result.output
+        return _json(result)["action"]  # type: ignore[index]
+
+    assert unset("--dry-run") == "planned"
+    assert read_config_dict(_isolated_config)["profiles"]["default"]["github"] == {"mode": "on"}
+    assert unset() == "deleted"
+    assert unset() == "unchanged"
+    assert unset("--dry-run") == "unchanged"
