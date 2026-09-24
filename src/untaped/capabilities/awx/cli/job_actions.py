@@ -15,9 +15,9 @@ from cyclopts import App, Parameter
 
 from untaped.capabilities.awx.cli.context import AwxContext, open_context
 from untaped.capabilities.awx.cli.job_targets import (
-    JOB_KIND_HELP,
     JobIdsArgument,
-    JobKind,
+    JobKindOption,
+    JobsStdinOption,
     as_job_id,
     job_targets,
 )
@@ -38,12 +38,6 @@ from untaped.capability_api import (
     resolve_each,
 )
 
-_StdinOption = Annotated[
-    bool,
-    Parameter(name="--stdin", negative="", help="Read job ids from stdin (one per line)."),
-]
-_KindOption = Annotated[JobKind, Parameter(name="--kind", help=JOB_KIND_HELP)]
-
 
 def register_job_actions(jobs_app: App) -> None:
     """Attach ``cancel`` and ``relaunch`` to the ``awx jobs`` group."""
@@ -53,8 +47,8 @@ def register_job_actions(jobs_app: App) -> None:
         job_ids: JobIdsArgument = None,
         /,
         *,
-        stdin: _StdinOption = False,
-        kind: _KindOption = "job",
+        stdin: JobsStdinOption = False,
+        kind: JobKindOption = "job",
         yes: YesOption = False,
         dry_run: DryRunOption = False,
         fmt: FormatOption = "table",
@@ -89,8 +83,8 @@ def register_job_actions(jobs_app: App) -> None:
         job_ids: JobIdsArgument = None,
         /,
         *,
-        stdin: _StdinOption = False,
-        kind: _KindOption = "job",
+        stdin: JobsStdinOption = False,
+        kind: JobKindOption = "job",
         failed_hosts: Annotated[
             bool,
             Parameter(

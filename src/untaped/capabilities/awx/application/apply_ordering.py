@@ -111,4 +111,3 @@ def _kahn_topological_order(
         unresolved = sorted(k for k, deg in in_degree.items() if deg > 0)
         raise AwxApiError(f"cycle in apply order across kinds: {', '.join(unresolved)}")
     return ordered
-
