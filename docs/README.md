@@ -26,8 +26,8 @@ the version you have installed.
 | `ansible` | [Ansible dependency graphs](./ansible/usage.md) | What a role depends on, and what depends on it. |
 | `recipe` | [Recipes](./recipe/usage.md) | Plan, preview and apply file changes across many directories. |
 
-- [Agent skills](./skills.md): install the skills that teach AI coding agents
-  to use each capability.
+- [Agent skills](./skills.md): install and update the skills that teach AI
+  coding agents to use each capability.
 
 ## Reference
 

@@ -44,6 +44,7 @@ from untaped.config_schema import walk_settings
 from untaped.errors import ConfigError, ExitCode, first_validation_error
 from untaped.http import resolve_verify
 from untaped.management._render import emit_isolated
+from untaped.management.skills import composed_skills
 from untaped.messages import plural
 from untaped.profile_resolver import classify_active_profile
 from untaped.render import OutputFormat
@@ -57,7 +58,7 @@ from untaped.settings import (
     resolve_state_path,
     state_section_source,
 )
-from untaped.skills import InstallableSkill, outdated_skills
+from untaped.skills import SkillState, outdated_skills, project_root
 from untaped.theme import UiSettings, resolve_theme
 
 _PASS = "pass"
@@ -245,17 +246,15 @@ def _collect_unknown(
 def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
     """Warn when an installed skill no longer matches the packaged copy."""
     title = "installed skills up to date"
-    skills: dict[str, InstallableSkill] = {asset.name: asset for asset in shell.skills}
-    for registered in result.capabilities:
-        skills.update({asset.name: asset for asset in registered.skills})
-    stale = outdated_skills(skills, project_dir=Path.cwd())
+    stale = outdated_skills(composed_skills(shell, result), project_dir=project_root(Path.cwd()))
     if not stale:
         return _row("skills", shell.name, _PASS, title, "no outdated skills")
-    names = sorted({path.name for path in stale})
-    detail = (
-        f"outdated: {', '.join(str(path) for path in stale)}; "
-        f"reinstall with `untaped skills install {' '.join(names)} --force`"
-    )
+    parts = [f"{item.state.value}: {item.path}" for item in stale]
+    if any(item.state is SkillState.outdated for item in stale):
+        parts.append("update with `untaped skills update`")
+    if any(item.state is SkillState.orphaned for item in stale):
+        parts.append("remove unshipped skills with `untaped skills remove NAME`")
+    detail = "; ".join(parts)
     return _row("skills", shell.name, _WARN, title, detail)
 
 

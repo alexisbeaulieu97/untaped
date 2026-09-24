@@ -33,6 +33,7 @@ variable shown.
 | `ui.detail_view` | `list` \| `table` (optional) | unset | `UNTAPED_UI__DETAIL_VIEW` | How a single record renders in `table` format; overrides the theme. |
 | `ui.symbols` | mapping | empty | `UNTAPED_UI__SYMBOLS` | Symbol overrides merged over the theme's symbols. |
 | `ui.color_roles` | mapping | empty | `UNTAPED_UI__COLOR_ROLES` | Color-role overrides merged over the theme's colors. |
+| `skills.updates` | `warn` \| `auto` \| `off` | `warn` | `UNTAPED_SKILLS__UPDATES` | What each run does when installed agent skills differ from this version: `warn` (print a warning), `auto` (update them in place), or `off`. |
 
 ## `workspace`
 

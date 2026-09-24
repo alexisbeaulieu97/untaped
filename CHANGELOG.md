@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Core
+  - **Behavior change:** after every command, the root warns on stderr when an
+    installed agent skill differs from the copy this version ships, or is no
+    longer shipped, so agents do not follow stale instructions. The new
+    `skills.updates` setting picks `warn` (default), `auto` (update outdated
+    skills in place) or `off`. `untaped skills` and `untaped doctor` skip the
+    check.
+  - New `untaped skills status` (with `--check`), `untaped skills update` and
+    `untaped skills remove` manage installed skills, all or by name.
+  - `doctor` now finds project-local skills from any subdirectory of a git
+    repository, and its `skills` row points to `untaped skills update`
+    instead of a `skills install --force` command that installed globally.
+
 ## 7.0.0
 
 Major cleanup release. Scripts should read **Upgrading** (under the UX

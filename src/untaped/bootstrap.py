@@ -9,7 +9,7 @@ contribute command trees, settings sections, skills, or doctor checks.
 from __future__ import annotations
 
 import inspect
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextvars import ContextVar, Token
 from importlib import import_module, metadata
 from itertools import chain
@@ -46,6 +46,7 @@ from untaped.management import (
     build_root_profile_app,
     build_root_skills_app,
 )
+from untaped.management.skills import check_installed_skills, composed_skills
 from untaped.profile_resolver import set_profile_override
 from untaped.quiet import reset as _reset_quiet
 from untaped.settings import (
@@ -56,6 +57,7 @@ from untaped.settings import (
     register_state_settings,
     reset_config_registry_for_tests,
 )
+from untaped.skills import InstallableSkill
 from untaped.verbose import reset as _reset_verbose
 
 #: Unified executable name; also the identity reported before dispatch selects
@@ -226,7 +228,13 @@ def build_root_app(
         _mount_capability(root, capability)
     root.version = _resolve_version
     capability_names = frozenset(capability.spec.name for capability in result.capabilities)
-    _install_root_callback(root, _root_options(), capability_names)
+    skills = composed_skills(SHELL_SPEC, result)
+    _install_root_callback(
+        root,
+        _root_options(),
+        capability_names,
+        after_command=lambda tokens: _check_skills_after(tokens, skills),
+    )
     root.register_install_completion_command()
     return root
 
@@ -290,10 +298,31 @@ def _mount_capability(root: App, capability: RegisteredCapability) -> None:
     root._commands[spec.name] = _LazyCapabilityCommand(spec, root)
 
 
+#: Root commands that manage or diagnose skills themselves: the per-run
+#: skills check stays quiet after them.
+_SKILLS_CHECK_EXEMPT = frozenset({"skills", "doctor"})
+
+
+def _check_skills_after(tokens: list[str], skills: Mapping[str, InstallableSkill]) -> None:
+    """Run the per-run installed-skills check after a command.
+
+    Skipped for bare ``untaped``, root flags (``--help``, ``--version``) and
+    the skills-managing commands. Never lets the check break the command.
+    """
+    if not tokens or tokens[0].startswith("-") or tokens[0] in _SKILLS_CHECK_EXEMPT:
+        return
+    try:
+        check_installed_skills(skills)
+    except Exception:
+        return
+
+
 def _install_root_callback(
     app: App,
     root_options: dict[str, _RootOption],
     capability_names: frozenset[str],
+    *,
+    after_command: Callable[[list[str]], None] | None = None,
 ) -> None:
     # The meta app must not intercept --help/--version: that would render the
     # meta callback instead of the inner app's command listing. The inner app
@@ -312,6 +341,7 @@ def _install_root_callback(
         # outer invocation's identity.
         applied_tokens: list[tuple[_RootOption, object]] = []
         identity_token: Token[str | None] | None = None
+        command_tokens: list[str] = []
         try:
             with report_errors():
                 command_tokens = _consume_leading_root_options(
@@ -329,6 +359,9 @@ def _install_root_callback(
                     app, command_tokens, root_options, applied_tokens
                 )
         finally:
+            # Runs on failures too: a stale skill is a likely cause of one.
+            if after_command is not None and identity_token is not None:
+                after_command(command_tokens)
             if identity_token is not None:
                 _active_capability.reset(identity_token)
             for option, token in reversed(applied_tokens):

@@ -46,7 +46,8 @@ Terms as `untaped` uses them in commands, output and these docs.
   `profiles.default.awx`. `http` and `ui` are shared root sections.
 - **setting**: One configurable value in a section, addressed by its key.
 - **skill**: A packaged instruction set (`SKILL.md`) that teaches an AI agent
-  to use a capability. Install with `untaped skills install`.
+  to use a capability. Install with `untaped skills install`; keep it current
+  with `untaped skills update`.
 - **source (ansible)**: A saved scan boundary (orgs, teams, repos, paths, refs)
   whose dependency data `ansible source refresh` caches for upstream impact
   queries.

@@ -1,7 +1,7 @@
 """Generate ``docs/reference/config.md`` from the composed settings models.
 
 The page lists every setting of the root shell (``log_level``, ``http.*``,
-``ui.*``) and of each built-in capability's profile model, plus each
+``ui.*``, ``skills.*``) and of each built-in capability's profile model, plus each
 capability's state model. Types, defaults and environment variables come from
 the Pydantic models; a description comes from ``Field(description=...)`` when
 the model declares one, else from :data:`DESCRIPTIONS` below.
@@ -46,6 +46,8 @@ DESCRIPTIONS: dict[str, str] = {
     "ui.detail_view": "How a single record renders in `table` format; overrides the theme.",
     "ui.symbols": "Symbol overrides merged over the theme's symbols.",
     "ui.color_roles": "Color-role overrides merged over the theme's colors.",
+    "skills.updates": "What each run does when installed agent skills differ from this "
+    "version: `warn` (print a warning), `auto` (update them in place), or `off`.",
     "workspace.cache_dir": "Bare-clone cache used as the reference for new workspace clones.",
     "workspace.workspaces_dir": "Parent directory for `workspace init NAME` without `--path`.",
     "workspace.workspaces": "Registered workspaces (`name`, `path`). Managed by `workspace` "
@@ -253,7 +255,9 @@ def _section_rows(prefix: str, model: type[BaseModel]) -> list[Row]:
     rows = _leaf_rows(model, (prefix,) if prefix else ())
     if not prefix:
         # Root model: keep the shell's own settings, not the pydantic-settings base.
-        rows = [row for row in rows if row.key.split(".")[0] in {"log_level", "http", "ui"}]
+        rows = [
+            row for row in rows if row.key.split(".")[0] in {"log_level", "http", "ui", "skills"}
+        ]
     return rows
 
 
