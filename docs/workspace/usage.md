@@ -30,8 +30,8 @@ untaped workspace status --workspace prod            # per-repo git status
 ```
 
 To use another profile's settings (for example its `workspace.workspaces_dir`),
-pass the root `--profile` option right after `untaped` or at the end of the
-command:
+pass the root `--profile` option anywhere before a `--` separator (tokens
+after `--` belong to the command):
 
 ```bash
 untaped --profile work workspace init prod
@@ -572,9 +572,11 @@ untaped workspace edit [--workspace <ws> | --path <dir>] [--editor <cmd>]
 Opens the resolved workspace root in your editor. With no explicit
 target, `edit` walks up from the current directory until it finds
 `untaped.yml`, matching `get`, `sync`, `status`, and `foreach`.
-Honours `$VISUAL` then `$EDITOR`, overrideable with `--editor`. An
-editor that exits non-zero fails the command with
-`error: editor exited with status N` (exit `1`).
+Honours `$VISUAL` then `$EDITOR`, overrideable with `--editor`. With
+none of them set, `edit` fails with
+`error: set $VISUAL or $EDITOR to use an external editor` (exit `1`), like
+every other `edit` command. An editor that exits non-zero fails the command
+with `error: editor exited with status N` (exit `1`).
 
 ## Recipes
 

@@ -32,7 +32,7 @@ OUTPUT = REPO_ROOT / "docs" / "reference" / "config.md"
 
 #: Descriptions for settings whose model field has no ``description``.
 DESCRIPTIONS: dict[str, str] = {
-    "log_level": "Stored and validated, but no command reads it; use `--verbose` for debug logs.",
+    "log_level": "Deprecated and ignored (removed in 7.0); `untaped doctor` warns when set.",
     "http.ca_bundle": "PEM file of extra CA certificates to trust instead of the OS trust store.",
     "http.verify_ssl": "Verify TLS certificates. `false` disables all certificate checks.",
     "http.verify_hostname": "Check the certificate host name. `false` keeps chain validation.",
@@ -108,8 +108,12 @@ capability's commands. See [Configuration](../configuration.md) for the file
 layout, profiles and precedence.
 
 Set a profile setting with `untaped config set KEY VALUE` (secrets:
-`untaped config set KEY --prompt`). Each profile setting can be overridden for
-one process with the environment variable shown.
+`untaped config set KEY --prompt`). A `mapping` or `list` setting takes its
+whole value as JSON or YAML (`untaped config set ui.symbols '{"ok": "+"}'`),
+and `config unset` removes the whole key. `config set` and `config unset`
+print an `untaped.setting_outcome` record and accept `--dry-run`. Each
+profile setting can be overridden for one process with the environment
+variable shown.
 """
 
 _FOOTER = """\
@@ -194,11 +198,7 @@ def _default_text(value: Any) -> str:
         if not value:
             return "empty"
         return "; ".join(f"`{item}`" for item in value) if isinstance(value, list) else "built-in"
-    text = str(value)
-    home = str(Path.home())
-    if text.startswith(home):
-        text = "~" + text[len(home) :]
-    return f"`{text}`"
+    return f"`{value}`"
 
 
 def _env_name(key: str) -> str:

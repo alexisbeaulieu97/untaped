@@ -14,6 +14,11 @@ A batch command that fails on some items still prints a row for every item,
 then exits 1. When both a failure and a predicate hit happen, the exit code
 is 1.
 
+Output into a closed pipe exits 0 quietly: when the reader stops early, as in
+`untaped awx jobs list --format raw | head -1` or `untaped --help | head`, the
+command stops writing and exits 0 with no error. A failure unrelated to that
+pipe keeps its own exit code.
+
 ## Commands that exit 3
 
 | Command | Exits 3 when |

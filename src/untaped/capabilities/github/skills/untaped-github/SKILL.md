@@ -21,7 +21,7 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
 - `untaped github repos list [PATTERN] [--org ORG]... [--team ORG/SLUG|SLUG]... [--limit N]` lists complete org/team repository inventory from GitHub list APIs with at least one repeatable scope, emitting `github.repo` records (`full_name` plus `repo`, `html_url` plus `url`).
 - `untaped github sweep --org ORG|--team ORG/SLUG|--repo OWNER/NAME --grep PATTERN` asks a question over the local Git corpus and emits matching `github.sweep_repo` rows by default.
 - `untaped github sweep --org ORG --show matches --grep PATTERN` emits deduped `github.sweep_match` rows with `full_name`, `refs`, `path`, `line`, and `text`.
-- `untaped github cache status`, `cache delete OWNER/NAME...|--all`, `cache prune --org ORG`, and `cache worktree OWNER/NAME` inspect/delete/prune/materialize the managed corpus. `cache delete` and `cache prune` take `--yes|-y` and `--dry-run`. `cache clean` still works but is deprecated (removed in 7.0).
+- `untaped github cache status`, `cache delete OWNER/NAME...|--all`, `cache prune --org ORG`, and `cache worktree OWNER/NAME` inspect/delete/prune/materialize the managed corpus. `cache delete` and `cache prune` take `--yes|-y` and `--dry-run`.
 - `untaped github search repos` searches repositories and emits `github.repo_hit` records (a different shape from the `github.repo` inventory rows).
 - `untaped github search code` searches GitHub's indexed code search and does not support sort, regex, or exhaustive multi-ref sweeps.
 - `untaped github search issues` searches issues and pull requests.
@@ -34,18 +34,11 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
 - Use `repos list --no-archived --no-fork --format raw --columns ssh_url` to produce cloneable inventory URL lines for `untaped workspace add --stdin`.
 - Use `sweep` instead of GitHub `search code` for repeated team-wide code checks, regexes, path-scoped predicates, negation, and refs beyond the default branch.
 
-## Client API Notes
-
-- `untaped.capabilities.github` provides `GithubClient`, `GithubSettings`, `GithubGraphqlError`, the ref-probe result models, and the repository inventory helpers (`RepositoryInventoryScope`, `RepositoryInventoryItem`, `ResolveRepositoryInventory`, `TeamScope`, `normalize_team_scopes`), plus `is_global_github_failure` for telling auth/rate-limit failures (401, 429, rate-limited 403) from per-repo ones. Capability code outside `github` must not import these private helpers; the narrow inter-capability API is defined per the Wave 2 import plan.
-- `GithubClient.batch_repo_refs(...)` treats exact path-scoped GraphQL `NOT_FOUND`/`FORBIDDEN` errors (`path: ["rX"]`) as per-repo missing results. Nested paths raise `GithubGraphqlError`. Global `/graphql` access failures such as HTTP `401`/`403`/`429` or unscoped `RATE_LIMITED` raise `GithubGraphqlError`, which subclasses `UntapedError` and has a user-ready message. Retryable GraphQL HTTP 5xx and transport failures are retried, adaptively split after retry exhaustion, and surfaced as `BatchRepoRefsResult.failures` per repo instead of aborting successful subchunks; this also applies to all-ref pagination follow-up failures. `BatchRepoRefsResult.rate_limit_cost` sums GraphQL `rateLimit.cost` across every POST in the operation; `rate_limit_remaining` and `rate_limit_reset_at` come from the latest response.
-- `GithubClient.batch_default_branch_refs(...)` probes only `defaultBranchRef { name target { oid } }` with no `refs(...)` connection and returns the same `BatchRepoRefsResult` shape with one synthesized `heads` ref per repo when a default branch exists. Both default-branch and all-ref probe modes share the same bounded retry and adaptive split machinery for transient GraphQL failures.
-- Known limitation: a `200 OK` response containing per-alias `FORBIDDEN` for every repo is still reported as per-repo missing/inaccessible rather than inferred as a global SSO or token-scope failure.
-
 ## Agent Guidance
 
 - Prefer `--format json` for structured search and sweep results.
 - Prefer `repos list` over `search repos` when the user needs complete org/team inventory or local glob/regex matching.
-- Prefer `sweep --team ORG/SLUG --grep PATTERN` for broad repeated code checks. It expands scopes with REST inventory but does not call GitHub Search APIs for code search.
+- Prefer `sweep --team ORG/SLUG --grep PATTERN` for broad repeated code checks. It expands scopes from the org/team inventory and searches a local clone of each repo, not GitHub code search.
 - Question-first sweep examples:
   - `untaped github sweep --org acme --grep 'requests\.get\(' --path 'src/**' --has-file Jenkinsfile`
   - `untaped github sweep --team acme/platform --grep log4j --grep slf4j --any`
@@ -53,7 +46,7 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
   - `untaped github sweep --org acme --ref 'release/*' --grep jenkins --show matches`
 - Use `--fail-on-match` as the CI gate for banned patterns: the sweep still reports rows, then exits `3` if any repo matched. Use `--strict` only when any unscanned repo should also fail the run (also exit `3`). Usage errors (bad scope, pattern, or pathspec) exit `2`.
 - Per-repo problems never abort a sweep: an explicit `--repo`/`--stdin` name that GitHub cannot resolve (404, no access), corrupt corpus metadata, or a local filesystem/Git error becomes an unscanned repo with its reason in the footer, and the rest of the sweep completes (`--strict` still exits `3`). Bad credentials (401) and rate limits (429, rate-limited 403) abort the sweep instead, and a sweep whose explicitly requested repos all fail to resolve exits non-zero.
-- Sweep freshness footer semantics: default online sweeps refresh uncached, stale, or under-profiled repos according to `github.sweep.max_age_seconds`; `--refresh` forces refresh; `--cached` scans only cached metadata (`--sync`/`--no-sync` are deprecated aliases). The footer reports matched/scanned counts, refreshed/cached counts, oldest fetch, and warnings for unscanned repos. A failed refresh scans a covering cached copy and counts it as cached, but the footer warns `refresh failed for N repos; scanned cached copies` and lists each stale repo with its failure reason; without a usable covering copy it becomes unscanned.
+- Sweep freshness footer semantics: default online sweeps refresh uncached, stale, or under-profiled repos according to `github.sweep.max_age_seconds`; `--refresh` forces refresh; `--cached` scans only cached metadata. The footer reports matched/scanned counts, refreshed/cached counts, oldest fetch, and warnings for unscanned repos. A failed refresh scans a covering cached copy and counts it as cached, but the footer warns `refresh failed for N repos; scanned cached copies` and lists each stale repo with its failure reason; without a usable covering copy it becomes unscanned.
 - Sweep refreshes retry transient Git transport failures (dropped TLS/TCP streams, `early EOF`, HTTP 429/5xx) with short backoff. Wide ref selections (`--refs branches|tags|all`, `--ref GLOB`) list remote refs first, fetch only new or moved refs in bounded batches, and prune refs deleted upstream, so an interrupted refresh resumes from the refs already fetched on the next run.
 - Sweep content predicates use local `git grep -I --extended-regexp`: patterns are POSIX extended regexes regardless of the user's `grep.patternType` (`a|b` alternates, `\(` matches a literal parenthesis, Perl classes such as `\d` are unsupported — use `[0-9]`). Binary files are skipped. `-i`, `-F`, and `--word-regexp` apply to every `--grep` and `--not-grep` in the query. `--any` ORs positive predicates only; negative predicates remain ANDed.
 - `github.sweep_repo` rows contain `full_name`, `clone_url`, `refs_matched`, `hits`, `owners`, and `synced_at`. `github.sweep_match` rows contain `full_name`, plural `refs`, `path`, `line`, and `text`. Refs are reported by short name (`main`, `v1.2`); when a branch and a tag share a name, both are scanned and shown as `heads/NAME` and `tags/NAME`.
@@ -66,7 +59,6 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
   `github.sweep_repo` records back (mapping `full_name`; other kinds exit `2`)
   as well as bare `owner/name` lines — e.g. `untaped github search repos --org
   acme --format pipe | untaped github search code "BaseModel" --stdin`.
-  `--repo-stdin` is a deprecated alias of `--stdin`.
 - Use `--format pipe` to chain sweep results into another sweep: `untaped github repos list 'svc-*' --org acme --format pipe | untaped github sweep --stdin --grep old_api --format pipe | untaped github sweep --stdin --not-grep new_api`.
 - For `untaped workspace add --stdin`, use raw URL lines:
   `untaped github sweep --org acme --grep old_api --format raw --columns clone_url |

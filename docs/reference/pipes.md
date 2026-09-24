@@ -51,12 +51,16 @@ reads. Commands not listed write no records.
 | Command | Writes |
 |---|---|
 | `config list`, `config get` | `untaped.setting` |
+| `config set`, `config unset` | `untaped.setting_outcome` (`key`, `profile`, `action`; never the value) |
 | `profile list` | `untaped.profile` |
+| `profile create`, `profile delete`, `profile rename` | `untaped.profile_outcome` (`name`, `previous_name`, `copied_from`, `action`) |
 | `skills list` | `untaped.skill` |
 | `doctor` | `untaped.doctor_check` |
 | `capabilities` | `untaped.capability` |
 
-`skills install --stdin` reads bare skill names, one per line.
+`skills install --stdin` reads bare skill names, one per line. With
+`--dry-run`, `config set/unset` and `profile create/delete/rename` validate,
+write nothing and print their outcome with `action` `planned`.
 
 ### workspace
 
@@ -131,8 +135,8 @@ Resource kinds are `awx.<snake_case kind>`: `awx.organization`,
 | `awx job-templates launch`, `awx workflow-templates launch` | `awx.launch_outcome` |
 | `awx projects sync`, `inventories sync`, `inventory-sources sync` | `awx.sync_outcome` |
 | `awx jobs list`, `jobs get`, `jobs wait` | `awx.job` |
-| `awx jobs events` | `awx.event` |
-| `awx jobs logs` | `awx.log` |
+| `awx jobs events` | `awx.event`, with the job id as `job` |
+| `awx jobs logs` | `awx.log` (`job`, `line`) |
 | `awx unified-templates list/get` | `awx.unified_template` |
 | `awx job-templates usage`, `awx workflow-templates usage` | `awx.template_usage` |
 | `awx workflow-templates nodes` | `awx.workflow_node` |
@@ -147,6 +151,11 @@ Resource kinds are `awx.<snake_case kind>`: `awx.organization`,
 | `awx jobs get/events/logs/wait --stdin` | `awx.job`, `awx.launch_outcome`, `awx.sync_outcome`; or ID lines | `id`; a record's own execution kind wins over `--kind` |
 | `awx unified-templates get --stdin` | `awx.unified_template`; or ID lines | `id` |
 | `awx job-templates usage --stdin`, `workflow-templates usage/nodes --stdin` | the template's kind; or name lines | name field |
+
+`awx jobs events` and `awx jobs logs` with several ids print one json or yaml
+array covering every job; the `job` field says which job a row belongs to.
+`pipe` and `raw` print one line per row, and `--follow --format json` streams
+NDJSON.
 
 ### ansible
 
