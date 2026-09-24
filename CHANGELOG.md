@@ -413,6 +413,9 @@ messages, flags, confirmations and records (see `docs/conventions.md`).
   - `jobs events --follow` and `launch --track` print live events through the
     shared UI. Every parameter has help text; HTTP 401 hints `untaped config
     set awx.token --prompt`; `test run` gains `-j`.
+- Docs: a getting-started page, guides for github, jira, ansible and recipe,
+  and reference pages for settings (generated), pipes, exit codes and
+  environment variables, indexed from `docs/README.md`.
 
 ## 6.0.1
 

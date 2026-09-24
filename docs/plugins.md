@@ -367,7 +367,8 @@ untaped skills install --all --target all
 The short selector `acme` resolves the existing `untaped-acme` asset ID. The
 installed directory and `.untaped-skill.json` marker retain the full asset ID.
 See [Agent skills](./skills.md) for targets, scopes, overwrite behavior, and
-marker paths.
+marker paths. Start the skill's `SKILL.md` from the
+[skill template](./templates/SKILL.md).
 
 ## 7. Managed state
 
