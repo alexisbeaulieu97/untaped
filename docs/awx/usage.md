@@ -435,6 +435,29 @@ untaped awx hosts list --inventory Production --search web --format pipe \
 untaped awx inventories input-inventories remove Constructed Legacy --dry-run
 ```
 
+## Template SCM source
+
+`job-templates list` and `get` accept `--with-scm` to add three fields read
+from each template's project:
+
+- `scm_url`: the project's SCM URL.
+- `effective_scm_ref`: the ref a job checks out, which is the template's
+  `scm_branch` when it is set and the project allows the override
+  (`allow_override`), otherwise the project's `scm_branch`. An empty value
+  stays empty (the repository's default branch); it is never guessed.
+- `project_allow_override`: the project's `allow_override`.
+
+```bash
+untaped awx job-templates list --organization Default --with-scm \
+  --columns name,scm_url,effective_scm_ref
+untaped awx job-templates get Deploy --with-scm --format json
+```
+
+Each distinct project is read once per command. The fields appear in `json`,
+`yaml` and `pipe` output and can be picked with `--columns`; the table view
+shows them by default. A template without a project, or whose project cannot
+be read (with a warning), gets `null` values.
+
 ## Find where a template is used
 
 ```bash
