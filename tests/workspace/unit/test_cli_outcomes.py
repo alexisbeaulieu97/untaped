@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shlex
+import sys
 from pathlib import Path
 
 import pytest
@@ -209,16 +211,12 @@ def test_branch_unset_emits_outcome(tmp_path: Path) -> None:
     ]
 
 
-def test_edit_nonzero_editor_exit_is_runtime_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(
-        "untaped.capabilities.workspace.cli.ux_commands.editor_runner", lambda argv: 7
-    )
+def test_edit_nonzero_editor_exit_is_runtime_error(tmp_path: Path) -> None:
     runner = CliInvoker()
     _init(runner, tmp_path)
+    editor = shlex.join([sys.executable, "-c", "raise SystemExit(7)"])
 
-    result = runner.invoke(app, ["edit", "-w", "prod", "--editor", "code"])
+    result = runner.invoke(app, ["edit", "-w", "prod", "--editor", editor])
 
     assert result.exit_code == 1, result.output
     assert "error: editor exited with status 7" in result.stderr

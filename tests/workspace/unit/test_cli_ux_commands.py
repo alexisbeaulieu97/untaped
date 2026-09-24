@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shlex
+import sys
 from pathlib import Path
 
 import pytest
@@ -173,17 +175,22 @@ def test_shell_init_unknown() -> None:
     assert result.exit_code == 1
 
 
+def _recording_editor(tmp_path: Path) -> tuple[str, Path]:
+    """An ``--editor`` command that records its argv (after the script) as JSON."""
+    script = tmp_path / "record_editor.py"
+    record = tmp_path / "editor-argv.json"
+    script.write_text(
+        "import json, pathlib, sys\n"
+        f"pathlib.Path({str(record)!r}).write_text(json.dumps(sys.argv[1:]))\n"
+    )
+    return shlex.join([sys.executable, str(script)]), record
+
+
 def test_edit_from_cwd_opens_workspace_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured: list[list[str]] = []
-
-    def _runner(argv: list[str]) -> int:
-        captured.append(argv)
-        return 0
-
-    monkeypatch.setattr("untaped.capabilities.workspace.cli.ux_commands.editor_runner", _runner)
+    editor, record = _recording_editor(tmp_path)
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
@@ -191,48 +198,55 @@ def test_edit_from_cwd_opens_workspace_root(
     nested.mkdir()
     monkeypatch.chdir(nested)
 
-    result = runner.invoke(app, ["edit", "--editor", "code --reuse-window"])
+    result = runner.invoke(app, ["edit", "--editor", f"{editor} --reuse-window"])
 
     assert result.exit_code == 0, result.output
-    assert captured == [["code", "--reuse-window", str(target.resolve())]]
+    assert json.loads(record.read_text()) == ["--reuse-window", str(target.resolve())]
 
 
-def test_edit_path_opens_unregistered_workspace(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: list[list[str]] = []
-    monkeypatch.setattr(
-        "untaped.capabilities.workspace.cli.ux_commands.editor_runner",
-        lambda argv: captured.append(argv) or 0,
-    )
+def test_edit_path_opens_unregistered_workspace(tmp_path: Path) -> None:
+    editor, record = _recording_editor(tmp_path)
     target = tmp_path / "ws"
     target.mkdir()
     (target / "untaped.yml").write_text("name: prod\nrepos: []\n")
 
-    result = CliInvoker().invoke(app, ["edit", "--path", str(target), "--editor", "code"])
+    result = CliInvoker().invoke(app, ["edit", "--path", str(target), "--editor", editor])
 
     assert result.exit_code == 0, result.output
-    assert captured == [["code", str(target.resolve())]]
+    assert json.loads(record.read_text()) == [str(target.resolve())]
 
 
-def test_edit_workspace_opens_registered_workspace(
+def test_edit_workspace_uses_visual_then_editor(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured: list[list[str]] = []
-    monkeypatch.setattr(
-        "untaped.capabilities.workspace.cli.ux_commands.editor_runner",
-        lambda argv: captured.append(argv) or 0,
-    )
+    editor, record = _recording_editor(tmp_path)
+    monkeypatch.setenv("VISUAL", editor)
+    monkeypatch.setenv("EDITOR", "does-not-exist")
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
 
-    result = runner.invoke(app, ["edit", "--workspace", "prod", "--editor", "code"])
+    result = runner.invoke(app, ["edit", "--workspace", "prod"])
 
-    assert result.exit_code == 0
-    assert captured == [["code", str(target.resolve())]]
+    assert result.exit_code == 0, result.output
+    assert json.loads(record.read_text()) == [str(target.resolve())]
+
+
+def test_edit_without_editor_fails_with_hint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("VISUAL", raising=False)
+    monkeypatch.delenv("EDITOR", raising=False)
+    target = tmp_path / "ws"
+    target.mkdir()
+    (target / "untaped.yml").write_text("name: prod\nrepos: []\n")
+
+    result = CliInvoker().invoke(app, ["edit", "--path", str(target)])
+
+    assert result.exit_code == 1
+    assert "set $VISUAL or $EDITOR" in result.stderr
 
 
 def test_edit_missing_context_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -244,22 +258,17 @@ def test_edit_missing_context_errors(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert "not inside a workspace" in result.output
 
 
-def test_edit_editor_not_found_errors(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def _missing(_argv: list[str]) -> int:
-        raise FileNotFoundError("no such file")
-
-    monkeypatch.setattr("untaped.capabilities.workspace.cli.ux_commands.editor_runner", _missing)
+def test_edit_editor_not_found_errors(tmp_path: Path) -> None:
     target = tmp_path / "ws"
     target.mkdir()
     (target / "untaped.yml").write_text("name: prod\nrepos: []\n")
 
-    result = CliInvoker().invoke(app, ["edit", "--path", str(target), "--editor", "code"])
+    result = CliInvoker().invoke(
+        app, ["edit", "--path", str(target), "--editor", "definitely-missing-bin"]
+    )
 
     assert result.exit_code == 1
-    assert "editor not found: code" in result.output
+    assert "editor not found: definitely-missing-bin" in result.output
 
 
 def test_path_accepts_multiple_positional_names(tmp_path: Path) -> None:

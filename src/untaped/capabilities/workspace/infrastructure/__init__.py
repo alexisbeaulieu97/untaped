@@ -16,7 +16,6 @@ from untaped.capabilities.workspace.infrastructure.system_adapters import (
     DEFAULT_FOREACH_TIMEOUT,
     InterruptibleShellRunner,
     LocalFilesystem,
-    editor_runner,
     resolve_editor_argv,
     shell_runner,
 )
@@ -33,7 +32,6 @@ __all__ = [
     "WorkspaceRegistryRepository",
     "YamlManifestRepository",
     "cache_path_for",
-    "editor_runner",
     "resolve_editor_argv",
     "shell_runner",
 ]

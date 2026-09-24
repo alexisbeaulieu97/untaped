@@ -14,9 +14,11 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shlex
 import shutil
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -694,24 +696,16 @@ def test_f09_exit_codes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     assert result.exit_code == 0, result.output
     assert fix["foreach_ignore_errors"] == {"exit": 0}
 
-    # edit forwards the editor exit code; missing binary is a clean error (P26)
-    target = tmp_path / "smoke"
+    # edit fails on a non-zero editor exit; missing binary is a clean error (P26)
     result = _run(
         ["workspace", "edit", "--workspace", "smoke", "--editor", "definitely-missing-bin"]
     )
     assert result.exit_code == 1, result.output
     assert "editor not found: definitely-missing-bin" in result.stderr
-    import untaped.capabilities.workspace.cli.ux_commands as ux
-
-    monkeypatch.setattr(ux, "editor_runner", lambda argv: 3)
-    with pytest.raises(SystemExit) as excinfo:
-        from untaped.capabilities.workspace.application import EditWorkspace
-
-        ws = Workspace(name="smoke", path=target.expanduser().resolve())
-        rc = EditWorkspace(runner=ux.editor_runner)(ws, argv=("whatever", str(target)))
-        if rc != 0:
-            raise SystemExit(rc)
-    assert excinfo.value.code == 3
+    failing = shlex.join([sys.executable, "-c", "raise SystemExit(3)"])
+    result = _run(["workspace", "edit", "--workspace", "smoke", "--editor", failing])
+    assert result.exit_code == 1, result.output
+    assert "editor exited with status 3" in result.stderr
     assert fix["success"] == {"exit": 0}
 
 
@@ -1049,17 +1043,14 @@ def test_f13_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_f14_editor_shell(tmp_path: Path) -> None:
     fix = fixture("f14-editor-shell.json")
-    assert fix["editor_precedence"] == "--editor > $VISUAL > $EDITOR > vi"
+    assert fix["editor_precedence"] == "--editor > $VISUAL > $EDITOR"
     assert fix["dispatch"] == "argv + workspace path"
 
-    assert resolve_editor_argv("code --wait", env={}) == ("code", "--wait")
-    assert resolve_editor_argv(None, env={"VISUAL": "v", "EDITOR": "e"}) == ("v",)
-    assert resolve_editor_argv(None, env={"EDITOR": "e"}) == ("e",)
-    assert resolve_editor_argv(None, env={}) == ("vi",)
+    assert resolve_editor_argv("code --wait") == ("code", "--wait")
     with pytest.raises(WorkspaceError, match="editor command is empty"):
-        resolve_editor_argv("   ", env={})
+        resolve_editor_argv("   ")
     with pytest.raises(WorkspaceError, match="could not parse editor command"):
-        resolve_editor_argv("'unterminated", env={})
+        resolve_editor_argv("'unterminated")
     assert fix["editor_errors"][2].startswith("editor not found:")
 
     # shell runner: shell=True pipes, DEVNULL stdin, buffered replay (P39)
