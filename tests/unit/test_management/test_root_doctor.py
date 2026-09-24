@@ -273,6 +273,16 @@ def test_core_settings_rows_pass_on_empty_config(_isolated_config: Path) -> None
         assert title in titles
 
 
+def test_set_log_level_warns_that_it_is_deprecated(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    log_level: DEBUG\n")
+    code, rows = _rows(_doctor_app())
+    assert code == 0
+    (row,) = [row for row in rows if row["title"] == "validate log_level"]
+    assert row["status"] == "warn"
+    assert "deprecated" in row["detail"]
+    assert "untaped config unset log_level" in row["detail"]
+
+
 def test_unknown_ui_theme_fails_ui_row(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      theme: bogus\n")
     code, rows = _rows(_doctor_app())
