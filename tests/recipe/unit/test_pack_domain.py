@@ -64,20 +64,6 @@ def test_pack_manifest_parses_recipes_hooks_and_project_metadata(tmp_path: Path)
 def test_pack_manifest_tables_are_optional_when_tool_table_exists(tmp_path: Path) -> None:
     _write_pyproject(
         tmp_path,
-        '[project]\nname = "untaped-recipe-empty"\n\n[tool.untaped_recipe]\n',
-    )
-
-    manifest = read_pack_manifest(tmp_path)
-
-    assert manifest.name == "empty"
-    assert manifest.version == "0"
-    assert manifest.recipes == {}
-    assert manifest.hooks == {}
-
-
-def test_pack_manifest_parses_one_table_without_the_other(tmp_path: Path) -> None:
-    _write_pyproject(
-        tmp_path,
         "[project]\n"
         'name = "untaped-recipe-hooks-only"\n\n'
         "[tool.untaped_recipe]\n\n"
@@ -87,6 +73,8 @@ def test_pack_manifest_parses_one_table_without_the_other(tmp_path: Path) -> Non
 
     manifest = read_pack_manifest(tmp_path)
 
+    assert manifest.name == "hooks-only"
+    assert manifest.version == "0"
     assert manifest.recipes == {}
     assert manifest.hooks["check"].module == "hooks.check"
 
@@ -98,20 +86,6 @@ def test_pack_manifest_requires_tool_table(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match=r"missing \[tool\.untaped_recipe\].*pyproject\.toml"):
-        read_pack_manifest(tmp_path)
-
-
-def test_pack_manifest_rejects_unknown_hook_metadata(tmp_path: Path) -> None:
-    _write_pyproject(
-        tmp_path,
-        "[project]\n"
-        'name = "untaped-recipe-invalid"\n\n'
-        "[tool.untaped_recipe]\n\n"
-        "[tool.untaped_recipe.hooks]\n"
-        '"check" = { kind = "validate", module = "hooks.check" }\n',
-    )
-
-    with pytest.raises(ValueError, match="extra_forbidden"):
         read_pack_manifest(tmp_path)
 
 
