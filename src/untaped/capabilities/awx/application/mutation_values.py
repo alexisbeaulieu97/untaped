@@ -27,6 +27,9 @@ def semantic_equal(
         left = _parse_structured_string(left)
         right = _parse_structured_string(right)
     if allow_server_enrichment and isinstance(left, Mapping) and isinstance(right, Mapping):
+        if not left:
+            # An empty request is a clear (``survey_spec: {}``), not a subset.
+            return not right
         return bool(
             all(
                 key in right and semantic_equal(value, right[key], allow_server_enrichment=True)

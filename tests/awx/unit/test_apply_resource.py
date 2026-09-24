@@ -439,6 +439,7 @@ def test_nested_encrypted_does_not_mutate_original_payload() -> None:
             "spec": [
                 {
                     "variable": "pw",
+                    "type": "password",
                     "default": "$encrypted$",
                     "question_name": "Password",
                 },
@@ -457,6 +458,7 @@ def test_nested_encrypted_does_not_mutate_original_payload() -> None:
             "spec": [
                 {
                     "variable": "pw",
+                    "type": "password",
                     "default": "$encrypted$",
                     "question_name": "Password",
                 },
@@ -567,7 +569,12 @@ def test_apply_unchanged_with_nested_encrypted_preserves_field() -> None:
     """
     survey = {
         "spec": [
-            {"variable": "pw", "default": "$encrypted$", "question_name": "Password"},
+            {
+                "variable": "pw",
+                "type": "password",
+                "default": "$encrypted$",
+                "question_name": "Password",
+            },
         ]
     }
     existing = {
@@ -607,6 +614,7 @@ def test_apply_sibling_change_alongside_nested_secret_raises() -> None:
             "spec": [
                 {
                     "variable": "pw",
+                    "type": "password",
                     "default": "$encrypted$",
                     "question_name": "Password",
                 },
@@ -628,6 +636,7 @@ def test_apply_sibling_change_alongside_nested_secret_raises() -> None:
                 "spec": [
                     {
                         "variable": "pw",
+                        "type": "password",
                         "default": "$encrypted$",
                         "question_name": "New Password Prompt",
                     },
@@ -647,8 +656,18 @@ def test_top_level_change_beside_survey_placeholders_keeps_the_survey() -> None:
     """
     survey = {
         "spec": [
-            {"variable": "pw", "default": "$encrypted$", "question_name": "Password"},
-            {"variable": "env", "default": "$encrypted$", "question_name": "Environment"},
+            {
+                "variable": "pw",
+                "type": "password",
+                "default": "$encrypted$",
+                "question_name": "Password",
+            },
+            {
+                "variable": "env",
+                "type": "password",
+                "default": "$encrypted$",
+                "question_name": "Environment",
+            },
         ],
     }
     existing = {
@@ -675,7 +694,7 @@ def test_top_level_change_beside_survey_placeholders_keeps_the_survey() -> None:
 
     assert outcome.action == "updated"
     assert [p for p in outcome.preserved_secrets if p.startswith("survey_spec.spec.")] == [
-        "survey_spec.spec.*.default"
+        "survey_spec.spec.*[type=password].default"
     ] * 2
     assert strategy.updated is not None
     assert strategy.updated[1] == {"description": "new"}
@@ -694,6 +713,7 @@ def test_apply_real_secret_value_alongside_sibling_change_succeeds() -> None:
             "spec": [
                 {
                     "variable": "pw",
+                    "type": "password",
                     "default": "$encrypted$",
                     "question_name": "Password",
                 },
@@ -710,6 +730,7 @@ def test_apply_real_secret_value_alongside_sibling_change_succeeds() -> None:
         "spec": [
             {
                 "variable": "pw",
+                "type": "password",
                 "default": "actual-secret",
                 "question_name": "New Password Prompt",
             },

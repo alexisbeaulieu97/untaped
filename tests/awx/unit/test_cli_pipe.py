@@ -106,6 +106,9 @@ def test_get_stdin_consumes_pipe_envelope_by_id(
         route = mock.get("/api/v2/job_templates/5/").mock(
             return_value=httpx.Response(200, json={"id": 5, "name": "deploy"})
         )
+        mock.get("/api/v2/job_templates/5/survey_spec/").mock(
+            return_value=httpx.Response(200, json={})
+        )
         result = CliInvoker().invoke(
             app,
             ["job-templates", "get", "--stdin", "--format", "raw", "--columns", "name"],

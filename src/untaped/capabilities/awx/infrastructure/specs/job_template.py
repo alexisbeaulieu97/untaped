@@ -61,6 +61,7 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
         "project",
         "inventory",
         "credentials",
+        "labels",
     ),
     read_only_fields=(
         *UNIVERSAL_READ_ONLY,
@@ -87,13 +88,22 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
             multi=True,
             sub_endpoint="credentials",
         ),
+        FkRef(
+            field="labels",
+            kind="Label",
+            scope_field="organization",
+            multi=True,
+            sub_endpoint="labels",
+        ),
     ),
     launch_fk_refs=(
         FkRef(field="execution_environment", kind="ExecutionEnvironment"),
         FkRef(field="labels", kind="Label", scope_field="organization", multi=True),
         FkRef(field="instance_groups", kind="InstanceGroup", multi=True),
     ),
-    secret_paths=("webhook_key", "survey_spec.spec.*.default"),
+    sub_document_fields=("survey_spec",),
+    secret_paths=("webhook_key", "survey_spec.spec.*[type=password].default"),
+    optional_secret_paths=("survey_spec.spec.*[type=password].default",),
     # AWX may normalize and enrich the submitted survey document while
     # retaining the user-owned questions/defaults.  Batch verification allows
     # that explicitly instead of silently weakening comparison for all fields.

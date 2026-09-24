@@ -97,6 +97,11 @@ class Controller:
             record = self.records["inventory_sources"][int(parts[1])]
             return httpx.Response(200, json={**record, "type": "inventory_source"})
         records = self.records[collection]
+        if len(parts) == 3 and parts[2] == "survey_spec":
+            record = records[int(parts[1])]
+            if request.method == "POST":
+                record["survey_spec"] = body
+            return httpx.Response(200, json=record.get("survey_spec", {}))
         if len(parts) == 3:
             parent_id, child = int(parts[1]), parts[2]
             if child in {"input_inventories", "instance_groups"} or (

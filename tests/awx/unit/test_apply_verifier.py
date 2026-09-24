@@ -16,6 +16,7 @@ def test_verifier_accepts_reflected_structures_and_secret_paths() -> None:
             "spec": [
                 {
                     "variable": "pw",
+                    "type": "password",
                     "question_name": "Password",
                     "default": "actual-secret",
                 }
@@ -31,6 +32,7 @@ def test_verifier_accepts_reflected_structures_and_secret_paths() -> None:
                 {
                     "question_name": "Password",
                     "variable": "pw",
+                    "type": "password",
                     "required": False,
                     "min": None,
                     "max": None,
@@ -56,6 +58,7 @@ def test_verifier_reports_only_fields_not_reflected() -> None:
             "spec": [
                 {
                     "variable": "pw",
+                    "type": "password",
                     "question_name": "Password",
                 }
             ]
@@ -164,3 +167,10 @@ def test_verifier_currently_requires_none_keys_to_be_present() -> None:
         {},
         fields=("timeout",),
     ) == ("timeout",)
+
+
+def test_empty_enriched_mapping_requests_a_clear() -> None:
+    from untaped.capabilities.awx.application.mutation_values import semantic_equal
+
+    assert semantic_equal({}, {}, allow_server_enrichment=True)
+    assert not semantic_equal({}, {"spec": []}, allow_server_enrichment=True)
