@@ -296,9 +296,28 @@ broken section to hide the rest:
   `config.yml`, saying whether the next state change moves it or it is
   shadowed by `state.yml` and should be deleted; `warn` rows do not fail
   `doctor`;
+- `config` (permissions) — `warn` when other users can read or write the
+  config file (it can hold tokens); fix it with `chmod 600`;
+- `unknown-keys` — `warn` naming every key, in any profile, that no settings
+  model declares (usually a typo, which is otherwise silently ignored);
+- `skills` — `warn` when a skill installed by `untaped skills install` (in the
+  global Codex/Claude skill directories or the current directory's
+  `.agents/skills`/`.claude/skills`) differs from the packaged copy, with the
+  `skills install … --force` command that refreshes it;
 - each capability-contributed health check (a check can report a
   non-failing `warn`, such as ansible's `ansible.deprecated-settings` while
-  `ansible.freshness_ttl` is set), and any quarantined provider.
+  `ansible.freshness_ttl` is set), and any quarantined provider. The built-in
+  capabilities contribute:
+  - `github.connection`, `jira.connection`, `awx.connection` — the resolved
+    profile's `base_url` and where the token comes from (see
+    [Tokens](#tokens)); `warn` when only one of the pair is set. A section
+    with neither passes as `not configured`. `token_command` is named, never
+    run;
+  - `workspace.git`, `github.git`, `ansible.git`, `recipe.git`, `recipe.uv` —
+    `warn` when the program is not on `PATH`.
+
+`doctor` has no `--online` mode yet; use each capability's `whoami` or `ping`
+command to test a connection.
 
 Settings rows apply `UNTAPED_*` environment overrides on top of the file and
 name the variable when an override is the invalid value (for example
@@ -350,6 +369,51 @@ untaped --profile prod awx ping
 Keep credentials in `SecretStr` fields in capability models. Root listing and
 profile output redact those fields by default, and `--show-secrets` is an
 explicit opt-in.
+
+## Tokens
+
+`github`, `jira` and `awx` read their API token from the first of these that
+is set:
+
+1. `<section>.token`, from the active profile or its
+   `UNTAPED_<SECTION>__TOKEN` override;
+2. `<section>.token_command`, a command whose standard output is the token;
+3. for `github` only, the `GH_TOKEN` and then the `GITHUB_TOKEN` environment
+   variable.
+
+`token_command` keeps the token out of `config.yml`. It is an argv list, run
+without a shell, at most once per process and only when a command first needs
+the token:
+
+```bash
+untaped config set github.token_command '["gh", "auth", "token"]'
+untaped config set jira.token_command '["op", "read", "op://work/jira/token"]'
+untaped config set awx.token_command '["pass", "show", "aap/token"]'
+```
+
+untaped strips surrounding whitespace from the output. It never prints the
+token, the command's arguments or its output: a failure is reported as
+`error: jira.token_command: 'op' exited with status 1` (or `not found on
+PATH`, `printed no token`, `timed out after 60s`). The command's own stderr
+goes straight to your terminal.
+
+untaped does not run `gh auth token` on its own. To reuse the GitHub CLI's
+login, set `github.token_command` as above.
+
+## Debug logs
+
+`--verbose`/`-v` sends debug logs to stderr through Python's `logging`, as
+`DEBUG untaped.<area>: <message>` lines:
+
+- `untaped.http`: each request's method, URL (with any password masked),
+  status or transport error, and time, plus each retry wait;
+- `untaped.git`: each `git` command's arguments (URL credentials masked), its
+  directory, exit status and time, and `[auth header]` when a token was
+  passed (the header itself never appears);
+- `untaped.auth`: which token source was used (never the token).
+
+The `log_level` setting stays deprecated and has no effect; `--verbose` is the
+only switch.
 
 ## See also
 

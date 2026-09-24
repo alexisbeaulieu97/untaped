@@ -51,6 +51,7 @@ def test_spec_is_awx_capability() -> None:
     assert set(AwxSettings.model_fields) == {
         "base_url",
         "token",
+        "token_command",
         "api_prefix",
         "default_organization",
         "page_size",
@@ -59,7 +60,7 @@ def test_spec_is_awx_capability() -> None:
     assert skill.name == "untaped-awx"
     assert skill.description == "Use the built-in `untaped awx` capability for AWX/AAP workflows."
     assert skill.source.joinpath("SKILL.md").is_file()
-    assert SPEC.doctor_checks == ()
+    assert [check.id for check in SPEC.doctor_checks] == ["awx.connection"]
 
 
 def test_build_app_is_nullary_factory() -> None:

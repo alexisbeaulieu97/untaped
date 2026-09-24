@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.capabilities.recipe.settings import RecipeSettings
-from untaped.capability_api import CapabilitySpec, SkillAsset
+from untaped.capability_api import CapabilitySpec, SkillAsset, executable_check
 
 if TYPE_CHECKING:
     from cyclopts import App
@@ -44,5 +44,8 @@ SPEC = CapabilitySpec(
             ),
         ),
     ),
-    doctor_checks=(),
+    doctor_checks=(
+        executable_check("recipe.uv", "uv", purpose="recipe hooks and packs"),
+        executable_check("recipe.git", "git", purpose="installing packs from git"),
+    ),
 )

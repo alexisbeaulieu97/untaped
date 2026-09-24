@@ -48,12 +48,18 @@ def test_spec_is_github_capability() -> None:
     assert SPEC.config_section == "github"
     assert SPEC.profile_model is GithubSettings
     assert SPEC.state_model is None
-    assert set(GithubSettings.model_fields) == {"base_url", "token", "corpus_path", "sweep"}
+    assert set(GithubSettings.model_fields) == {
+        "base_url",
+        "token",
+        "token_command",
+        "corpus_path",
+        "sweep",
+    }
     (skill,) = SPEC.skills
     assert skill.name == "untaped-github"
     assert skill.description == "Use the built-in `untaped github` capability for GitHub workflows."
     assert skill.source.joinpath("SKILL.md").is_file()
-    assert SPEC.doctor_checks == ()
+    assert [check.id for check in SPEC.doctor_checks] == ["github.connection", "github.git"]
 
 
 def test_build_app_is_nullary_factory() -> None:

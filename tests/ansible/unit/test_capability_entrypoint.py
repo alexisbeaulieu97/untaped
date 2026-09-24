@@ -72,7 +72,10 @@ def test_spec_is_ansible_capability() -> None:
         "Use the built-in `untaped ansible` capability for Ansible analysis."
     )
     assert skill.source.joinpath("SKILL.md").is_file()
-    assert [check.id for check in SPEC.doctor_checks] == ["ansible.deprecated-settings"]
+    assert [check.id for check in SPEC.doctor_checks] == [
+        "ansible.deprecated-settings",
+        "ansible.git",
+    ]
 
 
 def test_build_app_is_nullary_factory() -> None:
