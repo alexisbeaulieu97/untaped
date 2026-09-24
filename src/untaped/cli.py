@@ -373,7 +373,11 @@ def run_cyclopts_app(
     except BrokenPipeError:
         # Pipe broke mid-write (output large enough to flush before we got here).
         _exit_broken_pipe()
-    except SystemExit:
+    except SystemExit as exc:
+        if isinstance(exc.__context__, BrokenPipeError):
+            # Rich's ``Console.on_broken_pipe`` (help output) exits 1 from
+            # inside its ``except BrokenPipeError``; a closed pipe exits 0.
+            _exit_broken_pipe()
         # cyclopts exits (0 on success) rather than returning. Flush buffered
         # stdout now so a broken pipe surfaces here — catchable — instead of at
         # interpreter shutdown, where it can't be handled.

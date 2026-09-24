@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+CLI polish: root options, broken pipes, structured output and root
+mutations. Items marked **behavior change** alter output, exit codes, or
+defaults.
+
+- Core
+  - Fixed: `untaped --help | head` (help into a closed pipe) exited 1 through
+    Rich's broken-pipe handler. It now exits 0 quietly, like data commands.
+
 Correctness and safety fixes from a whole-codebase review. Items marked
 **behavior change** alter output, exit codes, or defaults.
 
