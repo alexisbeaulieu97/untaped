@@ -270,6 +270,29 @@ The `awx.copy_outcome` record (`id`, `name`, `source_id`, `kind`, `action`,
 `not_carried`) names the new template. `patch`, `delete`, `launch` and the other
 `--stdin` selections of the same kind accept it.
 
+## Rename templates
+
+`patch` never changes a name. `rename` is the separate, explicit command for
+job and workflow templates:
+
+```bash
+untaped awx job-templates rename Deploy "Deploy app" --organization Default --dry-run
+untaped awx job-templates rename Deploy "Deploy app" --format pipe --yes \
+  | untaped awx job-templates patch --stdin --set scm_branch=main --dry-run
+```
+
+One resource per call, selected like any single target. Before any write,
+`rename` refuses a new name already used in the same scope (the same
+organization, or no organization for an org-less workflow template) and the
+resource's current name. The preview shows the old and new names; it
+confirms like other writes, and `--dry-run` never writes. After the write,
+the resource is read again: if AWX does not show the new name, the row is
+`failed` and the command exits 1.
+
+The `awx.rename_outcome` record (`id`, `name`, `old_name`, `kind`, `action`:
+`planned`, `renamed` or `failed`) names the resource by `id`, so `--stdin`
+selection of the same kind accepts it.
+
 ## Launch templates
 
 `launch` submits job or workflow templates. `--extra-vars` is repeatable and

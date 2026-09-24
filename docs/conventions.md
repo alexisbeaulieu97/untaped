@@ -84,7 +84,7 @@ come from a closed set:
 
 - Read: `list`, `get`, `status`, `whoami`, `ping`
 - Write: `create`, `set`, `unset`, `add`, `remove`, `delete`, `prune`, `edit`,
-  `patch`, `apply`, `copy`
+  `patch`, `apply`, `copy`, `rename`
 - Update: `sync`, `refresh`
 - Other: `export`, `init`, `run`, `launch`, `wait`, `validate`, `test`,
   `cancel`, `relaunch`

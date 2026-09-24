@@ -54,6 +54,7 @@ VERBS = frozenset(
         "patch",
         "apply",
         "copy",
+        "rename",
         # update
         "sync",
         "refresh",
@@ -70,7 +71,19 @@ VERBS = frozenset(
     }
 )
 MUTATION_VERBS = frozenset(
-    {"create", "set", "unset", "add", "remove", "delete", "prune", "patch", "apply", "copy"}
+    {
+        "create",
+        "set",
+        "unset",
+        "add",
+        "remove",
+        "delete",
+        "prune",
+        "patch",
+        "apply",
+        "copy",
+        "rename",
+    }
 )
 DESTRUCTIVE_VERBS = frozenset({"delete", "remove", "prune", "cancel"})
 RESERVED_SHORTS = {

@@ -26,6 +26,12 @@
   - `job-templates list` and `get` accept `--with-scm`, adding `scm_url`,
     `effective_scm_ref` and `project_allow_override` from each template's
     project (read once per distinct project).
+  - New `job-templates rename SOURCE NEW` and `workflow-templates rename`.
+    They refuse a name already used in the same scope before any write,
+    preview the old and new names, re-read the resource to verify the new
+    name, and emit `awx.rename_outcome`, which `--stdin` selection of the same
+    kind accepts. `patch` still rejects `name`; `rename` joins the
+    conventions' write verbs. Other kinds opt in through their spec.
 - Ansible
   - `graph --contains OWNER/REPO` (repeatable) reports the roots whose
     downstream graph contains a repository: one `ansible.dependency_match`
