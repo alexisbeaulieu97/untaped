@@ -1,13 +1,15 @@
 """Register external-editor batch editing for each writable AWX kind."""
 
+from __future__ import annotations
+
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._edit_runner import run_edit
 from untaped.capabilities.awx.cli._mutation_runner import validate_controls
 from untaped.capabilities.awx.cli._selection import select_resources
+from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.options import (
     AllOption,
     ByIdOption,
@@ -16,6 +18,7 @@ from untaped.capabilities.awx.cli.options import (
     FilterOption,
     InventoryOption,
     InventoryOrganizationOption,
+    NamesArgument,
     OrganizationOption,
     ParallelOption,
     ParentOption,
@@ -31,7 +34,8 @@ from untaped.capability_api import ColumnsOption, FormatOption, raise_usage, rep
 def _add_edit(app: App, spec: AwxResourceSpec) -> None:
     @app.command(name="edit")
     def edit_command(
-        names: list[str] | None = None,
+        names: NamesArgument = None,
+        /,
         *,
         stdin: StdinOption = False,
         by_id: ByIdOption = False,
@@ -47,6 +51,7 @@ def _add_edit(app: App, spec: AwxResourceSpec) -> None:
             Parameter(
                 name="--field",
                 consume_multiple=False,
+                negative="",
                 help="Limit editable top-level fields (repeatable).",
             ),
         ] = None,

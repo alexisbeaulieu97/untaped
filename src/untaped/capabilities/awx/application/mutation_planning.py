@@ -343,7 +343,7 @@ class MutationPlanner:
                     kind=spec.kind,
                     name=resource.metadata.name,
                     action=(
-                        "preview"
+                        "planned"
                         if target.id is None
                         or body.payload
                         or any(

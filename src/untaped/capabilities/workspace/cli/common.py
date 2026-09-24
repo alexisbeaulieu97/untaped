@@ -11,8 +11,8 @@ from cyclopts import Parameter
 from untaped.capabilities.workspace.application import WorkspaceResolver
 from untaped.capabilities.workspace.domain import Workspace
 from untaped.capabilities.workspace.infrastructure import (
-    ManifestRepository,
     WorkspaceRegistryRepository,
+    YamlManifestRepository,
 )
 from untaped.capabilities.workspace.settings import WorkspaceSettings
 from untaped.capability_api import UiContext, get_config_section, raise_usage, ui_context
@@ -21,6 +21,7 @@ RepoSelectorOption = Annotated[
     list[str] | None,
     Parameter(
         name=["--repo", "-r"],
+        negative="",
         help="Limit to these repos (repeatable; name or URL).",
         consume_multiple=False,
     ),
@@ -57,7 +58,7 @@ def resolve_workspace(
         raise_usage("--workspace and --path are mutually exclusive")
     return WorkspaceResolver(
         registry=WorkspaceRegistryRepository(),
-        manifests=ManifestRepository(),
+        manifests=YamlManifestRepository(),
     ).resolve(name=workspace, path=path, cwd=cwd)
 
 

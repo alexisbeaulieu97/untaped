@@ -108,6 +108,9 @@ def _prompt_default(
         )
     if value is None or value in {"", "***"}:
         return None
+    if isinstance(value, str) and ":***@" in value:
+        # A masked URL password must never become the text to accept.
+        return None
     if isinstance(value, bool):
         return str(value).lower()
     return str(value)

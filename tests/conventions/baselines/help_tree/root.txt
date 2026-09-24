@@ -1,0 +1,8 @@
+# Known violations of the help_tree convention check for 'root'.
+# This list may only shrink: fix an entry and delete its line.
+# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
+config set::mutation-format::set
+config unset::mutation-format::unset
+profile create::mutation-format::create
+profile delete::destructive-controls::--dry-run
+profile delete::mutation-format::delete

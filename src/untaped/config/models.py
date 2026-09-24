@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, SecretStr
 
-from untaped.config_schema import FieldDescriptor
+from untaped.config_schema import FieldDescriptor, redact_url_password
 
 
 @dataclass(frozen=True)
@@ -87,7 +87,9 @@ def display_value(descriptor: FieldDescriptor, value: Any, *, reveal_secrets: bo
         return value.get_secret_value() if reveal_secrets else "***"
     if isinstance(value, Enum):
         return value.value
-    if isinstance(value, bool | int | float | str):
+    if isinstance(value, str):
+        return value if reveal_secrets else redact_url_password(value)
+    if isinstance(value, bool | int | float):
         return value
     return str(value)
 

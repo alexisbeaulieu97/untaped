@@ -14,6 +14,6 @@ def test_apply_outcome_is_frozen() -> None:
     Pins the parallelism contract: phase 2's outcome rewrites can't
     silently regress into in-place mutations.
     """
-    outcome = ApplyOutcome(kind="Project", name="p", action="preview")
+    outcome = ApplyOutcome(kind="Project", name="p", action="planned")
     with pytest.raises(ValidationError):
         outcome.action = "failed"  # type: ignore[misc]

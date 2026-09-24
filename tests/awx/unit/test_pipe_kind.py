@@ -1,10 +1,10 @@
-"""Unit tests for the spec -> ``--format pipe`` helpers in ``cli/_pipe.py``."""
+"""Unit tests for the spec -> ``--format pipe`` helpers in ``cli/pipe.py``."""
 
 from __future__ import annotations
 
 import pytest
 
-from untaped.capabilities.awx.cli._pipe import id_field_for, pipe_kind_for_spec
+from untaped.capabilities.awx.cli.pipe import id_field_for, pipe_kind_for_spec
 from untaped.capabilities.awx.domain import ResourceSpec
 
 

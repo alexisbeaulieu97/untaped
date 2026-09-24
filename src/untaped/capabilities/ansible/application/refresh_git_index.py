@@ -8,9 +8,10 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Literal
 
 from untaped.capabilities.ansible.application.ports import (
+    GitCache,
     GitHubDependencyReader,
     IncrementalDependencyIndexWriter,
     RefProbe,
@@ -56,39 +57,6 @@ ProbeMode = Literal["all", "default_branch"]
 # (GitHub REST/GraphQL traffic happens in expansion and the probe), so no
 # HTTP-specific error type belongs here.
 _REPO_FAILURE_ERRORS = (GitCacheError, UntapedError)
-
-
-class GitCache(Protocol):
-    """Git operations needed by git-backed source refresh."""
-
-    def ensure_bare(
-        self,
-        url: str,
-        *,
-        cache_dir: Path,
-        auth_header: str | None,
-    ) -> Path: ...
-
-    def fetch_refs(
-        self,
-        bare_path: Path,
-        *,
-        refspecs: list[str],
-        depth: int,
-        blob_filter: bool,
-        auth_header: str | None,
-    ) -> None: ...
-
-    def read_files(
-        self,
-        bare_path: Path,
-        sha: str,
-        paths: list[str],
-        *,
-        auth_header: str | None,
-    ) -> dict[str, str]:
-        """Return contents for the ``paths`` that exist at ``sha``; omit the rest."""
-        ...
 
 
 @dataclass(frozen=True)
@@ -170,7 +138,7 @@ class RefreshGitSourceIndex:
         paths = source.dependency_paths or self._default_dependency_paths
         paths_fingerprint = _dependency_paths_fingerprint(paths)
         aliases_fingerprint = _aliases_fingerprint(self._aliases, self._github_host)
-        source_fingerprint = _source_refresh_fingerprint(
+        source_fingerprint = source_refresh_fingerprint(
             source,
             repos=repos,
             paths_fingerprint=paths_fingerprint,
@@ -582,7 +550,7 @@ class RefreshGitSourceIndex:
             )
         )
         self._emit_progress("expanding", done=selector_count, total=selector_count)
-        return [_repo_candidate(item.model_dump(), fallback=None) for item in inventory]
+        return [repo_candidate(item.model_dump(), fallback=None) for item in inventory]
 
     def _probe_progress(self, done: int, total: int) -> None:
         self._emit_progress("probing", done=done, total=total)
@@ -687,7 +655,7 @@ def _skipped_file_key(skipped: SkippedDependencyFile) -> tuple[str, str, str, st
     )
 
 
-def _repo_candidate(row: dict[str, object], *, fallback: str | None) -> ProbeTarget:
+def repo_candidate(row: dict[str, object], *, fallback: str | None) -> ProbeTarget:
     full_name = _str(row.get("full_name")) or fallback
     if full_name is None:
         raise ValueError("repository metadata missing full_name")
@@ -719,7 +687,7 @@ def _aliases_fingerprint(aliases: dict[str, str], github_host: str | None = None
     return hashlib.sha256(payload).hexdigest()
 
 
-def _source_refresh_fingerprint(
+def source_refresh_fingerprint(
     source: SourceDefinition,
     *,
     repos: list[ProbeTarget],

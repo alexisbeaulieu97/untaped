@@ -22,17 +22,18 @@ from untaped.capabilities.workspace.domain import BranchApplyOutcome
 from untaped.capabilities.workspace.infrastructure import (
     GitRunner,
     LocalFilesystem,
-    ManifestRepository,
+    YamlManifestRepository,
 )
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
     OutputFormat,
     create_app,
-    echo,
     emit,
     finish,
+    q,
     report_errors,
+    ui_context,
 )
 
 CreateOption = Annotated[
@@ -82,18 +83,18 @@ def branch_set_command(
     """Set the default branch or a repo branch override in ``untaped.yml``."""
     with report_errors():
         ws = resolve_workspace(workspace, path)
-        change = SetWorkspaceBranch(ManifestRepository())(ws, branch=branch, repo=repo)
+        change = SetWorkspaceBranch(YamlManifestRepository())(ws, branch=branch, repo=repo)
+        ui = ui_context(strict=False)
         if change.repo is None:
-            echo(f"set default branch for {change.workspace!r} to {change.branch}", err=True)
+            ui.success(f"set default branch for {q(change.workspace)} to {change.branch}")
         else:
-            echo(
-                f"set branch for repo {change.repo!r} in {change.workspace!r} to {change.branch}",
-                err=True,
+            ui.success(
+                f"set branch for repo {q(change.repo)} in {q(change.workspace)} to {change.branch}"
             )
         if apply_checkout:
             with progress_ui().progress("Applying branches…"):
                 outcomes = ApplyWorkspaceBranch(
-                    ManifestRepository(),
+                    YamlManifestRepository(),
                     GitRunner(),
                     fs=LocalFilesystem(),
                 )(ws, repo=change.repo, create=create)
@@ -113,17 +114,23 @@ def branch_unset_command(
     ] = None,
     workspace: WorkspaceNameOption = None,
     path: WorkspacePathOption = None,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
     """Unset the default branch or a repo branch override in ``untaped.yml``."""
     with report_errors():
         ws = resolve_workspace(workspace, path)
-        change = UnsetWorkspaceBranch(ManifestRepository())(ws, repo=repo)
+        change = UnsetWorkspaceBranch(YamlManifestRepository())(ws, repo=repo)
+        ui = ui_context(strict=False)
         if change.repo is None:
-            echo(f"unset default branch for {change.workspace!r}", err=True)
-            return
-        echo(
-            f"unset branch for repo {change.repo!r} in {change.workspace!r}",
-            err=True,
+            ui.success(f"unset default branch for {q(change.workspace)}")
+        else:
+            ui.success(f"unset branch for repo {q(change.repo)} in {q(change.workspace)}")
+        emit(
+            [change],
+            fmt=fmt,
+            columns=columns,
+            kind="workspace.branch_unset_outcome",
         )
 
 
@@ -142,7 +149,7 @@ def branch_apply_command(
         ws = resolve_workspace(workspace, path)
         with progress_ui().progress("Applying branches…"):
             outcomes = ApplyWorkspaceBranch(
-                ManifestRepository(),
+                YamlManifestRepository(),
                 GitRunner(),
                 fs=LocalFilesystem(),
             )(ws, repo=repo, create=create)
@@ -156,9 +163,8 @@ def print_branch_apply_outcomes(
     fmt: OutputFormat,
     columns: list[str] | None,
 ) -> None:
-    rows = [row.model_dump() for row in outcomes]
     emit(
-        rows,
+        outcomes,
         fmt=fmt,
         columns=columns,
         kind="workspace.branch_outcome",

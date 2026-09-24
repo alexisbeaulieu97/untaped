@@ -9,7 +9,7 @@ import pytest
 from untaped.capabilities.recipe.application.inputs import (
     InputResolutionConfig,
     InputResolutionResult,
-    NoPromptAvailable,
+    NoPromptAvailableError,
     has_sensitive_inputs,
     prepare_input_resolution,
     redact_inputs,
@@ -250,7 +250,7 @@ def test_recipe_from_still_falls_back_to_default() -> None:
 
 
 def test_input_resolution_rejects_cli_value_and_source_conflicts() -> None:
-    with pytest.raises(ConfigError, match="cannot combine --var/--vars and --input-from"):
+    with pytest.raises(ConfigError, match="cannot combine --var/--vars-file and --input-from"):
         _config(
             _recipe(),
             fixed_values={"service": "api", "token": "secret"},
@@ -472,7 +472,7 @@ def test_interactive_without_prompt_backend_fails_clearly() -> None:
         {"version": 1, "inputs": {"service": {"type": "str", "required": True}}}
     )
 
-    with pytest.raises(NoPromptAvailable, match="interactive input requires a terminal"):
+    with pytest.raises(NoPromptAvailableError, match="interactive input requires a terminal"):
         _resolve(
             recipe,
             Target(path=Path("/work/acme/api")),

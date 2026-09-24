@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from untaped.errors import ConfigError
+from untaped.messages import hint, not_found
 from untaped.profile_resolver import (
     DEFAULT_PROFILE,
     effective_active_profile_name,
@@ -69,10 +70,9 @@ class ProfilesSettingsLayout:
         existing = raw.get("profiles")
         known = existing if isinstance(existing, dict) else {}
         if name != DEFAULT_PROFILE and name not in known:
-            known_str = ", ".join(sorted(known)) or "(none)"
             raise ConfigError(
-                f"profile {name!r} does not exist; known profiles: {known_str}. "
-                "Create it first with `untaped profile create`."
+                f"{not_found('profile', name, known=sorted(known))}\n"
+                f"{hint(f'profile create {name}')}"
             )
         profiles = raw.setdefault("profiles", {})
         if not isinstance(profiles, dict):

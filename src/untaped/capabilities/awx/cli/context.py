@@ -20,15 +20,17 @@ from typing import TYPE_CHECKING
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.errors import WaitCancelledError
 from untaped.capabilities.awx.infrastructure import AwxClient, AwxResourceCatalog
-from untaped.capabilities.awx.infrastructure.fk_resolver import FkResolver
+from untaped.capabilities.awx.infrastructure.fk_resolver import HttpFkResolver
 from untaped.capabilities.awx.infrastructure.job_monitor import PollingJobMonitor
 from untaped.capabilities.awx.infrastructure.job_record_repo import JobRecordRepository
 from untaped.capabilities.awx.infrastructure.resource_repo import ResourceRepository
 from untaped.capabilities.awx.infrastructure.strategy_resolver import StaticStrategyResolver
-from untaped.capabilities.awx.infrastructure.unified_template_repo import UnifiedTemplateRepository
-from untaped.capabilities.awx.infrastructure.workflow_node_repo import WorkflowNodeRepository
+from untaped.capabilities.awx.infrastructure.unified_template_repo import (
+    HttpUnifiedTemplateRepository,
+)
+from untaped.capabilities.awx.infrastructure.workflow_node_repo import HttpWorkflowNodeRepository
 from untaped.capabilities.awx.settings import AwxSettings
-from untaped.capability_api import AppContext, ConfigError, app_context, echo
+from untaped.capability_api import AppContext, ConfigError, UsageError, app_context
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -46,18 +48,18 @@ class AwxContext:
         self.client = AwxClient(config, http=context.http)
         self.repo = ResourceRepository(self.client, page_size=config.page_size)
         self.catalog = AwxResourceCatalog()
-        self.fk = FkResolver(
+        self.fk = HttpFkResolver(
             self.repo,
             self.catalog,
-            warn=lambda msg: echo(f"warning: {msg}", err=True),
+            warn=lambda msg: self.progress_ui().message("warning", msg),
         )
         self.strategies = StaticStrategyResolver()
         # Set on Ctrl-C so polling workers stop instead of blocking the exit.
         self.stop = threading.Event()
         self.monitor = PollingJobMonitor(self.repo, sleep=self.pause)
         self.jobs = JobRecordRepository(self.repo)
-        self.ujts = UnifiedTemplateRepository(self.repo)
-        self.workflow_nodes = WorkflowNodeRepository(self.repo)
+        self.ujts = HttpUnifiedTemplateRepository(self.repo)
+        self.workflow_nodes = HttpWorkflowNodeRepository(self.repo)
         self.default_organization = config.default_organization
 
     def pause(self, seconds: float) -> None:
@@ -145,7 +147,7 @@ def scope_for_spec(
     if parent is not None and spec.parent_field is None:
         raise ConfigError(f"--parent is not supported for {spec.kind}")
     if parent is not None and inventory is not None:
-        raise ConfigError("use --parent or --inventory, not both")
+        raise UsageError("use --parent or --inventory, not both")
     scope: dict[str, str] = {}
     if child:
         if inventory or parent:

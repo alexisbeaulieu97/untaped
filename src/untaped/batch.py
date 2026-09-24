@@ -20,8 +20,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from untaped.cli import echo, format_error
-from untaped.errors import ConfigError, UntapedError
-from untaped.render import stream_is_tty
+from untaped.errors import ExitCode, OperationCancelledError, UntapedError
+from untaped.messages import plural
 from untaped.ui import UiContext
 
 
@@ -33,11 +33,14 @@ class BatchOutcome[T, R]:
     callers keep the originating input (e.g. for a ``(name, job)`` monitor
     phase). ``planned_rows`` is ``describe(item)`` for every input — reused for
     the ``--dry-run`` output and any summary so callers don't recompute it.
+    ``cancelled`` marks a declined confirmation (:func:`finish` exits ``1``).
     """
 
     results: list[tuple[T, R]]
     failed: int
     planned_rows: list[dict[str, object]]
+    cancelled: bool = False
+    """The user declined the confirmation; nothing ran."""
 
     @property
     def any_failed(self) -> bool:
@@ -48,17 +51,25 @@ class BatchOutcome[T, R]:
         return len(self.planned_rows)
 
 
-def finish(outcome: BatchOutcome[Any, Any] | bool) -> None:
+def finish(outcome: BatchOutcome[Any, Any] | bool, *, predicate_hit: bool = False) -> None:
     """Turn a batch/aggregate outcome into the suite's exit-code contract.
 
     Raises ``SystemExit(1)`` when any item failed ("3 of 5 deleted" is a
-    failure), returns otherwise. Accepts a :class:`BatchOutcome` or a bare
-    ``any_failed``-style bool so non-batch aggregate paths (``resolve_each``
-    callers, hand-rolled loops) share the same guarantee.
+    failure) or the confirmation was declined (after printing the standard
+    ``cancelled; no changes made`` line), ``SystemExit(3)`` when
+    ``predicate_hit`` (``--check`` drift, ``--fail-on-match``, ``--strict``)
+    and nothing failed, and returns otherwise. Accepts a :class:`BatchOutcome`
+    or a bare ``any_failed``-style bool so non-batch aggregate paths
+    (``resolve_each`` callers, hand-rolled loops) share the same guarantee.
     """
+    if isinstance(outcome, BatchOutcome) and outcome.cancelled:
+        echo(str(OperationCancelledError()), err=True)
+        raise SystemExit(ExitCode.FAILURE)
     failed = outcome.any_failed if isinstance(outcome, BatchOutcome) else bool(outcome)
     if failed:
-        raise SystemExit(1)
+        raise SystemExit(ExitCode.FAILURE)
+    if predicate_hit:
+        raise SystemExit(ExitCode.PREDICATE)
 
 
 def batch_apply[T, R](
@@ -82,11 +93,12 @@ def batch_apply[T, R](
     ``label(item)`` is the identifier shown in progress and ``error: <label>: …``
     lines; ``describe(item)`` is the row used for the preview and ``planned_rows``.
 
-    A **destructive** verb gates execution: with ``assume_yes`` it proceeds; on an
-    interactive ``ui.stdin`` it previews then prompts (decline → no action run);
-    otherwise it raises :class:`ConfigError` (stdin is the data pipe, so there is
-    nothing to confirm against — pass ``--yes``). The context stream is the TTY
-    authority, matching production wiring and embedded tests. Callers can pass
+    A **destructive** verb gates execution: with ``assume_yes`` it proceeds;
+    otherwise it previews then prompts through :meth:`UiContext.confirm_action`
+    — on ``ui.stdin`` when it is a TTY, else on the controlling terminal (stdin
+    is the data pipe) — and a decline returns ``cancelled=True`` with no action
+    run. With no terminal at all it raises :class:`UsageError` (exit 2; pass
+    ``--yes``). Callers can pass
     ``preview`` to render the planned rows for the confirmation preview; the
     generic delete-style row dump remains the default. Callers that already
     rendered a richer preview can pass ``render_generic_preview=False`` to keep
@@ -105,20 +117,18 @@ def batch_apply[T, R](
         return BatchOutcome(results=[], failed=0, planned_rows=planned_rows)
     total = len(planned_rows)
     if destructive and not assume_yes:
-        if stream_is_tty(ui.stdin):
+        with ui.terminal(refusal=f"{verb} requires --yes when not interactive"):
             if preview is not None:
                 preview(planned_rows)
             elif render_generic_preview:
-                echo(f"About to {verb} {total} {noun}(s):", err=True)
+                echo(f"About to {verb} {plural(total, noun)}:", err=True)
                 for row in planned_rows:
                     echo("  - " + "\t".join(str(value) for value in row.values()), err=True)
             if not ui.confirm("Continue?"):
-                return BatchOutcome(results=[], failed=0, planned_rows=planned_rows)
-        else:
-            raise ConfigError(f"{verb} requires --yes when stdin is not interactive")
+                return BatchOutcome(results=[], failed=0, planned_rows=planned_rows, cancelled=True)
     results: list[tuple[T, R]] = []
     failed = 0
-    with ui.progress(f"{verb.capitalize()} {total} {noun}(s)") as handle:
+    with ui.progress(f"{verb.capitalize()} {plural(total, noun)}") as handle:
         for index, item in enumerate(items, 1):
             handle.update(label(item), fraction=index / total)
             try:

@@ -6,7 +6,8 @@ validation only, never network I/O. Each row is isolated: invalid settings
 for one capability surface as failed rows while every other row still runs.
 Quarantine records render as failed rows (nonzero exit). Capability state
 sections still at the top level of ``config.yml`` (the pre-``state.yml``
-layout) render as a ``warn`` row, which does not fail the run.
+layout) render as a ``warn`` row, which does not fail the run; so does a
+capability check that returns ``DoctorResult(..., warn=True)``.
 """
 
 from __future__ import annotations
@@ -35,9 +36,10 @@ from untaped.cli import (
     report_errors,
 )
 from untaped.config_file import read_config_dict
-from untaped.errors import ConfigError, first_validation_error
+from untaped.errors import ConfigError, ExitCode, first_validation_error
 from untaped.http import resolve_verify
 from untaped.management._render import emit_isolated
+from untaped.messages import plural
 from untaped.profile_resolver import classify_active_profile
 from untaped.render import OutputFormat
 from untaped.settings import (
@@ -95,11 +97,11 @@ def _run(
     columns: list[str] | None,
 ) -> None:
     rows = _collect(shell, result)
-    emit_isolated(rows, fmt=fmt, columns=columns)
+    emit_isolated(rows, fmt=fmt, columns=columns, kind="untaped.doctor_check")
     failed = [row for row in rows if row["status"] == _FAIL]
     if failed:
-        echo(f"doctor: {len(failed)} of {len(rows)} checks failed", err=True)
-        raise SystemExit(1)
+        echo(f"doctor: {len(failed)} of {plural(len(rows), 'check')} failed", err=True)
+        raise SystemExit(ExitCode.FAILURE)
 
 
 def _row(check: str, capability: str, status: str, title: str, detail: str) -> dict[str, object]:
@@ -362,6 +364,8 @@ def _run_check(
         )
     if not outcome.ok:
         return _row(check_item.id, scope.capability, _FAIL, check_item.title, outcome.detail)
+    if outcome.warn:
+        return _row(check_item.id, scope.capability, _WARN, check_item.title, outcome.detail)
     return _row(check_item.id, scope.capability, _PASS, check_item.title, outcome.detail or "OK")
 
 

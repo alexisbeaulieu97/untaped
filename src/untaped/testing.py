@@ -8,7 +8,7 @@ from collections import deque
 from collections.abc import Callable, Iterable, Sequence
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TextIO
 
 from cyclopts import App
 from rich.console import Console
@@ -19,7 +19,9 @@ from untaped.prompts import (
     PromptBackend,
     PromptChoice,
     reset_prompt_backend_override,
+    reset_terminal_override,
     set_prompt_backend_override,
+    set_terminal_override,
 )
 
 __all__ = [
@@ -60,6 +62,7 @@ class CliInvoker:
         catch_exceptions: bool = True,
         interactive: bool = False,
         prompt_backend: PromptBackend | None = None,
+        terminal: bool = False,
     ) -> CliResult:
         """Invoke a command with captured stdout/stderr."""
         return invoke_cli(
@@ -69,6 +72,7 @@ class CliInvoker:
             catch_exceptions=catch_exceptions,
             interactive=interactive,
             prompt_backend=prompt_backend,
+            terminal=terminal,
         )
 
 
@@ -80,18 +84,23 @@ def invoke_cli(
     catch_exceptions: bool = True,
     interactive: bool = False,
     prompt_backend: PromptBackend | None = None,
+    terminal: bool = False,
 ) -> CliResult:
     """Invoke a Cyclopts app or launcher while capturing terminal streams.
 
     ``interactive=True`` swaps stdin for a :class:`TtyStringIO` so TTY gates
     open; ``prompt_backend`` installs a scripted backend for the invocation
-    (reaching even ``UiContext``s the command builds itself).
+    (reaching even ``UiContext``s the command builds itself). The
+    controlling terminal (``/dev/tty``, used for prompts while stdin is
+    piped) is simulated: absent by default, present with ``terminal=True``
+    (prompts then go to ``prompt_backend``).
     """
     stdout = io.StringIO()
     stderr = io.StringIO()
     previous_stdin = sys.stdin
     sys.stdin = TtyStringIO(input or "") if interactive else io.StringIO(input or "")
     token = set_prompt_backend_override(prompt_backend) if prompt_backend is not None else None
+    terminal_token = set_terminal_override(TtyStringIO if terminal else _no_terminal)
     try:
         with redirect_stdout(stdout), redirect_stderr(stderr):
             try:
@@ -114,9 +123,15 @@ def invoke_cli(
                 )
     finally:
         sys.stdin = previous_stdin
+        reset_terminal_override(terminal_token)
         if token is not None:
             reset_prompt_backend_override(token)
     return CliResult(exit_code=0, stdout=stdout.getvalue(), stderr=stderr.getvalue())
+
+
+def _no_terminal() -> TextIO:
+    """Terminal opener for tests without a controlling terminal."""
+    raise OSError("no controlling terminal (test harness)")
 
 
 def assert_destructive_contract(

@@ -1,5 +1,7 @@
 """Validate a complete action selection and freeze inventory source expansion."""
 
+from __future__ import annotations
+
 import json
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -12,12 +14,12 @@ from untaped.capabilities.awx.application.selection import (
 )
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.errors import LaunchPromptError
-from untaped.capability_api import ConfigError
+from untaped.capability_api import ConfigError, UsageError, q
 
 # Launch payload field → (template prompt flag, CLI flag that sets it).
 LAUNCH_PROMPTS: dict[str, tuple[str, str]] = {
     "extra_vars": ("ask_variables_on_launch", "--extra-vars"),
-    "limit": ("ask_limit_on_launch", "--limit"),
+    "limit": ("ask_limit_on_launch", "--host-pattern"),
     "inventory": ("ask_inventory_on_launch", "--inventory"),
     "credentials": ("ask_credential_on_launch", "--credential"),
     "scm_branch": ("ask_scm_branch_on_launch", "--scm-branch"),
@@ -43,7 +45,7 @@ def _preflight_launch(
     if missing:
         raise LaunchPromptError(
             f"{label} requires survey variables {', '.join(map(str, missing))}; "
-            "pass them with --extra-vars KEY=VAL."
+            "pass them with --extra-vars KEY=VAL"
         )
     for field, value in payload.items():
         prompt = LAUNCH_PROMPTS.get(field)
@@ -64,7 +66,7 @@ def _preflight_launch(
             continue
         raise LaunchPromptError(
             f"{label} does not prompt for {field} on launch ({ask_key} is false); "
-            f"AWX would ignore {flag}. Enable {ask_key} on the template or drop {flag}."
+            f"AWX would ignore {flag}; enable {ask_key} on the template or drop {flag}"
         )
 
 
@@ -86,8 +88,8 @@ def _check_survey_variables(
     if outside := sorted(names - allowed):
         raise LaunchPromptError(
             f"{label} does not prompt for extra variables outside its survey "
-            f"(ask_variables_on_launch is false); AWX would ignore {', '.join(outside)}. "
-            "Enable ask_variables_on_launch or pass only survey variables."
+            f"(ask_variables_on_launch is false); AWX would ignore {', '.join(outside)}; "
+            "enable ask_variables_on_launch or pass only survey variables"
         )
 
 
@@ -136,7 +138,7 @@ def prepare_action_targets(
     required survey variable fails the whole selection before any POST.
     """
     if not selected:
-        raise ConfigError(f"No {spec.kind} targets selected for {action}")
+        raise UsageError(f"no {spec.kind} targets selected for {action}")
     if action == "launch":
         for item in selected:
             _preflight_launch(client, spec, item, payload or {})
@@ -162,7 +164,9 @@ def prepare_action_targets(
         spec, targets = source_spec, tuple(expanded.values())
     for item in targets:
         if spec.kind == "InventorySource" and item.record.get("source") in (None, "", "file"):
-            raise ConfigError(f"InventorySource {item.name!r} (id={item.id}): no syncable source")
+            raise ConfigError(f"inventory source {q(item.name)} (id={item.id}): no syncable source")
         if spec.kind == "Project" and not item.record.get("scm_type"):
-            raise ConfigError(f"Project {item.name!r} (id={item.id}): manual project cannot sync")
+            raise ConfigError(
+                f"project {q(item.name)} (id={item.id}): a manual project cannot sync"
+            )
     return spec, targets

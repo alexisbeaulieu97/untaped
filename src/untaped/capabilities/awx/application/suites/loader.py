@@ -20,7 +20,7 @@ from untaped.capabilities.awx.application.suites.ports import (
     VarsResolver,
 )
 from untaped.capabilities.awx.domain.suite import Suite, VariableSpec
-from untaped.capability_api import ConfigError
+from untaped.capability_api import ConfigError, plural
 
 
 class LoadTestSuite:
@@ -125,6 +125,6 @@ def _reject_non_empty_assert(path: Path, suite: Suite) -> None:
     if locations:
         joined = ", ".join(locations)
         raise ConfigError(
-            f"{path}: non-empty 'assert:' block(s) at {joined} — assertions land in v2; "
-            "remove or empty the assert: block in v1."
+            f"{path}: non-empty 'assert:' {plural(len(locations), 'block')} at {joined}; "
+            "assertions land in v2, so remove or empty the assert: block in v1"
         )

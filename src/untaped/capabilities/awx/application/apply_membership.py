@@ -104,7 +104,7 @@ class MembershipReconciler:
                 raise BadRequestError(
                     f"{spec.kind} {resource.metadata.name!r}: {ref.field!r} must be a "
                     f"list of names (got {type(raw_value).__name__}); wrap a single "
-                    f"value in [ ... ] to clarify intent."
+                    f"value in [ ... ] to clarify intent"
                 )
             desired_names = list(raw_value)
             scope = scope_for(ref, resource)

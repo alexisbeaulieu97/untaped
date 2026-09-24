@@ -20,7 +20,7 @@ def test_401_maps_to_config_error() -> None:
     err = to_awx_error(_http_error(401, '{"detail":"invalid token"}'))
     assert isinstance(err, ConfigError)
     # Names the unified root command path for the awx section.
-    assert "`untaped config set awx.token <new-token>`" in str(err)
+    assert "hint: run `untaped config set awx.token --prompt`" in str(err)
 
 
 def test_403_maps_to_permission_denied_with_body() -> None:

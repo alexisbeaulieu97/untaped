@@ -196,6 +196,224 @@ Startup and SDK surface.
   goes away with `untaped.api`. `untaped.app_context` now names the submodule
   rather than the function.
 
+UX conventions: every command follows one set of rules for exit codes,
+messages, flags, confirmations and records (see `docs/conventions.md`).
+
+**Upgrading.** Scripts that call `untaped` will hit these changes:
+
+- Exit codes: usage errors exit 2 (most were 1), predicate hits
+  (`github sweep --fail-on-match`/`--strict`, `recipe apply --check`) exit 3
+  (were 1), Ctrl-C exits 130, and a declined confirmation exits 1.
+- Write commands now confirm first: jira
+  `issues create/patch/comment/transition`, ansible `alias remove`/`source
+  remove`, awx launches and syncs of several targets, workspace `remove --prune`/`forget --prune`/`sync --prune`, and
+  recipe `apply`/`remove`/`backup restore`/`backup prune`. Without a terminal
+  they exit 2 unless you pass `--yes`; `--dry-run` previews and wins over
+  `--yes`.
+- Renamed commands and flags (`jira me`, `recipe check`, `awx save`,
+  `--repo-stdin`, `--concurrency`, ...) keep hidden deprecated aliases that
+  print one warning each and go away in 7.0.
+- Record kinds and fields are renamed: root kinds are `untaped.*`, mutation
+  results are `<cap>.<verb>_outcome` with an `action` field, jira fields are
+  snake_case with `*_at` UTC timestamps, file records carry an absolute
+  `target_path`, and `github search repos`/`search users` emit
+  `github.repo_hit`/`github.user_hit`. Pipe and JSON consumers keyed on the
+  old names must update.
+
+- Core
+  - Exit codes follow one contract: 1 failure or declined confirmation, 2
+    usage error, 3 predicate hit, 130 interrupted. **Behavior change:** Ctrl-C
+    exits 130 without a traceback, including at a prompt (was 1). Declining
+    the confirmation of workspace `remove --prune`/`forget --prune`, recipe
+    `backup restore`/`backup prune`, github `cache clean` or `profile delete`
+    prints `cancelled; no changes made` and exits 1 (was a silent exit 0, or
+    `delete cancelled`). A command that must confirm but has no terminal exits
+    2 (was 1). Mixing positional identifiers with `--stdin`, passing
+    none, and `--body`/`--body-file` together exit 2.
+  - Confirmations reach the controlling terminal when stdin carries piped data,
+    so `... --format pipe | untaped workspace remove --stdin` prompts instead of
+    refusing. Without a terminal, pass `--yes`.
+  - `untaped.capability_api` adds (API 1.1, backwards compatible): `UsageError`,
+    `OperationCancelledError`, `ExitCode`, `plural`, `q`, `not_found`, `hint`,
+    `summary`, `YesOption`, `DryRunOption`, `StdinOption`, `ParallelOption`,
+    `LimitOption`, `OutcomeRecord`, `TargetRecord`, `CheckRecord`,
+    `UtcTimestamp`, `read_stdin_input`, `StdinInput`, `read_records` and
+    `deprecated_alias`, which keeps a renamed command or flag working as a
+    hidden spelling that prints a deprecation warning.
+    `read_identifiers`/`read_records` accept `accept_kinds` (a record of another
+    kind exits 2). `UiContext` gains `success`, `confirm_action` and `terminal`.
+    `finish()` takes `predicate_hit`, and `BatchOutcome` gains `cancelled`.
+    `untaped.testing.invoke_cli` gains `terminal=`.
+  - Fixed: `untaped awx job_templates --help` (any underscore or camelCase
+    spelling of a multi-word command) crashed with a `KeyError`. It now
+    resolves to the registered name.
+  - Fixed: the `config list` warning for an invalid section repeated itself. It
+    is now one sentence.
+  - `http.proxy` (and any URL setting) no longer prints a `user:password@`
+    password in `config list/get` or `profile show` unless you pass
+    `--show-secrets`.
+  - **Behavior change:** root pipe records use `untaped.*` kinds
+    (`untaped.setting`, `untaped.profile` (was `profile.profile`),
+    `untaped.capability`, `untaped.doctor_check`, `untaped.skill`). "Profile not
+    found" errors read `profile not found: 'x'; known: …` with a `hint:` line.
+    The meaningless `--empty-columns` flag is gone, and so are `--no-*`
+    flags for root options that default to off (`--no-show-secrets`,
+    `--no-stdin`, ...). `skills install` takes names positionally only (no
+    `--skill-names`).
+  - `tests/conventions/` lints the help tree, messages, capability structure and
+    layer imports against per-capability baselines that may only shrink.
+  - Records built on `OutcomeRecord`/`TargetRecord` list their own fields
+    before the inherited `action`/`target_path`, so the identifying field
+    leads tables and `--format raw`.
+  - `UiContext.styled` prints Rich-styled lines (color only on a terminal).
+    `DoctorResult` gains `warn=False`: a capability check can report a `warn`
+    row, which does not fail `doctor`.
+  - Fixed: typing `y` at a `[y/N]` confirmation re-prompted with "Please
+    answer y or n." because the default letter was pre-filled; Enter alone
+    now takes the default.
+- github
+  - **Behavior change:** `github search repos|code|issues --repo-stdin` →
+    `--stdin` (deprecated alias kept). Stdin only accepts `github.repo`,
+    `github.repo_hit` or `github.sweep_repo` records; any other kind exits 2.
+    `sweep --stdin` follows the same rule.
+  - **Behavior change:** `search repos` emits `github.repo_hit` and `search
+    users` emits `github.user_hit`; `github.repo` and `github.user` each have
+    one schema.
+  - **Behavior change:** `cache clean` is replaced by `cache delete
+    REPO...|--all` and `cache prune --org` (both with `--yes`/`--dry-run`);
+    `cache clean` still works but warns it is deprecated.
+  - **Behavior change:** `sweep --fail-on-match`/`--strict` exit 3 instead of
+    1. `--sync/--no-sync` → `--refresh/--cached`, `-w` → `--word-regexp`
+    (deprecated aliases kept).
+  - **Behavior change:** usage errors exit 2 instead of 1 (malformed `--team`,
+    missing scope, bad `--regex`/grep pattern/pathspec, cache selection
+    errors, `--parallel 0`, `--team` with `--cached`).
+  - **Behavior change:** `cache worktree REPO`, `repos list PATTERN` and the
+    search `QUERY` are positional-only; the `--empty-*` flags are gone.
+  - Added `repos list --limit`, a `url` (web URL) field on
+    repo/code/issue/user records, and a `repo` field on repo records.
+  - An HTTP 401 from GitHub now hints `untaped config set github.token
+    --prompt`.
+- jira
+  - **Behavior change:** `jira me` → `jira whoami`; groups
+    `issue`/`project`/`board`/`sprint` →
+    `issues`/`projects`/`boards`/`sprints`; `issue edit` → `issues patch`;
+    `--field`/`--json-field` → `--set`/`--set-json` on create/patch (old
+    spellings are hidden deprecated aliases).
+  - **Behavior change:** records use snake_case (`display_name`,
+    `email_address`, `issue_type`, `project_type_key`, `origin_board_id`);
+    `updated`/`created` → `updated_at`/`created_at`; sprint
+    `startDate`/`endDate` → `start_at`/`end_at`; timestamps are UTC `…Z`
+    (unparseable → null); `self` → `api_url`; issue rows gain `api_url`.
+  - **Behavior change:** `create`/`patch`/`comment`/`transition` emit
+    `jira.issue_outcome` (`action`
+    created/updated/commented/transitioned/planned, plus
+    key/id/url/api_url/transition_id/comment_id) instead of
+    `jira.issue`/`jira.comment`.
+  - **Behavior change:** these writes now confirm before sending and print the
+    REST request; without a terminal they need `--yes` or exit 2 (unattended
+    scripts must add `--yes`).
+  - Added `--dry-run` on these writes (request on stderr, `planned` outcome;
+    wins over `--yes`).
+  - Added: `issues get`/`issues transition` accept several keys or `--stdin`
+    (per-key failure → exit 1); `--stdin` accepts `jira.issue` and
+    `jira.issue_outcome`.
+  - **Behavior change:** usage mistakes exit 2 instead of 1 (blank `--jql`,
+    both/neither of `--id`/`--to`, `sprints list` without a board id).
+  - Jira errors: 401 hints `untaped config set jira.token --prompt`; 404 reads
+    `issue not found: 'KEY'`; other HTTP errors include Jira's own messages;
+    an unknown transition lists the known ones.
+- ansible
+  - **Behavior change:** `alias add` → `alias set`; `source save` → `source
+    set`, `source edit` → `source patch`, `source show` → `source get` (hidden
+    deprecated aliases).
+  - **Behavior change:** `--concurrency` → `--parallel/-j` on `source refresh`
+    and `graph` (values over 32 are capped with a warning instead of
+    rejected); `graph --output` → `--out/-o` (aliases kept).
+  - **Behavior change:** `alias set/remove` and `source set/patch/remove` take
+    `--format`/`--columns` and emit
+    `ansible.alias_outcome`/`ansible.source_outcome` on stdout instead of a
+    stderr success line.
+  - **Behavior change:** `alias remove` and `source remove` confirm first;
+    without a terminal they need `--yes` (exit 2); a decline exits 1; added
+    `--dry-run`.
+  - **Behavior change:** flag problems exit 2 instead of 1 (invalid alias
+    target, source definition errors, `source patch` with no flags,
+    `--ref-scan-default` with `--clear-ref-scan-default`). Unknown names read
+    `source not found: 'x'; known: …`.
+  - **Behavior change:** `source status` states are
+    `not_refreshed`/`missing_source`; `scanned_at` renders as
+    `2026-01-02T03:04:05Z`.
+  - `doctor` reports a non-failing `ansible.deprecated-settings` `warn` row
+    while `ansible.freshness_ttl` is set.
+  - Refresh warnings go through the UI, the summary is muted by `-q`, and
+    counts are pluralized correctly. ansible now reads GitHub settings through
+    github's public facade.
+- workspace
+  - **Behavior change:** sync actions are
+    `cloned`/`pulled`/`unchanged`/`skipped`/`removed`; branch-apply actions
+    are `checked_out`/`unchanged`/`skipped`. Sync, status, foreach, branch
+    apply and `get` rows carry an absolute `target_path`.
+  - **Behavior change:** `workspace show` → `get` (hidden deprecated alias).
+  - **Behavior change:** `init`/`add`/`remove`/`forget`/`branch unset` emit
+    `workspace.<verb>_outcome` rows on stdout and take `--format`/`--columns`;
+    `remove` gains `--dry-run`.
+  - **Behavior change:** `foreach -j 0` exits 2 (it ran serially);
+    `--repo-name` with several URLs exits 2; `edit` exits 1 with `error:
+    editor exited with status N` instead of passing the editor's code through.
+  - **Behavior change:** the sync summary reads `sync: 2 cloned` / `sync:
+    nothing to do`.
+  - `add --stdin` accepts `github.repo`, `github.repo_hit`,
+    `github.sweep_repo` and `workspace.repo` records, so `github search repos
+    --format pipe | workspace add --stdin` works; `remove --stdin`/`path
+    --stdin` check record kinds (other kinds exit 2). Success lines are muted
+    by `-q`.
+- recipe
+  - **Behavior change:** `recipe check` → `validate`, `show` → `get`, `backup
+    show` → `backup get`, `new pack|recipe|hook` → `init pack|recipe|hook`,
+    `apply --vars` → `--vars-file` (old spellings warn).
+  - **Behavior change:** `apply` records are kind `recipe.apply_outcome`:
+    `status` → `action`
+    (`planned`/`applied`/`unchanged`/`skipped`/`cancelled`/`failed`; old
+    `check`/`dry-run` become `planned`/`unchanged`), `target` → absolute
+    `target_path`, `warnings` is a list, `error` is null when nothing failed.
+  - **Behavior change:** `apply --check` exits 3 on drift (was 1). Declining
+    the prompt in `apply`/`remove` exits 1 with `cancelled; no changes made`
+    (`remove` exited 0).
+  - **Behavior change:** `add` never prompts (`-y` is a hidden no-op) and
+    prints a `recipe.add_outcome` table (`action` created/updated) instead of
+    the bare pack name.
+  - `remove` gains `--dry-run`/`--format` and emits `recipe.remove_outcome`;
+    `backup prune`/`backup restore` gain `--dry-run`.
+  - **Behavior change:** usage errors exit 2 (conflicting flags, missing
+    targets, `--keep`/`--older-than`/`--hook-timeout` ranges, `--rev` on a
+    local path, `test --update` without a ref, no terminal).
+  - `hook run` failures print as `error: <traceback>`; `add`/`init` notes go
+    through the UI (`warning:` prefix, info muted by `-q`).
+- awx
+  - **Behavior change:** `awx save` / `awx <kind> save` → `export`; `launch
+    --limit` → `--host-pattern`; `jobs logs -f` → `--follow`; `usage
+    -r`/`nodes -r` → `--recursive`; `input_inventories`/`instance_groups` →
+    kebab-case (old spellings warn).
+  - **Behavior change:** names/ids are positional-only and other options
+    keyword-only (`ping json` → `ping -f json`); list `--empty-*` flags are
+    gone.
+  - **Behavior change:** `get` (per kind, `jobs get`, `unified-templates get`)
+    defaults to a table; `list -f json/yaml/pipe` returns full records.
+  - **Behavior change:** `--yes` with `--dry-run` is allowed (dry-run wins);
+    declining a prompt exits 1 with `cancelled; no changes made`; no terminal
+    exits 2; `--allow-unverified` without `--yes` and conflicting
+    selection/scope flags exit 2.
+  - **Behavior change:** `--stdin` rejects records of the wrong kind (exit 2)
+    and empty stdin is an error (it selected nothing and exited 0).
+  - **Behavior change:** launch/sync rows are
+    `awx.launch_outcome`/`awx.sync_outcome` (accepted by `jobs --stdin`); the
+    `preview` action is `planned`; `fields_changed`/`preserved_secrets` are
+    lists.
+  - `jobs events --follow` and `launch --track` print live events through the
+    shared UI. Every parameter has help text; HTTP 401 hints `untaped config
+    set awx.token --prompt`; `test run` gains `-j`.
+
 ## 6.0.1
 
 - `github sweep` now retries transient Git transport failures (dropped TLS/TCP

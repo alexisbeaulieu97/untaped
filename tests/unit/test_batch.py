@@ -9,7 +9,8 @@ from typing import Any
 import pytest
 
 from untaped.batch import BatchOutcome, batch_apply, finish
-from untaped.errors import ConfigError, HttpError
+from untaped.errors import HttpError, UsageError
+from untaped.prompts import reset_terminal_override, set_terminal_override
 from untaped.testing import ScriptedPromptBackend, TtyStringIO
 from untaped.ui import UiContext
 
@@ -54,7 +55,7 @@ def test_interactive_destructive_previews_and_confirms(capsys: pytest.CaptureFix
     outcome = _run(interactive=True, items=["a", "b"], action=action, ui=ui)
 
     captured = capsys.readouterr()
-    assert "About to delete 2 Widget(s):" in captured.err
+    assert "About to delete 2 Widgets:" in captured.err
     assert "name-a" in captured.err and "name-b" in captured.err
     assert captured.out == ""  # preview/progress stay off stdout
     assert ui.prompt_backend.calls == [("confirm", "Continue?")]
@@ -93,8 +94,48 @@ def test_decline_runs_no_action() -> None:
 
     assert calls == []
     assert outcome.results == []
+    assert outcome.cancelled is True
     assert outcome.total == 2
     assert len(outcome.planned_rows) == 2
+
+
+def test_finish_exits_one_with_standard_line_on_decline(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    outcome = _run(interactive=True, confirms=[False], items=["a"], action=lambda item: item)
+
+    with pytest.raises(SystemExit) as exc_info:
+        finish(outcome)
+
+    assert exc_info.value.code == 1
+    assert capsys.readouterr().err.endswith("cancelled; no changes made\n")
+
+
+def test_finish_exits_three_on_predicate_hit_only_without_failures() -> None:
+    with pytest.raises(SystemExit) as hit:
+        finish(False, predicate_hit=True)
+    with pytest.raises(SystemExit) as failed:
+        finish(True, predicate_hit=True)
+
+    assert hit.value.code == 3
+    assert failed.value.code == 1
+    finish(False, predicate_hit=False)  # returns: nothing to report
+
+
+def test_piped_stdin_confirms_on_the_controlling_terminal() -> None:
+    """Piped stdin carries data, so the prompt goes to the controlling terminal."""
+    action, calls = _recorder()
+    ui = _ui(interactive=False, confirms=[True])
+    token = set_terminal_override(TtyStringIO)
+    try:
+        outcome = _run(interactive=False, items=["a"], action=action, ui=ui)
+    finally:
+        reset_terminal_override(token)
+
+    assert ui.prompt_backend.calls == [("confirm", "Continue?")]
+    assert calls == ["a"]
+    assert outcome.cancelled is False
+    assert not isinstance(ui.stdin, TtyStringIO)  # the data stream is restored
 
 
 def test_assume_yes_skips_gate_and_preview(
@@ -146,7 +187,7 @@ def test_benign_verb_skips_gate() -> None:
 
 def test_destructive_non_interactive_refuses() -> None:
     action, calls = _recorder()
-    with pytest.raises(ConfigError, match="requires --yes when stdin is not interactive"):
+    with pytest.raises(UsageError, match="delete requires --yes when not interactive"):
         _run(interactive=False, items=["a", "b"], action=action)
     assert calls == []
 
@@ -155,7 +196,7 @@ def test_destructive_non_interactive_refuses_before_generic_preview(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     action, calls = _recorder()
-    with pytest.raises(ConfigError, match="requires --yes when stdin is not interactive"):
+    with pytest.raises(UsageError, match="requires --yes when not interactive"):
         _run(
             interactive=False,
             items=["a", "b"],
@@ -230,7 +271,7 @@ def test_tty_authority_is_the_context_stdin_not_sys_stdin(
     """A real-TTY process stdin must not open the gate when context stdin is a pipe."""
     monkeypatch.setattr("sys.stdin", TtyStringIO())
     ui = _ui(interactive=False)
-    with pytest.raises(ConfigError, match="requires --yes"):
+    with pytest.raises(UsageError, match="requires --yes"):
         batch_apply(
             ["a"],
             lambda item: item,

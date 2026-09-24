@@ -16,7 +16,7 @@ import respx
 import yaml
 
 from untaped.capabilities.ansible.application.refresh_index import RefreshResult
-from untaped.capabilities.ansible.cli import _refresh, app
+from untaped.capabilities.ansible.cli import app, refresh
 from untaped.capabilities.ansible.domain.payloads import (
     GRAPHQL_RATE_LIMIT_FALLBACK,
     GRAPHQL_TRANSIENT_FALLBACK,
@@ -26,6 +26,7 @@ from untaped.capabilities.ansible.domain.payloads import (
     SourceRepoMetadata,
 )
 from untaped.capabilities.ansible.infrastructure import SqliteDependencyIndex
+from untaped.capability_api import ui_context
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker
 
@@ -325,7 +326,7 @@ def _seed_unchanged_scan(
     fingerprints a subsequent refresh recomputes.
     """
     with monkeypatch.context() as patcher:
-        patcher.setattr(_refresh, "GitRepositoryCache", _SeedGitCache)
+        patcher.setattr(refresh, "GitRepositoryCache", _SeedGitCache)
         with respx.mock(base_url="https://api.github.com") as mock:
             _mock_refresh_repos(mock, repos, missing=missing)
             result = CliInvoker().invoke(app, ["source", "refresh", "prod"])
@@ -386,14 +387,14 @@ def test_alias_add_list_remove_updates_config(
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     runner = CliInvoker()
 
-    result = runner.invoke(app, ["alias", "add", "common", "acme/common"])
+    result = runner.invoke(app, ["alias", "set", "common", "acme/common"])
     assert result.exit_code == 0, result.output
 
     result = runner.invoke(app, ["alias", "list", "--format", "json"])
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [{"alias": "common", "repo": "acme/common"}]
 
-    result = runner.invoke(app, ["alias", "remove", "common"])
+    result = runner.invoke(app, ["alias", "remove", "common", "--yes"])
     assert result.exit_code == 0, result.output
     assert _read_state(cfg).get("ansible", {}).get("aliases") is None
 
@@ -402,9 +403,9 @@ def test_alias_add_rejects_non_owner_repo_target(tmp_path: Path, monkeypatch) ->
     cfg = _write_config(tmp_path)
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
 
-    result = CliInvoker().invoke(app, ["alias", "add", "foo", "bar"])
+    result = CliInvoker().invoke(app, ["alias", "set", "foo", "bar"])
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "owner/name" in result.stderr
     assert _read_state(cfg).get("ansible", {}).get("aliases") is None
 
@@ -416,7 +417,7 @@ def test_alias_add_warns_that_saved_sources_need_refresh(tmp_path: Path, monkeyp
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
 
-    result = CliInvoker().invoke(app, ["alias", "add", "common", "acme/common"])
+    result = CliInvoker().invoke(app, ["alias", "set", "common", "acme/common"])
 
     assert result.exit_code == 0, result.output
     assert "untaped ansible source refresh" in result.stderr
@@ -471,7 +472,7 @@ def test_source_save_show_remove_updates_config(tmp_path: Path, monkeypatch) -> 
         app,
         [
             "source",
-            "save",
+            "set",
             "prod",
             "--org",
             "acme",
@@ -489,7 +490,7 @@ def test_source_save_show_remove_updates_config(tmp_path: Path, monkeypatch) -> 
     )
     assert result.exit_code == 0, result.output
 
-    result = runner.invoke(app, ["source", "show", "prod", "--format", "json"])
+    result = runner.invoke(app, ["source", "get", "prod", "--format", "json"])
     assert result.exit_code == 0, result.output
     # A single source renders as a bare object {…} via emit (not [{…}]).
     assert json.loads(result.stdout) == {
@@ -504,12 +505,12 @@ def test_source_save_show_remove_updates_config(tmp_path: Path, monkeypatch) -> 
 
     # A single source renders as a vertical detail view under the default
     # config — not a boxed one-row table.
-    result = runner.invoke(app, ["source", "show", "prod", "--format", "table"])
+    result = runner.invoke(app, ["source", "get", "prod", "--format", "table"])
     assert result.exit_code == 0, result.output
     assert "name: prod" in result.stdout
     assert not any(ch in result.stdout for ch in "╭╮╰╯┌┐└┘│─")
 
-    result = runner.invoke(app, ["source", "remove", "prod"])
+    result = runner.invoke(app, ["source", "remove", "prod", "--yes"])
     assert result.exit_code == 0, result.output
     assert _read_state(cfg).get("ansible", {}).get("sources") is None
 
@@ -643,7 +644,7 @@ def test_source_edit_add_remove_and_clear_updates_config(
         app,
         [
             "source",
-            "edit",
+            "patch",
             "prod",
             "--remove-team",
             "acme/old-platform",
@@ -667,11 +668,10 @@ def test_source_edit_add_remove_and_clear_updates_config(
     )
 
     assert result.exit_code == 0, result.output
-    assert result.stdout == ""
-    assert "updated source 'prod':" in result.stderr
-    assert "removed team acme/old-platform" in result.stderr
-    assert "added team acme/platform" in result.stderr
-    assert "cleared path" in result.stderr
+    assert "action: updated" in result.stdout
+    assert "removed team acme/old-platform" in result.stdout
+    assert "added team acme/platform" in result.stdout
+    assert "cleared path" in result.stdout
     assert _read_state(cfg)["ansible"]["sources"] == [
         {
             "name": "prod",
@@ -695,7 +695,7 @@ def test_source_edit_clear_boundary_requires_replacement(
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
 
-    result = CliInvoker().invoke(app, ["source", "edit", "prod", "--clear-team"])
+    result = CliInvoker().invoke(app, ["source", "patch", "prod", "--clear-team"])
 
     assert result.exit_code == 1
     assert "source requires --org, --team, or --repo" in result.output
@@ -724,7 +724,7 @@ def test_source_edit_bare_team_removal_uses_original_source_org(
         app,
         [
             "source",
-            "edit",
+            "patch",
             "prod",
             "--remove-org",
             "acme",
@@ -761,17 +761,22 @@ def test_source_edit_errors_for_unknown_source_missing_mutation_and_missing_valu
     runner = CliInvoker()
 
     cases = [
-        (["source", "edit", "missing", "--add-repo", "acme/api"], "unknown source: 'missing'"),
-        (["source", "edit", "prod"], "source edit requires at least one mutation flag"),
         (
-            ["source", "edit", "prod", "--remove-team", "acme/platform"],
+            ["source", "patch", "missing", "--add-repo", "acme/api"],
+            "source not found: 'missing'; known: prod",
+            1,
+        ),
+        (["source", "patch", "prod"], "source patch requires at least one mutation flag", 2),
+        (
+            ["source", "patch", "prod", "--remove-team", "acme/platform"],
             "source 'prod' has no team acme/platform",
+            1,
         ),
     ]
 
-    for args, message in cases:
+    for args, message, exit_code in cases:
         result = runner.invoke(app, args)
-        assert result.exit_code == 1
+        assert result.exit_code == exit_code
         assert message in result.output
 
 
@@ -801,10 +806,9 @@ def test_source_edit_noop_preserves_cached_data(
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
 
-    result = CliInvoker().invoke(app, ["source", "edit", "platform", "--add-repo", "acme/site"])
+    result = CliInvoker().invoke(app, ["source", "patch", "platform", "--add-repo", "acme/site"])
     assert result.exit_code == 0, result.output
-    assert result.stdout == ""
-    assert "source 'platform' unchanged" in result.stderr
+    assert "action: unchanged" in result.stdout
 
     result = CliInvoker().invoke(
         app,
@@ -840,7 +844,7 @@ def test_source_edit_real_change_clears_cached_data(
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
 
-    result = CliInvoker().invoke(app, ["source", "edit", "platform", "--add-repo", "acme/api"])
+    result = CliInvoker().invoke(app, ["source", "patch", "platform", "--add-repo", "acme/api"])
     assert result.exit_code == 0, result.output
 
     result = CliInvoker().invoke(
@@ -1038,7 +1042,7 @@ def test_graph_inline_upstream_refreshes_and_renders_impact(
         )
         return RefreshResult(source_key=source_key, repos=1, refs=1, edges=1, changed_refs=1)
 
-    monkeypatch.setattr(_refresh, "refresh_source", fake_refresh)
+    monkeypatch.setattr(refresh, "refresh_source", fake_refresh)
 
     result = CliInvoker().invoke(
         app,
@@ -1105,7 +1109,7 @@ def test_graph_inline_source_reuses_fingerprint_cache_without_refresh(
         )
         return RefreshResult(source_key=source_key, repos=1, refs=1, edges=1, changed_refs=1)
 
-    monkeypatch.setattr(_refresh, "refresh_source", fake_refresh)
+    monkeypatch.setattr(refresh, "refresh_source", fake_refresh)
 
     first = runner.invoke(
         app,
@@ -1228,7 +1232,7 @@ def test_graph_invalid_depth_fails_before_refreshing(tmp_path: Path, monkeypatch
     def fail_refresh(*args: object, **kwargs: object) -> RefreshResult:
         raise AssertionError("refresh must not run for an invalid --depth")
 
-    monkeypatch.setattr(_refresh, "refresh_source", fail_refresh)
+    monkeypatch.setattr(refresh, "refresh_source", fail_refresh)
 
     result = CliInvoker().invoke(
         app, ["graph", "acme/base", "--source", "platform", "--refresh", "--depth", "abc"]
@@ -1364,7 +1368,7 @@ def test_graph_repeated_sources_refresh_each_saved_source(
             unchanged_refs=0,
         )
 
-    monkeypatch.setattr(_refresh, "refresh_source", fake_refresh)
+    monkeypatch.setattr(refresh, "refresh_source", fake_refresh)
 
     result = CliInvoker().invoke(
         app,
@@ -1559,7 +1563,7 @@ def test_source_save_clears_cached_data_for_redefined_source(
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     runner = CliInvoker()
 
-    result = runner.invoke(app, ["source", "save", "platform", "--repo", "acme/new-site"])
+    result = runner.invoke(app, ["source", "set", "platform", "--repo", "acme/new-site"])
     assert result.exit_code == 0, result.output
 
     result = runner.invoke(
@@ -1597,7 +1601,7 @@ def test_source_save_preserves_cached_data_for_identical_source(
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     runner = CliInvoker()
 
-    result = runner.invoke(app, ["source", "save", "platform", "--repo", "acme/site"])
+    result = runner.invoke(app, ["source", "set", "platform", "--repo", "acme/site"])
     assert result.exit_code == 0, result.output
 
     result = runner.invoke(
@@ -1937,19 +1941,19 @@ def test_source_save_validates_search_boundary_repo_and_ref_kind(
 
     cases = [
         (
-            ["source", "save", "prod", "--path", "roles/requirements.yml"],
+            ["source", "set", "prod", "--path", "roles/requirements.yml"],
             "requires --org, --team, or --repo",
         ),
-        (["source", "save", "prod", "--repo", "not-a-repo"], "repo must be owner/name"),
+        (["source", "set", "prod", "--repo", "not-a-repo"], "repo must be owner/name"),
         (
-            ["source", "save", "prod", "--repo", "acme/site", "--ref-kind", "pulls"],
+            ["source", "set", "prod", "--repo", "acme/site", "--ref-kind", "pulls"],
             "ref-kind must be heads or tags",
         ),
     ]
 
     for args, message in cases:
         result = runner.invoke(app, args)
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert message in result.output
 
 
@@ -2012,7 +2016,7 @@ def test_inline_source_cache_key_is_order_insensitive(tmp_path: Path, monkeypatc
             changed_refs=len(source.repos),
         )
 
-    monkeypatch.setattr(_refresh, "refresh_source", fake_refresh)
+    monkeypatch.setattr(refresh, "refresh_source", fake_refresh)
 
     first = runner.invoke(
         app,
@@ -2547,7 +2551,7 @@ def test_graph_output_writes_data_to_file_and_keeps_stdout_clean(
                 "mermaid",
                 "--depth",
                 "1",
-                "--output",
+                "--out",
                 str(output),
             ],
         )
@@ -2604,7 +2608,7 @@ def test_graph_help_teaches_clean_source_first_workflow() -> None:
     assert "--cached" in output
     assert "--kind" not in output
     assert "--cache-backend" not in output
-    assert "--concurrency" in output
+    assert "--parallel" in output
     assert "--live" in output
     assert "--target-repo" in output
     assert "--both" in output
@@ -2612,7 +2616,7 @@ def test_graph_help_teaches_clean_source_first_workflow() -> None:
     assert "Show what TARGET depends on (works without a source)." in output
     assert "Show repos that depend on TARGET (reverse impact; requires a source)." in output
     assert "deterministic fingerprint key" in output
-    assert "Examples:" in output
+    assert "For example:" in output
     assert (
         "untaped ansible graph acme/base --org acme --team platform --upstream --refresh" in output
     )
@@ -2630,7 +2634,7 @@ def test_graph_bare_invocation_requires_target() -> None:
 
 
 def test_source_edit_help_does_not_expose_negative_clear_aliases() -> None:
-    result = CliInvoker().invoke(app, ["source", "edit", "--help"])
+    result = CliInvoker().invoke(app, ["source", "patch", "--help"])
 
     assert result.exit_code == 0, result.output
     assert "--clear-org" in result.output
@@ -2666,12 +2670,12 @@ def test_source_status_classifies_missing_unindexed_and_stale_sources(
     result = runner.invoke(app, ["source", "status", "--format", "json"])
     assert result.exit_code == 0, result.output
     rows = {row["source"]: row for row in json.loads(result.stdout)}
-    assert rows["unindexed"]["state"] == "not-refreshed"
+    assert rows["unindexed"]["state"] == "not_refreshed"
     assert rows["stale"]["state"] == "stale"
 
     result = runner.invoke(app, ["source", "status", "missing", "--format", "json"])
     assert result.exit_code == 1
-    assert "unknown source: 'missing'" in result.output
+    assert "source not found: 'missing'" in result.output
 
 
 def test_source_refresh_scans_source_with_git_backend(tmp_path: Path, monkeypatch) -> None:
@@ -2725,12 +2729,12 @@ def test_source_refresh_scans_source_with_git_backend(tmp_path: Path, monkeypatc
                 unchanged_refs=0,
             )
 
-    monkeypatch.setattr(_refresh, "RefreshGitSourceIndex", FakeGitRefresh)
+    monkeypatch.setattr(refresh, "RefreshGitSourceIndex", FakeGitRefresh)
 
     result = CliInvoker().invoke(app, ["source", "refresh", "prod"])
 
     assert result.exit_code == 0, result.output
-    assert "refreshed source 'prod': 1 repos, 1 refs, 1 edges" in result.stderr
+    assert "refreshed source 'prod': 1 repo, 1 ref, 1 edge" in result.stderr
     assert SqliteDependencyIndex(index_path).dependents(
         "acme/common", None, source_key="source:prod"
     )
@@ -2762,7 +2766,7 @@ def test_source_refresh_survives_invalid_ui_theme(tmp_path: Path, monkeypatch) -
                 unchanged_refs=0,
             )
 
-    monkeypatch.setattr(_refresh, "RefreshGitSourceIndex", FakeGitRefresh)
+    monkeypatch.setattr(refresh, "RefreshGitSourceIndex", FakeGitRefresh)
 
     result = CliInvoker().invoke(app, ["source", "refresh", "prod"])
 
@@ -2794,7 +2798,7 @@ def test_source_refresh_uses_basic_auth_for_git_backend(tmp_path: Path, monkeypa
                 unchanged_refs=0,
             )
 
-    monkeypatch.setattr(_refresh, "RefreshGitSourceIndex", FakeGitRefresh)
+    monkeypatch.setattr(refresh, "RefreshGitSourceIndex", FakeGitRefresh)
 
     result = CliInvoker().invoke(app, ["source", "refresh", "prod"])
 
@@ -2827,14 +2831,14 @@ def test_source_refresh_allows_git_concurrency_override(tmp_path: Path, monkeypa
                 unchanged_refs=0,
             )
 
-    monkeypatch.setattr(_refresh, "RefreshGitSourceIndex", FakeGitRefresh)
+    monkeypatch.setattr(refresh, "RefreshGitSourceIndex", FakeGitRefresh)
 
-    result = CliInvoker().invoke(app, ["source", "refresh", "prod", "--concurrency", "5"])
+    result = CliInvoker().invoke(app, ["source", "refresh", "prod", "--parallel", "5"])
 
     assert result.exit_code == 0, result.output
     assert captured["concurrency"] == 5
     assert "1 changed, 0 unchanged" in result.stderr
-    assert "concurrency 5" in result.stderr
+    assert "parallel 5" in result.stderr
 
 
 def test_source_refresh_backend_override_passes_to_refresh(tmp_path: Path, monkeypatch) -> None:
@@ -2865,8 +2869,8 @@ def test_source_refresh_backend_override_passes_to_refresh(tmp_path: Path, monke
                 unchanged_refs=0,
             )
 
-    monkeypatch.setattr(_refresh, "AutoRefProbe", FakeAutoRefProbe)
-    monkeypatch.setattr(_refresh, "RefreshGitSourceIndex", FakeGitRefresh)
+    monkeypatch.setattr(refresh, "AutoRefProbe", FakeAutoRefProbe)
+    monkeypatch.setattr(refresh, "RefreshGitSourceIndex", FakeGitRefresh)
 
     result = CliInvoker().invoke(app, ["source", "refresh", "prod", "--backend", "git"])
 
@@ -2888,7 +2892,7 @@ def test_source_refresh_git_backend_skips_unchanged_fetch_and_graphql(
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     _seed_unchanged_scan(monkeypatch, {"acme/site": "sha-site"})
 
-    monkeypatch.setattr(_refresh, "GitRepositoryCache", _NoFetchLsRemoteGitCache)
+    monkeypatch.setattr(refresh, "GitRepositoryCache", _NoFetchLsRemoteGitCache)
     with respx.mock(base_url="https://api.github.com", assert_all_called=True) as mock:
         mock.get("/repos/acme/site").mock(
             return_value=httpx.Response(
@@ -2904,7 +2908,7 @@ def test_source_refresh_git_backend_skips_unchanged_fetch_and_graphql(
         result = CliInvoker().invoke(app, ["source", "refresh", "prod", "--backend", "git"])
 
     assert result.exit_code == 0, result.output
-    assert "refreshed source 'prod': 1 repos, 1 refs" in result.stderr
+    assert "refreshed source 'prod': 1 repo, 1 ref" in result.stderr
 
 
 def test_graph_with_source_uses_cache_by_default_with_git_backend(
@@ -2936,11 +2940,11 @@ def test_graph_with_source_uses_cache_by_default_with_git_backend(
     def fail_refresh(*args, **kwargs) -> RefreshResult:
         raise AssertionError("graph must not refresh source data unless --refresh is passed")
 
-    monkeypatch.setattr(_refresh, "refresh_source", fail_refresh)
+    monkeypatch.setattr(refresh, "refresh_source", fail_refresh)
 
     result = CliInvoker().invoke(
         app,
-        ["graph", "acme/base", "--source", "platform", "--upstream", "--concurrency", "4"],
+        ["graph", "acme/base", "--source", "platform", "--upstream", "--parallel", "4"],
     )
 
     assert result.exit_code == 0, result.output
@@ -2992,8 +2996,8 @@ def test_graph_refresh_backend_override_passes_to_refresh(tmp_path: Path, monkey
                 unchanged_refs=0,
             )
 
-    monkeypatch.setattr(_refresh, "AutoRefProbe", FakeAutoRefProbe)
-    monkeypatch.setattr(_refresh, "RefreshGitSourceIndex", FakeGitRefresh)
+    monkeypatch.setattr(refresh, "AutoRefProbe", FakeAutoRefProbe)
+    monkeypatch.setattr(refresh, "RefreshGitSourceIndex", FakeGitRefresh)
 
     result = CliInvoker().invoke(
         app,
@@ -3085,7 +3089,7 @@ def test_graph_inline_upstream_with_ref_renders_all_matching_source_refs(
         )
         return RefreshResult(source_key=source_key, repos=1, refs=2, edges=2)
 
-    monkeypatch.setattr(_refresh, "refresh_source", fake_refresh)
+    monkeypatch.setattr(refresh, "refresh_source", fake_refresh)
 
     result = CliInvoker().invoke(
         app,
@@ -3141,7 +3145,7 @@ def test_graph_inline_source_preserves_repeated_selectors(
         _seed_index(index, source_key)
         return RefreshResult(source_key=source_key, repos=0, refs=0, edges=0)
 
-    monkeypatch.setattr(_refresh, "refresh_source", fake_refresh)
+    monkeypatch.setattr(refresh, "refresh_source", fake_refresh)
 
     result = CliInvoker().invoke(
         app,
@@ -3215,7 +3219,7 @@ def test_graph_inline_source_passes_ref_scan_default_to_refresh(
         _seed_index(index, source_key)
         return RefreshResult(source_key=source_key, repos=0, refs=0, edges=0)
 
-    monkeypatch.setattr(_refresh, "refresh_source", fake_refresh)
+    monkeypatch.setattr(refresh, "refresh_source", fake_refresh)
 
     result = CliInvoker().invoke(
         app,
@@ -3261,7 +3265,7 @@ def test_graph_cached_skips_source_refresh(tmp_path: Path, monkeypatch) -> None:
     def fail_refresh(*args, **kwargs) -> RefreshResult:
         raise AssertionError("--cached must not refresh source data")
 
-    monkeypatch.setattr(_refresh, "refresh_source", fail_refresh)
+    monkeypatch.setattr(refresh, "refresh_source", fail_refresh)
 
     result = CliInvoker().invoke(
         app,
@@ -3398,7 +3402,7 @@ def test_graph_cache_first_missing_source_fails_even_with_freshness_ttl(
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     calls: list[str] = []
-    monkeypatch.setattr(_refresh, "refresh_source", _counting_refresh(calls))
+    monkeypatch.setattr(refresh, "refresh_source", _counting_refresh(calls))
 
     result = CliInvoker().invoke(
         app,
@@ -3429,7 +3433,7 @@ def test_graph_freshness_ttl_with_refresh_flag_still_probes(
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     calls: list[str] = []
-    monkeypatch.setattr(_refresh, "refresh_source", _counting_refresh(calls))
+    monkeypatch.setattr(refresh, "refresh_source", _counting_refresh(calls))
 
     result = CliInvoker().invoke(
         app,
@@ -3460,7 +3464,7 @@ def test_graph_cache_first_uses_stale_source_without_freshness_probe(
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     calls: list[str] = []
-    monkeypatch.setattr(_refresh, "refresh_source", _counting_refresh(calls))
+    monkeypatch.setattr(refresh, "refresh_source", _counting_refresh(calls))
 
     result = CliInvoker().invoke(
         app,
@@ -3513,7 +3517,7 @@ def test_graph_cache_first_ignores_freshness_ttl_for_mixed_sources(
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     calls: list[str] = []
-    monkeypatch.setattr(_refresh, "refresh_source", _counting_refresh(calls))
+    monkeypatch.setattr(refresh, "refresh_source", _counting_refresh(calls))
 
     result = CliInvoker().invoke(
         app,
@@ -3562,7 +3566,7 @@ def test_source_save_expands_bare_team_slug_with_single_org(tmp_path: Path, monk
 
     result = CliInvoker().invoke(
         app,
-        ["source", "save", "prod", "--org", "acme", "--team", "platform"],
+        ["source", "set", "prod", "--org", "acme", "--team", "platform"],
     )
 
     assert result.exit_code == 0, result.output
@@ -3577,7 +3581,7 @@ def test_source_save_records_ref_scan_default(tmp_path: Path, monkeypatch) -> No
         app,
         [
             "source",
-            "save",
+            "set",
             "prod",
             "--repo",
             "acme/site",
@@ -3630,7 +3634,7 @@ def test_source_refresh_prints_skipped_dependency_files(
         top_level_ansible={"sources": [{"name": "prod", "repos": ["acme/site"]}]},
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    monkeypatch.setattr(_refresh, "GitRepositoryCache", _InvalidDependencyGitCache)
+    monkeypatch.setattr(refresh, "GitRepositoryCache", _InvalidDependencyGitCache)
 
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_refresh_repos(mock, {"acme/site": "sha-site"})
@@ -3669,7 +3673,7 @@ def test_source_refresh_reports_ignored_collections(tmp_path: Path, monkeypatch)
         top_level_ansible={"sources": [{"name": "prod", "repos": ["acme/site"]}]},
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    monkeypatch.setattr(_refresh, "GitRepositoryCache", _CollectionsGitCache)
+    monkeypatch.setattr(refresh, "GitRepositoryCache", _CollectionsGitCache)
 
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_refresh_repos(mock, {"acme/site": "sha-site"})
@@ -3771,7 +3775,7 @@ def test_source_refresh_transient_probe_failure_prints_safe_rerun_hint(
             },
         )
 
-    monkeypatch.setattr(_refresh, "GitRepositoryCache", _NoGitFetchCache)
+    monkeypatch.setattr(refresh, "GitRepositoryCache", _NoGitFetchCache)
     with respx.mock(base_url="https://api.github.com") as mock:
         for full_name in ("acme/ok", "acme/flaky"):
             owner, name = full_name.split("/", maxsplit=1)
@@ -3831,7 +3835,7 @@ def test_source_refresh_auto_recovers_transient_probe_failure_with_git_fallback(
             },
         )
 
-    monkeypatch.setattr(_refresh, "GitRepositoryCache", _LsRemoteSeedGitCache)
+    monkeypatch.setattr(refresh, "GitRepositoryCache", _LsRemoteSeedGitCache)
     with respx.mock(base_url="https://api.github.com") as mock:
         for full_name in ("acme/flaky", "acme/ok"):
             owner, name = full_name.split("/", maxsplit=1)
@@ -3871,7 +3875,7 @@ def test_source_refresh_default_auto_recovers_primary_rate_limit_with_git_fallba
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
 
-    monkeypatch.setattr(_refresh, "GitRepositoryCache", _LsRemoteSeedGitCache)
+    monkeypatch.setattr(refresh, "GitRepositoryCache", _LsRemoteSeedGitCache)
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_refresh_graphql_error(
             mock,
@@ -3930,7 +3934,7 @@ def test_source_refresh_hard_failure_does_not_print_transient_rerun_hint(
             failures=(RepoFailure(repo="acme/bad", reason="git fetch failed: timeout"),),
         )
 
-    monkeypatch.setattr(_refresh, "refresh_source", fake_refresh)
+    monkeypatch.setattr(refresh, "refresh_source", fake_refresh)
 
     result = CliInvoker().invoke(app, ["source", "refresh", "prod"])
 
@@ -3976,7 +3980,7 @@ def test_source_refresh_budget_pause_exits_nonzero_without_repo_failures(
             rate_limit_remaining=200,
         )
 
-    monkeypatch.setattr(_refresh, "refresh_source", fake_refresh)
+    monkeypatch.setattr(refresh, "refresh_source", fake_refresh)
 
     result = CliInvoker().invoke(app, ["source", "refresh", "prod"])
 
@@ -4131,7 +4135,7 @@ def test_warn_probe_fallbacks_groups_mixed_reasons(capsys: pytest.CaptureFixture
         },
     )
 
-    _refresh.warn_probe_fallbacks(result)
+    refresh.warn_probe_fallbacks(result, ui=ui_context())
 
     stderr = capsys.readouterr().err
     assert "warning: 1 repo fell back to git ls-remote after GitHub GraphQL rate limit" in stderr
@@ -4153,11 +4157,11 @@ def test_warn_probe_fallbacks_reports_unknown_reasons(
         },
     )
 
-    _refresh.warn_probe_fallbacks(result)
+    refresh.warn_probe_fallbacks(result, ui=ui_context())
 
     stderr = capsys.readouterr().err
     assert (
-        "warning: 2 repos fell back to git ls-remote for unrecognized fallback reason(s)" in stderr
+        "warning: 2 repos fell back to git ls-remote for 1 unrecognized fallback reason:" in stderr
     )
     assert "future_reason (2)" in stderr
 
@@ -4211,7 +4215,7 @@ def test_graph_refresh_with_partial_failures_warns_and_proceeds(
             failures=(RepoFailure(repo="acme/gone", reason="boom"),),
         )
 
-    monkeypatch.setattr(_refresh, "refresh_source", fake_refresh)
+    monkeypatch.setattr(refresh, "refresh_source", fake_refresh)
 
     result = CliInvoker().invoke(
         app,
@@ -4269,7 +4273,7 @@ def test_graph_refresh_budget_pause_exits_without_rendering_stale_graph(
             rate_limit_remaining=200,
         )
 
-    monkeypatch.setattr(_refresh, "refresh_source", fake_refresh)
+    monkeypatch.setattr(refresh, "refresh_source", fake_refresh)
 
     result = CliInvoker().invoke(
         app,

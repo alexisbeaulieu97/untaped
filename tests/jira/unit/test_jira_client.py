@@ -11,10 +11,11 @@ import pytest
 import respx
 from pydantic import SecretStr
 
+from untaped.capabilities.jira.errors import JiraError
 from untaped.capabilities.jira.infrastructure import JiraClient
 from untaped.capabilities.jira.infrastructure import jira_client as jira_client_module
 from untaped.capabilities.jira.settings import JiraSettings
-from untaped.capability_api import ConfigError, HttpClient, HttpSettings
+from untaped.capability_api import ConfigError, HttpClient, HttpSettings, HttpStatusError
 
 
 def _settings() -> JiraSettings:
@@ -255,3 +256,46 @@ def test_agile_list_boards_uses_agile_prefix() -> None:
 
     assert rows == [{"id": 7}]
     assert route.calls[0].request.url.params["projectKeyOrId"] == "ABC"
+
+
+def test_client_maps_401_to_config_error_with_token_hint() -> None:
+    with respx.mock(base_url="https://jira.example.com") as mock:
+        mock.get("/rest/api/2/myself").mock(return_value=httpx.Response(401))
+        with JiraClient(_settings()) as client, pytest.raises(ConfigError) as caught:
+            client.me()
+
+    assert "HTTP 401" in str(caught.value)
+    assert "hint: run `untaped config set jira.token --prompt`" in str(caught.value)
+
+
+def test_client_maps_issue_404_to_not_found() -> None:
+    with respx.mock(base_url="https://jira.example.com") as mock:
+        mock.get("/rest/api/2/issue/ABC-9").mock(
+            return_value=httpx.Response(404, json={"errorMessages": ["Issue does not exist"]})
+        )
+        with JiraClient(_settings()) as client, pytest.raises(JiraError) as caught:
+            client.get_issue("ABC-9")
+
+    assert str(caught.value) == "issue not found: 'ABC-9'"
+    assert not isinstance(caught.value, HttpStatusError)
+
+
+def test_client_surfaces_jira_error_messages_on_other_statuses() -> None:
+    body = {"errorMessages": [], "errors": {"summary": "You must specify a summary."}}
+    with respx.mock(base_url="https://jira.example.com") as mock:
+        mock.post("/rest/api/2/issue").mock(return_value=httpx.Response(400, json=body))
+        with JiraClient(_settings()) as client, pytest.raises(JiraError) as caught:
+            client.create_issue({"fields": {}})
+
+    assert "HTTP 400" in str(caught.value)
+    assert "summary: You must specify a summary." in str(caught.value)
+    assert not isinstance(caught.value, HttpStatusError)
+
+
+def test_client_maps_errors_raised_while_paginating() -> None:
+    with respx.mock(base_url="https://jira.example.com") as mock:
+        mock.get("/rest/agile/1.0/board").mock(return_value=httpx.Response(403))
+        with JiraClient(_settings()) as client, pytest.raises(JiraError) as caught:
+            list(client.list_boards())
+
+    assert "permission denied" in str(caught.value)

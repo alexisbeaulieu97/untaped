@@ -13,10 +13,10 @@ import untaped.capabilities.ansible.cli.source_commands as source_commands
 from untaped.capabilities.ansible.application import BuildGraph, GraphRequest
 from untaped.capabilities.ansible.application.ports import DependencyIndex
 from untaped.capabilities.ansible.application.refresh_index import RefreshResult
-from untaped.capabilities.ansible.cli._refresh import (
+from untaped.capabilities.ansible.cli.refresh import (
+    GIT_PARALLEL_CAP,
     format_skipped_dependency_file,
     ignored_collections_warning,
-    pluralize,
     run_source_refresh,
     warn_deprecated_settings,
 )
@@ -38,12 +38,18 @@ from untaped.capabilities.ansible.infrastructure import (
 )
 from untaped.capabilities.ansible.settings import AnsibleSettings, SourceDefinition
 from untaped.capabilities.github.ansible import GithubClient, GithubSettings
+from untaped.capabilities.github.ansible import github_settings as load_github_settings
 from untaped.capability_api import (
     HttpSettings,
+    ParallelOption,
     UntapedError,
     app_context,
+    clamp_parallel,
+    deprecated_alias,
     echo,
     get_config_section,
+    not_found,
+    plural,
     raise_usage,
     report_errors,
 )
@@ -69,19 +75,9 @@ _SOURCE_DATA_GROUP = Group("Source Data", validator=validators.LimitedChoice())
 
 def register_graph_command(app: App) -> None:
     """Register graph commands on the Ansible root app."""
-    app.command(graph_command, name="graph", help=_GRAPH_HELP)
-
-
-_GRAPH_HELP = (
-    "Graph Ansible dependency relationships for a role, repo, or playbook. "
-    "Inline source selectors (--org, --team, --repo, --path, --ref-kind, "
-    "--ref-pattern, --ref-scan-default) are cached under a deterministic fingerprint key, so "
-    "repeated identical invocations reuse the same scan. "
-    "Examples: untaped ansible graph acme/base --org acme --team platform "
-    "--upstream --refresh; untaped ansible graph acme/app --source prod "
-    "--both --cached; untaped ansible graph ./roles/web --target-repo acme/web "
-    "--downstream."
-)
+    app.command(graph_command, name="graph")
+    deprecated_alias(app["graph"], "--concurrency", "--parallel")
+    deprecated_alias(app["graph"], "--output", "--out")
 
 
 def graph_command(
@@ -104,6 +100,7 @@ def graph_command(
             name="--source",
             help="Saved source to use for cached graph data and upstream impact; repeat to union.",
             consume_multiple=False,
+            negative="",
         ),
     ] = None,
     upstream: Annotated[
@@ -154,16 +151,7 @@ def graph_command(
             ),
         ),
     ] = False,
-    concurrency: Annotated[
-        int | None,
-        Parameter(
-            name="--concurrency",
-            validator=validators.Number(gte=1, lte=32),
-            help=(
-                "Git-backed source refresh concurrency; defaults to ansible.git_fetch_concurrency."
-            ),
-        ),
-    ] = None,
+    parallel: ParallelOption | None = None,
     backend: BackendOption = None,
     live: Annotated[
         bool,
@@ -183,7 +171,9 @@ def graph_command(
     ] = None,
     orgs: Annotated[
         list[str] | None,
-        Parameter(name="--org", help="Inline source GitHub org.", consume_multiple=False),
+        Parameter(
+            name="--org", help="Inline source GitHub org.", consume_multiple=False, negative=""
+        ),
     ] = None,
     teams: Annotated[
         list[str] | None,
@@ -194,6 +184,7 @@ def graph_command(
                 "exactly one --org is given and normalizes to ORG/SLUG."
             ),
             consume_multiple=False,
+            negative="",
         ),
     ] = None,
     source_repos: Annotated[
@@ -202,11 +193,17 @@ def graph_command(
             name="--repo",
             help="Inline source GitHub repo as owner/name.",
             consume_multiple=False,
+            negative="",
         ),
     ] = None,
     paths: Annotated[
         list[str] | None,
-        Parameter(name="--path", help="Inline source dependency path.", consume_multiple=False),
+        Parameter(
+            name="--path",
+            help="Inline source dependency path.",
+            consume_multiple=False,
+            negative="",
+        ),
     ] = None,
     ref_kinds: Annotated[
         list[str] | None,
@@ -214,6 +211,7 @@ def graph_command(
             name="--ref-kind",
             help="Inline source ref namespace to scan: heads or tags; omit for configured default.",
             consume_multiple=False,
+            negative="",
         ),
     ] = None,
     ref_patterns: Annotated[
@@ -222,6 +220,7 @@ def graph_command(
             name="--ref-pattern",
             help="Inline source fnmatch pattern for branch/tag names; omit for configured default.",
             consume_multiple=False,
+            negative="",
         ),
     ] = None,
     ref_scan_default: Annotated[
@@ -234,15 +233,21 @@ def graph_command(
     fmt: GraphFormatOption = "tree",
     output: Annotated[
         Path | None,
-        Parameter(name="--output", help="Write graph data to a file."),
+        Parameter(name=["--out", "-o"], help="Write graph data to this file instead of stdout."),
     ] = None,
 ) -> None:
     """Graph Ansible dependency relationships for a role, repo, or playbook.
 
-    Examples:
-      untaped ansible graph acme/base --org acme --team platform --upstream --refresh
-      untaped ansible graph acme/app --source prod --both --cached
-      untaped ansible graph ./roles/web --target-repo acme/web --downstream
+    Inline source selectors (--org, --team, --repo, --path, --ref-kind,
+    --ref-pattern, --ref-scan-default) are cached under a deterministic
+    fingerprint key, so repeated identical invocations reuse the same scan.
+    --parallel defaults to ansible.git_fetch_concurrency and is capped at 32.
+
+    For example:
+
+        untaped ansible graph acme/base --org acme --team platform --upstream --refresh
+        untaped ansible graph acme/app --source prod --both --cached
+        untaped ansible graph ./roles/web --target-repo acme/web --downstream
     """
     depth_limit = _parse_depth(depth)
     if refresh and not any((source, orgs, teams, source_repos)):
@@ -252,9 +257,9 @@ def graph_command(
     with report_errors():
         ctx = app_context()
         settings = get_config_section("ansible", AnsibleSettings)
-        warn_deprecated_settings(settings)
+        warn_deprecated_settings(settings, ui=ctx.ui(strict=False))
         aliases = AliasRepository().entries()
-        github_settings = get_config_section("github", GithubSettings)
+        github_settings = load_github_settings()
         github_host = github_web_host(github_settings.base_url)
         target_repo_name = target_repo or _resolve_target_repo(
             target, aliases, github_host=github_host
@@ -269,7 +274,11 @@ def graph_command(
             raise UntapedError(message)
 
         direction = _graph_direction(upstream=upstream, downstream=downstream, both=both)
-        git_concurrency = concurrency or settings.git_fetch_concurrency
+        git_concurrency = clamp_parallel(
+            parallel or settings.git_fetch_concurrency,
+            cap=GIT_PARALLEL_CAP,
+            policy="Git fetch limit",
+        )
         graph_source = _graph_source(
             source_names=source,
             orgs=orgs,
@@ -305,7 +314,7 @@ def graph_command(
                 if result.failures:
                     refresh_warnings.append(
                         f"refresh of {selection.label} had "
-                        f"{pluralize(len(result.failures), 'failure')}; "
+                        f"{plural(len(result.failures), 'failure')}; "
                         "data for those repos may be stale"
                     )
 
@@ -429,7 +438,8 @@ def _graph_source(
         for source_name in selected_source_names:
             source = source_repository.get(source_name)
             if source is None:
-                raise UntapedError(f"unknown source: {source_name!r}")
+                known = sorted(entry.name for entry in source_repository.entries())
+                raise UntapedError(not_found("source", source_name, known=known))
             selections.append(
                 _GraphSourceSelection(
                     definition=source,

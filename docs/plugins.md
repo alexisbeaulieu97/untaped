@@ -205,13 +205,17 @@ capability and is rejected by `untaped config set`.
 
 The root supplies position-independent `--profile`, `--verbose`, and `--quiet`
 options. Use `report_errors()` for user-facing configuration, input, and domain
-errors so the root preserves its standard diagnostics and exit codes.
+errors so the root preserves its standard diagnostics and exit codes: it exits
+with the error's `exit_code`, which is `2` for `UsageError` and `1` for other
+`UntapedError`s. Follow [Command and output conventions](./conventions.md) for
+flags, messages, exit codes and record shapes.
 
 ## 4. Stable helper surface
 
 Provider imports come from `untaped.capability_api` only. The module exports the
 composition types (`CapabilitySpec`, `SkillAsset`, `DoctorCheck`, and related
-records), `CAPABILITY_API_VERSION`, and the supported helpers including
+records; `DoctorResult(..., warn=True)` reports a `warn` row that does not fail
+`doctor`), `CAPABILITY_API_VERSION`, and the supported helpers including
 `create_app`, `app_context`, `get_config_section`, `emit`, `read_identifiers`,
 `report_errors`, `FormatOption`, and `ColumnsOption`. The canonical v1 wire
 parser and record type are also exported as `parse_envelope_line` and
@@ -221,18 +225,29 @@ The shared runtime helpers are exported from the same module:
 
 - Output and arguments: `echo`, `emit`, `render_rows`, `OutputFormat`,
   `raise_usage`, `parse_kv_pairs`, `parse_json_pairs`, `existing_file`,
-  `resolve_each`, `clamp_parallel`.
-- Errors: `UntapedError`, `ConfigError`, `HttpError`, `HttpStatusError`,
-  `HttpTransportError`, `first_validation_error`.
+  `resolve_each`, `clamp_parallel`, and `deprecated_alias` (a hidden old
+  spelling of a renamed command or flag).
+- Shared options: `FormatOption`, `ColumnsOption`, `YesOption`,
+  `DryRunOption`, `StdinOption`, `ParallelOption` (>= 1), `LimitOption`
+  (>= 1).
+- Errors and exit codes: `UntapedError`, `ConfigError`, `UsageError` (exit
+  2), `OperationCancelledError` (declined confirmation, exit 1), `HttpError`,
+  `HttpStatusError`, `HttpTransportError`, `first_validation_error`, and
+  `ExitCode`.
+- Message wording: `plural`, `q`, `not_found`, `hint`, `summary`.
+- Records: `OutcomeRecord`, `TargetRecord`, `CheckRecord`, and the
+  `UtcTimestamp` field type.
 - Settings and context: `get_config_section`, `get_core_settings`,
   `HttpSettings`, `app_context`, `AppContext`.
 - HTTP: `connected_client`, `HttpClient`, `RetryPolicy`, `resolve_verify`, and
   the `paginate_link`, `paginate_offset`, and `paginate_pages` cursor loops.
-- Input and pipes: `read_identifiers`, `read_stdin`, `resolve_text_input`,
-  `is_envelope_line`, `parse_envelope_line`, `PipeEnvelope`.
+- Input and pipes: `read_identifiers`, `read_stdin_input`, `StdinInput`,
+  `read_records`, `read_stdin`, `resolve_text_input`, `is_envelope_line`,
+  `parse_envelope_line`, `PipeEnvelope`.
 - Files and state: `atomic_write`, `read_structured_file`, `unified_diff_text`,
   `StateCollection`, `StateMap`.
-- UI: `UiContext`, `ui_context`, `ProgressHandle`, `PromptChoice`.
+- UI: `UiContext` (including `success`, `styled`, `confirm_action` and
+  `terminal`), `ui_context`, `ProgressHandle`, `PromptChoice`.
 - Batches and concurrency: `batch_apply`, `BatchOutcome`, `finish`,
   `bounded_map`.
 
@@ -301,13 +316,19 @@ def items_command(
 Kinds use the lowercase capability namespace and a snake-case noun, with an
 optional `.summary` suffix for informational records. `read_identifiers()` can
 consume bare identifiers or an untaped pipe stream when a command accepts
-`--stdin`:
+`--stdin`. Declare the kinds you understand with `accept_kinds`; a record of any
+other kind exits 2 instead of being misread:
 
 ```python
 from untaped.capability_api import read_identifiers
 
-identifiers = read_identifiers([], stdin=True, id_field="full_name")
+identifiers = read_identifiers(
+    [], stdin=True, id_field="full_name", accept_kinds={"github.repo"}
+)
 ```
+
+`read_stdin_input(accept_kinds=...)` returns either the bare values or the
+parsed envelopes (a `StdinInput`), for commands that need whole records.
 
 A composed capability can participate in a root pipeline without another
 executable:
@@ -318,6 +339,19 @@ untaped github search repos --format pipe | untaped acme import --stdin
 
 Keep filesystem destinations in an absolute, non-empty `record.target_path`.
 Consumers should not need producer-specific branching just to find that path.
+Subclassing `TargetRecord` enforces this, and `OutcomeRecord` fixes the `action`
+field of mutation results.
+
+## Confirmation
+
+Gate destructive batches with `batch_apply(..., destructive=True,
+assume_yes=yes)` and pass its outcome to `finish()`. A single confirmation uses
+`ui.confirm_action(message, assume_yes=yes, refusal="<verb> requires --yes when
+not interactive")`. When stdin carries piped data, both prompt on the
+controlling terminal. With no terminal they exit 2. A decline prints
+`cancelled; no changes made` and exits 1. In tests,
+`untaped.testing.invoke_cli(..., terminal=True, prompt_backend=...)` simulates
+the controlling terminal. Without `terminal=True` there is none.
 
 ## 6. Packaged skills
 

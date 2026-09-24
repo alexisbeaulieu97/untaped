@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import re
+from itertools import islice
 from typing import Annotated
 
 from cyclopts import Parameter
 
 from untaped.capabilities.github.application.scopes import TeamScope
 from untaped.capabilities.github.cli._client import open_client
-from untaped.capabilities.github.cli._scopes import OrgOption, TeamOption, parse_team_scopes
+from untaped.capabilities.github.cli.scopes import OrgOption, TeamOption, parse_team_scopes
 from untaped.capability_api import (
     ColumnsOption,
-    ConfigError,
     FormatOption,
+    LimitOption,
+    UsageError,
     create_app,
     emit,
     report_errors,
@@ -39,22 +41,23 @@ def _validate_args(
     team_scopes: tuple[TeamScope, ...],
 ) -> None:
     if not orgs and not team_scopes:
-        raise ConfigError(
+        raise UsageError(
             "repos list requires --org or --team; user-owned repository inventory is not "
             "supported in v1"
         )
     if regex and not pattern:
-        raise ConfigError("--regex requires PATTERN")
+        raise UsageError("--regex requires PATTERN")
     if regex and pattern:
         try:
             re.compile(pattern)
         except re.error as exc:
-            raise ConfigError(f"invalid regular expression: {exc}") from exc
+            raise UsageError(f"invalid regular expression: {exc}") from exc
 
 
 @app.command(name="list")
 def list_command(
     pattern: PatternArgument = None,
+    /,
     *,
     org: OrgOption = None,
     team: TeamOption = None,
@@ -71,9 +74,17 @@ def list_command(
     ] = False,
     archived: Annotated[
         bool | None,
-        Parameter(name="--archived", negative="--no-archived"),
+        Parameter(
+            name="--archived",
+            negative="--no-archived",
+            help="Only archived repos; --no-archived excludes them.",
+        ),
     ] = None,
-    fork: Annotated[bool | None, Parameter(name="--fork", negative="--no-fork")] = None,
+    fork: Annotated[
+        bool | None,
+        Parameter(name="--fork", negative="--no-fork", help="Only forks; --no-fork excludes them."),
+    ] = None,
+    limit: LimitOption = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -86,14 +97,8 @@ def list_command(
         _validate_args(pattern, regex=regex, orgs=orgs, team_scopes=team_scopes)
         filters = RepoListFilters(pattern=pattern, regex=regex, archived=archived, fork=fork)
         with open_client() as (client, ui), ui.progress("Listing repositories…"):
-            rows = [
-                repo.model_dump()
-                for repo in ListRepos(client)(
-                    filters,
-                    orgs=orgs,
-                    team_scopes=team_scopes,
-                )
-            ]
+            repos = ListRepos(client)(filters, orgs=orgs, team_scopes=team_scopes)
+            rows = [repo.model_dump() for repo in islice(repos, limit)]
         emit(
             rows,
             fmt=fmt,

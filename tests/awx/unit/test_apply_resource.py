@@ -231,7 +231,7 @@ def test_preview_does_not_write() -> None:
         spec={"description": "demo", "scm_type": "git"},
     )
     outcome = apply(resource)
-    assert outcome.action == "preview"
+    assert outcome.action == "planned"
     assert strategy.created is None
     assert strategy.updated is None
 
@@ -1030,7 +1030,7 @@ def test_apply_to_existing_preview_does_not_write() -> None:
         spec={"description": "new"},
     )
     outcome = apply.apply_to_existing(resource, existing)  # write defaults False
-    assert outcome.action == "preview"
+    assert outcome.action == "planned"
     assert strategy.updated is None
 
 

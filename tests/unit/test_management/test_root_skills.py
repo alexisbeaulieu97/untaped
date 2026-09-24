@@ -114,7 +114,7 @@ def test_install_multiple_selectors_are_rejected(tmp_path: Path) -> None:
     app = _skills_app(tmp_path, "untaped-demo")
     target = tmp_path / "skills"
     result = CliInvoker().invoke(app, ["install", "demo", "--all", "--target-dir", str(target)])  # type: ignore[arg-type]
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "not more than one" in result.output
     assert not target.exists()
 

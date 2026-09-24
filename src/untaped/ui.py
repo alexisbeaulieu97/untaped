@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Sequence
-from contextlib import AbstractContextManager
-from typing import TextIO
+from collections.abc import Iterator, Sequence
+from contextlib import AbstractContextManager, contextmanager
+from typing import TYPE_CHECKING, TextIO
 
-from untaped.errors import ConfigError
+from untaped.errors import ConfigError, UsageError
+from untaped.messages import plural
 from untaped.progress import ProgressHandle, progress_reporter
 from untaped.prompts import (
     PromptBackend,
     PromptChoice,
     PromptToolkitPromptBackend,
     handle_prompt_exception,
+    open_controlling_terminal,
     prompt_backend_override,
     prompt_style_from_roles,
 )
@@ -24,6 +26,7 @@ from untaped.render import (
     Renderer,
     RichTerminalRenderer,
     Row,
+    render_styled,
     should_colorize,
     stream_is_tty,
 )
@@ -33,6 +36,9 @@ from untaped.theme import (
     resolve_theme_or_default,
 )
 from untaped.verbose import is_verbose
+
+if TYPE_CHECKING:
+    from rich.text import Text
 
 
 class UiContext:
@@ -148,6 +154,21 @@ class UiContext:
         )
         print(rendered, file=self.stderr)
 
+    def success(self, text: str) -> None:
+        """Print a success line to stderr (muted by ``--quiet``)."""
+        self.message("success", text)
+
+    def styled(self, text: Text | str, *, err: bool = False) -> None:
+        """Print a Rich-styled line to stdout, or to stderr with ``err``.
+
+        Color is emitted only where the stream supports it (TTY, honoring
+        ``NO_COLOR``/``FORCE_COLOR``). Use it for streamed human-readable
+        output such as live job events; unlike :meth:`message`, ``--quiet``
+        does not mute it.
+        """
+        stream = self.stderr if err else self.stdout
+        print(render_styled(text, colorize=should_colorize(stream)), file=stream, flush=True)
+
     def progress(self, label: str) -> AbstractContextManager[ProgressHandle]:
         """Report progress for a blocking operation on stderr.
 
@@ -170,6 +191,54 @@ class UiContext:
             return self.prompt_backend.confirm(message, default=default)
         except (ConfigError, EOFError, KeyboardInterrupt) as exc:
             raise handle_prompt_exception(exc) from exc
+
+    def confirm_action(
+        self,
+        message: str,
+        *,
+        assume_yes: bool = False,
+        default: bool = False,
+        refusal: str = "confirmation requires --yes when not interactive",
+    ) -> bool:
+        """Confirm a destructive or remote action, reaching the terminal if needed.
+
+        ``assume_yes`` (``--yes``) skips the prompt. Otherwise the prompt
+        reads from stdin when it is a TTY, or from the controlling terminal
+        when stdin carries piped data. With no terminal at all it raises
+        :class:`UsageError` (exit 2) with ``refusal``. Returns the answer;
+        on ``False`` the caller raises :class:`OperationCancelledError`
+        (or lets :func:`untaped.batch.finish` do it) after printing nothing
+        else.
+        """
+        if assume_yes:
+            return True
+        with self.terminal(refusal=refusal):
+            return self.confirm(message, default=default)
+
+    @contextmanager
+    def terminal(
+        self, *, refusal: str = "interactive input requires a terminal"
+    ) -> Iterator[UiContext]:
+        """Point prompts at a terminal for the duration of the block.
+
+        A TTY stdin is used as-is; piped stdin is swapped for the controlling
+        terminal (``/dev/tty``) and restored afterwards. Raises
+        :class:`UsageError` with ``refusal`` when no terminal is available.
+        """
+        if stream_is_tty(self.stdin):
+            yield self
+            return
+        try:
+            terminal = open_controlling_terminal()
+        except OSError as exc:
+            raise UsageError(refusal) from exc
+        original = self.stdin
+        self.stdin = terminal
+        try:
+            yield self
+        finally:
+            self.stdin = original
+            terminal.close()
 
     def text(
         self,
@@ -238,7 +307,7 @@ class UiContext:
         except (ConfigError, EOFError, KeyboardInterrupt) as exc:
             raise handle_prompt_exception(exc) from exc
         if len(values) < min_count:
-            raise ConfigError(f"select at least {min_count} value(s)")
+            raise ConfigError(f"select at least {plural(min_count, 'value')}")
         return values
 
     def _ensure_promptable(self) -> None:

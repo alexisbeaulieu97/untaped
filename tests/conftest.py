@@ -12,9 +12,11 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from typing import TextIO
 
 import pytest
 
+from untaped.prompts import reset_terminal_override, set_terminal_override
 from untaped.settings import get_settings
 
 _TERMINAL_ENV = {"TERM": "dumb", "NO_COLOR": "1", "COLUMNS": "200"}
@@ -39,5 +41,15 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
         for key, value in _TERMINAL_ENV.items():
             patch.setenv(key, value)
         get_settings.cache_clear()
-        yield
+        # No test may prompt on the developer's real terminal: the controlling
+        # terminal is absent unless a test installs one (``invoke_cli(terminal=True)``).
+        terminal_token = set_terminal_override(_no_controlling_terminal)
+        try:
+            yield
+        finally:
+            reset_terminal_override(terminal_token)
     get_settings.cache_clear()
+
+
+def _no_controlling_terminal() -> TextIO:
+    raise OSError("no controlling terminal in tests")

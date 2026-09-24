@@ -16,6 +16,8 @@ a TUI:
       failed: api-01
 """
 
+from __future__ import annotations
+
 from rich.text import Text
 
 from untaped.capabilities.awx.domain import JobEvent
@@ -97,8 +99,8 @@ def _render_body(ev: JobEvent) -> Text:
 def render_event_text(ev: JobEvent, *, prefix: str = "") -> Text:
     """Return :class:`rich.text.Text` with status styling.
 
-    Use with :class:`rich.console.Console` so colour is emitted on TTY
-    and stripped on pipes — no manual ``isatty`` check required.
+    Print with ``UiContext.styled`` so colour is emitted on TTY and
+    stripped on pipes — no manual ``isatty`` check required.
 
     When ``prefix`` is non-empty, ``[<prefix>] `` is prepended (dim
     cyan) so concurrent multi-template event streams stay

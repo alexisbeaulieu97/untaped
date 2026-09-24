@@ -1,0 +1,7 @@
+# Known violations of the messages convention check for 'ansible'.
+# This list may only shrink: fix an entry and delete its line.
+# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
+src/untaped/capabilities/ansible/application/refresh_git_index.py::usage-phrase::rate_limit_floor must be >= 0
+src/untaped/capabilities/ansible/application/refresh_git_index.py::usage-phrase::repo_batch_size must be >= 1
+src/untaped/capabilities/ansible/infrastructure/github_ref_probe.py::usage-phrase::chunk_size must be >= 1
+src/untaped/capabilities/ansible/infrastructure/github_ref_probe.py::usage-phrase::default_branch_chunk_size must be >= 1

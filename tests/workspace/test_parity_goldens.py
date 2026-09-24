@@ -36,8 +36,8 @@ from untaped.capabilities.workspace.domain.prune_safety import (
 )
 from untaped.capabilities.workspace.errors import GitError, WorkspaceError
 from untaped.capabilities.workspace.infrastructure import (
-    ManifestRepository,
     WorkspaceRegistryRepository,
+    YamlManifestRepository,
 )
 from untaped.capabilities.workspace.infrastructure.bare_cache import cache_path_for
 from untaped.capabilities.workspace.infrastructure.git_runner import (
@@ -385,11 +385,11 @@ def test_f04_manifest(tmp_path: Path) -> None:
         "via": "os.replace",
     }
     nested = tmp_path / "deep" / "ws"
-    ManifestRepository().write(nested, manifest)
+    YamlManifestRepository().write(nested, manifest)
     written = nested / "untaped.yml"
     assert written.is_file()
     assert stat.S_IMODE(written.stat().st_mode) == 0o644
-    assert ManifestRepository().read(nested) == manifest
+    assert YamlManifestRepository().read(nested) == manifest
     leftovers = list(nested.glob("*.tmp"))
     assert leftovers == []
 
@@ -397,15 +397,15 @@ def test_f04_manifest(tmp_path: Path) -> None:
     from untaped.capabilities.workspace.errors import ManifestError
 
     with pytest.raises(ManifestError, match="run `untaped workspace init` first"):
-        ManifestRepository().read(tmp_path / "missing")
+        YamlManifestRepository().read(tmp_path / "missing")
     (tmp_path / "bad").mkdir()
     (tmp_path / "bad" / "untaped.yml").write_text("repos: [unclosed\n")
     with pytest.raises(ManifestError, match="invalid YAML in"):
-        ManifestRepository().read(tmp_path / "bad")
+        YamlManifestRepository().read(tmp_path / "bad")
     (tmp_path / "bad2").mkdir()
     (tmp_path / "bad2" / "untaped.yml").write_text("repos: [{url: x}, {url: x}]\n")
     with pytest.raises(ManifestError, match="invalid manifest at"):
-        ManifestRepository().read(tmp_path / "bad2")
+        YamlManifestRepository().read(tmp_path / "bad2")
     for message in fix["errors"]:
         assert isinstance(message, str)
 
@@ -460,7 +460,7 @@ def test_f06_pipe(tmp_path: Path) -> None:
         parse_envelope_line(1, '{"untaped": "2", "kind": "x", "record": {}}')
 
     # empty show emits a summary row with no target_path at all (P14)
-    result = _run(["workspace", "show", "--workspace", "prod", "--format", "pipe"])
+    result = _run(["workspace", "get", "--workspace", "prod", "--format", "pipe"])
     assert result.exit_code == 0, result.output
     rows = [json.loads(line) for line in result.stdout.splitlines()]
     assert len(rows) == 1
@@ -476,6 +476,11 @@ def test_f06_pipe(tmp_path: Path) -> None:
         "workspace.status",
         "workspace.foreach_outcome",
         "workspace.branch_outcome",
+        "workspace.init_outcome",
+        "workspace.add_outcome",
+        "workspace.remove_outcome",
+        "workspace.forget_outcome",
+        "workspace.branch_unset_outcome",
     }
     assert kinds <= set(fix["kinds"])
     assert fix["summary_convention"].startswith(".summary rows carry no target_path")
@@ -507,18 +512,18 @@ def test_f07_row_schemas(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert fix["list"]["columns"] == ["name", "path"]
 
     # show: first key workspace, target_path omitted when absent (P16)
-    result = _run(["workspace", "show", "--workspace", "prod", "--format", "json"])
+    result = _run(["workspace", "get", "--workspace", "prod", "--format", "json"])
     rows = _json_rows(result, tmp_path)
     assert len(rows) == 1
     assert next(iter(rows[0])) == "workspace"
     assert "target_path" not in rows[0]
     assert rows[0]["repo_count"] == 0
-    assert fix["show"]["target_path"] == "omitted (not null) when absent"
+    assert fix["show"]["target_path"] == "omitted on the workspace.repo.summary row"
 
     upstream = _bare_upstream(tmp_path)
     result = _run(["workspace", "add", f"file://{upstream}", "--workspace", "prod"])
     assert result.exit_code == 0, result.output
-    result = _run(["workspace", "show", "--workspace", "prod", "--format", "json"])
+    result = _run(["workspace", "get", "--workspace", "prod", "--format", "json"])
     rows = _json_rows(result, tmp_path)
     assert next(iter(rows[0])) == "workspace"
     assert rows[0]["target_path"].endswith("/upstream")
@@ -529,7 +534,7 @@ def test_f07_row_schemas(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     rows = _json_rows(result, tmp_path)
     assert [sorted(row) for row in rows] == [sorted(fix["sync"]["columns"])]
     assert next(iter(rows[0])) == "workspace"
-    assert rows[0]["action"] == "clone"
+    assert rows[0]["action"] == "cloned"
     _run(["workspace", "init", "empty", "--path", str(tmp_path / "empty-ws")])
     result = _run(["workspace", "sync", "--workspace", "empty", "--format", "table"])
     assert result.exit_code == 0, result.output
@@ -560,7 +565,7 @@ def test_f07_row_schemas(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     rows = _json_rows(result, tmp_path)
     assert [sorted(r) for r in rows] == [sorted(fix["branch_apply"]["columns"])]
     assert next(iter(rows[0])) == "repo"
-    assert rows[0]["action"] == "skip"
+    assert rows[0]["action"] == "skipped"
     assert rows[0]["detail"] == "no target branch"
     assert rows[0]["target_branch"] is None
     assert fix["branch_apply"]["first_key"] == "repo"
@@ -589,7 +594,7 @@ def test_f08_messages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
     result = _run(["workspace", "init", "prod", "--path", str(tmp_path / "ws")])
     assert result.exit_code == 0, result.output
-    assert norm(result.stderr, tmp_path) == "initialised workspace 'prod' at <tmp>/ws"
+    assert norm(result.stderr, tmp_path) == "initialized workspace 'prod' at <tmp>/ws"
 
     result = _run(["workspace", "add", f"file://{upstream}", "--workspace", "prod"])
     assert result.exit_code == 0, result.output
@@ -625,17 +630,17 @@ def test_f08_messages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _registered(tmp_path, "smoke")
     result = _run(["workspace", "sync", "--workspace", "smoke", "--format", "table"])
     assert result.exit_code == 0, result.output
-    assert "sync complete: 0 repos" in result.stderr
-    assert fix["sync_summary"][0] == "sync complete: 0 repos"
+    assert "sync: nothing to do" in result.stderr
+    assert fix["sync_summary"][0] == "sync: nothing to do"
     other = tmp_path / "other.git"
     shutil.copytree(upstream, other)
     _run(["workspace", "add", f"file://{upstream}", "--workspace", "smoke"])
     _run(["workspace", "add", f"file://{other}", "--repo-name", "ui", "--workspace", "smoke"])
     result = _run(["workspace", "sync", "--workspace", "smoke"])
     assert result.exit_code == 0, result.output
-    assert "sync complete: 2 repos (2 cloned)" in result.stderr
+    assert "sync: 2 cloned" in result.stderr
     result = _run(["workspace", "sync", "--workspace", "smoke"])
-    assert "sync complete: 2 repos (2 up to date)" in result.stderr
+    assert "sync: 2 unchanged" in result.stderr
 
     # foreach table replay + no-match hint (P19/P23)
     result = _run(["workspace", "foreach", "echo hello", "--workspace", "smoke"])
@@ -643,11 +648,11 @@ def test_f08_messages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert "[upstream] hello" in result.stdout
     assert "[ui] hello" in result.stdout
     # --repo with no match stays strict (same as status --repo): the typed
-    # UnmatchedRepoFilter names the offending identifier. The P19 table hint
+    # UnmatchedRepoFilterError names the offending identifier. The P19 table hint
     # fires only when the manifest itself yields no repos (no filter).
     result = _run(["workspace", "foreach", "echo hi", "--workspace", "smoke", "--repo", "typo"])
     assert result.exit_code != 0
-    assert "unknown repo identifier(s) for --repo: typo" in result.stderr
+    assert "1 unknown repo identifier for --repo: typo" in result.stderr
     _registered(tmp_path, "empty")
     result = _run(["workspace", "foreach", "echo hi", "--workspace", "empty"])
     assert result.exit_code == 0, result.output
@@ -672,7 +677,7 @@ def test_f09_exit_codes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     assert fix["usage_error"] == {"exit": 2, "stderr_prefix": "error: ", "stdout": ""}
 
     # domain errors under report_errors: exit 1 (P25)
-    result = _run(["workspace", "show", "--workspace", "ghost"])
+    result = _run(["workspace", "get", "--workspace", "ghost"])
     assert result.exit_code == 1, result.output
     assert fix["domain_error"] == {"exit": 1, "via": "report_errors"}
 
@@ -728,7 +733,7 @@ def test_f10_stdin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         input=f"file://{upstream}\nfile://{other}\n",
     )
     assert result.exit_code == 0, result.output
-    result = _run(["workspace", "show", "--workspace", "prod", "--format", "json"])
+    result = _run(["workspace", "get", "--workspace", "prod", "--format", "json"])
     rows = _json_rows(result, tmp_path)
     assert sorted(r["repo"] for r in rows) == ["other", "upstream"]
     assert fix["add_stdin"].startswith("one URL per line")
@@ -741,7 +746,7 @@ def test_f10_stdin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.exit_code == 2, result.output
     assert result.stdout == ""
     assert (
-        "--repo-name applies to a single URL; drop --repo-name or pass URLs one at a time."
+        "error: --repo-name applies to a single URL; drop --repo-name or pass URLs one at a time\n"
         in result.stderr
     )
     assert fix["repo_name_rule"].startswith("--repo-name applies to a single URL")
@@ -777,30 +782,30 @@ def test_f11_resolver_options(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     target = _registered(tmp_path)
 
     # --workspace (registry) resolves
-    result = _run(["workspace", "show", "--workspace", "prod", "--format", "raw"])
+    result = _run(["workspace", "get", "--workspace", "prod", "--format", "raw"])
     assert result.exit_code == 0, result.output
     # --path (manifest dir) resolves
-    result = _run(["workspace", "show", "--path", str(target), "--format", "raw"])
+    result = _run(["workspace", "get", "--path", str(target), "--format", "raw"])
     assert result.exit_code == 0, result.output
     # cwd walk resolves
     sub = target / "subdir"
     sub.mkdir()
     monkeypatch.chdir(sub)
-    result = _run(["workspace", "show", "--format", "raw"])
+    result = _run(["workspace", "get", "--format", "raw"])
     assert result.exit_code == 0, result.output
     monkeypatch.chdir(tmp_path)
 
     # unregistered on-disk manifest resolves with manifest name (beats dirname)
     alien = tmp_path / "odd-dirname"
     alien.mkdir()
-    ManifestRepository().write(alien, WorkspaceManifest(name="realname"))
-    result = _run(["workspace", "show", "--path", str(alien), "--format", "json"])
+    YamlManifestRepository().write(alien, WorkspaceManifest(name="realname"))
+    result = _run(["workspace", "get", "--path", str(alien), "--format", "json"])
     rows = _json_rows(result, tmp_path)
     assert rows[0]["workspace"] == "realname"
     assert fix["unregistered_manifest"].startswith("resolves with manifest name:")
 
     # resolver errors (P31)
-    result = _run(["workspace", "show", "--workspace", "prod", "--path", str(target)])
+    result = _run(["workspace", "get", "--workspace", "prod", "--path", str(target)])
     assert result.exit_code == 2, result.output
     assert "--workspace and --path are mutually exclusive" in result.stderr
     result = _run(["workspace", "sync", "--all", "--workspace", "prod"])
@@ -809,16 +814,16 @@ def test_f11_resolver_options(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     lone = tmp_path / "lone"
     lone.mkdir()
     monkeypatch.chdir(lone)
-    result = _run(["workspace", "show"])
+    result = _run(["workspace", "get"])
     assert result.exit_code == 1, result.output
     assert "not inside a workspace" in result.stderr
     monkeypatch.chdir(tmp_path)
-    result = _run(["workspace", "show", "--path", str(tmp_path / "elsewhere")])
+    result = _run(["workspace", "get", "--path", str(tmp_path / "elsewhere")])
     assert result.exit_code == 1, result.output
     assert "no workspace manifest at" in norm(result.stderr, tmp_path)
     result = _run(["workspace", "status", "--workspace", "prod", "--repo", "typo"])
     assert result.exit_code == 1, result.output
-    assert "unknown repo identifier(s) for --repo: typo" in result.stderr
+    assert "1 unknown repo identifier for --repo: typo" in result.stderr
 
     # option validation (P32)
     result = _run(["workspace", "sync", "--workspace", "prod", "--timeout", "0"])
@@ -826,16 +831,16 @@ def test_f11_resolver_options(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert "--timeout must be positive" in result.stderr
     result = _run(["workspace", "sync", "--workspace", "prod", "--parallel", "0"])
     assert result.exit_code == 2, result.output
-    assert "--parallel must be >= 1" in result.stderr
+    assert 'Invalid value "0" for --parallel. Must be >= 1.' in result.stderr
     for message in fix["errors"]:
         assert isinstance(message, str)
 
     # short flags (P32)
     shorts = fix["short_flags"]
     assert shorts["--workspace"] == "-w"
-    result = _run(["workspace", "show", "-w", "prod", "--format", "raw"])
+    result = _run(["workspace", "get", "-w", "prod", "--format", "raw"])
     assert result.exit_code == 0, result.output
-    result = _run(["workspace", "show", "-p", str(target), "--format", "raw"])
+    result = _run(["workspace", "get", "-p", str(target), "--format", "raw"])
     assert result.exit_code == 0, result.output
     result = _run(["workspace", "list", "-f", "raw", "-c", "name"])
     assert result.exit_code == 0, result.output
@@ -896,10 +901,12 @@ def test_f12_prune(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         interactive=True,
         prompt_backend=backend,
     )
-    assert result.exit_code == 0, result.output
+    # Declining is a cancellation: exit 1, standard line, no mutation.
+    assert result.exit_code == 1, result.output
+    assert "cancelled; no changes made" in result.stderr
     assert backend.calls == [("confirm", "Continue?")]
     assert clone.is_dir()
-    assert fix["batch_confirm"]["decline"] == "exits cleanly, no mutation"
+    assert fix["batch_confirm"]["decline"] == "exits 1 (cancelled), no mutation"
 
     # sync --prune prompts only when there are safe orphans; none here (P34)
     result = _run(["workspace", "sync", "--workspace", "prod", "--prune"])
@@ -933,7 +940,7 @@ def test_f12_prune(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert all(r["detail"] == "not in this workspace's manifest" for r in unmatched)
     result = _run(["workspace", "status", "--all", "--repo", "typo", "--format", "json"])
     assert result.exit_code == 1, result.output
-    assert "unknown repo identifier(s) for --repo: typo" in result.stderr
+    assert "1 unknown repo identifier for --repo: typo" in result.stderr
     assert fix["prune_remove_detail"] == "no longer declared"
 
 
@@ -993,14 +1000,14 @@ def test_f13_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     shutil.rmtree(bare)
     result = _run(["workspace", "sync", "--workspace", "prod"])
     assert result.exit_code == 0, result.output
-    assert "1 repo (1 up to date)" in result.stderr
+    assert "sync: 1 unchanged" in result.stderr
     assert fix["clone"].startswith("git clone --reference <bare> --dissociate")
 
     # sync skip details (P36)
     (target / "upstream" / "dirty.txt").write_text("dirty")
     result = _run(["workspace", "sync", "--workspace", "prod", "--format", "json"])
     rows = _json_rows(result, tmp_path)
-    assert rows[0]["action"] == "skip"
+    assert rows[0]["action"] == "skipped"
     assert rows[0]["detail"] == "dirty working tree"
     (target / "upstream" / "dirty.txt").unlink()
     # A detached clone is never checked out or pulled: skip (P36). Porcelain
@@ -1017,7 +1024,7 @@ def test_f13_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     )
     result = _run(["workspace", "sync", "--workspace", "prod", "--format", "json"])
     rows = _json_rows(result, tmp_path)
-    assert rows[0]["action"] == "skip"
+    assert rows[0]["action"] == "skipped"
     assert rows[0]["detail"] == "on detached, expected main"
     result = _run(["workspace", "status", "--workspace", "prod", "--format", "json"])
     rows = _json_rows(result, tmp_path)
@@ -1157,15 +1164,17 @@ def test_f16_branch_adopt_parallel(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     # cascade: per-repo branch wins over defaults.branch for target_branch
     _run(["workspace", "branch", "set", "main", "--workspace", "prod"])
     _run(["workspace", "branch", "set", "develop", "--repo", "upstream", "--workspace", "prod"])
-    result = _run(["workspace", "show", "--workspace", "prod", "--format", "json"])
+    result = _run(["workspace", "get", "--workspace", "prod", "--format", "json"])
     rows = _json_rows(result, tmp_path)
     assert rows[0]["repo_branch"] == "develop"
     assert rows[0]["target_branch"] == "develop"
     # branch apply touches only explicit targets: tracking branch from origin
     result = _run(["workspace", "branch", "apply", "--workspace", "prod", "--format", "json"])
     rows = _json_rows(result, tmp_path)
-    assert [sorted(r) for r in rows] == [["action", "detail", "repo", "target_branch", "workspace"]]
-    assert rows[0]["action"] == "checkout"
+    assert [sorted(r) for r in rows] == [
+        ["action", "detail", "repo", "target_branch", "target_path", "workspace"]
+    ]
+    assert rows[0]["action"] == "checked_out"
     assert rows[0]["target_branch"] == "develop"
     assert next(iter(rows[0])) == "repo"
     assert fix["branch_apply"].startswith("explicit targets only")
@@ -1174,7 +1183,7 @@ def test_f16_branch_adopt_parallel(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     _run(["workspace", "branch", "unset", "--repo", "upstream", "--workspace", "prod"])
     result = _run(["workspace", "sync", "--workspace", "prod", "--format", "json"])
     rows = _json_rows(result, tmp_path)
-    assert rows[0]["action"] == "skip"
+    assert rows[0]["action"] == "skipped"
     assert rows[0]["detail"] == "on develop, expected main"
     assert fix["sync_never_checkout"].startswith("skips dirty/diverged/wrong-branch")
 
@@ -1182,7 +1191,7 @@ def test_f16_branch_adopt_parallel(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     adopted = tmp_path / "adopted"
     adopted.mkdir()
     manifest = WorkspaceManifest(name="prod", repos=[{"url": f"file://{upstream}"}])
-    ManifestRepository().write(adopted, manifest)
+    YamlManifestRepository().write(adopted, manifest)
     before = (adopted / "untaped.yml").read_bytes()
     result = _run(["workspace", "adopt", str(adopted), "--name", "adopted"])
     assert result.exit_code == 0, result.output
@@ -1211,10 +1220,10 @@ def test_f16_branch_adopt_parallel(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     assert fix["parallelism"]["cap"].startswith("2 * os.cpu_count()")
     capped = clamp_parallel(10**9, cap=parallel_cap(), policy="2 * os.cpu_count()")
     assert capped == parallel_cap()
-    # foreach --parallel<=0 runs serially
+    # foreach --parallel<=0 is a usage error, like every --parallel
     result = _run(["workspace", "foreach", "echo hi", "--workspace", "prod", "--parallel", "0"])
-    assert result.exit_code == 0, result.output
-    assert fix["parallelism"]["foreach_le_0"] == "serial"
+    assert result.exit_code == 2, result.output
+    assert fix["parallelism"]["foreach_le_0"] == "usage error (exit 2)"
     assert fix["parallelism"]["order"] == "manifest order"
     assert fix["quiet"]["flag"] == "--quiet / -q"
 
@@ -1342,7 +1351,7 @@ def test_p48_branch_set_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     # set --apply writes the manifest first, then checks out existing clones
     result = _run(["workspace", "branch", "set", "develop", "--workspace", "prod", "--apply"])
     assert result.exit_code == 0, result.output
-    assert ManifestRepository().read(target).defaults.branch == "develop"
+    assert YamlManifestRepository().read(target).defaults.branch == "develop"
     current = subprocess.run(
         ["git", "-C", str(target / "upstream"), "branch", "--show-current"],
         check=True,

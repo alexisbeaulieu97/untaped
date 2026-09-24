@@ -176,7 +176,7 @@ class ResolveCasePayload:
     def _is_org_scoped(self, kind: str) -> bool:
         """True iff the kind's identity includes ``organization``.
 
-        Mirrors :func:`untaped.capabilities.awx.cli._context.scope_for_spec` — global
+        Mirrors :func:`untaped.capabilities.awx.cli.context.scope_for_spec` — global
         kinds (``ExecutionEnvironment``, ``InstanceGroup``, …) must not
         receive the active profile's default organization as a filter.
         """

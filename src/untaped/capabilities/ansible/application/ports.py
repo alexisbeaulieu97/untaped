@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from datetime import datetime
-from typing import Any, Literal, Protocol
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from untaped.capabilities.ansible.domain import payloads
+
+if TYPE_CHECKING:
+    from untaped.capabilities.github.ansible import BatchRepoRefsResult
 
 
 class DependencyIndex(Protocol):
@@ -169,3 +173,78 @@ class GitHubDependencyReader(Protocol):
     ) -> dict[str, object]: ...
 
     def get_raw_content(self, owner: str, repo: str, path: str, *, ref: str) -> str: ...
+
+
+class EdgeBatchRead(Protocol):
+    """Batch edge read matching ``dependencies_batch``/``dependents_batch``."""
+
+    def __call__(
+        self,
+        pairs: Sequence[tuple[str, str | None]],
+        *,
+        source_key: str | None,
+    ) -> dict[tuple[str, str | None], list[payloads.IndexedDependency]]: ...
+
+
+class GitCache(Protocol):
+    """Git operations needed by git-backed source refresh."""
+
+    def ensure_bare(
+        self,
+        url: str,
+        *,
+        cache_dir: Path,
+        auth_header: str | None,
+    ) -> Path: ...
+
+    def fetch_refs(
+        self,
+        bare_path: Path,
+        *,
+        refspecs: list[str],
+        depth: int,
+        blob_filter: bool,
+        auth_header: str | None,
+    ) -> None: ...
+
+    def read_files(
+        self,
+        bare_path: Path,
+        sha: str,
+        paths: list[str],
+        *,
+        auth_header: str | None,
+    ) -> dict[str, str]:
+        """Return contents for the ``paths`` that exist at ``sha``; omit the rest."""
+        ...
+
+
+class LsRemoteGit(Protocol):
+    """The ``git ls-remote`` call the Git ref probe needs."""
+
+    def ls_remote(
+        self,
+        url: str,
+        *,
+        patterns: list[str],
+        auth_header: str | None,
+    ) -> str: ...
+
+
+class BatchRepoRefsClient(Protocol):
+    """The slice of ``untaped.capabilities.github.ansible.GithubClient`` the probe needs."""
+
+    def batch_repo_refs(
+        self,
+        repos: Sequence[str],
+        *,
+        kinds: Sequence[str] = ("heads", "tags"),
+        chunk_size: int = 50,
+    ) -> BatchRepoRefsResult: ...
+
+    def batch_default_branch_refs(
+        self,
+        repos: Sequence[str],
+        *,
+        chunk_size: int = 200,
+    ) -> BatchRepoRefsResult: ...

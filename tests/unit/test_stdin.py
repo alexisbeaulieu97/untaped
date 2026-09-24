@@ -6,12 +6,14 @@ from unittest.mock import patch
 
 import pytest
 
-from untaped.errors import ConfigError
+from untaped.errors import ConfigError, UsageError
 from untaped.pipe import PIPE_MARKER_KEY
 from untaped.stdin import (
+    StdinInput,
     read_identifiers,
     read_records,
     read_stdin,
+    read_stdin_input,
     read_stdin_text,
     resolve_text_input,
 )
@@ -141,6 +143,51 @@ def test_read_identifiers_mixed_bare_then_envelope_raises() -> None:
         read_identifiers([], stdin=True, id_field="full_name")
 
 
+# ---- accepted kinds ---------------------------------------------------------
+
+
+def test_read_identifiers_accepts_declared_kinds_and_kindless_records() -> None:
+    payload = _env({"id": 1}, kind="awx.job") + "\n" + _env({"id": 2}, kind=None) + "\n"
+    with _feed(payload):
+        assert read_identifiers([], stdin=True, id_field="id", accept_kinds={"awx.job"}) == [
+            "1",
+            "2",
+        ]
+
+
+def test_read_identifiers_rejects_other_kinds_as_usage_error() -> None:
+    payload = _env({"id": 1}, kind="awx.job") + "\n" + _env({"id": 7}, kind="awx.host") + "\n"
+    with (
+        _feed(payload),
+        pytest.raises(
+            UsageError,
+            match=r"line 2: record kind 'awx\.host' is not accepted here; expected 'awx\.job'",
+        ),
+    ):
+        read_identifiers([], stdin=True, id_field="id", accept_kinds={"awx.job"})
+
+
+def test_read_records_checks_accepted_kinds() -> None:
+    with _feed(_env({"id": 1}, kind="github.repo") + "\n"), pytest.raises(UsageError):
+        read_records(accept_kinds={"workspace.repo"})
+
+
+def test_read_stdin_input_returns_bare_values_or_records() -> None:
+    with _feed("a\nb\n"):
+        bare = read_stdin_input()
+    with _feed(_env({"id": 1}) + "\n"):
+        piped = read_stdin_input(accept_kinds={"github.repo"})
+
+    assert bare == StdinInput(values=("a", "b"), records=None)
+    assert piped.values == ()
+    assert piped.records is not None and piped.records[0].record == {"id": 1}
+
+
+def test_read_stdin_input_names_what_was_expected_when_empty() -> None:
+    with _feed(""), pytest.raises(ConfigError, match="no names received on stdin"):
+        read_stdin_input(what="names")
+
+
 # ---- raw text input --------------------------------------------------------
 
 
@@ -185,7 +232,7 @@ def test_resolve_text_input_empty_flag_is_config_error() -> None:
 def test_resolve_text_input_rejects_flag_plus_file(tmp_path: Path) -> None:
     f = tmp_path / "body.txt"
     f.write_text("filed", encoding="utf-8")
-    with pytest.raises(ConfigError, match="not both"):
+    with pytest.raises(UsageError, match="not both"):
         resolve_text_input(value="inline", file=f)
 
 

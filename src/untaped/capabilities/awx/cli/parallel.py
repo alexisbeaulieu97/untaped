@@ -1,29 +1,30 @@
 """Parallel monitor scaffolding shared by ``--track`` and ``--wait``.
 
 Owns the bounded-worker / launch-order collection / error-wrap shape that
-both ``_drain_parallel`` (``--track``) and ``_wait_parallel`` (``--wait``)
+both ``drain_parallel`` (``--track``) and ``wait_parallel`` (``--wait``)
 need, on top of :func:`untaped.capability_api.bounded_map`; each caller contributes
 only its unique mechanics (queue + print loop for track; ``WatchJob``
 lambda for wait).
 """
 
+from __future__ import annotations
+
 import queue
 import threading
 from collections.abc import Callable
 
-from rich.console import Console
 from rich.text import Text
 
 from untaped.capabilities.awx.application import WatchJob
 from untaped.capabilities.awx.application.ports import JobMonitor, RawHttpResourceClient
 from untaped.capabilities.awx.application.scheduling import MAX_PARALLEL
-from untaped.capabilities.awx.cli._event_render import render_event_text
+from untaped.capabilities.awx.cli.event_render import render_event_text
 from untaped.capabilities.awx.domain import Job, JobEvent
 from untaped.capabilities.awx.domain.job import JOB_ROUTES
 from untaped.capability_api import UntapedError, bounded_map
 
 
-def _drain_parallel_with_worker(
+def drain_parallel_with_worker(
     jobs: list[tuple[str, Job]],
     worker_fn: Callable[[str, Job], Job],
     *,
@@ -93,10 +94,10 @@ def _idle() -> None:
     return None
 
 
-def _drain_parallel(
+def drain_parallel(
     monitor: JobMonitor,
     jobs: list[tuple[str, Job]],
-    console: Console,
+    write: Callable[[Text], None],
     *,
     stop: threading.Event | None = None,
     finished: dict[str, Job] | None = None,
@@ -104,12 +105,13 @@ def _drain_parallel(
     """Drain ``--track`` events from multiple jobs concurrently.
 
     Workers stream structured events, or workflow status changes, onto a queue; the
-    main thread drains the queue and prints with the originating
+    main thread drains the queue and hands each line to ``write`` (a Rich
+    console's ``print`` in the CLI) with the originating
     template name as a prefix so concurrent output stays
     disambiguable on a shared stderr. After every worker has signalled
     completion (sentinel ``(name, None)``), each future's final
     :class:`Job` (post ``monitor.fetch``) is collected in launch order
-    by :func:`_drain_parallel_with_worker` so the caller's per-job
+    by :func:`drain_parallel_with_worker` so the caller's per-job
     error stderr rows + ``any_failed`` exit-code semantics stay stable.
 
     ``Ctrl-C`` sets ``stop``; a monitor built with a stop-aware sleep
@@ -145,16 +147,16 @@ def _drain_parallel(
                 done += 1
                 continue
             if isinstance(ev, Job):
-                console.print(Text(f"[{name}] {ev.kind}#{ev.id}: {ev.status}"))
+                write(Text(f"[{name}] {ev.kind}#{ev.id}: {ev.status}"))
             else:
-                console.print(render_event_text(ev, prefix=name))
+                write(render_event_text(ev, prefix=name))
 
-    return _drain_parallel_with_worker(
+    return drain_parallel_with_worker(
         jobs, _worker, while_running=_drain_queue, stop=stop, finished=finished
     )
 
 
-def _wait_parallel(
+def wait_parallel(
     client: RawHttpResourceClient,
     jobs: list[tuple[str, Job]],
     *,
@@ -164,13 +166,13 @@ def _wait_parallel(
 ) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
     """Block-wait on multiple jobs concurrently — no streaming.
 
-    Mirrors :func:`_drain_parallel` for the ``--wait`` (no
+    Mirrors :func:`drain_parallel` for the ``--wait`` (no
     ``--track``) path: each worker calls ``WatchJob(client)(job)``
     until the job hits a terminal state and returns. The
     executor / collection / error-wrap scaffolding lives in
-    :func:`_drain_parallel_with_worker`.
+    :func:`drain_parallel_with_worker`.
     """
     watch = WatchJob(client, sleep=sleep) if sleep is not None else WatchJob(client)
-    return _drain_parallel_with_worker(
+    return drain_parallel_with_worker(
         jobs, lambda _name, job: watch(job), stop=stop, finished=finished
     )

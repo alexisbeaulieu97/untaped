@@ -25,14 +25,14 @@ from untaped.capabilities.github.domain import (
     WorktreeResult,
     profile_join,
 )
-from untaped.capabilities.github.domain.errors import GitCorpusError
+from untaped.capabilities.github.errors import GitCorpusError
 from untaped.capability_api import (
     GitCommandError,
     GitResult,
-    echo,
     run_git,
     safe_cache_path,
     safe_path_segment,
+    ui_context,
 )
 
 DEFAULT_TIMEOUT = 60.0
@@ -69,7 +69,7 @@ class GitCorpusCache:
         self._fetch_attempts = fetch_attempts
         self._fetch_batch_size = fetch_batch_size
         self._sleep = sleep
-        self._warn = warn or _echo_warning
+        self._warn = warn or _ui_warning
 
     def sync_repo(
         self,
@@ -551,8 +551,8 @@ class GitCorpusCache:
             raise GitCorpusError(str(exc)) from exc
 
 
-def _echo_warning(message: str) -> None:
-    echo(f"warning: {message}", err=True)
+def _ui_warning(message: str) -> None:
+    ui_context(strict=False).message("warning", message)
 
 
 def cache_path_for(url: str, *, cache_dir: Path) -> Path:

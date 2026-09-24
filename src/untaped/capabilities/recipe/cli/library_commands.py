@@ -1,4 +1,4 @@
-"""Library commands: ``add``, ``list``, ``show``, ``check``, ``remove``, ``edit``."""
+"""Library commands: ``add``, ``list``, ``get``, ``validate``, ``remove``, ``edit``."""
 
 from __future__ import annotations
 
@@ -42,23 +42,41 @@ from untaped.capabilities.recipe.infrastructure.pack_store import (
 from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
+    DryRunOption,
     FormatOption,
+    OutcomeRecord,
+    UsageError,
+    YesOption,
     batch_apply,
     echo,
     emit,
     finish,
+    plural,
+    q,
     render_rows,
 )
 
 _EMPTY_LIBRARY_HINT = (
-    "no packs installed; scaffold one with `untaped recipe new pack NAME` "
+    "no packs installed; scaffold one with `untaped recipe init pack NAME` "
     "or install one with `untaped recipe add PATH|GIT_URL`"
 )
 
 
+class PackOutcomeRecord(OutcomeRecord):
+    """An installed pack's ``add``/``remove`` result.
+
+    Kinds ``recipe.add_outcome`` (``action``: ``created``/``updated``) and
+    ``recipe.remove_outcome`` (``removed``, or ``planned`` with --dry-run).
+    """
+
+    name: str
+    source: str | None = None
+    rev: str | None = None
+
+
 @dataclass(frozen=True)
 class _ResolvedTarget:
-    """A pack/recipe/hook/builtin ref resolved for `show` and `edit`."""
+    """A pack/recipe/hook/builtin ref resolved for `get` and `edit`."""
 
     pack: InstalledPack | None = None
     name: str | None = None
@@ -90,13 +108,25 @@ def add_command(
     ] = False,
     yes: Annotated[
         bool,
-        Parameter(name=["--yes", "-y"], negative="", help="Skip the confirmation prompt."),
+        Parameter(
+            name=["--yes", "-y"],
+            negative="",
+            show=False,
+            help="Accepted for compatibility; add never prompts.",
+        ),
     ] = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
-    """Install a recipe pack from a path or git URL."""
+    """Install a recipe pack from a path or git URL.
+
+    Installing never prompts: only --force (and --discard-edits for a library
+    copy with local edits) replaces an installed pack.
+    """
+    del yes
     with report_config_errors(), tempfile.TemporaryDirectory() as temp_root:
         if rev is not None and not is_git_url(source):
-            raise ConfigError("--rev is only valid for git URL sources")
+            raise UsageError("--rev is only valid for git URL sources")
         source_dir = (
             fetch_pack_source(source, rev=rev, dest=Path(temp_root) / "pack")
             if is_git_url(source)
@@ -112,31 +142,22 @@ def add_command(
         if edited and not discard_edits:
             raise ConfigError(local_edits_message(installed_name))
         _render_pack_add_preview(installed_name, manifest, local_edits=edited)
-
-        def _install(item: str) -> PackManifest:
-            del item
-            return library.add(
-                source_dir,
-                source=source,
-                rev=rev,
-                name=name,
-                force=force,
-                discard_edits=discard_edits,
-            )
-
-        outcome = batch_apply(
-            [source],
-            _install,
-            verb="add",
-            noun="pack",
-            label=lambda item: installed_name,
-            describe=lambda item: {"name": installed_name, "source": item},
-            ui=recipe_ui(),
-            destructive=True,
-            assume_yes=yes,
+        replaced = library.find_pack(installed_name) is not None
+        library.add(
+            source_dir,
+            source=source,
+            rev=rev,
+            name=name,
+            force=force,
+            discard_edits=discard_edits,
         )
-        if outcome.results:
-            echo(installed_name)
+        record = PackOutcomeRecord(
+            name=installed_name,
+            action="updated" if replaced else "created",
+            source=source,
+            rev=rev,
+        )
+        emit(record.model_dump(), fmt=fmt, columns=columns, kind="recipe.add_outcome")
 
 
 def list_command(
@@ -155,7 +176,7 @@ def list_command(
     """List installed recipes, hooks, or packs."""
     with report_config_errors():
         if hooks and packs:
-            raise ConfigError("choose one of --hooks or --packs")
+            raise UsageError("--hooks and --packs cannot be combined")
         library = PackLibrary(library_root=library_root())
         installed = library.packs()
         for name, error in library.load_errors().items():
@@ -187,7 +208,7 @@ def list_command(
             )
 
 
-def show_command(
+def get_command(
     ref_text: Annotated[str, Parameter(help="Pack, recipe, or hook ref.")],
     /,
     *,
@@ -248,7 +269,7 @@ def show_command(
             )
 
 
-def check_command(
+def validate_command(
     ref_text: Annotated[
         str | None,
         Parameter(help="Installed pack, recipe ref, or explicit path."),
@@ -283,10 +304,10 @@ def remove_command(
     name: Annotated[str, Parameter(help="Installed pack identity.")],
     /,
     *,
-    yes: Annotated[
-        bool,
-        Parameter(name=["--yes", "-y"], negative="", help="Skip the confirmation prompt."),
-    ] = False,
+    yes: YesOption = False,
+    dry_run: DryRunOption = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
     """Remove an installed pack."""
     with report_config_errors():
@@ -297,17 +318,17 @@ def remove_command(
             return item
 
         def _preview(rows: Sequence[dict[str, object]]) -> None:
-            echo(f"About to remove {len(rows)} pack(s):", err=True)
+            echo(f"About to remove {plural(len(rows), 'pack')}:", err=True)
             for row in rows:
                 echo(f"  - {row['name']}", err=True)
             if library.local_edits(name):
-                echo(
-                    f"warning: pack '{name}' has local edits in the library "
-                    "(via edit or new recipe/hook); removing discards them.",
-                    err=True,
+                recipe_ui().message(
+                    "warning",
+                    f"pack {q(name)} has local edits in the library "
+                    "(via edit or init recipe/hook); removing discards them",
                 )
 
-        batch_apply(
+        outcome = batch_apply(
             [name],
             _remove,
             verb="remove",
@@ -317,8 +338,20 @@ def remove_command(
             ui=recipe_ui(),
             destructive=True,
             assume_yes=yes,
+            preview_only=dry_run,
             preview=_preview,
         )
+        if dry_run:
+            rows = [PackOutcomeRecord(name=name, action="planned").model_dump()]
+        else:
+            rows = [
+                PackOutcomeRecord(name=item, action="removed").model_dump()
+                for item, _ in outcome.results
+            ]
+        rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.remove_outcome")
+        if rendered:
+            echo(rendered)
+        finish(outcome)
 
 
 def edit_command(ref_text: Annotated[str, Parameter(help="Pack, recipe, or hook ref.")], /) -> None:
@@ -416,13 +449,11 @@ def _render_pack_add_preview(
     *,
     local_edits: bool = False,
 ) -> None:
-    echo(f"Pack: {installed_name}", err=True)
+    ui = recipe_ui()
     recipes = ", ".join(sorted(manifest.recipes)) or "(none)"
     hooks = ", ".join(sorted(manifest.hooks)) or "(none)"
-    echo(f"Recipes: {recipes}", err=True)
-    echo(f"Hooks: {hooks}", err=True)
+    ui.message("info", f"Pack: {installed_name}")
+    ui.message("info", f"Recipes: {recipes}")
+    ui.message("info", f"Hooks: {hooks}")
     if local_edits:
-        echo(
-            "warning: library copy has local edits; --discard-edits will overwrite them.",
-            err=True,
-        )
+        ui.message("warning", "library copy has local edits; --discard-edits will overwrite them")

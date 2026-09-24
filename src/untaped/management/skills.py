@@ -23,7 +23,7 @@ from untaped.cli import (
     raise_usage,
     report_errors,
 )
-from untaped.errors import ConfigError
+from untaped.errors import UsageError
 from untaped.render import OutputFormat
 from untaped.skills import (
     AllSkillsOption,
@@ -67,6 +67,7 @@ def build_root_skills_app(*, shell: ApplicationSpec, result: CompositionResult) 
     @app.command(name="install")
     def install_command(
         skill_names: SkillNamesArgument = None,
+        /,
         *,
         stdin: SkillStdinOption = False,
         all_skills: AllSkillsOption = False,
@@ -111,7 +112,7 @@ def _list(
     columns: list[str] | None,
 ) -> None:
     with report_errors():
-        emit(skill_rows(skills), fmt=fmt, columns=columns)
+        emit(skill_rows(skills), fmt=fmt, columns=columns, kind="untaped.skill")
 
 
 def _install(
@@ -128,7 +129,7 @@ def _install(
 ) -> None:
     with report_errors():
         if int(bool(skill_names)) + int(stdin) + int(all_skills) > 1:
-            raise ConfigError("provide skill names, --stdin, or --all; not more than one")
+            raise UsageError("provide skill names, --stdin, or --all; not more than one")
         if all_skills:
             selected = sorted(skills)
         else:
@@ -145,8 +146,8 @@ def _install(
             scope=scope,
             project_dir=project_dir,
             target_dir=target_dir,
-            on_installed=lambda result: ui_context(strict=False).message(
-                "success", f"installed skill: {result.name}"
+            on_installed=lambda result: ui_context(strict=False).success(
+                f"installed skill: {result.name}"
             ),
         )
 

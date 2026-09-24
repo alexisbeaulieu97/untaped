@@ -65,7 +65,12 @@ def _show(
     fmt: OutputFormat,
     columns: list[str] | None,
 ) -> None:
-    emit_isolated(_rows(result, candidates, shell_distribution), fmt=fmt, columns=columns)
+    emit_isolated(
+        _rows(result, candidates, shell_distribution),
+        fmt=fmt,
+        columns=columns,
+        kind="untaped.capability",
+    )
 
 
 def _rows(

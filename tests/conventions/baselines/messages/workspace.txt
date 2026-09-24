@@ -1,0 +1,3 @@
+# Known violations of the messages convention check for 'workspace'.
+# This list may only shrink: fix an entry and delete its line.
+# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.

@@ -181,7 +181,7 @@ def test_apply_allow_unverified_requires_yes(fake_aap: Any, tmp_path: Path) -> N
 
     result = CliInvoker().invoke(app, ["apply", str(f), "--allow-unverified"])
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "--yes" in (result.output + (result.stderr or ""))
 
 
@@ -550,7 +550,9 @@ def test_save_apply_round_trip_keeps_org_less_workflow(
         "workflow_job_templates", id=40, name="global-wf", organization=None, description="old"
     )
     out = tmp_path / "w.yml"
-    saved = CliInvoker().invoke(app, ["workflow-templates", "save", "global-wf", "--out", str(out)])
+    saved = CliInvoker().invoke(
+        app, ["workflow-templates", "export", "global-wf", "--out", str(out)]
+    )
     assert saved.exit_code == 0, saved.output + (saved.stderr or "")
     assert "organization: null" in out.read_text()
     fake_aap.seed(

@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from untaped.capability_api import OutcomeRecord, UtcTimestamp
+
 ProbeFallbackReason = Literal["graphql_rate_limited", "graphql_transient"]
 GRAPHQL_RATE_LIMIT_FALLBACK: ProbeFallbackReason = "graphql_rate_limited"
 GRAPHQL_TRANSIENT_FALLBACK: ProbeFallbackReason = "graphql_transient"
@@ -174,7 +176,21 @@ class SourceIndexStatus(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     source_key: str
-    scanned_at: datetime
+    scanned_at: UtcTimestamp
     repos: int
     refs: int
     edges: int
+
+
+class AliasOutcome(OutcomeRecord):
+    """Result of ``alias set`` or ``alias remove`` (kind ``ansible.alias_outcome``)."""
+
+    alias: str
+    repo: str
+
+
+class SourceOutcome(OutcomeRecord):
+    """Result of ``source set``, ``patch`` or ``remove`` (kind ``ansible.source_outcome``)."""
+
+    name: str
+    changes: list[str] = Field(default_factory=list)

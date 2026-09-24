@@ -265,7 +265,9 @@ broken section to hide the rest:
   `config.yml`, saying whether the next state change moves it or it is
   shadowed by `state.yml` and should be deleted; `warn` rows do not fail
   `doctor`;
-- each capability-contributed health check, and any quarantined provider.
+- each capability-contributed health check (a check can report a
+  non-failing `warn`, such as ansible's `ansible.deprecated-settings` while
+  `ansible.freshness_ttl` is set), and any quarantined provider.
 
 Settings rows apply `UNTAPED_*` environment overrides on top of the file and
 name the variable when an override is the invalid value (for example

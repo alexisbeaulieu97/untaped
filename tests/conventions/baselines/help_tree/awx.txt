@@ -1,0 +1,8 @@
+# Known violations of the help_tree convention check for 'awx'.
+# This list may only shrink: fix an entry and delete its line.
+# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
+awx job-templates usage::verb::usage
+awx jobs events::verb::events
+awx jobs logs::verb::logs
+awx workflow-templates nodes::verb::nodes
+awx workflow-templates usage::verb::usage

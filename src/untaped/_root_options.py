@@ -7,7 +7,7 @@ helpers live here so the bootstrap composition root has one implementation.
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextvars import Token
 from dataclasses import dataclass
 from typing import Annotated, cast
@@ -15,11 +15,12 @@ from typing import Annotated, cast
 from cyclopts import App, Parameter
 from cyclopts.exceptions import CycloptsError, UnknownOptionError
 
-from untaped.cli import echo, raise_usage
+from untaped.cli import deprecated_aliases, echo, raise_usage
 from untaped.profile_resolver import reset_profile_override, set_profile_override
 from untaped.quiet import enable as _enable_quiet
 from untaped.quiet import reset as _reset_quiet
 from untaped.settings import get_settings
+from untaped.ui import ui_context
 from untaped.verbose import enable as _enable_verbose
 from untaped.verbose import reset as _reset_verbose
 
@@ -185,7 +186,7 @@ def _dispatch_with_root_options(
     errors surface before the command body runs, so a retry never repeats
     side effects.
     """
-    remaining = list(command_tokens)
+    remaining = canonical_command_tokens(app, command_tokens)
     applied: set[str] = set()
     while True:
         try:
@@ -207,6 +208,67 @@ def _dispatch_with_root_options(
         except CycloptsError as exc:
             echo(f"error: {exc}", err=True)
             raise SystemExit(2) from exc
+
+
+def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
+    """Rewrite leading command tokens to their registered spelling.
+
+    Cyclopts resolves a command token loosely (``job_templates`` or
+    ``JobTemplates`` for ``job-templates``) but keeps the raw token in the
+    command chain, and its help renderer then looks the raw token up exactly
+    and crashes with ``KeyError`` (``untaped awx job_templates --help``).
+    Substituting the one registered name that the loose match would pick
+    keeps the lenient spelling working and gives help the canonical chain.
+    Exact names, cyclopts aliases and ambiguous spellings are left for
+    cyclopts to handle. Spellings registered with
+    :func:`untaped.cli.deprecated_alias` are rewritten too, with a warning:
+    command aliases along the chain, then option aliases of the selected
+    command (up to a ``--`` separator).
+    """
+    rewritten = list(tokens)
+    current = app
+    index = 0
+    for index, token in enumerate(rewritten):
+        if token.startswith("-"):
+            break
+        aliases = deprecated_aliases(current)
+        if token not in current and token in aliases:
+            _warn_deprecated(token, aliases[token])
+            token = rewritten[index] = aliases[token]
+        elif token not in current:
+            wanted = _loose_command_key(token)
+            matches = [
+                name
+                for name in current
+                if not name.startswith("-") and _loose_command_key(name) == wanted
+            ]
+            if len(matches) != 1:
+                break
+            token = rewritten[index] = matches[0]
+        current = current[token]
+    else:
+        return rewritten
+    options = {old: new for old, new in deprecated_aliases(current).items() if old[0] == "-"}
+    if options:
+        for position in range(index, len(rewritten)):
+            name, separator, value = rewritten[position].partition("=")
+            if name == "--":
+                break
+            if name in options:
+                _warn_deprecated(name, options[name])
+                rewritten[position] = f"{options[name]}{separator}{value}"
+    return rewritten
+
+
+def _warn_deprecated(old: str, new: str) -> None:
+    ui_context(strict=False).message(
+        "warning", f"`{old}` is deprecated and will be removed in 7.0; use `{new}`"
+    )
+
+
+def _loose_command_key(name: str) -> str:
+    """The spelling-insensitive key cyclopts uses to match command tokens."""
+    return name.replace("-", "").replace("_", "").lower()
 
 
 def _unknown_root_option(

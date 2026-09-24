@@ -1,25 +1,25 @@
 """Submit fixed launch/sync targets and preserve execution IDs through monitoring failures."""
 
+from __future__ import annotations
+
 import json
 from collections import Counter
 from collections.abc import Callable, Sequence
 from typing import Any, NoReturn
 
-from rich.console import Console
-
 from untaped.capabilities.awx.application import RunAction
 from untaped.capabilities.awx.application.mutation_values import redact_error
 from untaped.capabilities.awx.application.prepare_actions import prepare_action_targets
 from untaped.capabilities.awx.application.selected_actions import (
-    ActionsInterrupted,
+    ActionsInterruptedError,
     SelectedActionOutcome,
     run_selected_actions,
 )
 from untaped.capabilities.awx.application.selection import SelectedResource
-from untaped.capabilities.awx.cli._context import AwxContext
 from untaped.capabilities.awx.cli._mutation_runner import confirm_batch
-from untaped.capabilities.awx.cli._parallel import _drain_parallel, _wait_parallel
+from untaped.capabilities.awx.cli.context import AwxContext
 from untaped.capabilities.awx.cli.format import format_scope
+from untaped.capabilities.awx.cli.parallel import drain_parallel, wait_parallel
 from untaped.capabilities.awx.domain import Job, ResourceSpec
 from untaped.capabilities.awx.errors import ActionResponseError, LaunchPromptError
 from untaped.capability_api import (
@@ -66,12 +66,12 @@ def run_action_selection(
             "target_kind": item.kind,
             "target_name": item.name,
             "scope": item.scope,
-            "action": "preview",
+            "action": "planned",
         }
         for item in targets
     ]
     if dry_run or (confirm and not yes and not _confirm_targets(ctx, targets, action=action)):
-        emit(rows, fmt=fmt, columns=columns, kind="awx.job")
+        emit(rows, fmt=fmt, columns=columns, kind=f"awx.{action}_outcome")
         return
 
     def safe_error(exc: Exception, target: SelectedResource) -> str:
@@ -112,7 +112,7 @@ def run_action_selection(
     for row in rows:
         if row.get("detail"):
             echo(f"{row['action']}: {row['target_name']}: {row['detail']}", err=True)
-    emit(rows, fmt=fmt, columns=columns, kind="awx.job")
+    emit(rows, fmt=fmt, columns=columns, kind=f"awx.{action}_outcome")
     finish(any(row["action"] != "completed" for row in rows))
 
 
@@ -134,7 +134,7 @@ def _submit(
             continue_on_error=continue_on_error,
             error_detail=error_detail,
         )
-    except ActionsInterrupted as interrupted:
+    except ActionsInterruptedError as interrupted:
         label_by_target = {id(item): label for item, label in zip(targets, labels, strict=True)}
         report_interrupted(
             [
@@ -156,9 +156,15 @@ def _monitor(
     finished: dict[str, Job] = {}
     try:
         if track:
-            console = Console(stderr=True, highlight=False)
-            return _drain_parallel(ctx.monitor, launched, console, stop=ctx.stop, finished=finished)
-        return _wait_parallel(ctx.repo, launched, sleep=ctx.pause, stop=ctx.stop, finished=finished)
+            ui = ctx.progress_ui()
+            return drain_parallel(
+                ctx.monitor,
+                launched,
+                lambda line: ui.styled(line, err=True),
+                stop=ctx.stop,
+                finished=finished,
+            )
+        return wait_parallel(ctx.repo, launched, sleep=ctx.pause, stop=ctx.stop, finished=finished)
     except KeyboardInterrupt:
         report_interrupted(
             [(label, finished.get(label, job)) for label, job in launched] + unmonitored
@@ -210,16 +216,16 @@ def _submitted_execution(outcome: SelectedActionOutcome[Job]) -> Job | None:
 
 
 def _confirm_targets(ctx: AwxContext, targets: Sequence[SelectedResource], *, action: str) -> bool:
-    """Preview every target on stderr, then ask once with No as the default."""
+    """Preview every target on stderr, then ask once with No as the default.
+
+    A decline raises :class:`OperationCancelledError` (exit 1).
+    """
     for item in targets:
         echo(
             f"{action} {item.kind}/{item.name} id={item.id} scope={format_scope(item.scope)}",
             err=True,
         )
-    if confirm_batch(ctx, count=len(targets), verb=action, yes=False, dry_run=False):
-        return True
-    echo(f"Cancelled; nothing to {action}.", err=True)
-    return False
+    return confirm_batch(ctx, count=len(targets), verb=action, yes=False, dry_run=False)
 
 
 def _prepare(

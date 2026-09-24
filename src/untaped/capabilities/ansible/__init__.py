@@ -10,6 +10,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from untaped.capabilities.ansible.doctor import DOCTOR_CHECKS
 from untaped.capabilities.ansible.settings import AnsibleSettings, AnsibleState
 from untaped.capability_api import CapabilitySpec, SkillAsset
 
@@ -42,5 +43,5 @@ SPEC = CapabilitySpec(
             description="Use the built-in `untaped ansible` capability for Ansible analysis.",
         ),
     ),
-    doctor_checks=(),
+    doctor_checks=DOCTOR_CHECKS,
 )

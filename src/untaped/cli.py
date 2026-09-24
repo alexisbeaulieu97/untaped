@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sys
+import weakref
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from pathlib import Path
@@ -13,10 +14,11 @@ from typing import Annotated, Any, Literal, NoReturn
 
 from cyclopts import App, Parameter
 from cyclopts.exceptions import CycloptsError
+from cyclopts.validators import Number
 from pydantic import BaseModel
 from rich.console import Console
 
-from untaped.errors import HttpError, UntapedError
+from untaped.errors import ExitCode, HttpError, OperationCancelledError, UntapedError
 from untaped.render import OutputFormat
 from untaped.ui import UiContext, ui_context
 from untaped.verbose import is_verbose
@@ -31,11 +33,86 @@ ColumnsOption = Annotated[
     list[str] | None,
     Parameter(
         name=["--columns", "-c"],
+        negative="",
         help="Columns to include (repeatable or comma-separated).",
         consume_multiple=False,
     ),
 ]
 """Shared ``--columns / -c`` option for any command that prints rows."""
+
+YesOption = Annotated[
+    bool,
+    Parameter(name=["--yes", "-y"], negative="", help="Skip the confirmation prompt."),
+]
+"""Shared ``--yes / -y``: skip only the prompt (``--dry-run`` still wins)."""
+
+DryRunOption = Annotated[
+    bool,
+    Parameter(name="--dry-run", negative="", help="Preview the changes without applying them."),
+]
+"""Shared ``--dry-run``: preview and exit ``0`` without side effects."""
+
+StdinOption = Annotated[
+    bool,
+    Parameter(
+        name="--stdin",
+        negative="",
+        help="Read identifiers, or --format pipe records, from stdin.",
+    ),
+]
+"""Shared ``--stdin``: pair with :func:`untaped.stdin.read_identifiers`."""
+
+ParallelOption = Annotated[
+    int,
+    Parameter(
+        name=["--parallel", "-j"],
+        help="Maximum number of operations to run at once.",
+        validator=Number(gte=1),
+    ),
+]
+"""Shared ``--parallel / -j`` (``>= 1``; cap it with :func:`clamp_parallel`)."""
+
+LimitOption = Annotated[
+    int | None,
+    Parameter(
+        name="--limit",
+        help="Return at most this many results.",
+        validator=Number(gte=1),
+    ),
+]
+"""Shared ``--limit N`` (``>= 1``; ``None`` means no limit)."""
+
+
+# Keyed by ``id(app)``: cyclopts apps are unhashable. A finalizer drops the
+# entry with the app, so a recycled id never inherits stale aliases.
+_DEPRECATED_ALIASES: dict[int, dict[str, str]] = {}
+
+
+def deprecated_alias(app: App, old: str, new: str) -> None:
+    """Keep ``old`` working as a hidden, deprecated spelling of ``new`` on ``app``.
+
+    For a renamed command or group, ``app`` is its parent and the names are
+    command names (``deprecated_alias(jira_app, "me", "whoami")``). For a
+    renamed option or short flag, ``app`` is the command itself and the names
+    are flags (``deprecated_alias(logs_app, "-f", "--follow")``). The root
+    shell rewrites the old token to the new one before dispatch and prints
+    ``warning: `old` is deprecated; use `new``` on stderr, so the old spelling
+    never appears in ``--help``. Aliases apply to invocations through the
+    ``untaped`` root (test them with ``build_root_app``); they are removed in
+    the next major release.
+    """
+    if old.startswith("-") != new.startswith("-"):
+        raise ValueError(f"alias {old!r} -> {new!r} mixes a command and an option")
+    key = id(app)
+    if key not in _DEPRECATED_ALIASES:
+        _DEPRECATED_ALIASES[key] = {}
+        weakref.finalize(app, _DEPRECATED_ALIASES.pop, key, None)
+    _DEPRECATED_ALIASES[key][old] = new
+
+
+def deprecated_aliases(app: App) -> Mapping[str, str]:
+    """The ``{old: new}`` deprecated spellings registered on ``app``."""
+    return _DEPRECATED_ALIASES.get(id(app), {})
 
 
 def create_app(*, name: str, help: str = "") -> App:
@@ -50,9 +127,14 @@ def echo(message: object = "", *, err: bool = False, nl: bool = True) -> None:
 
 
 def raise_usage(message: str) -> NoReturn:
-    """Raise a command-usage error with the suite's stable exit code."""
+    """Print ``error: <message>`` and exit ``2`` (usage) immediately.
+
+    For code outside :func:`report_errors` (cyclopts validators, option
+    parsing). Inside a ``report_errors`` block prefer
+    ``raise UsageError(message)``, which exits the same way.
+    """
     echo(f"error: {message}", err=True)
-    raise SystemExit(2)
+    raise SystemExit(ExitCode.USAGE)
 
 
 # <tool>.<snake_noun> with an optional ".summary" suffix. The suffix is
@@ -265,7 +347,8 @@ def run_cyclopts_app(
 ) -> object:
     """Run a Cyclopts app while preserving untaped's usage-error contract.
 
-    Also converts a broken downstream pipe — the consumer closed it early, e.g.
+    Ctrl-C anywhere exits ``130`` without a traceback. Also converts a broken
+    downstream pipe — the consumer closed it early, e.g.
     ``untaped <capability> list | head`` or a consumer that exits before reading all of
     its input — into a quiet ``SystemExit(0)`` (the standard CLI behaviour:
     the consumer chose to stop reading, which is not a failure). Without this the producer's
@@ -283,7 +366,10 @@ def run_cyclopts_app(
         )
     except CycloptsError as exc:
         echo(f"error: {exc}", err=True)
-        raise SystemExit(2) from exc
+        raise SystemExit(ExitCode.USAGE) from exc
+    except KeyboardInterrupt:
+        _flush_stdout()
+        raise SystemExit(ExitCode.INTERRUPTED) from None
     except BrokenPipeError:
         # Pipe broke mid-write (output large enough to flush before we got here).
         _exit_broken_pipe()
@@ -430,17 +516,26 @@ def clamp_parallel(requested: int, *, cap: int, policy: str) -> int:
 
 @contextmanager
 def report_errors() -> Iterator[None]:
-    """Convert :class:`UntapedError` into a clean stderr message + exit code 1.
+    """Convert :class:`UntapedError` into a clean stderr message + its exit code.
 
     Wrap every Cyclopts command body in this so users see ``error: ...``
-    instead of a Python traceback. Non-:class:`UntapedError` exceptions are
-    left to Cyclopts' default handling — those represent bugs we want to see.
+    instead of a Python traceback. The exit code is the error class's
+    ``exit_code``: ``2`` for :class:`~untaped.errors.UsageError`, ``130`` for
+    an interrupted prompt, ``1`` otherwise. A declined confirmation
+    (:class:`~untaped.errors.OperationCancelledError`) prints its message
+    without the ``error:`` prefix. Non-:class:`UntapedError`
+    exceptions are left to Cyclopts' default handling — those represent bugs
+    we want to see.
     """
     try:
         yield
+    except OperationCancelledError as exc:
+        # A declined confirmation is the user's choice, not an error.
+        echo(str(exc), err=True)
+        raise SystemExit(exc.exit_code) from exc
     except UntapedError as exc:
         echo(f"error: {format_error(exc)}", err=True)
-        raise SystemExit(1) from exc
+        raise SystemExit(exc.exit_code) from exc
 
 
 def format_error(exc: UntapedError) -> str:

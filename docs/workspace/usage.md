@@ -23,7 +23,7 @@ want; the registry is local-only.
 ```bash
 untaped workspace init prod                     # new workspace at ~/.untaped/workspaces/prod
 untaped workspace add git@github.com:acme/api --workspace prod  # add a repo
-untaped workspace show --workspace prod                         # inspect manifest details
+untaped workspace get --workspace prod                          # inspect manifest details
 untaped workspace branch set main --workspace prod              # update manifest default branch
 untaped workspace sync --workspace prod              # clone everything in the manifest
 untaped workspace status --workspace prod            # per-repo git status
@@ -97,25 +97,31 @@ untaped workspace list --profile work --format raw --columns name
 Lists the central registry — every workspace `untaped workspace` knows about
 by name and path.
 
-### `show`
+### `get`
 
 ```bash
-untaped workspace show [--workspace <ws> | --path <dir>]
-                       [--format json|yaml|table|raw|pipe] [--columns ...]
+untaped workspace get [--workspace <ws> | --path <dir>]
+                      [--format json|yaml|table|raw|pipe] [--columns ...]
 ```
 
 Show the manifest details for one workspace. Each repo produces one
-row with the workspace name, manifest path, default branch, repo name,
-repo URL, per-repo branch override, and effective target branch. Empty
-manifests still emit a single summary row with `repo_count: 0`.
+`workspace.repo` row with the workspace name, manifest path, default
+branch, repo name, repo URL, per-repo branch override, effective target
+branch, and the clone's absolute `target_path`. Empty manifests still
+emit a single `workspace.repo.summary` row with `repo_count: 0` and no
+`target_path`.
 
-`show` reads `untaped.yml` only. It does not inspect git status or
+`get` was called `show` before; `show` still works as a hidden,
+deprecated alias that prints a warning.
+
+`get` reads `untaped.yml` only. It does not inspect git status or
 remote state; use `untaped workspace status` for live checkout data.
 
 ### `init`
 
 ```bash
 untaped workspace init <name> [--path <dir>] [--branch <default>]
+                             [--format json|yaml|table|raw|pipe] [--columns ...]
 ```
 
 Creates a new workspace named `<name>` and registers it. The default
@@ -126,7 +132,10 @@ that lives elsewhere. Writes a starter `untaped.yml` in the directory.
 `init` and `import` refuse a name that is already registered before
 writing anything, and remove the manifest they just wrote if
 registration fails. If the directory already has an `untaped.yml`, use
-`untaped workspace adopt <dir>` to register it instead.
+`untaped workspace adopt <dir>` to register it instead. `init` prints
+`initialized workspace '<name>' at <dir>` on stderr (muted by `-q`) and
+one `workspace.init_outcome` row (`name`, `action: created`,
+`target_path`) on stdout.
 
 ### `adopt`
 
@@ -163,7 +172,7 @@ untaped workspace adopt ~/work/prod
 ### `forget`
 
 ```bash
-untaped workspace forget <name> [--prune] [--yes]
+untaped workspace forget <name> [--prune] [--yes] [--format ...] [--columns ...]
 ```
 
 Remove a workspace from the central registry. The on-disk manifest and
@@ -171,8 +180,10 @@ clones are preserved by default — `forget` is the inverse of `init` /
 `adopt`, not of `sync --prune`. Pass `--prune` to also delete what
 untaped manages in the workspace directory; the command previews the
 workspace name and its absolute path and confirms the destructive
-operation unless `--yes` / `-y` is passed. A declined prompt exits
-cleanly without changing registry state or files.
+operation unless `--yes` / `-y` is passed. A declined prompt exits `1`
+(`cancelled; no changes made`) without changing registry state or
+files. A forgotten workspace produces one `workspace.forget_outcome` row
+(`name`, `action: forgotten` or `pruned`, `target_path`).
 
 `forget --prune` deletes only:
 
@@ -212,29 +223,44 @@ the imported manifest — same scope as `add --sync`).
 ```bash
 untaped workspace add <url>... [--workspace <ws>] [--path <ws-dir>]
                                [--branch <b>] [--repo-name <alias>]
-                               [--sync]
+                               [--sync] [--format ...] [--columns ...]
 untaped workspace add --stdin --workspace <ws>
 ```
 
 Add one or more repo URLs to the workspace's manifest. Multiple URLs
 may be passed positionally or via `--stdin`; `--branch` and
 `--repo-name` apply uniformly to every URL in the batch (use one URL
-per invocation for per-repo overrides). With `--sync`, also clone
-the URLs that landed (a duplicate that fails to register won't try
-to clone).
+per invocation for per-repo overrides). `--repo-name` with more than
+one URL is a usage error (exit `2`). Each added repo produces one
+`workspace.add_outcome` row (`workspace`, `repo`, `url`, `branch`,
+`action: added`, `target_path`). With `--sync`, also clone the URLs
+that landed (a duplicate that fails to register won't try to clone);
+the command then prints the `workspace.sync_outcome` rows instead of
+the add rows.
+
+`--stdin` reads one URL per line, or a `--format pipe` stream of
+`github.repo`, `github.repo_hit` or `github.sweep_repo` records (their
+`clone_url`, else `url`) or `workspace.repo` records (their `url`), so
+`untaped github search repos --org acme --format pipe | untaped workspace
+add --stdin` works. A pipe record of any other kind exits `2`.
 
 ### `remove`
 
 ```bash
 untaped workspace remove <repo>... [--workspace <ws> | --path <dir>]
-                                  [--prune] [--yes]
+                                  [--prune] [--yes] [--dry-run]
+                                  [--format ...] [--columns ...]
 untaped workspace remove --stdin [--workspace <ws> | --path <dir>]
 ```
 
 Remove one or more repos from the manifest, identified by URL or
 alias. `--prune` also deletes the local clone after the SDK batch
 preview and confirmation, unless `--yes` / `-y` is passed. A declined
-prompt exits cleanly without changing the manifest or local clone. The
+prompt exits `1` (`cancelled; no changes made`) without changing the
+manifest or local clone. `--dry-run` prints one `planned` row per
+identifier and changes nothing (it wins over `--yes`). Each removed
+repo produces one `workspace.remove_outcome` row (`workspace`, `repo`,
+`action`, `pruned`). The
 prune is refused if the clone has unsafe local
 state: dirty/untracked/staged work, stash entries, or commits not
 reachable from local remote-tracking refs, including commits reachable
@@ -243,7 +269,8 @@ inspect upstream config, or require an `origin` remote. Stale
 remote-tracking refs are trusted as the offline safety boundary; fetch
 the clone yourself first if you need the check to reflect current
 remote state. With
-`--stdin`, reads repo identifiers one per line — works
+`--stdin`, reads repo identifiers one per line, or the `repo` field of
+a `workspace.repo` / `workspace.sync_outcome` pipe stream — works
 nicely with `fzf`:
 
 ```bash
@@ -258,13 +285,16 @@ untaped workspace status --workspace prod --format raw --columns repo \
 untaped workspace branch set <branch> [--workspace <ws> | --path <dir>]
                                 [--repo <repo>] [--apply [--create]]
 untaped workspace branch unset [--workspace <ws> | --path <dir>] [--repo <repo>]
+                               [--format ...] [--columns ...]
 untaped workspace branch apply [--workspace <ws> | --path <dir>] [--repo <repo>]...
                                [--create]
 ```
 
 Set or unset branch metadata in `untaped.yml`. Without `--repo`, the
 command updates `defaults.branch`; with `--repo`, it updates the
-matching repo override by alias or URL.
+matching repo override by alias or URL. `branch unset` prints one
+`workspace.branch_unset_outcome` row (`workspace`, `repo`, `branch`,
+`action: updated`).
 
 `branch set` and `branch unset` never run `git checkout` by default.
 They only change the target branch used for future clones, `branch
@@ -282,7 +312,8 @@ untaped workspace branch set main --workspace prod --apply
 ```
 
 `branch apply` fetches first, refuses dirty or diverged repos, and emits
-one row per repo with `checkout`, `up-to-date`, `skip`, or `failed`
+one row per repo (with the clone's `target_path`) whose `action` is
+`checked_out`, `unchanged`, `skipped`, or `failed`
 (a fetch, status, or checkout error; the command then exits `1`). Missing
 clones and repos without a target branch are skipped. If the target
 branch resolves to a commit on `origin` but not locally, `branch apply`
@@ -305,22 +336,27 @@ Reconcile each repo on disk with the manifest:
 
 | Action       | When                                                      |
 | ------------ | --------------------------------------------------------- |
-| `clone`      | Repo is in the manifest but missing on disk.              |
-| `pull`       | Repo exists; on the manifest's target branch; behind.     |
-| `up-to-date` | Repo exists; nothing to do.                               |
-| `skip`       | Deliberately left alone: dirty, diverged, on a different branch, not a git repository, or an unsafe orphan (with a reason). |
+| `cloned`     | Repo is in the manifest but missing on disk.              |
+| `pulled`     | Repo exists; on the manifest's target branch; behind.     |
+| `unchanged`  | Repo exists; nothing to do.                               |
+| `skipped`    | Deliberately left alone: dirty, diverged, on a different branch, not a git repository, or an unsafe orphan (with a reason). |
 | `failed`     | A clone, fetch, status, or pull errored; `detail` names the step and git's error. |
-| `remove`     | Local clone is not in the manifest, and `--prune` is set. |
+| `removed`    | Local clone is not in the manifest, and `--prune` is set. |
 | `unmatched`  | `--all --repo <repo>` was passed and `<repo>` isn't in this workspace's manifest — `repo` carries the unmatched identifier. |
 | `unavailable` | `--all` hit a registered workspace whose manifest could not be read — `repo` is empty and `detail` explains the manifest failure. |
 
-A `pull` fast-forwards the checked-out branch to its configured upstream
+Every row carries an absolute `target_path`: the repo's clone
+directory, or the workspace directory for `unmatched` and `unavailable`
+rows. Earlier releases spelled these actions `clone`, `pull`,
+`up-to-date`, `skip` and `remove`.
+
+A `pulled` row fast-forwards the checked-out branch to its configured upstream
 (`@{upstream}`), which need not be `origin/<same name>`. A branch with
 no upstream is skipped with `no upstream` rather than reported as up to
 date.
 
 `sync` exits `1` when any row is `failed` (after printing every row), so
-scripts and CI notice a clone or fetch that did not happen; `skip` rows
+scripts and CI notice a clone or fetch that did not happen; `skipped` rows
 alone keep exit `0`. `add --sync` and `import --sync` follow the same
 rule.
 
@@ -354,20 +390,21 @@ remotes.
 `--parallel N` / `-j N` runs up to `N` repo sync jobs concurrently.
 This works for a single workspace and for `--all`; the cap is global
 across every selected repo, not per workspace. The value is clamped to
-`2 * os.cpu_count()` with a stderr warning when needed. Default sync
-is still serial.
+`2 * os.cpu_count()` with a stderr warning when needed; a value below
+`1` is a usage error (exit `2`). Default sync is still serial.
 
 Sync output remains deterministic even when repo jobs finish out of
 order: workspace input order first, then unmatched selector rows,
 manifest-order sync rows, and prune rows last. `--prune` runs as a
 serial second phase after all clone/fetch/pull jobs finish, so it
 doesn't race in-flight clones. Progress and the final summary are
-stderr-only; `json`, `yaml`, `raw`, and `pipe` stdout rows keep the
-same `SyncOutcome` shape.
+stderr-only (the summary reads `sync: 2 cloned, 1 failed`, or
+`sync: nothing to do`); `json`, `yaml`, `raw`, and `pipe` stdout rows
+keep the same `SyncOutcome` shape.
 
 `sync --prune` deletes immediate child git clones that are no longer
 declared in the manifest only when the clone is safe to delete. Unsafe
-orphans are not deleted; they emit a `skip` row whose detail begins with
+orphans are not deleted; they emit a `skipped` row whose detail begins with
 `unsafe local state:`. Multiple blockers render as
 `unsafe local state: <first>; +N more`. Uninspectable/corrupt orphans
 remain distinct as `not a usable git repo`; symlinked git candidates are
@@ -375,7 +412,7 @@ also skipped instead of followed or deleted. Like `remove --prune` and
 `forget --prune`, `sync --prune` previews the safe orphans it is about
 to delete (workspace, repo, absolute path) and asks once for
 confirmation; pass `--yes` / `-y` to skip the prompt. Without a TTY and
-without `--yes` it prints the sync rows and exits `1` with an error
+without `--yes` it prints the sync rows and exits `2` with an error
 instead of deleting; declining keeps every orphan. There is nothing to
 confirm, and no `--yes` needed, when no safe orphans exist. Safety is
 re-checked right before each delete. The same local remote-tracking ref
@@ -415,7 +452,9 @@ untaped workspace status [--workspace <ws> | --path <dir>] [--all]
 ```
 
 Per-repo git snapshot: `branch`, `ahead`, `behind`, `modified`,
-`untracked`, a `cloned` flag, and `action="status"` for normal rows.
+`untracked`, a `cloned` flag, the clone's absolute `target_path` (the
+workspace directory on `unavailable` rows), and `action="status"` for
+normal rows.
 Under `--all`, a registered workspace whose manifest cannot be read
 emits one `action="unavailable"` row with `repo=""`, `cloned=false`,
 and a `detail` message; single-workspace status remains strict.
@@ -451,7 +490,8 @@ Run a shell command in every repo of a workspace. Default
 under `--parallel`) — output is buffered per
 repo, so chatty commands won't interleave but you also won't see
 anything until each repo exits. `--format json|yaml|raw|pipe` emits one
-`ForeachOutcome` row per repo (with `command` and `duration_s`) for
+`ForeachOutcome` row per repo (with `command`, `duration_s` and the
+repo's `target_path`) for
 piping into `jq` / `awk` or another command.
 
 Child commands run with stdin closed (`DEVNULL`), so interactive
@@ -535,8 +575,10 @@ untaped workspace edit [--workspace <ws> | --path <dir>] [--editor <cmd>]
 
 Opens the resolved workspace root in your editor. With no explicit
 target, `edit` walks up from the current directory until it finds
-`untaped.yml`, matching `show`, `sync`, `status`, and `foreach`.
-Honours `$VISUAL` then `$EDITOR`, overrideable with `--editor`.
+`untaped.yml`, matching `get`, `sync`, `status`, and `foreach`.
+Honours `$VISUAL` then `$EDITOR`, overrideable with `--editor`. An
+editor that exits non-zero fails the command with
+`error: editor exited with status N` (exit `1`).
 
 ## Recipes
 

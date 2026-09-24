@@ -1,10 +1,18 @@
 """Shared Cyclopts options for AWX CLI command builders."""
 
+from __future__ import annotations
+
 from typing import Annotated
 
 from cyclopts import Parameter
 
-from untaped.capability_api import raise_usage
+from untaped.capability_api import (
+    DryRunOption,
+    StdinOption,
+    YesOption,
+    raise_usage,
+)
+from untaped.capability_api import ParallelOption as _CoreParallelOption
 
 
 def resolve_max_depth(depth: int | None, recursive: bool) -> int | None:
@@ -21,6 +29,12 @@ def resolve_max_depth(depth: int | None, recursive: bool) -> int | None:
         return depth
     return None if recursive else 0
 
+
+NamesArgument = Annotated[
+    list[str] | None,
+    Parameter(help="Names of the resources to select, or AWX ids with --by-id."),
+]
+"""Positional resource names; declare it positional-only (before ``/``)."""
 
 ByIdOption = Annotated[
     bool,
@@ -57,22 +71,17 @@ SearchOption = Annotated[str | None, Parameter(name="--search", help="Server-sid
 FilterOption = Annotated[
     list[str] | None,
     Parameter(
-        name="--filter", consume_multiple=False, help="Server filter KEY=VALUE (repeatable)."
+        name="--filter",
+        consume_multiple=False,
+        negative="",
+        help="Server-side filter KEY=VALUE (repeatable).",
     ),
-]
-StdinOption = Annotated[
-    bool,
-    Parameter(name="--stdin", negative="", help="Read names, IDs, or typed records from stdin."),
 ]
 AllOption = Annotated[
     bool, Parameter(name="--all", negative="", help="Explicitly select every resource in scope.")
 ]
 ParentOption = Annotated[
     str | None, Parameter(name="--parent", help="Scope to the parent resource name.")
-]
-YesOption = Annotated[bool, Parameter(name=["--yes", "-y"], negative="", help="Skip confirmation.")]
-DryRunOption = Annotated[
-    bool, Parameter(name="--dry-run", negative="", help="Preview without writing.")
 ]
 ContinueOption = Annotated[
     bool,
@@ -81,7 +90,8 @@ ContinueOption = Annotated[
     ),
 ]
 ParallelOption = Annotated[
-    int, Parameter(name=["--parallel", "-j"], help="Concurrent writes (default 1, capped at 10).")
+    _CoreParallelOption,
+    Parameter(help="Maximum number of concurrent writes (capped at 10)."),
 ]
 UnverifiedOption = Annotated[
     bool,
@@ -101,6 +111,7 @@ __all__ = [
     "FilterOption",
     "InventoryOption",
     "InventoryOrganizationOption",
+    "NamesArgument",
     "OrganizationOption",
     "ParallelOption",
     "ParentOption",

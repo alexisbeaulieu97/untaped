@@ -1,13 +1,15 @@
 """Shared-selection sync commands for projects, sources and inventories."""
 
+from __future__ import annotations
+
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
 from untaped.capabilities.awx.cli._action_runner import run_action_selection
-from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._mutation_runner import validate_controls
 from untaped.capabilities.awx.cli._selection import select_resources
+from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.options import (
     AllOption,
     ByIdOption,
@@ -16,6 +18,7 @@ from untaped.capabilities.awx.cli.options import (
     FilterOption,
     InventoryOption,
     InventoryOrganizationOption,
+    NamesArgument,
     OrganizationOption,
     ParallelOption,
     ParentOption,
@@ -30,7 +33,8 @@ from untaped.capability_api import ColumnsOption, FormatOption, report_errors
 def _add_sync(app: App, spec: AwxResourceSpec) -> None:
     @app.command(name="sync")
     def sync_command(
-        names: list[str] | None = None,
+        names: NamesArgument = None,
+        /,
         *,
         stdin: StdinOption = False,
         by_id: ByIdOption = False,

@@ -86,6 +86,7 @@ def test_edit_all_writable_kinds(fake_aap: Any, editor: Any, cli: str, path: str
         app,
         [cli, "edit", "10", "--by-id", "--field", "description", "--format", "json"],
         prompt_backend=backend,
+        terminal=True,
     )
     assert result.exit_code == 0, result.output
     assert fake_aap.get_record(path, 10)["description"] == "new"
@@ -140,6 +141,7 @@ def test_invalid_edit_retains_owner_only_file_without_writes(
         app,
         ["projects", "edit", "target", "--field", "description", "--yes"],
         prompt_backend=ScriptedPromptBackend(confirms=[False]),
+        terminal=True,
     )
     assert result.exit_code != 0, result.output
     assert fake_aap.get_record("projects", 10)["description"] == "old"
@@ -165,6 +167,7 @@ def test_invalid_yaml_reopen_then_confirm_with_piped_selection(fake_aap: Any, ed
         ["projects", "edit", "--stdin", "--format", "json"],
         input=pipe("awx.project", 10),
         prompt_backend=backend,
+        terminal=True,
     )
     assert result.exit_code == 0, result.output
     assert len(paths) == 2 and paths[0] == paths[1]
@@ -228,7 +231,10 @@ def test_noop_batch_with_secret_and_existing_membership_never_prompts(
         args = ["target"]
     backend = ScriptedPromptBackend(confirms=[])
     result = CliInvoker().invoke(
-        app, ["job-templates", command, *args, "--format", "json"], prompt_backend=backend
+        app,
+        ["job-templates", command, *args, "--format", "json"],
+        prompt_backend=backend,
+        terminal=True,
     )
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)[0]["action"] == "unchanged"
@@ -252,6 +258,7 @@ def test_retarget_to_same_named_selected_id_is_invalid(fake_aap: Any, editor: An
         app,
         ["projects", "edit", "10", "11", "--by-id", "--yes"],
         prompt_backend=ScriptedPromptBackend(confirms=[False]),
+        terminal=True,
     )
     assert result.exit_code != 0, result.output
     assert not any(call.request.method == "PATCH" for call in fake_aap.router.calls)
@@ -390,7 +397,10 @@ def test_reopen_uses_fresh_default_backend_stream_each_time(
     monkeypatch.setattr(PromptToolkitPromptBackend, "confirm", confirm)
     paths = editor(invalid, lambda _: "[invalid", lambda _: changed(original))
     result = CliInvoker().invoke(
-        app, ["projects", "edit", "--stdin", "--format", "json"], input=pipe("awx.project", 10)
+        app,
+        ["projects", "edit", "--stdin", "--format", "json"],
+        input=pipe("awx.project", 10),
+        terminal=True,
     )
     assert result.exit_code == 0, result.output
     assert len(streams) == 3 and len({id(stream) for stream in streams}) == 3
@@ -447,9 +457,12 @@ def test_editor_cleanup_or_retention_after_runner(
             *(["--dry-run"] if mode == "dry-run" else []),
         ],
         prompt_backend=ScriptedPromptBackend(confirms=[mode == "failure"]),
+        terminal=True,
     )
-    assert (result.exit_code == 0) is (mode != "failure"), result.output
+    assert result.exit_code == (1 if mode in {"cancel", "failure"} else 0), result.output
     assert paths[0].exists() is (mode == "failure")
+    if mode == "cancel":
+        assert "cancelled; no changes made" in result.stderr
     assert fake_aap.get_record("projects", 10)["description"] == "old"
     if mode == "failure":
         assert str(paths[0]) in result.stderr
@@ -472,7 +485,6 @@ def test_editor_missing_configuration_is_clean_and_retained(
     [
         ["--field", "name"],
         ["--field", "not_a_field"],
-        ["--yes", "--dry-run"],
         ["--allow-unverified"],
         ["--inventory", "prod"],
         ["--parallel", "0"],
@@ -501,10 +513,11 @@ def test_invalid_fk_mapping_never_leaks_parser_values(fake_aap: Any, editor: Any
         app,
         ["job-templates", "edit", "target", "--yes"],
         prompt_backend=ScriptedPromptBackend(confirms=[False]),
+        terminal=True,
     )
     assert result.exit_code == 1, result.output
     assert "new-secret-in-invalid-input" not in result.output
-    assert "validation cancelled" in result.output
+    assert "cancelled; no changes made" in result.output
     assert paths[0].exists()
     assert not any(call.request.method in {"PATCH", "POST"} for call in fake_aap.router.calls)
 
@@ -560,6 +573,7 @@ def test_configured_editor_uses_real_nonseekable_terminal(
             ],
             input=pipe("awx.project", 10),
             prompt_backend=backend,
+            terminal=True,
         )
         assert result.exit_code == 0, result.output
         terminal_output = b""

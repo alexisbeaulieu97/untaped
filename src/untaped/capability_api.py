@@ -3,7 +3,8 @@
 Every capability — built-in or external provider — imports untaped helpers
 from this module only. It carries the composition set, the provider
 ``CAPABILITY_API_VERSION``, and the supported runtime helpers (output,
-errors, settings, HTTP, git, stdin/pipe, state, UI, batch, concurrency).
+errors and exit codes, settings, HTTP, git, stdin/pipe, state, UI, batch,
+concurrency, shared options, message wording and record bases).
 Additions are backwards compatible; removals or signature breaks require a
 major ``CAPABILITY_API_VERSION`` bump.
 """
@@ -24,9 +25,15 @@ from untaped.capabilities.registry import (
 )
 from untaped.cli import (
     ColumnsOption,
+    DryRunOption,
     FormatOption,
+    LimitOption,
+    ParallelOption,
+    StdinOption,
+    YesOption,
     clamp_parallel,
     create_app,
+    deprecated_alias,
     echo,
     emit,
     existing_file,
@@ -42,10 +49,13 @@ from untaped.diff import unified_diff_text
 from untaped.editor import run_editor
 from untaped.errors import (
     ConfigError,
+    ExitCode,
     HttpError,
     HttpStatusError,
     HttpTransportError,
+    OperationCancelledError,
     UntapedError,
+    UsageError,
     first_validation_error,
 )
 from untaped.fs import atomic_write, read_structured_file
@@ -66,13 +76,22 @@ from untaped.http import (
     paginate_pages,
     resolve_verify,
 )
+from untaped.messages import hint, not_found, plural, q, summary
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.progress import ProgressHandle
 from untaped.prompts import PromptChoice
+from untaped.records import CheckRecord, OutcomeRecord, TargetRecord, UtcTimestamp
 from untaped.render import OutputFormat
 from untaped.settings import HttpSettings, get_config_section, get_core_settings
 from untaped.state import StateCollection, StateMap
-from untaped.stdin import read_identifiers, read_stdin, resolve_text_input
+from untaped.stdin import (
+    StdinInput,
+    read_identifiers,
+    read_records,
+    read_stdin,
+    read_stdin_input,
+    resolve_text_input,
+)
 from untaped.ui import UiContext, ui_context
 
 __all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by test_all_contains_exact_surface
@@ -143,4 +162,26 @@ __all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by
     "resolve_verify",
     "ui_context",
     "unified_diff_text",
+    # 1.1 UX-convention helpers (docs/conventions.md).
+    "CheckRecord",
+    "DryRunOption",
+    "ExitCode",
+    "LimitOption",
+    "OperationCancelledError",
+    "OutcomeRecord",
+    "ParallelOption",
+    "StdinInput",
+    "StdinOption",
+    "TargetRecord",
+    "UsageError",
+    "UtcTimestamp",
+    "YesOption",
+    "deprecated_alias",
+    "hint",
+    "not_found",
+    "plural",
+    "q",
+    "read_records",
+    "read_stdin_input",
+    "summary",
 ]

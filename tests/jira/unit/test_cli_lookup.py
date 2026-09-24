@@ -46,7 +46,7 @@ def test_project_list_outputs_project_keys(jira_config: Path) -> None:
             return_value=httpx.Response(200, json=[{"id": "10000", "key": "ABC", "name": "App"}])
         )
         result = CliInvoker().invoke(
-            app, ["project", "list", "--format", "raw", "--columns", "key"]
+            app, ["projects", "list", "--format", "raw", "--columns", "key"]
         )
 
     assert result.exit_code == 0, result.output
@@ -59,7 +59,7 @@ def test_project_get_outputs_one_project(jira_config: Path) -> None:
             return_value=httpx.Response(200, json={"id": "10000", "key": "ABC", "name": "App"})
         )
         result = CliInvoker().invoke(
-            app, ["project", "get", "ABC", "--format", "raw", "--columns", "key"]
+            app, ["projects", "get", "ABC", "--format", "raw", "--columns", "key"]
         )
 
     assert result.exit_code == 0, result.output
@@ -67,7 +67,7 @@ def test_project_get_outputs_one_project(jira_config: Path) -> None:
 
 
 def test_project_get_missing_key_is_usage_error() -> None:
-    result = CliInvoker().invoke(app, ["project", "get"])
+    result = CliInvoker().invoke(app, ["projects", "get"])
 
     assert result.exit_code == 2, result.output
     assert result.stdout == ""
@@ -88,7 +88,7 @@ def test_board_list_filters_by_project(jira_config: Path) -> None:
             )
         )
         result = CliInvoker().invoke(
-            app, ["board", "list", "--project", "ABC", "--format", "raw", "--columns", "id"]
+            app, ["boards", "list", "--project", "ABC", "--format", "raw", "--columns", "id"]
         )
 
     assert result.exit_code == 0, result.output
@@ -118,7 +118,7 @@ def test_sprint_list_uses_configured_default_board(jira_config: Path) -> None:
             )
         )
         result = CliInvoker().invoke(
-            app, ["sprint", "list", "--state", "active", "--format", "raw", "--columns", "id"]
+            app, ["sprints", "list", "--state", "active", "--format", "raw", "--columns", "id"]
         )
 
     assert result.exit_code == 0, result.output
@@ -129,7 +129,7 @@ def test_sprint_list_uses_configured_default_board(jira_config: Path) -> None:
 def test_project_list_empty_guides_with_stderr_hint(jira_config: Path) -> None:
     with respx.mock(base_url="https://jira.example.com") as mock:
         mock.get("/rest/api/2/project").mock(return_value=httpx.Response(200, json=[]))
-        result = CliInvoker().invoke(app, ["project", "list"])
+        result = CliInvoker().invoke(app, ["projects", "list"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
@@ -139,7 +139,7 @@ def test_project_list_empty_guides_with_stderr_hint(jira_config: Path) -> None:
 def test_project_list_empty_json_stays_pipe_clean(jira_config: Path) -> None:
     with respx.mock(base_url="https://jira.example.com") as mock:
         mock.get("/rest/api/2/project").mock(return_value=httpx.Response(200, json=[]))
-        result = CliInvoker().invoke(app, ["project", "list", "--format", "json"])
+        result = CliInvoker().invoke(app, ["projects", "list", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "[]"
@@ -152,7 +152,7 @@ def test_project_list_reports_progress_on_stderr(jira_config: Path) -> None:
             return_value=httpx.Response(200, json=[{"id": "10000", "key": "ABC", "name": "App"}])
         )
         result = CliInvoker().invoke(
-            app, ["project", "list", "--format", "raw", "--columns", "key"]
+            app, ["projects", "list", "--format", "raw", "--columns", "key"]
         )
 
     assert result.exit_code == 0, result.output
@@ -169,7 +169,7 @@ def test_board_list_empty_guides_with_stderr_hint(jira_config: Path) -> None:
                 json={"startAt": 0, "maxResults": 50, "isLast": True, "values": []},
             )
         )
-        result = CliInvoker().invoke(app, ["board", "list"])
+        result = CliInvoker().invoke(app, ["boards", "list"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
@@ -184,7 +184,7 @@ def test_sprint_list_empty_guides_with_stderr_hint(jira_config: Path) -> None:
                 json={"startAt": 0, "maxResults": 50, "isLast": True, "values": []},
             )
         )
-        result = CliInvoker().invoke(app, ["sprint", "list", "--board-id", "7"])
+        result = CliInvoker().invoke(app, ["sprints", "list", "--board-id", "7"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""

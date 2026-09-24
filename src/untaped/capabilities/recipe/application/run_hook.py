@@ -11,6 +11,8 @@ from untaped.capabilities.recipe.application.ports import HookExecutorPort
 from untaped.capabilities.recipe.domain.hook_project import HookKind
 from untaped.capabilities.recipe.domain.paths import confined_path
 from untaped.capabilities.recipe.domain.plan import Verdict
+from untaped.capabilities.recipe.errors import RecipeError
+from untaped.capability_api import UsageError
 
 
 @dataclass(frozen=True)
@@ -43,7 +45,7 @@ class ValidateHookRun:
 HookRun = TransformHookRun | ValidateHookRun
 
 
-class AmbiguousHookVerbError(ValueError):
+class AmbiguousHookVerbError(RecipeError, ValueError):
     """Raised when hook exports need an explicit debug-run verb."""
 
 
@@ -205,7 +207,7 @@ def _transform_content(
     if file is None:
         raise ValueError("transform hooks require --file")
     if content is not None and content_file is not None:
-        raise ValueError("provide --content or --content-file, not both")
+        raise UsageError("provide --content or --content-file, not both")
     resolved_file = confined_path(target, file, field="file")
     if content_file is not None:
         try:
