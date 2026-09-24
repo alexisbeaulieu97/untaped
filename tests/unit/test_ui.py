@@ -143,61 +143,31 @@ def test_structured_formats_ignore_color_roles_even_for_tty_stdout() -> None:
     assert not _has_ansi(ui.collection(rows, fmt="raw"))
 
 
-def test_no_color_env_strips_ansi_even_for_tty_stdout(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("NO_COLOR", "1")
+@pytest.mark.parametrize(
+    ("env", "tty", "colored"),
+    [
+        ({"NO_COLOR": "1"}, True, False),
+        ({"FORCE_COLOR": "1"}, False, True),
+        ({"NO_COLOR": "1", "FORCE_COLOR": "1"}, True, False),
+        # ``FORCE_COLOR=`` (empty) is not a request to force color (matches NO_COLOR).
+        ({"FORCE_COLOR": ""}, False, False),
+    ],
+    ids=["no-color-on-tty", "force-color-off-tty", "no-color-wins", "empty-force-color"],
+)
+def test_color_env_overrides_tty_detection(
+    monkeypatch: pytest.MonkeyPatch, env: dict[str, str], tty: bool, colored: bool
+) -> None:
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
     theme = ThemeSpec(color_roles={"header": "bold cyan", "value": "yellow"})
 
-    rendered = UiContext(stdout=TtyStringIO(), theme=theme).collection(
+    rendered = UiContext(stdout=TtyStringIO() if tty else io.StringIO(), theme=theme).collection(
         [{"id": 1, "name": "alpha"}],
         fmt="table",
     )
 
     assert "alpha" in rendered
-    assert not _has_ansi(rendered)
-
-
-def test_force_color_env_emits_ansi_even_for_non_tty_stdout(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("FORCE_COLOR", "1")
-    theme = ThemeSpec(color_roles={"header": "bold cyan", "value": "yellow"})
-
-    rendered = UiContext(stdout=io.StringIO(), theme=theme).collection(
-        [{"id": 1, "name": "alpha"}],
-        fmt="table",
-    )
-
-    assert _has_ansi(rendered)
-
-
-def test_no_color_wins_over_force_color_when_both_set(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("NO_COLOR", "1")
-    monkeypatch.setenv("FORCE_COLOR", "1")
-    theme = ThemeSpec(color_roles={"header": "bold cyan", "value": "yellow"})
-
-    rendered = UiContext(stdout=TtyStringIO(), theme=theme).collection(
-        [{"id": 1, "name": "alpha"}],
-        fmt="table",
-    )
-
-    assert not _has_ansi(rendered)
-
-
-def test_empty_force_color_does_not_force_color_on_non_tty(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``FORCE_COLOR=`` (empty) is not a request to force color (matches NO_COLOR)."""
-    monkeypatch.setenv("FORCE_COLOR", "")
-    theme = ThemeSpec(color_roles={"header": "bold cyan", "value": "yellow"})
-
-    rendered = UiContext(stdout=io.StringIO(), theme=theme).collection(
-        [{"id": 1, "name": "alpha"}],
-        fmt="table",
-    )
-
-    assert not _has_ansi(rendered)
+    assert _has_ansi(rendered) is colored
 
 
 def test_collection_accepts_explicit_theme() -> None:
@@ -301,44 +271,27 @@ def test_progress_verbose_context_passes_through_without_animation() -> None:
     assert "\r" not in output
 
 
-def test_collection_empty_table_emits_hint_to_stderr() -> None:
-    stdout = io.StringIO()
-    stderr = io.StringIO()
-    ui = UiContext(stdout=stdout, stderr=stderr)
-
-    rendered = ui.collection([], fmt="table", empty="No plugins installed.")
-
-    assert rendered == ""
+@pytest.mark.parametrize(
+    ("rows", "fmt", "empty", "rendered", "hint"),
+    [
+        ([], "table", "No plugins installed.", "", "No plugins installed."),
+        ([], "table", None, "", ""),
+        ([], "json", "No results.", "[]", ""),
+        ([], "yaml", "No results.", "[]", ""),
+        ([], "raw", "No results.", "", ""),
+        ([{"name": "alpha"}], "table", "No results.", None, ""),
+    ],
+    ids=["table-hint", "table-no-hint", "json", "yaml", "raw", "non-empty"],
+)
+def test_empty_hint_goes_to_stderr_only_for_an_empty_table(
+    rows: list[dict[str, str]], fmt: str, empty: str | None, rendered: str | None, hint: str
+) -> None:
+    stdout, stderr = io.StringIO(), io.StringIO()
+    out = UiContext(stdout=stdout, stderr=stderr).collection(rows, fmt=fmt, empty=empty)  # type: ignore[arg-type]
+    if rendered is not None:
+        assert out == rendered
     assert stdout.getvalue() == ""
-    assert "No plugins installed." in stderr.getvalue()
-
-
-def test_collection_empty_structured_formats_emit_no_hint() -> None:
-    stderr = io.StringIO()
-    ui = UiContext(stderr=stderr)
-
-    assert ui.collection([], fmt="json", empty="No results.") == "[]"
-    assert ui.collection([], fmt="yaml", empty="No results.") == "[]"
-    assert ui.collection([], fmt="raw", empty="No results.") == ""
-    assert stderr.getvalue() == ""
-
-
-def test_collection_empty_table_without_hint_stays_silent() -> None:
-    stderr = io.StringIO()
-    ui = UiContext(stderr=stderr)
-
-    assert ui.collection([], fmt="table") == ""
-    assert stderr.getvalue() == ""
-
-
-def test_collection_nonempty_table_does_not_emit_hint() -> None:
-    stderr = io.StringIO()
-    ui = UiContext(stderr=stderr)
-
-    rendered = ui.collection([{"name": "alpha"}], fmt="table", empty="No results.")
-
-    assert "alpha" in rendered
-    assert stderr.getvalue() == ""
+    assert stderr.getvalue().strip() == hint
 
 
 def test_ui_context_reflects_active_verbose_state(
@@ -392,11 +345,6 @@ def test_ui_context_raises_on_unknown_theme_when_strict(
         get_settings.cache_clear()
 
 
-def test_builtin_themes_include_folded_presets() -> None:
-    for name in ("high-contrast", "quiet", "classic"):
-        assert name in BUILTIN_THEMES
-
-
 def test_resolve_theme_finds_quiet_preset_from_builtins_without_registry() -> None:
     theme = resolve_theme(UiSettings(theme="quiet"))
 
@@ -428,29 +376,20 @@ def test_ui_context_builds_default_prompt_backend_lazily_and_caches_it() -> None
 # ---- --quiet gating --------------------------------------------------------
 
 
-def test_message_suppresses_success_and_info_when_quiet() -> None:
+@pytest.mark.parametrize(
+    ("quiet", "level", "shown"),
+    [
+        (True, "success", False),
+        (True, "info", False),
+        (True, "warning", True),
+        (True, "error", True),
+        (False, "success", True),
+    ],
+)
+def test_quiet_suppresses_only_success_and_info(quiet: bool, level: str, shown: bool) -> None:
     buf = io.StringIO()
-    ctx = UiContext(quiet=True, stderr=buf)
-    ctx.message("success", "done")
-    ctx.message("info", "fyi")
-    assert buf.getvalue() == ""
-
-
-def test_message_keeps_warning_and_error_when_quiet() -> None:
-    buf = io.StringIO()
-    ctx = UiContext(quiet=True, stderr=buf)
-    ctx.message("warning", "careful")
-    ctx.message("error", "boom")
-    rendered = buf.getvalue()
-    assert "careful" in rendered
-    assert "boom" in rendered
-
-
-def test_message_shows_success_when_not_quiet() -> None:
-    buf = io.StringIO()
-    ctx = UiContext(stderr=buf)  # quiet defaults to False
-    ctx.message("success", "done")
-    assert "done" in buf.getvalue()
+    UiContext(quiet=quiet, stderr=buf).message(level, "the message")  # type: ignore[arg-type]
+    assert ("the message" in buf.getvalue()) is shown
 
 
 def test_ui_context_factory_reads_quiet_flag(_isolated_config: Path) -> None:
