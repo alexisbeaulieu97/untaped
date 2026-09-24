@@ -181,6 +181,7 @@ def test_forget_removes_workspace_from_registry(tmp_path: Path) -> None:
 
     forget = runner.invoke(app, ["forget", "scratch"])
     assert forget.exit_code == 0, forget.output
+    assert "forgot workspace 'scratch'" in forget.stderr
 
     listed = runner.invoke(app, ["list", "--format", "raw", "--columns", "name"])
     assert "scratch" not in listed.stdout.splitlines()

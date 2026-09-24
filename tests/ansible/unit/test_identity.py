@@ -31,17 +31,10 @@ def test_resolves_configured_aliases_before_marking_unresolved() -> None:
     assert resolver.resolve(_dep("common")).repo == "acme/common"
 
 
-def test_unknown_galaxy_or_local_name_is_unresolved_but_preserved() -> None:
-    resolved = IdentityResolver().resolve(_dep("common"))
-
-    assert resolved.repo is None
-    assert resolved.unresolved == "common"
-
-
-def test_path_like_sources_are_not_github_repos() -> None:
+def test_galaxy_names_and_path_like_sources_are_unresolved_but_preserved() -> None:
     resolver = IdentityResolver()
 
-    for source in ("./local", "../roles/web", "/abs/role", ".hidden/role"):
+    for source in ("common", "./local", "../roles/web", "/abs/role", ".hidden/role"):
         resolved = resolver.resolve(_dep(source))
         assert resolved.repo is None, source
         assert resolved.unresolved == source

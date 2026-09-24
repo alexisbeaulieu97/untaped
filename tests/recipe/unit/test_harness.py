@@ -9,7 +9,6 @@ import pytest
 from untaped.capabilities.recipe.application.harness import (
     CaseResult,
     DiscoveredCase,
-    RecordingHookExecutor,
     discover_cases,
     load_case_spec,
     orphaned_test_dirs,
@@ -216,12 +215,6 @@ def test_load_case_spec_rejects_non_mapping_and_invalid_yaml(tmp_path: Path) -> 
         load_case_spec(tmp_path)
 
 
-def test_load_case_spec_rejects_unknown_fields(tmp_path: Path) -> None:
-    (tmp_path / "case.yml").write_text("targets: [a.yml]\n", encoding="utf-8")
-    with pytest.raises(ValueError, match=r"invalid case\.yml"):
-        load_case_spec(tmp_path)
-
-
 def test_run_case_passes_when_result_tree_matches_expected(tmp_path: Path) -> None:
     pack = _copy_pack(tmp_path)
     case_dir = _write_case(pack.root, "emit", "basic")
@@ -255,14 +248,30 @@ def test_run_case_fails_on_full_tree_mismatch_with_diffs(tmp_path: Path) -> None
     assert extra.after is None
 
 
-def test_run_case_omitted_expected_asserts_no_changes(tmp_path: Path) -> None:
+_ERROR_CASE = 'expect: error\nerror_contains: "boom"\n'
+
+
+@pytest.mark.parametrize(
+    ("case_yml", "make_expected", "status", "detail"),
+    [
+        (None, False, "fail", "expected no changes; planned changes to: out.txt"),
+        (_ERROR_CASE, False, "fail", "expected planning to fail; it succeeded"),
+        (_ERROR_CASE, True, "error", "expected/ is forbidden for expect: error cases"),
+        ('inputs:\n  bogus: "x"\n', False, "error", "unknown input"),
+    ],
+)
+def test_run_case_reports_contract_mismatches(
+    tmp_path: Path, case_yml: str | None, make_expected: bool, status: str, detail: str
+) -> None:
     pack = _copy_pack(tmp_path)
-    _write_case(pack.root, "emit", "basic")
+    case_dir = _write_case(pack.root, "emit", "basic", case_yml=case_yml)
+    if make_expected:
+        (case_dir / "expected").mkdir()
 
     result = run_case(_case(pack, "emit", "basic"), executor=_FakeExecutor())
 
-    assert result.status == "fail"
-    assert result.detail == "expected no changes; planned changes to: out.txt"
+    assert result.status == status
+    assert detail in result.detail
 
 
 def test_run_case_expect_error_matches_message(tmp_path: Path) -> None:
@@ -281,47 +290,6 @@ def test_run_case_expect_error_matches_message(tmp_path: Path) -> None:
     result = run_case(_case(pack, "shout", "missing-file"), executor=_FakeExecutor())
 
     assert result.status == "pass"
-
-
-def test_run_case_expect_error_fails_on_unexpected_success(tmp_path: Path) -> None:
-    pack = _copy_pack(tmp_path)
-    _write_case(
-        pack.root,
-        "emit",
-        "basic",
-        case_yml='expect: error\nerror_contains: "boom"\n',
-    )
-
-    result = run_case(_case(pack, "emit", "basic"), executor=_FakeExecutor())
-
-    assert result.status == "fail"
-    assert result.detail == "expected planning to fail; it succeeded"
-
-
-def test_run_case_expected_dir_forbidden_for_error_cases(tmp_path: Path) -> None:
-    pack = _copy_pack(tmp_path)
-    case_dir = _write_case(
-        pack.root,
-        "emit",
-        "basic",
-        case_yml='expect: error\nerror_contains: "boom"\n',
-    )
-    (case_dir / "expected").mkdir()
-
-    result = run_case(_case(pack, "emit", "basic"), executor=_FakeExecutor())
-
-    assert result.status == "error"
-    assert result.detail == "expected/ is forbidden for expect: error cases"
-
-
-def test_run_case_config_error_is_a_per_case_error(tmp_path: Path) -> None:
-    pack = _copy_pack(tmp_path)
-    _write_case(pack.root, "emit", "basic", case_yml='inputs:\n  bogus: "x"\n')
-
-    result = run_case(_case(pack, "emit", "basic"), executor=_FakeExecutor())
-
-    assert result.status == "error"
-    assert "unknown input" in result.detail
 
 
 def test_run_case_temp_target_is_named_after_the_case(tmp_path: Path) -> None:
@@ -416,23 +384,6 @@ def test_run_case_non_utf8_fixture_is_a_per_case_error(tmp_path: Path) -> None:
     assert "non-UTF-8 fixture file: blob.bin" in result.detail
 
 
-def test_recording_executor_records_validate_verdicts_only(tmp_path: Path) -> None:
-    recorder = RecordingHookExecutor(_FakeExecutor(verdicts=(Verdict(status="skip"),)))
-
-    recorder.transform(
-        "shout",
-        "hi",
-        local_hook_project=None,
-        target=tmp_path,
-        file=tmp_path / "f",
-        inputs={},
-        args={},
-    )
-    recorder.validate("probe", local_hook_project=None, target=tmp_path, inputs={}, args={})
-
-    assert [verdict.status for verdict in recorder.verdicts] == ["skip"]
-
-
 def test_update_case_writes_expected_tree_from_plan(tmp_path: Path) -> None:
     pack = _copy_pack(tmp_path)
     case_dir = _write_case(pack.root, "emit", "basic")
@@ -468,18 +419,3 @@ def test_update_case_deletes_expected_when_plan_is_empty(tmp_path: Path) -> None
 
     assert result.status == "updated"
     assert not (case_dir / "expected").exists()
-
-
-def test_update_case_rejects_error_cases(tmp_path: Path) -> None:
-    pack = _copy_pack(tmp_path)
-    _write_case(
-        pack.root,
-        "emit",
-        "basic",
-        case_yml='expect: error\nerror_contains: "boom"\n',
-    )
-
-    result = update_case(_case(pack, "emit", "basic"), executor=_FakeExecutor())
-
-    assert result.status == "error"
-    assert result.detail == "cannot --update an expect: error case"

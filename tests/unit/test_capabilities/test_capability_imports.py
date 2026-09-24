@@ -6,11 +6,8 @@ surface — ``untaped.capability_api`` (the single public SDK surface) — or
 the capability's own subtree. Anything else (kernel internals by module
 path, the deprecated ``untaped.api`` shim, the composition kernel
 ``untaped.capabilities.registry``, sibling capabilities, or the bare
-``untaped`` root) fails this suite.
-
-The approved helpers re-exported by ``untaped.capability_api`` are
-pinned below as an explicit allowlist. Unapproved additions fail here
-as well as in ``test_capability_api.py``.
+``untaped`` root) fails this suite. The surface itself is pinned in
+``test_capability_api.py``.
 """
 
 from __future__ import annotations
@@ -18,112 +15,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-import untaped.capability_api as capability_api
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CAPABILITIES_SRC = REPO_ROOT / "src" / "untaped" / "capabilities"
-
-COMPOSITION_NAMES = frozenset(
-    {
-        "ApplicationSpec",
-        "CapabilitySpec",
-        "CapabilityProvider",
-        "CAPABILITY_API_VERSION",
-        "SkillAsset",
-        "DoctorCheck",
-        "DoctorResult",
-        "CapabilityContext",
-    }
-)
-
-APPROVED_HELPERS = frozenset(
-    {
-        "ColumnsOption",
-        "ConfigError",
-        "FormatOption",
-        "PipeEnvelope",
-        "StateCollection",
-        "UiContext",
-        "UntapedError",
-        "app_context",
-        "create_app",
-        "echo",
-        "emit",
-        "finish",
-        "first_validation_error",
-        "get_config_section",
-        "parse_envelope_line",
-        "raise_usage",
-        "read_identifiers",
-        "report_errors",
-        "run_editor",
-        "GitCommandError",
-        "GitResult",
-        "git_auth_header",
-        "run_git",
-        "safe_cache_path",
-        "safe_path_segment",
-        "AppContext",
-        "BatchOutcome",
-        "HttpClient",
-        "HttpError",
-        "HttpSettings",
-        "HttpStatusError",
-        "HttpTransportError",
-        "OutputFormat",
-        "ProgressHandle",
-        "PromptChoice",
-        "RetryPolicy",
-        "StateMap",
-        "atomic_write",
-        "batch_apply",
-        "bounded_map",
-        "clamp_parallel",
-        "connected_client",
-        "existing_file",
-        "get_core_settings",
-        "is_envelope_line",
-        "paginate_link",
-        "paginate_offset",
-        "paginate_pages",
-        "parse_json_pairs",
-        "parse_kv_pairs",
-        "read_stdin",
-        "read_structured_file",
-        "render_rows",
-        "resolve_each",
-        "resolve_text_input",
-        "resolve_verify",
-        "ui_context",
-        "unified_diff_text",
-        "AbsolutePath",
-        "CheckRecord",
-        "DryRunOption",
-        "ExitCode",
-        "LimitOption",
-        "OperationCancelledError",
-        "OutcomeRecord",
-        "ParallelOption",
-        "StdinInput",
-        "StdinOption",
-        "TargetRecord",
-        "UsageError",
-        "UtcTimestamp",
-        "YesOption",
-        "deprecated_alias",
-        "hint",
-        "not_found",
-        "plural",
-        "q",
-        "read_records",
-        "read_stdin_input",
-        "summary",
-        "TokenCommand",
-        "TokenSources",
-        "connection_check",
-        "executable_check",
-    }
-)
 
 _KERNEL_SURFACE_MODULES = frozenset({"untaped.capability_api"})
 
@@ -259,12 +152,6 @@ def _rel(py_file: Path) -> str:
 
 def test_capability_code_imports_kernel_only_surface() -> None:
     assert surface_violations() == []
-
-
-def test_approved_helper_allowlist_matches_capability_api() -> None:
-    helpers = set(capability_api.__all__) - COMPOSITION_NAMES
-    assert helpers == set(APPROVED_HELPERS)
-    assert len(capability_api.__all__) == len(COMPOSITION_NAMES) + len(APPROVED_HELPERS)
 
 
 # ── negatives (hermetic probes) ──────────────────────────────────────────────

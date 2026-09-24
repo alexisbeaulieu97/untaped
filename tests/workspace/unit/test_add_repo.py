@@ -5,111 +5,63 @@ from pathlib import Path
 import pytest
 
 from untaped.capabilities.workspace.application import AddRepo
-from untaped.capabilities.workspace.domain import Workspace
+from untaped.capabilities.workspace.domain import Workspace, WorkspaceManifest
 from untaped.capabilities.workspace.errors import WorkspaceError
 from untaped.capabilities.workspace.infrastructure import YamlManifestRepository
-from workspace.conftest import empty_manifest
+
+_SVC_A = "https://github.com/org/svc-a.git"
 
 
-def test_add_repo_appends_and_dedups(tmp_path: Path) -> None:
-    ws_path = tmp_path / "prod"
-    YamlManifestRepository().write(ws_path, empty_manifest())
-    workspace = Workspace(name="prod", path=ws_path)
+@pytest.fixture
+def workspace(tmp_path: Path) -> Workspace:
+    YamlManifestRepository().write(tmp_path / "prod", WorkspaceManifest())
+    return Workspace(name="prod", path=tmp_path / "prod")
+
+
+def _repos(workspace: Workspace) -> list[tuple[str, str, str | None]]:
+    return [(r.name, r.url, r.branch) for r in YamlManifestRepository().read(workspace.path).repos]
+
+
+def test_add_repo_appends_with_optional_name_and_branch(workspace: Workspace) -> None:
     use_case = AddRepo(YamlManifestRepository())
+    use_case(workspace, url=_SVC_A)
+    use_case(workspace, url="https://x/b.git", repo_name="alpha", branch="develop")
+    assert _repos(workspace) == [
+        ("svc-a", _SVC_A, None),
+        ("alpha", "https://x/b.git", "develop"),
+    ]
 
-    use_case(workspace, url="https://github.com/org/svc-a.git")
+
+def test_add_repo_rejects_same_url(workspace: Workspace) -> None:
+    AddRepo(YamlManifestRepository())(workspace, url=_SVC_A)
     with pytest.raises(WorkspaceError, match="already in workspace"):
-        use_case(workspace, url="https://github.com/org/svc-a.git")
-
-    manifest = YamlManifestRepository().read(ws_path)
-    assert len(manifest.repos) == 1
-    assert manifest.repos[0].name == "svc-a"
+        AddRepo(YamlManifestRepository())(workspace, url=_SVC_A)
+    assert len(_repos(workspace)) == 1
 
 
-def test_add_repo_with_explicit_name_and_branch(tmp_path: Path) -> None:
-    ws_path = tmp_path / "prod"
-    YamlManifestRepository().write(ws_path, empty_manifest())
-    workspace = Workspace(name="prod", path=ws_path)
-    AddRepo(YamlManifestRepository())(
-        workspace,
-        url="https://github.com/org/svc-a.git",
-        repo_name="alpha",
-        branch="develop",
-    )
-    manifest = YamlManifestRepository().read(ws_path)
-    assert manifest.repos[0].name == "alpha"
-    assert manifest.repos[0].branch == "develop"
+@pytest.mark.parametrize(
+    ("kwargs", "suggests_flag"),
+    [
+        # A derived-name clash points at the disambiguation flag ...
+        ({"url": "https://gitlab.com/team/svc-a.git"}, True),
+        # ... an explicit one doesn't (the user already used it).
+        ({"url": "https://github.com/team/other.git", "repo_name": "svc-a"}, False),
+    ],
+)
+def test_add_repo_rejects_name_collision_without_touching_manifest(
+    workspace: Workspace, kwargs: dict[str, str], suggests_flag: bool
+) -> None:
+    AddRepo(YamlManifestRepository())(workspace, url=_SVC_A)
 
+    with pytest.raises(WorkspaceError, match="already in use") as exc_info:
+        AddRepo(YamlManifestRepository())(workspace, **kwargs)
 
-def test_add_repo_rejects_name_collision(tmp_path: Path) -> None:
-    ws_path = tmp_path / "prod"
-    YamlManifestRepository().write(ws_path, empty_manifest())
-    workspace = Workspace(name="prod", path=ws_path)
-    AddRepo(YamlManifestRepository())(workspace, url="https://github.com/org/svc-a.git")
-    # Same derived name from a different host
-    with pytest.raises(WorkspaceError, match="already in use"):
-        AddRepo(YamlManifestRepository())(workspace, url="https://gitlab.com/team/svc-a.git")
-
-
-def test_add_repo_rejects_explicit_name_collision(tmp_path: Path) -> None:
-    """An explicit ``--repo-name`` that collides with an existing repo must
-    be rejected before the manifest is mutated. Without this guard the
-    Pydantic ``WorkspaceManifest`` validator only fires on the *next*
-    read, leaving an invalid YAML on disk that the tool itself wrote.
-    """
-    ws_path = tmp_path / "prod"
-    YamlManifestRepository().write(ws_path, empty_manifest())
-    workspace = Workspace(name="prod", path=ws_path)
-    AddRepo(YamlManifestRepository())(workspace, url="https://github.com/org/svc-a.git")
-
-    with pytest.raises(WorkspaceError, match="already in use"):
-        AddRepo(YamlManifestRepository())(
-            workspace,
-            url="https://github.com/team/other.git",
-            repo_name="svc-a",
-        )
-
-    # Manifest must still be readable and unchanged — no half-written state.
-    manifest = YamlManifestRepository().read(ws_path)
-    assert [r.name for r in manifest.repos] == ["svc-a"]
-    assert [r.url for r in manifest.repos] == ["https://github.com/org/svc-a.git"]
-
-
-def test_add_repo_derived_collision_message_suggests_repo_name_flag(tmp_path: Path) -> None:
-    """When the collision comes from a *derived* name, point the user at
-    the disambiguation flag. The explicit-collision case must NOT show
-    this suggestion (the user already used the flag)."""
-    ws_path = tmp_path / "prod"
-    YamlManifestRepository().write(ws_path, empty_manifest())
-    workspace = Workspace(name="prod", path=ws_path)
-    AddRepo(YamlManifestRepository())(workspace, url="https://github.com/org/svc-a.git")
-
-    with pytest.raises(WorkspaceError, match="--repo-name"):
-        AddRepo(YamlManifestRepository())(workspace, url="https://gitlab.com/team/svc-a.git")
-
-
-def test_add_repo_explicit_collision_message_omits_repo_name_flag(tmp_path: Path) -> None:
-    ws_path = tmp_path / "prod"
-    YamlManifestRepository().write(ws_path, empty_manifest())
-    workspace = Workspace(name="prod", path=ws_path)
-    AddRepo(YamlManifestRepository())(workspace, url="https://github.com/org/svc-a.git")
-
-    with pytest.raises(WorkspaceError) as exc_info:
-        AddRepo(YamlManifestRepository())(
-            workspace,
-            url="https://github.com/team/other.git",
-            repo_name="svc-a",
-        )
-    assert "--repo-name" not in str(exc_info.value)
+    assert ("--repo-name" in str(exc_info.value)) is suggests_flag
+    assert _repos(workspace) == [("svc-a", _SVC_A, None)]
 
 
 @pytest.mark.parametrize("repo_name", ["../escape", "/etc", ".", "C:\\x", "untaped.yml"])
-def test_add_repo_rejects_unsafe_repo_name(tmp_path: Path, repo_name: str) -> None:
-    ws_path = tmp_path / "prod"
-    YamlManifestRepository().write(ws_path, empty_manifest())
-    workspace = Workspace(name="prod", path=ws_path)
+def test_add_repo_rejects_unsafe_repo_name(workspace: Workspace, repo_name: str) -> None:
     with pytest.raises(WorkspaceError, match="repo name"):
-        AddRepo(YamlManifestRepository())(
-            workspace, url="https://github.com/org/svc-a.git", repo_name=repo_name
-        )
-    assert YamlManifestRepository().read(ws_path).repos == ()
+        AddRepo(YamlManifestRepository())(workspace, url=_SVC_A, repo_name=repo_name)
+    assert _repos(workspace) == []

@@ -1,3 +1,5 @@
+"""How AWX HTTP failures map onto typed errors and user-facing messages."""
+
 from __future__ import annotations
 
 import pytest
@@ -7,59 +9,43 @@ from untaped.capabilities.awx.errors import (
     BadRequestError,
     ConflictError,
     PermissionDeniedError,
+    ResourceNotFoundError,
 )
 from untaped.capabilities.awx.infrastructure.errors import map_awx_errors, to_awx_error
-from untaped.capability_api import ConfigError, HttpError
+from untaped.capability_api import ConfigError, HttpError, UntapedError
+
+_TOKEN_HINT = "hint: run `untaped config set awx.token --prompt`"
 
 
-def _http_error(status: int, body: str = "") -> HttpError:
-    return HttpError(f"HTTP {status} for /x", status_code=status, url="/x", body=body)
+@pytest.mark.parametrize(
+    ("status", "body", "error", "message"),
+    [
+        (401, '{"detail":"invalid token"}', ConfigError, _TOKEN_HINT),
+        (403, '{"detail": "you may not"}', PermissionDeniedError, "you may not"),
+        (404, "", AwxApiError, "not found: /x"),
+        (409, '{"name": ["already exists"]}', ConflictError, "name: already exists"),
+        (400, '{"playbook": ["This field is required."]}', BadRequestError, "playbook"),
+        (503, "service unavailable", AwxApiError, "service unavailable"),
+        # the body is capped upstream and may end mid-token: keep the raw snippet
+        (400, '{"name": ["Already exi', BadRequestError, '{"name": ["Already exi'),
+        (None, "", AwxApiError, "dns failure"),
+    ],
+)
+def test_http_errors_map_to_awx_errors(
+    status: int | None, body: str, error: type[UntapedError], message: str
+) -> None:
+    summary = "dns failure" if status is None else f"HTTP {status} for /x"
+    raw = HttpError(summary, status_code=status, url="/x", body=body)
+    mapped = to_awx_error(raw)
+    assert type(mapped) is error
+    assert message in str(mapped)
+    if isinstance(mapped, AwxApiError):
+        assert mapped.status == mapped.status_code == status
+    with pytest.raises(error), map_awx_errors():
+        raise raw
 
 
-def test_401_maps_to_config_error() -> None:
-    err = to_awx_error(_http_error(401, '{"detail":"invalid token"}'))
-    assert isinstance(err, ConfigError)
-    # Names the unified root command path for the awx section.
-    assert "hint: run `untaped config set awx.token --prompt`" in str(err)
-
-
-def test_403_maps_to_permission_denied_with_body() -> None:
-    err = to_awx_error(_http_error(403, '{"detail": "you may not"}'))
-    assert isinstance(err, PermissionDeniedError)
-    assert "you may not" in str(err)
-
-
-def test_404_maps_to_generic_awx_api_error() -> None:
-    err = to_awx_error(_http_error(404))
-    assert isinstance(err, AwxApiError)
-    assert err.status == 404
-
-
-def test_409_maps_to_conflict() -> None:
-    err = to_awx_error(_http_error(409, '{"name": ["already exists"]}'))
-    assert isinstance(err, ConflictError)
-    assert "already exists" in str(err)
-
-
-def test_400_maps_to_bad_request_with_field_error() -> None:
-    err = to_awx_error(_http_error(400, '{"playbook": ["This field is required."]}'))
-    assert isinstance(err, BadRequestError)
-    assert "playbook" in str(err)
-
-
-def test_500_maps_to_awx_api_error_with_snippet() -> None:
-    err = to_awx_error(_http_error(503, "service unavailable"))
-    assert isinstance(err, AwxApiError)
-    assert err.status == 503
-    assert "service unavailable" in str(err)
-
-
-def test_status_none_passes_through() -> None:
-    err = to_awx_error(HttpError("dns failure", status_code=None))
-    assert isinstance(err, AwxApiError)
-    assert err.status is None
-
-
-def test_map_awx_errors_context_manager() -> None:
-    with pytest.raises(ConflictError), map_awx_errors():
-        raise _http_error(409, '{"name": ["dup"]}')
+def test_resource_not_found_message_includes_identity() -> None:
+    err = ResourceNotFoundError("JobTemplate", {"name": "deploy", "organization": "Default"})
+    assert "JobTemplate" in str(err)
+    assert "deploy" in str(err)

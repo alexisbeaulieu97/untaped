@@ -21,29 +21,26 @@ def test_workspace_path_unknown_raises(tmp_path: Path) -> None:
         WorkspacePath(registry)("missing")
 
 
-def test_shell_init_zsh() -> None:
-    out = ShellInit()("zsh")
+_LIST_CMD = "untaped workspace list --format raw --columns name 2>/dev/null"
+
+
+@pytest.mark.parametrize(
+    ("shell", "fragments"),
+    [
+        ("zsh", ["uwcd()", "_uwcd_complete()", "compdef _uwcd_complete uwcd", _LIST_CMD]),
+        ("bash", ["uwcd()", "_uwcd_complete()", "complete -F _uwcd_complete uwcd", _LIST_CMD]),
+        ("fish", ["function uwcd", "function __uwcd_workspaces", "complete -c uwcd", _LIST_CMD]),
+    ],
+)
+def test_shell_init_snippets(shell: str, fragments: list[str]) -> None:
+    out = ShellInit()(shell)
+    assert [f for f in fragments if f not in out] == []
+
+
+def test_shell_init_sh_is_the_posix_function_only() -> None:
+    out = ShellInit()("sh")
     assert "uwcd()" in out
-    assert "cd " in out
-    assert "_uwcd_complete()" in out
-    assert "compdef _uwcd_complete uwcd" in out
-    assert "untaped workspace list --format raw --columns name 2>/dev/null" in out
-
-
-def test_shell_init_bash() -> None:
-    out = ShellInit()("bash")
-    assert "uwcd()" in out
-    assert "_uwcd_complete()" in out
-    assert "complete -F _uwcd_complete uwcd" in out
-    assert "untaped workspace list --format raw --columns name 2>/dev/null" in out
-
-
-def test_shell_init_fish() -> None:
-    out = ShellInit()("fish")
-    assert "function uwcd" in out
-    assert "function __uwcd_workspaces" in out
-    assert "complete -c uwcd" in out
-    assert "untaped workspace list --format raw --columns name 2>/dev/null" in out
+    assert "complete" not in out
 
 
 def test_shell_init_unknown_shell() -> None:

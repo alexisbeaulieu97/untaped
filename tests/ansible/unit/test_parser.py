@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
+
 from untaped.capabilities.ansible.domain.parser import parse_dependency_file
+
+_TEMPLATED = "---\ngalaxy_info:\n  role_name: {@ role_slug @}\n"
 
 
 def test_parse_requirements_roles_from_list_entries() -> None:
@@ -63,83 +67,36 @@ def test_parse_meta_main_dependencies_from_simple_and_complex_entries() -> None:
     ]
 
 
-def test_parse_empty_or_unknown_yaml_shape_returns_empty_report() -> None:
-    assert parse_dependency_file("README.yml", "name: not a dependency file").dependencies == ()
-    report = parse_dependency_file("roles/requirements.yml", "")
-    assert report.dependencies == ()
-    assert report.warnings == ()
+@pytest.mark.parametrize(
+    ("path", "content", "reason"),
+    [
+        ("roles/requirements.yml", "", None),
+        ("meta/main.yml", "---\n", None),
+        ("meta/main.yml", "dependencies:\n", None),
+        ("meta/main.yml", "dependencies: null\n", None),
+        ("requirements.yml", "roles: []\ncollections:\n", None),
+        ("README.yml", "name: not a dependency file", "unsupported dependency file"),
+        ("deps/custom.yml", "- src: acme/base\n", "unsupported dependency file"),
+        ("meta/main.yml", _TEMPLATED, "could not parse dependency YAML"),
+        ("meta/main.yml", "- common\n", "expected mapping at top level"),
+        ("requirements.yml", "42\n", "expected mapping or list at top level"),
+        ("meta/main.yml", "dependencies:\n  common: {}\n", "expected list at dependencies"),
+        # blank, non-mapping and name-less entries are skipped silently
+        ("requirements.yml", "- ''\n- [nested]\n- {version: v1}\n", None),
+    ],
+)
+def test_files_without_dependencies_warn_only_when_malformed(
+    path: str, content: str, reason: str | None
+) -> None:
+    report = parse_dependency_file(path, content)
 
-
-def test_parse_yaml_none_document_returns_empty_report_without_warning() -> None:
-    report = parse_dependency_file("meta/main.yml", "---\n")
-
-    assert report.dependencies == ()
-    assert report.ignored_collections == ()
-    assert report.warnings == ()
-
-
-def test_parse_invalid_templated_yaml_returns_empty_report() -> None:
-    report = parse_dependency_file(
-        "meta/main.yml",
-        """
-        ---
-        galaxy_info:
-          role_name: {@ role_slug @}
-        """,
+    assert (report.dependencies, report.ignored_collections) == ((), ())
+    assert [(warning.source_path, warning.reason) for warning in report.warnings] == (
+        [] if reason is None else [(path, reason)]
     )
-
-    assert report.dependencies == ()
-    assert report.ignored_collections == ()
-    assert [(warning.source_path, warning.reason) for warning in report.warnings] == [
-        ("meta/main.yml", "could not parse dependency YAML")
-    ]
-
-
-def test_parse_meta_main_list_shape_returns_warning_instead_of_crashing() -> None:
-    report = parse_dependency_file("meta/main.yml", "- common\n")
-
-    assert report.dependencies == ()
-    assert report.ignored_collections == ()
-    assert [(warning.source_path, warning.reason) for warning in report.warnings] == [
-        ("meta/main.yml", "expected mapping at top level")
-    ]
-
-
-def test_parse_recognized_scalar_yaml_returns_warning() -> None:
-    report = parse_dependency_file("requirements.yml", "42\n")
-
-    assert report.dependencies == ()
-    assert report.ignored_collections == ()
-    assert [(warning.source_path, warning.reason) for warning in report.warnings] == [
-        ("requirements.yml", "expected mapping or list at top level")
-    ]
-
-
-def test_parse_null_or_empty_dependency_sections_are_warning_free() -> None:
-    meta_report = parse_dependency_file("meta/main.yml", "dependencies:\n")
-    requirements_report = parse_dependency_file(
-        "requirements.yml",
-        """
-        roles: []
-        collections:
-        """,
-    )
-
-    assert meta_report.dependencies == ()
-    assert meta_report.warnings == ()
-    assert requirements_report.dependencies == ()
-    assert requirements_report.ignored_collections == ()
-    assert requirements_report.warnings == ()
 
 
 def test_parse_wrong_shaped_nested_dependency_sections_warn() -> None:
-    meta_report = parse_dependency_file(
-        "meta/main.yml",
-        """
-        dependencies:
-          common: {}
-        """,
-    )
     invalid_roles_report = parse_dependency_file(
         "requirements.yml",
         """
@@ -157,10 +114,6 @@ def test_parse_wrong_shaped_nested_dependency_sections_warn() -> None:
         """,
     )
 
-    assert meta_report.dependencies == ()
-    assert [(warning.source_path, warning.reason) for warning in meta_report.warnings] == [
-        ("meta/main.yml", "expected list at dependencies")
-    ]
     assert invalid_roles_report.dependencies == ()
     assert invalid_roles_report.ignored_collections == ("community.general",)
     assert [(warning.source_path, warning.reason) for warning in invalid_roles_report.warnings] == [
@@ -188,18 +141,4 @@ def test_meta_main_yaml_extension_is_supported() -> None:
     report = parse_dependency_file("meta/main.yaml", "dependencies:\n  - src: acme/base\n")
 
     assert [dep.src for dep in report.dependencies] == ["acme/base"]
-    assert report.warnings == ()
-
-
-def test_unsupported_dependency_file_name_warns() -> None:
-    report = parse_dependency_file("deps/custom.yml", "- src: acme/base\n")
-
-    assert report.dependencies == ()
-    assert [warning.reason for warning in report.warnings] == ["unsupported dependency file"]
-
-
-def test_null_sections_stay_warning_free_with_string_scalars() -> None:
-    report = parse_dependency_file("meta/main.yml", "dependencies: null\n")
-
-    assert report.dependencies == ()
     assert report.warnings == ()

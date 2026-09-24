@@ -98,13 +98,11 @@ def _stage_replacements(
             tmp.write_text(change.after, encoding="utf-8", errors=CONTENT_ERRORS, newline="")
             if change in modes:
                 tmp.chmod(modes[change])
-    except ApplyWriteError:
+    except (OSError, ApplyWriteError) as exc:
         _remove_staged_files(staged.values())
         _remove_created_dirs(created_dirs)
-        raise
-    except OSError as exc:
-        _remove_staged_files(staged.values())
-        _remove_created_dirs(created_dirs)
+        if isinstance(exc, ApplyWriteError):
+            raise
         raise ApplyWriteError(str(exc)) from exc
     return staged, created_dirs
 

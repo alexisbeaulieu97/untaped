@@ -7,23 +7,12 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.capabilities.awx.cli._selection import select_resources
+from untaped.capabilities.awx.cli._selection import SELECTION_DEFAULTS, SelectionOptions
 from untaped.capabilities.awx.cli.context import open_context
-from untaped.capabilities.awx.cli.options import (
-    AllOption,
-    ByIdOption,
-    FilterOption,
-    InventoryOption,
-    InventoryOrganizationOption,
-    NamesArgument,
-    OrganizationOption,
-    ParentOption,
-    SearchOption,
-    StdinOption,
-)
+from untaped.capabilities.awx.cli.options import NamesArgument
 from untaped.capabilities.awx.cli.save_runner import run_save_selection
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
-from untaped.capability_api import ColumnsOption, FormatOption, raise_usage, report_errors
+from untaped.capability_api import ColumnsOption, FormatOption, report_errors
 
 
 def _add_save(app: App, spec: AwxResourceSpec) -> None:
@@ -32,15 +21,7 @@ def _add_save(app: App, spec: AwxResourceSpec) -> None:
         names: NamesArgument = None,
         /,
         *,
-        stdin: StdinOption = False,
-        by_id: ByIdOption = False,
-        search: SearchOption = None,
-        filter_: FilterOption = None,
-        all_: AllOption = False,
-        organization: OrganizationOption = None,
-        inventory: InventoryOption = None,
-        inventory_organization: InventoryOrganizationOption = None,
-        parent: ParentOption = None,
+        selection: SelectionOptions = SELECTION_DEFAULTS,
         output: Annotated[
             Path | None,
             Parameter(name=["--out", "-o"], help="Write portable YAML documents to FILE."),
@@ -49,22 +30,7 @@ def _add_save(app: App, spec: AwxResourceSpec) -> None:
         columns: ColumnsOption = None,
     ) -> None:
         """Export a fixed selection as one portable YAML document batch."""
-        if not names and not stdin and not filter_ and search is None and not all_:
-            raise_usage("provide names, --stdin, filters/search, or --all")
+        selection.require_source(names)
         with report_errors(), open_context() as ctx:
-            selected = select_resources(
-                ctx,
-                spec,
-                names,
-                stdin=stdin,
-                by_id=by_id,
-                filters=filter_,
-                search=search,
-                all_=all_,
-                require_explicit=True,
-                organization=organization,
-                inventory=inventory,
-                inventory_organization=inventory_organization,
-                parent=parent,
-            )
+            selected = selection.select(ctx, spec, names)
             run_save_selection(ctx, spec, selected, output=output, fmt=fmt, columns=columns)

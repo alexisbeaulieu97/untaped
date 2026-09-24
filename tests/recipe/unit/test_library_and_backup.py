@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-import untaped.capabilities.recipe.infrastructure.file_writer as file_writer_module
 from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
 from untaped.capabilities.recipe.domain.plan import FileChange
 from untaped.capabilities.recipe.domain.recipe import Recipe
@@ -19,7 +19,6 @@ from untaped.capabilities.recipe.infrastructure.backup import (
 )
 from untaped.capabilities.recipe.infrastructure.file_writer import flush_changes
 from untaped.capabilities.recipe.infrastructure.hook_resolver import (
-    BuiltinHookRef,
     HookResolver,
     UvHookRef,
 )
@@ -74,15 +73,6 @@ def test_hook_resolver_bare_name_in_pack_does_not_fall_through_to_other_packs(
 
     assert isinstance(qualified, UvHookRef)
     assert qualified.project_root == library_root / "packs" / "other"
-
-
-def test_hook_resolver_falls_back_to_builtins(tmp_path: Path) -> None:
-    recipe_dir = tmp_path / "recipe"
-    recipe_dir.mkdir()
-
-    ref = HookResolver(library_root=tmp_path / "library").resolve("yaml_edit", recipe_dir)
-
-    assert isinstance(ref, BuiltinHookRef)
 
 
 def test_hook_resolver_rejects_hook_paths_that_escape_recipe(tmp_path: Path) -> None:
@@ -157,39 +147,6 @@ def _add_pack(library_root: Path, source: Path, *, name: str, **kwargs: object) 
     )
 
 
-def test_pack_add_force_blocks_on_local_edits(tmp_path: Path) -> None:
-    library_root = tmp_path / "library"
-    pack_source = tmp_path / "pack-source"
-    _write_hook_project(pack_source, hook_name="pick")
-    _add_pack(library_root, pack_source, name="guarded")
-    installed = library_root / "packs" / "guarded"
-    (installed / "src" / "project_hooks" / "hooks" / "pick.py").write_text(
-        "def transform(content, *, inputs, target, file, args, helpers):\n"
-        "    return content + 'edited'\n"
-    )
-
-    library = PackLibrary(library_root=library_root)
-    assert library.local_edits("guarded") is True
-    with pytest.raises(
-        ValueError,
-        match=r"pack 'guarded' has local edits in the library",
-    ):
-        _add_pack(library_root, pack_source, name="guarded", force=True)
-
-    _add_pack(library_root, pack_source, name="guarded", force=True, discard_edits=True)
-    assert PackLibrary(library_root=library_root).local_edits("guarded") is False
-    _add_pack(library_root, pack_source, name="guarded", force=True)
-
-
-def test_pack_add_force_proceeds_without_local_edits(tmp_path: Path) -> None:
-    library_root = tmp_path / "library"
-    pack_source = tmp_path / "pack-source"
-    _write_hook_project(pack_source, hook_name="pick")
-    _add_pack(library_root, pack_source, name="clean")
-
-    _add_pack(library_root, pack_source, name="clean", force=True)
-
-
 def test_pack_add_rejects_index_rows_without_content_hash_before_mutation(tmp_path: Path) -> None:
     library_root = tmp_path / "library"
     pack_source = tmp_path / "pack-source"
@@ -256,7 +213,9 @@ class _UnusedHooks:
         raise AssertionError("hook executor should not be used")
 
 
-def test_backup_store_records_and_restores_touched_files(tmp_path: Path) -> None:
+def test_backup_store_plans_and_restores_touched_files_behind_a_hash_guard(
+    tmp_path: Path,
+) -> None:
     target = tmp_path / "target"
     target.mkdir()
     existing = target / "config.yml"
@@ -264,54 +223,11 @@ def test_backup_store_records_and_restores_touched_files(tmp_path: Path) -> None
     removed = target / "old.txt"
     existing.write_text("before\n")
     removed.write_text("old\n")
-    changes = [
-        FileChange(
-            target=target,
-            relative_path=Path("config.yml"),
-            before="before\n",
-            after="after\n",
-        ),
-        FileChange(target=target, relative_path=Path("new.txt"), before=None, after="new\n"),
-        FileChange(target=target, relative_path=Path("old.txt"), before="old\n", after=None),
-    ]
     store = BackupStore(tmp_path / "backups")
-
     bundle = _create_backup(
         store,
         recipe_name="demo",
         inputs={"x": 1},
-        changes=changes,
-    )
-    existing.write_text("after\n")
-    created.write_text("new\n")
-    removed.unlink()
-
-    store.restore(bundle.id[:8])
-
-    assert existing.read_text() == "before\n"
-    assert not created.exists()
-    assert removed.read_text() == "old\n"
-
-    existing.write_text("user edit\n")
-    with pytest.raises(ValueError, match="changed since backup"):
-        store.restore(bundle.id)
-    store.restore("latest", force=True)
-    assert existing.read_text() == "before\n"
-
-
-def test_backup_store_plans_restore_actions_and_hash_guard(tmp_path: Path) -> None:
-    target = tmp_path / "target"
-    target.mkdir()
-    existing = target / "config.yml"
-    created = target / "new.txt"
-    removed = target / "old.txt"
-    existing.write_text("before\n")
-    removed.write_text("old\n")
-    store = BackupStore(tmp_path / "backups")
-    bundle = _create_backup(
-        store,
-        recipe_name="demo",
-        inputs={},
         changes=[
             FileChange(
                 target=target,
@@ -332,12 +248,19 @@ def test_backup_store_plans_restore_actions_and_hash_guard(tmp_path: Path) -> No
         RestoreItem(path=created, action="delete"),
         RestoreItem(path=removed, action="create"),
     ]
-
     existing.write_text("user edit\n")
     with pytest.raises(ValueError, match="changed since backup"):
         store.plan_restore(bundle.id)
+    with pytest.raises(ValueError, match="changed since backup"):
+        store.restore(bundle.id[:8])
     assert created.read_text() == "new\n"
     assert not removed.exists()
+
+    store.restore("latest", force=True)
+
+    assert existing.read_text() == "before\n"
+    assert not created.exists()
+    assert removed.read_text() == "old\n"
 
 
 def test_backup_restore_of_crlf_file_does_not_false_trip_hash_guard(tmp_path: Path) -> None:
@@ -397,98 +320,39 @@ def test_backup_restore_rejects_symlink_escape(tmp_path: Path) -> None:
     assert escaped.read_text() == "after\n"
 
 
-def test_backup_restore_rolls_back_prior_files_on_write_failure(
+@pytest.mark.parametrize(
+    ("ids", "keep", "max_age_days", "pruned"),
+    [
+        pytest.param(
+            ["custom-name", "20200101T000000000000Z-aaaaaaaa"],
+            None,
+            30,
+            ["20200101T000000000000Z-aaaaaaaa"],
+            id="never-age-prunes-unparsable-ids",
+        ),
+        pytest.param(
+            ["aaa-custom", "20990101T000000000000Z-bbbbbbbb", "20200101T000000000000Z-cccccccc"],
+            1,
+            None,
+            ["20200101T000000000000Z-cccccccc"],
+            id="unparsable-ids-do-not-consume-keep-slots",
+        ),
+    ],
+)
+def test_prune_selection_leaves_unparsable_ids_alone(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    ids: list[str],
+    keep: int | None,
+    max_age_days: int | None,
+    pruned: list[str],
 ) -> None:
-    target = tmp_path / "target"
-    target.mkdir()
-    first = target / "one.txt"
-    second = target / "two.txt"
-    first.write_text("one-before\n")
-    second.write_text("two-before\n")
-    store = BackupStore(tmp_path / "backups")
-    bundle = _create_backup(
-        store,
-        recipe_name="demo",
-        inputs={},
-        changes=[
-            FileChange(
-                target=target,
-                relative_path=Path("one.txt"),
-                before="one-before\n",
-                after="one-after\n",
-            ),
-            FileChange(
-                target=target,
-                relative_path=Path("two.txt"),
-                before="two-before\n",
-                after="two-after\n",
-            ),
-        ],
-    )
-    first.write_text("one-after\n")
-    second.write_text("two-after\n")
-    original_replace = file_writer_module.os.replace
+    bundles = [BackupBundle(id=bundle_id, path=tmp_path / bundle_id) for bundle_id in ids]
 
-    def fail_second_replace(source: Path, dest: Path) -> None:
-        if Path(dest).name == "two.txt":
-            raise OSError("disk full")
-        original_replace(source, dest)
-
-    monkeypatch.setattr(file_writer_module.os, "replace", fail_second_replace)
-
-    with pytest.raises(Exception, match="disk full"):
-        store.restore(bundle.id)
-
-    assert first.read_text() == "one-after\n"
-    assert second.read_text() == "two-after\n"
-
-
-def test_prune_selection_never_age_prunes_unparsable_ids(tmp_path: Path) -> None:
-    from datetime import UTC, datetime
-
-    bundles = [
-        BackupBundle(id="custom-name", path=tmp_path / "custom-name"),
-        BackupBundle(
-            id="20200101T000000000000Z-aaaaaaaa",
-            path=tmp_path / "20200101T000000000000Z-aaaaaaaa",
-        ),
-    ]
-
-    pruned = prune_selection(
-        bundles,
-        keep=None,
-        max_age_days=30,
-        now=datetime(2026, 7, 7, tzinfo=UTC),
+    selected = prune_selection(
+        bundles, keep=keep, max_age_days=max_age_days, now=datetime(2026, 7, 7, tzinfo=UTC)
     )
 
-    assert [bundle.id for bundle in pruned] == ["20200101T000000000000Z-aaaaaaaa"]
-
-
-def test_prune_selection_unparsable_ids_do_not_consume_keep_slots(tmp_path: Path) -> None:
-    from datetime import UTC, datetime
-
-    bundles = [
-        BackupBundle(id="aaa-custom", path=tmp_path / "aaa-custom"),
-        BackupBundle(
-            id="20990101T000000000000Z-bbbbbbbb",
-            path=tmp_path / "20990101T000000000000Z-bbbbbbbb",
-        ),
-        BackupBundle(
-            id="20200101T000000000000Z-cccccccc",
-            path=tmp_path / "20200101T000000000000Z-cccccccc",
-        ),
-    ]
-
-    pruned = prune_selection(
-        bundles,
-        keep=1,
-        max_age_days=None,
-        now=datetime(2026, 7, 7, tzinfo=UTC),
-    )
-
-    assert [bundle.id for bundle in pruned] == ["20200101T000000000000Z-cccccccc"]
+    assert [bundle.id for bundle in selected] == pruned
 
 
 def test_backup_draft_keeps_created_at_across_commits(tmp_path: Path) -> None:

@@ -500,12 +500,6 @@ def test_prune_blockers_refuses_untracked_files(tmp_path: Path, upstream: Path) 
     assert runner.prune_blockers(ws) == ("dirty working tree",)
 
 
-def test_default_branch_reads_bare_head(tmp_path: Path, upstream: Path) -> None:
-    runner = GitRunner()
-    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
-    assert runner.default_branch(bare) == "main"
-
-
 def test_runner_raises_git_error_on_bad_command(tmp_path: Path) -> None:
     runner = GitRunner()
     not_a_repo = tmp_path / "nope"

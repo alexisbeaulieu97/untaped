@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
@@ -11,281 +10,109 @@ import pytest
 import respx
 
 from untaped.capabilities.github.cli import app
-from untaped.capabilities.github.settings import GithubSettings
-from untaped.settings import get_settings, register_profile_settings
-from untaped.testing import CliInvoker
+from untaped.testing import CliInvoker, CliResult
 
 
 @pytest.fixture(autouse=True)
-def _reset_settings_cache() -> Iterator[None]:
-    register_profile_settings("github", GithubSettings)
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
-
-
-def _write_config(tmp_path: Path) -> Path:
+def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
     cfg.write_text("profiles:\n  default:\n    github:\n      token: ghp_test\n")
-    return cfg
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
 
 
 def _repo(full_name: str, *, archived: bool = False, fork: bool = False) -> dict[str, object]:
-    name = full_name.rsplit("/", 1)[1]
     return {
         "full_name": full_name,
-        "name": name,
+        "name": full_name.rsplit("/", 1)[1],
         "html_url": f"https://github.com/{full_name}",
         "clone_url": f"https://github.com/{full_name}.git",
         "ssh_url": f"git@github.com:{full_name}.git",
         "default_branch": "main",
-        "private": True,
         "archived": archived,
         "fork": fork,
     }
 
 
-def test_repos_list_combines_scopes_filters_and_outputs_raw_clone_urls(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+LISTINGS = {
+    "/orgs/acme/repos": [
+        _repo("acme/zeta"),
+        _repo("acme/play-api"),
+        _repo("acme/play-old", archived=True),
+        _repo("acme/play-fork", fork=True),
+    ],
+    "/orgs/acme/teams/backend/repos": [_repo("acme/play-team")],
+    "/orgs/platform/teams/ops/repos": [_repo("platform/play-role"), _repo("acme/play-api")],
+}
 
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/orgs/acme/repos").mock(
-            return_value=httpx.Response(
-                200,
-                json=[
-                    _repo("acme/zeta"),
-                    _repo("acme/play-api"),
-                    _repo("acme/play-old", archived=True),
-                    _repo("acme/play-fork", fork=True),
-                ],
-            )
-        )
-        mock.get("/orgs/platform/teams/ops/repos").mock(
-            return_value=httpx.Response(
-                200,
-                json=[
-                    _repo("platform/play-role"),
-                    _repo("acme/play-api"),
-                ],
-            )
-        )
-        result = CliInvoker().invoke(
-            app,
-            [
-                "repos",
-                "list",
-                "play*",
-                "--org",
-                "acme",
-                "--team",
-                "platform/ops",
-                "--no-archived",
-                "--no-fork",
-                "--format",
-                "raw",
-                "--columns",
-                "ssh_url",
-            ],
-        )
+
+def _list(*args: str) -> CliResult:
+    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
+        for path, repos in LISTINGS.items():
+            mock.get(path).mock(return_value=httpx.Response(200, json=repos))
+        return CliInvoker().invoke(app, ["repos", "list", *args, "--format", "raw", "-c", "repo"])
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        (
+            ["play*", "--org", "acme", "--team", "platform/ops", "--no-archived", "--no-fork"],
+            ["acme/play-api", "platform/play-role"],
+        ),
+        (["play*", "--team", "acme/backend"], ["acme/play-team"]),
+        # A bare team with exactly one --org adds that team's repos to the org's.
+        (
+            ["play*", "--org", "acme", "--team", "backend", "--no-fork"],
+            ["acme/play-api", "acme/play-old", "acme/play-team"],
+        ),
+        (["--org", "acme", "--limit", "2"], ["acme/play-api", "acme/play-fork"]),
+    ],
+    ids=["scopes-and-filters", "qualified-team", "bare-team-is-additive", "limit-after-sort"],
+)
+def test_repos_list_combines_scopes_and_filters_into_sorted_rows(
+    args: list[str], expected: list[str]
+) -> None:
+    result = _list(*args)
 
     assert result.exit_code == 0, result.output
-    assert result.stdout.splitlines() == [
-        "git@github.com:acme/play-api.git",
-        "git@github.com:platform/play-role.git",
-    ]
+    assert result.stdout.splitlines() == expected
     assert "Listing repositories" in result.stderr
-    assert "Listing repositories" not in result.stdout
 
 
-def test_repos_list_accepts_org_qualified_team_without_org_scope(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/orgs/acme/teams/backend/repos").mock(
-            return_value=httpx.Response(200, json=[_repo("acme/play-api")])
-        )
-        result = CliInvoker().invoke(
-            app,
-            [
-                "repos",
-                "list",
-                "play*",
-                "--team",
-                "acme/backend",
-                "--format",
-                "raw",
-                "--columns",
-                "ssh_url",
-            ],
-        )
-
-    assert result.exit_code == 0, result.output
-    assert result.stdout.splitlines() == ["git@github.com:acme/play-api.git"]
-
-
-def test_repos_list_expands_bare_team_with_one_org_as_additive_scope(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/orgs/acme/repos").mock(
-            return_value=httpx.Response(200, json=[_repo("acme/play-org")])
-        )
-        mock.get("/orgs/acme/teams/backend/repos").mock(
-            return_value=httpx.Response(200, json=[_repo("acme/play-api")])
-        )
-        result = CliInvoker().invoke(
-            app,
-            [
-                "repos",
-                "list",
-                "play*",
-                "--org",
-                "acme",
-                "--team",
-                "backend",
-                "--format",
-                "raw",
-                "--columns",
-                "full_name",
-            ],
-        )
-
-    assert result.exit_code == 0, result.output
-    assert result.stdout.splitlines() == ["acme/play-api", "acme/play-org"]
-
-
-def test_repos_list_pipe_tags_github_repo_kind(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/orgs/acme/repos").mock(
-            return_value=httpx.Response(200, json=[_repo("acme/play-api")])
-        )
-        result = CliInvoker().invoke(
-            app,
-            ["repos", "list", "--org", "acme", "--format", "pipe"],
-        )
-
-    assert result.exit_code == 0, result.output
-    [line] = result.stdout.splitlines()
-    envelope = json.loads(line)
-    assert envelope["untaped"] == "1"
-    assert envelope["kind"] == "github.repo"
-    assert envelope["record"]["full_name"] == "acme/play-api"
-    assert envelope["record"]["ssh_url"] == "git@github.com:acme/play-api.git"
-
-
-def test_repos_list_limit_caps_the_sorted_rows(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/orgs/acme/repos").mock(
-            return_value=httpx.Response(
-                200, json=[_repo("acme/c"), _repo("acme/a"), _repo("acme/b")]
-            )
-        )
-        result = CliInvoker().invoke(
-            app,
-            ["repos", "list", "--org", "acme", "--limit", "2", "--format", "raw", "-c", "repo"],
-        )
-
-    assert result.exit_code == 0, result.output
-    assert result.stdout.splitlines() == ["acme/a", "acme/b"]
-
-
-def test_repos_list_records_carry_url_and_repo(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-
+def test_repos_list_pipe_record_carries_kind_urls_and_repo() -> None:
     with respx.mock(base_url="https://api.github.com") as mock:
         mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=[_repo("acme/a")]))
-        result = CliInvoker().invoke(app, ["repos", "list", "--org", "acme", "--format", "json"])
+        result = CliInvoker().invoke(app, ["repos", "list", "--org", "acme", "--format", "pipe"])
 
     assert result.exit_code == 0, result.output
-    [row] = json.loads(result.stdout)
-    assert row["repo"] == row["full_name"] == "acme/a"
-    assert row["url"] == row["html_url"] == "https://github.com/acme/a"
+    [envelope] = [json.loads(line) for line in result.stdout.splitlines()]
+    record = envelope["record"]
+    assert (envelope["untaped"], envelope["kind"]) == ("1", "github.repo")
+    assert record["repo"] == record["full_name"] == "acme/a"
+    assert record["url"] == record["html_url"] == "https://github.com/acme/a"
+    assert record["ssh_url"] == "git@github.com:acme/a.git"
 
 
-def test_repos_list_requires_org_or_team_scope(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-
-    result = CliInvoker().invoke(app, ["repos", "list", "play*"])
-
-    assert result.exit_code == 2
-    assert "requires --org or --team" in result.output
-    assert "user-owned" in result.output
-
-
-def test_repos_list_rejects_regex_without_pattern(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-
-    result = CliInvoker().invoke(app, ["repos", "list", "--org", "acme", "--regex"])
+@pytest.mark.parametrize(
+    ("args", "messages"),
+    [
+        (["play*"], ["requires --org or --team", "user-owned"]),
+        (["--org", "acme", "--regex"], ["--regex requires PATTERN"]),
+        (["[", "--org", "acme", "--regex"], ["invalid regular expression"]),
+        (["--team", "backend"], ["ORG/SLUG"]),
+        (["--org", "acme", "--org", "platform", "--team", "backend"], ["exactly one --org"]),
+    ],
+)
+def test_repos_list_usage_errors_exit_2(args: list[str], messages: list[str]) -> None:
+    result = CliInvoker().invoke(app, ["repos", "list", *args])
 
     assert result.exit_code == 2
-    assert "--regex requires PATTERN" in result.output
+    assert all(message in result.output for message in messages)
 
 
-def test_repos_list_rejects_malformed_team_scope(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-
-    result = CliInvoker().invoke(app, ["repos", "list", "--team", "backend"])
-
-    assert result.exit_code == 2
-    assert "ORG/SLUG" in result.output
-
-
-def test_repos_list_rejects_bare_team_with_multiple_orgs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-
-    result = CliInvoker().invoke(
-        app,
-        ["repos", "list", "--org", "acme", "--org", "platform", "--team", "backend"],
-    )
-
-    assert result.exit_code == 2
-    assert "exactly one --org" in result.output
-
-
-def test_repos_list_rejects_invalid_regex(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-
-    result = CliInvoker().invoke(app, ["repos", "list", "[", "--org", "acme", "--regex"])
-
-    assert result.exit_code == 2
-    assert "invalid regular expression" in result.output
-
-
-def test_repos_list_help_documents_pattern_targeting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-
+def test_repos_list_help_documents_pattern_targeting() -> None:
     result = CliInvoker().invoke(app, ["repos", "list", "--help"])
 
     assert result.exit_code == 0, result.output
-    assert "glob" in result.output
-    assert "full_name" in result.output
-    assert "unanchored" in result.output
-    assert "additive" in result.output
-    assert "exactly one --org" in result.output
-    assert "--regex" in result.output
+    for phrase in ("glob", "full_name", "unanchored", "additive", "exactly one --org", "--regex"):
+        assert phrase in result.output

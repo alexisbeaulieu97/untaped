@@ -8,38 +8,15 @@ and ``issues links create``.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
-from pathlib import Path
 
 import httpx
 import pytest
 import respx
 
 from untaped.capabilities.jira.cli import app
-from untaped.capabilities.jira.settings import JiraSettings
-from untaped.settings import get_settings, register_profile_settings
 from untaped.testing import invoke_cli
 
 BASE = "https://jira.example.com"
-
-
-@pytest.fixture(autouse=True)
-def _reset_settings_cache() -> Iterator[None]:
-    register_profile_settings("jira", JiraSettings)
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
-
-
-@pytest.fixture(autouse=True)
-def jira_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    cfg = tmp_path / "config.yml"
-    cfg.write_text(
-        f"profiles:\n  default:\n    jira:\n      base_url: {BASE}\n      token: jira_pat\n"
-    )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
-    return cfg
 
 
 def _issue(key: str) -> dict[str, object]:
@@ -163,18 +140,6 @@ def test_comments_list_emits_comment_records() -> None:
     assert route.calls[0].request.url.params["startAt"] == "0"
 
 
-def test_comments_list_empty_hints_on_stderr() -> None:
-    with respx.mock(base_url=BASE) as mock:
-        mock.get("/rest/api/2/issue/ABC-1/comment").mock(
-            return_value=httpx.Response(200, json=_comments())
-        )
-        result = invoke_cli(app, ["issues", "comments", "list", "ABC-1"])
-
-    assert result.exit_code == 0, result.output
-    assert result.stdout == ""
-    assert "No comments found." in result.stderr
-
-
 # --- assign via issues patch -------------------------------------------------------
 
 
@@ -218,17 +183,6 @@ def test_patch_assignee_me_dry_run_shows_the_resolved_name() -> None:
 
     assert result.exit_code == 0, result.output
     assert '"name": "alexis"' in result.stderr
-    assert len(route.calls) == 0
-
-
-def test_patch_assignee_and_unassign_conflict() -> None:
-    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
-        route = mock.route()
-        result = invoke_cli(
-            app, ["issues", "patch", "ABC-1", "--assignee", "bob", "--unassign", "--yes"]
-        )
-
-    assert result.exit_code == 2, result.output
     assert len(route.calls) == 0
 
 

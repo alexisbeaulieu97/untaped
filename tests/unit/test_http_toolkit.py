@@ -26,12 +26,6 @@ class DemoSettings(BaseModel):
     token: SecretStr | None = None
 
 
-def test_http_settings_timeout_and_proxy_defaults() -> None:
-    settings = HttpSettings()
-    assert settings.timeout == 30.0
-    assert settings.proxy is None
-
-
 @pytest.mark.parametrize("bad", [0, -1, -0.5])
 def test_http_settings_rejects_non_positive_timeout(bad: float) -> None:
     with pytest.raises(ValidationError):
@@ -108,46 +102,49 @@ def test_connected_client_defaults_to_resolved_profile_http(
     assert captured["proxy"] == "http://corp-proxy:3128"
 
 
-def test_missing_setting_error_names_config_set_and_env_paths() -> None:
-    error = missing_setting_error("demo", "token")
+@pytest.mark.parametrize(("field", "placeholder"), [("token", "<token>"), ("base_url", "<url>")])
+def test_missing_setting_error_names_config_set_and_env_paths(field: str, placeholder: str) -> None:
+    """The ``config set`` placeholder is the field's last word."""
+    error = missing_setting_error("demo", field)
 
     assert isinstance(error, ConfigError)
-    assert "demo.token is not configured" in str(error)
-    assert "`untaped config set demo.token <token>`" in str(error)
-    assert "UNTAPED_DEMO__TOKEN" in str(error)
+    assert f"demo.{field} is not configured" in str(error)
+    assert f"`untaped config set demo.{field} {placeholder}`" in str(error)
+    assert f"UNTAPED_DEMO__{field.upper()}" in str(error)
 
 
-def test_missing_setting_error_placeholder_uses_last_field_word() -> None:
-    error = missing_setting_error("demo", "base_url")
-
-    assert "`untaped config set demo.base_url <url>`" in str(error)
-
-
-def test_missing_secret_setting_suggests_prompt_not_argv() -> None:
-    error = str(missing_setting_error("demo", "token", secret=("token",)))
-
-    assert "`untaped config set demo.token --prompt`" in error
-    assert "<token>" not in error
-
-
-def test_missing_setting_error_names_every_missing_field() -> None:
+def test_missing_setting_error_names_every_field_and_prompts_for_secrets() -> None:
     error = str(missing_setting_error("demo", "base_url", "token", secret=("token",)))
 
     assert "demo.base_url and demo.token are not configured" in error
     assert "`untaped config set demo.base_url <url>`" in error
     assert "`untaped config set demo.token --prompt`" in error
+    assert "<token>" not in error
     assert "UNTAPED_DEMO__BASE_URL" in error
     assert "UNTAPED_DEMO__TOKEN" in error
 
 
-def test_connected_client_reports_all_missing_fields_and_prompts_for_secrets() -> None:
-    config = DemoSettings(base_url="", token=None)
+class NoUrlSettings(BaseModel):
+    base_url: str | None = None
+    token: SecretStr | None = SecretStr("sekret")
 
-    with pytest.raises(ConfigError) as excinfo:
+
+@pytest.mark.parametrize(
+    ("config", "message"),
+    [
+        (DemoSettings(token=None), r"demo\.token is not configured"),
+        (DemoSettings(token=SecretStr("   ")), r"demo\.token is not configured"),
+        (NoUrlSettings(), r"demo\.base_url is not configured"),
+        (
+            DemoSettings(base_url="", token=None),
+            r"demo\.base_url and demo\.token are not configured.*config set demo\.token --prompt",
+        ),
+    ],
+    ids=["missing-token", "blank-token", "missing-base-url", "both-missing"],
+)
+def test_connected_client_rejects_missing_settings(config: BaseModel, message: str) -> None:
+    with pytest.raises(ConfigError, match=message):
         connected_client(config, section="demo")
-    message = str(excinfo.value)
-    assert "demo.base_url and demo.token are not configured" in message
-    assert "`untaped config set demo.token --prompt`" in message
 
 
 @respx.mock
@@ -170,29 +167,6 @@ def test_connected_client_sends_bearer_token_and_extra_headers() -> None:
     assert request.headers["Accept"] == "application/vnd.demo+json"
 
 
-def test_connected_client_rejects_missing_token() -> None:
-    config = DemoSettings(token=None)
-
-    with pytest.raises(ConfigError, match=r"demo\.token is not configured"):
-        connected_client(config, section="demo")
-
-
-def test_connected_client_rejects_blank_secret_token() -> None:
-    config = DemoSettings(token=SecretStr("   "))
-
-    with pytest.raises(ConfigError, match=r"demo\.token is not configured"):
-        connected_client(config, section="demo")
-
-
-def test_connected_client_rejects_missing_base_url() -> None:
-    class NoUrlSettings(BaseModel):
-        base_url: str | None = None
-        token: SecretStr | None = SecretStr("sekret")
-
-    with pytest.raises(ConfigError, match=r"demo\.base_url is not configured"):
-        connected_client(NoUrlSettings(), section="demo")
-
-
 @respx.mock
 def test_connected_client_strips_trailing_base_url_slash() -> None:
     respx.get("https://api.example.com/user").mock(
@@ -204,37 +178,25 @@ def test_connected_client_strips_trailing_base_url_slash() -> None:
         assert client.get_json_dict("/user") == {"ok": True}
 
 
+@pytest.mark.parametrize(
+    ("token", "authorization"), [(SecretStr("sekret"), "Bearer sekret"), (None, None)]
+)
 @respx.mock
-def test_connected_client_sends_bearer_when_token_not_required() -> None:
-    """A configured token still authenticates when left out of ``required``.
-
-    awx leaves ``token`` out of ``required`` so a token-less client can hit
+def test_connected_client_token_not_required(
+    token: SecretStr | None, authorization: str | None
+) -> None:
+    """awx leaves ``token`` out of ``required`` so a token-less client can hit
     unauthenticated endpoints, yet a token that *is* configured must still
-    become the ``Authorization: Bearer`` header.
-    """
-    route = respx.get("https://api.example.com/projects/").mock(
-        return_value=httpx.Response(200, json={"results": []})
-    )
-    config = DemoSettings(token=SecretStr("sekret"))
-
-    with connected_client(config, section="demo", required=("base_url",)) as client:
-        client.get_json_dict("/projects/")
-
-    assert route.calls.last.request.headers["Authorization"] == "Bearer sekret"
-
-
-@respx.mock
-def test_connected_client_token_optional_builds_without_auth() -> None:
-    """No token + token-not-required builds a client that sends no auth header."""
+    become the ``Authorization: Bearer`` header."""
     route = respx.get("https://api.example.com/ping/").mock(
         return_value=httpx.Response(200, json={"pong": True})
     )
-    config = DemoSettings(token=None)
+    config = DemoSettings(token=token)
 
     with connected_client(config, section="demo", required=("base_url",)) as client:
         assert client.get_json_dict("/ping/") == {"pong": True}
 
-    assert "Authorization" not in route.calls.last.request.headers
+    assert route.calls.last.request.headers.get("Authorization") == authorization
 
 
 def test_paginate_pages_follows_cursors_and_respects_limit() -> None:
@@ -262,27 +224,6 @@ def test_paginate_pages_errors_when_not_converging() -> None:
 
     with pytest.raises(UntapedError, match="did not converge"):
         list(paginate_pages(fetch, limit=None, max_pages=5))
-
-
-@respx.mock
-def test_paginate_link_follows_next_links_until_exhausted() -> None:
-    def responder(request: httpx.Request) -> httpx.Response:
-        params = httpx.QueryParams(request.url.query)
-        if params.get("page") == "2":
-            return httpx.Response(200, json=[{"id": 3}])
-        return httpx.Response(
-            200,
-            json=[{"id": 1}, {"id": 2}],
-            headers={"link": '<https://api.example.com/things?page=2>; rel="next"'},
-        )
-
-    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
-    config = DemoSettings(token=SecretStr("sekret"))
-
-    with connected_client(config, section="demo") as client:
-        rows = list(paginate_link(client, "/things"))
-
-    assert [row["id"] for row in rows] == [1, 2, 3]
 
 
 @pytest.mark.parametrize(

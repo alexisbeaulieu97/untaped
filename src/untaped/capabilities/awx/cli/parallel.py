@@ -17,7 +17,7 @@ from rich.text import Text
 
 from untaped.capabilities.awx.application import WatchJob
 from untaped.capabilities.awx.application.ports import JobMonitor, RawHttpResourceClient
-from untaped.capabilities.awx.application.scheduling import MAX_PARALLEL
+from untaped.capabilities.awx.application.scheduling import MAX_PARALLEL, idle
 from untaped.capabilities.awx.cli.event_render import render_event_text
 from untaped.capabilities.awx.domain import Job, JobEvent
 from untaped.capabilities.awx.domain.job import JOB_ROUTES
@@ -77,7 +77,7 @@ def drain_parallel_with_worker(
         on_abort=stop.set if stop is not None else None,
         # Always on worker threads (even one job): Ctrl-C then lands in the
         # main thread's wait, never inside a worker's HTTP call.
-        while_running=while_running or _idle,
+        while_running=while_running or idle,
     )
     results: list[Job] = []
     errors: list[tuple[str, UntapedError]] = []
@@ -88,10 +88,6 @@ def drain_parallel_with_worker(
         else:
             results.append(outcome)
     return results, errors
-
-
-def _idle() -> None:
-    return None
 
 
 def drain_parallel(

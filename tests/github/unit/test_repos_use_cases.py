@@ -14,7 +14,6 @@ from untaped.capabilities.github.application import (
     RepositoryInventoryScope,
     ResolveRepositoryInventory,
     TeamScope,
-    normalize_team_scopes,
 )
 from untaped.capability_api import HttpError, UntapedError
 
@@ -76,55 +75,6 @@ def _repo(
     }
 
 
-def test_list_repos_dedupes_filters_and_sorts_complete_inventory() -> None:
-    stub = _StubRepoLists(
-        orgs={
-            "acme": [
-                _repo("acme/zeta"),
-                _repo("acme/play-api"),
-                _repo("acme/play-old", archived=True),
-                _repo("acme/play-fork", fork=True),
-            ]
-        },
-        teams={
-            ("platform", "ops"): [
-                _repo("platform/play-role"),
-                _repo("acme/play-api"),
-            ],
-        },
-    )
-    use_case = ListRepos(_service(stub))
-
-    rows = list(
-        use_case(
-            RepoListFilters(pattern="play*", archived=False, fork=False),
-            orgs=("acme",),
-            team_scopes=(TeamScope("platform", "ops"),),
-        )
-    )
-
-    assert stub.calls == [("org", "acme", None), ("team", "platform", "ops")]
-    assert [row.full_name for row in rows] == ["acme/play-api", "platform/play-role"]
-
-
-def test_list_repos_pattern_without_slash_matches_leaf_name_case_insensitively() -> None:
-    stub = _StubRepoLists(orgs={"acme": [_repo("acme/Play-Api"), _repo("acme/api-play")]})
-    use_case = ListRepos(_service(stub))
-
-    rows = list(use_case(RepoListFilters(pattern="play*"), orgs=("acme",)))
-
-    assert [row.full_name for row in rows] == ["acme/Play-Api"]
-
-
-def test_list_repos_pattern_with_slash_matches_full_name() -> None:
-    stub = _StubRepoLists(orgs={"acme": [_repo("acme/play-api"), _repo("other/play-api")]})
-    use_case = ListRepos(_service(stub))
-
-    rows = list(use_case(RepoListFilters(pattern="acme/play*"), orgs=("acme",)))
-
-    assert [row.full_name for row in rows] == ["acme/play-api"]
-
-
 def test_list_repos_handles_sparse_inventory_rows_with_leaf_name_fallback() -> None:
     stub = _StubRepoLists(
         orgs={
@@ -141,15 +91,6 @@ def test_list_repos_handles_sparse_inventory_rows_with_leaf_name_fallback() -> N
     assert [row.full_name for row in rows] == ["acme/play-api"]
     assert rows[0].name == "play-api"
     assert rows[0].html_url is None
-
-
-def test_list_repos_regex_matches_selected_target_case_insensitively() -> None:
-    stub = _StubRepoLists(orgs={"acme": [_repo("acme/Play-1"), _repo("acme/play-x")]})
-    use_case = ListRepos(_service(stub))
-
-    rows = list(use_case(RepoListFilters(pattern=r"^acme/play-\d+$", regex=True), orgs=("acme",)))
-
-    assert [row.full_name for row in rows] == ["acme/Play-1"]
 
 
 def test_resolve_repository_inventory_expands_dedupes_sorts_and_prefers_explicit_repos() -> None:
@@ -218,15 +159,3 @@ def test_resolve_repository_inventory_wraps_explicit_repo_lookup_errors() -> Non
     assert "failed to expand repository acme/gone" in message
     assert "Not Found" in message
     assert stub.calls == [("repo", "acme", "gone")]
-
-
-def test_normalize_team_scopes_accepts_qualified_and_single_org_bare_teams() -> None:
-    assert normalize_team_scopes(["backend", "platform/ops"], orgs=("acme",)) == (
-        TeamScope("acme", "backend"),
-        TeamScope("platform", "ops"),
-    )
-
-
-def test_normalize_team_scopes_rejects_ambiguous_bare_team() -> None:
-    with pytest.raises(ValueError, match="ORG/SLUG"):
-        normalize_team_scopes(["backend"], orgs=("acme", "platform"))

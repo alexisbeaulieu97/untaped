@@ -10,7 +10,7 @@ import inspect
 from collections.abc import Callable, Sequence
 from contextvars import Token
 from dataclasses import dataclass
-from typing import Annotated, cast
+from typing import Annotated, Any
 
 from cyclopts import App, Parameter
 from cyclopts.exceptions import CycloptsError, UnknownOptionError
@@ -41,29 +41,21 @@ class _RootOption:
 
     name: str
     help: str
-    handler: Callable[[str], object]
-    resetter: Callable[[object], None]
+    handler: Callable[[str], Any]
+    resetter: Callable[[Any], None]
     aliases: tuple[str, ...] = ()
     takes_value: bool = False
 
 
-def _apply_profile(value: str) -> object:
+def _apply_profile(value: str) -> Token[str | None]:
     token = set_profile_override(value)
     get_settings.cache_clear()
     return token
 
 
-def _reset_profile(token: object) -> None:
-    reset_profile_override(cast(Token[str | None], token))
+def _reset_profile(token: Token[str | None]) -> None:
+    reset_profile_override(token)
     get_settings.cache_clear()
-
-
-def _reset_verbose_option(token: object) -> None:
-    _reset_verbose(cast(Token[bool], token))
-
-
-def _reset_quiet_option(token: object) -> None:
-    _reset_quiet(cast(Token[bool], token))
 
 
 def _root_options() -> dict[str, _RootOption]:
@@ -80,22 +72,16 @@ def _root_options() -> dict[str, _RootOption]:
             aliases=("-v",),
             help=_VERBOSE_HELP,
             handler=_enable_verbose,
-            resetter=_reset_verbose_option,
+            resetter=_reset_verbose,
         ),
         "--quiet": _RootOption(
             name="--quiet",
             aliases=("-q",),
             help=_QUIET_HELP,
             handler=_enable_quiet,
-            resetter=_reset_quiet_option,
+            resetter=_reset_quiet,
         ),
     }
-
-
-def _option_names(option: _RootOption) -> str | tuple[str, ...]:
-    if option.aliases:
-        return (option.name, *option.aliases)
-    return option.name
 
 
 def _match_option(name: str, root_options: dict[str, _RootOption]) -> _RootOption | None:
@@ -125,24 +111,18 @@ def _root_callback_signature(root_options: dict[str, _RootOption]) -> inspect.Si
         )
     ]
     for index, option in enumerate(root_options.values()):
+        names = (option.name, *option.aliases)
         annotation: object
         default: object
         if option.takes_value:
             annotation = Annotated[
-                str | None,
-                Parameter(name=_option_names(option), help=option.help, parse=False, show=True),
+                str | None, Parameter(name=names, help=option.help, parse=False, show=True)
             ]
             default = None
         else:
             annotation = Annotated[
                 bool,
-                Parameter(
-                    name=_option_names(option),
-                    help=option.help,
-                    parse=False,
-                    show=True,
-                    negative="",
-                ),
+                Parameter(name=names, help=option.help, parse=False, show=True, negative=""),
             ]
             default = False
         parameters.append(

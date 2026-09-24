@@ -138,18 +138,13 @@ def _parse_entry(entry: Any, source_path: str) -> DependencyDeclaration | None:
     if not isinstance(entry, dict):
         return None
     src = _string(entry.get("src"))
-    name = _string(entry.get("name")) or _string(entry.get("role")) or _name_from_src(src)
-    version = _string(entry.get("version"))
-    if name is None and src is None:
-        return None
-    src_final = src or name
-    name_final = name or src_final
-    if name_final is None or src_final is None:
+    name = _string(entry.get("name")) or _string(entry.get("role")) or _name_from_src(src) or src
+    if name is None:
         return None
     return DependencyDeclaration(
-        name=name_final,
-        src=src_final,
-        version=version,
+        name=name,
+        src=src or name,
+        version=_string(entry.get("version")),
         source_path=source_path,
     )
 

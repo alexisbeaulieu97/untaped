@@ -18,7 +18,6 @@ from untaped.capabilities.workspace.cli.common import (
     WorkspaceNameOption,
     WorkspacePathOption,
     parallel_cap,
-    progress_ui,
     resolve_workspace,
     target_workspaces,
     workspace_settings,
@@ -53,6 +52,7 @@ from untaped.capability_api import (
     raise_usage,
     report_errors,
     summary,
+    ui_context,
 )
 
 
@@ -124,7 +124,9 @@ def sync_command(
             fs=LocalFilesystem(),
             cache_dir=workspace_settings().cache_dir,
         )
-        ui = progress_ui()
+        # strict=False: a misconfigured ``ui.theme`` degrades the progress UI to
+        # the default theme; feedback must never fail an otherwise-valid command.
+        ui = ui_context(strict=False)
         if all_workspaces and repo:
             ui.message(
                 "warning",
@@ -225,7 +227,7 @@ def status_command(
         targets = target_workspaces(workspace, path, all_workspaces=all_workspaces)
         use_case = WorkspaceStatus(YamlManifestRepository(), GitRunner(), fs=LocalFilesystem())
         rows: list[StatusEntry] = []
-        with progress_ui().progress("Gathering workspace status…"):
+        with ui_context(strict=False).progress("Gathering workspace status…"):
             for ws in targets:
                 for entry in use_case(ws, only=repo, skip_manifest_errors=all_workspaces):
                     rows.append(entry)

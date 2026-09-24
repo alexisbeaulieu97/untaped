@@ -10,6 +10,7 @@ URL rather than carried in the body.
 from __future__ import annotations
 
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
+from untaped.capabilities.awx.infrastructure.specs._support import UNIVERSAL_READ_ONLY
 
 HOST_SPEC = AwxResourceSpec(
     kind="Host",
@@ -19,14 +20,8 @@ HOST_SPEC = AwxResourceSpec(
     identity_keys=("name",),  # unique within parent (Inventory)
     canonical_fields=("description", "enabled", "instance_id", "variables"),
     read_only_fields=(
-        "id",
+        *UNIVERSAL_READ_ONLY,
         "inventory",
-        "created",
-        "modified",
-        "summary_fields",
-        "related",
-        "type",
-        "url",
         "has_active_failures",
         "has_inventory_sources",
         "last_job",

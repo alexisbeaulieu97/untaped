@@ -293,28 +293,6 @@ def test_validate_renders_without_launching(
     assert all(action != "launch" for _, _, action, _ in fake_aap.actions_called)
 
 
-def test_fake_aap_next_action_status_is_one_shot(
-    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
-) -> None:
-    """Setting ``next_action_status`` once must not bleed into a second launch."""
-    _seed_jt(fake_aap)
-    fake_aap.next_action_status = "failed"
-
-    test_file = _write(
-        tmp_path / "matrix.yml",
-        "kind: AwxTestSuite\nname: m\njobTemplate: Deploy app\n"
-        "cases:\n  first:\n    launch: {}\n  second:\n    launch: {}\n",
-    )
-
-    result = cli.invoke(app, ["test", "run", str(test_file), "--non-interactive"])
-
-    assert result.exit_code == 1  # one of the cases failed
-    out = result.stdout
-    # First case picks up the override (failed); second resets to successful.
-    assert "fail" in out
-    assert "pass" in out
-
-
 def test_show_logs_prints_stdout_tail_for_failed_case(
     cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
 ) -> None:

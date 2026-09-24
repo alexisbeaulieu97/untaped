@@ -719,52 +719,27 @@ def test_mutation_preview_renders_scope_and_values_readably(fake_aap: Any) -> No
     assert '{"a":[1,true]}' in result.stderr
 
 
-def test_patch_rejects_unknown_fields_by_default(fake_aap: Any) -> None:
+@pytest.mark.parametrize(
+    ("extra", "written"),
+    [
+        # a near-miss of a known field is a typo: refused before any write
+        (["--set", "verbostiy=2"], False),
+        # a name unlike any known field may be a real AWX field: warn and send
+        (["--set", "future_field=2"], True),
+        (["--set", "verbostiy=2", "--allow-unknown-fields"], True),
+    ],
+)
+def test_patch_unknown_fields(fake_aap: Any, extra: list[str], written: bool) -> None:
     seed(fake_aap, "job_templates")
-    result = CliInvoker().invoke(
-        app, ["job-templates", "patch", "target", "--set", "verbostiy=2", "--yes"]
-    )
-    assert result.exit_code == 2, result.output
-    assert "verbostiy" in result.output
-    assert not any(call.request.method == "PATCH" for call in fake_aap.router.calls)
-
-
-def test_patch_allow_unknown_fields_warns_and_sends(fake_aap: Any) -> None:
-    seed(fake_aap, "job_templates")
-    result = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "patch",
-            "target",
-            "--set",
-            "future_field=2",
-            "--allow-unknown-fields",
-            "--yes",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert "future_field" in (result.stderr or "")
-    assert fake_aap.get_record("job_templates", 10)["future_field"] == 2
-
-
-def test_patch_rejection_suggests_the_close_known_field(fake_aap: Any) -> None:
-    seed(fake_aap, "job_templates")
-    result = CliInvoker().invoke(
-        app, ["job-templates", "patch", "target", "--set", "verbostiy=2", "--yes"]
-    )
-    assert result.exit_code == 2, result.output
-    assert "did you mean verbosity" in result.output
-
-
-def test_patch_unknown_field_without_close_match_warns_and_sends(fake_aap: Any) -> None:
-    seed(fake_aap, "job_templates")
-    result = CliInvoker().invoke(
-        app, ["job-templates", "patch", "target", "--set", "future_field=2", "--yes"]
-    )
-    assert result.exit_code == 0, result.output
-    assert "future_field" in (result.stderr or "")
-    assert fake_aap.get_record("job_templates", 10)["future_field"] == 2
+    field = extra[1].split("=")[0]
+    result = CliInvoker().invoke(app, ["job-templates", "patch", "target", *extra, "--yes"])
+    assert result.exit_code == (0 if written else 2), result.output
+    assert field in result.stderr
+    if written:
+        assert fake_aap.get_record("job_templates", 10)[field] == 2
+    else:
+        assert "did you mean verbosity" in result.stderr
+        assert not any(call.request.method == "PATCH" for call in fake_aap.router.calls)
 
 
 @pytest.mark.parametrize(

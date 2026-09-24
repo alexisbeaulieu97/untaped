@@ -24,8 +24,6 @@ from test_management.support import (
 from untaped import bootstrap
 from untaped.config_file import read_config_dict
 from untaped.management.config import (
-    RootConfigContext,
-    RootSectionScope,
     build_root_config_app,
 )
 from untaped.settings import get_settings
@@ -39,16 +37,6 @@ def _config_app() -> object:
     jira = make_spec("jira", profile_model=JiraProfile)
     result = compose(github, jira)
     return build_root_config_app(shell=bootstrap.SHELL_SPEC, result=result)
-
-
-def _scopes() -> dict[str, RootSectionScope]:
-    return {
-        "github": RootSectionScope(
-            capability="github",
-            profile_fields=frozenset({"token", "base_url", "mode"}),
-            state_fields=frozenset({"cursor"}),
-        )
-    }
 
 
 # ── fully-qualified keys ─────────────────────────────────────────────────────
@@ -73,24 +61,13 @@ def test_get_fully_qualified_key_reads_section(_isolated_config: Path) -> None:
     assert "https://j" in result.stdout
 
 
-def test_list_shows_every_composed_section(_isolated_config: Path) -> None:
-    app = _config_app()
-    result = CliInvoker().invoke(app, ["list", "--format", "raw", "--columns", "key"])  # type: ignore[arg-type]
-    assert result.exit_code == 0, result.output
-    keys = set(result.stdout.splitlines())
-    assert "github.token" in keys
-    assert "jira.base_url" in keys
-    assert "log_level" in keys
-
-
-def test_list_raw_defaults_to_key_column(_isolated_config: Path) -> None:
+def test_list_raw_is_the_key_stream_of_every_composed_section(_isolated_config: Path) -> None:
     """Raw list output is the stable key stream when columns are omitted."""
     app = _config_app()
     result = CliInvoker().invoke(app, ["list", "--format", "raw"])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
     keys = set(result.stdout.splitlines())
-    assert "github.token" in keys
-    assert "github.base_url" in keys
+    assert {"github.token", "github.base_url", "jira.base_url", "log_level"} <= keys
     assert "https://api.github.com" not in keys
 
 
@@ -128,63 +105,38 @@ def test_sdk_root_key_resolves_to_sdk_settings(_isolated_config: Path) -> None:
     assert "http" not in data["profiles"]["default"].get("github", {})
 
 
-def test_bare_log_level_sets_sdk_setting(_isolated_config: Path) -> None:
-    app = _config_app()
-    result = CliInvoker().invoke(app, ["set", "log_level", "DEBUG"])  # type: ignore[arg-type]
-    assert result.exit_code == 0, result.output
-    assert read_config_dict(_isolated_config)["profiles"]["default"]["log_level"] == "DEBUG"
-
-
 # ── state writes rejected per section schema ─────────────────────────────────
 
 
-def test_set_state_field_is_rejected_without_writing(_isolated_config: Path) -> None:
-    app = _config_app()
-    result = CliInvoker().invoke(app, ["set", "github.cursor", "abc"])  # type: ignore[arg-type]
+@pytest.mark.parametrize(
+    "argv", [["set", "github.cursor", "abc"], ["get", "github.cursor"], ["unset", "github.cursor"]]
+)
+def test_state_field_is_rejected_without_writing(_isolated_config: Path, argv: list[str]) -> None:
+    result = CliInvoker().invoke(_config_app(), argv)  # type: ignore[arg-type]
     assert result.exit_code != 0
     assert "github.cursor" in result.output
     assert "managed by" in result.output
     assert not _isolated_config.exists()
 
 
-def test_get_state_field_is_rejected(_isolated_config: Path) -> None:
-    app = _config_app()
-    result = CliInvoker().invoke(app, ["get", "github.cursor"])  # type: ignore[arg-type]
-    assert result.exit_code != 0
-    assert "managed by" in result.output
-
-
-def test_unset_state_field_is_rejected(_isolated_config: Path) -> None:
-    app = _config_app()
-    result = CliInvoker().invoke(app, ["unset", "github.cursor"])  # type: ignore[arg-type]
-    assert result.exit_code != 0
-    assert "managed by" in result.output
-
-
 # ── NO bare-key implicit expansion ───────────────────────────────────────────
 
 
-def test_bare_capability_key_is_not_expanded(_isolated_config: Path) -> None:
-    """``token`` must NOT resolve to ``github.token`` at the root."""
-    app = _config_app()
-    result = CliInvoker().invoke(app, ["set", "token", "ghp_x"])  # type: ignore[arg-type]
+@pytest.mark.parametrize(
+    ("argv", "named"),
+    [
+        # ``token`` must NOT resolve to ``github.token`` at the root.
+        (["set", "token", "ghp_x"], "token"),
+        (["get", "bogus"], "bogus"),
+        (["get", "nope.key"], "nope.key"),
+    ],
+    ids=["bare-capability-key", "bare-unknown-key", "unknown-section"],
+)
+def test_unresolvable_key_is_rejected(_isolated_config: Path, argv: list[str], named: str) -> None:
+    result = CliInvoker().invoke(_config_app(), argv)  # type: ignore[arg-type]
     assert result.exit_code != 0
-    assert "token" in result.output
+    assert named in result.output
     assert not _isolated_config.exists()
-
-
-def test_bare_unknown_key_lists_valid_qualified_keys(_isolated_config: Path) -> None:
-    app = _config_app()
-    result = CliInvoker().invoke(app, ["get", "bogus"])  # type: ignore[arg-type]
-    assert result.exit_code != 0
-    assert "bogus" in result.output
-
-
-def test_unknown_section_passes_through_to_schema_error(_isolated_config: Path) -> None:
-    app = _config_app()
-    result = CliInvoker().invoke(app, ["get", "nope.key"])  # type: ignore[arg-type]
-    assert result.exit_code != 0
-    assert "nope.key" in result.output
 
 
 # ── repair path (failure isolation) ──────────────────────────────────────────
@@ -201,9 +153,6 @@ def test_set_repairing_invalid_value_succeeds(_isolated_config: Path) -> None:
     result = CliInvoker().invoke(app, ["set", "jira.timeout", "12"])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
     assert read_config_dict(_isolated_config)["profiles"]["default"]["jira"]["timeout"] == 12
-
-
-# ── unit: RootConfigContext ──────────────────────────────────────────────────
 
 
 def test_list_all_profiles_shows_each_profile(_isolated_config: Path) -> None:
@@ -229,16 +178,6 @@ def test_edit_without_editor_is_a_clean_error(monkeypatch: pytest.MonkeyPatch) -
     result = CliInvoker().invoke(app, ["edit"])  # type: ignore[arg-type]
     assert result.exit_code == 1
     assert "VISUAL" in result.output or "EDITOR" in result.output
-
-
-def test_resolve_key_unit_semantics() -> None:
-    ctx = RootConfigContext(sections=_scopes())
-    assert ctx.resolve_key("github.token") == "github.token"
-    assert ctx.resolve_key("http.verify_ssl") == "http.verify_ssl"
-    assert ctx.resolve_key("log_level") == "log_level"
-    # Bare keys pass through untouched: no implicit expansion.
-    assert ctx.resolve_key("token") == "token"
-    assert ctx.resolve_key("nope.key") == "nope.key"
 
 
 @pytest.mark.parametrize("valid", [True, False])

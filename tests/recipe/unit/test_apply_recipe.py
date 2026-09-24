@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -89,74 +90,18 @@ def _write_hook_project(recipe_dir: Path, hooks: dict[str, str]) -> None:
     (recipe_dir / "uv.lock").write_text("version = 1\n")
 
 
-def test_apply_recipe_executor_calls_default_to_no_diagnostics(tmp_path: Path) -> None:
-    class SpyExecutor:
-        def __init__(self) -> None:
-            self.transform_capture_flags: list[bool] = []
-            self.validate_capture_flags: list[bool] = []
+class _StubExecutor:
+    """HookExecutorPort stand-in: canned verdict, ``content + "!"`` transforms, full recording."""
 
-        def transform(
-            self,
-            hook: str,
-            content: str,
-            *,
-            local_hook_project: Path | None,
-            target: Path,
-            file: Path,
-            inputs: dict[str, object],
-            args: dict[str, object],
-            capture_diagnostics: bool = False,
-        ) -> HookDebugResult[str]:
-            self.transform_capture_flags.append(capture_diagnostics)
-            return HookDebugResult(result=content + "!", diagnostics="ignored")
-
-        def validate(
-            self,
-            hook: str,
-            *,
-            local_hook_project: Path | None,
-            target: Path,
-            inputs: dict[str, object],
-            args: dict[str, object],
-            capture_diagnostics: bool = False,
-        ) -> HookDebugResult[Verdict]:
-            self.validate_capture_flags.append(capture_diagnostics)
-            return HookDebugResult(result=Verdict(status="pass"), diagnostics="ignored")
-
-    spy = SpyExecutor()
-    target = tmp_path / "target"
-    target.mkdir()
-    (target / "config.txt").write_text("before")
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "steps": [
-                {"type": "validate", "hook": "check"},
-                {"type": "transform", "file": "config.txt", "hook": "rewrite"},
-            ],
-        }
-    )
-
-    plan = ApplyRecipe(spy)(
-        recipe=recipe,
-        recipe_dir=tmp_path,
-        local_hook_project=None,
-        target=target,
-        inputs={},
-    )
-
-    assert spy.validate_capture_flags == [False]
-    assert spy.transform_capture_flags == [False]
-    assert plan.changes[0].after == "before!"
-
-
-class _TargetRecordingExecutor:
-    """HookExecutorPort that records the target/file paths hooks observe."""
-
-    def __init__(self) -> None:
-        self.validate_targets: list[Path] = []
-        self.transform_targets: list[Path] = []
-        self.transform_files: list[Path] = []
+    def __init__(
+        self,
+        *,
+        verdict: Verdict = Verdict(status="pass"),  # noqa: B008
+        warnings: tuple[str, ...] = (),
+    ) -> None:
+        self.verdict = verdict
+        self.warnings = warnings
+        self.calls: list[tuple[str, Path, Path | None, bool]] = []
 
     def transform(
         self,
@@ -170,9 +115,8 @@ class _TargetRecordingExecutor:
         args: dict[str, object],
         capture_diagnostics: bool = False,
     ) -> HookDebugResult[str]:
-        self.transform_targets.append(target)
-        self.transform_files.append(file)
-        return HookDebugResult(result=content, diagnostics="")
+        self.calls.append(("transform", target, file, capture_diagnostics))
+        return HookDebugResult(result=content + "!", diagnostics="ignored", warnings=self.warnings)
 
     def validate(
         self,
@@ -184,23 +128,22 @@ class _TargetRecordingExecutor:
         args: dict[str, object],
         capture_diagnostics: bool = False,
     ) -> HookDebugResult[Verdict]:
-        self.validate_targets.append(target)
-        return HookDebugResult(result=Verdict(status="pass"), diagnostics="")
+        self.calls.append(("validate", target, None, capture_diagnostics))
+        return HookDebugResult(result=self.verdict, diagnostics="ignored", warnings=self.warnings)
 
 
-def _target_reading_recipe() -> Recipe:
-    return Recipe.model_validate(
-        {
-            "version": 1,
-            "steps": [
-                {"type": "validate", "hook": "check"},
-                {"type": "transform", "file": "config.txt", "hook": "rewrite"},
-            ],
-        }
-    )
+_VALIDATE_THEN_TRANSFORM = Recipe.model_validate(
+    {
+        "version": 1,
+        "steps": [
+            {"type": "validate", "hook": "check"},
+            {"type": "transform", "file": "config.txt", "hook": "rewrite"},
+        ],
+    }
+)
 
 
-def test_apply_recipe_absolutizes_relative_target_before_hooks(
+def test_apply_recipe_absolutizes_relative_target_before_hooks_without_diagnostics(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -210,167 +153,52 @@ def test_apply_recipe_absolutizes_relative_target_before_hooks(
     target.mkdir()
     (target / "config.txt").write_text("before")
     monkeypatch.chdir(tmp_path)
+    spy = _StubExecutor()
 
-    spy = _TargetRecordingExecutor()
     plan = ApplyRecipe(spy)(
-        recipe=_target_reading_recipe(),
+        recipe=_VALIDATE_THEN_TRANSFORM,
         recipe_dir=tmp_path,
         local_hook_project=None,
         target=Path("app-alpha"),
         inputs={},
     )
 
-    assert plan.target == tmp_path / "app-alpha"
-    assert plan.target.is_absolute()
-    assert spy.validate_targets == [tmp_path / "app-alpha"]
-    assert spy.transform_targets == [tmp_path / "app-alpha"]
-    assert all(observed.is_absolute() for observed in spy.validate_targets)
-    assert all(observed.is_absolute() for observed in spy.transform_targets)
-    assert all(observed.is_absolute() for observed in spy.transform_files)
-
-
-def test_apply_recipe_relative_and_absolute_targets_match(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    target = tmp_path / "app-bravo"
-    target.mkdir()
-    (target / "config.txt").write_text("before")
-    monkeypatch.chdir(tmp_path)
-
-    relative_spy = _TargetRecordingExecutor()
-    ApplyRecipe(relative_spy)(
-        recipe=_target_reading_recipe(),
-        recipe_dir=tmp_path,
-        local_hook_project=None,
-        target=Path("app-bravo"),
-        inputs={},
-    )
-    absolute_spy = _TargetRecordingExecutor()
-    ApplyRecipe(absolute_spy)(
-        recipe=_target_reading_recipe(),
-        recipe_dir=tmp_path,
-        local_hook_project=None,
-        target=tmp_path / "app-bravo",
-        inputs={},
-    )
-
-    assert relative_spy.validate_targets == absolute_spy.validate_targets
-    assert relative_spy.transform_targets == absolute_spy.transform_targets
-    assert relative_spy.transform_files == absolute_spy.transform_files
-
-
-def test_apply_recipe_skip_verdict_stops_planning_without_changes(tmp_path: Path) -> None:
-    class _SkipExecutor:
-        def transform(
-            self,
-            hook: str,
-            content: str,
-            *,
-            local_hook_project: Path | None,
-            target: Path,
-            file: Path,
-            inputs: dict[str, object],
-            args: dict[str, object],
-            capture_diagnostics: bool = False,
-        ) -> HookDebugResult[str]:
-            raise AssertionError("transform must not run after a skip verdict")
-
-        def validate(
-            self,
-            hook: str,
-            *,
-            local_hook_project: Path | None,
-            target: Path,
-            inputs: dict[str, object],
-            args: dict[str, object],
-            capture_diagnostics: bool = False,
-        ) -> HookDebugResult[Verdict]:
-            return HookDebugResult(
-                result=Verdict(status="skip", message="out of scope"),
-                diagnostics="",
-                warnings=("earlier note",),
-            )
-
-    target = tmp_path / "target"
-    target.mkdir()
-    (target / "config.txt").write_text("before")
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "steps": [
-                {"type": "validate", "hook": "scope"},
-                {"type": "transform", "file": "config.txt", "hook": "rewrite"},
-            ],
-        }
-    )
-
-    plan = ApplyRecipe(_SkipExecutor())(
-        recipe=recipe,
-        recipe_dir=tmp_path,
-        local_hook_project=None,
-        target=target,
-        inputs={},
-    )
-
-    assert plan.status == "skipped"
-    assert plan.changes == ()
-    assert plan.warnings == ("earlier note", "out of scope")
-
-
-def test_apply_recipe_transform_warnings_attach_to_plan(tmp_path: Path) -> None:
-    class _WarnExecutor:
-        def transform(
-            self,
-            hook: str,
-            content: str,
-            *,
-            local_hook_project: Path | None,
-            target: Path,
-            file: Path,
-            inputs: dict[str, object],
-            args: dict[str, object],
-            capture_diagnostics: bool = False,
-        ) -> HookDebugResult[str]:
-            return HookDebugResult(
-                result=content + "!",
-                diagnostics="",
-                warnings=("noted", "again"),
-            )
-
-        def validate(
-            self,
-            hook: str,
-            *,
-            local_hook_project: Path | None,
-            target: Path,
-            inputs: dict[str, object],
-            args: dict[str, object],
-            capture_diagnostics: bool = False,
-        ) -> HookDebugResult[Verdict]:  # pragma: no cover - unused
-            return HookDebugResult(result=Verdict(status="pass"), diagnostics="")
-
-    target = tmp_path / "target"
-    target.mkdir()
-    (target / "config.txt").write_text("before")
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "steps": [{"type": "transform", "file": "config.txt", "hook": "rewrite"}],
-        }
-    )
-
-    plan = ApplyRecipe(_WarnExecutor())(
-        recipe=recipe,
-        recipe_dir=tmp_path,
-        local_hook_project=None,
-        target=target,
-        inputs={},
-    )
-
-    assert plan.status == "planned"
-    assert plan.warnings == ("noted", "again")
+    assert plan.target == target
     assert plan.changes[0].after == "before!"
+    # Planning never asks hooks for captured diagnostics.
+    assert spy.calls == [
+        ("validate", target, None, False),
+        ("transform", target, target / "config.txt", False),
+    ]
+
+
+@pytest.mark.parametrize("skip", [True, False])
+def test_apply_recipe_hook_warnings_attach_and_skip_stops_planning(
+    tmp_path: Path, skip: bool
+) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "config.txt").write_text("before")
+    verdict = Verdict(status="skip", message="out of scope") if skip else Verdict(status="pass")
+    spy = _StubExecutor(verdict=verdict, warnings=("noted",))
+
+    plan = ApplyRecipe(spy)(
+        recipe=_VALIDATE_THEN_TRANSFORM,
+        recipe_dir=tmp_path,
+        local_hook_project=None,
+        target=target,
+        inputs={},
+    )
+
+    if skip:
+        assert plan.status == "skipped"
+        assert plan.changes == ()
+        assert plan.warnings == ("noted", "out of scope")
+        assert [call[0] for call in spy.calls] == ["validate"]
+    else:
+        assert plan.status == "planned"
+        assert plan.warnings == ("noted", "noted")
+        assert plan.changes[0].after == "before!"
 
 
 def test_apply_recipe_plans_template_copy_remove_and_transform(tmp_path: Path) -> None:
@@ -530,14 +358,7 @@ def test_apply_recipe_renders_template_source_and_dest_fields_per_target(
             ],
         }
     )
-    runner = RunBulkApply(
-        ApplyRecipe(
-            HookExecutor(
-                HookResolver(),
-                workers=InlineWorkers(),
-            )
-        )
-    )
+    runner = RunBulkApply(ApplyRecipe(HookExecutor(HookResolver(), workers=InlineWorkers())))
 
     plans = runner.plan(
         recipe=recipe,
@@ -707,140 +528,70 @@ def test_apply_recipe_if_absent_uses_rendered_dest(tmp_path: Path) -> None:
     assert plan.changes == ()
 
 
-def test_apply_recipe_rechecks_rendered_dest_for_path_escape_security(
+@pytest.mark.parametrize(
+    ("declared", "inputs", "step", "match"),
+    [
+        pytest.param(
+            {"name": {"type": "str", "required": True}},
+            {"name": "../escape"},
+            {},
+            "dest must be a safe relative path",
+            id="rendered-dest-escape",
+        ),
+        pytest.param(
+            {"name": {"type": "str", "required": True}},
+            {"name": "/tmp/escape"},
+            {},
+            "dest must be a safe relative path",
+            id="rendered-dest-absolute",
+        ),
+        pytest.param(
+            {"name": {"type": "str", "sensitive": True}},
+            {"name": "secret"},
+            {},
+            "sensitive input 'name' cannot be used in path field 'dest'",
+            id="sensitive-input",
+        ),
+        pytest.param(
+            {"name": {"type": "list"}},
+            {"name": ["a"]},
+            {},
+            "structured input 'name' cannot be rendered; hooks receive it natively",
+            id="structured-input",
+        ),
+        pytest.param(
+            {},
+            {},
+            {"unknown_tokens": "keep"},
+            "template input 'name' is not defined",
+            id="strict-even-when-body-keeps-unknown-tokens",
+        ),
+    ],
+)
+def test_apply_recipe_rejects_unsafe_rendered_path_fields(
     tmp_path: Path,
+    declared: dict[str, object],
+    inputs: dict[str, object],
+    step: dict[str, object],
+    match: str,
 ) -> None:
     recipe_dir = tmp_path / "recipe"
     recipe_dir.mkdir()
-    (recipe_dir / "template.txt").write_text("unsafe\n")
+    (recipe_dir / "template.txt").write_text("body=${{ github.ref }}\n" if step else "plain\n")
     target = tmp_path / "target"
     target.mkdir()
     recipe = Recipe.model_validate(
         {
             "version": 1,
-            "inputs": {"name": {"type": "str", "required": True}},
+            "inputs": declared,
             "steps": [
-                {"type": "template", "template": "template.txt", "dest": "{{ name }}.yml"},
+                {"type": "template", "template": "template.txt", "dest": "{{ name }}.yml", **step}
             ],
         }
     )
 
-    with pytest.raises(ValueError, match="dest must be a safe relative path"):
-        _planner(tmp_path)(
-            recipe=recipe,
-            recipe_dir=recipe_dir,
-            target=target,
-            inputs={"name": "../escape"},
-        )
-
-
-def test_apply_recipe_rechecks_rendered_dest_for_absolute_path_injection(
-    tmp_path: Path,
-) -> None:
-    recipe_dir = tmp_path / "recipe"
-    recipe_dir.mkdir()
-    (recipe_dir / "template.txt").write_text("unsafe\n")
-    target = tmp_path / "target"
-    target.mkdir()
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "inputs": {"name": {"type": "str", "required": True}},
-            "steps": [
-                {"type": "template", "template": "template.txt", "dest": "{{ name }}.yml"},
-            ],
-        }
-    )
-
-    with pytest.raises(ValueError, match="dest must be a safe relative path"):
-        _planner(tmp_path)(
-            recipe=recipe,
-            recipe_dir=recipe_dir,
-            target=target,
-            inputs={"name": "/tmp/escape"},
-        )
-
-
-def test_apply_recipe_rejects_sensitive_input_in_path_field(tmp_path: Path) -> None:
-    recipe_dir = tmp_path / "recipe"
-    recipe_dir.mkdir()
-    (recipe_dir / "template.txt").write_text("secret\n")
-    target = tmp_path / "target"
-    target.mkdir()
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "inputs": {"token": {"type": "str", "sensitive": True}},
-            "steps": [
-                {"type": "template", "template": "template.txt", "dest": "{{ token }}.yml"},
-            ],
-        }
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="sensitive input 'token' cannot be used in path field 'dest'",
-    ):
-        _planner(tmp_path)(
-            recipe=recipe,
-            recipe_dir=recipe_dir,
-            target=target,
-            inputs={"token": "secret"},
-        )
-
-
-def test_apply_recipe_rejects_structured_input_in_path_field(tmp_path: Path) -> None:
-    recipe_dir = tmp_path / "recipe"
-    recipe_dir.mkdir()
-    (recipe_dir / "template.txt").write_text("structured\n")
-    target = tmp_path / "target"
-    target.mkdir()
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "inputs": {"cols": {"type": "list"}},
-            "steps": [
-                {"type": "template", "template": "template.txt", "dest": "{{ cols }}.yml"},
-            ],
-        }
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="structured input 'cols' cannot be rendered; hooks receive it natively",
-    ):
-        _planner(tmp_path)(
-            recipe=recipe,
-            recipe_dir=recipe_dir,
-            target=target,
-            inputs={"cols": ["a"]},
-        )
-
-
-def test_apply_recipe_path_fields_are_strict_even_when_template_body_keeps_unknown_tokens(
-    tmp_path: Path,
-) -> None:
-    recipe_dir = tmp_path / "recipe"
-    recipe_dir.mkdir()
-    (recipe_dir / "template.txt").write_text("body=${{ github.ref }}\n")
-    target = tmp_path / "target"
-    target.mkdir()
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "steps": [
-                {
-                    "type": "template",
-                    "template": "template.txt",
-                    "dest": "{{ missing }}.yml",
-                    "unknown_tokens": "keep",
-                },
-            ],
-        }
-    )
-
-    with pytest.raises(ValueError, match="template input 'missing' is not defined"):
-        _planner(tmp_path)(recipe=recipe, recipe_dir=recipe_dir, target=target, inputs={})
+    with pytest.raises(ValueError, match=re.escape(match)):
+        _planner(tmp_path)(recipe=recipe, recipe_dir=recipe_dir, target=target, inputs=inputs)
 
 
 def test_apply_recipe_if_absent_false_keeps_overwrite_behavior(tmp_path: Path) -> None:
@@ -930,53 +681,47 @@ def test_apply_recipe_transform_globs_expand_sorted_deduped_and_excluded(
     ]
 
 
-def test_apply_recipe_remove_globs_plan_like_literal_files_and_include_dot_git(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    ("step", "removed"),
+    [
+        pytest.param(
+            {"globs": ["*.bak", ".git/**"]},
+            [".git/config", "build.bak"],
+            id="globs-plan-like-literal-files-and-include-dot-git",
+        ),
+        pytest.param(
+            {"globs": ["**/*.yml"], "exclude": ["*.yml"]},
+            ["sub/nested.yml"],
+            id="exclude-uses-glob-semantics-not-fnmatch",
+        ),
+        pytest.param(
+            {"files": ["build.bak", "top.yml", "missing.cfg"]},
+            ["build.bak", "top.yml"],
+            id="files-skip-missing",
+        ),
+    ],
+)
+def test_apply_recipe_remove_selects_files(
+    tmp_path: Path, step: dict[str, object], removed: list[str]
 ) -> None:
-    recipe_dir = tmp_path / "recipe"
-    recipe_dir.mkdir()
     target = tmp_path / "target"
-    target.mkdir()
-    (target / ".git").mkdir()
-    (target / ".git" / "config").write_text("[core]\n")
-    (target / "build.bak").write_text("remove\n")
-    (target / "keep.txt").write_text("keep\n")
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "steps": [
-                {"type": "remove", "globs": ["*.bak", ".git/**"]},
-            ],
-        }
-    )
+    for relative, content in {
+        ".git/config": "[core]\n",
+        "build.bak": "remove\n",
+        "keep.txt": "keep\n",
+        "top.yml": "top\n",
+        "sub/nested.yml": "nested\n",
+    }.items():
+        (target / relative).parent.mkdir(parents=True, exist_ok=True)
+        (target / relative).write_text(content)
+    recipe = Recipe.model_validate({"version": 1, "steps": [{"type": "remove", **step}]})
 
-    plan = _planner(tmp_path)(recipe=recipe, recipe_dir=recipe_dir, target=target, inputs={})
+    plan = _planner(tmp_path)(recipe=recipe, recipe_dir=tmp_path, target=target, inputs={})
 
-    assert [
-        (change.relative_path.as_posix(), change.before, change.after) for change in plan.changes
-    ] == [
-        (".git/config", "[core]\n", None),
-        ("build.bak", "remove\n", None),
+    assert [(change.relative_path.as_posix(), change.after) for change in plan.changes] == [
+        (relative, None) for relative in removed
     ]
-
-
-def test_apply_recipe_glob_exclude_uses_glob_semantics_not_fnmatch(tmp_path: Path) -> None:
-    recipe_dir = tmp_path / "recipe"
-    recipe_dir.mkdir()
-    target = tmp_path / "target"
-    (target / "sub").mkdir(parents=True)
-    (target / "top.yml").write_text("top\n")
-    (target / "sub" / "nested.yml").write_text("nested\n")
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "steps": [{"type": "remove", "globs": ["**/*.yml"], "exclude": ["*.yml"]}],
-        }
-    )
-
-    plan = _planner(tmp_path)(recipe=recipe, recipe_dir=recipe_dir, target=target, inputs={})
-
-    assert [change.relative_path.as_posix() for change in plan.changes] == ["sub/nested.yml"]
+    assert plan.changes[0].before == (target / removed[0]).read_text()
 
 
 def test_apply_recipe_glob_expansion_skips_directories_and_symlinks(tmp_path: Path) -> None:
@@ -995,24 +740,6 @@ def test_apply_recipe_glob_expansion_skips_directories_and_symlinks(tmp_path: Pa
     plan = _planner(tmp_path)(recipe=recipe, recipe_dir=recipe_dir, target=target, inputs={})
 
     assert [change.relative_path.as_posix() for change in plan.changes] == ["real.yml"]
-
-
-def test_apply_recipe_globs_with_zero_matches_warn(tmp_path: Path) -> None:
-    recipe_dir = tmp_path / "recipe"
-    recipe_dir.mkdir()
-    target = tmp_path / "target"
-    target.mkdir()
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "steps": [{"type": "remove", "globs": ["**/*.generated"]}],
-        }
-    )
-
-    plan = _planner(tmp_path)(recipe=recipe, recipe_dir=recipe_dir, target=target, inputs={})
-
-    assert plan.changes == ()
-    assert plan.warnings == ("globs matched no files: **/*.generated",)
 
 
 def test_apply_recipe_glob_transform_binary_file_reports_target_error(tmp_path: Path) -> None:
@@ -1037,14 +764,7 @@ def test_apply_recipe_glob_transform_binary_file_reports_target_error(tmp_path: 
         }
     )
 
-    runner = RunBulkApply(
-        ApplyRecipe(
-            HookExecutor(
-                HookResolver(),
-                workers=InlineWorkers(),
-            )
-        )
-    )
+    runner = RunBulkApply(ApplyRecipe(HookExecutor(HookResolver(), workers=InlineWorkers())))
     plan = runner.plan(
         recipe=recipe,
         recipe_dir=recipe_dir,
@@ -1231,7 +951,16 @@ def test_crlf_file_survives_transform_round_trip(tmp_path: Path) -> None:
     assert (target / "config.txt").read_bytes() == expected.encode("utf-8")
 
 
-def test_optional_transform_still_errors_after_explicit_remove(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("remove_first", "match"),
+    [
+        (True, r"cannot transform deleted file: local\.yml"),
+        (False, r"transform path is not a file: local\.yml"),
+    ],
+)
+def test_optional_transform_still_errors_on_deleted_or_non_file_paths(
+    tmp_path: Path, remove_first: bool, match: str
+) -> None:
     recipe_dir = tmp_path / "recipe"
     recipe_dir.mkdir()
     _write_hook_project(
@@ -1245,56 +974,18 @@ def test_optional_transform_still_errors_after_explicit_remove(tmp_path: Path) -
     )
     target = tmp_path / "target"
     target.mkdir()
-    (target / "local.yml").write_text("---\n")
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "steps": [
-                {"type": "remove", "file": "local.yml"},
-                {
-                    "type": "transform",
-                    "file": "local.yml",
-                    "optional": True,
-                    "hook": "noop",
-                },
-            ],
-        }
-    )
+    if remove_first:
+        (target / "local.yml").write_text("---\n")
+    else:
+        (target / "local.yml").mkdir()
+    steps: list[dict[str, object]] = [
+        {"type": "transform", "file": "local.yml", "optional": True, "hook": "noop"}
+    ]
+    if remove_first:
+        steps.insert(0, {"type": "remove", "file": "local.yml"})
+    recipe = Recipe.model_validate({"version": 1, "steps": steps})
 
-    with pytest.raises(ValueError, match=r"cannot transform deleted file: local\.yml"):
-        _planner(tmp_path)(recipe=recipe, recipe_dir=recipe_dir, target=target, inputs={})
-
-
-def test_optional_transform_errors_when_target_path_is_not_a_file(tmp_path: Path) -> None:
-    recipe_dir = tmp_path / "recipe"
-    recipe_dir.mkdir()
-    _write_hook_project(
-        recipe_dir,
-        {
-            "noop": (
-                "def transform(content, *, inputs, target, file, args, helpers):\n"
-                "    return content\n"
-            )
-        },
-    )
-    target = tmp_path / "target"
-    target.mkdir()
-    (target / "local.yml").mkdir()
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "steps": [
-                {
-                    "type": "transform",
-                    "file": "local.yml",
-                    "optional": True,
-                    "hook": "noop",
-                },
-            ],
-        }
-    )
-
-    with pytest.raises(ValueError, match=r"transform path is not a file: local\.yml"):
+    with pytest.raises(ValueError, match=match):
         _planner(tmp_path)(recipe=recipe, recipe_dir=recipe_dir, target=target, inputs={})
 
 
@@ -1333,29 +1024,6 @@ def test_optional_transform_uses_content_created_earlier_in_plan(tmp_path: Path)
     assert [str(change.relative_path) for change in plan.changes] == ["generated.yml"]
     assert plan.changes[0].after == "created\ntransformed\n"
     assert plan.warnings == ()
-
-
-def test_remove_files_removes_multiple_files_and_skips_missing_files(tmp_path: Path) -> None:
-    recipe_dir = tmp_path / "recipe"
-    recipe_dir.mkdir()
-    target = tmp_path / "target"
-    target.mkdir()
-    (target / "ansible.cfg").write_text("delete\n")
-    (target / "old.cfg").write_text("delete too\n")
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "steps": [{"type": "remove", "files": ["ansible.cfg", "old.cfg", "missing.cfg"]}],
-        }
-    )
-
-    plan = _planner(tmp_path)(recipe=recipe, recipe_dir=recipe_dir, target=target, inputs={})
-
-    assert sorted(str(change.relative_path) for change in plan.changes) == [
-        "ansible.cfg",
-        "old.cfg",
-    ]
-    assert all(change.after is None for change in plan.changes)
 
 
 def test_apply_recipe_globs_work_when_target_is_a_symlink(tmp_path: Path) -> None:
@@ -1440,3 +1108,22 @@ def test_run_bulk_apply_dedupes_targets_by_resolved_path(
     for plan in plans:
         flush_changes(plan.changes)
     assert (first / "out.txt").read_text() == "hello\n"
+
+
+def test_apply_recipe_rejects_recipe_source_symlink_escape(tmp_path: Path) -> None:
+    recipe_dir = tmp_path / "recipe"
+    recipe_dir.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret\n")
+    (recipe_dir / "template.txt").symlink_to(outside)
+    target = tmp_path / "target"
+    target.mkdir()
+    recipe = Recipe.model_validate(
+        {
+            "version": 1,
+            "steps": [{"type": "template", "template": "template.txt", "dest": "out.txt"}],
+        }
+    )
+
+    with pytest.raises(ValueError, match="symlink"):
+        _planner(tmp_path)(recipe=recipe, recipe_dir=recipe_dir, target=target, inputs={})

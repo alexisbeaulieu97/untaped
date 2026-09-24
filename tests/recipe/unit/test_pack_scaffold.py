@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import tomllib
+from collections.abc import Callable
 from importlib.metadata import version
 from pathlib import Path
 
@@ -9,12 +11,23 @@ import pytest
 from packaging.version import Version
 
 import untaped.capabilities.recipe.infrastructure.pack_scaffold as pack_scaffold
+from untaped.capabilities.recipe.application.harness import load_case_spec, orphaned_test_dirs
 from untaped.capabilities.recipe.cli import app
 from untaped.capabilities.recipe.domain.pack import InstalledPack
 from untaped.capabilities.recipe.infrastructure.pack_files import hook_exports, read_pack_manifest
 from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("isolate_config")
+
+
+@pytest.fixture(autouse=True)
+def no_uv_lock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
+
+
+@pytest.fixture
+def pack(tmp_path: Path) -> Path:
+    return pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
 
 
 def _fail_lock(project_root: Path) -> None:
@@ -25,420 +38,185 @@ def _fail_if_lock_called(project_root: Path) -> None:
     raise AssertionError(f"lock_project should not be called for {project_root}")
 
 
-def _assert_repairable_lock_error(
-    exc_info: pytest.ExceptionInfo[ValueError],
-    *,
-    project_root: Path,
-    created_path: Path,
-    created_label: str,
+def test_scaffold_pack_writes_parseable_manifest_with_hook_api_floors(pack: Path) -> None:
+    pyproject = tomllib.loads((pack / "pyproject.toml").read_text(encoding="utf-8"))
+    installed = Version(version("untaped"))
+
+    assert read_pack_manifest(pack).name == "ansible"
+    assert pyproject["project"]["name"] == "untaped-recipe-ansible"
+    assert pyproject["tool"]["untaped_recipe"]["requires_hook_api"] == ">=0.10,<1"
+    assert pyproject["dependency-groups"]["dev"] == [
+        f"untaped>={installed.public},<{installed.major + 1}",
+        "pytest",
+    ]
+    assert pyproject["tool"]["pytest"]["ini_options"]["pythonpath"] == ["src"]
+    assert (pack / "src" / "ansible_pack" / "hooks" / "__init__.py").is_file()
+
+
+def test_scaffold_recipe_appends_manifest_row_starter_case_and_rejects_duplicates(
+    pack: Path,
 ) -> None:
-    message = str(exc_info.value)
-    assert exc_info.type.__name__ == "ScaffoldLockError"
-    assert created_label in message
-    assert str(created_path) in message
-    assert "mirror is missing untaped-recipe" in message
-    assert (
-        f"fix the index or add a [tool.uv.sources] override, then run `uv lock` in {project_root}"
-    ) in message
+    recipe_path = pack_scaffold.scaffold_recipe(pack, "playbook")
 
-
-def test_scaffold_pack_writes_parseable_manifest_with_hook_api_floors(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
-    pack_dir = tmp_path / "ansible"
-
-    pack_scaffold.scaffold_pack(pack_dir, "ansible")
-
-    manifest = read_pack_manifest(pack_dir)
-    pyproject = (pack_dir / "pyproject.toml").read_text(encoding="utf-8")
-    assert manifest.name == "ansible"
-    assert pyproject == (
-        "[project]\n"
-        'name = "untaped-recipe-ansible"\n'
-        'version = "0.1.0"\n'
-        'requires-python = ">=3.14"\n'
-        "dependencies = []\n"
-        "\n"
-        "[dependency-groups]\n"
-        f'dev = ["{_expected_dev_requirement()}", "pytest"]\n'
-        "\n"
-        "[tool.pytest.ini_options]\n"
-        'pythonpath = ["src"]\n'
-        "\n"
-        "[tool.untaped_recipe]\n"
-        'requires_hook_api = ">=0.10,<1"\n'
-    )
-    assert (pack_dir / "src" / "ansible_pack" / "hooks" / "__init__.py").is_file()
-
-
-def test_scaffold_pack_lock_failure_keeps_pack_directory(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(pack_scaffold, "lock_project", _fail_lock)
-    pack_dir = tmp_path / "ansible"
-
-    with pytest.raises(ValueError) as exc_info:
-        pack_scaffold.scaffold_pack(pack_dir, "ansible")
-
-    _assert_repairable_lock_error(
-        exc_info,
-        project_root=pack_dir,
-        created_path=pack_dir,
-        created_label="recipe pack",
-    )
-    assert (pack_dir / "pyproject.toml").is_file()
-    assert (pack_dir / "src" / "ansible_pack" / "__init__.py").is_file()
-    assert (pack_dir / "src" / "ansible_pack" / "hooks" / "__init__.py").is_file()
-
-
-def test_scaffold_recipe_appends_manifest_row_and_rejects_duplicates(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
-    pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
-
-    recipe_path = pack_scaffold.scaffold_recipe(tmp_path / "ansible", "playbook")
-
-    manifest = read_pack_manifest(tmp_path / "ansible")
-    assert recipe_path == tmp_path / "ansible" / "recipes" / "playbook" / "recipe.yml"
-    assert manifest.recipes["playbook"].path == "recipes/playbook/recipe.yml"
+    assert recipe_path == pack / "recipes" / "playbook" / "recipe.yml"
+    assert read_pack_manifest(pack).recipes["playbook"].path == "recipes/playbook/recipe.yml"
     assert "version: 1" in recipe_path.read_text(encoding="utf-8")
-    with pytest.raises(ValueError, match="recipe already exists"):
-        pack_scaffold.scaffold_recipe(tmp_path / "ansible", "playbook")
-
-
-def test_scaffold_recipe_creates_starter_test_case(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
-    pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
-
-    pack_scaffold.scaffold_recipe(tmp_path / "ansible", "playbook")
-
-    case_dir = tmp_path / "ansible" / "tests" / "playbook" / "basic"
+    case_dir = pack / "tests" / "playbook" / "basic"
     assert (case_dir / "given").is_dir()
-    case_yml = (case_dir / "case.yml").read_text(encoding="utf-8")
-    assert case_yml.startswith("#")
-    assert "untaped recipe test <pack>/<recipe>" in case_yml
-    from untaped.capabilities.recipe.application.harness import load_case_spec
-
+    assert "untaped recipe test <pack>/<recipe>" in (case_dir / "case.yml").read_text()
     assert load_case_spec(case_dir).expect == "success"
+    with pytest.raises(ValueError, match="recipe already exists"):
+        pack_scaffold.scaffold_recipe(pack, "playbook")
 
 
-def test_scaffold_recipe_lock_failure_keeps_recipe_case_and_manifest_row(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
-    pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
-
-    monkeypatch.setattr(pack_scaffold, "lock_project", _fail_lock)
-    with pytest.raises(ValueError) as exc_info:
-        pack_scaffold.scaffold_recipe(tmp_path / "ansible", "playbook")
-
-    recipe_path = tmp_path / "ansible" / "recipes" / "playbook" / "recipe.yml"
-    _assert_repairable_lock_error(
-        exc_info,
-        project_root=tmp_path / "ansible",
-        created_path=recipe_path,
-        created_label="recipe",
-    )
-    assert recipe_path.is_file()
-    assert (tmp_path / "ansible" / "tests" / "playbook" / "basic" / "given").is_dir()
-    assert (tmp_path / "ansible" / "tests" / "playbook" / "basic" / "case.yml").is_file()
-    manifest = read_pack_manifest(tmp_path / "ansible")
-    assert manifest.recipes["playbook"].path == "recipes/playbook/recipe.yml"
-
-
-def test_scaffold_recipe_rejects_existing_starter_test_case(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
-    pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
-    (tmp_path / "ansible" / "tests" / "playbook" / "basic").mkdir(parents=True)
+def test_scaffold_recipe_rejects_existing_starter_test_case(pack: Path) -> None:
+    (pack / "tests" / "playbook" / "basic").mkdir(parents=True)
 
     with pytest.raises(ValueError, match="recipe tests already exist: playbook"):
-        pack_scaffold.scaffold_recipe(tmp_path / "ansible", "playbook")
+        pack_scaffold.scaffold_recipe(pack, "playbook")
 
 
-def test_scaffold_hook_writes_exporting_stub_and_manifest_row(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("kind", ["transform", "validate"])
+def test_scaffold_hook_writes_exporting_stub_paired_pytest_and_manifest_row(
+    pack: Path, kind: str
 ) -> None:
-    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
-    pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
+    module_path = pack_scaffold.scaffold_hook(pack, "probe", kind=kind)
 
-    module_path = pack_scaffold.scaffold_hook(tmp_path / "ansible", "set_owner")
-
-    manifest = read_pack_manifest(tmp_path / "ansible")
-    assert hook_exports(module_path) == frozenset({"transform"})
-    assert module_path.read_text(encoding="utf-8") == (
-        "from pathlib import Path\n"
-        "from typing import TYPE_CHECKING\n"
-        "\n"
-        "if TYPE_CHECKING:\n"
-        "    from untaped.capabilities.recipe.hook_api import HookHelpers\n"
-        "\n"
-        "\n"
-        "def transform(\n"
-        "    content: str,\n"
-        "    *,\n"
-        "    inputs: dict[str, object],\n"
-        "    target: Path,\n"
-        "    file: Path,\n"
-        "    args: dict[str, object],\n"
-        '    helpers: "HookHelpers",\n'
-        ") -> str:\n"
-        "    return content\n"
+    assert hook_exports(module_path) == frozenset({kind})
+    # Pack authors import the stable hook_api path for editor typing.
+    assert "from untaped.capabilities.recipe.hook_api import HookHelpers" in (
+        module_path.read_text(encoding="utf-8")
     )
-    assert manifest.hooks["set_owner"].module == "ansible_pack.hooks.set_owner"
-    assert "kind" not in (tmp_path / "ansible" / "pyproject.toml").read_text(encoding="utf-8")
-    with pytest.raises(ValueError, match="hook already exists"):
-        pack_scaffold.scaffold_hook(tmp_path / "ansible", "set_owner")
-
-
-def test_scaffold_hook_can_write_validate_stub(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
-    pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
-
-    module_path = pack_scaffold.scaffold_hook(tmp_path / "ansible", "check", kind="validate")
-
-    assert hook_exports(module_path) == frozenset({"validate"})
-    assert module_path.read_text(encoding="utf-8") == (
-        "from pathlib import Path\n"
-        "from typing import TYPE_CHECKING\n"
-        "\n"
-        "if TYPE_CHECKING:\n"
-        "    from untaped.capabilities.recipe.hook_api import HookHelpers\n"
-        "\n"
-        "\n"
-        "def validate(\n"
-        "    *,\n"
-        "    inputs: dict[str, object],\n"
-        "    target: Path,\n"
-        "    args: dict[str, object],\n"
-        '    helpers: "HookHelpers",\n'
-        ") -> object:\n"
-        "    return helpers.pass_()\n"
-    )
-
-
-def test_scaffold_hook_writes_direct_pytest(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
-    pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
-
-    pack_scaffold.scaffold_hook(tmp_path / "ansible", "set_owner")
-
-    test_path = tmp_path / "ansible" / "tests" / "test_hook_set_owner.py"
+    test_path = pack / "tests" / "test_hook_probe.py"
     content = test_path.read_text(encoding="utf-8")
     compile(content, str(test_path), "exec")
-    assert "from pathlib import Path" in content
-    assert "from untaped.capabilities.recipe.hook_worker import HookHelpers" in content
-    assert "from ansible_pack.hooks.set_owner import transform" in content
-    assert 'target=Path(".")' in content
-    assert 'file=Path("example.txt")' in content
-    assert "def test_" in content
-
-
-def test_scaffold_hook_validate_kind_writes_matching_pytest(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
-    pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
-
-    pack_scaffold.scaffold_hook(tmp_path / "ansible", "check", kind="validate")
-
-    test_path = tmp_path / "ansible" / "tests" / "test_hook_check.py"
-    content = test_path.read_text(encoding="utf-8")
-    compile(content, str(test_path), "exec")
-    assert "from pathlib import Path" in content
-    assert "from ansible_pack.hooks.check import validate" in content
-    assert 'target=Path(".")' in content
-    assert "pass_()" in content
-
-
-def test_scaffold_hook_force_replaces_stub_and_paired_test(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
-    pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
-    pack_scaffold.scaffold_hook(tmp_path / "ansible", "probe", kind="transform")
-
-    module_path = tmp_path / "ansible" / "src" / "ansible_pack" / "hooks" / "probe.py"
-    test_path = tmp_path / "ansible" / "tests" / "test_hook_probe.py"
-    assert "def transform" in module_path.read_text(encoding="utf-8")
-    assert "import transform" in test_path.read_text(encoding="utf-8")
-
-    # Without --force a re-scaffold of the same hook is refused.
+    assert f"from ansible_pack.hooks.probe import {kind}" in content
+    assert read_pack_manifest(pack).hooks["probe"].module == "ansible_pack.hooks.probe"
+    assert "kind" not in (pack / "pyproject.toml").read_text(encoding="utf-8")
     with pytest.raises(ValueError, match="hook already exists"):
-        pack_scaffold.scaffold_hook(tmp_path / "ansible", "probe", kind="validate")
-
-    module_path = pack_scaffold.scaffold_hook(
-        tmp_path / "ansible", "probe", kind="validate", force=True
-    )
-
-    module_content = module_path.read_text(encoding="utf-8")
-    assert "def validate" in module_content
-    assert "def transform" not in module_content
-    test_content = test_path.read_text(encoding="utf-8")
-    assert "import validate" in test_content
-    assert "transform" not in test_content
-    # The manifest still names the hook exactly once.
-    manifest = read_pack_manifest(tmp_path / "ansible")
-    assert manifest.hooks["probe"].module == "ansible_pack.hooks.probe"
+        pack_scaffold.scaffold_hook(pack, "probe")
 
 
-def test_scaffold_hook_rejects_existing_test_file(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
-    pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
-    tests_dir = tmp_path / "ansible" / "tests"
+def test_scaffold_hook_rejects_existing_test_file(pack: Path) -> None:
+    tests_dir = pack / "tests"
     tests_dir.mkdir()
     (tests_dir / "test_hook_set_owner.py").write_text("mine\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="hook test already exists"):
-        pack_scaffold.scaffold_hook(tmp_path / "ansible", "set_owner")
+        pack_scaffold.scaffold_hook(pack, "set_owner")
 
-    module_path = tmp_path / "ansible" / "src" / "ansible_pack" / "hooks" / "set_owner.py"
-    assert not module_path.exists()
+    assert not (pack / "src" / "ansible_pack" / "hooks" / "set_owner.py").exists()
     assert (tests_dir / "test_hook_set_owner.py").read_text(encoding="utf-8") == "mine\n"
 
 
 def test_scaffold_hook_creation_failure_removes_test_file(
-    tmp_path: Path,
+    pack: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
-    pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
-
     def _boom(pyproject: Path, name: str, module: str) -> None:
         raise OSError("disk full")
 
     monkeypatch.setattr(pack_scaffold, "_append_hook_row", _boom)
     with pytest.raises(OSError, match="disk full"):
-        pack_scaffold.scaffold_hook(tmp_path / "ansible", "set_owner")
+        pack_scaffold.scaffold_hook(pack, "set_owner")
 
-    assert not (tmp_path / "ansible" / "tests" / "test_hook_set_owner.py").exists()
-    assert not (tmp_path / "ansible" / "tests").exists()
+    assert not (pack / "tests").exists()
 
 
-def test_scaffolded_hook_pack_passes_check(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from untaped.capabilities.recipe.application.harness import orphaned_test_dirs
+def test_scaffolded_hook_pack_passes_check(pack: Path) -> None:
+    pack_scaffold.scaffold_hook(pack, "set_owner")
+    (pack / "uv.lock").write_text("version = 1\n", encoding="utf-8")
 
-    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
-    pack_dir = tmp_path / "ansible"
-    pack_scaffold.scaffold_pack(pack_dir, "ansible")
-    pack_scaffold.scaffold_hook(pack_dir, "set_owner")
-    (pack_dir / "uv.lock").write_text("version = 1\n", encoding="utf-8")
-
-    manifest = read_pack_manifest(pack_dir)
-    assert orphaned_test_dirs(InstalledPack.local(pack_dir, manifest)) == []
-    result = CliInvoker().invoke(app, ["validate", str(pack_dir), "--format", "json"])
+    assert orphaned_test_dirs(InstalledPack.local(pack, read_pack_manifest(pack))) == []
+    result = CliInvoker().invoke(app, ["validate", str(pack), "--format", "json"])
     assert result.exit_code == 0, result.output
 
 
-def test_scaffold_hook_lock_failure_keeps_module_and_manifest_row(
+_LOCK_FAILURES: list[tuple[str, Callable[[Path], Path], str, str]] = [
+    ("pack", lambda root: pack_scaffold.scaffold_pack(root, "ansible"), "", "recipe pack"),
+    (
+        "recipe",
+        lambda root: pack_scaffold.scaffold_recipe(root, "playbook"),
+        "recipes/playbook/recipe.yml",
+        "recipe",
+    ),
+    (
+        "hook",
+        lambda root: pack_scaffold.scaffold_hook(root, "set_owner"),
+        "src/ansible_pack/hooks/set_owner.py",
+        "hook module",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("what", "scaffold", "created", "label"), _LOCK_FAILURES, ids=[row[0] for row in _LOCK_FAILURES]
+)
+def test_scaffold_lock_failure_keeps_written_files_and_explains_repair(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    what: str,
+    scaffold: Callable[[Path], Path],
+    created: str,
+    label: str,
 ) -> None:
-    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
-    pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
-
+    root = tmp_path / "ansible"
+    if what != "pack":
+        pack_scaffold.scaffold_pack(root, "ansible")
     monkeypatch.setattr(pack_scaffold, "lock_project", _fail_lock)
-    with pytest.raises(ValueError) as exc_info:
-        pack_scaffold.scaffold_hook(tmp_path / "ansible", "set_owner")
 
-    module_path = tmp_path / "ansible" / "src" / "ansible_pack" / "hooks" / "set_owner.py"
-    _assert_repairable_lock_error(
-        exc_info,
-        project_root=tmp_path / "ansible",
-        created_path=module_path,
-        created_label="hook module",
-    )
-    assert module_path.is_file()
-    assert (tmp_path / "ansible" / "tests" / "test_hook_set_owner.py").is_file()
-    manifest = read_pack_manifest(tmp_path / "ansible")
-    assert manifest.hooks["set_owner"].module == "ansible_pack.hooks.set_owner"
+    with pytest.raises(pack_scaffold.ScaffoldLockError) as exc_info:
+        scaffold(root)
+
+    message = str(exc_info.value)
+    created_path = root / created if created else root
+    assert label in message
+    assert str(created_path) in message
+    assert "mirror is missing untaped-recipe" in message
+    assert (
+        f"fix the index or add a [tool.uv.sources] override, then run `uv lock` in {root}"
+    ) in message
+    assert created_path.exists()
+    manifest = read_pack_manifest(root)
+    assert manifest.recipes.keys() == ({"playbook"} if what == "recipe" else set())
+    assert manifest.hooks.keys() == ({"set_owner"} if what == "hook" else set())
 
 
-def test_new_pack_no_lock_never_invokes_uv_and_writes_scaffold(
+@pytest.mark.parametrize(
+    ("args", "printed", "created"),
+    [
+        (["init", "pack", "fresh"], "fresh", "fresh/src/fresh_pack/__init__.py"),
+        (
+            ["init", "recipe", "./ansible/playbook"],
+            "ansible/recipes/playbook/recipe.yml",
+            "ansible/tests/playbook/basic/case.yml",
+        ),
+        (
+            ["init", "hook", "./ansible/set_owner"],
+            "ansible/src/ansible_pack/hooks/set_owner.py",
+            "ansible/tests/test_hook_set_owner.py",
+        ),
+    ],
+)
+def test_init_no_lock_never_invokes_uv_and_writes_scaffold(
     tmp_path: Path,
+    pack: Path,
     monkeypatch: pytest.MonkeyPatch,
+    args: list[str],
+    printed: str,
+    created: str,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(pack_scaffold, "lock_project", _fail_if_lock_called)
 
-    result = CliInvoker().invoke(app, ["init", "pack", "ansible", "--no-lock"])
+    result = CliInvoker().invoke(app, [*args, "--no-lock"])
 
     assert result.exit_code == 0, result.output
-    assert str(tmp_path / "ansible") in result.stdout
+    assert printed in result.stdout
     assert "uv.lock was not created/refreshed" in result.stderr
     assert "hooks need `uv lock` before running" in result.stderr
-    assert (tmp_path / "ansible" / "pyproject.toml").is_file()
-    assert (tmp_path / "ansible" / "src" / "ansible_pack" / "__init__.py").is_file()
-    assert not (tmp_path / "ansible" / "uv.lock").exists()
-
-
-def test_new_recipe_no_lock_never_invokes_uv_and_writes_scaffold(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
-    pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
-    monkeypatch.setattr(pack_scaffold, "lock_project", _fail_if_lock_called)
-
-    result = CliInvoker().invoke(app, ["init", "recipe", "./ansible/playbook", "--no-lock"])
-
-    assert result.exit_code == 0, result.output
-    recipe_path = tmp_path / "ansible" / "recipes" / "playbook" / "recipe.yml"
-    assert "ansible/recipes/playbook/recipe.yml" in result.stdout
-    assert "uv.lock was not created/refreshed" in result.stderr
-    assert "hooks need `uv lock` before running" in result.stderr
-    assert recipe_path.is_file()
-    assert (tmp_path / "ansible" / "tests" / "playbook" / "basic" / "case.yml").is_file()
-    manifest = read_pack_manifest(tmp_path / "ansible")
-    assert manifest.recipes["playbook"].path == "recipes/playbook/recipe.yml"
-
-
-def test_new_hook_no_lock_never_invokes_uv_and_writes_scaffold(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
-    pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
-    monkeypatch.setattr(pack_scaffold, "lock_project", _fail_if_lock_called)
-
-    result = CliInvoker().invoke(app, ["init", "hook", "./ansible/set_owner", "--no-lock"])
-
-    assert result.exit_code == 0, result.output
-    module_path = tmp_path / "ansible" / "src" / "ansible_pack" / "hooks" / "set_owner.py"
-    assert "ansible/src/ansible_pack/hooks/set_owner.py" in result.stdout
-    assert "uv.lock was not created/refreshed" in result.stderr
-    assert "hooks need `uv lock` before running" in result.stderr
-    assert module_path.is_file()
-    manifest = read_pack_manifest(tmp_path / "ansible")
-    assert manifest.hooks["set_owner"].module == "ansible_pack.hooks.set_owner"
+    assert (tmp_path / created).is_file()
+    assert not (tmp_path / created.split("/")[0] / "uv.lock").exists()
 
 
 def test_new_hook_explicit_local_path_splits_on_last_segment(
@@ -446,34 +224,26 @@ def test_new_hook_explicit_local_path_splits_on_last_segment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
     pack_scaffold.scaffold_pack(tmp_path / "some-local-pack", "some-local-pack")
 
     result = CliInvoker().invoke(app, ["init", "hook", "./some-local-pack/probe"])
 
     assert result.exit_code == 0, result.output
-    assert (
-        tmp_path / "some-local-pack" / "src" / "some_local_pack_pack" / "hooks" / "probe.py"
-    ).is_file()
     manifest = read_pack_manifest(tmp_path / "some-local-pack")
     assert manifest.hooks["probe"].module == "some_local_pack_pack.hooks.probe"
 
 
 def test_new_hook_names_kind_and_force_replaces_wrong_kind(
     tmp_path: Path,
+    pack: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
-    pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
 
     made = CliInvoker().invoke(app, ["init", "hook", "./ansible/probe"])
     assert made.exit_code == 0, made.output
     assert "scaffolded transform hook" in made.stderr
     assert "--kind" in made.stderr
-
-    test_path = tmp_path / "ansible" / "tests" / "test_hook_probe.py"
-    assert "transform" in test_path.read_text(encoding="utf-8")
 
     refused = CliInvoker().invoke(app, ["init", "hook", "./ansible/probe", "--kind", "validate"])
     assert refused.exit_code != 0
@@ -484,51 +254,34 @@ def test_new_hook_names_kind_and_force_replaces_wrong_kind(
     )
     assert forced.exit_code == 0, forced.output
     assert "scaffolded validate hook" in forced.stderr
-    content = test_path.read_text(encoding="utf-8")
+    assert hook_exports(pack / "src" / "ansible_pack" / "hooks" / "probe.py") == {"validate"}
+    content = (pack / "tests" / "test_hook_probe.py").read_text(encoding="utf-8")
     assert "import validate" in content
     assert "transform" not in content
 
 
-def test_new_hook_rejects_bare_multi_segment_ref_with_exact_message(
+@pytest.mark.parametrize(
+    ("ref", "message"),
+    [
+        ("a/b/c", "qualified refs must use <pack>/<name>"),
+        (
+            "demo/probe",
+            "pack not found: demo (a directory named 'demo' exists — use ./demo/probe, "
+            "or install it with add ./demo)",
+        ),
+        ("missing/probe", "pack not found: missing\n"),
+    ],
+)
+def test_new_hook_rejects_unresolvable_refs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    result = CliInvoker().invoke(app, ["init", "hook", "a/b/c"])
-
-    assert result.exit_code != 0
-    assert "qualified refs must use <pack>/<name>" in result.output
-
-
-def test_new_hook_pack_not_found_hints_when_matching_directory_exists(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    ref: str,
+    message: str,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     (tmp_path / "demo").mkdir()
 
-    result = CliInvoker().invoke(app, ["init", "hook", "demo/probe"])
+    result = CliInvoker().invoke(app, ["init", "hook", ref])
 
     assert result.exit_code != 0
-    assert (
-        "pack not found: demo (a directory named 'demo' exists — use ./demo/probe, "
-        "or install it with add ./demo)"
-    ) in result.output
-
-
-def test_new_hook_pack_not_found_omits_hint_when_no_matching_directory(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.chdir(tmp_path)
-
-    result = CliInvoker().invoke(app, ["init", "hook", "missing/probe"])
-
-    assert result.exit_code != 0
-    assert "pack not found: missing" in result.output
-    assert "directory named" not in result.output
-
-
-def _expected_dev_requirement() -> str:
-    installed = Version(version("untaped"))
-    return f"untaped>={installed.public},<{installed.major + 1}"
+    assert message in result.output

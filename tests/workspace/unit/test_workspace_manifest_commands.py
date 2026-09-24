@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -121,42 +122,52 @@ def test_set_and_unset_repo_branch_writes_manifest(tmp_path: Path) -> None:
     assert manifests.read(workspace.path).repos[0].branch is None
 
 
-def test_set_repo_branch_errors_on_unknown_repo(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda m, ws: SetWorkspaceBranch(m)(ws, branch="main", repo="ghost"),
+        lambda m, ws: UnsetWorkspaceBranch(m)(ws, repo="ghost"),
+    ],
+    ids=["set", "unset"],
+)
+def test_branch_change_errors_on_unknown_repo(tmp_path: Path, call: Any) -> None:
     workspace = Workspace(name="prod", path=tmp_path / "prod")
     manifests = StubManifests({workspace.path: WorkspaceManifest()})
 
     with pytest.raises(WorkspaceError, match="repo 'ghost' not declared in workspace 'prod'"):
-        SetWorkspaceBranch(manifests)(workspace, branch="main", repo="ghost")
+        call(manifests, workspace)
 
 
-def test_unset_repo_branch_errors_on_unknown_repo(tmp_path: Path) -> None:
-    workspace = Workspace(name="prod", path=tmp_path / "prod")
-    manifests = StubManifests({workspace.path: WorkspaceManifest()})
+# ---- apply -------------------------------------------------------------------
 
-    with pytest.raises(WorkspaceError, match="repo 'ghost' not declared in workspace 'prod'"):
-        UnsetWorkspaceBranch(manifests)(workspace, repo="ghost")
+_WS = Workspace(name="prod", path=Path("/ws/prod"))
 
 
-def test_apply_workspace_branch_checks_out_clean_repo_to_default_branch(tmp_path: Path) -> None:
-    workspace = Workspace(name="prod", path=tmp_path / "prod")
-    local = workspace.path / "api"
-    manifests = StubManifests(
-        {
-            workspace.path: WorkspaceManifest(
-                defaults=ManifestDefaults(branch="develop"),
-                repos=[Repo(url="https://x/api.git", name="api")],
-            )
-        }
+def _apply(
+    git: StubGit,
+    *,
+    repos: list[Repo] | None = None,
+    default: str | None = "develop",
+    cloned: bool = True,
+    **kwargs: Any,
+) -> list[Any]:
+    repos = repos or [Repo(url="https://x/api.git", name="api")]
+    manifest = WorkspaceManifest(defaults=ManifestDefaults(branch=default), repos=repos)
+    dirs = [_WS.path / r.name / sub for r in repos for sub in ("", ".git")] if cloned else []
+    use_case = ApplyWorkspaceBranch(
+        StubManifests({_WS.path: manifest}), git, fs=StubFilesystem(dirs)
     )
+    return use_case(_WS, **kwargs)
+
+
+def test_apply_workspace_branch_checks_out_clean_repo_to_default_branch() -> None:
     git = StubGit(statuses={"api": RepoStatus(branch="main")})
 
-    outcomes = ApplyWorkspaceBranch(manifests, git, fs=StubFilesystem([local, local / ".git"]))(
-        workspace
-    )
+    outcomes = _apply(git)
 
     assert [row.model_dump(mode="json") for row in outcomes] == [
         {
-            "target_path": str(local),
+            "target_path": str(_WS.path / "api"),
             "action": "checked_out",
             "repo": "api",
             "workspace": "prod",
@@ -164,284 +175,95 @@ def test_apply_workspace_branch_checks_out_clean_repo_to_default_branch(tmp_path
             "detail": "from main",
         }
     ]
-    assert ("fetch", "api") in git.events
-    assert ("checkout", "api", "develop") in git.events
+    assert git.events.index(("fetch", "api")) < git.events.index(("checkout", "api", "develop"))
 
 
-def test_apply_workspace_branch_reports_up_to_date_when_already_on_target(
-    tmp_path: Path,
-) -> None:
-    workspace = Workspace(name="prod", path=tmp_path / "prod")
-    local = workspace.path / "api"
-    manifests = StubManifests(
-        {
-            workspace.path: WorkspaceManifest(
-                defaults=ManifestDefaults(branch="develop"),
-                repos=[Repo(url="https://x/api.git", name="api")],
-            )
-        }
-    )
-    git = StubGit(statuses={"api": RepoStatus(branch="develop")})
-
-    outcomes = ApplyWorkspaceBranch(manifests, git, fs=StubFilesystem([local, local / ".git"]))(
-        workspace
-    )
-
-    assert outcomes[0].action == "unchanged"
-    assert outcomes[0].detail == "already on develop"
-    assert ("checkout", "api", "develop") not in git.events
-
-
-def test_apply_workspace_branch_repo_override_wins_over_default(tmp_path: Path) -> None:
-    workspace = Workspace(name="prod", path=tmp_path / "prod")
-    local = workspace.path / "api"
-    manifests = StubManifests(
-        {
-            workspace.path: WorkspaceManifest(
-                defaults=ManifestDefaults(branch="main"),
-                repos=[Repo(url="https://x/api.git", name="api", branch="release")],
-            )
-        }
-    )
+def test_apply_workspace_branch_repo_override_wins_over_default() -> None:
     git = StubGit(statuses={"api": RepoStatus(branch="main")})
-
-    outcomes = ApplyWorkspaceBranch(manifests, git, fs=StubFilesystem([local, local / ".git"]))(
-        workspace
-    )
-
-    assert outcomes[0].target_branch == "release"
-    assert outcomes[0].action == "checked_out"
+    outcomes = _apply(git, default="main", repos=[Repo(url="https://x/api.git", branch="release")])
+    assert (outcomes[0].target_branch, outcomes[0].action) == ("release", "checked_out")
     assert ("checkout", "api", "release") in git.events
 
 
-def test_apply_workspace_branch_skips_repo_without_target_branch(tmp_path: Path) -> None:
-    workspace = Workspace(name="prod", path=tmp_path / "prod")
-    local = workspace.path / "api"
-    manifests = StubManifests(
-        {workspace.path: WorkspaceManifest(repos=[Repo(url="https://x/api.git", name="api")])}
-    )
-    git = StubGit(statuses={"api": RepoStatus(branch="main")})
-
-    outcomes = ApplyWorkspaceBranch(manifests, git, fs=StubFilesystem([local, local / ".git"]))(
-        workspace
-    )
-
-    assert outcomes[0].action == "skipped"
-    assert outcomes[0].detail == "no target branch"
-    assert git.events == []
-
-
-def test_apply_workspace_branch_skips_missing_local_clone(tmp_path: Path) -> None:
-    workspace = Workspace(name="prod", path=tmp_path / "prod")
-    manifests = StubManifests(
-        {
-            workspace.path: WorkspaceManifest(
-                defaults=ManifestDefaults(branch="develop"),
-                repos=[Repo(url="https://x/api.git", name="api")],
-            )
-        }
-    )
-    git = StubGit(statuses={"api": RepoStatus(branch="main")})
-
-    outcomes = ApplyWorkspaceBranch(manifests, git, fs=StubFilesystem())(workspace)
-
-    assert outcomes[0].action == "skipped"
-    assert outcomes[0].detail == "not cloned"
-    assert git.events == []
-
-
-@pytest.mark.parametrize(("create", "action"), [(False, "skipped"), (True, "checked_out")])
-def test_apply_workspace_branch_only_creates_unknown_branch_when_asked(
-    tmp_path: Path, create: bool, action: str
+@pytest.mark.parametrize(
+    ("git", "kwargs", "action", "detail"),
+    [
+        (
+            StubGit(statuses={"api": RepoStatus(branch="develop")}),
+            {},
+            "unchanged",
+            "already on develop",
+        ),
+        (StubGit(), {"default": None}, "skipped", "no target branch"),
+        (StubGit(), {"cloned": False}, "skipped", "not cloned"),
+        (
+            StubGit(statuses={"api": RepoStatus(branch="main", modified=1)}),
+            {},
+            "skipped",
+            "dirty working tree",
+        ),
+        (
+            StubGit(statuses={"api": RepoStatus(branch="main", ahead=1, behind=1)}),
+            {},
+            "skipped",
+            "diverged from origin",
+        ),
+        (
+            StubGit(missing_branches={"develop"}),
+            {},
+            "skipped",
+            "branch not found locally or on origin",
+        ),
+        (StubGit(missing_branches={"develop"}), {"create": True}, "checked_out", "from main"),
+        (
+            StubGit(statuses={"api": RepoStatus(branch="main")}, checkout_fail=frozenset({"api"})),
+            {},
+            "failed",
+            "checkout failed: checkout failed",
+        ),
+    ],
+)
+def test_apply_workspace_branch_outcomes(
+    git: StubGit, kwargs: dict[str, Any], action: str, detail: str
 ) -> None:
-    workspace = Workspace(name="prod", path=tmp_path / "prod")
-    local = workspace.path / "api"
-    manifests = StubManifests(
-        {
-            workspace.path: WorkspaceManifest(
-                defaults=ManifestDefaults(branch="mian"),
-                repos=[Repo(url="https://x/api.git", name="api")],
-            )
-        }
-    )
-    git = StubGit(missing_branches={"mian"})
-
-    outcomes = ApplyWorkspaceBranch(manifests, git, fs=StubFilesystem([local, local / ".git"]))(
-        workspace, create=create
-    )
-
-    assert outcomes[0].action == action
-    if not create:
-        assert outcomes[0].detail == "branch not found locally or on origin"
-        assert ("checkout", "api", "mian") not in git.events
+    outcomes = _apply(git, **kwargs)
+    assert (outcomes[0].action, outcomes[0].detail) == (action, detail)
+    checked_out = any(e[0] == "checkout" for e in git.events)
+    assert checked_out == (action != "unchanged" and action != "skipped")
 
 
-def test_apply_workspace_branch_skips_dir_without_git_metadata(tmp_path: Path) -> None:
-    workspace = Workspace(name="prod", path=tmp_path / "prod")
-    manifests = StubManifests(
-        {
-            workspace.path: WorkspaceManifest(
-                defaults=ManifestDefaults(branch="develop"),
-                repos=[Repo(url="https://x/api.git", name="api")],
-            )
-        }
+def test_apply_workspace_branch_skips_dir_without_git_metadata() -> None:
+    manifest = WorkspaceManifest(
+        defaults=ManifestDefaults(branch="develop"), repos=[Repo(url="https://x/api.git")]
     )
     git = StubGit()
-
-    outcomes = ApplyWorkspaceBranch(manifests, git, fs=StubFilesystem([workspace.path / "api"]))(
-        workspace
+    use_case = ApplyWorkspaceBranch(
+        StubManifests({_WS.path: manifest}), git, fs=StubFilesystem([_WS.path / "api"])
     )
 
-    assert outcomes[0].action == "skipped"
-    assert outcomes[0].detail == "not a git repository"
+    outcomes = use_case(_WS)
+
+    assert (outcomes[0].action, outcomes[0].detail) == ("skipped", "not a git repository")
     assert git.events == []
 
 
-def test_apply_workspace_branch_skips_dirty_repo(tmp_path: Path) -> None:
-    workspace = Workspace(name="prod", path=tmp_path / "prod")
-    local = workspace.path / "api"
-    manifests = StubManifests(
-        {
-            workspace.path: WorkspaceManifest(
-                defaults=ManifestDefaults(branch="develop"),
-                repos=[Repo(url="https://x/api.git", name="api")],
-            )
-        }
-    )
-    git = StubGit(statuses={"api": RepoStatus(branch="main", modified=1)})
+@pytest.mark.parametrize(
+    ("selector", "expected"),
+    [("https://x/api.git", ["api"]), (["api", "ui"], ["api", "ui"])],
+)
+def test_apply_workspace_branch_filters_by_repo(
+    selector: str | list[str], expected: list[str]
+) -> None:
+    git = StubGit()
+    repos = [Repo(url=f"https://x/{n}.git") for n in ("api", "ui", "docs")]
 
-    outcomes = ApplyWorkspaceBranch(manifests, git, fs=StubFilesystem([local, local / ".git"]))(
-        workspace
-    )
+    outcomes = _apply(git, repos=repos, repo=selector)
 
-    assert outcomes[0].action == "skipped"
-    assert outcomes[0].detail == "dirty working tree"
-    assert ("fetch", "api") in git.events
-    assert ("checkout", "api", "develop") not in git.events
+    assert [row.repo for row in outcomes] == expected
+    assert [e[1] for e in git.events if e[0] == "checkout"] == expected
 
 
-def test_apply_workspace_branch_skips_diverged_repo(tmp_path: Path) -> None:
-    workspace = Workspace(name="prod", path=tmp_path / "prod")
-    local = workspace.path / "api"
-    manifests = StubManifests(
-        {
-            workspace.path: WorkspaceManifest(
-                defaults=ManifestDefaults(branch="develop"),
-                repos=[Repo(url="https://x/api.git", name="api")],
-            )
-        }
-    )
-    git = StubGit(statuses={"api": RepoStatus(branch="main", ahead=1, behind=1)})
-
-    outcomes = ApplyWorkspaceBranch(manifests, git, fs=StubFilesystem([local, local / ".git"]))(
-        workspace
-    )
-
-    assert outcomes[0].action == "skipped"
-    assert outcomes[0].detail == "diverged from origin"
-    assert ("checkout", "api", "develop") not in git.events
-
-
-def test_apply_workspace_branch_filters_by_repo_url(tmp_path: Path) -> None:
-    workspace = Workspace(name="prod", path=tmp_path / "prod")
-    api = workspace.path / "api"
-    ui = workspace.path / "ui"
-    manifests = StubManifests(
-        {
-            workspace.path: WorkspaceManifest(
-                defaults=ManifestDefaults(branch="develop"),
-                repos=[
-                    Repo(url="https://x/api.git", name="api"),
-                    Repo(url="https://x/ui.git", name="ui"),
-                ],
-            )
-        }
-    )
-    git = StubGit(
-        statuses={
-            "api": RepoStatus(branch="main"),
-            "ui": RepoStatus(branch="main"),
-        }
-    )
-
-    outcomes = ApplyWorkspaceBranch(
-        manifests, git, fs=StubFilesystem([api, api / ".git", ui, ui / ".git"])
-    )(
-        workspace,
-        repo="https://x/api.git",
-    )
-
-    assert [row.repo for row in outcomes] == ["api"]
-    assert ("checkout", "api", "develop") in git.events
-    assert ("checkout", "ui", "develop") not in git.events
-
-
-def test_apply_workspace_branch_filters_by_multiple_repos(tmp_path: Path) -> None:
-    workspace = Workspace(name="prod", path=tmp_path / "prod")
-    api = workspace.path / "api"
-    ui = workspace.path / "ui"
-    docs = workspace.path / "docs"
-    manifests = StubManifests(
-        {
-            workspace.path: WorkspaceManifest(
-                defaults=ManifestDefaults(branch="develop"),
-                repos=[
-                    Repo(url="https://x/api.git", name="api"),
-                    Repo(url="https://x/ui.git", name="ui"),
-                    Repo(url="https://x/docs.git", name="docs"),
-                ],
-            )
-        }
-    )
-    git = StubGit(
-        statuses={
-            "api": RepoStatus(branch="main"),
-            "ui": RepoStatus(branch="main"),
-            "docs": RepoStatus(branch="main"),
-        }
-    )
-
-    outcomes = ApplyWorkspaceBranch(
-        manifests, git, fs=StubFilesystem([api, api / ".git", ui, ui / ".git", docs, docs / ".git"])
-    )(
-        workspace,
-        repo=["api", "ui"],
-    )
-
-    assert [row.repo for row in outcomes] == ["api", "ui"]
-    assert ("checkout", "api", "develop") in git.events
-    assert ("checkout", "ui", "develop") in git.events
-    assert ("checkout", "docs", "develop") not in git.events
-
-
-def test_apply_workspace_branch_errors_on_unknown_repo(tmp_path: Path) -> None:
-    workspace = Workspace(name="prod", path=tmp_path / "prod")
-    manifests = StubManifests({workspace.path: WorkspaceManifest()})
-
+def test_apply_workspace_branch_errors_on_unknown_repo() -> None:
     with pytest.raises(UnmatchedRepoFilterError, match="ghost") as excinfo:
-        ApplyWorkspaceBranch(manifests, StubGit(), fs=StubFilesystem())(workspace, repo="ghost")
+        _apply(StubGit(), repo="ghost")
     assert excinfo.value.unmatched == ("ghost",)
-
-
-def test_apply_workspace_branch_checkout_failure_returns_skip(tmp_path: Path) -> None:
-    workspace = Workspace(name="prod", path=tmp_path / "prod")
-    local = workspace.path / "api"
-    manifests = StubManifests(
-        {
-            workspace.path: WorkspaceManifest(
-                defaults=ManifestDefaults(branch="develop"),
-                repos=[Repo(url="https://x/api.git", name="api")],
-            )
-        }
-    )
-    git = StubGit(
-        statuses={"api": RepoStatus(branch="main")},
-        checkout_fail=frozenset({"api"}),
-    )
-
-    outcomes = ApplyWorkspaceBranch(manifests, git, fs=StubFilesystem([local, local / ".git"]))(
-        workspace
-    )
-
-    assert outcomes[0].action == "failed"
-    assert outcomes[0].detail == "checkout failed: checkout failed"

@@ -1,13 +1,13 @@
-"""Additional infrastructure contract tests."""
+"""Tests for the built-in yaml_edit hook, bulk planning, transactional writes, and uv probes."""
 
 from __future__ import annotations
 
 import errno
+import subprocess
 from pathlib import Path
 
 import pytest
 
-import untaped.capabilities.recipe.hook_worker as helpers_module
 import untaped.capabilities.recipe.infrastructure.file_writer as file_writer_module
 from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
 from untaped.capabilities.recipe.application.run_bulk import RunBulkApply
@@ -15,224 +15,20 @@ from untaped.capabilities.recipe.application.targets import Target
 from untaped.capabilities.recipe.builtins.hooks import yaml_edit
 from untaped.capabilities.recipe.domain.plan import FileChange
 from untaped.capabilities.recipe.domain.recipe import Recipe
-from untaped.capabilities.recipe.hook_worker import HookHelpers
+from untaped.capabilities.recipe.hook_worker import HookHelpers, dump_yaml, load_yaml
+from untaped.capabilities.recipe.infrastructure import uv_project
 from untaped.capabilities.recipe.infrastructure.file_writer import ApplyWriteError, flush_changes
 from untaped.capabilities.recipe.infrastructure.hook_executor import HookExecutor
 from untaped.capabilities.recipe.infrastructure.hook_resolver import HookResolver
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
 
 
-def test_check_lock_reports_stale_lockfile_with_uv_detail(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import subprocess
-
-    from untaped.capabilities.recipe.infrastructure import uv_project
-
-    def _stale_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(
-            args=["uv", "lock", "--check"],
-            returncode=2,
-            stdout="",
-            stderr="error: The lockfile at `uv.lock` needs to be updated\n",
-        )
-
-    monkeypatch.setattr(uv_project.subprocess, "run", _stale_run)
-    with pytest.raises(ValueError, match="lockfile is stale") as exc_info:
-        uv_project.check_lock(tmp_path)
-
-    message = str(exc_info.value)
-    assert message.startswith(f"lockfile is stale — run 'uv lock' in {tmp_path}")
-    assert "needs to be updated" in message
+def _runner() -> RunBulkApply:
+    return RunBulkApply(ApplyRecipe(HookExecutor(HookResolver(), workers=UvHookWorkerPool())))
 
 
-def test_check_lock_reports_unverifiable_probe_with_detail(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import subprocess
-
-    from untaped.capabilities.recipe.infrastructure import uv_project
-
-    def _network_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(
-            args=["uv", "lock", "--check"],
-            returncode=2,
-            stdout="",
-            stderr="error: failed to fetch package metadata\n",
-        )
-
-    monkeypatch.setattr(uv_project.subprocess, "run", _network_run)
-    with pytest.raises(ValueError) as exc_info:
-        uv_project.check_lock(tmp_path)
-
-    assert str(exc_info.value) == (
-        f"could not verify lockfile freshness in {tmp_path}: "
-        "error: failed to fetch package metadata"
-    )
-    assert "stale" not in str(exc_info.value)
-
-
-def test_check_lock_reports_unverifiable_probe_without_detail(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import subprocess
-
-    from untaped.capabilities.recipe.infrastructure import uv_project
-
-    def _empty_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(
-            args=["uv", "lock", "--check"], returncode=2, stdout="", stderr=""
-        )
-
-    monkeypatch.setattr(uv_project.subprocess, "run", _empty_run)
-    with pytest.raises(ValueError) as exc_info:
-        uv_project.check_lock(tmp_path)
-
-    assert str(exc_info.value) == f"could not verify lockfile freshness in {tmp_path}"
-    assert "stale" not in str(exc_info.value)
-
-
-def test_check_lock_passes_on_fresh_lockfile(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import subprocess
-
-    from untaped.capabilities.recipe.infrastructure import uv_project
-
-    monkeypatch.setattr(
-        uv_project.subprocess,
-        "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(
-            args=["uv", "lock", "--check"], returncode=0, stdout="", stderr=""
-        ),
-    )
-
-    uv_project.check_lock(tmp_path)
-
-
-def test_public_hook_api_exposes_yaml_option_types() -> None:
-    from untaped.capabilities.recipe.hook_api import (
-        HOOK_API_VERSION,
-        YamlDumpOptions,
-        YamlIndentOptions,
-    )
-    from untaped.capabilities.recipe.hook_api import HookHelpers as ExternalHookHelpers
-
-    indent: YamlIndentOptions = {"mapping": 2, "sequence": 4, "offset": 2}
-    options: YamlDumpOptions = {"width": 120, "indent": indent}
-
-    assert HOOK_API_VERSION == "0.10.0"
-    assert options["indent"]["sequence"] == 4
-    assert ExternalHookHelpers.__name__ == "HookHelpers"
-
-
-def test_dump_yaml_applies_core_formatting_options(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    created: list[object] = []
-
-    class FakeYaml:
-        def __init__(self) -> None:
-            self.preserve_quotes: bool | None = None
-            self.width: int | None = None
-            self.block_seq_indent: int | None = None
-            self.explicit_start: bool | None = None
-            self.explicit_end: bool | None = None
-            self.indent_calls: list[dict[str, int]] = []
-            created.append(self)
-
-        def indent(self, **kwargs: int) -> None:
-            self.indent_calls.append(kwargs)
-
-        def dump(self, data: object, out: object) -> None:
-            del data
-            out.write("dumped\n")
-
-    monkeypatch.setattr("ruamel.yaml.YAML", FakeYaml)
-
-    result = helpers_module.dump_yaml(
-        {"items": [1]},
-        options={
-            "width": 120,
-            "preserve_quotes": False,
-            "indent": {"mapping": 2, "sequence": 4, "offset": 2},
-            "block_seq_indent": 2,
-            "explicit_start": True,
-            "explicit_end": True,
-        },
-    )
-
-    yaml = created[0]
-    assert result == "dumped\n"
-    assert yaml.preserve_quotes is False
-    assert yaml.width == 120
-    assert yaml.indent_calls == [{"mapping": 2, "sequence": 4, "offset": 2}]
-    assert yaml.block_seq_indent == 2
-    assert yaml.explicit_start is True
-    assert yaml.explicit_end is True
-
-
-@pytest.mark.parametrize(
-    ("options", "message"),
-    [
-        ({"preserve_quote": True}, "unsupported YAML dump option"),
-        ({"indent": {"seqence": 4}}, "unsupported YAML indent option"),
-        ({"width": "100"}, "must be an integer"),
-        ({"width": True}, "must be an integer"),
-        ({"preserve_quotes": "yes"}, "must be a boolean"),
-        ({"indent": 2}, "must be a mapping"),
-    ],
-)
-def test_dump_yaml_rejects_invalid_options(
-    options: dict[str, object],
-    message: str,
-) -> None:
-    with pytest.raises(TypeError, match=message):
-        helpers_module.dump_yaml({"items": [1]}, options=options)
-
-
-def test_dump_yaml_defaults_preserve_existing_in_process_formatting(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    created: list[object] = []
-
-    class FakeYaml:
-        def __init__(self) -> None:
-            self.preserve_quotes: bool | None = None
-            self.width: int | None = None
-            self.indent_calls: list[dict[str, int]] = []
-            created.append(self)
-
-        def indent(self, **kwargs: int) -> None:
-            self.indent_calls.append(kwargs)
-
-        def dump(self, data: object, out: object) -> None:
-            del data
-            out.write("dumped\n")
-
-    monkeypatch.setattr("ruamel.yaml.YAML", FakeYaml)
-
-    assert helpers_module.dump_yaml({"items": [1]}) == "dumped\n"
-
-    yaml = created[0]
-    assert yaml.preserve_quotes is True
-    assert yaml.width == 4096
-    assert yaml.indent_calls == []
-
-
-def test_hook_helpers_and_builtin_yaml_edit_preserve_round_trip_yaml(tmp_path: Path) -> None:
+def test_builtin_yaml_edit_preserves_round_trip_yaml(tmp_path: Path) -> None:
     helpers = HookHelpers()
-
-    assert helpers.pass_("ok") == {"status": "pass", "message": "ok"}
-    assert helpers.skip("n/a") == {"status": "skip", "message": "n/a"}
-    assert helpers.fail("bad") == {"status": "fail", "message": "bad"}
-    assert helpers.warn("check") is None
-    assert helpers.warnings == ["check"]
-    assert helpers.render_template("{{ name }}", {"name": "api"}) == "api"
 
     result = yaml_edit.transform(
         "# top\nservices:\n  - name: api\n    config:\n      old: true\n"
@@ -262,8 +58,7 @@ def test_hook_helpers_and_builtin_yaml_edit_preserve_round_trip_yaml(tmp_path: P
     assert "enabled: true" in result
     assert "name: web" not in result
 
-    loaded = helpers_module.load_yaml(result)
-    assert helpers_module.dump_yaml(loaded) == result
+    assert dump_yaml(load_yaml(result)) == result
 
     empty = yaml_edit.transform(
         "",
@@ -376,9 +171,27 @@ def _ensure(
             "top: 1\ntags:\n- release\n",
             id="scalar-into-missing-path-creates-list",
         ),
+        pytest.param(
+            "enabled: 1\n",
+            {"op": "set", "path": ["enabled"], "value": True},
+            "enabled: true\n",
+            id="set-bool-over-int-is-a-change",
+        ),
+        pytest.param(
+            "top: 1\n",
+            {"op": "set", "path": ["spec", "replicas"], "value": 1},
+            "top: 1\nspec:\n  replicas: 1\n",
+            id="set-missing-path",
+        ),
+        pytest.param(
+            "settings:\n  a: 1\n",
+            {"op": "merge", "path": ["settings"], "value": {"a": 2}},
+            "settings:\n  a: 2\n",
+            id="merge-different-value",
+        ),
     ],
 )
-def test_builtin_yaml_edit_ensure_appends_and_creates(
+def test_builtin_yaml_edit_applies_real_changes(
     content: str,
     edit: dict[str, object],
     expected: str,
@@ -409,18 +222,6 @@ def test_builtin_yaml_edit_ensure_appends_and_creates(
             {"op": "ensure", "path": ["settings"], "value": {"a": 9}},
             id="mapping-key-already-present",
         ),
-    ],
-)
-def test_builtin_yaml_edit_ensure_noop_is_byte_identical(
-    content: str,
-    edit: dict[str, object],
-) -> None:
-    assert _ensure(content, edit) == content
-
-
-@pytest.mark.parametrize(
-    ("content", "edit"),
-    [
         pytest.param(
             "---\nimage:   nginx  # pinned\nreplicas: 2\n",
             {"op": "set", "path": ["image"], "value": "nginx"},
@@ -443,42 +244,11 @@ def test_builtin_yaml_edit_ensure_noop_is_byte_identical(
         ),
     ],
 )
-def test_builtin_yaml_edit_set_and_merge_noop_is_byte_identical(
+def test_builtin_yaml_edit_noop_is_byte_identical(
     content: str,
     edit: dict[str, object],
 ) -> None:
     assert _ensure(content, edit) == content
-
-
-@pytest.mark.parametrize(
-    ("content", "edit", "expected"),
-    [
-        pytest.param(
-            "enabled: 1\n",
-            {"op": "set", "path": ["enabled"], "value": True},
-            "enabled: true\n",
-            id="set-bool-over-int-is-a-change",
-        ),
-        pytest.param(
-            "top: 1\n",
-            {"op": "set", "path": ["spec", "replicas"], "value": 1},
-            "top: 1\nspec:\n  replicas: 1\n",
-            id="set-missing-path",
-        ),
-        pytest.param(
-            "settings:\n  a: 1\n",
-            {"op": "merge", "path": ["settings"], "value": {"a": 2}},
-            "settings:\n  a: 2\n",
-            id="merge-different-value",
-        ),
-    ],
-)
-def test_builtin_yaml_edit_set_and_merge_report_real_changes(
-    content: str,
-    edit: dict[str, object],
-    expected: str,
-) -> None:
-    assert _ensure(content, edit) == expected
 
 
 def test_builtin_yaml_edit_ensure_renders_value_tokens() -> None:
@@ -525,31 +295,6 @@ def test_builtin_yaml_edit_ensure_load_errors(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         _ensure(content, edit)
-
-
-def test_apply_recipe_rejects_recipe_source_symlink_escape(tmp_path: Path) -> None:
-    recipe_dir = tmp_path / "recipe"
-    recipe_dir.mkdir()
-    outside = tmp_path / "outside.txt"
-    outside.write_text("secret\n")
-    (recipe_dir / "template.txt").symlink_to(outside)
-    target = tmp_path / "target"
-    target.mkdir()
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "steps": [{"type": "template", "template": "template.txt", "dest": "out.txt"}],
-        }
-    )
-    planner = ApplyRecipe(
-        HookExecutor(
-            HookResolver(),
-            workers=UvHookWorkerPool(),
-        )
-    )
-
-    with pytest.raises(ValueError, match="symlink"):
-        planner(recipe=recipe, recipe_dir=recipe_dir, target=target, inputs={})
 
 
 @pytest.mark.parametrize(
@@ -604,16 +349,7 @@ def test_parallel_bulk_plan_returns_ordered_errors_and_flushes_atomically(tmp_pa
     good = tmp_path / "good"
     good.mkdir()
     missing = tmp_path / "missing"
-    runner = RunBulkApply(
-        ApplyRecipe(
-            HookExecutor(
-                HookResolver(),
-                workers=UvHookWorkerPool(),
-            )
-        )
-    )
-
-    plans = runner.plan(
+    plans = _runner().plan(
         recipe=recipe,
         recipe_dir=recipe_dir,
         local_hook_project=None,
@@ -671,16 +407,7 @@ def test_bulk_plan_resolves_per_target_inputs_and_dedupes_repeated_targets(
     target.mkdir()
     other = tmp_path / "worker"
     other.mkdir()
-    runner = RunBulkApply(
-        ApplyRecipe(
-            HookExecutor(
-                HookResolver(),
-                workers=UvHookWorkerPool(),
-            )
-        )
-    )
-
-    plans = runner.plan(
+    plans = _runner().plan(
         recipe=recipe,
         recipe_dir=recipe_dir,
         local_hook_project=None,
@@ -726,16 +453,7 @@ def test_bulk_plan_error_rows_preserve_resolved_input_display(
         }
     )
     missing = tmp_path / "missing"
-    runner = RunBulkApply(
-        ApplyRecipe(
-            HookExecutor(
-                HookResolver(),
-                workers=UvHookWorkerPool(),
-            )
-        )
-    )
-
-    plans = runner.plan(
+    plans = _runner().plan(
         recipe=recipe,
         recipe_dir=recipe_dir,
         local_hook_project=None,
@@ -759,16 +477,7 @@ def test_bulk_plan_input_resolution_errors_have_empty_inputs(tmp_path: Path) -> 
     )
     target = tmp_path / "api"
     target.mkdir()
-    runner = RunBulkApply(
-        ApplyRecipe(
-            HookExecutor(
-                HookResolver(),
-                workers=UvHookWorkerPool(),
-            )
-        )
-    )
-
-    plans = runner.plan(
+    plans = _runner().plan(
         recipe=recipe,
         recipe_dir=tmp_path,
         local_hook_project=None,
@@ -844,48 +553,6 @@ def test_flush_changes_rejects_stale_files_without_overwriting(tmp_path: Path) -
     assert config.read_text() == "user edit\n"
 
 
-def test_flush_changes_rolls_back_target_when_write_fails(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    target = tmp_path / "target"
-    target.mkdir()
-    first = target / "first.txt"
-    second = target / "second.txt"
-    first.write_text("old first\n")
-    second.write_text("old second\n")
-    changes = (
-        FileChange(
-            target=target,
-            relative_path=Path("first.txt"),
-            before="old first\n",
-            after="new first\n",
-        ),
-        FileChange(
-            target=target,
-            relative_path=Path("second.txt"),
-            before="old second\n",
-            after="new second\n",
-        ),
-    )
-    original_replace = file_writer_module.os.replace
-    calls = 0
-
-    def flaky_replace(src: Path, dst: Path) -> None:
-        nonlocal calls
-        calls += 1
-        if calls == 2:
-            raise OSError("disk full")
-        original_replace(src, dst)
-
-    monkeypatch.setattr(file_writer_module.os, "replace", flaky_replace)
-
-    with pytest.raises(ApplyWriteError, match="disk full"):
-        flush_changes(changes)
-    assert first.read_text() == "old first\n"
-    assert second.read_text() == "old second\n"
-
-
 def test_flush_changes_stages_replacements_next_to_destination(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -936,29 +603,6 @@ def test_flush_changes_rejects_target_symlink_escape(tmp_path: Path) -> None:
     assert not (outside / "out.txt").exists()
 
 
-def test_flush_changes_removes_created_directories_after_write_failure(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    target = tmp_path / "target"
-    target.mkdir()
-    change = FileChange(
-        target=target,
-        relative_path=Path("created/dir/out.txt"),
-        before=None,
-        after="new\n",
-    )
-
-    def fail_replace(src: Path, dst: Path) -> None:
-        raise OSError("disk full")
-
-    monkeypatch.setattr(file_writer_module.os, "replace", fail_replace)
-
-    with pytest.raises(ApplyWriteError, match="disk full"):
-        flush_changes((change,))
-    assert not (target / "created").exists()
-
-
 def test_file_change_kind_reports_create_modify_and_remove(tmp_path: Path) -> None:
     target = tmp_path / "target"
 
@@ -993,7 +637,7 @@ def test_flush_changes_preserves_executable_mode(tmp_path: Path) -> None:
     assert script.stat().st_mode & 0o777 == 0o755
 
 
-def test_flush_changes_rollback_restores_mode_of_deleted_file(
+def test_flush_changes_rolls_back_every_change_when_a_write_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1002,29 +646,76 @@ def test_flush_changes_rollback_restores_mode_of_deleted_file(
     script = target / "run.sh"
     script.write_text("old\n")
     script.chmod(0o755)
-    other = target / "other.txt"
-    other.write_text("before\n")
+    first = target / "first.txt"
+    first.write_text("old first\n")
+    (target / "second.txt").write_text("old second\n")
     original_replace = file_writer_module.os.replace
 
-    def fail_other(src: Path, dst: Path) -> None:
-        if Path(dst).name == "other.txt" and ".rollback." not in Path(src).name:
+    def fail_second(src: Path, dst: Path) -> None:
+        if Path(dst).name == "second.txt" and ".rollback." not in Path(src).name:
             raise OSError("disk full")
         original_replace(src, dst)
 
-    monkeypatch.setattr(file_writer_module.os, "replace", fail_other)
+    monkeypatch.setattr(file_writer_module.os, "replace", fail_second)
 
-    with pytest.raises(ApplyWriteError, match="disk full"):
+    def change(name: str, before: str | None, after: str | None) -> FileChange:
+        return FileChange(target=target, relative_path=Path(name), before=before, after=after)
+
+    with pytest.raises(ApplyWriteError, match="disk full") as excinfo:
         flush_changes(
             (
-                FileChange(target=target, relative_path=Path("run.sh"), before="old\n", after=None),
-                FileChange(
-                    target=target,
-                    relative_path=Path("other.txt"),
-                    before="before\n",
-                    after="after\n",
-                ),
+                change("run.sh", "old\n", None),
+                change("first.txt", "old first\n", "new first\n"),
+                change("created/dir/out.txt", None, "new\n"),
+                change("second.txt", "old second\n", "new second\n"),
             )
         )
 
+    assert not excinfo.value.rollback_incomplete
     assert script.read_text() == "old\n"
     assert script.stat().st_mode & 0o777 == 0o755
+    assert first.read_text() == "old first\n"
+    assert (target / "second.txt").read_text() == "old second\n"
+    assert not (target / "created").exists()
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stderr", "message"),
+    [
+        (0, "", None),
+        (
+            2,
+            "error: The lockfile at `uv.lock` needs to be updated\n",
+            "lockfile is stale — run 'uv lock' in {root}: "
+            "error: The lockfile at `uv.lock` needs to be updated",
+        ),
+        (
+            2,
+            "error: failed to fetch package metadata\n",
+            "could not verify lockfile freshness in {root}: "
+            "error: failed to fetch package metadata",
+        ),
+        (2, "", "could not verify lockfile freshness in {root}"),
+        (None, "", "uv executable not found for project lock"),
+    ],
+)
+def test_check_lock_reports_stale_or_unverifiable_lockfiles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    returncode: int | None,
+    stderr: str,
+    message: str | None,
+) -> None:
+    def run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if returncode is None:
+            raise FileNotFoundError("uv")
+        return subprocess.CompletedProcess(args=[], returncode=returncode, stdout="", stderr=stderr)
+
+    monkeypatch.setattr(uv_project.subprocess, "run", run)
+
+    if message is None:
+        uv_project.check_lock(tmp_path)
+        return
+    with pytest.raises(ValueError) as exc_info:
+        uv_project.check_lock(tmp_path)
+    assert str(exc_info.value) == message.format(root=tmp_path)

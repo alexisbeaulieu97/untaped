@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from cyclopts import Parameter
+from cyclopts import Parameter, validators
 
 from untaped.capabilities.github.application.inventory import RepositoryInventoryItem
 from untaped.capabilities.github.application.scopes import TeamScope, normalize_team_scopes
-from untaped.capability_api import ConfigError, UsageError, read_stdin_input
+from untaped.capability_api import ConfigError, ParallelOption, UsageError, read_stdin_input
 
 REPO_KINDS = frozenset({"github.repo", "github.repo_hit", "github.sweep_repo"})
 """Pipe record kinds whose ``full_name`` names a repository for ``--stdin``."""
@@ -27,6 +27,29 @@ TeamOption = Annotated[
         consume_multiple=False,
         negative="",
     ),
+]
+
+RepoOption = Annotated[
+    list[str] | None,
+    Parameter(
+        name="--repo",
+        help="Repository OWNER/NAME. Repeatable.",
+        consume_multiple=False,
+        negative="",
+    ),
+]
+ArchivedOption = Annotated[
+    bool, Parameter(name="--archived", negative="", help="Include archived repositories.")
+]
+DepthOption = Annotated[
+    int,
+    Parameter(
+        name="--depth", validator=validators.Number(gte=0), help="Git fetch depth; 0 is full."
+    ),
+]
+CorpusParallelOption = Annotated[
+    ParallelOption,
+    Parameter(help="Parallel Git workers (capped at 32; default from github.sweep settings)."),
 ]
 
 

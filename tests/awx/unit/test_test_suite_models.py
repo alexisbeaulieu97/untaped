@@ -1,6 +1,8 @@
-"""Tests for the AwxTestSuite domain models."""
+"""Tests for the AwxTestSuite domain models: validation rules and the exit code."""
 
 from __future__ import annotations
+
+from collections.abc import Callable
 
 import pytest
 from pydantic import ValidationError
@@ -8,121 +10,65 @@ from pydantic import ValidationError
 from untaped.capabilities.awx.domain.suite import (
     Case,
     CaseResult,
+    RefSentinel,
     Suite,
     SuiteRunOutcome,
     VariableSpec,
 )
 
 
-def test_variable_spec_minimal() -> None:
-    var = VariableSpec(name="env", type="string")
-    assert var.name == "env"
-    assert var.required is True  # no default → required
+def test_variable_spec_is_required_unless_it_has_a_default() -> None:
+    assert VariableSpec(name="env", type="string").required is True
+    assert VariableSpec(name="env", type="string", default="dev").required is False
+    assert VariableSpec(name="env", type="choice", choices=("a", "b"), default="a").default == "a"
 
 
-def test_variable_spec_with_default_is_optional() -> None:
-    var = VariableSpec(name="env", type="string", default="dev")
-    assert var.required is False
-
-
-def test_variable_spec_choice_requires_choices_list() -> None:
-    with pytest.raises(ValidationError):
-        VariableSpec(name="env", type="choice", choices=())
-
-
-def test_variable_spec_default_must_be_in_choices() -> None:
-    with pytest.raises(ValidationError):
-        VariableSpec(name="env", type="choice", choices=("a", "b"), default="c")
-
-
-def test_variable_spec_default_in_choices_is_accepted() -> None:
-    spec = VariableSpec(name="env", type="choice", choices=("a", "b"), default="a")
-    assert spec.default == "a"
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: VariableSpec(name="env", type="choice", choices=()),
+        lambda: VariableSpec(name="env", type="choice", choices=("a", "b"), default="c"),
+        lambda: Case.model_validate({}),
+        lambda: Suite(name="deploy", job_template="Deploy app", cases={}),
+        lambda: CaseResult(suite="deploy", case="us-east", result="awesome"),
+        lambda: RefSentinel(kind="", name="foo"),
+        lambda: RefSentinel(kind="Inventory", name=""),
+    ],
+    ids=[
+        "choice-without-choices",
+        "default-outside-choices",
+        "case-without-launch",
+        "suite-without-cases",
+        "unknown-result",
+        "ref-without-kind",
+        "ref-without-name",
+    ],
+)
+def test_invalid_suite_shapes_are_rejected(build: Callable[[], object]) -> None:
+    with pytest.raises((ValidationError, ValueError)):
+        build()
 
 
 def test_case_assert_alias_for_python_keyword() -> None:
     """``assert:`` is a Python keyword, the field is exposed as ``assert_``."""
     case = Case.model_validate({"launch": {"limit": "x"}, "assert": {}})
     assert case.assert_ == {}
-    # Empty dict serialises back as ``assert``
-    dumped = case.model_dump(by_alias=True)
-    assert "assert" in dumped
+    assert "assert" in case.model_dump(by_alias=True)
 
 
-def test_case_requires_launch_block() -> None:
-    with pytest.raises(ValidationError):
-        Case.model_validate({})
-
-
-def test_case_assert_default_is_none() -> None:
-    case = Case.model_validate({"launch": {"limit": "x"}})
-    assert case.assert_ is None
-
-
-def test_test_suite_minimal() -> None:
-    suite = Suite(
-        name="deploy",
-        job_template="Deploy app",
-        cases={"only": Case.model_validate({"launch": {}})},
-    )
-    assert suite.kind == "AwxTestSuite"
-    assert "only" in suite.cases
-
-
-def test_test_suite_rejects_no_cases() -> None:
-    with pytest.raises(ValidationError):
-        Suite(name="deploy", job_template="Deploy app", cases={})
-
-
-def test_case_result_literals() -> None:
-    res = CaseResult(suite="deploy", case="us-east", result="pass", job_status="successful")
-    assert res.result == "pass"
-    with pytest.raises(ValidationError):
-        CaseResult(suite="deploy", case="us-east", result="awesome")  # type: ignore[arg-type]
-
-
-def test_case_result_job_status_optional() -> None:
-    res = CaseResult(suite="deploy", case="bad", result="error")
-    assert res.job_status is None
-    assert res.job_id is None
-
-
-def test_outcome_exit_code_zero_when_all_pass() -> None:
+@pytest.mark.parametrize(
+    ("results", "code"),
+    [
+        (("pass", "pass"), 0),
+        (("pass", "fail"), 1),
+        (("pass", "error"), 1),
+        (("pass", "timeout"), 1),
+        # nothing ran means nothing was tested: a failure for a test runner
+        ((), 1),
+    ],
+)
+def test_outcome_exit_code(results: tuple[str, ...], code: int) -> None:
     outcome = SuiteRunOutcome(
-        results=(
-            CaseResult(suite="s", case="a", result="pass", job_status="successful"),
-            CaseResult(suite="s", case="b", result="pass", job_status="successful"),
-        )
+        results=tuple(CaseResult(suite="s", case=str(i), result=r) for i, r in enumerate(results))
     )
-    assert outcome.exit_code() == 0
-
-
-@pytest.mark.parametrize("bad_result", ["fail", "error", "timeout"])
-def test_outcome_exit_code_one_when_any_not_pass(bad_result: str) -> None:
-    outcome = SuiteRunOutcome(
-        results=(
-            CaseResult(suite="s", case="a", result="pass", job_status="successful"),
-            CaseResult(suite="s", case="b", result=bad_result),  # type: ignore[arg-type]
-        )
-    )
-    assert outcome.exit_code() == 1
-
-
-def test_outcome_exit_code_one_when_no_cases_ran() -> None:
-    """Empty results means nothing was tested — that's a failure for a test runner."""
-    outcome = SuiteRunOutcome(results=())
-    assert outcome.exit_code() == 1
-
-
-def test_ref_sentinel_rejects_empty_kind() -> None:
-    from untaped.capabilities.awx.domain.suite import RefSentinel
-
-    with pytest.raises(ValueError, match="kind"):
-        RefSentinel(kind="", name="foo")
-
-
-def test_ref_sentinel_rejects_empty_name() -> None:
-    from untaped.capabilities.awx.domain.suite import RefSentinel
-
-    with pytest.raises(ValueError, match="name"):
-        RefSentinel(kind="Inventory", name="")
+    assert outcome.exit_code() == code

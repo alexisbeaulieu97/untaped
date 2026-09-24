@@ -1,4 +1,4 @@
-"""Quick smoke for UiPrompt: interactivity check + core prompt routing."""
+"""UiPrompt: when suites may prompt, and which prompt each variable gets."""
 
 from __future__ import annotations
 
@@ -8,119 +8,50 @@ import pytest
 
 from untaped.capabilities.awx.domain.suite import VariableSpec
 from untaped.capabilities.awx.infrastructure.suites.prompt import UiPrompt
-from untaped.capability_api import ConfigError, PromptChoice
+from untaped.capability_api import PromptChoice
 
 
-def test_is_interactive_when_stdin_is_tty(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("sys.stderr.isatty", lambda: False)
-    assert UiPrompt().is_interactive() is True
+@pytest.mark.parametrize(
+    ("stdin_tty", "stderr_tty", "forced", "expected"),
+    [
+        # stderr redirection (``2>/dev/null``) must not disable prompts
+        (True, False, False, True),
+        (False, True, False, False),
+        (True, True, True, False),
+    ],
+)
+def test_is_interactive_follows_stdin_only(
+    monkeypatch: pytest.MonkeyPatch, stdin_tty: bool, stderr_tty: bool, forced: bool, expected: bool
+) -> None:
+    monkeypatch.setattr("sys.stdin.isatty", lambda: stdin_tty)
+    monkeypatch.setattr("sys.stderr.isatty", lambda: stderr_tty)
+    assert UiPrompt(force_non_interactive=forced).is_interactive() is expected
 
 
-def test_not_interactive_when_stdin_redirected(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    monkeypatch.setattr("sys.stderr.isatty", lambda: True)
-    assert UiPrompt().is_interactive() is False
+class _PromptUi:
+    def text(self, message: str) -> str:
+        return f"text:{message}"
+
+    def secret(self, message: str) -> str:
+        return f"secret:{message}"
+
+    def select(self, message: str, choices: Sequence[PromptChoice[str]]) -> str:
+        return f"select:{message}:" + ",".join(choice.value for choice in choices)
 
 
-def test_force_non_interactive_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    assert UiPrompt(force_non_interactive=True).is_interactive() is False
-
-
-def test_visible_prompt_uses_core_text(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: dict[str, object] = {}
-
-    class _PromptUi:
-        def text(
-            self,
-            message: str,
-            *,
-            default: str | None = None,
-            required: bool = True,
-        ) -> str:
-            seen["message"] = message
-            seen["default"] = default
-            seen["required"] = required
-            return "answer"
-
+@pytest.mark.parametrize(
+    ("spec", "answer"),
+    [
+        (VariableSpec(name="env", description="Environment"), "text:Environment"),
+        (VariableSpec(name="token", secret=True), "secret:token"),
+        (VariableSpec(name="env", type="choice", choices=("dev", "prod")), "select:env:dev,prod"),
+    ],
+)
+def test_ask_routes_each_variable_to_its_prompt(
+    monkeypatch: pytest.MonkeyPatch, spec: VariableSpec, answer: str
+) -> None:
     monkeypatch.setattr(
         "untaped.capabilities.awx.infrastructure.suites.prompt.ui_context",
         lambda **_: _PromptUi(),
     )
-
-    assert UiPrompt().ask(VariableSpec(name="env", description="Environment")) == "answer"
-    assert seen == {"message": "Environment", "default": None, "required": True}
-
-
-def test_secret_prompt_uses_core_secret(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: dict[str, object] = {}
-
-    class _PromptUi:
-        def secret(self, message: str, *, confirmation: bool = False, required: bool = True) -> str:
-            seen["message"] = message
-            seen["confirmation"] = confirmation
-            seen["required"] = required
-            return "s3cr3t"
-
-    monkeypatch.setattr(
-        "untaped.capabilities.awx.infrastructure.suites.prompt.ui_context",
-        lambda **_: _PromptUi(),
-    )
-
-    assert UiPrompt().ask(VariableSpec(name="token", secret=True)) == "s3cr3t"
-    assert seen == {"message": "token", "confirmation": False, "required": True}
-
-
-def test_choice_prompt_uses_core_select(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: dict[str, object] = {}
-
-    class _PromptUi:
-        def select(
-            self,
-            message: str,
-            choices: Sequence[PromptChoice[str]],
-            *,
-            default: str | None = None,
-            search: bool = False,
-        ) -> str:
-            seen["message"] = message
-            seen["choices"] = [(choice.value, choice.label) for choice in choices]
-            seen["default"] = default
-            seen["search"] = search
-            return "prod"
-
-    monkeypatch.setattr(
-        "untaped.capabilities.awx.infrastructure.suites.prompt.ui_context",
-        lambda **_: _PromptUi(),
-    )
-
-    answer = UiPrompt().ask(VariableSpec(name="env", type="choice", choices=("dev", "prod")))
-
-    assert answer == "prod"
-    assert seen == {
-        "message": "env",
-        "choices": [("dev", "dev"), ("prod", "prod")],
-        "default": None,
-        "search": False,
-    }
-
-
-def test_prompt_error_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
-    class _PromptUi:
-        def text(
-            self,
-            message: str,
-            *,
-            default: str | None = None,
-            required: bool = True,
-        ) -> str:
-            raise ConfigError("prompt cancelled")
-
-    monkeypatch.setattr(
-        "untaped.capabilities.awx.infrastructure.suites.prompt.ui_context",
-        lambda **_: _PromptUi(),
-    )
-
-    with pytest.raises(ConfigError, match="prompt cancelled"):
-        UiPrompt().ask(VariableSpec(name="env", type="string"))
+    assert UiPrompt().ask(spec) == answer

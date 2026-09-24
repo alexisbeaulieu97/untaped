@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
@@ -24,7 +24,6 @@ from untaped.capability_api import (
     DryRunOption,
     FormatOption,
     LimitOption,
-    OperationCancelledError,
     StdinOption,
     UsageError,
     YesOption,
@@ -47,7 +46,8 @@ from untaped.capability_api import (
 )
 
 if TYPE_CHECKING:
-    from untaped.capability_api import UiContext
+    from untaped.capabilities.jira.infrastructure import JiraClient
+    from untaped.capability_api import OutputFormat
 
 SetOption = Annotated[
     list[str] | None,
@@ -309,16 +309,33 @@ def _show_request(method: str, path: str, body: object) -> None:
     echo(json.dumps(body, indent=2, ensure_ascii=False, sort_keys=True), err=True)
 
 
-def _confirm_request(
-    ui: UiContext, *, verb: str, method: str, path: str, body: object, yes: bool
+def _send(
+    verb: str,
+    request: tuple[str, str, object],
+    send: Callable[[JiraClient], IssueOutcome],
+    *,
+    planned: IssueOutcome,
+    progress: str,
+    yes: bool,
+    dry_run: bool,
+    fmt: OutputFormat,
+    columns: list[str] | None,
 ) -> None:
-    """Show the request and ask before sending it; ``--yes`` skips both."""
-    if yes:
+    """Preview one write (``--dry-run``) or confirm and send it, then emit the outcome."""
+    if dry_run:
+        _show_request(*request)
+        emit(planned, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
         return
-    with ui.terminal(refusal=f"{verb} requires --yes when not interactive"):
-        _show_request(method, path, body)
-        if not ui.confirm("Send this request to Jira?"):
-            raise OperationCancelledError
+    with open_client() as (client, ui):
+        ui.confirm_or_cancel(
+            "Send this request to Jira?",
+            assume_yes=yes,
+            refusal=f"{verb} requires --yes when not interactive",
+            preview=lambda: _show_request(*request),
+        )
+        with ui.progress(progress):
+            row = send(client)
+    emit(row, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
 
 
 @issues_app.command(name="create")
@@ -366,16 +383,17 @@ def issue_create_command(
             fields=parse_kv_pairs(set_fields, flag="--set"),
             json_fields=parse_json_pairs(set_json, flag="--set-json"),
         )
-        path = f"{settings.api_prefix}/issue"
-        if dry_run:
-            _show_request("POST", path, payload)
-            emit(IssueOutcome(action="planned"), fmt=fmt, columns=columns, kind=OUTCOME_KIND)
-            return
-        with open_client() as (client, ui):
-            _confirm_request(ui, verb="create", method="POST", path=path, body=payload, yes=yes)
-            with ui.progress("Creating issue…"):
-                row = CreateIssue(client, base_url=settings.base_url)(payload)
-        emit(row, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
+        _send(
+            "create",
+            ("POST", f"{settings.api_prefix}/issue", payload),
+            lambda client: CreateIssue(client, base_url=settings.base_url)(payload),
+            planned=IssueOutcome(action="planned"),
+            progress="Creating issue…",
+            yes=yes,
+            dry_run=dry_run,
+            fmt=fmt,
+            columns=columns,
+        )
 
 
 @issues_app.command(name="patch")
@@ -434,19 +452,17 @@ def issue_patch_command(
             )
         if assignee is not None:
             payload["fields"]["assignee"] = {"name": _username(assignee)}
-        path = f"{settings.api_prefix}/issue/{key}"
-        if dry_run:
-            _show_request("PUT", path, payload)
-            planned = IssueOutcome(
-                action="planned", key=key, url=browse_url(settings.base_url, key)
-            )
-            emit(planned, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
-            return
-        with open_client() as (client, ui):
-            _confirm_request(ui, verb="patch", method="PUT", path=path, body=payload, yes=yes)
-            with ui.progress("Updating issue…"):
-                row = PatchIssue(client, base_url=settings.base_url)(key, payload)
-        emit(row, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
+        _send(
+            "patch",
+            ("PUT", f"{settings.api_prefix}/issue/{key}", payload),
+            lambda client: PatchIssue(client, base_url=settings.base_url)(key, payload),
+            planned=IssueOutcome(action="planned", key=key, url=browse_url(settings.base_url, key)),
+            progress="Updating issue…",
+            yes=yes,
+            dry_run=dry_run,
+            fmt=fmt,
+            columns=columns,
+        )
 
 
 @issues_app.command(name="comment")
@@ -475,20 +491,17 @@ def issue_comment_command(
     with report_errors():
         settings = current_jira_settings()
         resolved_body = resolve_text_input(value=body, file=body_file, what="body")
-        path = f"{settings.api_prefix}/issue/{key}/comment"
-        request = {"body": resolved_body}
-        if dry_run:
-            _show_request("POST", path, request)
-            planned = IssueOutcome(
-                action="planned", key=key, url=browse_url(settings.base_url, key)
-            )
-            emit(planned, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
-            return
-        with open_client() as (client, ui):
-            _confirm_request(ui, verb="comment", method="POST", path=path, body=request, yes=yes)
-            with ui.progress("Adding comment…"):
-                row = AddComment(client, base_url=settings.base_url)(key, resolved_body)
-        emit(row, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
+        _send(
+            "comment",
+            ("POST", f"{settings.api_prefix}/issue/{key}/comment", {"body": resolved_body}),
+            lambda client: AddComment(client, base_url=settings.base_url)(key, resolved_body),
+            planned=IssueOutcome(action="planned", key=key, url=browse_url(settings.base_url, key)),
+            progress="Adding comment…",
+            yes=yes,
+            dry_run=dry_run,
+            fmt=fmt,
+            columns=columns,
+        )
 
 
 @issues_app.command(name="transitions")
@@ -595,10 +608,7 @@ def issue_transition_command(
             ]
         else:
             rows = [result for _, result in outcome.results]
-        if single and rows:
-            emit(rows[0], fmt=fmt, columns=columns, kind=OUTCOME_KIND)
-        else:
-            emit(rows, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
+        emit(rows[0] if single and rows else rows, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
         finish(resolve_failed or outcome.any_failed)
 
 
@@ -620,27 +630,26 @@ def link_create_command(
 
     with report_errors():
         settings = current_jira_settings()
-        path = f"{settings.api_prefix}/issueLink"
-        payload = build_link_payload(key, link_type, other)
         if dry_run or not yes:
             # The REST field names read backwards; say the direction in words.
             echo(f"reads as: {key} <outward phrase of {q(link_type)}> {other}", err=True)
-        if dry_run:
-            _show_request("POST", path, payload)
-            planned = IssueOutcome(
+        _send(
+            "link",
+            ("POST", f"{settings.api_prefix}/issueLink", build_link_payload(key, link_type, other)),
+            lambda client: LinkIssues(client, base_url=settings.base_url)(key, link_type, other),
+            planned=IssueOutcome(
                 action="planned",
                 key=key,
                 url=browse_url(settings.base_url, key),
                 link_type=link_type,
                 linked_key=other,
-            )
-            emit(planned, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
-            return
-        with open_client() as (client, ui):
-            _confirm_request(ui, verb="link", method="POST", path=path, body=payload, yes=yes)
-            with ui.progress("Linking issues…"):
-                row = LinkIssues(client, base_url=settings.base_url)(key, link_type, other)
-        emit(row, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
+            ),
+            progress="Linking issues…",
+            yes=yes,
+            dry_run=dry_run,
+            fmt=fmt,
+            columns=columns,
+        )
 
 
 @projects_app.command(name="list")

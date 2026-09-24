@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 
 from cyclopts import Parameter
 
-from untaped.capabilities.ansible.application.refresh_index import RefreshResult
+from untaped.capabilities.ansible.application.refresh_git_index import RefreshResult
 from untaped.capabilities.ansible.cli.refresh import (
     GIT_PARALLEL_CAP,
     run_source_refresh,
@@ -33,7 +33,6 @@ from untaped.capability_api import (
     ColumnsOption,
     DryRunOption,
     FormatOption,
-    OperationCancelledError,
     ParallelOption,
     UntapedError,
     UsageError,
@@ -294,17 +293,11 @@ def source_remove_command(
         if source_repo.get(name) is None:
             raise UntapedError(_unknown_source(name, source_repo))
         if not dry_run:
-            confirmed = (
-                app_context()
-                .ui(strict=False)
-                .confirm_action(
-                    f"Remove source {q(name)} and its cached source data?",
-                    assume_yes=yes,
-                    refusal="source remove requires --yes when not interactive",
-                )
+            app_context().ui(strict=False).confirm_or_cancel(
+                f"Remove source {q(name)} and its cached source data?",
+                assume_yes=yes,
+                refusal="source remove requires --yes when not interactive",
             )
-            if not confirmed:
-                raise OperationCancelledError
             source_repo.remove(name)
             settings = get_config_section("ansible", AnsibleSettings)
             SqliteDependencyIndex(settings.index_path).clear(_saved_source_key(name))
