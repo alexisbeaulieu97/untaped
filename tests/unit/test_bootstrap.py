@@ -523,7 +523,7 @@ def test_installed_wheel_reports_version_and_help(tmp_path: Path) -> None:
     assert built.returncode == 0, built.stderr
     wheels = sorted(dist_dir.glob("untaped-*-py3-none-any.whl"))
     assert len(wheels) == 1
-    assert wheels[0].name == "untaped-7.0.0-py3-none-any.whl"
+    assert wheels[0].name == "untaped-7.1.0-py3-none-any.whl"
 
     venv_dir = tmp_path / "smoke-venv"
     subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True, timeout=300)
@@ -571,7 +571,7 @@ def test_installed_wheel_reports_version_and_help(tmp_path: Path) -> None:
         timeout=120,
     )
     assert version.returncode == 0, version.stderr
-    assert version.stdout == "7.0.0\n"
+    assert version.stdout == "7.1.0\n"
 
     helped = subprocess.run(
         [str(venv_dir / "bin" / "untaped"), "--help"],
