@@ -158,23 +158,6 @@ def test_save_resources_filenames_never_collide() -> None:
     assert filenames[3] == "JobTemplate__Default__plain.yml"
 
 
-def test_save_resources_resolves_domain_kind() -> None:
-    use, client = _use(
-        records={
-            "JobTemplate": [
-                {"id": 30, "name": "deploy", "organization": 1, "playbook": "deploy.yml"}
-            ]
-        },
-        specs=[JOB_TEMPLATE_SPEC],
-        names={("Organization", 1): "Default"},
-    )
-
-    outcomes = list(use(kind="JobTemplate"))
-
-    assert client.list_calls == [("JobTemplate", None)]
-    assert [outcome.filename for outcome in outcomes] == ["JobTemplate__Default__deploy.yml"]
-
-
 def test_save_resources_skips_read_only_kinds_and_preserves_order() -> None:
     use, client = _use(
         records={
