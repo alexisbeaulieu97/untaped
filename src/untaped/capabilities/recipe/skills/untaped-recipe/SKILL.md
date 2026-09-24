@@ -16,7 +16,9 @@ no control flow in recipes, and no state or inventory.
 - `untaped recipe apply <recipe> <dir>...` plans, previews on stderr, confirms,
   backs up, then writes. The recipe argument is a bare name (unique across
   installed packs), a `pack/recipe` ref, an explicit path to a `recipe.yml`, or
-  a local pack path plus `--recipe <name>`. A value is a path only when it is
+  a local pack path plus `--recipe <name>`. An installed pack name or a local
+  pack path with exactly one recipe selects that recipe; with several, the
+  error lists them. A value is a path only when it is
   `.` or `..`, starts with `./`, `../`, `/`, or `~`, or ends in
   `.yml`/`.yaml` — anything else is a library ref, never probed on disk.
   The same target directory given twice (in any spelling) is planned once.
@@ -164,8 +166,10 @@ no control flow in recipes, and no state or inventory.
   `transform`, `template`, `copy`, and `remove`. `transform`/`remove` take
   exactly one of `file`, `files` (load-time fan-out to per-file steps), or
   `globs` (planning-time discovery; `exclude` skips matches; no implicit
-  excludes, so repo sweeps usually add `exclude: [".git/**"]`; binary files
-  must be excluded; matches under symlinked directories are skipped with a
+  excludes, so repo sweeps usually add `exclude: [".git/**"]`; `transform`
+  rejects binary files, so exclude them; `copy` and `remove` handle binary
+  files byte-exact, and `--preview diff` prints `Binary file PATH differs`
+  for them; matches under symlinked directories are skipped with a
   warning). `optional: true` (transform with `file`/`files` only)
   skips missing files with a warning. `template`/`copy` accept
   `if_absent: true` to create only when the destination does not exist.

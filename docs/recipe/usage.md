@@ -21,7 +21,8 @@ untaped recipe apply ./my-pack/recipes/editorconfig/recipe.yml ~/work/api --yes
 The recipe argument is a unique recipe name, a `pack/recipe` ref, or a path.
 A value is a path only when it starts with `./`, `../`, `/` or `~`, is `.` or
 `..`, or ends in `.yml`/`.yaml`. For a local pack directory, pass its path and
-`--recipe NAME`.
+`--recipe NAME`. A pack name or pack path alone selects the pack's recipe when
+it has exactly one.
 
 | Flag | Effect |
 |---|---|
@@ -138,7 +139,7 @@ steps:
 | `validate` | `hook`, `args` | Runs a hook that returns pass, fail or skip for the target. |
 | `transform` | `hook`, one of `file`/`files`/`globs`, `exclude`, `optional`, `args` | Rewrites file content through a hook. |
 | `template` | `template`, `dest`, `unknown_tokens`, `if_absent` | Renders a template file into the target. |
-| `copy` | `source`, `dest`, `if_absent` | Copies a file as is. |
+| `copy` | `source`, `dest`, `if_absent` | Copies a file as is, binary files included. |
 | `remove` | one of `file`/`files`/`globs`, `exclude` | Deletes files. |
 
 - Inputs have `type` (`str`, `int`, `bool`, `float`, `list`, `dict`),
@@ -149,6 +150,8 @@ steps:
   expressions alone. Path fields render tokens too.
 - `globs` has no implicit excludes: add `exclude: [".git/**"]` when the
   targets are Git clones.
+- `transform` works on UTF-8 text only; `copy` and `remove` also handle
+  binary files, which `--preview diff` shows as `Binary file PATH differs`.
 - All paths must be relative and stay inside the target; `..` and symlinks
   out are rejected.
 - Hook `args` are passed to the hook as written. The built-in `yaml_edit`
