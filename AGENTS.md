@@ -69,7 +69,7 @@ against per-capability baselines that may only shrink.
 - Management command names are owned by the root shell; inspect
   `untaped --help` and `src/untaped/management/` when adding a capability.
 - A new built-in capability: add `capabilities/<name>/` per the layout
-  above, expose `SPEC` + `build_app`, and append it to
+  above, expose `SPEC` + `build_app`, and append its name to
   `BUILTIN_CAPABILITIES` in `bootstrap.py` in declaration order. Start its
   skill from [`docs/templates/SKILL.md`](docs/templates/SKILL.md) and its user
   guide at `docs/<name>/usage.md`, linked from `docs/README.md`. Set

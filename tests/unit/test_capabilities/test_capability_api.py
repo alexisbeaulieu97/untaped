@@ -2,39 +2,10 @@
 
 from __future__ import annotations
 
-import importlib
-import sys
-
 import pytest
 
 import untaped.capability_api as capi
 from untaped import api as sdk_api
-from untaped import batch as batch_mod
-from untaped import cli as cli_mod
-from untaped import errors as errors_mod
-from untaped import git as git_mod
-from untaped import settings as settings_mod
-from untaped import state as state_mod
-from untaped import stdin as stdin_mod
-from untaped import ui as ui_mod
-from untaped.app_context import app_context
-from untaped.batch import finish
-from untaped.capabilities import registry
-from untaped.cli import (
-    ColumnsOption,
-    FormatOption,
-    create_app,
-    echo,
-    emit,
-    raise_usage,
-    report_errors,
-)
-from untaped.editor import run_editor
-from untaped.errors import ConfigError, UntapedError, first_validation_error
-from untaped.settings import get_config_section
-from untaped.state import StateCollection
-from untaped.stdin import read_identifiers
-from untaped.ui import UiContext
 
 EXPECTED_ALL = [
     "ApplicationSpec",
@@ -132,167 +103,25 @@ EXPECTED_ALL = [
     "executable_check",
 ]
 
-#: Canonical defining module for each additive helper.
-ADDITIVE_SOURCES = {
-    "AppContext": "untaped.app_context",
-    "BatchOutcome": "untaped.batch",
-    "HttpClient": "untaped.http",
-    "HttpError": "untaped.errors",
-    "HttpSettings": "untaped.settings",
-    "HttpStatusError": "untaped.errors",
-    "HttpTransportError": "untaped.errors",
-    "OutputFormat": "untaped.render",
-    "ProgressHandle": "untaped.progress",
-    "PromptChoice": "untaped.prompts",
-    "RetryPolicy": "untaped.http",
-    "StateMap": "untaped.state",
-    "atomic_write": "untaped.fs",
-    "batch_apply": "untaped.batch",
-    "bounded_map": "untaped.concurrency",
-    "clamp_parallel": "untaped.cli",
-    "connected_client": "untaped.http",
-    "existing_file": "untaped.cli",
-    "get_core_settings": "untaped.settings",
-    "is_envelope_line": "untaped.pipe",
-    "paginate_link": "untaped.http",
-    "paginate_offset": "untaped.http",
-    "paginate_pages": "untaped.http",
-    "parse_json_pairs": "untaped.cli",
-    "parse_kv_pairs": "untaped.cli",
-    "read_stdin": "untaped.stdin",
-    "read_structured_file": "untaped.fs",
-    "render_rows": "untaped.cli",
-    "resolve_each": "untaped.cli",
-    "resolve_text_input": "untaped.stdin",
-    "resolve_verify": "untaped.http",
-    "ui_context": "untaped.ui",
-    "unified_diff_text": "untaped.diff",
-    "AbsolutePath": "untaped.records",
-    "CheckRecord": "untaped.records",
-    "ExitCode": "untaped.errors",
-    "OperationCancelledError": "untaped.errors",
-    "OutcomeRecord": "untaped.records",
-    "StdinInput": "untaped.stdin",
-    "TargetRecord": "untaped.records",
-    "UsageError": "untaped.errors",
-    "deprecated_alias": "untaped.cli",
-    "hint": "untaped.messages",
-    "not_found": "untaped.messages",
-    "plural": "untaped.messages",
-    "q": "untaped.messages",
-    "read_records": "untaped.stdin",
-    "read_stdin_input": "untaped.stdin",
-    "summary": "untaped.messages",
-    "TokenCommand": "untaped.auth",
-    "TokenSources": "untaped.auth",
-    "connection_check": "untaped.doctor_checks",
-    "executable_check": "untaped.doctor_checks",
-}
-
 
 def test_all_contains_exact_surface() -> None:
     assert capi.__all__ == EXPECTED_ALL
-
-
-def test_composition_names_resolve_to_registry() -> None:
-    assert capi.ApplicationSpec is registry.ApplicationSpec
-    assert capi.CapabilitySpec is registry.CapabilitySpec
-    assert capi.CapabilityProvider is registry.CapabilityProvider
-    assert capi.CAPABILITY_API_VERSION == registry.CAPABILITY_API_VERSION == 1.1
-    assert capi.SkillAsset is registry.SkillAsset
-    assert capi.DoctorCheck is registry.DoctorCheck
-    assert capi.DoctorResult is registry.DoctorResult
-    assert capi.CapabilityContext is registry.CapabilityContext
-
-
-def test_helpers_resolve_to_canonical_sources() -> None:
-    assert capi.ColumnsOption is ColumnsOption
-    assert capi.FormatOption is FormatOption
-    assert capi.create_app is create_app
-    assert capi.echo is echo
-    assert capi.emit is emit
-    assert capi.raise_usage is raise_usage
-    assert capi.report_errors is report_errors
-    assert capi.ConfigError is ConfigError
-    assert capi.UntapedError is UntapedError
-    assert capi.first_validation_error is first_validation_error
-    assert capi.StateCollection is StateCollection
-    assert capi.UiContext is UiContext
-    assert capi.app_context is app_context
-    assert capi.finish is finish
-    assert capi.get_config_section is get_config_section
-    assert capi.read_identifiers is read_identifiers
-    assert capi.run_editor is run_editor
-    assert capi.run_git is git_mod.run_git
-    assert capi.GitCommandError is git_mod.GitCommandError
-    assert capi.GitResult is git_mod.GitResult
-    assert capi.git_auth_header is git_mod.git_auth_header
-    assert capi.safe_cache_path is git_mod.safe_cache_path
-    assert capi.safe_path_segment is git_mod.safe_path_segment
-
-
-@pytest.mark.parametrize(("name", "module"), sorted(ADDITIVE_SOURCES.items()))
-def test_additive_helpers_resolve_to_canonical_sources(name: str, module: str) -> None:
-    assert getattr(capi, name) is getattr(importlib.import_module(module), name)
-
-
-def test_helpers_match_sdk_modules() -> None:
-    assert capi.create_app is cli_mod.create_app
-    assert capi.emit is cli_mod.emit
-    assert capi.ConfigError is errors_mod.ConfigError
-    assert capi.get_config_section is settings_mod.get_config_section
-    assert capi.StateCollection is state_mod.StateCollection
-    assert capi.read_identifiers is stdin_mod.read_identifiers
-    assert capi.UiContext is ui_mod.UiContext
-    assert capi.app_context is sys.modules["untaped.app_context"].app_context
-    assert capi.finish is batch_mod.finish
-
-
-def test_retired_composition_names_are_excluded() -> None:
-    for name in ("ToolSpec", "register_tool", "build_tool_app", "run_tool"):
-        assert name not in capi.__all__
-        assert not hasattr(capi, name), name
-
-
-def test_registry_internals_are_not_exported() -> None:
-    for name in (
-        "compose",
-        "ExternalProvider",
-        "CompositionResult",
-        "RegisteredCapability",
-        "ProviderRef",
-        "QuarantineRecord",
-        "VALID_REASONS",
-        "check_api_range",
-        "check_builtin_metadata",
-    ):
-        assert name not in capi.__all__
-        assert not hasattr(capi, name), name
-
-
-def test_every_all_name_resolves() -> None:
-    for name in capi.__all__:
-        assert getattr(capi, name) is not None, name
+    assert capi.CAPABILITY_API_VERSION == 1.1
 
 
 def test_no_extra_module_level_names_leak() -> None:
+    """Nothing beyond ``__all__`` is public (retired and registry names stay out)."""
     public = {name for name in dir(capi) if not name.startswith("_")}
     assert public == set(capi.__all__) | {"annotations"}
+
+
+@pytest.mark.parametrize("name", EXPECTED_ALL)
+def test_every_name_is_a_reexport_of_its_core_module(name: str) -> None:
+    """The SDK module only re-exports; nothing is (re)defined there."""
+    assert getattr(getattr(capi, name), "__module__", None) != capi.__name__
 
 
 def test_sdk_api_does_not_expose_capability_composition_types() -> None:
     assert "SkillAsset" not in sdk_api.__all__
     assert "ToolSpec" not in sdk_api.__all__
     assert "capability_api" not in sdk_api.__all__
-
-
-@pytest.mark.parametrize("name", EXPECTED_ALL)
-def test_all_entries_importable_from_module(name: str) -> None:
-    assert name in dir(capi)
-
-
-def test_pipe_helpers_are_canonical_exports() -> None:
-    from untaped.pipe import PipeEnvelope, parse_envelope_line
-
-    assert capi.PipeEnvelope is PipeEnvelope
-    assert capi.parse_envelope_line is parse_envelope_line

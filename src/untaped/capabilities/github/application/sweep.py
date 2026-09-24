@@ -65,10 +65,6 @@ class SweepOptions:
     stdin_items: tuple[RepositoryInventoryItem, ...] = ()
 
     def __post_init__(self) -> None:
-        if self.depth < 0:
-            raise ValueError("depth must be non-negative")
-        if self.parallel < 1:
-            raise ValueError("parallel must be positive")
         if self.max_age_seconds < 0:
             raise ValueError("max_age_seconds must be non-negative")
 
@@ -247,8 +243,8 @@ class _TreeScanner:
         ]
 
 
-class Sweep:
-    """Run a sweep query across repository inventory and local corpus refs."""
+class _CorpusUseCase:
+    """Shared wiring for use cases that resolve inventory into the local corpus."""
 
     def __init__(
         self,
@@ -262,6 +258,10 @@ class Sweep:
         self._corpus = corpus
         self._root = root
         self._auth_header = auth_header
+
+
+class Sweep(_CorpusUseCase):
+    """Run a sweep query across repository inventory and local corpus refs."""
 
     def __call__(
         self, options: SweepOptions, *, progress: ProgressHandle | None = None
@@ -281,7 +281,16 @@ class Sweep:
         def sweep_one(
             repo: CorpusRepoTarget,
         ) -> tuple[_ReadyRepo | None, _RepoScan | CorpusFailure]:
-            prepared = self._prepare(repo, options)
+            prepared = _prepare_repo(
+                self._corpus,
+                repo,
+                root=self._root,
+                selector=options.query.refs,
+                sync=options.sync,
+                max_age_seconds=options.max_age_seconds,
+                depth=options.depth,
+                auth_header=self._auth_header,
+            )
             if isinstance(prepared, CorpusFailure):
                 return None, prepared
             try:
@@ -393,19 +402,6 @@ class Sweep:
             raise ConfigError("corpus has no repos in scope; run without --cached to populate")
         return tuple(sorted(targets, key=lambda repo: repo.full_name))
 
-    def _prepare(self, repo: CorpusRepoTarget, options: SweepOptions) -> _ReadyRepo | CorpusFailure:
-        """Make one repo's cached copy current enough to scan (sync mode permitting)."""
-        return _prepare_repo(
-            self._corpus,
-            repo,
-            root=self._root,
-            selector=options.query.refs,
-            sync=options.sync,
-            max_age_seconds=options.max_age_seconds,
-            depth=options.depth,
-            auth_header=self._auth_header,
-        )
-
     def _scan_repo(self, ready: _ReadyRepo, options: SweepOptions) -> _RepoScan:
         refs_matched: list[str] = []
         aggregate_hits: dict[str, int] = {}
@@ -416,9 +412,13 @@ class Sweep:
         # (a tag on a branch tip, say) are scanned once.
         refs = self._corpus.local_refs(ready.repo, root=self._root, selector=options.query.refs)
         display_names = ref_display_names(ref.name for ref in refs)
-        tree_scans = self._scan_trees(
-            ready.repo, tuple(dict.fromkeys(ref.tree for ref in refs)), options.query
-        )
+        tree_scans = _TreeScanner(
+            self._corpus,
+            ready.repo,
+            root=self._root,
+            trees=tuple(dict.fromkeys(ref.tree for ref in refs)),
+            query=options.query,
+        ).run()
         for ref in refs:
             tree_scan = tree_scans[ref.tree]
             display = display_names[ref.name]
@@ -428,7 +428,8 @@ class Sweep:
             refs_matched.append(display)
             owner_paths.update(tree_scan.owner_paths)
             matches.extend(
-                _content_match(ready.repo.full_name, display, hit) for hit in tree_scan.grep_hits
+                _ContentMatch(ready.repo.full_name, display, hit.path, hit.line, hit.text)
+                for hit in tree_scan.grep_hits
             )
             for label, count in tree_scan.hits.items():
                 aggregate_hits[label] = max(aggregate_hits.get(label, 0), count)
@@ -449,11 +450,6 @@ class Sweep:
             ),
             matches=tuple(matches),
         )
-
-    def _scan_trees(
-        self, repo: CorpusRepoTarget, trees: tuple[str, ...], query: SweepQuery
-    ) -> dict[str, _TreeScan]:
-        return _TreeScanner(self._corpus, repo, root=self._root, trees=trees, query=query).run()
 
     def _owners_for(self, repo: CorpusRepoTarget, *, paths: Iterable[str]) -> tuple[str, ...]:
         branch = repo.default_branch
@@ -539,21 +535,8 @@ def _failure(repo: CorpusRepoTarget, exc: Exception) -> CorpusFailure:
     return CorpusFailure(repo=repo.full_name, reason=str(exc) or type(exc).__name__)
 
 
-class SyncCorpus:
+class SyncCorpus(_CorpusUseCase):
     """Fetch every repository in scope into the corpus so later sweeps start warm."""
-
-    def __init__(
-        self,
-        *,
-        inventory: InventoryResolver,
-        corpus: GitCorpus,
-        root: Path,
-        auth_header: AuthHeaderSupplier,
-    ) -> None:
-        self._inventory = inventory
-        self._corpus = corpus
-        self._root = root
-        self._auth_header = auth_header
 
     def __call__(
         self, options: CorpusSyncOptions, *, progress: ProgressHandle | None = None
@@ -638,7 +621,8 @@ def _prepare_repo(
     except (GitCorpusError, OSError) as exc:
         return _failure(repo, exc)
     if sync == "off":
-        return _ReadyRepo(repo=repo, fetched_at=_freshness_datetime(freshness), refreshed=False)
+        fetched_at = freshness.fetched_at if freshness is not None else None
+        return _ReadyRepo(repo=repo, fetched_at=fetched_at, refreshed=False)
     if sync == "auto" and freshness is not None and covers(freshness, selector):
         if not _expired(freshness, max_age_seconds=max_age_seconds):
             return _ReadyRepo(repo=repo, fetched_at=freshness.fetched_at, refreshed=False)
@@ -685,10 +669,6 @@ def _positive_labels(query: SweepQuery) -> tuple[str, ...]:
     )
 
 
-def _freshness_datetime(freshness: CorpusFreshness | None) -> datetime | None:
-    return freshness.fetched_at if freshness is not None else None
-
-
 def _parse_datetime(value: str | None) -> datetime | None:
     if value is None:
         return None
@@ -702,16 +682,6 @@ def _matching_paths(paths: tuple[str, ...], glob: str) -> tuple[str, ...]:
     return tuple(path for path in paths if fnmatch.fnmatchcase(path, glob))
 
 
-def _content_match(full_name: str, ref: str, hit: GrepHit) -> _ContentMatch:
-    return _ContentMatch(
-        full_name=full_name,
-        ref=ref,
-        path=hit.path,
-        line=hit.line,
-        text=hit.text,
-    )
-
-
 def _dedupe_matches(matches: Iterable[_ContentMatch]) -> tuple[SweepMatch, ...]:
     # Insertion-ordered dicts give O(1) ref dedupe while keeping first-seen order.
     # Refs showing the same line at the same place collapse into one row.
@@ -720,13 +690,7 @@ def _dedupe_matches(matches: Iterable[_ContentMatch]) -> tuple[SweepMatch, ...]:
         key = (match.full_name, match.path, match.line, match.text)
         grouped.setdefault(key, {})[match.ref] = None
     rows = [
-        SweepMatch(
-            full_name=full_name,
-            refs=tuple(refs),
-            path=path,
-            line=line,
-            text=text,
-        )
+        SweepMatch(full_name=full_name, refs=tuple(refs), path=path, line=line, text=text)
         for (full_name, path, line, text), refs in grouped.items()
     ]
     return tuple(sorted(rows, key=lambda row: (row.full_name, row.path, row.line, row.text)))

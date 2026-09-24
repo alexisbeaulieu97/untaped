@@ -1,7 +1,13 @@
-"""Row-by-row validation tests: fatal built-ins, quarantined externals (spec §5)."""
+"""Row-by-row validation tests: fatal built-ins, quarantined externals (spec §5).
+
+Each rejection row is exercised through both origins: a built-in violation
+raises ``ConfigError`` naming the reason, an external one becomes a
+``QuarantineRecord`` while composition continues.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +17,6 @@ from pydantic import BaseModel
 import untaped.capabilities.registry as registry
 from test_capabilities.capharness import (
     OtherProfile,
-    function_provider,
     make_check,
     make_external,
     make_shell,
@@ -22,10 +27,8 @@ from untaped.capabilities.registry import (
     CapabilitySpec,
     DoctorCheck,
     ExternalProvider,
-    ProviderRef,
     SkillAsset,
     check_api_range,
-    check_builtin_metadata,
     compose,
 )
 from untaped.errors import ConfigError
@@ -48,22 +51,22 @@ def broken_asset(name: str = "", description: str = "d") -> SkillAsset:
     return asset
 
 
-def fatal_spec(spec: CapabilitySpec) -> ConfigError:
-    with pytest.raises(ConfigError) as exc_info:
-        compose(make_shell(), [spec])
-    return exc_info.value
+def _with(spec: CapabilitySpec, **fields: Any) -> CapabilitySpec:
+    """Bypass construction checks the way a hostile provider could."""
+    for key, value in fields.items():
+        object.__setattr__(spec, key, value)
+    return spec
 
 
-def quarantine_reason(
-    spec: CapabilitySpec,
-    distribution: str = "ext-dist",
-    name: str | None = None,
-    **kwargs: Any,
-) -> Any:
-    result = compose(make_shell(), [], [make_external(spec, distribution, name, **kwargs)])
-    assert len(result.capabilities) == 0
-    (record,) = result.quarantine
-    return record
+def _check_with(**fields: Any) -> DoctorCheck:
+    check = make_check("d.ok")
+    for key, value in fields.items():
+        object.__setattr__(check, key, value)
+    return check
+
+
+def _failing_factory() -> Any:
+    raise RuntimeError("factory-boom")
 
 
 RESERVED = [
@@ -79,112 +82,214 @@ RESERVED = [
     "capabilities",
 ]
 
-
-@pytest.mark.parametrize("value", RESERVED)
-def test_reserved_name_builtin_fatal(value: str) -> None:
-    err = fatal_spec(make_spec(name=value, section=f"ok-{value}"))
-    assert "reserved-root" in str(err)
-    assert value in str(err)
-
-
-@pytest.mark.parametrize("value", RESERVED)
-def test_reserved_section_builtin_fatal(value: str) -> None:
-    err = fatal_spec(make_spec(name=f"ok-{value}", section=value))
-    assert "reserved-root" in str(err)
-    assert value in str(err)
-
-
-@pytest.mark.parametrize("value", RESERVED)
-def test_reserved_name_external_quarantine(value: str) -> None:
-    record = quarantine_reason(make_spec(name=value, section=f"ok-{value}"))
-    assert record.reason == "reserved-root"
-    assert value in record.detail
-
-
-@pytest.mark.parametrize("value", RESERVED)
-def test_reserved_section_external_quarantine(value: str) -> None:
-    record = quarantine_reason(make_spec(name=f"ok-{value}", section=value))
-    assert record.reason == "reserved-root"
-    assert value in record.detail
-
-
-def test_duplicate_name_builtin_fatal() -> None:
-    with pytest.raises(ConfigError, match="duplicate-name"):
-        compose(make_shell(), [make_spec(name="a"), make_spec(name="a", profile=OtherProfile)])
-
-
-def test_duplicate_name_external_quarantine() -> None:
-    clash = compose(
-        make_shell(),
-        [make_spec(name="taken")],
-        [make_external(make_spec(name="taken", profile=OtherProfile))],
-    )
-    assert [c.spec.name for c in clash.capabilities] == ["taken"]
-    (record,) = clash.quarantine
-    assert record.reason == "duplicate-name"
-    assert "'taken'" in record.detail
-
-
-def test_shell_name_collision_quarantines() -> None:
-    record = quarantine_reason(make_spec(name="untaped"))
-    assert record.reason == "duplicate-name"
-    assert "'untaped'" in record.detail
-
-
-def test_duplicate_section_builtin_fatal() -> None:
-    with pytest.raises(ConfigError, match="duplicate-section"):
-        compose(
-            make_shell(),
-            [make_spec(name="a", section="shared"), make_spec(name="b", section="shared")],
+# (spec factory, reason, text the error/detail must name)
+SINGLE_SPEC_ROWS: list[tuple[str, Callable[[], CapabilitySpec], str, str]] = [
+    *(
+        (f"reserved-name-{v}", lambda v=v: make_spec(name=v, section=f"ok-{v}"), "reserved-root", v)
+        for v in RESERVED
+    ),
+    *(
+        (
+            f"reserved-section-{v}",
+            lambda v=v: make_spec(name=f"ok-{v}", section=v),
+            "reserved-root",
+            v,
         )
+        for v in RESERVED
+    ),
+    (
+        "profile-state-overlap",
+        lambda: make_spec(name="o", profile=TokenProfile, state=TokenState),
+        "profile-state-overlap",
+        "token",
+    ),
+    (
+        "skill-dup-in-spec",
+        lambda: make_spec(name="a", skills=(make_skill("dup"), make_skill("dup"))),
+        "duplicate-skill",
+        "dup",
+    ),
+    (
+        "skill-not-asset",
+        lambda: _with(make_spec(name="bad-assets"), skills=("not-an-asset",)),
+        "bad-skill-asset",
+        "not-an-asset",
+    ),
+    (
+        "skill-empty-name",
+        lambda: _with(make_spec(name="bad-assets"), skills=(broken_asset(name="  "),)),
+        "bad-skill-asset",
+        "bad-assets",
+    ),
+    (
+        "skill-empty-description",
+        lambda: _with(
+            make_spec(name="bad-assets"), skills=(broken_asset(name="x", description="  "),)
+        ),
+        "bad-skill-asset",
+        "bad-assets",
+    ),
+    (
+        "doctor-dup-in-spec",
+        lambda: make_spec(name="d", checks=(make_check("d.x"), make_check("d.x"))),
+        "duplicate-doctor-check",
+        "d.x",
+    ),
+    (
+        "doctor-empty-id",
+        lambda: _with(make_spec(name="d"), doctor_checks=(_check_with(id="  "),)),
+        "doctor-check-failed",
+        "d",
+    ),
+    (
+        "doctor-empty-title",
+        lambda: make_spec(name="d", checks=(_check_with(title="  "),)),
+        "doctor-check-failed",
+        "d",
+    ),
+    (
+        "doctor-non-callable",
+        lambda: make_spec(name="d", checks=(_check_with(run=None),)),
+        "doctor-check-failed",
+        "d",
+    ),
+    *(
+        (
+            f"factory-{label}",
+            lambda label=label, factory=factory: make_spec(
+                name=f"factory-{label}", factory=factory
+            ),
+            "bad-app-factory",
+            f"factory-{label}",
+        )
+        for label, factory in (
+            ("takes-args", lambda arg: None),
+            ("returns-str", lambda: "not-an-app"),
+            ("raises", _failing_factory),
+        )
+    ),
+]
 
 
-def test_duplicate_section_external_quarantine() -> None:
-    result = compose(
-        make_shell(),
-        [make_spec(name="a", section="shared")],
-        [make_external(make_spec(name="b", section="shared"))],
-    )
-    assert [c.spec.name for c in result.capabilities] == ["a"]
+@pytest.mark.parametrize("builtin", [True, False], ids=["builtin-fatal", "external-quarantine"])
+@pytest.mark.parametrize(
+    ("make", "reason", "named"),
+    [row[1:] for row in SINGLE_SPEC_ROWS],
+    ids=[row[0] for row in SINGLE_SPEC_ROWS],
+)
+def test_invalid_spec_is_rejected(
+    make: Callable[[], CapabilitySpec], reason: str, named: str, builtin: bool
+) -> None:
+    spec = make()
+    if builtin:
+        with pytest.raises(ConfigError) as exc_info:
+            compose(make_shell(), [spec])
+        assert reason in str(exc_info.value)
+        assert named in str(exc_info.value)
+        return
+    result = compose(make_shell(), [], [make_external(spec, "ext-dist")])
+    assert result.capabilities == ()
     (record,) = result.quarantine
-    assert record.reason == "duplicate-section"
-    assert "'shared'" in record.detail
+    assert record.reason == reason
+    assert named in record.detail
 
 
-def test_shell_section_collision_quarantines() -> None:
-    record = quarantine_reason(make_spec(name="intruder", section="shell"))
-    assert record.reason == "duplicate-section"
-    assert "'shell'" in record.detail
+# (first spec, colliding spec, reason, text the error/detail must name)
+COLLISION_ROWS: list[tuple[str, Callable[[], tuple[CapabilitySpec, CapabilitySpec]], str, str]] = [
+    (
+        "name",
+        lambda: (make_spec(name="taken"), make_spec(name="taken", profile=OtherProfile)),
+        "duplicate-name",
+        "'taken'",
+    ),
+    (
+        "section",
+        lambda: (make_spec(name="a", section="shared"), make_spec(name="b", section="shared")),
+        "duplicate-section",
+        "'shared'",
+    ),
+    (
+        "state-shadow",
+        lambda: (
+            make_spec(name="first", section="data", profile=TokenProfile),
+            make_spec(name="second", section="data", profile=OtherProfile, state=TokenState),
+        ),
+        "state-shadow",
+        "'data'",
+    ),
+    (
+        "skill",
+        lambda: (
+            make_spec(name="a", skills=(make_skill("shared"),)),
+            make_spec(name="b", skills=(make_skill("shared"),)),
+        ),
+        "duplicate-skill",
+        "'shared'",
+    ),
+    (
+        "doctor-id",
+        lambda: (
+            make_spec(name="a", checks=(make_check("shared.id"),)),
+            make_spec(name="b", checks=(make_check("shared.id"),)),
+        ),
+        "duplicate-doctor-check",
+        "'shared.id'",
+    ),
+]
 
 
-def test_profile_state_overlap_builtin_fatal() -> None:
-    err = fatal_spec(make_spec(name="o", profile=TokenProfile, state=TokenState))
-    assert "profile-state-overlap" in str(err)
-    assert "token" in str(err)
-
-
-def test_profile_state_overlap_external_quarantine() -> None:
-    record = quarantine_reason(make_spec(name="o", profile=TokenProfile, state=TokenState))
-    assert record.reason == "profile-state-overlap"
-    assert "token" in record.detail
-
-
-def test_state_shadow_external_quarantine() -> None:
-    first = make_spec(name="first", section="data", profile=TokenProfile)
-    second = make_spec(name="second", section="data", profile=OtherProfile, state=TokenState)
+@pytest.mark.parametrize("builtin", [True, False], ids=["builtin-fatal", "external-quarantine"])
+@pytest.mark.parametrize(
+    ("make", "reason", "named"),
+    [row[1:] for row in COLLISION_ROWS],
+    ids=[row[0] for row in COLLISION_ROWS],
+)
+def test_collision_with_an_earlier_capability_is_rejected(
+    make: Callable[[], tuple[CapabilitySpec, CapabilitySpec]],
+    reason: str,
+    named: str,
+    builtin: bool,
+) -> None:
+    first, second = make()
+    if builtin:
+        with pytest.raises(ConfigError, match=reason):
+            compose(make_shell(), [first, second])
+        return
     result = compose(make_shell(), [first], [make_external(second)])
-    assert [c.spec.name for c in result.capabilities] == ["first"]
+    assert [c.spec.name for c in result.capabilities] == [first.name]
     (record,) = result.quarantine
-    assert record.reason == "state-shadow"
-    assert "token" in record.detail
-    assert "'data'" in record.detail
+    assert record.reason == reason
+    assert named in record.detail
 
 
-def test_state_shadow_builtin_fatal() -> None:
-    first = make_spec(name="first", section="data", profile=TokenProfile)
-    second = make_spec(name="second", section="data", profile=OtherProfile, state=TokenState)
-    with pytest.raises(ConfigError, match="state-shadow"):
-        compose(make_shell(), [first, second])
+@pytest.mark.parametrize(
+    ("shell", "spec", "reason", "named"),
+    [
+        (make_shell(), make_spec(name="untaped"), "duplicate-name", "'untaped'"),
+        (make_shell(), make_spec(name="intruder", section="shell"), "duplicate-section", "'shell'"),
+        (
+            make_shell(skills=(make_skill("shell-skill"),)),
+            make_spec(name="s", skills=(make_skill("shell-skill"),)),
+            "duplicate-skill",
+            "'shell-skill'",
+        ),
+        (
+            make_shell(checks=(make_check("shell.health"),)),
+            make_spec(name="d", checks=(make_check("shell.health"),)),
+            "duplicate-doctor-check",
+            "'shell.health'",
+        ),
+    ],
+    ids=["name", "section", "skill", "doctor-id"],
+)
+def test_collision_with_the_shell_quarantines(
+    shell: Any, spec: CapabilitySpec, reason: str, named: str
+) -> None:
+    result = compose(shell, [], [make_external(spec)])
+    assert result.capabilities == ()
+    (record,) = result.quarantine
+    assert record.reason == reason
+    assert named in record.detail
 
 
 def test_state_shadow_scoped_to_same_section() -> None:
@@ -195,29 +300,7 @@ def test_state_shadow_scoped_to_same_section() -> None:
     assert result.quarantine == ()
 
 
-def test_duplicate_skill_builtin_fatal() -> None:
-    first = make_spec(name="a", skills=(make_skill("shared"),))
-    second = make_spec(name="b", skills=(make_skill("shared"),))
-    with pytest.raises(ConfigError, match="duplicate-skill"):
-        compose(make_shell(), [first, second])
-
-
-def test_duplicate_skill_within_spec_fatal() -> None:
-    err = fatal_spec(make_spec(name="a", skills=(make_skill("dup"), make_skill("dup"))))
-    assert "duplicate-skill" in str(err)
-
-
-def test_duplicate_skill_external_quarantine() -> None:
-    shell = make_shell(skills=(make_skill("shell-skill"),))
-    candidate = make_external(make_spec(name="s", skills=(make_skill("shell-skill"),)))
-    result = compose(shell, [], [candidate])
-    assert result.capabilities == ()
-    (record,) = result.quarantine
-    assert record.reason == "duplicate-skill"
-    assert "'shell-skill'" in record.detail
-
-
-def test_duplicate_skill_across_externals() -> None:
+def test_duplicate_skill_across_externals_keeps_the_first() -> None:
     first = make_external(make_spec(name="a", skills=(make_skill("s1"),)), "d1")
     second = make_external(make_spec(name="b", skills=(make_skill("s1"),)), "d2")
     result = compose(make_shell(), [], [first, second])
@@ -226,98 +309,22 @@ def test_duplicate_skill_across_externals() -> None:
     assert record.reason == "duplicate-skill"
 
 
-def test_bad_skill_asset_external_quarantine() -> None:
-    spec = make_spec(name="bad-assets")
-    object.__setattr__(spec, "skills", ("not-an-asset",))
-    record = quarantine_reason(spec)
-    assert record.reason == "bad-skill-asset"
-    assert "not-an-asset" in record.detail
+# ---- api_requires ranges ----------------------------------------------------
 
 
-def test_bad_skill_asset_empty_name_quarantine() -> None:
-    spec = make_spec(name="bad-assets")
-    object.__setattr__(spec, "skills", (broken_asset(name="  "),))
-    record = quarantine_reason(spec)
-    assert record.reason == "bad-skill-asset"
-
-
-def test_bad_skill_asset_empty_description_quarantine() -> None:
-    spec = make_spec(name="bad-assets")
-    object.__setattr__(spec, "skills", (broken_asset(name="x", description="  "),))
-    record = quarantine_reason(spec)
-    assert record.reason == "bad-skill-asset"
-
-
-def test_bad_skill_asset_builtin_fatal() -> None:
-    spec = make_spec(name="bad-assets")
-    object.__setattr__(spec, "skills", ("not-an-asset",))
-    err = fatal_spec(spec)
-    assert "bad-skill-asset" in str(err)
-
-
-def test_duplicate_doctor_id_builtin_fatal() -> None:
-    first = make_spec(name="a", checks=(make_check("shared.id"),))
-    second = make_spec(name="b", checks=(make_check("shared.id"),))
-    with pytest.raises(ConfigError, match="duplicate-doctor-check"):
-        compose(make_shell(), [first, second])
-
-
-def test_duplicate_doctor_id_external_quarantine() -> None:
-    shell = make_shell(checks=(make_check("shell.health"),))
-    spec = make_spec(name="d", checks=(make_check("shell.health"),))
-    result = compose(shell, [], [make_external(spec)])
-    assert result.capabilities == ()
-    (record,) = result.quarantine
-    assert record.reason == "duplicate-doctor-check"
-    assert "'shell.health'" in record.detail
-
-
-def test_doctor_empty_id_quarantine() -> None:
-    spec = make_spec(name="d")
-    object.__setattr__(
-        spec, "doctor_checks", (DoctorCheck(id="  ", title="T", run=lambda ctx: None),)
-    )
-    record = quarantine_reason(spec)
-    assert record.reason == "doctor-check-failed"
-
-
-def test_doctor_empty_title_quarantine() -> None:
-    check = make_check("d.ok")
-    object.__setattr__(check, "title", "  ")
-    spec = make_spec(name="d", checks=(check,))
-    record = quarantine_reason(spec)
-    assert record.reason == "doctor-check-failed"
-
-
-def test_doctor_non_callable_body_quarantine() -> None:
-    check = make_check("d.ok")
-    object.__setattr__(check, "run", None)
-    spec = make_spec(name="d", checks=(check,))
-    record = quarantine_reason(spec)
-    assert record.reason == "doctor-check-failed"
-
-
-def test_doctor_within_spec_duplicate_fatal() -> None:
-    err = fatal_spec(make_spec(name="d", checks=(make_check("d.x"), make_check("d.x"))))
-    assert "duplicate-doctor-check" in str(err)
-
-
-GOOD_RANGES = [
-    ((1.0, 2.0), (1.0, 2.0)),
-    ((0.0, 99.0), (0.0, 99.0)),
-    ((1.0, 1.5), (1.0, 1.5)),
-    ([1.0, 2.0], (1.0, 2.0)),
-    ((1, 2), (1.0, 2.0)),
-]
-
-
-@pytest.mark.parametrize(("rng", "expected"), GOOD_RANGES)
+@pytest.mark.parametrize(
+    ("rng", "expected"),
+    [
+        ((1.0, 2.0), (1.0, 2.0)),
+        ((0.0, 99.0), (0.0, 99.0)),
+        ((1.0, 1.5), (1.0, 1.5)),
+        ([1.0, 2.0], (1.0, 2.0)),
+        ((1, 2), (1.0, 2.0)),
+    ],
+)
 def test_api_range_accepts_covering_ranges(rng: Any, expected: Any) -> None:
+    # Checked against 1.0: the lower bound is inclusive.
     assert check_api_range(rng, 1.0) == expected
-
-
-@pytest.mark.parametrize(("rng", "expected"), GOOD_RANGES)
-def test_api_range_covering_ranges_compose(rng: Any, expected: Any) -> None:
     spec = make_spec(name="ranged")
     result = compose(make_shell(), [], [make_external(spec, api_requires=rng)])
     assert [c.spec.name for c in result.capabilities] == ["ranged"]
@@ -336,32 +343,28 @@ def test_api_1_1_accepts_1_0_providers_and_additive_ranges() -> None:
     assert [record.reason for record in capped.quarantine] == ["api-range"]
 
 
-BAD_RANGES = [
-    ((1.0, 1.0), "inverted"),
-    ((2.0, 1.0), "inverted"),
-    (("1.0", 2.0), "non-numeric"),
-    ((1.0,), "pair"),
-    ((1.0, 2.0, 3.0), "pair"),
-    ("1.0", "pair"),
-    ({"lo": 1.0}, "pair"),
-    ((True, 2.0), "non-numeric"),
-    ((float("nan"), 2.0), "non-numeric"),
-    ((1.0, float("inf")), "non-finite"),
-    ((0.5, 1.0), "admit"),
-    ((1.5, 2.0), "admit"),
-    ((0.5, 0.9), "admit"),
-    (None, "missing"),
-]
-
-
-@pytest.mark.parametrize(("rng", "kind"), BAD_RANGES)
-def test_api_range_rejects_bad_ranges(rng: Any, kind: str) -> None:
+@pytest.mark.parametrize(
+    "rng",
+    [
+        (1.0, 1.0),  # inverted
+        (2.0, 1.0),
+        ("1.0", 2.0),  # non-numeric
+        (True, 2.0),
+        (float("nan"), 2.0),
+        (1.0, float("inf")),  # non-finite
+        (1.0,),  # not a pair
+        (1.0, 2.0, 3.0),
+        "1.0",
+        {"lo": 1.0},
+        (0.5, 1.0),  # does not admit the running API
+        (1.5, 2.0),
+        (0.5, 0.9),
+        None,  # missing
+    ],
+)
+def test_api_range_rejects_bad_ranges(rng: Any) -> None:
     with pytest.raises(ConfigError, match="api-range"):
         check_api_range(rng, 1.0)
-
-
-@pytest.mark.parametrize(("rng", "kind"), BAD_RANGES)
-def test_api_range_external_quarantine(rng: Any, kind: str) -> None:
     spec = make_spec(name="ranged")
     result = compose(make_shell(), [], [make_external(spec, api_requires=rng)])
     assert result.capabilities == ()
@@ -382,158 +385,94 @@ def test_api_range_missing_attribute_quarantine() -> None:
     assert record.reason == "api-range"
 
 
-def test_api_range_boundary_lo_inclusive() -> None:
-    lo, _hi = check_api_range((1.0, 1.0 + 1e-9), 1.0)
-    assert lo == 1.0
-
-
 def test_api_range_builtin_fatal(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(registry, "CAPABILITY_API_VERSION", 5.0)
     with pytest.raises(ConfigError, match="api-range"):
         compose(make_shell(), [make_spec(name="built")])
 
 
-def test_malformed_unresolvable_target() -> None:
-    candidate = ExternalProvider(
-        distribution="ghost", name="ghost", target="missing_mod_xyz:provider"
-    )
+# ---- entry-point targets ------------------------------------------------------
+
+
+def _needs_arg(value: str) -> CapabilitySpec:
+    return make_spec(name="argful")
+
+
+_needs_arg.api_requires = (1.0, 2.0)  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    ("candidate", "reason", "entry_point", "named"),
+    [
+        # An unimportable target has no resolved label; the detail names it.
+        (
+            ExternalProvider(distribution="d", name="ghost", target="missing_mod_xyz:provider"),
+            "malformed-entry-point",
+            "",
+            "missing_mod_xyz:provider",
+        ),
+        (
+            ExternalProvider(distribution="d", name="ghost", target="not-a-module-ref"),
+            "malformed-entry-point",
+            "",
+            "",
+        ),
+        (
+            ExternalProvider(distribution="d", name="mod", target="json:decoder"),
+            "malformed-entry-point",
+            "json:decoder",
+            "",
+        ),
+        # A dotted attribute resolves and is then judged on its api range.
+        (
+            ExternalProvider(distribution="d", name="jsoncap", target="json.decoder:JSONDecoder"),
+            "api-range",
+            "json.decoder:JSONDecoder",
+            "",
+        ),
+        (
+            ExternalProvider(distribution="d", name="thing", target=object()),
+            "malformed-entry-point",
+            "thing",
+            "",
+        ),
+        (
+            ExternalProvider(distribution="d", name="argful", target=_needs_arg),
+            "malformed-entry-point",
+            "argful",
+            "",
+        ),
+        (
+            make_external(make_spec(name="raiser"), "d", error=RuntimeError("boom-text")),
+            "malformed-entry-point",
+            None,
+            "boom-text",
+        ),
+        (
+            make_external(make_spec(name="wrong"), "d", result={"not": "a-spec"}),
+            "malformed-entry-point",
+            None,
+            "dict",
+        ),
+    ],
+    ids=[
+        "unresolvable",
+        "no-colon",
+        "non-callable-attr",
+        "dotted-attr",
+        "non-callable-object",
+        "requires-arguments",
+        "raises",
+        "returns-non-spec",
+    ],
+)
+def test_bad_entry_point_target_quarantines(
+    candidate: ExternalProvider, reason: str, entry_point: str | None, named: str
+) -> None:
     result = compose(make_shell(), [], [candidate])
     (record,) = result.quarantine
-    assert record.reason == "malformed-entry-point"
-    assert record.entry_point == ""
-    assert "missing_mod_xyz:provider" in record.detail
-
-
-def test_malformed_target_without_colon() -> None:
-    candidate = ExternalProvider(distribution="ghost", name="ghost", target="not-a-module-ref")
-    result = compose(make_shell(), [], [candidate])
-    (record,) = result.quarantine
-    assert record.reason == "malformed-entry-point"
-    assert record.entry_point == ""
-
-
-def test_resolved_non_callable_keeps_target_label() -> None:
-    candidate = ExternalProvider(distribution="mod-dist", name="mod", target="json:decoder")
-    result = compose(make_shell(), [], [candidate])
-    (record,) = result.quarantine
-    assert record.reason == "malformed-entry-point"
-    assert record.entry_point == "json:decoder"
-    assert record.distribution == "mod-dist"
-
-
-def test_dotted_attr_target_resolves() -> None:
-    candidate = ExternalProvider(
-        distribution="json-dist", name="jsoncap", target="json.decoder:JSONDecoder"
-    )
-    result = compose(make_shell(), [], [candidate])
-    (record,) = result.quarantine
-    assert record.reason == "api-range"
-    assert record.entry_point == "json.decoder:JSONDecoder"
-
-
-def test_malformed_non_callable_target() -> None:
-    candidate = ExternalProvider(distribution="d", name="thing", target=object())
-    result = compose(make_shell(), [], [candidate])
-    (record,) = result.quarantine
-    assert record.reason == "malformed-entry-point"
-    assert record.entry_point == "thing"
-
-
-def test_malformed_provider_requiring_arguments() -> None:
-    spec = make_spec(name="argful")
-
-    def _needs_arg(value: str) -> CapabilitySpec:
-        return spec
-
-    _needs_arg.api_requires = (1.0, 2.0)  # type: ignore[attr-defined]
-    candidate = ExternalProvider(distribution="d", name="argful", target=_needs_arg)
-    result = compose(make_shell(), [], [candidate])
-    (record,) = result.quarantine
-    assert record.reason == "malformed-entry-point"
-
-
-def test_malformed_provider_raising() -> None:
-    spec = make_spec(name="raiser")
-    candidate = make_external(spec, error=RuntimeError("boom-text"))
-    result = compose(make_shell(), [], [candidate])
-    (record,) = result.quarantine
-    assert record.reason == "malformed-entry-point"
-    assert "boom-text" in record.detail
-
-
-def test_malformed_provider_returning_non_spec() -> None:
-    spec = make_spec(name="wrong")
-    candidate = make_external(spec, result={"not": "a-spec"})
-    result = compose(make_shell(), [], [candidate])
-    (record,) = result.quarantine
-    assert record.reason == "malformed-entry-point"
-    assert "dict" in record.detail
-
-
-def test_bad_factory_variants_external() -> None:
-    variants = {
-        "takes-args": (lambda arg: None),
-        "returns-str": (lambda: "not-an-app"),
-        "raises": (_failing_factory),
-    }
-    for label, factory in variants.items():
-        spec = make_spec(name=f"factory-{label}", factory=factory)  # type: ignore[arg-type]
-        record = quarantine_reason(spec)
-        assert record.reason == "bad-app-factory", label
-        assert f"factory-{label}" in record.detail
-
-
-def _failing_factory() -> Any:
-    raise RuntimeError("factory-boom")
-
-
-def test_bad_factory_builtin_fatal() -> None:
-    spec = make_spec(name="bad", factory=lambda: "not-an-app")  # type: ignore[arg-type]
-    err = fatal_spec(spec)
-    assert "bad-app-factory" in str(err)
-
-
-def test_bad_factory_takes_args_builtin_fatal() -> None:
-    spec = make_spec(name="bad", factory=lambda arg: None)  # type: ignore[arg-type]
-    err = fatal_spec(spec)
-    assert "bad-app-factory" in str(err)
-
-
-def test_bad_metadata_name_mismatch() -> None:
-    spec = make_spec(name="real")
-    result = compose(make_shell(), [], [make_external(spec, "d", name="alias")])
-    assert result.capabilities == ()
-    (record,) = result.quarantine
-    assert record.reason == "bad-metadata"
-    assert "'alias'" in record.detail
-    assert "'real'" in record.detail
-
-
-def test_bad_metadata_empty_distribution() -> None:
-    spec = make_spec(name="nodist")
-    candidate = ExternalProvider(distribution="  ", name="nodist", target=function_provider(spec))
-    result = compose(make_shell(), [], [candidate])
-    assert result.capabilities == ()
-    (record,) = result.quarantine
-    assert record.reason == "bad-metadata"
-    assert record.distribution == "unknown"
-
-
-def test_builtin_metadata_helper_accepts_valid_ref() -> None:
-    check_builtin_metadata(
-        ProviderRef(
-            kind="built-in", distribution="untaped", entry_point="", api_requires=(1.0, 2.0)
-        )
-    )
-
-
-def test_builtin_metadata_helper_rejects_bad_ref() -> None:
-    with pytest.raises(ConfigError, match="bad-metadata"):
-        check_builtin_metadata(
-            ProviderRef(
-                kind="external",
-                distribution="evil",
-                entry_point="m:a",
-                api_requires=(1.0, 2.0),
-            )
-        )
+    assert record.reason == reason
+    assert record.distribution == "d"
+    if entry_point is not None:
+        assert record.entry_point == entry_point
+    assert named in record.detail

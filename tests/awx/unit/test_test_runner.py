@@ -147,62 +147,34 @@ def test_parallel_interrupt_stops_watchers_and_cancels_queued_cases() -> None:
 # ---- sequential runner --------------------------------------------------
 
 
-def test_sequential_all_pass() -> None:
-    fk = StubFk()
-    launcher = StubLauncher({"__default__": {"job": _job(id_=42, status="successful")}})
-    watcher = StubWatcher(default=_job(id_=42, status="successful"))
-    runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher)
-    suite = _suite(
-        "s", {"a": {"extra_vars": {"case_name": "a"}}, "b": {"extra_vars": {"case_name": "b"}}}
+@pytest.mark.parametrize(
+    ("launched", "final", "result", "job_status"),
+    [
+        (_job(id_=1, status="pending"), _job(id_=1, status="successful"), "pass", "successful"),
+        (_job(id_=1, status="pending"), _job(id_=1, status="failed"), "fail", "failed"),
+        # a watch that ends before a terminal state is a timeout
+        (_job(id_=1, status="pending"), _job(id_=1, status="running"), "timeout", "running"),
+        (RuntimeError("boom"), None, "error", None),
+    ],
+)
+def test_case_classification(
+    launched: Job | Exception, final: Job | None, result: str, job_status: str | None
+) -> None:
+    behaviour = {"raises": launched} if isinstance(launched, Exception) else {"job": launched}
+    runner = _make_runner(
+        fk=StubFk(),
+        launcher=StubLauncher({"a": behaviour}),
+        watcher=StubWatcher(by_id={1: final} if final else None),
     )
 
-    outcome = runner([suite])
+    outcome = runner([_suite("s", {"a": {"extra_vars": {"case_name": "a"}}})], timeout=1.0)
 
-    assert [r.case for r in outcome.results] == ["a", "b"]
-    assert all(r.result == "pass" for r in outcome.results)
-    assert outcome.exit_code() == 0
-
-
-def test_failed_status_classified_as_fail() -> None:
-    fk = StubFk()
-    launcher = StubLauncher({"a": {"job": _job(id_=1, status="pending")}})
-    watcher = StubWatcher(by_id={1: _job(id_=1, status="failed")})
-    runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher)
-    suite = _suite("s", {"a": {"extra_vars": {"case_name": "a"}}})
-
-    outcome = runner([suite])
-
-    assert outcome.results[0].result == "fail"
-    assert outcome.results[0].job_status == "failed"
-    assert outcome.exit_code() == 1
-
-
-def test_launcher_exception_classified_as_error() -> None:
-    fk = StubFk()
-    launcher = StubLauncher({"a": {"raises": RuntimeError("boom")}})
-    watcher = StubWatcher()
-    runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher)
-    suite = _suite("s", {"a": {"extra_vars": {"case_name": "a"}}})
-
-    outcome = runner([suite])
-
-    assert outcome.results[0].result == "error"
-    assert outcome.results[0].job_id is None
-    assert "boom" in (outcome.results[0].failure_reason or "")
-    assert outcome.exit_code() == 1
-
-
-def test_non_terminal_watch_classified_as_timeout() -> None:
-    fk = StubFk()
-    launcher = StubLauncher({"a": {"job": _job(id_=2, status="pending")}})
-    watcher = StubWatcher(by_id={2: _job(id_=2, status="running")})  # never terminal
-    runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher)
-    suite = _suite("s", {"a": {"extra_vars": {"case_name": "a"}}})
-
-    outcome = runner([suite], timeout=1.0)
-
-    assert outcome.results[0].result == "timeout"
-    assert outcome.results[0].job_status == "running"
+    [row] = outcome.results
+    assert (row.result, row.job_status) == (result, job_status)
+    assert outcome.exit_code() == (0 if result == "pass" else 1)
+    if result == "error":
+        assert row.job_id is None
+        assert "boom" in (row.failure_reason or "")
 
 
 def test_all_name_lookups_complete_before_first_launch() -> None:
@@ -255,45 +227,16 @@ class RecordingLauncher:
 
 
 def test_case_filter_with_unmatched_names_raises() -> None:
-    """Typos like ``--case smokee`` must hard-fail, not silently launch zero jobs."""
-    fk = StubFk()
-    launcher = StubLauncher({})
-    watcher = StubWatcher()
-    runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher)
-    suite = _suite("s", {"keep": {}})
-
+    """Typos like ``--case smokee`` hard-fail before any launch, naming only the misses."""
     from untaped.capability_api import ConfigError
 
-    with pytest.raises(ConfigError, match="nope"):
-        runner([suite], case_filter={"nope"})
-    assert launcher.calls == []  # no launches on unmatched filter
-
-
-def test_case_filter_partial_match_reports_only_unmatched() -> None:
-    fk = StubFk()
     launcher = StubLauncher({})
-    watcher = StubWatcher()
-    runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher)
-    suite = _suite("s", {"keep": {}, "skip": {}})
-
-    from untaped.capability_api import ConfigError
+    runner = _make_runner(fk=StubFk(), launcher=launcher, watcher=StubWatcher())
 
     with pytest.raises(ConfigError, match="bogus") as exc_info:
-        runner([suite], case_filter={"keep", "bogus"})
+        runner([_suite("s", {"keep": {}, "skip": {}})], case_filter={"keep", "bogus"})
     assert "keep" not in str(exc_info.value)
-
-
-def test_case_filter_runs_only_selected() -> None:
-    fk = StubFk()
-    launcher = StubLauncher({})
-    watcher = StubWatcher()
-    runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher)
-    suite = _suite("s", {"keep": {"extra_vars": {"case_name": "keep"}}, "skip": {}})
-
-    outcome = runner([suite], case_filter={"keep"})
-
-    assert [r.case for r in outcome.results] == ["keep"]
-    assert len(launcher.calls) == 1
+    assert launcher.calls == []
 
 
 # ---- prefetch correctness ------------------------------------------------

@@ -29,18 +29,6 @@ def _seed_jt(fake: Any, *, id_: int, name: str) -> None:
     )
 
 
-def test_delete_by_id_removes_record(seeded_default_org: Any) -> None:
-    _seed_jt(seeded_default_org, id_=10, name="alpha")
-
-    result = CliInvoker().invoke(
-        app, ["job-templates", "delete", "--by-id", "10", "--yes", "--format", "raw"]
-    )
-    assert result.exit_code == 0, result.output
-    assert 10 not in seeded_default_org.store["job_templates"]
-    # First key of the success row is ``id`` — ``-f raw`` emits the deleted id.
-    assert result.stdout.strip() == "10"
-
-
 def _detail_gets(fake: Any, suffix: str) -> int:
     return sum(
         1
@@ -113,174 +101,6 @@ def test_delete_by_id_yes_validates_existence(
 
     assert result.exit_code != 0, result.output
     assert 10 in seeded_default_org.store["job_templates"]
-
-
-def test_delete_by_name_resolves_through_organization(seeded_default_org: Any) -> None:
-    _seed_jt(seeded_default_org, id_=10, name="alpha")
-    result = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "delete",
-            "alpha",
-            "--yes",
-            "--organization",
-            "Default",
-            "--format",
-            "raw",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert 10 not in seeded_default_org.store["job_templates"]
-
-
-def test_delete_stdin_batch_removes_each(seeded_default_org: Any) -> None:
-    """``list -f raw | delete --stdin --yes`` is the documented pipeline."""
-    _seed_jt(seeded_default_org, id_=10, name="alpha")
-    _seed_jt(seeded_default_org, id_=11, name="beta")
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "delete", "--stdin", "--by-id", "--yes", "--format", "raw"],
-        input="10\n11\n",
-    )
-    assert result.exit_code == 0, result.output
-    assert 10 not in seeded_default_org.store["job_templates"]
-    assert 11 not in seeded_default_org.store["job_templates"]
-    # Both ids appear on stdout, one per line.
-    assert set(result.stdout.split()) == {"10", "11"}
-
-
-def test_delete_stdin_without_yes_or_dry_run_errors(seeded_default_org: Any) -> None:
-    """Without a controlling terminal, consumed stdin requires an explicit write gate.
-
-    Without ``--yes`` (skip prompt) or ``--dry-run`` (safe preview),
-    the CLI has no way to interactively confirm while reading stdin —
-    fail fast rather than silently delete.
-    """
-    _seed_jt(seeded_default_org, id_=10, name="alpha")
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "delete", "--stdin", "--by-id"],
-        input="10\n",
-    )
-    # Usage errors exit before touching the store.
-    assert result.exit_code == 2
-    assert "--yes or --dry-run" in (result.stderr or result.output)
-    # Record must still exist.
-    assert 10 in seeded_default_org.store["job_templates"]
-
-
-def test_dry_run_resolves_but_does_not_delete(seeded_default_org: Any) -> None:
-    _seed_jt(seeded_default_org, id_=10, name="alpha")
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "delete", "--by-id", "10", "--dry-run", "--format", "raw"],
-    )
-    assert result.exit_code == 0, result.output
-    assert 10 in seeded_default_org.store["job_templates"]
-    # Dry-run row still goes to stdout (so users can preview through a pipe).
-    assert result.stdout.strip() == "10"
-
-
-def test_dry_run_with_stdin_is_allowed(seeded_default_org: Any) -> None:
-    """``--dry-run`` is a safe preview — no need for ``--yes``."""
-    _seed_jt(seeded_default_org, id_=10, name="alpha")
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "delete", "--stdin", "--by-id", "--dry-run", "--format", "raw"],
-        input="10\n",
-    )
-    assert result.exit_code == 0, result.output
-    assert 10 in seeded_default_org.store["job_templates"]
-    assert result.stdout.strip() == "10"
-
-
-def test_delete_missing_id_emits_error_row(seeded_default_org: Any) -> None:
-    """A 404 from resolution emits ``error: <id>: ...`` and exits 1."""
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "delete", "--by-id", "999", "--yes", "--format", "raw"],
-    )
-    assert result.exit_code == 1, result.output
-    assert "error" in result.output.lower()
-    assert "999" in result.output
-
-
-def test_delete_missing_target_rejects_whole_batch(seeded_default_org: Any) -> None:
-    """Missing targets prevent any delete in the selected batch."""
-    _seed_jt(seeded_default_org, id_=10, name="alpha")
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "delete", "--stdin", "--by-id", "--yes", "--format", "raw"],
-        input="10\n999\n",
-    )
-    assert result.exit_code == 1
-    # alpha survives.
-    assert 10 in seeded_default_org.store["job_templates"]
-    # No successful result is emitted.
-    assert result.stdout.strip() == ""
-    assert "999" in (result.stderr or "")
-
-
-def test_delete_prompt_accepts_yes(
-    seeded_default_org: Any,
-) -> None:
-    _seed_jt(seeded_default_org, id_=10, name="alpha")
-    backend = ScriptedPromptBackend(confirms=[True])
-
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "delete", "--by-id", "10", "--format", "raw"],
-        interactive=True,
-        prompt_backend=backend,
-    )
-    assert result.exit_code == 0, result.output
-    assert 10 not in seeded_default_org.store["job_templates"]
-    assert backend.calls == [("confirm", "Delete 1 resource?")]
-    # Preamble lands on stderr so stdout stays clean for piping.
-    preview = result.stderr or result.output
-    assert "Delete JobTemplate/alpha" in preview
-    assert "alpha" in preview
-
-
-def test_delete_prompt_declines_aborts(
-    seeded_default_org: Any,
-) -> None:
-    """Saying no at the confirmation prompt must not call DELETE."""
-    _seed_jt(seeded_default_org, id_=10, name="alpha")
-    backend = ScriptedPromptBackend(confirms=[False])
-
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "delete", "--by-id", "10"],
-        interactive=True,
-        prompt_backend=backend,
-    )
-    # A decline exits 1 with the standard line and writes nothing.
-    assert result.exit_code == 1, result.output
-    assert "cancelled; no changes made" in result.stderr
-    assert backend.calls == [("confirm", "Delete 1 resource?")]
-    assert 10 in seeded_default_org.store["job_templates"]
-
-
-def test_delete_prompt_requires_yes_when_non_interactive(
-    seeded_default_org: Any,
-) -> None:
-    _seed_jt(seeded_default_org, id_=10, name="alpha")
-
-    result = CliInvoker().invoke(app, ["job-templates", "delete", "--by-id", "10"])
-
-    assert result.exit_code == 2
-    assert "--yes or --dry-run" in result.output
-    assert 10 in seeded_default_org.store["job_templates"]
-
-
-def test_delete_no_args_is_usage_error(seeded_default_org: Any) -> None:
-    """No positional args + no ``--stdin`` → ``error: provide …`` usage error."""
-    result = CliInvoker().invoke(app, ["job-templates", "delete"])
-    # Missing identifiers is a usage error on stderr, exit 2.
-    assert result.exit_code == 2
-    assert "error: provide names, --stdin, filters/search, or --all" in result.stderr
 
 
 def test_delete_defaults_to_name_lookup_for_digit_named(
@@ -370,32 +190,83 @@ def test_delete_conflict_surfaces_per_id(
     assert "conflict" in err.lower() or "in use" in err.lower()
 
 
-def test_delete_by_id_yes_populates_name_in_table(seeded_default_org: Any) -> None:
-    """``delete --by-id <id> --yes`` populates the ``name`` column.
-
-    Regression guard: the previous fast-path returned a stub
-    ``{"id": int(n)}`` with no ``name`` field, so the rendered table
-    advertised a ``name`` column header with an empty cell. The
-    bulk-prefetch via ``?id__in=…`` now fills it in.
-    """
-    _seed_jt(seeded_default_org, id_=10, name="alpha")
-    result = CliInvoker().invoke(app, ["job-templates", "delete", "--by-id", "10", "--yes"])
-    assert result.exit_code == 0, result.output
-    assert 10 not in seeded_default_org.store["job_templates"]
-    assert "10" in result.stdout
-    assert "alpha" in result.stdout
-    assert "deleted" in result.stdout.lower()
-
-
-def test_delete_stdin_by_id_reports_validated_names(seeded_default_org: Any) -> None:
-    """Batch ID deletion validates every target and reports its resolved name."""
+@pytest.fixture
+def alpha_beta(seeded_default_org: Any) -> Any:
     _seed_jt(seeded_default_org, id_=10, name="alpha")
     _seed_jt(seeded_default_org, id_=11, name="beta")
+    return seeded_default_org
+
+
+@pytest.mark.parametrize(
+    ("args", "input", "deleted"),
+    [
+        (["--by-id", "10", "--yes"], None, {10}),
+        (["alpha", "--yes", "--organization", "Default"], None, {10}),
+        # ``list -f raw | delete --stdin --yes`` is the documented pipeline
+        (["--stdin", "--by-id", "--yes"], "10\n11\n", {10, 11}),
+        # --dry-run previews the same rows on stdout and needs no --yes
+        (["--by-id", "10", "--dry-run"], None, set()),
+        (["--stdin", "--by-id", "--dry-run"], "10\n", set()),
+    ],
+)
+def test_delete_selection(
+    alpha_beta: Any, args: list[str], input: str | None, deleted: set[int]
+) -> None:
+    result = CliInvoker().invoke(
+        app, ["job-templates", "delete", *args, "--format", "raw"], input=input
+    )
+    assert result.exit_code == 0, result.output
+    assert {10, 11} - set(alpha_beta.store["job_templates"]) == deleted
+    # the first key of each row is ``id``: raw prints the (to be) deleted ids
+    assert {int(x) for x in result.stdout.split()} == (deleted or {10})
+
+
+def test_delete_table_reports_validated_names(alpha_beta: Any) -> None:
+    """Regression: an id-only fast path once left the ``name`` cell empty."""
     result = CliInvoker().invoke(
         app, ["job-templates", "delete", "--stdin", "--by-id", "--yes"], input="10\n11\n"
     )
     assert result.exit_code == 0, result.output
-    assert 10 not in seeded_default_org.store["job_templates"]
-    assert 11 not in seeded_default_org.store["job_templates"]
-    assert "alpha" in result.stdout
-    assert "beta" in result.stdout
+    assert "alpha" in result.stdout and "beta" in result.stdout
+    assert "deleted" in result.stdout.lower()
+
+
+@pytest.mark.parametrize(
+    ("args", "input", "exit_code", "message"),
+    [
+        # without a terminal a write needs --yes or --dry-run, even when stdin is consumed
+        (["--stdin", "--by-id"], "10\n", 2, "--yes or --dry-run"),
+        (["--by-id", "10"], None, 2, "--yes or --dry-run"),
+        ([], None, 2, "error: provide names, --stdin, filters/search, or --all"),
+        (["--by-id", "999", "--yes"], None, 1, "999"),
+        # one missing target rejects the whole batch
+        (["--stdin", "--by-id", "--yes"], "10\n999\n", 1, "999"),
+    ],
+)
+def test_delete_refusals_write_nothing(
+    alpha_beta: Any, args: list[str], input: str | None, exit_code: int, message: str
+) -> None:
+    result = CliInvoker().invoke(
+        app, ["job-templates", "delete", *args, "--format", "raw"], input=input
+    )
+    assert result.exit_code == exit_code, result.output
+    assert message in result.stderr
+    assert result.stdout.strip() == ""
+    assert set(alpha_beta.store["job_templates"]) == {10, 11}
+
+
+@pytest.mark.parametrize("answer", [True, False])
+def test_delete_prompt_previews_then_asks_once(alpha_beta: Any, answer: bool) -> None:
+    backend = ScriptedPromptBackend(confirms=[answer])
+    result = CliInvoker().invoke(
+        app,
+        ["job-templates", "delete", "--by-id", "10", "--format", "raw"],
+        interactive=True,
+        prompt_backend=backend,
+    )
+    assert backend.calls == [("confirm", "Delete 1 resource?")]
+    assert "Delete JobTemplate/alpha" in result.stderr  # stdout stays clean for piping
+    assert result.exit_code == (0 if answer else 1), result.output
+    assert (10 in alpha_beta.store["job_templates"]) is not answer
+    if not answer:
+        assert "cancelled; no changes made" in result.stderr

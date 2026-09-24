@@ -6,10 +6,7 @@ from typing import Any
 import pytest
 
 from untaped.config_file import (
-    MISSING,
-    get_at_path,
     mutate_config,
-    parse_key,
     read_config_dict,
     set_at_path,
     unset_at_path,
@@ -46,31 +43,6 @@ def test_write_uses_secure_perms(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     write_config_dict({"a": 1})
     mode = cfg.stat().st_mode & 0o777
     assert mode == 0o600
-
-
-def test_parse_key_simple() -> None:
-    assert parse_key("demo.token") == ("demo", "token")
-
-
-def test_parse_key_top_level() -> None:
-    assert parse_key("log_level") == ("log_level",)
-
-
-def test_parse_key_rejects_empty() -> None:
-    with pytest.raises(ValueError):
-        parse_key("")
-    with pytest.raises(ValueError):
-        parse_key(".foo")
-    with pytest.raises(ValueError):
-        parse_key("foo.")
-
-
-def test_get_returns_missing_for_absent_path() -> None:
-    assert get_at_path({}, ("a", "b")) is MISSING
-
-
-def test_get_returns_value_for_present_path() -> None:
-    assert get_at_path({"a": {"b": 42}}, ("a", "b")) == 42
 
 
 def test_set_creates_intermediate_dicts() -> None:

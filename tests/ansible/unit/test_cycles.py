@@ -22,16 +22,10 @@ def _edge(source_id: str, target_id: str, relation: str = "requires") -> GraphEd
     return GraphEdge(source_id=source_id, target_id=target_id, relation=relation)
 
 
-def _complete_digraph_edges(nodes: tuple[str, ...]) -> list[GraphEdge]:
-    return [
-        GraphEdge(source_id=source, target_id=target, relation="requires")
-        for source in nodes
-        for target in nodes
-        if source != target
-    ]
+def test_overlapping_simple_cycles_are_reported_as_elementary_cycles(monkeypatch) -> None:
+    # Exactly at the per-component cap: still individual cycles, no SCC group.
+    monkeypatch.setattr(cycles_module, "MAX_CYCLES_PER_COMPONENT", 2)
 
-
-def test_overlapping_simple_cycles_are_reported_as_elementary_cycles() -> None:
     graph_cycles, warnings = detect_cycles(
         [
             _edge("a", "b"),
@@ -58,22 +52,6 @@ def test_overlapping_simple_cycles_are_reported_as_elementary_cycles() -> None:
             (_edge_id("requires", "a", "c"), _edge_id("requires", "c", "a")),
         ),
     ]
-
-
-def test_cycle_cap_keeps_exactly_capped_cycles(monkeypatch) -> None:
-    monkeypatch.setattr(cycles_module, "MAX_CYCLES_PER_COMPONENT", 2)
-
-    graph_cycles, warnings = detect_cycles(
-        [
-            _edge("a", "b"),
-            _edge("b", "a"),
-            _edge("a", "c"),
-            _edge("c", "a"),
-        ]
-    )
-
-    assert warnings == ()
-    assert [cycle.kind for cycle in graph_cycles] == ["cycle", "cycle"]
 
 
 def test_cycle_cap_overflow_emits_deterministic_scc_group(monkeypatch) -> None:
@@ -159,7 +137,9 @@ def test_both_relations_keep_scc_groups_distinct(monkeypatch) -> None:
 
 
 def test_complete_k4_emits_canonical_deterministic_cycles() -> None:
-    graph_cycles, warnings = detect_cycles(_complete_digraph_edges(("a", "b", "c", "d")))
+    graph_cycles, warnings = detect_cycles(
+        [_edge(source, target) for source in "abcd" for target in "abcd" if source != target]
+    )
 
     expected_node_ids = [
         ("a", "b", "a"),
@@ -191,40 +171,27 @@ def test_complete_k4_emits_canonical_deterministic_cycles() -> None:
     assert all(cycle.node_ids[0] == min(cycle.node_ids[:-1]) for cycle in graph_cycles)
 
 
-def test_graph_cycle_model_validates_kind_specific_node_shape() -> None:
-    GraphCycle(
-        kind="cycle",
-        relation="requires",
-        node_ids=("a", "b", "a"),
-        edge_ids=(_edge_id("requires", "a", "b"), _edge_id("requires", "b", "a")),
-    )
-    GraphCycle(
-        kind="scc_group",
-        relation="requires",
-        node_ids=("a", "b"),
-        edge_ids=tuple(sorted((_edge_id("requires", "a", "b"), _edge_id("requires", "b", "a")))),
-    )
+_AB, _BA = _edge_id("requires", "a", "b"), _edge_id("requires", "b", "a")
 
-    with pytest.raises(ValidationError):
-        GraphCycle(
-            kind="cycle",
-            relation="requires",
-            node_ids=("a", "b"),
-            edge_ids=(_edge_id("requires", "a", "b"),),
-        )
-    with pytest.raises(ValidationError):
-        GraphCycle(
-            kind="scc_group",
-            relation="requires",
-            node_ids=("b", "a"),
-            edge_ids=tuple(
-                sorted((_edge_id("requires", "a", "b"), _edge_id("requires", "b", "a")))
-            ),
-        )
-    with pytest.raises(ValidationError):
-        GraphCycle(
-            kind="scc_group",
-            relation="requires",
-            node_ids=("a", "b"),
-            edge_ids=(_edge_id("requires", "a", "b"), _edge_id("requires", "b", "a")),
-        )
+
+@pytest.mark.parametrize(
+    ("kind", "node_ids", "edge_ids", "valid"),
+    [
+        ("cycle", ("a", "b", "a"), (_AB, _BA), True),
+        ("scc_group", ("a", "b"), tuple(sorted((_AB, _BA))), True),
+        ("cycle", ("a", "b"), (_AB,), False),  # a cycle must close on its start
+        ("scc_group", ("b", "a"), tuple(sorted((_AB, _BA))), False),  # nodes unsorted
+        ("scc_group", ("a", "b"), (_AB, _BA) if _AB > _BA else (_BA, _AB), False),  # edges unsorted
+    ],
+)
+def test_graph_cycle_model_validates_kind_specific_node_shape(
+    kind: str, node_ids: tuple[str, ...], edge_ids: tuple[str, ...], valid: bool
+) -> None:
+    def build() -> GraphCycle:
+        return GraphCycle(kind=kind, relation="requires", node_ids=node_ids, edge_ids=edge_ids)
+
+    if valid:
+        build()
+    else:
+        with pytest.raises(ValidationError):
+            build()

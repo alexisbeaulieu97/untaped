@@ -17,23 +17,19 @@ from cyclopts import Parameter
 
 from untaped.capabilities.awx.application import Ping, TailJobLogs, WatchJob
 from untaped.capabilities.awx.cli._apply_runner import run_apply
-from untaped.capabilities.awx.cli._mutation_runner import validate_controls
+from untaped.capabilities.awx.cli._mutation_runner import CONTROL_DEFAULTS, WriteControls
 from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.event_render import render_event_text
 from untaped.capabilities.awx.cli.factory import make_resource_app
 from untaped.capabilities.awx.cli.job_actions import register_job_actions
-from untaped.capabilities.awx.cli.job_targets import JOB_KIND_HELP as _JOB_KIND_HELP
-from untaped.capabilities.awx.cli.job_targets import JobIdsArgument, JobKind
+from untaped.capabilities.awx.cli.job_targets import (
+    JobIdsArgument,
+    JobKindOption,
+    JobsStdinOption,
+)
 from untaped.capabilities.awx.cli.job_targets import as_job_id as _as_job_id
 from untaped.capabilities.awx.cli.job_targets import job_targets as _job_targets
-from untaped.capabilities.awx.cli.options import (
-    ContinueOption,
-    DryRunOption,
-    OrganizationOption,
-    ParallelOption,
-    UnverifiedOption,
-    YesOption,
-)
+from untaped.capabilities.awx.cli.options import OrganizationOption
 from untaped.capabilities.awx.cli.save_runner import run_save_batch
 from untaped.capabilities.awx.cli.suite_commands import app as test_app
 from untaped.capabilities.awx.cli.unified_templates_commands import app as unified_templates_app
@@ -89,31 +85,13 @@ def apply_command(
     file: Annotated[Path, Parameter(help="YAML file or directory.")],
     /,
     *,
-    yes: YesOption = False,
-    dry_run: DryRunOption = False,
-    continue_on_error: ContinueOption = False,
-    parallel: ParallelOption = 1,
-    allow_unverified: UnverifiedOption = False,
-    fmt: FormatOption = "table",
-    columns: ColumnsOption = None,
+    controls: WriteControls = CONTROL_DEFAULTS,
 ) -> None:
     """Create/update YAML documents in dependency order, with one confirmation."""
     with report_errors():
-        parallel = validate_controls(
-            yes=yes, dry_run=dry_run, allow_unverified=allow_unverified, parallel=parallel
-        )
+        controls = controls.validated()
         with open_context() as ctx:
-            run_apply(
-                ctx,
-                file,
-                yes=yes,
-                dry_run=dry_run,
-                continue_on_error=continue_on_error,
-                parallel=parallel,
-                allow_unverified=allow_unverified,
-                fmt=fmt,
-                columns=columns,
-            )
+            run_apply(ctx, file, controls)
 
 
 # ---- top-level save ----
@@ -247,7 +225,7 @@ def jobs_list(
         int,
         Parameter(name="--limit", help="Newest N jobs (default 20; 0 lists every job)."),
     ] = 20,
-    kind: Annotated[JobKind, Parameter(name="--kind", help=_JOB_KIND_HELP)] = "job",
+    kind: JobKindOption = "job",
     template: Annotated[
         str | None,
         Parameter(
@@ -291,11 +269,8 @@ def jobs_get(
     job_ids: JobIdsArgument = None,
     /,
     *,
-    stdin: Annotated[
-        bool,
-        Parameter(name="--stdin", negative="", help="Read job ids from stdin (one per line)."),
-    ] = False,
-    kind: Annotated[JobKind, Parameter(name="--kind", help=_JOB_KIND_HELP)] = "job",
+    stdin: JobsStdinOption = False,
+    kind: JobKindOption = "job",
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -319,10 +294,7 @@ def jobs_events(
     job_ids: JobIdsArgument = None,
     /,
     *,
-    stdin: Annotated[
-        bool,
-        Parameter(name="--stdin", negative="", help="Read job ids from stdin (one per line)."),
-    ] = False,
+    stdin: JobsStdinOption = False,
     follow: Annotated[
         bool,
         Parameter(name="--follow", negative="", help="Tail events live until terminal."),
@@ -340,7 +312,7 @@ def jobs_events(
             negative="",
         ),
     ] = None,
-    kind: Annotated[JobKind, Parameter(name="--kind", help=_JOB_KIND_HELP)] = "job",
+    kind: JobKindOption = "job",
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -509,10 +481,7 @@ def jobs_logs(
     job_ids: JobIdsArgument = None,
     /,
     *,
-    stdin: Annotated[
-        bool,
-        Parameter(name="--stdin", negative="", help="Read job ids from stdin (one per line)."),
-    ] = False,
+    stdin: JobsStdinOption = False,
     follow: Annotated[
         bool,
         Parameter(name="--follow", negative="", help="Tail until terminal."),
@@ -529,7 +498,7 @@ def jobs_logs(
         bool,
         Parameter(name=["--ignore-case", "-i"], negative="", help="Case-insensitive --grep."),
     ] = False,
-    kind: Annotated[JobKind, Parameter(name="--kind", help=_JOB_KIND_HELP)] = "job",
+    kind: JobKindOption = "job",
     fmt: Annotated[
         OutputFormat,
         Parameter(name="--format", help="Output format."),
@@ -586,15 +555,12 @@ def jobs_wait(
     job_ids: JobIdsArgument = None,
     /,
     *,
-    stdin: Annotated[
-        bool,
-        Parameter(name="--stdin", negative="", help="Read job ids from stdin (one per line)."),
-    ] = False,
+    stdin: JobsStdinOption = False,
     timeout: Annotated[
         float | None,
         Parameter(name="--timeout", help="Seconds to wait before giving up (applies per id)."),
     ] = None,
-    kind: Annotated[JobKind, Parameter(name="--kind", help=_JOB_KIND_HELP)] = "job",
+    kind: JobKindOption = "job",
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:

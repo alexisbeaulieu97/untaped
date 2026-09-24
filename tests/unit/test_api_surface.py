@@ -107,13 +107,10 @@ EXPECTED_SURFACE = frozenset(
 )
 
 
-def test_api_declares_explicit_all() -> None:
-    api = importlib.import_module("untaped.api")
-    assert isinstance(api.__all__, list)
-    assert sorted(api.__all__) == api.__all__, "untaped.api.__all__ must stay sorted"
-
-
 def test_api_surface_matches_expected_sdk_names() -> None:
+    """The sorted ``__all__`` is exactly the historical set (retired plugin
+    types and module-internal plumbing stay off it) and each name is the
+    canonical ``capability_api`` object where both publish it."""
     api = importlib.import_module("untaped.api")
     actual = set(api.__all__)
     assert actual == EXPECTED_SURFACE, (
@@ -121,20 +118,11 @@ def test_api_surface_matches_expected_sdk_names() -> None:
         f"missing={sorted(EXPECTED_SURFACE - actual)}, "
         f"unexpected={sorted(actual - EXPECTED_SURFACE)}"
     )
-
-
-def test_api_names_resolve() -> None:
-    api = importlib.import_module("untaped.api")
-    unresolved = [name for name in api.__all__ if not hasattr(api, name)]
-    assert not unresolved, f"untaped.api.__all__ names that do not resolve: {unresolved}"
-
-
-def test_shim_names_are_the_capability_api_objects() -> None:
-    """Every name the shim shares with the canonical surface is the same object."""
-    api = importlib.import_module("untaped.api")
-    shared = set(api.__all__) & set(capi.__all__)
-    for name in shared:
-        assert getattr(api, name) is getattr(capi, name), name
+    assert api.__all__ == sorted(api.__all__), "untaped.api.__all__ must stay sorted"
+    for name in api.__all__:
+        value = getattr(api, name)
+        if name in capi.__all__:
+            assert value is getattr(capi, name), name
 
 
 def test_shim_import_emits_no_warning() -> None:
@@ -146,40 +134,3 @@ def test_shim_import_emits_no_warning() -> None:
     )
     assert proc.returncode == 0, proc.stderr
     assert proc.stderr == ""
-
-
-def test_api_drops_retired_plugin_contract() -> None:
-    """The plugin platform is retired; its types must not resurface."""
-    api = importlib.import_module("untaped.api")
-    retired = {
-        "CliSpec",
-        "PluginManifest",
-        "PluginRegistry",
-        "RootOptionSpec",
-        "SettingsLayoutSpec",
-        "UntapedPlugin",
-        "SkillSpec",
-        "DiagnosticResult",
-        "PluginContext",
-        "plugin_context",
-        "ProfileOverrideOption",
-        "profile_override",
-    }
-    leaked = retired & set(api.__all__)
-    assert not leaked, f"retired plugin contract still on the SDK surface: {sorted(leaked)}"
-
-
-def test_api_exposes_get_settings_for_root_option_handlers() -> None:
-    """Root-option handlers re-read settings after invalidating the cache."""
-    api = importlib.import_module("untaped.api")
-    assert callable(api.get_settings)
-    assert callable(api.invalidate_settings_cache)
-
-
-def test_skills_install_transaction_stays_off_public_api() -> None:
-    """The install transaction is module-internal SDK plumbing, not tool API."""
-    api = importlib.import_module("untaped.api")
-    assert "install_skills" not in api.__all__
-    assert not hasattr(api, "install_skills")
-    assert "install_skills" not in capi.__all__
-    assert not hasattr(capi, "install_skills")

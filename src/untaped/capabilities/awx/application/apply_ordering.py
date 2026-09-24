@@ -53,12 +53,10 @@ def topological_sort(docs: Iterable[Resource], *, catalog: Catalog) -> list[Reso
         if parent is not None and parent.kind in kinds_in_docs:
             edges[doc.kind].add(parent.kind)
         for ref in specs[doc.kind].fk_refs:
-            if not ref.polymorphic or ref.kind_in_value is None:
-                continue
-            value = doc.spec.get(ref.field) if isinstance(doc.spec, dict) else None
-            if value is None:
-                value = _meta_value(doc, ref.field)
-            referenced_kind = _extract_field(value, ref.kind_in_value)
+            # ``metadata.parent`` (above) is the saved shape; a spec-level
+            # ``{kind: ...}`` value names its kind the same way.
+            value = doc.spec.get(ref.field) if ref.polymorphic and ref.kind_in_value else None
+            referenced_kind = value.get(ref.kind_in_value) if isinstance(value, dict) else None
             if isinstance(referenced_kind, str) and referenced_kind in kinds_in_docs:
                 edges[doc.kind].add(referenced_kind)
 
@@ -113,27 +111,3 @@ def _kahn_topological_order(
         unresolved = sorted(k for k, deg in in_degree.items() if deg > 0)
         raise AwxApiError(f"cycle in apply order across kinds: {', '.join(unresolved)}")
     return ordered
-
-
-def _meta_value(doc: Resource, field: str) -> object:
-    """Polymorphic refs (Schedule's ``parent``) live under ``metadata`` in
-    the saved envelope, not ``spec``. Look there as a fallback so the
-    sorter sees the dependency the reader already validated."""
-    metadata = getattr(doc, "metadata", None)
-    if metadata is None:
-        return None
-    return getattr(metadata, field, None)
-
-
-def _extract_field(container: object, key: str) -> object:
-    """Read ``key`` from a dict OR a pydantic model.
-
-    Schedule's ``parent`` deserializes into an :class:`IdentityRef` (a
-    pydantic model), not a plain dict, so a `value.get(...)` lookup
-    silently returns nothing. Treat both shapes uniformly here.
-    """
-    if container is None:
-        return None
-    if isinstance(container, dict):
-        return container.get(key)
-    return getattr(container, key, None)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
@@ -19,6 +18,7 @@ from untaped.capabilities.recipe.application.ports import PromptFunc
 from untaped.capabilities.recipe.application.targets import Target, dedupe_targets
 from untaped.capabilities.recipe.domain.plan import TargetPlan
 from untaped.capabilities.recipe.domain.recipe import Recipe
+from untaped.capability_api import bounded_map
 
 SENSITIVE_DIAGNOSTIC_SUPPRESSED = "diagnostic suppressed for target with sensitive inputs"
 SENSITIVE_ERROR_SUPPRESSED = (
@@ -56,46 +56,22 @@ class RunBulkApply:
         )
         global_values = resolve_global_values(recipe, config)
         targets = dedupe_targets(targets)
-        if interactive:
-            parallel = 1
-        if parallel <= 1 or len(targets) <= 1:
-            plans: list[TargetPlan] = []
-            for index, target in enumerate(targets, start=1):
-                plans.append(
-                    self._plan_one(
-                        recipe,
-                        recipe_dir,
-                        local_hook_project,
-                        target,
-                        config,
-                        global_values,
-                    )
-                )
-                if on_progress is not None:
-                    on_progress(index, len(targets))
-            return plans
-        indexed_outcomes: list[tuple[int, TargetPlan]] = []
-        completed = 0
-        with ThreadPoolExecutor(max_workers=parallel) as pool:
-            futures = {
-                pool.submit(
-                    self._plan_one,
-                    recipe,
-                    recipe_dir,
-                    local_hook_project,
-                    target,
-                    config,
-                    global_values,
-                ): index
-                for index, target in enumerate(targets)
-            }
-            for future in as_completed(futures):
-                indexed_outcomes.append((futures[future], future.result()))
-                completed += 1
-                if on_progress is not None:
-                    on_progress(completed, len(targets))
-        indexed_outcomes.sort(key=lambda item: item[0])
-        return [outcome for _, outcome in indexed_outcomes]
+        plans: dict[int, TargetPlan] = {}
+
+        def record(index: int, plan: TargetPlan) -> None:
+            plans[index] = plan
+            if on_progress is not None:
+                on_progress(len(plans), len(targets))
+
+        bounded_map(
+            lambda index: self._plan_one(
+                recipe, recipe_dir, local_hook_project, targets[index], config, global_values
+            ),
+            range(len(targets)),
+            concurrency=1 if interactive else max(1, parallel),
+            on_each=record,
+        )
+        return [plans[index] for index in range(len(targets))]
 
     def _plan_one(
         self,

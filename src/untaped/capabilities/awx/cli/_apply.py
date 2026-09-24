@@ -8,17 +8,10 @@ from typing import Annotated
 from cyclopts import App, Parameter
 
 from untaped.capabilities.awx.cli._apply_runner import run_apply
-from untaped.capabilities.awx.cli._mutation_runner import validate_controls
+from untaped.capabilities.awx.cli._mutation_runner import CONTROL_DEFAULTS, WriteControls
 from untaped.capabilities.awx.cli.context import open_context
-from untaped.capabilities.awx.cli.options import (
-    ContinueOption,
-    DryRunOption,
-    ParallelOption,
-    UnverifiedOption,
-    YesOption,
-)
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
-from untaped.capability_api import ColumnsOption, FormatOption, report_errors
+from untaped.capability_api import report_errors
 
 
 def _add_apply(app: App, spec: AwxResourceSpec) -> None:
@@ -27,29 +20,10 @@ def _add_apply(app: App, spec: AwxResourceSpec) -> None:
         file: Annotated[Path, Parameter(help="YAML file or directory.")],
         /,
         *,
-        yes: YesOption = False,
-        dry_run: DryRunOption = False,
-        continue_on_error: ContinueOption = False,
-        parallel: ParallelOption = 1,
-        allow_unverified: UnverifiedOption = False,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
+        controls: WriteControls = CONTROL_DEFAULTS,
     ) -> None:
         """Create/update a complete YAML file or directory, with one confirmation."""
         with report_errors():
-            parallel = validate_controls(
-                yes=yes, dry_run=dry_run, allow_unverified=allow_unverified, parallel=parallel
-            )
+            controls = controls.validated()
             with open_context() as ctx:
-                run_apply(
-                    ctx,
-                    file,
-                    yes=yes,
-                    dry_run=dry_run,
-                    continue_on_error=continue_on_error,
-                    parallel=parallel,
-                    allow_unverified=allow_unverified,
-                    kind_filter=spec.kind,
-                    fmt=fmt,
-                    columns=columns,
-                )
+                run_apply(ctx, file, controls, kind_filter=spec.kind)

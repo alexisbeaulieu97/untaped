@@ -25,6 +25,12 @@ JobIdsArgument = Annotated[list[str] | None, Parameter(help="AWX job ids.")]
 
 JobKind = Literal["job", "workflow_job", "project_update", "inventory_update", "ad_hoc_command"]
 
+JobKindOption = Annotated[JobKind, Parameter(name="--kind", help=JOB_KIND_HELP)]
+
+JobsStdinOption = Annotated[
+    bool, Parameter(name="--stdin", negative="", help="Read job ids from stdin (one per line).")
+]
+
 
 def job_targets(
     job_ids: list[str] | None, *, stdin: bool, kind: JobKind

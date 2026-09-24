@@ -12,13 +12,16 @@ from untaped.capabilities.awx.application.edit_resources import EditResources
 from untaped.capabilities.awx.application.save_resource import SaveResource
 from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.cli._apply_runner import build_mutation_engine
-from untaped.capabilities.awx.cli._mutation_runner import emit_outcomes, preview_and_execute
+from untaped.capabilities.awx.cli._mutation_runner import (
+    WriteControls,
+    emit_outcomes,
+    preview_and_execute,
+)
 from untaped.capabilities.awx.cli.context import AwxContext
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capability_api import (
     ConfigError,
     OperationCancelledError,
-    OutputFormat,
     UntapedError,
     UsageError,
     atomic_write,
@@ -31,20 +34,14 @@ def run_edit(
     ctx: AwxContext,
     spec: ResourceSpec,
     selected: Sequence[SelectedResource],
+    controls: WriteControls,
     *,
     fields: Sequence[str] | None = None,
-    yes: bool = False,
-    dry_run: bool = False,
-    continue_on_error: bool = False,
-    parallel: int = 1,
-    allow_unverified: bool = False,
-    fmt: OutputFormat = "table",
-    columns: list[str] | None = None,
 ) -> None:
     """Edit one bounded batch; retain the private session on any failure."""
     batch = EditResources(spec, selected, SaveResource(ctx.repo, ctx.fk), fields=fields)
     if not selected:
-        emit_outcomes([], fmt=fmt, columns=columns)
+        emit_outcomes([], fmt=controls.fmt, columns=controls.columns)
         return
     # A controlling terminal is required even under --yes and even if stdin is
     # a TTY-like wrapper. All subprocess I/O goes there, never to machine stdout.
@@ -62,7 +59,7 @@ def run_edit(
         try:
             atomic_write(path, batch.render())
             path.chmod(0o600)
-            engine = build_mutation_engine(ctx, allow_unverified=allow_unverified)
+            engine = build_mutation_engine(ctx, allow_unverified=controls.allow_unverified)
             while True:
                 try:
                     run_editor(
@@ -95,15 +92,7 @@ def run_edit(
                         continue
                     raise OperationCancelledError from None
                 try:
-                    outcomes = preview_and_execute(
-                        ctx,
-                        engine,
-                        plan,
-                        yes=yes,
-                        dry_run=dry_run,
-                        continue_on_error=continue_on_error,
-                        parallel=parallel,
-                    )
+                    outcomes = preview_and_execute(ctx, engine, plan, controls)
                 except OperationCancelledError:
                     clean = True  # declined: nothing was written, so nothing to keep
                     raise
@@ -119,4 +108,9 @@ def run_edit(
                 shutil.rmtree(directory)
             else:
                 echo(f"Edited batch retained at {path}", err=True)
-    emit_outcomes(outcomes, fmt=fmt, columns=columns, allow_unverified=allow_unverified)
+    emit_outcomes(
+        outcomes,
+        fmt=controls.fmt,
+        columns=controls.columns,
+        allow_unverified=controls.allow_unverified,
+    )

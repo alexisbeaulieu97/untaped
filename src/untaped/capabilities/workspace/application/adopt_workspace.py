@@ -31,10 +31,6 @@ class AdoptResult:
     discovered: bool = True
 
 
-def _noop(_: str) -> None:
-    return None
-
-
 class AdoptWorkspace:
     def __init__(
         self,
@@ -42,7 +38,7 @@ class AdoptWorkspace:
         discoverer: RepoDiscoverer,
         *,
         fs: Filesystem,
-        warn: Callable[[str], None] = _noop,
+        warn: Callable[[str], None] = lambda _: None,
     ) -> None:
         self._bootstrap = bootstrapper
         self._discoverer = discoverer

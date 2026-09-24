@@ -1,6 +1,5 @@
 from untaped.capabilities.github.domain.codeowners import (
     CODEOWNERS_LOCATIONS,
-    CodeownersRules,
     parse_codeowners,
 )
 from untaped.capabilities.github.domain.corpus import (
@@ -14,17 +13,12 @@ from untaped.capabilities.github.domain.corpus import (
     unchanged_upstream,
 )
 from untaped.capabilities.github.domain.models import (
-    BatchRepoRefsFailure,
-    BatchRepoRefsResult,
-    CodeHitResult,
     CodeResult,
     CorpusRepoResult,
     CorpusSyncOutcome,
     GithubUser,
     IssueResult,
     RepoListResult,
-    RepoRef,
-    RepoRefs,
     RepoResult,
     UserResult,
     WorktreeResult,
@@ -48,12 +42,8 @@ from untaped.capabilities.github.domain.sweep import (
 
 __all__ = [
     "CODEOWNERS_LOCATIONS",
-    "BatchRepoRefsFailure",
-    "BatchRepoRefsResult",
-    "CodeHitResult",
     "CodeResult",
     "CodeSearchFilters",
-    "CodeownersRules",
     "CorpusFailure",
     "CorpusFreshness",
     "CorpusRepoResult",
@@ -69,8 +59,6 @@ __all__ = [
     "RefProfile",
     "RefSelector",
     "RepoListResult",
-    "RepoRef",
-    "RepoRefs",
     "RepoResult",
     "RepoSearchFilters",
     "RepoSweepOutcome",

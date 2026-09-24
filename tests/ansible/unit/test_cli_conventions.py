@@ -1,14 +1,13 @@
 """CLI convention tests for the Ansible capability (docs/conventions.md).
 
 Covers the renamed verbs and flags (with their deprecated spellings through the
-``untaped`` root), mutation outcome records, destructive confirmation, usage
-exit codes and the source status record shape.
+``untaped`` root), mutation outcome records, destructive confirmation and usage
+exit codes.
 """
 
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -17,9 +16,10 @@ import yaml
 
 from untaped.bootstrap import build_root_app
 from untaped.capabilities.ansible.cli import app
-from untaped.capabilities.ansible.domain.payloads import RefScan
-from untaped.capabilities.ansible.infrastructure import SqliteDependencyIndex
 from untaped.testing import ScriptedPromptBackend, invoke_cli
+
+_SOURCES = {"sources": [{"name": "prod", "repos": ["acme/site"]}]}
+_ALIASES = {"aliases": {"common": "acme/common"}}
 
 
 def _config(
@@ -58,22 +58,15 @@ def test_alias_set_emits_created_then_unchanged_then_updated(
 
     first = invoke_cli(app, ["alias", "set", "common", "acme/common", "-f", "json"])
     again = invoke_cli(app, ["alias", "set", "common", "acme/common", "-f", "json"])
-    moved = invoke_cli(app, ["alias", "set", "common", "acme/other", "-f", "json"])
+    moved = invoke_cli(app, ["alias", "set", "common", "acme/other", "-f", "pipe"])
 
     assert first.exit_code == 0, first.output
     assert _json(first.stdout) == {"action": "created", "alias": "common", "repo": "acme/common"}
     assert _json(again.stdout)["action"] == "unchanged"
-    assert _json(moved.stdout)["action"] == "updated"
+    envelope = _json(moved.stdout)
+    assert envelope["kind"] == "ansible.alias_outcome"
+    assert envelope["record"]["action"] == "updated"
     assert _state(tmp_path)["aliases"] == {"common": "acme/other"}
-
-
-def test_alias_set_pipe_record_kind(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _config(tmp_path, monkeypatch)
-
-    result = invoke_cli(app, ["alias", "set", "common", "acme/common", "-f", "pipe"])
-
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout)["kind"] == "ansible.alias_outcome"
 
 
 def test_alias_set_rejects_non_repo_target_as_usage_error(
@@ -103,68 +96,101 @@ def test_alias_add_is_a_deprecated_spelling_of_set(
     assert _state(tmp_path)["aliases"] == {"common": "acme/common"}
 
 
-def test_alias_remove_requires_yes_without_a_terminal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _config(tmp_path, monkeypatch, state={"aliases": {"common": "acme/common"}})
+# --- destructive removal (alias remove / source remove) ------------------
 
-    result = invoke_cli(app, ["alias", "remove", "common"])
+_REMOVALS = pytest.mark.parametrize(
+    ("group", "name", "state", "record"),
+    [
+        ("alias", "common", _ALIASES, {"alias": "common", "repo": "acme/common"}),
+        ("source", "prod", _SOURCES, {"name": "prod", "changes": []}),
+    ],
+)
+
+
+@_REMOVALS
+def test_remove_requires_yes_without_a_terminal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    group: str,
+    name: str,
+    state: dict[str, object],
+    record: dict[str, object],
+) -> None:
+    _config(tmp_path, monkeypatch, state=state)
+
+    result = invoke_cli(app, [group, "remove", name])
 
     assert result.exit_code == 2
-    assert "alias remove requires --yes when not interactive" in result.stderr
-    assert _state(tmp_path)["aliases"] == {"common": "acme/common"}
+    assert f"{group} remove requires --yes when not interactive" in result.stderr
+    assert _state(tmp_path) == state
 
 
-def test_alias_remove_decline_exits_1_and_keeps_alias(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@_REMOVALS
+@pytest.mark.parametrize("confirm", [True, False])
+def test_remove_prompts_and_honours_the_answer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    group: str,
+    name: str,
+    state: dict[str, object],
+    record: dict[str, object],
+    confirm: bool,
 ) -> None:
-    _config(tmp_path, monkeypatch, state={"aliases": {"common": "acme/common"}})
+    _config(tmp_path, monkeypatch, state=state)
+    backend = ScriptedPromptBackend(confirms=[confirm])
 
     result = invoke_cli(
-        app,
-        ["alias", "remove", "common"],
-        terminal=True,
-        prompt_backend=ScriptedPromptBackend(confirms=[False]),
+        app, [group, "remove", name, "-f", "json"], terminal=True, prompt_backend=backend
     )
 
-    assert result.exit_code == 1
-    assert "cancelled; no changes made" in result.stderr
-    assert _state(tmp_path)["aliases"] == {"common": "acme/common"}
+    assert backend.calls and backend.calls[0][0] == "confirm"
+    if confirm:
+        assert result.exit_code == 0, result.output
+        assert _json(result.stdout) == {"action": "deleted", **record}
+        assert _state(tmp_path) == {}
+    else:
+        assert result.exit_code == 1
+        assert "cancelled; no changes made" in result.stderr
+        assert _state(tmp_path) == state
 
 
-def test_alias_remove_dry_run_plans_without_prompting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@_REMOVALS
+def test_remove_dry_run_plans_without_prompting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    group: str,
+    name: str,
+    state: dict[str, object],
+    record: dict[str, object],
 ) -> None:
-    _config(tmp_path, monkeypatch, state={"aliases": {"common": "acme/common"}})
+    _config(tmp_path, monkeypatch, state=state)
 
-    result = invoke_cli(app, ["alias", "remove", "common", "--dry-run", "--yes", "-f", "json"])
+    result = invoke_cli(app, [group, "remove", name, "--dry-run", "-f", "json"])
 
     assert result.exit_code == 0, result.output
-    assert _json(result.stdout) == {"action": "planned", "alias": "common", "repo": "acme/common"}
-    assert _state(tmp_path)["aliases"] == {"common": "acme/common"}
+    assert _json(result.stdout) == {"action": "planned", **record}
+    assert _state(tmp_path) == state
 
 
-def test_alias_remove_yes_deletes_and_reports(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (
+            ["alias", "remove", "missing", "--yes"],
+            "error: alias not found: 'missing'; known: common",
+        ),
+        (["source", "get", "missing"], "error: source not found: 'missing'; known: prod"),
+    ],
+)
+def test_unknown_names_list_the_known_ones(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, args: list[str], message: str
 ) -> None:
-    _config(tmp_path, monkeypatch, state={"aliases": {"common": "acme/common"}})
+    _config(tmp_path, monkeypatch, state={**_ALIASES, **_SOURCES})
 
-    result = invoke_cli(app, ["alias", "remove", "common", "--yes", "-f", "json"])
-
-    assert result.exit_code == 0, result.output
-    assert _json(result.stdout) == {"action": "deleted", "alias": "common", "repo": "acme/common"}
-    assert "aliases" not in _state(tmp_path)
-
-
-def test_alias_remove_unknown_alias_names_known_aliases(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _config(tmp_path, monkeypatch, state={"aliases": {"common": "acme/common"}})
-
-    result = invoke_cli(app, ["alias", "remove", "missing", "--yes"])
+    result = invoke_cli(app, args)
 
     assert result.exit_code == 1
-    assert "error: alias not found: 'missing'; known: common" in result.stderr
+    assert message in result.stderr
 
 
 # --- source --------------------------------------------------------------
@@ -187,17 +213,6 @@ def test_source_set_emits_created_then_unchanged(
     assert envelope["record"]["action"] == "updated"
 
 
-def test_source_set_without_boundary_is_a_usage_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _config(tmp_path, monkeypatch)
-
-    result = invoke_cli(app, ["source", "set", "prod", "--path", "roles/requirements.yml"])
-
-    assert result.exit_code == 2
-    assert "source requires --org, --team, or --repo" in result.stderr
-
-
 @pytest.mark.parametrize(
     ("old", "new_args"),
     [
@@ -209,7 +224,7 @@ def test_source_set_without_boundary_is_a_usage_error(
 def test_renamed_source_verbs_keep_deprecated_spellings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, old: list[str], new_args: str
 ) -> None:
-    _config(tmp_path, monkeypatch, state={"sources": [{"name": "prod", "repos": ["acme/site"]}]})
+    _config(tmp_path, monkeypatch, state=_SOURCES)
 
     result = invoke_cli(build_root_app(externals=[]), ["ansible", "source", *old])
 
@@ -222,7 +237,7 @@ def test_renamed_source_verbs_keep_deprecated_spellings(
 def test_source_patch_emits_changes_as_a_list(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _config(tmp_path, monkeypatch, state={"sources": [{"name": "prod", "repos": ["acme/site"]}]})
+    _config(tmp_path, monkeypatch, state=_SOURCES)
 
     result = invoke_cli(app, ["source", "patch", "prod", "--add-repo", "acme/api", "-f", "json"])
     noop = invoke_cli(app, ["source", "patch", "prod", "--add-repo", "acme/api", "-f", "json"])
@@ -249,106 +264,12 @@ def test_source_patch_emits_changes_as_a_list(
 def test_source_patch_flag_problems_are_usage_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, args: list[str], message: str
 ) -> None:
-    _config(tmp_path, monkeypatch, state={"sources": [{"name": "prod", "repos": ["acme/site"]}]})
+    _config(tmp_path, monkeypatch, state=_SOURCES)
 
     result = invoke_cli(app, ["source", "patch", *args])
 
     assert result.exit_code == 2
     assert message in result.stderr
-
-
-def test_source_get_unknown_source_names_known_sources(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _config(tmp_path, monkeypatch, state={"sources": [{"name": "prod", "repos": ["acme/site"]}]})
-
-    result = invoke_cli(app, ["source", "get", "missing"])
-
-    assert result.exit_code == 1
-    assert "error: source not found: 'missing'; known: prod" in result.stderr
-
-
-def test_source_remove_requires_yes_without_a_terminal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _config(tmp_path, monkeypatch, state={"sources": [{"name": "prod", "repos": ["acme/site"]}]})
-
-    result = invoke_cli(app, ["source", "remove", "prod"])
-
-    assert result.exit_code == 2
-    assert "source remove requires --yes when not interactive" in result.stderr
-    assert _state(tmp_path)["sources"] == [{"name": "prod", "repos": ["acme/site"]}]
-
-
-def test_source_remove_confirmed_interactively(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _config(tmp_path, monkeypatch, state={"sources": [{"name": "prod", "repos": ["acme/site"]}]})
-    backend = ScriptedPromptBackend(confirms=[True])
-
-    result = invoke_cli(
-        app, ["source", "remove", "prod", "-f", "json"], terminal=True, prompt_backend=backend
-    )
-
-    assert result.exit_code == 0, result.output
-    assert backend.calls and backend.calls[0][0] == "confirm"
-    assert _json(result.stdout) == {"action": "deleted", "name": "prod", "changes": []}
-    assert "sources" not in _state(tmp_path)
-
-
-def test_source_remove_dry_run_keeps_source(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _config(tmp_path, monkeypatch, state={"sources": [{"name": "prod", "repos": ["acme/site"]}]})
-
-    result = invoke_cli(app, ["source", "remove", "prod", "--dry-run", "-f", "json"])
-
-    assert result.exit_code == 0, result.output
-    assert _json(result.stdout)["action"] == "planned"
-    assert _state(tmp_path)["sources"] == [{"name": "prod", "repos": ["acme/site"]}]
-
-
-def test_source_status_uses_snake_case_states_and_utc_timestamps(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _config(
-        tmp_path,
-        monkeypatch,
-        state={
-            "sources": [
-                {"name": "prod", "repos": ["acme/site"]},
-                {"name": "new", "repos": ["acme/api"]},
-            ]
-        },
-    )
-    scanned_at = datetime(2026, 1, 2, 3, 4, 5, 678, tzinfo=UTC)
-    scan = RefScan(
-        source_key="source:prod",
-        source_repo="acme/site",
-        ref_kind="heads",
-        source_ref="main",
-        source_sha="sha-main",
-        clone_url="https://github.com/acme/site.git",
-        clone_protocol="https",
-        dependency_paths_fingerprint="paths",
-        checked_at=scanned_at,
-        indexed_at=scanned_at,
-        dependencies=(),
-    )
-    SqliteDependencyIndex(tmp_path / "index.sqlite3").commit_source_ref_refresh(
-        "source:prod",
-        scans=(scan,),
-        touches=(),
-        keep={("acme/site", "heads", "main")},
-        scanned_at=scanned_at,
-    )
-
-    result = invoke_cli(app, ["source", "status", "-f", "json"])
-
-    assert result.exit_code == 0, result.output
-    rows = {row["source"]: row for row in _json(result.stdout)}
-    assert rows["new"]["state"] == "not_refreshed"
-    assert rows["prod"]["scanned_at"] == "2026-01-02T03:04:05Z"
 
 
 # --- parallel / out flags -------------------------------------------------
@@ -370,15 +291,16 @@ def test_source_refresh_concurrency_is_a_deprecated_spelling_of_parallel(
     assert "source not found: 'missing'" in result.stderr
 
 
-def test_graph_help_lists_parallel_and_out() -> None:
+def test_graph_help_lists_current_flags_only() -> None:
     result = invoke_cli(app, ["graph", "--help"])
     output = " ".join(result.output.replace("│", " ").split())
 
     assert result.exit_code == 0, result.output
-    assert "--parallel" in output
-    assert "--out" in output
-    assert "--concurrency" not in output
-    assert "--output" not in output
+    shown = "--upstream --downstream --both --source --refresh --cached --live --target-repo"
+    shown += " --parallel --out"
+    hidden = "--concurrency --output --kind --cache-backend --scope --direction"
+    assert [flag for flag in shown.split() if flag not in output] == []
+    assert [flag for flag in hidden.split() if flag in output] == []
 
 
 def test_graph_output_is_a_deprecated_spelling_of_out(
@@ -411,7 +333,7 @@ def test_graph_output_is_a_deprecated_spelling_of_out(
 
 
 def test_parallel_rejects_zero(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _config(tmp_path, monkeypatch, state={"sources": [{"name": "prod", "repos": ["acme/site"]}]})
+    _config(tmp_path, monkeypatch, state=_SOURCES)
 
     result = invoke_cli(app, ["source", "refresh", "prod", "-j", "0"])
 

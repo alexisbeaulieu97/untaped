@@ -4,13 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from untaped.capabilities.workspace.application import AddRepo, RemoveRepo
-from untaped.capabilities.workspace.domain import Workspace
+from untaped.capabilities.workspace.application import RemoveRepo
+from untaped.capabilities.workspace.domain import Repo, Workspace, WorkspaceManifest
 from untaped.capabilities.workspace.errors import GitError, WorkspaceError
 from untaped.capabilities.workspace.infrastructure import LocalFilesystem, YamlManifestRepository
-from workspace.conftest import empty_manifest
-
-_FS = LocalFilesystem()
 
 
 class _PruneSafety:
@@ -28,98 +25,62 @@ class _PruneSafety:
         return self._blockers.get(repo_path, ())
 
 
-def test_remove_repo_by_url(tmp_path: Path) -> None:
-    ws_path = tmp_path / "prod"
-    YamlManifestRepository().write(ws_path, empty_manifest())
-    workspace = Workspace(name="prod", path=ws_path)
-    AddRepo(YamlManifestRepository())(workspace, url="https://github.com/org/svc-a.git")
-    RemoveRepo(YamlManifestRepository(), fs=_FS, prune_safety=_PruneSafety())(
-        workspace, ident="https://github.com/org/svc-a.git"
-    )
-    assert YamlManifestRepository().read(ws_path).repos == ()
+@pytest.fixture
+def workspace(tmp_path: Path) -> Workspace:
+    manifest = WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")])
+    YamlManifestRepository().write(tmp_path / "prod", manifest)
+    return Workspace(name="prod", path=tmp_path / "prod")
 
 
-def test_remove_repo_by_alias(tmp_path: Path) -> None:
-    ws_path = tmp_path / "prod"
-    YamlManifestRepository().write(ws_path, empty_manifest())
-    workspace = Workspace(name="prod", path=ws_path)
-    AddRepo(YamlManifestRepository())(workspace, url="https://x/svc-a.git")
-    RemoveRepo(YamlManifestRepository(), fs=_FS, prune_safety=_PruneSafety())(
-        workspace, ident="svc-a"
-    )
-    assert YamlManifestRepository().read(ws_path).repos == ()
+def _remove(workspace: Workspace, safety: _PruneSafety | None = None, **kwargs: object) -> None:
+    RemoveRepo(
+        YamlManifestRepository(), fs=LocalFilesystem(), prune_safety=safety or _PruneSafety()
+    )(workspace, **kwargs)
 
 
-def test_remove_repo_unknown_raises(tmp_path: Path) -> None:
-    ws_path = tmp_path / "prod"
-    YamlManifestRepository().write(ws_path, empty_manifest())
-    workspace = Workspace(name="prod", path=ws_path)
+def _names(workspace: Workspace) -> list[str]:
+    return [r.name for r in YamlManifestRepository().read(workspace.path).repos]
+
+
+@pytest.mark.parametrize("ident", ["https://x/svc-a.git", "svc-a"])
+def test_remove_repo_by_url_or_name(workspace: Workspace, ident: str) -> None:
+    _remove(workspace, ident=ident)
+    assert _names(workspace) == []
+
+
+def test_remove_repo_unknown_raises(workspace: Workspace) -> None:
     with pytest.raises(WorkspaceError, match="not declared"):
-        RemoveRepo(YamlManifestRepository(), fs=_FS, prune_safety=_PruneSafety())(
-            workspace, ident="nope"
-        )
+        _remove(workspace, ident="nope")
 
 
-def test_remove_repo_prune_deletes_clone_dir(tmp_path: Path) -> None:
-    ws_path = tmp_path / "prod"
-    YamlManifestRepository().write(ws_path, empty_manifest())
-    workspace = Workspace(name="prod", path=ws_path)
-    AddRepo(YamlManifestRepository())(workspace, url="https://x/svc-a.git")
-
-    clone_dir = ws_path / "svc-a"
+def test_remove_repo_prune_deletes_clone_dir(workspace: Workspace) -> None:
+    clone_dir = workspace.path / "svc-a"
     clone_dir.mkdir()
     (clone_dir / "data.txt").write_text("payload")
 
-    RemoveRepo(YamlManifestRepository(), fs=_FS, prune_safety=_PruneSafety())(
-        workspace, ident="svc-a", prune=True
-    )
+    _remove(workspace, ident="svc-a", prune=True)
+
     assert not clone_dir.exists()
+    assert _names(workspace) == []
 
 
-def test_remove_repo_prune_refuses_unsafe_local_state(tmp_path: Path) -> None:
-    ws_path = tmp_path / "prod"
-    YamlManifestRepository().write(ws_path, empty_manifest())
-    workspace = Workspace(name="prod", path=ws_path)
-    AddRepo(YamlManifestRepository())(workspace, url="https://x/svc-a.git")
-
-    clone_dir = ws_path / "svc-a"
+@pytest.mark.parametrize(
+    ("inspection_fails", "match"),
+    # A failed inspection is translated, not leaked as a raw GitError.
+    [(False, "unsafe local state"), (True, "cannot inspect")],
+)
+def test_remove_repo_prune_refuses_before_any_change(
+    workspace: Workspace, inspection_fails: bool, match: str
+) -> None:
+    clone_dir = workspace.path / "svc-a"
     clone_dir.mkdir()
+    if inspection_fails:
+        safety = _PruneSafety(failures={clone_dir})
+    else:
+        safety = _PruneSafety(blockers={clone_dir: ("local commits not reachable",)})
 
-    use_case = RemoveRepo(
-        YamlManifestRepository(),
-        fs=_FS,
-        prune_safety=_PruneSafety(
-            blockers={clone_dir: ("local commits not reachable from any remote-tracking ref",)}
-        ),
-    )
-    with pytest.raises(WorkspaceError, match="unsafe local state"):
-        use_case(workspace, ident="svc-a", prune=True)
-    assert clone_dir.exists()  # not pruned
-    # manifest must not have been modified — both clone and entry stay
-    manifest = YamlManifestRepository().read(ws_path)
-    assert [r.name for r in manifest.repos] == ["svc-a"]
+    with pytest.raises(WorkspaceError, match=match):
+        _remove(workspace, safety, ident="svc-a", prune=True)
 
-
-def test_remove_repo_prune_translates_giterror(tmp_path: Path) -> None:
-    """If the status check fails (e.g. local dir exists but isn't a git
-    clone), translate the ``GitError`` to a ``WorkspaceError`` rather
-    than letting the raw subprocess error escape — mirrors
-    ``ForgetWorkspace._refuse_if_any_repo_dirty``.
-    """
-    ws_path = tmp_path / "prod"
-    YamlManifestRepository().write(ws_path, empty_manifest())
-    workspace = Workspace(name="prod", path=ws_path)
-    AddRepo(YamlManifestRepository())(workspace, url="https://x/svc-a.git")
-
-    clone_dir = ws_path / "svc-a"
-    clone_dir.mkdir()
-
-    use_case = RemoveRepo(
-        YamlManifestRepository(),
-        fs=_FS,
-        prune_safety=_PruneSafety(failures={clone_dir}),
-    )
-    with pytest.raises(WorkspaceError, match="cannot inspect"):
-        use_case(workspace, ident="svc-a", prune=True)
     assert clone_dir.exists()
-    assert [r.name for r in YamlManifestRepository().read(ws_path).repos] == ["svc-a"]
+    assert _names(workspace) == ["svc-a"]

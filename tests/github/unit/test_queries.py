@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import BaseModel, ValidationError
 
 from untaped.capabilities.github.domain import (
     CodeSearchFilters,
@@ -71,13 +72,6 @@ def test_code_query_string(filters: CodeSearchFilters, expected: str) -> None:
     assert filters.to_query_string() == expected
 
 
-def test_code_filters_reject_sort_field() -> None:
-    import pydantic
-
-    with pytest.raises(pydantic.ValidationError):
-        CodeSearchFilters(raw_query="TODO", sort="updated")  # type: ignore[call-arg]
-
-
 @pytest.mark.parametrize(
     ("filters", "expected"),
     [
@@ -133,11 +127,12 @@ def test_user_query_string(filters: UserSearchFilters, expected: str) -> None:
     assert filters.to_query_string() == expected
 
 
-def test_user_filters_reject_scope_fields() -> None:
-    # The scope mixin is intentionally not on UserSearchFilters; passing
-    # `user=` / `orgs=` / `repos=` must fail loudly (extra="forbid") so
-    # a misuse can't silently produce zero results upstream.
-    import pydantic
-
-    with pytest.raises(pydantic.ValidationError):
-        UserSearchFilters(raw_query="alice", user="@me")  # type: ignore[call-arg]
+@pytest.mark.parametrize(
+    ("cls", "field"),
+    [(CodeSearchFilters, "sort"), (UserSearchFilters, "user"), (UserSearchFilters, "repos")],
+)
+def test_filters_reject_fields_github_would_ignore(cls: type[BaseModel], field: str) -> None:
+    # Code search has no sort and user search has no scope qualifiers; a
+    # misuse must fail loudly (extra="forbid") instead of silently dropping.
+    with pytest.raises(ValidationError):
+        cls.model_validate({"raw_query": "x", field: "value"})

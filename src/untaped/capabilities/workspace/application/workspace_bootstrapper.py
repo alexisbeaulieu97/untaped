@@ -11,11 +11,9 @@ Workspace-dir creation is a side effect of ``ManifestRepository.write``
 callers don't need to. See ``AGENTS.md``.
 
 Two entry points: ``__call__`` for ``InitWorkspace`` /
-``ImportWorkspace`` (resolves once, derives name, writes, registers);
-``verify`` + ``bootstrap`` for ``AdoptWorkspace`` — the canonical-in
-fast path that would otherwise canonicalise three times per
-invocation. See ``AGENTS.md``'s "`init` vs. `adopt` vs. `import` vs.
-`forget`" section for the long form.
+``ImportWorkspace`` (resolves once, derives name, checks, writes,
+registers); ``verify_adopt_target`` + ``bootstrap`` for ``AdoptWorkspace``,
+which checks its already-canonical target itself.
 """
 
 from __future__ import annotations
@@ -59,21 +57,10 @@ class WorkspaceBootstrapper:
                 )
         return canonical, ws_name
 
-    def verify(self, path: Path, *, name: str | None = None) -> tuple[Path, str]:
-        """Resolve ``path``, raise on collision, return ``(canonical, ws_name)``.
-
-        Pairs with :meth:`bootstrap`: the collision check happens here
-        and is the only one — calling ``bootstrap`` without ``verify``
-        writes/registers without checking for an existing workspace at
-        the same path. The TOCTOU window between the two is acceptable
-        for the single-user CLI today.
-        """
-        return self._resolve_and_check(path, name)
-
     def verify_adopt_target(self, path: Path) -> Path:
         """Resolve ``path`` and reject already-registered paths.
 
-        Unlike :meth:`verify`, this deliberately allows an existing
+        Unlike ``__call__``, this deliberately allows an existing
         manifest because ``workspace adopt`` can claim an already
         initialised but unregistered workspace.
         """
@@ -112,9 +99,8 @@ class WorkspaceBootstrapper:
     ) -> Workspace:
         """Write ``manifest`` at ``canonical`` and register ``ws_name``.
 
-        Precondition: ``canonical`` + ``ws_name`` come from a prior
-        :meth:`verify` call. See ``verify`` for the consequence of
-        skipping it.
+        Precondition: the caller already ran the collision checks
+        (``bootstrap`` itself does not).
         """
         existed = self._manifests.exists(canonical)
         self._manifests.write(canonical, manifest)

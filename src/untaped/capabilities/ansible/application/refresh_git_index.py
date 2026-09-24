@@ -10,13 +10,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from untaped.capabilities.ansible.application.ports import (
     GitCache,
     GitHubDependencyReader,
     IncrementalDependencyIndexWriter,
     RefProbe,
 )
-from untaped.capabilities.ansible.application.refresh_index import RefreshResult
 from untaped.capabilities.ansible.application.source_refs import (
     RefScanDefault,
     pattern_matches,
@@ -57,6 +58,28 @@ ProbeMode = Literal["all", "default_branch"]
 # (GitHub REST/GraphQL traffic happens in expansion and the probe), so no
 # HTTP-specific error type belongs here.
 _REPO_FAILURE_ERRORS = (GitCacheError, UntapedError)
+
+
+class RefreshResult(BaseModel):
+    """Summary of an index refresh."""
+
+    model_config = ConfigDict(frozen=True)
+
+    source_key: str
+    completed: bool = True
+    pause_reason: str | None = None
+    repos: int
+    refs: int
+    edges: int
+    ignored_collections: tuple[str, ...] = ()
+    changed_refs: int = 0
+    unchanged_refs: int = 0
+    failures: tuple[RepoFailure, ...] = ()
+    skipped_files: tuple[SkippedDependencyFile, ...] = ()
+    probe_fallbacks: dict[str, str] = Field(default_factory=dict)
+    rate_limit_cost: int | None = None
+    rate_limit_remaining: int | None = None
+    rate_limit_reset_at: datetime | None = None
 
 
 @dataclass(frozen=True)

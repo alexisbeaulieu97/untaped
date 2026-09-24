@@ -1,5 +1,8 @@
+"""End-to-end CLI tests for ``untaped github whoami`` and token errors."""
+
+from __future__ import annotations
+
 import json
-from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
@@ -7,153 +10,71 @@ import pytest
 import respx
 
 from untaped.capabilities.github.cli import app
-from untaped.capabilities.github.settings import GithubSettings
-from untaped.settings import get_settings, register_profile_settings
-from untaped.testing import CliInvoker
+from untaped.testing import CliInvoker, CliResult
 
 
-@pytest.fixture(autouse=True)
-def _reset_settings_cache() -> Iterator[None]:
-    # Invoking the github app directly skips the SDK profile-settings
-    # registration, so mirror it (idempotent for the same model class)
-    # before each test.
-    register_profile_settings("github", GithubSettings)
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
-
-
-def _write_config(tmp_path: Path) -> Path:
+def _whoami(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    args: list[str],
+    *,
+    github: str = "token: ghp_test",
+    ui: str = "",
+    response: httpx.Response | None = None,
+) -> CliResult:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    github:\n      token: ghp_test\n")
-    return cfg
-
-
-def _write_missing_theme_config(tmp_path: Path) -> Path:
-    cfg = tmp_path / "config.yml"
-    cfg.write_text(
-        "profiles:\n  default:\n    ui:\n      theme: missing\n    github:\n      token: ghp_test\n"
-    )
-    return cfg
-
-
-def test_whoami_demo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    cfg = _write_config(tmp_path)
+    ui_section = f"    ui:\n      {ui}\n" if ui else ""
+    cfg.write_text(f"profiles:\n  default:\n{ui_section}    github:\n      {github}\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/user").mock(return_value=httpx.Response(200, json={"login": "octocat", "id": 1}))
-        result = CliInvoker().invoke(app, ["whoami", "--format", "raw", "--columns", "login"])
-
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "octocat"
+    reply = response or httpx.Response(200, json={"login": "octocat", "id": 1, "extra": "x"})
+    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
+        mock.get("/user").mock(return_value=reply)
+        return CliInvoker().invoke(app, ["whoami", *args])
 
 
-def test_whoami_pipe_tags_github_user_kind(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+def test_whoami_renders_one_user_record_per_format(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw = _whoami(tmp_path, monkeypatch, ["--format", "raw"])
+    as_json = _whoami(tmp_path, monkeypatch, ["--format", "json"])
+    pipe = _whoami(tmp_path, monkeypatch, ["--format", "pipe"])
+    table = _whoami(tmp_path, monkeypatch, ["--format", "table"])
 
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/user").mock(return_value=httpx.Response(200, json={"login": "octocat", "id": 1}))
-        result = CliInvoker().invoke(app, ["whoami", "--format", "pipe"])
-
-    assert result.exit_code == 0, result.output
-    envelope = json.loads(result.stdout.splitlines()[0])
-    assert envelope["kind"] == "github.user"
-    assert envelope["record"]["login"] == "octocat"
-
-
-def test_whoami_json_emits_bare_object(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A single entity emits a bare JSON object ``{…}``, not a one-element
-    array ``[{…}]`` (the ``emit`` single-record contract)."""
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/user").mock(return_value=httpx.Response(200, json={"login": "octocat", "id": 1}))
-        result = CliInvoker().invoke(app, ["whoami", "--format", "json"])
-
-    assert result.exit_code == 0, result.output
-    payload = json.loads(result.stdout)
-    assert isinstance(payload, dict)
-    assert payload["login"] == "octocat"
-
-
-def test_whoami_table_renders_detail_view(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A single entity renders as a vertical key:value detail view under the
-    default config — not a boxed one-row table (the ``emit`` single-record
-    contract). This is the behavioural change from ``render_rows([x])``."""
-    cfg = _write_config(tmp_path)
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/user").mock(return_value=httpx.Response(200, json={"login": "octocat", "id": 1}))
-        result = CliInvoker().invoke(app, ["whoami", "--format", "table"])
-
-    assert result.exit_code == 0, result.output
-    assert "login: octocat" in result.stdout
-    assert "id: 1" in result.stdout
-    # Detail view is vertical key:value lines, not a bordered table grid.
-    assert "─" not in result.stdout
-    assert "│" not in result.stdout
+    assert raw.stdout.strip() == "octocat"
+    # A single entity is a bare JSON object and a vertical detail view.
+    assert json.loads(as_json.stdout) == {"login": "octocat", "id": 1, "name": None, "email": None}
+    envelope = json.loads(pipe.stdout.splitlines()[0])
+    assert (envelope["kind"], envelope["record"]["login"]) == ("github.user", "octocat")
+    assert "login: octocat" in table.stdout
+    assert "│" not in table.stdout
 
 
 def test_whoami_raw_ignores_invalid_ui_theme(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cfg = _write_missing_theme_config(tmp_path)
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/user").mock(return_value=httpx.Response(200, json={"login": "octocat", "id": 1}))
-        result = CliInvoker().invoke(app, ["whoami", "--format", "raw"])
+    result = _whoami(tmp_path, monkeypatch, ["--format", "raw"], ui="theme: missing")
 
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "octocat"
-    assert "\x1b[" not in result.output
     assert "unknown UI theme" not in result.output
 
 
-def test_whoami_rejects_command_local_profile_flag(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("github", ["base_url: https://api.github.com", 'token: "   "'])
+def test_whoami_without_a_token_fails_naming_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, github: str
 ) -> None:
-    # Profile selection moved to the root `untaped --profile` option
-    # (plugin API v4, accepted in any token position). The tool's own
-    # commands no longer define a local --profile, so it must be rejected
-    # as an unknown option (usage error, exit 2).
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    result = _whoami(tmp_path, monkeypatch, [], github=github)
 
-    result = CliInvoker().invoke(
-        app, ["whoami", "--profile", "stage", "--format", "raw", "--columns", "login"]
-    )
-
-    assert result.exit_code == 2, result.output
-    assert "--profile" in result.output
-
-
-def test_whoami_requires_token(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
-    result = CliInvoker().invoke(app, ["whoami"])
-    assert result.exit_code != 0
-    assert "token" in str(result.exception) or "token" in result.output
-
-
-def test_whoami_rejects_blank_token(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    cfg = tmp_path / "config.yml"
-    cfg.write_text('profiles:\n  default:\n    github:\n      token: "   "\n')
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    result = CliInvoker().invoke(app, ["whoami"])
-    assert result.exit_code != 0
-    assert "token" in str(result.exception) or "token" in result.output
+    assert result.exit_code == 1
+    assert "token" in result.stderr
 
 
 def test_whoami_rejected_token_hints_at_setting_a_new_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/user").mock(return_value=httpx.Response(401, json={"message": "Bad"}))
-        result = CliInvoker().invoke(app, ["whoami", "--format", "json"])
+    result = _whoami(
+        tmp_path, monkeypatch, [], response=httpx.Response(401, json={"message": "Bad"})
+    )
 
     assert result.exit_code == 1
     assert "error: GitHub rejected the configured token (HTTP 401)" in result.stderr

@@ -36,9 +36,11 @@ def test_add_then_remove(tmp_path: Path) -> None:
 
     a = runner.invoke(app, ["add", "https://x/svc-a.git", "--workspace", "lab"])
     assert a.exit_code == 0, a.output
+    assert "added svc-a to 'lab'" in a.stderr
 
     rm = runner.invoke(app, ["remove", "svc-a", "--workspace", "lab"])
     assert rm.exit_code == 0, rm.output
+    assert "removed svc-a from 'lab'" in rm.stderr
 
 
 def test_add_unknown_workspace_errors(tmp_path: Path) -> None:

@@ -421,11 +421,12 @@ def test_identity_resets_after_nested_calls() -> None:
     assert bootstrap.current_capability() is None
 
 
-def test_completion_flag_is_wired() -> None:
+def test_root_help_lists_root_options_and_completion() -> None:
     root = bootstrap.build_root_app(builtins=(), externals=())
     result = CliInvoker().invoke(root.meta, ["--help"])
     assert result.exit_code == 0, result.output
-    assert "--install-completion" in result.stdout
+    for flag in ("--profile", "--verbose", "--quiet", "--install-completion"):
+        assert flag in result.stdout
 
 
 def test_bootstrap_has_no_standalone_composition_imports() -> None:

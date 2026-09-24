@@ -1,4 +1,4 @@
-"""Unit tests for shared CLI scope parsing helpers."""
+"""``--team`` parsing: ORG/SLUG, or a bare SLUG with exactly one ``--org``."""
 
 from __future__ import annotations
 
@@ -9,24 +9,29 @@ from untaped.capabilities.github.cli.scopes import parse_team_scopes
 from untaped.capability_api import UsageError
 
 
-def test_parse_team_scopes_accepts_repeated_org_slug_values() -> None:
-    scopes = parse_team_scopes(["acme/backend", "platform/ops"])
-
-    assert scopes == (TeamScope(org="acme", slug="backend"), TeamScope(org="platform", slug="ops"))
-
-
-def test_parse_team_scopes_expands_bare_slug_with_one_org() -> None:
-    scopes = parse_team_scopes(["backend"], orgs=("acme",))
-
-    assert scopes == (TeamScope(org="acme", slug="backend"),)
-
-
-@pytest.mark.parametrize("value", ["backend", "acme/backend/extra", "/backend", "acme/"])
-def test_parse_team_scopes_rejects_malformed_values(value: str) -> None:
-    with pytest.raises(UsageError, match="ORG/SLUG"):
-        parse_team_scopes([value])
+@pytest.mark.parametrize(
+    ("values", "orgs", "expected"),
+    [
+        (["acme/backend", "platform/ops"], (), (("acme", "backend"), ("platform", "ops"))),
+        (["backend"], ("acme",), (("acme", "backend"),)),
+    ],
+)
+def test_parse_team_scopes(
+    values: list[str], orgs: tuple[str, ...], expected: tuple[tuple[str, str], ...]
+) -> None:
+    assert parse_team_scopes(values, orgs=orgs) == tuple(TeamScope(*pair) for pair in expected)
 
 
-def test_parse_team_scopes_rejects_bare_slug_with_multiple_orgs() -> None:
-    with pytest.raises(UsageError, match="exactly one --org"):
-        parse_team_scopes(["backend"], orgs=("acme", "platform"))
+@pytest.mark.parametrize(
+    ("value", "orgs"),
+    [
+        ("backend", ()),
+        ("acme/backend/extra", ()),
+        ("/backend", ()),
+        ("acme/", ()),
+        ("backend", ("acme", "platform")),
+    ],
+)
+def test_parse_team_scopes_rejects_malformed_values(value: str, orgs: tuple[str, ...]) -> None:
+    with pytest.raises(UsageError, match="ORG/SLUG unless exactly one --org"):
+        parse_team_scopes([value], orgs=orgs)

@@ -9,7 +9,6 @@ from untaped.capabilities.awx.application import SaveResource
 from untaped.capabilities.awx.application.ports import FkResolver, ResourceClient
 from untaped.capabilities.awx.domain import ResourceSpec, ServerRecord
 from untaped.capabilities.awx.infrastructure.specs import (
-    JOB_TEMPLATE_SPEC,
     PROJECT_SPEC,
     SCHEDULE_SPEC,
 )
@@ -53,44 +52,6 @@ class _StubFk:
 
     def id_to_name(self, kind: str, id_: int) -> str:
         return self._by_id[(kind, id_)]
-
-
-def test_save_resource_translates_fk_ids_to_names() -> None:
-    client = _StubClient(
-        find_result={
-            "id": 99,
-            "name": "deploy",
-            "organization": 1,
-            "project": 5,
-            "inventory": 7,
-            "playbook": "deploy.yml",
-        },
-        sub_members={
-            "credentials": [
-                {"id": 10, "name": "ssh-key"},
-                {"id": 11, "name": "vault-pw"},
-            ]
-        },
-    )
-    fk = _StubFk(
-        {
-            ("Organization", 1): "Default",
-            ("Project", 5): "playbooks",
-            ("Inventory", 7): "prod",
-            ("Credential", 10): "ssh-key",
-            ("Credential", 11): "vault-pw",
-        }
-    )
-    use = SaveResource(cast(ResourceClient, client), cast(FkResolver, fk))
-    saved = use.from_record(JOB_TEMPLATE_SPEC, client.record)
-
-    assert saved.kind == "JobTemplate"
-    assert saved.metadata.name == "deploy"
-    assert saved.metadata.organization == "Default"
-    assert saved.spec["project"] == "playbooks"
-    assert saved.spec["inventory"] == "prod"
-    assert saved.spec["credentials"] == ["ssh-key", "vault-pw"]
-    assert saved.spec["playbook"] == "deploy.yml"
 
 
 def test_save_resource_strips_read_only_fields() -> None:

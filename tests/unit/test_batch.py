@@ -111,15 +111,26 @@ def test_finish_exits_one_with_standard_line_on_decline(
     assert capsys.readouterr().err.endswith("cancelled; no changes made\n")
 
 
-def test_finish_exits_three_on_predicate_hit_only_without_failures() -> None:
-    with pytest.raises(SystemExit) as hit:
-        finish(False, predicate_hit=True)
-    with pytest.raises(SystemExit) as failed:
-        finish(True, predicate_hit=True)
-
-    assert hit.value.code == 3
-    assert failed.value.code == 1
-    finish(False, predicate_hit=False)  # returns: nothing to report
+@pytest.mark.parametrize(
+    ("result", "predicate_hit", "code"),
+    [
+        (BatchOutcome(results=[("a", "a")], failed=1, planned_rows=[{}, {}]), False, 1),
+        (BatchOutcome(results=[("a", "a")], failed=0, planned_rows=[{}]), False, None),
+        (True, False, 1),
+        (False, False, None),
+        # A predicate hit exits 3 only when nothing failed.
+        (False, True, 3),
+        (True, True, 1),
+    ],
+    ids=["partial-failure", "success", "failed", "ok", "predicate-hit", "failed-and-hit"],
+)
+def test_finish_exit_codes(result: Any, predicate_hit: bool, code: int | None) -> None:
+    if code is None:
+        finish(result, predicate_hit=predicate_hit)
+        return
+    with pytest.raises(SystemExit) as excinfo:
+        finish(result, predicate_hit=predicate_hit)
+    assert excinfo.value.code == code
 
 
 def test_piped_stdin_confirms_on_the_controlling_terminal() -> None:
@@ -300,23 +311,6 @@ def test_custom_preview_replaces_generic_rows(capsys: pytest.CaptureFixture[str]
     )
     assert seen == [[{"name": "a"}, {"name": "b"}]]
     assert "About to delete" not in capsys.readouterr().err
-
-
-def test_finish_exits_1_on_partial_failure() -> None:
-    outcome = BatchOutcome(results=[("a", "a")], failed=1, planned_rows=[{}, {}])
-    with pytest.raises(SystemExit) as excinfo:
-        finish(outcome)
-    assert excinfo.value.code == 1
-
-
-def test_finish_returns_on_success() -> None:
-    finish(BatchOutcome(results=[("a", "a")], failed=0, planned_rows=[{}]))
-
-
-def test_finish_accepts_any_failed_bool() -> None:
-    with pytest.raises(SystemExit):
-        finish(True)
-    finish(False)
 
 
 def test_failure_lines_use_the_shared_error_formatter() -> None:
