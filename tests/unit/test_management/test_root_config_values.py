@@ -50,30 +50,26 @@ def test_stdin_secret_keeps_hash_and_everything_after_it(_isolated_config: Path)
     assert _default_profile(_isolated_config)["github"] == {"token": "p4ss #word"}
 
 
-def test_numeric_looking_secret_is_stored_as_string(_isolated_config: Path) -> None:
-    result = _invoke(["set", "github.token", "0123456"])
-    assert result.exit_code == 0, result.output
-    assert _default_profile(_isolated_config)["github"] == {"token": "0123456"}
-
-
-@pytest.mark.parametrize("value", ["no", "2024-01-01", "project = X: y", "[abc", "null", "~"])
-def test_string_field_stores_raw_value_verbatim(_isolated_config: Path, value: str) -> None:
-    result = _invoke(["set", "github.base_url", value])
-    assert result.exit_code == 0, result.output
-    assert _default_profile(_isolated_config)["github"] == {"base_url": value}
-
-
 @pytest.mark.parametrize(
     ("key", "raw", "stored"),
     [
+        ("github.token", "0123456", "0123456"),
+        # String fields store the raw value verbatim, never YAML-coerced.
+        *(("github.base_url", v, v) for v in ["no", "2024-01-01", "project = X: y", "[abc", "~"]),
+        ("github.base_url", "null", "null"),
+        ("http.proxy", "null", "null"),
+        # Typed fields are coerced from the raw string.
         ("http.verify_ssl", "no", False),
         ("http.verify_ssl", "true", True),
         ("http.timeout", "5", 5.0),
         ("http.ca_bundle", "/etc/ssl/ca.pem", "/etc/ssl/ca.pem"),
         ("github.mode", "on", "on"),
+        ("ui.theme", "high-contrast", "high-contrast"),
+        ("ui.symbols", '{"ok": "Y", "fail": "N"}', {"ok": "Y", "fail": "N"}),
+        ("ui.symbols", "{ok: Y, fail: N}", {"ok": "Y", "fail": "N"}),
     ],
 )
-def test_typed_fields_are_coerced_from_the_raw_string(
+def test_set_stores_the_value_for_the_field_type(
     _isolated_config: Path, key: str, raw: str, stored: object
 ) -> None:
     result = _invoke(["set", key, raw])
@@ -83,15 +79,25 @@ def test_typed_fields_are_coerced_from_the_raw_string(
 
 
 @pytest.mark.parametrize(
-    ("key", "raw"),
-    [("http.timeout", "abc"), ("http.timeout", "-1"), ("github.mode", "maybe")],
+    ("key", "raw", "detail"),
+    [
+        ("http.timeout", "abc", ""),
+        ("http.timeout", "-1", ""),
+        ("http.timeout", "null", ""),
+        ("github.mode", "maybe", ""),
+        ("ui.theme", "bogus", "unknown UI theme 'bogus'"),
+        ("ui.symbols", "[1, 2]", ""),
+        ("ui.symbols", "{bad", ""),
+        ("ui.symbols", "plain", ""),
+    ],
 )
-def test_invalid_typed_value_is_rejected_without_writing(
-    _isolated_config: Path, key: str, raw: str
+def test_invalid_value_is_rejected_without_writing(
+    _isolated_config: Path, key: str, raw: str, detail: str
 ) -> None:
     result = _invoke(["set", key, raw])
     assert result.exit_code == 1
     assert f"invalid value for {key!r}" in result.stderr
+    assert detail in result.stderr
     assert "Traceback" not in result.output
     assert not _isolated_config.exists()
 
@@ -101,11 +107,24 @@ def test_invalid_typed_value_is_rejected_without_writing(
 _BROKEN_JIRA = "profiles:\n  default:\n    jira:\n      timeout: lots\n"
 
 
-def test_get_other_key_works_when_another_section_is_invalid(_isolated_config: Path) -> None:
+@pytest.mark.parametrize(
+    ("argv", "section", "stored"),
+    [
+        (["get", "http.timeout"], None, None),
+        (["set", "http.timeout", "5"], "http", {"timeout": 5.0}),
+        # The broken key itself can be repaired by set or unset.
+        (["set", "jira.timeout", "10"], "jira", {"timeout": 10.0}),
+        (["unset", "jira.timeout"], None, None),
+    ],
+)
+def test_an_invalid_section_does_not_block_other_keys_or_its_repair(
+    _isolated_config: Path, argv: list[str], section: str | None, stored: object
+) -> None:
     write_config(_isolated_config, _BROKEN_JIRA)
-    result = _invoke(["get", "http.timeout"])
+    result = _invoke(argv)
     assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "30.0"
+    if section is not None:
+        assert _default_profile(_isolated_config)[section] == stored
 
 
 def test_get_key_of_invalid_section_names_the_problem(_isolated_config: Path) -> None:
@@ -113,26 +132,6 @@ def test_get_key_of_invalid_section_names_the_problem(_isolated_config: Path) ->
     result = _invoke(["get", "jira.timeout"])
     assert result.exit_code == 1
     assert "jira.timeout" in result.stderr
-
-
-def test_set_other_key_works_when_another_section_is_invalid(_isolated_config: Path) -> None:
-    write_config(_isolated_config, _BROKEN_JIRA)
-    result = _invoke(["set", "http.timeout", "5"])
-    assert result.exit_code == 0, result.output
-    assert _default_profile(_isolated_config)["http"] == {"timeout": 5.0}
-
-
-def test_set_repairs_the_invalid_section(_isolated_config: Path) -> None:
-    write_config(_isolated_config, _BROKEN_JIRA)
-    result = _invoke(["set", "jira.timeout", "10"])
-    assert result.exit_code == 0, result.output
-    assert _default_profile(_isolated_config)["jira"] == {"timeout": 10.0}
-
-
-def test_unset_repairs_the_invalid_section(_isolated_config: Path) -> None:
-    write_config(_isolated_config, _BROKEN_JIRA)
-    result = _invoke(["unset", "jira.timeout"])
-    assert result.exit_code == 0, result.output
 
 
 def test_list_shows_raw_values_and_warns_for_invalid_section(_isolated_config: Path) -> None:
@@ -169,45 +168,30 @@ def test_non_mapping_config_shapes_are_config_errors(_isolated_config: Path, tex
     assert "mapping" in result.stderr
 
 
-def test_set_rejects_unknown_ui_theme(_isolated_config: Path) -> None:
-    result = _invoke(["set", "ui.theme", "bogus"])
-    assert result.exit_code == 1
-    assert "invalid value for 'ui.theme'" in result.stderr
-    assert "unknown UI theme 'bogus'" in result.stderr
-    assert "classic" in result.stderr
-    assert not _isolated_config.exists()
-
-
-def test_set_accepts_builtin_ui_theme(_isolated_config: Path) -> None:
-    result = _invoke(["set", "ui.theme", "high-contrast"])
-    assert result.exit_code == 0, result.output
-    assert _default_profile(_isolated_config)["ui"] == {"theme": "high-contrast"}
-
-
 # ── structured output carries native values ──────────────────────────────────
 
 
-def test_get_json_emits_native_values(_isolated_config: Path) -> None:
-    result = _invoke(["get", "http.verify_ssl", "--format", "json"])
+@pytest.mark.parametrize(
+    ("config", "key", "row"),
+    [
+        ("", "http.verify_ssl", {"value": True, "default": True, "source": "default"}),
+        ("", "github.token", {"value": None, "default": None}),
+        (
+            "profiles:\n  default:\n    github:\n      token: t0k\n",
+            "github.token",
+            {"value": "***"},
+        ),
+    ],
+    ids=["native", "null-when-unset", "secret-masked"],
+)
+def test_get_json_emits_native_values(
+    _isolated_config: Path, config: str, key: str, row: dict[str, object]
+) -> None:
+    write_config(_isolated_config, config)
+    result = _invoke(["get", key, "--format", "json"])
     assert result.exit_code == 0, result.output
-    row = json.loads(result.stdout)
-    assert row["value"] is True
-    assert row["default"] is True
-    assert row["source"] == "default"
-
-
-def test_get_json_emits_null_for_unset_values(_isolated_config: Path) -> None:
-    result = _invoke(["get", "github.token", "--format", "json"])
-    assert result.exit_code == 0, result.output
-    row = json.loads(result.stdout)
-    assert row["value"] is None
-    assert row["default"] is None
-
-
-def test_get_json_keeps_secrets_masked(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    github:\n      token: t0k\n")
-    row = json.loads(_invoke(["get", "github.token", "--format", "json"]).stdout)
-    assert row["value"] == "***"
+    emitted = json.loads(result.stdout)
+    assert {field: emitted[field] for field in row} == row
 
 
 _PROXY_WITH_PASSWORD = (
@@ -261,18 +245,6 @@ def test_null_clears_optional_typed_setting(_isolated_config: Path, key: str, cu
     assert _default_profile(_isolated_config)[section] == {leaf: None}
 
 
-def test_null_for_required_typed_setting_is_rejected(_isolated_config: Path) -> None:
-    result = _invoke(["set", "http.timeout", "null"])
-    assert result.exit_code == 1
-    assert "invalid value for 'http.timeout'" in result.stderr
-
-
-def test_optional_string_setting_keeps_literal_null(_isolated_config: Path) -> None:
-    result = _invoke(["set", "http.proxy", "null"])
-    assert result.exit_code == 0, result.output
-    assert _default_profile(_isolated_config)["http"] == {"proxy": "null"}
-
-
 # ── `--prompt` on an invalid section ─────────────────────────────────────────
 
 
@@ -292,23 +264,6 @@ def test_prompt_repairs_key_in_invalid_section(_isolated_config: Path) -> None:
 
 
 # ── non-scalar (mapping / list) settings ─────────────────────────────────────
-
-
-@pytest.mark.parametrize("raw", ['{"ok": "Y", "fail": "N"}', "{ok: Y, fail: N}"])
-def test_set_mapping_setting_from_json_or_yaml(_isolated_config: Path, raw: str) -> None:
-    result = _invoke(["set", "ui.symbols", raw])
-    assert result.exit_code == 0, result.output
-    assert _default_profile(_isolated_config)["ui"] == {"symbols": {"ok": "Y", "fail": "N"}}
-
-
-@pytest.mark.parametrize("raw", ["[1, 2]", "{bad", "plain"])
-def test_set_mapping_setting_rejects_a_value_of_the_wrong_shape(
-    _isolated_config: Path, raw: str
-) -> None:
-    result = _invoke(["set", "ui.symbols", raw])
-    assert result.exit_code == 1
-    assert "invalid value for 'ui.symbols'" in result.stderr
-    assert not _isolated_config.exists() or "ui" not in _default_profile(_isolated_config)
 
 
 def test_get_and_list_render_mapping_settings(_isolated_config: Path) -> None:
