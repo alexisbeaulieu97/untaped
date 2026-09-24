@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
 from untaped.capabilities.awx.cli import app, parallel
 from untaped.capabilities.awx.infrastructure.job_monitor import PollingJobMonitor
@@ -925,30 +926,47 @@ def test_jobs_events_continues_when_one_id_missing(fake_aap: Any) -> None:
     assert "error:" not in result.stdout
 
 
-def test_jobs_events_multi_id_non_follow_emits_per_job_blocks(fake_aap: Any) -> None:
-    """Pin the v0 non-follow multi-id contract: each job emits its own
-    format block (not a single merged document). For ``--format json``
-    that means N separately framed arrays, so callers wanting one
-    document should use ``--format raw`` or ``--follow --format json``
-    (NDJSON). Documented in ``jobs events`` docstring."""
-    import json as _json
-
+@pytest.mark.parametrize("fmt", ["json", "yaml"])
+def test_jobs_events_multi_id_non_follow_emits_one_document(fake_aap: Any, fmt: str) -> None:
+    """json/yaml print a single document per invocation: several jobs'
+    events merge into one array, each row naming its ``job``."""
     _seed_running_job(fake_aap, job_id=42)
     _seed_running_job(fake_aap, job_id=43)
     fake_aap.seed("job_events", id=1, job=42, counter=1, event="playbook_on_play_start")
     fake_aap.seed("job_events", id=2, job=43, counter=2, event="playbook_on_play_start")
     result = CliInvoker().invoke(
         app,
-        ["jobs", "events", "42", "43", "--format", "json", "--columns", "counter"],
+        ["jobs", "events", "42", "43", "--format", fmt, "--columns", "job,counter"],
     )
     assert result.exit_code == 0, result.output
-    # Two separately framed arrays — verify they're parseable on their
-    # own, not as one document. ``json.loads`` would reject the
-    # concatenation; we split-then-parse.
-    chunks = result.stdout.replace("][", "]\n[").strip().splitlines()
-    assert len(chunks) == 2, result.stdout
-    parsed = [_json.loads(c) for c in chunks]
-    assert [row[0]["counter"] for row in parsed] == [1, 2]
+    assert yaml.safe_load(result.stdout) == [
+        {"job": 42, "counter": 1},
+        {"job": 43, "counter": 2},
+    ]
+    assert "[42]" in result.stderr
+
+
+def test_jobs_events_json_keeps_one_document_when_an_id_is_missing(fake_aap: Any) -> None:
+    _seed_running_job(fake_aap, job_id=42)
+    fake_aap.seed("job_events", id=1, job=42, counter=1, event="playbook_on_play_start")
+    result = CliInvoker().invoke(
+        app, ["jobs", "events", "9999", "42", "--format", "json", "--columns", "counter"]
+    )
+    assert result.exit_code == 1
+    assert json.loads(result.stdout) == [{"counter": 1}]
+    assert "error: 9999" in result.stderr
+
+
+@pytest.mark.parametrize("fmt", ["json", "yaml"])
+def test_jobs_logs_multi_id_non_follow_emits_one_document(fake_aap: Any, fmt: str) -> None:
+    _seed_running_job(fake_aap, job_id=42)
+    _seed_running_job(fake_aap, job_id=43)
+    result = CliInvoker().invoke(app, ["jobs", "logs", "42", "43", "--format", fmt])
+    assert result.exit_code == 0, result.output
+    rows = yaml.safe_load(result.stdout)
+    assert [(row["job"], row["line"]) for row in rows] == [
+        (job, f"line-{n}") for job in (42, 43) for n in range(3)
+    ]
 
 
 def test_jobs_list_empty_guides_with_stderr_hint(fake_aap: Any) -> None:

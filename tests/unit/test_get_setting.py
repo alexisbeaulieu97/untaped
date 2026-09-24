@@ -131,9 +131,16 @@ def test_get_ui_setting_uses_schema_default(_isolate_settings: Path) -> None:
     assert entry.source.label == "default"
 
 
-def test_get_rejects_dict_shaped_ui_settings(_isolate_settings: Path) -> None:
-    with pytest.raises(ConfigError, match="unknown setting"):
-        GetSetting(SettingsFileRepository())("ui.color_roles")
+def test_get_returns_dict_shaped_ui_settings_as_mappings(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text(
+        "profiles:\n  default:\n    ui:\n      color_roles:\n        error: red\n"
+    )
+
+    entry = GetSetting(SettingsFileRepository())("ui.color_roles")
+
+    assert entry.value == {"error": "red"}
+    assert entry.default == {}
+    assert entry.source.label == "profile:default"
 
 
 def test_get_http_setting_from_profile(_isolate_settings: Path) -> None:

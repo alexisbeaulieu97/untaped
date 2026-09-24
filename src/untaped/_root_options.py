@@ -186,7 +186,9 @@ def _dispatch_with_root_options(
     errors surface before the command body runs, so a retry never repeats
     side effects.
     """
-    remaining = canonical_command_tokens(app, command_tokens)
+    remaining = canonical_command_tokens(
+        app, _consume_path_root_options(app, command_tokens, root_options, applied_tokens)
+    )
     applied: set[str] = set()
     while True:
         try:
@@ -231,20 +233,12 @@ def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
     for index, token in enumerate(rewritten):
         if token.startswith("-"):
             break
-        aliases = deprecated_aliases(current)
-        if token not in current and token in aliases:
-            _warn_deprecated(token, aliases[token])
-            token = rewritten[index] = aliases[token]
-        elif token not in current:
-            wanted = _loose_command_key(token)
-            matches = [
-                name
-                for name in current
-                if not name.startswith("-") and _loose_command_key(name) == wanted
-            ]
-            if len(matches) != 1:
-                break
-            token = rewritten[index] = matches[0]
+        name = _command_name(current, token)
+        if name is None:
+            break
+        if token not in current and token in deprecated_aliases(current):
+            _warn_deprecated(token, name)
+        token = rewritten[index] = name
         current = current[token]
     else:
         return rewritten
@@ -258,6 +252,68 @@ def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
                 _warn_deprecated(name, options[name])
                 rewritten[position] = f"{options[name]}{separator}{value}"
     return rewritten
+
+
+def _command_name(app: App, token: str) -> str | None:
+    """The registered subcommand of ``app`` that ``token`` selects, if any.
+
+    Exact names win, then deprecated aliases, then the one loose
+    (case/``-``/``_``-insensitive) match; ambiguity selects nothing.
+    """
+    if token in app:
+        return token
+    aliases = deprecated_aliases(app)
+    if token in aliases:
+        return aliases[token]
+    wanted = _loose_command_key(token)
+    matches = [
+        name for name in app if not name.startswith("-") and _loose_command_key(name) == wanted
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _consume_path_root_options(
+    app: App,
+    tokens: list[str],
+    root_options: dict[str, _RootOption],
+    applied_tokens: list[tuple[_RootOption, object]],
+) -> list[str]:
+    """Apply and strip root options sitting between command names.
+
+    ``untaped awx --profile x jobs list`` places a root option after a
+    capability (or group) name but before the next command name, where
+    cyclopts would read it as an unknown command. Walking the command path
+    (resolving lazy capabilities only along the chain dispatch would
+    resolve anyway), each run of root options followed by another command
+    name is applied and removed. Options after the last command name stay
+    in place for the leaf to parse, so a leaf's homonymous option still wins
+    and trailing root options go through the retry in
+    :func:`_dispatch_with_root_options`.
+    """
+    remaining = list(tokens)
+    current = app
+    index = 0
+    while index < len(remaining):
+        probe = remaining
+        pending: list[tuple[_RootOption, str]] = []
+        while index < len(probe):
+            head = probe[index].partition("=")[0]
+            spec = _match_option(head, root_options)
+            if spec is None:
+                break
+            value, probe = _consume_option_at(probe, index, spec, head)
+            pending.append((spec, value))
+        if index >= len(probe) or probe[index].startswith("-"):
+            break
+        name = _command_name(current, probe[index])
+        if name is None:
+            break
+        for spec, value in pending:
+            _apply_root_option(spec, value, applied_tokens)
+        remaining = probe
+        current = current[name]
+        index += 1
+    return remaining
 
 
 def _warn_deprecated(old: str, new: str) -> None:
