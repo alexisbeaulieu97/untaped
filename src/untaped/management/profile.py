@@ -14,6 +14,7 @@ from cyclopts import App, Parameter
 
 from untaped.cli import (
     ColumnsOption,
+    DryRunOption,
     FormatOption,
     YesOption,
     create_app,
@@ -24,7 +25,7 @@ from untaped.cli import (
 from untaped.config_schema import redact_secrets, secret_field_paths
 from untaped.errors import OperationCancelledError
 from untaped.messages import q
-from untaped.profile.models import Profile, ProfileDeletePreview
+from untaped.profile.models import Profile, ProfileDeletePreview, ProfileOutcome
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile.use_cases import (
     CreateProfile,
@@ -37,6 +38,8 @@ from untaped.profile.use_cases import (
 )
 from untaped.settings import get_profile_settings_model, resolve_config_path
 from untaped.ui import ui_context
+
+_PROFILE_OUTCOME = "untaped.profile_outcome"
 
 # `profile show` returns a single nested object — `raw`/`table` (which want
 # tabular rows) don't apply, so narrow the format type for this command and
@@ -192,12 +195,20 @@ def _create_command(
         str | None,
         Parameter(name="--copy-from", help="Existing profile to copy as a starting point."),
     ] = None,
+    dry_run: DryRunOption = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
     """Create a new profile (empty by default; use ``--copy-from`` to seed it)."""
     with report_errors():
-        CreateProfile(ProfileFileRepository())(name, copy_from=copy_from)
-        suffix = f" (copied from {copy_from})" if copy_from else ""
-        ui_context(strict=False).success(f"created profile: {name}{suffix}")
+        CreateProfile(ProfileFileRepository())(name, copy_from=copy_from, dry_run=dry_run)
+        if not dry_run:
+            suffix = f" (copied from {copy_from})" if copy_from else ""
+            ui_context(strict=False).success(f"created profile: {name}{suffix}")
+        outcome = ProfileOutcome(
+            name=name, copied_from=copy_from, action="planned" if dry_run else "created"
+        )
+        emit(outcome, fmt=fmt, columns=columns, kind=_PROFILE_OUTCOME)
 
 
 def _delete_command(
@@ -205,38 +216,59 @@ def _delete_command(
     /,
     *,
     yes: YesOption = False,
+    dry_run: DryRunOption = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
     """Delete a profile. Refuses to delete the active profile."""
     with report_errors():
         repo = ProfileFileRepository()
         delete_profile = DeleteProfile(repo)
         preview = delete_profile.preview(name)
-        if not yes:
-            _confirm_delete(preview)
-        delete_profile(name)
-        ui_context(strict=False).success(f"deleted profile: {name}")
+        if dry_run:
+            _show_delete_preview(preview)
+        else:
+            if not yes:
+                _confirm_delete(preview)
+            delete_profile(name)
+            ui_context(strict=False).success(f"deleted profile: {name}")
+        outcome = ProfileOutcome(name=name, action="planned" if dry_run else "deleted")
+        emit(outcome, fmt=fmt, columns=columns, kind=_PROFILE_OUTCOME)
 
 
 def _rename_command(
     old_name: Annotated[str, Parameter(help="Existing profile name.")],
     new_name: Annotated[str, Parameter(help="New profile name.")],
     /,
+    *,
+    dry_run: DryRunOption = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
     """Rename a profile, updating ``active:`` if it pointed at the old name."""
     with report_errors():
-        RenameProfile(ProfileFileRepository())(old_name, new_name)
-        ui_context(strict=False).success(f"renamed profile: {old_name} → {new_name}")
+        RenameProfile(ProfileFileRepository())(old_name, new_name, dry_run=dry_run)
+        if not dry_run:
+            ui_context(strict=False).success(f"renamed profile: {old_name} → {new_name}")
+        outcome = ProfileOutcome(
+            name=new_name, previous_name=old_name, action="planned" if dry_run else "renamed"
+        )
+        emit(outcome, fmt=fmt, columns=columns, kind=_PROFILE_OUTCOME)
 
 
 def _confirm_delete(preview: ProfileDeletePreview) -> None:
     ui = ui_context(strict=False)
     with ui.terminal(refusal="profile delete requires --yes when not interactive"):
-        top_level = ", ".join(preview.top_level_keys) or "(none)"
-        echo(f"config: {resolve_config_path()}", err=True)
-        echo(f"profile: {preview.name}", err=True)
-        echo(f"top-level keys: {top_level}", err=True)
+        _show_delete_preview(preview)
         if not ui.confirm(f"Delete profile {q(preview.name)}?"):
             raise OperationCancelledError
+
+
+def _show_delete_preview(preview: ProfileDeletePreview) -> None:
+    top_level = ", ".join(preview.top_level_keys) or "(none)"
+    echo(f"config: {resolve_config_path()}", err=True)
+    echo(f"profile: {preview.name}", err=True)
+    echo(f"top-level keys: {top_level}", err=True)
 
 
 def _profile_row(p: Profile, *, human: bool) -> dict[str, object]:

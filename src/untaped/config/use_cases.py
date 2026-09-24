@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Container
 from dataclasses import dataclass
 from typing import Any
 
@@ -9,6 +10,7 @@ from untaped.config.models import SettingEntry, Source, display_default, display
 from untaped.config.ports import SettingsReader, SettingsRepository
 from untaped.config_schema import FieldDescriptor
 from untaped.errors import ConfigError
+from untaped.profile_resolver import DEFAULT_PROFILE
 
 _UNRESOLVED: Any = object()
 
@@ -83,7 +85,7 @@ class ListAllProfilesSettings:
         entries: list[SettingEntry] = []
         for profile_name in self._repo.profile_names():
             profile = self._repo.profile_data(profile_name) or {}
-            for path, value in _iter_leaves(profile, ()):
+            for path, value in _iter_leaves(profile, (), stop_at=descriptors_by_path):
                 descriptor = descriptors_by_path.get(path)
                 if descriptor is None:
                     continue
@@ -121,7 +123,7 @@ def setting_entry_for_descriptor(
     in_env = repo.env_value_for(descriptor) is not None
     source = _resolve_source(
         in_env,
-        resolved_provenance.get(descriptor.path),
+        _provenance_for(resolved_provenance, descriptor),
         descriptor,
         current,
     )
@@ -135,17 +137,43 @@ def setting_entry_for_descriptor(
 
 
 def _iter_leaves(
-    data: dict[str, Any], prefix: tuple[str, ...]
+    data: dict[str, Any],
+    prefix: tuple[str, ...],
+    *,
+    stop_at: Container[tuple[str, ...]] = (),
 ) -> list[tuple[tuple[str, ...], Any]]:
-    """Yield ``(path, value)`` pairs for every scalar leaf of ``data``."""
+    """Yield ``(path, value)`` pairs for every leaf of ``data``.
+
+    A mapping whose path is in ``stop_at`` (a mapping-typed setting such as
+    ``ui.symbols``) is one leaf rather than a subtree.
+    """
     out: list[tuple[tuple[str, ...], Any]] = []
     for key, value in data.items():
         path = (*prefix, key)
-        if isinstance(value, dict):
-            out.extend(_iter_leaves(value, path))
+        if isinstance(value, dict) and path not in stop_at:
+            out.extend(_iter_leaves(value, path, stop_at=stop_at))
         else:
             out.append((path, value))
     return out
+
+
+def _provenance_for(
+    provenance: dict[tuple[str, ...], str], descriptor: FieldDescriptor
+) -> str | None:
+    """The profile supplying ``descriptor``; a mapping's comes from its entries.
+
+    Provenance is recorded per scalar leaf, so a mapping setting takes the
+    profile of its entries, preferring the selected profile over ``default``
+    when both contribute.
+    """
+    exact = provenance.get(descriptor.path)
+    if exact is not None or not descriptor.is_collection:
+        return exact
+    depth = len(descriptor.path)
+    owners = {name for path, name in provenance.items() if path[:depth] == descriptor.path}
+    return next(iter(sorted(owners - {DEFAULT_PROFILE})), None) or (
+        DEFAULT_PROFILE if owners else None
+    )
 
 
 def _resolve_source(

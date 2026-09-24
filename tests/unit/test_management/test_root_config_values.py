@@ -289,3 +289,53 @@ def test_prompt_repairs_key_in_invalid_section(_isolated_config: Path) -> None:
     assert _default_profile(_isolated_config)["jira"] == {"timeout": 12.0}
     # The raw stored (invalid) value is offered as the default.
     assert backend.calls == [("text", "Value for jira.timeout")]
+
+
+# ── non-scalar (mapping / list) settings ─────────────────────────────────────
+
+
+@pytest.mark.parametrize("raw", ['{"ok": "Y", "fail": "N"}', "{ok: Y, fail: N}"])
+def test_set_mapping_setting_from_json_or_yaml(_isolated_config: Path, raw: str) -> None:
+    result = _invoke(["set", "ui.symbols", raw])
+    assert result.exit_code == 0, result.output
+    assert _default_profile(_isolated_config)["ui"] == {"symbols": {"ok": "Y", "fail": "N"}}
+
+
+@pytest.mark.parametrize("raw", ["[1, 2]", "{bad", "plain"])
+def test_set_mapping_setting_rejects_a_value_of_the_wrong_shape(
+    _isolated_config: Path, raw: str
+) -> None:
+    result = _invoke(["set", "ui.symbols", raw])
+    assert result.exit_code == 1
+    assert "invalid value for 'ui.symbols'" in result.stderr
+    assert not _isolated_config.exists() or "ui" not in _default_profile(_isolated_config)
+
+
+def test_get_and_list_render_mapping_settings(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      symbols: {ok: Y}\n")
+
+    raw = _invoke(["get", "ui.symbols"])
+    assert raw.exit_code == 0, raw.output
+    assert raw.stdout.strip() == '{"ok": "Y"}'
+
+    as_json = _invoke(["get", "ui.symbols", "--format", "json"])
+    assert json.loads(as_json.stdout)["value"] == {"ok": "Y"}
+
+    rows = json.loads(_invoke(["list", "--format", "json"]).stdout)
+    symbols = next(row for row in rows if row["key"] == "ui.symbols")
+    assert symbols["value"] == {"ok": "Y"}
+    assert symbols["source"] == "profile:default"
+
+    everywhere = json.loads(_invoke(["list", "--all-profiles", "--format", "json"]).stdout)
+    assert {"key": "ui.symbols", "value": {"ok": "Y"}} in [
+        {"key": row["key"], "value": row["value"]} for row in everywhere
+    ]
+
+
+def test_unset_removes_the_whole_mapping(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    ui:\n      symbols: {ok: Y, fail: N}\n"
+    )
+    result = _invoke(["unset", "ui.symbols"])
+    assert result.exit_code == 0, result.output
+    assert "symbols" not in (_default_profile(_isolated_config).get("ui") or {})

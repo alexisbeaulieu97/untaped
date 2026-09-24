@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+CLI polish: root options, broken pipes, structured output and root
+mutations. Items marked **behavior change** alter output, exit codes, or
+defaults.
+
+- Core
+  - Fixed: root options (`--profile`, `--verbose`/`-v`, `--quiet`/`-q`)
+    placed between command names, as in `untaped github --profile work
+    whoami`, failed with "Unknown command". They now work before, between
+    and after command names at any depth.
+  - Fixed: `untaped --help | head` (help into a closed pipe) exited 1 through
+    Rich's broken-pipe handler. It now exits 0 quietly, like data commands.
+  - `config set/unset` and `profile create/delete/rename` take `--format`,
+    `--columns` and `--dry-run`, and print `untaped.setting_outcome` /
+    `untaped.profile_outcome` records (table by default) after the existing
+    stderr message. `--dry-run` validates and writes nothing; `profile delete
+    --dry-run` shows the preview without prompting.
+  - Mapping and list settings (`ui.symbols`, `ui.color_roles`,
+    `ansible.dependency_paths`) show up in `config list/get` (compact JSON in
+    table/raw, native values in json/yaml/pipe). `config set KEY VALUE` takes
+    their whole value as JSON or YAML, validated against the setting's type,
+    and `config unset` removes the whole key. They were "unknown setting"
+    before.
+- awx
+  - **Behavior change:** `jobs events` and `jobs logs` with several ids print
+    one json/yaml array instead of one document per job. Event and log rows
+    carry the job id as `job` (first in the default json/yaml event columns;
+    log rows are `{job, line}`, and `raw`/`table` still show the line).
+    `--follow --format json` still streams NDJSON.
+
 Correctness and safety fixes from a whole-codebase review. Items marked
 **behavior change** alter output, exit codes, or defaults.
 
