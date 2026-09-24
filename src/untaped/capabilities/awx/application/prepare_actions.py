@@ -122,6 +122,65 @@ def _extra_var_names(value: Any) -> set[str]:
     return set(value) if isinstance(value, dict) else set()
 
 
+_PARENT_IDS_PER_REQUEST = 100
+"""Keeps an ``inventory__in`` query URL well inside common length limits."""
+
+
+def _sources_by_parent(
+    client: ResourceClient,
+    catalog: Catalog,
+    source_spec: ResourceSpec,
+    parent_field: str,
+    parent_ids: Sequence[int],
+) -> dict[int, list[SelectedResource]]:
+    """List every parent's sources with ``<parent>__in`` (one request per 100 parents)."""
+    ids = list(dict.fromkeys(parent_ids))
+    by_parent: dict[int, list[SelectedResource]] = {}
+    for start in range(0, len(ids), _PARENT_IDS_PER_REQUEST):
+        chunk = ids[start : start + _PARENT_IDS_PER_REQUEST]
+        sources = SelectionResolver(client, catalog).resolve(
+            source_spec,
+            SelectionRequest(
+                filters={f"{parent_field}__in": ",".join(map(str, chunk))},
+                require_explicit=True,
+            ),
+        )
+        for source in sources:
+            parent = source.record.get(parent_field)
+            if isinstance(parent, int) and parent in chunk:
+                by_parent.setdefault(parent, []).append(source)
+    return by_parent
+
+
+def _expand_sources(
+    client: ResourceClient,
+    catalog: Catalog,
+    spec: ResourceSpec,
+    selected: Sequence[SelectedResource],
+    source_spec: ResourceSpec,
+) -> tuple[ResourceSpec, tuple[SelectedResource, ...]]:
+    """Freeze each selected inventory's current sources, in selection order."""
+    parent_field = source_spec.parent_field or spec.kind.lower()
+    for item in selected:
+        if item.record.get("kind", "") not in ("", "constructed"):
+            raise ConfigError(
+                f"{spec.kind} {item.name!r} (id={item.id}): "
+                f"sync is unsupported for {item.record.get('kind')}"
+            )
+    by_parent = _sources_by_parent(
+        client, catalog, source_spec, parent_field, [item.id for item in selected]
+    )
+    expanded: dict[int, SelectedResource] = {}
+    for item in selected:
+        sources = by_parent.get(item.id)
+        if not sources:
+            raise ConfigError(
+                f"{spec.kind} {item.name!r} (id={item.id}): no inventory sources to sync"
+            )
+        expanded.update((source.id, source) for source in sources)
+    return source_spec, tuple(expanded.values())
+
+
 def prepare_action_targets(
     client: ResourceClient,
     catalog: Catalog,
@@ -147,21 +206,9 @@ def prepare_action_targets(
     targets = tuple(selected)
     action_spec = next((item for item in spec.actions if item.name == action), None)
     if action_spec is not None and action_spec.expand_to is not None:
-        source_spec = catalog.get(action_spec.expand_to)
-        parent_field = source_spec.parent_field or spec.kind.lower()
-        expanded: dict[int, SelectedResource] = {}
-        for item in selected:
-            label = f"{spec.kind} {item.name!r} (id={item.id})"
-            if item.record.get("kind", "") not in ("", "constructed"):
-                raise ConfigError(f"{label}: sync is unsupported for {item.record.get('kind')}")
-            sources = SelectionResolver(client, catalog).resolve(
-                source_spec,
-                SelectionRequest(filters={parent_field: str(item.id)}, require_explicit=True),
-            )
-            if not sources:
-                raise ConfigError(f"{label}: no inventory sources to sync")
-            expanded.update((source.id, source) for source in sources)
-        spec, targets = source_spec, tuple(expanded.values())
+        spec, targets = _expand_sources(
+            client, catalog, spec, selected, catalog.get(action_spec.expand_to)
+        )
     for item in targets:
         if spec.kind == "InventorySource" and item.record.get("source") in (None, "", "file"):
             raise ConfigError(f"inventory source {q(item.name)} (id={item.id}): no syncable source")

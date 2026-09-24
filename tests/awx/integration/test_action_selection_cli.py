@@ -189,6 +189,36 @@ def test_inventory_sync_freezes_all_sources_before_first_post(fake_aap: Any) -> 
     ]
 
 
+def test_inventory_sync_lists_sources_for_every_inventory_in_one_request(fake_aap: Any) -> None:
+    seed(fake_aap)
+    fake_aap.seed("inventories", id=21, name="stage", organization=1, kind="")
+    fake_aap.seed("inventory_sources", id=33, name="stage-cloud", inventory=21, source="ec2")
+    fake_aap.seed("inventory_sources", id=31, name="other", inventory=20, source="scm")
+
+    result = CliInvoker().invoke(app, ["inventories", "sync", "--all", "--yes", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert [row["target_id"] for row in json.loads(result.stdout)] == [30, 31, 33]
+    source_lists = [
+        call.request
+        for call in fake_aap.router.calls
+        if call.request.method == "GET" and call.request.url.path.endswith("/inventory_sources/")
+    ]
+    assert len(source_lists) == 1
+    assert source_lists[0].url.params["inventory__in"] == "20,21"
+
+
+def test_inventory_sync_names_the_inventory_without_sources(fake_aap: Any) -> None:
+    seed(fake_aap)
+    fake_aap.seed("inventories", id=21, name="empty", organization=1, kind="")
+
+    result = CliInvoker().invoke(app, ["inventories", "sync", "--all", "--yes"])
+
+    assert result.exit_code != 0
+    assert "'empty' (id=21): no inventory sources to sync" in result.output
+    assert fake_aap.actions_called == []
+
+
 @pytest.mark.parametrize("continue_", [False, True])
 def test_launch_runtime_failure_retains_success_and_skips_without_retry(
     fake_aap: Any, continue_: bool
@@ -489,6 +519,37 @@ def test_single_named_launch_does_not_prompt(fake_aap: Any) -> None:
     )
     assert result.exit_code == 0, result.output
     assert backend.calls == []
+
+
+@pytest.mark.parametrize("flag", ["--wait", "--track"])
+@pytest.mark.parametrize(
+    ("command", "name"), [("job-templates launch", "deploy"), ("projects sync", "playbooks")]
+)
+def test_timeout_stops_waiting_and_names_the_running_execution(
+    fake_aap: Any, flag: str, command: str, name: str
+) -> None:
+    seed(fake_aap)
+    fake_aap.next_action_status = "running"
+
+    result = CliInvoker().invoke(
+        app, [*command.split(), name, flag, "--timeout", "0", "--format", "json"]
+    )
+
+    assert result.exit_code == 1, result.output
+    row = json.loads(result.stdout)[0]
+    assert (row["status"], row["action"]) == ("running", "failed")
+    assert row["detail"] == "still running after --timeout 0s; it keeps running"
+    kind = row["kind"]
+    assert f"hint: run `untaped awx jobs wait {row['id']} --kind {kind}`" in result.stderr
+
+
+@pytest.mark.parametrize("command", ["job-templates launch deploy", "projects sync playbooks"])
+def test_timeout_needs_wait_or_track_and_a_non_negative_value(fake_aap: Any, command: str) -> None:
+    seed(fake_aap)
+    for extra in (["--timeout", "5"], ["--wait", "--timeout", "-1"]):
+        result = CliInvoker().invoke(app, [*command.split(), *extra])
+        assert result.exit_code == 2, result.output
+    assert fake_aap.actions_called == []
 
 
 @pytest.mark.parametrize("flag", ["--wait", "--track"])

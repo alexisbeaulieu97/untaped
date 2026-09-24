@@ -790,3 +790,53 @@ def test_patch_accepts_real_awx_fields(
     assert result.exit_code == 0, result.output + (result.stderr or "")
     assert "not in this tool's known schema" not in (result.stderr or "")
     assert fake_aap.get_record(path, 10)[field] == expected
+
+
+def _gets(fake: Any, path: str) -> int:
+    return sum(
+        1
+        for call in fake.router.calls
+        if call.request.method == "GET" and call.request.url.path.endswith(path)
+    )
+
+
+def test_patch_reads_organization_from_summary_fields(fake_aap: Any) -> None:
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=10,
+        name="deploy",
+        organization=1,
+        verbosity=0,
+        summary_fields={"organization": {"id": 1, "name": "Default"}},
+    )
+
+    result = CliInvoker().invoke(
+        app,
+        ["job-templates", "patch", "deploy", "--org", "Default", "--set", "verbosity=2", "--yes"],
+    )
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert fake_aap.get_record("job_templates", 10)["verbosity"] == 2
+    assert _gets(fake_aap, "/organizations/1/") == 0
+    assert _gets(fake_aap, "/organizations/") == 0
+
+
+def test_patch_scoped_batch_reads_the_parent_once(fake_aap: Any) -> None:
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("inventories", id=7, name="prod", organization=1, kind="")
+    for i in range(5):
+        fake_aap.seed("hosts", id=100 + i, name=f"h{i}", inventory=7, description="")
+
+    result = CliInvoker().invoke(
+        app,
+        [
+            *("hosts", "patch", "--all", "--inventory", "prod", "--inventory-org", "Default"),
+            *("--set", "description=x", "--yes"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert {r["description"] for r in fake_aap.list_records("hosts")} == {"x"}
+    # One read for the selection's scope check, one for the patch ancestry.
+    assert _gets(fake_aap, "/inventories/7/") == 2

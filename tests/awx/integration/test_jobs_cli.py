@@ -472,6 +472,27 @@ def test_launch_track_exits_one_on_job_failure(fake_aap: Any) -> None:
     assert result.exit_code == 1
 
 
+def test_launch_track_shows_the_failure_reason(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.capabilities.awx.domain import JobEvent
+
+    _seed_basic_jt(fake_aap, job_status="failed")
+    failed = JobEvent(
+        counter=1,
+        event="runner_on_failed",
+        host_name="web-01",
+        stdout='fatal: [web-01]: FAILED! => {"msg": "disk full"}',
+    )
+    monkeypatch.setattr(PollingJobMonitor, "stream_events", lambda *_a, **_k: iter([failed]))
+
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "deploy", "--track"])
+
+    assert result.exit_code == 1
+    assert "[deploy]   failed: web-01" in result.stderr
+    assert '[deploy]     fatal: [web-01]: FAILED! => {"msg": "disk full"}' in result.stderr
+
+
 def test_launch_track_parallel_drains_concurrently(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -37,3 +37,15 @@ class JobRecordRepository:
 
     def get(self, *, kind: str, job_id: int) -> dict[str, Any]:
         return self._client.request("GET", f"{KIND_TO_API_PATH.get(kind, kind)}/{job_id}/")
+
+    def cancel(self, *, kind: str, job_id: int) -> None:
+        """``POST <collection>/<id>/cancel/``: AWX answers 202 and stops the job later."""
+        self._client.request("POST", f"{KIND_TO_API_PATH.get(kind, kind)}/{job_id}/cancel/")
+
+    def relaunch(self, *, kind: str, job_id: int, hosts: str | None = None) -> dict[str, Any]:
+        """``POST <collection>/<id>/relaunch/``; returns the new execution record."""
+        return self._client.request(
+            "POST",
+            f"{KIND_TO_API_PATH.get(kind, kind)}/{job_id}/relaunch/",
+            json={"hosts": hosts} if hosts else {},
+        )
