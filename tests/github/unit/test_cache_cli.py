@@ -1,11 +1,10 @@
-"""End-to-end CLI tests for ``untaped github cache``."""
+"""End-to-end CLI tests for ``untaped github cache`` against real local Git repos."""
 
 from __future__ import annotations
 
 import json
 import re
-import subprocess
-from collections.abc import Iterator
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
@@ -13,173 +12,115 @@ import pytest
 import respx
 
 from untaped.capabilities.github.cli import app
-from untaped.capabilities.github.settings import GithubSettings
-from untaped.settings import get_settings, register_profile_settings
-from untaped.testing import CliInvoker, assert_destructive_contract
+from untaped.testing import CliInvoker, CliResult, assert_destructive_contract
+
+SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
 
 
 @pytest.fixture(autouse=True)
-def _reset_settings_cache() -> Iterator[None]:
-    register_profile_settings("github", GithubSettings)
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
-
-
-def _write_config(tmp_path: Path) -> Path:
+def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config.yml"
-    corpus = tmp_path / "corpus"
     cfg.write_text(
-        f"profiles:\n  default:\n    github:\n      token: ghp_test\n      corpus_path: {corpus}\n"
+        "profiles:\n  default:\n    github:\n      token: ghp_test\n"
+        f"      corpus_path: {tmp_path / 'corpus'}\n"
     )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     return cfg
 
 
-def _git(cwd: Path, *args: str) -> None:
-    result = subprocess.run(
-        ["git", *args],
-        cwd=cwd,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-
-
-def _source_repo(tmp_path: Path, name: str, files: dict[str, str]) -> Path:
-    repo = tmp_path / name
-    repo.mkdir()
-    _git(repo, "init", "-q")
-    _git(repo, "config", "user.email", "a@example.com")
-    _git(repo, "config", "user.name", "A")
-    _git(repo, "config", "commit.gpgsign", "false")
-    for rel, content in files.items():
-        path = repo / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
-    _git(repo, "add", ".")
-    _git(repo, "commit", "-q", "-m", "init")
-    _git(repo, "branch", "-M", "main")
-    return repo
-
-
 def _repo(full_name: str, source: Path, *, archived: bool = False) -> dict[str, object]:
-    name = full_name.rsplit("/", 1)[1]
     return {
         "full_name": full_name,
-        "name": name,
+        "name": full_name.rsplit("/", 1)[1],
         "html_url": f"https://github.com/{full_name}",
         "clone_url": source.as_uri(),
-        "ssh_url": f"git@github.com:{full_name}.git",
         "default_branch": "main",
-        "private": True,
         "archived": archived,
-        "fork": False,
+        "pushed_at": "2026-07-01T00:00:00Z",
     }
 
 
-def _populate_cache(tmp_path: Path, repos: list[dict[str, object]], *, org: str = "acme") -> None:
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get(f"/orgs/{org}/repos").mock(return_value=httpx.Response(200, json=repos))
-        result = CliInvoker().invoke(
-            app,
-            ["sweep", "--org", org, "--has-file", "README.md", "--format", "json"],
-        )
+def _cache(args: list[str], *, org: dict[str, list[dict[str, object]]] | None = None) -> CliResult:
+    """Run ``<args>``; ``org`` maps an org name to its ``/orgs/<org>/repos`` listing."""
+    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
+        for name, repos in (org or {}).items():
+            mock.get(f"/orgs/{name}/repos").mock(return_value=httpx.Response(200, json=repos))
+        return CliInvoker().invoke(app, args)
+
+
+def _rows(result: CliResult) -> list[str]:
     assert result.exit_code == 0, result.output
+    return [row["repo"] for row in json.loads(result.stdout)]
 
 
-def test_cache_status_reports_profile_disk_freshness(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-    source = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
-    _populate_cache(tmp_path, [_repo("acme/api", source)])
+def _cached() -> list[str]:
+    return _rows(CliInvoker().invoke(app, ["cache", "status", "--format", "json"]))
 
-    result = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
 
-    assert result.exit_code == 0, result.output
-    [row] = json.loads(result.stdout)
-    assert row["repo"] == "acme/api"
-    assert row["profile"] == "default"
+def _populate(source_repo: SourceRepo, *full_names: str) -> dict[str, dict[str, object]]:
+    listings: dict[str, dict[str, object]] = {}
+    for full_name in full_names:
+        org, name = full_name.split("/")
+        listings[full_name] = _repo(full_name, source_repo(name, {"README.md": "hello\n"}))
+        sync = ["cache", "sync", "--org", org, "--format", "json"]
+        assert _rows(_cache(sync, org={org: [listings[full_name]]})) == [full_name]
+    return listings
+
+
+def test_cache_status_reports_profile_size_and_freshness(source_repo: SourceRepo) -> None:
+    _populate(source_repo, "acme/api")
+
+    as_json = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
+    table = CliInvoker().invoke(app, ["cache", "status"])
+
+    [row] = json.loads(as_json.stdout)
+    assert (row["repo"], row["profile"]) == ("acme/api", "default")
     assert row["disk_bytes"] > 0
-    assert re.search(r"Cache: 1 repo, [0-9.]+ KiB, oldest just now, newest just now", result.stderr)
+    assert re.search(
+        r"Cache: 1 repo, [0-9.]+ KiB, oldest just now, newest just now", as_json.stderr
+    )
+    assert "KiB" in table.stdout
+    assert "just now" in table.stdout
+    assert "disk_bytes" not in table.stdout
 
 
-def test_cache_status_table_shows_readable_size_and_age(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-    source = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
-    _populate_cache(tmp_path, [_repo("acme/api", source)])
+def test_cache_sync_warms_the_corpus_without_a_query(source_repo: SourceRepo) -> None:
+    listed = [_repo("acme/api", source_repo("api", {"README.md": "hello\n"}))]
 
-    result = CliInvoker().invoke(app, ["cache", "status"])
-
-    assert result.exit_code == 0, result.output
-    assert "KiB" in result.stdout
-    assert "just now" in result.stdout
-    assert "disk_bytes" not in result.stdout
-
-
-def test_cache_sync_warms_the_corpus_without_a_query(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-    source = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
-    listed = [{**_repo("acme/api", source), "pushed_at": "2026-07-01T00:00:00Z"}]
-
-    def sync(*extra: str) -> list[dict[str, object]]:
-        with respx.mock(base_url="https://api.github.com") as mock:
-            mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=listed))
-            result = CliInvoker().invoke(
-                app, ["cache", "sync", "--org", "acme", "--format", "json", *extra]
-            )
+    def sync(*extra: str) -> dict[str, object]:
+        result = _cache(
+            ["cache", "sync", "--org", "acme", "--format", "json", *extra], org={"acme": listed}
+        )
         assert result.exit_code == 0, result.output
         assert result.stderr.splitlines()[-1].startswith("sync: 1 ")
-        rows: list[dict[str, object]] = json.loads(result.stdout)
-        return rows
+        [row] = json.loads(result.stdout)
+        return dict(row)
 
-    [first] = sync()
-    [second] = sync()
-    [forced] = sync("--refresh")
+    first, second, forced = sync(), sync(), sync("--refresh")
 
     assert list(first) == ["repo", "fetched_at", "error", "action"]
     assert (first["repo"], first["action"]) == ("acme/api", "synced")
     assert second["action"] == "skipped"
     assert forced["action"] == "synced"
-    status = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
-    assert [row["repo"] for row in json.loads(status.stdout)] == ["acme/api"]
+    assert _cached() == ["acme/api"]
 
 
 def test_cache_sync_skips_fetch_when_github_reports_no_push(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    _config: Path, source_repo: SourceRepo
 ) -> None:
-    cfg = _write_config(tmp_path)
-    cfg.write_text(cfg.read_text() + "      sweep:\n        max_age_seconds: 0\n")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    source = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
-    listed = [{**_repo("acme/api", source), "pushed_at": "2026-07-01T00:00:00Z"}]
-    actions = []
-    for _ in range(2):
-        with respx.mock(base_url="https://api.github.com") as mock:
-            mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=listed))
-            result = CliInvoker().invoke(app, ["cache", "sync", "--org", "acme", "-f", "json"])
-        assert result.exit_code == 0, result.output
-        actions.append(json.loads(result.stdout)[0]["action"])
+    _config.write_text(_config.read_text() + "      sweep:\n        max_age_seconds: 0\n")
+    listed = [_repo("acme/api", source_repo("api", {"README.md": "hello\n"}))]
+    args = ["cache", "sync", "--org", "acme", "-f", "json"]
+
+    actions = [json.loads(_cache(args, org={"acme": listed}).stdout)[0]["action"] for _ in range(2)]
 
     assert actions == ["synced", "unchanged"]
 
 
-def test_cache_sync_failure_exits_1_and_names_the_repo(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-    missing = tmp_path / "missing"
+def test_cache_sync_failure_exits_1_and_names_the_repo(tmp_path: Path) -> None:
+    listed = [_repo("acme/gone", tmp_path / "missing")]
 
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/orgs/acme/repos").mock(
-            return_value=httpx.Response(200, json=[_repo("acme/gone", missing)])
-        )
-        result = CliInvoker().invoke(app, ["cache", "sync", "--org", "acme", "-f", "json"])
+    result = _cache(["cache", "sync", "--org", "acme", "-f", "json"], org={"acme": listed})
 
     assert result.exit_code == 1, result.output
     assert json.loads(result.stdout)[0]["action"] == "failed"
@@ -187,227 +128,90 @@ def test_cache_sync_failure_exits_1_and_names_the_repo(
     assert "sync: 1 failed" in result.stderr
 
 
-def test_cache_sync_requires_a_scope(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-
-    result = CliInvoker().invoke(app, ["cache", "sync"])
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["sync"], "cache sync requires --org, --team, --repo, or --stdin"),
+        (["delete"], "cache delete requires REPO arguments or --all"),
+        (["delete", "acme/api", "--all", "--yes"], "pass REPO arguments or --all, not both"),
+        (["prune", "--yes"], "cache prune requires --org"),
+        (["prune", "--team", "acme/backend", "--yes"], "--team"),
+        (["clean"], "cache clean requires exactly one of --repo, --all, or --prune"),
+        (["clean", "--repo", "a/b", "--all", "--yes"], "requires exactly one"),
+        (["clean", "--prune", "--yes"], "cache clean --prune requires --org"),
+    ],
+)
+def test_cache_selection_usage_errors_exit_2(args: list[str], message: str) -> None:
+    result = CliInvoker().invoke(app, ["cache", *args])
 
     assert result.exit_code == 2, result.output
-    assert "cache sync requires --org, --team, --repo, or --stdin" in result.stderr
+    assert message in result.output
 
 
-def test_cache_prune_removes_departed_repos(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("args", "deleted", "remaining"),
+    [
+        (["--all", "--org", "ACME"], ["acme/api"], ["other/tool"]),
+        (["acme/api", "--org", "other"], [], ["acme/api", "other/tool"]),
+        (["ACME/Api"], ["acme/api"], ["other/tool"]),
+        (["--all"], ["acme/api", "other/tool"], []),
+        (["--all", "--dry-run"], ["acme/api", "other/tool"], ["acme/api", "other/tool"]),
+    ],
+    ids=["all-in-org", "org-filters-names", "case-insensitive", "all", "dry-run"],
+)
+def test_cache_delete_selects_cached_repos(
+    source_repo: SourceRepo, args: list[str], deleted: list[str], remaining: list[str]
 ) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-    api = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
-    worker = _source_repo(tmp_path, "worker", {"README.md": "hello\n"})
-    _populate_cache(tmp_path, [_repo("acme/api", api), _repo("acme/worker", worker)])
+    _populate(source_repo, "acme/api", "other/tool")
 
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/orgs/acme/repos").mock(
-            return_value=httpx.Response(200, json=[_repo("acme/api", api)])
-        )
-        rejected = CliInvoker().invoke(
-            app,
-            ["cache", "prune", "--org", "acme", "--format", "json"],
-        )
-    listed_after_reject = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
+    result = CliInvoker().invoke(app, ["cache", "delete", *args, "--yes", "--format", "json"])
 
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/orgs/acme/repos").mock(
-            return_value=httpx.Response(200, json=[_repo("acme/api", api)])
-        )
-        pruned = CliInvoker().invoke(
-            app,
-            ["cache", "prune", "--org", "acme", "--yes", "--format", "json"],
-        )
-    listed_after_prune = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
-
-    assert rejected.exit_code != 0
-    assert {row["repo"] for row in json.loads(listed_after_reject.stdout)} == {
-        "acme/api",
-        "acme/worker",
-    }
-    assert pruned.exit_code == 0, pruned.output
-    assert [row["repo"] for row in json.loads(pruned.stdout)] == ["acme/worker"]
-    assert [row["repo"] for row in json.loads(listed_after_prune.stdout)] == ["acme/api"]
+    assert _rows(result) == deleted
+    assert _cached() == remaining
 
 
-def test_cache_prune_has_no_team_option(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-    source = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
-    _populate_cache(tmp_path, [_repo("acme/api", source)])
+def test_cache_delete_repo_conforms_to_destructive_contract(source_repo: SourceRepo) -> None:
+    _populate(source_repo, "acme/api")
 
-    result = CliInvoker().invoke(
+    def corpus_still_has_repo() -> None:
+        assert _cached() == ["acme/api"]
+
+    assert_destructive_contract(
         app,
-        ["cache", "prune", "--team", "acme/backend", "--yes", "--format", "json"],
-    )
-    listed = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
-
-    assert result.exit_code != 0
-    assert "--team" in result.output
-    assert [row["repo"] for row in json.loads(listed.stdout)] == ["acme/api"]
-
-
-def test_cache_delete_all_with_org_only_removes_that_org(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-    api = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
-    tool = _source_repo(tmp_path, "tool", {"README.md": "hello\n"})
-    _populate_cache(tmp_path, [_repo("acme/api", api)])
-    _populate_cache(tmp_path, [_repo("other/tool", tool)], org="other")
-
-    cleaned = CliInvoker().invoke(
-        app, ["cache", "delete", "--all", "--org", "ACME", "--yes", "--format", "json"]
-    )
-    listed = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
-
-    assert cleaned.exit_code == 0, cleaned.output
-    assert [row["repo"] for row in json.loads(cleaned.stdout)] == ["acme/api"]
-    assert [row["repo"] for row in json.loads(listed.stdout)] == ["other/tool"]
-
-
-def test_cache_delete_repo_with_org_filters_selection(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-    api = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
-    _populate_cache(tmp_path, [_repo("acme/api", api)])
-
-    cleaned = CliInvoker().invoke(
-        app,
-        ["cache", "delete", "acme/api", "--org", "other", "--yes", "--format", "json"],
-    )
-    listed = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
-
-    assert cleaned.exit_code == 0, cleaned.output
-    assert json.loads(cleaned.stdout) == []
-    assert [row["repo"] for row in json.loads(listed.stdout)] == ["acme/api"]
-
-
-def test_cache_clean_requires_exactly_one_mode(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-
-    missing = CliInvoker().invoke(app, ["cache", "clean", "--format", "json"])
-    combined = CliInvoker().invoke(
-        app,
-        ["cache", "clean", "--repo", "acme/api", "--all", "--yes", "--format", "json"],
+        ["cache", "delete", "acme/api", "--format", "json"],
+        assert_unchanged=corpus_still_has_repo,
     )
 
-    assert missing.exit_code == 2
-    assert "requires exactly one" in missing.output
-    assert combined.exit_code == 2
-    assert "requires exactly one" in combined.output
+
+def test_cache_prune_deletes_departed_and_archived_repos(source_repo: SourceRepo) -> None:
+    listings = _populate(source_repo, "acme/api", "acme/old", "acme/worker")
+    live = {"acme": [listings["acme/api"], {**listings["acme/old"], "archived": True}]}
+    args = ["cache", "prune", "--org", "acme", "--format", "json"]
+
+    refused = _cache(args, org=live)
+    kept = _cached()
+    pruned = _cache([*args, "--yes"], org=live)
+
+    assert refused.exit_code == 2
+    assert "requires --yes" in refused.stderr
+    assert kept == ["acme/api", "acme/old", "acme/worker"]
+    assert _rows(pruned) == ["acme/old", "acme/worker"]
+    assert _cached() == ["acme/api"]
 
 
-def test_cache_clean_still_works_and_warns_it_is_deprecated(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-    source = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
-    _populate_cache(tmp_path, [_repo("acme/api", source)])
+def test_cache_clean_still_works_and_warns_it_is_deprecated(source_repo: SourceRepo) -> None:
+    _populate(source_repo, "acme/api")
 
     cleaned = CliInvoker().invoke(
         app, ["cache", "clean", "--repo", "acme/api", "--yes", "--format", "json"]
     )
 
-    assert cleaned.exit_code == 0, cleaned.output
-    assert [row["repo"] for row in json.loads(cleaned.stdout)] == ["acme/api"]
+    assert _rows(cleaned) == ["acme/api"]
     assert "warning: `cache clean` is deprecated" in cleaned.stderr
 
 
-def test_cache_delete_and_prune_selection_errors_exit_2(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-
-    missing = CliInvoker().invoke(app, ["cache", "delete"])
-    combined = CliInvoker().invoke(app, ["cache", "delete", "acme/api", "--all", "--yes"])
-    no_org = CliInvoker().invoke(app, ["cache", "prune", "--yes"])
-
-    assert missing.exit_code == 2
-    assert "cache delete requires REPO arguments or --all" in missing.stderr
-    assert combined.exit_code == 2
-    assert "not both" in combined.stderr
-    assert no_org.exit_code == 2
-    assert "cache prune requires --org" in no_org.stderr
-
-
-def test_cache_delete_dry_run_lists_without_deleting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-    source = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
-    _populate_cache(tmp_path, [_repo("acme/api", source)])
-
-    planned = CliInvoker().invoke(
-        app, ["cache", "delete", "--all", "--dry-run", "--yes", "--format", "json"]
-    )
-    listed = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
-
-    assert planned.exit_code == 0, planned.output
-    assert [row["repo"] for row in json.loads(planned.stdout)] == ["acme/api"]
-    assert [row["repo"] for row in json.loads(listed.stdout)] == ["acme/api"]
-
-
-def test_cache_delete_all_requires_yes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-    source = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
-    _populate_cache(tmp_path, [_repo("acme/api", source)])
-
-    result = CliInvoker().invoke(app, ["cache", "delete", "--all", "--format", "json"])
-    listed = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
-
-    assert result.exit_code != 0
-    assert "requires --yes" in result.output
-    assert [row["repo"] for row in json.loads(listed.stdout)] == ["acme/api"]
-
-
-def test_cache_delete_repo_conforms_to_destructive_contract(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-    source = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
-    _populate_cache(tmp_path, [_repo("acme/api", source)])
-
-    def _corpus_still_has_repo() -> None:
-        listed = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
-        assert listed.exit_code == 0, listed.output
-        assert [row["repo"] for row in json.loads(listed.stdout)] == ["acme/api"]
-
-    assert_destructive_contract(
-        app,
-        ["cache", "delete", "acme/api", "--format", "json"],
-        assert_unchanged=_corpus_still_has_repo,
-    )
-
-
-def test_cache_delete_all_yes_removes_every_cached_repo(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-    api = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
-    worker = _source_repo(tmp_path, "worker", {"README.md": "hello\n"})
-    _populate_cache(tmp_path, [_repo("acme/api", api), _repo("acme/worker", worker)])
-
-    cleaned = CliInvoker().invoke(app, ["cache", "delete", "--all", "--yes", "--format", "json"])
-    listed = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
-
-    assert cleaned.exit_code == 0, cleaned.output
-    assert {row["repo"] for row in json.loads(cleaned.stdout)} == {"acme/api", "acme/worker"}
-    assert listed.stdout == "[]\n"
-
-
-def test_cache_worktree_materializes_cached_ref(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-    source = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
-    _populate_cache(tmp_path, [_repo("acme/api", source)])
+def test_cache_worktree_materializes_cached_ref(source_repo: SourceRepo) -> None:
+    _populate(source_repo, "acme/api")
 
     result = CliInvoker().invoke(app, ["cache", "worktree", "acme/api", "--format", "json"])
 
@@ -415,16 +219,3 @@ def test_cache_worktree_materializes_cached_ref(
     row = json.loads(result.stdout)
     assert row["repo"] == "acme/api"
     assert (Path(row["path"]) / "README.md").is_file()
-
-
-def test_cache_delete_repo_matches_case_insensitively(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
-    api = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
-    _populate_cache(tmp_path, [_repo("acme/api", api)])
-
-    cleaned = CliInvoker().invoke(app, ["cache", "delete", "ACME/Api", "--yes", "--format", "json"])
-
-    assert cleaned.exit_code == 0, cleaned.output
-    assert [row["repo"] for row in json.loads(cleaned.stdout)] == ["acme/api"]
