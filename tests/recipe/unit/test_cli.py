@@ -1100,6 +1100,32 @@ def test_apply_var_values_parse_by_declared_type(
             assert "expects YAML" not in result.output
 
 
+@pytest.mark.parametrize(
+    ("vars_file", "extra", "code", "message"),
+    [
+        (None, [], 1, "--vars-file file not found"),
+        ("[unclosed\n", [], 1, "--vars-file file is invalid YAML"),
+        ("- a\n", [], 1, "--vars-file file must contain a YAML mapping"),
+        ("{}\n", ["--hook-timeout", "-1"], 2, "--hook-timeout must be greater than or equal to 0"),
+    ],
+)
+def test_apply_rejects_bad_vars_file_and_hook_timeout(
+    tmp_path: Path, vars_file: str | None, extra: list[str], code: int, message: str
+) -> None:
+    recipe, target = _out_recipe(tmp_path)
+    path = tmp_path / "vars.yml"
+    if vars_file is not None:
+        path.write_text(vars_file)
+
+    result = CliInvoker().invoke(
+        app, ["apply", str(recipe), str(target), "--vars-file", str(path), *extra, "--dry-run"]
+    )
+
+    assert result.exit_code == code, result.output
+    assert message in result.stderr
+    assert "Traceback" not in result.output
+
+
 def test_apply_derives_target_inputs_and_redacts_outcome_rows(tmp_path: Path) -> None:
     recipe = tmp_path / "recipe.yml"
     recipe.write_text(

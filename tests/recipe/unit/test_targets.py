@@ -34,6 +34,8 @@ def test_resolves_pipe_target_paths_and_generic_path_fallback() -> None:
         (3, _env("other.kind", {"path": "/tmp/ws", "target_path": "/tmp/explicit"})),
         (4, _env("other.kind", {"path": "/tmp/fallback"})),
         (5, _env("workspace.summary", {"path": "/tmp/ws", "repo_count": 0, "repo": ""})),
+        # Foreign records carrying ``repo`` still use the generic path fallback.
+        (6, _env("github.pr", {"path": "/tmp/checkout", "repo": "api"})),
     ]
 
     assert resolve_target_lines(lines) == [
@@ -53,14 +55,7 @@ def test_resolves_pipe_target_paths_and_generic_path_fallback() -> None:
             path=Path("/tmp/fallback"),
             record={"path": "/tmp/fallback"},
         ),
-    ]
-
-
-def test_foreign_records_with_repo_use_generic_path_fallback() -> None:
-    record = {"path": "/tmp/checkout", "repo": "api"}
-
-    assert resolve_target_lines([(1, _env("github.pr", record))]) == [
-        Target(path=Path("/tmp/checkout"), record=record)
+        Target(path=Path("/tmp/checkout"), record={"path": "/tmp/checkout", "repo": "api"}),
     ]
 
 
