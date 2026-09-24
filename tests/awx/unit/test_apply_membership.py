@@ -152,89 +152,55 @@ def test_plan_skips_field_absent_from_resource_spec() -> None:
     assert plans == []
 
 
-def test_plan_record_id_none_treats_existing_as_empty() -> None:
-    """When the resource doesn't exist yet, every desired member becomes
-    an associate — no existing-member fetch is issued."""
-    rec = MembershipReconciler()
-    plans = rec.plan(
-        GROUP_SPEC,
-        _group("g1", hosts=["web-01", "web-02"]),
-        record_id=None,
-        client=cast(ResourceClient, _StubClient()),
-        fk=cast(FkResolver, _StubFk({("Host", "web-01"): 7, ("Host", "web-02"): 8})),
-    )
-    hosts_plan = next(p for p in plans if p.ref.field == "hosts")
-    assert sorted(hosts_plan.to_associate) == [7, 8]
-    assert hosts_plan.to_disassociate == ()
+_HOST_IDS = {"web-01": 7, "web-02": 8, "web-03": 9}
 
 
-def test_plan_associate_only() -> None:
-    rec = MembershipReconciler()
-    plans = rec.plan(
-        GROUP_SPEC,
-        _group("g1", hosts=["web-01", "web-02"]),
-        record_id=42,
-        client=cast(
-            ResourceClient,
-            _StubClient(existing_members={"hosts": [{"id": 7, "name": "web-01"}]}),
-        ),
-        fk=cast(FkResolver, _StubFk({("Host", "web-01"): 7, ("Host", "web-02"): 8})),
-    )
-    hosts_plan = next(p for p in plans if p.ref.field == "hosts")
-    assert hosts_plan.to_associate == (8,)
-    assert hosts_plan.to_disassociate == ()
-
-
-def test_plan_disassociate_only() -> None:
-    rec = MembershipReconciler()
+@pytest.mark.parametrize(
+    ("desired", "existing", "record_id", "associate", "disassociate", "change"),
+    [
+        # a resource that does not exist yet associates every member, without a fetch
+        (["web-01", "web-02"], ["web-03"], None, [7, 8], [], ([], ["web-01", "web-02"])),
+        (["web-01", "web-02"], ["web-01"], 42, [8], [], (["web-01"], ["web-01", "web-02"])),
+        (["web-01"], ["web-01", "web-02"], 42, [], [8], (["web-01", "web-02"], ["web-01"])),
+        (["web-01", "web-03"], ["web-01", "web-02"], 42, [9], [8],
+         (["web-01", "web-02"], ["web-01", "web-03"])),
+        # ``hosts: []`` is the explicit "remove every host" gesture
+        ([], ["web-01", "web-02"], 42, [], [7, 8], (["web-01", "web-02"], [])),
+        # identical membership keeps the diff quiet; before/after are sorted names
+        (["web-01"], ["web-01"], 42, [], [], None),
+        (["web-02", "web-01"], ["web-03"], 42, [7, 8], [9], (["web-03"], ["web-01", "web-02"])),
+    ],
+)  # fmt: skip
+def test_plan_reconciles_group_hosts(
+    desired: list[str],
+    existing: list[str],
+    record_id: int | None,
+    associate: list[int],
+    disassociate: list[int],
+    change: tuple[list[str], list[str]] | None,
+) -> None:
     client = _StubClient(
-        existing_members={"hosts": [{"id": 7, "name": "web-01"}, {"id": 8, "name": "web-02"}]}
+        existing_members={"hosts": [{"id": _HOST_IDS[n], "name": n} for n in existing]}
     )
-    plans = rec.plan(
+    fk = _StubFk({("Host", name): id_ for name, id_ in _HOST_IDS.items()})
+    [plan] = MembershipReconciler().plan(
         GROUP_SPEC,
-        _group("g1", hosts=["web-01"]),
-        record_id=42,
+        _group("g1", hosts=desired),
+        record_id=record_id,
         client=cast(ResourceClient, client),
-        fk=cast(FkResolver, _StubFk({("Host", "web-01"): 7})),
+        fk=cast(FkResolver, fk),
     )
-    hosts_plan = next(p for p in plans if p.ref.field == "hosts")
-    assert hosts_plan.to_associate == ()
-    assert hosts_plan.to_disassociate == (8,)
-
-
-def test_plan_mixed_associate_disassociate() -> None:
-    rec = MembershipReconciler()
-    client = _StubClient(
-        existing_members={"hosts": [{"id": 7, "name": "web-01"}, {"id": 8, "name": "web-02"}]}
-    )
-    plans = rec.plan(
-        GROUP_SPEC,
-        _group("g1", hosts=["web-01", "web-03"]),
-        record_id=42,
-        client=cast(ResourceClient, client),
-        fk=cast(FkResolver, _StubFk({("Host", "web-01"): 7, ("Host", "web-03"): 9})),
-    )
-    hosts_plan = next(p for p in plans if p.ref.field == "hosts")
-    assert hosts_plan.to_associate == (9,)
-    assert hosts_plan.to_disassociate == (8,)
-
-
-def test_plan_empty_list_clears_membership() -> None:
-    """``hosts: []`` is the explicit "remove every host" gesture."""
-    rec = MembershipReconciler()
-    client = _StubClient(
-        existing_members={"hosts": [{"id": 7, "name": "web-01"}, {"id": 8, "name": "web-02"}]}
-    )
-    plans = rec.plan(
-        GROUP_SPEC,
-        _group("g1", hosts=[]),
-        record_id=42,
-        client=cast(ResourceClient, client),
-        fk=cast(FkResolver, _StubFk({})),
-    )
-    hosts_plan = next(p for p in plans if p.ref.field == "hosts")
-    assert hosts_plan.to_associate == ()
-    assert sorted(hosts_plan.to_disassociate) == [7, 8]
+    assert plan.ref.field == "hosts"
+    assert sorted(plan.to_associate) == associate
+    assert sorted(plan.to_disassociate) == disassociate
+    if change is None:
+        assert plan.field_change is None
+    else:
+        assert plan.field_change is not None
+        assert (plan.field_change.field, plan.field_change.before, plan.field_change.after) == (
+            "hosts",
+            *change,
+        )
 
 
 def test_plan_rejects_non_list_field() -> None:
@@ -256,43 +222,6 @@ def test_plan_rejects_non_list_field() -> None:
             client=cast(ResourceClient, _StubClient()),
             fk=cast(FkResolver, _StubFk({})),
         )
-
-
-def test_plan_field_change_is_none_when_no_changes() -> None:
-    """Identical desired vs existing means no associate, no disassociate,
-    so the diff stays quiet (no ``FieldChange`` row)."""
-    rec = MembershipReconciler()
-    plans = rec.plan(
-        GROUP_SPEC,
-        _group("g1", hosts=["web-01"]),
-        record_id=42,
-        client=cast(
-            ResourceClient,
-            _StubClient(existing_members={"hosts": [{"id": 7, "name": "web-01"}]}),
-        ),
-        fk=cast(FkResolver, _StubFk({("Host", "web-01"): 7})),
-    )
-    hosts_plan = next(p for p in plans if p.ref.field == "hosts")
-    assert hosts_plan.field_change is None
-
-
-def test_plan_field_change_carries_sorted_before_after() -> None:
-    rec = MembershipReconciler()
-    plans = rec.plan(
-        GROUP_SPEC,
-        _group("g1", hosts=["web-02", "web-01"]),
-        record_id=42,
-        client=cast(
-            ResourceClient,
-            _StubClient(existing_members={"hosts": [{"id": 9, "name": "web-03"}]}),
-        ),
-        fk=cast(FkResolver, _StubFk({("Host", "web-01"): 7, ("Host", "web-02"): 8})),
-    )
-    hosts_plan = next(p for p in plans if p.ref.field == "hosts")
-    assert hosts_plan.field_change is not None
-    assert hosts_plan.field_change.field == "hosts"
-    assert hosts_plan.field_change.before == ["web-03"]
-    assert hosts_plan.field_change.after == ["web-01", "web-02"]
 
 
 # ---- execute ----
@@ -317,87 +246,32 @@ def test_execute_issues_associate_then_disassociate_posts() -> None:
     ]
 
 
-def test_execute_skips_plans_with_no_work() -> None:
-    rec = MembershipReconciler()
-    client = _StubClient()
-    plans = [
-        MembershipPlan(
-            ref=GROUP_SPEC.fk_refs[0],
-            to_associate=(),
-            to_disassociate=(),
-            field_change=None,
-        )
-    ]
-    rec.execute(GROUP_SPEC, 42, plans, client=cast(ResourceClient, client))
-    assert client.subendpoint_calls == []
-
-
 # ---- post_members ----
 
 
-def _hosts_ref() -> Any:
-    return next(r for r in GROUP_SPEC.fk_refs if r.field == "hosts")
-
-
-def test_post_members_associates_each_id() -> None:
-    rec = MembershipReconciler()
+@pytest.mark.parametrize(
+    ("ref", "member_ids", "disassociate", "calls"),
+    [
+        (GROUP_SPEC.fk_refs[0], [7, 8], False, [{"id": 7}, {"id": 8}]),
+        (GROUP_SPEC.fk_refs[0], [7], True, [{"id": 7, "disassociate": True}]),
+        (GROUP_SPEC.fk_refs[0], [], False, []),
+        # a ref without a sub-endpoint never issues a malformed POST
+        (FkRef(field="hosts", kind="Host"), [7, 8], False, []),
+    ],
+)
+def test_post_members(
+    ref: FkRef, member_ids: list[int], disassociate: bool, calls: list[dict[str, Any]]
+) -> None:
     client = _StubClient()
-    rec.post_members(
+    MembershipReconciler().post_members(
         GROUP_SPEC,
         parent_id=42,
-        ref=_hosts_ref(),
-        member_ids=[7, 8],
+        ref=ref,
+        member_ids=member_ids,
+        disassociate=disassociate,
         client=cast(ResourceClient, client),
     )
-    assert client.subendpoint_calls == [
-        (42, "hosts", "POST", {"id": 7}),
-        (42, "hosts", "POST", {"id": 8}),
-    ]
-
-
-def test_post_members_disassociate_sets_flag() -> None:
-    rec = MembershipReconciler()
-    client = _StubClient()
-    rec.post_members(
-        GROUP_SPEC,
-        parent_id=42,
-        ref=_hosts_ref(),
-        member_ids=[7],
-        disassociate=True,
-        client=cast(ResourceClient, client),
-    )
-    assert client.subendpoint_calls == [
-        (42, "hosts", "POST", {"id": 7, "disassociate": True}),
-    ]
-
-
-def test_post_members_empty_ids_is_a_noop() -> None:
-    rec = MembershipReconciler()
-    client = _StubClient()
-    rec.post_members(
-        GROUP_SPEC,
-        parent_id=42,
-        ref=_hosts_ref(),
-        member_ids=[],
-        client=cast(ResourceClient, client),
-    )
-    assert client.subendpoint_calls == []
-
-
-def test_post_members_ref_without_sub_endpoint_is_a_noop() -> None:
-    """Defensive: a ``FkRef(sub_endpoint=None)`` (the dataclass is public —
-    a future external caller could build one) must short-circuit before
-    iterating ``member_ids`` so no malformed POST is ever issued."""
-    rec = MembershipReconciler()
-    client = _StubClient()
-    rec.post_members(
-        GROUP_SPEC,
-        parent_id=42,
-        ref=FkRef(field="hosts", kind="Host"),  # sub_endpoint default = None
-        member_ids=[7, 8],
-        client=cast(ResourceClient, client),
-    )
-    assert client.subendpoint_calls == []
+    assert client.subendpoint_calls == [(42, "hosts", "POST", body) for body in calls]
 
 
 @pytest.mark.parametrize(
