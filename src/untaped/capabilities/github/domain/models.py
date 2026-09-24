@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from untaped.capability_api import OutcomeRecord, UtcTimestamp
+
 RefKind = Literal["heads", "tags"]
 """Ref namespace probed by ``GithubClient.batch_repo_refs``."""
 
@@ -136,6 +138,19 @@ class CorpusRepoResult(BaseModel):
     ref_globs: tuple[str, ...] = ()
     archived: bool = False
     disk_bytes: int = 0
+
+
+class CorpusSyncOutcome(OutcomeRecord):
+    """The result of warming one repository in the corpus (``github.sync_outcome``).
+
+    ``action`` is ``synced`` (fetched), ``unchanged`` (GitHub reports no push
+    since the cached fetch, so none ran), ``skipped`` (the cached copy is
+    younger than ``github.sweep.max_age_seconds``), or ``failed``.
+    """
+
+    repo: str
+    fetched_at: UtcTimestamp | None = None
+    error: str | None = None
 
 
 class CodeHitResult(BaseModel):

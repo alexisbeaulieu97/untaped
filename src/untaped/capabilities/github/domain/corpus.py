@@ -25,6 +25,8 @@ class CorpusRepoTarget:
     clone_url: str | None = None
     html_url: str | None = None
     archived: bool = False
+    # GitHub's last-push timestamp; None when the source did not report it.
+    pushed_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -35,16 +37,36 @@ class CorpusFreshness:
     profile: RefProfile
     ref_globs: tuple[str, ...] = ()
     archived: bool = False
+    pushed_at: str | None = None
+    default_branch: str | None = None
+
+
+@dataclass(frozen=True)
+class LocalRef:
+    """One cached ref and the tree it points at; refs often share a tree."""
+
+    name: str
+    tree: str
+
+
+@dataclass(frozen=True)
+class GrepSpec:
+    """One content pattern plus the modifiers every ``git grep`` call shares."""
+
+    pattern: str
+    paths: tuple[str, ...] = ()
+    ignore_case: bool = False
+    fixed_strings: bool = False
+    word_regexp: bool = False
 
 
 @dataclass(frozen=True)
 class GrepHit:
-    """One content match within a cached Git blob."""
+    """One content match within a cached Git tree."""
 
     path: str
     line: int
     text: str
-    blob_oid: str
 
 
 def covers(freshness: CorpusFreshness, selector: RefSelector) -> bool:
@@ -52,3 +74,16 @@ def covers(freshness: CorpusFreshness, selector: RefSelector) -> bool:
     return profile_join(freshness.profile, selector.profile) == freshness.profile and set(
         selector.globs
     ).issubset(freshness.ref_globs)
+
+
+def unchanged_upstream(freshness: CorpusFreshness, repo: CorpusRepoTarget) -> bool:
+    """Return whether GitHub reports no push since the cached copy was fetched.
+
+    Needs a ``pushed_at`` on both sides and the same default branch, so a
+    renamed default branch still triggers a fetch.
+    """
+    return (
+        repo.pushed_at is not None
+        and freshness.pushed_at == repo.pushed_at
+        and freshness.default_branch == repo.default_branch
+    )

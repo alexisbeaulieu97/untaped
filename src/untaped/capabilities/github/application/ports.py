@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
+    from datetime import datetime
     from pathlib import Path
 
     from untaped.capabilities.github.domain import (
@@ -13,6 +14,8 @@ if TYPE_CHECKING:
         CorpusRepoResult,
         CorpusRepoTarget,
         GrepHit,
+        GrepSpec,
+        LocalRef,
         RefSelector,
         WorktreeResult,
     )
@@ -85,37 +88,52 @@ class GitCorpus(Protocol):
 
     def repo_freshness(self, repo: CorpusRepoTarget, *, root: Path) -> CorpusFreshness | None: ...
 
+    def touch_repo(self, repo: CorpusRepoTarget, *, root: Path) -> datetime:
+        """Record that the cached copy is current without fetching; return the new time."""
+        ...
+
     def local_refs(
         self,
         repo: CorpusRepoTarget,
         *,
         root: Path,
         selector: RefSelector,
-    ) -> tuple[str, ...]: ...
+    ) -> tuple[LocalRef, ...]: ...
 
-    def grep_ref(
+    def grep_trees(
         self,
         repo: CorpusRepoTarget,
         *,
         root: Path,
-        ref: str,
-        pattern: str,
-        paths: tuple[str, ...],
-        ignore_case: bool,
-        fixed_strings: bool,
-        word_regexp: bool,
-    ) -> tuple[GrepHit, ...]: ...
+        trees: tuple[str, ...],
+        spec: GrepSpec,
+    ) -> dict[str, tuple[GrepHit, ...]]:
+        """Grep several trees in one pass; trees without hits are absent."""
+        ...
+
+    def tree_has_match(
+        self,
+        repo: CorpusRepoTarget,
+        *,
+        root: Path,
+        tree: str,
+        spec: GrepSpec,
+    ) -> bool:
+        """Return whether ``spec`` matches anywhere in ``tree``, stopping at the first hit."""
+        ...
 
     def tree_paths(self, repo: CorpusRepoTarget, *, root: Path, ref: str) -> tuple[str, ...]: ...
 
-    def read_blob(
+    def read_first_blob(
         self,
         repo: CorpusRepoTarget,
         *,
         root: Path,
         ref: str,
-        path: str,
-    ) -> str | None: ...
+        paths: tuple[str, ...],
+    ) -> str | None:
+        """Read the first of ``paths`` that exists in ``ref``; None when none does."""
+        ...
 
     def validate_pattern(
         self,

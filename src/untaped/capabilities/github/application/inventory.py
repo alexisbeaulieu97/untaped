@@ -26,6 +26,8 @@ class RepositoryInventoryItem(BaseModel):
     private: bool = False
     archived: bool = False
     fork: bool = False
+    # Last push to any ref; lets a sweep skip fetching an unchanged repo.
+    pushed_at: str | None = None
 
 
 @dataclass(frozen=True)
