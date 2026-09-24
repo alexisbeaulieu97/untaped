@@ -204,11 +204,11 @@ def apply_command(
                 hook_timeout_seconds=hook_timeout_seconds(hook_timeout),
                 recipe_id=recipe_id,
             )
-            effective_preview = _effective_preview(preview, check=check)
             render_preview(
                 context.recipe,
                 context.plans,
-                preview=effective_preview,
+                # --check defaults to no preview; everything else to a table.
+                preview=preview or ("none" if check else "table"),
                 preview_max_rows=settings().preview_max_rows,
             )
             outcome = _execute_plans(
@@ -321,14 +321,6 @@ def _apply_context(
     )
 
 
-def _effective_preview(preview: PreviewMode | None, *, check: bool) -> PreviewMode:
-    if preview is not None:
-        return preview
-    if check:
-        return "none"
-    return "table"
-
-
 def _execute_plans(
     context: ApplyContext,
     *,
@@ -390,13 +382,12 @@ def _execute_plans(
     backup_id = draft.id if draft is not None and draft.entries else None
     if draft is not None:
         draft.discard_if_empty()
-    cancelled = outcome.cancelled
     return ApplyExecution(
         outcome=outcome,
         applied=frozenset(applied),
         failed=failed,
         backup_id=backup_id,
-        cancelled=cancelled,
+        cancelled=outcome.cancelled,
     )
 
 
