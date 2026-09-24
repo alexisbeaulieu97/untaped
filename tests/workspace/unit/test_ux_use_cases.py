@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.capabilities.workspace.application import EditWorkspace, ShellInit, WorkspacePath
+from untaped.capabilities.workspace.application import ShellInit, WorkspacePath
 from untaped.capabilities.workspace.domain import Workspace
 from untaped.capabilities.workspace.errors import RegistryError, WorkspaceError
 from workspace.conftest import StubRegistry
@@ -49,39 +49,3 @@ def test_shell_init_fish() -> None:
 def test_shell_init_unknown_shell() -> None:
     with pytest.raises(WorkspaceError, match="unsupported shell"):
         ShellInit()("powershell")
-
-
-def test_edit_appends_workspace_path_to_argv(tmp_path: Path) -> None:
-    """``EditWorkspace`` is now a thin "append path, dispatch"
-    use case — no env reading, no shlex parsing, no platform branching.
-    Editor resolution lives in
-    :func:`untaped.capabilities.workspace.infrastructure.system_adapters.resolve_editor_argv`
-    and is tested there. This test pins the use case's narrow contract:
-    given a resolved workspace and argv tuple, append the workspace path
-    and call the runner."""
-    captured: list[list[str]] = []
-
-    def _runner(cmd):  # type: ignore[no-untyped-def]
-        captured.append(list(cmd))
-        return 0
-
-    workspace = Workspace(name="prod", path=tmp_path / "prod")
-    rc = EditWorkspace(runner=_runner)(workspace, argv=("code", "--reuse-window"))
-    assert rc == 0
-    assert captured[-1] == ["code", "--reuse-window", str(tmp_path / "prod")]
-
-
-def test_edit_missing_editor_raises(tmp_path: Path) -> None:
-    """``FileNotFoundError`` from the runner — same shape ``subprocess``
-    raises when the executable doesn't exist — surfaces as
-    ``WorkspaceError`` naming the executable (argv[0]), not the full
-    string with flags."""
-
-    def _runner(_cmd):  # type: ignore[no-untyped-def]
-        raise FileNotFoundError("no such file")
-
-    with pytest.raises(WorkspaceError, match=r"editor not found: code$"):
-        EditWorkspace(runner=_runner)(
-            Workspace(name="prod", path=tmp_path / "prod"),
-            argv=("code", "--reuse-window"),
-        )

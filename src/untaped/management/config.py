@@ -24,13 +24,14 @@ from cyclopts import App, Parameter
 from untaped.capabilities.registry import ApplicationSpec, CompositionResult
 from untaped.cli import (
     ColumnsOption,
+    DryRunOption,
     FormatOption,
     create_app,
     emit,
     report_errors,
 )
 from untaped.config.editor import run_config_editor
-from untaped.config.models import setting_entry_row
+from untaped.config.models import SettingOutcome, setting_entry_row
 from untaped.config.prompting import resolve_set_value
 from untaped.config.repository import SettingsFileRepository
 from untaped.config.use_cases import GetSetting, ListAllProfilesSettings, ListSettings
@@ -159,7 +160,7 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
             ),
         ] = False,
     ) -> None:
-        """Print one effective scalar setting value."""
+        """Print one effective setting value (mappings and lists as JSON in raw/table)."""
         _get(ctx, key, fmt=fmt, show_secrets=show_secrets)
 
     @app.command(name="set")
@@ -184,9 +185,22 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
                 name="--prompt", negative="", help="Prompt for the value using the setting type."
             ),
         ] = False,
+        dry_run: DryRunOption = False,
+        fmt: FormatOption = "table",
+        columns: ColumnsOption = None,
     ) -> None:
         """Persist ``section.key = value`` (validated against the schema)."""
-        _set(ctx, key, value, target_profile=target_profile, stdin=stdin, prompt=prompt)
+        _set(
+            ctx,
+            key,
+            value,
+            target_profile=target_profile,
+            stdin=stdin,
+            prompt=prompt,
+            dry_run=dry_run,
+            fmt=fmt,
+            columns=columns,
+        )
 
     @app.command(name="unset")
     def unset_command(
@@ -200,9 +214,12 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
                 help="Target profile to remove from (defaults to the active profile).",
             ),
         ] = None,
+        dry_run: DryRunOption = False,
+        fmt: FormatOption = "table",
+        columns: ColumnsOption = None,
     ) -> None:
         """Remove ``section.key`` from the resolved write scope (no-op if unset)."""
-        _unset(ctx, key, target_profile=target_profile)
+        _unset(ctx, key, target_profile=target_profile, dry_run=dry_run, fmt=fmt, columns=columns)
 
     @app.command(name="edit")
     def edit_command() -> None:
@@ -255,6 +272,9 @@ def _set(
     target_profile: str | None,
     stdin: bool,
     prompt: bool,
+    dry_run: bool,
+    fmt: OutputFormat,
+    columns: list[str] | None,
 ) -> None:
     with report_errors():
         repo = SettingsFileRepository()
@@ -262,21 +282,41 @@ def _set(
         resolved_value = resolve_set_value(
             resolved, value, stdin=stdin, prompt=prompt, repo=repo, target_profile=target_profile
         )
-        profile = repo.set_value(resolved, resolved_value, profile=target_profile)
-        message = f"set {resolved} in profile {profile} (config: {resolve_config_path()})"
-        ui_context(strict=False).success(message)
+        profile = repo.set_value(resolved, resolved_value, profile=target_profile, dry_run=dry_run)
+        if not dry_run:
+            message = f"set {resolved} in profile {profile} (config: {resolve_config_path()})"
+            ui_context(strict=False).success(message)
+        action = "planned" if dry_run else "updated"
+        outcome = SettingOutcome(key=resolved, profile=profile, action=action)
+        emit(outcome, fmt=fmt, columns=columns, kind=_SETTING_OUTCOME)
 
 
-def _unset(ctx: RootConfigContext, key: str, *, target_profile: str | None) -> None:
+def _unset(
+    ctx: RootConfigContext,
+    key: str,
+    *,
+    target_profile: str | None,
+    dry_run: bool,
+    fmt: OutputFormat,
+    columns: list[str] | None,
+) -> None:
     with report_errors():
         resolved = ctx.resolve_key(key)
-        removed, profile = SettingsFileRepository().unset_value(resolved, profile=target_profile)
+        removed, profile = SettingsFileRepository().unset_value(
+            resolved, profile=target_profile, dry_run=dry_run
+        )
         ui = ui_context(strict=False)
         where = f"in profile {profile}"
-        if removed:
-            ui.success(f"unset {resolved} {where}")
-        else:
+        if not removed:
             ui.message("info", f"{resolved} was not set {where}")
+        elif not dry_run:
+            ui.success(f"unset {resolved} {where}")
+        action = "unchanged" if not removed else "planned" if dry_run else "deleted"
+        outcome = SettingOutcome(key=resolved, profile=profile, action=action)
+        emit(outcome, fmt=fmt, columns=columns, kind=_SETTING_OUTCOME)
+
+
+_SETTING_OUTCOME = "untaped.setting_outcome"
 
 
 __all__ = [

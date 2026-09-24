@@ -186,7 +186,9 @@ def _dispatch_with_root_options(
     errors surface before the command body runs, so a retry never repeats
     side effects.
     """
-    remaining = canonical_command_tokens(app, command_tokens)
+    remaining = canonical_command_tokens(
+        app, _consume_path_root_options(app, command_tokens, root_options, applied_tokens)
+    )
     applied: set[str] = set()
     while True:
         try:
@@ -198,12 +200,19 @@ def _dispatch_with_root_options(
             )
         except UnknownOptionError as exc:
             name = _unknown_root_option(exc, root_options)
-            if name is None or name in applied:
+            index = (
+                None
+                if name is None or name in applied
+                else _last_root_option_index(remaining, root_options[name])
+            )
+            if name is None or index is None:
                 echo(f"error: {exc}", err=True)
                 raise SystemExit(2) from exc
             applied.add(name)
             spec = root_options[name]
-            value, remaining = _strip_trailing_root_option(remaining, spec)
+            value, remaining = _consume_option_at(
+                remaining, index, spec, remaining[index].partition("=")[0]
+            )
             _apply_root_option(spec, value, applied_tokens)
         except CycloptsError as exc:
             echo(f"error: {exc}", err=True)
@@ -231,20 +240,12 @@ def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
     for index, token in enumerate(rewritten):
         if token.startswith("-"):
             break
-        aliases = deprecated_aliases(current)
-        if token not in current and token in aliases:
-            _warn_deprecated(token, aliases[token])
-            token = rewritten[index] = aliases[token]
-        elif token not in current:
-            wanted = _loose_command_key(token)
-            matches = [
-                name
-                for name in current
-                if not name.startswith("-") and _loose_command_key(name) == wanted
-            ]
-            if len(matches) != 1:
-                break
-            token = rewritten[index] = matches[0]
+        name = _command_name(current, token)
+        if name is None:
+            break
+        if token not in current and token in deprecated_aliases(current):
+            _warn_deprecated(token, name)
+        token = rewritten[index] = name
         current = current[token]
     else:
         return rewritten
@@ -258,6 +259,68 @@ def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
                 _warn_deprecated(name, options[name])
                 rewritten[position] = f"{options[name]}{separator}{value}"
     return rewritten
+
+
+def _command_name(app: App, token: str) -> str | None:
+    """The registered subcommand of ``app`` that ``token`` selects, if any.
+
+    Exact names win, then deprecated aliases, then the one loose
+    (case/``-``/``_``-insensitive) match; ambiguity selects nothing.
+    """
+    if token in app:
+        return token
+    aliases = deprecated_aliases(app)
+    if token in aliases:
+        return aliases[token]
+    wanted = _loose_command_key(token)
+    matches = [
+        name for name in app if not name.startswith("-") and _loose_command_key(name) == wanted
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _consume_path_root_options(
+    app: App,
+    tokens: list[str],
+    root_options: dict[str, _RootOption],
+    applied_tokens: list[tuple[_RootOption, object]],
+) -> list[str]:
+    """Apply and strip root options sitting between command names.
+
+    ``untaped awx --profile x jobs list`` places a root option after a
+    capability (or group) name but before the next command name, where
+    cyclopts would read it as an unknown command. Walking the command path
+    (resolving lazy capabilities only along the chain dispatch would
+    resolve anyway), each run of root options followed by another command
+    name is applied and removed. Options after the last command name stay
+    in place for the leaf to parse, so a leaf's homonymous option still wins
+    and trailing root options go through the retry in
+    :func:`_dispatch_with_root_options`.
+    """
+    remaining = list(tokens)
+    current = app
+    index = 0
+    while index < len(remaining):
+        probe = remaining
+        pending: list[tuple[_RootOption, str]] = []
+        while index < len(probe):
+            head = probe[index].partition("=")[0]
+            spec = _match_option(head, root_options)
+            if spec is None:
+                break
+            value, probe = _consume_option_at(probe, index, spec, head)
+            pending.append((spec, value))
+        if index >= len(probe) or probe[index].startswith("-"):
+            break
+        name = _command_name(current, probe[index])
+        if name is None:
+            break
+        for spec, value in pending:
+            _apply_root_option(spec, value, applied_tokens)
+        remaining = probe
+        current = current[name]
+        index += 1
+    return remaining
 
 
 def _warn_deprecated(old: str, new: str) -> None:
@@ -283,14 +346,17 @@ def _unknown_root_option(
     return spec.name if spec is not None else None
 
 
-def _strip_trailing_root_option(tokens: list[str], spec: _RootOption) -> tuple[str, list[str]]:
-    """Remove the last occurrence of ``spec`` (by any spelling), returning its value."""
+def _last_root_option_index(tokens: list[str], spec: _RootOption) -> int | None:
+    """Index of the last ``spec`` token (any spelling) before ``--``, if any.
+
+    Tokens after ``--`` are positional data for the command, never root options.
+    """
     accepted = (spec.name, *spec.aliases)
-    for index in range(len(tokens) - 1, -1, -1):
-        head = tokens[index].partition("=")[0]
-        if head in accepted:
-            return _consume_option_at(tokens, index, spec, head)
-    raise_usage(f"{spec.name} expects a value")
+    end = tokens.index("--") if "--" in tokens else len(tokens)
+    for index in range(end - 1, -1, -1):
+        if tokens[index].partition("=")[0] in accepted:
+            return index
+    return None
 
 
 def _extract_root_option_value(tokens: list[str], index: int, name: str) -> tuple[str, list[str]]:

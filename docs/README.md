@@ -1,57 +1,58 @@
-# `untaped` — documentation
+# untaped documentation
 
-`untaped` is a single application composing built-in capabilities. Use the
-installed command's `--help` output for the current command surface; these pages
-cover the workflows and contracts that are useful across commands.
+`untaped` is one command-line tool for DevOps work: local Git workspaces,
+GitHub, Jira, AWX/AAP, Ansible dependency graphs and file recipes. Every
+command shares one config file, the same profiles, and the same output and
+piping rules.
 
-## Pages
+`untaped --help` and `untaped COMMAND --help` always show the exact options of
+the version you have installed.
 
-- [AWX/AAP usage](./awx/usage.md) — connection setup, selection, configuration
-  changes, inventory sources, and execution tracking.
-- [Configuration](./configuration.md) — `~/.untaped/config.yml`,
-  `~/.untaped/state.yml`, profiles, secrets, TLS, env-var overrides. Start here.
-- [Building a capability provider](./plugins.md) — package an external
-  capability for the unified CLI.
-- [Command and output conventions](./conventions.md) — flags, messages, exit
-  codes and record shapes every command follows, and the helpers that
-  implement them.
-- [Agent Skills](./skills.md) — list and install the skills shipped with the
-  composed application.
-- [Releasing](./release.md) — PyPI/TestPyPI workflow, Trusted Publisher setup,
-  and recovery rules.
-- [Workspace usage](./workspace/usage.md) — workspace manifests, sync, and
-  shell helpers.
+## Get started
 
-For installation, see the repo's [README](../README.md).
+- [Getting started](./getting-started.md): install, store tokens, use
+  profiles, run a first command in each capability, pipe commands together.
+- [Configuration](./configuration.md): the config and state files, profiles,
+  secrets, TLS, and `untaped doctor`.
 
-## Pipe-friendly by design
+## Guides
 
-Row-oriented `list`/`get`/`status`-style commands support
-`--format json|yaml|table|raw|pipe` and `--columns <field>` so their stdout
-can feed into the next command. `--format pipe` is a self-describing record stream
-(NDJSON) that another `untaped` command reads back — typed composition without
-flattening to strings:
+| Capability | Guide | What it does |
+|---|---|---|
+| `workspace` | [Workspaces](./workspace/usage.md) | Declare, clone, sync and run commands across sets of Git repos. |
+| `github` | [GitHub](./github/usage.md) | Repo inventory, GitHub search, and content sweeps across many repos. |
+| `jira` | [Jira](./jira/usage.md) | Search, create, update and transition Jira Data Center issues. |
+| `awx` | [AWX/AAP](./awx/usage.md) | Inspect, change, launch, sync and test AWX/AAP resources. |
+| `ansible` | [Ansible dependency graphs](./ansible/usage.md) | What a role depends on, and what depends on it. |
+| `recipe` | [Recipes](./recipe/usage.md) | Plan, preview and apply file changes across many directories. |
 
-```bash
-# Pick a job template interactively, then fetch its details as JSON.
-untaped awx job-templates list --format raw --columns name \
-  | fzf \
-  | untaped awx job-templates get --stdin --format json
+- [Agent skills](./skills.md): install the skills that teach AI coding agents
+  to use each capability.
 
-# --format pipe carries full records between capability commands.
-untaped github search repos --org acme --format pipe \
-  | untaped github search code "BaseModel" --stdin
-```
+## Reference
 
-Single-entity commands (`whoami`/`get`/`show`/`status`) render a readable detail
-view by default and still honour every `--format`.
+- [Configuration reference](./reference/config.md): every setting, its type,
+  default and environment variable (generated).
+- [Pipes and record kinds](./reference/pipes.md): the `--format pipe`
+  envelope, and which command writes and reads each record kind.
+- [Exit codes](./reference/exit-codes.md): what 0, 1, 2, 3 and 130 mean, and
+  which commands exit 3.
+- [Environment variables](./reference/environment.md): every variable
+  `untaped` reads or sets.
+- [Glossary](./glossary.md): the terms these docs use.
 
-Side-effect commands (`untaped profile use`, `untaped config set`, `apply --yes`,
-…) print a short confirmation to stderr and exit. **Logs go to stderr; only
-data hits stdout** — so pipes stay clean. A `--quiet` root option mutes progress
-and `success`/`info` messages without touching data or warnings/errors.
+## Contributing
 
-## Contributing / extending
+- [Building a capability provider](./plugins.md): add a capability to
+  `untaped` from your own package.
+- [Command and output conventions](./conventions.md): the flags, messages,
+  exit codes and record shapes every command follows.
+- [Skill template](./templates/SKILL.md): the starting point for a
+  capability's agent skill.
+- [Releasing](./release.md): the PyPI release workflow.
+- [AGENTS.md](../AGENTS.md) and [CONTRIBUTING.md](../CONTRIBUTING.md): repo
+  rules and local setup.
 
-Contribution rules live in [AGENTS.md](../AGENTS.md). Source code and tests are
-the authority for implementation behavior.
+The configuration reference is generated. After changing a settings model,
+run `uv run python scripts/gen_config_reference.py`; the test suite fails
+while the page is stale.

@@ -140,15 +140,22 @@ UNTAPED_<SECTION>__<FIELD>
 For example, `UNTAPED_GITHUB__TOKEN`, `UNTAPED_AWX__BASE_URL`,
 `UNTAPED_HTTP__VERIFY_SSL`, and `UNTAPED_UI__THEME` override one process's
 resolved values. The root scalar `log_level` is addressed as `log_level` and
-can be overridden with `UNTAPED_LOG_LEVEL`; capability fields still require
+can be overridden with `UNTAPED_LOG_LEVEL`. It is deprecated and has no
+effect; `untaped doctor` warns when it is set. Capability fields still require
 their fully qualified section key. For a setting value, precedence is the
 environment override, the selected active profile, `profiles.default`, and
 then the schema default.
 
 ## Profiles
 
-`--profile` is a root option and is position-independent. It applies to the
-root management commands and to a capability invocation for one process:
+`--profile` is a root option and is position-independent: it can go before the
+capability, between command names (`untaped github --profile work whoami`), or
+after the command. The same holds for `--verbose`/`-v` and `--quiet`/`-q`.
+Tokens after `--` belong to the command and are never read as root options,
+so `untaped workspace foreach -- "tool --profile x"` passes `--profile x`
+through. It
+applies to the root management commands and to a capability invocation for one
+process:
 
 ```bash
 untaped profile list
@@ -159,8 +166,9 @@ untaped profile show prod --show-secrets
 untaped profile use prod
 untaped profile create stage
 untaped profile create stage --copy-from default
+untaped profile delete stage --dry-run
 untaped profile delete stage --yes
-untaped profile rename stage staging
+untaped profile rename stage staging --format json
 
 untaped --profile stage config list
 untaped config list --profile stage
@@ -183,6 +191,13 @@ reported on stderr, so it is safe in a prompt or pipeline:
 echo "[$(untaped profile current 2>/dev/null)] $ "
 ```
 
+`profile create`, `delete` and `rename` print an `untaped.profile_outcome`
+record (`name`, `previous_name`, `copied_from`, `action`) in any `--format`;
+`action` is `created`, `deleted`, `renamed`, or `planned` under `--dry-run`,
+which checks the change and writes nothing. `profile delete` confirms first
+(pass `--yes` without a terminal); `--dry-run` shows the preview without
+prompting.
+
 `default` is created automatically by the first setting write. Other profiles
 must exist before a write targets them.
 
@@ -204,9 +219,10 @@ untaped config set github.token --prompt
 printf '%s\n' "$GITHUB_TOKEN" | untaped config set github.token --stdin
 untaped config set awx.base_url https://aap.example.com --target-profile default
 untaped config unset awx.token --target-profile prod
+untaped config set http.timeout 60 --dry-run --format json
 untaped config set ui.theme quiet
 untaped config set http.verify_ssl false
-untaped config set log_level DEBUG
+untaped config set ui.symbols '{"ok": "✓", "fail": "✗"}'
 untaped config edit
 ```
 
@@ -218,6 +234,20 @@ parsing it as YAML. String and secret settings store the input verbatim, so
 strings; an invalid value is rejected before anything is written. For an
 optional non-string setting, the literal `null` stores an explicit null; a
 string setting stores `null` as text. To clear a value, use `config unset`.
+
+`config set` and `config unset` print an `untaped.setting_outcome` record
+(`key`, `profile`, `action`) in any `--format`; the value itself is never
+echoed. `action` is `updated` for a set, `deleted` or `unchanged` for an unset,
+and `planned` under `--dry-run`, which validates the value and target profile
+without writing.
+
+Mapping and list settings (`ui.symbols`, `ui.color_roles`,
+`ansible.dependency_paths`) take the whole value as JSON or YAML
+(`'{"ok": "✓"}'` or `'{ok: ✓}'`), validated against the setting's type;
+`config set` replaces the stored value and `config unset` removes the whole
+key. `config get` and `config list` print such a value as compact JSON in
+table and raw output and as a native mapping or list in `json`, `yaml` and
+`pipe`.
 
 Reads and writes validate only the section a key belongs to, so one invalid
 value (for example a typo in `jira.page_size`) never blocks `config get`,
@@ -256,8 +286,9 @@ broken section to hide the rest:
   mapping root);
 - `profile` — the selected profile (`--profile`, `UNTAPED_PROFILE`, or
   `active:`) exists;
-- `settings` for the shell — one row each for `log_level`, `http` (including a
-  readable `http.ca_bundle`), and `ui` (including a known `ui.theme`);
+- `settings` for the shell — one row each for `log_level` (a warning when the
+  deprecated setting is set), `http` (including a readable `http.ca_bundle`),
+  and `ui` (including a known `ui.theme`);
 - `settings` per capability — the capability's profile section;
 - `state` per capability with a state model — its section in `state.yml` (or
   the legacy copy in `config.yml`), naming the file on failure;
@@ -322,6 +353,9 @@ explicit opt-in.
 
 ## See also
 
+- [Configuration reference](./reference/config.md) — every setting, default and
+  environment variable.
+- [Environment variables](./reference/environment.md).
 - [Agent skills](./skills.md) — root skill discovery and installation.
 - [Capability authoring](./plugins.md) — building an external capability for
   the unified executable.

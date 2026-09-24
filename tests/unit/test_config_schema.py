@@ -64,6 +64,25 @@ def test_skips_collection_fields() -> None:
     assert "demo.directory" in keys
 
 
+def test_include_collections_returns_collections_as_whole_leaves() -> None:
+    class Nested(BaseModel):
+        roles: dict[str, str] = Field(default_factory=dict)
+
+    class Demo(BaseModel):
+        entries: list[str] = Field(default_factory=list)
+        nested: Nested = Field(default_factory=Nested)
+        name: str = "x"
+
+    descriptors = walk_settings(Demo, include_collections=True)
+
+    assert [(d.key, d.is_collection) for d in descriptors] == [
+        ("entries", True),
+        ("nested.roles", True),
+        ("name", False),
+    ]
+    assert [d.key for d in walk_settings(Demo)] == ["name"]
+
+
 def test_secrets_are_marked() -> None:
     descriptors = walk_settings(get_settings_model())
     token = find_descriptor(descriptors, "demo.token")

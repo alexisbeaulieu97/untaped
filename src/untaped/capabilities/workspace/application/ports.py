@@ -5,7 +5,7 @@ Transport DTOs live in :mod:`untaped.capabilities.workspace.domain.payloads`.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Protocol
 
@@ -134,9 +134,6 @@ class ShellRunner(Protocol):
     def __call__(self, cmd: str, cwd: Path, *, timeout: float) -> CompletedCommand: ...
 
 
-EditorRunner = Callable[[Sequence[str]], int]
-
-
 class ProgressNotify(Protocol):
     """Progress callback a long-running sweep reports through."""
 
@@ -148,7 +145,6 @@ class ProgressNotify(Protocol):
 __all__ = [
     "BranchOperations",
     "CompletedCommand",
-    "EditorRunner",
     "ExternalManifestReader",
     "Filesystem",
     "GitInspector",

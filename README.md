@@ -1,98 +1,67 @@
 # untaped
 
-**untaped** is one `untaped` application built on [cyclopts](https://cyclopts.readthedocs.io/). It provides the shared shell, five management command groups, and six built-in capabilities from one install.
+**untaped** is a batteries-included CLI for DevOps workflows. One install
+gives you six capabilities that share one config file, the same profiles, and
+the same output and piping rules:
 
-The root shell provides:
+- **`workspace`**: declare sets of Git repos, clone and sync them, run a
+  command in each.
+- **`github`**: repo inventory, GitHub search, and content sweeps across
+  hundreds of repos.
+- **`jira`**: search, create, update and transition Jira Data Center issues.
+- **`awx`**: inspect, change, launch, sync and test AWX/AAP resources.
+- **`ansible`**: Ansible role dependency graphs and upstream impact.
+- **`recipe`**: plan, preview and apply file changes across many directories.
 
-- **Config** — a shared `~/.untaped/config.yml` with top-level `active:` /
-  `profiles:`, per-profile SDK `http` / `ui` settings, and each capability's own
-  profile settings plus tool-managed top-level state.
-- **Profiles** — named overlays (`dev`, `prod`, `homelab`) and a `--profile`
-  root option, built in.
-- **Themes** — built-in theme presets for consistent terminal styling.
-- **Output** — consistent `--format json|yaml|table|raw|pipe` and `--columns`,
-  so commands compose. `pipe` is a self-describing NDJSON record stream another
-  `untaped` command can read back. `emit(...)` renders a single entity as a vertical
-  detail view or a sequence as a collection, dispatching by shape.
-- **HTTP / UI helpers** — an `HttpClient` with profile-aware TLS, automatic
-  retries for transient failures (`RetryPolicy`), and pagination helpers, plus a
-  `UiContext` for messages, prompts, and progress.
-- **Config tooling** — `untaped doctor` diagnoses the shared file and
-  `untaped config edit` opens it in `$VISUAL`/`$EDITOR`; a `--quiet` root option
-  mutes progress and `success`/`info` chatter.
-- **Installed version reporting** — `untaped --version` prints the installed
-  distribution version.
+Root commands manage the tool itself: `config`, `profile`, `skills`,
+`doctor` and `capabilities`.
 
-Capability providers use the stable surface in
-[`src/untaped/capability_api.py`](./src/untaped/capability_api.py). Built-ins
-are composed by [`src/untaped/bootstrap.py`](./src/untaped/bootstrap.py), and
-each capability owns its commands, settings, state, and packaged skill.
+## Install
 
-The public package is built with `uv build --no-sources`; the release manifest
-records the supported Python floor, capability order, direct requirements, and
-selected source OIDs in [`release-manifest.toml`](./release-manifest.toml).
-
-## Requirements
-
-Python 3.14 and [uv](https://docs.astral.sh/uv/).
-
-## Install and use
+Python 3.14 and [uv](https://docs.astral.sh/uv/) are required.
 
 ```bash
-uv tool install untaped==6.0.1
-untaped --help
+uv tool install untaped
 untaped --version
-```
-
-Every command reads the shared `~/.untaped/config.yml` and uses the same
-`--format json|yaml|table|raw|pipe` output contract. A typical offline check is:
-
-```bash
-untaped config list --format yaml
-untaped capabilities --format json
 untaped doctor
 ```
 
-## Built-in capabilities
-
-The unified shell composes these capabilities under one executable:
-
-- **`workspace`** — local git workspaces and repo sync.
-- **`github`** — authenticated GitHub inventory, search, and corpus workflows.
-- **`jira`** — Jira Data Center issue and sprint workflows.
-- **`awx`** — AWX/AAP resource inspection and guarded reconciliation.
-- **`ansible`** — Ansible dependency graph and impact analysis.
-- **`recipe`** — local recipe pack planning, backup, and application.
-
-All six command roots resolve without network access when invoked with
-`--help`:
+## Quick start
 
 ```bash
-untaped workspace --help
-untaped github --help
-untaped jira --help
-untaped awx --help
-untaped ansible --help
-untaped recipe --help
+# Store a token without echoing it
+untaped config set github.token --prompt
+untaped github whoami
+
+# List an org's repos and clone them into a workspace
+untaped workspace init acme
+untaped github repos list --org acme --no-archived --format pipe \
+  | untaped workspace add --stdin --workspace acme --sync
+
+# Run a command in every repo
+untaped workspace foreach 'git status -s' --workspace acme
 ```
 
-See [docs/workspace/usage.md](./docs/workspace/usage.md) for the manifest
-shape, command reference, and shell helper examples.
+Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
+`--format pipe` writes typed records that another `untaped` command reads with
+`--stdin`. Only data goes to stdout; progress and errors go to stderr.
 
 ## Documentation
 
-User-facing docs live in [`docs/`](./docs/README.md):
+Start with [Getting started](./docs/getting-started.md). The
+[documentation index](./docs/README.md) lists everything:
 
-- [Capability authoring](./docs/plugins.md) — the stable provider surface and
-  composition rules for built-in capabilities.
-- [Configuration](./docs/configuration.md) — the `~/.untaped/config.yml`
-  format, profiles, secrets, and TLS.
-- [Agent Skills](./docs/skills.md) — how capabilities ship and install
-  Codex/Claude agent skills.
-- [Releasing](./docs/release.md) — PyPI/TestPyPI workflow, Trusted Publisher
-  setup, and recovery rules.
-- [Workspace usage](./docs/workspace/usage.md) — manifests, sync workflows, and
-  shell helpers.
+- guides for [workspace](./docs/workspace/usage.md),
+  [github](./docs/github/usage.md), [jira](./docs/jira/usage.md),
+  [awx](./docs/awx/usage.md), [ansible](./docs/ansible/usage.md) and
+  [recipe](./docs/recipe/usage.md);
+- [configuration](./docs/configuration.md) and the generated
+  [configuration reference](./docs/reference/config.md);
+- references for [pipes](./docs/reference/pipes.md),
+  [exit codes](./docs/reference/exit-codes.md) and
+  [environment variables](./docs/reference/environment.md);
+- [agent skills](./docs/skills.md) for AI coding agents;
+- [building a capability provider](./docs/plugins.md) for extending `untaped`.
 
 ## Security
 
@@ -102,7 +71,8 @@ Please report suspected vulnerabilities privately. See
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) and [AGENTS.md](./AGENTS.md) for the
-local workflow, architecture rules, and recipes for extending the app.
+local workflow and architecture rules. Releases follow
+[docs/release.md](./docs/release.md).
 
 ## License
 

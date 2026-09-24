@@ -12,9 +12,7 @@ class RecipeSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    library_root: Path = Field(
-        default_factory=lambda: Path("~/.untaped/untaped-recipes").expanduser()
-    )
+    library_root: Path = Path("~/.untaped/untaped-recipes")
     hook_timeout_seconds: float = Field(default=60, ge=0)
     hook_startup_timeout_seconds: float = Field(default=300, ge=0)
     backup_keep: int | None = Field(default=None, ge=1)

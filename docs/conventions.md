@@ -14,7 +14,8 @@ implements each one. Use the helper instead of writing your own version.
 | 3 | Predicate hit (`--check` drift, `--fail-on-match`, `--strict`) | Call `finish(any_failed, predicate_hit=True)`. |
 | 130 | Interrupted with Ctrl-C, including at a prompt | Handled by the root shell. |
 
-`ExitCode` names these values. A broken pipe exits 0.
+`ExitCode` names these values. Output into a closed pipe (`untaped … | head`)
+exits 0 quietly, for `--help` and data commands alike.
 
 Usage errors include conflicting flags, a value out of range, no selection,
 and "requires `--yes` when not interactive". Problems that depend on
@@ -127,6 +128,10 @@ come from a closed set:
   as `2026-01-02T03:04:05Z`.
 - Use native booleans, `null` and lists in records. Do not use glyphs such as
   `✓` or `—` as data.
+- `--format json` and `--format yaml` print one document per invocation: an
+  array for a collection (even when it spans several ids), a mapping for a
+  single record. `pipe` and `raw` print one line per record. Only a live
+  stream (`--follow`) prints json as one object per line (NDJSON).
 
 ## Enforcement
 

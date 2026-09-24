@@ -63,6 +63,10 @@ def test_spec_is_recipe_capability() -> None:
     assert SPEC.doctor_checks == ()
 
 
+def test_library_root_default_keeps_tilde_like_other_path_defaults() -> None:
+    assert RecipeSettings().library_root == Path("~/.untaped/untaped-recipes")
+
+
 def test_build_app_is_nullary_factory() -> None:
     app = build_app()
     assert isinstance(app, App)
