@@ -12,6 +12,9 @@ from untaped.capabilities.ansible.domain.payloads import GitRef, ProbeTarget
 from untaped.capabilities.ansible.infrastructure.git_cache import GitCacheError, GitRepositoryCache
 from untaped.capabilities.ansible.infrastructure.git_ref_probe import GitRemoteRefProbe
 
+_URL = "https://github.com/acme/site.git"
+_TARGET = ProbeTarget(full_name="acme/site", default_branch="main", clone_url=_URL)
+
 
 class FakeGit:
     def __init__(self) -> None:
@@ -35,7 +38,7 @@ class FakeGit:
 
 def test_git_probe_all_mode_parses_branches_tags_and_peeled_tags() -> None:
     git = FakeGit()
-    git.outputs["https://github.com/acme/site.git"] = "\n".join(
+    git.outputs[_URL] = "\n".join(
         [
             "ref: refs/heads/main\tHEAD",
             "sha-head\tHEAD",
@@ -47,14 +50,9 @@ def test_git_probe_all_mode_parses_branches_tags_and_peeled_tags() -> None:
             "",
         ]
     )
-    target = ProbeTarget(
-        full_name="acme/site",
-        default_branch="main",
-        clone_url="https://github.com/acme/site.git",
-    )
 
     report = GitRemoteRefProbe(git, clone_protocol="https", auth_header="AUTH").probe(
-        [target],
+        [_TARGET],
         kinds=("heads", "tags"),
     )
 
@@ -77,78 +75,45 @@ def test_git_probe_all_mode_parses_branches_tags_and_peeled_tags() -> None:
 
 def test_git_probe_respects_requested_ref_kinds() -> None:
     git = FakeGit()
-    git.outputs["https://github.com/acme/site.git"] = "sha-main\trefs/heads/main\n"
-    target = ProbeTarget(
-        full_name="acme/site",
-        default_branch="main",
-        clone_url="https://github.com/acme/site.git",
-    )
+    git.outputs[_URL] = "sha-main\trefs/heads/main\n"
 
     GitRemoteRefProbe(git, clone_protocol="https", auth_header=None).probe(
-        [target],
+        [_TARGET],
         kinds=("heads",),
     )
 
     assert git.calls == [("https://github.com/acme/site.git", ("HEAD", "refs/heads/*"), None)]
 
 
-def test_git_probe_default_branch_mode_resolves_head_symref() -> None:
+@pytest.mark.parametrize(
+    ("output", "branch"),
+    [
+        ("ref: refs/heads/trunk\tHEAD\nsha-trunk\tHEAD\nsha-trunk\trefs/heads/trunk\n", "trunk"),
+        # no HEAD symref: fall back to the inventory's default branch
+        ("sha-main\trefs/heads/main\n", "main"),
+    ],
+)
+def test_git_probe_default_branch_mode_resolves_head_symref(output: str, branch: str) -> None:
     git = FakeGit()
-    git.outputs["https://github.com/acme/site.git"] = "\n".join(
-        [
-            "ref: refs/heads/trunk\tHEAD",
-            "sha-trunk\tHEAD",
-            "sha-trunk\trefs/heads/trunk",
-            "",
-        ]
-    )
-    target = ProbeTarget(
-        full_name="acme/site",
-        default_branch="main",
-        clone_url="https://github.com/acme/site.git",
-    )
+    git.outputs[_URL] = output
 
     report = GitRemoteRefProbe(git, clone_protocol="https", auth_header=None).probe(
-        [target],
-        kinds=("heads", "tags"),
-        mode="default_branch",
+        [_TARGET], kinds=("heads", "tags"), mode="default_branch"
     )
 
-    assert report.repos["acme/site"].default_branch == "trunk"
-    assert report.repos["acme/site"].refs == (GitRef(kind="heads", name="trunk", sha="sha-trunk"),)
-    assert git.calls == [("https://github.com/acme/site.git", ("HEAD", "refs/heads/main"), None)]
-
-
-def test_git_probe_default_branch_mode_falls_back_to_inventory_branch() -> None:
-    git = FakeGit()
-    git.outputs["https://github.com/acme/site.git"] = "sha-main\trefs/heads/main\n"
-    target = ProbeTarget(
-        full_name="acme/site",
-        default_branch="main",
-        clone_url="https://github.com/acme/site.git",
+    assert report.repos["acme/site"].default_branch == branch
+    assert report.repos["acme/site"].refs == (
+        GitRef(kind="heads", name=branch, sha=f"sha-{branch}"),
     )
-
-    report = GitRemoteRefProbe(git, clone_protocol="https", auth_header=None).probe(
-        [target],
-        kinds=("heads", "tags"),
-        mode="default_branch",
-    )
-
-    assert report.repos["acme/site"].default_branch == "main"
-    assert report.repos["acme/site"].refs == (GitRef(kind="heads", name="main", sha="sha-main"),)
+    assert git.calls == [(_URL, ("HEAD", "refs/heads/main"), None)]
 
 
 def test_git_probe_reports_git_failures_per_repo() -> None:
     git = FakeGit()
-    git.failures["https://github.com/acme/site.git"] = GitCacheError("git ls-remote failed")
-    target = ProbeTarget(
-        full_name="acme/site",
-        default_branch="main",
-        clone_url="https://github.com/acme/site.git",
-    )
+    git.failures[_URL] = GitCacheError("git ls-remote failed")
 
     report = GitRemoteRefProbe(git, clone_protocol="https", auth_header=None).probe(
-        [target],
+        [_TARGET],
         kinds=("heads",),
     )
 
@@ -159,14 +124,9 @@ def test_git_probe_reports_git_failures_per_repo() -> None:
 
 def test_git_probe_empty_output_is_success_with_no_refs() -> None:
     git = FakeGit()
-    target = ProbeTarget(
-        full_name="acme/site",
-        default_branch="main",
-        clone_url="https://github.com/acme/site.git",
-    )
 
     report = GitRemoteRefProbe(git, clone_protocol="https", auth_header=None).probe(
-        [target],
+        [_TARGET],
         kinds=("heads",),
     )
 

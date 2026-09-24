@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -103,14 +104,29 @@ def _commit(
         keep = {(scan.source_repo, scan.ref_kind, scan.source_ref) for scan in scans} | {
             (touch.source_repo, touch.ref_kind, touch.source_ref) for touch in touches
         }
-    index.commit_source_ref_refresh(
+    repos = frozenset(repo for repo, _, _ in keep)
+    index.commit_source_ref_partial_refresh(
         source_key,
         scans=scans,
         touches=touches,
         keep=keep,
         repo_metadata=repo_metadata,
+        processed_repos=repos,
+    )
+    index.complete_source_ref_refresh(
+        source_key,
+        source_repos=repos,
         scanned_at=scanned_at or datetime(2026, 6, 1, tzinfo=UTC),
     )
+
+
+def _count(db_path: Path, sql: str) -> int:
+    with closing(sqlite3.connect(db_path)) as db:
+        return int(db.execute(sql).fetchone()[0])
+
+
+def _rows(db_path: Path, table: str) -> int:
+    return _count(db_path, f"select count(*) from {table}")
 
 
 def test_source_ref_refresh_supports_dependency_and_reverse_lookup(tmp_path) -> None:
@@ -300,14 +316,9 @@ def test_touch_updates_checked_at_without_reindexing_snapshot(tmp_path) -> None:
     )
 
     metadata = index.ref_scans("source:prod", "acme/site", [("heads", "main")])
-    db = sqlite3.connect(db_path)
-    try:
-        snapshot_count = db.execute("select count(*) from dependency_snapshots").fetchone()[0]
-    finally:
-        db.close()
     assert metadata[("heads", "main")].checked_at == touched_at
     assert metadata[("heads", "main")].indexed_at == indexed_at
-    assert snapshot_count == 1
+    assert _rows(db_path, "dependency_snapshots") == 1
     assert index.status("source:prod").scanned_at == touched_at  # type: ignore[union-attr]
 
 
@@ -331,12 +342,16 @@ def test_cached_refs_and_metadata_include_default_branch(tmp_path) -> None:
         scanned_at=now,
     )
 
+    batch = index.cached_ref_metadata_batch(["acme/site", "acme/missing"], source_key="source:prod")
+
     assert index.cached_refs("acme/site", source_key="source:prod") == {"v2.0.0", "trunk"}
     assert index.cached_refs("acme/site", source_key=None) == set()
-    assert set(index.cached_ref_metadata("acme/site", source_key="source:prod")) == {
+    assert set(batch["acme/site"]) == {
         CachedRef(name="v2.0.0", kind="tags", default_branch="trunk"),
         CachedRef(name="trunk", kind="heads", default_branch="trunk"),
     }
+    assert batch["acme/missing"] == ()
+    assert index.cached_ref_metadata_batch(["acme/site"], source_key=None) == {"acme/site": ()}
 
 
 def test_ref_scans_share_one_dependency_snapshot_for_duplicate_shas(tmp_path) -> None:
@@ -373,14 +388,8 @@ def test_ref_scans_share_one_dependency_snapshot_for_duplicate_shas(tmp_path) ->
     assert {
         edge.source_ref for edge in index.dependents("acme/base", None, source_key="source:prod")
     } == {"main", "release"}
-    db = sqlite3.connect(db_path)
-    try:
-        snapshot_count = db.execute("select count(*) from dependency_snapshots").fetchone()[0]
-        edge_count = db.execute("select count(*) from snapshot_edges").fetchone()[0]
-    finally:
-        db.close()
-    assert snapshot_count == 1
-    assert edge_count == 1
+    assert _rows(db_path, "dependency_snapshots") == 1
+    assert _rows(db_path, "snapshot_edges") == 1
 
 
 def test_pruning_keeps_same_ref_name_separate_by_ref_kind(tmp_path) -> None:
@@ -433,84 +442,28 @@ def test_pruning_keeps_same_ref_name_separate_by_ref_kind(tmp_path) -> None:
 
 def test_fresh_index_stamps_current_schema_version(tmp_path) -> None:
     db_path = tmp_path / "index.sqlite3"
-    index = SqliteDependencyIndex(db_path)
 
-    assert index.status("source:prod") is None
-
-    db = sqlite3.connect(db_path)
-    try:
-        assert db.execute("pragma user_version").fetchone()[0] == SCHEMA_VERSION
-    finally:
-        db.close()
+    assert SqliteDependencyIndex(db_path).status("source:prod") is None
+    assert _count(db_path, "pragma user_version") == SCHEMA_VERSION
 
 
-def _assert_outdated_schema_is_rebuilt(db_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    index = SqliteDependencyIndex(db_path)
+@pytest.mark.parametrize("version", [1, None])
+def test_outdated_or_versionless_schema_is_rebuilt_as_empty_cache(
+    tmp_path, capsys: pytest.CaptureFixture[str], version: int | None
+) -> None:
+    db_path = tmp_path / "index.sqlite3"
+    with closing(sqlite3.connect(db_path)) as db:
+        if version is not None:
+            db.execute(f"pragma user_version = {version}")
+        db.execute("create table stale_table (source_key text primary key)")
+        db.commit()
 
-    assert index.status("source:prod") is None
-    db = sqlite3.connect(db_path)
-    try:
-        assert db.execute("pragma user_version").fetchone()[0] == SCHEMA_VERSION
-        stale = db.execute(
-            "select count(*) from sqlite_master where name = 'stale_table'"
-        ).fetchone()[0]
-        assert stale == 0
-    finally:
-        db.close()
+    assert SqliteDependencyIndex(db_path).status("source:prod") is None
+    assert _count(db_path, "pragma user_version") == SCHEMA_VERSION
+    assert _count(db_path, "select count(*) from sqlite_master where name = 'stale_table'") == 0
     err = capsys.readouterr().err
     assert "rebuilt" in err
     assert "untaped ansible source refresh" in err
-
-
-def test_outdated_schema_version_is_rebuilt_as_empty_cache(
-    tmp_path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    db_path = tmp_path / "index.sqlite3"
-    db = sqlite3.connect(db_path)
-    try:
-        db.execute("pragma user_version = 1")
-        db.execute("create table stale_table (source_key text primary key)")
-        db.commit()
-    finally:
-        db.close()
-
-    _assert_outdated_schema_is_rebuilt(db_path, capsys)
-
-
-def test_versionless_db_with_tables_is_rebuilt_as_empty_cache(
-    tmp_path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    db_path = tmp_path / "index.sqlite3"
-    db = sqlite3.connect(db_path)
-    try:
-        db.execute("create table stale_table (source_key text primary key)")
-        db.commit()
-    finally:
-        db.close()
-
-    _assert_outdated_schema_is_rebuilt(db_path, capsys)
-
-
-def test_recommitting_unchanged_scan_reuses_snapshot_and_edges(tmp_path) -> None:
-    db_path = tmp_path / "index.sqlite3"
-    index = SqliteDependencyIndex(db_path)
-    now = datetime(2026, 6, 1, tzinfo=UTC)
-    scan = _scan()
-
-    _commit(index, scans=(scan,), scanned_at=now)
-    _commit(index, scans=(scan,), scanned_at=now)
-
-    db = sqlite3.connect(db_path)
-    try:
-        snapshot_count = db.execute("select count(*) from dependency_snapshots").fetchone()[0]
-        edge_count = db.execute("select count(*) from snapshot_edges").fetchone()[0]
-    finally:
-        db.close()
-    assert snapshot_count == 1
-    assert edge_count == 1
-    assert index.dependencies("acme/site", "main", source_key="source:prod") == list(
-        scan.dependencies
-    )
 
 
 def test_commit_resolves_snapshot_ids_across_multiple_lookup_chunks(tmp_path) -> None:
@@ -533,70 +486,14 @@ def test_commit_resolves_snapshot_ids_across_multiple_lookup_chunks(tmp_path) ->
     # pre-lookup instead of inserting duplicates.
     _commit(index, scans=scans, scanned_at=now)
 
-    db = sqlite3.connect(db_path)
-    try:
-        snapshot_count = db.execute("select count(*) from dependency_snapshots").fetchone()[0]
-        edge_count = db.execute("select count(*) from snapshot_edges").fetchone()[0]
-        orphan_scans = db.execute(
-            """
-            select count(*) from source_ref_scans
-            where snapshot_id not in (select id from dependency_snapshots)
-            """
-        ).fetchone()[0]
-    finally:
-        db.close()
-    assert snapshot_count == 401
-    assert edge_count == 401
-    assert orphan_scans == 0
+    assert _rows(db_path, "dependency_snapshots") == 401
+    assert _rows(db_path, "snapshot_edges") == 401
+    orphans = "select count(*) from source_ref_scans where snapshot_id not in "
+    assert _count(db_path, orphans + "(select id from dependency_snapshots)") == 0
     status = index.status("source:prod")
     assert status is not None
     assert status.refs == 401
     assert status.edges == 401
-
-
-def test_schema_creates_graph_read_indexes(tmp_path) -> None:
-    db_path = tmp_path / "index.sqlite3"
-    index = SqliteDependencyIndex(db_path)
-
-    assert index.status("source:prod") is None
-
-    db = sqlite3.connect(db_path)
-    try:
-        indexes = {
-            row[1]: row[0]
-            for row in db.execute(
-                "select tbl_name, name from sqlite_master where type = 'index'"
-            ).fetchall()
-        }
-        indexed_columns = {
-            name: tuple(row[2] for row in db.execute(f"pragma index_info({name})").fetchall())
-            for name in indexes
-        }
-        source_ref_scan_columns = {
-            row[1] for row in db.execute("pragma table_info(source_ref_scans)").fetchall()
-        }
-    finally:
-        db.close()
-
-    assert "backend" not in source_ref_scan_columns
-    assert "last_error" not in source_ref_scan_columns
-    assert indexes["idx_snapshot_edges_dependency_ref"] == "snapshot_edges"
-    assert indexed_columns["idx_snapshot_edges_dependency_ref"] == (
-        "dependency_repo_key",
-        "dependency_version",
-        "snapshot_id",
-    )
-    assert indexes["idx_source_ref_scans_source_ref"] == "source_ref_scans"
-    assert indexed_columns["idx_source_ref_scans_source_ref"] == (
-        "source_key",
-        "source_repo_key",
-        "source_ref",
-    )
-    assert indexes["idx_source_ref_scans_source_snapshot"] == "source_ref_scans"
-    assert indexed_columns["idx_source_ref_scans_source_snapshot"] == (
-        "source_key",
-        "snapshot_id",
-    )
 
 
 def test_dependencies_batch_returns_every_requested_pair(tmp_path) -> None:
@@ -690,35 +587,6 @@ def test_dependencies_batch_spans_multiple_value_chunks(tmp_path) -> None:
     assert len(batch[("acme/site", None)]) == 401
 
 
-def test_cached_ref_metadata_batch_includes_missing_repos(tmp_path) -> None:
-    index = SqliteDependencyIndex(tmp_path / "index.sqlite3")
-    now = datetime(2026, 6, 1, tzinfo=UTC)
-    _commit(
-        index,
-        scans=(
-            _scan(ref_kind="tags", source_ref="v2.0.0", source_sha="sha-v2", dependencies=()),
-            _scan(ref_kind="heads", source_ref="trunk", source_sha="sha-trunk", dependencies=()),
-        ),
-        repo_metadata=(
-            SourceRepoMetadata(
-                source_key="source:prod",
-                source_repo="acme/site",
-                default_branch="trunk",
-            ),
-        ),
-        scanned_at=now,
-    )
-
-    batch = index.cached_ref_metadata_batch(["acme/site", "acme/missing"], source_key="source:prod")
-
-    assert set(batch["acme/site"]) == {
-        CachedRef(name="v2.0.0", kind="tags", default_branch="trunk"),
-        CachedRef(name="trunk", kind="heads", default_branch="trunk"),
-    }
-    assert batch["acme/missing"] == ()
-    assert index.cached_ref_metadata_batch(["acme/site"], source_key=None) == {"acme/site": ()}
-
-
 def test_index_creates_missing_parent_directories(tmp_path) -> None:
     db_path = tmp_path / "missing" / "nested" / "index.sqlite3"
 
@@ -736,13 +604,10 @@ def test_unopenable_index_raises_untaped_error(tmp_path) -> None:
 
 def test_newer_schema_version_is_not_reported_as_outdated(tmp_path) -> None:
     db_path = tmp_path / "index.sqlite3"
-    db = sqlite3.connect(db_path)
-    try:
+    with closing(sqlite3.connect(db_path)) as db:
         db.execute(f"pragma user_version = {SCHEMA_VERSION + 1}")
         db.execute("create table source_runs (source_key text primary key)")
         db.commit()
-    finally:
-        db.close()
 
     with pytest.raises(UntapedError) as excinfo:
         SqliteDependencyIndex(db_path).status("source:prod")
@@ -798,15 +663,12 @@ def _captured_plans(
     monkeypatch.setattr(sqlite3, "connect", real_connect)
     selects = [sql for sql in statements if "with requested" in sql]
     assert selects
-    db = sqlite3.connect(db_path)
-    try:
+    with closing(sqlite3.connect(db_path)) as db:
         return [
             str(row[3])
             for sql in selects
             for row in db.execute(f"explain query plan {sql}").fetchall()
         ]
-    finally:
-        db.close()
 
 
 def test_repo_joins_search_the_repo_key_indexes(tmp_path, monkeypatch) -> None:

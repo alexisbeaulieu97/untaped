@@ -7,8 +7,10 @@ from collections import Counter
 from collections.abc import Callable, Iterable
 from typing import Literal
 
-from untaped.capabilities.ansible.application.refresh_git_index import RefreshGitSourceIndex
-from untaped.capabilities.ansible.application.refresh_index import RefreshResult
+from untaped.capabilities.ansible.application.refresh_git_index import (
+    RefreshGitSourceIndex,
+    RefreshResult,
+)
 from untaped.capabilities.ansible.domain.identity import github_web_host
 from untaped.capabilities.ansible.domain.payloads import (
     GRAPHQL_RATE_LIMIT_FALLBACK,

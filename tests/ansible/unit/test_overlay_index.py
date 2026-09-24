@@ -89,50 +89,25 @@ class StubIndex:
         return False
 
 
-def test_dependencies_prefer_local_edges_and_keep_authoritative_pairs_local() -> None:
+def test_local_edges_win_for_authoritative_pairs_and_the_rest_delegates() -> None:
     local = _edge("acme/site", "main", "acme/local-base")
-    indexed = _edge("acme/site", "release", "acme/indexed-base")
+    release = _edge("acme/site", "release", "acme/indexed-base")
+    other = _edge("acme/other", "main", "acme/indexed-base")
     index = OverlayDependencyIndex(
-        StubIndex([indexed]),
-        [local],
-        authoritative_sources={("acme/site", "main")},
-    )
-
-    assert index.dependencies("acme/site", "main", source_key=None) == [local]
-    assert index.dependencies("acme/site", "release", source_key=None) == [indexed]
-    assert index.dependents("acme/indexed-base", None, source_key=None) == [indexed]
-
-
-def test_dependencies_batch_mixes_local_authoritative_and_delegated_pairs() -> None:
-    local = _edge("acme/site", "main", "acme/local-base")
-    indexed = _edge("acme/other", "main", "acme/indexed-base")
-    index = OverlayDependencyIndex(
-        StubIndex([indexed]),
+        StubIndex([release, other]),
         [local],
         authoritative_sources={("acme/site", "main"), ("acme/empty", "v1")},
     )
 
-    batch = index.dependencies_batch(
-        [("acme/site", "main"), ("acme/empty", "v1"), ("acme/other", "main")],
-        source_key=None,
-    )
-
-    assert batch[("acme/site", "main")] == [local]
-    assert batch[("acme/empty", "v1")] == []
-    assert batch[("acme/other", "main")] == [indexed]
-
-
-def test_dependents_batch_delegates_to_wrapped_index() -> None:
-    indexed = _edge("acme/site", "main", "acme/base")
-    index = OverlayDependencyIndex(StubIndex([indexed]), [])
-
-    batch = index.dependents_batch(
-        [("acme/base", "main"), ("acme/missing", None)],
-        source_key=None,
-    )
-
-    assert batch[("acme/base", "main")] == [indexed]
-    assert batch[("acme/missing", None)] == []
+    pairs = [("acme/site", "main"), ("acme/empty", "v1"), ("acme/site", "release")]
+    expected = {pairs[0]: [local], pairs[1]: [], pairs[2]: [release]}
+    assert index.dependencies_batch(pairs, source_key=None) == expected
+    assert {pair: index.dependencies(*pair, source_key=None) for pair in pairs} == expected
+    # dependents always come from the wrapped index
+    assert index.dependents("acme/indexed-base", None, source_key=None) == [release, other]
+    assert index.dependents_batch(
+        [("acme/indexed-base", "main"), ("acme/missing", None)], source_key=None
+    ) == {("acme/indexed-base", "main"): [release, other], ("acme/missing", None): []}
 
 
 def test_cached_ref_reads_overlay_authoritative_refs_onto_wrapped_metadata() -> None:
