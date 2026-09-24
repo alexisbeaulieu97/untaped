@@ -53,15 +53,10 @@ class GitRunner:
 
     def ensure_bare(self, url: str, *, cache_dir: Path) -> BareCacheEntry:
         """Ensure a bare clone of ``url`` exists in the cache."""
-        bare = self.bare_cache_path(url, cache_dir=cache_dir)
+        bare = cache_path_for(url, cache_dir=cache_dir)
         if bare.is_dir() and (bare / "HEAD").is_file():
             return BareCacheEntry(path=bare, created=False)
-        # ``mkdir(parents=True, exist_ok=True)`` is the thread-safety
-        # boundary for repo-level sync parallelism: different URLs can
-        # race on the same ``cache_dir`` here, and ``exist_ok=True`` (plus the
-        # per-level ``FileExistsError`` handling in ``os.makedirs``)
-        # makes it idempotent. Don't replace with a non-idempotent
-        # variant.
+        # Must stay idempotent: parallel syncs of different URLs race here.
         bare.parent.mkdir(parents=True, exist_ok=True)
         self._clone(["clone", "--bare", url, str(bare)], dest=bare)
         self._protect_cache_objects(bare)
