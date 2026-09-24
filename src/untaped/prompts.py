@@ -130,9 +130,12 @@ class PromptToolkitPromptBackend:
 
     def confirm(self, message: str, *, default: bool) -> bool:
         suffix = " [Y/n]: " if default else " [y/N]: "
-        default_text = "y" if default else "n"
         while True:
-            answer = self._prompt(f"{message}{suffix}", default=default_text).strip().lower()
+            # The buffer starts empty (Enter takes the default): a pre-filled
+            # "n" would turn a typed "y" into "ny" and re-prompt.
+            answer = self._prompt(f"{message}{suffix}", default="").strip().lower()
+            if not answer:
+                return default
             if answer in {"y", "yes"}:
                 return True
             if answer in {"n", "no"}:
