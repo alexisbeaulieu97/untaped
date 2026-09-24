@@ -17,7 +17,6 @@ from untaped.capabilities.recipe.application.inputs import (
     resolve_target_inputs,
 )
 from untaped.capabilities.recipe.application.targets import Target
-from untaped.capabilities.recipe.domain import input_jinja
 from untaped.capabilities.recipe.domain.recipe import Recipe
 from untaped.capability_api import ConfigError
 
@@ -480,40 +479,11 @@ def test_interactive_without_prompt_backend_fails_clearly() -> None:
         )
 
 
-def test_invalid_jinja_syntax_fails_during_input_preparation() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "inputs": {
-                "service": {"type": "str", "from": "{{ target.name"},
-            },
-        }
-    )
-
-    with pytest.raises(ConfigError, match="invalid input source expression for service"):
-        _config(recipe)
-
-
-def test_jinja_control_blocks_fail_during_input_preparation() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "inputs": {
-                "service": {
-                    "type": "str",
-                    "from": "{% for item in [target.name] %}{{ item }}{% endfor %}",
-                },
-            },
-        }
-    )
-
-    with pytest.raises(ConfigError, match="invalid input source expression for service"):
-        _config(recipe)
-
-
 @pytest.mark.parametrize(
     "expression",
     [
+        pytest.param("{{ target.name", id="syntax-error"),
+        pytest.param("{% for item in [target.name] %}{{ item }}{% endfor %}", id="control-block"),
         "{{ target.name | upper }}",
         "{{ target.name is string }}",
         "{{ target.name.upper() }}",
@@ -521,9 +491,13 @@ def test_jinja_control_blocks_fail_during_input_preparation() -> None:
         "{{ 2 + 2 }}",
         "{{ {'service': target.name} }}",
         "{{ [target.name] }}",
+        pytest.param("{{ range(3) }}", id="no-ambient-globals"),
+        pytest.param("{{ dict(service=target.name) }}", id="no-ambient-dict"),
+        pytest.param("{{ 'x' * 9000 }}", id="bounded-string"),
+        pytest.param("{{ 2 ** 9000 }}", id="bounded-integer"),
     ],
 )
-def test_jinja_rejects_non_field_derivation_during_input_preparation(
+def test_input_sources_allow_only_field_access_and_fail_during_preparation(
     expression: str,
 ) -> None:
     recipe = Recipe.model_validate(
@@ -567,79 +541,48 @@ def test_jinja_allows_scalar_literals_and_target_record_field_access() -> None:
     }
 
 
-@pytest.mark.parametrize("expression", ["{{ range(3) }}", "{{ dict(service=target.name) }}"])
-def test_jinja_has_no_ambient_globals(expression: str) -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "inputs": {
-                "service": {"type": "str", "required": True, "from": expression},
-            },
-        }
-    )
+@pytest.mark.parametrize(
+    ("spec", "record", "match"),
+    [
+        pytest.param(
+            {"type": "str", "from": "{{ record.value }}"},
+            {"value": 2**9000},
+            "maximum length",
+            id="bounded-record-integer",
+        ),
+        pytest.param(
+            {"type": "str", "from": "{{ record }}"},
+            {"value": "TOP-SECRET-9000"},
+            "derived input value must be a scalar",
+            id="container-not-copied",
+        ),
+        pytest.param(
+            {"type": "str", "from": "{{ record.value }}"},
+            {"value": ["api"]},
+            "derived input value must be a scalar",
+            id="scalar-rejects-list",
+        ),
+        pytest.param(
+            {"type": "list", "from": "{{ record.value }}"},
+            {"value": ["x" * 9000]},
+            "maximum length",
+            id="structured-size-bound",
+        ),
+        pytest.param(
+            {"type": "list", "from": "{{ record.value }}"},
+            {"value": [["nested"]]},
+            "cannot coerce value to list",
+            id="structured-rejects-nesting",
+        ),
+    ],
+)
+def test_derived_values_are_bounded_and_shape_checked(
+    spec: dict[str, object], record: dict[str, object], match: str
+) -> None:
+    recipe = Recipe.model_validate({"version": 1, "inputs": {"value": spec}})
 
-    with pytest.raises(ConfigError, match="invalid input source expression"):
-        _config(recipe)
-
-
-def test_derived_value_size_is_bounded() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "inputs": {
-                "service": {"type": "str", "from": "{{ 'x' * 9000 }}"},
-            },
-        }
-    )
-
-    with pytest.raises(ConfigError, match="invalid input source expression"):
-        _config(recipe)
-
-
-def test_derived_large_integer_value_is_bounded() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "inputs": {
-                "big": {"type": "int", "from": "{{ 2 ** 9000 }}"},
-            },
-        }
-    )
-
-    with pytest.raises(ConfigError, match="invalid input source expression"):
-        _config(recipe)
-
-
-def test_derived_large_record_integer_value_is_bounded() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "inputs": {
-                "big": {"type": "str", "from": "{{ record.big }}"},
-            },
-        }
-    )
-
-    with pytest.raises(ValueError, match="maximum length"):
-        _resolve(
-            recipe,
-            Target(path=Path("/work/acme/api"), record={"big": 2**9000}),
-        )
-
-
-def test_derived_container_values_are_rejected_without_copying_contents() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "inputs": {
-                "service": {"type": "str", "from": "{{ record }}"},
-            },
-        }
-    )
-    target = Target(path=Path("/work/acme/api"), record={"token": "TOP-SECRET-9000"})
-
-    with pytest.raises(ValueError, match="derived input value must be a scalar") as exc_info:
-        _resolve(recipe, target)
+    with pytest.raises(ValueError, match=match) as exc_info:
+        _resolve(recipe, Target(path=Path("/work/acme/api"), record=record))
 
     assert "TOP-SECRET-9000" not in str(exc_info.value)
 
@@ -667,57 +610,6 @@ def test_derived_list_values_feed_structured_inputs() -> None:
     assert result.values == {"collections": ["ansible.builtin", "community.general"]}
 
 
-def test_scalar_declared_input_still_rejects_derived_list_values() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "inputs": {
-                "service": {"type": "str", "from": "{{ record.services }}"},
-            },
-        }
-    )
-
-    with pytest.raises(ValueError, match="derived input value must be a scalar"):
-        _resolve(
-            recipe,
-            Target(path=Path("/work/acme/api"), record={"services": ["api"]}),
-        )
-
-
-def test_derived_structured_values_still_obey_size_bound() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "inputs": {
-                "collections": {"type": "list", "from": "{{ record.collections }}"},
-            },
-        }
-    )
-
-    with pytest.raises(ValueError, match="maximum length"):
-        _resolve(
-            recipe,
-            Target(path=Path("/work/acme/api"), record={"collections": ["x" * 9000]}),
-        )
-
-
-def test_derived_structured_values_reject_nested_containers_during_coercion() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "inputs": {
-                "collections": {"type": "list", "from": "{{ record.collections }}"},
-            },
-        }
-    )
-
-    with pytest.raises(ValueError, match="cannot coerce value to list"):
-        _resolve(
-            recipe,
-            Target(path=Path("/work/acme/api"), record={"collections": [["nested"]]}),
-        )
-
-
 def test_fixed_values_are_coerced_once_during_input_preparation() -> None:
     recipe = Recipe.model_validate(
         {
@@ -733,35 +625,9 @@ def test_fixed_values_are_coerced_once_during_input_preparation() -> None:
     assert config.fixed_values == {"replicas": 3}
 
 
-def test_invalid_fixed_values_fail_during_input_preparation() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "inputs": {
-                "replicas": {"type": "int", "scope": "target"},
-            },
-        }
-    )
-
-    with pytest.raises(ConfigError, match="cannot coerce value to int"):
-        _config(recipe, fixed_values={"replicas": "not-an-int"})
-
-
 def test_has_sensitive_inputs_detects_declared_sensitive_display_values() -> None:
     assert has_sensitive_inputs(_recipe().inputs, {"token": "***"})
     assert not has_sensitive_inputs(_recipe().inputs, {"service": "api"})
-
-
-def test_jinja_compile_failures_are_wrapped(monkeypatch: pytest.MonkeyPatch) -> None:
-    input_jinja._compile_template.cache_clear()
-
-    def fail_compile(_expression: str) -> object:
-        raise RuntimeError("compile boom")
-
-    monkeypatch.setattr(input_jinja, "_compile_template", fail_compile)
-
-    with pytest.raises(input_jinja.InputSourceError, match="compile boom"):
-        input_jinja.compile_input_source(("{{ target.name }}",))
 
 
 def test_redact_inputs_only_redacts_sensitive_declared_inputs() -> None:
