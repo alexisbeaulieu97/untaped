@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 
 from cyclopts import App, Group, Parameter, validators
 
@@ -20,7 +20,14 @@ from untaped.capabilities.ansible.cli.refresh import (
     run_source_refresh,
     warn_deprecated_settings,
 )
+from untaped.capabilities.ansible.domain.containment import DependencyMatch, find_matches
 from untaped.capabilities.ansible.domain.graph import DependencyGraph
+from untaped.capabilities.ansible.domain.graph_roots import (
+    REPO_FIELDS,
+    GraphRoot,
+    root_from_line,
+    root_from_record,
+)
 from untaped.capabilities.ansible.domain.identity import IdentityResolver, github_web_host
 from untaped.capabilities.ansible.domain.models import DependencyDeclaration, ParseWarning
 from untaped.capabilities.ansible.domain.parser import parse_dependency_file
@@ -41,24 +48,35 @@ from untaped.capabilities.github.ansible import GithubClient, GithubSettings
 from untaped.capabilities.github.ansible import github_settings as load_github_settings
 from untaped.capability_api import (
     HttpSettings,
+    OutputFormat,
     ParallelOption,
+    UiContext,
     UntapedError,
     app_context,
     clamp_parallel,
     deprecated_alias,
     echo,
+    emit,
     get_config_section,
     not_found,
     plural,
     raise_usage,
+    read_stdin_input,
     report_errors,
 )
 
 GraphDirection = Literal["deps", "impact", "both"]
 GraphFormatOption = Annotated[
-    GraphFormat,
-    Parameter(name=["--format", "-f"], help="Graph output format."),
+    GraphFormat | Literal["table", "pipe"] | None,
+    Parameter(
+        name=["--format", "-f"],
+        help=(
+            "Output format: tree (default), mermaid or json; with --contains, table "
+            "(default), json or pipe."
+        ),
+    ),
 ]
+_CONTAINS_FORMATS = frozenset({"table", "json", "pipe"})
 BackendOption = Annotated[
     Literal["auto", "graphql", "git"] | None,
     Parameter(
@@ -82,11 +100,34 @@ def register_graph_command(app: App) -> None:
 
 def graph_command(
     target: Annotated[
-        str,
+        str | None,
         Parameter(help="Target repo, GitHub URL, alias, or local path."),
-    ],
+    ] = None,
     /,
     *,
+    stdin: Annotated[
+        bool,
+        Parameter(
+            name="--stdin",
+            negative="",
+            help=(
+                "Read roots from stdin (requires --contains): owner/repo@ref lines, or pipe "
+                "records with scm_url/repo_url/repo/full_name and effective_scm_ref/ref."
+            ),
+        ),
+    ] = False,
+    contains: Annotated[
+        list[str] | None,
+        Parameter(
+            name="--contains",
+            help=(
+                "Report only roots whose downstream graph contains OWNER/REPO, one row per "
+                "match (repeatable)."
+            ),
+            consume_multiple=False,
+            negative="",
+        ),
+    ] = None,
     ref: Annotated[
         str | None,
         Parameter(
@@ -230,7 +271,7 @@ def graph_command(
             help="Inline source scan strategy: all refs or only each repo's default branch.",
         ),
     ] = None,
-    fmt: GraphFormatOption = "tree",
+    fmt: GraphFormatOption = None,
     output: Annotated[
         Path | None,
         Parameter(name=["--out", "-o"], help="Write graph data to this file instead of stdout."),
@@ -250,6 +291,19 @@ def graph_command(
         untaped ansible graph ./roles/web --target-repo acme/web --downstream
     """
     depth_limit = _parse_depth(depth)
+    if contains:
+        _check_contains_usage(
+            target=target,
+            stdin=stdin,
+            upstream=upstream,
+            both=both,
+            fmt=fmt,
+            output=output,
+            ref=ref,
+            target_repo=target_repo,
+        )
+    else:
+        _check_single_usage(target=target, stdin=stdin, fmt=fmt)
     if refresh and not any((source, orgs, teams, source_repos)):
         raise_usage("--refresh requires --source or inline source selectors")
     if backend is not None and not refresh:
@@ -261,19 +315,11 @@ def graph_command(
         aliases = AliasRepository().entries()
         github_settings = load_github_settings()
         github_host = github_web_host(github_settings.base_url)
-        target_repo_name = target_repo or _resolve_target_repo(
-            target, aliases, github_host=github_host
-        )
-        if target_repo_name is None:
-            message = f"could not resolve target to a GitHub repo: {target!r}"
-            if Path(target).expanduser().exists():
-                message = (
-                    f"{message}; the local path is not the top level of a Git checkout "
-                    "with a remote pointing at GitHub. Pass --target-repo OWNER/NAME"
-                )
-            raise UntapedError(message)
+        roots = _read_roots() if stdin else [GraphRoot(target=target or "", ref=ref)]
 
         direction = _graph_direction(upstream=upstream, downstream=downstream, both=both)
+        if contains:
+            direction = "deps"
         git_concurrency = clamp_parallel(
             parallel or settings.git_fetch_concurrency,
             cap=GIT_PARALLEL_CAP,
@@ -291,96 +337,266 @@ def graph_command(
         )
         sqlite_index = SqliteDependencyIndex(settings.index_path)
         index: DependencyIndex = _dependency_index_for_graph_source(sqlite_index, graph_source)
-        should_refresh_source = refresh
-        refresh_warnings: list[str] = []
-        if should_refresh_source:
-            for selection in graph_source.selections:
-                result = run_source_refresh(
-                    selection.definition,
-                    source_key=selection.key,
-                    action="refreshed" if refresh else "checked",
-                    label=selection.label,
-                    index=sqlite_index,
-                    aliases=aliases,
-                    settings=settings,
-                    github_settings=github_settings,
-                    http=ctx.http,
-                    concurrency=git_concurrency,
-                    backend=backend,
-                    ui=ctx.ui(strict=False),
-                )
-                if not result.completed:
-                    raise UntapedError(_refresh_pause_message(result, selection))
-                if result.failures:
-                    refresh_warnings.append(
-                        f"refresh of {selection.label} had "
-                        f"{plural(len(result.failures), 'failure')}; "
-                        "data for those repos may be stale"
-                    )
-
-        direction, graph_warnings = _effective_direction(
-            target=target,
-            source_state=graph_source,
-            index=sqlite_index,
-            direction=direction,
-            live=live,
-        )
-        refresh_hint = _refresh_hint(graph_source)
-        parse_warnings: list[str] = []
-
-        target_path = Path(target).expanduser()
-        local_dependencies: _LocalDependencies | None = None
-        if target_path.exists():
-            local_dependencies = _local_dependencies(
-                target_path,
-                repo=target_repo_name,
-                ref=ref,
+        refresh_warnings = (
+            _refresh_sources(
+                graph_source,
+                index=sqlite_index,
                 aliases=aliases,
-                dependency_paths=settings.dependency_paths,
-                github_host=github_host,
+                settings=settings,
+                github_settings=github_settings,
+                http=ctx.http,
+                concurrency=git_concurrency,
+                backend=backend,
+                ui=ctx.ui(strict=False),
             )
-            parse_warnings.extend(local_dependencies.warnings)
+            if refresh
+            else []
+        )
 
-        graph, read_warnings = _graph_for_target(
-            index,
-            request=GraphRequest(
-                repo=target_repo_name,
-                ref=ref,
-                source_key=graph_source.key,
-                direction=direction,
-                depth=depth_limit,
-                stale_after=settings.stale_after,
-                refresh_hint=refresh_hint,
-            ),
-            local=local_dependencies,
-            use_live=_should_use_live_dependencies(
-                direction=direction,
-                source_key=graph_source.key,
-                live=live,
-            ),
+        env = _GraphEnv(
+            settings=settings,
+            aliases=aliases,
             github_settings=github_settings,
+            github_host=github_host,
             http=ctx.http,
+            index=index,
+            sqlite_index=sqlite_index,
+            graph_source=graph_source,
+            live=live,
+            depth=depth_limit,
+        )
+        if not contains:
+            graph = _target_graph(
+                env,
+                target=roots[0].target,
+                ref=roots[0].ref,
+                target_repo=target_repo,
+                direction=direction,
+                extra_warnings=refresh_warnings,
+            )
+            _emit_graph(graph, fmt=cast(GraphFormat, fmt or "tree"), output=output)
+            return
+
+        ui = ctx.ui(strict=False)
+        for warning in refresh_warnings:
+            ui.message("warning", warning)
+        matches: list[DependencyMatch] = []
+        for root in roots:
+            graph = _target_graph(
+                env,
+                target=root.target,
+                ref=root.ref,
+                target_repo=target_repo,
+                direction=direction,
+                extra_warnings=[],
+            )
+            for warning in graph.warnings:
+                ui.message("warning", f"{_root_label(root)}: {warning}")
+            matches.extend(find_matches(graph, contains))
+        emit(
+            matches,
+            fmt=cast(OutputFormat, fmt or "table"),
+            kind="ansible.dependency_match",
+            empty="No matching roots found.",
+        )
+
+
+def _refresh_sources(
+    graph_source: _GraphSource,
+    *,
+    index: SqliteDependencyIndex,
+    aliases: dict[str, str],
+    settings: AnsibleSettings,
+    github_settings: GithubSettings,
+    http: HttpSettings,
+    concurrency: int,
+    backend: Literal["auto", "graphql", "git"] | None,
+    ui: UiContext,
+) -> list[str]:
+    """Refresh every selected source; return warnings for partial refreshes."""
+    warnings: list[str] = []
+    for selection in graph_source.selections:
+        result = run_source_refresh(
+            selection.definition,
+            source_key=selection.key,
+            action="refreshed",
+            label=selection.label,
+            index=index,
             aliases=aliases,
             settings=settings,
-            github_host=github_host,
+            github_settings=github_settings,
+            http=http,
+            concurrency=concurrency,
+            backend=backend,
+            ui=ui,
         )
-        parse_warnings.extend(read_warnings)
+        if not result.completed:
+            raise UntapedError(_refresh_pause_message(result, selection))
+        if result.failures:
+            warnings.append(
+                f"refresh of {selection.label} had "
+                f"{plural(len(result.failures), 'failure')}; "
+                "data for those repos may be stale"
+            )
+    return warnings
 
-        graph = _with_graph_warnings(
-            graph,
-            [
-                *refresh_warnings,
-                *graph_warnings,
-                *parse_warnings,
-                *_empty_graph_warnings(
-                    graph,
-                    direction=direction,
-                    dependency_paths=settings.dependency_paths,
-                    source_label=graph_source.label,
-                ),
-            ],
+
+def _check_single_usage(*, target: str | None, stdin: bool, fmt: str | None) -> None:
+    """Without ``--contains`` the command graphs exactly one TARGET."""
+    if stdin:
+        raise_usage("--stdin requires --contains")
+    if target is None:
+        raise_usage("graph requires an argument: TARGET")
+    if fmt in {"table", "pipe"}:
+        raise_usage(f"--format {fmt} requires --contains")
+
+
+@dataclass(frozen=True)
+class _GraphEnv:
+    """Everything a single root's graph build shares with the others."""
+
+    settings: AnsibleSettings
+    aliases: dict[str, str]
+    github_settings: GithubSettings
+    github_host: str | None
+    http: HttpSettings
+    index: DependencyIndex
+    sqlite_index: SqliteDependencyIndex
+    graph_source: _GraphSource
+    live: bool
+    depth: int | None
+
+
+def _target_graph(
+    env: _GraphEnv,
+    *,
+    target: str,
+    ref: str | None,
+    target_repo: str | None,
+    direction: GraphDirection,
+    extra_warnings: list[str],
+) -> DependencyGraph:
+    """Build one root's graph, with its warnings attached."""
+    target_repo_name = target_repo or _resolve_target_repo(
+        target, env.aliases, github_host=env.github_host
+    )
+    if target_repo_name is None:
+        message = f"could not resolve target to a GitHub repo: {target!r}"
+        if Path(target).expanduser().exists():
+            message = (
+                f"{message}; the local path is not the top level of a Git checkout "
+                "with a remote pointing at GitHub. Pass --target-repo OWNER/NAME"
+            )
+        raise UntapedError(message)
+    graph_source = env.graph_source
+    direction, graph_warnings = _effective_direction(
+        target=target,
+        source_state=graph_source,
+        index=env.sqlite_index,
+        direction=direction,
+        live=env.live,
+    )
+    refresh_hint = _refresh_hint(graph_source)
+    parse_warnings: list[str] = []
+
+    target_path = Path(target).expanduser()
+    local_dependencies: _LocalDependencies | None = None
+    if target_path.exists():
+        local_dependencies = _local_dependencies(
+            target_path,
+            repo=target_repo_name,
+            ref=ref,
+            aliases=env.aliases,
+            dependency_paths=env.settings.dependency_paths,
+            github_host=env.github_host,
         )
-        _emit_graph(graph, fmt=fmt, output=output)
+        parse_warnings.extend(local_dependencies.warnings)
+
+    graph, read_warnings = _graph_for_target(
+        env.index,
+        request=GraphRequest(
+            repo=target_repo_name,
+            ref=ref,
+            source_key=graph_source.key,
+            direction=direction,
+            depth=env.depth,
+            stale_after=env.settings.stale_after,
+            refresh_hint=refresh_hint,
+        ),
+        local=local_dependencies,
+        use_live=_should_use_live_dependencies(
+            direction=direction,
+            source_key=graph_source.key,
+            live=env.live,
+        ),
+        github_settings=env.github_settings,
+        http=env.http,
+        aliases=env.aliases,
+        settings=env.settings,
+        github_host=env.github_host,
+    )
+    parse_warnings.extend(read_warnings)
+
+    return _with_graph_warnings(
+        graph,
+        [
+            *extra_warnings,
+            *graph_warnings,
+            *parse_warnings,
+            *_empty_graph_warnings(
+                graph,
+                direction=direction,
+                dependency_paths=env.settings.dependency_paths,
+                source_label=graph_source.label,
+            ),
+        ],
+    )
+
+
+def _check_contains_usage(
+    *,
+    target: str | None,
+    stdin: bool,
+    upstream: bool,
+    both: bool,
+    fmt: str | None,
+    output: Path | None,
+    ref: str | None,
+    target_repo: str | None,
+) -> None:
+    """Reject flag combinations the containment mode cannot honour."""
+    if stdin and target is not None:
+        raise_usage("pass TARGET or --stdin, not both")
+    if not stdin and target is None:
+        raise_usage("provide TARGET or --stdin")
+    if upstream or both:
+        raise_usage("--contains follows downstream dependencies; drop --upstream/--both")
+    if fmt is not None and fmt not in _CONTAINS_FORMATS:
+        raise_usage("--contains supports --format table, json or pipe")
+    if output is not None:
+        raise_usage("--out is not supported with --contains; redirect stdout instead")
+    if stdin and (ref is not None or target_repo is not None):
+        raise_usage("--ref and --target-repo apply to TARGET; give each root's ref on stdin")
+
+
+def _read_roots() -> list[GraphRoot]:
+    """Roots from stdin: bare ``owner/repo@ref`` lines or pipe records."""
+    piped = read_stdin_input(what="roots")
+    if piped.records is None:
+        return [root_from_line(value) for value in piped.values]
+    roots: list[GraphRoot] = []
+    for envelope in piped.records:
+        root = root_from_record(envelope.record)
+        if root is None:
+            raise_usage(
+                f"line {envelope.lineno}: record has no repository field ({', '.join(REPO_FIELDS)})"
+            )
+        roots.append(root)
+    return list(dict.fromkeys(roots))
+
+
+def _root_label(root: GraphRoot) -> str:
+    return f"{root.target}@{root.ref}" if root.ref else root.target
 
 
 @dataclass(frozen=True)
