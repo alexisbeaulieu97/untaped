@@ -37,11 +37,6 @@ from untaped.settings import (
 )
 from untaped.yaml_roundtrip import plain_dump, render_preserving
 
-_MISSING = object()
-# Typed as ``Any`` so ``value is MISSING`` at call sites doesn't
-# narrow the result to ``object`` under mypy strict.
-MISSING: Any = _MISSING
-
 _DEFAULT_LOCK_TIMEOUT = 5.0
 
 
@@ -344,23 +339,6 @@ def _drop_legacy_section(
     if state.get(section) == {}:
         del state[section]
         write_config_dict(state, state_path)
-
-
-def parse_key(key: str) -> tuple[str, ...]:
-    """Convert ``"http.verify_ssl"`` to ``("http", "verify_ssl")``."""
-    if not key or key.startswith(".") or key.endswith("."):
-        raise ValueError(f"invalid setting key: {key!r}")
-    return tuple(key.split("."))
-
-
-def get_at_path(data: dict[str, Any], path: tuple[str, ...]) -> Any:
-    """Return the value at ``path`` or the sentinel ``MISSING``."""
-    cur: Any = data
-    for key in path:
-        if not isinstance(cur, dict) or key not in cur:
-            return MISSING
-        cur = cur[key]
-    return cur
 
 
 def set_at_path(data: dict[str, Any], path: tuple[str, ...], value: Any) -> None:
