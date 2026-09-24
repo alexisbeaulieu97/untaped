@@ -178,9 +178,10 @@ the org-less record (for example a global workflow template); `export` writes
 that null for org-less records so an export/apply round trip never lands in the
 default organization.
 
-Relationship lists (`credentials`, group `hosts`/`children`, inventory
-`instance_groups`) are replaced by adding new members before removing old
-ones, so a refused add never leaves a template without its credentials. Only a
+Relationship lists (template `credentials` and `labels`, group
+`hosts`/`children`, inventory `instance_groups`) are replaced by adding new
+members before removing old ones, so a refused add never leaves a template
+without its credentials. Only a
 credential that shares a type with an incoming one is removed first (AWX allows
 one per type); if the add then fails, the removed members are re-added and the
 row reports `partial`.
@@ -208,6 +209,42 @@ constructed inventory and its generated source share `source_vars`,
 `update_cache_timeout`, `limit`, and `verbosity`. A batch cannot request
 conflicting values for those fields through the two resources. Workflow
 template exports are partial: their node graph and edges are not round-tripped.
+
+### Template export round trip
+
+A job or workflow template export carries its settings, `extra_vars`,
+`credentials` and `labels` (by name), and its survey. Applying that file under
+another `metadata.name` creates a template with the same non-secret
+configuration:
+
+```bash
+untaped awx job-templates export Deploy --organization Default --out deploy.yml
+# edit metadata.name to "Deploy next", then:
+untaped awx job-templates apply deploy.yml --yes
+```
+
+Surveys are read from and written to the template's `survey_spec/` endpoint;
+`survey_spec: {}` removes the survey. Labels are resolved by name in the
+template's organization. An unknown label fails the apply before any write:
+apply never creates labels, so a typo cannot add one silently. AWX deletes a
+label once no resource uses it, so removing a template's last use of a label
+also deletes the label.
+
+What an export cannot carry:
+
+- **Secrets.** `webhook_key` and the default of every `password` survey
+  question are written as `$encrypted$`. Applying the file to the template it
+  came from keeps the stored values. Applying it as a new template drops the
+  password defaults with a warning, so the new template starts without them;
+  a `webhook_key` placeholder refuses the create. Other survey defaults are
+  exported as they are.
+- **Access and history.** Roles, team and user permissions, notification
+  attachments, schedules, and past jobs are not part of the document.
+- **Server-managed fields.** IDs, timestamps, `last_job_*` and `status` are
+  dropped; references (organization, project, inventory, execution
+  environment, credentials, labels) travel by name, so they must already exist
+  where the file is applied.
+- **Workflow graphs.** A workflow template export has no nodes or edges.
 
 ## Launch templates
 
@@ -361,12 +398,13 @@ untaped awx job-templates launch Deploy --format pipe \
 
 ## Memberships
 
-Credentials on a job template, hosts and child groups in a group, and input
-inventories and instance groups on an inventory are managed with `add` and
-`remove`. Both are idempotent and preview before they write.
+Credentials on a job template, labels on a job or workflow template, hosts
+and child groups in a group, and input inventories and instance groups on an
+inventory are managed with `add` and `remove`. Both are idempotent and preview before they write.
 
 ```bash
 untaped awx job-templates credentials add Deploy "Vault prod" --organization Default
+untaped awx workflow-templates labels add "Release train" nightly --organization Default
 untaped awx groups hosts add web web-01 web-02 --inventory Production
 untaped awx hosts list --inventory Production --search web --format pipe \
   | untaped awx groups hosts add web --inventory Production --stdin

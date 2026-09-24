@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- AWX
+  - **Behavior change:** job and workflow template exports now carry
+    `labels` (by name), and apply reconciles them through the template's
+    `labels/` endpoint, adding before removing. An unknown label fails the
+    apply before any write; labels are never created implicitly. The new
+    `job-templates labels add/remove` and `workflow-templates labels
+    add/remove` commands manage them one by one.
+  - **Fix:** template surveys now round-trip against AWX. They are read from
+    and written to the `survey_spec/` endpoint (AWX ignores a `survey_spec`
+    on the template record), `get` shows the survey, and `survey_spec: {}`
+    removes it.
+  - **Fix:** export keeps plain survey defaults; only `password` question
+    defaults become `$encrypted$`. Applying an export as a new template drops
+    those placeholders with a warning instead of refusing the create.
+    `preserved_secrets` names the path `survey_spec.spec.*[type=password].default`.
+
 ## 7.1.0
 
 - Core
