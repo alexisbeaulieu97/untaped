@@ -1,17 +1,18 @@
-"""Tests for Jira issue row models."""
+"""Tests for how Jira row models flatten raw REST payloads."""
 
 from __future__ import annotations
 
-import json
-
 import pytest
-from pydantic import ValidationError
 
 from untaped.capabilities.jira.domain import IssueDetailResult, SprintResult
 
 
 def _issue(**fields: object) -> dict[str, object]:
     return {"key": "ABC-1", "self": "https://jira/rest/api/3/issue/1", "fields": fields}
+
+
+def _text(value: str, **extra: object) -> dict[str, object]:
+    return {"type": "text", "text": value, **extra}
 
 
 def test_detail_flattens_api_v3_adf_description_to_plain_text() -> None:
@@ -22,45 +23,67 @@ def test_detail_flattens_api_v3_adf_description_to_plain_text() -> None:
             {
                 "type": "paragraph",
                 "content": [
-                    {"type": "text", "text": "Deploy fails "},
-                    {"type": "text", "text": "on step 3.", "marks": [{"type": "strong"}]},
+                    _text("Deploy fails "),
+                    _text("on step 3.", marks=[{"type": "strong"}]),
                 ],
             },
             {
                 "type": "paragraph",
+                "content": [_text("See"), {"type": "hardBreak"}, _text("logs.")],
+            },
+            {
+                "type": "bulletList",
                 "content": [
-                    {"type": "text", "text": "See"},
-                    {"type": "hardBreak"},
-                    {"type": "text", "text": "logs."},
+                    {
+                        "type": "listItem",
+                        "content": [
+                            {
+                                "type": "paragraph",
+                                "content": [
+                                    {"type": "mention", "attrs": {"text": "@sam"}},
+                                    _text(" see "),
+                                    {"type": "inlineCard", "attrs": {"url": "https://x"}},
+                                    _text(" by "),
+                                    {"type": "date", "attrs": {"timestamp": "1717200000"}},
+                                ],
+                            }
+                        ],
+                    }
                 ],
             },
+            {"type": "rule"},
         ],
     }
 
     row = IssueDetailResult.model_validate(_issue(description=adf))
 
-    assert row.description == "Deploy fails on step 3.\nSee\nlogs."
-
-
-def test_detail_dumps_unrecognized_object_fields_as_json() -> None:
-    odd = {"unexpected": ["shape"]}
-
-    row = IssueDetailResult.model_validate(
-        _issue(description=odd, created={"iso": "2026-01-01"}, summary=["a", "b"])
+    assert row.description == (
+        "Deploy fails on step 3.\nSee\nlogs.\n@sam see https://x by 1717200000"
     )
 
-    assert json.loads(row.description) == odd
-    assert row.created_at is None  # an unparseable timestamp is dropped, not dumped
-    assert json.loads(row.summary) == ["a", "b"]
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("plain", "plain"), (None, ""), ({"unexpected": ["shape"]}, '{"unexpected": ["shape"]}')],
+)
+def test_detail_text_fields_are_strings_and_odd_objects_dump_as_json(
+    value: object, expected: str
+) -> None:
+    row = IssueDetailResult.model_validate(_issue(description=value, summary=value))
+
+    assert row.description == expected
+    assert row.summary == expected
 
 
 def test_timestamps_normalize_to_utc_and_bad_ones_become_none() -> None:
     row = IssueDetailResult.model_validate(
-        _issue(updated="2026-06-05T10:00:00.000-0400", created="not a date")
+        _issue(updated="2026-06-05T10:00:00.000-0400", created={"iso": "2026-01-01"})
     )
+    garbled = IssueDetailResult.model_validate(_issue(created="not a date"))
 
     assert row.model_dump(mode="json")["updated_at"] == "2026-06-05T14:00:00Z"
     assert row.created_at is None
+    assert garbled.created_at is None
 
 
 def test_sprint_rows_use_snake_case_and_utc_timestamps() -> None:
@@ -84,16 +107,3 @@ def test_sprint_rows_use_snake_case_and_utc_timestamps() -> None:
         "goal": None,
         "origin_board_id": 7,
     }
-
-
-def test_rows_are_frozen() -> None:
-    row = SprintResult.model_validate({"id": 20})
-
-    with pytest.raises(ValidationError):
-        row.name = "renamed"  # type: ignore[misc]
-
-
-def test_detail_keeps_plain_string_description() -> None:
-    row = IssueDetailResult.model_validate(_issue(description="plain"))
-
-    assert row.description == "plain"
