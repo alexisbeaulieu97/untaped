@@ -1440,3 +1440,22 @@ def test_run_bulk_apply_dedupes_targets_by_resolved_path(
     for plan in plans:
         flush_changes(plan.changes)
     assert (first / "out.txt").read_text() == "hello\n"
+
+
+def test_apply_recipe_rejects_recipe_source_symlink_escape(tmp_path: Path) -> None:
+    recipe_dir = tmp_path / "recipe"
+    recipe_dir.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret\n")
+    (recipe_dir / "template.txt").symlink_to(outside)
+    target = tmp_path / "target"
+    target.mkdir()
+    recipe = Recipe.model_validate(
+        {
+            "version": 1,
+            "steps": [{"type": "template", "template": "template.txt", "dest": "out.txt"}],
+        }
+    )
+
+    with pytest.raises(ValueError, match="symlink"):
+        _planner(tmp_path)(recipe=recipe, recipe_dir=recipe_dir, target=target, inputs={})

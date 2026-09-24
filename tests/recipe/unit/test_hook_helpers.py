@@ -75,12 +75,42 @@ def test_helpers_return_wire_ready_verdicts_and_collect_warnings() -> None:
     assert HookHelpers().warnings == []
 
 
-def test_helpers_dump_yaml_honours_options() -> None:
+def test_helpers_dump_yaml_round_trips_by_default_and_honours_options() -> None:
     helpers = HookHelpers()
-    data = helpers.load_yaml("items:\n- 'quoted'\n")
+    long_line = "k: " + " ".join(["y"] * 60) + "\n"
+    data = helpers.load_yaml("items:\n- 'quoted'\n" + long_line)
 
-    assert helpers.dump_yaml(data) == "items:\n- 'quoted'\n"
-    assert helpers.dump_yaml(data, options={"explicit_start": True}).startswith("---\n")
+    # Defaults keep quotes and never wrap long lines (width 4096).
+    assert helpers.dump_yaml(data) == "items:\n- 'quoted'\n" + long_line
+    formatted = helpers.dump_yaml(
+        {"items": [1], "k": "aa bb cc dd ee ff"},
+        options={
+            "indent": {"mapping": 2, "sequence": 4, "offset": 2},
+            "width": 10,
+            "explicit_start": True,
+            "explicit_end": True,
+        },
+    )
+    assert formatted.startswith("---\nitems:\n  - 1\n")
+    assert "\n  cc dd ee\n" in formatted
+    assert formatted.endswith("\n...\n")
+    assert helpers.dump_yaml({"items": [1]}, options={"block_seq_indent": 2}) == "items:\n  - 1\n"
+
+
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        ({"preserve_quote": True}, "unsupported YAML dump option"),
+        ({"indent": {"seqence": 4}}, "unsupported YAML indent option"),
+        ({"width": "100"}, "must be an integer"),
+        ({"width": True}, "must be an integer"),
+        ({"preserve_quotes": "yes"}, "must be a boolean"),
+        ({"indent": 2}, "must be a mapping"),
+    ],
+)
+def test_dump_yaml_rejects_invalid_options(options: dict[str, object], message: str) -> None:
+    with pytest.raises(TypeError, match=message):
+        HookHelpers().dump_yaml({"items": [1]}, options=options)
 
 
 def test_helpers_module_is_stdlib_only_at_import() -> None:
