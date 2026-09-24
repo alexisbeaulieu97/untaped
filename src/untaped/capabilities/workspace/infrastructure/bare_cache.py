@@ -45,8 +45,6 @@ def _parse(url: str) -> tuple[str | None, list[str]]:
             return None, []
         host = match.group("host")
         segments = [s for s in match.group("path").replace("\\", "/").split("/") if s]
-    if not segments:
-        return host, []
-    if segments[-1].endswith(".git"):
+    if segments and segments[-1].endswith(".git"):
         segments[-1] = segments[-1][:-4]
     return host, segments

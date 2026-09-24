@@ -156,14 +156,8 @@ def _signal_process_group(process: subprocess.Popen[str], sig: signal.Signals | 
         else:
             process.kill()
         return
-    try:
-        pgid = os.getpgid(process.pid)
-    except ProcessLookupError:
-        return
-    try:
-        os.killpg(pgid, sig)
-    except ProcessLookupError:
-        return
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(os.getpgid(process.pid), sig)
 
 
 def _terminate_process_group(process: subprocess.Popen[str]) -> None:
