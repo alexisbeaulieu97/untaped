@@ -48,7 +48,7 @@ DEFAULT_LOCK_TIMEOUT = 600.0
 METADATA_FILE = "untaped-corpus.json"
 # Serializes writers (sync, touch, delete) of one bare repo across processes.
 LOCK_FILE = "untaped.lock"
-# Bare repos live at <root>/<host>/<name>-<digest>.git (see cache_path_for);
+# Bare repos live at <root>/<host>/<name>-<digest>.git (see _bare_path);
 # a fixed-depth glob avoids walking objects/ and managed worktrees.
 METADATA_GLOB = f"*/*.git/{METADATA_FILE}"
 
@@ -68,10 +68,6 @@ class GitCorpusCache:
         sleep: Callable[[float], None] = time.sleep,
         warn: Callable[[str], None] | None = None,
     ) -> None:
-        if fetch_attempts < 1:
-            raise ValueError("fetch_attempts must be positive")
-        if fetch_batch_size < 1:
-            raise ValueError("fetch_batch_size must be positive")
         self._git = git
         self._timeout = timeout
         self._slow_timeout = slow_timeout
@@ -91,83 +87,71 @@ class GitCorpusCache:
         auth_header: str | None,
     ) -> CorpusRepoResult:
         """Fetch the requested ref profile into the managed bare corpus."""
-        bare = cache_path_for(_remote_url(repo), cache_dir=root)
+        bare = _bare_path(repo, root=root)
         with self._repo_lock(bare):
-            return self._sync_locked(
-                repo, bare=bare, root=root, selector=selector, depth=depth, auth_header=auth_header
+            branch = _default_branch(repo)
+            url = _remote_url(repo)
+            scoped_auth_header = _auth_header_for_url(url, auth_header)
+            if not (bare / "HEAD").is_file():
+                bare.parent.mkdir(parents=True, exist_ok=True)
+                self._run(["init", "--bare", str(bare)], timeout=self._slow_timeout)
+            self._ensure_origin(bare, url)
+
+            stored = self.repo_freshness(repo, root=root)
+            profile = profile_join(stored.profile, selector.profile) if stored else selector.profile
+            ref_globs = tuple(
+                dict.fromkeys((*(stored.ref_globs if stored else ()), *selector.globs))
             )
+            effective = RefSelector(profile=profile, globs=ref_globs)
 
-    def _sync_locked(
-        self,
-        repo: CorpusRepoTarget,
-        *,
-        bare: Path,
-        root: Path,
-        selector: RefSelector,
-        depth: int,
-        auth_header: str | None,
-    ) -> CorpusRepoResult:
-        branch = _default_branch(repo)
-        url = _remote_url(repo)
-        scoped_auth_header = _auth_header_for_url(url, auth_header)
-        if not (bare / "HEAD").is_file():
-            bare.parent.mkdir(parents=True, exist_ok=True)
-            self._run(["init", "--bare", str(bare)], timeout=self._slow_timeout)
-        self._ensure_origin(bare, url)
+            if effective.beyond_default():
+                self._sync_selected_refs(
+                    bare,
+                    url=url,
+                    depth=depth,
+                    auth_header=scoped_auth_header,
+                    selector=effective,
+                    default_branch=branch,
+                )
+            else:
+                self._fetch_refspecs(
+                    bare,
+                    url=url,
+                    depth=depth,
+                    auth_header=scoped_auth_header,
+                    refspecs=(f"+refs/heads/{branch}:refs/heads/{branch}",),
+                )
+                self._prune_uncovered_refs(bare, selector=effective, default_branch=branch)
 
-        stored = self.repo_freshness(repo, root=root)
-        profile = profile_join(stored.profile, selector.profile) if stored else selector.profile
-        ref_globs = _join_globs(stored.ref_globs if stored else (), selector.globs)
-        effective = RefSelector(profile=profile, globs=ref_globs)
-
-        if effective.beyond_default():
-            self._sync_selected_refs(
+            fetched_at = datetime.now(UTC).isoformat()
+            _write_metadata(
                 bare,
-                url=url,
-                depth=depth,
-                auth_header=scoped_auth_header,
-                selector=effective,
-                default_branch=branch,
+                {
+                    "repo": repo.full_name,
+                    "ref": branch,
+                    "clone_url": url,
+                    "fetched_at": fetched_at,
+                    "profile": effective.profile,
+                    "ref_globs": list(effective.globs),
+                    "archived": repo.archived,
+                    "pushed_at": repo.pushed_at,
+                },
             )
-        else:
-            self._fetch_refspecs(
-                bare,
-                url=url,
-                depth=depth,
-                auth_header=scoped_auth_header,
-                refspecs=(f"+refs/heads/{branch}:refs/heads/{branch}",),
+            return CorpusRepoResult(
+                repo=repo.full_name,
+                ref=branch,
+                path=str(bare),
+                clone_url=url,
+                status="synced",
+                fetched_at=fetched_at,
+                profile=effective.profile,
+                ref_globs=effective.globs,
+                archived=repo.archived,
             )
-            self._prune_uncovered_refs(bare, selector=effective, default_branch=branch)
-
-        fetched_at = datetime.now(UTC).isoformat()
-        _write_metadata(
-            bare,
-            {
-                "repo": repo.full_name,
-                "ref": branch,
-                "clone_url": url,
-                "fetched_at": fetched_at,
-                "profile": effective.profile,
-                "ref_globs": list(effective.globs),
-                "archived": repo.archived,
-                "pushed_at": repo.pushed_at,
-            },
-        )
-        return CorpusRepoResult(
-            repo=repo.full_name,
-            ref=branch,
-            path=str(bare),
-            clone_url=url,
-            status="synced",
-            fetched_at=fetched_at,
-            profile=effective.profile,
-            ref_globs=effective.globs,
-            archived=repo.archived,
-        )
 
     def repo_freshness(self, repo: CorpusRepoTarget, *, root: Path) -> CorpusFreshness | None:
         """Return cached fetch metadata for ``repo`` if present."""
-        metadata_path = cache_path_for(_remote_url(repo), cache_dir=root) / METADATA_FILE
+        metadata_path = _bare_path(repo, root=root) / METADATA_FILE
         if not metadata_path.is_file():
             return None
         data = _read_metadata(metadata_path)
@@ -215,7 +199,7 @@ class GitCorpusCache:
         cannot be read that way keeps its own name as the tree-ish.
         """
         branch = _default_branch(repo)
-        bare = cache_path_for(_remote_url(repo), cache_dir=root)
+        bare = _bare_path(repo, root=root)
         if not (bare / "HEAD").is_file():
             return ()
         result = self._run(
@@ -399,7 +383,7 @@ class GitCorpusCache:
         """Materialize one cached repository ref into a managed worktree."""
         branch = _default_branch(repo)
         selected_ref = ref or branch
-        bare = cache_path_for(_remote_url(repo), cache_dir=root)
+        bare = _bare_path(repo, root=root)
         if not (bare / "HEAD").is_file():
             raise GitCorpusError("repository is not in the local corpus")
         if not self._ref_exists(bare, selected_ref):
@@ -625,9 +609,9 @@ def _ui_warning(message: str) -> None:
     ui_context(strict=False).message("warning", message)
 
 
-def cache_path_for(url: str, *, cache_dir: Path) -> Path:
-    """Return the deterministic bare-cache path for a remote URL."""
-    return safe_cache_path(url, root=cache_dir)
+def _bare_path(repo: CorpusRepoTarget, *, root: Path) -> Path:
+    """Return the deterministic bare-cache path for ``repo``'s remote URL."""
+    return safe_cache_path(_remote_url(repo), root=root)
 
 
 def _default_branch(repo: CorpusRepoTarget) -> str:
@@ -642,10 +626,6 @@ def _remote_url(repo: CorpusRepoTarget) -> str:
     if repo.html_url:
         return f"{repo.html_url.removesuffix('/')}.git"
     return f"https://github.com/{repo.full_name}.git"
-
-
-def _join_globs(stored: tuple[str, ...], requested: tuple[str, ...]) -> tuple[str, ...]:
-    return tuple(dict.fromkeys((*stored, *requested)))
 
 
 def _selector_covers_ref(selector: RefSelector, ref: str, *, default_branch: str) -> bool:
@@ -670,7 +650,7 @@ def _order_refs(refs: tuple[str, ...], *, default_branch: str) -> tuple[str, ...
 
 
 def _cached_bare(repo: CorpusRepoTarget, *, root: Path) -> Path:
-    bare = cache_path_for(_remote_url(repo), cache_dir=root)
+    bare = _bare_path(repo, root=root)
     if not (bare / "HEAD").is_file():
         raise GitCorpusError("repository is not in the local corpus")
     return bare
@@ -708,8 +688,6 @@ def _parse_grep_output(
     payload: bytes, *, trees: tuple[str, ...]
 ) -> tuple[tuple[str, str, int, str], ...]:
     """Parse ``git grep -n --column -z`` output over tree-ishes into (tree, path, line, text)."""
-    if not payload:
-        return ()
     rows: list[tuple[str, str, int, str]] = []
     cursor = 0
     while cursor < len(payload):
@@ -725,14 +703,7 @@ def _parse_grep_output(
             line = int(raw_line.decode())
         except ValueError as exc:
             raise GitCorpusError("could not parse git grep output: invalid line") from exc
-        rows.append(
-            (
-                tree,
-                path,
-                line,
-                raw_text.decode(errors="replace").rstrip("\n"),
-            )
-        )
+        rows.append((tree, path, line, raw_text.decode(errors="replace").rstrip("\n")))
     return tuple(rows)
 
 
