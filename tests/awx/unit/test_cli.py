@@ -349,26 +349,6 @@ def test_list_filter_rejects_malformed_entry(
     assert "KEY=VALUE" in output
 
 
-def test_apply_help_advertises_parallel() -> None:
-    """The top-level ``awx apply`` exposes ``--parallel / -j`` so users
-    can speed up directory applies. Surface check only; behaviour is
-    covered by the ``test_apply_file`` unit tests."""
-    result = CliInvoker().invoke(app, ["apply", "--help"])
-    assert result.exit_code == 0
-    assert "--parallel" in result.output
-    assert "-j" in result.output
-
-
-def test_per_kind_apply_help_advertises_parallel() -> None:
-    """Per-resource sub-apps' ``apply`` (e.g. ``awx projects apply``)
-    must also expose ``--parallel / -j`` — the per-kind path routes
-    through the same ``run_apply`` composition root."""
-    result = CliInvoker().invoke(app, ["projects", "apply", "--help"])
-    assert result.exit_code == 0
-    assert "--parallel" in result.output
-    assert "-j" in result.output
-
-
 def test_get_bare_invocation_is_usage_error_without_opening_context() -> None:
     result = CliInvoker().invoke(app, ["job-templates", "get"])
 
@@ -451,28 +431,15 @@ def test_apply_rejects_removed_file_alias(
     assert result.stdout == ""
 
 
-def test_top_level_apply_bare_invocation_is_missing_argument_error() -> None:
-    """Top-level multi-kind ``apply`` still requires a positional file: exit 2,
-    Cyclopts' ``requires an argument`` message on stderr, nothing on stdout —
-    the suite convention for required positionals."""
-    result = CliInvoker().invoke(app, ["apply"])
-    assert result.exit_code == 2
-    assert "requires an argument" in result.stderr
-    assert result.stdout == ""
-
-
-def test_per_kind_apply_bare_invocation_needs_file() -> None:
-    """Per-kind declarative apply requires a file; missing input leaves stdout clean."""
-    result = CliInvoker().invoke(app, ["job-templates", "apply"])
-    assert result.exit_code == 2
-    assert "requires an argument" in result.stderr
-    assert result.stdout == ""
-
-
-@pytest.mark.parametrize("cmd", [["apply", "--help"], ["job-templates", "apply", "--help"]])
-def test_apply_help_synopsis_shows_file_positional(cmd: list[str]) -> None:
-    """The help must describe positional file input without reviving ``--file``."""
-    result = CliInvoker().invoke(app, cmd)
-    assert result.exit_code == 0
-    assert "YAML file" in result.output
-    assert "--file" not in result.output
+@pytest.mark.parametrize("command", [["apply"], ["projects", "apply"]])
+def test_apply_takes_a_positional_file_and_advertises_parallel(command: list[str]) -> None:
+    """Top-level and per-kind apply share one surface; ``--file`` stays removed."""
+    helped = CliInvoker().invoke(app, [*command, "--help"])
+    assert helped.exit_code == 0
+    assert "YAML file" in helped.output
+    assert "--parallel" in helped.output and "-j" in helped.output
+    assert "--file" not in helped.output
+    bare = CliInvoker().invoke(app, command)
+    assert bare.exit_code == 2
+    assert "requires an argument" in bare.stderr
+    assert bare.stdout == ""

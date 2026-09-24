@@ -97,9 +97,7 @@ def _first_field_error(body: str | None) -> str | None:
     data: Any
     try:
         data = json.loads(body)
-    except ValueError:
-        return None
-    except TypeError:
+    except ValueError, TypeError:
         return None
     if isinstance(data, dict):
         for key, value in data.items():

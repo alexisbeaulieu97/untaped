@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
+
+from cyclopts import Parameter
 
 from untaped.capabilities.awx.application.selection import (
     SelectedResource,
@@ -10,6 +13,17 @@ from untaped.capabilities.awx.application.selection import (
     SelectionResolver,
 )
 from untaped.capabilities.awx.cli.context import AwxContext, scope_for_command
+from untaped.capabilities.awx.cli.options import (
+    AllOption,
+    ByIdOption,
+    FilterOption,
+    InventoryOption,
+    InventoryOrganizationOption,
+    OrganizationOption,
+    ParentOption,
+    SearchOption,
+    StdinOption,
+)
 from untaped.capabilities.awx.cli.pipe import pipe_kind_for_spec
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capability_api import (
@@ -17,8 +31,58 @@ from untaped.capability_api import (
     UsageError,
     echo,
     parse_kv_pairs,
+    raise_usage,
     read_stdin_input,
 )
+
+
+@Parameter(name="*")
+@dataclass(frozen=True, kw_only=True)
+class SelectionOptions:
+    """Selection flags of the fixed-selection write commands, in their help order."""
+
+    stdin: StdinOption = False
+    by_id: ByIdOption = False
+    search: SearchOption = None
+    filter_: FilterOption = None
+    all_: AllOption = False
+    organization: OrganizationOption = None
+    inventory: InventoryOption = None
+    inventory_organization: InventoryOrganizationOption = None
+    parent: ParentOption = None
+
+    @property
+    def mass(self) -> bool:
+        """Whether targets come from stdin, ``--all``, or a server-side query."""
+        return self.stdin or self.all_ or bool(self.filter_) or self.search is not None
+
+    def require_source(self, names: list[str] | None) -> None:
+        """Refuse an empty selection before any AWX read (usage error)."""
+        if not names and not self.mass:
+            raise_usage("provide names, --stdin, filters/search, or --all")
+
+    def select(
+        self, ctx: AwxContext, spec: ResourceSpec, names: list[str] | None
+    ) -> tuple[SelectedResource, ...]:
+        """Resolve these flags plus ``names`` to an explicit fixed selection."""
+        return select_resources(
+            ctx,
+            spec,
+            names,
+            stdin=self.stdin,
+            by_id=self.by_id,
+            filters=self.filter_,
+            search=self.search,
+            all_=self.all_,
+            require_explicit=True,
+            organization=self.organization,
+            inventory=self.inventory,
+            inventory_organization=self.inventory_organization,
+            parent=self.parent,
+        )
+
+
+SELECTION_DEFAULTS = SelectionOptions()
 
 
 def select_resources(

@@ -1,8 +1,12 @@
-"""End-to-end CLI tests for ``untaped awx workflow-templates nodes``."""
+"""End-to-end CLI tests for ``untaped awx workflow-templates nodes``.
+
+Seeded tree: workflow 100 ``weekly-rollup`` holds node 1 (job template 10)
+and node 2 (sub-workflow 200 ``nightly-backups``), which holds nodes 3 and 4
+(job templates 11 and 12).
+"""
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
 
@@ -13,300 +17,206 @@ from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.integration
 
+_UJT_TYPES = {10: "job", 11: "job", 12: "job", 100: "workflow_job", 200: "workflow_job"}
+_NAMES = {10: "smoke-test", 11: "db-backup", 12: "fs-backup", 100: "alpha", 200: "beta"}
 
-def _seed_org_and_root_workflow(fake: Any) -> None:
-    """Seed an org + a root workflow with two children: one JT, one WJT."""
-    fake.seed("organizations", id=1, name="Default")
-    fake.seed(
-        "workflow_job_templates",
-        id=100,
-        name="weekly-rollup",
-        organization=1,
-        organization_name="Default",
-    )
-    fake.seed(
-        "job_templates",
-        id=10,
-        name="smoke-test",
-        organization=1,
-        organization_name="Default",
-    )
-    fake.seed(
-        "workflow_job_templates",
-        id=200,
-        name="nightly-backups",
-        organization=1,
-        organization_name="Default",
-    )
+
+def _node(fake: Any, id_: int, *, parent: int, parent_name: str, ujt: int, name: str) -> None:
     fake.seed(
         "workflow_nodes",
-        id=1,
-        identifier="pre-flight",
-        workflow_job_template=100,
-        unified_job_template=10,
+        id=id_,
+        identifier=f"node-{id_}",
+        workflow_job_template=parent,
+        unified_job_template=ujt,
         summary_fields={
-            "unified_job_template": {
-                "id": 10,
-                "name": "smoke-test",
-                "unified_job_type": "job",
-            },
-            "workflow_job_template": {"id": 100, "name": "weekly-rollup"},
-        },
-    )
-    fake.seed(
-        "workflow_nodes",
-        id=2,
-        identifier="rollup",
-        workflow_job_template=100,
-        unified_job_template=200,
-        summary_fields={
-            "unified_job_template": {
-                "id": 200,
-                "name": "nightly-backups",
-                "unified_job_type": "workflow_job",
-            },
-            "workflow_job_template": {"id": 100, "name": "weekly-rollup"},
+            "unified_job_template": {"id": ujt, "name": name, "unified_job_type": _UJT_TYPES[ujt]},
+            "workflow_job_template": {"id": parent, "name": parent_name},
         },
     )
 
 
-def _seed_nested(fake: Any) -> None:
-    """Seed two more nodes under the nested workflow (id 200)."""
+def _workflow(fake: Any, id_: int, name: str, org: int = 1, org_name: str = "Default") -> None:
     fake.seed(
-        "job_templates",
-        id=11,
-        name="db-backup",
-        organization=1,
-        organization_name="Default",
-    )
-    fake.seed(
-        "job_templates",
-        id=12,
-        name="fs-backup",
-        organization=1,
-        organization_name="Default",
-    )
-    fake.seed(
-        "workflow_nodes",
-        id=3,
-        identifier="db",
-        workflow_job_template=200,
-        unified_job_template=11,
-        summary_fields={
-            "unified_job_template": {
-                "id": 11,
-                "name": "db-backup",
-                "unified_job_type": "job",
-            },
-            "workflow_job_template": {"id": 200, "name": "nightly-backups"},
-        },
-    )
-    fake.seed(
-        "workflow_nodes",
-        id=4,
-        identifier="fs",
-        workflow_job_template=200,
-        unified_job_template=12,
-        summary_fields={
-            "unified_job_template": {
-                "id": 12,
-                "name": "fs-backup",
-                "unified_job_type": "job",
-            },
-            "workflow_job_template": {"id": 200, "name": "nightly-backups"},
-        },
+        "workflow_job_templates", id=id_, name=name, organization=org, organization_name=org_name
     )
 
 
-def test_nodes_repeatable_columns_contract(fake_aap: Any) -> None:
+@pytest.fixture
+def tree(fake_aap: Any) -> Any:
+    fake_aap.seed("organizations", id=1, name="Default")
+    _workflow(fake_aap, 100, "weekly-rollup")
+    _workflow(fake_aap, 200, "nightly-backups")
+    for jt in (10, 11, 12):
+        fake_aap.seed(
+            "job_templates", id=jt, name=_NAMES[jt], organization=1, organization_name="Default"
+        )
+    _node(fake_aap, 1, parent=100, parent_name="weekly-rollup", ujt=10, name="smoke-test")
+    _node(fake_aap, 2, parent=100, parent_name="weekly-rollup", ujt=200, name="nightly-backups")
+    _node(fake_aap, 3, parent=200, parent_name="nightly-backups", ujt=11, name="db-backup")
+    _node(fake_aap, 4, parent=200, parent_name="nightly-backups", ujt=12, name="fs-backup")
+    return fake_aap
+
+
+def _nodes(*args: str, input: str | None = None) -> Any:
+    return CliInvoker().invoke(app, ["workflow-templates", "nodes", *args], input=input)
+
+
+def _ids(*args: str, input: str | None = None) -> list[int]:
+    result = _nodes(*args, "--format", "raw", "--columns", "id", input=input)
+    assert result.exit_code == 0, result.output
+    return [int(line) for line in result.stdout.split()]
+
+
+def test_nodes_repeatable_columns_contract(tree: Any) -> None:
     """Repeated ``--columns`` flags select the column set in order."""
-    _seed_org_and_root_workflow(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-            "--columns",
-            "identifier",
-            "--columns",
-            "name",
-            "--columns",
-            "type",
-            "--columns",
-            "depth",
-        ],
+    columns = ["id", "identifier", "name", "type", "depth"]
+    result = _nodes(
+        "--by-id", "100", "--format", "raw", *(f"--columns={column}" for column in columns)
     )
     assert result.exit_code == 0, result.output
-    rows = sorted(result.stdout.strip().splitlines())
-    assert rows == [
-        "1\tpre-flight\tsmoke-test\tjob_template\t0",
-        "2\trollup\tnightly-backups\tworkflow_job_template\t0",
+    assert sorted(result.stdout.strip().splitlines()) == [
+        "1\tnode-1\tsmoke-test\tjob_template\t0",
+        "2\tnode-2\tnightly-backups\tworkflow_job_template\t0",
     ]
 
 
-def test_nodes_lists_top_level_by_id(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-            "--columns",
-            "identifier",
-            "--columns",
-            "name",
-            "--columns",
-            "type",
-            "--columns",
-            "depth",
-        ],
+def test_nodes_recursive_rows_carry_depth_and_their_immediate_parent(tree: Any) -> None:
+    result = _nodes(
+        "--by-id",
+        "100",
+        "--recursive",
+        "--format",
+        "raw",
+        "--columns",
+        "id",
+        "--columns",
+        "depth",
+        "--columns",
+        "summary_fields.workflow_job_template.name",
     )
     assert result.exit_code == 0, result.output
-    rows = sorted(result.stdout.strip().splitlines())
-    assert rows == [
-        "1\tpre-flight\tsmoke-test\tjob_template\t0",
-        "2\trollup\tnightly-backups\tworkflow_job_template\t0",
+    assert sorted(result.stdout.strip().splitlines()) == [
+        "1\t0\tweekly-rollup",
+        "2\t0\tweekly-rollup",
+        "3\t1\tnightly-backups",
+        "4\t1\tnightly-backups",
     ]
 
 
-def test_nodes_resolves_workflow_by_name(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "weekly-rollup",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-    )
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        (["--by-id", "100"], [1, 2]),
+        (["weekly-rollup"], [1, 2]),
+        (["--by-id", "100", "--recursive"], [1, 2, 3, 4]),
+        (["--by-id", "100", "--recursive", "--depth", "0"], [1, 2]),
+        (["--by-id", "100", "--depth", "1"], [1, 2, 3, 4]),
+        # --type filters the output, not the traversal
+        (["--by-id", "100", "--recursive", "--type", "job_template"], [1, 3, 4]),
+        (["--by-id", "100", "--recursive", "--type", "workflow_job_template"], [2]),
+        (["--by-id", "100", "--filter", "unified_job_template=10"], [1]),
+        # repeated filters compose server-side (AND)
+        (["--by-id", "100", "--filter", "unified_job_template__in=10,200",
+          "--filter", "unified_job_template__gt=11"], [2]),
+        # the filter applies at every level of the recursion ...
+        (["--by-id", "100", "--recursive", "--filter",
+          "unified_job_template__in=10,11,12,200"], [1, 2, 3, 4]),
+        # ... so excluding a sub-workflow row prunes its descent
+        (["--by-id", "100", "--recursive", "--filter", "unified_job_template__in=10,11"], [1]),
+        (["--by-id", "100", "--depth", "1", "--filter",
+          "unified_job_template__in=10,11,200"], [1, 2, 3]),
+    ],
+)  # fmt: skip
+def test_nodes_selection(tree: Any, args: list[str], expected: list[int]) -> None:
+    assert sorted(_ids(*args)) == expected
+
+
+def test_nodes_stdin_recursive_type_filter_end_to_end(tree: Any) -> None:
+    ids = _ids("--stdin", "--by-id", "--recursive", "--type", "job_template", input="100\n")
+    assert sorted(ids) == [1, 3, 4]
+
+
+@pytest.mark.parametrize(
+    ("name", "org_id", "org_name"),
+    [
+        # a numeric identifier is a name unless --by-id is given
+        ("123", 1, "Default"),
+        # --org scopes a name shared across organizations
+        ("weekly-rollup", 2, "Other"),
+    ],
+)
+def test_nodes_resolves_names_within_organization(
+    tree: Any, name: str, org_id: int, org_name: str
+) -> None:
+    if org_id != 1:
+        tree.seed("organizations", id=org_id, name=org_name)
+    _workflow(tree, 300, name, org_id, org_name)
+    _node(tree, 5, parent=300, parent_name=name, ujt=10, name="smoke-test")
+    assert _ids(name, "--org", org_name) == [5]
+
+
+@pytest.mark.parametrize(
+    ("args", "input"),
+    [(["--by-id", "100", "200"], None), (["--stdin", "--by-id"], "100\n200\n")],
+)
+def test_nodes_multiple_roots_are_listed_in_input_order(
+    tree: Any, args: list[str], input: str | None
+) -> None:
+    ids = _ids(*args, input=input)
+    assert sorted(ids) == [1, 2, 3, 4]
+    # every root-100 row precedes every root-200 row; within a root, any order
+    assert {*ids[:2]} == {1, 2}
+
+
+@pytest.mark.parametrize(
+    ("args", "input"),
+    [
+        (["--by-id", "100", "does-not-exist"], None),
+        (["--stdin", "--by-id"], "100\ndoes-not-exist\n"),
+    ],
+)  # fmt: skip
+def test_nodes_partial_failure_warns_and_exits_nonzero(
+    tree: Any, args: list[str], input: str | None
+) -> None:
+    result = _nodes(*args, "--format", "raw", "--columns", "id", input=input)
+    assert result.exit_code == 1, result.output
+    assert sorted(result.stdout.split()) == ["1", "2"]
+    assert "does-not-exist" in result.stderr
+    assert "does-not-exist" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("args", "input", "stderr"),
+    [
+        (["does-not-exist"], None, ""),
+        (["100", "--depth", "-1"], None, ""),
+        # --type is a Literal: a typo fails at parse time instead of matching nothing
+        (["100", "--type", "job-template"], None, ""),
+        (["100", "--filter", "no-equals-sign"], None, "--filter"),
+        (["100", "--stdin"], "200\n", "stdin"),
+        (["--stdin"], "", "stdin"),
+    ],
+)
+def test_nodes_rejects_bad_input(
+    tree: Any, args: list[str], input: str | None, stderr: str
+) -> None:
+    result = _nodes(*args, input=input)
+    assert result.exit_code != 0
+    assert stderr in result.stderr
+
+
+def test_nodes_cycle_emits_stderr_warning(fake_aap: Any) -> None:
+    """A → B → A: the re-entry is skipped with a warning on stderr, never stdout."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    _workflow(fake_aap, 100, "alpha")
+    _workflow(fake_aap, 200, "beta")
+    _node(fake_aap, 1, parent=100, parent_name="alpha", ujt=200, name="beta")
+    _node(fake_aap, 2, parent=200, parent_name="beta", ujt=100, name="alpha")
+    result = _nodes("--by-id", "100", "--recursive", "--format", "raw", "--columns", "id")
     assert result.exit_code == 0, result.output
-    ids = sorted(result.stdout.strip().splitlines(), key=int)
-    assert ids == ["1", "2"]
-
-
-def test_nodes_numeric_name_is_default(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    fake_aap.seed(
-        "workflow_job_templates",
-        id=300,
-        name="123",
-        organization=1,
-        organization_name="Default",
-    )
-    fake_aap.seed(
-        "workflow_nodes",
-        id=3,
-        identifier="numeric-name",
-        workflow_job_template=300,
-        unified_job_template=10,
-        summary_fields={
-            "unified_job_template": {
-                "id": 10,
-                "name": "smoke-test",
-                "unified_job_type": "job",
-            },
-            "workflow_job_template": {"id": 300, "name": "123"},
-        },
-    )
-
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "123",
-            "--org",
-            "Default",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "3"
-
-
-def test_nodes_by_id_uses_awx_id(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    ids = sorted(result.stdout.strip().splitlines(), key=int)
-    assert ids == ["1", "2"]
-
-
-def test_nodes_accepts_org_alias_for_name_scope(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    fake_aap.seed("organizations", id=2, name="Other")
-    fake_aap.seed(
-        "workflow_job_templates",
-        id=300,
-        name="weekly-rollup",
-        organization=2,
-        organization_name="Other",
-    )
-    fake_aap.seed(
-        "workflow_nodes",
-        id=3,
-        identifier="other",
-        workflow_job_template=300,
-        unified_job_template=10,
-        summary_fields={
-            "unified_job_template": {
-                "id": 10,
-                "name": "smoke-test",
-                "unified_job_type": "job",
-            },
-            "workflow_job_template": {"id": 300, "name": "weekly-rollup"},
-        },
-    )
-
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "weekly-rollup",
-            "--org",
-            "Other",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "3"
+    assert "cycle" in result.stderr
+    assert "100" in result.stderr
+    assert "cycle" not in result.stdout
 
 
 def test_nodes_help_advertises_org_alias_without_short_o() -> None:
@@ -315,603 +225,3 @@ def test_nodes_help_advertises_org_alias_without_short_o() -> None:
     assert "--organization" in result.output
     assert "--org" in result.output
     assert re.search(r"(^|\s)-o(\s|,)", result.output) is None
-
-
-def test_nodes_unknown_workflow_exits_nonzero(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        ["workflow-templates", "nodes", "does-not-exist"],
-    )
-    assert result.exit_code != 0
-
-
-def test_nodes_recursive_flattens_sub_workflow(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    _seed_nested(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "--recursive",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-            "--columns",
-            "depth",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    rows = sorted(result.stdout.strip().splitlines(), key=lambda r: int(r.split("\t")[0]))
-    assert rows == ["1\t0", "2\t0", "3\t1", "4\t1"]
-
-
-def test_nodes_depth_zero_returns_only_root(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    _seed_nested(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "--recursive",
-            "--depth",
-            "0",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    ids = sorted(result.stdout.strip().splitlines(), key=int)
-    assert ids == ["1", "2"]
-
-
-def test_nodes_depth_one_caps_nested(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    _seed_nested(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "--depth",
-            "1",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    ids = sorted(result.stdout.strip().splitlines(), key=int)
-    assert ids == ["1", "2", "3", "4"]
-
-
-def test_nodes_type_filter_keeps_only_matching_kind(fake_aap: Any) -> None:
-    # ``--type job_template`` with ``--recursive`` must still descend into
-    # workflow nodes so nested job templates surface — the filter is on
-    # the output, not the traversal.
-    _seed_org_and_root_workflow(fake_aap)
-    _seed_nested(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "--recursive",
-            "--type",
-            "job_template",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-            "--columns",
-            "type",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    rows = sorted(result.stdout.strip().splitlines(), key=lambda r: int(r.split("\t")[0]))
-    assert rows == [
-        "1\tjob_template",
-        "3\tjob_template",
-        "4\tjob_template",
-    ]
-
-
-def test_nodes_type_filter_keeps_only_workflows(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    _seed_nested(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "--recursive",
-            "--type",
-            "workflow_job_template",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    ids = sorted(result.stdout.strip().splitlines(), key=int)
-    assert ids == ["2"]
-
-
-def test_nodes_cycle_emits_stderr_warning(fake_aap: Any) -> None:
-    # A → B → A. The use case skips re-entry and warns; the CLI must
-    # forward that warning to stderr (not stdout) so pipelines stay clean.
-    fake_aap.seed("organizations", id=1, name="Default")
-    fake_aap.seed(
-        "workflow_job_templates",
-        id=100,
-        name="alpha",
-        organization=1,
-        organization_name="Default",
-    )
-    fake_aap.seed(
-        "workflow_job_templates",
-        id=200,
-        name="beta",
-        organization=1,
-        organization_name="Default",
-    )
-    fake_aap.seed(
-        "workflow_nodes",
-        id=1,
-        identifier="a-to-b",
-        workflow_job_template=100,
-        unified_job_template=200,
-        summary_fields={
-            "unified_job_template": {
-                "id": 200,
-                "name": "beta",
-                "unified_job_type": "workflow_job",
-            },
-        },
-    )
-    fake_aap.seed(
-        "workflow_nodes",
-        id=2,
-        identifier="b-to-a",
-        workflow_job_template=200,
-        unified_job_template=100,
-        summary_fields={
-            "unified_job_template": {
-                "id": 100,
-                "name": "alpha",
-                "unified_job_type": "workflow_job",
-            },
-        },
-    )
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "--recursive",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert "cycle" in result.stderr
-    assert "100" in result.stderr
-    assert "cycle" not in result.stdout
-
-
-def test_nodes_rejects_negative_depth(fake_aap: Any) -> None:
-    result = CliInvoker().invoke(
-        app,
-        ["workflow-templates", "nodes", "100", "--depth", "-1"],
-    )
-    assert result.exit_code != 0
-
-
-def test_nodes_rejects_unknown_type_value(fake_aap: Any) -> None:
-    # ``--type`` is a Literal; a typo must fail at parse time, not
-    # silently return an empty result set.
-    result = CliInvoker().invoke(
-        app,
-        ["workflow-templates", "nodes", "100", "--type", "job-template"],
-    )
-    assert result.exit_code != 0
-
-
-def test_nodes_accepts_multiple_positional_roots(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    _seed_nested(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "200",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    ids = [int(r) for r in result.stdout.strip().splitlines()]
-    assert sorted(ids) == [1, 2, 3, 4]
-    # Input-order pin: every root-100 id (1,2) precedes every root-200
-    # id (3,4); within-root order is intentionally not constrained.
-    last_root_100 = max(i for i, n in enumerate(ids) if n in {1, 2})
-    first_root_200 = min(i for i, n in enumerate(ids) if n in {3, 4})
-    assert last_root_100 < first_root_200
-
-
-def test_nodes_stdin_reads_multiple_roots_and_concatenates(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    _seed_nested(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--stdin",
-            "--by-id",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-        input="100\n200\n",
-    )
-    assert result.exit_code == 0, result.output
-    ids = [int(r) for r in result.stdout.strip().splitlines()]
-    assert sorted(ids) == [1, 2, 3, 4]
-    last_root_100 = max(i for i, n in enumerate(ids) if n in {1, 2})
-    first_root_200 = min(i for i, n in enumerate(ids) if n in {3, 4})
-    assert last_root_100 < first_root_200
-
-
-def test_nodes_stdin_rejects_positional_combo(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        ["workflow-templates", "nodes", "100", "--stdin"],
-        input="200\n",
-    )
-    assert result.exit_code != 0
-    assert "stdin" in result.stderr
-
-
-def test_nodes_stdin_rejects_empty_input(fake_aap: Any) -> None:
-    result = CliInvoker().invoke(
-        app,
-        ["workflow-templates", "nodes", "--stdin"],
-        input="",
-    )
-    assert result.exit_code != 0
-    assert "stdin" in result.stderr
-
-
-def test_nodes_positional_partial_failure_warns_and_exits_nonzero(
-    fake_aap: Any,
-) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "does-not-exist",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-    )
-    assert result.exit_code == 1, result.output
-    ids = sorted(result.stdout.strip().splitlines(), key=int)
-    assert ids == ["1", "2"]
-    assert "does-not-exist" in result.stderr
-    assert "does-not-exist" not in result.stdout
-
-
-def test_nodes_stdin_partial_failure_warns_and_exits_nonzero(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--stdin",
-            "--by-id",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-        input="100\ndoes-not-exist\n",
-    )
-    assert result.exit_code == 1, result.output
-    ids = sorted(result.stdout.strip().splitlines(), key=int)
-    assert ids == ["1", "2"]
-    assert "does-not-exist" in result.stderr
-    assert "does-not-exist" not in result.stdout
-
-
-def test_nodes_filter_narrows_results(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "--filter",
-            "unified_job_template=10",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip().splitlines() == ["1"]
-
-
-def test_nodes_filter_repeatable(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    # Two filters compose with AND server-side: ``__in`` narrows to
-    # nodes whose UJT is in {10, 200}; ``__gt`` then drops the UJT=10
-    # row. Verifies both flags reach AWX, not just the first.
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "--filter",
-            "unified_job_template__in=10,200",
-            "--filter",
-            "unified_job_template__gt=11",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip().splitlines() == ["2"]
-
-
-def test_nodes_filter_with_recursive_applies_at_every_level(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    _seed_nested(fake_aap)
-    # ``unified_job_template__in=10,11,12,200`` matches: node 1 (JT 10)
-    # at root, the sub-workflow node 2 (UJT 200) at root, and nodes
-    # 3 (JT 11) + 4 (JT 12) inside the sub-workflow. Recursion succeeds
-    # because the filter keeps the workflow-job-template row that lets
-    # the BFS discover the child workflow.
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "--recursive",
-            "--filter",
-            "unified_job_template__in=10,11,12,200",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    ids = sorted(result.stdout.strip().splitlines(), key=int)
-    assert ids == ["1", "2", "3", "4"]
-
-
-def test_nodes_filter_with_recursive_prunes_sub_workflow_descent(
-    fake_aap: Any,
-) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    _seed_nested(fake_aap)
-    # ``unified_job_template__in=10,11`` excludes node 2 (UJT 200, the
-    # sub-workflow link), so BFS never sees it and never descends into
-    # workflow 200 — nodes 3, 4 are absent. Locks in the documented
-    # pruning semantics: filters that exclude sub-workflow rows stop
-    # the descent at that node.
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "--recursive",
-            "--filter",
-            "unified_job_template__in=10,11",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    ids = sorted(result.stdout.strip().splitlines(), key=int)
-    assert ids == ["1"]
-
-
-def test_nodes_filter_composes_with_depth_cap(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    _seed_nested(fake_aap)
-    # ``--depth 1`` descends one level, and the same filter applies at
-    # both levels. UJT 11 is inside sub-workflow 200 (depth 1); UJT 12
-    # is also there but excluded by the filter. Locks in that the
-    # filter reaches the depth-capped recursion frontier.
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "--depth",
-            "1",
-            "--filter",
-            "unified_job_template__in=10,11,200",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    ids = sorted(result.stdout.strip().splitlines(), key=int)
-    # Node 1 (UJT=10, depth 0), node 2 (UJT=200, depth 0), node 3
-    # (UJT=11, depth 1). Node 4 (UJT=12) excluded by the filter.
-    assert ids == ["1", "2", "3"]
-
-
-def test_nodes_projects_summary_fields_parent_workflow_name(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "--format",
-            "raw",
-            "--columns",
-            "summary_fields.workflow_job_template.name",
-            "--columns",
-            "name",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    rows = sorted(result.stdout.strip().splitlines())
-    assert rows == [
-        "weekly-rollup\tnightly-backups",
-        "weekly-rollup\tsmoke-test",
-    ]
-
-
-def test_nodes_json_explicit_summary_fields_column_projects_correctly(
-    fake_aap: Any,
-) -> None:
-    # ``-f json`` honours the default column set just like the other
-    # formats — ``summary_fields`` only appears when the user opts in
-    # via dotted-path projection. Pins that the column is reachable
-    # via projection, with the correct per-row parent-workflow name.
-    _seed_org_and_root_workflow(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "--format",
-            "json",
-            "--columns",
-            "id",
-            "--columns",
-            "summary_fields.workflow_job_template.name",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    rows = json.loads(result.stdout)
-    assert {row["id"] for row in rows} == {1, 2}
-    assert all(row["summary_fields.workflow_job_template.name"] == "weekly-rollup" for row in rows)
-
-
-def test_nodes_recursive_summary_fields_carries_per_root_name(fake_aap: Any) -> None:
-    # ``summary_fields.workflow_job_template.name`` tracks the *immediate*
-    # parent workflow on each row, not the BFS root. Locks in that the
-    # field travels through recursion with per-level fidelity.
-    _seed_org_and_root_workflow(fake_aap)
-    _seed_nested(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--by-id",
-            "100",
-            "--recursive",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-            "--columns",
-            "summary_fields.workflow_job_template.name",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    rows = sorted(result.stdout.strip().splitlines(), key=lambda r: int(r.split("\t")[0]))
-    assert rows == [
-        "1\tweekly-rollup",
-        "2\tweekly-rollup",
-        "3\tnightly-backups",
-        "4\tnightly-backups",
-    ]
-
-
-def test_nodes_filter_malformed_rejected(fake_aap: Any) -> None:
-    result = CliInvoker().invoke(
-        app,
-        ["workflow-templates", "nodes", "100", "--filter", "no-equals-sign"],
-    )
-    assert result.exit_code != 0
-    assert "--filter" in result.stderr
-
-
-def test_nodes_stdin_recursive_type_filter_end_to_end(fake_aap: Any) -> None:
-    _seed_org_and_root_workflow(fake_aap)
-    _seed_nested(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "workflow-templates",
-            "nodes",
-            "--stdin",
-            "--by-id",
-            "--recursive",
-            "--type",
-            "job_template",
-            "--format",
-            "raw",
-            "--columns",
-            "id",
-        ],
-        input="100\n",
-    )
-    assert result.exit_code == 0, result.output
-    ids = sorted(result.stdout.strip().splitlines(), key=int)
-    assert ids == ["1", "3", "4"]

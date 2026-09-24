@@ -74,12 +74,7 @@ class AwxContext:
         return PollingJobMonitor(self.repo, sleep=self.pause, timeout=timeout)
 
     def progress_ui(self) -> UiContext:
-        """Themed UI for stderr progress on slow AWX calls.
-
-        Built ``strict=False`` so a misconfigured ``ui.theme`` degrades the
-        spinner to the default theme rather than failing an otherwise-valid
-        command on the data path (e.g. ``--format raw``).
-        """
+        """Themed stderr UI; a bad ``ui.theme`` falls back instead of failing."""
         return self._context.ui(strict=False)
 
     def close(self) -> None:

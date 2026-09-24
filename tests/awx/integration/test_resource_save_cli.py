@@ -51,35 +51,9 @@ def _seed_basic(fake: Any) -> None:
     )
 
 
-def test_job_templates_save_translates_fks(fake_aap: Any, tmp_path: Path) -> None:
-    _seed_basic(fake_aap)
-    out = tmp_path / "jt.yml"
-    result = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "export",
-            "deploy",
-            "--out",
-            str(out),
-            "--organization",
-            "Default",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    text = out.read_text()
-    assert "kind: JobTemplate" in text
-    assert "name: deploy" in text
-    assert "playbook: deploy.yml" in text
-    # FKs translated to names
-    assert "project: playbooks" in text
-    assert "inventory: prod" in text
-
-
-def _save_to(out: str) -> Any:
-    return CliInvoker().invoke(
-        app, ["job-templates", "export", "deploy", "--organization", "Default", f"--out={out}"]
-    )
+def _save_to(out: str | None, *extra: str) -> Any:
+    args = ["job-templates", "export", "deploy", "--organization", "Default", *extra]
+    return CliInvoker().invoke(app, args if out is None else [*args, f"--out={out}"])
 
 
 def test_save_out_writes_through_a_symlink(fake_aap: Any, tmp_path: Path) -> None:
@@ -134,38 +108,6 @@ def test_save_out_reports_unwritable_paths(fake_aap: Any, tmp_path: Path) -> Non
     assert "out.yml" in result.stderr
 
 
-def test_job_templates_save_emits_credentials_from_sub_endpoint(fake_aap: Any) -> None:
-    _seed_basic(fake_aap)
-    fake_aap.seed("credentials", id=40, name="ssh", organization=1, organization_name="Default")
-    fake_aap.seed("credentials", id=41, name="vault", organization=1, organization_name="Default")
-    fake_aap.memberships[("job_templates", 30, "credentials")] = {40, 41}
-
-    result = CliInvoker().invoke(
-        app, ["job-templates", "export", "deploy", "--organization", "Default"]
-    )
-
-    assert result.exit_code == 0, result.output
-    doc = yaml.safe_load(result.stdout)
-    assert sorted(doc["spec"]["credentials"]) == ["ssh", "vault"]
-
-
-def test_job_templates_save_default_yaml_round_trips(fake_aap: Any) -> None:
-    """Default stdout (no ``--out``, no ``--format``) is a bare YAML
-    envelope — a single mapping that ``read_resources`` can ingest
-    without ``yaml.safe_load_all`` wrapping. Round-trip into apply
-    depends on this shape; using row collection rendering for YAML
-    would wrap in a top-level list and silently break it."""
-    _seed_basic(fake_aap)
-    result = CliInvoker().invoke(
-        app, ["job-templates", "export", "deploy", "--organization", "Default"]
-    )
-    assert result.exit_code == 0, result.output
-    doc = yaml.safe_load(result.stdout)
-    assert isinstance(doc, dict), f"expected bare mapping, got {type(doc).__name__}"
-    assert doc["kind"] == "JobTemplate"
-    Resource.model_validate(doc)
-
-
 def test_job_templates_save_apply_round_trips_string_extra_vars(
     fake_aap: Any, tmp_path: Path
 ) -> None:
@@ -184,36 +126,6 @@ def test_job_templates_save_apply_round_trips_string_extra_vars(
     assert apply_result.exit_code == 0, apply_result.output
     assert "did not converge" not in apply_result.output.lower()
     assert fake_aap.get_record("job_templates", 30)["extra_vars"] == "answer: 42\n"
-
-
-def test_job_templates_save_format_json_emits_envelope(fake_aap: Any) -> None:
-    """``--format json`` emits the single-document envelope as a bare object
-    ``{…}`` via ``emit`` (not a one-element list)."""
-    _seed_basic(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "export", "deploy", "--organization", "Default", "--format", "json"],
-    )
-    assert result.exit_code == 0, result.output
-    envelope = json.loads(result.stdout)
-    assert isinstance(envelope, dict)
-    assert envelope["kind"] == "JobTemplate"
-    assert envelope["metadata"]["name"] == "deploy"
-    assert envelope["spec"]["playbook"] == "deploy.yml"
-    # exclude_none pruning must survive emit (it receives the pre-pruned dict,
-    # not the model) — no None leaked back into the rendered spec.
-    assert all(value is not None for value in envelope["spec"].values())
-
-
-def test_job_templates_save_format_raw_emits_kind(fake_aap: Any) -> None:
-    """``--format raw`` emits the first key of the envelope per the
-    default-column contract. For a Resource that's ``kind``."""
-    _seed_basic(fake_aap)
-    result = CliInvoker().invoke(
-        app, ["job-templates", "export", "deploy", "--organization", "Default", "--format", "raw"]
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "JobTemplate"
 
 
 def test_credentials_have_no_save_or_apply(fake_aap: Any) -> None:
@@ -270,43 +182,6 @@ def test_save_kind_org_scopes_inventory_child_kind(fake_aap: Any, tmp_path: Path
     assert not (out_dir / "Host__Inventory__Other__prod__web-other.yml").exists()
 
 
-def test_save_kind_accepts_cli_name(seeded_default_org: Any, tmp_path: Path) -> None:
-    """``save --kind job-templates`` should work as well as ``--kind JobTemplate``."""
-    seeded_default_org.seed(
-        "job_templates",
-        id=30,
-        name="deploy",
-        organization=1,
-        organization_name="Default",
-        playbook="a.yml",
-    )
-    out_dir = tmp_path / "backup"
-    result = CliInvoker().invoke(
-        app, ["export", "--out-dir", str(out_dir), "--kind", "job-templates"]
-    )
-    assert result.exit_code == 0, result.output
-    assert (out_dir / "JobTemplate__Default__deploy.yml").exists()
-
-
-def test_save_kind_accepts_domain_kind(seeded_default_org: Any, tmp_path: Path) -> None:
-    """The ``_resolve_kind`` fallback path: ``--kind JobTemplate`` resolves
-    via ``catalog.get`` after ``catalog.by_cli_name`` raises."""
-    seeded_default_org.seed(
-        "job_templates",
-        id=30,
-        name="deploy",
-        organization=1,
-        organization_name="Default",
-        playbook="a.yml",
-    )
-    out_dir = tmp_path / "backup"
-    result = CliInvoker().invoke(
-        app, ["export", "--out-dir", str(out_dir), "--kind", "JobTemplate"]
-    )
-    assert result.exit_code == 0, result.output
-    assert (out_dir / "JobTemplate__Default__deploy.yml").exists()
-
-
 def test_save_kind_rejects_unknown_kind(fake_aap: Any, tmp_path: Path) -> None:
     """Neither ``by_cli_name`` nor ``get`` can resolve a bogus kind —
     the second arm of ``_resolve_kind`` re-raises."""
@@ -315,95 +190,6 @@ def test_save_kind_rejects_unknown_kind(fake_aap: Any, tmp_path: Path) -> None:
     assert result.exit_code != 0
     output = result.output + (result.stderr or "")
     assert "Bogus" in output
-
-
-def test_save_kind_print_paths_legacy_shape(seeded_default_org: Any, tmp_path: Path) -> None:
-    """``--print-paths`` with ``--kind`` (single-kind path through the
-    same loop) keeps the legacy filename-list stdout — proves the flag
-    isn't ``--all-kinds``-only."""
-    seeded_default_org.seed(
-        "job_templates",
-        id=30,
-        name="deploy",
-        organization=1,
-        organization_name="Default",
-        playbook="a.yml",
-    )
-    out_dir = tmp_path / "backup"
-    result = CliInvoker().invoke(
-        app,
-        [
-            "export",
-            "--out-dir",
-            str(out_dir),
-            "--kind",
-            "job-templates",
-            "--print-paths",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    expected = out_dir / "JobTemplate__Default__deploy.yml"
-    assert expected.exists()
-    assert result.stdout.strip() == str(expected)
-
-
-def test_save_kind_default_emits_yaml_envelope_on_stdout(
-    seeded_default_org: Any, tmp_path: Path
-) -> None:
-    """``save --kind --out-dir`` (no ``--all-kinds``) shares the bulk loop's
-    default stdout shape — one ``---``-prefixed envelope per record.
-    Coverage gap before this: only ``--all-kinds`` exercised the envelope
-    path."""
-    seeded_default_org.seed(
-        "job_templates",
-        id=30,
-        name="deploy",
-        organization=1,
-        organization_name="Default",
-        playbook="a.yml",
-    )
-    out_dir = tmp_path / "backup"
-    result = CliInvoker().invoke(
-        app, ["export", "--out-dir", str(out_dir), "--kind", "job-templates"]
-    )
-    assert result.exit_code == 0, result.output
-    docs = [d for d in yaml.safe_load_all(result.stdout) if d is not None]
-    assert len(docs) == 1
-    Resource.model_validate(docs[0])
-    assert docs[0]["kind"] == "JobTemplate"
-    assert docs[0]["metadata"]["name"] == "deploy"
-
-
-def test_job_templates_save_format_with_out_still_writes_yaml_file(
-    fake_aap: Any, tmp_path: Path
-) -> None:
-    """``--out FILE`` takes precedence over ``--format``: the file is
-    always YAML (apply-ingestible), even when the user passed
-    ``--format json``. Avoids writing a JSON envelope to a ``.yml``
-    file that ``apply`` would then fail to parse."""
-    _seed_basic(fake_aap)
-    out = tmp_path / "jt.yml"
-    result = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "export",
-            "deploy",
-            "--out",
-            str(out),
-            "--organization",
-            "Default",
-            "--format",
-            "json",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    text = out.read_text()
-    # File body is YAML, not JSON.
-    assert text.startswith("kind: JobTemplate")
-    Resource.model_validate(yaml.safe_load(text))
-    # Stdout is untouched (file write path is the side-effect-only branch).
-    assert result.stdout == ""
 
 
 def test_workflow_save_emits_partial_warning(seeded_default_org: Any, tmp_path: Path) -> None:
@@ -433,3 +219,67 @@ def test_workflow_save_emits_partial_warning(seeded_default_org: Any, tmp_path: 
     # The fidelity comment is the first line of the file.
     assert text.startswith("# nodes not saved (v0 limitation)") or text.startswith("# node graph")
     assert "partial save" in result.stderr
+
+
+def test_job_templates_export_out_writes_yaml_with_fk_names(fake_aap: Any, tmp_path: Path) -> None:
+    """``--out FILE`` always writes apply-ingestible YAML, even with ``--format json``."""
+    _seed_basic(fake_aap)
+    out = tmp_path / "jt.yml"
+    result = _save_to(str(out), "--format", "json")
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+    text = out.read_text()
+    assert text.startswith("kind: JobTemplate")
+    spec = Resource.model_validate(yaml.safe_load(text)).spec
+    assert (spec["playbook"], spec["project"], spec["inventory"]) == (
+        "deploy.yml",
+        "playbooks",
+        "prod",
+    )
+
+
+def test_job_templates_export_default_is_one_bare_yaml_envelope(fake_aap: Any) -> None:
+    """Default stdout is a bare mapping (not a one-item list) so it round-trips
+    into ``apply``; multi-valued FKs come from their sub-endpoint as names."""
+    _seed_basic(fake_aap)
+    fake_aap.seed("credentials", id=40, name="ssh", organization=1, organization_name="Default")
+    fake_aap.seed("credentials", id=41, name="vault", organization=1, organization_name="Default")
+    fake_aap.memberships[("job_templates", 30, "credentials")] = {40, 41}
+
+    result = _save_to(None)
+
+    assert result.exit_code == 0, result.output
+    doc = yaml.safe_load(result.stdout)
+    assert isinstance(doc, dict)
+    assert Resource.model_validate(doc).kind == "JobTemplate"
+    assert sorted(doc["spec"]["credentials"]) == ["ssh", "vault"]
+
+
+def test_job_templates_export_format_json_and_raw(fake_aap: Any) -> None:
+    """``json`` is the bare pruned envelope; ``raw`` prints its first key, ``kind``."""
+    _seed_basic(fake_aap)
+    envelope = json.loads(_save_to(None, "--format", "json").stdout)
+    assert envelope["metadata"]["name"] == "deploy"
+    assert all(value is not None for value in envelope["spec"].values())
+    assert _save_to(None, "--format", "raw").stdout.strip() == "JobTemplate"
+
+
+@pytest.mark.parametrize("kind", ["job-templates", "JobTemplate"])
+def test_export_kind_accepts_cli_and_domain_names(
+    seeded_default_org: Any, tmp_path: Path, kind: str
+) -> None:
+    """``export --kind`` writes one file per record and streams its envelope."""
+    seeded_default_org.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
+    out_dir = tmp_path / "backup"
+    result = CliInvoker().invoke(app, ["export", "--out-dir", str(out_dir), "--kind", kind])
+    assert result.exit_code == 0, result.output
+    assert [p.name for p in out_dir.iterdir()] == ["JobTemplate__Default__deploy.yml"]
+    docs = [d for d in yaml.safe_load_all(result.stdout) if d is not None]
+    assert [Resource.model_validate(d).metadata.name for d in docs] == ["deploy"]

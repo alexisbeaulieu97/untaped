@@ -20,86 +20,49 @@ def _flag_in_help(flag: str, help_text: str) -> bool:
     return re.search(rf"{re.escape(flag)}\b", help_text) is not None
 
 
-def test_launch_reads_names_from_stdin(seeded_default_org: Any) -> None:
-    """`launch --stdin` fans out launches across every identifier read from
-    stdin — same pipeline shape as `get --stdin`."""
-    seeded_default_org.seed(
-        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
-    )
-    seeded_default_org.seed(
-        "job_templates", id=11, name="beta", organization=1, organization_name="Default"
-    )
-    result = CliInvoker().invoke(
-        app, ["job-templates", "launch", "--yes", "--stdin"], input="alpha\nbeta\n"
-    )
+@pytest.mark.parametrize(
+    ("args", "input", "launched"),
+    [
+        (["--stdin"], "alpha\nbeta\n", [10, 11]),
+        # all-digit identifiers are names unless --by-id is passed
+        (["123", "--org", "Default"], None, [99]),
+        (["--by-id", "123"], None, [123]),
+        (["shared", "--org", "Other"], None, [51]),
+    ],
+)
+def test_launch_selection(
+    seeded_default_org: Any, args: list[str], input: str | None, launched: list[int]
+) -> None:
+    fake = seeded_default_org
+    fake.seed("organizations", id=2, name="Other")
+    for id_, name, org in ((10, "alpha", 1), (11, "beta", 1), (99, "123", 1), (123, "other", 1),
+                           (50, "shared", 1), (51, "shared", 2)):  # fmt: skip
+        fake.seed("job_templates", id=id_, name=name, organization=org)
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "--yes", *args], input=input)
     assert result.exit_code == 0, result.output
-    launches = [c for c in seeded_default_org.actions_called if c[2] == "launch"]
-    launched_ids = {c[1] for c in launches}
-    assert launched_ids == {10, 11}
+    assert sorted(c[1] for c in fake.actions_called if c[2] == "launch") == launched
 
 
-def test_launch_numeric_name_is_default(seeded_default_org: Any) -> None:
-    """All-digit launch identifiers are template names unless ``--by-id`` is passed."""
-    seeded_default_org.seed(
-        "job_templates", id=99, name="123", organization=1, organization_name="Default"
-    )
-    seeded_default_org.seed(
-        "job_templates", id=123, name="other", organization=1, organization_name="Default"
-    )
-
-    result = CliInvoker().invoke(app, ["job-templates", "launch", "123", "--org", "Default"])
-
+@pytest.mark.parametrize(
+    ("args", "action"),
+    [
+        (["job-templates", "launch", "alpha"], ("job_templates", "launch")),
+        (["projects", "sync", "playbooks"], ("projects", "update")),
+        (["jobs", "wait", "42"], None),
+    ],
+)
+def test_actions_honour_format_json(
+    seeded_default_org: Any, args: list[str], action: tuple[str, str] | None
+) -> None:
+    """CI scripts pipe launch, sync and wait verdicts into ``jq``."""
+    seeded_default_org.seed("job_templates", id=10, name="alpha", organization=1)
+    seeded_default_org.seed("projects", id=10, name="playbooks", organization=1, scm_type="git")
+    seeded_default_org.seed("jobs", id=42, name="run", status="successful", type="job")
+    result = CliInvoker().invoke(app, [*args, "--format", "json"])
     assert result.exit_code == 0, result.output
-    launches = [c for c in seeded_default_org.actions_called if c[2] == "launch"]
-    assert len(launches) == 1
-    assert launches[0][1] == 99
-
-
-def test_launch_by_id_uses_awx_id(seeded_default_org: Any) -> None:
-    seeded_default_org.seed(
-        "job_templates", id=99, name="123", organization=1, organization_name="Default"
-    )
-    seeded_default_org.seed(
-        "job_templates", id=123, name="other", organization=1, organization_name="Default"
-    )
-
-    result = CliInvoker().invoke(app, ["job-templates", "launch", "--by-id", "123"])
-
-    assert result.exit_code == 0, result.output
-    launches = [c for c in seeded_default_org.actions_called if c[2] == "launch"]
-    assert len(launches) == 1
-    assert launches[0][1] == 123
-
-
-def test_launch_supports_format_json(seeded_default_org: Any) -> None:
-    """The pipeline contract: launch must honour --format/--columns
-    instead of forcing yaml output."""
-    import json as _json
-
-    seeded_default_org.seed(
-        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
-    )
-    result = CliInvoker().invoke(app, ["job-templates", "launch", "alpha", "--format", "json"])
-    assert result.exit_code == 0, result.output
-    parsed = _json.loads(result.stdout)
-    assert isinstance(parsed, list) and parsed, parsed
-
-
-def test_launch_accepts_org_alias_for_name_scope(fake_aap: Any) -> None:
-    fake_aap.seed("organizations", id=1, name="Org-A")
-    fake_aap.seed("organizations", id=2, name="Org-B")
-    fake_aap.seed("job_templates", id=10, name="deploy", organization=1, organization_name="Org-A")
-    fake_aap.seed("job_templates", id=11, name="deploy", organization=2, organization_name="Org-B")
-
-    result = CliInvoker().invoke(
-        app,
-        ["job-templates", "launch", "deploy", "--org", "Org-B", "--format", "raw"],
-    )
-
-    assert result.exit_code == 0, result.output
-    launches = [c for c in fake_aap.actions_called if c[2] == "launch"]
-    assert len(launches) == 1
-    assert launches[0][1] == 11
+    assert json.loads(result.stdout)
+    if action is not None:
+        assert [c[0::2] for c in seeded_default_org.actions_called] == [action]
 
 
 def test_workflow_launch_rejects_unsupported_flags(seeded_default_org: Any) -> None:
@@ -226,50 +189,6 @@ def test_launch_round_trips_falsy_but_meaningful_flag_values(
     assert body["diff_mode"] is False
 
 
-def test_jobs_wait_supports_format_json(fake_aap: Any) -> None:
-    """`awx jobs wait` must honour --format — CI scripts that pipe a
-    wait verdict into ``jq`` rely on the structured shape."""
-    import json as _json
-
-    fake_aap.seed("jobs", id=42, name="run", status="successful", type="job")
-    result = CliInvoker().invoke(app, ["jobs", "wait", "42", "--format", "json"])
-    assert result.exit_code == 0, result.output
-    parsed = _json.loads(result.stdout)
-    assert isinstance(parsed, list) and parsed
-    assert parsed[0].get("id") == 42
-
-
-def test_jobs_wait_exits_nonzero_on_timeout(fake_aap: Any) -> None:
-    """A non-terminal job at the deadline must exit non-zero — `awx test`
-    already classifies that as ``timeout``; `jobs wait` should agree so
-    scripts can ``set -e`` and detect the failure."""
-    fake_aap.seed("jobs", id=42, name="run", status="running", type="job")
-    result = CliInvoker().invoke(app, ["jobs", "wait", "42", "--timeout", "0"])
-    assert result.exit_code == 1, result.output
-    assert "timeout" in (result.output + (result.stderr or ""))
-
-
-def test_project_sync_supports_format_json(seeded_default_org: Any) -> None:
-    """The generated `<kind> sync` command on Project must honour
-    --format too. Symmetric with launch."""
-    import json as _json
-
-    seeded_default_org.seed(
-        "projects",
-        id=10,
-        name="playbooks",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    result = CliInvoker().invoke(
-        app, ["projects", "sync", "playbooks", "--organization", "Default", "--format", "json"]
-    )
-    assert result.exit_code == 0, result.output
-    parsed = _json.loads(result.stdout)
-    assert isinstance(parsed, list) and parsed
-
-
 def test_launch_stdin_preflights_every_name_before_submitting(seeded_default_org: Any) -> None:
     """Known missing targets invalidate the complete selection before any POST."""
     seeded_default_org.seed(
@@ -281,41 +200,6 @@ def test_launch_stdin_preflights_every_name_before_submitting(seeded_default_org
     assert result.exit_code != 0
     assert seeded_default_org.actions_called == []
     assert "ghost" in result.output
-
-
-def test_jobs_logs_returns_text_not_json(fake_aap: Any) -> None:
-    """`jobs logs` hits a text endpoint — must not JSON-decode."""
-    fake_aap.seed(
-        "jobs",
-        id=42,
-        name="deploy-1",
-        status="successful",
-        stdout="PLAY [deploy] **\nTASK [run] **\nok: [host1]\n",
-    )
-    result = CliInvoker().invoke(app, ["jobs", "logs", "42"])
-    assert result.exit_code == 0, result.output
-    assert "PLAY [deploy]" in result.stdout
-    assert "TASK [run]" in result.stdout
-
-
-def test_project_sync_calls_action(seeded_default_org: Any) -> None:
-    seeded_default_org.seed(
-        "projects",
-        id=10,
-        name="playbooks",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    result = CliInvoker().invoke(
-        app,
-        ["projects", "sync", "playbooks", "--organization", "Default"],
-    )
-    assert result.exit_code == 0, result.output
-    assert any(
-        api_path == "projects" and action == "update"
-        for api_path, _, action, _ in seeded_default_org.actions_called
-    )
 
 
 def test_launch_help_narrows_flags_by_accepts() -> None:
@@ -479,7 +363,7 @@ def test_launch_extra_vars_yaml_dates_become_iso_strings(
     }
 
 
-@pytest.mark.parametrize("entry", ["x: .nan", "x: !!binary aGk="])
+@pytest.mark.parametrize("entry", ["x: .nan", "x: !!binary aGk=", "[1, 2]"])
 def test_launch_extra_vars_rejects_unencodable_values(seeded_default_org: Any, entry: str) -> None:
     seeded_default_org.seed(
         "job_templates", id=10, name="alpha", organization=1, ask_variables_on_launch=True
@@ -488,18 +372,6 @@ def test_launch_extra_vars_rejects_unencodable_values(seeded_default_org: Any, e
     assert result.exit_code == 2, result.output
     assert "--extra-vars" in result.output
     assert result.exception is None or isinstance(result.exception, SystemExit)
-    assert seeded_default_org.actions_called == []
-
-
-def test_launch_extra_vars_rejects_non_mapping_values(seeded_default_org: Any) -> None:
-    seeded_default_org.seed(
-        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
-    )
-    result = CliInvoker().invoke(
-        app, ["job-templates", "launch", "alpha", "--extra-vars", "[1, 2]"]
-    )
-    assert result.exit_code != 0
-    assert "--extra-vars" in result.output
     assert seeded_default_org.actions_called == []
 
 

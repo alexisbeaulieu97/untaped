@@ -1,24 +1,16 @@
 from __future__ import annotations
 
 from untaped.capabilities.awx.domain.envelope import API_VERSION, IdentityRef, Metadata, Resource
-from untaped.capabilities.awx.domain.job import TERMINAL_STATUSES, Job, JobEvent
+from untaped.capabilities.awx.domain.job import Job, JobEvent
 from untaped.capabilities.awx.domain.outcomes import (
-    ApplyAction,
     ApplyOutcome,
     BatchResult,
     FieldChange,
-    SaveAction,
     SaveOutcome,
 )
 from untaped.capabilities.awx.domain.payloads import ActionPayload, ServerRecord, WritePayload
 from untaped.capabilities.awx.domain.ping import PingStatus
-from untaped.capabilities.awx.domain.spec import (
-    ActionSpec,
-    CommandName,
-    Fidelity,
-    FkRef,
-    ResourceSpec,
-)
+from untaped.capabilities.awx.domain.spec import ActionSpec, CommandName, FkRef, ResourceSpec
 from untaped.capabilities.awx.domain.workflow_node import (
     WorkflowNode,
     WorkflowNodeType,
@@ -28,14 +20,11 @@ from untaped.capabilities.awx.domain.workflow_usage import WorkflowUsage
 
 __all__ = [
     "API_VERSION",
-    "TERMINAL_STATUSES",
     "ActionPayload",
     "ActionSpec",
-    "ApplyAction",
     "ApplyOutcome",
     "BatchResult",
     "CommandName",
-    "Fidelity",
     "FieldChange",
     "FkRef",
     "IdentityRef",
@@ -45,7 +34,6 @@ __all__ = [
     "PingStatus",
     "Resource",
     "ResourceSpec",
-    "SaveAction",
     "SaveOutcome",
     "ServerRecord",
     "WorkflowNode",

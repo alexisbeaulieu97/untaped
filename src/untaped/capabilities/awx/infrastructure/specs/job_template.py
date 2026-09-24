@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from untaped.capabilities.awx.domain import ActionSpec, FkRef
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
+from untaped.capabilities.awx.infrastructure.specs._support import UNIVERSAL_READ_ONLY
 
 JOB_TEMPLATE_SPEC = AwxResourceSpec(
     kind="JobTemplate",
@@ -62,13 +63,7 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
         "credentials",
     ),
     read_only_fields=(
-        "id",
-        "created",
-        "modified",
-        "summary_fields",
-        "related",
-        "type",
-        "url",
+        *UNIVERSAL_READ_ONLY,
         "last_job_run",
         "last_job_failed",
         "last_job_status",

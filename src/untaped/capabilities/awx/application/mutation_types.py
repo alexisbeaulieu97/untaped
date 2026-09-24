@@ -18,7 +18,7 @@ class PreparedMutation:
 
     ``payload`` and ``existing`` are execution-only values and are excluded
     from repr so printing a plan cannot accidentally expose a secret.  Use
-    ``presentation_payload`` and ``preview`` for human-facing output.
+    ``preview`` for human-facing output.
     Structured accessors return copies so callers cannot alter execution state
     through a nested mapping or an exposed Pydantic value.
     """
@@ -30,7 +30,6 @@ class PreparedMutation:
     _identity: dict[str, Any]
     _scope: dict[str, Any]
     _payload: dict[str, Any] = field(repr=False)
-    _presentation_payload: dict[str, Any]
     _existing: dict[str, Any] | None = field(repr=False)
     target_id: int | None
     watched_fields: tuple[str, ...]
@@ -55,10 +54,6 @@ class PreparedMutation:
     @property
     def payload(self) -> dict[str, Any]:
         return copy.deepcopy(self._payload)
-
-    @property
-    def presentation_payload(self) -> dict[str, Any]:
-        return copy.deepcopy(self._presentation_payload)
 
     @property
     def existing(self) -> dict[str, Any] | None:

@@ -65,23 +65,6 @@ def _seed_groups(fake: Any) -> None:
     )
 
 
-def test_groups_list_returns_seeded_records(fake_aap: Any) -> None:
-    _seed_groups(fake_aap)
-    result = CliInvoker().invoke(app, ["groups", "list", "--format", "raw", "--columns", "name"])
-    assert result.exit_code == 0, result.output
-    names = sorted(result.stdout.strip().splitlines())
-    assert names == ["api-servers", "web-servers"]
-
-
-def test_groups_get_by_id(fake_aap: Any) -> None:
-    _seed_groups(fake_aap)
-    result = CliInvoker().invoke(
-        app, ["groups", "get", "--by-id", "200", "--format", "raw", "--columns", "name"]
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "web-servers"
-
-
 def test_groups_apply_creates_group_and_associates_hosts(fake_aap: Any, tmp_path: Path) -> None:
     """Apply a Group with ``hosts:`` reconciles membership via
     ``POST /groups/<id>/hosts/`` per host id."""

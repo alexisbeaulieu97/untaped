@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from untaped.capabilities.awx.domain import FkRef
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
+from untaped.capabilities.awx.infrastructure.specs._support import UNIVERSAL_READ_ONLY
 
 GROUP_SPEC = AwxResourceSpec(
     kind="Group",
@@ -25,14 +26,8 @@ GROUP_SPEC = AwxResourceSpec(
     identity_keys=("name",),  # unique within parent (Inventory)
     canonical_fields=("description", "variables"),
     read_only_fields=(
-        "id",
+        *UNIVERSAL_READ_ONLY,
         "inventory",
-        "created",
-        "modified",
-        "summary_fields",
-        "related",
-        "type",
-        "url",
         "has_active_failures",
         "total_hosts",
         "hosts_with_active_failures",
