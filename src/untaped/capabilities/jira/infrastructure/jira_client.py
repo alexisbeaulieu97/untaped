@@ -69,6 +69,21 @@ class JiraClient:
                 retry=_SEARCH_RETRY,
             )
 
+    def list_comments(
+        self, issue_key: str, *, limit: int | None = None
+    ) -> Iterator[dict[str, Any]]:
+        with map_jira_errors(noun="issue", name=issue_key):
+            yield from paginate_offset(
+                self._http,
+                "GET",
+                self._api(f"issue/{issue_key}/comment"),
+                item_key="comments",
+                page_size=self._page_size,
+                limit=limit,
+                start_param="startAt",
+                size_param="maxResults",
+            )
+
     def create_issue(self, payload: dict[str, Any]) -> dict[str, Any]:
         with map_jira_errors():
             return self._http.post_json(self._api("issue"), json=payload)  # type: ignore[no-any-return]
@@ -84,6 +99,10 @@ class JiraClient:
                 json={"body": body},
             )
 
+    def create_link(self, payload: dict[str, Any]) -> None:
+        with map_jira_errors():
+            self._http.request_json("POST", self._api("issueLink"), json=payload)
+
     def list_transitions(self, issue_key: str) -> list[dict[str, Any]]:
         with map_jira_errors(noun="issue", name=issue_key):
             payload = self._http.get_json_dict(self._api(f"issue/{issue_key}/transitions"))
@@ -92,12 +111,10 @@ class JiraClient:
             return []
         return [transition for transition in transitions if isinstance(transition, dict)]
 
-    def transition_issue(self, issue_key: str, transition_id: str) -> None:
+    def transition_issue(self, issue_key: str, payload: dict[str, Any]) -> None:
         with map_jira_errors(noun="issue", name=issue_key):
             self._http.request_json(
-                "POST",
-                self._api(f"issue/{issue_key}/transitions"),
-                json={"transition": {"id": transition_id}},
+                "POST", self._api(f"issue/{issue_key}/transitions"), json=payload
             )
 
     def list_projects(self) -> Iterator[dict[str, Any]]:

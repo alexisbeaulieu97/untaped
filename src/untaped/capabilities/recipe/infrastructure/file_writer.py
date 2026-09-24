@@ -9,7 +9,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from untaped.capabilities.recipe.domain.paths import confined_path
-from untaped.capabilities.recipe.domain.plan import FileChange
+from untaped.capabilities.recipe.domain.plan import CONTENT_ERRORS, FileChange
 from untaped.capability_api import UntapedError
 
 
@@ -57,7 +57,11 @@ def _verify_current_content(changes: tuple[FileChange, ...]) -> None:
     for change in changes:
         path = _change_path(change)
         try:
-            current = path.read_text(encoding="utf-8", newline="") if path.is_file() else None
+            current = (
+                path.read_text(encoding="utf-8", errors=CONTENT_ERRORS, newline="")
+                if path.is_file()
+                else None
+            )
         except OSError as exc:
             raise ApplyWriteError(str(exc)) from exc
         if current != change.before:
@@ -91,7 +95,7 @@ def _stage_replacements(
             created_dirs.extend(_ensure_parent(path))
             tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.untaped-recipe.tmp")
             staged[change] = tmp
-            tmp.write_text(change.after, encoding="utf-8", newline="")
+            tmp.write_text(change.after, encoding="utf-8", errors=CONTENT_ERRORS, newline="")
             if change in modes:
                 tmp.chmod(modes[change])
     except ApplyWriteError:
@@ -140,7 +144,7 @@ def _rollback(
                 continue
             path.parent.mkdir(parents=True, exist_ok=True)
             tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.untaped-recipe.rollback.tmp")
-            tmp.write_text(change.before, encoding="utf-8", newline="")
+            tmp.write_text(change.before, encoding="utf-8", errors=CONTENT_ERRORS, newline="")
             if change in modes:
                 tmp.chmod(modes[change])
             os.replace(tmp, path)

@@ -16,10 +16,13 @@ from typing import TextIO
 
 import pytest
 
+from untaped.auth import clear_token_cache
 from untaped.prompts import reset_terminal_override, set_terminal_override
 from untaped.settings import get_settings
 
 _TERMINAL_ENV = {"TERM": "dumb", "NO_COLOR": "1", "COLUMNS": "200"}
+# Ambient token fallbacks (``GH_TOKEN``) would otherwise leak a real token in.
+_AMBIENT_ENV = frozenset({"GIT_CONFIG", "GH_TOKEN", "GITHUB_TOKEN"})
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +32,7 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
     with pytest.MonkeyPatch.context() as patch:
         uv_cache = os.environ.get("UV_CACHE_DIR") or str(Path.home() / ".cache" / "uv")
         for key in list(os.environ):
-            if key.startswith(("UNTAPED_", "GIT_CONFIG_")) or key == "GIT_CONFIG":
+            if key.startswith(("UNTAPED_", "GIT_CONFIG_")) or key in _AMBIENT_ENV:
                 patch.delenv(key)
         patch.setenv("HOME", str(home))
         patch.setenv("UV_CACHE_DIR", uv_cache)
@@ -41,6 +44,7 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
         for key, value in _TERMINAL_ENV.items():
             patch.setenv(key, value)
         get_settings.cache_clear()
+        clear_token_cache()
         # No test may prompt on the developer's real terminal: the controlling
         # terminal is absent unless a test installs one (``invoke_cli(terminal=True)``).
         terminal_token = set_terminal_override(_no_controlling_terminal)

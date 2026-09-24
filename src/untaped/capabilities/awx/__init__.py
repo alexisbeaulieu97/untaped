@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.capabilities.awx.settings import AwxSettings
-from untaped.capability_api import CapabilitySpec, SkillAsset
+from untaped.capability_api import CapabilitySpec, SkillAsset, connection_check
 
 if TYPE_CHECKING:
     from cyclopts import App
@@ -35,5 +35,5 @@ SPEC = CapabilitySpec(
             description="Use the built-in `untaped awx` capability for AWX/AAP workflows.",
         ),
     ),
-    doctor_checks=(),
+    doctor_checks=(connection_check("awx.connection", section="awx"),),
 )

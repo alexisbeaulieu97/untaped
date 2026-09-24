@@ -21,15 +21,18 @@ from untaped.capabilities.github.application.search import (
     SearchUsers,
 )
 from untaped.capabilities.github.application.sweep import (
+    CorpusSyncOptions,
     Sweep,
     SweepMatch,
     SweepOptions,
     SweepReport,
+    SyncCorpus,
 )
 from untaped.capabilities.github.application.whoami import WhoAmI
 
 __all__ = [
     "CleanCorpus",
+    "CorpusSyncOptions",
     "GitCorpus",
     "GithubMeService",
     "GithubRepoListService",
@@ -50,6 +53,7 @@ __all__ = [
     "SweepMatch",
     "SweepOptions",
     "SweepReport",
+    "SyncCorpus",
     "TeamScope",
     "WhoAmI",
     "WorktreeCorpus",

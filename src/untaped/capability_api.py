@@ -4,7 +4,8 @@ Every capability — built-in or external provider — imports untaped helpers
 from this module only. It carries the composition set, the provider
 ``CAPABILITY_API_VERSION``, and the supported runtime helpers (output,
 errors and exit codes, settings, HTTP, git, stdin/pipe, state, UI, batch,
-concurrency, shared options, message wording and record bases).
+concurrency, shared options, message wording, record bases, token sources
+and doctor-check factories).
 Additions are backwards compatible; removals or signature breaks require a
 major ``CAPABILITY_API_VERSION`` bump.
 """
@@ -12,6 +13,7 @@ major ``CAPABILITY_API_VERSION`` bump.
 from __future__ import annotations
 
 from untaped.app_context import AppContext, app_context
+from untaped.auth import TokenCommand, TokenSources
 from untaped.batch import BatchOutcome, batch_apply, finish
 from untaped.capabilities.registry import (
     CAPABILITY_API_VERSION,
@@ -46,6 +48,7 @@ from untaped.cli import (
 )
 from untaped.concurrency import bounded_map
 from untaped.diff import unified_diff_text
+from untaped.doctor_checks import connection_check, executable_check
 from untaped.editor import run_editor
 from untaped.errors import (
     ConfigError,
@@ -185,4 +188,9 @@ __all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by
     "read_records",
     "read_stdin_input",
     "summary",
+    # Auth and doctor helpers.
+    "TokenCommand",
+    "TokenSources",
+    "connection_check",
+    "executable_check",
 ]

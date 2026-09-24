@@ -16,6 +16,7 @@ from typing import Any, cast
 
 from pydantic import BaseModel
 
+from untaped.auth import resolve_token
 from untaped.errors import ConfigError
 from untaped.settings import (
     HttpSettings,
@@ -51,7 +52,9 @@ class AppContext:
         Only ``name`` (plus its own state section) is validated, once per
         context. Unlike :func:`untaped.settings.get_config_section`, this never
         builds a one-off model for unregistered sections — it serves only
-        sections registered before the composition was resolved.
+        sections registered before the composition was resolved. A
+        token-bearing section gets its token fallbacks applied
+        (:func:`untaped.auth.resolve_token`).
         """
         if name not in self.settings_model.model_fields:
             raise ConfigError(
@@ -61,10 +64,10 @@ class AppContext:
             self._resolved[name] = load_settings_section(name, self.settings_model)
         value = self._resolved[name]
         if isinstance(value, model_cls):
-            return value
+            return resolve_token(value, section=name)
         if isinstance(value, BaseModel):
-            return model_cls.model_validate(value.model_dump())
-        return model_cls.model_validate(value)
+            return resolve_token(model_cls.model_validate(value.model_dump()), section=name)
+        return resolve_token(model_cls.model_validate(value), section=name)
 
     @property
     def http(self) -> HttpSettings:

@@ -51,12 +51,19 @@ DESCRIPTIONS: dict[str, str] = {
     "workspace.workspaces": "Registered workspaces (`name`, `path`). Managed by `workspace` "
     "commands.",
     "github.base_url": "GitHub API URL. GitHub Enterprise Server uses `https://HOST/api/v3`.",
-    "github.token": "GitHub token for API calls and Git fetches.",
+    "github.token": "GitHub token for API calls and Git fetches. Falls back to "
+    "`token_command`, then `GH_TOKEN`, then `GITHUB_TOKEN`.",
+    "github.token_command": "Command (argv list, no shell) that prints the token; "
+    "used when `github.token` is unset.",
     "github.corpus_path": "Local Git corpus that `github sweep` and `github cache` manage.",
-    "github.sweep.max_age_seconds": "`sweep` refreshes cached repos older than this.",
-    "github.sweep.sync_concurrency": "Default `sweep --parallel` Git workers.",
+    "github.sweep.max_age_seconds": "`sweep` and `cache sync` refresh cached repos older than "
+    "this that GitHub reports as pushed since.",
+    "github.sweep.sync_concurrency": "Default `sweep --parallel` and `cache sync --parallel` Git "
+    "workers.",
     "jira.base_url": "Jira Data Center URL, for example `https://jira.example.com`.",
     "jira.token": "Jira personal access token.",
+    "jira.token_command": "Command (argv list, no shell) that prints the token; "
+    "used when `jira.token` is unset.",
     "jira.api_prefix": "Jira platform REST prefix.",
     "jira.agile_prefix": "Jira Software (boards, sprints) REST prefix.",
     "jira.assigned_jql": "Base JQL for `issues assigned`, and for `issues search` with no query.",
@@ -65,6 +72,8 @@ DESCRIPTIONS: dict[str, str] = {
     "jira.page_size": "Results requested per Jira API page.",
     "awx.base_url": "AWX/AAP URL, for example `https://aap.example.com`.",
     "awx.token": "AWX/AAP API token.",
+    "awx.token_command": "Command (argv list, no shell) that prints the token; "
+    "used when `awx.token` is unset.",
     "awx.api_prefix": "API prefix. Standalone AWX usually uses `/api/v2/`.",
     "awx.default_organization": "Organization that scopes name lookups and `apply` documents "
     "without one.",

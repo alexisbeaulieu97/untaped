@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
@@ -101,9 +102,98 @@ def test_cache_status_reports_profile_disk_freshness(
     assert row["repo"] == "acme/api"
     assert row["profile"] == "default"
     assert row["disk_bytes"] > 0
-    assert "Cache: 1 repo," in result.stderr
-    assert "oldest" in result.stderr
-    assert "newest" in result.stderr
+    assert re.search(r"Cache: 1 repo, [0-9.]+ KiB, oldest just now, newest just now", result.stderr)
+
+
+def test_cache_status_table_shows_readable_size_and_age(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    source = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
+    _populate_cache(tmp_path, [_repo("acme/api", source)])
+
+    result = CliInvoker().invoke(app, ["cache", "status"])
+
+    assert result.exit_code == 0, result.output
+    assert "KiB" in result.stdout
+    assert "just now" in result.stdout
+    assert "disk_bytes" not in result.stdout
+
+
+def test_cache_sync_warms_the_corpus_without_a_query(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    source = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
+    listed = [{**_repo("acme/api", source), "pushed_at": "2026-07-01T00:00:00Z"}]
+
+    def sync(*extra: str) -> list[dict[str, object]]:
+        with respx.mock(base_url="https://api.github.com") as mock:
+            mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=listed))
+            result = CliInvoker().invoke(
+                app, ["cache", "sync", "--org", "acme", "--format", "json", *extra]
+            )
+        assert result.exit_code == 0, result.output
+        assert result.stderr.splitlines()[-1].startswith("sync: 1 ")
+        rows: list[dict[str, object]] = json.loads(result.stdout)
+        return rows
+
+    [first] = sync()
+    [second] = sync()
+    [forced] = sync("--refresh")
+
+    assert list(first) == ["repo", "fetched_at", "error", "action"]
+    assert (first["repo"], first["action"]) == ("acme/api", "synced")
+    assert second["action"] == "skipped"
+    assert forced["action"] == "synced"
+    status = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
+    assert [row["repo"] for row in json.loads(status.stdout)] == ["acme/api"]
+
+
+def test_cache_sync_skips_fetch_when_github_reports_no_push(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = _write_config(tmp_path)
+    cfg.write_text(cfg.read_text() + "      sweep:\n        max_age_seconds: 0\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    source = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
+    listed = [{**_repo("acme/api", source), "pushed_at": "2026-07-01T00:00:00Z"}]
+    actions = []
+    for _ in range(2):
+        with respx.mock(base_url="https://api.github.com") as mock:
+            mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=listed))
+            result = CliInvoker().invoke(app, ["cache", "sync", "--org", "acme", "-f", "json"])
+        assert result.exit_code == 0, result.output
+        actions.append(json.loads(result.stdout)[0]["action"])
+
+    assert actions == ["synced", "unchanged"]
+
+
+def test_cache_sync_failure_exits_1_and_names_the_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    missing = tmp_path / "missing"
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/orgs/acme/repos").mock(
+            return_value=httpx.Response(200, json=[_repo("acme/gone", missing)])
+        )
+        result = CliInvoker().invoke(app, ["cache", "sync", "--org", "acme", "-f", "json"])
+
+    assert result.exit_code == 1, result.output
+    assert json.loads(result.stdout)[0]["action"] == "failed"
+    assert "error: acme/gone:" in result.stderr
+    assert "sync: 1 failed" in result.stderr
+
+
+def test_cache_sync_requires_a_scope(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+
+    result = CliInvoker().invoke(app, ["cache", "sync"])
+
+    assert result.exit_code == 2, result.output
+    assert "cache sync requires --org, --team, --repo, or --stdin" in result.stderr
 
 
 def test_cache_prune_removes_departed_repos(

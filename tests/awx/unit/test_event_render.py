@@ -40,6 +40,30 @@ def test_render_event_runner_failed_falls_back_to_host_id_when_name_missing() ->
     assert line == "  failed: 42"
 
 
+def test_render_event_failure_shows_the_reason_from_stdout() -> None:
+    stdout = '\x1b[0;31mfatal: [web-01]: FAILED! => {"msg": "no package foo"}\x1b[0m\r\n'
+    line = render_event_text(_ev("runner_on_failed", host_name="web-01", stdout=stdout))
+    assert line.plain == (
+        '  failed: web-01\n    fatal: [web-01]: FAILED! => {"msg": "no package foo"}'
+    )
+
+
+def test_render_event_failure_reason_is_capped_and_prefixed() -> None:
+    stdout = "\n".join(f"line {i}" for i in range(15))
+    line = render_event_text(
+        _ev("runner_on_unreachable", host_name="db", stdout=stdout), prefix="deploy"
+    ).plain.splitlines()
+    assert line[0] == "[deploy]   unreachable: db"
+    assert line[1] == "[deploy]     line 0"
+    assert line[-1] == "[deploy]     … 5 more lines (see jobs events)"
+    assert len(line) == 12
+
+
+def test_render_event_success_ignores_stdout() -> None:
+    line = render_event_text(_ev("runner_on_ok", host_name="web-01", stdout="ok: [web-01]"))
+    assert line.plain == "  ok: web-01"
+
+
 def test_render_event_runner_unknown_host_renders_question_mark() -> None:
     line = render_event_text(_ev("runner_on_ok")).plain
     assert line == "  ok: ?"

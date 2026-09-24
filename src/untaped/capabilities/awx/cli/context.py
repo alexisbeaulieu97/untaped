@@ -67,6 +67,12 @@ class AwxContext:
         if self.stop.wait(seconds):
             raise WaitCancelledError("wait interrupted")
 
+    def job_monitor(self, *, timeout: float | None = None) -> PollingJobMonitor:
+        """The job monitor; with ``timeout`` each follow loop stops after that many seconds."""
+        if timeout is None:
+            return self.monitor
+        return PollingJobMonitor(self.repo, sleep=self.pause, timeout=timeout)
+
     def progress_ui(self) -> UiContext:
         """Themed UI for stderr progress on slow AWX calls.
 

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from untaped.capabilities.recipe.domain.paths import confined_path
-from untaped.capabilities.recipe.domain.plan import FileChange
+from untaped.capabilities.recipe.domain.plan import CONTENT_ERRORS, FileChange
 from untaped.capabilities.recipe.infrastructure.file_writer import flush_changes
 
 
@@ -88,7 +88,9 @@ class BackupDraft:
             }
             if change.before is not None:
                 backup_file = self.files_dir / f"{self._next_file_index}"
-                backup_file.write_text(change.before, encoding="utf-8", newline="")
+                backup_file.write_text(
+                    change.before, encoding="utf-8", errors=CONTENT_ERRORS, newline=""
+                )
                 self._next_file_index += 1
                 entry["backup_file"] = str(backup_file.relative_to(self.path))
             entries.append(entry)
@@ -179,12 +181,17 @@ class BackupStore:
                     f"{path} changed since backup {backup_id}; pass --force to restore"
                 )
             backup_file = entry["backup_file"]
-            before = path.read_text(encoding="utf-8", newline="") if path.is_file() else None
+            before = (
+                path.read_text(encoding="utf-8", errors=CONTENT_ERRORS, newline="")
+                if path.is_file()
+                else None
+            )
             after = (
                 None
                 if backup_file is None
                 else confined_path(bundle_dir, Path(backup_file), field="backup_file").read_text(
                     encoding="utf-8",
+                    errors=CONTENT_ERRORS,
                     newline="",
                 )
             )
@@ -301,7 +308,7 @@ def _metadata_entries(metadata: Mapping[str, object], backup_id: str) -> builtin
 def _hash_text(content: str | None) -> str | None:
     if content is None:
         return None
-    return _hash_bytes(content.encode("utf-8"))
+    return _hash_bytes(content.encode("utf-8", CONTENT_ERRORS))
 
 
 def _hash_bytes(content: bytes) -> str:

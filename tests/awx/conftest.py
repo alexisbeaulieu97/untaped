@@ -56,6 +56,8 @@ class FakeAap:
         # Member ids whose associate POST is refused with 403 (e.g. no
         # permission on that credential); disassociation still works.
         self.forbidden_associate_ids: set[int] = set()
+        # Execution ids whose ``cancel/`` POST AWX refuses (405 once finished).
+        self.refuse_cancel_ids: set[int] = set()
         self.mask_secret_write_response = False
         self.enrich_survey_spec_response = False
 
@@ -115,6 +117,13 @@ class FakeAap:
         elif method == "POST":
             if len(parts) == 1:
                 return self._create(parts[0], body)
+            if (
+                len(parts) == 3
+                and parts[0] in _EXECUTION_SUBPATHS
+                and parts[1].isdigit()
+                and parts[2] in {"cancel", "relaunch"}
+            ):
+                return self._execution_action(parts[0], int(parts[1]), parts[2], body)
             if len(parts) == 3 and parts[1].isdigit():
                 # AWX overloads ``POST /<parent>/<id>/<sub>/`` for two
                 # things: launching a job/action (body has no ``id``) and
@@ -281,6 +290,30 @@ class FakeAap:
             seed_fields["stdout"] = stdout
         self.seed(store_path, **seed_fields)
         return httpx.Response(200, json=result)
+
+    def _execution_action(
+        self, api_path: str, id_: int, action: str, body: dict[str, Any]
+    ) -> httpx.Response:
+        """``cancel/`` (202, no body) and ``relaunch/`` (201, the new execution)."""
+        record = self.store.get(api_path, {}).get(id_)
+        if record is None:
+            return _err(404, f"{api_path}/{id_}/{action}/ not found")
+        self.actions_called.append((api_path, id_, action, body))
+        if action == "cancel":
+            if id_ in self.refuse_cancel_ids or record.get("status") in {
+                "successful",
+                "failed",
+                "error",
+                "canceled",
+            }:
+                return _err(405, 'Method "POST" not allowed.')
+            record["status"] = "canceled"
+            return httpx.Response(202)
+        kind = {"jobs": "job", "workflow_jobs": "workflow_job", "ad_hoc_commands": "ad_hoc_command"}
+        if api_path not in kind:
+            return _err(405, 'Method "POST" not allowed.')
+        new = self.seed(api_path, name=record.get("name"), status="successful")
+        return httpx.Response(201, json={**new, "type": kind[api_path], "status": "pending"})
 
     def _launch_info(self, api_path: str, id_: int) -> httpx.Response:
         """``GET <template>/launch/``: prompt flags default to AWX's ``False``."""

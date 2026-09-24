@@ -18,6 +18,12 @@ For GitHub Enterprise Server, point the API at your host first:
 untaped config set github.base_url https://github.example.com/api/v3
 ```
 
+To keep the token out of `config.yml`, reuse the GitHub CLI's login instead
+(`untaped config set github.token_command '["gh", "auth", "token"]'`), or
+export `GH_TOKEN` or `GITHUB_TOKEN`. `github.token` wins over
+`github.token_command`, which wins over the variables; see
+[Tokens](../configuration.md#tokens).
+
 A rejected token (HTTP 401) fails with a hint to run `config set github.token`.
 `sweep` and `cache` run `git`, so Git must be on your `PATH`.
 
@@ -25,9 +31,10 @@ A rejected token (HTTP 401) fails with a hint to run `config set github.token`.
 |---|---|---|
 | `github.base_url` | `https://api.github.com` | API URL. |
 | `github.token` | unset | Token for the API and for Git fetches. |
+| `github.token_command` | unset | Command (argv list) that prints the token when `github.token` is unset. |
 | `github.corpus_path` | `~/.untaped/github-corpus` | Where `sweep` keeps its Git copies. |
-| `github.sweep.max_age_seconds` | `3600` | `sweep` refreshes cached copies older than this. |
-| `github.sweep.sync_concurrency` | `12` | Default `sweep --parallel`. |
+| `github.sweep.max_age_seconds` | `3600` | `sweep` and `cache sync` refresh cached copies older than this. |
+| `github.sweep.sync_concurrency` | `12` | Default `sweep --parallel` and `cache sync --parallel`. |
 
 ## List an org's or team's repos
 
@@ -105,13 +112,29 @@ untaped github sweep --org acme --ref 'release/*' --grep jenkins --show matches
 | `-i`, `-F`, `--word-regexp` | Case-insensitive, literal strings, whole words. They apply to every `--grep` and `--not-grep`. |
 | `--refs default\|branches\|tags\|all`, `--ref GLOB` | Which refs to scan. Default: each repo's default branch. |
 | `--refresh`, `--cached` | Fetch every repo, or scan only what is cached. Default: fetch copies older than `github.sweep.max_age_seconds`. |
-| `--show repos\|matches` | One row per repo (`github.sweep_repo`), or one per matching line (`github.sweep_match`). |
+| `--show repos\|files\|matches` | One row per repo (`github.sweep_repo`), one per matching file with its line count (`github.sweep_file`), or one per matching line (`github.sweep_match`). |
 | `--no-owners` | Skip the CODEOWNERS column. |
 | `--depth N` | Git fetch depth; `0` is full history. |
 | `-j N` | Parallel Git workers (at most 32). |
 
 Binary files are skipped. A branch and a tag with the same name are both
-scanned and shown as `heads/NAME` and `tags/NAME`.
+scanned and shown as `heads/NAME` and `tags/NAME`. Refs that point at the same
+content (a tag on a branch tip, say) are scanned once and all reported.
+
+### Sweep a large org quickly
+
+- A cached copy older than `github.sweep.max_age_seconds` is fetched again
+  only when GitHub reports a push since the last fetch (the repo's
+  `pushed_at`). An unchanged repo costs no Git network call, so re-running a
+  sweep over a mostly quiet org takes seconds after the inventory listing.
+  `--refresh` always fetches.
+- Each repo is scanned as soon as its fetch ends, and the progress line shows
+  `Sweeping 312/1400 repos (45 fetched, 3 failed)`.
+- `repos list --format pipe | sweep --stdin` reuses the piped records instead
+  of looking each repo up again.
+- Warm the corpus ahead of time, for example from a nightly job, with
+  `cache sync` (see below). Two sweeps can run at once: each cached repo is
+  locked while it is fetched.
 
 ### Sweep in CI
 
@@ -139,6 +162,8 @@ untaped github repos list 'svc-*' --org acme --format pipe \
 ## Manage the corpus
 
 ```bash
+untaped github cache sync --org acme
+untaped github cache sync --team acme/platform --refs all --refresh
 untaped github cache status
 untaped github cache worktree acme/api --ref main
 untaped github cache delete acme/old-service --dry-run
@@ -146,7 +171,14 @@ untaped github cache delete --all --org acme --yes
 untaped github cache prune --org acme
 ```
 
-- `cache status` lists cached repos with disk use and age.
+- `cache sync` fetches every repo in scope into the corpus without a query,
+  so later sweeps start warm. It takes the same scope, `--refs`, `--ref`,
+  `--depth`, `-j` and `--refresh` flags as `sweep`, and emits one
+  `github.sync_outcome` per repo: `synced`, `unchanged` (no push since the
+  last fetch), `skipped` (younger than `max_age_seconds`) or `failed`. Any
+  failure exits 1.
+- `cache status` lists cached repos with their size and fetch age (`1.2 MiB`,
+  `3 hours ago` in the table; `disk_bytes` and `fetched_at` in json).
 - `cache worktree` checks out a cached ref and prints its path. It only uses
   refs already in the corpus.
 - `cache delete` removes the repos you name, or `--all` (narrowed by `--org`).
@@ -165,13 +197,15 @@ The corpus is for sweeps. For clones you work in, use
 | `whoami` | `github.user` |
 | `repos list` | `github.repo` |
 | `search repos` / `code` / `issues` / `users` | `github.repo_hit` / `github.code` / `github.issue` / `github.user_hit` |
-| `sweep` | `github.sweep_repo`, or `github.sweep_match` with `--show matches` |
+| `sweep` | `github.sweep_repo`; `github.sweep_file` with `--show files`; `github.sweep_match` with `--show matches` |
 | `cache status` / `delete` / `prune` | `github.corpus_repo` |
+| `cache sync` | `github.sync_outcome` |
 | `cache worktree` | `github.worktree` |
 
-`--stdin` on `search repos`, `search code`, `search issues` and `sweep` reads
-`owner/name` lines or `github.repo`, `github.repo_hit` and `github.sweep_repo`
-records.
+`--stdin` on `search repos`, `search code`, `search issues`, `sweep` and
+`cache sync` reads `owner/name` lines or `github.repo`, `github.repo_hit` and
+`github.sweep_repo` records. `sweep` and `cache sync` use a `github.repo`
+record as it is; other records and bare names are looked up through the API.
 
 ## See also
 
