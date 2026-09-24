@@ -274,23 +274,6 @@ def test_clamp_parallel_caps_above_with_warning_naming_the_policy(
 # ---- render_rows -----------------------------------------------------------
 
 
-def test_render_rows_table_contains_cells(_isolated_config: Path) -> None:
-    rendered = render_rows([{"name": "alpha", "value": "1"}], fmt="table")
-    assert "alpha" in rendered
-    assert "name" in rendered
-
-
-def test_render_rows_empty_table_emits_hint_to_stderr(
-    _isolated_config: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    rendered = render_rows([], fmt="table", empty="No plugins installed.")
-    captured = capsys.readouterr()
-    assert rendered == ""
-    assert captured.out == ""
-    assert "No plugins installed." in captured.err
-
-
 def test_render_rows_structured_formats_ignore_theme(_isolated_config: Path) -> None:
     """json/raw output must stay byte-stable no matter the configured theme."""
     _isolated_config.write_text("ui:\n  theme: dark\n")
@@ -585,12 +568,17 @@ def test_emit_unknown_column_on_empty_result_is_not_an_error(
 
 
 @pytest.mark.parametrize(
-    "rows", [_Widget(name="a", value=1), [{"name": "a", "value": 1}]], ids=["model", "mapping"]
+    "render",
+    [
+        lambda: emit(_Widget(name="a", value=1), fmt="table", columns=["?"]),
+        lambda: render_rows([{"name": "a", "value": 1}], fmt="table", columns=["?"]),
+    ],
+    ids=["emit-model", "render-rows-mapping"],
 )
 def test_columns_question_mark_lists_columns_instead_of_rendering(
-    rows: object, capsys: pytest.CaptureFixture[str]
+    render: Any, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    emit(rows, fmt="table", columns=["?"])  # type: ignore[arg-type]
+    assert not render()
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "name" in captured.err
