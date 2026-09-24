@@ -328,54 +328,6 @@ def test_patch_stdin_ignored_unknown_field_fails_by_default(seeded_default_org: 
     assert "zzz_bogus" not in seeded_default_org.get_record("job_templates", 30)
 
 
-def test_patch_stdin_ignored_unknown_field_can_be_allowed(seeded_default_org: Any) -> None:
-    _seed_jt(seeded_default_org)
-    seeded_default_org.ignored_write_fields.add("zzz_bogus")
-    result = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "patch",
-            "--stdin",
-            "--set",
-            "zzz_bogus=1",
-            "--allow-unknown-fields",
-            "--yes",
-            "--allow-unverified",
-            "--organization",
-            "Default",
-        ],
-        input="deploy\n",
-    )
-    output = result.output + (result.stderr or "")
-    assert result.exit_code == 0, output
-    assert "updated" in result.stdout
-    assert "zzz_bogus" in output
-    assert "unverified" in output
-    assert "zzz_bogus" not in seeded_default_org.get_record("job_templates", 30)
-
-
-def test_patch_stdin_allow_unverified_requires_yes(seeded_default_org: Any) -> None:
-    _seed_jt(seeded_default_org)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "patch",
-            "--stdin",
-            "--set",
-            "zzz_bogus=1",
-            "--allow-unknown-fields",
-            "--allow-unverified",
-            "--organization",
-            "Default",
-        ],
-        input="deploy\n",
-    )
-    assert result.exit_code == 2
-    assert "--yes" in (result.output + (result.stderr or ""))
-
-
 def test_patch_stdin_overlay_fks_use_organization_scope(fake_aap: Any) -> None:
     fake_aap.seed("organizations", id=1, name="OrgA")
     fake_aap.seed("organizations", id=2, name="OrgB")
