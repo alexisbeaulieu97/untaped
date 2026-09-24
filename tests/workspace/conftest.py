@@ -1,36 +1,11 @@
-"""Shared test scaffolding for the workspace use cases.
+"""Shared stubs for the workspace use-case tests.
 
-This module is reachable by sibling test files via ``from workspace.conftest
-import StubGit, StubRegistry`` because ``tests/workspace`` ships an
-``__init__.py`` making ``workspace`` a top-level test package (mirroring
-``test_capabilities``). No ``pythonpath`` entry is used: pytest's
-``--import-mode=importlib`` resolves the ``workspace.*`` package from the
-``tests/`` root.
-
-**Global-namespace caveat.** The unqualified ``from conftest import …``
-pattern is exclusive to one package per pytest session. Workspace tests
-must use the qualified ``from workspace.conftest import …`` form; future
-capability test packages must pick their own unique package name and must
-not add a second per-package tests dir to ``pythonpath``.
-Other packages can still ship ``conftest.py`` files for pytest's
-auto-discovery; only the qualified runtime-import pattern is supported.
-
-``StubGit`` mirrors the full ``GitRunner`` surface consumed across
-sync and status tests; per-test failure injection rides on the kwargs
-(``clone_fail``, ``fetch_fail``, ``local_fetch_fail``, ``status_fail``,
-``prune_fail``, ``pull_fail``). ``StubRegistry`` exposes the union of
-``WorkspaceRegistryRepository`` methods (``register`` / ``find_by_path``
-/ ``entries`` / ``get`` / ``unregister``) with optional positional
-seeding so empty-init and seeded-init test sites both keep working
-unchanged. ``StubFilesystem`` satisfies the widened ``Filesystem`` port
-with an in-memory set of paths — lets use-case tests assert disk
-predicates without touching ``tmp_path``. ``StubManifests`` satisfies
-the ``ManifestRepository`` port with an in-memory map of paths to
-manifests — used by the resolver's stub-based unit tests where the
-disk-touching ``ManifestRepository`` would force a real workspace
-on disk. ``empty_manifest()`` is a default-constructed
-``WorkspaceManifest`` for tests that only need an empty file on disk
-(init/add/remove/import + workspace-resolver tests).
+Import them as ``from workspace.conftest import StubGit, ...``:
+``tests/workspace`` is a package, so pytest's ``--import-mode=importlib``
+resolves ``workspace.*`` from the ``tests/`` root. ``StubGit`` satisfies the
+``GitRunner`` port with per-test failure injection through its keyword
+arguments; ``StubRegistry``, ``StubFilesystem`` and ``StubManifests`` are
+in-memory registry, filesystem and manifest ports.
 """
 
 from __future__ import annotations
@@ -70,11 +45,6 @@ from workspace.cli_fixtures import (
 __all__ = ["existing_clones", "isolate_config", "isolated_cache", "upstream"]
 
 
-def empty_manifest() -> WorkspaceManifest:
-    """Default-constructed manifest for tests that only need an empty file on disk."""
-    return WorkspaceManifest()
-
-
 _DEFAULT_STATUS = RepoStatus(branch="main", upstream="origin/main")
 
 
@@ -84,7 +54,6 @@ class StubGit:
     def __init__(
         self,
         *,
-        on_disk: Iterable[str] = (),
         statuses: dict[str, RepoStatus] | None = None,
         clone_fail: Set[str] = frozenset(),
         fetch_fail: bool = False,
@@ -97,7 +66,6 @@ class StubGit:
         missing_branches: Set[str] = frozenset(),
     ) -> None:
         self.events: list[tuple[Any, ...]] = []
-        self._on_disk = set(on_disk)
         self._statuses = statuses or {}
         self._clone_fail = clone_fail
         self._fetch_fail = fetch_fail
@@ -127,7 +95,6 @@ class StubGit:
         self.events.append(("clone", str(dest), branch))
         if dest.name in self._clone_fail:
             raise GitError("clone failed")
-        self._on_disk.add(dest.name)
         dest.mkdir(parents=True, exist_ok=True)
 
     def fetch(self, repo_path: Path) -> None:
