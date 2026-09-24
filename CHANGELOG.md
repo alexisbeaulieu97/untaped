@@ -5,6 +5,11 @@
 Cleanup phase 6: performance and features. Items marked **behavior change**
 alter output, exit codes, or defaults.
 
+- Internal: simplification removed ~28,000 net lines (src −1,081, tests −26,991)
+  of duplication and low-value tests. Only user-visible changes: `github sweep
+  -f json|yaml` no longer requests table-only `grep:` columns (no "unknown
+  column" warning or null keys), and Ctrl-C during `recipe apply` now cancels
+  queued planning work. No other behavior change.
 - Core
   - **Behavior change:** `github`, `jira` and `awx` accept
     `<section>.token_command` (an argv list, no shell). It runs at most once
