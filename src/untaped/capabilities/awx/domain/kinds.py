@@ -30,6 +30,14 @@ def snake_kind(kind: str) -> str:
     return _CAMEL_RUN.sub(r"\1_\2", _CAMEL_TAIL.sub(r"\1_\2", kind)).lower()
 
 
+RESOURCE_OUTCOME_PIPE_KINDS: dict[str, str] = {"copy": "awx.copy_outcome"}
+"""Command -> outcome pipe kind naming one resource by ``id`` plus its ``kind``.
+
+A kind offering the command also accepts these records wherever it selects
+from ``--stdin``, so a copy pipes straight into ``patch``.
+"""
+
+
 def pipe_kind(kind: str) -> str:
     """The ``awx.<snake_kind>`` ``--format pipe`` hint for ``kind``."""
     return f"awx.{snake_kind(kind)}"

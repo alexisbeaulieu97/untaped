@@ -9,12 +9,25 @@ multi-word entities (``awx.job_template``); the transform lives in
 from __future__ import annotations
 
 from untaped.capabilities.awx.domain import ResourceSpec
-from untaped.capabilities.awx.domain.kinds import pipe_kind
+from untaped.capabilities.awx.domain.kinds import RESOURCE_OUTCOME_PIPE_KINDS, pipe_kind
+from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 
 
 def pipe_kind_for_spec(spec: ResourceSpec) -> str:
     """Return the ``awx.<snake_kind>`` pipe hint for ``spec``."""
     return pipe_kind(spec.kind)
+
+
+def selection_pipe_kinds(spec: ResourceSpec) -> set[str]:
+    """Pipe kinds ``--stdin`` selection of ``spec`` accepts.
+
+    The kind's own records, plus the outcome records of the commands it
+    offers that name one resource (``copy`` -> ``awx.copy_outcome``).
+    """
+    commands = spec.commands if isinstance(spec, AwxResourceSpec) else ()
+    return {pipe_kind(spec.kind)} | {
+        kind for command, kind in RESOURCE_OUTCOME_PIPE_KINDS.items() if command in commands
+    }
 
 
 def id_field_for(spec: ResourceSpec, *, by_id: bool) -> str:
@@ -27,4 +40,4 @@ def id_field_for(spec: ResourceSpec, *, by_id: bool) -> str:
     return "id" if by_id else spec.identity_keys[0]
 
 
-__all__ = ["id_field_for", "pipe_kind_for_spec"]
+__all__ = ["id_field_for", "pipe_kind_for_spec", "selection_pipe_kinds"]

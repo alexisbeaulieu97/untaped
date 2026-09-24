@@ -14,7 +14,11 @@ from typing import Any
 
 from untaped.capabilities.awx.application.ports import Catalog, ResourceClient
 from untaped.capabilities.awx.domain import ResourceSpec
-from untaped.capabilities.awx.domain.kinds import pipe_kind, unified_template_kind
+from untaped.capabilities.awx.domain.kinds import (
+    RESOURCE_OUTCOME_PIPE_KINDS,
+    pipe_kind,
+    unified_template_kind,
+)
 from untaped.capabilities.awx.domain.payloads import as_dict
 from untaped.capabilities.awx.errors import BadRequestError, ResourceNotFoundError
 from untaped.capability_api import ConfigError, PipeEnvelope
@@ -131,7 +135,13 @@ class SelectionResolver:
         expected_kind = pipe_kind(spec.kind)
         selected: list[SelectedResource] = []
         for envelope in envelopes:
-            if envelope.kind != expected_kind:
+            if envelope.kind in RESOURCE_OUTCOME_PIPE_KINDS.values():
+                if envelope.record.get("kind") != spec.kind:
+                    raise ConfigError(
+                        f"pipe record line {envelope.lineno} is a {envelope.kind!r} for "
+                        f"{envelope.record.get('kind')!r}; expected {spec.kind!r}"
+                    )
+            elif envelope.kind != expected_kind:
                 raise ConfigError(
                     f"pipe record line {envelope.lineno} has kind {envelope.kind!r}; "
                     f"expected {expected_kind!r}"
