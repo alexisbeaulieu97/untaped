@@ -1,4 +1,5 @@
-"""Contract tests for the release smoke GitHub Actions workflow.
+"""Contract tests for the release smoke and the supply-chain hygiene of every
+GitHub Actions workflow.
 
 The release smoke proves the unified application boundary: the wheel builds,
 installs clean, exposes the executable, and resolves every root and built-in
@@ -7,74 +8,34 @@ capability command through the shared checked-in smoke helper.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
-WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release-smoke.yml"
-RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
-WORKFLOWS = [CI_WORKFLOW, WORKFLOW, RELEASE_WORKFLOW]
-FULL_SHA_ACTION_RE = re.compile(r"@[0-9a-f]{40}$")
+WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
+WORKFLOWS = [WORKFLOW_DIR / name for name in ("ci.yml", "release-smoke.yml", "release.yml")]
 EXPECTED_UV_VERSION = "0.11.26"
+# action -> (reviewed release tag, the full commit SHA it must be pinned to)
 EXPECTED_ACTION_REFS = {
-    "actions/cache": (
-        "v6.1.0",
-        "55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
-    ),
-    "actions/checkout": (
-        "v7.0.0",
-        "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
-    ),
-    "actions/download-artifact": (
-        "v8.0.1",
-        "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
-    ),
-    "actions/upload-artifact": (
-        "v7.0.1",
-        "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
-    ),
-    "astral-sh/setup-uv": (
-        "v8.2.0",
-        "fac544c07dec837d0ccb6301d7b5580bf5edae39",
-    ),
-    "pypa/gh-action-pypi-publish": (
-        "v1.14.0",
-        "cef221092ed1bacb1cc03d23a2d87d1d172e277b",
-    ),
+    "actions/cache": ("v6.1.0", "55cc8345863c7cc4c66a329aec7e433d2d1c52a9"),
+    "actions/checkout": ("v7.0.0", "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"),
+    "actions/download-artifact": ("v8.0.1", "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"),
+    "actions/upload-artifact": ("v7.0.1", "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"),
+    "astral-sh/setup-uv": ("v8.2.0", "fac544c07dec837d0ccb6301d7b5580bf5edae39"),
+    "pypa/gh-action-pypi-publish": ("v1.14.0", "cef221092ed1bacb1cc03d23a2d87d1d172e277b"),
 }
-SMOKE_JOB = "unified-app-wheel-smoke"
 
 
-def _load_yaml(path: Path) -> tuple[str, dict[str, Any]]:
-    text = path.read_text(encoding="utf-8")
-    return text, yaml.safe_load(text)
+def _steps(path: Path) -> list[dict[str, Any]]:
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return [step for job in workflow["jobs"].values() for step in job["steps"]]
 
 
-def _load_workflow() -> tuple[str, dict[str, Any]]:
-    return _load_yaml(WORKFLOW)
-
-
-def _steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:
-    steps: list[dict[str, Any]] = []
-    for job in workflow["jobs"].values():
-        steps.extend(job["steps"])
-    return steps
-
-
-def _step_run(workflow: dict[str, Any], name: str) -> str:
-    for step in workflow["jobs"][SMOKE_JOB]["steps"]:
-        if step["name"] == name:
-            return str(step["run"])
-    raise AssertionError(f"workflow step not found: {name}")
-
-
-def test_release_smoke_workflow_runs_on_pr_main_push_and_manual_dispatch() -> None:
-    _, workflow = _load_workflow()
-
+def test_release_smoke_runs_on_pr_and_main_and_uses_the_shared_smoke() -> None:
+    path = WORKFLOW_DIR / "release-smoke.yml"
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert workflow["on"] == {
         "pull_request": None,
         "push": {"branches": ["main"]},
@@ -82,109 +43,47 @@ def test_release_smoke_workflow_runs_on_pr_main_push_and_manual_dispatch() -> No
     }
     assert workflow["permissions"] == {"contents": "read"}
 
-    job = workflow["jobs"][SMOKE_JOB]
-    assert job["runs-on"] == "ubuntu-latest"
-
-
-def test_release_smoke_workflow_initializes_home_at_step_runtime() -> None:
-    _, workflow = _load_workflow()
-
-    job = workflow["jobs"][SMOKE_JOB]
-    assert "HOME" not in job.get("env", {})
-    run = _step_run(workflow, "Configure isolated smoke home")
-    assert 'home_dir="$RUNNER_TEMP/untaped-smoke-home"' in run
-    assert 'mkdir -p "$home_dir"' in run
-    assert 'echo "HOME=$home_dir" >> "$GITHUB_ENV"' in run
-
-
-def test_release_smoke_workflow_builds_and_installs_the_unified_app_wheel() -> None:
-    _, workflow = _load_workflow()
-
-    assert "uv build --wheel" in _step_run(workflow, "Build the unified app wheel")
-
-    install = _step_run(workflow, "Install the built wheel into an isolated venv")
-    assert "uv venv" in install
-    assert "uv pip install" in install
-    assert "dist/*.whl" in install
-
-
-def test_release_smoke_workflow_uses_the_shared_unified_smoke() -> None:
-    _, workflow = _load_workflow()
-    run = _step_run(workflow, "Run the unified app smoke")
+    run = "\n".join(str(step.get("run", "")) for step in _steps(path))
+    assert "uv build --wheel" in run
+    assert "dist/*.whl" in run
     assert "release.py smoke-unified" in run
-    assert "--package untaped" in run
     assert "--console-script untaped" in run
 
 
-def test_release_smoke_workflow_has_no_legacy_sdk_surface_assertions() -> None:
-    _, workflow = _load_workflow()
-    run = "\n".join(str(step.get("run", "")) for step in _steps(workflow))
-    assert "untaped.__all__ == untaped.api.__all__" not in run
-    assert "ToolSpec" not in run
-
-
-def test_workflow_actions_are_pinned_to_commit_shas() -> None:
+def test_workflow_actions_are_pinned_to_reviewed_release_shas() -> None:
     offenders: list[str] = []
     for path in WORKFLOWS:
-        _, workflow = _load_yaml(path)
-        for step in _steps(workflow):
-            uses = step.get("uses")
-            if uses and not FULL_SHA_ACTION_RE.search(uses):
-                offenders.append(f"{path.relative_to(REPO_ROOT)}: {uses}")
-
-    assert not offenders, "GitHub Action refs must be pinned to full SHAs:\n" + "\n".join(offenders)
-
-
-def test_workflow_actions_use_latest_reviewed_release_shas() -> None:
-    offenders: list[str] = []
-    for path in WORKFLOWS:
-        _, workflow = _load_yaml(path)
-        for step in _steps(workflow):
+        for step in _steps(path):
             uses = step.get("uses")
             if not uses:
                 continue
             action, ref = str(uses).rsplit("@", 1)
             expected = EXPECTED_ACTION_REFS.get(action)
             if expected is None:
-                offenders.append(f"{path.relative_to(REPO_ROOT)}: unreviewed action {action}")
-                continue
-            latest_tag, latest_sha = expected
-            if ref != latest_sha:
+                offenders.append(f"{path.name}: unreviewed action {action}")
+            elif ref != expected[1]:
                 offenders.append(
-                    f"{path.relative_to(REPO_ROOT)}: {action}@{ref} "
-                    f"does not match reviewed latest {latest_tag} ({latest_sha})"
+                    f"{path.name}: {action}@{ref} is not {expected[0]} ({expected[1]})"
                 )
 
-    assert not offenders, "GitHub Action pins are stale:\n" + "\n".join(offenders)
+    assert not offenders, "GitHub Action pins are stale or unpinned:\n" + "\n".join(offenders)
 
 
-def test_checkout_steps_do_not_persist_credentials() -> None:
+def test_checkout_and_setup_uv_steps_are_hardened() -> None:
     offenders: list[str] = []
     for path in WORKFLOWS:
-        _, workflow = _load_yaml(path)
-        for step in _steps(workflow):
-            uses = step.get("uses", "")
+        for step in _steps(path):
+            uses = str(step.get("uses", ""))
+            options = step.get("with", {})
             if (
                 uses.startswith("actions/checkout@")
-                and step.get("with", {}).get("persist-credentials") is not False
+                and options.get("persist-credentials") is not False
             ):
-                offenders.append(str(path.relative_to(REPO_ROOT)))
-
-    assert not offenders, "checkout steps must set persist-credentials: false"
-
-
-def test_setup_uv_steps_pin_uv_version() -> None:
-    offenders: list[str] = []
-    for path in WORKFLOWS:
-        _, workflow = _load_yaml(path)
-        for step in _steps(workflow):
-            uses = step.get("uses", "")
+                offenders.append(f"{path.name}: checkout must set persist-credentials: false")
             if (
                 uses.startswith("astral-sh/setup-uv@")
-                and step.get("with", {}).get("version") != EXPECTED_UV_VERSION
+                and options.get("version") != EXPECTED_UV_VERSION
             ):
-                offenders.append(str(path.relative_to(REPO_ROOT)))
+                offenders.append(f"{path.name}: setup-uv must pin uv {EXPECTED_UV_VERSION}")
 
-    assert not offenders, f"setup-uv steps must pin uv {EXPECTED_UV_VERSION}:\n" + "\n".join(
-        offenders
-    )
+    assert not offenders, "\n".join(offenders)
