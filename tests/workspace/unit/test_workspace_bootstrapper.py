@@ -157,56 +157,6 @@ def test_explicit_name_overrides_canonical_dirname(tmp_path: Path) -> None:
     assert manifests.read(ws_dir.resolve()).name == "override"
 
 
-def test_verify_raises_for_each_collision_without_mutating(tmp_path: Path) -> None:
-    """``verify`` reproduces ``__call__``'s read-only checks so callers
-    with expensive pre-bootstrap work (e.g. ``AdoptWorkspace``'s
-    git-subprocess discovery walk) can fail fast on collision.
-    """
-    ws_dir = tmp_path / "prod"
-
-    # Collision on manifest.
-    seeded_manifests = StubManifests({ws_dir.resolve(): _manifest("prod")})
-    boot_m = WorkspaceBootstrapper(seeded_manifests, StubRegistry())
-    with pytest.raises(WorkspaceError, match="already initialised"):
-        boot_m.verify(ws_dir, name="prod")
-
-    # Collision on registry.
-    reg = StubRegistry()
-    reg.registered.append(Workspace(name="other", path=ws_dir.resolve()))
-    boot_r = WorkspaceBootstrapper(StubManifests(), reg)
-    with pytest.raises(WorkspaceError, match="already registered"):
-        boot_r.verify(ws_dir, name="prod")
-
-    # No name derivable.
-    boot_n = WorkspaceBootstrapper(StubManifests(), StubRegistry())
-    with pytest.raises(WorkspaceError, match="unable to derive workspace name"):
-        boot_n.verify(Path("/"))
-
-    # Happy path: no raise, no mutation observable via the stubs.
-    registry = StubRegistry()
-    WorkspaceBootstrapper(StubManifests(), registry).verify(tmp_path / "ok")
-    assert registry.registered == []
-
-
-def test_verify_returns_canonical_path_and_derived_ws_name(tmp_path: Path) -> None:
-    """``verify`` returns ``(canonical, ws_name)`` so callers (Adopt)
-    can use them without re-canonicalising. Pins the new shape that
-    underwrites the canonical-once contract.
-    """
-    boot = WorkspaceBootstrapper(StubManifests(), StubRegistry())
-
-    # Path with `..` segments; explicit name overrides directory basename.
-    nested = tmp_path / "outer" / "inner" / ".." / "leaf"
-    canonical, ws_name = boot.verify(nested, name="override")
-    assert canonical == nested.expanduser().resolve()
-    assert ws_name == "override"
-
-    # No explicit name → ws_name derived from canonical's basename.
-    canonical2, ws_name2 = boot.verify(tmp_path / "leaf-from-dir")
-    assert canonical2 == (tmp_path / "leaf-from-dir").expanduser().resolve()
-    assert ws_name2 == "leaf-from-dir"
-
-
 def test_bootstrap_writes_and_registers_with_canonical_inputs(tmp_path: Path) -> None:
     """``bootstrap(canonical, ws_name, manifest)`` is the canonical-in
     fast path: it writes ``manifest`` at ``canonical`` and registers

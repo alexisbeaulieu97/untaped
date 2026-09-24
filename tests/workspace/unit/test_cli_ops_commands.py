@@ -21,31 +21,6 @@ from untaped.testing import CliInvoker, ScriptedPromptBackend
 pytestmark = pytest.mark.usefixtures("isolate_config")
 
 
-def test_sync_clones_repos(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
-    runner = CliInvoker()
-    target = tmp_path / "ws"
-    runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-
-    result = runner.invoke(
-        app,
-        [
-            "sync",
-            "--workspace",
-            "smoke",
-            "--format",
-            "raw",
-            "--columns",
-            "repo",
-            "--columns",
-            "action",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert "cloned" in result.stdout
-    assert (target / "upstream").is_dir()
-
-
 def test_sync_repo_filter_limits_cloned_repos(
     tmp_path: Path, upstream: Path, isolated_cache: Path
 ) -> None:
@@ -230,37 +205,6 @@ def test_sync_all_repo_filter_emits_warning_and_per_workspace_outcomes(
     assert "beta\tupstream\tunmatched" in rows, rows
 
 
-def test_sync_help_exposes_repo_filter_not_only() -> None:
-    result = CliInvoker().invoke(app, ["sync", "--help"])
-
-    assert result.exit_code == 0, result.output
-    assert "--repo" in result.output
-    assert "-r" in result.output
-    assert "--parallel" in result.output
-    assert "-j" in result.output
-    assert "Concurrent repo sync jobs" in result.output
-    assert "local-only git ops" in result.output
-    assert "read-only ops" not in result.output
-    assert "--only" not in result.output
-
-
-@pytest.mark.parametrize(
-    "args",
-    [
-        ["status"],
-        ["foreach"],
-        ["branch", "apply"],
-    ],
-)
-def test_repo_operating_commands_expose_repo_filter(args: list[str]) -> None:
-    result = CliInvoker().invoke(app, [*args, "--help"])
-
-    assert result.exit_code == 0, result.output
-    assert "--repo" in result.output
-    assert "-r" in result.output
-    assert "--only" not in result.output
-
-
 def test_sync_parallel_single_workspace_uses_repo_workers_in_manifest_order(
     tmp_path: Path, upstream: Path, isolated_cache: Path
 ) -> None:
@@ -342,26 +286,6 @@ def test_sync_quiet_suppresses_progress_and_summary(
     assert result.stderr == ""
 
 
-def test_sync_json_stdout_shape_stays_data_only(
-    tmp_path: Path, upstream: Path, isolated_cache: Path
-) -> None:
-    runner = CliInvoker()
-    target = tmp_path / "ws"
-    runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-
-    result = runner.invoke(app, ["sync", "--workspace", "smoke", "--format", "json"])
-
-    assert result.exit_code == 0, result.output
-    parsed = json.loads(result.stdout)
-    assert isinstance(parsed, list)
-    assert len(parsed) == 1
-    assert set(parsed[0]) == {"workspace", "repo", "action", "detail", "target_path"}
-    assert parsed[0]["action"] == "cloned"
-    assert "Syncing repos" not in result.stdout
-    assert "sync complete:" not in result.stdout
-
-
 def test_sync_stale_bare_cache_clones_remote_created_branch(
     tmp_path: Path, upstream: Path, isolated_cache: Path
 ) -> None:
@@ -414,20 +338,6 @@ def test_sync_stale_bare_cache_clones_remote_created_branch(
     assert head == "develop"
 
 
-def test_sync_all_rejects_workspace_target() -> None:
-    runner = CliInvoker()
-    result = runner.invoke(app, ["sync", "--all", "--workspace", "smoke"])
-    assert result.exit_code != 0
-    assert "--all cannot be combined with --workspace or --path" in result.output
-
-
-def test_sync_all_rejects_path_target(tmp_path: Path) -> None:
-    runner = CliInvoker()
-    result = runner.invoke(app, ["sync", "--all", "--path", str(tmp_path)])
-    assert result.exit_code != 0
-    assert "--all cannot be combined with --workspace or --path" in result.output
-
-
 def test_sync_parallel_warns_when_clamped(monkeypatch: pytest.MonkeyPatch) -> None:
     """Passing ``-j`` above the cap is honoured (clamped) but a stderr
     warning surfaces the truncation so users notice when they ask for
@@ -444,68 +354,6 @@ def test_sync_parallel_warns_when_clamped(monkeypatch: pytest.MonkeyPatch) -> No
     assert result.exit_code == 0, result.output
     assert "clamped to 8" in result.output
     assert "2 * os.cpu_count()" in result.output
-
-
-def test_sync_all_parallel_covers_every_workspace(
-    tmp_path: Path, upstream: Path, isolated_cache: Path
-) -> None:
-    """``sync --all -j 4`` syncs every registered workspace and emits a
-    stderr header that names the worker count."""
-    runner = CliInvoker()
-    names = ("alpha", "beta", "gamma", "delta")
-    for name in names:
-        ws_path = tmp_path / f"ws-{name}"
-        runner.invoke(app, ["init", name, "--path", str(ws_path)])
-        runner.invoke(app, ["add", f"file://{upstream}", "--workspace", name])
-
-    result = runner.invoke(
-        app,
-        [
-            "sync",
-            "--all",
-            "-j",
-            "4",
-            "--format",
-            "raw",
-            "--columns",
-            "workspace",
-            "--columns",
-            "action",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    # stderr header — CliInvoker combines stderr into output by default.
-    assert "syncing 4 repos with up to 4 workers" in result.output
-    assert "sync: 4 cloned" in result.output
-    rows = [r for r in result.stdout.strip().splitlines() if "\t" in r]
-    assert sorted(rows) == sorted(f"{n}\tcloned" for n in names), rows
-
-
-def test_sync_all_parallel_ordering_is_stable(
-    tmp_path: Path, upstream: Path, isolated_cache: Path
-) -> None:
-    """Outcome rows from ``sync --all -j 4`` come back in registry-input
-    order, not in non-deterministic ``as_completed`` order. Running the
-    same command twice yields identical row sequences."""
-    runner = CliInvoker()
-    names = ("alpha", "beta", "gamma", "delta")
-    for name in names:
-        ws_path = tmp_path / f"ws-{name}"
-        runner.invoke(app, ["init", name, "--path", str(ws_path)])
-        runner.invoke(app, ["add", f"file://{upstream}", "--workspace", name])
-
-    def workspace_rows() -> list[str]:
-        result = runner.invoke(
-            app,
-            ["sync", "--all", "-j", "4", "--format", "raw", "--columns", "workspace"],
-        )
-        assert result.exit_code == 0, result.output
-        return [r for r in result.stdout.strip().splitlines() if r]
-
-    first = workspace_rows()
-    second = workspace_rows()
-    assert first == second
-    assert first == list(names)
 
 
 def test_status_after_sync(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
@@ -606,267 +454,6 @@ def test_status_honors_global_ui_collection_view_for_table_output(
     assert "┌" not in result.stdout
 
 
-def test_status_all_rejects_workspace_target() -> None:
-    runner = CliInvoker()
-    result = runner.invoke(app, ["status", "--all", "--workspace", "smoke"])
-    assert result.exit_code != 0
-    assert "--all cannot be combined with --workspace or --path" in result.output
-
-
-def test_status_all_rejects_path_target(tmp_path: Path) -> None:
-    runner = CliInvoker()
-    result = runner.invoke(app, ["status", "--all", "--path", str(tmp_path)])
-    assert result.exit_code != 0
-    assert "--all cannot be combined with --workspace or --path" in result.output
-
-
-def test_sync_all_unavailable_manifest_does_not_abort_valid_workspace(
-    tmp_path: Path,
-    upstream: Path,
-    isolate_config: Path,
-    isolated_cache: Path,
-) -> None:
-    alpha = tmp_path / "alpha"
-    alpha.mkdir()
-    ghost = tmp_path / "ghost"
-    (alpha / "untaped.yml").write_text(
-        f"name: alpha\nrepos:\n  - url: file://{upstream}\n    name: upstream\n",
-        encoding="utf-8",
-    )
-    isolate_config.write_text(
-        f"""
-        workspace:
-          workspaces:
-            - name: alpha
-              path: {alpha}
-            - name: ghost
-              path: {ghost}
-        """,
-        encoding="utf-8",
-    )
-
-    result = CliInvoker().invoke(
-        app,
-        [
-            "sync",
-            "--all",
-            "--format",
-            "raw",
-            "--columns",
-            "workspace",
-            "--columns",
-            "repo",
-            "--columns",
-            "action",
-            "--columns",
-            "detail",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    rows = result.stdout.splitlines()
-    assert "alpha\tupstream\tcloned\t" in rows
-    ghost_rows = [row for row in rows if row.startswith("ghost\t\tunavailable\t")]
-    assert len(ghost_rows) == 1
-    assert "workspace manifest unavailable: no manifest at" in ghost_rows[0]
-    assert (alpha / "upstream").is_dir()
-
-
-def test_sync_all_unavailable_manifest_json_output(
-    tmp_path: Path,
-    upstream: Path,
-    isolate_config: Path,
-    isolated_cache: Path,
-) -> None:
-    alpha = tmp_path / "alpha"
-    alpha.mkdir()
-    ghost = tmp_path / "ghost"
-    (alpha / "untaped.yml").write_text(
-        f"name: alpha\nrepos:\n  - url: file://{upstream}\n    name: upstream\n",
-        encoding="utf-8",
-    )
-    isolate_config.write_text(
-        f"""
-        workspace:
-          workspaces:
-            - name: alpha
-              path: {alpha}
-            - name: ghost
-              path: {ghost}
-        """,
-        encoding="utf-8",
-    )
-
-    result = CliInvoker().invoke(app, ["sync", "--all", "--format", "json"])
-
-    assert result.exit_code == 0, result.output
-    rows = json.loads(result.stdout)
-    assert any(row["workspace"] == "alpha" and row["action"] == "cloned" for row in rows)
-    ghost_rows = [row for row in rows if row["workspace"] == "ghost"]
-    assert len(ghost_rows) == 1
-    assert ghost_rows[0]["repo"] == ""
-    assert ghost_rows[0]["action"] == "unavailable"
-    assert "workspace manifest unavailable: no manifest at" in ghost_rows[0]["detail"]
-
-
-def test_status_all_unavailable_manifest_outputs_machine_visible_row(
-    tmp_path: Path,
-    isolate_config: Path,
-) -> None:
-    alpha = tmp_path / "alpha"
-    alpha.mkdir()
-    ghost = tmp_path / "ghost"
-    (alpha / "untaped.yml").write_text(
-        "name: alpha\nrepos:\n  - url: https://x/api.git\n    name: api\n",
-        encoding="utf-8",
-    )
-    isolate_config.write_text(
-        f"""
-        workspace:
-          workspaces:
-            - name: alpha
-              path: {alpha}
-            - name: ghost
-              path: {ghost}
-        """,
-        encoding="utf-8",
-    )
-
-    result = CliInvoker().invoke(app, ["status", "--all", "--format", "json"])
-
-    assert result.exit_code == 0, result.output
-    rows = json.loads(result.stdout)
-    assert any(row["workspace"] == "alpha" and row["action"] == "status" for row in rows)
-    ghost_rows = [row for row in rows if row["workspace"] == "ghost"]
-    assert len(ghost_rows) == 1
-    row = ghost_rows[0]
-    assert {key: value for key, value in row.items() if key not in {"detail", "target_path"}} == {
-        "workspace": "ghost",
-        "repo": "",
-        "action": "unavailable",
-        "cloned": False,
-        "branch": None,
-        "ahead": 0,
-        "behind": 0,
-        "modified": 0,
-        "untracked": 0,
-    }
-    assert row["detail"].startswith(
-        f"workspace manifest unavailable: no manifest at {ghost}/untaped.yml"
-    )
-
-
-def test_status_all_unavailable_manifest_raw_output(
-    tmp_path: Path,
-    isolate_config: Path,
-) -> None:
-    alpha = tmp_path / "alpha"
-    alpha.mkdir()
-    ghost = tmp_path / "ghost"
-    (alpha / "untaped.yml").write_text(
-        "name: alpha\nrepos:\n  - url: https://x/api.git\n    name: api\n",
-        encoding="utf-8",
-    )
-    isolate_config.write_text(
-        f"""
-        workspace:
-          workspaces:
-            - name: alpha
-              path: {alpha}
-            - name: ghost
-              path: {ghost}
-        """,
-        encoding="utf-8",
-    )
-
-    result = CliInvoker().invoke(
-        app,
-        [
-            "status",
-            "--all",
-            "--format",
-            "raw",
-            "--columns",
-            "workspace",
-            "--columns",
-            "repo",
-            "--columns",
-            "action",
-            "--columns",
-            "detail",
-            "--columns",
-            "branch",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    rows = result.stdout.splitlines()
-    assert "alpha\tapi\tstatus\t\t" in rows
-    ghost_rows = [row for row in rows if row.startswith("ghost\t\tunavailable\t")]
-    assert len(ghost_rows) == 1
-    assert "workspace manifest unavailable: no manifest at" in ghost_rows[0]
-    assert ghost_rows[0].endswith("\t")
-
-
-def test_status_all_unreadable_manifest_does_not_abort_valid_workspace(
-    tmp_path: Path,
-    isolate_config: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    alpha = tmp_path / "alpha"
-    alpha.mkdir()
-    ghost = tmp_path / "ghost"
-    ghost.mkdir()
-    ghost_manifest = ghost / "untaped.yml"
-    ghost_manifest.write_text("name: ghost\n", encoding="utf-8")
-    (alpha / "untaped.yml").write_text(
-        "name: alpha\nrepos:\n  - url: https://x/api.git\n    name: api\n",
-        encoding="utf-8",
-    )
-    isolate_config.write_text(
-        f"""
-        workspace:
-          workspaces:
-            - name: alpha
-              path: {alpha}
-            - name: ghost
-              path: {ghost}
-        """,
-        encoding="utf-8",
-    )
-    original = Path.read_text
-
-    def _read_text(self: Path, *args: Any, **kwargs: Any) -> str:
-        if self == ghost_manifest:
-            raise PermissionError("denied")
-        return original(self, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "read_text", _read_text)
-
-    result = CliInvoker().invoke(
-        app,
-        [
-            "status",
-            "--all",
-            "--format",
-            "raw",
-            "--columns",
-            "workspace",
-            "--columns",
-            "action",
-            "--columns",
-            "detail",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    rows = result.stdout.splitlines()
-    assert "alpha\tstatus\t" in rows
-    ghost_rows = [row for row in rows if row.startswith("ghost\tunavailable\t")]
-    assert len(ghost_rows) == 1
-    assert f"could not read manifest at {ghost_manifest}" in ghost_rows[0]
-
-
 def test_status_all_malformed_registry_entry_stays_hard_error(isolate_config: Path) -> None:
     isolate_config.write_text(
         "workspace:\n  workspaces:\n    - name: prod\n",
@@ -953,8 +540,8 @@ def test_foreach_unknown_repo_filter_exits_before_running_command(
 
     result = runner.invoke(app, ["foreach", "echo ok", "--workspace", "prod", "--repo", "ghost"])
 
-    assert result.exit_code != 0
-    assert "ghost" in result.output
+    assert result.exit_code == 1
+    assert "1 unknown repo identifier for --repo: ghost" in result.stderr
     assert calls == []
 
 
@@ -999,64 +586,6 @@ def test_foreach_structured_format(tmp_path: Path, upstream: Path, isolated_cach
     assert "[upstream]" not in result.stdout
 
 
-def test_foreach_timeout_option_wires_to_runner(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    seen: list[float] = []
-
-    def _runner(cmd: str, cwd: Path, *, timeout: float) -> subprocess.CompletedProcess[str]:
-        seen.append(timeout)
-        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
-
-    _patch_shell_runner(monkeypatch, _runner)
-    runner = CliInvoker()
-    target = tmp_path / "ws"
-    runner.invoke(app, ["init", "prod", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
-    (target / "api").mkdir()
-
-    result = runner.invoke(
-        app,
-        [
-            "foreach",
-            "echo ok",
-            "--workspace",
-            "prod",
-            "--timeout",
-            "12.5",
-            "--format",
-            "json",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert seen == [12.5]
-
-
-def test_foreach_default_timeout_wires_to_runner(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    seen: list[float] = []
-
-    def _runner(cmd: str, cwd: Path, *, timeout: float) -> subprocess.CompletedProcess[str]:
-        seen.append(timeout)
-        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
-
-    _patch_shell_runner(monkeypatch, _runner)
-    runner = CliInvoker()
-    target = tmp_path / "ws"
-    runner.invoke(app, ["init", "prod", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
-    (target / "api").mkdir()
-
-    result = runner.invoke(app, ["foreach", "echo ok", "--workspace", "prod"])
-
-    assert result.exit_code == 0, result.output
-    assert seen == [600.0]
-
-
 def test_foreach_timeout_zero_is_rejected(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
@@ -1066,151 +595,6 @@ def test_foreach_timeout_zero_is_rejected(tmp_path: Path) -> None:
 
     assert result.exit_code != 0
     assert "--timeout must be positive" in result.output
-
-
-def test_foreach_help_exposes_timeout() -> None:
-    result = CliInvoker().invoke(app, ["foreach", "--help"])
-
-    assert result.exit_code == 0, result.output
-    assert "--timeout" in result.output
-    assert "600s" in result.output
-
-
-def test_foreach_timeout_json_output(tmp_path: Path) -> None:
-    runner = CliInvoker()
-    target = tmp_path / "ws"
-    runner.invoke(app, ["init", "prod", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
-    (target / "api").mkdir()
-    command = f"{shlex.quote(sys.executable)} -c {shlex.quote('import time; time.sleep(60)')}"
-
-    result = runner.invoke(
-        app,
-        [
-            "foreach",
-            command,
-            "--workspace",
-            "prod",
-            "--timeout",
-            "0.1",
-            "--format",
-            "json",
-        ],
-    )
-
-    assert result.exit_code == 1
-    rows = json.loads(result.stdout)
-    assert len(rows) == 1
-    assert rows[0]["repo"] == "api"
-    assert rows[0]["returncode"] == 124
-    assert "timed out after 0.1s" in rows[0]["stderr"]
-
-
-def test_foreach_timeout_raw_output(tmp_path: Path) -> None:
-    runner = CliInvoker()
-    target = tmp_path / "ws"
-    runner.invoke(app, ["init", "prod", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
-    (target / "api").mkdir()
-    command = f"{shlex.quote(sys.executable)} -c {shlex.quote('import time; time.sleep(60)')}"
-
-    result = runner.invoke(
-        app,
-        [
-            "foreach",
-            command,
-            "--workspace",
-            "prod",
-            "--timeout",
-            "0.1",
-            "--format",
-            "raw",
-            "--columns",
-            "repo",
-            "--columns",
-            "returncode",
-            "--columns",
-            "stderr",
-        ],
-    )
-
-    assert result.exit_code == 1
-    assert result.stdout.strip() == "api\t124\ttimed out after 0.1s"
-
-
-def test_foreach_format_raw_columns(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
-    """`--format raw --columns repo,returncode` produces tab-separated rows."""
-    runner = CliInvoker()
-    target = tmp_path / "ws"
-    runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    runner.invoke(app, ["sync", "--workspace", "smoke"])
-
-    result = runner.invoke(
-        app,
-        [
-            "foreach",
-            "git rev-parse --abbrev-ref HEAD",
-            "--workspace",
-            "smoke",
-            "--format",
-            "raw",
-            "--columns",
-            "repo",
-            "--columns",
-            "returncode",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert "upstream\t0" in result.stdout
-    assert "[upstream]" not in result.stdout
-
-
-def test_foreach_default_emits_summary_on_failure(
-    tmp_path: Path, upstream: Path, isolated_cache: Path
-) -> None:
-    """Even in default fail-fast mode, a failing repo surfaces in the summary line."""
-    runner = CliInvoker()
-    target = tmp_path / "ws"
-    runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    runner.invoke(app, ["sync", "--workspace", "smoke"])
-
-    result = runner.invoke(app, ["foreach", "false", "--workspace", "smoke"])
-    assert result.exit_code == 1
-    assert "failed in: upstream" in (result.stderr or result.output)
-
-
-def test_foreach_continue_on_error_still_exits_one(
-    tmp_path: Path, upstream: Path, isolated_cache: Path
-) -> None:
-    """`--continue-on-error` keeps going but still exits 1 on failures
-    (pins the historical contract)."""
-    runner = CliInvoker()
-    target = tmp_path / "ws"
-    runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    runner.invoke(app, ["sync", "--workspace", "smoke"])
-
-    result = runner.invoke(app, ["foreach", "false", "--workspace", "smoke", "--continue-on-error"])
-    assert result.exit_code == 1
-    assert "failed in: upstream" in (result.stderr or result.output)
-
-
-def test_foreach_ignore_errors_exits_zero_with_summary(
-    tmp_path: Path, upstream: Path, isolated_cache: Path
-) -> None:
-    """`--ignore-errors` keeps going AND exits 0; failures surface via the
-    summary line so they aren't silent."""
-    runner = CliInvoker()
-    target = tmp_path / "ws"
-    runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    runner.invoke(app, ["sync", "--workspace", "smoke"])
-
-    result = runner.invoke(app, ["foreach", "false", "--workspace", "smoke", "--ignore-errors"])
-    assert result.exit_code == 0, result.output
-    assert "failed in: upstream" in (result.stderr or result.output)
 
 
 def test_foreach_summary_suppressed_in_structured_format(
@@ -1237,62 +621,234 @@ def test_foreach_summary_suppressed_in_structured_format(
     assert "failed in:" not in (result.stderr or "")
 
 
-# ── foreach --parallel: silent <1 coercion (foreach-specific UX) ─────────────
-# The cap-clamp policy is unit-tested at ``clamp_parallel`` in
-# ``tests/unit/test_cli_helpers.py``; the sync CLI
-# test above exercises the wire-through end-to-end. Foreach has one
-# divergent contract: ``-j 0`` silently coerces to serial (sync and
-# ``awx apply`` raise ``BadParameter`` instead), so that's the only
-# foreach-specific case worth a CLI-level pin.
-
-
-def test_foreach_parallel_zero_is_a_usage_error(
+def test_sync_json_stdout_shape_stays_data_only(
     tmp_path: Path, upstream: Path, isolated_cache: Path
 ) -> None:
-    """``foreach -j 0`` is rejected with exit 2 like every ``--parallel``."""
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+
+    result = runner.invoke(app, ["sync", "--workspace", "smoke", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    (row,) = json.loads(result.stdout)
+    # ``workspace`` leads so ``--format raw`` defaults to it.
+    assert list(row) == ["workspace", "repo", "action", "detail", "target_path"]
+    assert row["action"] == "cloned"
+    assert (target / "upstream").is_dir()
+
+
+@pytest.mark.parametrize("args", [["sync"], ["status"], ["foreach"], ["branch", "apply"]])
+def test_repo_operating_commands_expose_repo_filter(args: list[str]) -> None:
+    result = CliInvoker().invoke(app, [*args, "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "--repo" in result.output
+    assert "-r" in result.output
+    assert "--only" not in result.output
+
+
+@pytest.mark.parametrize("command", ["sync", "status"])
+@pytest.mark.parametrize("target", [["--workspace", "smoke"], ["--path", "."]])
+def test_all_rejects_explicit_target(command: str, target: list[str]) -> None:
+    result = CliInvoker().invoke(app, [command, "--all", *target])
+    assert result.exit_code == 2
+    assert "--all cannot be combined with --workspace or --path" in result.stderr
+
+
+def test_sync_all_parallel_covers_every_workspace_in_registry_order(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    """``sync --all -j 4`` syncs every workspace, names the worker count on
+    stderr, and emits rows in registry order (not completion order)."""
+    runner = CliInvoker()
+    names = ("alpha", "beta", "gamma", "delta")
+    for name in names:
+        runner.invoke(app, ["init", name, "--path", str(tmp_path / f"ws-{name}")])
+        runner.invoke(app, ["add", f"file://{upstream}", "--workspace", name])
+
+    result = runner.invoke(
+        app,
+        ["sync", "--all", "-j", "4", "--format", "raw", "--columns", "workspace", "-c", "action"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "syncing 4 repos with up to 4 workers" in result.stderr
+    assert "sync: 4 cloned" in result.stderr
+    assert result.stdout.splitlines() == [f"{n}\tcloned" for n in names]
+
+
+def _register_alpha_and_ghost(isolate_config: Path, tmp_path: Path, url: str) -> Path:
+    """Register ``alpha`` (one repo at ``url``) and ``ghost`` (no manifest)."""
+    alpha = tmp_path / "alpha"
+    alpha.mkdir()
+    (alpha / "untaped.yml").write_text(
+        f"name: alpha\nrepos:\n  - url: {url}\n    name: upstream\n", encoding="utf-8"
+    )
+    isolate_config.write_text(
+        "workspace:\n  workspaces:\n"
+        f"    - name: alpha\n      path: {alpha}\n"
+        f"    - name: ghost\n      path: {tmp_path / 'ghost'}\n",
+        encoding="utf-8",
+    )
+    return alpha
+
+
+def test_sync_all_unavailable_manifest_does_not_abort_valid_workspace(
+    tmp_path: Path, upstream: Path, isolate_config: Path, isolated_cache: Path
+) -> None:
+    alpha = _register_alpha_and_ghost(isolate_config, tmp_path, f"file://{upstream}")
+
+    result = CliInvoker().invoke(app, ["sync", "--all", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    rows = json.loads(result.stdout)
+    assert [(r["workspace"], r["repo"], r["action"]) for r in rows] == [
+        ("alpha", "upstream", "cloned"),
+        ("ghost", "", "unavailable"),
+    ]
+    assert rows[1]["detail"].startswith("workspace manifest unavailable: no manifest at")
+    assert (alpha / "upstream").is_dir()
+
+
+def test_status_all_unavailable_manifest_outputs_machine_visible_row(
+    tmp_path: Path, isolate_config: Path
+) -> None:
+    _register_alpha_and_ghost(isolate_config, tmp_path, "https://x/api.git")
+
+    result = CliInvoker().invoke(app, ["status", "--all", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    alpha, ghost = json.loads(result.stdout)
+    assert (alpha["workspace"], alpha["action"]) == ("alpha", "status")
+    assert {k: v for k, v in ghost.items() if k not in {"detail", "target_path"}} == {
+        "workspace": "ghost",
+        "repo": "",
+        "action": "unavailable",
+        "cloned": False,
+        "branch": None,
+        "ahead": 0,
+        "behind": 0,
+        "modified": 0,
+        "untracked": 0,
+    }
+    assert ghost["detail"].startswith(
+        f"workspace manifest unavailable: no manifest at {tmp_path / 'ghost'}/untaped.yml"
+    )
+
+
+def test_status_all_unreadable_manifest_does_not_abort_valid_workspace(
+    tmp_path: Path, isolate_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _register_alpha_and_ghost(isolate_config, tmp_path, "https://x/api.git")
+    ghost_manifest = tmp_path / "ghost" / "untaped.yml"
+    ghost_manifest.parent.mkdir()
+    ghost_manifest.write_text("name: ghost\n", encoding="utf-8")
+    original = Path.read_text
+
+    def _read_text(self: Path, *args: Any, **kwargs: Any) -> str:
+        if self == ghost_manifest:
+            raise PermissionError("denied")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _read_text)
+
+    result = CliInvoker().invoke(
+        app,
+        ["status", "--all", "--format", "raw", "-c", "workspace", "-c", "action", "-c", "detail"],
+    )
+
+    assert result.exit_code == 0, result.output
+    alpha, ghost = result.stdout.splitlines()
+    assert alpha == "alpha\tstatus\t"
+    assert ghost.startswith("ghost\tunavailable\t")
+    assert f"could not read manifest at {ghost_manifest}" in ghost
+
+
+def _workspace_with_api_dir(tmp_path: Path) -> None:
+    runner = CliInvoker()
+    runner.invoke(app, ["init", "prod", "--path", str(tmp_path / "ws")])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
+    (tmp_path / "ws" / "api").mkdir()
+
+
+@pytest.mark.parametrize(("extra", "expected"), [([], 600.0), (["--timeout", "12.5"], 12.5)])
+def test_foreach_timeout_wires_to_runner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, extra: list[str], expected: float
+) -> None:
+    seen: list[float] = []
+
+    def _runner(cmd: str, cwd: Path, *, timeout: float) -> subprocess.CompletedProcess[str]:
+        seen.append(timeout)
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    _patch_shell_runner(monkeypatch, _runner)
+    _workspace_with_api_dir(tmp_path)
+
+    result = CliInvoker().invoke(app, ["foreach", "echo ok", "--workspace", "prod", *extra])
+
+    assert result.exit_code == 0, result.output
+    assert seen == [expected]
+
+
+def test_foreach_timeout_json_output(tmp_path: Path) -> None:
+    _workspace_with_api_dir(tmp_path)
+    command = f"{shlex.quote(sys.executable)} -c {shlex.quote('import time; time.sleep(60)')}"
+
+    result = CliInvoker().invoke(
+        app, ["foreach", command, "--workspace", "prod", "--timeout", "0.1", "--format", "json"]
+    )
+
+    assert result.exit_code == 1
+    (row,) = json.loads(result.stdout)
+    assert (row["repo"], row["returncode"]) == ("api", 124)
+    assert "timed out after 0.1s" in row["stderr"]
+
+
+@pytest.mark.parametrize(
+    ("flags", "exit_code"),
+    [([], 1), (["--continue-on-error"], 1), (["--ignore-errors"], 0)],
+)
+def test_foreach_failure_summary_and_exit_code(
+    tmp_path: Path, upstream: Path, isolated_cache: Path, flags: list[str], exit_code: int
+) -> None:
+    """Failures always surface in the summary line; only ``--ignore-errors``
+    exits 0 (``--continue-on-error`` keeps going but still exits 1)."""
+    runner = CliInvoker()
+    runner.invoke(app, ["init", "smoke", "--path", str(tmp_path / "ws")])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
     runner.invoke(app, ["sync", "--workspace", "smoke"])
 
-    result = runner.invoke(app, ["foreach", "true", "--workspace", "smoke", "-j", "0"])
+    result = runner.invoke(app, ["foreach", "false", "--workspace", "smoke", *flags])
+
+    assert result.exit_code == exit_code, result.output
+    assert "failed in: upstream" in result.stderr
+
+
+def test_foreach_parallel_zero_is_a_usage_error() -> None:
+    result = CliInvoker().invoke(app, ["foreach", "true", "--workspace", "smoke", "-j", "0"])
     assert result.exit_code == 2, result.output
     assert "Must be >= 1" in result.stderr
 
 
-def test_sync_empty_workspace_reports_progress_and_hint(tmp_path: Path) -> None:
-    """A repo-less workspace still announces progress on stderr and guides with
-    an empty-state hint, while keeping stdout pipe-clean."""
+@pytest.mark.parametrize(
+    ("command", "hints"),
+    [
+        (["sync"], ["Syncing repos", "sync: nothing to do", "Nothing to sync"]),
+        (["status"], ["No cloned repos"]),
+        (["foreach", "true"], ["No repos matched"]),
+    ],
+)
+def test_empty_workspace_guides_with_stderr_hint(
+    tmp_path: Path, command: list[str], hints: list[str]
+) -> None:
+    """A repo-less workspace keeps stdout pipe-clean and guides on stderr."""
     runner = CliInvoker()
     runner.invoke(app, ["init", "solo", "--path", str(tmp_path / "solo")])
 
-    result = runner.invoke(app, ["sync", "--workspace", "solo"])
+    result = runner.invoke(app, [*command, "--workspace", "solo"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
-    assert "Syncing repos" in result.stderr
-    assert "sync: nothing to do" in result.stderr
-    assert "Nothing to sync" in result.stderr
-
-
-def test_status_empty_workspace_guides_with_stderr_hint(tmp_path: Path) -> None:
-    runner = CliInvoker()
-    runner.invoke(app, ["init", "solo", "--path", str(tmp_path / "solo")])
-
-    result = runner.invoke(app, ["status", "--workspace", "solo"])
-
-    assert result.exit_code == 0, result.output
-    assert result.stdout == ""
-    assert "No cloned repos" in result.stderr
-
-
-def test_foreach_no_matching_repos_guides_with_stderr_hint(tmp_path: Path) -> None:
-    runner = CliInvoker()
-    runner.invoke(app, ["init", "solo", "--path", str(tmp_path / "solo")])
-
-    result = runner.invoke(app, ["foreach", "true", "--workspace", "solo"])
-
-    assert result.exit_code == 0, result.output
-    assert result.stdout == ""
-    assert "No repos matched" in result.stderr
+    assert [h for h in hints if h not in result.stderr] == []

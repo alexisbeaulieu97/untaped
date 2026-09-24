@@ -19,8 +19,10 @@ def test_read_missing_raises(tmp_path: Path) -> None:
         repo.read(tmp_path)
 
 
-def test_round_trip(tmp_path: Path) -> None:
-    repo = YamlManifestRepository()
+def test_round_trip_creates_parent_dirs_and_writes_plain_yaml(tmp_path: Path) -> None:
+    """``repos`` is a tuple at the type level but must serialise as a plain
+    YAML sequence (no ``!!python/tuple`` tag)."""
+    target = tmp_path / "deeply" / "nested"
     manifest = WorkspaceManifest(
         name="prod",
         defaults=ManifestDefaults(branch="main"),
@@ -29,32 +31,24 @@ def test_round_trip(tmp_path: Path) -> None:
             Repo(url="https://github.com/org/svc-b.git", name="bee", branch="develop"),
         ],
     )
-    repo.write(tmp_path, manifest)
-    loaded = repo.read(tmp_path)
-    assert loaded.name == "prod"
-    assert loaded.defaults.branch == "main"
-    assert len(loaded.repos) == 2
-    assert loaded.repos[1].name == "bee"
-    assert loaded.repos[1].branch == "develop"
+    YamlManifestRepository().write(target, manifest)
+    assert "python/tuple" not in (target / "untaped.yml").read_text()
+    assert YamlManifestRepository().read(target) == manifest
 
 
-def test_write_creates_dir(tmp_path: Path) -> None:
-    target = tmp_path / "deeply" / "nested"
-    YamlManifestRepository().write(target, WorkspaceManifest())
-    assert (target / "untaped.yml").is_file()
-
-
-def test_read_invalid_yaml(tmp_path: Path) -> None:
-    (tmp_path / "untaped.yml").write_text("not: valid: yaml: at all:")
-    with pytest.raises(ManifestError, match="invalid YAML"):
-        YamlManifestRepository().read(tmp_path)
-
-
-def test_read_invalid_schema(tmp_path: Path) -> None:
-    (tmp_path / "untaped.yml").write_text(
-        yaml.safe_dump({"repos": [{"url": "https://x/a.git", "weird_field": True}]})
-    )
-    with pytest.raises(ManifestError, match="invalid manifest"):
+@pytest.mark.parametrize(
+    ("text", "match"),
+    [
+        ("not: valid: yaml: at all:", "invalid YAML"),
+        (
+            yaml.safe_dump({"repos": [{"url": "https://x/a.git", "weird_field": True}]}),
+            "invalid manifest",
+        ),
+    ],
+)
+def test_read_rejects_bad_manifest(tmp_path: Path, text: str, match: str) -> None:
+    (tmp_path / "untaped.yml").write_text(text)
+    with pytest.raises(ManifestError, match=match):
         YamlManifestRepository().read(tmp_path)
 
 
@@ -121,29 +115,6 @@ def test_write_empty_defaults_omitted(tmp_path: Path) -> None:
     YamlManifestRepository().write(tmp_path, WorkspaceManifest())
     raw = yaml.safe_load((tmp_path / "untaped.yml").read_text())
     assert "defaults" not in raw
-
-
-def test_write_repos_emits_plain_yaml_sequence(tmp_path: Path) -> None:
-    """``repos`` is a tuple at the type level but must serialise as a plain
-    YAML sequence — no ``!!python/tuple`` tag and no ``RepresenterError``.
-
-    PyYAML's ``SafeRepresenter`` happens to represent tuples and lists the
-    same way today, so this test is a regression pin against a future
-    PyYAML / pydantic change that would otherwise leak the runtime
-    container type into the on-disk manifest.
-    """
-    manifest = WorkspaceManifest(
-        repos=[
-            Repo(url="https://github.com/org/svc-a.git"),
-            Repo(url="https://github.com/org/svc-b.git"),
-        ],
-    )
-    YamlManifestRepository().write(tmp_path, manifest)
-    text = (tmp_path / "untaped.yml").read_text()
-    assert "python/tuple" not in text
-    # Round-trip through the safe loader to confirm the dumped shape is
-    # a plain mapping/sequence pydantic can parse back without help.
-    assert YamlManifestRepository().read(tmp_path).repos == manifest.repos
 
 
 def test_write_does_not_use_a_fixed_temp_name(tmp_path: Path) -> None:
