@@ -1685,3 +1685,162 @@ def test_warn_probe_fallbacks_groups_known_and_unknown_reasons(
         "warning: 2 repos fell back to git ls-remote for 1 unrecognized fallback reason:" in stderr
     )
     assert "future_reason (2)" in stderr
+
+
+# --- graph: many roots with --contains ------------------------------------
+
+_CONTAINS_SOURCE = {
+    "sources": [
+        {
+            "name": "platform",
+            "repos": ["acme/site", "acme/app", "acme/common", "acme/multi", "acme/lib"],
+        }
+    ]
+}
+
+
+def _seed_contains(tmp_path: Path) -> None:
+    _seed(
+        tmp_path,
+        "source:platform",
+        _edge("acme/site", "acme/target", version="v1"),
+        _edge("acme/app", "acme/common", version="main"),
+        _edge("acme/common", "acme/target", version="v2"),
+        _edge("acme/multi", "acme/target", version="v1"),
+        _edge("acme/multi", "acme/lib", version="1.0"),
+        _edge("acme/lib", "acme/target", ref="1.0", version="feature/x"),
+        _edge("acme/none", "acme/other"),
+    )
+
+
+def _contains(stdin: str, *args: str) -> CliResult:
+    return CliInvoker().invoke(
+        app,
+        ["graph", "--stdin", "--contains", "acme/target", "--source", "platform", *args],
+        input=stdin,
+    )
+
+
+def _match_rows(result: CliResult) -> list[tuple[str, str | None, str | None, list[str]]]:
+    assert result.exit_code == 0, result.output + result.stderr
+    return sorted(
+        (row["root_repo"], row["root_ref"], row["declared_ref"], row["path"])
+        for row in json.loads(result.stdout)
+    )
+
+
+def test_graph_contains_reports_direct_intermediate_two_refs_and_skips_misses(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _seed_contains(tmp_path)
+    _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
+
+    result = _contains(
+        "acme/site@main\nacme/app@main\nacme/multi@main\nacme/none@main\n", "--format", "json"
+    )
+
+    assert _match_rows(result) == [
+        ("acme/app", "main", "v2", ["acme/app@main", "acme/common@main", "acme/target@v2"]),
+        (
+            "acme/multi",
+            "main",
+            "feature/x",
+            ["acme/multi@main", "acme/lib@1.0", "acme/target@feature/x"],
+        ),
+        ("acme/multi", "main", "v1", ["acme/multi@main", "acme/target@v1"]),
+        ("acme/site", "main", "v1", ["acme/site@main", "acme/target@v1"]),
+    ]
+    first = json.loads(result.stdout)[0]
+    assert first["repo"] == "acme/target"
+    assert first["declared_in"] == _REQS
+
+
+def test_graph_contains_respects_depth(tmp_path: Path, monkeypatch) -> None:
+    _seed_contains(tmp_path)
+    _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
+
+    result = _contains("acme/app@main\nacme/site@main\n", "--depth", "1", "--format", "json")
+
+    assert [row[0] for row in _match_rows(result)] == ["acme/site"]
+
+
+def test_graph_contains_reads_pipe_records_with_scm_fields(tmp_path: Path, monkeypatch) -> None:
+    _seed_contains(tmp_path)
+    _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
+    records = [
+        {"id": 1, "name": "Deploy", "scm_url": "https://github.com/acme/app.git",
+         "effective_scm_ref": "main"},
+        # An empty effective ref is the default branch: every cached ref is walked.
+        {"id": 2, "name": "Site", "scm_url": "git@github.com:acme/site.git",
+         "effective_scm_ref": ""},
+        {"id": 3, "name": "Other", "scm_url": "https://github.com/acme/none",
+         "effective_scm_ref": "main"},
+    ]  # fmt: skip
+    stdin = "".join(
+        json.dumps({"untaped": "1", "kind": "awx.job_template", "record": record}) + "\n"
+        for record in records
+    )
+
+    result = _contains(stdin, "--format", "pipe")
+
+    assert result.exit_code == 0, result.output + result.stderr
+    envelopes = [json.loads(line) for line in result.stdout.splitlines()]
+    assert {envelope["kind"] for envelope in envelopes} == {"ansible.dependency_match"}
+    assert sorted((e["record"]["root_repo"], e["record"]["root_ref"]) for e in envelopes) == [
+        ("acme/app", "main"),
+        ("acme/site", "main"),
+    ]
+
+
+def test_graph_contains_table_and_no_match(tmp_path: Path, monkeypatch) -> None:
+    _seed_contains(tmp_path)
+    _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
+
+    table = _contains("acme/site@main\n")
+    assert table.exit_code == 0, table.output + table.stderr
+    assert "acme/target" in table.stdout
+    assert "v1" in table.stdout
+
+    none = _contains("acme/none@main\n")
+    assert none.exit_code == 0
+    assert "No matching roots found." in none.stdout + none.stderr
+
+
+def test_graph_contains_single_target_argument(tmp_path: Path, monkeypatch) -> None:
+    _seed_contains(tmp_path)
+    _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
+
+    result = _run(
+        "graph", "acme/site", "--ref", "main", "--contains", "acme/target", "--source",
+        "platform", "--format", "json",
+    )  # fmt: skip
+
+    assert [row[2] for row in _match_rows(result)] == ["v1"]
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["graph", "--stdin"], "--stdin requires --contains"),
+        (["graph", "acme/site", "--format", "table"], "--format table requires --contains"),
+        (["graph", "--stdin", "--contains", "a/b", "--upstream"], "downstream"),
+        (["graph", "--stdin", "--contains", "a/b", "--format", "tree"], "table, json or pipe"),
+        (["graph", "acme/site", "--stdin", "--contains", "a/b"], "not both"),
+        (["graph", "--stdin", "--contains", "a/b", "--ref", "main"], "on stdin"),
+    ],
+)
+def test_graph_contains_usage_errors(args: list[str], message: str) -> None:
+    result = CliInvoker().invoke(app, args, input="acme/site\n")
+
+    assert result.exit_code == 2, result.output
+    assert message in result.stderr
+
+
+def test_graph_contains_rejects_records_without_a_repository(tmp_path: Path, monkeypatch) -> None:
+    _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
+    stdin = json.dumps({"untaped": "1", "kind": "awx.job_template", "record": {"id": 1}}) + "\n"
+
+    result = _contains(stdin)
+
+    assert result.exit_code == 2
+    assert "line 1: record has no repository field" in result.stderr
