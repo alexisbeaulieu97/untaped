@@ -1,13 +1,15 @@
 """Secret-path patterns: the one walker and ``$encrypted$`` placeholder stripping.
 
 ``ResourceSpec.secret_paths`` patterns use dot notation with ``*`` matching
-any list element or dict key; :func:`path_slots` is the single walker every
-read, redact, and remove of a secret path goes through:
+any list element or dict key, and ``*[key=value]`` matching only the elements
+that are mappings whose ``key`` equals ``value``; :func:`path_slots` is the
+single walker every read, redact, strip, and remove of a secret path goes
+through:
 
 - ``webhook_key``                — exact top-level key
 - ``inputs.*``                   — any direct child of ``inputs``
-- ``survey_spec.spec.*.default`` — ``default`` key on any list element
-                                   under ``survey_spec.spec``
+- ``survey_spec.spec.*[type=password].default`` — ``default`` key on the
+                                   password questions under ``survey_spec.spec``
 
 The walker drops matched ``$encrypted$`` values from the payload and
 returns the dotted paths that were preserved, plus any
@@ -37,18 +39,36 @@ def path_slots(value: Any, pattern: str) -> Iterator[tuple[Any, Any]]:
     before descending, so callers may assign through a yielded slot.
     """
     head, _, rest = pattern.partition(".")
+    wildcard, predicate = _wildcard(head)
     keys: list[Any]
     if isinstance(value, Mapping):
-        keys = list(value) if head == "*" else [head] if head in value else []
-    elif isinstance(value, list | tuple) and head == "*":
+        keys = list(value) if wildcard else [head] if head in value else []
+    elif isinstance(value, list | tuple) and wildcard:
         keys = list(range(len(value)))
     else:
         return
+    if predicate is not None:
+        field, expected = predicate
+        keys = [
+            key
+            for key in keys
+            if isinstance(value[key], Mapping) and value[key].get(field) == expected
+        ]
     for key in keys:
         if rest:
             yield from path_slots(value[key], rest)
         else:
             yield value, key
+
+
+def _wildcard(segment: str) -> tuple[bool, tuple[str, str] | None]:
+    """Split a pattern segment into (is wildcard, optional ``key=value`` filter)."""
+    if segment == "*":
+        return True, None
+    if segment.startswith("*[") and segment.endswith("]") and "=" in segment:
+        field, _, expected = segment[2:-1].partition("=")
+        return True, (field, expected)
+    return False, None
 
 
 def values_at(value: Any, pattern: str) -> Iterator[Any]:
@@ -85,16 +105,20 @@ def strip_encrypted_in_place(
     paths. ``preserved`` is the declared-and-stripped set; the rest are
     extras the caller should warn about.
     """
+    declared: dict[tuple[int, Any], str] = {}
+    for pattern in spec.secret_paths:
+        for container, key in path_slots(payload, pattern):
+            declared.setdefault((id(container), key), pattern)
     preserved: list[str] = []
     dropped: list[str] = []
-    _walk(payload, [], spec, preserved, dropped)
+    _walk(payload, [], declared, preserved, dropped)
     return preserved, dropped
 
 
 def _walk(
     obj: Any,
     path: list[str],
-    spec: ResourceSpec,
+    declared: Mapping[tuple[int, Any], str],
     preserved: list[str],
     dropped: list[str],
 ) -> None:
@@ -103,30 +127,27 @@ def _walk(
             value = obj[key]
             child_path = [*path, key]
             if isinstance(value, str) and value == PLACEHOLDER:
-                rendered = ".".join(child_path)
-                if _is_declared(child_path, spec):
-                    preserved.append(rendered)
+                pattern = declared.get((id(obj), key))
+                if pattern is not None:
+                    preserved.append(_render(child_path, pattern))
                 else:
-                    dropped.append(rendered)
+                    dropped.append(".".join(child_path))
                 obj.pop(key)
             elif isinstance(value, (dict, list)):
-                _walk(value, child_path, spec, preserved, dropped)
+                _walk(value, child_path, declared, preserved, dropped)
     elif isinstance(obj, list):
         for item in obj:
-            _walk(item, [*path, "*"], spec, preserved, dropped)
+            _walk(item, [*path, "*"], declared, preserved, dropped)
 
 
-def _is_declared(path_parts: list[str], spec: ResourceSpec) -> bool:
-    return any(_pattern_matches(path_parts, p) for p in spec.secret_paths)
+def _render(path_parts: list[str], pattern: str) -> str:
+    """Name a preserved slot, keeping the pattern's filtered wildcards.
 
-
-def _pattern_matches(path_parts: list[str], pattern: str) -> bool:
-    pattern_parts = pattern.split(".")
-    if len(pattern_parts) != len(path_parts):
-        return False
-    for p, pp in zip(pattern_parts, path_parts, strict=True):
-        if p == "*":
-            continue
-        if p != pp:
-            return False
-    return True
+    The rendered path is later replayed with :func:`remove_at` against the
+    existing record, so a ``*[key=value]`` segment must survive; a plain
+    ``*`` or literal key renders as walked.
+    """
+    return ".".join(
+        segment if _wildcard(segment)[1] is not None else part
+        for part, segment in zip(path_parts, pattern.split("."), strict=True)
+    )

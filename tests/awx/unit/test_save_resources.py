@@ -43,6 +43,11 @@ class _StubClient:
     ) -> ServerRecord | None:
         raise AssertionError("SaveResources must use bulk list(), not find_by_identity()")
 
+    def get(self, spec: ResourceSpec, id_: int) -> ServerRecord:
+        """Detail read that completes a list row (e.g. a template's survey)."""
+        record = next(r for r in self._records.get(spec.kind, ()) if r["id"] == id_)
+        return ServerRecord(**{**record, "survey_spec": {}})
+
     def paginate_sub_endpoint(
         self,
         spec: ResourceSpec,

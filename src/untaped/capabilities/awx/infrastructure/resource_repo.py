@@ -12,6 +12,11 @@ Pydantic round trip is pure overhead. Writes unwrap
 :class:`WritePayload` / :class:`ActionPayload` via ``.model_dump()``
 before handing the dict to httpx.
 
+Fields a spec lists in ``sub_document_fields`` (a template's
+``survey_spec``) live behind ``<id>/<field>/`` rather than on the record:
+``get`` fills them in, and ``create``/``update`` route them to that
+endpoint after the record write.
+
 The application :class:`ResourceClient` Protocol takes domain
 :class:`ResourceSpec` arguments. This adapter narrows to
 :class:`AwxResourceSpec` via :func:`awx_api_path` so the
@@ -31,6 +36,14 @@ from untaped.capabilities.awx.infrastructure.awx_client import AwxClient
 from untaped.capabilities.awx.infrastructure.errors import map_awx_errors
 from untaped.capabilities.awx.infrastructure.pagination import paginate
 from untaped.capabilities.awx.infrastructure.spec import awx_api_path, awx_relationship_path
+
+
+def _split_sub_documents(
+    spec: ResourceSpec, body: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Separate record fields from the fields written through their own endpoint."""
+    documents = {field: body.pop(field) for field in spec.sub_document_fields if field in body}
+    return body, documents
 
 
 class ResourceRepository:
@@ -68,6 +81,7 @@ class ResourceRepository:
                 if proxy.get("id") != id_:
                     raise BadRequestError("constructed inventory hydration changed requested ID")
                 raw = {**raw, **proxy}
+            raw.update(self._read_sub_documents(spec, id_))
         return ServerRecord(**raw)
 
     def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> ServerRecord | None:
@@ -107,20 +121,43 @@ class ResourceRepository:
         return self.find(spec, params=params)
 
     def create(self, spec: ResourceSpec, payload: WritePayload) -> ServerRecord:
+        body, documents = _split_sub_documents(spec, payload.model_dump(exclude_none=False))
         with map_awx_errors():
-            raw = self._client.post_json(
-                f"{awx_api_path(spec)}/", json=payload.model_dump(exclude_none=False)
-            )
+            raw = self._client.post_json(f"{awx_api_path(spec)}/", json=body)
+            raw.update(self._write_sub_documents(spec, int(raw["id"]), documents))
         return ServerRecord(**raw)
 
     def update(self, spec: ResourceSpec, id_: int, payload: WritePayload) -> ServerRecord:
+        body, documents = _split_sub_documents(spec, payload.model_dump(exclude_none=False))
         with map_awx_errors():
-            raw = self._client.request_json(
-                "PATCH",
-                f"{awx_api_path(spec)}/{id_}/",
-                json=payload.model_dump(exclude_none=False),
-            )
+            raw = self._client.request_json("PATCH", f"{awx_api_path(spec)}/{id_}/", json=body)
+            raw.update(self._write_sub_documents(spec, id_, documents))
         return ServerRecord(**raw)
+
+    def _read_sub_documents(self, spec: ResourceSpec, id_: int) -> dict[str, Any]:
+        """Fetch each ``spec.sub_document_fields`` value from ``<id>/<field>/``."""
+        return {
+            field: self._client.get_json(f"{awx_relationship_path(spec)}/{id_}/{field}/")
+            for field in spec.sub_document_fields
+        }
+
+    def _write_sub_documents(
+        self, spec: ResourceSpec, id_: int, documents: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Replace (POST) or clear (DELETE) each sub-document, then read it back.
+
+        An empty or null value clears the document: AWX rejects an empty
+        POST body but a DELETE resets the document to ``{}``.
+        """
+        observed: dict[str, Any] = {}
+        for field, value in documents.items():
+            path = f"{awx_relationship_path(spec)}/{id_}/{field}/"
+            if value:
+                self._client.request_json("POST", path, json=value)
+            else:
+                self._client.delete(path)
+            observed[field] = self._client.get_json(path)
+        return observed
 
     def delete(self, spec: ResourceSpec, id_: int) -> DeleteReceipt:
         with map_awx_errors():
