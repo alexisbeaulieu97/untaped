@@ -46,7 +46,15 @@ untaped jira issues comments list OPS-123
   `openSprints()`, `futureSprints()`, `closedSprints()`.
 - Search rows carry `key`, `summary`, `status`, `assignee`, `updated_at`,
   `url` and `api_url`. `issues get` adds `issue_type`, `priority`, `reporter`,
-  `labels`, `created_at`, `resolution`, `description` and `comments`.
+  `labels`, `created_at`, `resolution`, `description`, `links` and `comments`.
+- `links` lists the issue's links (an empty list when there are none). Each
+  link has the linked issue's `key`, `summary`, `status` and `url`, the link
+  `type` name, the `direction` of this issue on it (`outward` when this issue
+  is the link's source, `inward` when it is the target) and `relation`, the
+  phrase Jira shows on this issue for that direction (`blocks`,
+  `is blocked by`, `duplicates`, ...). Linked issues are not fetched; run
+  `issues get` on their keys for more. The detail table shows one line per
+  link: `blocks ABC-2 (To Do): Release 2.0`.
 - The `issues get` table shows one issue as a detail view and several issues
   as a compact table (`key`, `issue_type`, `status`, `priority`, `assignee`,
   `summary`, `updated_at`); `--columns` picks others.

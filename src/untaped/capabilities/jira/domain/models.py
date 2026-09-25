@@ -22,6 +22,7 @@ ISSUE_DETAIL_FIELDS: tuple[str, ...] = (
     "created",
     "resolution",
     "description",
+    "issuelinks",
 )
 
 
@@ -106,6 +107,49 @@ class CommentResult(BaseModel):
         return {**data, **patch}
 
 
+class IssueLink(BaseModel):
+    """One link on an issue, read from the issue's own ``issuelinks`` field.
+
+    ``direction`` says which side of the link this issue is on: ``outward``
+    when this issue is the link's source (Jira shows the type's outward
+    phrase, e.g. ``blocks``), ``inward`` when it is the target (the inward
+    phrase, e.g. ``is blocked by``). ``relation`` is that phrase verbatim.
+    The linked issue carries only what the link embeds; it is not fetched.
+    """
+
+    model_config = _ROW_CONFIG
+
+    key: str
+    summary: str = ""
+    status: str = ""
+    type: str = ""
+    direction: str = ""
+    relation: str = ""
+    url: str = ""
+
+    @classmethod
+    def from_jira(cls, link: Any) -> IssueLink | None:
+        """Build a row from one raw ``issuelinks`` entry; ``None`` if malformed."""
+        if not isinstance(link, dict):
+            return None
+        raw_type = link.get("type")
+        link_type: dict[str, Any] = raw_type if isinstance(raw_type, dict) else {}
+        for direction in ("outward", "inward"):
+            other = link.get(f"{direction}Issue")
+            if isinstance(other, dict) and isinstance(other.get("key"), str):
+                fields = other.get("fields") or {}
+                return cls(
+                    key=other["key"],
+                    summary=_text(fields.get("summary")),
+                    status=_name(fields.get("status")),
+                    type=str(link_type.get("name") or ""),
+                    direction=direction,
+                    relation=str(link_type.get(direction) or ""),
+                    url=_browser_url(other),
+                )
+        return None
+
+
 class IssueDetailResult(IssueResult):
     """One issue with the extra fields shown by ``issues get``.
 
@@ -119,6 +163,7 @@ class IssueDetailResult(IssueResult):
     created_at: UtcTimestamp | None = None
     resolution: str = ""
     description: str = ""
+    links: list[IssueLink] = Field(default_factory=list)
     comments: list[CommentResult] | None = None
 
     @model_validator(mode="before")
@@ -136,8 +181,15 @@ class IssueDetailResult(IssueResult):
             "created_at": _timestamp(fields.get("created")),
             "resolution": _name(fields.get("resolution")),
             "description": _text(fields.get("description")),
+            "links": _links(fields.get("issuelinks")),
         }
         return {**data, **patch}
+
+
+def _links(value: Any) -> list[IssueLink]:
+    if not isinstance(value, list):
+        return []
+    return [link for raw in value if (link := IssueLink.from_jira(raw)) is not None]
 
 
 _ADF_INLINE_TYPES = frozenset(

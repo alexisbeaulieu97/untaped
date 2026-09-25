@@ -32,6 +32,12 @@
     name, and emit `awx.rename_outcome`, which `--stdin` selection of the same
     kind accepts. `patch` still rejects `name`; `rename` joins the
     conventions' write verbs. Other kinds opt in through their spec.
+- Jira
+  - `issues get` now includes the issue's `links`: for each, the linked
+    issue's `key`, `summary`, `status` and `url`, the link `type`, this
+    issue's `direction` (`outward`/`inward`) and the `relation` phrase Jira
+    shows for it. JSON and YAML carry a list (empty when there are none); the
+    detail table shows one line per link. Linked issues are not fetched.
 - Ansible
   - `graph --contains OWNER/REPO` (repeatable) reports the roots whose
     downstream graph contains a repository: one `ansible.dependency_match`
