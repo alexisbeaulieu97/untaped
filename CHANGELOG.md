@@ -26,6 +26,15 @@
   - `job-templates list` and `get` accept `--with-scm`, adding `scm_url`,
     `effective_scm_ref` and `project_allow_override` from each template's
     project (read once per distinct project).
+- Ansible
+  - `graph --contains OWNER/REPO` (repeatable) reports the roots whose
+    downstream graph contains a repository: one `ansible.dependency_match`
+    row per match with the root, the matched repo, the ref exactly as
+    declared, the dependency file and the shortest path. Roots come from
+    `TARGET` or `--stdin` (`owner/repo@ref` lines, or pipe records carrying
+    `scm_url`/`effective_scm_ref` such as `awx job-templates list --with-scm
+    --format pipe`). Supports `--format table|json|pipe`; single-target
+    `tree`/`mermaid` output is unchanged.
 
 ## 7.1.0
 
