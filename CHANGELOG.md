@@ -23,6 +23,9 @@
     write; warn about what AWX will not copy; and emit `awx.copy_outcome`,
     which `--stdin` selection of the same kind (for example `patch --stdin`)
     accepts. `copy` joins the conventions' write verbs.
+  - `job-templates list` and `get` accept `--with-scm`, adding `scm_url`,
+    `effective_scm_ref` and `project_allow_override` from each template's
+    project (read once per distinct project).
 
 ## 7.1.0
 
