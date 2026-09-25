@@ -7,6 +7,7 @@ from untaped.capabilities.awx.domain.outcomes import (
     BatchResult,
     CopyOutcome,
     FieldChange,
+    RenameOutcome,
     SaveOutcome,
 )
 from untaped.capabilities.awx.domain.payloads import ActionPayload, ServerRecord, WritePayload
@@ -34,6 +35,7 @@ __all__ = [
     "JobEvent",
     "Metadata",
     "PingStatus",
+    "RenameOutcome",
     "Resource",
     "ResourceSpec",
     "SaveOutcome",

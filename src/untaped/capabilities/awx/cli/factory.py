@@ -21,6 +21,7 @@ from untaped.capabilities.awx.cli._edit import _add_edit
 from untaped.capabilities.awx.cli._get import _add_get
 from untaped.capabilities.awx.cli._list import _add_list
 from untaped.capabilities.awx.cli._patch import _add_patch
+from untaped.capabilities.awx.cli._rename import _add_rename
 from untaped.capabilities.awx.cli._save import _add_save
 from untaped.capabilities.awx.cli._sync import _add_sync
 from untaped.capabilities.awx.cli.launch import _add_launch
@@ -51,6 +52,8 @@ def make_resource_app(spec: AwxResourceSpec) -> App:
         _add_delete(app, spec)
     if "copy" in spec.commands:
         _add_copy(app, spec)
+    if "rename" in spec.commands:
+        _add_rename(app, spec)
     for action in spec.actions:
         builder = ACTION_BUILDERS.get(action.name)
         if builder is not None:

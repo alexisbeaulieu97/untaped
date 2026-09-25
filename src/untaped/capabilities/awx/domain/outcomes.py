@@ -138,6 +138,22 @@ class CopyOutcome(OutcomeRecord):
     detail: str | None = None
 
 
+class RenameOutcome(OutcomeRecord):
+    """One ``rename`` row: the resource (``id``), its new and previous names.
+
+    ``kind`` is the resource kind (``JobTemplate``), so ``patch --stdin`` on
+    that kind selects the renamed resource by ``id``. ``action`` is
+    ``planned``, ``renamed`` (the re-read shows the new name) or ``failed``.
+    """
+
+    id: int
+    name: str
+    old_name: str
+    kind: str
+    action: str
+    detail: str | None = None
+
+
 class DeleteReceipt(BaseModel):
     """A successful DELETE acknowledges removal or asynchronous acceptance."""
 
