@@ -246,6 +246,30 @@ What an export cannot carry:
   where the file is applied.
 - **Workflow graphs.** A workflow template export has no nodes or edges.
 
+## Copy templates
+
+`copy` asks AWX to copy one job or workflow template under a new name, in the
+source's organization:
+
+```bash
+untaped awx job-templates copy Deploy --name "Deploy next" --organization Default --dry-run
+untaped awx job-templates copy Deploy --name "Deploy next" --format pipe --yes \
+  | untaped awx job-templates patch --stdin --set scm_branch=main --dry-run
+```
+
+The source is selected like any other single target (name plus scope, or
+`--by-id`). Before any write, `copy` refuses a name already used in the
+source's scope, the source's own name, and a source AWX reports it cannot
+copy (`can_copy: false`). When AWX reports it cannot copy everything without
+user input (workflow templates referencing templates, credentials or
+inventories the caller cannot use), the preview warns about each part it
+will leave behind, and the outcome lists them in `not_carried`. The copy
+previews and confirms like other writes, and `--dry-run` never writes.
+
+The `awx.copy_outcome` record (`id`, `name`, `source_id`, `kind`, `action`,
+`not_carried`) names the new template. `patch`, `delete`, `launch` and the other
+`--stdin` selections of the same kind accept it.
+
 ## Launch templates
 
 `launch` submits job or workflow templates. `--extra-vars` is repeatable and
