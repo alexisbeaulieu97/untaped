@@ -6,6 +6,7 @@ from typing import Annotated
 
 from cyclopts import Parameter
 
+from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capability_api import (
     DryRunOption,
     StdinOption,
@@ -132,3 +133,14 @@ __all__ = [
     "YesOption",
     "resolve_max_depth",
 ]
+
+
+WITH_SCM_HELP = (
+    "Add scm_url, effective_scm_ref (the template's scm_branch when set and its "
+    "project allows the override, else the project's) and project_allow_override."
+)
+
+
+def offers_with_scm(spec: ResourceSpec) -> bool:
+    """``--with-scm`` applies to kinds that run a project's playbook."""
+    return any(ref.field == "project" and ref.kind == "Project" for ref in spec.fk_refs)

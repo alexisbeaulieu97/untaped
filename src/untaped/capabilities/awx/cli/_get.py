@@ -5,18 +5,19 @@ Also owns ``default_get_columns`` — the public helper shared with
 projects records the same way as factory-built ``get``.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
 from untaped.capabilities.awx.application.mutation_values import redact_value
+from untaped.capabilities.awx.application.template_scm import SCM_FIELDS
+from untaped.capabilities.awx.application.template_scm import with_scm as add_scm_fields
 from untaped.capabilities.awx.cli._selection import select_resources
 from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.names import flatten_fks
 from untaped.capabilities.awx.cli.options import (
+    WITH_SCM_HELP,
     AllOption,
     ByIdOption,
     FilterOption,
@@ -27,6 +28,7 @@ from untaped.capabilities.awx.cli.options import (
     ParentOption,
     SearchOption,
     StdinOption,
+    offers_with_scm,
 )
 from untaped.capabilities.awx.cli.pipe import pipe_kind_for_spec
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
@@ -41,6 +43,7 @@ from untaped.capability_api import (
 
 
 def _add_get(app: App, spec: AwxResourceSpec) -> None:
+    # Resolved lazily by cyclopts (PEP 649), so ``show`` can read ``spec``.
     @app.command(name="get")
     def get_command(
         names: NamesArgument = None,
@@ -63,12 +66,20 @@ def _add_get(app: App, spec: AwxResourceSpec) -> None:
                 help="Replace FK ids with names from summary_fields.",
             ),
         ] = False,
+        with_scm: Annotated[
+            bool,
+            Parameter(
+                name="--with-scm", negative="", show=offers_with_scm(spec), help=WITH_SCM_HELP
+            ),
+        ] = False,
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
         """Fetch one or more resources by name, or by explicit AWX id."""
         if not names and not stdin and not filter_ and search is None and not all_:
             raise_usage("provide names, --stdin, filters/search, or --all")
+        if with_scm and not offers_with_scm(spec):
+            raise_usage(f"--with-scm is not available for {spec.cli_name}")
         with report_errors(), open_context() as ctx:
             selected = select_resources(
                 ctx,
@@ -86,8 +97,16 @@ def _add_get(app: App, spec: AwxResourceSpec) -> None:
                 parent=parent,
             )
             records = [item.record for item in selected]
+            if with_scm:
+                records = add_scm_fields(
+                    records,
+                    client=ctx.repo,
+                    catalog=ctx.catalog,
+                    warn=lambda msg: ctx.progress_ui().message("warning", msg),
+                )
         if records:
-            cols = list(columns) if columns else default_get_columns(fmt, spec.list_columns)
+            default_cols = (*spec.list_columns, *SCM_FIELDS) if with_scm else spec.list_columns
+            cols = list(columns) if columns else default_get_columns(fmt, default_cols)
             if with_names:
                 # ``cols`` may be ``None`` for non-table formats — that's
                 # fine; ``flatten_fks`` then only flattens declared fk_refs.
