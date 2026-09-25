@@ -161,4 +161,3 @@ A suite that refers to a template by name has no spec to render. With
   overlay files beside the spec?
 - Should workflow templates be in scope, given that their node graphs do not
   round-trip yet?
-
