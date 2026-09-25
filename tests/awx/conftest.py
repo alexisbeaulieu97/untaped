@@ -58,6 +58,9 @@ class FakeAap:
         self.forbidden_associate_ids: set[int] = set()
         # Execution ids whose ``cancel/`` POST AWX refuses (405 once finished).
         self.refuse_cancel_ids: set[int] = set()
+        # ``GET <template>/<id>/copy/`` answers per (api_path, id); default
+        # ``{"can_copy": true}`` like AWX's job template copy check.
+        self.copy_checks: dict[tuple[str, int], dict[str, Any]] = {}
         self.mask_secret_write_response = False
         self.enrich_survey_spec_response = False
 
@@ -111,6 +114,12 @@ class FakeAap:
                 survey = copy.deepcopy(record.get("survey_spec") or {})
                 _mask_survey_defaults(survey)
                 return httpx.Response(200, json=survey)
+            if len(parts) == 3 and parts[1].isdigit() and parts[2] == "copy":
+                if int(parts[1]) not in self.store.get(parts[0], {}):
+                    return _err(404, f"{path} not found")
+                return httpx.Response(
+                    200, json=self.copy_checks.get((parts[0], int(parts[1])), {"can_copy": True})
+                )
             if len(parts) == 3 and parts[1].isdigit() and parts[2] == "stdout":
                 return self._stdout(parts[0], int(parts[1]), params)
             if len(parts) == 3 and parts[1].isdigit():
@@ -122,6 +131,8 @@ class FakeAap:
                 return self._create(parts[0], body)
             if len(parts) == 3 and parts[1].isdigit() and parts[2] == "survey_spec":
                 return self._post_survey(parts[0], int(parts[1]), body)
+            if len(parts) == 3 and parts[1].isdigit() and parts[2] == "copy":
+                return self._copy(parts[0], int(parts[1]), body)
             if (
                 len(parts) == 3
                 and parts[0] in _EXECUTION_SUBPATHS
@@ -216,6 +227,26 @@ class FakeAap:
             return _err(404, f"{api_path}/{id_}/ not found")
         record.update(self._write_body(api_path, body))
         return httpx.Response(200, json=_public(api_path, record))
+
+    def _copy(self, api_path: str, id_: int, body: dict[str, Any]) -> httpx.Response:
+        """``POST <kind>/<id>/copy/``: a new record with the source's fields and members."""
+        record = self.store.get(api_path, {}).get(id_)
+        if record is None:
+            return _err(404, f"{api_path}/{id_}/copy/ not found")
+        if not self.copy_checks.get((api_path, id_), {"can_copy": True}).get("can_copy"):
+            return _err(403, "You do not have permission to perform this action.")
+        name = body.get("name") or f"{record.get('name')} copy"
+        if name == record.get("name"):
+            return _err(400, "a copy cannot have the same name")
+        self.actions_called.append((api_path, id_, "copy", body))
+        new_id = self._next_id
+        self._next_id += 1
+        copied = {**copy.deepcopy(record), "id": new_id, "name": name}
+        self.store[api_path][new_id] = copied
+        for (parent, parent_id, sub), members in list(self.memberships.items()):
+            if parent == api_path and parent_id == id_:
+                self.memberships[(parent, new_id, sub)] = set(members)
+        return httpx.Response(201, json=_public(api_path, copied))
 
     def _post_survey(self, api_path: str, id_: int, body: dict[str, Any]) -> httpx.Response:
         """``POST <template>/<id>/survey_spec/``: AWX's ``$encrypted$`` rules.
