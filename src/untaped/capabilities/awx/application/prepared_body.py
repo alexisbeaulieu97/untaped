@@ -65,11 +65,19 @@ class BodyOperations:
                 "declare in spec.secret_paths to silence"
             )
         if existing is None and preserved:
-            raise BadRequestError(
-                f"{spec.kind} {resource.metadata.name!r} has placeholder secrets "
-                f"at {', '.join(preserved)}; provide real values or pre-create "
-                "the resource in AWX first"
-            )
+            required = [path for path in preserved if path not in spec.optional_secret_paths]
+            if required:
+                raise BadRequestError(
+                    f"{spec.kind} {resource.metadata.name!r} has placeholder secrets "
+                    f"at {', '.join(required)}; provide real values or pre-create "
+                    "the resource in AWX first"
+                )
+            for path in dict.fromkeys(preserved):
+                self._warn(
+                    f"{spec.kind} {resource.metadata.name!r}: {path} placeholders "
+                    "dropped; the new resource starts without those secrets"
+                )
+            preserved = []
         preserved_fields, conflicts = self._secret_policy.partition(
             write_payload=write_payload, existing=existing, preserved=preserved
         )

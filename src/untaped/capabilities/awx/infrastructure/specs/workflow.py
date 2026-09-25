@@ -39,6 +39,7 @@ WORKFLOW_JOB_TEMPLATE_SPEC = AwxResourceSpec(
         "webhook_service",
         "webhook_credential",
         "webhook_key",
+        "labels",
     ),
     read_only_fields=(
         *UNIVERSAL_READ_ONLY,
@@ -51,9 +52,18 @@ WORKFLOW_JOB_TEMPLATE_SPEC = AwxResourceSpec(
     fk_refs=(
         FkRef(field="organization", kind="Organization"),
         FkRef(field="inventory", kind="Inventory", scope_field="organization"),
+        FkRef(
+            field="labels",
+            kind="Label",
+            scope_field="organization",
+            multi=True,
+            sub_endpoint="labels",
+        ),
     ),
     launch_fk_refs=(FkRef(field="labels", kind="Label", scope_field="organization", multi=True),),
-    secret_paths=("webhook_key", "survey_spec.spec.*.default"),
+    sub_document_fields=("survey_spec",),
+    secret_paths=("webhook_key", "survey_spec.spec.*[type=password].default"),
+    optional_secret_paths=("survey_spec.spec.*[type=password].default",),
     actions=(
         ActionSpec(
             name="launch",

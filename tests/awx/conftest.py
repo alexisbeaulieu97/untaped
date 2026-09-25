@@ -107,7 +107,10 @@ class FakeAap:
                 record = self.store.get(parts[0], {}).get(int(parts[1]))
                 if record is None:
                     return _err(404, f"{path} not found")
-                return httpx.Response(200, json=record.get("survey_spec") or {})
+                # Like AWX's ``display_survey_spec``: password defaults masked.
+                survey = copy.deepcopy(record.get("survey_spec") or {})
+                _mask_survey_defaults(survey)
+                return httpx.Response(200, json=survey)
             if len(parts) == 3 and parts[1].isdigit() and parts[2] == "stdout":
                 return self._stdout(parts[0], int(parts[1]), params)
             if len(parts) == 3 and parts[1].isdigit():
@@ -117,6 +120,8 @@ class FakeAap:
         elif method == "POST":
             if len(parts) == 1:
                 return self._create(parts[0], body)
+            if len(parts) == 3 and parts[1].isdigit() and parts[2] == "survey_spec":
+                return self._post_survey(parts[0], int(parts[1]), body)
             if (
                 len(parts) == 3
                 and parts[0] in _EXECUTION_SUBPATHS
@@ -141,6 +146,12 @@ class FakeAap:
             if len(parts) == 2 and parts[1].isdigit():
                 return self._update(parts[0], int(parts[1]), body)
         elif method == "DELETE":
+            if len(parts) == 3 and parts[1].isdigit() and parts[2] == "survey_spec":
+                record = self.store.get(parts[0], {}).get(int(parts[1]))
+                if record is None:
+                    return _err(404, f"{path} not found")
+                record["survey_spec"] = {}
+                return httpx.Response(200, json={})
             if len(parts) == 2 and parts[1].isdigit():
                 return self._delete(parts[0], int(parts[1]))
         return _err(404, f"no fake handler for {method} {path}")
@@ -151,7 +162,7 @@ class FakeAap:
         page = int(params.get("page", "1"))
         page_size = int(params.get("page_size", "200"))
         start = (page - 1) * page_size
-        page_records = records[start : start + page_size]
+        page_records = [_public(api_path, r) for r in records[start : start + page_size]]
         next_url: str | None = None
         if start + page_size < len(records):
             next_url = f"{self.api_prefix}{api_path}/?page={page + 1}&page_size={page_size}"
@@ -169,7 +180,7 @@ class FakeAap:
         record = self.store.get(api_path, {}).get(id_)
         if record is None:
             return _err(404, f"{api_path}/{id_}/ not found")
-        return httpx.Response(200, json=record)
+        return httpx.Response(200, json=_public(api_path, record))
 
     def _stdout(self, api_path: str, id_: int, params: dict[str, str]) -> httpx.Response:
         """Plain-text stdout endpoint (e.g. ``jobs/<id>/stdout/``).
@@ -197,20 +208,50 @@ class FakeAap:
         self._next_id += 1
         record = {"id": new_id, **self._write_body(api_path, body)}
         self.store[api_path][new_id] = record
-        return httpx.Response(201, json=record)
+        return httpx.Response(201, json=_public(api_path, record))
 
     def _update(self, api_path: str, id_: int, body: dict[str, Any]) -> httpx.Response:
         record = self.store.get(api_path, {}).get(id_)
         if record is None:
             return _err(404, f"{api_path}/{id_}/ not found")
         record.update(self._write_body(api_path, body))
-        return httpx.Response(200, json=record)
+        return httpx.Response(200, json=_public(api_path, record))
+
+    def _post_survey(self, api_path: str, id_: int, body: dict[str, Any]) -> httpx.Response:
+        """``POST <template>/<id>/survey_spec/``: AWX's ``$encrypted$`` rules.
+
+        A password default of ``$encrypted$`` keeps the stored default and
+        is refused when none exists; any other placeholder use is refused.
+        """
+        record = self.store.get(api_path, {}).get(id_)
+        if record is None:
+            return _err(404, f"{api_path}/{id_}/survey_spec/ not found")
+        old = {
+            q.get("variable"): q
+            for q in (record.get("survey_spec") or {}).get("spec") or []
+            if isinstance(q, dict)
+        }
+        survey = copy.deepcopy(body)
+        for question in survey.get("spec") or []:
+            if question.get("default") != "$encrypted$":
+                continue
+            previous = old.get(question.get("variable"), {})
+            if question.get("type") != "password" or "default" not in previous:
+                return _err(400, "$encrypted$ is a reserved keyword")
+            question["default"] = previous["default"]
+        if self.enrich_survey_spec_response:
+            survey = _enrich_survey_spec(survey)
+        record["survey_spec"] = survey
+        return httpx.Response(200)
 
     def _write_body(self, api_path: str, body: dict[str, Any]) -> dict[str, Any]:
         stored = {
             key: copy.deepcopy(value)
             for key, value in body.items()
             if key not in self.ignored_write_fields
+            # AWX's template serializers have no survey_spec field: a record
+            # write ignores it; only ``<id>/survey_spec/`` changes the survey.
+            and not (key == "survey_spec" and api_path in _SURVEY_PATHS)
         }
         if self.enrich_survey_spec_response and "survey_spec" in stored:
             stored["survey_spec"] = _enrich_survey_spec(stored["survey_spec"])
@@ -670,6 +711,16 @@ def _numeric_compare(
         return False
 
 
+_SURVEY_PATHS = {"job_templates", "workflow_job_templates"}
+
+
+def _public(api_path: str, record: dict[str, Any]) -> dict[str, Any]:
+    """A record as AWX serializes it: templates never carry ``survey_spec``."""
+    if api_path in _SURVEY_PATHS and "survey_spec" in record:
+        return {k: v for k, v in record.items() if k != "survey_spec"}
+    return record
+
+
 def _enrich_survey_spec(value: Any) -> Any:
     enriched = copy.deepcopy(value)
     if not isinstance(enriched, dict):
@@ -694,7 +745,11 @@ def _mask_survey_defaults(value: Any) -> None:
     if not isinstance(questions, list):
         return
     for question in questions:
-        if isinstance(question, dict) and "default" in question:
+        if (
+            isinstance(question, dict)
+            and question.get("type") == "password"
+            and question.get("default") not in (None, "")
+        ):
             question["default"] = "$encrypted$"
 
 

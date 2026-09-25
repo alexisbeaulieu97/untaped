@@ -13,7 +13,8 @@ exercised against any kind without depending on AWX-specific transport.
 
 from __future__ import annotations
 
-from typing import Literal
+from collections.abc import Mapping
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -138,6 +139,13 @@ class ResourceSpec(BaseModel):
     ``instance_groups``). Used by the test runner's name resolver.
     """
     secret_paths: tuple[str, ...] = ()
+    optional_secret_paths: tuple[str, ...] = ()
+    """Subset of ``secret_paths`` a create may leave unset.
+
+    A ``$encrypted$`` placeholder at one of these paths is dropped with a
+    warning when the resource does not exist yet (a survey's password
+    default), instead of refusing the create.
+    """
     structured_text_fields: tuple[str, ...] = ()
     """Explicit YAML/JSON mapping fields encoded as text at the HTTP boundary."""
     server_enriched_fields: tuple[str, ...] = ()
@@ -146,6 +154,13 @@ class ResourceSpec(BaseModel):
     These are narrow, explicit exceptions to the exact replacement contract;
     an omitted field or extra server key remains a verification failure for
     every other user-owned map and sequence.
+    """
+    sub_document_fields: tuple[str, ...] = ()
+    """Top-level fields AWX keeps behind their own ``<id>/<field>/`` endpoint.
+
+    The record itself never carries them (e.g. a template's ``survey_spec``),
+    so list rows lack them; a single-record read fills them in and a write
+    sends them to that endpoint instead of the record body.
     """
     actions: tuple[ActionSpec, ...] = ()
     singleton_parent: bool = False
@@ -166,6 +181,13 @@ class ResourceSpec(BaseModel):
     infrastructure adapter) maps it to a concrete :class:`ApplyStrategy`."""
     fidelity: Fidelity = "full"
     fidelity_note: str | None = None
+
+    @model_validator(mode="after")
+    def _optional_secrets_are_secrets(self) -> ResourceSpec:
+        extra = set(self.optional_secret_paths) - set(self.secret_paths)
+        if extra:
+            raise ValueError(f"optional_secret_paths not in secret_paths: {sorted(extra)}")
+        return self
 
     @property
     def known_fields(self) -> frozenset[str]:
@@ -196,3 +218,7 @@ class ResourceSpec(BaseModel):
             | frozenset(self.identity_keys)
             | ({self.parent_field} if self.parent_field else frozenset())
         )
+
+    def lacks_sub_documents(self, record: Mapping[str, Any]) -> bool:
+        """Whether ``record`` (e.g. a list row) is missing a sub-document field."""
+        return any(field not in record for field in self.sub_document_fields)

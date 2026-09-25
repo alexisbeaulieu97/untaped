@@ -76,7 +76,9 @@ class SaveResource:
 
     def snapshot_from_record(self, spec: ResourceSpec, record: dict[str, Any]) -> ResourceSnapshot:
         """Capture display labels and their original IDs without a second member read."""
-        if is_constructed_inventory(spec.kind, record):
+        if is_constructed_inventory(spec.kind, record) or (
+            spec.lacks_sub_documents(record) and isinstance(record.get("id"), int)
+        ):
             record = self._client.get(spec, int(record["id"])).model_dump()
         fk_ids = {
             ref.field: copy.deepcopy(record[ref.field])

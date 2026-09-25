@@ -163,3 +163,50 @@ def test_low_level_delete_returns_status(awx_config: AwxSettings) -> None:
         mock.delete("/api/v2/inventories/7/").mock(return_value=httpx.Response(202))
         with AwxClient(awx_config) as awx:
             assert awx.delete("inventories/7/") == 202
+
+
+def test_get_fills_in_endpoint_backed_survey(awx_config: AwxSettings) -> None:
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        mock.get("/api/v2/job_templates/7/").mock(
+            return_value=httpx.Response(200, json={"id": 7, "name": "deploy"})
+        )
+        mock.get("/api/v2/job_templates/7/survey_spec/").mock(
+            return_value=httpx.Response(200, json={"name": "s", "spec": []})
+        )
+        with AwxClient(awx_config) as awx:
+            record = ResourceRepository(awx).get(JOB_TEMPLATE_SPEC, 7)
+    assert record.model_dump()["survey_spec"] == {"name": "s", "spec": []}
+
+
+def test_writes_route_survey_to_its_endpoint(awx_config: AwxSettings) -> None:
+    from untaped.capabilities.awx.domain import WritePayload
+
+    survey = {"name": "s", "description": "", "spec": [{"variable": "a", "type": "text"}]}
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        create = mock.post("/api/v2/job_templates/").mock(
+            return_value=httpx.Response(201, json={"id": 7, "name": "deploy"})
+        )
+        patch = mock.patch("/api/v2/job_templates/7/").mock(
+            return_value=httpx.Response(200, json={"id": 7, "name": "deploy"})
+        )
+        post_survey = mock.post("/api/v2/job_templates/7/survey_spec/").mock(
+            return_value=httpx.Response(200)
+        )
+        clear = mock.delete("/api/v2/job_templates/7/survey_spec/").mock(
+            return_value=httpx.Response(200, json={})
+        )
+        mock.get("/api/v2/job_templates/7/survey_spec/").mock(
+            return_value=httpx.Response(200, json=survey)
+        )
+        with AwxClient(awx_config) as awx:
+            repo = ResourceRepository(awx)
+            created = repo.create(
+                JOB_TEMPLATE_SPEC, WritePayload(name="deploy", survey_spec=survey)
+            )
+            repo.update(JOB_TEMPLATE_SPEC, 7, WritePayload(description="x", survey_spec={}))
+
+    assert b"survey_spec" not in create.calls[0].request.content
+    assert b"survey_spec" not in patch.calls[0].request.content
+    assert post_survey.call_count == 1
+    assert clear.call_count == 1
+    assert created.model_dump()["survey_spec"] == survey

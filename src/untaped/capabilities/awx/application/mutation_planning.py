@@ -243,6 +243,11 @@ class MutationPlanner:
                     found = strategy.find_existing(
                         spec, fixed_identity, client=self._client, fk=resolver
                     )
+                if found is not None and spec.lacks_sub_documents(found):
+                    # List rows omit endpoint-backed fields (a survey); diff
+                    # against the complete record.
+                    current = as_dict(found)
+                    found = {**as_dict(self._client.get(spec, int(current["id"]))), **current}
                 if found is not None and mode != "edit":
                     found = strategy.snapshot_existing(spec, found, client=self._client)
                 spec, found = strategy.prepare_state(
