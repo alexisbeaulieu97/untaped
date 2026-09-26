@@ -1,7 +1,7 @@
 """RunTestSuite: load → plan → prefetch → resolve → launch+wait.
 
-With a :class:`Canceller`, a case that times out and every unfinished
-execution left by Ctrl-C is cancelled, so agents never leave jobs behind.
+With a :class:`Canceller`, every execution the run stops watching before it
+ends (timeout, polling error, Ctrl-C) is cancelled rather than left running.
 
 Resolution finishes in the main thread before any worker is spawned so
 the launch+wait pool only sees fully-baked, immutable launch dicts —
@@ -25,6 +25,7 @@ from untaped.capabilities.awx.application.suites.ports import (
 )
 from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
 from untaped.capabilities.awx.domain import Job, ResourceSpec
+from untaped.capabilities.awx.domain.job import still_running_detail
 from untaped.capabilities.awx.domain.suite import (
     Case,
     CaseResult,
@@ -78,11 +79,11 @@ class RunTestSuite:
         self._clock = clock
         self._stop = stop
         self._cancel = canceller
-        """``None`` leaves timed-out and interrupted executions running."""
+        """``None`` leaves executions the run stops watching still running."""
         self.launched: list[Job] = []
         """Executions submitted so far (for reporting after an interrupt)."""
-        self.cancelled: list[Job] = []
-        """Executions a Ctrl-C cancel was accepted for."""
+        self.cancelled: set[tuple[str, int]] = set()
+        """``(kind, id)`` of executions whose cancel AWX accepted."""
         self._finals: dict[tuple[str, int], Job] = {}
 
     def __call__(
@@ -118,16 +119,20 @@ class RunTestSuite:
         return [self._finals.get((job.kind, job.id), job) for job in self.launched]
 
     def _cancel_unfinished(self) -> None:
-        if self._cancel is None:
-            return
         for job in self.known_executions():
-            if job.is_terminal:
-                continue
-            try:
-                self._cancel(job)
-            except Exception:
-                continue
-            self.cancelled.append(job)
+            if not job.is_terminal and (job.kind, job.id) not in self.cancelled:
+                self._abandon(job)
+
+    def _abandon(self, job: Job) -> str:
+        """Cancel an execution the run stops watching; say what became of it."""
+        if self._cancel is None:
+            return "it keeps running"
+        try:
+            self._cancel(kind=job.kind, job_id=job.id)
+        except Exception as exc:
+            return f"cancel failed: {exc}"
+        self.cancelled.add((job.kind, job.id))
+        return "cancel requested"
 
     def _build_plan(
         self,
@@ -222,26 +227,28 @@ class RunTestSuite:
                 result="error",
                 job_id=job.id,
                 duration_s=self._clock() - started_clock,
-                failure_reason=str(exc),
+                failure_reason=f"{exc}; {self._abandon(job)}",
             )
-        result = _classify(item.suite_name, item.case_name, final, self._clock() - started_clock)
-        if result.result == "timeout":
-            result = result.model_copy(update={"failure_reason": self._timed_out(final, timeout)})
-        return result
-
-    def _timed_out(self, job: Job, timeout: float | None) -> str:
-        """Cancel a timed-out execution (when enabled) and describe what happened."""
-        reason = f"still running after {timeout:g}s" if timeout is not None else "still running"
-        if self._cancel is None:
-            return f"{reason}; it keeps running"
-        try:
-            self._cancel(job)
-        except Exception as exc:
-            return f"{reason}; cancel failed: {exc}"
-        return f"{reason}; cancel requested"
+        if final.is_terminal:
+            return _classify(item.suite_name, item.case_name, final, self._clock() - started_clock)
+        reason = f"{still_running_detail(final, timeout)}; {self._abandon(final)}"
+        return _classify(
+            item.suite_name,
+            item.case_name,
+            final,
+            self._clock() - started_clock,
+            failure_reason=reason,
+        )
 
 
-def _classify(suite_name: str, case_name: str, job: Job, duration_s: float) -> CaseResult:
+def _classify(
+    suite_name: str,
+    case_name: str,
+    job: Job,
+    duration_s: float,
+    *,
+    failure_reason: str | None = None,
+) -> CaseResult:
     if not job.is_terminal:
         return CaseResult(
             suite=suite_name,
@@ -252,6 +259,7 @@ def _classify(suite_name: str, case_name: str, job: Job, duration_s: float) -> C
             duration_s=duration_s,
             started_at=job.started,
             finished_at=job.finished,
+            failure_reason=failure_reason,
         )
     result: CaseStatus = "pass" if job.status == "successful" else "fail"
     return CaseResult(

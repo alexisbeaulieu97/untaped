@@ -49,7 +49,7 @@ class TailJobLogs:
         pattern: Pattern[str] | None,
         tail: int | None,
     ) -> Iterator[str]:
-        existing = self._monitor.fetch_stdout(job, start_line=0)
+        existing = self._monitor.fetch_stdout(job)
         cursor = len(existing)
         historical: Iterable[str]
         if tail is None:

@@ -5,9 +5,10 @@
 - AWX
   - **Behavior change:** `test run` now waits at most 30 minutes per case by
     default (`awx.test_timeout`) and runs 4 cases at once by default
-    (`awx.test_parallel`). A case that times out, and every unfinished job
-    left by Ctrl-C, is cancelled; `--no-cancel` leaves them running. A
-    timed-out row's `failure_reason` says whether the cancel was requested.
+    (`awx.test_parallel`). A job the run stops watching (timeout, polling
+    error, Ctrl-C) is cancelled; `--no-cancel` leaves it running. The row's
+    `failure_reason` says whether the cancel was requested, and Ctrl-C lists
+    cancelled jobs without a `jobs wait` hint. `--timeout` must be positive.
   - **Fix:** `jobs logs` and `test run --show-logs` download the full log
     (`format=txt_download`), so large jobs no longer print AWX's "too large
     to display" notice instead of their output.

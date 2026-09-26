@@ -536,11 +536,12 @@ untaped awx test run tests/awx/deploy-smoke.yml --case web --non-interactive
 - A variable without a default is required: pass `--var`, `--vars-file`, or
   answer the prompt. `--non-interactive` fails instead of prompting.
 - `run` exits 1 unless at least one case ran and every case passed.
-- Each case waits `--timeout` seconds (default `awx.test_timeout`, 30
-  minutes) and `--parallel` cases run at once (default `awx.test_parallel`,
-  4). A case still running at its timeout is reported as `timeout` and its job
-  is cancelled; Ctrl-C cancels every unfinished job too. `--no-cancel` leaves
-  them running.
+- Each case waits `--timeout` seconds (a positive number; default
+  `awx.test_timeout`, 30 minutes) and `--parallel` cases run at once (default
+  `awx.test_parallel`, 4). A case still running at its timeout is reported as
+  `timeout` and its job is cancelled. A polling error or Ctrl-C cancels the
+  job too; `failure_reason` says what happened to it. `--no-cancel` leaves
+  jobs running.
 
 ## Confirmations, failures, and integrity
 

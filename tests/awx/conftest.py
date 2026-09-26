@@ -194,22 +194,14 @@ class FakeAap:
         return httpx.Response(200, json=_public(api_path, record))
 
     def _stdout(self, api_path: str, id_: int, params: dict[str, str]) -> httpx.Response:
-        """Plain-text stdout endpoint (e.g. ``jobs/<id>/stdout/``).
+        """Plain-text stdout endpoint (e.g. ``jobs/<id>/stdout/``): the whole log.
 
-        Honours AWX's ``start_line`` query param except for the
-        ``*_download`` formats, which (like AWX) always return the whole log.
+        Like AWX's ``txt``/``txt_download`` formats, ``start_line`` is ignored.
         """
         record = self.store.get(api_path, {}).get(id_)
         if record is None:
             return _err(404, f"{api_path}/{id_}/stdout/ not found")
         text = str(record.get("stdout", ""))
-        try:
-            start_line = int(params.get("start_line", "0"))
-        except ValueError:
-            start_line = 0
-        if start_line > 0 and not params.get("format", "").endswith("_download"):
-            lines = text.splitlines(keepends=True)
-            text = "".join(lines[start_line:])
         return httpx.Response(200, text=text, headers={"content-type": "text/plain"})
 
     def _create(self, api_path: str, body: dict[str, Any]) -> httpx.Response:

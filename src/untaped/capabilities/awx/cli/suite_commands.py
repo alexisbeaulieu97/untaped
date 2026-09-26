@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -155,23 +155,20 @@ def run_command(
     var: _VAR_OPT = None,
     vars_file: _VARS_FILE_OPT = None,
     non_interactive: _NON_INTERACTIVE_OPT = False,
-    parallel: Annotated[
-        ParallelOption | None,
-        Parameter(help="Maximum number of concurrent launches (default: awx.test_parallel)."),
-    ] = None,
+    parallel: ParallelOption | None = None,
     timeout: Annotated[
         float | None,
         Parameter(
             name="--timeout",
             help="Seconds each case waits before its job is cancelled (default: awx.test_timeout).",
-            validator=Number(gte=0),
+            validator=Number(gt=0),
         ),
     ] = None,
     cancel: Annotated[
         bool,
         Parameter(
             name="--cancel",
-            help="Cancel a case's job on timeout, and unfinished jobs on Ctrl-C.",
+            help="Cancel jobs the run stops watching (timeout, polling error, Ctrl-C).",
         ),
     ] = True,
     show_logs: Annotated[
@@ -219,7 +216,7 @@ def run_command(
             fk_prefetcher=ctx.fk,
             jt_scope=_jt_scope(ctx, spec),
             stop=ctx.stop,
-            canceller=_canceller(ctx) if cancel else None,
+            canceller=ctx.jobs.cancel if cancel else None,
         )
         try:
             outcome = runner(
@@ -231,7 +228,7 @@ def run_command(
         except KeyboardInterrupt:
             report_interrupted(
                 [(None, job) for job in runner.known_executions()],
-                cancelled={(job.kind, job.id) for job in runner.cancelled},
+                cancelled=runner.cancelled,
             )
 
         if show_logs:
@@ -247,13 +244,6 @@ def run_command(
             kind="awx.test_result",
         )
         finish(outcome.exit_code() != 0)
-
-
-def _canceller(ctx: AwxContext) -> Callable[[Job], None]:
-    def cancel(job: Job) -> None:
-        ctx.jobs.cancel(kind=job.kind, job_id=job.id)
-
-    return cancel
 
 
 def _print_failure_logs(ctx: AwxContext, suite: str, case: str, job_id: int) -> None:

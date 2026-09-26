@@ -24,15 +24,13 @@ class _FakeMonitor:
     ) -> None:
         self.existing = list(existing or [])
         self.live = list(live or [])
-        self.fetch_stdout_calls: list[int] = []
         self.stream_stdout_calls: list[int] = []
 
     def fetch(self, job: Job) -> Job:
         return job
 
-    def fetch_stdout(self, job: Job, *, start_line: int = 0) -> list[str]:
-        self.fetch_stdout_calls.append(start_line)
-        return self.existing[start_line:]
+    def fetch_stdout(self, job: Job) -> list[str]:
+        return list(self.existing)
 
     def stream_stdout(self, job: Job, *, start_line: int = 0) -> Iterator[str]:
         self.stream_stdout_calls.append(start_line)
