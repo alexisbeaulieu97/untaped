@@ -368,3 +368,97 @@ def test_list_dumps_cases_in_json(cli: CliInvoker, fake_aap: FakeAap, tmp_path: 
     assert result.exit_code == 0, result.stderr or result.output
     out = result.stdout
     assert "a" in out and "b" in out
+
+
+def _smoke(tmp_path: Path) -> Path:
+    return _write(
+        tmp_path / "smoke.yml",
+        "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\ncases:\n  c:\n    launch: {}\n",
+    )
+
+
+def _cancelled_ids(fake: FakeAap) -> list[int]:
+    return [id_ for path, id_, action, _ in fake.actions_called if action == "cancel"]
+
+
+def test_run_timeout_cancels_the_job(cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path) -> None:
+    _seed_jt(fake_aap)
+    fake_aap.next_action_status = "running"
+
+    result = cli.invoke(
+        app, ["test", "run", str(_smoke(tmp_path)), "--timeout", "0", "--format", "json"]
+    )
+
+    assert result.exit_code == 1, result.output
+    [row] = json.loads(result.stdout)
+    assert row["result"] == "timeout"
+    assert row["failure_reason"] == "still running after 0s; cancel requested"
+    assert _cancelled_ids(fake_aap) == [row["job_id"]]
+
+
+def test_run_no_cancel_leaves_a_timed_out_job_running(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+    fake_aap.next_action_status = "running"
+
+    result = cli.invoke(
+        app,
+        ["test", "run", str(_smoke(tmp_path)), "--timeout", "0", "--no-cancel", "-f", "json"],
+    )
+
+    assert result.exit_code == 1, result.output
+    [row] = json.loads(result.stdout)
+    assert row["failure_reason"] == "still running after 0s; it keeps running"
+    assert _cancelled_ids(fake_aap) == []
+
+
+def test_run_timeout_and_parallel_default_to_settings(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.capabilities.awx.application.suites.runner import RunTestSuite
+
+    seen: dict[str, object] = {}
+    real_call = RunTestSuite.__call__
+
+    def spy(self: RunTestSuite, suites: object, **kwargs: object) -> object:
+        seen.update(kwargs)
+        return real_call(self, suites, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(RunTestSuite, "__call__", spy)
+    monkeypatch.setenv("UNTAPED_AWX__TEST_TIMEOUT", "0")
+    monkeypatch.setenv("UNTAPED_AWX__TEST_PARALLEL", "3")
+    _seed_jt(fake_aap)
+    fake_aap.next_action_status = "running"
+
+    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "-f", "json"])
+
+    assert result.exit_code == 1, result.output
+    assert (seen["timeout"], seen["parallel"]) == (0, 3)
+    assert json.loads(result.stdout)[0]["result"] == "timeout"
+
+
+def test_run_timeout_and_parallel_defaults() -> None:
+    from untaped.capabilities.awx.settings import AwxSettings
+
+    settings = AwxSettings()
+    assert (settings.test_timeout, settings.test_parallel) == (1800, 4)
+
+
+def test_run_interrupt_cancels_running_jobs(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.capabilities.awx.application import WatchJob
+
+    def interrupt(self: WatchJob, job: object, *, timeout: float | None = None) -> object:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(WatchJob, "__call__", interrupt)
+    _seed_jt(fake_aap)
+    fake_aap.next_action_status = "running"
+
+    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path))])
+
+    assert result.exit_code == 130, result.output
+    [job_id] = _cancelled_ids(fake_aap)
+    assert f"interrupted: job {job_id} cancel requested" in result.stderr

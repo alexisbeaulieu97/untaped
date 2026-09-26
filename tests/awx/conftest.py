@@ -196,10 +196,8 @@ class FakeAap:
     def _stdout(self, api_path: str, id_: int, params: dict[str, str]) -> httpx.Response:
         """Plain-text stdout endpoint (e.g. ``jobs/<id>/stdout/``).
 
-        Honours AWX's ``start_line`` query param: lines numbered
-        ``[0, start_line)`` are skipped so callers can tail the log
-        incrementally without re-receiving everything they've already
-        seen.
+        Honours AWX's ``start_line`` query param except for the
+        ``*_download`` formats, which (like AWX) always return the whole log.
         """
         record = self.store.get(api_path, {}).get(id_)
         if record is None:
@@ -209,7 +207,7 @@ class FakeAap:
             start_line = int(params.get("start_line", "0"))
         except ValueError:
             start_line = 0
-        if start_line > 0:
+        if start_line > 0 and not params.get("format", "").endswith("_download"):
             lines = text.splitlines(keepends=True)
             text = "".join(lines[start_line:])
         return httpx.Response(200, text=text, headers={"content-type": "text/plain"})

@@ -1,5 +1,8 @@
 """RunTestSuite: load → plan → prefetch → resolve → launch+wait.
 
+With a :class:`Canceller`, a case that times out and every unfinished
+execution left by Ctrl-C is cancelled, so agents never leave jobs behind.
+
 Resolution finishes in the main thread before any worker is spawned so
 the launch+wait pool only sees fully-baked, immutable launch dicts —
 keeps workers free of FK lookups entirely. (:class:`FkResolver`'s caches
@@ -14,7 +17,12 @@ import time
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
-from untaped.capabilities.awx.application.suites.ports import FkPrefetcher, Launcher, Watcher
+from untaped.capabilities.awx.application.suites.ports import (
+    Canceller,
+    FkPrefetcher,
+    Launcher,
+    Watcher,
+)
 from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
 from untaped.capabilities.awx.domain import Job, ResourceSpec
 from untaped.capabilities.awx.domain.suite import (
@@ -59,6 +67,7 @@ class RunTestSuite:
         jt_scope: dict[str, str] | None = None,
         clock: Callable[[], float] = time.monotonic,
         stop: threading.Event | None = None,
+        canceller: Canceller | None = None,
     ) -> None:
         self._resolve = resolver
         self._launch = launcher
@@ -68,8 +77,12 @@ class RunTestSuite:
         self._jt_scope = jt_scope
         self._clock = clock
         self._stop = stop
+        self._cancel = canceller
+        """``None`` leaves timed-out and interrupted executions running."""
         self.launched: list[Job] = []
         """Executions submitted so far (for reporting after an interrupt)."""
+        self.cancelled: list[Job] = []
+        """Executions a Ctrl-C cancel was accepted for."""
         self._finals: dict[tuple[str, int], Job] = {}
 
     def __call__(
@@ -85,20 +98,36 @@ class RunTestSuite:
         resolved = self._resolve_all(plan)
 
         results: dict[int, CaseResult] = {}
-        bounded_map(
-            lambda index: self._launch_and_wait(resolved[index], timeout),
-            range(len(resolved)),
-            concurrency=max(1, parallel),
-            on_each=results.__setitem__,
-            # Ctrl-C stops polling workers; queued cases are never launched.
-            on_abort=self._stop.set if self._stop is not None else None,
-        )
+        try:
+            bounded_map(
+                lambda index: self._launch_and_wait(resolved[index], timeout),
+                range(len(resolved)),
+                concurrency=max(1, parallel),
+                on_each=results.__setitem__,
+                # Ctrl-C stops polling workers; queued cases are never launched.
+                on_abort=self._stop.set if self._stop is not None else None,
+            )
+        except KeyboardInterrupt:
+            self._cancel_unfinished()
+            raise
         # Indexed by declaration order, so the report ignores completion order.
         return SuiteRunOutcome(results=[results[index] for index in range(len(resolved))])
 
     def known_executions(self) -> list[Job]:
         """Every submitted execution with its latest locally known status."""
         return [self._finals.get((job.kind, job.id), job) for job in self.launched]
+
+    def _cancel_unfinished(self) -> None:
+        if self._cancel is None:
+            return
+        for job in self.known_executions():
+            if job.is_terminal:
+                continue
+            try:
+                self._cancel(job)
+            except Exception:
+                continue
+            self.cancelled.append(job)
 
     def _build_plan(
         self,
@@ -195,7 +224,21 @@ class RunTestSuite:
                 duration_s=self._clock() - started_clock,
                 failure_reason=str(exc),
             )
-        return _classify(item.suite_name, item.case_name, final, self._clock() - started_clock)
+        result = _classify(item.suite_name, item.case_name, final, self._clock() - started_clock)
+        if result.result == "timeout":
+            result = result.model_copy(update={"failure_reason": self._timed_out(final, timeout)})
+        return result
+
+    def _timed_out(self, job: Job, timeout: float | None) -> str:
+        """Cancel a timed-out execution (when enabled) and describe what happened."""
+        reason = f"still running after {timeout:g}s" if timeout is not None else "still running"
+        if self._cancel is None:
+            return f"{reason}; it keeps running"
+        try:
+            self._cancel(job)
+        except Exception as exc:
+            return f"{reason}; cancel failed: {exc}"
+        return f"{reason}; cancel requested"
 
 
 def _classify(suite_name: str, case_name: str, job: Job, duration_s: float) -> CaseResult:
