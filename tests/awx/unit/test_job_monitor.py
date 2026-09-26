@@ -81,15 +81,12 @@ def test_fetch_uses_kind_specific_api_path_for_workflow_jobs() -> None:
     assert client.json_calls[0][1] == "workflow_jobs/9/"
 
 
-def test_fetch_stdout_downloads_full_text_and_slices_locally() -> None:
-    """``txt_download`` has no size cap (``txt`` returns a "too large" stub).
-
-    The download ignores ``start_line`` server-side, so the monitor slices.
-    """
-    client = _FakeClient(text_responses=["line-1\nline-2\nline-3\nline-4\n"])
+def test_fetch_stdout_downloads_the_full_log() -> None:
+    """``txt_download`` has no size cap (``txt`` returns a "too large" stub)."""
+    client = _FakeClient(text_responses=["line-1\nline-2\n"])
     monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=lambda _: None)
-    lines = monitor.fetch_stdout(_running(), start_line=2)
-    assert lines == ["line-3", "line-4"]
+    lines = monitor.fetch_stdout(_running())
+    assert lines == ["line-1", "line-2"]
     method, path, params = client.text_calls[0]
     assert method == "GET"
     assert path == "jobs/7/stdout/"

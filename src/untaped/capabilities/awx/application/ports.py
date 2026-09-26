@@ -354,8 +354,8 @@ class JobMonitor(Protocol):
         """Yield the initial status and changes until terminal via the detail endpoint."""
         ...
 
-    def fetch_stdout(self, job: Job, *, start_line: int = 0) -> list[str]:
-        """One-shot: return stdout lines starting at ``start_line``.
+    def fetch_stdout(self, job: Job) -> list[str]:
+        """One-shot: return every stdout line (the full log, never truncated).
 
         No polling — used both by ``jobs logs`` (drain the existing log
         for a finished job) and as the historical phase of
@@ -366,9 +366,9 @@ class JobMonitor(Protocol):
     def stream_stdout(self, job: Job, *, start_line: int = 0) -> Iterable[str]:
         """Yield stdout lines from ``start_line`` onward until terminal.
 
-        Polls ``/jobs/<id>/stdout/``; emits one string per
-        line (no trailing newline). Final block of lines after the job
-        reaches a terminal state is yielded before the iterator returns.
+        Re-downloads the full log each poll and emits only the new lines,
+        one string per line (no trailing newline). Final block of lines after
+        the job reaches a terminal state is yielded before the iterator returns.
         """
         ...
 

@@ -22,7 +22,7 @@ class AwxSettings(BaseModel):
     api_prefix: str = "/api/controller/v2/"
     default_organization: str | None = None
     page_size: int = Field(default=200, gt=0)
-    test_timeout: float | None = Field(default=1800, ge=0)
+    test_timeout: float = Field(default=1800, gt=0)
     test_parallel: int = Field(default=4, gt=0)
 
     @field_validator("api_prefix")

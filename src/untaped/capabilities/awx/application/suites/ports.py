@@ -58,9 +58,9 @@ class Watcher(Protocol):
 
 @runtime_checkable
 class Canceller(Protocol):
-    """Ask AWX to cancel a running :class:`Job` (best effort; raises on refusal)."""
+    """Ask AWX to cancel a running execution (raises when AWX refuses)."""
 
-    def __call__(self, job: Job, /) -> None: ...
+    def __call__(self, *, kind: str, job_id: int) -> None: ...
 
 
 @runtime_checkable
