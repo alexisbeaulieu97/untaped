@@ -64,12 +64,14 @@ class PollingJobMonitor:
         api_path = _api_path_for(job)
         if not JOB_ROUTES[job.kind].stdout:
             raise AwxApiError(f"{job.kind} does not expose stdout; use jobs get/wait for status")
+        # ``txt`` answers large logs with a "too large to display" stub;
+        # ``txt_download`` streams the full log but ignores ``start_line``.
         text = self._client.request_text(
             "GET",
             f"{api_path}/{job.id}/stdout/",
-            params={"format": "txt", "start_line": str(start_line)},
+            params={"format": "txt_download"},
         )
-        return text.splitlines()
+        return text.splitlines()[start_line:]
 
     def stream_stdout(self, job: Job, *, start_line: int = 0) -> Iterator[str]:
         cursor = start_line

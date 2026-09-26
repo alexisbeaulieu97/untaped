@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from typing import Any, NoReturn
 
 from untaped.capabilities.awx.application import RunAction
@@ -224,10 +224,15 @@ def _monitor(
 _ACTIVE_STATUSES = frozenset({"new", "pending", "waiting", "running"})
 
 
-def report_interrupted(executions: Sequence[tuple[str | None, Job]]) -> NoReturn:
+def report_interrupted(
+    executions: Sequence[tuple[str | None, Job]],
+    *,
+    cancelled: Collection[tuple[str, int]] = (),
+) -> NoReturn:
     """Name every execution not known to have ended, with a ``jobs wait`` hint; exit 130.
 
-    A status known locally to be terminal is skipped; an active one "keeps
+    A status known locally to be terminal is skipped; one in ``cancelled``
+    (``(kind, id)``) had a "cancel requested"; an active one "keeps
     running"; an unknown status (e.g. a job AWX created while ignoring
     fields) is reported as "was launched".
     """
@@ -235,7 +240,12 @@ def report_interrupted(executions: Sequence[tuple[str | None, Job]]) -> NoReturn
     for label, job in executions:
         if job.is_terminal:
             continue
-        state = "keeps running" if job.status in _ACTIVE_STATUSES else "was launched"
+        if (job.kind, job.id) in cancelled:
+            state = "cancel requested"
+        elif job.status in _ACTIVE_STATUSES:
+            state = "keeps running"
+        else:
+            state = "was launched"
         prefix = f"{label}: " if label else ""
         echo(f"interrupted: {prefix}{job.kind} {job.id} {state}", err=True)
         by_kind.setdefault(job.kind, []).append(str(job.id))

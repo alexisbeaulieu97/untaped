@@ -405,3 +405,93 @@ def test_interrupt_reports_ignored_field_executions_and_final_statuses() -> None
         (9, False),
         (8, False),
     }
+
+
+class StubCanceller:
+    def __init__(self, *, fail_ids: frozenset[int] = frozenset()) -> None:
+        self.calls: list[int] = []
+        self._fail_ids = fail_ids
+
+    def __call__(self, job: Job) -> None:
+        self.calls.append(job.id)
+        if job.id in self._fail_ids:
+            raise RuntimeError("405 Method not allowed")
+
+
+def _timeout_runner(canceller: StubCanceller | None) -> RunTestSuite:
+    fk = StubFk()
+    launcher = StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}})
+    return RunTestSuite(
+        resolver=ResolveCasePayload(fk, catalog=AwxResourceCatalog()),
+        launcher=cast(Launcher, launcher),
+        watcher=cast(Watcher, StubWatcher(default=_job(id_=5, status="running"))),
+        spec=JOB_TEMPLATE_SPEC,
+        fk_prefetcher=cast(FkPrefetcher, fk),
+        canceller=canceller,
+    )
+
+
+def test_timeout_cancels_the_job_and_says_so() -> None:
+    canceller = StubCanceller()
+    outcome = _timeout_runner(canceller)([_suite("s", {"a": {}})], timeout=60)
+    [result] = outcome.results
+    assert result.result == "timeout"
+    assert canceller.calls == [5]
+    assert result.failure_reason == "still running after 60s; cancel requested"
+
+
+def test_timeout_without_canceller_leaves_the_job_running() -> None:
+    outcome = _timeout_runner(None)([_suite("s", {"a": {}})], timeout=1.5)
+    [result] = outcome.results
+    assert result.result == "timeout"
+    assert result.failure_reason == "still running after 1.5s; it keeps running"
+
+
+def test_timeout_reports_a_failed_cancel() -> None:
+    canceller = StubCanceller(fail_ids=frozenset({5}))
+    outcome = _timeout_runner(canceller)([_suite("s", {"a": {}})], timeout=60)
+    [result] = outcome.results
+    assert result.result == "timeout"
+    assert result.failure_reason == (
+        "still running after 60s; cancel failed: 405 Method not allowed"
+    )
+
+
+def test_interrupt_cancels_unfinished_executions() -> None:
+    """Ctrl-C cancels every launched execution not known to be finished."""
+    from untaped.capabilities.awx.errors import ActionResponseError
+
+    class InterruptingWatcher:
+        def __call__(self, job: Job, *, timeout: float | None = None) -> Job:
+            if job.id == 8:
+                raise KeyboardInterrupt
+            return _job(id_=job.id, status="successful")
+
+    fk = StubFk()
+    launcher = StubLauncher(
+        {
+            "done": {"job": _job(id_=7, status="pending")},
+            "ignored": {
+                "raises": ActionResponseError(
+                    "AWX ignored launch fields: limit", execution_id=9, execution_kind="job"
+                )
+            },
+            "stuck": {"job": _job(id_=8, status="pending")},
+        }
+    )
+    canceller = StubCanceller(fail_ids=frozenset({9}))
+    runner = RunTestSuite(
+        resolver=ResolveCasePayload(fk, catalog=AwxResourceCatalog()),
+        launcher=cast(Launcher, launcher),
+        watcher=cast(Watcher, InterruptingWatcher()),
+        spec=JOB_TEMPLATE_SPEC,
+        fk_prefetcher=cast(FkPrefetcher, fk),
+        canceller=canceller,
+    )
+    suite = _suite(
+        "s", {name: {"extra_vars": {"case_name": name}} for name in ("done", "ignored", "stuck")}
+    )
+    with pytest.raises(KeyboardInterrupt):
+        runner([suite])
+    assert sorted(canceller.calls) == [8, 9]
+    assert [job.id for job in runner.cancelled] == [8]

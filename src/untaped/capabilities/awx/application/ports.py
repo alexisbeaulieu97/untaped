@@ -209,7 +209,7 @@ class RawHttpResourceClient(ResourceClient, Protocol):
         *,
         params: dict[str, str] | None = None,
     ) -> str:
-        """For non-JSON endpoints (e.g. ``jobs/<id>/stdout/?format=txt``)."""
+        """For non-JSON endpoints (e.g. ``jobs/<id>/stdout/?format=txt_download``)."""
         ...
 
 
@@ -366,7 +366,7 @@ class JobMonitor(Protocol):
     def stream_stdout(self, job: Job, *, start_line: int = 0) -> Iterable[str]:
         """Yield stdout lines from ``start_line`` onward until terminal.
 
-        Polls ``/jobs/<id>/stdout/?start_line=N``; emits one string per
+        Polls ``/jobs/<id>/stdout/``; emits one string per
         line (no trailing newline). Final block of lines after the job
         reaches a terminal state is yielded before the iterator returns.
         """

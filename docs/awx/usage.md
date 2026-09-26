@@ -352,7 +352,8 @@ fails its row (`still running after --timeout 600s; it keeps running`), and a
 promptly, exits 130, and prints the IDs of executions not known to have
 finished (including ones AWX created while ignoring fields; "was launched"
 when their status is unknown) with an `untaped awx jobs wait ...` command to
-resume; the executions themselves keep running on the controller. `--track`
+resume; the executions themselves keep running on the controller (`awx test
+run` cancels them unless `--no-cancel`). `--track`
 shows progress on stderr while waiting; a failed or unreachable host result
 is followed by the reason from that event's output (up to ten lines; `jobs
 events` has the rest). Ordinary
@@ -371,7 +372,9 @@ untaped awx jobs logs 101 --kind project_update
 ```
 
 `jobs events` and `jobs logs` accept several ids (or `--stdin`) and drain them
-in order with a `[<id>]` breadcrumb on stderr. Without `--follow`,
+in order with a `[<id>]` breadcrumb on stderr. Logs are downloaded in full, so
+large jobs return their whole output rather than AWX's "too large to display"
+notice; `--follow` re-downloads the log on each poll. Without `--follow`,
 `--format json` or `yaml` prints one array holding every job's rows, and each
 row names its `job`. With `--follow`, json streams one object per line
 (NDJSON) as rows arrive.
@@ -533,6 +536,11 @@ untaped awx test run tests/awx/deploy-smoke.yml --case web --non-interactive
 - A variable without a default is required: pass `--var`, `--vars-file`, or
   answer the prompt. `--non-interactive` fails instead of prompting.
 - `run` exits 1 unless at least one case ran and every case passed.
+- Each case waits `--timeout` seconds (default `awx.test_timeout`, 30
+  minutes) and `--parallel` cases run at once (default `awx.test_parallel`,
+  4). A case still running at its timeout is reported as `timeout` and its job
+  is cancelled; Ctrl-C cancels every unfinished job too. `--no-cancel` leaves
+  them running.
 
 ## Confirmations, failures, and integrity
 
