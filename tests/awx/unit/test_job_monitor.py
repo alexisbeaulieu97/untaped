@@ -109,6 +109,45 @@ def test_stream_stdout_polls_until_terminal_then_drains() -> None:
     assert sleeps == [2.0]
 
 
+def test_stream_stdout_waits_for_a_finished_jobs_events_to_be_saved() -> None:
+    """AWX writes the log from events: a finished job keeps streaming its tail
+    (the PLAY RECAP) until ``event_processing_finished``."""
+    client = _FakeClient(
+        text_responses=["a\n", "a\nPLAY RECAP\n"],
+        json_responses=[{"id": 7, "status": "successful", "event_processing_finished": True}],
+    )
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=lambda _: None)
+    finished = Job(id=7, kind="job", status="successful", event_processing_finished=False)
+    assert list(monitor.stream_stdout(finished)) == ["a", "PLAY RECAP"]
+    assert len(client.text_calls) == 2
+
+
+def test_stream_stdout_settling_is_bounded() -> None:
+    client = _FakeClient(
+        json_responses=[{"id": 7, "status": "successful", "event_processing_finished": False}] * 20,
+    )
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=lambda _: None)
+    finished = Job(id=7, kind="job", status="successful", event_processing_finished=False)
+    assert list(monitor.stream_stdout(finished)) == []
+    assert len(client.json_calls) < 20
+
+
+def test_stream_stdout_warns_when_events_are_still_being_saved() -> None:
+    client = _FakeClient(
+        json_responses=[{"id": 7, "status": "failed", "event_processing_finished": False}] * 20,
+    )
+    warnings: list[str] = []
+    monitor = PollingJobMonitor(
+        cast(RawHttpResourceClient, client), sleep=lambda _: None, warn=warnings.append
+    )
+    finished = Job(id=7, kind="job", status="failed", event_processing_finished=False)
+    list(monitor.stream_stdout(finished))
+    assert warnings == [
+        "job 7: AWX is still saving its events; the log (and its PLAY RECAP) may be cut "
+        "short; see `jobs logs 7 --kind job` later"
+    ]
+
+
 def test_stream_events_yields_until_terminal_and_advances_counter() -> None:
     """Two event-poll cycles, second after the job flips to ``successful``."""
     page_1 = {

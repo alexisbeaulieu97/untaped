@@ -44,7 +44,6 @@ from untaped.capability_api import (
     OutputFormat,
     UiContext,
     create_app,
-    deprecated_alias,
     echo,
     emit,
     finish,
@@ -82,16 +81,30 @@ def ping_command(
 
 @app.command(name="apply")
 def apply_command(
-    file: Annotated[Path, Parameter(help="YAML file or directory.")],
+    file: Annotated[
+        Path,
+        Parameter(help="YAML file or directory, or - to read stdin.", allow_leading_hyphen=True),
+    ],
     /,
     *,
+    check: Annotated[
+        bool,
+        Parameter(
+            name="--check",
+            negative="",
+            help="Plan without writing; exit 3 when anything would change.",
+        ),
+    ] = False,
     controls: WriteControls = CONTROL_DEFAULTS,
 ) -> None:
     """Create/update YAML documents in dependency order, with one confirmation."""
+    if str(file).startswith("-") and str(file) != "-":
+        # ``-`` may lead the file (stdin), so a mistyped option lands here.
+        raise_usage(f"unknown option: {file}")
     with report_errors():
         controls = controls.validated()
         with open_context() as ctx:
-            run_apply(ctx, file, controls)
+            run_apply(ctx, file, controls, check=check)
 
 
 # ---- top-level save ----
@@ -499,10 +512,7 @@ def jobs_logs(
         Parameter(name=["--ignore-case", "-i"], negative="", help="Case-insensitive --grep."),
     ] = False,
     kind: JobKindOption = "job",
-    fmt: Annotated[
-        OutputFormat,
-        Parameter(name="--format", help="Output format."),
-    ] = "raw",
+    fmt: FormatOption = "raw",
     columns: ColumnsOption = None,
 ) -> None:
     """Print the stdout of one or more jobs. Supports follow / tail / grep.
@@ -597,8 +607,6 @@ def jobs_wait(
 
 register_job_actions(jobs_app)
 app.command(jobs_app, name="jobs")
-deprecated_alias(app, "save", "export")
-deprecated_alias(jobs_app["logs"], "-f", "--follow")
 app.command(unified_templates_app, name="unified-templates")
 app.command(test_app, name="test")
 

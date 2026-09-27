@@ -4,6 +4,8 @@ The repository never branches on kind — it follows the spec verbatim
 to derive paths and parameters. Per-kind variation is handled in
 strategies + apply hooks.
 
+``scoped_names`` lists the names in a scope for "did you mean" hints.
+
 Single-record reads (``get`` / ``find`` / ``find_by_identity``) wrap
 raw httpx JSON in :class:`ServerRecord` so callers can use typed
 attribute access. The bulk ``list`` skips the wrap — its callers
@@ -43,6 +45,11 @@ from untaped.capabilities.awx.infrastructure.errors import map_awx_errors
 from untaped.capabilities.awx.infrastructure.pagination import paginate
 from untaped.capabilities.awx.infrastructure.spec import awx_api_path, awx_relationship_path
 from untaped.capability_api import ConfigError
+
+
+def scope_params(scope: dict[str, str] | None) -> dict[str, str]:
+    """AWX's ``<scope_field>__name=<value>`` filters for an FK-name scope."""
+    return {f"{key}__name": value for key, value in (scope or {}).items()}
 
 
 def _split_sub_documents(
@@ -136,10 +143,22 @@ class ResourceRepository:
         don't have to reconstruct the convention. Ambiguity behaviour
         comes from :meth:`find`.
         """
-        params: dict[str, str] = {"name": name}
-        for k, v in (scope or {}).items():
-            params[f"{k}__name"] = v
-        return self.find(spec, params=params)
+        return self.find(spec, params={"name": name, **scope_params(scope)})
+
+    def scoped_names(
+        self, spec: ResourceSpec, scope: dict[str, str] | None = None
+    ) -> tuple[str, ...]:
+        """Names on the first page of ``spec`` records in ``scope`` ("did you mean" pool).
+
+        Exactly one request; an API error yields no names so it never hides
+        the lookup failure it decorates.
+        """
+        params = scope_params(scope)
+        try:
+            records = self.list(spec, params=params or None, limit=self._page_size)
+            return tuple(str(record["name"]) for record in records if record.get("name"))
+        except AwxApiError:
+            return ()
 
     def create(self, spec: ResourceSpec, payload: WritePayload) -> ServerRecord:
         body, documents = _split_sub_documents(spec, payload.model_dump(exclude_none=False))

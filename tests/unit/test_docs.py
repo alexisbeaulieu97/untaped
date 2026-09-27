@@ -135,7 +135,7 @@ def _unknown_options(root: App, argv: list[str], aliases: set[str]) -> list[str]
             break  # the rest is data (``alias set NAME -- COMMAND…``)
         if skip_value:
             skip_value = False
-        elif token.startswith("-"):
+        elif token.startswith("-") and token != "-":  # a bare ``-`` names stdin
             flags.append(token.split("=")[0])
             skip_value = token == "--profile"
         elif token in app:

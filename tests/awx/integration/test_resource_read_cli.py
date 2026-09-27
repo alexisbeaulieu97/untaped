@@ -292,3 +292,69 @@ def test_scope_aliases_are_advertised_on_generated_commands(command: list[str]) 
     assert result.exit_code == 0, result.output
     for flag in ("--organization", "--org"):
         assert re.search(rf"{re.escape(flag)}\b", result.output), flag
+
+
+@pytest.mark.parametrize(
+    ("command", "shown", "absent"),
+    [
+        (["projects", "list"], ["--organization"], ["--inventory", "--parent"]),
+        (["projects", "patch"], ["--organization"], ["--inventory", "--inventory-organization"]),
+        (["job-templates", "launch"], ["--organization"], ["--inventory ", "--parent"]),
+        (["hosts", "get"], ["--inventory", "--inventory-organization"], ["--organization"]),
+        (["schedules", "delete"], ["--parent"], ["--organization", "--inventory"]),
+        (["organizations", "list"], [], ["--organization", "--inventory", "--parent"]),
+        (["job-templates", "credentials", "add"], ["--organization"], ["--inventory", "--parent"]),
+    ],
+)
+def test_each_kind_offers_only_the_scope_flags_it_supports(
+    command: list[str], shown: list[str], absent: list[str]
+) -> None:
+    result = CliInvoker().invoke(app, [*command, "--help"])
+    assert result.exit_code == 0, result.output
+    for flag in shown:
+        assert re.search(rf"{re.escape(flag)}\b", result.stdout), flag
+    for flag in absent:
+        assert not re.search(rf"{re.escape(flag.strip())}(?![\w-])", result.stdout), flag
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["projects", "list", "--inventory", "prod"],
+        ["projects", "get", "playbooks", "--parent", "x"],
+        ["organizations", "list", "--organization", "Default"],
+        ["job-templates", "launch", "deploy", "--inventory", "prod"],
+    ],
+)
+def test_an_unsupported_scope_flag_is_a_usage_error(catalog: Any, args: list[str]) -> None:
+    result = CliInvoker().invoke(app, args)
+    assert result.exit_code == 2, result.output
+    assert catalog.actions_called == []
+
+
+def test_not_found_suggests_close_names_in_the_same_scope(catalog: Any) -> None:
+    result = _raw("job-templates", "get", "deplyo", "--organization", "Default")
+    assert result.exit_code == 1, result.output
+    assert (
+        "error: JobTemplate not found: 'deplyo' in organization 'Default'; "
+        "did you mean 'deploy'?" in result.stderr
+    )
+
+
+def test_not_found_names_the_default_organization_scope(catalog: Any, aap_config: Path) -> None:
+    config = aap_config.read_text()
+    aap_config.write_text(
+        config.replace(
+            "api_prefix: /api/v2/",
+            "api_prefix: /api/v2/\n              default_organization: Other",
+        )
+    )
+    get_settings.cache_clear()
+    result = _raw("job-templates", "get", "deploy")
+    assert result.exit_code == 1, result.output
+    assert "JobTemplate not found: 'deploy' in organization 'Other'" in result.stderr
+    assert "did you mean" not in result.stderr
+    assert (
+        "searched in organization 'Other' (awx.default_organization); "
+        "pass --organization to search elsewhere" in result.stderr
+    )

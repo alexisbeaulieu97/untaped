@@ -40,7 +40,8 @@ def test_http_errors_map_to_awx_errors(
     assert type(mapped) is error
     assert message in str(mapped)
     if isinstance(mapped, AwxApiError):
-        assert mapped.status == mapped.status_code == status
+        assert mapped.status_code == status
+        assert not hasattr(mapped, "status")
     with pytest.raises(error), map_awx_errors():
         raise raw
 

@@ -71,7 +71,7 @@ def test_apply_wrong_kind_rejects_complete_batch(fake_aap: Any, tmp_path: Path) 
         "kind: Project\nmetadata: {name: target, organization: Default}\n"
         "spec: {description: new}\n---\nkind: Host\nmetadata: {name: host}\nspec: {}\n"
     )
-    result = CliInvoker().invoke(app, ["projects", "apply", str(file), "--yes"])
+    result = CliInvoker().invoke(app, ["apply", str(file), "--yes"])
     assert result.exit_code != 0
     assert fake_aap.get_record("projects", 10)["description"] == "old"
 
