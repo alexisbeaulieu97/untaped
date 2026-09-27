@@ -1,8 +1,9 @@
 """Secret-path patterns: the one walker and ``$encrypted$`` placeholder stripping.
 
 ``ResourceSpec.secret_paths`` patterns use dot notation with ``*`` matching
-any list element or dict key, and ``*[key=value]`` matching only the elements
-that are mappings whose ``key`` equals ``value``; :func:`path_slots` is the
+any list element or dict key, ``*[key=value]`` matching only the elements
+that are mappings whose ``key`` equals ``value``, and ``*[=value]`` matching
+only the elements that equal ``value``; :func:`path_slots` is the
 single walker every read, redact, strip, and remove of a secret path goes
 through:
 
@@ -10,6 +11,7 @@ through:
 - ``inputs.*``                   — any direct child of ``inputs``
 - ``survey_spec.spec.*[type=password].default`` — ``default`` key on the
                                    password questions under ``survey_spec.spec``
+- ``extra_data.*[=$encrypted$]`` — the masked answers in ``extra_data``
 
 The walker drops matched ``$encrypted$`` values from the payload and
 returns the dotted paths that were preserved, plus any
@@ -48,12 +50,7 @@ def path_slots(value: Any, pattern: str) -> Iterator[tuple[Any, Any]]:
     else:
         return
     if predicate is not None:
-        field, expected = predicate
-        keys = [
-            key
-            for key in keys
-            if isinstance(value[key], Mapping) and value[key].get(field) == expected
-        ]
+        keys = [key for key in keys if _passes(value[key], *predicate)]
     for key in keys:
         if rest:
             yield from path_slots(value[key], rest)
@@ -61,8 +58,15 @@ def path_slots(value: Any, pattern: str) -> Iterator[tuple[Any, Any]]:
             yield value, key
 
 
+def _passes(item: Any, field: str, expected: str) -> bool:
+    """``*[field=expected]`` checks a mapping's field; ``*[=expected]`` the item."""
+    if not field:
+        return bool(item == expected)
+    return isinstance(item, Mapping) and item.get(field) == expected
+
+
 def _wildcard(segment: str) -> tuple[bool, tuple[str, str] | None]:
-    """Split a pattern segment into (is wildcard, optional ``key=value`` filter)."""
+    """Split a pattern segment into (is wildcard, optional ``[key]=value`` filter)."""
     if segment == "*":
         return True, None
     if segment.startswith("*[") and segment.endswith("]") and "=" in segment:
@@ -141,13 +145,23 @@ def _walk(
 
 
 def _render(path_parts: list[str], pattern: str) -> str:
-    """Name a preserved slot, keeping the pattern's filtered wildcards.
+    """Name a preserved slot, keeping the pattern's filtered list wildcards.
 
     The rendered path is later replayed with :func:`remove_at` against the
-    existing record, so a ``*[key=value]`` segment must survive; a plain
-    ``*`` or literal key renders as walked.
+    existing record, so a filtered segment over a list (walked as ``*``)
+    must survive; a mapping key renders as its concrete key, so only that
+    key is replayed. A plain ``*`` or literal key renders as walked.
     """
     return ".".join(
-        segment if _wildcard(segment)[1] is not None else part
+        segment if part == "*" and _wildcard(segment)[1] is not None else part
         for part, segment in zip(path_parts, pattern.split("."), strict=True)
+    )
+
+
+def covered_by(path: str, pattern: str) -> bool:
+    """Whether a preserved ``path`` names a slot of the secret ``pattern``."""
+    parts, segments = path.split("."), pattern.split(".")
+    return len(parts) == len(segments) and all(
+        part == segment or _wildcard(segment)[0]
+        for part, segment in zip(parts, segments, strict=True)
     )
