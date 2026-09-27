@@ -295,7 +295,8 @@ def test_smoke_unified_checks_exact_capability_metadata(tmp_path: Path) -> None:
     console_script.write_text("#!/bin/sh\n", encoding="utf-8")
     console_script.chmod(0o755)
     root_commands = (
-        "config profile skills doctor capabilities workspace github jira awx ansible recipe"
+        "setup config profile alias skills doctor capabilities "
+        "workspace github jira awx ansible recipe"
     )
     rows = [
         {
