@@ -3,7 +3,7 @@
 Every target-resolving command takes one optional ``WS`` argument, resolved
 here: omitted → walk up from ``cwd`` to the nearest workspace manifest; a
 path (``.``, ``..``, anything containing a path separator, or ``~``-prefixed)
-→ walk up from that path; anything else → registry lookup by name.
+→ must exist, then walk up from it; anything else → registry lookup by name.
 
 Lives in ``application/`` because *how to name a workspace* is the
 package's ubiquitous language — every target-resolving command
@@ -19,7 +19,11 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from untaped.capabilities.workspace.application.ports import ManifestReader, RegistryReader
+from untaped.capabilities.workspace.application.ports import (
+    Filesystem,
+    ManifestReader,
+    RegistryReader,
+)
 from untaped.capabilities.workspace.domain import Workspace
 from untaped.capability_api import ConfigError
 
@@ -35,9 +39,12 @@ def _looks_like_path(target: str) -> bool:
 
 
 class WorkspaceResolver:
-    def __init__(self, *, registry: RegistryReader, manifests: ManifestReader) -> None:
+    def __init__(
+        self, *, registry: RegistryReader, manifests: ManifestReader, fs: Filesystem
+    ) -> None:
         self._registry = registry
         self._manifests = manifests
+        self._fs = fs
 
     def resolve(self, target: str | None = None, *, cwd: Path | None = None) -> Workspace:
         base = cwd or Path.cwd()
@@ -50,7 +57,13 @@ class WorkspaceResolver:
                 ),
             )
         if _looks_like_path(target):
-            start = (base / Path(target).expanduser()).resolve()
+            try:
+                start = (base / Path(target).expanduser()).resolve()
+            except RuntimeError as exc:  # ``~user`` for an unknown user
+                raise ConfigError(f"cannot expand workspace path {target!r}: {exc}") from exc
+            if not self._fs.exists(start):
+                # A typo must not silently walk up to an enclosing workspace.
+                raise ConfigError(f"workspace path does not exist: {start}")
             return self._resolve_from(
                 start, error=f"no workspace manifest at or above {start} (untaped.yml)"
             )

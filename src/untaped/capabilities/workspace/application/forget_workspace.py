@@ -56,28 +56,34 @@ class ForgetWorkspace:
     def __call__(self, name: str, *, prune: bool = False) -> Workspace:
         ws = self._registry.get(name)
 
-        if prune and self._fs.is_dir(ws.path):
-            plan = self._plan_prune(ws)
-            self._refuse_if_any_repo_unsafe(ws, plan)
+        if prune and (plan := self._checked_plan(ws)) is not None:
             self._prune(ws, plan)
 
         self._registry.unregister(name)
         return ws
 
-    def preview(self, name: str, *, prune: bool = False) -> tuple[Workspace, list[Path]]:
-        """Run every check a real forget would, delete nothing (``--dry-run``).
+    def preview_prune(self, name: str) -> tuple[Workspace, list[Path]]:
+        """Run every check ``forget --prune`` would, delete nothing (``--dry-run``).
 
-        Returns the workspace and the paths a prune would remove: clones,
-        symlinks, then the manifest. An unsafe clone raises exactly as
+        Returns the workspace and the paths the prune would remove: clones,
+        symlinks, then the manifest (the directory itself goes too if
+        nothing else is left). An unsafe clone raises exactly as
         :meth:`__call__` does, so a dry run predicts a refusal.
         """
         ws = self._registry.get(name)
-        if not (prune and self._fs.is_dir(ws.path)):
+        plan = self._checked_plan(ws)
+        if plan is None:
             return ws, []
-        plan = self._plan_prune(ws)
-        self._refuse_if_any_repo_unsafe(ws, plan)
         clones = [local for local, _label in plan.clones.values()]
         return ws, [*clones, *plan.links, self._manifests.manifest_path(ws.path)]
+
+    def _checked_plan(self, ws: Workspace) -> _PrunePlan | None:
+        """The safety-checked prune plan, or ``None`` when the directory is gone."""
+        if not self._fs.is_dir(ws.path):
+            return None
+        plan = self._plan_prune(ws)
+        self._refuse_if_any_repo_unsafe(ws, plan)
+        return plan
 
     def _plan_prune(self, ws: Workspace) -> _PrunePlan:
         if not self._manifests.exists(ws.path):

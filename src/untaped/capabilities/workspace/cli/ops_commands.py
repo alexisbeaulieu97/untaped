@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from collections import Counter
 from functools import partial
 from typing import Annotated
@@ -15,12 +16,12 @@ from untaped.capabilities.workspace.application import (
     WorkspaceStatus,
 )
 from untaped.capabilities.workspace.cli.common import (
-    WORKSPACE_ARG_HELP,
+    LeadingWorkspaceArg,
     RepoSelectorOption,
     WorkspaceArg,
     WorkspaceParallelOption,
+    leading_workspace,
     parallel_workers,
-    split_leading_workspace,
     target_workspaces,
     workspace_settings,
 )
@@ -30,8 +31,9 @@ from untaped.capabilities.workspace.domain import (
     StatusEntry,
     SyncAction,
     SyncOutcome,
+    Workspace,
 )
-from untaped.capabilities.workspace.errors import ManifestError
+from untaped.capabilities.workspace.errors import RegistryError
 from untaped.capabilities.workspace.infrastructure import (
     DEFAULT_SLOW_TIMEOUT,
     DEFAULT_TIMEOUT,
@@ -54,9 +56,10 @@ from untaped.capability_api import (
     echo,
     emit,
     finish,
+    hint,
     q,
     raise_usage,
-    read_identifiers,
+    read_stdin_input,
     report_errors,
     summary,
     ui_context,
@@ -129,7 +132,6 @@ def sync_command(
     if dry_run and not prune:
         raise_usage("--dry-run requires --prune")
     with report_errors():
-        workers = parallel_workers(parallel)
         targets = target_workspaces(workspace, all_workspaces=all_workspaces)
         runner = (
             GitRunner(timeout=timeout, slow_timeout=timeout) if timeout is not None else GitRunner()
@@ -150,7 +152,7 @@ def sync_command(
             )
         if dry_run:
             skipped, candidates = SyncWorkspaces(YamlManifestRepository(), engine).plan_prune(
-                targets, skip_manifest_errors=all_workspaces
+                targets, skip_manifest_errors=all_workspaces, report_unavailable=True
             )
             planned = [
                 SyncOutcome(
@@ -164,6 +166,7 @@ def sync_command(
             ]
             print_sync_outcomes([*skipped, *planned], fmt=fmt, columns=columns)
             return
+        workers = parallel_workers(parallel)
         with ui.progress("Syncing repos…") as p:
             sweep = SyncWorkspaces(YamlManifestRepository(), engine, notify=p.update)
             outcomes = sweep(
@@ -295,9 +298,11 @@ def status_command(
                 for entry in use_case(ws, only=repo, skip_manifest_errors=all_workspaces):
                     rows.append(entry)
         hits = [row for row in rows if row.needs_attention(dirty=dirty, behind=behind)]
+        uninspected = [row for row in rows if not row.inspected]
         filtered = dirty or behind
         emit(
-            hits if filtered else rows,
+            # Filters never hide a repo whose state could not be read.
+            [row for row in rows if row in hits or row in uninspected] if filtered else rows,
             fmt=fmt,
             columns=columns,
             kind="workspace.status",
@@ -307,14 +312,11 @@ def status_command(
                 else "No cloned repos. Run `untaped workspace sync` to clone from the manifest."
             ),
         )
-    finish(False, predicate_hit=check and bool(hits))
+    finish(check and bool(uninspected), predicate_hit=check and bool(hits))
 
 
 def foreach_command(
-    workspace: Annotated[
-        str | None,
-        Parameter(name="WS", help=f"{WORKSPACE_ARG_HELP} Pass it before CMD."),
-    ] = None,
+    workspace: LeadingWorkspaceArg = None,
     cmd: Annotated[
         str | None,
         Parameter(name="CMD", help='Shell command (e.g. "git pull --rebase").'),
@@ -372,7 +374,8 @@ def foreach_command(
 ) -> None:
     """Run a shell command in each repo of the workspace.
 
-    Select repos with at most one of ``--repo``, ``--stdin`` or ``--all``.
+    Select repos with ``--repo`` or ``--stdin`` (not both); ``--all`` runs in
+    every workspace, with ``--repo`` as a per-workspace filter.
     Fail-fast cancellation is best-effort under ``--parallel``: in-flight
     commands run to completion; only queued work stops.
 
@@ -386,55 +389,45 @@ def foreach_command(
     rows after every repo finishes — suitable for piping into ``jq``
     / ``awk`` / another ``untaped`` command.
     """
-    workspace, cmd = split_leading_workspace(workspace, cmd)
-    if cmd is None:
-        raise_usage("missing argument CMD")
+    workspace, cmd = leading_workspace(workspace, cmd, missing="CMD")
     if timeout <= 0:
         raise_usage("--timeout must be positive")
-    if sum((all_workspaces, stdin, bool(repo))) > 1:
-        raise_usage("--repo, --stdin and --all are mutually exclusive")
+    if stdin and (repo or all_workspaces):
+        raise_usage("--stdin cannot be combined with --repo or --all")
     with report_errors():
-        targets = target_workspaces(workspace, all_workspaces=all_workspaces)
-        only = (
-            read_identifiers([], stdin=True, id_field="repo", accept_kinds=FOREACH_STDIN_KINDS)
-            if stdin
-            else repo
-        )
+        try:
+            targets = target_workspaces(workspace, all_workspaces=all_workspaces)
+        except RegistryError as exc:
+            quoted = shlex.quote(f"{workspace} {cmd}")
+            raise RegistryError(
+                f"{exc}; quote a multi-word command to run it in the current workspace\n"
+                + hint(f"workspace foreach {quoted}")
+            ) from exc
+        only = _stdin_repos(targets[0]) if stdin else repo
         workers = parallel_workers(parallel)
         keep_going = continue_on_error or ignore_errors
         shell = InterruptibleShellRunner()
-        foreach = Foreach(
+        ui = ui_context(strict=False)
+        outcomes = Foreach(
             YamlManifestRepository(),
             runner=shell,
             fs=LocalFilesystem(),
             on_interrupt=shell.terminate_all,
+            warn=lambda m: ui.message("warning", m),
+        ).run_many(
+            targets,
+            command=cmd,
+            parallel=workers,
+            continue_on_error=keep_going,
+            only=only,
+            timeout=timeout,
+            # Table output streams each repo's block as soon as it finishes.
+            on_result=(
+                partial(_echo_foreach_outcome, qualify=all_workspaces) if fmt == "table" else None
+            ),
+            strict_only=not all_workspaces,
+            skip_manifest_errors=all_workspaces,
         )
-        ui = ui_context(strict=False)
-        outcomes: list[ForeachOutcome] = []
-        for ws in targets:
-            try:
-                ran = foreach(
-                    ws,
-                    command=cmd,
-                    parallel=workers,
-                    continue_on_error=keep_going,
-                    only=only,
-                    timeout=timeout,
-                    # Table output streams each repo's block as soon as it finishes.
-                    on_result=(
-                        partial(_echo_foreach_outcome, qualify=all_workspaces)
-                        if fmt == "table"
-                        else None
-                    ),
-                )
-            except ManifestError as exc:
-                if not all_workspaces:
-                    raise
-                ui.message("warning", f"skipped workspace {q(ws.name)}: {exc}")
-                continue
-            outcomes.extend(ran)
-            if not keep_going and any(o.returncode != 0 for o in ran):
-                break
         failed = [_label(o, qualify=all_workspaces) for o in outcomes if o.returncode != 0]
         if fmt == "table":
             if not outcomes:
@@ -444,6 +437,26 @@ def foreach_command(
         else:
             emit(outcomes, fmt=fmt, columns=columns, kind="workspace.foreach_outcome")
         finish(bool(failed) and not ignore_errors)
+
+
+def _stdin_repos(ws: Workspace) -> list[str]:
+    """Repo names piped to ``foreach --stdin``; records must belong to ``ws``."""
+    piped = read_stdin_input(accept_kinds=FOREACH_STDIN_KINDS)
+    if piped.records is None:
+        return list(piped.values)
+    names: list[str] = []
+    for env in piped.records:
+        source = env.record.get("workspace")
+        if source is not None and source != ws.name:
+            raise UsageError(
+                f"line {env.lineno}: record is from workspace {q(str(source))}, "
+                f"not {q(ws.name)}; pass {q(str(source))} as WS or filter the stream"
+            )
+        name = env.record.get("repo")
+        if not isinstance(name, str) or not name.strip():
+            raise ConfigError(f"line {env.lineno}: record 'repo' is missing or blank")
+        names.append(name.strip())
+    return names
 
 
 def _label(o: ForeachOutcome, *, qualify: bool) -> str:

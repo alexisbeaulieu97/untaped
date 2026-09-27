@@ -45,6 +45,7 @@ def test_forget_prune_dry_run_previews_and_keeps_everything(
     ]
     assert str(target / "upstream") in result.stderr
     assert str(target / "untaped.yml") in result.stderr
+    assert f"then {target} if nothing else is left" in result.stderr
     assert (target / "upstream" / ".git").is_dir()
     assert (target / "untaped.yml").is_file()
     assert _registered(runner) == ["smoke"]
@@ -64,14 +65,14 @@ def test_forget_prune_dry_run_reports_unsafe_state_like_a_real_prune(
     assert _registered(runner) == ["smoke"]
 
 
-def test_forget_dry_run_without_prune_keeps_the_registry_entry(tmp_path: Path) -> None:
+def test_forget_dry_run_requires_prune(tmp_path: Path) -> None:
     runner = CliInvoker()
     runner.invoke(app, ["init", "smoke", "--path", str(tmp_path / "ws")])
 
-    result = runner.invoke(app, ["forget", "smoke", "--dry-run", "--format", "json"])
+    result = runner.invoke(app, ["forget", "smoke", "--dry-run"])
 
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout)[0]["action"] == "planned"
+    assert result.exit_code == 2
+    assert "--dry-run requires --prune" in result.stderr
     assert _registered(runner) == ["smoke"]
 
 
@@ -113,3 +114,23 @@ def test_sync_dry_run_requires_prune() -> None:
 
     assert result.exit_code == 2
     assert "--dry-run requires --prune" in result.stderr
+
+
+def test_sync_prune_dry_run_all_reports_unreadable_manifests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = CliInvoker()
+    broken = tmp_path / "broken"
+    runner.invoke(app, ["init", "broken", "--path", str(broken)])
+    runner.invoke(app, ["init", "fine", "--path", str(tmp_path / "fine")])
+    (broken / "untaped.yml").write_text("repos: [\n")
+    monkeypatch.setattr("os.cpu_count", lambda: 1)
+
+    result = runner.invoke(
+        app, ["sync", "--all", "--prune", "--dry-run", "-j", "64", "--format", "json"]
+    )
+
+    assert result.exit_code == 0, result.output
+    rows = json.loads(result.stdout)
+    assert [(r["workspace"], r["action"]) for r in rows] == [("broken", "unavailable")]
+    assert "clamped" not in result.stderr

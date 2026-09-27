@@ -116,6 +116,11 @@ class StatusEntry(TargetRecord):
     untracked: int = 0
 
     @property
+    def inspected(self) -> bool:
+        """Whether git state was read: a cloned repo whose ``git status`` worked."""
+        return self.action == "status" and self.cloned and not self.detail
+
+    @property
     def dirty(self) -> bool:
         """Uncommitted changes: modified tracked files or untracked files."""
         return self.modified > 0 or self.untracked > 0

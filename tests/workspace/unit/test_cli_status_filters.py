@@ -95,3 +95,32 @@ def test_status_check_exits_zero_when_every_repo_is_clean(
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
     assert "No repos match" in result.stderr
+
+
+def test_status_check_fails_when_a_repo_cannot_be_inspected(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    runner = CliInvoker()
+    runner.invoke(app, ["init", "smoke", "--path", str(tmp_path / "ws")])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+
+    result = runner.invoke(
+        app, ["status", "smoke", "--check", "--dirty", "--format", "raw", "-c", "repo"]
+    )
+
+    assert result.exit_code == 1, result.output
+    assert result.stdout.splitlines() == ["upstream"]
+
+
+def test_status_filters_keep_unavailable_rows(tmp_path: Path) -> None:
+    runner = CliInvoker()
+    broken = tmp_path / "broken"
+    runner.invoke(app, ["init", "broken", "--path", str(broken)])
+    (broken / "untaped.yml").write_text("repos: [\n")
+
+    result = runner.invoke(
+        app, ["status", "--all", "--behind", "--check", "--format", "raw", "-c", "action"]
+    )
+
+    assert result.exit_code == 1, result.output
+    assert result.stdout.splitlines() == ["unavailable"]

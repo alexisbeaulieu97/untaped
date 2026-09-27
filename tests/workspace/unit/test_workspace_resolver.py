@@ -13,14 +13,16 @@ import pytest
 from untaped.capabilities.workspace.application import WorkspaceResolver
 from untaped.capabilities.workspace.domain import Workspace, WorkspaceManifest
 from untaped.capabilities.workspace.infrastructure import (
+    LocalFilesystem,
     WorkspaceRegistryRepository,
     YamlManifestRepository,
 )
 from untaped.capability_api import ConfigError
 from untaped.settings import get_settings
-from workspace.conftest import StubManifests, StubRegistry
+from workspace.conftest import StubFilesystem, StubManifests, StubRegistry
 
 _WS = Path("/ws/lab").resolve()
+_DIRS = (_WS, _WS / "src", _WS / "src" / "deep", Path("/ws/empty").resolve())
 
 
 def _resolver(
@@ -30,7 +32,19 @@ def _resolver(
     return WorkspaceResolver(
         registry=StubRegistry(registered or []),
         manifests=StubManifests(manifests or {}),
+        fs=StubFilesystem(_DIRS),
     )
+
+
+def test_unknown_user_home_raises_config_error() -> None:
+    with pytest.raises(ConfigError, match="~nosuchuser-untaped"):
+        _resolver().resolve("~nosuchuser-untaped/ws")
+
+
+def test_missing_explicit_path_raises_instead_of_walking_up() -> None:
+    resolver = _resolver(manifests={_WS: WorkspaceManifest(name="lab")})
+    with pytest.raises(ConfigError, match="does not exist"):
+        resolver.resolve("./typo/dir", cwd=_WS)
 
 
 def test_resolve_by_name_hits_registry() -> None:
@@ -100,7 +114,7 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 def test_real_adapters_resolve_by_name_path_and_cwd(tmp_path: Path) -> None:
     registry = WorkspaceRegistryRepository()
     manifests = YamlManifestRepository()
-    resolver = WorkspaceResolver(registry=registry, manifests=manifests)
+    resolver = WorkspaceResolver(registry=registry, manifests=manifests, fs=LocalFilesystem())
     prod = tmp_path / "prod"
     manifests.write(prod, WorkspaceManifest())
     registry.register(name="prod", path=prod)

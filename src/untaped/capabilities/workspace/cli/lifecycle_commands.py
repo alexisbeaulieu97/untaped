@@ -39,6 +39,7 @@ from untaped.capability_api import (
     finish,
     plural,
     q,
+    raise_usage,
     report_errors,
     ui_context,
 )
@@ -145,7 +146,8 @@ def forget_command(
         DryRunOption,
         Parameter(
             help=(
-                "Preview: run the same checks, list what --prune would delete, and change nothing."
+                "With --prune: run the same checks, list what the prune would delete, "
+                "and change nothing."
             ),
         ),
     ] = False,
@@ -158,8 +160,10 @@ def forget_command(
     `--prune` to also delete declared and orphan clones plus `untaped.yml`
     (refused if any clone that would be deleted has unsafe local state).
     Other files are kept; the workspace directory is removed only when
-    it ends up empty. ``--dry-run`` previews the prune and changes nothing.
+    it ends up empty. ``--prune --dry-run`` previews the prune and changes nothing.
     """
+    if dry_run and not prune:
+        raise_usage("--dry-run requires --prune")
     with report_errors():
         ui = ui_context(strict=False)
         registry = WorkspaceRegistryRepository()
@@ -172,11 +176,12 @@ def forget_command(
         )
 
         if dry_run:
-            ws, doomed = forget_workspace.preview(name, prune=prune)
+            ws, doomed = forget_workspace.preview_prune(name)
             if doomed:
                 ui.message("info", f"would delete {plural(len(doomed), 'path')}:")
                 for path in doomed:
                     ui.message("info", f"  - {path}")
+                ui.message("info", f"then {ws.path} if nothing else is left")
             emit(
                 [WorkspaceOutcome(name=ws.name, action="planned", target_path=ws.path)],
                 fmt=fmt,

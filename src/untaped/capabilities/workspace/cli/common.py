@@ -10,6 +10,7 @@ from cyclopts import Parameter
 from untaped.capabilities.workspace.application import WorkspaceResolver
 from untaped.capabilities.workspace.domain import Workspace
 from untaped.capabilities.workspace.infrastructure import (
+    LocalFilesystem,
     WorkspaceRegistryRepository,
     YamlManifestRepository,
 )
@@ -36,7 +37,15 @@ RepoSelectorOption = Annotated[
     ),
 ]
 WorkspaceArg = Annotated[str | None, Parameter(name="WS", help=WORKSPACE_ARG_HELP)]
-"""Optional leading positional ``WS`` (see :class:`WorkspaceResolver`)."""
+"""Optional sole positional ``WS`` (see :class:`WorkspaceResolver`)."""
+LeadingWorkspaceArg = Annotated[
+    str | None,
+    Parameter(
+        name="WS",
+        help=f"{WORKSPACE_ARG_HELP} When more arguments follow, the first one is the workspace.",
+    ),
+]
+"""``WS`` ahead of other positionals (``foreach``, ``branch set``, ``repos add|remove``)."""
 
 WorkspaceParallelOption = Annotated[
     ParallelOption,
@@ -66,6 +75,7 @@ def resolve_workspace(workspace: str | None) -> Workspace:
     return WorkspaceResolver(
         registry=WorkspaceRegistryRepository(),
         manifests=YamlManifestRepository(),
+        fs=LocalFilesystem(),
     ).resolve(workspace)
 
 
@@ -77,11 +87,18 @@ def target_workspaces(workspace: str | None, *, all_workspaces: bool) -> list[Wo
     return [resolve_workspace(workspace)]
 
 
-def split_leading_workspace(first: str | None, second: str | None) -> tuple[str | None, str | None]:
-    """Split ``[WS] VALUE`` positionals: one token is ``VALUE``, two are ``WS VALUE``."""
-    if second is None:
-        return None, first
-    return first, second
+def leading_workspace(
+    first: str | None, second: str | None, *, missing: str
+) -> tuple[str | None, str]:
+    """Split ``[WS] VALUE`` positionals: one token is ``VALUE``, two are ``WS VALUE``.
+
+    No token at all is a usage error naming ``missing`` (the ``VALUE``).
+    """
+    if second is not None:
+        return first, second
+    if first is None:
+        raise_usage(f"missing argument {missing}")
+    return None, first
 
 
 def parallel_workers(requested: int | None) -> int:

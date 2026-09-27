@@ -45,15 +45,17 @@ positional argument, `WS`:
 
 - a registered name (`prod`);
 - a path inside a workspace (`.`, `..`, `~/work/prod`, `./prod`, or
-  anything containing `/`); untaped walks up from it to the nearest
-  `untaped.yml`, so an unregistered workspace works too;
+  anything containing `/`); the path must exist, and untaped walks up
+  from it to the nearest `untaped.yml`, so an unregistered workspace
+  works too. Workspace names therefore cannot start with `~`;
 - omitted: the workspace containing the current directory (the same
   walk-up as `.`).
 
 `repos add` and `repos remove` take the repos after the workspace, so
 they need `WS` whenever repos are given positionally
-(`untaped workspace repos add . <url>`); with `--stdin` it may be
-omitted. `foreach [WS] CMD` and `branch set [WS] BRANCH` read one
+(`untaped workspace repos add . <url>`; a lone argument is the
+workspace, so `repos add prod` exits `2` with `missing URL (or --stdin)`);
+with `--stdin` it may be omitted. `foreach [WS] CMD` and `branch set [WS] BRANCH` read one
 positional as the command or branch and two as the workspace followed by
 it. `sync`, `status` and `foreach` take `--all` instead of `WS` to act
 on every registered workspace.
@@ -194,10 +196,12 @@ operation unless `--yes` / `-y` is passed. A declined prompt exits `1`
 files. A forgotten workspace produces one `workspace.forget_outcome` row
 (`name`, `action: forgotten` or `pruned`, `target_path`).
 
-`--dry-run` changes nothing (it wins over `--yes`): it runs the same
-checks, lists on stderr every path `--prune` would delete, and prints one
-`planned` row. An unsafe clone fails the dry run exactly as it would
-fail the prune.
+`--prune --dry-run` changes nothing (it wins over `--yes`): it runs the
+same checks, lists on stderr every path the prune would delete (and
+notes that the workspace directory goes too if nothing else is left),
+and prints one `planned` row. An unsafe clone fails the dry run exactly
+as it would fail the prune. `--dry-run` without `--prune` is a usage
+error (exit `2`), as for `sync`.
 
 `forget --prune` deletes only:
 
@@ -404,7 +408,8 @@ sync uses the `workspace.parallel` profile setting, or
 `min(8, 2 × CPUs)` when it is unset, so sync is parallel by default
 (`-j 1` or `untaped config set workspace.parallel 1` makes it serial).
 The value is clamped to `2 * os.cpu_count()` with a stderr warning when
-needed; a value below `1` is a usage error (exit `2`).
+needed. `-j` below `1` is a usage error (exit `2`); a `workspace.parallel`
+below `1` is an invalid config value (exit `1`).
 
 Sync output remains deterministic even when repo jobs finish out of
 order: workspace input order first, then unmatched selector rows,
@@ -435,7 +440,8 @@ phase.
 
 `sync --prune --dry-run` skips the sync phase entirely (nothing is
 cloned, pulled or deleted) and prints the prune plan: a `planned` row
-for each safe orphan and a `skipped` row for each unsafe one. It exits
+for each safe orphan, a `skipped` row for each unsafe one, and under
+`--all` an `unavailable` row for each unreadable manifest. It exits
 `0` and never prompts. `--dry-run` without `--prune` is a usage error
 (exit `2`).
 
@@ -492,9 +498,13 @@ Filters and checks:
 - `--behind` keeps only repos behind their upstream (`behind` above
   zero), as of the last fetch; `status` never fetches.
 - Together, a repo matches either filter.
+- The filters never hide a repo whose state could not be read: an
+  uncloned repo, a failed `git status`, or an `unavailable` workspace.
 - `--check` exits `3` when any repo is dirty or behind (only the
   `--dirty` / `--behind` condition when one is given), and `0` otherwise.
-  Without a filter it still prints every row.
+  It exits `1` instead when any repo could not be inspected, since the
+  check could not be answered. Without a filter it still prints every
+  row.
 
 ```bash
 # Repos with upstream commits you haven't pulled
@@ -507,7 +517,7 @@ untaped workspace status prod --dirty --check
 ### `foreach`
 
 ```bash
-untaped workspace foreach [WS] <cmd> [--repo <repo>... | --stdin | --all]
+untaped workspace foreach [WS | --all] <cmd> [--repo <repo>... | --stdin]
                                 [--timeout <seconds>]
                                 [--parallel N]
                                 [--continue-on-error | --ignore-errors]
@@ -524,17 +534,24 @@ anything until each repo exits. `--format json|yaml|raw|pipe` emits one
 repo's `target_path`) for
 piping into `jq` / `awk` or another command.
 
-Pick the repos with at most one of:
+Pick the repos:
 
-- `--repo <repo>` / `-r <repo>` (repeatable): only these repos of `WS`.
+- `--repo <repo>` / `-r <repo>` (repeatable): only these repos.
 - `--stdin`: repo names, one per line, or the `repo` field of a
   `workspace.repo`, `workspace.status` or `workspace.sync_outcome` pipe
-  stream; names are matched in `WS`. Any other record kind exits `2`.
-- `--all`: every repo of every registered workspace, in registry order.
-  Table output and the `failed in:` summary then name repos as
-  `<workspace>/<repo>`. A workspace whose manifest cannot be read is
-  skipped with a warning.
-  `--all` cannot be combined with `WS`.
+  stream. Names are matched in `WS`; a record whose `workspace` field
+  names another workspace exits `2`, as does any other record kind.
+  `--stdin` cannot be combined with `--repo` or `--all`.
+- `--all`: every registered workspace, in registry order, instead of
+  `WS`. `--repo` then filters per workspace (an identifier no workspace
+  declares is an error). Table output and the `failed in:` summary name
+  repos as `<workspace>/<repo>`. A workspace whose manifest cannot be
+  read is skipped with a warning. Fail-fast stops the later workspaces
+  too.
+
+A first argument that is not a registered workspace fails with a hint
+to quote the command: `foreach build make` looks up a workspace named
+`build`; write `foreach 'build make'`.
 
 `--parallel N` / `-j N` defaults to the `workspace.parallel` setting, or
 `min(8, 2 × CPUs)`, like `sync`; pass `-j 1` to run repos one at a time.
