@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 8.0.0
+
+A clean breaking release: the spellings deprecated in 7.x are removed without
+aliases, and the capability SDK moves to API version 2.0 (`untaped.api` is
+gone; import from `untaped.capability_api`). Read the **Breaking** entries
+below before upgrading scripts or providers.
 
 - Core
   - **Breaking:** `config set` and `config unset` lost `--target-profile`;
@@ -8,7 +13,8 @@
     another one (`untaped --profile prod config set awx.token --prompt`).
   - **New:** the `ui.format` setting and the `UNTAPED_FORMAT` environment
     variable (which wins) replace the `table` default of the shared
-    `--format` option; an explicit `--format` still wins.
+    `--format` option; an explicit `--format` still wins. Its help reads
+    `[default: table, or UNTAPED_FORMAT / ui.format]`.
   - **Behavior change:** table and styled output that does not go to a
     terminal is no longer wrapped at 80 columns; `COLUMNS` still bounds it.
   - **New:** `untaped setup`, an interactive wizard that configures a profile's

@@ -191,10 +191,14 @@ clones are preserved by default — `forget` is the inverse of `init` /
 `adopt`, not of `sync --prune`. Pass `--prune` to also delete what
 untaped manages in the workspace directory; the command previews the
 workspace name and its absolute path and confirms the destructive
-operation unless `--yes` / `-y` is passed. A declined prompt exits `1`
+operation unless `--yes` / `-y` is passed. Without a terminal and
+without `--yes` it exits `2` (`forget requires --yes when not
+interactive`) and changes nothing; `--prune --dry-run` needs no
+terminal. A declined prompt exits `1`
 (`cancelled; no changes made`) without changing registry state or
 files. A forgotten workspace produces one `workspace.forget_outcome` row
-(`name`, `action: forgotten` or `pruned`, `target_path`).
+(`name`, `action: forgotten`, `pruned`, or `planned` under `--dry-run`,
+`target_path`).
 
 `--prune --dry-run` changes nothing (it wins over `--yes`): it runs the
 same checks, lists on stderr every path the prune would delete (and
@@ -271,7 +275,9 @@ untaped workspace repos remove [WS] --stdin
 
 Remove one or more repos from the manifest, identified by URL or
 alias. `--prune` also deletes the local clone after the SDK batch
-preview and confirmation, unless `--yes` / `-y` is passed. A declined
+preview and confirmation, unless `--yes` / `-y` is passed; without a
+terminal and without `--yes` (or `--dry-run`) it exits `2` and changes
+nothing. A declined
 prompt exits `1` (`cancelled; no changes made`) without changing the
 manifest or local clone. `--dry-run` prints one `planned` row per
 identifier and changes nothing (it wins over `--yes`). Each removed

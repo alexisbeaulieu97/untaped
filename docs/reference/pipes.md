@@ -55,12 +55,15 @@ reads. Commands not listed write no records.
 | `profile list` | `untaped.profile` |
 | `profile create`, `profile delete`, `profile rename` | `untaped.profile_outcome` (`name`, `previous_name`, `copied_from`, `action`) |
 | `skills list` | `untaped.skill` |
+| `skills status` | `untaped.installed_skill` (`name`, `target`, `scope`, `state`, `target_path`) |
+| `skills update`, `skills remove` | `untaped.skill_outcome` (`name`, `target`, `scope`, `target_path`, `action`) |
 | `doctor`, `setup` | `untaped.doctor_check` |
 | `capabilities` | `untaped.capability` |
 | `alias list` | `untaped.alias` (`name`, `command`, `argv`, `profile`) |
 | `alias set`, `alias remove` | `untaped.alias_outcome` (`name`, `profile`, `action`) |
 
-`skills install --stdin` reads bare skill names, one per line. With
+`--stdin` on `skills install`, `status`, `update` and `remove` reads bare
+skill names, one per line. With
 `--dry-run`, `config set/unset`, `profile create/delete/rename` and
 `alias set/remove` validate, write nothing and print their outcome with
 `action` `planned`.
@@ -137,6 +140,8 @@ Resource kinds are `awx.<snake_case kind>`: `awx.organization`,
 | `awx <resource> export --format json` or `--format pipe` | `awx.document` (YAML by default) |
 | `awx apply`, `awx <resource> patch`, `edit` | `awx.apply_outcome` |
 | `awx <resource> delete` | `awx.delete_outcome` |
+| `awx job-templates copy`, `awx workflow-templates copy` | `awx.copy_outcome` (`id` names the new template) |
+| `awx job-templates rename`, `awx workflow-templates rename` | `awx.rename_outcome` |
 | `awx <resource> <members> add/remove` | `awx.membership_outcome` |
 | `awx job-templates launch`, `awx workflow-templates launch` | `awx.launch_outcome` |
 | `awx projects sync`, `inventories sync`, `inventory-sources sync` | `awx.sync_outcome` |
@@ -154,11 +159,11 @@ Resource kinds are `awx.<snake_case kind>`: `awx.organization`,
 
 | Consumer | Reads | Field used |
 |---|---|---|
-| `awx <resource> <verb> --stdin` (selection commands) | that resource's kind; or name lines (ID lines with `--by-id`) | name field, or `id` with `--by-id` |
-| `awx <resource> <members> add/remove --stdin` | the member resource's kind | name field, or `id` |
+| `awx <resource> <verb> --stdin` (selection commands) | that resource's kind (templates also take `awx.copy_outcome` and `awx.rename_outcome` of their kind); or name lines (ID lines with `--by-id`) | `id` of a record; a line is a name, or an ID with `--by-id` |
+| `awx <resource> <members> add/remove --stdin` | the member resource's kind; or name lines (ID lines with `--by-id`) | `id` of a record; a line is a name, or an ID with `--by-id` |
 | `awx jobs get/events/logs/wait/cancel/relaunch --stdin` | `awx.job`, `awx.launch_outcome`, `awx.sync_outcome`, `awx.relaunch_outcome`; or ID lines | `id`; a record's own execution kind wins over `--kind` |
 | `awx unified-templates get --stdin` | `awx.unified_template`; or ID lines | `id` |
-| `awx job-templates usage --stdin`, `workflow-templates usage/nodes --stdin` | the template's kind; or name lines | name field |
+| `awx job-templates usage --stdin`, `workflow-templates usage/nodes --stdin` | the template's kind; or name lines (ID lines with `--by-id`) | name field (`id` with `--by-id`) |
 
 `awx jobs events` and `awx jobs logs` with several ids print one json or yaml
 array covering every job; the `job` field says which job a row belongs to.

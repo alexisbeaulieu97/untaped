@@ -133,3 +133,13 @@ def test_an_invalid_ui_section_falls_back_so_it_can_be_repaired(_isolated_config
     assert result.exit_code == 0, result.output
     assert "key" in result.stdout
     assert json.loads(_invoke(["config", "list"]).stdout)
+
+
+def test_format_help_names_the_overrides_only_for_the_table_default() -> None:
+    def help_text(argv: list[str]) -> str:
+        return " ".join(_invoke([*argv, "--help"]).stdout.replace("│", " ").split())
+
+    assert "[default: table, or UNTAPED_FORMAT / ui.format]" in help_text(["config", "list"])
+    raw_help = help_text(["config", "get"])
+    assert "[default: raw]" in raw_help
+    assert "UNTAPED_FORMAT" not in raw_help
