@@ -370,7 +370,7 @@ class BatchMutationEngine:
                     "detail": _safe_error(exc, operation),
                 }
             )
-            if isinstance(exc, ConfigError):
+            if isinstance(exc, ConfigError) or isinstance(exc.__cause__, ConfigError):
                 raise _AbortBatchError(outcome) from exc
             return outcome
 

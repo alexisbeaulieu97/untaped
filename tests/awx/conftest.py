@@ -63,8 +63,8 @@ class FakeAap:
         self.copy_checks: dict[tuple[str, int], dict[str, Any]] = {}
         self.mask_secret_write_response = False
         self.enrich_survey_spec_response = False
-        # When set, ``POST <template>/<id>/survey_spec/`` answers 400 with it.
-        self.survey_post_error: str | None = None
+        # HTTP method → error status for ``<template>/<id>/survey_spec/``.
+        self.survey_errors: dict[str, int] = {}
 
     def seed(self, api_path: str, **fields: Any) -> dict[str, Any]:
         record_id = fields.pop("id", None) or self._next_id
@@ -95,6 +95,8 @@ class FakeAap:
         method = request.method
         body = self._json_body(request)
 
+        if len(parts) == 3 and parts[2] == "survey_spec" and method in self.survey_errors:
+            return _err(self.survey_errors[method], f"survey {method} rejected")
         if method == "GET":
             if (
                 len(parts) == 3
@@ -154,6 +156,9 @@ class FakeAap:
                 # auto-fills ``inventory: <id>``.
                 if parts[0] == "inventories" and parts[2] in {"hosts", "groups"}:
                     return self._nested_create(parts[2], int(parts[1]), body)
+                if parts[2] == "schedules":
+                    body = {**body, "unified_job_template": int(parts[1])}
+                    return self._create("schedules", body)
                 return self._action(parts[0], int(parts[1]), parts[2], body)
         elif method == "PATCH":
             if len(parts) == 2 and parts[1].isdigit():
@@ -259,8 +264,6 @@ class FakeAap:
         record = self.store.get(api_path, {}).get(id_)
         if record is None:
             return _err(404, f"{api_path}/{id_}/survey_spec/ not found")
-        if self.survey_post_error is not None:
-            return _err(400, self.survey_post_error)
         old = {
             q.get("variable"): q
             for q in (record.get("survey_spec") or {}).get("spec") or []

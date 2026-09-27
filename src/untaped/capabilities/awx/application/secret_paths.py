@@ -50,21 +50,19 @@ def path_slots(value: Any, pattern: str) -> Iterator[tuple[Any, Any]]:
     else:
         return
     if predicate is not None:
-        field, expected = predicate
-        keys = [
-            key
-            for key in keys
-            if (
-                isinstance(value[key], Mapping) and value[key].get(field) == expected
-                if field
-                else value[key] == expected
-            )
-        ]
+        keys = [key for key in keys if _passes(value[key], *predicate)]
     for key in keys:
         if rest:
             yield from path_slots(value[key], rest)
         else:
             yield value, key
+
+
+def _passes(item: Any, field: str, expected: str) -> bool:
+    """``*[field=expected]`` checks a mapping's field; ``*[=expected]`` the item."""
+    if not field:
+        return bool(item == expected)
+    return isinstance(item, Mapping) and item.get(field) == expected
 
 
 def _wildcard(segment: str) -> tuple[bool, tuple[str, str] | None]:
@@ -147,13 +145,23 @@ def _walk(
 
 
 def _render(path_parts: list[str], pattern: str) -> str:
-    """Name a preserved slot, keeping the pattern's filtered wildcards.
+    """Name a preserved slot, keeping the pattern's filtered list wildcards.
 
     The rendered path is later replayed with :func:`remove_at` against the
-    existing record, so a ``*[key=value]`` segment must survive; a plain
-    ``*`` or literal key renders as walked.
+    existing record, so a filtered segment over a list (walked as ``*``)
+    must survive; a mapping key renders as its concrete key, so only that
+    key is replayed. A plain ``*`` or literal key renders as walked.
     """
     return ".".join(
-        segment if _wildcard(segment)[1] is not None else part
+        segment if part == "*" and _wildcard(segment)[1] is not None else part
         for part, segment in zip(path_parts, pattern.split("."), strict=True)
+    )
+
+
+def covered_by(path: str, pattern: str) -> bool:
+    """Whether a preserved ``path`` names a slot of the secret ``pattern``."""
+    parts, segments = path.split("."), pattern.split(".")
+    return len(parts) == len(segments) and all(
+        part == segment or _wildcard(segment)[0]
+        for part, segment in zip(parts, segments, strict=True)
     )

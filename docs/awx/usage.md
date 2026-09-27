@@ -127,8 +127,10 @@ result changes, and controller errors. Saved specifications use
 `$encrypted$` placeholders where the controller does not return a secret.
 AWX returns a schedule's survey password answers in `extra_data` as
 `$encrypted$`: applying them back keeps the stored answers, a change to
-another `extra_data` key beside one is refused, and a new schedule drops them
-with a warning.
+another `extra_data` key beside one (including removing another answer) is
+refused, and a new schedule drops them with a warning. untaped cannot tell
+which `extra_data` keys are passwords, so a real answer you type there is not
+redacted: previews and results show it in plain text.
 
 ## Edit different values together
 
