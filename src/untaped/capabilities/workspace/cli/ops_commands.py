@@ -43,6 +43,7 @@ from untaped.capability_api import (
     FormatOption,
     OutputFormat,
     ParallelOption,
+    UsageError,
     YesOption,
     batch_apply,
     clamp_parallel,
@@ -165,7 +166,8 @@ def sync_command(
                     destructive=True,
                     assume_yes=yes,
                 )
-            except ConfigError:
+            except ConfigError, UsageError:
+                # Emit the sync rows already produced before the refusal exits.
                 print_sync_outcomes(outcomes, fmt=fmt, columns=columns)
                 raise
             outcomes.extend(row for _, row in pruned.results)

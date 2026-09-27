@@ -1,9 +1,10 @@
-"""Filesystem input helpers for SDK commands."""
+"""Filesystem helpers for SDK commands: structured reads and durable atomic writes."""
 
 from __future__ import annotations
 
 import json
 import os
+import stat
 import uuid
 from collections.abc import Iterable, Sequence
 from contextlib import suppress
@@ -40,21 +41,87 @@ class FileChange:
     after: str | None
 
 
-def atomic_write(path: Path, content: str, *, encoding: str = "utf-8", newline: str = "") -> None:
-    """Write ``content`` to ``path`` atomically (temp file + ``os.replace``).
+def atomic_write(
+    path: Path,
+    content: str,
+    *,
+    encoding: str = "utf-8",
+    newline: str = "",
+    mode: int | None = None,
+) -> None:
+    """Write ``content`` to ``path`` atomically and durably.
 
-    Creates parent directories. ``newline=""`` disables newline translation
-    so the caller's line endings land on disk verbatim.
+    The content goes to a temp file beside the target, is fsynced, then
+    ``os.replace``-d over the target, and the directory is fsynced where the
+    platform allows it; a failed write leaves the original untouched and no
+    temp file behind. A symlinked ``path`` is written through: the link
+    survives and the file it points at gets the content. An existing file
+    keeps its permission bits; ``mode`` sets them instead (the temp file never
+    has looser ones, even briefly); a new file otherwise gets the default mode
+    (``0o666`` minus the umask). Creates parent directories. ``newline=""``
+    disables newline translation so the caller's line endings land on disk
+    verbatim.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.untaped.tmp")
+    target = _write_target(path)
+    tmp = _write_temp(target, content, encoding=encoding, newline=newline, mode=mode)
     try:
-        with open(tmp, "w", encoding=encoding, newline=newline) as handle:
-            handle.write(content)
-        os.replace(tmp, path)
+        _commit(tmp, target)
     finally:
-        with suppress(OSError):
-            tmp.unlink(missing_ok=True)
+        _remove_staged((tmp,))
+
+
+def _write_target(path: Path) -> Path:
+    """The file a write to ``path`` must replace: a symlink's final target."""
+    return Path(os.path.realpath(path)) if path.is_symlink() else path
+
+
+def _write_temp(
+    target: Path,
+    content: str,
+    *,
+    encoding: str = "utf-8",
+    newline: str = "",
+    mode: int | None = None,
+) -> Path:
+    """Write ``content`` to a fresh fsynced temp file beside ``target``; return it.
+
+    The temp file gets ``mode``, else ``target``'s current mode, else the
+    default mode for a new file.
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if mode is None:
+        with suppress(FileNotFoundError):
+            mode = stat.S_IMODE(target.stat().st_mode)
+    create_mode = 0o666 if mode is None else 0o600
+    tmp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.untaped.tmp")
+    try:
+        with open(
+            tmp,
+            "x",
+            encoding=encoding,
+            newline=newline,
+            opener=lambda name, flags: os.open(name, flags, create_mode),
+        ) as handle:
+            if mode is not None:
+                os.chmod(handle.fileno(), mode)
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except BaseException:
+        _remove_staged((tmp,))
+        raise
+    return tmp
+
+
+def _commit(tmp: Path, target: Path) -> None:
+    """Move a staged temp file over ``target`` and persist the rename."""
+    os.replace(tmp, target)
+    with suppress(OSError):  # directories cannot be opened or fsynced everywhere
+        fd = os.open(target.parent, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
 
 
 def apply_file_changes(changes: Sequence[FileChange]) -> None:
@@ -76,7 +143,7 @@ def apply_file_changes(changes: Sequence[FileChange]) -> None:
                     change.path.unlink()
                 applied.append(change)
                 continue
-            os.replace(staged[index], change.path)
+            _commit(staged[index], _write_target(change.path))
             applied.append(change)
     except BaseException as exc:
         _remove_staged(staged.values())
@@ -110,22 +177,13 @@ def _verify_current_content(changes: Sequence[FileChange]) -> None:
 
 def _stage_replacements(changes: Sequence[FileChange]) -> dict[int, Path]:
     staged: dict[int, Path] = {}
-    tmp: Path | None = None
     try:
         for index, change in enumerate(changes):
             if change.after is None:
                 continue
-            change.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = change.path.with_name(f".{change.path.name}.{uuid.uuid4().hex}.untaped.tmp")
-            with open(tmp, "w", encoding="utf-8", newline="") as handle:
-                handle.write(change.after)
-            staged[index] = tmp
-            tmp = None
+            staged[index] = _write_temp(_write_target(change.path), change.after)
     except BaseException as exc:
-        pending = [*staged.values()]
-        if tmp is not None:
-            pending.append(tmp)
-        _remove_staged(pending)
+        _remove_staged(staged.values())
         if isinstance(exc, OSError):
             raise FileWriteError(str(exc)) from exc
         raise
@@ -135,24 +193,14 @@ def _stage_replacements(changes: Sequence[FileChange]) -> dict[int, Path]:
 def _rollback(applied: list[FileChange]) -> list[str]:
     errors: list[str] = []
     for change in reversed(applied):
-        tmp: Path | None = None
         try:
             if change.before is None:
                 if change.path.exists():
                     change.path.unlink()
                 continue
-            change.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = change.path.with_name(
-                f".{change.path.name}.{uuid.uuid4().hex}.untaped.rollback.tmp"
-            )
-            with open(tmp, "w", encoding="utf-8", newline="") as handle:
-                handle.write(change.before)
-            os.replace(tmp, change.path)
+            atomic_write(change.path, change.before)
         except OSError as exc:
             errors.append(f"{change.path}: {exc}")
-        finally:
-            if tmp is not None:
-                _remove_staged((tmp,))
     return errors
 
 

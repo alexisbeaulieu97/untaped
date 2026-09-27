@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- Core
+  - **Fix:** config and state writes go through a symlinked `config.yml` or
+    `state.yml` instead of replacing the link with a regular file.
+  - **Fix:** `config edit` edits a private copy and saves it under the config
+    lock, owner-only (`0600`) and through a symlink. An invalid result, or a
+    config file changed meanwhile, leaves `config.yml` unchanged (exit 1) and
+    names the copy holding your edits; before, the invalid file was kept.
+  - **Fix:** `atomic_write` (and `apply_file_changes`) now fsync the file and
+    its directory, keep an existing file's permission bits (or apply `mode=`),
+    and write through symlinks. Config writes, file transactions and the
+    GitHub corpus metadata use this one helper.
+  - **Fix:** with `skills.updates: auto`, the per-run skills check only warns
+    after a failed command or a `--dry-run`; it no longer rewrites installed
+    skills then.
+  - **Fix:** git's `core.sshCommand` is looked up in the repository a git
+    command runs in, not the current directory, before untaped defaults ssh
+    to `BatchMode`.
+- Workspace
+  - **Fix:** `sync --prune` without a terminal and without `--yes` prints the
+    sync rows before exiting 2, as documented; they were lost.
+  - **Fix:** the bare-repo cache is locked across processes, so two
+    concurrent syncs of the same URL no longer clone into, fetch, or delete
+    each other's partial clone.
 - AWX
   - **Behavior change:** job and workflow template exports now carry
     `labels` (by name), and apply reconciles them through the template's

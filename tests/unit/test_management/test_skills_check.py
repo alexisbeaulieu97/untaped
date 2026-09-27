@@ -103,3 +103,23 @@ def test_unshipped_skill_warns_but_is_never_removed(_isolated_config: Path, tmp_
     assert "warning: installed skills are no longer shipped: untaped-gone" in output
     assert "hint: run `untaped skills remove untaped-gone`" in output
     assert _installed("untaped-gone").is_file()
+
+
+@pytest.mark.parametrize(
+    ("args", "code"),
+    [
+        (("demo", "--no-such-flag"), 2),
+        (("config", "set", "ui.theme", "default", "--dry-run"), 0),
+    ],
+    ids=["failed", "dry-run"],
+)
+def test_auto_only_warns_after_a_failed_or_dry_run_command(
+    _isolated_config: Path, tmp_path: Path, args: tuple[str, ...], code: int
+) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    skills: {updates: auto}\n")
+    root = _install_then_change(tmp_path)
+    result_code, output = _run(root, *args)
+    assert result_code == code, output
+    assert "updated" not in output
+    assert "warning: installed skills are out of date: untaped-demo" in output
+    assert _installed("untaped-demo").read_text() != "new instructions\n"

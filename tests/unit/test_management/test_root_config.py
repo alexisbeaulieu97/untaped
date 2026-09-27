@@ -180,23 +180,74 @@ def test_edit_without_editor_is_a_clean_error(monkeypatch: pytest.MonkeyPatch) -
     assert "VISUAL" in result.output or "EDITOR" in result.output
 
 
-@pytest.mark.parametrize("valid", [True, False])
-def test_config_edit_waits_then_validates_with_shared_editor(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, valid: bool
-) -> None:
+def _scripted_editor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: str) -> None:
     import shlex
     import sys
+    import tempfile
 
+    # Edited copies kept after a failed save land in tmp_path, not /tmp.
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     script = tmp_path / "config editor.py"
-    content = "profiles: {default: {jira: {timeout: 12}}}" if valid else "[invalid"
     script.write_text(
         "import pathlib, sys\npathlib.Path(sys.argv[-1]).write_text(" + repr(content) + ")\n"
     )
     monkeypatch.setenv("VISUAL", shlex.join([sys.executable, str(script)]))
+
+
+@pytest.mark.parametrize(
+    "content", ["[invalid", "profiles: {default: {jira: {timeout: not-a-number}}}"]
+)
+def test_config_edit_rejects_an_invalid_edit_and_keeps_the_config(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: str
+) -> None:
+    original = "# mine\nprofiles: {default: {jira: {timeout: 5}}}\n"
+    write_config(_isolated_config, original)
+    _scripted_editor(tmp_path, monkeypatch, content)
     result = CliInvoker().invoke(_config_app(), ["edit"])
-    assert (result.exit_code == 0) is valid, result.output
-    assert _isolated_config.read_text() == content
-    assert ("saved and validated" in result.output) is valid
+    assert result.exit_code == 1, result.output
+    assert _isolated_config.read_text() == original
+    assert "saved and validated" not in result.output
+    kept = Path(result.stderr.split("your edits are in ")[1].split()[0])
+    assert kept.read_text() == content
+
+
+def test_config_edit_saves_verbatim_owner_only_and_through_a_symlink(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = tmp_path / "dotfiles" / "config.yml"
+    real.parent.mkdir()
+    real.write_text("profiles: {}\n")
+    real.chmod(0o644)
+    _isolated_config.unlink(missing_ok=True)
+    _isolated_config.parent.mkdir(parents=True, exist_ok=True)
+    _isolated_config.symlink_to(real)
+    content = "# hand edited\nprofiles: {default: {jira: {timeout: 12}}}"
+    _scripted_editor(tmp_path, monkeypatch, content)
+    result = CliInvoker().invoke(_config_app(), ["edit"])
+    assert result.exit_code == 0, result.output
+    assert "saved and validated" in result.output
+    assert _isolated_config.is_symlink()
+    assert real.read_text() == content
+    assert real.stat().st_mode & 0o777 == 0o600
+
+
+def test_config_edit_saves_under_the_config_lock(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from filelock import FileLock
+
+    write_config(_isolated_config, "profiles: {}\n")
+    monkeypatch.setenv("UNTAPED_CONFIG_LOCK_TIMEOUT", "0.05")
+    _scripted_editor(tmp_path, monkeypatch, "profiles: {default: {jira: {timeout: 12}}}")
+    held = FileLock(f"{_isolated_config}.lock")
+    held.acquire()
+    try:
+        result = CliInvoker().invoke(_config_app(), ["edit"])
+    finally:
+        held.release()
+    assert result.exit_code == 1, result.output
+    assert "could not acquire lock" in result.stderr
+    assert _isolated_config.read_text() == "profiles: {}\n"
 
 
 def test_set_preserves_comments_and_key_order(_isolated_config: Path) -> None:

@@ -206,7 +206,7 @@ def git_env(
         batch_ssh
         and "GIT_SSH_COMMAND" not in env
         and "GIT_SSH" not in env
-        and not _core_ssh_command_set(git_path, _config_scope(env))
+        and not _core_ssh_command_set(git_path, _config_scope(env), _probe_dir(cwd))
     ):
         env["GIT_SSH_COMMAND"] = _BATCH_SSH_COMMAND
     if ceiling and cwd is not None:
@@ -390,21 +390,32 @@ def _config_scope(env: Mapping[str, str]) -> tuple[tuple[str, str], ...]:
     return tuple(sorted((k, v) for k, v in env.items() if k in keys or k.startswith("GIT_CONFIG")))
 
 
-@functools.lru_cache(maxsize=8)
-def _core_ssh_command_set(git_path: str | None, scope: tuple[tuple[str, str], ...]) -> bool:
-    """Whether git config sets ``core.sshCommand`` (probed once per config scope).
+def _probe_dir(cwd: Path | None) -> str | None:
+    """The directory whose repository config the ``core.sshCommand`` probe reads."""
+    return str(cwd) if cwd is not None and os.path.isdir(cwd) else None
+
+
+@functools.lru_cache(maxsize=256)
+def _core_ssh_command_set(
+    git_path: str | None, scope: tuple[tuple[str, str], ...], cwd: str | None
+) -> bool:
+    """Whether git config sets ``core.sshCommand`` (probed once per scope and repo).
 
     ``GIT_SSH_COMMAND`` outranks ``core.sshCommand``, so the BatchMode
     default must not be injected over a user's configured ssh command. The
-    probe uses ``Popen`` directly so it stays out of the ``subprocess.run``
-    path that callers and tests observe.
+    probe runs in the command's ``cwd`` (the process cwd when there is none)
+    so it reads that repository's config, never one inherited ``GIT_DIR``
+    points at. It uses ``Popen`` directly so it stays out of the
+    ``subprocess.run`` path that callers and tests observe.
     """
     if git_path is None:
         return False
+    inherited = {k: v for k, v in os.environ.items() if k not in _REPO_REDIRECT_ENV}
     try:
         proc = subprocess.Popen(
             [git_path, "config", "--get", "core.sshCommand"],
-            env={**os.environ, **dict(scope), "GIT_TERMINAL_PROMPT": "0"},
+            cwd=cwd,
+            env={**inherited, **dict(scope), "GIT_TERMINAL_PROMPT": "0"},
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,

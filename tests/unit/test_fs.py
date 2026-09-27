@@ -1,6 +1,7 @@
 """Behavioral tests for filesystem input helpers."""
 
 import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -67,6 +68,72 @@ def test_atomic_write_preserves_crlf_verbatim(tmp_path: Path) -> None:
 def test_atomic_write_leaves_no_temp_file_on_success(tmp_path: Path) -> None:
     atomic_write(tmp_path / "out.txt", "x")
     assert [p.name for p in tmp_path.iterdir()] == ["out.txt"]
+
+
+def test_atomic_write_writes_through_a_symlink(tmp_path: Path) -> None:
+    real = tmp_path / "dotfiles" / "out.txt"
+    real.parent.mkdir()
+    real.write_text("old")
+    link = tmp_path / "out.txt"
+    link.symlink_to(real)
+    atomic_write(link, "new")
+    assert link.is_symlink()
+    assert real.read_text() == "new"
+    assert sorted(p.name for p in real.parent.iterdir()) == ["out.txt"]
+
+
+def test_atomic_write_keeps_the_existing_mode(tmp_path: Path) -> None:
+    target = tmp_path / "script.sh"
+    target.write_text("old")
+    target.chmod(0o750)
+    atomic_write(target, "new")
+    assert stat.S_IMODE(target.stat().st_mode) == 0o750
+
+
+def test_atomic_write_applies_an_explicit_mode(tmp_path: Path) -> None:
+    target = tmp_path / "secret.yml"
+    target.write_text("old")
+    target.chmod(0o644)
+    atomic_write(target, "new", mode=0o600)
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    atomic_write(tmp_path / "fresh.yml", "new", mode=0o600)
+    assert stat.S_IMODE((tmp_path / "fresh.yml").stat().st_mode) == 0o600
+
+
+def test_atomic_write_new_file_gets_the_default_mode(tmp_path: Path) -> None:
+    old_umask = os.umask(0o022)
+    try:
+        atomic_write(tmp_path / "out.txt", "x")
+    finally:
+        os.umask(old_umask)
+    assert stat.S_IMODE((tmp_path / "out.txt").stat().st_mode) == 0o644
+
+
+def test_atomic_write_fsyncs_the_file_and_its_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    synced: list[str] = []
+    real_fsync = os.fsync
+
+    def spy(fd: int) -> None:
+        synced.append("dir" if stat.S_ISDIR(os.fstat(fd).st_mode) else "file")
+        real_fsync(fd)
+
+    monkeypatch.setattr(fs_module.os, "fsync", spy)
+    atomic_write(tmp_path / "out.txt", "x")
+    assert synced == ["file", "dir"]
+
+
+def test_apply_file_changes_keeps_mode_and_writes_through_symlinks(tmp_path: Path) -> None:
+    real = tmp_path / "real.sh"
+    real.write_text("v1")
+    real.chmod(0o750)
+    link = tmp_path / "link.sh"
+    link.symlink_to(real)
+    apply_file_changes([FileChange(path=link, before="v1", after="v2")])
+    assert link.is_symlink()
+    assert real.read_text() == "v2"
+    assert stat.S_IMODE(real.stat().st_mode) == 0o750
 
 
 def test_apply_file_changes_writes_deletes_and_creates(tmp_path: Path) -> None:

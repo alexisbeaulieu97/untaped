@@ -233,7 +233,7 @@ def build_root_app(
         root,
         _root_options(),
         capability_names,
-        after_command=lambda tokens: _check_skills_after(tokens, skills),
+        after_command=lambda tokens, failed: _check_skills_after(tokens, skills, failed=failed),
     )
     root.register_install_completion_command()
     return root
@@ -303,16 +303,20 @@ def _mount_capability(root: App, capability: RegisteredCapability) -> None:
 _SKILLS_CHECK_EXEMPT = frozenset({"skills", "doctor"})
 
 
-def _check_skills_after(tokens: list[str], skills: Mapping[str, InstallableSkill]) -> None:
+def _check_skills_after(
+    tokens: list[str], skills: Mapping[str, InstallableSkill], *, failed: bool
+) -> None:
     """Run the per-run installed-skills check after a command.
 
     Skipped for bare ``untaped``, root flags (``--help``, ``--version``) and
-    the skills-managing commands. Never lets the check break the command.
+    the skills-managing commands. After a failed or ``--dry-run`` command it
+    only reports, never updates. Never lets the check break the command.
     """
     if not tokens or tokens[0].startswith("-") or tokens[0] in _SKILLS_CHECK_EXEMPT:
         return
+    options = tokens[: tokens.index("--")] if "--" in tokens else tokens
     try:
-        check_installed_skills(skills)
+        check_installed_skills(skills, allow_updates=not failed and "--dry-run" not in options)
     except Exception:
         return
 
@@ -322,7 +326,7 @@ def _install_root_callback(
     root_options: dict[str, _RootOption],
     capability_names: frozenset[str],
     *,
-    after_command: Callable[[list[str]], None] | None = None,
+    after_command: Callable[[list[str], bool], None] | None = None,
 ) -> None:
     # The meta app must not intercept --help/--version: that would render the
     # meta callback instead of the inner app's command listing. The inner app
@@ -342,6 +346,7 @@ def _install_root_callback(
         applied_tokens: list[tuple[_RootOption, object]] = []
         identity_token: Token[str | None] | None = None
         command_tokens: list[str] = []
+        failed = True
         try:
             with report_errors():
                 command_tokens = _consume_leading_root_options(
@@ -355,13 +360,18 @@ def _install_root_callback(
                     else SHELL_NAME
                 )
                 identity_token = _active_capability.set(selected)
-                return _dispatch_with_root_options(
+                result = _dispatch_with_root_options(
                     app, command_tokens, root_options, applied_tokens
                 )
+                failed = False
+                return result
+        except SystemExit as exc:
+            failed = exc.code not in (0, None)
+            raise
         finally:
             # Runs on failures too: a stale skill is a likely cause of one.
             if after_command is not None and identity_token is not None:
-                after_command(command_tokens)
+                after_command(command_tokens, failed)
             if identity_token is not None:
                 _active_capability.reset(identity_token)
             for option, token in reversed(applied_tokens):

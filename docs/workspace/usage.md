@@ -632,7 +632,10 @@ bare cache during sync; they fetch their own `origin` refs and then
 fast-forward or skip. Missing clones use the bare cache as the
 reference source. A fresh bare clone is treated as already fresh, while
 an existing bare is fetched at most once per bare cache path per sync
-run, on demand, before reference clones use it.
+run, on demand, before reference clones use it. Concurrent untaped
+processes can share the cache: each bare clone is created or fetched
+under a lock file beside it (`<name>.git.lock`), so one process never
+clones into, fetches, or removes another's partial clone.
 
 ## See also
 

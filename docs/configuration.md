@@ -55,15 +55,20 @@ file. An empty profile entry (`prod:` with nothing under it) is an empty
 profile. Writes take an advisory lock on `<config>.lock` (state writes on
 `<state>.lock`); set
 `UNTAPED_CONFIG_LOCK_TIMEOUT` (seconds, a non-negative number) to change the
-default 5-second wait. Both files are rewritten atomically through a unique
-temporary file that is created owner-only (`0600`), so secrets are never
-briefly world-readable.
+default 5-second wait. Both files are rewritten atomically and durably
+(fsynced) through a unique temporary file that is created owner-only (`0600`),
+so secrets are never briefly world-readable. A symlinked `config.yml` or
+`state.yml` stays a symlink: the file it points at is rewritten.
 
 Writes (`config set/unset`, `profile` commands, and capability state updates
 to `state.yml`) rewrite only the keys they change: your comments, key order, quoting, and
 indentation are kept. New keys are appended to their mapping, and new string
 values that YAML would read as another type (`no`, `0123`, `~`) are quoted.
-`config edit` saves exactly what you wrote.
+`config edit` saves exactly what you wrote: it opens a private copy, then
+writes it back like any other write (under the lock, owner-only, through a
+symlink) and validates it. If the result is invalid, or the file changed while
+you edited, `config.yml` is left as it was, the command exits 1, and the error
+names the copy that holds your edits.
 
 `config.yml` keeps profile-scoped settings under `profiles.<name>`. `active`
 is optional; when it is absent, `default` is the fallback profile.
