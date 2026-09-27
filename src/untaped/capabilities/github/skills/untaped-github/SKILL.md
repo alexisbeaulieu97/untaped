@@ -10,7 +10,8 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
 ## Setup
 
 - The command is `untaped github`. It ships with the unified `untaped` CLI (no separate install).
-- Settings live under `profiles.<name>.github`: `base_url`, `token`, `corpus_path`, and `sweep` freshness/concurrency settings.
+- Settings live under `profiles.<name>.github`: `base_url`, `token`, `default_org`, `corpus_path`, and `sweep` freshness/concurrency settings.
+- `untaped config set github.default_org ORG` gives `repos list`, `search repos|code|issues`, `sweep`, `cache sync` and `cache prune` an org scope when none of `--org`, `--team`, `--repo`, `--user` or `--stdin` is passed. Any explicit scope replaces it (never adds to it).
 - `base_url` defaults to `https://api.github.com`; GitHub Enterprise Server usually uses `https://HOST/api/v3`.
 - Git fetches (`sweep`, `cache sync`) send the token only to the Git host of `base_url` (`github.com`, or `HOST` for `https://HOST/api/v3`); a piped `clone_url` on another host is fetched without credentials.
 - Set the token with `untaped config set github.token --prompt` or `--stdin`, or point `github.token_command` at a command that prints it (`'["gh", "auth", "token"]'`). `GH_TOKEN`/`GITHUB_TOKEN` are the last fallback. A rejected token (HTTP 401) fails with a hint to run that command.
@@ -28,12 +29,13 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
 - `untaped github search code` searches GitHub's indexed code search and does not support sort, regex, or exhaustive multi-ref sweeps.
 - `untaped github search issues` searches issues and pull requests.
 - `untaped github search users` searches users and organizations and emits `github.user_hit` records (`whoami` emits `github.user`).
-- Search commands support scoped selectors such as `--user`, repeatable `--org`, repeatable `--repo`, and repeatable `--team ORG/SLUG` where applicable.
+- Search commands support scoped selectors such as `--user`, repeatable `--org`, repeatable `-r/--repo`, and repeatable `--team ORG/SLUG` where applicable. `-r` always means `--repo` across `github` commands.
+- `--archived include|exclude|only` on `repos list`, `search repos`, `sweep` and `cache sync` keeps, drops, or isolates archived repos; the default is `exclude` everywhere. There are no `--no-archived` or bare `--archived` spellings.
 - Prefer `--team ORG/SLUG` for team-only operations. A bare `--team SLUG` is accepted only when exactly one `--org` is present and normalizes to `ORG/SLUG`.
-- `repos list` requires explicit `--org` or `--team` scopes; it does not default to the authenticated user's repositories.
+- `repos list` requires `--org` or `--team` scopes (or `github.default_org`); it does not default to the authenticated user's repositories.
 - `repos list` treats `--org` and `--team` as additive scopes: `--team acme/backend` is team-only, while `--org acme --team backend` includes the whole org plus that team.
 - In `repos list`, `PATTERN` is a case-insensitive whole-target glob by default; `--regex` switches it to a case-insensitive, unanchored regex substring match. Patterns with `/` match `full_name`, otherwise they match repo `name`.
-- Use `repos list --no-archived --no-fork --format raw --columns ssh_url` to produce cloneable inventory URL lines for `untaped workspace add --stdin`.
+- Use `repos list --no-fork --format raw --columns ssh_url` to produce cloneable inventory URL lines for `untaped workspace add --stdin`.
 - Use `sweep` instead of GitHub `search code` for repeated team-wide code checks, regexes, path-scoped predicates, negation, and refs beyond the default branch.
 
 ## Agent Guidance
@@ -69,8 +71,8 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
   also reads `github.repo`, `github.repo_hit` and `github.sweep_repo` pipe records
   (`untaped github search repos --org acme --format pipe | untaped workspace add --stdin`).
 - `--profile <name>` works in any token position (e.g. `untaped github --profile work whoami`).
-- Use `--limit` intentionally; GitHub search has stricter rate limits than normal REST reads.
-- When no repo/org/user/team scope is passed to repo/code/issue search, the CLI defaults to the authenticated user.
+- Use `--limit` intentionally; GitHub search has stricter rate limits than normal REST reads. When `--limit` cuts results off, stderr says so (`showing 50 of 312 repositories; omit --limit to list all` for `repos list`; `showing the first 30 results; more match, raise --limit to see them` for search). No notice means you have every match (up to GitHub's 1000-result search cap).
+- When no repo/org/user/team/stdin scope is passed to repo/code/issue search, the CLI searches `github.default_org`, or else the authenticated user (`user:@me`) and prints `no scope given; searching user:@me ...` on stderr.
 - Repeated repo scopes are ORed together; do not rewrite them as separate AND qualifiers.
 - `search repos` automatically batches large team-expanded repo scopes around
   GitHub's search validation limits: at most five `AND`/`OR`/`NOT` operators

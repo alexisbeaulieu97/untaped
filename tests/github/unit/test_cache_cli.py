@@ -12,6 +12,7 @@ import pytest
 import respx
 
 from untaped.capabilities.github.cli import app
+from untaped.settings import get_settings
 from untaped.testing import CliInvoker, CliResult, assert_destructive_contract
 
 SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
@@ -179,9 +180,8 @@ def test_cache_sync_failure_exits_1_and_names_the_repo(tmp_path: Path) -> None:
         (["delete", "acme/api", "--all", "--yes"], "pass REPO arguments or --all, not both"),
         (["prune", "--yes"], "cache prune requires --org"),
         (["prune", "--team", "acme/backend", "--yes"], "--team"),
-        (["clean"], "cache clean requires exactly one of --repo, --all, or --prune"),
-        (["clean", "--repo", "a/b", "--all", "--yes"], "requires exactly one"),
-        (["clean", "--prune", "--yes"], "cache clean --prune requires --org"),
+        (["clean", "--all", "--yes"], "clean"),
+        (["sync", "--org", "acme", "--archived"], "--archived"),
     ],
 )
 def test_cache_selection_usage_errors_exit_2(args: list[str], message: str) -> None:
@@ -263,15 +263,42 @@ def test_cache_prune_deletes_departed_and_archived_repos(source_repo: SourceRepo
     assert _cached() == ["acme/api"]
 
 
-def test_cache_clean_still_works_and_warns_it_is_deprecated(source_repo: SourceRepo) -> None:
-    _populate(source_repo, "acme/api")
+def test_cache_prune_falls_back_to_github_default_org(
+    source_repo: SourceRepo, _config: Path
+) -> None:
+    listings = _populate(source_repo, "acme/api", "acme/old")
+    _config.write_text(_config.read_text() + "      default_org: acme\n")
+    get_settings.cache_clear()
 
-    cleaned = CliInvoker().invoke(
-        app, ["cache", "clean", "--repo", "acme/api", "--yes", "--format", "json"]
+    pruned = _cache(
+        ["cache", "prune", "--yes", "--format", "json"], org={"acme": [listings["acme/api"]]}
     )
 
-    assert _rows(cleaned) == ["acme/api"]
-    assert "warning: `cache clean` is deprecated" in cleaned.stderr
+    assert _rows(pruned) == ["acme/old"]
+
+
+@pytest.mark.parametrize(
+    ("args", "synced"),
+    [
+        ([], ["acme/api"]),
+        (["--archived", "only"], ["acme/old"]),
+        (["--archived", "include"], ["acme/api", "acme/old"]),
+    ],
+    ids=["default-excludes", "only", "include"],
+)
+def test_cache_sync_archived_modes_and_default_org(
+    source_repo: SourceRepo, _config: Path, args: list[str], synced: list[str]
+) -> None:
+    listing = [
+        _repo("acme/api", source_repo("api", {"README.md": "x\n"})),
+        _repo("acme/old", source_repo("old", {"README.md": "x\n"}), archived=True),
+    ]
+    _config.write_text(_config.read_text() + "      default_org: acme\n")
+    get_settings.cache_clear()
+
+    result = _cache(["cache", "sync", *args, "--format", "json"], org={"acme": listing})
+
+    assert _rows(result) == synced
 
 
 def test_cache_worktree_materializes_cached_ref(source_repo: SourceRepo) -> None:

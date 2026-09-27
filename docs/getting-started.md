@@ -134,7 +134,7 @@ pipe never carries noise. `-q`/`--quiet` mutes progress and success messages.
 
 ```bash
 # Clone every non-archived repo of a GitHub team into a workspace
-untaped github repos list --team acme/platform --no-archived --format pipe \
+untaped github repos list --team acme/platform --format pipe \
   | untaped workspace add --stdin --workspace demo --sync
 
 # Pick a job template with fzf and show it as YAML

@@ -16,6 +16,7 @@ from untaped.capabilities.github.application.inventory import (
 from untaped.capabilities.github.application.ports import GitCorpus
 from untaped.capabilities.github.domain import (
     CODEOWNERS_LOCATIONS,
+    ArchivedMode,
     CorpusFailure,
     CorpusFreshness,
     CorpusRepoTarget,
@@ -26,6 +27,7 @@ from untaped.capabilities.github.domain import (
     RefSelector,
     RepoSweepOutcome,
     SweepQuery,
+    archived_allows,
     covers,
     parse_codeowners,
     ref_display_names,
@@ -54,7 +56,7 @@ class SweepOptions:
 
     scope: RepositoryInventoryScope
     stdin_repos: tuple[str, ...]
-    include_archived: bool
+    archived: ArchivedMode
     query: SweepQuery
     sync: Literal["auto", "force", "off"]
     max_age_seconds: int
@@ -75,7 +77,7 @@ class CorpusSyncOptions:
 
     scope: RepositoryInventoryScope
     stdin_repos: tuple[str, ...]
-    include_archived: bool
+    archived: ArchivedMode
     refs: RefSelector
     refresh: bool
     max_age_seconds: int
@@ -364,7 +366,7 @@ class Sweep(_CorpusUseCase):
             scope=options.scope,
             stdin_repos=options.stdin_repos,
             stdin_items=options.stdin_items,
-            include_archived=options.include_archived,
+            archived=options.archived,
             parallel=options.parallel,
         )
 
@@ -384,7 +386,7 @@ class Sweep(_CorpusUseCase):
         rows = self._corpus.list_repos(root=self._root)
         targets: list[CorpusRepoTarget] = []
         for row in rows:
-            if not options.include_archived and row.archived:
+            if not archived_allows(options.archived, row.archived):
                 continue
             if owners and row.repo.partition("/")[0].casefold() not in owners:
                 continue
@@ -480,7 +482,7 @@ def _resolve_online_scope(
     scope: RepositoryInventoryScope,
     stdin_repos: tuple[str, ...],
     stdin_items: tuple[RepositoryInventoryItem, ...],
-    include_archived: bool,
+    archived: ArchivedMode,
     parallel: int,
 ) -> tuple[tuple[CorpusRepoTarget, ...], tuple[CorpusFailure, ...]]:
     """Expand scopes through the API into sorted corpus targets plus per-name failures."""
@@ -516,7 +518,7 @@ def _resolve_online_scope(
     if names and len(failures) == len(names) and not items:
         detail = "; ".join(failure.reason for failure in failures)
         raise UntapedError(f"no requested repository could be resolved: {detail}")
-    rows = (items[name] for name in sorted(items) if include_archived or not items[name].archived)
+    rows = (item for _, item in sorted(items.items()) if archived_allows(archived, item.archived))
     return tuple(_target(item) for item in rows), tuple(failures)
 
 
@@ -548,7 +550,7 @@ class SyncCorpus(_CorpusUseCase):
             scope=options.scope,
             stdin_repos=options.stdin_repos,
             stdin_items=options.stdin_items,
-            include_archived=options.include_archived,
+            archived=options.archived,
             parallel=options.parallel,
         )
         outcomes = [

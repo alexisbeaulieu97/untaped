@@ -11,7 +11,7 @@ from untaped.capabilities.github.application.inventory import (
 )
 from untaped.capabilities.github.application.ports import GithubRepositoryInventoryService
 from untaped.capabilities.github.application.scopes import TeamScope
-from untaped.capabilities.github.domain import RepoListResult
+from untaped.capabilities.github.domain import ArchivedMode, RepoListResult, archived_allows
 from untaped.capabilities.github.domain.repo_filters import compile_repo_pattern
 
 
@@ -21,7 +21,7 @@ class RepoListFilters:
 
     pattern: str | None = None
     regex: bool = False
-    archived: bool | None = None
+    archived: ArchivedMode = "include"
     fork: bool | None = None
 
 
@@ -56,7 +56,7 @@ def _matches(
     filters: RepoListFilters,
     matcher: Callable[[RepoListResult], bool] | None,
 ) -> bool:
-    if filters.archived is not None and row.archived is not filters.archived:
+    if not archived_allows(filters.archived, row.archived):
         return False
     if filters.fork is not None and row.fork is not filters.fork:
         return False

@@ -13,6 +13,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from untaped.capabilities.github.domain.repo_filters import ArchivedMode
+
 RepoSortOption = Literal["stars", "forks", "help-wanted-issues", "updated"]
 IssueSortOption = Literal[
     "comments",
@@ -84,7 +86,7 @@ class RepoSearchFilters(ScopedQueryBase):
 
     name: str | None = None
     language: str | None = None
-    archived: bool | None = None
+    archived: ArchivedMode = "include"
     fork: bool | None = None
     visibility: Literal["public", "private"] | None = None
     sort: RepoSortOption | None = None
@@ -95,8 +97,8 @@ class RepoSearchFilters(ScopedQueryBase):
             extras.append(f"{_quote(self.name)} in:name")
         if self.language:
             extras.append(f"language:{_quote(self.language)}")
-        if self.archived is not None:
-            extras.append(f"archived:{'true' if self.archived else 'false'}")
+        if self.archived != "include":
+            extras.append(f"archived:{'true' if self.archived == 'only' else 'false'}")
         if self.fork is not None:
             extras.append("fork:true" if self.fork else "fork:false")
         if self.visibility is not None:

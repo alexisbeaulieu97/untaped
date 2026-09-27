@@ -10,14 +10,20 @@ import pytest
 import respx
 
 from untaped.capabilities.github.cli import app
+from untaped.settings import get_settings
 from untaped.testing import CliInvoker, CliResult
 
 
 @pytest.fixture(autouse=True)
 def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _write_config(tmp_path, monkeypatch)
+
+
+def _write_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, extra: str = "") -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    github:\n      token: ghp_test\n")
+    cfg.write_text(f"profiles:\n  default:\n    github:\n      token: ghp_test\n{extra}")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    get_settings.cache_clear()
 
 
 def _repo(full_name: str, *, archived: bool = False, fork: bool = False) -> dict[str, object]:
@@ -56,13 +62,22 @@ def _list(*args: str) -> CliResult:
     ("args", "expected"),
     [
         (
-            ["play*", "--org", "acme", "--team", "platform/ops", "--no-archived", "--no-fork"],
+            [
+                "play*",
+                "--org",
+                "acme",
+                "--team",
+                "platform/ops",
+                "--archived",
+                "exclude",
+                "--no-fork",
+            ],
             ["acme/play-api", "platform/play-role"],
         ),
         (["play*", "--team", "acme/backend"], ["acme/play-team"]),
         # A bare team with exactly one --org adds that team's repos to the org's.
         (
-            ["play*", "--org", "acme", "--team", "backend", "--no-fork"],
+            ["play*", "--org", "acme", "--team", "backend", "--no-fork", "--archived", "include"],
             ["acme/play-api", "acme/play-old", "acme/play-team"],
         ),
         (["--org", "acme", "--limit", "2"], ["acme/play-api", "acme/play-fork"]),
@@ -77,6 +92,57 @@ def test_repos_list_combines_scopes_and_filters_into_sorted_rows(
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines() == expected
     assert "Listing repositories" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("archived", "expected"),
+    [
+        ([], ["acme/play-api", "acme/play-fork", "acme/zeta"]),
+        (["--archived", "exclude"], ["acme/play-api", "acme/play-fork", "acme/zeta"]),
+        (
+            ["--archived", "include"],
+            ["acme/play-api", "acme/play-fork", "acme/play-old", "acme/zeta"],
+        ),
+        (["--archived", "only"], ["acme/play-old"]),
+    ],
+    ids=["default-excludes", "exclude", "include", "only"],
+)
+def test_repos_list_archived_is_include_exclude_or_only(
+    archived: list[str], expected: list[str]
+) -> None:
+    result = _list("--org", "acme", *archived)
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == expected
+
+
+@pytest.mark.parametrize("old", [["--no-archived"], ["--archived"], ["--archived", "yes"]])
+def test_repos_list_rejects_the_old_boolean_archived_spellings(old: list[str]) -> None:
+    result = CliInvoker().invoke(app, ["repos", "list", "--org", "acme", *old])
+
+    assert result.exit_code == 2, result.output
+
+
+def test_repos_list_limit_prints_a_truncation_notice_on_stderr() -> None:
+    truncated = _list("--org", "acme", "--limit", "2")
+    complete = _list("--org", "acme", "--limit", "3")
+
+    assert truncated.stdout.splitlines() == ["acme/play-api", "acme/play-fork"]
+    assert "showing 2 of 3 repositories; omit --limit to list all" in truncated.stderr
+    assert "showing" not in complete.stderr
+
+
+def test_repos_list_falls_back_to_github_default_org(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_config(tmp_path, monkeypatch, "      default_org: acme\n")
+
+    unscoped = _list("play*")
+    team_only = _list("play*", "--team", "acme/backend")
+
+    assert unscoped.stdout.splitlines() == ["acme/play-api", "acme/play-fork"]
+    # Any explicit scope replaces the default org rather than adding to it.
+    assert team_only.stdout.splitlines() == ["acme/play-team"]
 
 
 def test_repos_list_pipe_record_carries_kind_urls_and_repo() -> None:
@@ -111,7 +177,7 @@ def test_repos_list_table_shows_default_columns_and_json_every_field() -> None:
 @pytest.mark.parametrize(
     ("args", "messages"),
     [
-        (["play*"], ["requires --org or --team", "user-owned"]),
+        (["play*"], ["requires --org or --team", "github.default_org"]),
         (["--org", "acme", "--regex"], ["--regex requires PATTERN"]),
         (["[", "--org", "acme", "--regex"], ["invalid regular expression"]),
         (["--team", "backend"], ["ORG/SLUG"]),
