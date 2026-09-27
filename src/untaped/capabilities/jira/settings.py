@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from untaped.capability_api import TokenCommand, TokenSources
 
 DEFAULT_ASSIGNED_JQL = "assignee = currentUser() AND resolution = Unresolved"
+# Which writes ask for confirmation: every write, only destructive ones
+# (patches that replace or remove values, assignee changes, transitions), or none.
+ConfirmPolicy = Literal["always", "destructive", "never"]
 
 
 class JiraSettings(BaseModel):
@@ -27,6 +30,7 @@ class JiraSettings(BaseModel):
     default_project: str | None = None
     default_board_id: int | None = None
     page_size: int = Field(default=50, gt=0)
+    confirm: ConfirmPolicy = "destructive"
 
     @field_validator("api_prefix", "agile_prefix")
     @classmethod

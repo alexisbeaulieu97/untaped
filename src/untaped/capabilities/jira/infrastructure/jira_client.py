@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from types import TracebackType
 from typing import Any
 from urllib.parse import quote
@@ -53,11 +53,11 @@ class JiraClient:
         with map_jira_errors():
             return self._http.get_json_dict(self._api("myself"))
 
-    def get_issue(self, issue_key: str) -> dict[str, Any]:
+    def get_issue(self, issue_key: str, *, fields: Sequence[str] | None = None) -> dict[str, Any]:
         with map_jira_errors(noun="issue", name=issue_key):
             return self._http.get_json_dict(
                 self._api(f"issue/{_segment(issue_key)}"),
-                params={"fields": ",".join(ISSUE_DETAIL_FIELDS)},
+                params={"fields": ",".join(fields or ISSUE_DETAIL_FIELDS)},
             )
 
     def search_issues(self, jql: str, *, limit: int | None = None) -> Iterator[dict[str, Any]]:
