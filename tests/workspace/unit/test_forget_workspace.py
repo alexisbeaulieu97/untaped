@@ -291,3 +291,51 @@ def test_forget_prune_skips_symlinked_child_clones(tmp_path: Path) -> None:
     assert orphan_target.is_dir()
     assert status.calls == []
     assert reg.registered == []
+
+
+def test_preview_lists_prune_targets_and_changes_nothing(tmp_path: Path) -> None:
+    ws_path = tmp_path / "prod"
+    clone = ws_path / "svc-a"
+    (clone / ".git").mkdir(parents=True)
+    orphan = ws_path / "old"
+    (orphan / ".git").mkdir(parents=True)
+    _seed_manifest(ws_path, repos=[("svc-a", "https://x/svc-a.git")])
+    reg = StubRegistry([Workspace(name="prod", path=ws_path)])
+    use_case = ForgetWorkspace(
+        reg, YamlManifestRepository(), fs=LocalFilesystem(), prune_safety=_PruneSafety()
+    )
+
+    ws, doomed = use_case.preview("prod", prune=True)
+
+    assert ws.name == "prod"
+    assert sorted(doomed) == sorted([clone.resolve(), orphan.resolve(), ws_path / "untaped.yml"])
+    assert clone.is_dir() and orphan.is_dir() and (ws_path / "untaped.yml").is_file()
+    assert reg.unregistered == []
+
+
+def test_preview_without_prune_lists_nothing(tmp_path: Path) -> None:
+    ws_path = tmp_path / "prod"
+    (ws_path / "svc-a" / ".git").mkdir(parents=True)
+    _seed_manifest(ws_path, repos=[("svc-a", "https://x/svc-a.git")])
+    ws = Workspace(name="prod", path=ws_path)
+    reg = StubRegistry([ws])
+    use_case = ForgetWorkspace(
+        reg, YamlManifestRepository(), fs=LocalFilesystem(), prune_safety=_PruneSafety()
+    )
+
+    assert use_case.preview("prod") == (ws, [])
+    assert reg.unregistered == []
+
+
+def test_preview_refuses_unsafe_clone_like_a_real_prune(tmp_path: Path) -> None:
+    ws_path = tmp_path / "prod"
+    repo_dir = ws_path / "svc-a"
+    (repo_dir / ".git").mkdir(parents=True)
+    _seed_manifest(ws_path, repos=[("svc-a", "https://x/svc-a.git")])
+    reg = StubRegistry([Workspace(name="prod", path=ws_path)])
+    status = _PruneSafety(blockers={repo_dir: ("dirty working tree",)})
+
+    with pytest.raises(WorkspaceError, match="unsafe local state"):
+        ForgetWorkspace(
+            reg, YamlManifestRepository(), fs=LocalFilesystem(), prune_safety=status
+        ).preview("prod", prune=True)

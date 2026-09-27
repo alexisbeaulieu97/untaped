@@ -21,8 +21,8 @@ def test_branch_set_and_unset_default_branch(tmp_path: Path) -> None:
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
 
-    set_result = runner.invoke(app, ["branch", "set", "main", "--workspace", "prod"])
-    unset_result = runner.invoke(app, ["branch", "unset", "--workspace", "prod"])
+    set_result = runner.invoke(app, ["branch", "set", "prod", "main"])
+    unset_result = runner.invoke(app, ["branch", "unset", "prod"])
 
     assert set_result.exit_code == 0, set_result.output
     assert "set default branch for 'prod' to main" in set_result.output
@@ -36,14 +36,14 @@ def test_branch_set_and_unset_repo_branch(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/api.git", "--repo-name", "api"])
 
     set_result = runner.invoke(
         app,
-        ["branch", "set", "develop", "--repo", "api", "--workspace", "prod"],
+        ["branch", "set", "prod", "develop", "--repo", "api"],
     )
     manifest_after_set = yaml.safe_load((target / "untaped.yml").read_text())
-    unset_result = runner.invoke(app, ["branch", "unset", "--repo", "api", "--workspace", "prod"])
+    unset_result = runner.invoke(app, ["branch", "unset", "prod", "--repo", "api"])
     manifest_after_unset = yaml.safe_load((target / "untaped.yml").read_text())
 
     assert set_result.exit_code == 0, set_result.output
@@ -77,7 +77,7 @@ def test_branch_set_unknown_repo_errors(tmp_path: Path) -> None:
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
 
-    result = runner.invoke(app, ["branch", "set", "main", "--repo", "ghost", "--workspace", "prod"])
+    result = runner.invoke(app, ["branch", "set", "prod", "main", "--repo", "ghost"])
 
     assert result.exit_code == 1
     assert "repo 'ghost' not declared in workspace 'prod'" in result.output
@@ -87,9 +87,9 @@ def test_branch_apply_json_skips_missing_clone(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "develop"])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/api.git", "--repo-name", "api"])
 
-    result = runner.invoke(app, ["branch", "apply", "--workspace", "prod", "--format", "json"])
+    result = runner.invoke(app, ["branch", "apply", "prod", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -108,24 +108,13 @@ def test_branch_apply_filters_by_multiple_repo_names(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "develop"])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
-    runner.invoke(app, ["add", "https://x/ui.git", "--repo-name", "ui", "--workspace", "prod"])
-    runner.invoke(app, ["add", "https://x/docs.git", "--repo-name", "docs", "--workspace", "prod"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/api.git", "--repo-name", "api"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/ui.git", "--repo-name", "ui"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/docs.git", "--repo-name", "docs"])
 
     result = runner.invoke(
         app,
-        [
-            "branch",
-            "apply",
-            "--repo",
-            "api",
-            "--repo",
-            "ui",
-            "--workspace",
-            "prod",
-            "--format",
-            "json",
-        ],
+        ["branch", "apply", "prod", "--repo", "api", "--repo", "ui", "--format", "json"],
     )
 
     assert result.exit_code == 0, result.output
@@ -137,10 +126,10 @@ def test_branch_apply_raw_defaults_to_repo_names(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "develop"])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
-    runner.invoke(app, ["add", "https://x/ui.git", "--repo-name", "ui", "--workspace", "prod"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/api.git", "--repo-name", "api"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/ui.git", "--repo-name", "ui"])
 
-    result = runner.invoke(app, ["branch", "apply", "--workspace", "prod", "--format", "raw"])
+    result = runner.invoke(app, ["branch", "apply", "prod", "--format", "raw"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines() == ["api", "ui"]
@@ -178,7 +167,6 @@ def test_branch_apply_honors_global_ui_collection_view_for_table_output(
         [
             "branch",
             "apply",
-            "--workspace",
             "prod",
             "--format",
             "table",
@@ -206,11 +194,11 @@ def test_branch_set_apply_writes_manifest_and_applies(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/api.git", "--repo-name", "api"])
 
     result = runner.invoke(
         app,
-        ["branch", "set", "develop", "--apply", "--workspace", "prod", "--format", "json"],
+        ["branch", "set", "prod", "develop", "--apply", "--format", "json"],
     )
 
     assert result.exit_code == 0, result.output
@@ -238,14 +226,14 @@ def test_branch_set_apply_creates_tracking_branch_for_remote_target(
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    runner.invoke(app, ["sync", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+    runner.invoke(app, ["sync", "smoke"])
     repo = target / "upstream"
     subprocess.run(["git", "-C", str(repo), "config", "checkout.guess", "false"], check=True)
 
     result = runner.invoke(
         app,
-        ["branch", "set", "develop", "--workspace", "smoke", "--apply", "--format", "json"],
+        ["branch", "set", "smoke", "develop", "--apply", "--format", "json"],
     )
 
     assert result.exit_code == 0, result.output
@@ -284,7 +272,7 @@ def test_branch_apply_creates_tracking_branch_for_single_branch_clone(
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target), "--branch", "develop"])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
     repo = target / "upstream"
     subprocess.run(
         [
@@ -300,7 +288,7 @@ def test_branch_apply_creates_tracking_branch_for_single_branch_clone(
         capture_output=True,
     )
 
-    result = runner.invoke(app, ["branch", "apply", "--workspace", "smoke", "--format", "json"])
+    result = runner.invoke(app, ["branch", "apply", "smoke", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -337,12 +325,12 @@ def test_branch_apply_creates_local_branch_when_remote_target_is_missing(
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    runner.invoke(app, ["sync", "--workspace", "smoke"])
-    runner.invoke(app, ["branch", "set", "ticket-123", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+    runner.invoke(app, ["sync", "smoke"])
+    runner.invoke(app, ["branch", "set", "smoke", "ticket-123"])
     repo = target / "upstream"
 
-    refused = runner.invoke(app, ["branch", "apply", "--workspace", "smoke", "--format", "json"])
+    refused = runner.invoke(app, ["branch", "apply", "smoke", "--format", "json"])
 
     assert refused.exit_code == 0, refused.output
     assert json.loads(refused.stdout) == [
@@ -356,9 +344,7 @@ def test_branch_apply_creates_local_branch_when_remote_target_is_missing(
         }
     ]
 
-    result = runner.invoke(
-        app, ["branch", "apply", "--create", "--workspace", "smoke", "--format", "json"]
-    )
+    result = runner.invoke(app, ["branch", "apply", "smoke", "--create", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -393,7 +379,7 @@ def test_branch_apply_fetch_failure_is_failed_row_and_exit_one(
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "main"])
-    runner.invoke(app, ["add", f"file://{upstream}", "--repo-name", "api", "--workspace", "prod"])
+    runner.invoke(app, ["repos", "add", "prod", f"file://{upstream}", "--repo-name", "api"])
     subprocess.run(
         ["git", "clone", "--quiet", str(upstream), str(target / "api")],
         check=True,
@@ -404,7 +390,7 @@ def test_branch_apply_fetch_failure_is_failed_row_and_exit_one(
         check=True,
     )
 
-    result = runner.invoke(app, ["branch", "apply", "--workspace", "prod", "--format", "json"])
+    result = runner.invoke(app, ["branch", "apply", "prod", "--format", "json"])
 
     assert result.exit_code == 1, result.output
     (row,) = json.loads(result.stdout)
@@ -416,7 +402,7 @@ def test_branch_apply_empty_guides_with_stderr_hint(tmp_path: Path) -> None:
     runner = CliInvoker()
     runner.invoke(app, ["init", "solo", "--path", str(tmp_path / "solo")])
 
-    result = runner.invoke(app, ["branch", "apply", "--workspace", "solo"])
+    result = runner.invoke(app, ["branch", "apply", "solo"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""

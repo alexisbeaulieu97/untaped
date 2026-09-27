@@ -50,7 +50,7 @@ def test_add_emits_add_outcome_rows(tmp_path: Path) -> None:
 
     result = runner.invoke(
         app,
-        ["add", "https://x/api.git", "https://x/ui.git", "-w", "prod", "--format", "json"],
+        ["repos", "add", "prod", "https://x/api.git", "https://x/ui.git", "--format", "json"],
     )
 
     assert result.exit_code == 0, result.output
@@ -80,7 +80,7 @@ def test_add_stdin_reads_github_repo_clone_urls(tmp_path: Path) -> None:
 
     result = runner.invoke(
         app,
-        ["add", "--stdin", "-w", "prod", "--format", "raw", "--columns", "url"],
+        ["repos", "add", "prod", "--stdin", "--format", "raw", "--columns", "url"],
         input=_pipe("github.repo", full_name="acme/api", clone_url="https://x/api.git"),
     )
 
@@ -103,7 +103,7 @@ def test_add_stdin_reads_github_search_and_sweep_records(
 
     result = runner.invoke(
         app,
-        ["add", "--stdin", "-w", "prod", "--format", "raw", "--columns", "url"],
+        ["repos", "add", "prod", "--stdin", "--format", "raw", "--columns", "url"],
         input=_pipe(kind, **record),
     )
 
@@ -117,7 +117,7 @@ def test_add_stdin_rejects_foreign_kind(tmp_path: Path) -> None:
 
     result = runner.invoke(
         app,
-        ["add", "--stdin", "-w", "prod"],
+        ["repos", "add", "prod", "--stdin"],
         input=_pipe("awx.host", id=1, name="h1"),
     )
 
@@ -127,10 +127,10 @@ def test_add_stdin_rejects_foreign_kind(tmp_path: Path) -> None:
 def test_remove_dry_run_plans_without_mutating(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = _init(runner, tmp_path)
-    runner.invoke(app, ["add", "https://x/api.git", "-w", "prod"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/api.git"])
 
     result = runner.invoke(
-        app, ["remove", "api", "-w", "prod", "--prune", "--dry-run", "--format", "json"]
+        app, ["repos", "remove", "prod", "api", "--prune", "--dry-run", "--format", "json"]
     )
 
     assert result.exit_code == 0, result.output
@@ -143,11 +143,11 @@ def test_remove_dry_run_plans_without_mutating(tmp_path: Path) -> None:
 def test_remove_emits_remove_outcome_and_reads_repo_records(tmp_path: Path) -> None:
     runner = CliInvoker()
     _init(runner, tmp_path)
-    runner.invoke(app, ["add", "https://x/api.git", "-w", "prod"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/api.git"])
 
     result = runner.invoke(
         app,
-        ["remove", "--stdin", "-w", "prod", "--format", "pipe"],
+        ["repos", "remove", "prod", "--stdin", "--format", "pipe"],
         input=_pipe("workspace.repo", workspace="prod", repo="api", url="https://x/api.git"),
     )
 
@@ -168,7 +168,7 @@ def test_remove_stdin_rejects_foreign_kind(tmp_path: Path) -> None:
 
     result = runner.invoke(
         app,
-        ["remove", "--stdin", "-w", "prod"],
+        ["repos", "remove", "prod", "--stdin"],
         input=_pipe("workspace.workspace", name="prod", path=str(tmp_path)),
     )
 
@@ -201,9 +201,9 @@ def test_forget_emits_forget_outcome(tmp_path: Path) -> None:
 def test_branch_unset_emits_outcome(tmp_path: Path) -> None:
     runner = CliInvoker()
     _init(runner, tmp_path)
-    runner.invoke(app, ["branch", "set", "main", "-w", "prod"])
+    runner.invoke(app, ["branch", "set", "prod", "main"])
 
-    result = runner.invoke(app, ["branch", "unset", "-w", "prod", "--format", "json"])
+    result = runner.invoke(app, ["branch", "unset", "prod", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -216,7 +216,7 @@ def test_edit_nonzero_editor_exit_is_runtime_error(tmp_path: Path) -> None:
     _init(runner, tmp_path)
     editor = shlex.join([sys.executable, "-c", "raise SystemExit(7)"])
 
-    result = runner.invoke(app, ["edit", "-w", "prod", "--editor", editor])
+    result = runner.invoke(app, ["edit", "prod", "--editor", editor])
 
     assert result.exit_code == 1, result.output
     assert "error: editor exited with status 7" in result.stderr

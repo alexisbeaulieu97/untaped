@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Annotated
 
 from cyclopts import Parameter
@@ -15,7 +14,17 @@ from untaped.capabilities.workspace.infrastructure import (
     YamlManifestRepository,
 )
 from untaped.capabilities.workspace.settings import WorkspaceSettings
-from untaped.capability_api import get_config_section, raise_usage
+from untaped.capability_api import (
+    ParallelOption,
+    clamp_parallel,
+    get_config_section,
+    raise_usage,
+)
+
+WORKSPACE_ARG_HELP = (
+    "Workspace name, or a path inside one (`.` is the current directory). "
+    "Default: the workspace containing the current directory."
+)
 
 RepoSelectorOption = Annotated[
     list[str] | None,
@@ -26,13 +35,17 @@ RepoSelectorOption = Annotated[
         consume_multiple=False,
     ),
 ]
-WorkspaceNameOption = Annotated[
-    str | None,
-    Parameter(name=["--workspace", "-w"], help="Workspace name."),
-]
-WorkspacePathOption = Annotated[
-    Path | None,
-    Parameter(name=["--path", "-p"], help="Workspace path."),
+WorkspaceArg = Annotated[str | None, Parameter(name="WS", help=WORKSPACE_ARG_HELP)]
+"""Optional leading positional ``WS`` (see :class:`WorkspaceResolver`)."""
+
+WorkspaceParallelOption = Annotated[
+    ParallelOption,
+    Parameter(
+        help=(
+            "Concurrent workers. Default: the workspace.parallel setting, else "
+            "min(8, 2 x CPUs). Values above 2 x CPUs are clamped with a stderr warning."
+        ),
+    ),
 ]
 
 
@@ -48,38 +61,37 @@ def workspace_settings() -> WorkspaceSettings:
     return get_config_section("workspace", WorkspaceSettings)
 
 
-def resolve_workspace(
-    workspace: str | None,
-    path: Path | None,
-    *,
-    cwd: Path | None = None,
-) -> Workspace:
-    if workspace is not None and path is not None:
-        raise_usage("--workspace and --path are mutually exclusive")
+def resolve_workspace(workspace: str | None) -> Workspace:
+    """Resolve a ``WS`` argument (name, path, or ``None`` for the cwd)."""
     return WorkspaceResolver(
         registry=WorkspaceRegistryRepository(),
         manifests=YamlManifestRepository(),
-    ).resolve(name=workspace, path=path, cwd=cwd)
+    ).resolve(workspace)
 
 
-def target_workspaces(
-    workspace: str | None,
-    path: Path | None,
-    *,
-    all_workspaces: bool,
-) -> list[Workspace]:
+def target_workspaces(workspace: str | None, *, all_workspaces: bool) -> list[Workspace]:
     if all_workspaces:
-        if workspace is not None or path is not None:
-            raise_usage("--all cannot be combined with --workspace or --path")
+        if workspace is not None:
+            raise_usage("--all cannot be combined with a workspace argument")
         return WorkspaceRegistryRepository().entries()
-    return [resolve_workspace(workspace, path)]
+    return [resolve_workspace(workspace)]
 
 
-def parallel_cap() -> int:
-    """Cap value for workspace CLI parallelism.
+def split_leading_workspace(first: str | None, second: str | None) -> tuple[str | None, str | None]:
+    """Split ``[WS] VALUE`` positionals: one token is ``VALUE``, two are ``WS VALUE``."""
+    if second is None:
+        return None, first
+    return first, second
 
-    ``2 * os.cpu_count()`` matches the I/O-bound work rule of thumb used by
-    sync and foreach. Computed per call so ``os.cpu_count`` monkeypatching in
-    tests stays live.
+
+def parallel_workers(requested: int | None) -> int:
+    """Worker count: ``--parallel``, else ``workspace.parallel``, else ``min(8, cap)``.
+
+    The cap, ``2 * os.cpu_count()``, is the I/O-bound rule of thumb shared by
+    sync and foreach; it is computed per call so ``os.cpu_count``
+    monkeypatching in tests stays live.
     """
-    return (os.cpu_count() or 1) * 2
+    cap = (os.cpu_count() or 1) * 2
+    if requested is None:
+        requested = workspace_settings().parallel or min(8, cap)
+    return clamp_parallel(requested, cap=cap, policy="2 * os.cpu_count()")

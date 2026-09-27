@@ -18,8 +18,7 @@ def test_help_lists_all_commands() -> None:
         "init",
         "adopt",
         "forget",
-        "add",
-        "remove",
+        "repos",
         "sync",
         "status",
         "foreach",
@@ -27,7 +26,6 @@ def test_help_lists_all_commands() -> None:
         "path",
         "shell-init",
         "edit",
-        "get",
         "branch",
     ):
         assert cmd in result.stdout
@@ -39,8 +37,7 @@ def test_help_lists_all_commands() -> None:
         "init",
         "adopt",
         "forget",
-        "add",
-        "remove",
+        "repos",
         "foreach",
         "import",
         "path",
@@ -66,11 +63,11 @@ def test_branch_set_no_args_is_usage_error() -> None:
 
     assert result.exit_code == 2, result.output
     assert result.stdout == ""
-    assert "BRANCH requires an argument" in result.stderr
+    assert "missing argument BRANCH" in result.stderr
 
 
 def test_stdin_flags_do_not_expose_negative_aliases() -> None:
-    for args in (["add", "--help"], ["remove", "--help"], ["path", "--help"]):
+    for args in (["repos", "add", "--help"], ["repos", "remove", "--help"], ["path", "--help"]):
         result = CliInvoker().invoke(app, args)
 
         assert result.exit_code == 0, result.output

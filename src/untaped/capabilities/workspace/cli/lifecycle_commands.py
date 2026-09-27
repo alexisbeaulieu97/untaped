@@ -30,6 +30,7 @@ from untaped.capabilities.workspace.infrastructure import (
 )
 from untaped.capability_api import (
     ColumnsOption,
+    DryRunOption,
     FormatOption,
     UntapedError,
     YesOption,
@@ -117,7 +118,7 @@ def adopt_command(
         ws = result.workspace
         n = len(result.repos)
         suffix = (
-            " — nothing matched (use 'workspace add' to declare repos)"
+            " — nothing matched (use 'workspace repos add' to declare repos)"
             if result.discovered and n == 0
             else ""
         )
@@ -140,6 +141,14 @@ def forget_command(
         ),
     ] = False,
     yes: YesOption = False,
+    dry_run: Annotated[
+        DryRunOption,
+        Parameter(
+            help=(
+                "Preview: run the same checks, list what --prune would delete, and change nothing."
+            ),
+        ),
+    ] = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -149,7 +158,7 @@ def forget_command(
     `--prune` to also delete declared and orphan clones plus `untaped.yml`
     (refused if any clone that would be deleted has unsafe local state).
     Other files are kept; the workspace directory is removed only when
-    it ends up empty.
+    it ends up empty. ``--dry-run`` previews the prune and changes nothing.
     """
     with report_errors():
         ui = ui_context(strict=False)
@@ -161,6 +170,20 @@ def forget_command(
             prune_safety=GitRunner(),
             warn=lambda m: ui.message("warning", m),
         )
+
+        if dry_run:
+            ws, doomed = forget_workspace.preview(name, prune=prune)
+            if doomed:
+                ui.message("info", f"would delete {plural(len(doomed), 'path')}:")
+                for path in doomed:
+                    ui.message("info", f"  - {path}")
+            emit(
+                [WorkspaceOutcome(name=ws.name, action="planned", target_path=ws.path)],
+                fmt=fmt,
+                columns=columns,
+                kind="workspace.forget_outcome",
+            )
+            return
 
         def _describe(workspace_name: str) -> dict[str, object]:
             # The confirmation preview must show *where* files will be

@@ -21,6 +21,8 @@ class WorkspaceSettings(BaseModel):
 
     cache_dir: Path = Field(default=Path("~/.untaped/repositories"))
     workspaces_dir: Path = Field(default=Path("~/.untaped/workspaces"))
+    parallel: int | None = Field(default=None, ge=1)
+    """Default ``sync`` / ``foreach`` workers; ``None`` means ``min(8, 2 x CPUs)``."""
 
 
 class WorkspaceState(BaseModel):

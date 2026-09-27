@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from functools import partial
 from typing import Annotated
 
 from cyclopts import App, Parameter
@@ -14,11 +15,12 @@ from untaped.capabilities.workspace.application import (
     WorkspaceStatus,
 )
 from untaped.capabilities.workspace.cli.common import (
+    WORKSPACE_ARG_HELP,
     RepoSelectorOption,
-    WorkspaceNameOption,
-    WorkspacePathOption,
-    parallel_cap,
-    resolve_workspace,
+    WorkspaceArg,
+    WorkspaceParallelOption,
+    parallel_workers,
+    split_leading_workspace,
     target_workspaces,
     workspace_settings,
 )
@@ -29,6 +31,7 @@ from untaped.capabilities.workspace.domain import (
     SyncAction,
     SyncOutcome,
 )
+from untaped.capabilities.workspace.errors import ManifestError
 from untaped.capabilities.workspace.infrastructure import (
     DEFAULT_SLOW_TIMEOUT,
     DEFAULT_TIMEOUT,
@@ -40,22 +43,27 @@ from untaped.capabilities.workspace.infrastructure import (
 from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
+    DryRunOption,
     FormatOption,
     OperationCancelledError,
     OutputFormat,
-    ParallelOption,
+    StdinOption,
     UsageError,
     YesOption,
     batch_apply,
-    clamp_parallel,
     echo,
     emit,
     finish,
+    q,
     raise_usage,
+    read_identifiers,
     report_errors,
     summary,
     ui_context,
 )
+
+FOREACH_STDIN_KINDS = frozenset({"workspace.repo", "workspace.status", "workspace.sync_outcome"})
+"""Pipe kinds ``foreach --stdin`` reads repo names from (``repo``)."""
 
 
 def register_operation_commands(app: App) -> None:
@@ -65,9 +73,9 @@ def register_operation_commands(app: App) -> None:
 
 
 def sync_command(
+    workspace: WorkspaceArg = None,
+    /,
     *,
-    workspace: WorkspaceNameOption = None,
-    path: WorkspacePathOption = None,
     repo: RepoSelectorOption = None,
     prune: Annotated[
         bool,
@@ -81,6 +89,15 @@ def sync_command(
         ),
     ] = False,
     yes: YesOption = False,
+    dry_run: Annotated[
+        DryRunOption,
+        Parameter(
+            help=(
+                "With --prune: skip the sync and list the orphan clones --prune "
+                "would remove (planned) or keep (skipped); change nothing."
+            ),
+        ),
+    ] = False,
     timeout: Annotated[
         float | None,
         Parameter(
@@ -98,26 +115,22 @@ def sync_command(
         bool,
         Parameter(name="--all", negative="", help="Sync every registered workspace."),
     ] = False,
-    parallel: Annotated[
-        ParallelOption,
-        Parameter(
-            help=(
-                "Concurrent repo sync jobs. Per-repo outcomes are rows, "
-                "not exceptions, so the pool drains to completion. Capped "
-                "at a CPU-relative ceiling; values "
-                "above are clamped with a stderr warning."
-            ),
-        ),
-    ] = 1,
+    parallel: WorkspaceParallelOption | None = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Reconcile workspace clones with the manifest."""
+    """Reconcile workspace clones with the manifest.
+
+    Per-repo outcomes are rows, not exceptions, so the worker pool drains to
+    completion.
+    """
     if timeout is not None and timeout <= 0:
         raise_usage("--timeout must be positive")
-    workers = clamp_parallel(parallel, cap=parallel_cap(), policy="2 * os.cpu_count()")
+    if dry_run and not prune:
+        raise_usage("--dry-run requires --prune")
     with report_errors():
-        targets = target_workspaces(workspace, path, all_workspaces=all_workspaces)
+        workers = parallel_workers(parallel)
+        targets = target_workspaces(workspace, all_workspaces=all_workspaces)
         runner = (
             GitRunner(timeout=timeout, slow_timeout=timeout) if timeout is not None else GitRunner()
         )
@@ -135,6 +148,22 @@ def sync_command(
                 "--all --repo filters per-workspace; workspaces without "
                 "matching repos will be skipped, not rejected",
             )
+        if dry_run:
+            skipped, candidates = SyncWorkspaces(YamlManifestRepository(), engine).plan_prune(
+                targets, skip_manifest_errors=all_workspaces
+            )
+            planned = [
+                SyncOutcome(
+                    workspace=c.workspace.name,
+                    repo=c.path.name,
+                    target_path=c.path,
+                    action="planned",
+                    detail="no longer declared",
+                )
+                for c in candidates
+            ]
+            print_sync_outcomes([*skipped, *planned], fmt=fmt, columns=columns)
+            return
         with ui.progress("Syncing repos…") as p:
             sweep = SyncWorkspaces(YamlManifestRepository(), engine, notify=p.update)
             outcomes = sweep(
@@ -218,52 +247,95 @@ def _sync_summary(outcomes: list[SyncOutcome]) -> str:
 
 
 def status_command(
+    workspace: WorkspaceArg = None,
+    /,
     *,
-    workspace: WorkspaceNameOption = None,
-    path: WorkspacePathOption = None,
     all_workspaces: Annotated[
         bool,
         Parameter(name="--all", negative="", help="Status across all workspaces."),
     ] = False,
     repo: RepoSelectorOption = None,
+    dirty: Annotated[
+        bool,
+        Parameter(
+            name="--dirty",
+            negative="",
+            help="Only repos with uncommitted changes (modified or untracked files).",
+        ),
+    ] = False,
+    behind: Annotated[
+        bool,
+        Parameter(
+            name="--behind",
+            negative="",
+            help="Only repos behind their upstream. With --dirty, a repo matches either.",
+        ),
+    ] = False,
+    check: Annotated[
+        bool,
+        Parameter(
+            name="--check",
+            negative="",
+            help=(
+                "Exit 3 when any repo is dirty or behind (only the --dirty / --behind "
+                "condition when one is given)."
+            ),
+        ),
+    ] = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Per-repo `git status` snapshot."""
     with report_errors():
-        targets = target_workspaces(workspace, path, all_workspaces=all_workspaces)
+        targets = target_workspaces(workspace, all_workspaces=all_workspaces)
         use_case = WorkspaceStatus(YamlManifestRepository(), GitRunner(), fs=LocalFilesystem())
         rows: list[StatusEntry] = []
         with ui_context(strict=False).progress("Gathering workspace status…"):
             for ws in targets:
                 for entry in use_case(ws, only=repo, skip_manifest_errors=all_workspaces):
                     rows.append(entry)
+        hits = [row for row in rows if row.needs_attention(dirty=dirty, behind=behind)]
+        filtered = dirty or behind
         emit(
-            rows,
+            hits if filtered else rows,
             fmt=fmt,
             columns=columns,
             kind="workspace.status",
-            empty="No cloned repos. Run `untaped workspace sync` to clone from the manifest.",
+            empty=(
+                "No repos match the filters."
+                if filtered
+                else "No cloned repos. Run `untaped workspace sync` to clone from the manifest."
+            ),
         )
+    finish(False, predicate_hit=check and bool(hits))
 
 
 def foreach_command(
-    cmd: Annotated[str, Parameter(help='Shell command (e.g. "git pull --rebase").')],
+    workspace: Annotated[
+        str | None,
+        Parameter(name="WS", help=f"{WORKSPACE_ARG_HELP} Pass it before CMD."),
+    ] = None,
+    cmd: Annotated[
+        str | None,
+        Parameter(name="CMD", help='Shell command (e.g. "git pull --rebase").'),
+    ] = None,
     /,
     *,
-    workspace: WorkspaceNameOption = None,
-    path: WorkspacePathOption = None,
-    parallel: Annotated[
-        ParallelOption,
+    all_workspaces: Annotated[
+        bool,
+        Parameter(name="--all", negative="", help="Run in every registered workspace."),
+    ] = False,
+    stdin: Annotated[
+        StdinOption,
         Parameter(
             help=(
-                "Concurrent workers. Capped at a CPU-relative ceiling; "
-                "values above are clamped with a stderr warning. Fail-fast "
-                "cancellation is best-effort: in-flight commands run to "
-                "completion; only queued work stops."
+                "Read the repos to run in from stdin: names, one per line, or a --format "
+                "pipe stream of workspace.repo, workspace.status or workspace.sync_outcome "
+                "records (repo)."
             ),
         ),
-    ] = 1,
+    ] = False,
+    parallel: WorkspaceParallelOption | None = None,
     continue_on_error: Annotated[
         bool,
         Parameter(
@@ -300,6 +372,10 @@ def foreach_command(
 ) -> None:
     """Run a shell command in each repo of the workspace.
 
+    Select repos with at most one of ``--repo``, ``--stdin`` or ``--all``.
+    Fail-fast cancellation is best-effort under ``--parallel``: in-flight
+    commands run to completion; only queued work stops.
+
     The default ``--format table`` is human-friendly: when each repo
     finishes, its captured stdout / stderr is replayed line-by-line
     with a ``[<repo>]`` prefix (in completion order under
@@ -310,29 +386,56 @@ def foreach_command(
     rows after every repo finishes — suitable for piping into ``jq``
     / ``awk`` / another ``untaped`` command.
     """
+    workspace, cmd = split_leading_workspace(workspace, cmd)
+    if cmd is None:
+        raise_usage("missing argument CMD")
     if timeout <= 0:
         raise_usage("--timeout must be positive")
+    if sum((all_workspaces, stdin, bool(repo))) > 1:
+        raise_usage("--repo, --stdin and --all are mutually exclusive")
     with report_errors():
-        ws = resolve_workspace(workspace, path)
-        workers = clamp_parallel(parallel, cap=parallel_cap(), policy="2 * os.cpu_count()")
+        targets = target_workspaces(workspace, all_workspaces=all_workspaces)
+        only = (
+            read_identifiers([], stdin=True, id_field="repo", accept_kinds=FOREACH_STDIN_KINDS)
+            if stdin
+            else repo
+        )
+        workers = parallel_workers(parallel)
         keep_going = continue_on_error or ignore_errors
         shell = InterruptibleShellRunner()
-        outcomes = Foreach(
+        foreach = Foreach(
             YamlManifestRepository(),
             runner=shell,
             fs=LocalFilesystem(),
             on_interrupt=shell.terminate_all,
-        )(
-            ws,
-            command=cmd,
-            parallel=workers,
-            continue_on_error=keep_going,
-            only=repo,
-            timeout=timeout,
-            # Table output streams each repo's block as soon as it finishes.
-            on_result=_echo_foreach_outcome if fmt == "table" else None,
         )
-        failed = [o.repo for o in outcomes if o.returncode != 0]
+        ui = ui_context(strict=False)
+        outcomes: list[ForeachOutcome] = []
+        for ws in targets:
+            try:
+                ran = foreach(
+                    ws,
+                    command=cmd,
+                    parallel=workers,
+                    continue_on_error=keep_going,
+                    only=only,
+                    timeout=timeout,
+                    # Table output streams each repo's block as soon as it finishes.
+                    on_result=(
+                        partial(_echo_foreach_outcome, qualify=all_workspaces)
+                        if fmt == "table"
+                        else None
+                    ),
+                )
+            except ManifestError as exc:
+                if not all_workspaces:
+                    raise
+                ui.message("warning", f"skipped workspace {q(ws.name)}: {exc}")
+                continue
+            outcomes.extend(ran)
+            if not keep_going and any(o.returncode != 0 for o in ran):
+                break
+        failed = [_label(o, qualify=all_workspaces) for o in outcomes if o.returncode != 0]
         if fmt == "table":
             if not outcomes:
                 echo("No repos matched. Check --repo or the workspace manifest.", err=True)
@@ -343,10 +446,16 @@ def foreach_command(
         finish(bool(failed) and not ignore_errors)
 
 
-def _echo_foreach_outcome(o: ForeachOutcome) -> None:
+def _label(o: ForeachOutcome, *, qualify: bool) -> str:
+    """``repo``, or ``workspace/repo`` under ``--all`` where names can repeat."""
+    return f"{o.workspace}/{o.repo}" if qualify else o.repo
+
+
+def _echo_foreach_outcome(o: ForeachOutcome, *, qualify: bool) -> None:
+    label = _label(o, qualify=qualify)
     for line in o.stdout.splitlines():
-        echo(f"[{o.repo}] {line}")
+        echo(f"[{label}] {line}")
     for line in o.stderr.splitlines():
-        echo(f"[{o.repo}] {line}", err=True)
+        echo(f"[{label}] {line}", err=True)
     if o.returncode != 0:
-        echo(f"[{o.repo}] exit {o.returncode}", err=True)
+        echo(f"[{label}] exit {o.returncode}", err=True)

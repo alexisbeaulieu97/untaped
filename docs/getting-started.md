@@ -83,8 +83,8 @@ Each capability has a guide with the full workflow.
 ```bash
 # workspace: register a directory of Git clones and sync it
 untaped workspace init demo
-untaped workspace add git@github.com:acme/api.git --workspace demo --sync
-untaped workspace status --workspace demo
+untaped workspace repos add demo git@github.com:acme/api.git --sync
+untaped workspace status demo
 
 # github: check the token, then list an org's repos
 untaped github whoami
@@ -135,7 +135,7 @@ pipe never carries noise. `-q`/`--quiet` mutes progress and success messages.
 ```bash
 # Clone every non-archived repo of a GitHub team into a workspace
 untaped github repos list --team acme/platform --no-archived --format pipe \
-  | untaped workspace add --stdin --workspace demo --sync
+  | untaped workspace repos add demo --stdin --sync
 
 # Pick a job template with fzf and show it as YAML
 untaped awx job-templates list --format raw --columns name \

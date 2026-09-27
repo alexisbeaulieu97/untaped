@@ -129,7 +129,7 @@ sets. State is written by the owning capability and is not writable through
 Earlier releases kept capability state at the top level of `config.yml`. Such
 a section keeps working: when `state.yml` has no copy of a section, untaped
 reads it from `config.yml` and prints one deprecation warning per run. The
-next change to that section (for example `untaped workspace add`) moves it:
+next change to that section (for example `untaped workspace repos add`) moves it:
 untaped writes the section to `state.yml` first and then removes it from
 `config.yml`, holding both files' locks and keeping the rest of `config.yml`
 (comments included) as written. If `config.yml` cannot be rewritten (for

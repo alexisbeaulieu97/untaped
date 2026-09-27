@@ -1,15 +1,19 @@
-"""Repository mutation commands for the workspace CLI."""
+"""``workspace repos`` commands: list, add, and remove a workspace's declared repos."""
 
 from __future__ import annotations
 
 from typing import Annotated
 
-from cyclopts import App, Parameter
+from cyclopts import Parameter
 
-from untaped.capabilities.workspace.application import AddRepo, RemoveRepo, SyncWorkspace
+from untaped.capabilities.workspace.application import (
+    AddRepo,
+    RemoveRepo,
+    ShowWorkspace,
+    SyncWorkspace,
+)
 from untaped.capabilities.workspace.cli.common import (
-    WorkspaceNameOption,
-    WorkspacePathOption,
+    WorkspaceArg,
     resolve_workspace,
     workspace_settings,
 )
@@ -17,7 +21,11 @@ from untaped.capabilities.workspace.cli.ops_commands import (
     any_sync_failed,
     print_sync_outcomes,
 )
-from untaped.capabilities.workspace.domain import RepoAddOutcome, RepoRemoveOutcome
+from untaped.capabilities.workspace.domain import (
+    RepoAddOutcome,
+    RepoRemoveOutcome,
+    WorkspaceSummaryRow,
+)
 from untaped.capabilities.workspace.infrastructure import (
     GitRunner,
     LocalFilesystem,
@@ -32,6 +40,7 @@ from untaped.capability_api import (
     UsageError,
     YesOption,
     batch_apply,
+    create_app,
     emit,
     finish,
     q,
@@ -51,12 +60,62 @@ REMOVE_STDIN_KINDS = frozenset({"workspace.repo", "workspace.sync_outcome"})
 """Pipe kinds ``remove --stdin`` reads repo names from (``repo``)."""
 
 
-def register_repo_commands(app: App) -> None:
-    app.command(add_command, name="add")
-    app.command(remove_command, name="remove")
+RequiredWorkspaceArg = Annotated[
+    str | None,
+    Parameter(
+        name="WS",
+        help=(
+            "Workspace name, or a path inside one (`.` is the current directory). "
+            "Required before positional repos; with --stdin it defaults to the "
+            "workspace containing the current directory."
+        ),
+    ),
+]
+
+app = create_app(
+    name="repos",
+    help="List, add, and remove the repos declared in a workspace's manifest.",
+)
 
 
+@app.command(name="list")
+def list_command(
+    workspace: WorkspaceArg = None,
+    /,
+    *,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """List the repos declared in a workspace's manifest.
+
+    An empty workspace emits one ``workspace.repo.summary`` row so its
+    default branch and path stay visible.
+    """
+    with report_errors():
+        ws = resolve_workspace(workspace)
+        details = ShowWorkspace(YamlManifestRepository())(ws)
+        kind = (
+            "workspace.repo.summary"
+            if any(isinstance(row, WorkspaceSummaryRow) for row in details)
+            else "workspace.repo"
+        )
+        emit(details, fmt=fmt, columns=columns, kind=kind)
+
+
+def _require_workspace_first(
+    workspace: str | None, idents: list[str], *, stdin: bool, usage: str
+) -> None:
+    """Positional repos need the workspace before them; only ``--stdin`` may omit it."""
+    if not stdin and workspace is not None and not idents:
+        raise UsageError(
+            f"pass the workspace first: `untaped workspace repos {usage}` "
+            "(`.` is the workspace containing the current directory)"
+        )
+
+
+@app.command(name="add")
 def add_command(
+    workspace: RequiredWorkspaceArg = None,
     urls: Annotated[
         list[str] | None,
         Parameter(negative="", help="Repo URLs to add."),
@@ -73,8 +132,6 @@ def add_command(
             ),
         ),
     ] = False,
-    workspace: WorkspaceNameOption = None,
-    path: WorkspacePathOption = None,
     branch: Annotated[
         str | None,
         Parameter(
@@ -105,19 +162,20 @@ def add_command(
 ) -> None:
     """Add one or more repos to a workspace's manifest.
 
-    Multiple URLs may be passed as positional args or via ``--stdin``;
+    Multiple URLs may follow the workspace or come via ``--stdin``;
     ``--branch`` and ``--repo-name`` apply uniformly to every URL in
     the batch. ``--sync`` only clones URLs that actually landed.
     """
     add_repo = AddRepo(YamlManifestRepository())
     any_failed = False
     with report_errors():
+        _require_workspace_first(workspace, list(urls or []), stdin=stdin, usage="add WS URL...")
         idents = _read_add_urls(list(urls or []), stdin=stdin)
         if repo_name is not None and len(idents) > 1:
             raise UsageError(
                 "--repo-name applies to a single URL; drop --repo-name or pass URLs one at a time"
             )
-        ws = resolve_workspace(workspace, path)
+        ws = resolve_workspace(workspace)
         ui = ui_context(strict=False)
 
         def _add_one(url: str) -> RepoAddOutcome:
@@ -169,7 +227,9 @@ def _read_add_urls(urls: list[str], *, stdin: bool) -> list[str]:
     return found
 
 
+@app.command(name="remove")
 def remove_command(
+    workspace: RequiredWorkspaceArg = None,
     repos: Annotated[
         list[str] | None,
         Parameter(negative="", help="Repo URLs or aliases to remove."),
@@ -185,8 +245,6 @@ def remove_command(
             ),
         ),
     ] = False,
-    workspace: WorkspaceNameOption = None,
-    path: WorkspacePathOption = None,
     prune: Annotated[
         bool,
         Parameter(
@@ -202,13 +260,16 @@ def remove_command(
 ) -> None:
     """Remove one or more repos from a workspace's manifest."""
     with report_errors():
+        _require_workspace_first(
+            workspace, list(repos or []), stdin=stdin, usage="remove WS REPO..."
+        )
         idents = read_identifiers(
             list(repos or []),
             stdin=stdin,
             id_field="repo",
             accept_kinds=REMOVE_STDIN_KINDS,
         )
-        ws = resolve_workspace(workspace, path)
+        ws = resolve_workspace(workspace)
         remove_repo = RemoveRepo(
             YamlManifestRepository(),
             fs=LocalFilesystem(),
