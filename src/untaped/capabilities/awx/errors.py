@@ -22,8 +22,7 @@ class AwxError(UntapedError):
 class AwxApiError(AwxError):
     """Raised when the AWX API returns an error or behaves unexpectedly.
 
-    ``status_code`` names the HTTP status like :class:`HttpError` does;
-    ``status`` is its older spelling, kept for one release.
+    ``status_code`` names the HTTP status like :class:`HttpError` does.
     """
 
     def __init__(
@@ -35,14 +34,10 @@ class AwxApiError(AwxError):
         url: str | None = None,
     ) -> None:
         super().__init__(message)
-        self.status = status
+        self.status_code = status
+        """The HTTP status of the failed response, when there was one."""
         self.body = body
         self.url = url
-
-    @property
-    def status_code(self) -> int | None:
-        """The HTTP status of the failed response, when there was one."""
-        return self.status
 
 
 class ActionResponseError(AwxApiError):

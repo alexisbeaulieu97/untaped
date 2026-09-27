@@ -43,7 +43,6 @@ from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
-    deprecated_alias,
     raise_usage,
     read_structured_file,
     report_errors,
@@ -236,8 +235,6 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                     fmt=fmt,
                     columns=columns,
                 )
-
-    deprecated_alias(app["launch"], "--limit", "--host-pattern")
 
 
 @dataclass(frozen=True)

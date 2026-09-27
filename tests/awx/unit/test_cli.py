@@ -357,11 +357,11 @@ def test_get_bare_invocation_is_usage_error_without_opening_context() -> None:
     assert "awx.base_url" not in result.output
 
 
-def test_per_kind_apply_rejects_parallel_below_one_before_opening_context(tmp_path: Path) -> None:
+def test_apply_rejects_parallel_below_one_before_opening_context(tmp_path: Path) -> None:
     yml = tmp_path / "empty.yml"
     yml.write_text("")
 
-    result = CliInvoker().invoke(app, ["job-templates", "apply", str(yml), "--parallel", "0"])
+    result = CliInvoker().invoke(app, ["apply", str(yml), "--parallel", "0"])
 
     assert result.exit_code != 0
     assert "parallel" in result.output
@@ -389,7 +389,6 @@ def test_apply_emits_clamp_warning_above_cap(
     "template",
     [
         pytest.param(["apply", "FILE"], id="top-level-positional"),
-        pytest.param(["job-templates", "apply", "FILE"], id="per-kind-positional"),
     ],
 )
 def test_apply_accepts_positional_file(
@@ -412,8 +411,6 @@ def test_apply_accepts_positional_file(
     [
         pytest.param(["apply", "--file", "FILE"], id="top-level-long"),
         pytest.param(["apply", "-f", "FILE"], id="top-level-short"),
-        pytest.param(["job-templates", "apply", "--file", "FILE"], id="per-kind-long"),
-        pytest.param(["job-templates", "apply", "-f", "FILE"], id="per-kind-short"),
     ],
 )
 def test_apply_rejects_removed_file_alias(
@@ -431,9 +428,9 @@ def test_apply_rejects_removed_file_alias(
     assert result.stdout == ""
 
 
-@pytest.mark.parametrize("command", [["apply"], ["projects", "apply"]])
+@pytest.mark.parametrize("command", [["apply"]])
 def test_apply_takes_a_positional_file_and_advertises_parallel(command: list[str]) -> None:
-    """Top-level and per-kind apply share one surface; ``--file`` stays removed."""
+    """Apply takes a positional file; ``--file`` stays removed."""
     helped = CliInvoker().invoke(app, [*command, "--help"])
     assert helped.exit_code == 0
     assert "YAML file" in helped.output
