@@ -9,6 +9,7 @@ from untaped.capabilities.jira.application.ports import (
     JiraIssueWriter,
     JiraLookupService,
     JiraMeService,
+    JiraTransitionReader,
     JiraTransitionService,
 )
 from untaped.capabilities.jira.domain import (
@@ -25,6 +26,10 @@ from untaped.capabilities.jira.domain import (
     browse_url,
     build_link_payload,
     build_transition_payload,
+    change_line,
+    payload_changes,
+    referenced_fields,
+    transition_changes,
 )
 from untaped.capabilities.jira.errors import JiraError, JiraTransitionError
 from untaped.capability_api import UsageError, not_found, q
@@ -132,6 +137,35 @@ class PatchIssue:
         )
 
 
+class PreviewPatch:
+    """Describe an issue edit and assignment against the issue's current values.
+
+    Reads only the fields the edit touches (plus ``assignee`` when assigning)
+    in one request; returns the edit's lines and the assignment's lines.
+    """
+
+    def __init__(self, client: JiraIssueReader) -> None:
+        self._client = client
+
+    def __call__(
+        self,
+        issue_key: str,
+        payload: dict[str, Any] | None,
+        *,
+        assignee: dict[str, Any] | None = None,
+    ) -> tuple[list[str], list[str]]:
+        names = referenced_fields(payload) + (["assignee"] if assignee is not None else [])
+        issue = self._client.get_issue(issue_key, fields=list(dict.fromkeys(names)))
+        current = issue.get("fields") or {}
+        edit = payload_changes(payload, current) if payload is not None else []
+        assign = (
+            [change_line("assignee", assignee, old=current.get("assignee"))]
+            if assignee is not None
+            else []
+        )
+        return edit, assign
+
+
 class AddComment:
     """Add one comment to an issue."""
 
@@ -234,6 +268,38 @@ class TransitionIssue:
                 f"multiple transitions named {q(name)} are available for {issue_key}"
             )
         return str(matches[0]["id"])
+
+
+class PreviewTransition:
+    """Describe a transition: its name, the status change, resolution and comment."""
+
+    def __init__(self, client: JiraTransitionReader) -> None:
+        self._client = client
+
+    def __call__(
+        self,
+        issue_key: str,
+        transition_id: str,
+        *,
+        comment: str | None = None,
+        resolution: str | None = None,
+    ) -> list[str]:
+        issue = self._client.get_issue(issue_key, fields=["status", "resolution"])
+        transition = next(
+            (
+                t
+                for t in self._client.list_transitions(issue_key)
+                if str(t.get("id")) == transition_id
+            ),
+            None,
+        )
+        return transition_changes(
+            transition,
+            transition_id,
+            issue.get("fields") or {},
+            comment=comment,
+            resolution=resolution,
+        )
 
 
 def _optional_str(value: Any) -> str | None:

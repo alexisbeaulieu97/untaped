@@ -1,5 +1,13 @@
 """Pure domain models and helpers for the Jira tool."""
 
+from untaped.capabilities.jira.domain.changes import (
+    change_line,
+    is_destructive_patch,
+    needs_confirmation,
+    payload_changes,
+    referenced_fields,
+    transition_changes,
+)
 from untaped.capabilities.jira.domain.keys import validate_issue_key, validate_project_key
 from untaped.capabilities.jira.domain.models import (
     BoardResult,
@@ -39,6 +47,12 @@ __all__ = [
     "build_issue_payload",
     "build_link_payload",
     "build_transition_payload",
+    "change_line",
+    "is_destructive_patch",
+    "needs_confirmation",
+    "payload_changes",
+    "referenced_fields",
+    "transition_changes",
     "validate_issue_key",
     "validate_project_key",
 ]

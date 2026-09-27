@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Any, Protocol
 
 
@@ -15,7 +15,9 @@ class JiraMeService(Protocol):
 class JiraIssueReader(Protocol):
     """Issue read and search contract."""
 
-    def get_issue(self, issue_key: str) -> dict[str, Any]: ...
+    def get_issue(
+        self, issue_key: str, *, fields: Sequence[str] | None = None
+    ) -> dict[str, Any]: ...
 
     def search_issues(self, jql: str, *, limit: int | None = None) -> Iterator[dict[str, Any]]: ...
 
@@ -44,6 +46,10 @@ class JiraTransitionService(Protocol):
     def list_transitions(self, issue_key: str) -> list[dict[str, Any]]: ...
 
     def transition_issue(self, issue_key: str, payload: dict[str, Any]) -> None: ...
+
+
+class JiraTransitionReader(JiraIssueReader, JiraTransitionService, Protocol):
+    """Issue reads plus the available transitions, for transition previews."""
 
 
 class JiraLookupService(Protocol):

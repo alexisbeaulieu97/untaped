@@ -72,6 +72,8 @@ DESCRIPTIONS: dict[str, str] = {
     "jira.default_project": "Project key `issues create` uses when `--project` is omitted.",
     "jira.default_board_id": "Board `sprints list` uses when `--board-id` is omitted.",
     "jira.page_size": "Results requested per Jira API page.",
+    "jira.confirm": "Which writes ask first: `always`, `destructive` (patches that replace or "
+    "remove values, assignee changes, transitions) or `never`. `--yes` skips the prompt.",
     "awx.base_url": "AWX/AAP URL, for example `https://aap.example.com`.",
     "awx.token": "AWX/AAP API token.",
     "awx.token_command": "Command (argv list, no shell) that prints the token; "

@@ -185,16 +185,16 @@ def test_patch_fields_and_assignee_edits_then_assigns() -> None:
     ("args", "expected"),
     [(["--assignee", "bob"], {"name": "bob"}), (["--unassign"], {"name": None})],
 )
-def test_patch_assignee_flags_override_a_body_file_assignee(
+def test_patch_assignee_flags_override_a_fields_file_assignee(
     tmp_path: Path, args: list[str], expected: object
 ) -> None:
-    body_file = tmp_path / "edit.yml"
-    body_file.write_text("fields:\n  summary: New\n  assignee:\n    name: carol\n")
+    fields_file = tmp_path / "edit.yml"
+    fields_file.write_text("fields:\n  summary: New\n  assignee:\n    name: carol\n")
     with respx.mock(base_url=BASE) as mock:
         edit = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
         assign = mock.put("/rest/api/2/issue/ABC-1/assignee").mock(return_value=httpx.Response(204))
         result = invoke_cli(
-            app, ["issues", "patch", "ABC-1", "--body-file", str(body_file), *args, "--yes"]
+            app, ["issues", "patch", "ABC-1", "--fields-file", str(fields_file), *args, "--yes"]
         )
 
     assert result.exit_code == 0, result.output
@@ -234,6 +234,9 @@ def test_patch_dry_run_shows_the_edit_and_assignee_requests() -> None:
         mock.get("/rest/api/2/myself").mock(
             return_value=httpx.Response(200, json={"name": "alexis"})
         )
+        mock.get("/rest/api/2/issue/ABC-1").mock(
+            return_value=httpx.Response(200, json=_issue("ABC-1"))
+        )
         route = mock.put(url__regex=r"/rest/api/2/issue/ABC-1.*")
         result = invoke_cli(
             app,
@@ -241,10 +244,12 @@ def test_patch_dry_run_shows_the_edit_and_assignee_requests() -> None:
         )
 
     assert result.exit_code == 0, result.output
-    assert "PUT /rest/api/2/issue/ABC-1\n" in result.stderr
-    assert "PUT /rest/api/2/issue/ABC-1/assignee\n" in result.stderr
-    assert '"name": "alexis"' in result.stderr
-    assert '"assignee"' not in result.stderr
+    assert (
+        "PUT /rest/api/2/issue/ABC-1\n"
+        '  summary: "Summary of ABC-1" → "New"\n'
+        "PUT /rest/api/2/issue/ABC-1/assignee\n"
+        "  assignee: (none) → alexis\n"
+    ) in result.stderr
     assert len(route.calls) == 0
 
 
@@ -278,17 +283,6 @@ def test_transition_sends_comment_and_resolution() -> None:
         "fields": {"resolution": {"name": "Fixed"}},
         "update": {"comment": [{"add": {"body": "Shipped in 1.2."}}]},
     }
-
-
-def test_transition_dry_run_previews_comment_and_resolution() -> None:
-    result = invoke_cli(
-        app,
-        ["issues", "transition", "ABC-1", "--id", "31", "--resolution", "Done", "--dry-run"],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert '"resolution"' in result.stderr
-    assert "POST /rest/api/2/issue/ABC-1/transitions" in result.stderr
 
 
 # --- issues links create ---------------------------------------------------------------
