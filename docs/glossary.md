@@ -39,9 +39,11 @@ Terms as `untaped` uses them in commands, output and these docs.
 - **recipe**: A YAML file of steps that `recipe apply` plans and applies to
   target directories.
 - **root commands**: The commands that belong to `untaped` itself rather than
-  to a capability: `config`, `profile`, `skills`, `doctor`, `capabilities`.
+  to a capability: `config`, `profile`, `skills`, `doctor`, `capabilities`,
+  `setup`, `alias`.
 - **section**: The part of a profile that one capability owns, for example
-  `profiles.default.awx`. `http` and `ui` are shared root sections.
+  `profiles.default.awx`. `http`, `ui`, `skills` and `shell` are shared root
+  sections.
 - **setting**: One configurable value in a section, addressed by its key.
 - **skill**: A packaged instruction set (`SKILL.md`) that teaches an AI agent
   to use a capability. Install with `untaped skills install`; keep it current

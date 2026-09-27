@@ -23,9 +23,16 @@ from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context
 from untaped.verbose import is_verbose
 
+
+def _format_default(value: object) -> str:
+    """Help text for a ``--format`` default; ``table`` defers to the overrides."""
+    shown = getattr(value, "value", value)
+    return "table, or UNTAPED_FORMAT / ui.format" if shown == "table" else str(shown)
+
+
 FormatOption = Annotated[
     OutputFormat,
-    Parameter(name=["--format", "-f"], help="Output format."),
+    Parameter(name=["--format", "-f"], help="Output format.", show_default=_format_default),
 ]
 """Shared ``--format / -f`` option for any command that prints rows."""
 
