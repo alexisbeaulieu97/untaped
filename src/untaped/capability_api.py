@@ -84,7 +84,6 @@ from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.progress import ProgressHandle
 from untaped.prompts import PromptChoice
 from untaped.records import AbsolutePath, CheckRecord, OutcomeRecord, TargetRecord, UtcTimestamp
-from untaped.render import OutputFormat
 from untaped.settings import HttpSettings, get_config_section, get_core_settings
 from untaped.state import StateCollection, StateMap
 from untaped.stdin import (
@@ -95,6 +94,7 @@ from untaped.stdin import (
     read_stdin_input,
     resolve_text_input,
 )
+from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context
 
 __all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by test_all_contains_exact_surface

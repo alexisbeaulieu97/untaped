@@ -37,7 +37,7 @@ from untaped.capabilities.registry import (
     compose,
     discover_external_providers,
 )
-from untaped.cli import create_app, echo, report_errors, run_cyclopts_app
+from untaped.cli import apply_default_format, create_app, echo, report_errors, run_cyclopts_app
 from untaped.errors import ConfigError
 from untaped.management import (
     build_root_capabilities_app,
@@ -227,6 +227,7 @@ def build_root_app(
     for capability in result.capabilities:
         _mount_capability(root, capability)
     root.version = _resolve_version
+    root.config = (apply_default_format,)
     capability_names = frozenset(capability.spec.name for capability in result.capabilities)
     skills = composed_skills(SHELL_SPEC, result)
     _install_root_callback(

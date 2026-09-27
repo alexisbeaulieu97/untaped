@@ -129,6 +129,16 @@ untaped github repos list --org acme --format raw --columns full_name
   `--columns` you name separated by tabs. It suits `fzf`, `awk` and `xargs`.
 - `pipe` prints records that another `untaped` command reads with `--stdin`.
 
+To change the `table` default, set `ui.format` in your profile or export
+`UNTAPED_FORMAT` (which wins over the setting); an explicit `--format` always
+wins. A table written to a pipe or file is never wrapped to the terminal
+width.
+
+```bash
+untaped config set ui.format json
+UNTAPED_FORMAT=yaml untaped github repos list --org acme
+```
+
 Only data goes to stdout. Progress, warnings and errors go to stderr, so a
 pipe never carries noise. `-q`/`--quiet` mutes progress and success messages.
 

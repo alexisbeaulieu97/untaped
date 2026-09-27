@@ -14,7 +14,7 @@ from collections.abc import Sequence
 
 from untaped.cli import echo, emit
 from untaped.errors import ConfigError
-from untaped.render import OutputFormat
+from untaped.theme import OutputFormat
 from untaped.ui import ui_context
 
 

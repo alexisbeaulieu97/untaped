@@ -36,8 +36,8 @@ from untaped.config.prompting import resolve_set_value
 from untaped.config.repository import SettingsFileRepository
 from untaped.config.use_cases import GetSetting, ListAllProfilesSettings, ListSettings
 from untaped.errors import ConfigError
-from untaped.render import OutputFormat
 from untaped.settings import Settings, resolve_config_path
+from untaped.theme import OutputFormat
 from untaped.ui import ui_context
 
 

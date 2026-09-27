@@ -49,7 +49,7 @@ Use the shared option aliases instead of declaring your own copy:
 
 | Alias | Flag |
 |---|---|
-| `FormatOption` | `-f/--format` (default `table`) |
+| `FormatOption` | `-f/--format` (default `table`, or the user's `UNTAPED_FORMAT`/`ui.format`) |
 | `ColumnsOption` | `-c/--columns` |
 | `YesOption` | `-y/--yes`: skips only the prompt. `--dry-run` still wins. |
 | `DryRunOption` | `--dry-run`: preview, then exit 0 |

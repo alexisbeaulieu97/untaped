@@ -26,6 +26,7 @@ variable shown.
 | `http.timeout` | number | `30.0` | `UNTAPED_HTTP__TIMEOUT` | HTTP request timeout in seconds. |
 | `http.proxy` | string (optional) | unset | `UNTAPED_HTTP__PROXY` | Proxy URL for HTTP clients. When unset, standard proxy variables apply. |
 | `ui.theme` | string | `default` | `UNTAPED_UI__THEME` | Built-in theme: `default`, `plain`, `compact`, `high-contrast`, `quiet`, `classic`. |
+| `ui.format` | `json` \| `yaml` \| `table` \| `raw` \| `pipe` (optional) | unset | `UNTAPED_UI__FORMAT` | Default `--format` for commands whose default is `table`. `UNTAPED_FORMAT` wins over it; an explicit `--format` wins over both. |
 | `ui.border` | `rounded` \| `square` \| `ascii` \| `none` (optional) | unset | `UNTAPED_UI__BORDER` | Table border style; overrides the theme. |
 | `ui.density` | `normal` \| `compact` (optional) | unset | `UNTAPED_UI__DENSITY` | Table density; overrides the theme. |
 | `ui.collection_view` | `table` \| `list` (optional) | unset | `UNTAPED_UI__COLLECTION_VIEW` | How lists render in `table` format; overrides the theme. |

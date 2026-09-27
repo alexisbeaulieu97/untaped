@@ -6,6 +6,11 @@
   - **Breaking:** `config set` and `config unset` lost `--target-profile`;
     they write to the active profile, and the root `--profile NAME` selects
     another one (`untaped --profile prod config set awx.token --prompt`).
+  - **New:** the `ui.format` setting and the `UNTAPED_FORMAT` environment
+    variable (which wins) replace the `table` default of the shared
+    `--format` option; an explicit `--format` still wins.
+  - **Behavior change:** table and styled output that does not go to a
+    terminal is no longer wrapped at 80 columns; `COLUMNS` still bounds it.
   - **Breaking:** the capability API version is a `(major, minor)` tuple of
     ints, now `(2, 0)`, so `1.10` can no longer compare equal to `1.1`.
     Providers declare `api_requires = ((2, 0), (3, 0))`; float bounds and

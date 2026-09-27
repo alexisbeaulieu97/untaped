@@ -9,6 +9,7 @@ These are all the environment variables `untaped` reads or sets.
 | `UNTAPED_CONFIG` | Path of the config file. Default: `~/.untaped/config.yml`. |
 | `UNTAPED_STATE` | Path of the state file. Default: `state.yml` next to `config.yml`, or `NAME.state.yml` next to any other config file `NAME.EXT`. It must not name the config file. |
 | `UNTAPED_PROFILE` | Active profile for this process. It must name an existing profile. The root `--profile` option takes precedence over it. |
+| `UNTAPED_FORMAT` | Default `--format` (`json`, `yaml`, `table`, `raw` or `pipe`) for commands whose default is `table`. Wins over the `ui.format` setting; an explicit `--format` wins over it. Any other value exits 2. |
 | `UNTAPED_CONFIG_LOCK_TIMEOUT` | Seconds to wait for the config or state file lock before a write fails. A non-negative number; default `5`. |
 | `UNTAPED_<SECTION>__<FIELD>` | Overrides one profile setting for this process, for example `UNTAPED_GITHUB__TOKEN` or `UNTAPED_HTTP__VERIFY_SSL`. Nested fields add another `__`: `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS`. |
 | `GH_TOKEN`, then `GITHUB_TOKEN` | GitHub token used when neither `github.token` nor `github.token_command` is set. See [Tokens](../configuration.md#tokens). |
@@ -38,6 +39,8 @@ GUI editor's wait flag, for example `VISUAL="code --wait"`. If neither is set,
 | `FORCE_COLOR` | Any non-empty value turns on color even when output is not a terminal. |
 
 Without either, color is used only when the stream is a terminal.
+`COLUMNS` sets the table width; without it a terminal's width is used, and
+output that does not go to a terminal is not wrapped.
 
 ## HTTP
 
