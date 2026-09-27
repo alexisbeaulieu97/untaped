@@ -76,6 +76,35 @@ def test_set_reports_unchanged_updated_and_planned(_isolated_config: Path) -> No
     assert _aliases(_isolated_config) == {"ls": ["profile", "list"]}
 
 
+@pytest.mark.parametrize(
+    ("options", "profile"),
+    [(["--profile", "work"], "work"), (["-v"], "default"), (["--quiet"], "default")],
+)
+def test_root_options_before_the_separator_apply_to_alias_set(
+    _isolated_config: Path, options: list[str], profile: str
+) -> None:
+    write_config(_isolated_config, _CONFIG)
+    result = _invoke("alias", "set", "wp", *options, "--", "profile", "list")
+    assert result.exit_code == 0, result.output
+    assert _aliases(_isolated_config, profile) == {"wp": ["profile", "list"]}
+
+
+def test_the_alias_is_looked_up_in_the_profile_named_anywhere(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        _CONFIG.replace(
+            "  work:\n", "  work:\n    shell:\n      aliases:\n        wb: [config, list]\n"
+        ),
+    )
+    before = _invoke("--profile", "work", "wb", "--format", "raw")
+    after = _invoke("wb", "--format", "raw", "--profile", "work")
+    assert before.exit_code == after.exit_code == 0, after.output
+    assert after.stdout == before.stdout
+    assert "github.base_url" in after.stdout
+    separated = _invoke("wb", "--", "--profile", "work")
+    assert separated.exit_code == 2
+
+
 def test_set_writes_into_the_root_profile(_isolated_config: Path) -> None:
     write_config(_isolated_config, _CONFIG)
     result = _invoke("--profile", "work", "alias", "set", "pl", "--", "profile", "list")
@@ -89,6 +118,7 @@ def test_set_writes_into_the_root_profile(_isolated_config: Path) -> None:
     [
         (["config", "--", "profile", "list"], "would shadow the built-in command 'config'"),
         (["github", "--", "profile", "list"], "would shadow the built-in command 'github'"),
+        (["git-hub", "--", "profile", "list"], "would shadow the built-in command 'github'"),
         (["alias", "--", "profile", "list"], "would shadow the built-in command 'alias'"),
         (["Bad_Name", "--", "profile", "list"], "alias name must be"),
         (["empty"], "alias set requires a command"),
@@ -134,8 +164,13 @@ def test_list_merges_default_and_active_profiles(_isolated_config: Path) -> None
     result = _invoke("--profile", "work", "alias", "list", "--format", "json")
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
-        {"name": "a", "command": "config list", "profile": "default"},
-        {"name": "b", "command": "config get ui.theme", "profile": "work"},
+        {"name": "a", "command": "config list", "argv": ["config", "list"], "profile": "default"},
+        {
+            "name": "b",
+            "command": "config get ui.theme",
+            "argv": ["config", "get", "ui.theme"],
+            "profile": "work",
+        },
     ]
     empty = _invoke("alias", "list")
     assert "b" not in empty.stdout
@@ -172,6 +207,30 @@ def test_remove_an_unknown_alias_names_the_known_ones(_isolated_config: Path) ->
     result = _invoke("alias", "remove", "nope", "--yes")
     assert result.exit_code == 1
     assert "alias not found: 'nope'; known: a" in result.stderr
+
+
+def test_remove_an_inherited_alias_points_at_its_profile(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        _CONFIG.replace(
+            "  default:\n", "  default:\n    shell:\n      aliases:\n        a: [config, list]\n"
+        ),
+    )
+    result = _invoke("--profile", "work", "alias", "remove", "a", "--yes")
+    assert result.exit_code == 1
+    assert "alias 'a' is defined in profile default" in result.stderr
+    assert "hint: run `untaped --profile default alias remove a`" in result.stderr
+
+
+def test_a_malformed_stored_alias_is_reported(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    shell:\n      aliases:\n        a: config list\n",
+    )
+    result = _invoke("alias", "remove", "a", "--yes")
+    assert result.exit_code == 1
+    assert "shell.aliases" in result.stderr
+    assert "Traceback" not in result.output
 
 
 def test_config_rejects_an_invalid_alias(_isolated_config: Path) -> None:

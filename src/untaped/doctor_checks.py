@@ -10,11 +10,14 @@ check: ``doctor --online`` runs it to contact the configured service.
 from __future__ import annotations
 
 import shutil
+import ssl
 from collections.abc import Callable, Iterator
+
+from pydantic import BaseModel
 
 from untaped.auth import describe_token_source
 from untaped.capabilities.registry import CapabilityContext, DoctorCheck, DoctorResult
-from untaped.errors import HttpError, HttpTransportError, UntapedError
+from untaped.errors import HttpError, UntapedError
 
 
 def executable_check(check_id: str, program: str, *, purpose: str) -> DoctorCheck:
@@ -69,6 +72,18 @@ def connection_check(check_id: str, *, section: str) -> DoctorCheck:
     return DoctorCheck(id=check_id, title=f"{section} connection settings", run=run)
 
 
+def service_configured(settings: BaseModel, *, section: str) -> bool:
+    """Whether ``section`` is set up: a token source, or a ``base_url`` of the user's own.
+
+    A model's built-in default URL (GitHub's, say) alone does not count.
+    """
+    if describe_token_source(settings, section=section) is not None:
+        return True
+    base_url = str(getattr(settings, "base_url", None) or "").strip()
+    field = type(settings).model_fields.get("base_url")
+    return bool(base_url) and (field is None or base_url != field.default)
+
+
 def online_check(
     check_id: str,
     *,
@@ -79,42 +94,55 @@ def online_check(
     """Contact ``section``'s service through ``probe`` (``doctor --online`` only).
 
     ``probe`` is the capability's own authenticated call (``whoami``-style),
-    run against the active profile; it returns the pass detail and raises
-    :class:`UntapedError` on failure. A section without a token source whose
-    ``base_url`` is unset (or the model default) is not configured and passes
-    without probing. A failure
-    names the command that fixes it: a new token for a rejected or missing
-    one, ``http.ca_bundle`` for a TLS failure, otherwise the ``base_url``.
+    run against the active profile inside :func:`untaped.http.quick_probe`
+    (no retries, a short timeout); it returns the pass detail and raises on
+    failure. A section that is not :func:`service_configured` passes
+    without probing. A failure keeps one line of its message and names the
+    command that fixes it: a new token for a rejected or missing one,
+    ``http.ca_bundle`` for an untrusted certificate, otherwise the
+    ``base_url``.
     """
 
     def run(ctx: CapabilityContext) -> DoctorResult:
         settings = ctx.settings
         if settings is None:
             return DoctorResult(id=check_id, ok=True, detail="skipped: settings are invalid")
-        base_url = str(getattr(settings, "base_url", None) or "").strip()
-        source = describe_token_source(settings, section=section)
-        field = type(settings).model_fields.get("base_url")
-        default_url = field.default if field is not None else None
-        if source is None and (not base_url or base_url == default_url):
-            # Nothing the user set: a built-in default URL alone is not a setup.
+        if not service_configured(settings, section=section):
             return DoctorResult(id=check_id, ok=True, detail="not configured")
         url_fix = f"config set {section}.base_url URL"
-        if not base_url:
+        if not str(getattr(settings, "base_url", None) or "").strip():
             detail = f"{section}.base_url is not set"
             return DoctorResult(id=check_id, ok=False, detail=detail, fix=url_fix)
+        has_token = describe_token_source(settings, section=section) is not None
+        from untaped.http import quick_probe  # noqa: PLC0415 - keep SPEC imports light
+
         try:
-            detail = probe()
+            with quick_probe():
+                detail = probe()
         except UntapedError as exc:
-            message = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
             return DoctorResult(
                 id=check_id,
                 ok=False,
-                detail=message,
-                fix=_online_fix(exc, section=section, has_token=source is not None),
+                detail=_first_line(exc) or type(exc).__name__,
+                fix=_online_fix(exc, section=section, has_token=has_token),
             )
+        except Exception as exc:
+            # Not a service error (e.g. an unexpected response shape): keep one
+            # line, never the response body a validation dump would carry.
+            detail = f"{type(exc).__name__}: {_first_line(exc)}".rstrip(": ")
+            return DoctorResult(id=check_id, ok=False, detail=detail, fix=url_fix)
         return DoctorResult(id=check_id, ok=True, detail=detail)
 
     return DoctorCheck(id=check_id, title=title or f"{section} API reachable", run=run, online=True)
+
+
+#: OpenSSL's verify code for a certificate that does not match the host name.
+_HOSTNAME_MISMATCH = 62
+
+
+def _first_line(exc: BaseException) -> str:
+    text = str(exc).strip()
+    return text.splitlines()[0] if text else ""
 
 
 def _online_fix(exc: BaseException, *, section: str, has_token: bool) -> str:
@@ -125,7 +153,8 @@ def _online_fix(exc: BaseException, *, section: str, has_token: bool) -> str:
     if rejected or not has_token:
         return f"config set {section}.token --prompt"
     if any(
-        isinstance(error, HttpTransportError) and "certificate" in str(error).lower()
+        isinstance(error, ssl.SSLCertVerificationError)
+        and getattr(error, "verify_code", None) != _HOSTNAME_MISMATCH
         for error in chain
     ):
         return "config set http.ca_bundle PATH"
@@ -141,4 +170,4 @@ def _causes(exc: BaseException) -> Iterator[BaseException]:
         current = current.__cause__ or current.__context__
 
 
-__all__ = ["connection_check", "executable_check", "online_check"]
+__all__ = ["connection_check", "executable_check", "online_check", "service_configured"]

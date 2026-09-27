@@ -47,7 +47,7 @@ from untaped.errors import ConfigError, ExitCode, first_validation_error
 from untaped.http import resolve_verify
 from untaped.management._render import emit_isolated
 from untaped.management.skills import composed_skills
-from untaped.messages import plural
+from untaped.messages import command_line, plural
 from untaped.profile_resolver import classify_active_profile
 from untaped.settings import (
     RESERVED_STATE_SECTIONS,
@@ -442,7 +442,7 @@ def _run_check(
         )
     detail = outcome.detail
     if outcome.fix and (not outcome.ok or outcome.warn):
-        detail = f"{detail}; run `untaped {outcome.fix}`"
+        detail = f"{detail}; run `{command_line(outcome.fix)}`"
     if not outcome.ok:
         return _row(check_item.id, scope.capability, _FAIL, check_item.title, detail)
     if outcome.warn:

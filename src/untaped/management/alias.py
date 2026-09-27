@@ -7,18 +7,19 @@ active profile, or the root ``--profile``) through the validated
 ``config set`` path; ``alias list`` shows the effective mapping, where
 ``profiles.default`` aliases merge beneath the active profile's. The root
 dispatcher expands ``untaped NAME [ARGS…]`` (:func:`untaped._root_options.expand_alias`)
-only when ``NAME`` is not a built-in command, and never expands twice.
+only when ``NAME`` is not a built-in command, and never expands twice. Name
+and argv rules live with the settings model in :mod:`untaped.shell_settings`.
 """
 
 from __future__ import annotations
 
 import json
-import re
 import shlex
 from collections.abc import Callable
 from typing import Annotated, Any
 
 from cyclopts import App, Parameter
+from pydantic import ValidationError
 
 from untaped.cli import (
     ColumnsOption,
@@ -31,15 +32,14 @@ from untaped.cli import (
 )
 from untaped.config.repository import SettingsFileRepository
 from untaped.config_file import read_config_dict
-from untaped.errors import ConfigError, UsageError
-from untaped.messages import not_found, q
+from untaped.errors import ConfigError, UsageError, first_validation_error
+from untaped.messages import hint, not_found, q
 from untaped.profile_resolver import DEFAULT_PROFILE, effective_active_profile_name
 from untaped.records import OutcomeRecord, Record
 from untaped.settings import load_settings_section
+from untaped.shell_settings import ShellProfileSettings, alias_name_error
 from untaped.ui import ui_context
 
-#: An alias name: lowercase letters, digits and dashes, like a command name.
-ALIAS_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _ALIASES_KEY = "shell.aliases"
 _OUTCOME = "untaped.alias_outcome"
 
@@ -50,6 +50,8 @@ class AliasRow(Record):
     name: str
     command: str
     """The argv the alias stands for, shell-quoted for reading."""
+    argv: list[str]
+    """The argv the alias stands for."""
     profile: str
     """The profile that defines it (``default`` or the active one)."""
 
@@ -65,18 +67,8 @@ class AliasOutcome(OutcomeRecord):
     profile: str
 
 
-def check_aliases(value: dict[str, list[str]]) -> dict[str, list[str]]:
-    """Validate an ``aliases`` mapping (names and non-empty argv)."""
-    for name, argv in value.items():
-        if not ALIAS_NAME.match(name):
-            raise ValueError(f"alias name must be lowercase letters, digits and dashes: {q(name)}")
-        if not argv:
-            raise ValueError(f"alias {q(name)} has no command")
-    return value
-
-
-def build_root_alias_app(*, is_builtin: Callable[[str], bool]) -> App:
-    """Return the root ``alias`` group; ``is_builtin`` says if a name is a root command."""
+def build_root_alias_app(*, builtin_for: Callable[[str], str | None]) -> App:
+    """Return the root ``alias`` group; ``builtin_for`` names the root command a word selects."""
     app = create_app(name="alias", help="Manage command aliases (``untaped NAME [ARGS…]``).")
 
     @app.command(name="set")
@@ -85,10 +77,9 @@ def build_root_alias_app(*, is_builtin: Callable[[str], bool]) -> App:
         /,
         *command: Annotated[
             str,
-            Parameter(
-                help="Command and arguments the alias runs; put them after `--`.",
-                allow_leading_hyphen=True,
-            ),
+            # No leading hyphens: root options before `--` (`--profile`, `-v`)
+            # apply to this command; only the tokens after `--` are the alias.
+            Parameter(help="Command and arguments the alias runs; put them after `--`."),
         ],
         dry_run: DryRunOption = False,
         fmt: FormatOption = "table",
@@ -96,7 +87,7 @@ def build_root_alias_app(*, is_builtin: Callable[[str], bool]) -> App:
     ) -> None:
         """Save ``untaped NAME`` as a shortcut for ``untaped COMMAND…`` in the profile."""
         with report_errors():
-            _check_name(name, is_builtin)
+            _check_name(name, builtin_for)
             if not command:
                 raise UsageError("alias set requires a command after NAME (`-- COMMAND ARGS…`)")
             profile, own = _own_aliases()
@@ -145,7 +136,7 @@ def build_root_alias_app(*, is_builtin: Callable[[str], bool]) -> App:
         with report_errors():
             profile, own = _own_aliases()
             if name not in own:
-                raise ConfigError(not_found("alias", name, known=sorted(own)))
+                raise ConfigError(_missing_alias(name, profile, own))
             action = "planned"
             if not dry_run:
                 ui_context(strict=False).confirm_or_cancel(
@@ -171,11 +162,24 @@ def build_root_alias_app(*, is_builtin: Callable[[str], bool]) -> App:
     return app
 
 
-def _check_name(name: str, is_builtin: Callable[[str], bool]) -> None:
-    if not ALIAS_NAME.match(name):
-        raise UsageError(f"alias name must be lowercase letters, digits and dashes: {q(name)}")
-    if is_builtin(name):
-        raise UsageError(f"alias {q(name)} would shadow the built-in command {q(name)}")
+def _check_name(name: str, builtin_for: Callable[[str], str | None]) -> None:
+    error = alias_name_error(name)
+    if error is not None:
+        raise UsageError(error)
+    builtin = builtin_for(name)
+    if builtin is not None:
+        raise UsageError(f"alias {q(name)} would shadow the built-in command {q(builtin)}")
+
+
+def _missing_alias(name: str, profile: str, own: dict[str, list[str]]) -> str:
+    """Not found in ``profile`` itself; point at the profile it is inherited from."""
+    source = SettingsFileRepository().provenance().get(("shell", "aliases", name))
+    if source is not None and source != profile:
+        return (
+            f"alias {q(name)} is defined in profile {source}, not {profile}\n"
+            f"{hint(f'--profile {source} alias remove {name}')}"
+        )
+    return not_found("alias", name, known=sorted(own))
 
 
 def _own_aliases() -> tuple[str, dict[str, list[str]]]:
@@ -184,9 +188,15 @@ def _own_aliases() -> tuple[str, dict[str, list[str]]]:
     data = SettingsFileRepository().profile_data(profile) or {}
     shell = data.get("shell")
     aliases = shell.get("aliases") if isinstance(shell, dict) else None
-    if not isinstance(aliases, dict):
+    if aliases is None:
         return profile, {}
-    return profile, {str(key): list(value) for key, value in aliases.items()}
+    try:
+        settings = ShellProfileSettings.model_validate({"aliases": aliases})
+    except ValidationError as exc:
+        raise ConfigError(
+            f"invalid {_ALIASES_KEY} in profile {profile}: {first_validation_error(exc)}"
+        ) from exc
+    return profile, settings.aliases
 
 
 def _alias_rows() -> list[AliasRow]:
@@ -196,6 +206,7 @@ def _alias_rows() -> list[AliasRow]:
         AliasRow(
             name=name,
             command=shlex.join(argv),
+            argv=argv,
             profile=_defining_profile(provenance, name),
         )
         for name, argv in sorted(aliases.items())
@@ -207,4 +218,4 @@ def _defining_profile(provenance: dict[tuple[str, ...], Any], name: str) -> str:
     return str(source) if source is not None else "env"
 
 
-__all__ = ["ALIAS_NAME", "AliasOutcome", "AliasRow", "build_root_alias_app", "check_aliases"]
+__all__ = ["AliasOutcome", "AliasRow", "build_root_alias_app"]

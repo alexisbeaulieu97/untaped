@@ -18,7 +18,6 @@ from typing import Any
 from cyclopts import App
 from cyclopts.command_spec import CommandSpec
 from cyclopts.core import _apply_parent_defaults_to_app
-from pydantic import BaseModel, Field, field_validator
 
 from untaped._root_options import (
     _consume_leading_root_options,
@@ -27,7 +26,7 @@ from untaped._root_options import (
     _root_options,
     _RootOption,
     expand_alias,
-    resolves_to_command,
+    resolve_command,
 )
 from untaped.capabilities.registry import (
     ApplicationSpec,
@@ -50,7 +49,6 @@ from untaped.management import (
     build_root_setup_app,
     build_root_skills_app,
 )
-from untaped.management.alias import check_aliases
 from untaped.management.skills import check_installed_skills, composed_skills
 from untaped.profile_resolver import set_profile_override
 from untaped.quiet import reset as _reset_quiet
@@ -62,6 +60,7 @@ from untaped.settings import (
     register_state_settings,
     reset_config_registry_for_tests,
 )
+from untaped.shell_settings import ShellProfileSettings
 from untaped.skills import InstallableSkill
 from untaped.verbose import reset as _reset_verbose
 
@@ -93,21 +92,6 @@ _active_capability: ContextVar[str | None] = ContextVar("untaped_active_capabili
 def current_capability() -> str | None:
     """Return the active capability name, or ``None`` outside dispatch."""
     return _active_capability.get()
-
-
-class ShellProfileSettings(BaseModel):
-    """Shell-level profile-scoped settings (the ``shell`` section)."""
-
-    aliases: dict[str, list[str]] = Field(
-        default_factory=dict,
-        description="Command aliases: `untaped NAME [ARGS…]` runs the argv stored under NAME. "
-        "Managed by `alias` commands.",
-    )
-
-    @field_validator("aliases")
-    @classmethod
-    def _valid_aliases(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
-        return check_aliases(value)
 
 
 def _shell_app() -> App:
@@ -234,7 +218,7 @@ def build_root_app(
     _mount(root, build_root_setup_app(shell=SHELL_SPEC, result=result), name="setup")
     _mount(
         root,
-        build_root_alias_app(is_builtin=lambda name: resolves_to_command(root, name)),
+        build_root_alias_app(builtin_for=lambda name: resolve_command(root, name)),
         name="alias",
     )
     _mount(

@@ -313,15 +313,22 @@ broken section to hide the rest:
 `awx.api`, `github.api` and `jira.api` authenticate against the configured
 service (the same call as `awx ping`, `github whoami` and `jira whoami`) for
 the selected profile. A section with no token and no URL of its own (a
-built-in default such as GitHub's does not count) passes as `not configured`. A failed row ends with the command that fixes it, for
-example ``run `untaped config set awx.token --prompt` `` for a rejected token,
-`config set http.ca_bundle PATH` for a TLS failure, or
-`config set awx.base_url URL` when the service cannot be reached. Plain
-`doctor` never touches the network.
+built-in default such as GitHub's does not count) passes as `not configured`.
+Each probe makes one attempt, with no retries, and its timeout is capped at 10
+seconds, so an unreachable service fails quickly. A failed row keeps one line
+of the error and ends with the command that fixes it, for example
+``run `untaped config set awx.token --prompt` `` for a rejected token,
+`config set http.ca_bundle PATH` for an untrusted certificate, or
+`config set awx.base_url URL` when the service cannot be reached, names the
+wrong host, or answers with something unexpected. Plain `doctor` never
+touches the network.
 
 `untaped setup` writes a profile's service settings interactively and then
 runs the same checks for the services it configured; see
-[Getting started](./getting-started.md#set-up-your-services).
+[Getting started](./getting-started.md#set-up-your-services). It checks each
+service's answers before writing any of them. For example, a token command
+that does not parse, or one that a token inherited from `profiles.default`
+would override, stops `setup` before it writes anything for that service.
 
 Settings rows apply `UNTAPED_*` environment overrides on top of the file and
 name the variable when an override is the invalid value (for example
@@ -333,8 +340,9 @@ An alias is a shortcut for a longer command. Put the command after `--`:
 
 ```bash
 untaped alias set failed -- awx jobs list --status failed
-untaped failed --limit 5          # runs: untaped awx jobs list --status failed --limit 5
+untaped failed --limit 5   # untaped awx jobs list --status failed --limit 5
 untaped alias set prod-jobs -- --profile prod awx jobs list
+untaped alias set pj --profile prod -- awx jobs list   # stored in profile prod
 untaped alias list
 untaped alias remove failed --yes
 ```
@@ -343,13 +351,19 @@ untaped alias remove failed --yes
 are stored per profile in the `shell.aliases` setting (a mapping of name to
 argv list); `profiles.default` aliases apply beneath the active profile's, and
 `alias set`/`alias remove` change the active profile (or the one the root
-`--profile` names). Names use lowercase letters, digits and dashes. An alias
+`--profile` names; before `--` it is a root option, after `--` it is part of
+the alias). `untaped NAME` looks the alias up in the profile a `--profile`
+anywhere before `--` names (`untaped pj --profile prod` works too). To remove
+an alias inherited from `default`, run
+`untaped --profile default alias remove NAME`. Names use lowercase letters,
+digits and dashes. An alias
 can never shadow a built-in command or capability (`alias set` rejects the
 name with exit 2, and a stored one is ignored), and an alias is expanded once:
 it cannot run another alias. The stored argv is passed to `untaped` as is; no
 shell runs it. `alias set` and `alias remove` print an
 `untaped.alias_outcome` record (`name`, `profile`, `action`); `alias list`
-prints `untaped.alias` records (`name`, `command`, `profile`).
+prints `untaped.alias` records (`name`, `command` shell-quoted, `argv`,
+`profile`).
 
 ## TLS and shared UI settings
 

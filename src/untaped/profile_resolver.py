@@ -25,6 +25,8 @@ caller's responsibility.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from typing import Any, Literal
 
@@ -46,6 +48,25 @@ def set_profile_override(name: str | None) -> Token[str | None]:
 def reset_profile_override(token: Token[str | None]) -> None:
     """Restore the invocation-scoped ``--profile`` override from ``token``."""
     _profile_override.reset(token)
+
+
+@contextmanager
+def profile_scope(name: str) -> Iterator[None]:
+    """Select ``name`` as this invocation's profile inside the block.
+
+    The root ``--profile`` option and ``setup`` both use it. The settings
+    cache is dropped on entry and exit so reads follow the selection.
+    """
+    # Lazy: ``untaped.settings`` imports this module.
+    from untaped.settings import get_settings  # noqa: PLC0415
+
+    token = _profile_override.set(name)
+    get_settings.cache_clear()
+    try:
+        yield
+    finally:
+        _profile_override.reset(token)
+        get_settings.cache_clear()
 
 
 def profile_override() -> str | None:
