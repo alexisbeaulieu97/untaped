@@ -123,6 +123,13 @@ def test_issue_edit_and_field_flags_alias_patch_and_set() -> None:
             ["issues", "create", "--yes", "--project", "ABC", "--set-json", "cf={broken"],
             "--set-json cf contains invalid JSON",
         ),
+        (["issues", "get", "ABC-1", "../../x"], "invalid issue key '../../x'"),
+        (["issues", "patch", "A-1?x=y", "--summary", "x", "--yes"], "invalid issue key"),
+        (["issues", "comment", "ABC-1/..", "--body", "hi", "--yes"], "invalid issue key"),
+        (["issues", "comments", "list", "ABC-1#x"], "invalid issue key"),
+        (["issues", "transitions", "1ABC-1"], "invalid issue key"),
+        (["issues", "transition", "ABC-1", "ABC-", "--id", "31"], "invalid issue key"),
+        (["issues", "links", "create", "ABC-1", "Blocks", "x y", "--yes"], "invalid issue key"),
     ],
 )
 def test_usage_errors_exit_2_before_any_request(args: list[str], message: str) -> None:
@@ -134,6 +141,19 @@ def test_usage_errors_exit_2_before_any_request(args: list[str], message: str) -
     assert result.stdout == ""
     assert message in result.stderr
     assert len(route.calls) == 0
+
+
+@pytest.mark.parametrize(
+    ("key", "path"),
+    [("abc_2-7", "/rest/api/2/issue/ABC_2-7"), ("10001", "/rest/api/2/issue/10001")],
+)
+def test_issue_keys_accept_lowercase_and_numeric_ids(key: str, path: str) -> None:
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.get(path).mock(return_value=httpx.Response(200, json=_issue("ABC_2-7")))
+        result = CliInvoker().invoke(app, ["issues", "get", key, "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert len(route.calls) == 1
 
 
 # --- write confirmation ------------------------------------------------------------

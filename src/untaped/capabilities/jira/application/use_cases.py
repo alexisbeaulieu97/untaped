@@ -100,14 +100,27 @@ class CreateIssue:
 
 
 class PatchIssue:
-    """Update fields of one issue from a Jira-shaped payload."""
+    """Update fields of one issue from a Jira-shaped payload, then its assignee.
+
+    The assignee goes through the dedicated assignee endpoint, which works
+    even when the assignee field is not on the issue's edit screen.
+    """
 
     def __init__(self, client: JiraIssueWriter, *, base_url: str | None = None) -> None:
         self._client = client
         self._base_url = base_url
 
-    def __call__(self, issue_key: str, payload: dict[str, Any]) -> IssueOutcome:
-        self._client.edit_issue(issue_key, payload)
+    def __call__(
+        self,
+        issue_key: str,
+        payload: dict[str, Any],
+        *,
+        assignee: dict[str, Any] | None = None,
+    ) -> IssueOutcome:
+        if payload.get("fields") or payload.get("update"):
+            self._client.edit_issue(issue_key, payload)
+        if assignee is not None:
+            self._client.assign_issue(issue_key, assignee)
         return IssueOutcome(
             action="updated", key=issue_key, url=browse_url(self._base_url, issue_key)
         )
