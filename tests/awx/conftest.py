@@ -49,6 +49,8 @@ class FakeAap:
         # set these before each call.
         self.next_action_status: str = "successful"
         self.next_action_stdout: str | None = None
+        # One-shot job events seeded for the next launched job.
+        self.next_action_events: list[dict[str, Any]] = []
         # One-shot ``ignored_fields`` added to the next launch response (on top
         # of the fields the template's ``ask_*_on_launch`` flags ignore).
         self.next_action_ignored_fields: dict[str, Any] = {}
@@ -307,8 +309,10 @@ class FakeAap:
         # Consume the one-shot overrides so a subsequent launch sees defaults.
         status = self.next_action_status
         stdout = self.next_action_stdout
+        events = self.next_action_events
         self.next_action_status = "successful"
         self.next_action_stdout = None
+        self.next_action_events = []
         new_id = self._next_id
         self._next_id += 1
         result_kind = {
@@ -350,7 +354,18 @@ class FakeAap:
         seed_fields: dict[str, Any] = {"id": new_id, "name": name, "status": status}
         if stdout is not None:
             seed_fields["stdout"] = stdout
+        if api_path == "job_templates" and action == "launch":
+            # A job runs its project's checkout of the launched (else template's) ref.
+            project = self.store.get("projects", {}).get(record.get("project"), {})
+            scm = {
+                "scm_branch": body.get("scm_branch", record.get("scm_branch", "")),
+                "scm_revision": project.get("scm_revision", ""),
+            }
+            seed_fields.update(scm)
+            result.update(scm)
         self.seed(store_path, **seed_fields)
+        for counter, event in enumerate(events, start=1):
+            self.seed(f"{result_kind}_events", job=new_id, counter=counter, **event)
         return httpx.Response(200, json=result)
 
     def _execution_action(

@@ -1,10 +1,12 @@
 """RunTestSuite: load → plan → prefetch → resolve → launch+wait.
 
-Each finished job is checked against its case's :class:`Expectation`
+With a :class:`LaunchCheck`, every case's launch is checked before any job
+runs. Each finished job is checked against its case's :class:`Expectation`
 (status, then log checks read through a :class:`LogReader`); with
-``log_tails``, a case that does not pass carries the tail of its log. With
-a :class:`Canceller`, every execution the run stops watching before it ends
-(timeout, polling error, Ctrl-C) is cancelled rather than left running.
+``evidence``, a case that does not pass carries its failed tasks (from job
+events) and the tail of its log. With a :class:`Canceller`, every execution
+the run stops watching before it ends (timeout, polling error, Ctrl-C) is
+cancelled rather than left running.
 
 Resolution finishes in the main thread before any worker is spawned so
 the launch+wait pool only sees fully-baked, immutable launch dicts —
@@ -23,7 +25,9 @@ from typing import Any
 
 from untaped.capabilities.awx.application.suites.ports import (
     Canceller,
+    EventReader,
     FkPrefetcher,
+    LaunchCheck,
     Launcher,
     LogReader,
     Watcher,
@@ -31,14 +35,16 @@ from untaped.capabilities.awx.application.suites.ports import (
 from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
 from untaped.capabilities.awx.domain import Job, ResourceSpec
 from untaped.capabilities.awx.domain.suite import (
+    FAILED_TASK_EVENTS,
     Case,
     CaseResult,
     Expectation,
+    FailedTask,
     RefSentinel,
     Suite,
     SuiteRunOutcome,
 )
-from untaped.capabilities.awx.errors import ActionResponseError
+from untaped.capabilities.awx.errors import ActionResponseError, AwxApiError
 from untaped.capability_api import ConfigError, bounded_map
 
 _LAUNCH_ACTION = "launch"
@@ -66,12 +72,14 @@ class RunTestSuite:
         spec: ResourceSpec,
         fk_prefetcher: FkPrefetcher,
         log_reader: LogReader,
+        event_reader: EventReader,
         job_url: Callable[[Job], str | None],
         jt_scope: dict[str, str] | None = None,
         clock: Callable[[], float] = time.monotonic,
         stop: threading.Event | None = None,
         canceller: Canceller | None = None,
-        log_tails: bool = True,
+        preflight: LaunchCheck | None = None,
+        evidence: bool = True,
     ) -> None:
         self._resolve = resolver
         self._launch = launcher
@@ -84,9 +92,11 @@ class RunTestSuite:
         self._cancel = canceller
         """``None`` leaves executions the run stops watching still running."""
         self._read_log = log_reader
+        self._read_events = event_reader
         self._job_url = job_url
-        self._log_tails = log_tails
-        """Attach ``log_tail`` to cases that did not pass (costs a download without log checks)."""
+        self._preflight = preflight
+        self._evidence = evidence
+        """Attach ``failed_tasks`` and ``log_tail`` to cases that did not pass."""
         self.launched: list[Job] = []
         """Executions submitted so far (for reporting after an interrupt)."""
         self.cancelled: set[tuple[str, int]] = set()
@@ -101,15 +111,20 @@ class RunTestSuite:
         parallel: int = 1,
         timeout: float | None = None,
         default_timeout: float | None = None,
+        scm_branch: str | None = None,
     ) -> SuiteRunOutcome:
         """Run the selected cases.
 
         A case waits ``timeout`` when given, else its own ``timeout:``, else its
         suite's ``defaults.timeout``, else ``default_timeout`` (``None``: forever).
+        ``scm_branch`` replaces every case's own.
         """
         plan = self._build_plan(list(suites), case_filter)
         self._fk.prefetch(self._prefetch_plan(plan))
-        resolved = self._resolve_all(plan, timeout=timeout, default_timeout=default_timeout)
+        resolved = self._resolve_all(
+            plan, timeout=timeout, default_timeout=default_timeout, scm_branch=scm_branch
+        )
+        self._check_launches(resolved)
 
         results: dict[int, CaseResult] = {}
         try:
@@ -200,11 +215,14 @@ class RunTestSuite:
         *,
         timeout: float | None,
         default_timeout: float | None,
+        scm_branch: str | None,
     ) -> list[_ResolvedCase]:
         out: list[_ResolvedCase] = []
         for suite, case_name, case in plan:
             defaults = suite.defaults or Case()
             payload = self._resolve(self._spec, case, defaults=suite.defaults)
+            if scm_branch is not None:
+                payload["scm_branch"] = scm_branch
             expect = case.expect.over(defaults.expect)
             case_timeout = timeout or case.timeout or defaults.timeout or default_timeout
             out.append(
@@ -213,6 +231,21 @@ class RunTestSuite:
                 )
             )
         return out
+
+    def _check_launches(self, resolved: Sequence[_ResolvedCase]) -> None:
+        """Raise, listing every case AWX would reject or half-ignore, before any launch."""
+        if self._preflight is None:
+            return
+        problems: list[str] = []
+        for item in resolved:
+            try:
+                self._preflight(
+                    self._spec, name=item.job_template, scope=self._jt_scope, payload=item.payload
+                )
+            except (AwxApiError, ConfigError) as exc:
+                problems.append(f"  {item.suite_name}/{item.case_name}: {exc}")
+        if problems:
+            raise ConfigError("\n".join(["preflight failed, nothing launched:", *problems]))
 
     def _launch_and_wait(self, item: _ResolvedCase) -> CaseResult:
         started_clock = self._clock()
@@ -258,6 +291,8 @@ class RunTestSuite:
                 "job_status": final.status,
                 "started_at": final.started,
                 "finished_at": final.finished,
+                "scm_branch": final.scm_branch,
+                "scm_revision": final.scm_revision,
             }
             if final.is_terminal:
                 checked, log = self._check(final, item.expect)
@@ -265,7 +300,8 @@ class RunTestSuite:
             else:
                 waited = f"still {final.status} after {item.timeout or 0:g}s"
                 fields.update(result="timeout", failure_reason=f"{waited}; {self._abandon(final)}")
-        if fields["result"] != "pass" and self._log_tails:
+        if fields["result"] != "pass" and self._evidence:
+            fields["failed_tasks"] = self._failed_tasks(final)
             fields["log_tail"] = self._tail(final, log)
         return CaseResult(
             suite=item.suite_name,
@@ -298,6 +334,15 @@ class RunTestSuite:
             "failure_reason": "; ".join(reasons) or None,
         }
         return fields, log
+
+    def _failed_tasks(self, job: Job) -> tuple[FailedTask, ...] | None:
+        """The job's failed tasks (``ignore_errors`` ones excluded); ``None`` if unreadable."""
+        params = {"event__in": ",".join(FAILED_TASK_EVENTS)}
+        try:
+            events = list(self._read_events(job, params=params, follow=False))
+        except Exception:
+            return None
+        return tuple(FailedTask.from_event(event) for event in events if event.failed)
 
     def _tail(self, job: Job, log: list[str] | None) -> tuple[str, ...] | None:
         """The last lines of ``log`` (downloaded when ``None``); ``None`` if unreadable."""

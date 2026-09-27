@@ -3,7 +3,9 @@
 Concrete implementations live in :mod:`untaped.capabilities.awx.infrastructure.suites`,
 except ``Launcher`` / ``Watcher`` (which reuse the existing
 :class:`RunAction` / :class:`WatchJob` use cases), ``Canceller`` (the
-job record repository's ``cancel``) and ``FkPrefetcher`` /
+job record repository's ``cancel``), ``LogReader`` / ``EventReader`` (the
+job monitor's ``fetch_stdout`` / ``stream_events``), ``LaunchCheck``
+(:class:`PreflightLaunch`) and ``FkPrefetcher`` /
 ``FkLookup`` (narrow views of :class:`FkResolver`, implemented by
 :mod:`untaped.capabilities.awx.infrastructure.fk_resolver`).
 """
@@ -14,7 +16,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from untaped.capabilities.awx.domain import Job, ResourceSpec
+from untaped.capabilities.awx.domain import Job, JobEvent, ResourceSpec
 from untaped.capabilities.awx.domain.suite import VariableSpec
 
 
@@ -68,6 +70,29 @@ class LogReader(Protocol):
     """Return a job's full stdout, one string per line."""
 
     def __call__(self, job: Job, /) -> list[str]: ...
+
+
+@runtime_checkable
+class EventReader(Protocol):
+    """Read a job's events; ``params`` filter server-side, ``follow=False`` reads once."""
+
+    def __call__(
+        self, job: Job, *, params: dict[str, str] | None = None, follow: bool = True
+    ) -> Iterable[JobEvent]: ...
+
+
+@runtime_checkable
+class LaunchCheck(Protocol):
+    """Raise when AWX would reject or ignore a launch, before anything runs."""
+
+    def __call__(
+        self,
+        spec: ResourceSpec,
+        *,
+        name: str,
+        scope: dict[str, str] | None,
+        payload: dict[str, Any],
+    ) -> None: ...
 
 
 @runtime_checkable
