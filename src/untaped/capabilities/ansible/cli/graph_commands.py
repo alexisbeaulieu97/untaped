@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal, cast
@@ -299,7 +300,7 @@ def graph_command(
         untaped ansible graph acme/app --source prod --both --cached
         untaped ansible graph ./roles/web --target-repo acme/web --downstream
     """
-    depth_limit = _parse_depth(depth, default=None if contains else 3)
+    depth_limit = _parse_depth(depth or ("unlimited" if contains else "3"))
     if contains:
         _check_contains_usage(
             target=target,
@@ -317,7 +318,7 @@ def graph_command(
         raise_usage("--refresh requires --source or inline source selectors")
     if backend is not None and not refresh:
         raise_usage("--backend requires --refresh")
-    with report_errors():
+    with report_errors(), ExitStack() as stack:
         ctx = app_context()
         settings = get_config_section("ansible", AnsibleSettings)
         warn_deprecated_settings(settings, ui=ctx.ui(strict=False))
@@ -367,12 +368,20 @@ def graph_command(
             aliases=aliases,
             github_settings=github_settings,
             github_host=github_host,
-            http=ctx.http,
             index=index,
             sqlite_index=sqlite_index,
             graph_source=graph_source,
             live=live,
             depth=depth_limit,
+            live_reads=_LiveReads(
+                stack,
+                github_settings=github_settings,
+                http=ctx.http,
+                wrapped=index,
+                aliases=aliases,
+                settings=settings,
+                github_host=github_host,
+            ),
         )
         if not contains:
             graph = _target_graph(
@@ -472,12 +481,53 @@ class _GraphEnv:
     aliases: dict[str, str]
     github_settings: GithubSettings
     github_host: str | None
-    http: HttpSettings
     index: DependencyIndex
     sqlite_index: SqliteDependencyIndex
     graph_source: _GraphSource
     live: bool
     depth: int | None
+    live_reads: _LiveReads
+
+
+class _LiveReads:
+    """One live GitHub read index shared by every root of a graph command.
+
+    It opens the GitHub client on first use, so each repo/ref is read live
+    once per command however many ``--contains`` roots reach it.
+    """
+
+    def __init__(
+        self,
+        stack: ExitStack,
+        *,
+        github_settings: GithubSettings,
+        http: HttpSettings,
+        wrapped: DependencyIndex,
+        aliases: dict[str, str],
+        settings: AnsibleSettings,
+        github_host: str | None,
+    ) -> None:
+        self._stack = stack
+        self._github_settings = github_settings
+        self._http = http
+        self._wrapped = wrapped
+        self._aliases = aliases
+        self._settings = settings
+        self._github_host = github_host
+        self._index: GithubDependencyIndex | None = None
+
+    def index(self) -> GithubDependencyIndex:
+        if self._index is None:
+            github = self._stack.enter_context(GithubClient(self._github_settings, http=self._http))
+            self._index = GithubDependencyIndex(
+                github=github,
+                wrapped=self._wrapped,
+                aliases=self._aliases,
+                dependency_paths=self._settings.dependency_paths,
+                github_host=self._github_host,
+                concurrency=self._settings.probe_concurrency,
+            )
+        return self._index
 
 
 def _target_graph(
@@ -543,10 +593,7 @@ def _target_graph(
             live=env.live,
         ),
         github_settings=env.github_settings,
-        http=env.http,
-        aliases=env.aliases,
-        settings=env.settings,
-        github_host=env.github_host,
+        live_reads=env.live_reads,
     )
     parse_warnings.extend(read_warnings)
 
@@ -902,10 +949,7 @@ def _graph_for_target(
     local: _LocalDependencies | None,
     use_live: bool,
     github_settings: GithubSettings,
-    http: HttpSettings,
-    aliases: dict[str, str],
-    settings: AnsibleSettings,
-    github_host: str | None,
+    live_reads: _LiveReads,
 ) -> tuple[DependencyGraph, list[str]]:
     """Build the graph, reading transitive dependencies live when requested.
 
@@ -934,17 +978,14 @@ def _graph_for_target(
                 "cached source data, or configure github.token for live GitHub reads"
             )
         return build(NullDependencyIndex()), warnings
-    with GithubClient(github_settings, http=http) as github:
-        live_index = GithubDependencyIndex(
-            github=github,
-            wrapped=index,
-            aliases=aliases,
-            dependency_paths=settings.dependency_paths,
-            github_host=github_host,
-            concurrency=settings.probe_concurrency,
-        )
-        graph = build(live_index)
-    return graph, [*live_index.errors, *_live_parse_warning_messages(live_index.warnings)]
+    live_index = live_reads.index()
+    # The index is shared across roots: report only what this build read.
+    seen_errors, seen_warnings = len(live_index.errors), len(live_index.warnings)
+    graph = build(live_index)
+    return graph, [
+        *live_index.errors[seen_errors:],
+        *_live_parse_warning_messages(live_index.warnings[seen_warnings:]),
+    ]
 
 
 def _refresh_hint(source_state: _GraphSource) -> str | None:
@@ -1024,9 +1065,7 @@ def _emit_graph(graph: DependencyGraph, *, fmt: GraphFormat, output: Path | None
     output.expanduser().write_text(rendered)
 
 
-def _parse_depth(value: str | None, *, default: int | None) -> int | None:
-    if value is None:
-        return default
+def _parse_depth(value: str) -> int | None:
     if value == "unlimited":
         return None
     try:

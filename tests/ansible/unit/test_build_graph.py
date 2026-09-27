@@ -287,14 +287,6 @@ def test_transitive_dependency_traversal_uses_exact_cached_refs() -> None:
     assert graph.warnings == ()
 
 
-_B_REFS = {
-    "acme/b": (
-        CachedRef(name="trunk", kind="heads", default_branch="trunk"),
-        CachedRef(name="v1", kind="tags", default_branch="trunk"),
-    )
-}
-
-
 def test_unpinned_dependency_bridges_to_the_cached_default_branch_node() -> None:
     index = StubIndex(
         [
@@ -303,7 +295,12 @@ def test_unpinned_dependency_bridges_to_the_cached_default_branch_node() -> None
             _dep("acme/b", "acme/c", ref="trunk"),
             _dep("acme/b", "acme/old", ref="v1"),
         ],
-        cached_ref_metadata=_B_REFS,
+        cached_ref_metadata={
+            "acme/b": (
+                CachedRef(name="trunk", kind="heads", default_branch="trunk"),
+                CachedRef(name="v1", kind="tags", default_branch="trunk"),
+            )
+        },
     )
 
     graph = _build(index, "acme/a", "main", source_key="source:prod", direction="deps", depth=3)
@@ -324,7 +321,12 @@ def test_unpinned_dependency_without_a_cached_default_branch_stays_ref_less() ->
 
     graph = _build(index, "acme/a", "main", source_key="source:prod", direction="deps", depth=3)
 
-    assert _edges(graph)[0] == ("acme/a@main", "acme/b", "requires")
+    # The hop is not bridged; the ref-less read still lists b's cached refs.
+    assert _edges(graph) == [
+        ("acme/a@main", "acme/b", "requires"),
+        ("acme/b@main", "acme/c@main", "requires"),
+    ]
+    assert "acme/b" in {node.id for node in graph.nodes}
 
 
 @pytest.mark.parametrize(

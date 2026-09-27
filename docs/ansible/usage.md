@@ -101,10 +101,14 @@ Each row (`ansible.dependency_match`) has `root_repo`, `root_ref`, the matched
 reaches it, or `null` when unpinned, never interpreted), `declared_in` (the
 dependency file) and `path` (the shortest path from the root, as node
 labels). A repository reached through two different declared refs gives two
-rows. The search follows the whole downstream graph; an explicit `--depth N`
-bounds it, and an empty result then names that depth. `--source`, inline
-selectors and `--refresh`/`--cached`/`--live` apply as for a single graph;
-each root's graph warnings are printed on stderr prefixed with the root.
+rows. An unpinned declaration and one pinned to the default branch reach the
+same node, so they give one row, whose `declared_ref` comes from the first
+edge the search reached. The search follows the whole downstream graph; an
+explicit `--depth N` bounds it, and an empty result then names that depth.
+`--source`, inline selectors and `--refresh`/`--cached`/`--live` apply as for
+a single graph; live reads are shared across roots, so each repo and ref is
+read from GitHub once per command. Each root's graph warnings are printed on
+stderr prefixed with the root.
 
 This mode is downstream only (`--upstream` and `--both` are usage errors) and
 prints `--format table` (default), `json` or `pipe`; `tree`, `mermaid` and
@@ -156,10 +160,13 @@ Aliases apply when a source is refreshed; run `source refresh` afterwards.
   look for longer loops.
 - `mermaid` prints a Mermaid diagram.
 - A dependency at `repo@v1` and one at `repo@main` are different nodes.
-- An unpinned dependency points at the node for the dependency's cached
-  default branch (`repo@main`), so the walk continues through it. When the
-  source has no default branch recorded for that repo, the node stays
-  ref-less (`repo`).
+- An unpinned dependency points at the node for the dependency's default
+  branch (`repo@main`), so the walk continues through it. Cached reads take
+  the default branch the source recorded; live reads (`--live`, or no
+  source) take it from GitHub. When no default branch is known (the repo is
+  not in the source, or GitHub reports none), the node stays ref-less
+  (`repo`). When a source scans only tags, the default-branch node is not
+  cached, so the walk stops there with a "ref is not cached" warning.
 - A malformed or templated dependency file is skipped with a warning; it
   never fails the graph.
 
@@ -175,7 +182,8 @@ do (`ansible.source`, `ansible.source_status`, `ansible.alias`, and the
 - **An older index is rebuilt**: after an upgrade the SQLite cache
   (`ansible.index_path`) may be rebuilt empty with a warning. Refresh each
   source again. When the dependency parser changes, the next refresh
-  re-parses every ref once instead of reusing cached results.
+  re-parses every ref once instead of reusing cached results, and a refresh
+  that was interrupted before the upgrade starts over.
 - **`ansible.freshness_ttl` warning**: the setting is ignored; remove it with
   `untaped config unset ansible.freshness_ttl`.
 

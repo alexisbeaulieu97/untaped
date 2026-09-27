@@ -48,12 +48,20 @@
     --format pipe`). Supports `--format table|json|pipe`; single-target
     `tree`/`mermaid` output is unchanged. It searches the full downstream
     graph unless `--depth N` is given; the empty message then names the depth.
-  - **Fix:** an unpinned dependency now points at the dependency's cached
-    default-branch node, so downstream graphs, `--contains` and cycle
-    detection continue past it instead of stopping at a ref-less node.
+    Live reads are shared across roots, so each repo and ref is read from
+    GitHub once per command.
+  - **Fix:** an unpinned dependency now points at the dependency's
+    default-branch node (the source's recorded default branch, or GitHub's
+    for live reads), so downstream graphs, `--contains` and cycle detection
+    continue past it instead of stopping at a ref-less node. With no known
+    default branch the node stays ref-less; a tags-only source stops at the
+    default-branch node with a "ref is not cached" warning. An unpinned and a
+    default-branch-pinned declaration of one repo now give one `--contains`
+    row.
   - **Fix:** cached ref snapshots record the dependency parser version, so a
     parser change re-parses refs on the next refresh instead of reusing stale
-    results. The first refresh after upgrading re-parses every ref once.
+    results. The first refresh after upgrading re-parses every ref once, and
+    a refresh interrupted before the upgrade starts over.
 
 ## 7.1.0
 

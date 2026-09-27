@@ -13,7 +13,6 @@ import pytest
 
 from untaped.capabilities.ansible.application import refresh_git_index
 from untaped.capabilities.ansible.application.refresh_git_index import (
-    PARSER_VERSION,
     RefreshGitSourceIndex,
     RefreshResult,
     repo_candidate,
@@ -781,7 +780,7 @@ def test_git_refresh_reparses_unchanged_ref_when_parser_version_changes(
     h.run()
     h.run()
 
-    monkeypatch.setattr(refresh_git_index, "PARSER_VERSION", PARSER_VERSION + 1)
+    monkeypatch.setattr(refresh_git_index, "PARSER_VERSION", refresh_git_index.PARSER_VERSION + 1)
     third = h.run()
 
     assert h.git.reads == [("site", "sha-main", _REQS, None)] * 2
