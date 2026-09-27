@@ -16,10 +16,11 @@ from cyclopts import App, Parameter
 from cyclopts.exceptions import CycloptsError, UnknownOptionError
 
 from untaped.cli import deprecated_aliases, echo, raise_usage
+from untaped.errors import UntapedError
 from untaped.profile_resolver import reset_profile_override, set_profile_override
 from untaped.quiet import enable as _enable_quiet
 from untaped.quiet import reset as _reset_quiet
-from untaped.settings import get_settings
+from untaped.settings import get_settings, load_settings_section
 from untaped.ui import ui_context
 from untaped.verbose import enable as _enable_verbose
 from untaped.verbose import reset as _reset_verbose
@@ -239,6 +240,32 @@ def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
                 _warn_deprecated(name, options[name])
                 rewritten[position] = f"{options[name]}{separator}{value}"
     return rewritten
+
+
+def resolves_to_command(app: App, token: str) -> bool:
+    """Whether ``token`` selects one of ``app``'s commands (as dispatch would)."""
+    return _command_name(app, token) is not None
+
+
+def expand_alias(app: App, tokens: list[str]) -> list[str]:
+    """Replace a leading user alias (``shell.aliases``) with the argv it stands for.
+
+    Only a first token that selects no command of ``app`` is looked up, so an
+    alias can never shadow a built-in command; the expansion is not expanded
+    again. Returns ``tokens`` itself when nothing expands (including when the
+    ``shell`` settings cannot be loaded: the unknown command then fails as
+    usual, and ``doctor`` reports the settings).
+    """
+    if not tokens or tokens[0].startswith("-") or resolves_to_command(app, tokens[0]):
+        return tokens
+    try:
+        aliases = load_settings_section("shell").aliases
+    except UntapedError:
+        return tokens
+    argv = aliases.get(tokens[0]) if isinstance(aliases, dict) else None
+    if not argv:
+        return tokens
+    return [*argv, *tokens[1:]]
 
 
 def _command_name(app: App, token: str) -> str | None:

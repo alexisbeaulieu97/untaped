@@ -219,10 +219,18 @@ def _env_name(key: str) -> str:
 
 def collect_sections() -> list[tuple[str, str, type[BaseModel], bool]]:
     """``(title, prefix, model, is_state)`` for the shell and every built-in."""
-    from untaped.bootstrap import BUILTIN_CAPABILITIES  # noqa: PLC0415
+    from untaped.bootstrap import BUILTIN_CAPABILITIES, SHELL_SPEC  # noqa: PLC0415
     from untaped.settings import Settings  # noqa: PLC0415
 
-    sections: list[tuple[str, str, type[BaseModel], bool]] = [("Root", "", Settings, False)]
+    sections: list[tuple[str, str, type[BaseModel], bool]] = [
+        ("Root", "", Settings, False),
+        (
+            f"`{SHELL_SPEC.config_section}`",
+            SHELL_SPEC.config_section,
+            SHELL_SPEC.profile_model,
+            False,
+        ),
+    ]
     for spec in BUILTIN_CAPABILITIES:
         sections.append(
             (f"`{spec.config_section}`", spec.config_section, spec.profile_model, False)

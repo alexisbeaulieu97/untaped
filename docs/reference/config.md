@@ -35,6 +35,12 @@ variable shown.
 | `ui.color_roles` | mapping | empty | `UNTAPED_UI__COLOR_ROLES` | Color-role overrides merged over the theme's colors. |
 | `skills.updates` | `warn` \| `auto` \| `off` | `warn` | `UNTAPED_SKILLS__UPDATES` | What each run does when installed agent skills differ from this version: `warn` (print a warning), `auto` (update them in place), or `off`. |
 
+## `shell`
+
+| Key | Type | Default | Environment | Description |
+|---|---|---|---|---|
+| `shell.aliases` | mapping | empty | `UNTAPED_SHELL__ALIASES` | Command aliases: `untaped NAME [ARGS…]` runs the argv stored under NAME. Managed by `alias` commands. |
+
 ## `workspace`
 
 | Key | Type | Default | Environment | Description |

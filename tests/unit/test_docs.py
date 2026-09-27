@@ -127,10 +127,12 @@ def _untaped_commands(block: str) -> list[list[str]]:
     return commands
 
 
-def _unknown_options(root: App, argv: list[str]) -> list[str]:
+def _unknown_options(root: App, argv: list[str], aliases: set[str]) -> list[str]:
     app, path, flags, words = root, [], [], []
     skip_value = False
     for token in argv:
+        if token == "--":
+            break  # the rest is data (``alias set NAME -- COMMAND…``)
         if skip_value:
             skip_value = False
         elif token.startswith("-"):
@@ -142,7 +144,7 @@ def _unknown_options(root: App, argv: list[str]) -> list[str]:
         else:
             words.append(token)
     if not path:
-        if words[:1] == [_EXAMPLE_PROVIDER]:
+        if words[:1] == [_EXAMPLE_PROVIDER] or (words and words[0] in aliases):
             return []
         if words:
             return [f"untaped {words[0]}: not a command"]
@@ -163,9 +165,12 @@ def test_command_examples_use_real_commands_and_options() -> None:
         if "templates" in path.parts:
             continue
         for block in _bash_blocks(path):
-            for argv in _untaped_commands(block):
+            commands = _untaped_commands(block)
+            # A block may run an alias it defines (``alias set NAME -- …``).
+            aliases = {argv[2] for argv in commands if argv[:2] == ["alias", "set"] and argv[2:]}
+            for argv in commands:
                 problems.extend(
                     f"{path.relative_to(REPO_ROOT)}: {problem}"
-                    for problem in _unknown_options(root, argv)
+                    for problem in _unknown_options(root, argv, aliases)
                 )
     assert problems == []

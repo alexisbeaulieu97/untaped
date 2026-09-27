@@ -325,6 +325,30 @@ Settings rows apply `UNTAPED_*` environment overrides on top of the file and
 name the variable when an override is the invalid value (for example
 `UNTAPED_HTTP__TIMEOUT=abc`). Any failed row makes `doctor` exit nonzero.
 
+## Command aliases
+
+An alias is a shortcut for a longer command. Put the command after `--`:
+
+```bash
+untaped alias set failed -- awx jobs list --status failed
+untaped failed --limit 5          # runs: untaped awx jobs list --status failed --limit 5
+untaped alias set prod-jobs -- --profile prod awx jobs list
+untaped alias list
+untaped alias remove failed --yes
+```
+
+`untaped NAME [ARGS…]` runs the stored command with `ARGS` appended. Aliases
+are stored per profile in the `shell.aliases` setting (a mapping of name to
+argv list); `profiles.default` aliases apply beneath the active profile's, and
+`alias set`/`alias remove` change the active profile (or the one the root
+`--profile` names). Names use lowercase letters, digits and dashes. An alias
+can never shadow a built-in command or capability (`alias set` rejects the
+name with exit 2, and a stored one is ignored), and an alias is expanded once:
+it cannot run another alias. The stored argv is passed to `untaped` as is; no
+shell runs it. `alias set` and `alias remove` print an
+`untaped.alias_outcome` record (`name`, `profile`, `action`); `alias list`
+prints `untaped.alias` records (`name`, `command`, `profile`).
+
 ## TLS and shared UI settings
 
 `http.*` and `ui.*` are profile-scoped root settings shared by all capabilities.

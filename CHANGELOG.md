@@ -21,6 +21,11 @@
     them with `online_check(...)` or `DoctorCheck(..., online=True)`;
     `DoctorResult(..., fix=...)` appends the fix. `setup` and `alias` are now
     reserved root command names.
+  - **New:** `untaped alias set NAME -- COMMAND ARGS…`, `alias list` and
+    `alias remove NAME` manage per-profile command aliases in the new
+    `shell.aliases` setting; `untaped NAME [ARGS…]` runs the stored argv with
+    `ARGS` appended. Aliases never shadow built-in commands and never expand
+    another alias.
   - **Breaking:** the capability API version is a `(major, minor)` tuple of
     ints, now `(2, 0)`, so `1.10` can no longer compare equal to `1.1`.
     Providers declare `api_requires = ((2, 0), (3, 0))`; float bounds and
