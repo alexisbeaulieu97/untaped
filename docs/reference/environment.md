@@ -69,9 +69,13 @@ fail-fast behavior.
 
 ## Recipe hooks
 
-Recipe hooks run in a separate `uv` environment. `untaped` removes
-`VIRTUAL_ENV` from that environment and adds the pack's sources to
-`PYTHONPATH`.
+Recipe hooks, and the `uv` commands `untaped` runs on a pack, get a reduced
+environment: only an allowlist of variables passes through (`PATH`, `HOME`,
+locale, temp directories, `UV_*`, `XDG_*`, TLS and proxy settings, and
+`SSH_AUTH_SOCK`/`GIT_SSH_COMMAND`). Tokens such as `GITHUB_TOKEN` and
+`UNTAPED_*` credentials are not passed. Hook workers get `PYTHONPATH` set to
+the pack's `src/` only. The full list is in
+[Install and manage packs](../recipe/usage.md#install-and-manage-packs).
 
 ## See also
 

@@ -74,7 +74,7 @@ class SkillInstallResult:
 
 SkillNamesArgument = Annotated[
     list[str] | None,
-    Parameter(negative="", help="Skill names to install (the untaped- prefix is optional)."),
+    Parameter(negative="", help="Skill names (the untaped- prefix is optional)."),
 ]
 SkillStdinOption = Annotated[
     bool,
