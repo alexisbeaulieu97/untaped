@@ -499,8 +499,9 @@ of every launchable kind.
 
 ## Test suites
 
-`awx test` launches a job template with a matrix of parameters and reports
-one pass or fail per case. A test file is YAML. An optional `---`-delimited
+`awx test` launches a job template with a matrix of parameters, checks each
+job against what the case expects, and reports one result per case. A test
+file is YAML. An optional `---`-delimited
 header declares variables; the body is a Jinja2 template rendered with them:
 
 ```yaml
@@ -514,14 +515,25 @@ jobTemplate: Deploy app
 defaults:
   launch:
     extra_vars: {dry_run: true}
+  expect:
+    log: {not_contains: ["[DEPRECATION WARNING]"]}
 cases:
   web:
     launch:
       limit: "web-{{ env }}"
+    expect:
+      log: {contains: ["PLAY RECAP"], matches: ['web-\w+ +: ok=\d+ +changed=0']}
   db:
+    timeout: 3600
     launch:
       limit: "db-{{ env }}"
       inventory: !ref {kind: Inventory, name: "{{ env }} inventory"}
+  missing-version:
+    launch:
+      extra_vars: {app_version: ""}
+    expect:
+      status: failed
+      log: {contains: ["app_version must be set"]}
 ```
 
 ```bash
@@ -535,9 +547,26 @@ untaped awx test run tests/awx/deploy-smoke.yml --case web --non-interactive
   resource name to its ID.
 - A variable without a default is required: pass `--var`, `--vars-file`, or
   answer the prompt. `--non-interactive` fails instead of prompting.
+- `expect` says what the job must produce, and every check must hold.
+  - `status`: the job's final status (`successful`, the default, or `failed`,
+    `error`, `canceled`).
+  - `log.contains` and `log.not_contains`: substrings of the job's full stdout.
+  - `log.matches`: regular expressions searched line by line.
+
+  A case's `status` and each of its `log` lists replace the ones in
+  `defaults.expect`; anything it leaves out is inherited.
 - `run` exits 1 unless at least one case ran and every case passed.
-- Each case waits `--timeout` seconds (a positive number; default
-  `awx.test_timeout`, 30 minutes) and `--parallel` cases run at once (default
+- Each `awx.test_result` row has `result` (`pass`, `fail`, `error` or
+  `timeout`), `job_status`, `job_id`, `job_url` (the job's page in the web
+  UI), `failure_reason`, and `expectations`, one `{check, expected, actual,
+  passed}` per check, where `actual` is the job status or the log line that
+  decided the check.
+  A case that did not pass also carries `log_tail`, the last 40 lines of its
+  stdout. `--show-logs` prints those tails to stderr, and the table shows
+  the summary columns only.
+- A case waits `--timeout` seconds when given (a positive number), else its
+  own `timeout:`, else the suite's `defaults.timeout`, else `awx.test_timeout`
+  (30 minutes). `--parallel` cases run at once (default
   `awx.test_parallel`, 4). A case still running at its timeout is reported as
   `timeout` and its job is cancelled. A polling error or Ctrl-C cancels the
   job too; `failure_reason` says what happened to it. `--no-cancel` leaves

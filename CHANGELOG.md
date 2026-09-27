@@ -3,6 +3,17 @@
 ## Unreleased
 
 - AWX
+  - **Breaking:** `awx test` cases declare what their job must produce in
+    `expect:`: a `status` (default `successful`) and `log` checks
+    (`contains`, `not_contains`, `matches`). The checks can be set in
+    `defaults.expect` and overridden per case. The reserved `assert:` block
+    is gone. A case may set `timeout:` (or `defaults.timeout` for the suite),
+    and `launch:` may be omitted.
+  - `awx.test_result` rows add `expectations` (each check's expected and
+    actual value), `job_url`, and, for a case that did not pass, `log_tail`.
+    `failure_reason` names the failed checks. `--show-logs` prints the tails
+    without downloading the logs again, and the table shows the summary
+    columns.
   - **Behavior change:** `test run` now waits at most 30 minutes per case by
     default (`awx.test_timeout`) and runs 4 cases at once by default
     (`awx.test_parallel`). A job the run stops watching (timeout, polling

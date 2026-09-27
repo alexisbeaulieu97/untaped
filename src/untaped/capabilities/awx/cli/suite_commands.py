@@ -10,7 +10,6 @@ from cyclopts import Parameter
 from cyclopts.validators import Number
 
 from untaped.capabilities.awx.cli.context import AwxContext, open_context
-from untaped.capabilities.awx.domain import Job
 from untaped.capabilities.awx.domain.suite import Suite
 from untaped.capabilities.awx.errors import AwxApiError
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
@@ -40,7 +39,15 @@ app = create_app(
 # Heavy imports (jinja2, yaml, the loader/runner) are deferred to subcommand
 # bodies — ``awx ping`` and ``awx --help`` shouldn't pay for them.
 
-_LOG_TAIL_LINES = 40
+_RESULT_TABLE_COLUMNS = [
+    "suite",
+    "case",
+    "result",
+    "job_status",
+    "job_id",
+    "duration_s",
+    "failure_reason",
+]
 
 _PATHS_ARG = Annotated[list[Path], Parameter(help="Test files, or directories of them.")]
 _CASE_OPT = Annotated[
@@ -160,7 +167,8 @@ def run_command(
         float | None,
         Parameter(
             name="--timeout",
-            help="Seconds each case waits before its job is cancelled (default: awx.test_timeout).",
+            help="Seconds each case waits before its job is cancelled; overrides each case's "
+            "timeout: (default: the case's timeout:, else awx.test_timeout).",
             validator=Number(gt=0),
         ),
     ] = None,
@@ -178,7 +186,7 @@ def run_command(
             # global ``--verbose``/``-v``, so the short alias would shadow it.
             name="--show-logs",
             negative="",
-            help="On failure, dump the tail of AWX stdout to stderr.",
+            help="Print the log tail of each case that did not pass to stderr.",
         ),
     ] = False,
     fmt: FormatOption = "table",
@@ -217,13 +225,16 @@ def run_command(
             jt_scope=_jt_scope(ctx, spec),
             stop=ctx.stop,
             canceller=ctx.jobs.cancel if cancel else None,
+            log_reader=ctx.monitor.fetch_stdout,
+            job_url=ctx.job_url,
         )
         try:
             outcome = runner(
                 suites,
                 case_filter=case_filter,
                 parallel=parallel if parallel is not None else ctx.settings.test_parallel,
-                timeout=timeout if timeout is not None else ctx.settings.test_timeout,
+                timeout=timeout,
+                default_timeout=ctx.settings.test_timeout,
             )
         except KeyboardInterrupt:
             report_interrupted(
@@ -231,41 +242,21 @@ def run_command(
                 cancelled=runner.cancelled,
             )
 
-        if show_logs:
-            for result in outcome.results:
-                if result.result == "pass" or result.job_id is None:
-                    continue
-                _print_failure_logs(ctx, result.suite, result.case, result.job_id)
+    if show_logs:
+        for result in outcome.results:
+            if result.log_tail is not None:
+                header = f"--- {result.suite}/{result.case} job {result.job_id}"
+                echo(f"{header} (last {len(result.log_tail)} lines)", err=True)
+                for line in result.log_tail:
+                    echo(line, err=True)
 
-        emit(
-            [r.model_dump() for r in outcome.results],
-            fmt=fmt,
-            columns=columns,
-            kind="awx.test_result",
-        )
-        finish(outcome.exit_code() != 0)
-
-
-def _print_failure_logs(ctx: AwxContext, suite: str, case: str, job_id: int) -> None:
-    """Best-effort: fetch the job's stdout and print its tail to stderr.
-
-    The :class:`Job` instance is constructed solely so :meth:`fetch_stdout`
-    can read ``id`` and ``kind``; ``status`` is never consumed. We pick
-    ``"failed"`` because every caller of this helper has already classified
-    the case as a failure — leaving ``"successful"`` would mislead a future
-    reader.
-    """
-    job = Job(id=job_id, kind="job", status="failed")
-    try:
-        lines = ctx.monitor.fetch_stdout(job)
-    except AwxApiError as exc:
-        echo(f"--- {suite}/{case} job {job_id}: log fetch failed ({exc})", err=True)
-        return
-    tail = lines[-_LOG_TAIL_LINES:]
-    header = f"--- {suite}/{case} job {job_id} (last {len(tail)} lines)"
-    echo(header, err=True)
-    for line in tail:
-        echo(line, err=True)
+    emit(
+        outcome.results,
+        fmt=fmt,
+        columns=columns or (_RESULT_TABLE_COLUMNS if fmt == "table" else None),
+        kind="awx.test_result",
+    )
+    finish(outcome.exit_code() != 0)
 
 
 # ---- list ----------------------------------------------------------------

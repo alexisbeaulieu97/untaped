@@ -166,38 +166,39 @@ def test_strict_undefined_on_missing_var() -> None:
         _load(text, cli_vars={"env": "prod"})
 
 
-def test_assert_block_non_empty_is_rejected() -> None:
+def test_expect_block_is_parsed_and_rendered() -> None:
     text = (
+        "---\nvariables:\n  word: {default: boom}\n---\n"
         "kind: AwxTestSuite\n"
         "name: x\n"
         "jobTemplate: y\n"
+        "defaults:\n"
+        "  expect: {status: failed}\n"
         "cases:\n"
         "  c:\n"
-        "    launch: {}\n"
-        "    assert:\n"
-        "      stdout_contains: ['x']\n"
+        "    timeout: 90\n"
+        "    expect:\n"
+        "      log: {contains: ['{{ word }}']}\n"
     )
+    suite = _load(text)
+    case = suite.cases["c"]
+    assert case.timeout == 90
+    assert case.expect is not None
+    assert case.expect.over(suite.defaults.expect if suite.defaults else None).model_dump() == {
+        "status": "failed",
+        "log": {"contains": ("boom",), "not_contains": (), "matches": ()},
+    }
+
+
+def test_the_removed_assert_block_is_rejected() -> None:
+    text = "kind: AwxTestSuite\nname: x\njobTemplate: y\ncases:\n  c:\n    assert: {}\n"
     with pytest.raises(ConfigError, match="assert"):
         _load(text)
 
 
-def test_empty_assert_block_is_allowed() -> None:
-    text = (
-        "kind: AwxTestSuite\n"
-        "name: x\n"
-        "jobTemplate: y\n"
-        "cases:\n"
-        "  c:\n"
-        "    launch: {}\n"
-        "    assert: {}\n"
-    )
-    suite = _load(text)
-    assert suite.cases["c"].assert_ == {}  # type: ignore[attr-defined]
-
-
-def test_case_without_launch_is_rejected() -> None:
+def test_launch_field_outside_launch_is_rejected() -> None:
     text = "kind: AwxTestSuite\nname: x\njobTemplate: y\ncases:\n  c:\n    extra_vars: {x: 1}\n"
-    with pytest.raises(ConfigError, match="launch"):
+    with pytest.raises(ConfigError, match="extra_vars"):
         _load(text)
 
 

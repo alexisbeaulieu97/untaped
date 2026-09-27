@@ -2,8 +2,7 @@
 
 The use case wires injected adapters end-to-end: read file → split
 frontmatter → resolve variable values → render Jinja2 body → parse YAML
-→ validate. Non-empty ``assert:`` blocks are rejected so users can't
-silently green-run un-checked behaviour.
+→ validate.
 """
 
 from __future__ import annotations
@@ -20,7 +19,7 @@ from untaped.capabilities.awx.application.suites.ports import (
     VarsResolver,
 )
 from untaped.capabilities.awx.domain.suite import Suite, VariableSpec
-from untaped.capability_api import ConfigError, plural
+from untaped.capability_api import ConfigError
 
 
 class LoadTestSuite:
@@ -68,11 +67,9 @@ class LoadTestSuite:
         # ``awx test list --format json``) can introspect required vars.
         data["variables"] = {name: spec for name, spec in var_specs.items()}
         try:
-            suite = Suite.model_validate(data)
+            return Suite.model_validate(data)
         except ValidationError as exc:
             raise ConfigError(f"{path}: {exc}") from exc
-        _reject_non_empty_assert(path, suite)
-        return suite
 
     def parse_specs(self, path: Path) -> dict[str, VariableSpec]:
         """Read *path* and return its frontmatter variable specs only.
@@ -113,18 +110,3 @@ class LoadTestSuite:
             except ValidationError as exc:
                 raise ConfigError(f"variable {name!r}: {exc}") from exc
         return specs
-
-
-def _reject_non_empty_assert(path: Path, suite: Suite) -> None:
-    locations: list[str] = []
-    if suite.defaults is not None and suite.defaults.assert_:
-        locations.append("defaults")
-    for name, case in suite.cases.items():
-        if case.assert_:
-            locations.append(f"cases.{name}")
-    if locations:
-        joined = ", ".join(locations)
-        raise ConfigError(
-            f"{path}: non-empty 'assert:' {plural(len(locations), 'block')} at {joined}; "
-            "assertions land in v2, so remove or empty the assert: block in v1"
-        )

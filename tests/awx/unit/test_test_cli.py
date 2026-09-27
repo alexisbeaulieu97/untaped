@@ -439,7 +439,7 @@ def test_run_timeout_and_parallel_default_to_settings(
     result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "-f", "json"])
 
     assert result.exit_code == 1, result.output
-    assert (seen["timeout"], seen["parallel"]) == (0.01, 3)
+    assert (seen["timeout"], seen["default_timeout"], seen["parallel"]) == (None, 0.01, 3)
     assert json.loads(result.stdout)[0]["result"] == "timeout"
 
 
@@ -466,3 +466,39 @@ def test_run_interrupt_cancels_running_jobs(
     [job_id] = _cancelled_ids(running_job)
     assert f"interrupted: job {job_id} cancel requested" in result.stderr
     assert "jobs wait" not in result.stderr
+
+
+def test_run_checks_expectations_and_reports_them(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+    fake_aap.next_action_status = "failed"
+    fake_aap.next_action_stdout = "TASK [check]\nfatal: [web1]: FAILED! => msg: disk full\n"
+    test_file = _write(
+        tmp_path / "neg.yml",
+        "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\ncases:\n"
+        "  c:\n    expect:\n      status: failed\n      log: {contains: [disk full]}\n",
+    )
+
+    result = cli.invoke(app, ["test", "run", str(test_file), "-f", "json"])
+
+    assert result.exit_code == 0, result.output
+    [row] = json.loads(result.stdout)
+    assert row["result"] == "pass"
+    assert [check["check"] for check in row["expectations"]] == ["status", "log.contains"]
+    assert row["job_url"] == f"https://aap.example.com/#/jobs/playbook/{row['job_id']}/output"
+
+
+def test_run_table_hides_evidence_columns(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+    fake_aap.next_action_status = "failed"
+    fake_aap.next_action_stdout = "boom\n"
+
+    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path))])
+
+    assert result.exit_code == 1, result.output
+    assert "expected status successful, got failed" in result.stdout
+    assert "log_tail" not in result.stdout
+    assert "expectations" not in result.stdout
