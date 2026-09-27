@@ -17,6 +17,7 @@ from untaped.capabilities.github.cli.scopes import (
     REPO_KINDS,
     ArchivedOption,
     OrgOption,
+    RepoOption,
     TeamOption,
     org_scope,
     parse_team_scopes,
@@ -57,15 +58,6 @@ UserOption = Annotated[
         help="user:LOGIN. Without any scope: github.default_org, else @me.",
     ),
 ]
-RepoOption = Annotated[
-    list[str] | None,
-    Parameter(
-        name=["--repo", "-r"],
-        help="repo:OWNER/NAME. Repeatable.",
-        consume_multiple=False,
-        negative="",
-    ),
-]
 LanguageOption = Annotated[
     str | None, Parameter(name="--language", help="Match the language (language:X).")
 ]
@@ -79,6 +71,9 @@ app = create_app(
 # GitHub serves at most this many results per search, so no row past it
 # can reveal that a --limit truncated the output.
 _GITHUB_SEARCH_CAP = 1000
+# Search pages hold at most this many rows; a probe row past a full page
+# would cost a whole extra request against the per-minute search budget.
+_GITHUB_SEARCH_PAGE = 100
 
 
 def _repo_scopes(values: list[str] | None, *, stdin: bool) -> tuple[str, ...]:
@@ -92,8 +87,13 @@ def _repo_scopes(values: list[str] | None, *, stdin: bool) -> tuple[str, ...]:
 
 
 def _probe(limit: int) -> int:
-    """Ask for one row past ``limit`` so :func:`_cap` can tell whether more match."""
-    return limit + 1 if limit < _GITHUB_SEARCH_CAP else limit
+    """Ask for one row past ``limit`` so :func:`_cap` can tell whether more match.
+
+    Skipped where it would need an extra request: at GitHub's cap and on a page boundary.
+    """
+    if limit >= _GITHUB_SEARCH_CAP or limit % _GITHUB_SEARCH_PAGE == 0:
+        return limit
+    return limit + 1
 
 
 def _cap(rows: list[dict[str, object]], limit: int, ui: UiContext) -> list[dict[str, object]]:
@@ -104,15 +104,6 @@ def _cap(rows: list[dict[str, object]], limit: int, ui: UiContext) -> list[dict[
             f"showing the first {plural(limit, 'result')}; more match, raise --limit to see them",
         )
     return rows[:limit]
-
-
-def _note_user_fallback(ui: UiContext, *scopes: object) -> None:
-    """Say so on stderr when no scope was given and the search falls back to ``user:@me``."""
-    if not any(scopes):
-        ui.message(
-            "info",
-            "no scope given; searching user:@me (pass --org or set github.default_org)",
-        )
 
 
 @app.command(name="repos")
@@ -168,9 +159,13 @@ def repos_command(
             limit=_probe(limit),
         )
         with open_client() as (client, ui):
-            use_case = SearchRepos(client, client, warn=lambda text: ui.message("warning", text))
+            use_case = SearchRepos(
+                client,
+                client,
+                warn=lambda text: ui.message("warning", text),
+                note=lambda text: ui.message("info", text),
+            )
             team_scopes = parse_team_scopes(team, orgs=orgs)
-            _note_user_fallback(ui, user, orgs, team_scopes, repos)
             with ui.progress("Searching repositories…"):
                 rows = [r.model_dump() for r in use_case(filters, team_scopes=team_scopes)]
             rows = _cap(rows, limit, ui)
@@ -234,9 +229,13 @@ def code_command(
             limit=_probe(limit),
         )
         with open_client() as (client, ui):
-            use_case = SearchCode(client, client, warn=lambda text: ui.message("warning", text))
+            use_case = SearchCode(
+                client,
+                client,
+                warn=lambda text: ui.message("warning", text),
+                note=lambda text: ui.message("info", text),
+            )
             team_scopes = parse_team_scopes(team, orgs=orgs)
-            _note_user_fallback(ui, user, orgs, team_scopes, repos)
             with ui.progress("Searching code…"):
                 rows = [r.model_dump() for r in use_case(filters, team_scopes=team_scopes)]
             rows = _cap(rows, limit, ui)
@@ -312,9 +311,13 @@ def issues_command(
             limit=_probe(limit),
         )
         with open_client() as (client, ui):
-            use_case = SearchIssues(client, client, warn=lambda text: ui.message("warning", text))
+            use_case = SearchIssues(
+                client,
+                client,
+                warn=lambda text: ui.message("warning", text),
+                note=lambda text: ui.message("info", text),
+            )
             team_scopes = parse_team_scopes(team, orgs=orgs)
-            _note_user_fallback(ui, user, orgs, team_scopes, repos)
             with ui.progress("Searching issues and pull requests…"):
                 rows = [r.model_dump() for r in use_case(filters, team_scopes=team_scopes)]
             rows = _cap(rows, limit, ui)

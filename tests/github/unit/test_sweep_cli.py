@@ -13,7 +13,6 @@ import respx
 
 from untaped.bootstrap import build_root_app
 from untaped.capabilities.github.cli import app
-from untaped.settings import get_settings
 from untaped.testing import CliInvoker, CliResult, invoke_cli
 
 SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
@@ -182,7 +181,10 @@ def test_content_modifiers_and_path_reach_the_grep(source_repo: SourceRepo) -> N
         ),
         (["--org", "acme", "--path", "src/**"], "use --has-file"),
         (["--repo", "acme/api", "--has-file", "README.md", "--parallel", "0"], "--parallel"),
-        (["--grep", "needle"], "sweep requires --org, --team, --repo, or --stdin"),
+        (
+            ["--grep", "needle"],
+            "sweep requires --org, --team, --repo, --stdin, or a github.default_org setting",
+        ),
     ],
 )
 def test_sweep_usage_errors_fail_before_any_request(args: list[str], message: str) -> None:
@@ -259,25 +261,28 @@ def test_sweep_archived_is_include_exclude_or_only(
     assert [row["full_name"] for row in _json(result)] == expected
 
 
-def test_sweep_short_r_is_repo_and_default_org_fills_an_empty_scope(
-    tmp_path: Path, source_repo: SourceRepo
-) -> None:
+def test_sweep_short_r_means_repo(source_repo: SourceRepo) -> None:
     source = source_repo("api", {"README.md": "x\n"})
-    by_short, short_paths = _sweep(
+
+    result, paths = _sweep(
         ["-r", "acme/api", "--has-file", "README.md", "--format", "json"],
         repos={"acme/api": httpx.Response(200, json=_repo("acme/api", source))},
     )
-    cfg = tmp_path / "config.yml"
-    cfg.write_text(cfg.read_text() + "      default_org: acme\n")
-    get_settings.cache_clear()
-    by_default, default_paths = _sweep(
+
+    assert [row["full_name"] for row in _json(result)] == ["acme/api"]
+    assert paths == ["/repos/acme/api"]
+
+
+@pytest.mark.usefixtures("default_org")
+def test_sweep_default_org_fills_an_empty_scope(source_repo: SourceRepo) -> None:
+    source = source_repo("api", {"README.md": "x\n"})
+
+    result, paths = _sweep(
         ["--has-file", "README.md", "--format", "json"], org=[_repo("acme/api", source)]
     )
 
-    assert [row["full_name"] for row in _json(by_short)] == ["acme/api"]
-    assert short_paths == ["/repos/acme/api"]
-    assert [row["full_name"] for row in _json(by_default)] == ["acme/api"]
-    assert default_paths == ["/orgs/acme/repos"]
+    assert [row["full_name"] for row in _json(result)] == ["acme/api"]
+    assert paths == ["/orgs/acme/repos"]
 
 
 def test_missing_explicit_repo_is_unscanned_and_strict_fails(source_repo: SourceRepo) -> None:

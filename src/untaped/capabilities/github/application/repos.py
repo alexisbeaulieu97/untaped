@@ -21,6 +21,7 @@ class RepoListFilters:
 
     pattern: str | None = None
     regex: bool = False
+    # Neutral (no filter) by default; the CLI applies the user-facing "exclude".
     archived: ArchivedMode = "include"
     fork: bool | None = None
 
