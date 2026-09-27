@@ -23,19 +23,25 @@ def pushed_branch(cwd: Path | None = None) -> str:
 
 def _pushed_branch(cwd: Path | None) -> str:
     head = _git(cwd, "rev-parse", "HEAD")
-    branch = _git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD", check=False)
-    if not branch:
+    # The full ref: ``--short`` answers ``heads/x`` when a tag ``x`` exists.
+    local_ref = _git(cwd, "symbolic-ref", "--quiet", "HEAD", check=False)
+    if not local_ref:
         raise ConfigError("HEAD is detached; pass --scm-branch a branch, tag or commit")
+    branch = local_ref.removeprefix("refs/heads/")
     upstream = _git(
         cwd,
         "for-each-ref",
         "--format=%(upstream:remotename)%00%(upstream:remoteref)",
-        f"refs/heads/{branch}",
+        local_ref,
     )
     remote, _, ref = upstream.partition("\0")
     if not remote or not ref:
         raise ConfigError(f"branch {q(branch)} has no upstream; push it with git push -u")
     name = ref.removeprefix("refs/heads/")
+    if remote == ".":
+        raise ConfigError(
+            f"branch {q(branch)} tracks local branch {name}; push it with git push -u"
+        )
     listed = run_git(
         ["ls-remote", remote, ref], cwd=cwd, timeout=_TIMEOUT, capture=True, retry_transient=True
     ).text.split()

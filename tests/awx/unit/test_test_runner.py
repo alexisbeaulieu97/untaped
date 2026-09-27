@@ -8,7 +8,12 @@ from typing import Any, cast
 
 import pytest
 
-from untaped.capabilities.awx.application.suites.ports import FkPrefetcher, Launcher, Watcher
+from untaped.capabilities.awx.application.suites.ports import (
+    FkPrefetcher,
+    LaunchCheck,
+    Launcher,
+    Watcher,
+)
 from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
 from untaped.capabilities.awx.application.suites.runner import LOG_TAIL_LINES, RunTestSuite
 from untaped.capabilities.awx.domain import Job, JobEvent
@@ -143,7 +148,7 @@ def _make_runner(
     canceller: StubCanceller | None = None,
     log_reader: StubLogReader | None = None,
     event_reader: StubEventReader | None = None,
-    preflight: Any = None,
+    preflight: LaunchCheck | None = None,
 ) -> RunTestSuite:
     resolver = ResolveCasePayload(
         fk, catalog=AwxResourceCatalog(), default_organization=default_org
@@ -674,6 +679,7 @@ def _event(event: str, *, failed: bool, host: str, msg: str) -> JobEvent:
 def test_a_case_that_did_not_pass_lists_its_failed_tasks() -> None:
     events = StubEventReader(
         [
+            _event("playbook_on_task_start", failed=True, host="web1", msg=""),
             _event("runner_on_failed", failed=True, host="web1", msg="boom"),
             # ``ignore_errors`` failures are not failures.
             _event("runner_on_failed", failed=False, host="web2", msg="ignored"),
@@ -705,6 +711,22 @@ def test_passing_cases_skip_events_and_unreadable_events_leave_no_list() -> None
     runner, _ = _expect_runner("failed", event_reader=StubEventReader([], error=RuntimeError()))
     [row] = runner([_case_suite({})]).results
     assert (row.result, row.failed_tasks) == ("fail", None)
+
+
+@pytest.mark.parametrize(("processed", "expected"), [(True, ()), (False, None)])
+def test_no_failed_tasks_is_only_trusted_once_events_are_saved(
+    processed: bool, expected: tuple[()] | None
+) -> None:
+    final = Job.model_validate(
+        {"id": 5, "kind": "job", "status": "failed", "event_processing_finished": processed}
+    )
+    runner = _make_runner(
+        fk=StubFk(),
+        launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
+        watcher=StubWatcher(default=final),
+    )
+    [row] = runner([_case_suite({})]).results
+    assert row.failed_tasks == expected
 
 
 def test_scm_branch_overrides_every_case_and_rows_report_what_ran() -> None:

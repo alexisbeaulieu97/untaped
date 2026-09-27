@@ -342,7 +342,15 @@ class RunTestSuite:
             events = list(self._read_events(job, params=params, follow=False))
         except Exception:
             return None
-        return tuple(FailedTask.from_event(event) for event in events if event.failed)
+        tasks = tuple(
+            FailedTask.from_event(event)
+            for event in events
+            # AWX also flags the play and task events above a failure.
+            if event.failed and event.event in FAILED_TASK_EVENTS
+        )
+        if not tasks and job.event_processing_finished is False:
+            return None  # the failures may not be saved yet
+        return tasks
 
     def _tail(self, job: Job, log: list[str] | None) -> tuple[str, ...] | None:
         """The last lines of ``log`` (downloaded when ``None``); ``None`` if unreadable."""

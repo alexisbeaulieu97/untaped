@@ -68,3 +68,14 @@ def test_a_detached_head_is_refused(clone: Path) -> None:
 def test_outside_a_repository_is_refused(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="--scm-branch HEAD"):
         pushed_branch(tmp_path)
+
+
+def test_a_branch_named_like_a_tag_still_resolves(clone: Path) -> None:
+    _git(clone, "tag", "work")
+    assert pushed_branch(clone) == "feature/x"
+
+
+def test_a_local_upstream_is_refused(clone: Path) -> None:
+    _git(clone, "checkout", "-b", "topic", "--track", "work")
+    with pytest.raises(ConfigError, match="tracks local branch work"):
+        pushed_branch(clone)

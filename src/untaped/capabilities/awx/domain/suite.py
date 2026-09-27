@@ -229,13 +229,12 @@ class FailedTask(BaseModel):
     @classmethod
     def from_event(cls, event: JobEvent) -> FailedTask:
         res = event.res or {}
-        msg, stderr = _text(res.get("msg")), _text(res.get("stderr"))
         return cls(
             host=event.host_name,
             task=event.task,
             status="unreachable" if event.event == "runner_on_unreachable" else "failed",
-            msg=msg[:_MAX_DETAIL] + "…" if msg and len(msg) > _MAX_DETAIL else msg,
-            stderr="…" + stderr[-_MAX_DETAIL:] if stderr and len(stderr) > _MAX_DETAIL else stderr,
+            msg=_clip(_text(res.get("msg")), _MAX_DETAIL),
+            stderr=_clip(_text(res.get("stderr")), _MAX_DETAIL, keep_end=True),
         )
 
 
@@ -285,9 +284,16 @@ class SuiteRunOutcome(BaseModel):
 def _log_result(
     check: CheckName, expected: str, line: str | None, *, passed: bool
 ) -> ExpectationResult:
-    if line is not None and len(line) > _MAX_ACTUAL:
-        line = line[:_MAX_ACTUAL] + "…"
-    return ExpectationResult(check=check, expected=expected, actual=line, passed=passed)
+    return ExpectationResult(
+        check=check, expected=expected, actual=_clip(line, _MAX_ACTUAL), passed=passed
+    )
+
+
+def _clip(text: str | None, limit: int, *, keep_end: bool = False) -> str | None:
+    """``text`` cut to ``limit`` characters plus an ellipsis (its end with ``keep_end``)."""
+    if text is None or len(text) <= limit:
+        return text
+    return "…" + text[-limit:] if keep_end else text[:limit] + "…"
 
 
 def _text(value: Any) -> str | None:
