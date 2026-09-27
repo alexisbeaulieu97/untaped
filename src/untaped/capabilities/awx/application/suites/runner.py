@@ -1,7 +1,10 @@
 """RunTestSuite: load → plan → prefetch → resolve → launch+wait.
 
-With a :class:`Canceller`, every execution the run stops watching before it
-ends (timeout, polling error, Ctrl-C) is cancelled rather than left running.
+Each finished job is checked against its case's :class:`Expectation`
+(status, then log checks read through a :class:`LogReader`); with
+``log_tails``, a case that does not pass carries the tail of its log. With
+a :class:`Canceller`, every execution the run stops watching before it ends
+(timeout, polling error, Ctrl-C) is cancelled rather than left running.
 
 Resolution finishes in the main thread before any worker is spawned so
 the launch+wait pool only sees fully-baked, immutable launch dicts —
@@ -15,21 +18,22 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from untaped.capabilities.awx.application.suites.ports import (
     Canceller,
     FkPrefetcher,
     Launcher,
+    LogReader,
     Watcher,
 )
 from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
 from untaped.capabilities.awx.domain import Job, ResourceSpec
-from untaped.capabilities.awx.domain.job import still_running_detail
 from untaped.capabilities.awx.domain.suite import (
     Case,
     CaseResult,
-    CaseStatus,
+    Expectation,
     RefSentinel,
     Suite,
     SuiteRunOutcome,
@@ -38,22 +42,18 @@ from untaped.capabilities.awx.errors import ActionResponseError
 from untaped.capability_api import ConfigError, bounded_map
 
 _LAUNCH_ACTION = "launch"
+LOG_TAIL_LINES = 40
+"""Log lines a case that did not pass carries in its result."""
 
 
+@dataclass(frozen=True, slots=True)
 class _ResolvedCase:
-    __slots__ = ("case_name", "job_template", "payload", "suite_name")
-
-    def __init__(
-        self,
-        suite_name: str,
-        case_name: str,
-        job_template: str,
-        payload: dict[str, Any],
-    ) -> None:
-        self.suite_name = suite_name
-        self.case_name = case_name
-        self.job_template = job_template
-        self.payload = payload
+    suite_name: str
+    case_name: str
+    job_template: str
+    payload: dict[str, Any]
+    expect: Expectation
+    timeout: float | None
 
 
 class RunTestSuite:
@@ -65,10 +65,13 @@ class RunTestSuite:
         watcher: Watcher,
         spec: ResourceSpec,
         fk_prefetcher: FkPrefetcher,
+        log_reader: LogReader,
+        job_url: Callable[[Job], str | None],
         jt_scope: dict[str, str] | None = None,
         clock: Callable[[], float] = time.monotonic,
         stop: threading.Event | None = None,
         canceller: Canceller | None = None,
+        log_tails: bool = True,
     ) -> None:
         self._resolve = resolver
         self._launch = launcher
@@ -80,6 +83,10 @@ class RunTestSuite:
         self._stop = stop
         self._cancel = canceller
         """``None`` leaves executions the run stops watching still running."""
+        self._read_log = log_reader
+        self._job_url = job_url
+        self._log_tails = log_tails
+        """Attach ``log_tail`` to cases that did not pass (costs a download without log checks)."""
         self.launched: list[Job] = []
         """Executions submitted so far (for reporting after an interrupt)."""
         self.cancelled: set[tuple[str, int]] = set()
@@ -93,15 +100,21 @@ class RunTestSuite:
         case_filter: set[str] | None = None,
         parallel: int = 1,
         timeout: float | None = None,
+        default_timeout: float | None = None,
     ) -> SuiteRunOutcome:
+        """Run the selected cases.
+
+        A case waits ``timeout`` when given, else its own ``timeout:``, else its
+        suite's ``defaults.timeout``, else ``default_timeout`` (``None``: forever).
+        """
         plan = self._build_plan(list(suites), case_filter)
         self._fk.prefetch(self._prefetch_plan(plan))
-        resolved = self._resolve_all(plan)
+        resolved = self._resolve_all(plan, timeout=timeout, default_timeout=default_timeout)
 
         results: dict[int, CaseResult] = {}
         try:
             bounded_map(
-                lambda index: self._launch_and_wait(resolved[index], timeout),
+                lambda index: self._launch_and_wait(resolved[index]),
                 range(len(resolved)),
                 concurrency=max(1, parallel),
                 on_each=results.__setitem__,
@@ -181,14 +194,27 @@ class RunTestSuite:
                 _collect_ref_sentinels(value, by_kind, self._resolve.scope_for_ref)
         return by_kind
 
-    def _resolve_all(self, plan: Sequence[tuple[Suite, str, Case]]) -> list[_ResolvedCase]:
+    def _resolve_all(
+        self,
+        plan: Sequence[tuple[Suite, str, Case]],
+        *,
+        timeout: float | None,
+        default_timeout: float | None,
+    ) -> list[_ResolvedCase]:
         out: list[_ResolvedCase] = []
         for suite, case_name, case in plan:
+            defaults = suite.defaults or Case()
             payload = self._resolve(self._spec, case, defaults=suite.defaults)
-            out.append(_ResolvedCase(suite.name, case_name, suite.job_template, payload))
+            expect = case.expect.over(defaults.expect)
+            case_timeout = timeout or case.timeout or defaults.timeout or default_timeout
+            out.append(
+                _ResolvedCase(
+                    suite.name, case_name, suite.job_template, payload, expect, case_timeout
+                )
+            )
         return out
 
-    def _launch_and_wait(self, item: _ResolvedCase, timeout: float | None) -> CaseResult:
+    def _launch_and_wait(self, item: _ResolvedCase) -> CaseResult:
         started_clock = self._clock()
         try:
             job = self._launch(
@@ -217,61 +243,70 @@ class RunTestSuite:
                 duration_s=self._clock() - started_clock,
                 failure_reason=str(exc),
             )
+        log: list[str] | None = None
         try:
-            final = self._watch(job, timeout=timeout)
+            final = self._watch(job, timeout=item.timeout)
             self._finals[(final.kind, final.id)] = final
         except Exception as exc:
-            return CaseResult(
-                suite=item.suite_name,
-                case=item.case_name,
-                result="error",
-                job_id=job.id,
-                duration_s=self._clock() - started_clock,
-                failure_reason=f"{exc}; {self._abandon(job)}",
-            )
-        if final.is_terminal:
-            return _classify(item.suite_name, item.case_name, final, self._clock() - started_clock)
-        reason = f"{still_running_detail(final, timeout)}; {self._abandon(final)}"
-        return _classify(
-            item.suite_name,
-            item.case_name,
-            final,
-            self._clock() - started_clock,
-            failure_reason=reason,
-        )
-
-
-def _classify(
-    suite_name: str,
-    case_name: str,
-    job: Job,
-    duration_s: float,
-    *,
-    failure_reason: str | None = None,
-) -> CaseResult:
-    if not job.is_terminal:
+            final = job
+            fields: dict[str, Any] = {
+                "result": "error",
+                "failure_reason": f"{exc}; {self._abandon(job)}",
+            }
+        else:
+            fields = {
+                "job_status": final.status,
+                "started_at": final.started,
+                "finished_at": final.finished,
+            }
+            if final.is_terminal:
+                checked, log = self._check(final, item.expect)
+                fields.update(checked)
+            else:
+                waited = f"still {final.status} after {item.timeout or 0:g}s"
+                fields.update(result="timeout", failure_reason=f"{waited}; {self._abandon(final)}")
+        if fields["result"] != "pass" and self._log_tails:
+            fields["log_tail"] = self._tail(final, log)
         return CaseResult(
-            suite=suite_name,
-            case=case_name,
-            result="timeout",
-            job_status=job.status,
-            job_id=job.id,
-            duration_s=duration_s,
-            started_at=job.started,
-            finished_at=job.finished,
-            failure_reason=failure_reason,
+            suite=item.suite_name,
+            case=item.case_name,
+            job_id=final.id,
+            job_url=self._job_url(final),
+            duration_s=self._clock() - started_clock,
+            **fields,
         )
-    result: CaseStatus = "pass" if job.status == "successful" else "fail"
-    return CaseResult(
-        suite=suite_name,
-        case=case_name,
-        result=result,
-        job_status=job.status,
-        job_id=job.id,
-        duration_s=duration_s,
-        started_at=job.started,
-        finished_at=job.finished,
-    )
+
+    def _check(self, job: Job, expect: Expectation) -> tuple[dict[str, Any], list[str] | None]:
+        """Evaluate ``expect`` against a finished job: result fields, plus the log if read."""
+        checks = [expect.check_status(job.status)]
+        log: list[str] | None = None
+        fetch_error: str | None = None
+        if expect.needs_log:
+            try:
+                log = self._read_log(job)
+            except Exception as exc:
+                fetch_error = f"log fetch failed: {exc}"
+            else:
+                checks.extend(expect.log.evaluate(log))
+        reasons = [check.describe_failure() for check in checks if not check.passed]
+        if fetch_error is not None:
+            reasons.append(fetch_error)
+        result = "error" if fetch_error else "fail" if reasons else "pass"
+        fields = {
+            "result": result,
+            "expectations": tuple(checks),
+            "failure_reason": "; ".join(reasons) or None,
+        }
+        return fields, log
+
+    def _tail(self, job: Job, log: list[str] | None) -> tuple[str, ...] | None:
+        """The last lines of ``log`` (downloaded when ``None``); ``None`` if unreadable."""
+        if log is None:
+            try:
+                log = self._read_log(job)
+            except Exception:
+                return None
+        return tuple(log[-LOG_TAIL_LINES:])
 
 
 def _collect_ref_sentinels(

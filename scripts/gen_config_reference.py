@@ -80,8 +80,8 @@ DESCRIPTIONS: dict[str, str] = {
     "awx.default_organization": "Organization that scopes name lookups and `apply` documents "
     "without one.",
     "awx.page_size": "Results requested per AWX API page.",
-    "awx.test_timeout": "Default `test run --timeout`: seconds each case waits before its job "
-    "is cancelled.",
+    "awx.test_timeout": "Seconds a `test run` case waits before its job is cancelled, unless "
+    "`--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it.",
     "awx.test_parallel": "Default `test run --parallel`.",
     "ansible.index_path": "SQLite cache of refreshed source data.",
     "ansible.stale_after": "Seconds after which `source status` reports a source as `stale`.",

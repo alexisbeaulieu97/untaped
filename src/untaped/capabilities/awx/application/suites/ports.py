@@ -64,6 +64,13 @@ class Canceller(Protocol):
 
 
 @runtime_checkable
+class LogReader(Protocol):
+    """Return a job's full stdout, one string per line."""
+
+    def __call__(self, job: Job, /) -> list[str]: ...
+
+
+@runtime_checkable
 class Parser(Protocol):
     """Splits frontmatter, parses YAML (with ``!ref``), renders Jinja2.
 
