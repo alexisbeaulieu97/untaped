@@ -58,13 +58,14 @@ class GitCorpusCache:
 
     ``auth_host`` is the only host the auth header is sent to (the Git host
     of ``github.base_url``); a remote on any other host, or any remote when
-    it is None, is fetched without credentials.
+    it is None, is fetched without credentials. It is required so a fetching
+    caller cannot silently drop auth; callers that never fetch pass None.
     """
 
     def __init__(
         self,
         *,
-        auth_host: str | None = None,
+        auth_host: str | None,
         git: str = "git",
         timeout: float = DEFAULT_TIMEOUT,
         slow_timeout: float = DEFAULT_SLOW_TIMEOUT,
@@ -187,9 +188,9 @@ class GitCorpusCache:
         with self._repo_lock(bare):
             data = _read_metadata(bare / METADATA_FILE)
             fetched = datetime.now(UTC)
-            data.update(fetched_at=fetched.isoformat(), archived=repo.archived)
-            if repo.pushed_at is not None:
-                data["pushed_at"] = repo.pushed_at
+            data.update(
+                fetched_at=fetched.isoformat(), archived=repo.archived, pushed_at=repo.pushed_at
+            )
             _write_metadata(bare, data)
         return fetched
 

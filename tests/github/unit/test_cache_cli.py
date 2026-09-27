@@ -125,13 +125,39 @@ def test_cache_sync_of_piped_repos_list_skips_fetch_when_github_reports_no_push(
     piped = _cache(["repos", "list", "--org", "acme", "-f", "pipe"], org={"acme": listed})
     args = ["cache", "sync", "--stdin", "-f", "json"]
 
+    # The first fetch stores GitHub's own pushed_at; piped records must match it.
+    synced = _cache(["cache", "sync", "--org", "acme", "-f", "json"], org={"acme": listed})
     actions = [
         json.loads(CliInvoker().invoke(app, args, input=piped.stdout).stdout)[0]["action"]
         for _ in range(2)
     ]
 
     assert '"pushed_at": "2026-07-01T00:00:00Z"' in piped.stdout
-    assert actions == ["synced", "unchanged"]
+    assert json.loads(synced.stdout)[0]["action"] == "synced"
+    assert actions == ["unchanged", "unchanged"]
+
+
+def test_cache_sync_sends_the_token_only_to_the_enterprise_git_host(
+    _config: Path, git_auth: dict[str, str | None]
+) -> None:
+    _config.write_text(_config.read_text() + "      base_url: https://ghe.example/api/v3\n")
+    records = [
+        {"untaped": "1", "kind": "github.repo", "record": {**row, "default_branch": "main"}}
+        for row in (
+            {"full_name": "acme/api", "clone_url": "https://ghe.example/acme/api.git"},
+            {"full_name": "acme/web", "clone_url": "https://other.example/acme/web.git"},
+        )
+    ]
+
+    result = CliInvoker().invoke(
+        app,
+        ["cache", "sync", "--stdin", "-f", "json"],
+        input="".join(f"{json.dumps(record)}\n" for record in records),
+    )
+
+    assert result.exit_code == 0, result.output
+    assert git_auth["https://ghe.example/acme/api.git"] is not None
+    assert git_auth["https://other.example/acme/web.git"] is None
 
 
 def test_cache_sync_failure_exits_1_and_names_the_repo(tmp_path: Path) -> None:
