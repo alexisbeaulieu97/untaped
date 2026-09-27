@@ -116,16 +116,16 @@ def test_mutate_config_clears_get_settings_cache(
 
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    write_config_dict({"profiles": {"default": {"log_level": "INFO"}}})
+    write_config_dict({"profiles": {"default": {"skills": {"updates": "warn"}}}})
 
     get_settings.cache_clear()
-    assert get_settings().log_level == "INFO"
+    assert get_settings().skills.updates == "warn"
 
-    def _set_debug(data: dict[str, Any]) -> None:
-        data["profiles"]["default"]["log_level"] = "DEBUG"
+    def _set_off(data: dict[str, Any]) -> None:
+        data["profiles"]["default"]["skills"]["updates"] = "off"
 
-    mutate_config(_set_debug)
-    assert get_settings().log_level == "DEBUG"
+    mutate_config(_set_off)
+    assert get_settings().skills.updates == "off"
 
 
 def test_mutate_config_no_op_does_not_clear_cache(

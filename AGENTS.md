@@ -58,9 +58,9 @@ against per-capability baselines that may only shrink.
 
 - `capability_api.py` is the single public SDK surface and the **only**
   untaped module capability code (built-in or external) imports from. Its
-  exported types, helpers, and API version are the source of truth for
-  provider compatibility. `untaped.api` is a deprecated re-export shim, and
-  the package root only forwards `from untaped import X` lazily (deprecated).
+  exported types, helpers, and `(major, minor)` API version tuple are the
+  source of truth for provider compatibility; the package root re-exports
+  nothing.
 - `capabilities/registry.py` is the internal composition kernel: discovery /
   API pre-checks → provider resolution → declaration validation + app-factory
   staging → commit. Built-in violations raise `ConfigError` (fatal);
@@ -93,9 +93,7 @@ User settings live in `config.yml` (`UNTAPED_CONFIG`): `active` plus
 `UNTAPED_STATE` overrides), one section per capability, read and
 written only through `StateCollection`/`StateMap` (or
 `read_tool_state`/`mutate_tool_state`). Settings writes never touch
-`state.yml` and state writes never touch `config.yml`, except the one-time move
-of a legacy top-level state section out of `config.yml` (see
-[`docs/configuration.md`](docs/configuration.md#capability-state)).
+`state.yml` and state writes never touch `config.yml`.
 [`docs/reference/config.md`](docs/reference/config.md) is generated from the
 settings models: after changing one, run
 `uv run python scripts/gen_config_reference.py` (a test fails while it is

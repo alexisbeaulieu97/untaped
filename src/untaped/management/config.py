@@ -1,8 +1,8 @@
 """Root ``untaped config …`` command group.
 
 Key resolution is direct: a fully qualified ``section.key``
-selects its schema by ``section`` — SDK roots (``log_level``, ``http``,
-``ui``) win first, then the section's own state fields raise the
+selects its schema by ``section`` — SDK roots (``http``, ``ui``,
+``skills``) win first, then the section's own state fields raise the
 "managed by" error, and anything else passes through to the schema. Bare
 keys are never implicitly expanded to a capability section.
 
