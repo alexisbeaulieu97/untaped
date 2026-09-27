@@ -12,7 +12,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.capabilities.github.settings import GithubSettings
-from untaped.capability_api import CapabilitySpec, SkillAsset, connection_check, executable_check
+from untaped.capability_api import (
+    CapabilitySpec,
+    SkillAsset,
+    connection_check,
+    executable_check,
+    online_check,
+)
 
 if TYPE_CHECKING:
     from cyclopts import App
@@ -25,6 +31,13 @@ def build_app() -> App:
     from untaped.capabilities.github.cli import app  # noqa: PLC0415
 
     return app
+
+
+def _probe_api() -> str:
+    """``doctor --online``: authenticate against GitHub (imports the CLI lazily)."""
+    from untaped.capabilities.github.cli.doctor import probe_api  # noqa: PLC0415
+
+    return probe_api()
 
 
 SPEC = CapabilitySpec(
@@ -44,6 +57,7 @@ SPEC = CapabilitySpec(
     ),
     doctor_checks=(
         connection_check("github.connection", section="github"),
+        online_check("github.api", section="github", probe=_probe_api),
         executable_check("github.git", "git", purpose="`untaped github sweep`"),
     ),
 )

@@ -195,7 +195,7 @@ root:
 ```bash
 untaped acme hello
 untaped profile create staging --copy-from default
-untaped config set acme.greeting "hello from staging" --target-profile staging
+untaped --profile staging config set acme.greeting "hello from staging"
 untaped --profile staging acme hello
 untaped capabilities
 untaped doctor
@@ -246,7 +246,17 @@ The shared runtime helpers are exported from the same module:
   See [Tokens](configuration.md#tokens).
 - Doctor checks: `connection_check(id, section=...)` reports the resolved
   `base_url` and token source; `executable_check(id, program, purpose=...)`
-  warns when a program is not on `PATH`.
+  warns when a program is not on `PATH`; `online_check(id, section=...,
+  probe=...)` runs only under `untaped doctor --online` (and `untaped setup`):
+  `probe` is a nullary callable doing your authenticated `whoami`-style call
+  (import your CLI lazily inside it) that returns the pass detail and raises
+  on failure. It runs inside `quick_probe()`, so `HttpClient` requests make
+  one attempt with a timeout of at most 10 seconds. The check keeps one line
+  of the error and names the fix (`config set <section>.token --prompt`,
+  `<section>.base_url`, or `http.ca_bundle`). Your
+  own `DoctorCheck(..., online=True)` is online-only too, and
+  `DoctorResult(..., fix="config set acme.token --prompt")` appends the
+  command to run to a failed or `warn` row.
 - Records: `OutcomeRecord`, `TargetRecord`, `CheckRecord`, and the
   `UtcTimestamp` and `AbsolutePath` field types.
 - Settings and context: `get_config_section`, `get_core_settings`,

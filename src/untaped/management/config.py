@@ -36,8 +36,8 @@ from untaped.config.prompting import resolve_set_value
 from untaped.config.repository import SettingsFileRepository
 from untaped.config.use_cases import GetSetting, ListAllProfilesSettings, ListSettings
 from untaped.errors import ConfigError
-from untaped.render import OutputFormat
 from untaped.settings import Settings, resolve_config_path
+from untaped.theme import OutputFormat
 from untaped.ui import ui_context
 
 
@@ -169,13 +169,6 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
         value: Annotated[str | None, Parameter(help="New value (validated for its type).")] = None,
         /,
         *,
-        target_profile: Annotated[
-            str | None,
-            Parameter(
-                name="--target-profile",
-                help="Target profile to write to (defaults to the active profile).",
-            ),
-        ] = None,
         stdin: Annotated[
             bool, Parameter(name="--stdin", negative="", help="Read the value from stdin.")
         ] = False,
@@ -189,12 +182,11 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """Persist ``section.key = value`` (validated against the schema)."""
+        """Persist ``section.key = value`` in the active profile (or the root ``--profile``)."""
         _set(
             ctx,
             key,
             value,
-            target_profile=target_profile,
             stdin=stdin,
             prompt=prompt,
             dry_run=dry_run,
@@ -207,19 +199,12 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
         key: Annotated[str, Parameter(help="Fully qualified setting key (section.key).")],
         /,
         *,
-        target_profile: Annotated[
-            str | None,
-            Parameter(
-                name="--target-profile",
-                help="Target profile to remove from (defaults to the active profile).",
-            ),
-        ] = None,
         dry_run: DryRunOption = False,
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """Remove ``section.key`` from the resolved write scope (no-op if unset)."""
-        _unset(ctx, key, target_profile=target_profile, dry_run=dry_run, fmt=fmt, columns=columns)
+        """Remove ``section.key`` from the active profile (or the root ``--profile``)."""
+        _unset(ctx, key, dry_run=dry_run, fmt=fmt, columns=columns)
 
     @app.command(name="edit")
     def edit_command() -> None:
@@ -269,7 +254,6 @@ def _set(
     key: str,
     value: str | None,
     *,
-    target_profile: str | None,
     stdin: bool,
     prompt: bool,
     dry_run: bool,
@@ -279,10 +263,8 @@ def _set(
     with report_errors():
         repo = SettingsFileRepository()
         resolved = ctx.resolve_key(key)
-        resolved_value = resolve_set_value(
-            resolved, value, stdin=stdin, prompt=prompt, repo=repo, target_profile=target_profile
-        )
-        profile = repo.set_value(resolved, resolved_value, profile=target_profile, dry_run=dry_run)
+        resolved_value = resolve_set_value(resolved, value, stdin=stdin, prompt=prompt, repo=repo)
+        profile = repo.set_value(resolved, resolved_value, dry_run=dry_run)
         if not dry_run:
             message = f"set {resolved} in profile {profile} (config: {resolve_config_path()})"
             ui_context(strict=False).success(message)
@@ -295,16 +277,13 @@ def _unset(
     ctx: RootConfigContext,
     key: str,
     *,
-    target_profile: str | None,
     dry_run: bool,
     fmt: OutputFormat,
     columns: list[str] | None,
 ) -> None:
     with report_errors():
         resolved = ctx.resolve_key(key)
-        removed, profile = SettingsFileRepository().unset_value(
-            resolved, profile=target_profile, dry_run=dry_run
-        )
+        removed, profile = SettingsFileRepository().unset_value(resolved, dry_run=dry_run)
         ui = ui_context(strict=False)
         where = f"in profile {profile}"
         if not removed:

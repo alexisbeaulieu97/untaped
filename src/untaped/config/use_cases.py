@@ -228,7 +228,7 @@ class UnsetSetting:
     """Remove ``key`` from the named profile (default = active).
 
     Returns the resolved key, whether anything was removed, and the resolved
-    profile name. An explicit ``--target-profile`` the layout cannot satisfy
+    profile name. An explicit ``profile`` the layout cannot satisfy
     raises ``ConfigError`` — same contract as ``set``.
     """
 

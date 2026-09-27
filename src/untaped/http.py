@@ -20,6 +20,8 @@ import logging
 import ssl
 import time
 from collections.abc import Callable, Collection, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from types import TracebackType
@@ -96,6 +98,24 @@ class _Inherit:
 
 _INHERIT = _Inherit()
 _DEFAULT_RETRY = RetryPolicy()
+
+#: Longest request timeout (seconds) inside :func:`quick_probe`.
+PROBE_TIMEOUT = 10.0
+_QUICK_PROBE: ContextVar[bool] = ContextVar("untaped_http_quick_probe", default=False)
+
+
+@contextmanager
+def quick_probe() -> Iterator[None]:
+    """Fail fast inside the block: no retries, timeouts capped at :data:`PROBE_TIMEOUT`.
+
+    ``doctor --online`` wraps each service probe in it, so an unreachable
+    service costs one short attempt instead of several full-length ones.
+    """
+    token = _QUICK_PROBE.set(True)
+    try:
+        yield
+    finally:
+        _QUICK_PROBE.reset(token)
 
 
 def _parse_retry_after(value: str) -> float | None:
@@ -192,6 +212,8 @@ class HttpClient:
     ) -> None:
         import httpx  # noqa: PLC0415
 
+        if _QUICK_PROBE.get():
+            timeout = min(timeout, PROBE_TIMEOUT)
         self._client = httpx.Client(
             base_url=base_url,
             timeout=timeout,
@@ -220,6 +242,8 @@ class HttpClient:
         import httpx  # noqa: PLC0415
 
         policy = self._retry if isinstance(retry, _Inherit) else retry
+        if _QUICK_PROBE.get():
+            policy = None
         attempt = 0
         while True:
             attempt += 1
