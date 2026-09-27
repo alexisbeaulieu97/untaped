@@ -66,7 +66,7 @@ Clone the result into a workspace:
 
 ```bash
 untaped github repos list --team acme/platform --no-archived --format pipe \
-  | untaped workspace add --stdin --workspace platform --sync
+  | untaped workspace repos add platform --stdin --sync
 ```
 
 ## Search GitHub

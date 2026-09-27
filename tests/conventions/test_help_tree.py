@@ -96,7 +96,6 @@ RESERVED_SHORTS = {
     "-o": "--out",
     "-i": "--ignore-case",
     "-r": "--repo",
-    "-w": "--workspace",
     "-v": "--verbose",
     "-q": "--quiet",
     "-h": "--help",

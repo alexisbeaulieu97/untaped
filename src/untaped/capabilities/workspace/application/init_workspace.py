@@ -9,7 +9,7 @@ from untaped.capabilities.workspace.domain import (
     ManifestDefaults,
     Workspace,
     WorkspaceManifest,
-    check_path_segment,
+    check_workspace_name,
 )
 from untaped.capabilities.workspace.errors import WorkspaceError
 
@@ -29,7 +29,7 @@ class InitWorkspace:
             # The CLI's default location is ``<workspaces_dir>/<name>``, so
             # the name must stay a single safe path segment.
             try:
-                check_path_segment(name, kind="workspace name")
+                check_workspace_name(name)
             except ValueError as exc:
                 raise WorkspaceError(str(exc)) from exc
 

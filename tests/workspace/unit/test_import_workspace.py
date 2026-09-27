@@ -48,7 +48,7 @@ repos:
 def test_import_returns_imported_repo_names(tmp_path: Path) -> None:
     """``ImportResult.repos`` carries the names of every repo from the
     external manifest. CLI's ``--sync`` block passes these as ``only=``
-    so the sync contract matches ``add --sync``.
+    so the sync contract matches ``repos add --sync``.
     """
     src = tmp_path / "team-prod.yml"
     src.write_text(

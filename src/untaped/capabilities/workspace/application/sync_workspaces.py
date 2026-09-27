@@ -89,22 +89,27 @@ class SyncWorkspaces:
         workspaces: Sequence[Workspace],
         *,
         skip_manifest_errors: bool = False,
+        report_unavailable: bool = False,
     ) -> tuple[list[SyncOutcome], list[PruneCandidate]]:
         """Collect orphan ``skip`` rows and safe prune candidates, deleting nothing.
 
         Lets the CLI confirm destructive deletes (``sync --prune``) the
         same way ``remove --prune`` does. Workspaces whose manifest is
         unreadable are skipped under ``skip_manifest_errors`` (the sync
-        phase already reported them as ``unavailable``).
+        phase already reported them as ``unavailable``); with
+        ``report_unavailable`` (``--dry-run``, which has no sync phase)
+        they yield that ``unavailable`` row here instead.
         """
         rows: list[SyncOutcome] = []
         candidates: list[PruneCandidate] = []
         for workspace in workspaces:
             try:
                 manifest = self._manifests.read(workspace.path)
-            except ManifestError:
+            except ManifestError as exc:
                 if not skip_manifest_errors:
                     raise
+                if report_unavailable:
+                    rows.append(_unavailable_outcome(workspace, exc))
                 continue
             ws_rows, ws_candidates = self._engine.plan_prune(workspace, manifest)
             rows.extend(ws_rows)

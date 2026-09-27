@@ -41,7 +41,7 @@ other targets still run. Within one target, writes roll back on failure.
 `--stdin` reads target paths, or records with a `target_path`:
 
 ```bash
-untaped workspace get --workspace prod --format pipe \
+untaped workspace repos list prod --format pipe \
   | untaped recipe apply acme/editorconfig --stdin --dry-run
 ```
 

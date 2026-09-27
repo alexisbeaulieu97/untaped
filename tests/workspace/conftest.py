@@ -264,6 +264,9 @@ class StubManifests:
     def write(self, workspace_dir: Path, manifest: WorkspaceManifest) -> None:
         self._manifests[workspace_dir] = manifest
 
+    def manifest_path(self, workspace_dir: Path) -> Path:
+        return workspace_dir / "untaped.yml"
+
     def delete(self, workspace_dir: Path) -> None:
         self._manifests.pop(workspace_dir, None)
 

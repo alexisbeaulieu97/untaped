@@ -6,7 +6,7 @@ consumer does not have to parse table text.
 
 ```bash
 untaped github repos list --org acme --format pipe \
-  | untaped workspace add --stdin --workspace acme
+  | untaped workspace repos add acme --stdin
 ```
 
 ## Envelope format
@@ -70,11 +70,11 @@ reads. Commands not listed write no records.
 | Command | Writes |
 |---|---|
 | `workspace list` | `workspace.workspace` |
-| `workspace get` | `workspace.repo`; `workspace.repo.summary` for an empty manifest |
+| `workspace repos list` | `workspace.repo`; `workspace.repo.summary` for an empty manifest |
 | `workspace init` | `workspace.init_outcome` |
 | `workspace forget` | `workspace.forget_outcome` |
-| `workspace add` | `workspace.add_outcome` (`workspace.sync_outcome` with `--sync`) |
-| `workspace remove` | `workspace.remove_outcome` |
+| `workspace repos add` | `workspace.add_outcome` (`workspace.sync_outcome` with `--sync`) |
+| `workspace repos remove` | `workspace.remove_outcome` |
 | `workspace branch set`, `workspace branch apply` | `workspace.branch_outcome` |
 | `workspace branch unset` | `workspace.branch_unset_outcome` |
 | `workspace sync` | `workspace.sync_outcome` |
@@ -83,8 +83,9 @@ reads. Commands not listed write no records.
 
 | Consumer | Reads | Field used |
 |---|---|---|
-| `workspace add --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`, `workspace.repo`; or URL lines | `clone_url`, else `url` |
-| `workspace remove --stdin` | `workspace.repo`, `workspace.sync_outcome`; or repo lines | `repo` |
+| `workspace repos add --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`, `workspace.repo`; or URL lines | `clone_url`, else `url` |
+| `workspace repos remove --stdin` | `workspace.repo`, `workspace.sync_outcome`; or repo lines | `repo` |
+| `workspace foreach --stdin` | `workspace.repo`, `workspace.status`, `workspace.sync_outcome`; or repo lines | `repo` |
 | `workspace path --stdin` | `workspace.workspace`; or name lines | `name` |
 
 ### github
@@ -196,7 +197,7 @@ kind that carry an absolute `target_path` (else `path`), such as
 `workspace.repo`, `workspace.status` or `workspace.sync_outcome`.
 
 ```bash
-untaped workspace get --workspace prod --format pipe \
+untaped workspace repos list prod --format pipe \
   | untaped recipe apply acme/ci-baseline --stdin --dry-run
 ```
 

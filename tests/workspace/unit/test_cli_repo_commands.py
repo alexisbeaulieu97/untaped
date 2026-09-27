@@ -34,17 +34,17 @@ def test_add_then_remove(tmp_path: Path) -> None:
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
 
-    a = runner.invoke(app, ["add", "https://x/svc-a.git", "--workspace", "lab"])
+    a = runner.invoke(app, ["repos", "add", "lab", "https://x/svc-a.git"])
     assert a.exit_code == 0, a.output
     assert "added svc-a to 'lab'" in a.stderr
 
-    rm = runner.invoke(app, ["remove", "svc-a", "--workspace", "lab"])
+    rm = runner.invoke(app, ["repos", "remove", "lab", "svc-a"])
     assert rm.exit_code == 0, rm.output
     assert "removed svc-a from 'lab'" in rm.stderr
 
 
 def test_add_unknown_workspace_errors(tmp_path: Path) -> None:
-    result = CliInvoker().invoke(app, ["add", "https://x/a.git", "--workspace", "ghost"])
+    result = CliInvoker().invoke(app, ["repos", "add", "ghost", "https://x/a.git"])
     assert result.exit_code == 1
 
 
@@ -54,10 +54,10 @@ def test_remove_accepts_multiple_repos(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/svc-a.git", "--workspace", "lab"])
-    runner.invoke(app, ["add", "https://x/svc-b.git", "--workspace", "lab"])
+    runner.invoke(app, ["repos", "add", "lab", "https://x/svc-a.git"])
+    runner.invoke(app, ["repos", "add", "lab", "https://x/svc-b.git"])
 
-    rm = runner.invoke(app, ["remove", "svc-a", "svc-b", "--workspace", "lab"])
+    rm = runner.invoke(app, ["repos", "remove", "lab", "svc-a", "svc-b"])
     assert rm.exit_code == 0, rm.output
 
 
@@ -66,10 +66,10 @@ def test_remove_reads_repos_from_stdin(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/svc-a.git", "--workspace", "lab"])
-    runner.invoke(app, ["add", "https://x/svc-b.git", "--workspace", "lab"])
+    runner.invoke(app, ["repos", "add", "lab", "https://x/svc-a.git"])
+    runner.invoke(app, ["repos", "add", "lab", "https://x/svc-b.git"])
 
-    rm = runner.invoke(app, ["remove", "--stdin", "--workspace", "lab"], input="svc-a\nsvc-b\n")
+    rm = runner.invoke(app, ["repos", "remove", "lab", "--stdin"], input="svc-a\nsvc-b\n")
     assert rm.exit_code == 0, rm.output
 
 
@@ -80,13 +80,13 @@ def test_remove_continues_when_one_repo_missing(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/svc-a.git", "--workspace", "lab"])
+    runner.invoke(app, ["repos", "add", "lab", "https://x/svc-a.git"])
 
-    rm = runner.invoke(app, ["remove", "ghost", "svc-a", "--workspace", "lab"])
+    rm = runner.invoke(app, ["repos", "remove", "lab", "ghost", "svc-a"])
     assert rm.exit_code != 0
     # svc-a was removed despite ghost failing — confirmed by being able to
     # re-add it without "duplicate" errors.
-    re_add = runner.invoke(app, ["add", "https://x/svc-a.git", "--workspace", "lab"])
+    re_add = runner.invoke(app, ["repos", "add", "lab", "https://x/svc-a.git"])
     assert re_add.exit_code == 0, re_add.output
 
 
@@ -94,11 +94,11 @@ def test_remove_prune_with_yes(tmp_path: Path, upstream: Path, isolated_cache: P
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    runner.invoke(app, ["sync", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+    runner.invoke(app, ["sync", "smoke"])
     assert (target / "upstream").is_dir()
 
-    rm = runner.invoke(app, ["remove", "upstream", "--workspace", "smoke", "--prune", "--yes"])
+    rm = runner.invoke(app, ["repos", "remove", "smoke", "upstream", "--prune", "--yes"])
     assert rm.exit_code == 0, rm.output
     assert not (target / "upstream").exists()
 
@@ -109,13 +109,13 @@ def test_remove_prune_refuses_clean_local_commit(
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    runner.invoke(app, ["sync", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+    runner.invoke(app, ["sync", "smoke"])
     clone = target / "upstream"
     _configure_identity(clone)
     _commit(clone, "local.txt", "local", "local-only")
 
-    rm = runner.invoke(app, ["remove", "upstream", "--workspace", "smoke", "--prune", "--yes"])
+    rm = runner.invoke(app, ["repos", "remove", "smoke", "upstream", "--prune", "--yes"])
 
     assert rm.exit_code == 1
     assert "unsafe local state" in rm.output
@@ -123,7 +123,7 @@ def test_remove_prune_refuses_clean_local_commit(
     assert clone.is_dir()
     shown = runner.invoke(
         app,
-        ["get", "--workspace", "smoke", "--format", "raw", "--columns", "repo"],
+        ["repos", "list", "smoke", "--format", "raw", "--columns", "repo"],
     )
     assert "upstream" in shown.stdout.splitlines()
 
@@ -136,14 +136,14 @@ def test_remove_prune_decline_exits_one_without_mutation(
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    runner.invoke(app, ["sync", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+    runner.invoke(app, ["sync", "smoke"])
     assert (target / "upstream").is_dir()
     backend = ScriptedPromptBackend(confirms=[False])
 
     rm = runner.invoke(
         app,
-        ["remove", "upstream", "--workspace", "smoke", "--prune"],
+        ["repos", "remove", "smoke", "upstream", "--prune"],
         interactive=True,
         prompt_backend=backend,
     )
@@ -155,7 +155,7 @@ def test_remove_prune_decline_exits_one_without_mutation(
     assert (target / "upstream").is_dir()
     shown = runner.invoke(
         app,
-        ["get", "--workspace", "smoke", "--format", "raw", "--columns", "repo"],
+        ["repos", "list", "smoke", "--format", "raw", "--columns", "repo"],
     )
     assert "upstream" in shown.stdout.splitlines()
 
@@ -168,11 +168,11 @@ def test_remove_prune_requires_yes_when_non_interactive(
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    runner.invoke(app, ["sync", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+    runner.invoke(app, ["sync", "smoke"])
     assert (target / "upstream").is_dir()
 
-    rm = runner.invoke(app, ["remove", "upstream", "--workspace", "smoke", "--prune"])
+    rm = runner.invoke(app, ["repos", "remove", "smoke", "upstream", "--prune"])
 
     assert rm.exit_code == 2
     assert "--yes" in rm.output
@@ -185,33 +185,33 @@ def test_remove_prune_conforms_to_destructive_contract(
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    runner.invoke(app, ["sync", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+    runner.invoke(app, ["sync", "smoke"])
 
     def _clone_and_registration_survive() -> None:
         assert (target / "upstream").is_dir()
         shown = runner.invoke(
             app,
-            ["get", "--workspace", "smoke", "--format", "raw", "--columns", "repo"],
+            ["repos", "list", "smoke", "--format", "raw", "--columns", "repo"],
         )
         assert shown.exit_code == 0, shown.output
         assert "upstream" in shown.stdout.splitlines()
 
     assert_destructive_contract(
         app,
-        ["remove", "upstream", "--workspace", "smoke", "--prune"],
+        ["repos", "remove", "smoke", "upstream", "--prune"],
         assert_unchanged=_clone_and_registration_survive,
     )
 
 
 def test_add_accepts_multiple_positional_urls(tmp_path: Path) -> None:
-    """``workspace add url-a url-b`` records both repos in one shot."""
+    """``workspace repos add WS url-a url-b`` records both repos in one shot."""
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
     result = runner.invoke(
         app,
-        ["add", "https://x/svc-a.git", "https://x/svc-b.git", "--workspace", "lab"],
+        ["repos", "add", "lab", "https://x/svc-a.git", "https://x/svc-b.git"],
     )
     assert result.exit_code == 0, result.output
     assert "added svc-a" in (result.stderr or "")
@@ -219,14 +219,14 @@ def test_add_accepts_multiple_positional_urls(tmp_path: Path) -> None:
 
 
 def test_add_reads_urls_from_stdin(tmp_path: Path) -> None:
-    """``workspace list --format raw | workspace add --stdin`` is the
+    """``workspace list --format raw | workspace repos add WS --stdin`` is the
     documented pipeline shape."""
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
     result = runner.invoke(
         app,
-        ["add", "--stdin", "--workspace", "lab"],
+        ["repos", "add", "lab", "--stdin"],
         input="https://x/svc-a.git\nhttps://x/svc-b.git\n",
     )
     assert result.exit_code == 0, result.output
@@ -236,17 +236,17 @@ def test_add_reads_urls_from_stdin(tmp_path: Path) -> None:
 
 def test_add_continues_when_one_url_fails(tmp_path: Path) -> None:
     """A duplicate URL doesn't suppress the URLs that landed cleanly —
-    same pipeline-resilience rule as ``workspace remove`` / ``awx get
+    same pipeline-resilience rule as ``workspace repos remove`` / ``awx get
     --stdin``."""
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/svc-a.git", "--workspace", "lab"])
+    runner.invoke(app, ["repos", "add", "lab", "https://x/svc-a.git"])
 
     # svc-a is duplicate; svc-b is novel.
     result = runner.invoke(
         app,
-        ["add", "https://x/svc-a.git", "https://x/svc-b.git", "--workspace", "lab"],
+        ["repos", "add", "lab", "https://x/svc-a.git", "https://x/svc-b.git"],
     )
     assert result.exit_code != 0
     # The novel URL still landed; both the success line and the per-id
@@ -264,7 +264,7 @@ def test_add_rejects_mixed_positional_and_stdin(tmp_path: Path) -> None:
     runner.invoke(app, ["init", "lab", "--path", str(target)])
     result = runner.invoke(
         app,
-        ["add", "https://x/svc-a.git", "--stdin", "--workspace", "lab"],
+        ["repos", "add", "lab", "https://x/svc-a.git", "--stdin"],
         input="https://x/svc-b.git\n",
     )
     assert result.exit_code != 0
@@ -282,13 +282,13 @@ def test_add_repo_name_rejected_with_multiple_urls(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
+            "repos",
             "add",
+            "lab",
             "https://x/svc-a.git",
             "https://x/svc-b.git",
             "--repo-name",
             "shared",
-            "--workspace",
-            "lab",
         ],
     )
     assert result.exit_code != 0
