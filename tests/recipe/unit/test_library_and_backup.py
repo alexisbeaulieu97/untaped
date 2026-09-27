@@ -69,7 +69,7 @@ def test_hook_resolver_bare_name_in_pack_does_not_fall_through_to_other_packs(
     )
     resolver = HookResolver(library_root=library_root)
 
-    with pytest.raises(ValueError, match="hook not found: pick"):
+    with pytest.raises(ValueError, match="hook not found: 'pick'"):
         resolver.resolve("pick", own_pack)
     qualified = resolver.resolve("other/pick", own_pack)
 

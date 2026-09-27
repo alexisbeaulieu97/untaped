@@ -1,4 +1,4 @@
-"""``recipe init``: scaffold packs, recipes, and hooks."""
+"""``recipe init``, ``recipe packs init`` and ``recipe hooks init``: scaffold projects."""
 
 from __future__ import annotations
 
@@ -13,69 +13,83 @@ from untaped.capabilities.recipe.domain.pack import parse_ref
 from untaped.capabilities.recipe.domain.paths import is_path_ref, safe_library_name
 from untaped.capabilities.recipe.infrastructure import pack_scaffold
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
-from untaped.capability_api import UsageError, echo
+from untaped.capability_api import echo, hint
 
 _NO_LOCK_NOTE = "uv.lock was not created/refreshed for {path}; hooks need `uv lock` before running"
 
-InitWhat = Literal["pack", "recipe", "hook"]
+_LockOption = Annotated[
+    bool,
+    Parameter(
+        name="--lock",
+        negative="--no-lock",
+        help="Refresh uv.lock after scaffolding (--no-lock skips it).",
+    ),
+]
 
 
-def init_command(
-    what: Annotated[InitWhat, Parameter(help="What to scaffold: pack, recipe, or hook.")],
-    ref: Annotated[
-        str,
-        Parameter(help="Pack NAME, or PACK/RECIPE or PACK/HOOK reference (or ./path)."),
-    ],
+def init_pack_command(
+    name: Annotated[str, Parameter(help="Pack NAME, created under the current directory.")],
+    /,
+    *,
+    lock: _LockOption = True,
+) -> None:
+    """Scaffold a recipe pack project."""
+    with report_config_errors():
+        pack_name = safe_library_name(name, field="pack")
+        path = pack_scaffold.scaffold_pack(Path.cwd() / pack_name, pack_name, lock=lock)
+        if not lock:
+            _warn_no_lock(path)
+        echo(str(path))
+
+
+def init_recipe_command(
+    ref: Annotated[str, Parameter(help="PACK/RECIPE reference (or ./path/RECIPE).")],
+    /,
+    *,
+    lock: _LockOption = True,
+) -> None:
+    """Scaffold a recipe, with a starter golden test case, inside a pack."""
+    with report_config_errors():
+        if "/" not in ref:
+            raise ValueError(
+                f"recipe refs must use <pack>/<recipe>\n{hint(f'recipe packs init {ref}')}"
+            )
+        pack_dir, name = _new_pack_child(ref)
+        path = pack_scaffold.scaffold_recipe(pack_dir, name, lock=lock)
+        if not lock:
+            _warn_no_lock(pack_dir)
+        echo(str(path))
+
+
+def init_hook_command(
+    ref: Annotated[str, Parameter(help="PACK/HOOK reference (or ./path/HOOK).")],
     /,
     *,
     kind: Annotated[
-        Literal["transform", "validate"] | None,
-        Parameter(name="--kind", help="Hook callable stub kind (hooks only; default transform)."),
-    ] = None,
+        Literal["transform", "validate"],
+        Parameter(name="--kind", help="Hook callable stub kind."),
+    ] = "transform",
     force: Annotated[
         bool,
         Parameter(
             name="--force",
             negative="",
-            help="Replace an existing hook's stub and paired test, e.g. wrong --kind (hooks only).",
+            help="Replace an existing hook's stub and paired test, e.g. wrong --kind.",
         ),
     ] = False,
-    lock: Annotated[
-        bool,
-        Parameter(
-            name="--lock",
-            negative="--no-lock",
-            help="Refresh uv.lock after scaffolding (--no-lock skips it).",
-        ),
-    ] = True,
+    lock: _LockOption = True,
 ) -> None:
-    """Scaffold a recipe pack, a recipe inside a pack, or a hook inside a pack."""
+    """Scaffold a hook module and its pytest inside a pack."""
     with report_config_errors():
-        if what != "hook" and (kind is not None or force):
-            raise UsageError("--kind and --force apply only to init hook")
-        if what == "pack":
-            pack_name = safe_library_name(ref, field="pack")
-            path = pack_scaffold.scaffold_pack(Path.cwd() / pack_name, pack_name, lock=lock)
-            if not lock:
-                _warn_no_lock(path)
-        elif what == "recipe":
-            pack_dir, name = _new_pack_child(ref)
-            path = pack_scaffold.scaffold_recipe(pack_dir, name, lock=lock)
-            if not lock:
-                _warn_no_lock(pack_dir)
-        else:
-            hook_kind = kind or "transform"
-            pack_dir, name = _new_pack_child(ref)
-            path = pack_scaffold.scaffold_hook(
-                pack_dir, name, kind=hook_kind, lock=lock, force=force
-            )
-            if not lock:
-                _warn_no_lock(pack_dir)
-            recipe_ui().message(
-                "info",
-                f"scaffolded {hook_kind} hook (choose with --kind transform|validate; "
-                "replace an existing hook with --force)",
-            )
+        pack_dir, name = _new_pack_child(ref)
+        path = pack_scaffold.scaffold_hook(pack_dir, name, kind=kind, lock=lock, force=force)
+        if not lock:
+            _warn_no_lock(pack_dir)
+        recipe_ui().message(
+            "info",
+            f"scaffolded {kind} hook (choose with --kind transform|validate; "
+            "replace an existing hook with --force)",
+        )
         echo(str(path))
 
 
@@ -103,6 +117,6 @@ def _new_pack_child_hint(pack: str, name: str) -> str:
     if Path(pack).is_dir():
         return (
             f" (a directory named '{pack}' exists — use ./{pack}/{name}, "
-            f"or install it with add ./{pack})"
+            f"or install it with packs add ./{pack})"
         )
     return ""

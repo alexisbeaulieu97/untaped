@@ -24,7 +24,7 @@ invalid value.
 
 | Variable | Used by |
 |---|---|
-| `VISUAL`, then `EDITOR` | `untaped config edit`, `untaped awx <resource> edit`, `untaped recipe edit`, `untaped workspace edit`. |
+| `VISUAL`, then `EDITOR` | `untaped config edit`, `untaped awx <resource> edit`, `untaped recipe edit` (and `recipe packs edit`, `recipe hooks edit`), `untaped workspace edit`. |
 
 The value is split like a shell command line but no shell runs it. Include your
 GUI editor's wait flag, for example `VISUAL="code --wait"`. If neither is set,

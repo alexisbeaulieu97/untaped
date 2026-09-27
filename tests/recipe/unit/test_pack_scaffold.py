@@ -185,14 +185,14 @@ def test_scaffold_lock_failure_keeps_written_files_and_explains_repair(
 @pytest.mark.parametrize(
     ("args", "printed", "created"),
     [
-        (["init", "pack", "fresh"], "fresh", "fresh/src/fresh_pack/__init__.py"),
+        (["packs", "init", "fresh"], "fresh", "fresh/src/fresh_pack/__init__.py"),
         (
-            ["init", "recipe", "./ansible/playbook"],
+            ["init", "./ansible/playbook"],
             "ansible/recipes/playbook/recipe.yml",
             "ansible/tests/playbook/basic/case.yml",
         ),
         (
-            ["init", "hook", "./ansible/set_owner"],
+            ["hooks", "init", "./ansible/set_owner"],
             "ansible/src/ansible_pack/hooks/set_owner.py",
             "ansible/tests/test_hook_set_owner.py",
         ),
@@ -226,7 +226,7 @@ def test_new_hook_explicit_local_path_splits_on_last_segment(
     monkeypatch.chdir(tmp_path)
     pack_scaffold.scaffold_pack(tmp_path / "some-local-pack", "some-local-pack")
 
-    result = CliInvoker().invoke(app, ["init", "hook", "./some-local-pack/probe"])
+    result = CliInvoker().invoke(app, ["hooks", "init", "./some-local-pack/probe"])
 
     assert result.exit_code == 0, result.output
     manifest = read_pack_manifest(tmp_path / "some-local-pack")
@@ -240,17 +240,17 @@ def test_new_hook_names_kind_and_force_replaces_wrong_kind(
 ) -> None:
     monkeypatch.chdir(tmp_path)
 
-    made = CliInvoker().invoke(app, ["init", "hook", "./ansible/probe"])
+    made = CliInvoker().invoke(app, ["hooks", "init", "./ansible/probe"])
     assert made.exit_code == 0, made.output
     assert "scaffolded transform hook" in made.stderr
     assert "--kind" in made.stderr
 
-    refused = CliInvoker().invoke(app, ["init", "hook", "./ansible/probe", "--kind", "validate"])
+    refused = CliInvoker().invoke(app, ["hooks", "init", "./ansible/probe", "--kind", "validate"])
     assert refused.exit_code != 0
     assert "hook already exists" in refused.output
 
     forced = CliInvoker().invoke(
-        app, ["init", "hook", "./ansible/probe", "--kind", "validate", "--force"]
+        app, ["hooks", "init", "./ansible/probe", "--kind", "validate", "--force"]
     )
     assert forced.exit_code == 0, forced.output
     assert "scaffolded validate hook" in forced.stderr
@@ -267,7 +267,7 @@ def test_new_hook_names_kind_and_force_replaces_wrong_kind(
         (
             "demo/probe",
             "pack not found: demo (a directory named 'demo' exists — use ./demo/probe, "
-            "or install it with add ./demo)",
+            "or install it with packs add ./demo)",
         ),
         ("missing/probe", "pack not found: missing\n"),
     ],
@@ -281,7 +281,7 @@ def test_new_hook_rejects_unresolvable_refs(
     monkeypatch.chdir(tmp_path)
     (tmp_path / "demo").mkdir()
 
-    result = CliInvoker().invoke(app, ["init", "hook", ref])
+    result = CliInvoker().invoke(app, ["hooks", "init", ref])
 
     assert result.exit_code != 0
     assert message in result.output

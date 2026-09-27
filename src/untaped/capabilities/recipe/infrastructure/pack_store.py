@@ -28,7 +28,7 @@ from untaped.capabilities.recipe.infrastructure.pack_files import (
     hook_exports,
     read_pack_manifest,
 )
-from untaped.capability_api import GitCommandError, atomic_write, run_git
+from untaped.capability_api import GitCommandError, atomic_write, not_found, run_git
 
 _GIT_URL_PREFIXES = ("https://", "git@", "ssh://")
 _GIT_CLONE_TIMEOUT = 600.0
@@ -375,7 +375,7 @@ class PackLibrary:
         if len(matches) > 1:
             candidates = ", ".join(f"{pack.name}/{ref.name}" for pack, _ in matches)
             raise ValueError(f"ambiguous {noun} ref {ref.name!r}; candidates: {candidates}")
-        raise ValueError(f"{noun} not found: {_ref_text(ref)}")
+        raise ValueError(not_found(noun, _ref_text(ref)))
 
     def _candidate_packs(self, pack: str | None) -> list[InstalledPack]:
         installed = self.packs()
@@ -457,8 +457,8 @@ def _reject_symlinks(source_dir: Path) -> None:
 def local_edits_message(installed_name: str) -> str:
     """Pinned guard message shared by the store and the CLI fail-fast."""
     return (
-        f"pack '{installed_name}' has local edits in the library (via edit or "
-        "init recipe/hook); re-run with --discard-edits to overwrite them"
+        f"pack '{installed_name}' has local edits in the library (via an edit "
+        "or init command); re-run with --discard-edits to overwrite them"
     )
 
 
