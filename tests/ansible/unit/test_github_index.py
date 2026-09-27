@@ -142,7 +142,12 @@ def test_dependencies_batch_reads_live_per_pair_and_augments_cached_ref_reads() 
     assert index.dependents_batch([("acme/base", None)], source_key=None) == {
         ("acme/base", None): []
     }
-    assert index.cached_ref_metadata_batch(["acme/site"], source_key=None) == {"acme/site": ()}
+    # The ref-less read records the default branch it resolved, and a later
+    # read of that branch reuses it (StubGithub rejects ref lookups).
+    assert index.cached_ref_metadata_batch(["acme/site"], source_key=None) == {
+        "acme/site": (CachedRef(name="main", default_branch="main"),)
+    }
+    assert index.dependencies("acme/site", "main", source_key=None) == batch[("acme/site", None)]
 
 
 def test_cached_ref_reads_include_live_fetched_refs() -> None:
@@ -234,7 +239,8 @@ def test_live_graph_keeps_building_past_a_failed_repo() -> None:
 
     graph = BuildGraph(index)(GraphRequest(repo="acme/site", direction="deps", depth=None))
 
-    assert {node.id for node in graph.nodes} >= {"acme/site", "acme/gone@v9", "acme/base"}
+    # The unpinned acme/base bridges to the default branch its live read resolved.
+    assert {node.id for node in graph.nodes} >= {"acme/site", "acme/gone@v9", "acme/base@main"}
     assert any("acme/gone@v9" in error for error in index.errors)
 
 
