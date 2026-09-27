@@ -1,4 +1,4 @@
-"""Alias management commands for the Ansible tool."""
+"""Source-alias management commands (``ansible source-alias``) for the Ansible tool."""
 
 from __future__ import annotations
 
@@ -19,16 +19,17 @@ from untaped.capability_api import (
     YesOption,
     app_context,
     create_app,
-    deprecated_alias,
     emit,
     not_found,
     q,
     report_errors,
 )
 
-app = create_app(name="alias", help="Manage dependency aliases.")
+app = create_app(
+    name="source-alias", help="Map role or Galaxy names in requirements files to GitHub repos."
+)
 
-_KIND = "ansible.alias_outcome"
+_KIND = "ansible.source_alias_outcome"
 
 
 @app.command(name="set")
@@ -61,7 +62,7 @@ def alias_set_command(
 
 @app.command(name="list")
 def alias_list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
-    """List dependency aliases."""
+    """List source aliases."""
     with report_errors():
         rows: list[dict[str, object]] = [
             {"alias": alias, "repo": repo}
@@ -71,9 +72,9 @@ def alias_list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = 
             rows,
             fmt=fmt,
             columns=columns,
-            kind="ansible.alias",
-            empty="No dependency aliases configured. Map one with "
-            "`untaped ansible alias set NAME OWNER/REPO`.",
+            kind="ansible.source_alias",
+            empty="No source aliases configured. Map one with "
+            "`untaped ansible source-alias set NAME OWNER/REPO`.",
         )
 
 
@@ -87,19 +88,19 @@ def alias_remove_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Remove a dependency alias."""
+    """Remove a source alias."""
     with report_errors():
         aliases = AliasRepository()
         entries = aliases.entries()
         repo = entries.get(alias)
         if repo is None:
-            raise UntapedError(not_found("alias", alias, known=sorted(entries)))
+            raise UntapedError(not_found("source alias", alias, known=sorted(entries)))
         ui = app_context().ui(strict=False)
         if not dry_run:
             ui.confirm_or_cancel(
-                f"Remove alias {q(alias)} -> {repo}?",
+                f"Remove source alias {q(alias)} -> {repo}?",
                 assume_yes=yes,
-                refusal="alias remove requires --yes when not interactive",
+                refusal="source-alias remove requires --yes when not interactive",
             )
             aliases.remove(alias)
         emit(
@@ -112,9 +113,6 @@ def alias_remove_command(
         )
         if not dry_run:
             _warn_saved_sources_need_refresh(ui)
-
-
-deprecated_alias(app, "add", "set")
 
 
 def _warn_saved_sources_need_refresh(ui: UiContext) -> None:

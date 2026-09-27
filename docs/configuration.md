@@ -31,7 +31,7 @@ and `untaped config list` still report every invalid section.
 
 The default file is `~/.untaped/config.yml`. Set `UNTAPED_CONFIG` to use a
 process-specific path. Capability-managed state (for example the workspace
-registry and ansible aliases) lives in a separate state file in the config
+registry and ansible source aliases) lives in a separate state file in the config
 file's directory, named after it: `config.yml` pairs with `state.yml`, and any
 other config file `<name>.<ext>` pairs with `<name>.state.yml` (so
 `UNTAPED_CONFIG=~/work.yml` keeps its state in `~/work.state.yml`, and sibling
@@ -306,8 +306,7 @@ broken section to hide the rest:
   longer shipped, pointing at `untaped skills update` or `skills remove`
   (see [Agent skills](./skills.md#keep-installed-skills-up-to-date));
 - each capability-contributed health check (a check can report a
-  non-failing `warn`, such as ansible's `ansible.deprecated-settings` while
-  `ansible.freshness_ttl` is set), and any quarantined provider. The built-in
+  non-failing `warn`), and any quarantined provider. The built-in
   capabilities contribute:
   - `github.connection`, `jira.connection`, `awx.connection` — the resolved
     profile's `base_url` and where the token comes from (see

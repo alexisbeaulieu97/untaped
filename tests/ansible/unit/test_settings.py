@@ -21,7 +21,6 @@ _SOURCE = {"name": "prod", "repos": ["acme/site"]}
     [
         (SourceDefinition, {**_SOURCE, "ref_scan_default": "main"}),
         (AnsibleSettings, {"ref_scan_default": "main"}),
-        (AnsibleSettings, {"freshness_ttl": -1}),
         (AnsibleSettings, {"git_clone_protocol": "ftp"}),
         (AnsibleSettings, {"git_fetch_depth": -1}),
         (AnsibleSettings, {"git_fetch_concurrency": 0}),

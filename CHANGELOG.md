@@ -39,25 +39,46 @@
     shows for it. JSON and YAML carry a list (empty when there are none); the
     detail table shows one line per link. Linked issues are not fetched.
 - Ansible
-  - `graph --contains OWNER/REPO` (repeatable) reports the roots whose
-    downstream graph contains a repository: one `ansible.dependency_match`
-    row per match with the root, the matched repo, the ref exactly as
-    declared, the dependency file and the shortest path. Roots come from
-    `TARGET` or `--stdin` (`owner/repo@ref` lines, or pipe records carrying
+  - New task-shaped commands answer the common graph questions as rows
+    (`--format table|json|yaml|pipe|raw`, `--columns`), searching the full
+    graph unless `--depth N` is given (the empty message then names the
+    depth). `deps ROLE` lists what ROLE depends on (`ansible.dependency`) and
+    `impact ROLE` what depends on it (`ansible.dependent`, cached source data
+    only; `--live` is a usage error). Each row has `repo`, `ref`,
+    `unresolved`, the verbatim `declared_ref`/`declared_in`, `depth` and the
+    shortest `path`. `graph` stays for the whole picture (`tree`, `mermaid`,
+    `json`, `--out`, both directions, default depth 3).
+  - `find REPO...` reports the roots whose downstream graph contains a
+    repository: one `ansible.dependency_match` row per match with the root,
+    the matched repo, the ref exactly as declared, the dependency file and
+    the shortest path. Roots come from repeatable `--root owner/repo[@ref]`
+    or `--stdin` (`owner/repo@ref` lines, or pipe records carrying
     `scm_url`/`effective_scm_ref` such as `awx job-templates list --with-scm
-    --format pipe`). Supports `--format table|json|pipe`; single-target
-    `tree`/`mermaid` output is unchanged. It searches the full downstream
-    graph unless `--depth N` is given; the empty message then names the depth.
-    Live reads are shared across roots, so each repo and ref is read from
-    GitHub once per command.
+    --format pipe`). REPO may be a source alias. Rows carry the input
+    record's `input_kind`, `input_id` and `input_name`, and every input
+    record gets its own rows even when records share a root, so a pipeline
+    can join results back to its inputs. Live reads are shared across roots,
+    so each repo and ref is read from GitHub once per command.
+  - New `ansible.default_source` setting: the saved source `deps`, `impact`,
+    `find` and `graph` use (and `--refresh` refreshes) when neither
+    `--source` nor inline selectors are given.
+  - **Breaking:** `ansible alias` is renamed `ansible source-alias`, with
+    record kinds `ansible.source_alias` and `ansible.source_alias_outcome`.
+    The old name is gone (`alias` is reserved for a future root command).
+  - **Breaking:** the deprecated spellings are removed: `alias add`,
+    `source save`/`edit`/`show`, and `--concurrency` (`source refresh`,
+    `graph`) and `--output` (`graph`). Use `source-alias set`,
+    `source set`/`patch`/`get`, `--parallel` and `--out`.
+  - **Breaking:** the ignored `ansible.freshness_ttl` setting and its
+    `ansible.deprecated-settings` doctor check are removed; `doctor`'s
+    `unknown-keys` row now reports a leftover key.
   - **Fix:** an unpinned dependency now points at the dependency's
     default-branch node (the source's recorded default branch, or GitHub's
-    for live reads), so downstream graphs, `--contains` and cycle detection
+    for live reads), so downstream graphs, `find` and cycle detection
     continue past it instead of stopping at a ref-less node. With no known
     default branch the node stays ref-less; a tags-only source stops at the
     default-branch node with a "ref is not cached" warning. An unpinned and a
-    default-branch-pinned declaration of one repo now give one `--contains`
-    row.
+    default-branch-pinned declaration of one repo now give one `find` row.
   - **Fix:** cached ref snapshots record the dependency parser version, so a
     parser change re-parses refs on the next refresh instead of reusing stale
     results. The first refresh after upgrading re-parses every ref once, and

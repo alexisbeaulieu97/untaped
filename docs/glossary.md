@@ -6,8 +6,6 @@ Terms as `untaped` uses them in commands, output and these docs.
   item: `planned`, `created`, `updated`, `deleted`, `unchanged`, `skipped`,
   `failed`, `partial`, `conflict`, `cancelled`, or a capability's own
   past-tense verb (`cloned`, `applied`, `transitioned`).
-- **alias (ansible)**: A mapping from an Ansible role or Galaxy name to a
-  GitHub `owner/repo`, so the dependency graph can follow it.
 - **backup bundle (recipe)**: The copy of files that `recipe apply` takes
   before it writes. Restore it with `recipe backup restore`.
 - **capability**: One command subtree of `untaped` (`workspace`, `github`,
@@ -51,6 +49,9 @@ Terms as `untaped` uses them in commands, output and these docs.
 - **source (ansible)**: A saved scan boundary (orgs, teams, repos, paths, refs)
   whose dependency data `ansible source refresh` caches for upstream impact
   queries.
+- **source alias (ansible)**: A mapping from an Ansible role or Galaxy name to
+  a GitHub `owner/repo`, so the dependency graph can follow it. Managed with
+  `ansible source-alias`.
 - **state file**: `~/.untaped/state.yml` (or `$UNTAPED_STATE`). Data a
   capability manages itself, such as registered workspaces and Ansible sources.
   Change it only through the capability's commands.

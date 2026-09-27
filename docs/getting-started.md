@@ -99,7 +99,7 @@ untaped awx ping
 untaped awx job-templates list
 
 # ansible: show what a role depends on
-untaped ansible graph acme/base-role --downstream
+untaped ansible deps acme/base-role
 
 # recipe: see installed recipes
 untaped recipe list
