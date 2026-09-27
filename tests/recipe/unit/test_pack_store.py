@@ -145,7 +145,7 @@ def test_pack_library_name_override_is_installed_identity(tmp_path: Path) -> Non
     assert installed.name == "alias"
     assert installed.manifest.name == "ansible"
     assert library.find_recipe(parse_ref("alias/playbook"))[0].name == "alias"
-    with pytest.raises(ValueError, match="recipe not found: ansible/playbook"):
+    with pytest.raises(ValueError, match="recipe not found: 'ansible/playbook'"):
         library.find_recipe(parse_ref("ansible/playbook"))
 
 

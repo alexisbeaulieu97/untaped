@@ -183,14 +183,19 @@ output.
 | Command | Writes |
 |---|---|
 | `recipe apply` | `recipe.apply_outcome` |
-| `recipe list`, `recipe get` | `recipe.recipe`, `recipe.hook` or `recipe.pack` |
-| `recipe add` | `recipe.add_outcome` |
-| `recipe sync` | `recipe.sync_outcome` |
-| `recipe remove` | `recipe.remove_outcome` |
+| `recipe list`, `recipe get` | `recipe.recipe` |
+| `recipe packs list`, `recipe packs get` | `recipe.pack` |
+| `recipe packs add` | `recipe.add_outcome` |
+| `recipe packs sync` | `recipe.sync_outcome` |
+| `recipe packs remove` | `recipe.remove_outcome` |
+| `recipe hooks list`, `recipe hooks get` | `recipe.hook` |
 | `recipe validate` | `recipe.check` |
 | `recipe test` | `recipe.test` |
-| `recipe hook run` | `recipe.hook_run` |
-| `recipe backup list/get/restore/prune` | `recipe.backup` |
+| `recipe hooks run` | `recipe.hook_run` |
+| `recipe backups list/get/restore/prune` | `recipe.backup` |
+
+`recipe packs sync --stdin` and `recipe packs remove --stdin` read pack
+names, or `recipe.pack` records from `recipe packs list --format pipe`.
 
 `recipe apply --stdin` reads target directories: path lines, or records of any
 kind that carry an absolute `target_path` (else `path`), such as
