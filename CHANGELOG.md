@@ -25,8 +25,7 @@ below before upgrading scripts or providers.
     each with one attempt and a timeout capped at 10 seconds, and each failed
     row names the command that fixes it. Providers contribute
     them with `online_check(...)` or `DoctorCheck(..., online=True)`;
-    `DoctorResult(..., fix=...)` appends the fix. `setup` and `alias` are now
-    reserved root command names.
+    `DoctorResult(..., fix=...)` appends the fix.
   - **New:** `untaped alias set NAME -- COMMAND ARGS…`, `alias list` and
     `alias remove NAME` manage per-profile command aliases in the new
     `shell.aliases` setting; `untaped NAME [ARGS…]` runs the stored argv with
@@ -60,8 +59,12 @@ below before upgrading scripts or providers.
     `doctor` as an unknown key.
   - `doctor`'s `unknown-keys` row also flags top-level `config.yml` keys other
     than `active` and `profiles`.
-  - The warning for a deprecated command or flag spelling now says it will be
-    removed "in the next major release" instead of naming 8.0.
+  - The `deprecated_alias` warning now says an old spelling will be removed
+    "in the next major release" instead of naming 8.0. No built-in command
+    has deprecated spellings left; the helper remains for providers.
+  - **New:** `UiContext.styled(text, tail=...)` prints `tail` verbatim after
+    the styled text (never wrapped or tab-expanded), for streamed log lines
+    behind a styled label.
   - **Fix:** config and state writes go through a symlinked `config.yml` or
     `state.yml` instead of replacing the link with a regular file.
   - **Fix:** `config edit` edits a private copy, validates it, and only then
@@ -73,8 +76,9 @@ below before upgrading scripts or providers.
   - **Fix:** `atomic_write` (and `apply_file_changes`) now fsync the file and
     its directory, keep an existing file's permission bits (or apply `mode=`,
     which the file has from the moment it is created), and write through
-    symlinks (never creating directories for a dangling link's target). Config writes, file transactions and the GitHub corpus
-    metadata use this one helper.
+    symlinks (never creating directories for a dangling link's target).
+    Config writes, file transactions and the GitHub corpus metadata use this
+    one helper.
   - **Fix:** with `skills.updates: auto`, the per-run skills check only warns
     after a failed command or a preview (`--dry-run`, `--check`); it no
     longer rewrites installed skills then.
@@ -440,10 +444,6 @@ below before upgrading scripts or providers.
     Search asks GitHub for one row past `--limit` to detect this, except at a
     multiple of 100 or at 1000 and up, where that row would cost an extra
     request; those limits print no notice.
-- SDK
-  - `UiContext.styled(text, tail=...)` prints `tail` verbatim after the
-    styled text (never wrapped or tab-expanded), for streamed log lines
-    behind a styled label.
 
 ## 7.1.0
 
