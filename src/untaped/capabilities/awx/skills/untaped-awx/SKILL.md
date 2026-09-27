@@ -58,6 +58,20 @@ Use this skill when the user wants an agent to operate the `untaped awx` CLI for
 - Ordinary jobs expose `job_events`; project and inventory updates expose `events`. Workflow jobs, including sliced launch results, have no events or stdout route: `--track` polls status instead. Use `--kind project_update` or `--kind inventory_update` for non-default `jobs` commands; use `jobs wait` for workflow jobs, not workflow `events` or `logs`.
 - Writes are serial by default, `--parallel` is capped at ten, and runtime failure stops new scheduling unless `--continue-on-error` is supplied. Already-running requests finish; partial results retain IDs. There is no transaction or rollback. Async inventory deletion reports `deletion_requested`.
 
+## Test your change with `awx test`
+
+Suites in `.untaped/awx/tests/` launch job templates with parameter variants and check each job against its `expect:`. After changing a playbook, role, or template variables:
+
+1. Commit and push the branch (`git push -u origin HEAD`); jobs run what the remote has.
+2. `untaped awx test validate` preflights every case (template exists, prompts for every field a case sets, survey variables present) without launching.
+3. `untaped awx test run --scm-branch HEAD --format json` runs every suite on the pushed branch (refused until HEAD is pushed). Narrow with `--case SUITE/CASE` (repeatable) or pass suite files or directories.
+4. Exit 0 means every case passed. Otherwise read each non-`pass` row: `failure_reason`, `expectations` (expected vs actual), `failed_tasks` (host, task, msg, stderr), `log_tail`, `job_url`, and `scm_revision` (the commit the job ran). Fix, push, and rerun the failing cases.
+
+- A case is `expect: {status, log: {contains, not_contains, matches}}` over its `launch:` payload; `defaults` apply to every case, and a case's `status` or `log` list replaces the default's. `status: failed` tests an intended failure.
+- Results are `pass`, `fail` (expectation not met), `error` (launch, polling or log problem), or `timeout` (job cancelled after `--timeout`, the case's `timeout:`, or `awx.test_timeout`). `--no-cancel` leaves timed-out jobs running.
+- Nothing prompts without a terminal: supply suite variables with `--var KEY=VALUE` or `--vars-file`.
+- Run as the dedicated agent profile when one is configured (`--profile agent`); see `docs/awx/agent-profile.md` in the untaped repository.
+
 ## Confirmations and output
 
 - `patch`, `edit`, `apply`, and `delete` show one redacted preview and default-No confirmation. `--yes` skips it; `--dry-run` never writes and wins over `--yes`. Declining exits 1 (`cancelled; no changes made`). Configuration writes without a controlling terminal require `--yes` or `--dry-run` (exit 2). A piped record of another kind exits 2; empty `--stdin` is an error. A single named `launch`/`sync` submits immediately; multiple targets or an `--all`/`--filter`/`--search`/`--stdin` selection lists the targets and asks once (`--yes` skips, `--dry-run` previews).

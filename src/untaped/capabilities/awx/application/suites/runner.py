@@ -57,6 +57,7 @@ class _ResolvedCase:
     suite_name: str
     case_name: str
     job_template: str
+    scope: dict[str, str] | None
     payload: dict[str, Any]
     expect: Expectation
     timeout: float | None
@@ -167,14 +168,18 @@ class RunTestSuite:
         suites: Sequence[Suite],
         case_filter: set[str] | None,
     ) -> list[tuple[Suite, str, Case]]:
+        """Every case, or those ``case_filter`` names as ``case`` or ``suite/case``."""
         plan: list[tuple[Suite, str, Case]] = []
+        matched: set[str] = set()
         for suite in suites:
             for case_name, case in suite.cases.items():
-                if case_filter is not None and case_name not in case_filter:
-                    continue
+                if case_filter is not None:
+                    hits = {case_name, f"{suite.name}/{case_name}"} & case_filter
+                    if not hits:
+                        continue
+                    matched |= hits
                 plan.append((suite, case_name, case))
         if case_filter is not None:
-            matched = {case_name for _, case_name, _ in plan}
             unmatched = sorted(case_filter - matched)
             if unmatched:
                 raise ConfigError(
@@ -227,7 +232,13 @@ class RunTestSuite:
             case_timeout = timeout or case.timeout or defaults.timeout or default_timeout
             out.append(
                 _ResolvedCase(
-                    suite.name, case_name, suite.job_template, payload, expect, case_timeout
+                    suite.name,
+                    case_name,
+                    suite.job_template,
+                    suite.scope(self._jt_scope),
+                    payload,
+                    expect,
+                    case_timeout,
                 )
             )
         return out
@@ -240,7 +251,7 @@ class RunTestSuite:
         for item in resolved:
             try:
                 self._preflight(
-                    self._spec, name=item.job_template, scope=self._jt_scope, payload=item.payload
+                    self._spec, name=item.job_template, scope=item.scope, payload=item.payload
                 )
             except (AwxApiError, ConfigError) as exc:
                 problems.append(f"  {item.suite_name}/{item.case_name}: {exc}")
@@ -254,7 +265,7 @@ class RunTestSuite:
                 self._spec,
                 name=item.job_template,
                 action=_LAUNCH_ACTION,
-                scope=self._jt_scope,
+                scope=item.scope,
                 payload=item.payload,
             )
             self.launched.append(job)

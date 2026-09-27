@@ -210,7 +210,7 @@ def test_run_with_disjoint_variables_across_files_succeeds(
 def test_run_against_directory_picks_up_yaml_children(
     cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
 ) -> None:
-    """Passing a directory should expand to its ``*.yml`` children."""
+    """A directory expands to every ``*.yml``/``*.yaml`` file under it."""
     _seed_jt(fake_aap)
     test_dir = tmp_path / "suites"
     test_dir.mkdir()
@@ -222,6 +222,11 @@ def test_run_against_directory_picks_up_yaml_children(
         test_dir / "second.yaml",
         "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\ncases:\n  c:\n    launch: {}\n",
     )
+    (test_dir / "nested").mkdir()
+    _write(
+        test_dir / "nested" / "third.yml",
+        "kind: AwxTestSuite\nname: t\njobTemplate: Deploy app\ncases:\n  c:\n    launch: {}\n",
+    )
     # Non-YAML siblings must be ignored.
     (test_dir / "README.md").write_text("# notes\n")
 
@@ -229,7 +234,7 @@ def test_run_against_directory_picks_up_yaml_children(
 
     assert result.exit_code == 0, result.stderr or result.output
     launches = [a for _, _, a, _ in fake_aap.actions_called if a == "launch"]
-    assert len(launches) == 2  # one per YAML file
+    assert len(launches) == 3  # one per YAML file, nested ones included
 
 
 def test_run_filters_to_one_case(cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path) -> None:
@@ -385,32 +390,37 @@ def test_list_json_includes_variable_metadata(
     )
 
     assert result.exit_code == 0, result.stderr or result.output
-    import json
-
     parsed = json.loads(result.stdout)
     assert parsed[0]["variables"]["env"]["description"] == "Target environment"
     assert parsed[0]["variables"]["env"]["choices"] == ["dev", "prod"]
-    assert parsed[0]["cases"] == ["c"]
 
 
-def test_list_dumps_cases_in_json(cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path) -> None:
-    _seed_jt(fake_aap)
+def test_list_emits_one_row_per_case_in_every_format(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
     test_file = _write(
         tmp_path / "list.yml",
-        "kind: AwxTestSuite\n"
-        "name: list-suite\n"
-        "jobTemplate: Deploy app\n"
+        "kind: AwxTestSuite\nname: list-suite\njobTemplate: Deploy app\norganization: Ops\n"
         "cases:\n  a:\n    launch: {}\n  b:\n    launch: {}\n",
     )
 
-    result = cli.invoke(
-        app,
-        ["test", "list", str(test_file), "--format", "json", "--non-interactive"],
-    )
+    result = cli.invoke(app, ["test", "list", str(test_file), "-f", "json"])
 
     assert result.exit_code == 0, result.stderr or result.output
-    out = result.stdout
-    assert "a" in out and "b" in out
+    assert json.loads(result.stdout) == [
+        {
+            "suite": "list-suite",
+            "case": case,
+            "job_template": "Deploy app",
+            "organization": "Ops",
+            "path": str(test_file),
+            "variables": {},
+        }
+        for case in ("a", "b")
+    ]
+    table = cli.invoke(app, ["test", "list", str(test_file)])
+    assert table.exit_code == 0, table.output
+    assert "list-suite" in table.stdout and "variables" not in table.stdout
 
 
 def _smoke(tmp_path: Path) -> Path:
@@ -650,3 +660,90 @@ def test_run_scm_branch_head_runs_the_pushed_branch(
     assert result.exit_code == 0, result.output
     [(_, _, _, body)] = fake_aap.actions_called
     assert body["scm_branch"] == "feature/x"
+
+
+# ---- discovery, selection, summary ---------------------------------------
+
+
+def _suite_text(name: str, *, organization: str | None = None) -> str:
+    org = f"organization: {organization}\n" if organization else ""
+    return (
+        f"kind: AwxTestSuite\nname: {name}\njobTemplate: Deploy app\n{org}"
+        "cases:\n  smoke: {}\n  full: {}\n"
+    )
+
+
+def test_run_without_paths_runs_every_suite_under_the_repository(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    _seed_jt(fake_aap)
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    tests_dir = tmp_path / ".untaped" / "awx" / "tests"
+    (tests_dir / "web").mkdir(parents=True)
+    _write(tests_dir / "a.yml", _suite_text("a"))
+    _write(tests_dir / "web" / "b.yaml", _suite_text("b"))
+    (tmp_path / "src").mkdir()
+    monkeypatch.chdir(tmp_path / "src")
+
+    result = cli.invoke(app, ["test", "run", "--case", "b/smoke", "-f", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert [(row["suite"], row["case"]) for row in json.loads(result.stdout)] == [("b", "smoke")]
+
+
+def test_no_paths_and_no_tests_directory_is_a_usage_error(
+    cli: CliInvoker, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = cli.invoke(app, ["test", "list"])
+    assert result.exit_code == 2
+    assert f"no test paths given and no {tmp_path / '.untaped/awx/tests'}" in result.stderr
+
+
+def test_overlapping_paths_read_each_file_once(cli: CliInvoker, tmp_path: Path) -> None:
+    suite = _write(tmp_path / "one.yml", _suite_text("one"))
+
+    result = cli.invoke(app, ["test", "list", str(tmp_path), str(suite), "-f", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert [row["case"] for row in json.loads(result.stdout)] == ["smoke", "full"]
+
+
+def test_suite_names_must_be_unique(cli: CliInvoker, tmp_path: Path) -> None:
+    first = _write(tmp_path / "one.yml", _suite_text("dup"))
+    second = _write(tmp_path / "two.yml", _suite_text("dup"))
+
+    result = cli.invoke(app, ["test", "list", str(first), str(second)])
+
+    assert result.exit_code == 1
+    assert f"suite 'dup' is defined in both {first} and {second}" in result.stderr
+
+
+def test_a_suite_organization_picks_its_template(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    for org_id, org in ((1, "Default"), (2, "Ops")):
+        fake_aap.seed("organizations", id=org_id, name=org)
+        fake_aap.seed("job_templates", name="Deploy app", organization=org_id)
+    ops_template = fake_aap.store["job_templates"][max(fake_aap.store["job_templates"])]
+    test_file = _write(tmp_path / "ops.yml", _suite_text("ops", organization="Ops"))
+
+    result = cli.invoke(app, ["test", "run", str(test_file), "--case", "smoke"])
+
+    assert result.exit_code == 0, result.output
+    assert {id_ for _, id_, _, _ in fake_aap.actions_called} == {ops_template["id"]}
+
+
+def test_run_summarizes_results_on_stderr(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+    fake_aap.next_action_status = "failed"
+    test_file = _write(tmp_path / "s.yml", _suite_text("s"))
+
+    result = cli.invoke(app, ["test", "run", str(test_file), "-f", "json"])
+
+    assert result.exit_code == 1
+    assert "2 cases: 1 pass, 1 fail" in result.stderr

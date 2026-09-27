@@ -170,3 +170,11 @@ def test_failed_task_clips_long_messages_keeping_the_end_of_stderr() -> None:
     assert task.msg is not None and task.msg.endswith("…") and len(task.msg) == 1001
     assert task.stderr is not None and task.stderr.startswith("…")
     assert task.stderr.endswith("END") and len(task.stderr) == 1001
+
+
+def test_a_suite_organization_overrides_the_default_scope() -> None:
+    suite = Suite.model_validate({"name": "s", "jobTemplate": "jt", "cases": {"c": {}}})
+    assert suite.scope({"organization": "Default"}) == {"organization": "Default"}
+    ops = suite.model_copy(update={"organization": "Ops"})
+    assert ops.scope(None) == {"organization": "Ops"}
+    assert ops.scope({"organization": "Default"}) == {"organization": "Ops"}

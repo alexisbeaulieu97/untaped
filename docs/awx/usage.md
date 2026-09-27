@@ -500,9 +500,10 @@ of every launchable kind.
 ## Test suites
 
 `awx test` launches a job template with a matrix of parameters, checks each
-job against what the case expects, and reports one result per case. A test
-file is YAML. An optional `---`-delimited
-header declares variables; the body is a Jinja2 template rendered with them:
+job against what the case expects, and reports one result per case. Suites
+live in the repository they test, under `.untaped/awx/tests/`. A test file is
+YAML. An optional `---`-delimited header declares variables; the body is a
+Jinja2 template rendered with them:
 
 ```yaml
 ---
@@ -512,6 +513,7 @@ variables:
 kind: AwxTestSuite
 name: deploy-smoke
 jobTemplate: Deploy app
+organization: Ops  # optional; default awx.default_organization
 defaults:
   launch:
     extra_vars: {dry_run: true}
@@ -537,17 +539,34 @@ cases:
 ```
 
 ```bash
-untaped awx test validate tests/awx/
-untaped awx test list tests/awx/deploy-smoke.yml --var env=prod
-untaped awx test run tests/awx/ --var env=prod --parallel 4 --show-logs
-untaped awx test run tests/awx/deploy-smoke.yml --case web --non-interactive
-untaped awx test run tests/awx/ --scm-branch HEAD --format json
+untaped awx test validate
+untaped awx test list --var env=prod
+untaped awx test run --var env=prod --parallel 4 --show-logs
+untaped awx test run --case deploy-smoke/web --non-interactive
+untaped awx test run --scm-branch HEAD --format json
+untaped awx test run other/tests/deploy-smoke.yml
 ```
+
+- Without paths, `run`, `list` and `validate` read every suite under
+  `.untaped/awx/tests/` at the root of the current git checkout (the current
+  directory outside one). A directory path is searched the same way: every
+  `*.yml`/`*.yaml` file below it with a `kind: AwxTestSuite` line, skipping
+  hidden entries (and not following directory symlinks), so vars files can
+  live beside the suites. A file named directly must be a suite. Each file is
+  read once, and suite names must be unique across the files read.
+- `--case` selects cases by `CASE` (in every suite) or `SUITE/CASE`, and is
+  repeatable. A `--case` that matches nothing is an error before any launch.
+- `organization` names the job template's organization when its name is not
+  unique; it defaults to `awx.default_organization`.
+- `list` writes one `awx.test_case` row per case (`suite`, `case`,
+  `job_template`, `organization`, `path`, `variables`) in every format; the
+  table shows `suite`, `case` and `job_template`.
 
 - `launch` holds the AWX launch payload fields. `!ref {kind, name}` resolves a
   resource name to its ID.
 - A variable without a default is required: pass `--var`, `--vars-file`, or
-  answer the prompt. `--non-interactive` fails instead of prompting.
+  answer the prompt. Without a terminal, or with `--non-interactive`, a
+  missing variable fails instead of prompting.
 - `expect` says what the job must produce, and every check must hold.
   - `status`: the job's final status (`successful`, the default, or `failed`,
     `error`, `canceled`).
@@ -569,7 +588,8 @@ untaped awx test run tests/awx/ --scm-branch HEAD --format json
   replacing any `scm_branch` in the suite. Each template must prompt for it
   (`ask_scm_branch_on_launch`). `--scm-branch HEAD` is the current git branch
   as named on its upstream remote; it is refused until HEAD is pushed there.
-- `run` exits 1 unless at least one case ran and every case passed.
+- `run` exits 1 unless at least one case ran and every case passed, and ends
+  with a summary on stderr (`4 cases: 3 pass, 1 fail`).
 - Each `awx.test_result` row has `result` (`pass`, `fail`, `error` or
   `timeout`), `job_status`, `job_id`, `job_url` (the job's page in the web
   UI), `scm_branch` and `scm_revision` (the ref the job ran and the commit it
@@ -591,6 +611,8 @@ untaped awx test run tests/awx/ --scm-branch HEAD --format json
   `timeout` and its job is cancelled. A polling error or Ctrl-C cancels the
   job too; `failure_reason` says what happened to it. `--no-cancel` leaves
   jobs running.
+- To let an AI agent run suites against its own changes, give it a dedicated
+  profile and token: see [AWX agent profile](./agent-profile.md).
 
 ## Confirmations, failures, and integrity
 
