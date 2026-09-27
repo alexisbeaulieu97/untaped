@@ -28,7 +28,7 @@ from untaped.capabilities.ansible.domain.graph_roots import (
     root_from_line,
     root_from_record,
 )
-from untaped.capabilities.ansible.domain.identity import IdentityResolver, github_web_host
+from untaped.capabilities.ansible.domain.identity import IdentityResolver
 from untaped.capabilities.ansible.domain.models import DependencyDeclaration, ParseWarning
 from untaped.capabilities.ansible.domain.parser import parse_dependency_file
 from untaped.capabilities.ansible.domain.payloads import IndexedDependency, SkippedDependencyFile
@@ -44,7 +44,7 @@ from untaped.capabilities.ansible.infrastructure import (
     local_remote_url,
 )
 from untaped.capabilities.ansible.settings import AnsibleSettings, SourceDefinition
-from untaped.capabilities.github.ansible import GithubClient, GithubSettings
+from untaped.capabilities.github.ansible import GithubClient, GithubSettings, github_web_host
 from untaped.capabilities.github.ansible import github_settings as load_github_settings
 from untaped.capability_api import (
     HttpSettings,
