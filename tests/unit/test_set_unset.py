@@ -30,7 +30,7 @@ class StrictSettings(Settings):
     model_config = SettingsConfigDict(
         env_prefix="UNTAPED_", env_nested_delimiter="__", extra="ignore"
     )
-    log_level: str = Field(...)  # type: ignore[assignment]
+    mandatory: str = Field(...)
 
 
 @pytest.fixture(autouse=True)
@@ -56,7 +56,14 @@ def _write(cfg: Path, text: str | None) -> None:
 @pytest.mark.parametrize(
     ("initial", "key", "value", "profile", "written_to", "expected"),
     [
-        (None, "log_level", "DEBUG", None, "default", {"default": {"log_level": "DEBUG"}}),
+        (
+            None,
+            "skills.updates",
+            "auto",
+            None,
+            "default",
+            {"default": {"skills": {"updates": "auto"}}},
+        ),
         (None, "demo.token", "ghp_x", None, "default", {"default": {"demo": {"token": "ghp_x"}}}),
         # YAML scalars are coerced; ``http`` is an ordinary per-profile setting.
         (
@@ -78,20 +85,20 @@ def _write(cfg: Path, text: str | None) -> None:
         ),
         # Writing the default scope creates it and leaves other profiles intact.
         (
-            "profiles:\n  prod:\n    log_level: WARNING\n",
-            "log_level",
-            "DEBUG",
+            "profiles:\n  prod:\n    skills:\n      updates: warn\n",
+            "skills.updates",
+            "auto",
             None,
             "default",
-            {"prod": {"log_level": "WARNING"}, "default": {"log_level": "DEBUG"}},
+            {"prod": {"skills": {"updates": "warn"}}, "default": {"skills": {"updates": "auto"}}},
         ),
         (
             "profiles:\n  default: {}\n  prod: {}\nactive: prod\n",
-            "log_level",
-            "DEBUG",
+            "skills.updates",
+            "auto",
             None,
             "prod",
-            {"default": {}, "prod": {"log_level": "DEBUG"}},
+            {"default": {}, "prod": {"skills": {"updates": "auto"}}},
         ),
         (
             "profiles:\n  default: {}\n  work: {}\n",
@@ -132,16 +139,16 @@ def test_set_preserves_other_keys_and_state(_isolate_settings: Path) -> None:
     _isolate_settings.write_text(
         "profiles:\n"
         "  default:\n"
-        "    log_level: DEBUG\n"
+        "    skills:\n      updates: auto\n"
         "    demo:\n      base_url: https://prod\n"
         "workspace:\n  workspaces:\n    - name: ws1\n      path: /tmp/ws1\n"
     )
     SetSetting(SettingsFileRepository())("demo.token", "tok")
     data = yaml.safe_load(_isolate_settings.read_text())
     default = data["profiles"]["default"]
-    assert default["log_level"] == "DEBUG"
+    assert default["skills"] == {"updates": "auto"}
     assert default["demo"] == {"base_url": "https://prod", "token": "tok"}
-    # State (top-level ``workspace``) is untouched by a profile write.
+    # Unknown top-level keys are untouched by a profile write.
     assert data["workspace"]["workspaces"][0]["name"] == "ws1"
 
 
@@ -151,8 +158,8 @@ def test_set_preserves_other_keys_and_state(_isolate_settings: Path) -> None:
         (None, "http.verify_ssl", "not-a-bool", None, "verify_ssl"),
         (None, "bogus.key", "x", None, "unknown setting"),
         (None, "plugins.tool.spec", "untaped", None, "unknown setting"),
-        (None, "log_level", "DEBUG", "prod", "profile not found.*prod"),
-        ("profiles:\n  default: {}\n", "log_level", "DEBUG", "ghost", "ghost"),
+        (None, "skills.updates", "auto", "prod", "profile not found.*prod"),
+        ("profiles:\n  default: {}\n", "skills.updates", "auto", "ghost", "ghost"),
         (
             "profiles:\n  default:\n    ui:\n      theme: classic\n",
             "ui.collection_view",
@@ -216,19 +223,20 @@ def test_set_validation_isolated_from_env_overlay(
     ("initial", "key", "profile", "removed", "expected"),
     [
         (
-            "profiles:\n  default:\n    log_level: DEBUG\n    demo:\n      base_url: https://x\n",
-            "log_level",
+            "profiles:\n  default:\n    skills:\n      updates: auto\n"
+            "    demo:\n      base_url: https://x\n",
+            "skills.updates",
             None,
             True,
             {"default": {"demo": {"base_url": "https://x"}}},
         ),
         # An emptied parent mapping is cleaned up; siblings are kept.
         (
-            "profiles:\n  default:\n    log_level: DEBUG\n    demo:\n      token: x\n",
+            "profiles:\n  default:\n    skills:\n      updates: auto\n    demo:\n      token: x\n",
             "demo.token",
             None,
             True,
-            {"default": {"log_level": "DEBUG"}},
+            {"default": {"skills": {"updates": "auto"}}},
         ),
         (
             "profiles:\n  default:\n    demo:\n      token: x\n      base_url: https://y\n",
@@ -238,11 +246,12 @@ def test_set_validation_isolated_from_env_overlay(
             {"default": {"demo": {"base_url": "https://y"}}},
         ),
         (
-            "profiles:\n  default:\n    log_level: DEBUG\n    ui:\n      theme: classic\n",
+            "profiles:\n  default:\n    skills:\n      updates: auto\n"
+            "    ui:\n      theme: classic\n",
             "ui.theme",
             None,
             True,
-            {"default": {"log_level": "DEBUG"}},
+            {"default": {"skills": {"updates": "auto"}}},
         ),
         # The schema default fills the gap, so the merged dict stays valid.
         (
@@ -253,14 +262,14 @@ def test_set_validation_isolated_from_env_overlay(
             {"default": {}},
         ),
         (
-            "profiles:\n  default:\n    log_level: INFO\n  prod:\n    log_level: DEBUG\n"
-            "active: prod\n",
-            "log_level",
+            "profiles:\n  default:\n    skills:\n      updates: warn\n"
+            "  prod:\n    skills:\n      updates: auto\nactive: prod\n",
+            "skills.updates",
             "default",
             True,
-            {"default": {}, "prod": {"log_level": "DEBUG"}},
+            {"default": {}, "prod": {"skills": {"updates": "auto"}}},
         ),
-        ("profiles:\n  default: {}\n", "log_level", None, False, {"default": {}}),
+        ("profiles:\n  default: {}\n", "skills.updates", None, False, {"default": {}}),
     ],
     ids=[
         "core",
@@ -288,10 +297,10 @@ def test_unset_removes_the_key(
 
 
 def test_unset_rejects_unknown_target_profile(_isolate_settings: Path) -> None:
-    original = "profiles:\n  default:\n    log_level: DEBUG\n"
+    original = "profiles:\n  default:\n    skills:\n      updates: auto\n"
     _isolate_settings.write_text(original)
     with pytest.raises(ConfigError, match="profile not found") as excinfo:
-        UnsetSetting(SettingsFileRepository())("log_level", profile="ghost")
+        UnsetSetting(SettingsFileRepository())("skills.updates", profile="ghost")
     assert "ghost" in str(excinfo.value)
     assert "untaped-profile" not in str(excinfo.value)
     assert _isolate_settings.read_text() == original
@@ -300,8 +309,8 @@ def test_unset_rejects_unknown_target_profile(_isolate_settings: Path) -> None:
 @pytest.mark.parametrize(
     ("initial", "profile"),
     [
-        ("profiles:\n  default:\n    log_level: WARN\n", "default"),
-        ("profiles:\n  default: {}\n  stage:\n    log_level: WARN\nactive: stage\n", "stage"),
+        ("profiles:\n  default:\n    mandatory: x\n", "default"),
+        ("profiles:\n  default: {}\n  stage:\n    mandatory: x\nactive: stage\n", "stage"),
     ],
 )
 def test_unset_leaving_an_invalid_profile_fails_naming_key_and_profile(
@@ -313,7 +322,7 @@ def test_unset_leaving_an_invalid_profile_fails_naming_key_and_profile(
     _isolate_settings.write_text(initial)
     repo = SettingsFileRepository(settings_cls=cast(type[Settings], StrictSettings))
     with pytest.raises(ConfigError) as exc_info:
-        UnsetSetting(repo)("log_level")
-    assert "log_level" in str(exc_info.value)
+        UnsetSetting(repo)("mandatory")
+    assert "mandatory" in str(exc_info.value)
     assert profile in str(exc_info.value)
     assert _isolate_settings.read_text() == initial

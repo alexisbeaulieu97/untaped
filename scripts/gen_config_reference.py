@@ -1,7 +1,7 @@
 """Generate ``docs/reference/config.md`` from the composed settings models.
 
-The page lists every setting of the root shell (``log_level``, ``http.*``,
-``ui.*``, ``skills.*``) and of each built-in capability's profile model, plus each
+The page lists every setting of the root shell (``http.*``, ``ui.*``,
+``skills.*``) and of each built-in capability's profile model, plus each
 capability's state model. Types, defaults and environment variables come from
 the Pydantic models; a description comes from ``Field(description=...)`` when
 the model declares one, else from :data:`DESCRIPTIONS` below.
@@ -32,7 +32,6 @@ OUTPUT = REPO_ROOT / "docs" / "reference" / "config.md"
 
 #: Descriptions for settings whose model field has no ``description``.
 DESCRIPTIONS: dict[str, str] = {
-    "log_level": "Deprecated and ignored (removed in 8.0); `untaped doctor` warns when set.",
     "http.ca_bundle": "PEM file of extra CA certificates to trust instead of the OS trust store.",
     "http.verify_ssl": "Verify TLS certificates. `false` disables all certificate checks.",
     "http.verify_hostname": "Check the certificate host name. `false` keeps chain validation.",
@@ -258,9 +257,7 @@ def _section_rows(prefix: str, model: type[BaseModel]) -> list[Row]:
     rows = _leaf_rows(model, (prefix,) if prefix else ())
     if not prefix:
         # Root model: keep the shell's own settings, not the pydantic-settings base.
-        rows = [
-            row for row in rows if row.key.split(".")[0] in {"log_level", "http", "ui", "skills"}
-        ]
+        rows = [row for row in rows if row.key.split(".")[0] in {"http", "ui", "skills"}]
     return rows
 
 

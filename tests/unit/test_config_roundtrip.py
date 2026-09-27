@@ -136,23 +136,6 @@ def test_tool_state_write_preserves_state_file_comments(cfg: Path) -> None:
     assert cfg.read_text(encoding="utf-8") == COMMENTED  # config.yml untouched
 
 
-def test_tool_state_migration_keeps_config_comments(cfg: Path) -> None:
-    def _add(state: dict[str, object]) -> None:
-        rows = state["workspaces"]
-        assert isinstance(rows, list)
-        rows.append({"name": "beta", "path": "/tmp/beta"})
-
-    mutate_tool_state("workspace", _add)
-
-    text = cfg.read_text(encoding="utf-8")
-    assert "workspace" not in read_config_dict(cfg)
-    assert "# untaped config -- hand edited" in text
-    assert "active: work   # the profile I use most" in text
-    assert "      token: old-token  # rotate monthly\n" in text
-    state = read_config_dict(cfg.parent / "state.yml")
-    assert [row["name"] for row in state["workspace"]["workspaces"]] == ["alpha", "beta"]
-
-
 def test_profile_writes_preserve_comments(cfg: Path) -> None:
     repo = ProfileFileRepository()
     repo.set_active("default")

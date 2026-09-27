@@ -16,9 +16,8 @@ console script and does not own a second config or profile command group.
 external capabilities import untaped helpers from it and nothing else. Its
 closed composition set and helper exports are intentional; provider code must
 not import the internal registry or rely on other `untaped` modules as an API.
-The older `untaped.api` module is a deprecated re-export kept for one release;
-the `untaped` package root only forwards those names lazily for
-`from untaped import X` (also deprecated).
+The `untaped.api` module and the `from untaped import X` root forwarding were
+removed in 8.0 (capability API 2.0).
 
 ## 1. Provider package
 
@@ -45,7 +44,7 @@ description = "Acme capability for untaped."
 requires-python = ">=3.14"
 dependencies = [
     "pydantic>=2.13.3,<3",
-    "untaped>=6.0.0,<7",
+    "untaped>=8.0.0,<9",
 ]
 
 [project.entry-points."untaped.capabilities"]
@@ -73,14 +72,18 @@ unzip -l dist/acme_provider-*.whl \
 ```
 
 The entry-point name must equal the `CapabilitySpec.name`. The resolved object
-must be callable, expose an `api_requires` tuple, and return one
-`CapabilitySpec` when called without arguments. Check the current
-`CAPABILITY_API_VERSION` in `src/untaped/capability_api.py` when choosing the
-compatible range. New exports are additive and keep the major version; removing
-or breaking an export requires a major bump, so `(1.0, 2.0)` stays compatible
-across 1.x. Version `1.1` added the runtime helpers folded in from `untaped.api`
-(HTTP client and pagination, batch, concurrency, file and state helpers, ...);
-a provider that uses one of them should declare `(1.1, 2.0)`.
+must be callable, expose an `api_requires` range, and return one
+`CapabilitySpec` when called without arguments. `CAPABILITY_API_VERSION` (in
+`src/untaped/capability_api.py`) is a `(major, minor)` tuple of ints, currently
+`(2, 0)`, and `api_requires` is a `(min_inclusive, max_exclusive)` pair of such
+tuples, compared as tuples (so `(1, 10)` is newer than `(1, 9)`). New exports
+are additive and bump the minor version; removing or breaking an export bumps
+the major, so `((2, 0), (3, 0))` stays compatible across 2.x. A provider that
+relies on an export added in `2.N` declares `((2, N), (3, 0))`. A missing,
+malformed (for example the float bounds of 1.x) or non-covering range
+quarantines the provider with an `api-range` reason naming the running
+version. Version `2.0` (untaped 8.0) removed the `untaped.api` module and the
+`from untaped import X` forwarding; 1.x ranges no longer compose.
 
 A built-in capability follows the same `SPEC` and `build_app()` shape but is
 constructed in the `untaped` source tree and listed in the root composition.
@@ -164,7 +167,7 @@ SPEC = CapabilitySpec(
 class AcmeProvider:
     """Entry-point provider discovered by the unified shell."""
 
-    api_requires = (1.0, 2.0)
+    api_requires = ((2, 0), (3, 0))
 
     def __call__(self) -> CapabilitySpec:
         return SPEC
@@ -396,8 +399,7 @@ _items.upsert({"id": "one", "label": "Example"})
 
 State lives in the state file (`state.yml` beside `config.yml`, or `UNTAPED_STATE`),
 outside profile overlays, and is never exposed as a user setting. The helpers
-preserve other capabilities' sections under the shared state-file lock and move
-a legacy copy of your section out of `config.yml` on its first write; never
+preserve other capabilities' sections under the shared state-file lock; never
 read or write either file directly.
 
 ## 8. Validation and checks

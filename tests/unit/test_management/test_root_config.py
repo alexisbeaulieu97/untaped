@@ -68,7 +68,7 @@ def test_list_raw_is_the_key_stream_of_every_composed_section(_isolated_config: 
     result = CliInvoker().invoke(app, ["list", "--format", "raw"])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
     keys = set(result.stdout.splitlines())
-    assert {"github.token", "github.base_url", "jira.base_url", "log_level"} <= keys
+    assert {"github.token", "github.base_url", "jira.base_url", "skills.updates"} <= keys
     assert "https://api.github.com" not in keys
 
 

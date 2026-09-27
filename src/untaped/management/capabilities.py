@@ -19,6 +19,8 @@ from untaped.capabilities.registry import (
     CompositionResult,
     ExternalProvider,
     QuarantineRecord,
+    format_api_version,
+    parse_api_range,
 )
 from untaped.cli import (
     ColumnsOption,
@@ -26,6 +28,7 @@ from untaped.cli import (
     create_app,
     report_errors,
 )
+from untaped.errors import ConfigError
 from untaped.management._render import emit_isolated
 from untaped.render import OutputFormat
 
@@ -143,20 +146,17 @@ def _candidate_version(candidate: ExternalProvider | None) -> str:
 
 
 def _api_text(requires: object) -> str:
-    """Render an ``(min_inclusive, max_exclusive)`` range; ``unknown`` when absent."""
-    if isinstance(requires, (tuple, list)) and len(requires) == 2:
-        low, high = requires[0], requires[1]
-        if (
-            isinstance(low, (int, float))
-            and isinstance(high, (int, float))
-            and not isinstance(low, bool)
-            and not isinstance(high, bool)
-        ):
-            low_f, high_f = float(low), float(high)
-            if (low_f, high_f) == (0.0, 0.0):
-                return _UNKNOWN
-            return f">={low_f},<{high_f}"
-    return _UNKNOWN
+    """Render an ``(min_inclusive, max_exclusive)`` range.
+
+    ``unknown`` when absent; a malformed declaration is shown as declared.
+    """
+    if requires is None:
+        return _UNKNOWN
+    try:
+        low, high = parse_api_range(requires)
+    except ConfigError:
+        return repr(requires)
+    return f">={format_api_version(low)},<{format_api_version(high)}"
 
 
 def _declared_api(candidate: ExternalProvider) -> str:

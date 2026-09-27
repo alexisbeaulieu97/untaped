@@ -73,18 +73,13 @@ def test_get_config_section_resolves_config_and_env(
     assert section.token.get_secret_value() == "from-env"
 
 
-def test_state_sections_are_spliced_from_top_level(_isolated_config: Path) -> None:
+def test_state_sections_are_spliced_from_the_state_file(_isolated_config: Path) -> None:
     register_profile_settings("demo", DemoSettings)
     register_state_settings("demo", DemoState)
     _isolated_config.write_text(
-        "profiles:\n"
-        "  default:\n"
-        "    demo:\n"
-        "      endpoint: https://configured.example\n"
-        "demo:\n"
-        "  entries:\n"
-        "    - alpha\n"
+        "profiles:\n  default:\n    demo:\n      endpoint: https://configured.example\n"
     )
+    (_isolated_config.parent / "state.yml").write_text("demo:\n  entries:\n    - alpha\n")
 
     settings = get_settings()
 
@@ -106,18 +101,20 @@ def test_profile_settings_cannot_overlap_state_settings() -> None:
         register_profile_settings("demo", DemoSettings)
 
 
-def test_state_splice_only_uses_registered_state_fields() -> None:
+def test_state_splice_only_uses_registered_state_fields(_isolated_config: Path) -> None:
     """The splice merges only the state model's set fields into the
-    effective dict — a non-state field in the raw top-level block must not
-    clobber the value the layout already resolved."""
+    effective dict — a non-state field in the state file must not clobber
+    the value the layout already resolved."""
     from untaped.settings import splice_registered_state
 
     register_profile_settings("demo", DemoSettings)
     register_state_settings("demo", DemoState)
-    raw = {"demo": {"endpoint": "https://state.example", "entries": ["alpha"]}}
+    (_isolated_config.parent / "state.yml").write_text(
+        "demo:\n  endpoint: https://state.example\n  entries:\n    - alpha\n"
+    )
     effective = {"demo": {"endpoint": "https://layout.example"}}
 
-    splice_registered_state(raw, effective)
+    splice_registered_state(effective)
 
     assert effective["demo"]["endpoint"] == "https://layout.example"
     assert effective["demo"]["entries"] == ["alpha"]

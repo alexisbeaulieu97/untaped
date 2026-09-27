@@ -3,6 +3,36 @@
 ## Unreleased
 
 - Core
+  - **Breaking:** the capability API version is a `(major, minor)` tuple of
+    ints, now `(2, 0)`, so `1.10` can no longer compare equal to `1.1`.
+    Providers declare `api_requires = ((2, 0), (3, 0))`; float bounds and
+    ranges capped below 2.0 are quarantined with an `api-range` reason that
+    names the running version (and, for a missing, malformed or inverted
+    range, a range that admits it); `untaped capabilities` shows a malformed
+    declaration as written instead of `unknown`.
+  - **Breaking:** removed the deprecated `untaped.api` module and the
+    `from untaped import X` forwarding at the package root; import from
+    `untaped.capability_api`. Names only `untaped.api` published are no
+    longer part of the SDK: `ensure_config`, `get_settings`,
+    `invalidate_settings_cache`, `read_tool_state`, `mutate_tool_state`,
+    `existing_directory`, `missing_setting_error`, `read_stdin_text`,
+    `common_kind`, `ThemeSpec`, `DiffStats`/`diff_stats`, and
+    `FileChange`/`FileWriteError`/`apply_file_changes`. Use `StateCollection`/
+    `StateMap` for state.
+  - **Breaking:** capability state is only read from `state.yml`; the
+    one-time move of a state section left at the top level of `config.yml`
+    (and its warning and `legacy-state` doctor row) is gone. Such a section
+    is now an ignored unknown key that `doctor`'s `unknown-keys` row flags:
+    move it into `state.yml` by hand before upgrading. (Internally,
+    `read_tool_state`/`mutate_tool_state` lost their `config_path` argument.)
+  - **Breaking:** removed the `log_level` setting and `UNTAPED_LOG_LEVEL`
+    (it never had an effect); `--verbose` is the only logging switch. A leftover
+    `log_level` key, in a profile or at the top level, is reported by
+    `doctor` as an unknown key.
+  - `doctor`'s `unknown-keys` row also flags top-level `config.yml` keys other
+    than `active` and `profiles`.
+  - The warning for a deprecated command or flag spelling now says it will be
+    removed "in the next major release" instead of naming 8.0.
   - **Fix:** config and state writes go through a symlinked `config.yml` or
     `state.yml` instead of replacing the link with a regular file.
   - **Fix:** `config edit` edits a private copy, validates it, and only then
@@ -11,8 +41,6 @@
     or a failed save leaves `config.yml` unchanged (exit 1) and names the copy
     holding your edits; before, the invalid file was kept. Saving without
     changes writes nothing.
-  - **Fix:** the one-time move of a legacy state section out of `config.yml`
-    now also works when `config.yml` is a symlink.
   - **Fix:** `atomic_write` (and `apply_file_changes`) now fsync the file and
     its directory, keep an existing file's permission bits (or apply `mode=`,
     which the file has from the moment it is created),

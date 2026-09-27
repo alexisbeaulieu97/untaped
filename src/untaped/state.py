@@ -2,7 +2,7 @@
 
 The shared state file is co-owned by every untaped tool, so all writes ride
 :func:`untaped.config_file.mutate_tool_state` (section-scoped, locked,
-atomic; it also moves a legacy section out of ``config.yml``).
+atomic).
 ``StateCollection`` is a list of records keyed by an id field
 (workspace registry shape); ``StateMap`` is a flat ``str → str`` map
 (ansible aliases shape). Both drop their key when emptied so the enclosing
