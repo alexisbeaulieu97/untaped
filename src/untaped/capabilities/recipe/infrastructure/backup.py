@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 import hashlib
 import json
+import os
 import shutil
 import uuid
 from collections.abc import Mapping, Sequence
@@ -16,6 +17,10 @@ from typing import Any, Literal, cast
 from untaped.capabilities.recipe.domain.paths import confined_path
 from untaped.capabilities.recipe.domain.plan import CONTENT_ERRORS, FileChange
 from untaped.capabilities.recipe.infrastructure.file_writer import flush_changes
+from untaped.capability_api import atomic_write
+
+_PRIVATE_DIR_MODE = 0o700
+_PRIVATE_FILE_MODE = 0o600
 
 
 @dataclass(frozen=True)
@@ -88,9 +93,7 @@ class BackupDraft:
             }
             if change.before is not None:
                 backup_file = self.files_dir / f"{self._next_file_index}"
-                backup_file.write_text(
-                    change.before, encoding="utf-8", errors=CONTENT_ERRORS, newline=""
-                )
+                _write_private(backup_file, change.before)
                 self._next_file_index += 1
                 entry["backup_file"] = str(backup_file.relative_to(self.path))
             entries.append(entry)
@@ -110,9 +113,10 @@ class BackupDraft:
             "inputs": self.inputs,
             "files": self.entries,
         }
-        (self.path / "metadata.json").write_text(
+        atomic_write(
+            self.path / "metadata.json",
             json.dumps(metadata, indent=2, sort_keys=True),
-            encoding="utf-8",
+            mode=_PRIVATE_FILE_MODE,
         )
 
     def discard_if_empty(self) -> None:
@@ -132,7 +136,10 @@ class BackupStore:
         backup_id = f"{datetime.now(tz=UTC).strftime('%Y%m%dT%H%M%S%fZ')}-{uuid.uuid4().hex[:8]}"
         bundle_dir = self._root / backup_id
         files_dir = bundle_dir / "files"
-        files_dir.mkdir(parents=True, exist_ok=False)
+        # Backups hold pre-change file content: owner-only from the start.
+        self._root.mkdir(parents=True, exist_ok=True, mode=_PRIVATE_DIR_MODE)
+        bundle_dir.mkdir(mode=_PRIVATE_DIR_MODE)
+        files_dir.mkdir(mode=_PRIVATE_DIR_MODE)
         draft = BackupDraft(
             id=backup_id,
             path=bundle_dir,
@@ -303,6 +310,13 @@ def _metadata_entries(metadata: Mapping[str, object], backup_id: str) -> builtin
         ):
             raise ValueError(f"invalid backup metadata: {backup_id}: malformed files[{index}]")
     return files
+
+
+def _write_private(path: Path, content: str) -> None:
+    """Create ``path`` owner-only (``0600``) and write ``content`` verbatim."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, _PRIVATE_FILE_MODE)
+    with open(fd, "w", encoding="utf-8", errors=CONTENT_ERRORS, newline="") as handle:
+        handle.write(content)
 
 
 def _hash_text(content: str | None) -> str | None:

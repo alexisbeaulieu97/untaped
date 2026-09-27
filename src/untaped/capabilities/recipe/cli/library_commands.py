@@ -34,6 +34,8 @@ from untaped.capabilities.recipe.infrastructure.pack_files import hook_exports, 
 from untaped.capabilities.recipe.infrastructure.pack_inspector import PackInspector
 from untaped.capabilities.recipe.infrastructure.pack_store import (
     PackLibrary,
+    changed_hook_files,
+    checkout_commit,
     fetch_pack_source,
     is_git_url,
     local_edits_message,
@@ -72,20 +74,24 @@ class PackOutcomeRecord(OutcomeRecord):
     Kinds ``recipe.add_outcome`` (``action``: ``created``/``updated``),
     ``recipe.sync_outcome`` (``updated``/``unchanged``, or ``planned`` with
     --dry-run) and ``recipe.remove_outcome`` (``removed``, or ``planned``).
+    ``commit`` is the resolved commit of a git source (``rev`` is the one asked for).
     """
 
     name: str
     source: str | None = None
     rev: str | None = None
+    commit: str | None = None
 
 
 @dataclass(frozen=True)
 class _SyncPlan:
-    """An installed pack and its freshly fetched source tree."""
+    """An installed pack and its freshly fetched source tree (at ``commit`` for git)."""
 
     pack: InstalledPack
     source_dir: Path
     changed: bool
+    commit: str | None = None
+    hook_changes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -149,6 +155,7 @@ def add_command(
             if is_git_url(source)
             else Path(source)
         )
+        commit = checkout_commit(source_dir) if is_git_url(source) else None
         manifest = read_pack_manifest(source_dir)
         # Validate before printing the pack summary: error output leads, and
         # the summary follows only on a pack that will actually install.
@@ -164,6 +171,7 @@ def add_command(
             source_dir,
             source=source,
             rev=rev,
+            commit=commit,
             name=name,
             force=force,
             discard_edits=discard_edits,
@@ -173,6 +181,7 @@ def add_command(
             action="updated" if replaced else "created",
             source=source,
             rev=rev,
+            commit=commit,
         )
         emit(record.model_dump(), fmt=fmt, columns=columns, kind="recipe.add_outcome")
 
@@ -202,8 +211,9 @@ def sync_command(
 ) -> None:
     """Re-fetch installed packs from their recorded source and rev.
 
-    Packs whose content would change are listed and confirmed first; the rest
-    report ``unchanged``.
+    Packs whose content would change are listed and confirmed first, with the
+    commit move and the hook-code files that change; the rest report
+    ``unchanged``.
     """
     with report_config_errors(), tempfile.TemporaryDirectory() as temp_root:
         library = PackLibrary(library_root=library_root())
@@ -216,8 +226,11 @@ def sync_command(
                 )
             ),
         )
+        changed = [plan for plan in plans if plan.changed]
+        if dry_run and changed:
+            _sync_preview(changed)
         outcome = batch_apply(
-            [plan for plan in plans if plan.changed],
+            changed,
             _as_config_error(
                 lambda plan: _install_for_sync(library, plan, discard_edits=discard_edits)
             ),
@@ -229,7 +242,7 @@ def sync_command(
             destructive=True,
             assume_yes=yes,
             preview_only=dry_run,
-            preview=_sync_preview,
+            preview=lambda _rows: _sync_preview(changed),
         )
         if outcome.cancelled:
             finish(outcome)
@@ -277,17 +290,33 @@ def _install_for_sync(library: PackLibrary, plan: _SyncPlan, *, discard_edits: b
         plan.source_dir,
         source=plan.pack.source,
         rev=plan.pack.rev or None,
+        commit=plan.commit,
         name=plan.pack.name,
         force=True,
         discard_edits=discard_edits,
     )
 
 
-def _sync_preview(rows: Sequence[dict[str, object]]) -> None:
-    echo(f"About to sync {plural(len(rows), 'pack')}:", err=True)
-    for row in rows:
-        at = f"@{row['rev']}" if row["rev"] else ""
-        echo(f"  - {row['name']} from {row['source']}{at}", err=True)
+def _sync_preview(plans: Sequence[_SyncPlan]) -> None:
+    """List the packs about to sync: source, commit move, and changed hook code."""
+    echo(f"About to sync {plural(len(plans), 'pack')}:", err=True)
+    for plan in plans:
+        pack = plan.pack
+        at = f"@{pack.rev}" if pack.rev else ""
+        move = (
+            f" ({_short_commit(pack.commit)} -> {_short_commit(plan.commit)})"
+            if plan.commit
+            else ""
+        )
+        echo(f"  - {pack.name} from {pack.source}{at}{move}", err=True)
+        if plan.hook_changes:
+            echo(f"    hook code changed: {', '.join(plan.hook_changes)}", err=True)
+        else:
+            echo("    hook code unchanged", err=True)
+
+
+def _short_commit(commit: str | None) -> str:
+    return commit[:12] if commit else "unrecorded"
 
 
 def _sync_action(plan: _SyncPlan, *, synced: set[str], dry_run: bool) -> str | None:
@@ -305,10 +334,12 @@ def _fetch_for_sync(
     """Fetch ``pack``'s recorded source and tell whether installing it changes files."""
     if not pack.source:
         raise ValueError("no recorded source; reinstall the pack with `untaped recipe add`")
+    commit = None
     if is_git_url(pack.source):
         source_dir = fetch_pack_source(
             pack.source, rev=pack.rev or None, dest=temp_root / pack.name
         )
+        commit = checkout_commit(source_dir)
     else:
         source_dir = Path(pack.source).expanduser()
         if not source_dir.is_absolute():
@@ -324,7 +355,14 @@ def _fetch_for_sync(
     changed = pack_content_hash(source_dir) != pack_content_hash(pack.root)
     if changed and not discard_edits and library.local_edits(pack.name):
         raise ValueError(local_edits_message(pack.name))
-    return _SyncPlan(pack=pack, source_dir=source_dir, changed=changed)
+    hook_changes = tuple(changed_hook_files(pack.root, source_dir)) if changed else ()
+    return _SyncPlan(
+        pack=pack,
+        source_dir=source_dir,
+        changed=changed,
+        commit=commit,
+        hook_changes=hook_changes,
+    )
 
 
 def _sync_row(plan: _SyncPlan, *, action: str) -> dict[str, object]:
@@ -333,6 +371,7 @@ def _sync_row(plan: _SyncPlan, *, action: str) -> dict[str, object]:
         action=action,
         source=plan.pack.source,
         rev=plan.pack.rev or None,
+        commit=plan.commit,
     ).model_dump()
 
 
@@ -584,6 +623,7 @@ def _pack_row(pack: InstalledPack) -> dict[str, object]:
         "path": str(pack.root),
         "source": pack.source,
         "rev": pack.rev,
+        "commit": pack.commit,
         "recipes": len(pack.manifest.recipes),
         "hooks": len(pack.manifest.hooks),
     }

@@ -7,7 +7,7 @@ import os
 import signal
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +25,43 @@ from untaped.capabilities.recipe.infrastructure.hook_resolver import UvHookRef
 APPLY_DIAGNOSTIC_LIMIT = 4000
 DEBUG_DIAGNOSTIC_LIMIT = 10 * 1024 * 1024
 DEBUG_DIAGNOSTIC_SETTLE_SECONDS = 0.05
+
+# Environment variables a hook worker inherits (case-insensitive); see
+# _worker_environment. PYTHONPATH is rebuilt around the pack's src/ separately.
+_WORKER_ENV_NAMES = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "LANG",
+        "LANGUAGE",
+        "TZ",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+        "PYTHONPATH",
+        "NETRC",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "REQUESTS_CA_BUNDLE",
+        "CURL_CA_BUNDLE",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        # Windows process basics.
+        "SYSTEMROOT",
+        "SYSTEMDRIVE",
+        "WINDIR",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "APPDATA",
+        "LOCALAPPDATA",
+    }
+)
+_WORKER_ENV_PREFIXES = ("LC_", "UV_", "XDG_")
 
 
 class HookWorkerResponse(BaseModel):
@@ -463,10 +500,10 @@ class UvHookWorker:
 
     def _start(self) -> subprocess.Popen[str]:
         worker_path = Path(hook_worker.__file__).resolve()
-        env = os.environ.copy()
-        # An inherited VIRTUAL_ENV makes uv target the caller's venv instead
-        # of the pack project environment.
-        env.pop("VIRTUAL_ENV", None)
+        # Only what uv and the worker need: never the caller's tokens. An
+        # inherited VIRTUAL_ENV (not allowlisted) would make uv target the
+        # caller's venv instead of the pack project environment.
+        env = _worker_environment(os.environ)
         project_src = str(self._project_root / "src")
         existing_pythonpath = env.get("PYTHONPATH")
         env["PYTHONPATH"] = (
@@ -542,6 +579,20 @@ class UvHookWorker:
             while limit is not None and size > limit and lines:
                 size -= len(lines.pop(0))
         return "".join(lines).strip()
+
+
+def _worker_environment(environ: Mapping[str, str]) -> dict[str, str]:
+    """The allowlisted subset of ``environ`` a hook worker process inherits.
+
+    Keeps what ``uv run`` and Python need (paths, locale, temp dirs, uv/XDG
+    configuration, TLS trust and proxies); drops everything else, so tokens
+    such as ``GITHUB_TOKEN`` or ``UNTAPED_*`` credentials never reach hook code.
+    """
+    return {
+        name: value
+        for name, value in environ.items()
+        if name.upper() in _WORKER_ENV_NAMES or name.upper().startswith(_WORKER_ENV_PREFIXES)
+    }
 
 
 def _is_stale_lock_failure(diagnostics: str) -> bool:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,21 +40,40 @@ class FileChange:
     after: str | None
 
 
-def atomic_write(path: Path, content: str, *, encoding: str = "utf-8", newline: str = "") -> None:
+def atomic_write(
+    path: Path,
+    content: str,
+    *,
+    encoding: str = "utf-8",
+    newline: str = "",
+    mode: int | None = None,
+) -> None:
     """Write ``content`` to ``path`` atomically (temp file + ``os.replace``).
 
     Creates parent directories. ``newline=""`` disables newline translation
-    so the caller's line endings land on disk verbatim.
+    so the caller's line endings land on disk verbatim. ``mode`` (e.g.
+    ``0o600``) creates the temp file with those permissions from the start,
+    so private content is never readable by others, even briefly.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.untaped.tmp")
     try:
-        with open(tmp, "w", encoding=encoding, newline=newline) as handle:
+        opener = None if mode is None else _opener_with_mode(mode)
+        with open(tmp, "w", encoding=encoding, newline=newline, opener=opener) as handle:
             handle.write(content)
         os.replace(tmp, path)
     finally:
         with suppress(OSError):
             tmp.unlink(missing_ok=True)
+
+
+def _opener_with_mode(mode: int) -> Callable[[str, int], int]:
+    """An ``open()`` opener that creates the file with ``mode`` permissions."""
+
+    def opener(file: str, flags: int) -> int:
+        return os.open(file, flags, mode)
+
+    return opener
 
 
 def apply_file_changes(changes: Sequence[FileChange]) -> None:

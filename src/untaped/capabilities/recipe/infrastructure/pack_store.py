@@ -7,7 +7,7 @@ import hashlib
 import shutil
 import tomllib
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,6 +32,8 @@ from untaped.capability_api import GitCommandError, atomic_write, run_git
 
 _GIT_URL_PREFIXES = ("https://", "git@", "ssh://")
 _GIT_CLONE_TIMEOUT = 600.0
+_GIT_REV_PARSE_TIMEOUT = 30.0
+_HOOK_ENVIRONMENT_FILES = frozenset({"pyproject.toml", "uv.lock"})
 
 # Dev/build junk excluded from library installs; pack_content_hash prunes the
 # same names so the recorded install hash and the copied tree always agree.
@@ -53,6 +55,7 @@ PACK_COPY_IGNORE = (
 class _IndexEntry:
     source: str = ""
     rev: str = ""
+    commit: str = ""
     version: str = ""
     content_hash: str = ""
 
@@ -61,23 +64,53 @@ def _is_ignored(name: str) -> bool:
     return any(fnmatch.fnmatch(name, pattern) for pattern in PACK_COPY_IGNORE)
 
 
-def pack_content_hash(root: Path) -> str:
-    """Digest a pack tree's install-relevant content (ignore set pruned)."""
-    digest = hashlib.sha256()
+def _pack_files(root: Path) -> Iterator[tuple[str, bytes]]:
+    """Yield ``(relative posix path, content)`` for a pack tree's install-relevant files."""
     for path in sorted(root.rglob("*"), key=lambda p: p.relative_to(root).as_posix()):
         relative = path.relative_to(root)
         if any(_is_ignored(part) for part in relative.parts):
             continue
         if not path.is_file():
             continue
-        digest.update(relative.as_posix().encode("utf-8"))
-        digest.update(b"\x00")
         try:
-            digest.update(path.read_bytes())
+            yield relative.as_posix(), path.read_bytes()
         except OSError as exc:
             raise ValueError(f"cannot hash pack file {relative.as_posix()}: {exc}") from exc
+
+
+def pack_content_hash(root: Path) -> str:
+    """Digest a pack tree's install-relevant content (ignore set pruned)."""
+    digest = hashlib.sha256()
+    for relative, content in _pack_files(root):
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\x00")
+        digest.update(content)
         digest.update(b"\x00")
     return digest.hexdigest()
+
+
+def changed_hook_files(installed_root: Path, source_root: Path) -> list[str]:
+    """Hook-code files added, removed, or modified between two pack trees.
+
+    Hook code is what the hook worker executes: everything under ``src/``
+    plus ``pyproject.toml`` and ``uv.lock``, which define its environment.
+    """
+    installed = {
+        relative: hashlib.sha256(content).digest()
+        for relative, content in _pack_files(installed_root)
+    }
+    source = {
+        relative: hashlib.sha256(content).digest() for relative, content in _pack_files(source_root)
+    }
+    return sorted(
+        relative
+        for relative in installed.keys() | source.keys()
+        if _is_hook_code(relative) and installed.get(relative) != source.get(relative)
+    )
+
+
+def _is_hook_code(relative: str) -> bool:
+    return relative.startswith("src/") or relative in _HOOK_ENVIRONMENT_FILES
 
 
 class PackLibrary:
@@ -107,8 +140,13 @@ class PackLibrary:
         name: str | None,
         force: bool,
         discard_edits: bool = False,
+        commit: str | None = None,
     ) -> PackManifest:
-        """Install a validated pack directory into the library."""
+        """Install a validated pack directory into the library.
+
+        ``rev`` is the revision the user asked for (a branch keeps tracking on
+        ``sync``); ``commit`` is the resolved commit that was installed.
+        """
         source_dir = source_dir.expanduser()
         manifest = read_pack_manifest(source_dir)
         validate_pack(source_dir, manifest)
@@ -128,6 +166,7 @@ class PackLibrary:
         index[installed_name] = _IndexEntry(
             source=source,
             rev=rev or "",
+            commit=commit or "",
             version=manifest.version,
             content_hash=content_hash,
         )
@@ -230,6 +269,7 @@ class PackLibrary:
                     manifest=manifest,
                     source=index_entry.source,
                     rev=index_entry.rev,
+                    commit=index_entry.commit,
                     installed_version=index_entry.version or manifest.version,
                 )
             )
@@ -330,6 +370,7 @@ class PackLibrary:
             index[name] = _IndexEntry(
                 source=str(raw_entry.get("source", "")),
                 rev=str(raw_entry.get("rev", "")),
+                commit=str(raw_entry.get("commit", "")),
                 version=str(raw_entry.get("version", "")),
                 content_hash=raw_hash,
             )
@@ -342,6 +383,8 @@ class PackLibrary:
             table = tomlkit.table()
             table.add("source", entry.source)
             table.add("rev", entry.rev)
+            if entry.commit:
+                table.add("commit", entry.commit)
             table.add("version", entry.version)
             table.add("content_hash", entry.content_hash)
             doc.add(name, table)
@@ -350,6 +393,7 @@ class PackLibrary:
 
 def validate_pack(source_dir: Path, manifest: PackManifest) -> None:
     """Validate a pack source before install (or before its summary is shown)."""
+    _reject_symlinks(source_dir)
     check_hook_project(source_dir, manifest)
     for recipe_name, recipe_entry in manifest.recipes.items():
         recipe_file = source_dir / recipe_entry.path
@@ -364,6 +408,21 @@ def validate_pack(source_dir: Path, manifest: PackManifest) -> None:
             raise ValueError(
                 f"hook module for {hook_name!r} exports neither transform() nor validate()"
             )
+
+
+def _reject_symlinks(source_dir: Path) -> None:
+    """Refuse a pack containing symlinks: installing would copy their targets.
+
+    Directories in the install ignore set (``.venv`` and friends) are never
+    copied, so their symlinks are left alone.
+    """
+    for directory, dirnames, filenames in source_dir.walk():
+        dirnames[:] = [name for name in dirnames if not _is_ignored(name)]
+        for name in sorted([*dirnames, *filenames]):
+            path = directory / name
+            if not _is_ignored(name) and path.is_symlink():
+                relative = path.relative_to(source_dir).as_posix()
+                raise ValueError(f"pack must not contain symlinks: {relative}")
 
 
 def local_edits_message(installed_name: str) -> str:
@@ -408,6 +467,21 @@ def fetch_pack_source(url: str, *, rev: str | None, dest: Path) -> Path:
         _run_git(["clone", "--", url, str(dest)])
         _run_git(["checkout", "--detach", rev, "--"], cwd=dest)
     return dest
+
+
+def checkout_commit(checkout: Path) -> str:
+    """Return the full commit SHA checked out at ``checkout``."""
+    try:
+        result = run_git(
+            ["rev-parse", "--verify", "HEAD^{commit}"],
+            cwd=checkout,
+            timeout=_GIT_REV_PARSE_TIMEOUT,
+            capture=True,
+            ceiling=True,
+        )
+    except GitCommandError as exc:
+        raise ValueError(str(exc)) from exc
+    return result.text.strip()
 
 
 def _is_missing_branch_error(message: str) -> bool:
