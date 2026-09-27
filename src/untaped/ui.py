@@ -22,7 +22,6 @@ from untaped.prompts import (
 from untaped.quiet import is_quiet
 from untaped.render import (
     MessageKind,
-    OutputFormat,
     Renderer,
     RichTerminalRenderer,
     Row,
@@ -32,6 +31,7 @@ from untaped.render import (
 )
 from untaped.theme import (
     BUILTIN_THEMES,
+    OutputFormat,
     ThemeSpec,
     resolve_theme_or_default,
 )

@@ -10,16 +10,16 @@ import weakref
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Annotated, Any, NoReturn
+from typing import Annotated, Any, NoReturn, get_args
 
-from cyclopts import App, Parameter, ResultAction
+from cyclopts import App, ArgumentCollection, Parameter, ResultAction, Token
 from cyclopts.exceptions import CycloptsError
 from cyclopts.validators import Number
 from pydantic import BaseModel
 from rich.console import Console
 
 from untaped.errors import ExitCode, HttpError, OperationCancelledError, UntapedError
-from untaped.render import OutputFormat
+from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context
 from untaped.verbose import is_verbose
 
@@ -28,6 +28,54 @@ FormatOption = Annotated[
     Parameter(name=["--format", "-f"], help="Output format."),
 ]
 """Shared ``--format / -f`` option for any command that prints rows."""
+
+#: Environment variable naming the default ``--format`` (wins over ``ui.format``).
+FORMAT_ENV = "UNTAPED_FORMAT"
+
+
+def apply_default_format(
+    app: App, commands: tuple[str, ...], arguments: ArgumentCollection
+) -> None:
+    """Cyclopts config source: default an omitted shared ``--format``.
+
+    Installed on the root app. Only a ``FormatOption`` whose command default
+    is ``table`` follows the user's choice (a command defaulting to ``raw``
+    or ``yaml`` keeps it): ``UNTAPED_FORMAT`` first, then the ``ui.format``
+    setting. An explicit ``--format`` has tokens already and always wins. A
+    ``ui`` section that fails to load is ignored here so ``config set`` can
+    still repair it; ``doctor`` reports it.
+    """
+    del app, commands
+    argument = next(
+        (
+            argument
+            for argument in arguments
+            if "--format" in argument.names
+            and not argument.tokens
+            and argument.hint == OutputFormat
+            and argument.field_info.default == "table"
+        ),
+        None,
+    )
+    if argument is None:
+        return
+    choices = get_args(OutputFormat)
+    value = os.environ.get(FORMAT_ENV) or None
+    source = FORMAT_ENV
+    if value is not None and value not in choices:
+        raise_usage(f"{FORMAT_ENV} must be one of {', '.join(choices)}; got {value!r}")
+    if value is None:
+        # Keep settings lazy: only commands printing rows need them here.
+        from untaped.settings import load_settings_section  # noqa: PLC0415
+
+        try:
+            value = load_settings_section("ui").format
+        except UntapedError:
+            return
+        source = "ui.format"
+    if value is not None:
+        argument.append(Token(keyword=source, value=value, source=source))
+
 
 ColumnsOption = Annotated[
     list[str] | None,

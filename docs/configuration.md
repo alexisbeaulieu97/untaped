@@ -338,6 +338,13 @@ Themes are selected through `ui.theme` and must name a built-in theme
 theme already in the file. Human table/detail rendering follows the theme,
 while JSON, YAML, raw, and pipe output remain machine-readable and stable.
 
+`ui.format` replaces the `table` default of every command that takes the
+shared `--format` option (`json`, `yaml`, `table`, `raw` or `pipe`). The
+`UNTAPED_FORMAT` environment variable wins over it, and an explicit `--format`
+wins over both. Commands whose own default is another format (`config get`
+prints `raw`) keep it. Table output that does not go to a terminal is not
+wrapped: only `COLUMNS` or a real terminal width bounds it.
+
 ## Worked profile setup
 
 This example writes capability-qualified keys through the root and then invokes

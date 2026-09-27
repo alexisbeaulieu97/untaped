@@ -46,7 +46,6 @@ from untaped.management._render import emit_isolated
 from untaped.management.skills import composed_skills
 from untaped.messages import plural
 from untaped.profile_resolver import classify_active_profile
-from untaped.render import OutputFormat
 from untaped.settings import (
     HttpSettings,
     Settings,
@@ -57,7 +56,7 @@ from untaped.settings import (
     resolve_state_path,
 )
 from untaped.skills import SkillState, outdated_skills, project_root
-from untaped.theme import UiSettings, resolve_theme
+from untaped.theme import OutputFormat, UiSettings, resolve_theme
 
 _PASS = "pass"
 _FAIL = "fail"
