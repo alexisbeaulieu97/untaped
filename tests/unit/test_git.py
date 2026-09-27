@@ -107,6 +107,23 @@ def test_env_respects_configured_core_ssh_command(monkeypatch: pytest.MonkeyPatc
     assert "GIT_SSH_COMMAND" not in git_env(git_path="git")
 
 
+def test_core_ssh_command_is_probed_in_the_target_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GIT_SSH_COMMAND", raising=False)
+    monkeypatch.delenv("GIT_SSH", raising=False)
+    configured, plain = tmp_path / "configured", tmp_path / "plain"
+    for repo in (configured, plain):
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(
+        ["git", "-C", str(configured), "config", "core.sshCommand", "ssh -i k"], check=True
+    )
+    monkeypatch.chdir(plain)
+    assert "GIT_SSH_COMMAND" not in git_env(git_path="git", cwd=configured)
+    monkeypatch.chdir(configured)
+    assert git_env(git_path="git", cwd=plain)["GIT_SSH_COMMAND"] == "ssh -o BatchMode=yes"
+
+
 def test_ceiling_stops_discovery_above_cwd(tmp_path: Path) -> None:
     env = git_env(cwd=tmp_path / "ws" / "repo", ceiling=True)
     assert os.path.abspath(tmp_path / "ws") in env["GIT_CEILING_DIRECTORIES"].split(os.pathsep)

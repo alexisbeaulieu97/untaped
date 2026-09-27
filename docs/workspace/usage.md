@@ -408,8 +408,9 @@ also skipped instead of followed or deleted. Like `remove --prune` and
 `forget --prune`, `sync --prune` previews the safe orphans it is about
 to delete (workspace, repo, absolute path) and asks once for
 confirmation; pass `--yes` / `-y` to skip the prompt. Without a TTY and
-without `--yes` it prints the sync rows and exits `2` with an error
-instead of deleting; declining keeps every orphan. There is nothing to
+without `--yes` it prints the sync summary and rows and exits `2` with an
+error instead of deleting; declining keeps every orphan, prints the rows,
+and exits `1` with `cancelled; no changes made`. There is nothing to
 confirm, and no `--yes` needed, when no safe orphans exist. Safety is
 re-checked right before each delete. The same local remote-tracking ref
 boundary applies here: `sync --prune` does not fetch during the prune
@@ -632,7 +633,14 @@ bare cache during sync; they fetch their own `origin` refs and then
 fast-forward or skip. Missing clones use the bare cache as the
 reference source. A fresh bare clone is treated as already fresh, while
 an existing bare is fetched at most once per bare cache path per sync
-run, on demand, before reference clones use it.
+run, on demand, before reference clones use it. Concurrent untaped
+processes can share the cache: each bare clone is created or fetched
+under a lock file beside it (`<name>.git.lock`), so one process never
+clones into, fetches, or removes another's partial clone. A ready bare
+clone is used without taking the lock. A waiting process allows for a few
+other processes' clone or fetch timeouts before its repo fails as locked,
+and a cache where the lock file cannot be created fails the repo with
+`could not lock bare cache`.
 
 ## See also
 
