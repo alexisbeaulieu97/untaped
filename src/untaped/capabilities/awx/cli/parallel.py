@@ -1,9 +1,9 @@
-"""Parallel monitor scaffolding shared by ``--track`` and ``--wait``.
+"""Parallel monitor scaffolding shared by ``--follow`` and ``--wait``.
 
 Owns the bounded-worker / launch-order collection / error-wrap shape that
-both ``drain_parallel`` (``--track``) and ``wait_parallel`` (``--wait``)
+both ``drain_parallel`` (``--follow``) and ``wait_parallel`` (``--wait``)
 need, on top of :func:`untaped.capability_api.bounded_map`; each caller contributes
-only its unique mechanics (queue + print loop for track; ``WatchJob``
+only its unique mechanics (queue + print loop for follow; ``WatchJob``
 lambda for wait).
 """
 
@@ -13,13 +13,10 @@ import queue
 import threading
 from collections.abc import Callable
 
-from rich.text import Text
-
 from untaped.capabilities.awx.application import WatchJob
 from untaped.capabilities.awx.application.ports import JobMonitor, RawHttpResourceClient
 from untaped.capabilities.awx.application.scheduling import MAX_PARALLEL, idle
-from untaped.capabilities.awx.cli.event_render import render_event_text
-from untaped.capabilities.awx.domain import Job, JobEvent
+from untaped.capabilities.awx.domain import Job
 from untaped.capabilities.awx.domain.job import JOB_ROUTES
 from untaped.capability_api import UntapedError, bounded_map
 
@@ -93,59 +90,60 @@ def drain_parallel_with_worker(
 def drain_parallel(
     monitor: JobMonitor,
     jobs: list[tuple[str, Job]],
-    write: Callable[[Text], None],
+    write: Callable[[str, str], None],
     *,
     stop: threading.Event | None = None,
     finished: dict[str, Job] | None = None,
 ) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
-    """Drain ``--track`` events from multiple jobs concurrently.
+    """Stream ``--follow`` logs from multiple jobs concurrently.
 
-    Workers stream structured events, or workflow status changes, onto a queue; the
-    main thread drains the queue and hands each line to ``write`` (a Rich
-    console's ``print`` in the CLI) with the originating
-    template name as a prefix so concurrent output stays
-    disambiguable on a shared stderr. After every worker has signalled
-    completion (sentinel ``(name, None)``), each future's final
-    :class:`Job` (post ``monitor.fetch``) is collected in launch order
+    Workers stream each job's stdout, or a workflow job's status changes,
+    onto a queue; the main thread drains the queue and hands each line to
+    ``write(prefix, line)``. With several jobs ``prefix`` is ``[label] `` so
+    concurrent logs stay disambiguable on a shared stderr; a single job's
+    log (empty prefix) reads as ``ansible-playbook`` prints it, ending with
+    its PLAY RECAP. ``line`` is the raw log line, to be written verbatim.
+    After every worker has signalled completion (sentinel
+    ``(name, None)``), each future's final :class:`Job` (post
+    ``monitor.fetch``) is collected in launch order
     by :func:`drain_parallel_with_worker` so the caller's per-job
     error stderr rows + ``any_failed`` exit-code semantics stay stable.
 
     ``Ctrl-C`` sets ``stop``; a monitor built with a stop-aware sleep
     (the CLI context's) then ends its polling loop immediately.
     """
-    q: queue.Queue[tuple[str, JobEvent | Job | None]] = queue.Queue()
+    q: queue.Queue[tuple[str, str | Job | None]] = queue.Queue()
+    prefix = len(jobs) > 1
 
     def _worker(name: str, job: Job) -> Job:
         # Sentinel pushed in ``finally`` *before* ``monitor.fetch`` so
         # a slow or failing fetch never blocks the main thread's queue
         # drain.
         try:
-            if JOB_ROUTES[job.kind].events is None:
+            if not JOB_ROUTES[job.kind].stdout:
                 final = job
                 for status in monitor.stream_status(job):
                     q.put((name, status))
                     final = status
                 return final
             else:
-                for ev in monitor.stream_events(job, follow=True):
-                    q.put((name, ev))
+                for line in monitor.stream_stdout(job):
+                    q.put((name, line))
         finally:
             q.put((name, None))
         return monitor.fetch(job)
 
     def _drain_queue() -> None:
-        # Single-threaded printing: queue drain runs only here so a
-        # multi-segment Rich Text never interleaves between workers.
+        # Single-threaded printing: queue drain runs only here so lines
+        # never interleave between workers.
         done = 0
         while done < len(jobs):
-            name, ev = q.get()
-            if ev is None:
+            name, item = q.get()
+            if item is None:
                 done += 1
                 continue
-            if isinstance(ev, Job):
-                write(Text(f"[{name}] {ev.kind}#{ev.id}: {ev.status}"))
-            else:
-                write(render_event_text(ev, prefix=name))
+            line = f"{item.kind}#{item.id}: {item.status}" if isinstance(item, Job) else item
+            write(f"[{name}] " if prefix else "", line)
 
     return drain_parallel_with_worker(
         jobs, _worker, while_running=_drain_queue, stop=stop, finished=finished
@@ -164,7 +162,7 @@ def wait_parallel(
     """Block-wait on multiple jobs concurrently — no streaming.
 
     Mirrors :func:`drain_parallel` for the ``--wait`` (no
-    ``--track``) path: each worker calls ``WatchJob(client)(job)``
+    ``--follow``) path: each worker calls ``WatchJob(client)(job)``
     until the job hits a terminal state and returns. The
     executor / collection / error-wrap scaffolding lives in
     :func:`drain_parallel_with_worker`. ``timeout`` bounds each wait;

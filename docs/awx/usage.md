@@ -40,8 +40,12 @@ Selection modes are exclusive. For selection-based commands, use positional
 names, names with `--by-id`, `--stdin`, `--filter`/`--search`, or explicit
 `--all`; do not combine modes.
 Organization, inventory, inventory-organization, and parent options constrain
-both lookup and server filters. Selection-based mutation commands require an
-explicit selection or `--all`.
+both lookup and server filters. Each resource group offers only the scopes it
+has: `--organization` for organization-scoped kinds (templates, projects,
+inventories, credentials), `--inventory`, `--inventory-organization` and
+`--parent` for hosts, groups and inventory sources, and `--parent` for
+schedules. Any other scope option is unknown to that group (exit 2).
+Selection-based mutation commands require an explicit selection or `--all`.
 
 ```bash
 untaped awx job-templates list --filter name__icontains=deploy
@@ -51,7 +55,12 @@ untaped awx inventory-sources patch Cloud --inventory Production \
 ```
 
 `--filter` is repeatable and is passed to AWX using its server-side lookup
-syntax. Names that remain ambiguous require a narrower scope or an ID. The
+syntax. Names that remain ambiguous require a narrower scope or an ID. A name
+that is not found names its scope and suggests close names from that scope
+(`JobTemplate not found: 'deplyo' in organization 'Default'; did you mean
+'deploy'?`); when `awx.default_organization` supplied the organization, a
+second line says so and to pass `--organization` to search elsewhere (a
+missed `launch --launch-inventory` or `--credential` name too). The
 resolver de-duplicates a kind and ID, validates the complete selection before
 mutation, and performs no writes for an empty or invalid selection.
 
@@ -162,18 +171,30 @@ can be reopened or cancelled. A no-op editor session does not prompt or write.
 
 ## Apply, export, and inventory lifecycle
 
-`apply FILE_OR_DIRECTORY` is the declarative create/update path. It accepts
-complete portable YAML documents, resolves dependencies, previews the full
-batch once, and writes only after confirmation:
+`awx apply FILE_OR_DIRECTORY` is the declarative create/update path, for
+every kind at once. It accepts complete portable YAML documents, resolves
+dependencies, previews the full batch once, and writes only after
+confirmation. `apply -` reads the documents from stdin, so an export from one
+profile can be applied to another without a file:
 
 ```bash
 untaped awx apply ./awx-specs --dry-run
-untaped awx inventories apply ./inventory.yml --yes
+untaped awx apply ./inventory.yml --yes
+untaped --profile staging awx export --kind job-templates --out-dir exported \
+  | untaped --profile prod awx apply - --yes
+untaped awx apply ./awx-specs --check
 ```
+
+`--check` computes the same plan and writes nothing: it exits 3 when any
+document would change the controller (drift) and 0 when everything is
+already in place, so CI can tell drift from failure (1). The rows show
+`planned` or `unchanged`.
 
 A directory contributes every `*.yml` and `*.yaml` file, so keep other YAML
 (for example CI or vars files) out of it; a file that cannot be read or parsed,
-or holds an unknown or unexpected kind, fails the apply with its path named.
+or holds an unknown kind, fails the apply with its path (`<stdin>` for
+`apply -`) named. Stdin with no documents (empty, or only `---` and comments)
+is an error, and so is an unknown option (`apply --chekc`, exit 2).
 A document of an
 organization-scoped kind without `metadata.organization` is scoped by
 `awx.default_organization`, as selection and `awx test` are. With no default
@@ -226,7 +247,7 @@ configuration:
 ```bash
 untaped awx job-templates export Deploy --organization Default --out deploy.yml
 # edit metadata.name to "Deploy next", then:
-untaped awx job-templates apply deploy.yml --yes
+untaped awx apply deploy.yml --yes
 ```
 
 Surveys are read from and written to the template's `survey_spec/` endpoint;
@@ -301,8 +322,9 @@ selection of the same kind accepts it.
 
 ## Launch templates
 
-`launch` submits job or workflow templates. `--extra-vars` is repeatable and
-merged left to right into one mapping sent as JSON:
+`launch` submits job or workflow templates. `--extra-vars` is
+repeatable and merged left to right into one mapping sent as JSON; a later
+entry wins over an earlier one for the same key:
 
 - `KEY=VAL`: only `true`/`false`/`null`, integers (`count=2`), and JSON
   objects or arrays (`tags=["a"]`) are decoded; everything else is kept as the
@@ -316,7 +338,23 @@ cannot carry (`.nan`, `!!binary`) are a usage error.
 ```bash
 untaped awx job-templates launch Deploy --organization Default \
   --extra-vars @vars.yml --extra-vars version=1.10.0 --host-pattern web --wait
+untaped awx job-templates launch Deploy --launch-inventory Staging --dry-run -f yaml
 ```
+
+`--organization` scopes the lookup of the template (and of `--launch-inventory`
+and `--credential` names). `--launch-inventory NAME|ID` is the inventory the
+job runs against; digits mean an AWX id. `--dry-run` resolves everything and
+submits nothing: each `planned` row carries the `payload` the launch would
+send, with names resolved to ids and `extra_vars` merged into a mapping
+(compact JSON in the `table` and `raw` formats).
+Secrets are shown as `<redacted>`: the answers to the template's `password`
+survey questions and any variable, at any depth, whose name looks secret.
+A name is split into words at `_`, `-`, `.` and camelCase humps; it looks
+secret when a word is `pass`, `passwd`, `password`, `passphrase`, `pwd`,
+`secret` or `token`, a word ends in `password`, `passphrase`, `secret` or
+`token` (`dbpassword`), or two adjacent words form `api_key`, `access_key`,
+`private_key`, `secret_key` or `ssh_key` (`vault_pass`, `dbPassword`,
+`db-password`, `sshKey`).
 
 Before any POST, each target's `launch/` endpoint is read. A supplied flag
 whose template setting `ask_*_on_launch` is false (AWX would silently ignore
@@ -331,14 +369,14 @@ the same way. If AWX still lists
 `ignored_fields` in a launch response, that row fails with the ignored field
 names and keeps the execution ID; `awx test` reports such a case as an error.
 
-## Sync and track executions
+## Sync, wait for and follow executions
 
 Project, inventory-source, and inventory synchronization use `sync`:
 
 ```bash
 untaped awx projects sync Playbooks --wait
 untaped awx inventory-sources sync Cloud --inventory Production --wait
-untaped awx inventories sync Production --wait --track
+untaped awx inventories sync Production --follow
 ```
 
 Inventory sync first resolves and freezes the current source IDs (one
@@ -349,24 +387,31 @@ manual, or otherwise invalid target fails complete preflight with zero POSTs;
 invalid selection. `--dry-run` resolves and previews targets without
 submitting an action.
 
-`--wait` waits for terminal success and exits nonzero for failed, canceled, or
-error executions. `--timeout SECONDS` (with `--wait` or `--track`) stops
+`launch` and `sync` watch what they start with one flag family. `--wait`
+waits for terminal success and exits nonzero for failed, canceled, or error
+executions. `--follow` waits the same way and streams each job's log to
+stderr as it runs, ending with its PLAY RECAP (stdout keeps only the result
+rows). With several executions each log line is prefixed with its
+`[template]`. `--timeout SECONDS` (with `--wait` or `--follow`) stops
 waiting after that many seconds per execution: an execution still running
 fails its row (`still running after --timeout 600s; it keeps running`), and a
-`jobs wait` hint names it. Ctrl-C while waiting or tracking (including
+`jobs wait` hint names it. Ctrl-C while waiting or following (including
 `awx test run --parallel`) or while launches are still being submitted stops
 promptly, exits 130, and prints the IDs of executions not known to have
 finished (including ones AWX created while ignoring fields; "was launched"
 when their status is unknown) with an `untaped awx jobs wait ...` command to
 resume; the executions themselves keep running on the controller (`awx test
-run` cancels them unless `--no-cancel`). `--track`
-shows progress on stderr while waiting; a failed or unreachable host result
-is followed by the reason from that event's output (up to ten lines; `jobs
-events` has the rest). Ordinary
-jobs expose `job_events`; project and inventory updates expose their `events`
-routes. Workflow jobs, including sliced launches that return a workflow job,
-have no own events or stdout route, so tracking emits status transitions from
-the detail endpoint instead of requesting `workflow_events` or `stdout`.
+run` cancels them unless `--no-cancel`). A failed or unreachable host shows
+up in the followed log as Ansible prints it (`fatal: [host]: FAILED! => …`).
+AWX writes a finished job's log from its saved events, so `--follow` (and
+`jobs logs --follow`) keeps reading briefly after the job ends until they are
+all in, and warns on stderr when AWX is still saving them after that (the log
+may be cut short; `jobs logs` later has it all). Log lines are written as
+AWX stores them: never wrapped or tab-expanded, whatever the terminal width. Workflow jobs, including sliced launches that return a workflow job,
+have no own events or stdout route, so following one prints its status
+transitions from the detail endpoint instead of requesting
+`workflow_events` or `stdout`. For structured per-task events, use
+`jobs events --follow`.
 
 For direct job inspection, non-default execution collections require an
 explicit kind:
@@ -419,7 +464,7 @@ retained in the failed result.
 untaped awx jobs list --status failed --limit 10
 untaped awx jobs get 101 102 --format yaml
 untaped awx jobs logs 101 --tail 50 --follow
-untaped awx jobs logs 101 --grep 'fatal:' -i
+untaped awx jobs logs 101 --grep 'fatal:' -i -f json
 untaped awx jobs events 101 --filter event=runner_on_failed
 untaped awx jobs wait 101 --timeout 600
 ```
@@ -444,7 +489,8 @@ the failed hosts and applies to job executions; project and inventory updates
 have no relaunch route (sync them instead).
 
 `logs` prints the job's stdout; `events` prints the structured per-task
-events. Both take `--follow` to tail a running job. Chain a launch into a
+events. Both take `--follow` to tail a running job (`--follow` has no short
+form; `-f` is `--format`, as everywhere). Chain a launch into a
 wait or log tail through the pipe:
 
 ```bash
@@ -570,9 +616,14 @@ untaped awx test run other/tests/deploy-smoke.yml
 
 - `launch` holds the AWX launch payload fields. `!ref {kind, name}` resolves a
   resource name to its ID.
-- A variable without a default is required: pass `--var`, `--vars-file`, or
-  answer the prompt. Without a terminal, or with `--non-interactive`, a
-  missing variable fails instead of prompting.
+- Suite variables come from `--var KEY=VALUE`, then `--vars-file` (repeatable;
+  a later file wins), then the variable's default: `--var` wins over a vars
+  file, which wins over the default. A variable without a default is
+  required: pass `--var`, `--vars-file`, or answer the prompt. Without a
+  terminal, or with `--non-interactive`, a missing variable fails instead of
+  prompting. These fill the suite's template; the extra vars AWX gets are
+  each case's `launch.extra_vars`, the counterpart of `launch --extra-vars`
+  on the command line.
 - `expect` says what the job must produce, and every check must hold.
   - `status`: the job's final status (`successful`, the default, or `failed`,
     `error`, `canceled`).
@@ -657,16 +708,11 @@ The old `apply --stdin --set ...` overlay interface is removed; use
 `--fail-fast` is removed; default runtime scheduling stops on failure, and
 `--continue-on-error` opts into best effort. There are no compatibility aliases.
 
-These spellings were renamed and keep working with a deprecation warning
-until 8.0:
-
-| Old | New |
-|---|---|
-| `awx save`, `awx <kind> save` | `awx export`, `awx <kind> export` |
-| `launch --limit` | `launch --host-pattern` |
-| `jobs logs -f` | `jobs logs --follow` |
-| `usage -r`, `nodes -r` | `--recursive` |
-| `inventories input_inventories`, `instance_groups` | `input-inventories`, `instance-groups` |
+8.0 removed these spellings: `awx save` and `awx <kind> save` (use
+`export`), `awx <kind> apply` (use `awx apply`), `launch --limit` (use
+`--host-pattern`), `launch --inventory` (use `--launch-inventory`),
+`launch`/`sync --track` (use `--follow`), `usage -r` and `nodes -r` (use
+`--recursive`), and `jobs logs -f` as `--follow` (`-f` is `--format`).
 
 `ping` options are keyword-only: use `awx ping -f json`, not `awx ping json`.
 
@@ -695,10 +741,10 @@ untaped awx inventory-sources get DisposableSource \
 untaped awx inventory-sources edit DisposableSource \
   --inventory Disposable --inventory-organization Default --dry-run
 untaped awx inventory-sources sync DisposableSource \
-  --inventory Disposable --inventory-organization Default --wait --track
+  --inventory Disposable --inventory-organization Default --follow
 
-untaped awx inventory-sources apply disposable-source.yml --yes
-untaped awx inventories apply disposable-inventory.yml --yes
+untaped awx apply disposable-source.yml --yes
+untaped awx apply disposable-inventory.yml --yes
 ```
 
 Confirm that the cache timeout changed, `update_on_launch` stayed unchanged,

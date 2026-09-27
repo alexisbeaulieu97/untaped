@@ -30,21 +30,20 @@ from untaped.capabilities.awx.cli.options import (
     ContinueOption,
     DryRunOption,
     FilterOption,
-    InventoryOrganizationOption,
+    FollowOption,
     NamesArgument,
     OrganizationOption,
     ParallelOption,
-    ParentOption,
     SearchOption,
     StdinOption,
     WaitTimeoutOption,
     YesOption,
 )
+from untaped.capabilities.awx.errors import ResourceNotFoundError, default_organization_note
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
-    deprecated_alias,
     raise_usage,
     read_structured_file,
     report_errors,
@@ -69,8 +68,6 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
         search: SearchOption = None,
         filter_: FilterOption = None,
         all_: AllOption = False,
-        parent: ParentOption = None,
-        inventory_organization: InventoryOrganizationOption = None,
         dry_run: DryRunOption = False,
         yes: YesOption = False,
         continue_on_error: ContinueOption = False,
@@ -94,12 +91,12 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
             str | None,
             Parameter(name="--host-pattern", help="Limit the run to hosts matching this pattern."),
         ] = None,
-        inventory: Annotated[
+        launch_inventory: Annotated[
             str | None,
             Parameter(
-                name="--inventory",
-                help="Override inventory by name (resolved to id).",
-                show=not hidden_by_flag["--inventory"],
+                name="--launch-inventory",
+                help="Inventory to run against: a name, or digits for an AWX id.",
+                show=not hidden_by_flag["--launch-inventory"],
             ),
         ] = None,
         credential: Annotated[
@@ -171,24 +168,14 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                 name="--wait", negative="", help="Wait for success; fail on unsuccessful execution."
             ),
         ] = False,
-        track: Annotated[
-            bool,
-            Parameter(
-                name=["--track", "-t"],
-                negative="",
-                help=(
-                    "Stream events (workflow status) to stderr while waiting; exit 1 "
-                    "if any tracked job ends in a non-successful terminal state."
-                ),
-            ),
-        ] = False,
+        follow: FollowOption = False,
         timeout: WaitTimeoutOption = None,
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
         """Launch one or more resources and (optionally) wait for each job."""
         supplied: dict[str, object] = {
-            "--inventory": inventory,
+            "--launch-inventory": launch_inventory,
             "--credential": credential,
             "--scm-branch": scm_branch,
             "--job-tag": job_tag,
@@ -198,11 +185,10 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
             "--job-type": job_type,
         }
         _reject_unsupported_launch_flags(kind=spec.kind, accepts=accepts, supplied=supplied)
-        validate_wait_timeout(timeout, wait=wait, track=track)
+        validate_wait_timeout(timeout, wait=wait, follow=follow)
         with report_errors():
             parallel = validate_controls(yes=yes, dry_run=dry_run, parallel=parallel)
             with open_context() as ctx:
-                # --inventory remains a payload override, never template scope.
                 selected = select_resources(
                     ctx,
                     spec,
@@ -214,18 +200,19 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                     all_=all_,
                     require_explicit=True,
                     organization=organization,
-                    inventory_organization=inventory_organization,
-                    parent=parent,
                 )
                 scope = scope_for_command(ctx, organization, spec)
-                payload = _build_launch_payload(
-                    accepts=accepts,
-                    extra_vars=extra_vars,
-                    limit=host_pattern,
-                    supplied=supplied,
-                    fk=ctx.fk,
-                    org_scope=scope,
-                )
+                try:
+                    payload = _build_launch_payload(
+                        accepts=accepts,
+                        extra_vars=extra_vars,
+                        limit=host_pattern,
+                        supplied=supplied,
+                        fk=ctx.fk,
+                        org_scope=scope,
+                    )
+                except ResourceNotFoundError as exc:
+                    raise _with_scope_note(exc, organization, scope) from None
                 run_action_selection(
                     ctx,
                     spec,
@@ -240,13 +227,11 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                     parallel=parallel,
                     continue_on_error=continue_on_error,
                     wait=wait,
-                    track=track,
+                    follow=follow,
                     timeout=timeout,
                     fmt=fmt,
                     columns=columns,
                 )
-
-    deprecated_alias(app["launch"], "--limit", "--host-pattern")
 
 
 @dataclass(frozen=True)
@@ -274,17 +259,28 @@ class LaunchFlag:
     payload_builder: Callable[[Any, FkResolver, dict[str, str] | None], Any]
 
 
+def _with_scope_note(
+    exc: ResourceNotFoundError, organization: str | None, scope: dict[str, str] | None
+) -> ResourceNotFoundError:
+    """A missed FK name says so when ``awx.default_organization`` chose its scope."""
+    default = (scope or {}).get("organization") if organization is None else None
+    return exc.with_note(default_organization_note(default)) if default else exc
+
+
+def _inventory_id(value: str, fk: FkResolver, scope: dict[str, str] | None) -> Any:
+    """``--launch-inventory``: digits are an AWX id, anything else a name in scope."""
+    if value.isdecimal():
+        return fk.validate_id("Inventory", int(value))
+    return fk.name_to_id("Inventory", value, scope=scope)
+
+
 # Source of truth for the launch CLI flag → payload-field mapping.
 # ``extra_vars`` and ``limit`` stay outside the table — both are
 # accepted by every launch-capable kind today, so they don't need
 # per-kind visibility / rejection logic. If a future kind drops one,
 # fold it in here.
 LAUNCH_FLAGS: tuple[LaunchFlag, ...] = (
-    LaunchFlag(
-        "--inventory",
-        "inventory",
-        lambda v, fk, scope: fk.name_to_id("Inventory", v, scope=scope),
-    ),
+    LaunchFlag("--launch-inventory", "inventory", _inventory_id),
     LaunchFlag(
         "--credential",
         "credentials",
@@ -346,7 +342,7 @@ def _build_launch_payload(
 
     Only fields listed in this kind's ``ActionSpec.accepts`` are
     forwarded; flags for fields not in ``accepts`` are silently
-    ignored. FK flags (``--inventory``, ``--credential``) resolve
+    ignored. FK flags (``--launch-inventory``, ``--credential``) resolve
     names to ids using the per-process :class:`FkResolver` via each
     row's ``payload_builder``.
     """

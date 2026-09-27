@@ -95,15 +95,20 @@ def emit_outcomes(
     fmt: OutputFormat,
     columns: list[str] | None,
     allow_unverified: bool = False,
+    predicate_hit: bool = False,
 ) -> None:
-    """Preserve structured identity/status and nonzero failure conventions."""
+    """Preserve structured identity/status and nonzero failure conventions.
+
+    ``predicate_hit`` (``apply --check`` drift) exits 3 when nothing failed.
+    """
     emit(outcome_rows(outcomes), fmt=fmt, columns=columns, kind="awx.apply_outcome")
     finish(
         any(
             o.action in {"failed", "partial", "conflict", "skipped"}
             or (o.unverified and not allow_unverified)
             for o in outcomes
-        )
+        ),
+        predicate_hit=predicate_hit,
     )
 
 

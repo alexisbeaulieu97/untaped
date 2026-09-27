@@ -57,11 +57,14 @@ class AwxContext:
         self.strategies = StaticStrategyResolver()
         # Set on Ctrl-C so polling workers stop instead of blocking the exit.
         self.stop = threading.Event()
-        self.monitor = PollingJobMonitor(self.repo, sleep=self.pause)
+        self.monitor = PollingJobMonitor(self.repo, sleep=self.pause, warn=self._warn)
         self.jobs = JobRecordRepository(self.repo)
         self.ujts = HttpUnifiedTemplateRepository(self.repo)
         self.workflow_nodes = HttpWorkflowNodeRepository(self.repo)
         self.default_organization = config.default_organization
+
+    def _warn(self, message: str) -> None:
+        self.progress_ui().message("warning", message)
 
     def pause(self, seconds: float) -> None:
         """Poll-interval sleep that ends early (raising) once :attr:`stop` is set."""
@@ -72,7 +75,7 @@ class AwxContext:
         """The job monitor; with ``timeout`` each follow loop stops after that many seconds."""
         if timeout is None:
             return self.monitor
-        return PollingJobMonitor(self.repo, sleep=self.pause, timeout=timeout)
+        return PollingJobMonitor(self.repo, sleep=self.pause, timeout=timeout, warn=self._warn)
 
     def progress_ui(self) -> UiContext:
         """Themed stderr UI; a bad ``ui.theme`` falls back instead of failing."""
@@ -129,6 +132,18 @@ def scope_for_command(
     )
 
 
+def supported_scopes(spec: ResourceSpec) -> frozenset[str]:
+    """The scope options, by parameter name, that can narrow a ``spec`` lookup."""
+    scopes: set[str] = set()
+    if "organization" in spec.identity_keys:
+        scopes.add("organization")
+    if spec.apply_strategy == "inventory_child":
+        scopes.update({"inventory", "inventory_organization"})
+    if spec.parent_field is not None:
+        scopes.add("parent")
+    return frozenset(scopes)
+
+
 def scope_for_spec(
     spec: ResourceSpec,
     organization: str | None,
@@ -139,15 +154,17 @@ def scope_for_spec(
     parent: str | None = None,
 ) -> dict[str, str] | None:
     """Validate applicable scopes and constrain every selection mode."""
-    child = spec.apply_strategy == "inventory_child"
-    if inventory is not None and not child:
-        raise ConfigError(f"--inventory is not supported for {spec.kind}")
-    if inventory_organization is not None and not child:
-        raise ConfigError(f"--inventory-organization is not supported for {spec.kind}")
-    if organization is not None and "organization" not in spec.identity_keys:
-        raise ConfigError(f"--organization is not supported for {spec.kind}")
-    if parent is not None and spec.parent_field is None:
-        raise ConfigError(f"--parent is not supported for {spec.kind}")
+    supported = supported_scopes(spec)
+    requested = {
+        "inventory": inventory,
+        "inventory_organization": inventory_organization,
+        "organization": organization,
+        "parent": parent,
+    }
+    for name, value in requested.items():
+        if value is not None and name not in supported:
+            raise ConfigError(f"--{name.replace('_', '-')} is not supported for {spec.kind}")
+    child = "inventory" in supported
     if parent is not None and inventory is not None:
         raise UsageError("use --parent or --inventory, not both")
     scope: dict[str, str] = {}
@@ -158,7 +175,7 @@ def scope_for_spec(
             scope["inventory__organization"] = inventory_organization
     elif parent:
         scope["parent"] = parent
-    if "organization" in spec.identity_keys:
+    if "organization" in supported:
         org = organization or default_organization
         if org:
             scope["organization"] = org

@@ -38,6 +38,7 @@ from untaped.capabilities.awx.errors import (
     ResourceNotFoundError,
 )
 from untaped.capabilities.awx.infrastructure.catalog import AwxResourceCatalog
+from untaped.capabilities.awx.infrastructure.resource_repo import scope_params
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 
 if TYPE_CHECKING:
@@ -104,7 +105,9 @@ class HttpFkResolver:
             spec = self._catalog.get(kind)
             record = self._repo.find_by_identity(spec, name=name, scope=scope)
             if record is None:
-                raise ResourceNotFoundError(kind, {"name": name, **scope})
+                raise ResourceNotFoundError(
+                    kind, {"name": name, **scope}, candidates=self._repo.scoped_names(spec, scope)
+                )
             id_ = int(record["id"])
             self._name_cache[key] = id_
             self._id_cache[(kind, id_)] = name
@@ -125,7 +128,7 @@ class HttpFkResolver:
             # scope; an ambiguous display label never changes this target.
             scoped_record = self._repo.find(
                 spec,
-                params={"id": str(id_), **{f"{key}__name": value for key, value in scope.items()}},
+                params={"id": str(id_), **scope_params(scope)},
             )
             if scoped_record is None or scoped_record.get("id") != id_:
                 raise ResourceNotFoundError(kind, {"id": id_, **scope})
@@ -218,7 +221,7 @@ class HttpFkResolver:
 
     def _prefetch_one(self, kind: str, scope: dict[str, str]) -> None:
         spec = self._catalog.get(kind)
-        params: dict[str, str] = {f"{k}__name": v for k, v in scope.items()}
+        params = scope_params(scope)
         cache_scope = frozenset(scope.items())
         # Drain the paginated iterator off-lock so a `prefetch` running
         # while workers are live doesn't block their `name_to_id` calls

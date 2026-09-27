@@ -135,7 +135,7 @@ Resource kinds are `awx.<snake_case kind>`: `awx.organization`,
 |---|---|
 | `awx <resource> list`, `awx <resource> get` | that resource's kind |
 | `awx <resource> export --format json` or `--format pipe` | `awx.document` (YAML by default) |
-| `awx apply`, `awx <resource> apply`, `patch`, `edit` | `awx.apply_outcome` |
+| `awx apply`, `awx <resource> patch`, `edit` | `awx.apply_outcome` |
 | `awx <resource> delete` | `awx.delete_outcome` |
 | `awx <resource> <members> add/remove` | `awx.membership_outcome` |
 | `awx job-templates launch`, `awx workflow-templates launch` | `awx.launch_outcome` |
