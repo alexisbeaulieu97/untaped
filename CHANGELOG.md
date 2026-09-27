@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- Core
+  - **Fix:** config and state writes go through a symlinked `config.yml` or
+    `state.yml` instead of replacing the link with a regular file.
+  - **Fix:** `config edit` edits a private copy, validates it, and only then
+    saves it under the config lock, owner-only (`0600`), through a symlink and
+    with its line endings. An invalid result, a config file changed meanwhile,
+    or a failed save leaves `config.yml` unchanged (exit 1) and names the copy
+    holding your edits; before, the invalid file was kept. Saving without
+    changes writes nothing.
+  - **Fix:** the one-time move of a legacy state section out of `config.yml`
+    now also works when `config.yml` is a symlink.
+  - **Fix:** `atomic_write` (and `apply_file_changes`) now fsync the file and
+    its directory, keep an existing file's permission bits (or apply `mode=`),
+    and write through symlinks (never creating directories for a dangling
+    link's target). Config writes, file transactions and the GitHub corpus
+    metadata use this one helper.
+  - **Fix:** with `skills.updates: auto`, the per-run skills check only warns
+    after a failed command or a preview (`--dry-run`, `--check`); it no
+    longer rewrites installed skills then.
+  - **Fix:** git's `core.sshCommand` is looked up in the repository a git
+    command runs in, not the current directory, before untaped defaults ssh
+    to `BatchMode`.
+- Workspace
+  - **Fix:** `sync --prune` without a terminal and without `--yes` prints the
+    sync summary and rows before exiting 2, as documented; they were lost.
+  - **Fix:** declining the `sync --prune` confirmation exits 1 with
+    `cancelled; no changes made`, per the conventions (it exited 0).
+  - **Fix:** the bare-repo cache is locked across processes, so two
+    concurrent syncs of the same URL no longer clone into, fetch, or delete
+    each other's partial clone.
 - AWX
   - **Breaking:** `awx test` cases declare what their job must produce in
     `expect:`: a `status` (default `successful`) and `log` checks

@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import stat
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -95,16 +96,21 @@ def test_per_repo_git_calls_set_ceiling_to_repo_parent(tmp_path: Path) -> None:
     assert os.path.abspath(tmp_path / "ws") in ceilings
 
 
-def _fake_git(tmp_path: Path, body: str) -> Path:
+def _fake_git(tmp_path: Path, body: str, monkeypatch: pytest.MonkeyPatch) -> Path:
+    # The core.sshCommand probe runs git in the process cwd: keep it in tmp_path
+    # and answer it (`config`: unset) before the body can write or sleep.
+    monkeypatch.chdir(tmp_path)
     script = tmp_path / "fake-git"
-    script.write_text(f"#!/bin/sh\nfor last; do :; done\n{body}\n")
+    script.write_text(f'#!/bin/sh\n[ "$1" = config ] && exit 1\nfor last; do :; done\n{body}\n')
     script.chmod(script.stat().st_mode | stat.S_IXUSR)
     return script
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX shell script stands in for git")
-def test_clone_timeout_removes_partial_destination(tmp_path: Path) -> None:
-    git = _fake_git(tmp_path, 'mkdir -p "$last/.git"; exec sleep 5')
+def test_clone_timeout_removes_partial_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    git = _fake_git(tmp_path, 'mkdir -p "$last/.git"; exec sleep 5', monkeypatch)
     dest = tmp_path / "ws" / "svc-a"
     runner = GitRunner(git=str(git), slow_timeout=0.3)
 
@@ -115,8 +121,10 @@ def test_clone_timeout_removes_partial_destination(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX shell script stands in for git")
-def test_clone_failure_keeps_preexisting_destination(tmp_path: Path) -> None:
-    git = _fake_git(tmp_path, 'echo "fatal: nope" >&2; exit 128')
+def test_clone_failure_keeps_preexisting_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    git = _fake_git(tmp_path, 'echo "fatal: nope" >&2; exit 128', monkeypatch)
     dest = tmp_path / "ws" / "svc-a"
     dest.mkdir(parents=True)
     (dest / "keep.txt").write_text("mine")
@@ -130,8 +138,10 @@ def test_clone_failure_keeps_preexisting_destination(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX shell script stands in for git")
-def test_bare_clone_timeout_removes_partial_cache(tmp_path: Path) -> None:
-    git = _fake_git(tmp_path, 'mkdir -p "$last"; touch "$last/HEAD"; exec sleep 5')
+def test_bare_clone_timeout_removes_partial_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    git = _fake_git(tmp_path, 'mkdir -p "$last"; touch "$last/HEAD"; exec sleep 5', monkeypatch)
     runner = GitRunner(git=str(git), slow_timeout=0.3)
     cache = tmp_path / "cache"
 
@@ -139,3 +149,68 @@ def test_bare_clone_timeout_removes_partial_cache(tmp_path: Path) -> None:
         runner.ensure_bare("https://x.example/org/svc-a.git", cache_dir=cache)
 
     assert not runner.bare_cache_path("https://x.example/org/svc-a.git", cache_dir=cache).exists()
+
+
+@pytest.mark.parametrize("operation", ["ensure_bare", "bare_fetch"])
+def test_bare_cache_is_locked_across_processes(tmp_path: Path, operation: str) -> None:
+    # Two untaped processes syncing the same URL must not clone, fetch, or
+    # remove a partial clone of one bare cache at the same time.
+    url = "https://x.example/org/svc-a.git"
+    cache = tmp_path / "cache"
+    runner = GitRunner(timeout=0.02, slow_timeout=0.02)
+    bare = runner.bare_cache_path(url, cache_dir=cache)
+    bare.mkdir(parents=True)
+    holder = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from filelock import FileLock\n"
+            "with FileLock(sys.argv[1]):\n    print('held', flush=True); sys.stdin.read()",
+            f"{bare}.lock",
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    calls, fake_run = _record_calls()
+    try:
+        assert holder.stdout is not None and holder.stdout.readline() == "held\n"
+        with (
+            patch("subprocess.run", side_effect=fake_run),
+            pytest.raises(GitError, match="locked by another untaped process"),
+        ):
+            if operation == "ensure_bare":
+                runner.ensure_bare(url, cache_dir=cache)
+            else:
+                runner.bare_fetch(bare)
+    finally:
+        holder.communicate("")
+    assert calls == []
+    assert bare.is_dir()
+
+    with patch("subprocess.run", side_effect=fake_run):
+        runner.bare_fetch(bare)
+    assert calls
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="POSIX permissions")
+def test_unlockable_bare_cache_is_a_git_error_but_a_ready_cache_needs_no_lock(
+    tmp_path: Path,
+) -> None:
+    url = "https://x.example/org/svc-a.git"
+    cache = tmp_path / "cache"
+    runner = GitRunner()
+    bare = runner.bare_cache_path(url, cache_dir=cache)
+    bare.mkdir(parents=True)
+    (bare / "HEAD").write_text("ref: refs/heads/main\n")
+    bare.parent.chmod(0o555)  # a read-only shared cache: no lock file can be created
+    calls, fake_run = _record_calls()
+    try:
+        with patch("subprocess.run", side_effect=fake_run):
+            assert runner.ensure_bare(url, cache_dir=cache).created is False
+            with pytest.raises(GitError, match="could not lock bare cache"):
+                runner.bare_fetch(bare)
+    finally:
+        bare.parent.chmod(0o755)
+    assert calls == []
+    assert sorted(p.name for p in bare.parent.iterdir()) == [bare.name]

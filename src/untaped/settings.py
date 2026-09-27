@@ -196,14 +196,17 @@ def reset_config_registry_for_tests() -> None:
 class LayoutSettingsSource(InitSettingsSource):
     """Pydantic-settings source reading YAML through the active settings layout."""
 
-    def __init__(self, settings_cls: type[BaseSettings], yaml_file: Path) -> None:
+    def __init__(
+        self, settings_cls: type[BaseSettings], yaml_file: Path, *, config_path: Path | None = None
+    ) -> None:
+        """``config_path`` names the config file ``yaml_file`` stands in for."""
         raw = load_config_yaml(yaml_file)
         effective = active_settings_layout().effective(raw)
         # Only splice (and so only validate) the state sections this model
         # actually declares: a broken state section must not block loading
         # an unrelated one (see :func:`load_settings_section`).
         splice_registered_state(
-            raw, effective, sections=settings_cls.model_fields, config_path=yaml_file
+            raw, effective, sections=settings_cls.model_fields, config_path=config_path or yaml_file
         )
         super().__init__(settings_cls, effective)
 
@@ -378,6 +381,35 @@ def get_settings() -> Settings:
     """Return the cached aggregate settings instance."""
     try:
         return get_settings_model()()
+    except ValidationError as exc:
+        raise ConfigError(settings_error_message(exc)) from exc
+
+
+def validate_config_file(candidate: Path, *, config_path: Path | None = None) -> None:
+    """Validate ``candidate`` as if it were the config file, without loading it.
+
+    Checks exactly what :func:`get_settings` would (environment overrides and
+    capability state included) against the candidate's content instead of
+    ``config_path``'s (default: the active config file). Raises
+    :class:`ConfigError`.
+    """
+    stands_for = config_path or resolve_config_path()
+
+    class _Candidate(get_settings_model()):  # type: ignore[misc]
+        @classmethod
+        def settings_customise_sources(
+            cls,
+            settings_cls: type[BaseSettings],
+            init_settings: PydanticBaseSettingsSource,
+            env_settings: PydanticBaseSettingsSource,
+            dotenv_settings: PydanticBaseSettingsSource,
+            file_secret_settings: PydanticBaseSettingsSource,
+        ) -> tuple[PydanticBaseSettingsSource, ...]:
+            layout = LayoutSettingsSource(settings_cls, candidate, config_path=stands_for)
+            return (init_settings, env_settings, layout, file_secret_settings)
+
+    try:
+        _Candidate()
     except ValidationError as exc:
         raise ConfigError(settings_error_message(exc)) from exc
 

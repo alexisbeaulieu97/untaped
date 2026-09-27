@@ -5,7 +5,6 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import json
-import os
 import shutil
 import tempfile
 import time
@@ -34,6 +33,7 @@ from untaped.capabilities.github.errors import GitCorpusError
 from untaped.capability_api import (
     GitCommandError,
     GitResult,
+    atomic_write,
     run_git,
     safe_cache_path,
     safe_path_segment,
@@ -721,10 +721,7 @@ def _worktree_path(repo: str, ref: str, *, root: Path) -> Path:
 
 
 def _write_metadata(path: Path, data: dict[str, object]) -> None:
-    target = path / METADATA_FILE
-    tmp = target.with_name(f".{target.name}.{os.getpid()}.tmp")
-    tmp.write_text(json.dumps(data, sort_keys=True) + "\n")
-    os.replace(tmp, target)
+    atomic_write(path / METADATA_FILE, json.dumps(data, sort_keys=True) + "\n")
 
 
 def _read_metadata(path: Path) -> dict[str, object]:

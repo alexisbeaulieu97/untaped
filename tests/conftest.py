@@ -23,6 +23,22 @@ from untaped.settings import get_settings
 _TERMINAL_ENV = {"TERM": "dumb", "NO_COLOR": "1", "COLUMNS": "200"}
 # Ambient token fallbacks (``GH_TOKEN``) would otherwise leak a real token in.
 _AMBIENT_ENV = frozenset({"GIT_CONFIG", "GH_TOKEN", "GITHUB_TOKEN"})
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture(autouse=True)
+def _no_writes_to_the_repo_root() -> Iterator[None]:
+    """Fail the test that leaves a new file at the repository root.
+
+    A subprocess that inherits the process cwd (the repo root under pytest)
+    once committed junk such as ``core.sshCommand/HEAD``; write into
+    ``tmp_path`` or ``monkeypatch.chdir`` there instead.
+    """
+    before = set(os.listdir(_REPO_ROOT))
+    yield
+    leaked = sorted(set(os.listdir(_REPO_ROOT)) - before)
+    if leaked:
+        pytest.fail(f"test left files at the repository root: {', '.join(leaked)}")
 
 
 @pytest.fixture(autouse=True)

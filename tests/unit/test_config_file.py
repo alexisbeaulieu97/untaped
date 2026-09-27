@@ -45,6 +45,22 @@ def test_write_uses_secure_perms(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert mode == 0o600
 
 
+def test_write_goes_through_a_symlinked_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = tmp_path / "dotfiles" / "config.yml"
+    real.parent.mkdir()
+    real.write_text("# mine\na: 1\n")
+    real.chmod(0o644)
+    cfg = tmp_path / "config.yml"
+    cfg.symlink_to(real)
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    mutate_config(lambda data: data.update({"b": 2}))
+    assert cfg.is_symlink()
+    assert real.read_text() == "# mine\na: 1\nb: 2\n"
+    assert real.stat().st_mode & 0o777 == 0o600
+
+
 def test_set_creates_intermediate_dicts() -> None:
     data: dict = {}
     set_at_path(data, ("awx", "token"), "secret")

@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 import untaped.config_file as config_file
 from untaped.config.repository import SettingsFileRepository
-from untaped.config_file import mutate_tool_state, read_tool_state
+from untaped.config_file import mutate_tool_state, read_config_dict, read_tool_state
 from untaped.errors import ConfigError
 from untaped.settings import (
     get_config_section,
@@ -323,7 +323,7 @@ def test_failed_legacy_removal_of_emptied_section_keeps_placeholder(
     assert items.entries() == []
 
 
-def test_symlinked_config_is_not_replaced(
+def test_legacy_state_moves_out_of_a_symlinked_config(
     cfg: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     real = tmp_path / "dotfiles" / "config.yml"
@@ -332,8 +332,9 @@ def test_symlinked_config_is_not_replaced(
     cfg.symlink_to(real)
     StateCollection("demo", "items").upsert({"name": "beta"})
     assert cfg.is_symlink()
-    assert real.read_text() == LEGACY
-    assert "symlink" in capsys.readouterr().err
+    assert "demo" not in read_config_dict(real)
+    assert "# my config" in real.read_text()
+    assert "could not be removed" not in capsys.readouterr().err
     assert StateCollection("demo", "items").entries() == [{"name": "alpha"}, {"name": "beta"}]
 
 
