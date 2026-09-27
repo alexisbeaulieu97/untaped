@@ -7,6 +7,7 @@ from typing import Annotated
 
 from cyclopts import Parameter
 
+from untaped.capabilities.awx.cli.context import supported_scopes
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capability_api import (
     DryRunOption,
@@ -105,11 +106,17 @@ WaitTimeoutOption = Annotated[
         ),
     ),
 ]
-FOLLOW_HELP = (
-    "Stream each job's log to stderr until it ends with its PLAY RECAP (a workflow "
-    "job's status changes); fail on unsuccessful execution."
-)
-"""Help of the ``launch``/``sync --follow`` watch flag."""
+FollowOption = Annotated[
+    bool,
+    Parameter(
+        name="--follow",
+        negative="",
+        help=(
+            "Stream each job's log to stderr until it ends with its PLAY RECAP (a workflow "
+            "job's status changes); fail on unsuccessful execution."
+        ),
+    ),
+]
 UnverifiedOption = Annotated[
     bool,
     Parameter(
@@ -121,12 +128,12 @@ UnverifiedOption = Annotated[
 
 
 __all__ = [
-    "FOLLOW_HELP",
     "AllOption",
     "ByIdOption",
     "ContinueOption",
     "DryRunOption",
     "FilterOption",
+    "FollowOption",
     "InventoryOption",
     "InventoryOrganizationOption",
     "NamesArgument",
@@ -151,18 +158,6 @@ WITH_SCM_HELP = (
 def offers_with_scm(spec: ResourceSpec) -> bool:
     """``--with-scm`` applies to kinds that run a project's playbook."""
     return any(ref.field == "project" and ref.kind == "Project" for ref in spec.fk_refs)
-
-
-def supported_scopes(spec: ResourceSpec) -> frozenset[str]:
-    """The scope options, by parameter name, that can narrow a ``spec`` lookup."""
-    scopes: set[str] = set()
-    if "organization" in spec.identity_keys:
-        scopes.add("organization")
-    if spec.apply_strategy == "inventory_child":
-        scopes.update({"inventory", "inventory_organization"})
-    if spec.parent_field is not None:
-        scopes.add("parent")
-    return frozenset(scopes)
 
 
 def scope_parameter(spec: ResourceSpec, *, parent: str = "parent") -> Parameter:

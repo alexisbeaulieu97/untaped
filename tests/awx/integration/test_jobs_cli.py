@@ -382,6 +382,32 @@ def test_launch_follow_streams_the_log_to_stderr_ending_with_the_recap(fake_aap:
     assert "PLAY RECAP" not in result.stdout
 
 
+_LONG_LINE = 'fatal: [web01]: FAILED! => {"msg": "' + "disk full " * 20 + '"}'
+
+
+@pytest.mark.parametrize(
+    ("names", "prefix"), [(["deploy"], ""), (["deploy-a", "deploy-b"], "[deploy-")]
+)
+def test_launch_follow_writes_log_lines_verbatim(
+    fake_aap: Any, names: list[str], prefix: str
+) -> None:
+    """Lines longer than the terminal and tabs survive byte-for-byte."""
+    _seed_fk_prereqs(fake_aap)
+    for index, name in enumerate(names):
+        _seed_jt(fake_aap, name=name, id=30 + index, playbook="p.yml")
+    fake_aap.next_action_stdout = f"{_LONG_LINE}\n\tweb01 : ok=1 changed=0\n"
+
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "--yes", *names, "--follow"])
+
+    assert result.exit_code == 0, result.output
+    lines = result.stderr.splitlines()
+    long_line = next(line for line in lines if line.endswith(_LONG_LINE))
+    assert long_line.startswith(prefix)
+    assert long_line == (f"{long_line.split('] ')[0]}] {_LONG_LINE}" if prefix else _LONG_LINE)
+    tab_line = next(line for line in lines if "web01 : ok=1" in line)
+    assert tab_line.endswith("\tweb01 : ok=1 changed=0")
+
+
 def test_launch_follow_parallel_drains_concurrently(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

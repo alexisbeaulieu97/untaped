@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable, Mapping, Sequence
+from itertools import pairwise
 from typing import Any
 
 from untaped.capabilities.awx.application.mutation_values import REDACTED
@@ -129,32 +130,72 @@ def _is_template_value(field: str, supplied: Any, current: Any) -> bool:
     return bool(supplied == current)
 
 
-_SECRET_NAME = re.compile(
-    r"(?:^|_)(?:password|passwd|pass|secret|token|api_?key|private_?key)(?:$|_)", re.IGNORECASE
-)
+_SECRET_WORDS = frozenset({"pass", "passwd", "password", "passphrase", "pwd", "secret", "token"})
+_SECRET_PAIRS = frozenset({"apikey", "accesskey", "privatekey", "secretkey", "sshkey"})
+_WORD = re.compile(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])")
+
+
+def looks_secret(name: str) -> bool:
+    """Whether a variable name reads as a secret, in any case or separator style.
+
+    Its words (split on ``_``, ``-``, ``.`` and camelCase) are checked:
+    ``pass``/``password``/``passphrase``/``pwd``/``secret``/``token``, any
+    word ending in ``password``/``passphrase``/``secret``/``token``
+    (``dbpassword``), or two adjacent words forming ``api_key``,
+    ``access_key``, ``private_key``, ``secret_key`` or ``ssh_key`` (also
+    written as one word).
+    """
+    words = [word.lower() for word in _WORD.findall(name)]
+    candidates = [*words, *(a + b for a, b in pairwise(words))]
+    return any(
+        word in _SECRET_WORDS
+        or word in _SECRET_PAIRS
+        or word.endswith(("password", "passphrase", "secret", "token"))
+        for word in candidates
+    )
+
+
+class TemplateReads:
+    """Memoized GETs of each target template's ``launch/`` and ``survey_spec/`` endpoints.
+
+    One instance serves a launch's preflight and its ``--dry-run`` preview,
+    so neither reads an endpoint the other already read.
+    """
+
+    def __init__(self, client: ResourceClient, spec: ResourceSpec) -> None:
+        self._client = client
+        self._spec = spec
+        self._cache: dict[tuple[int, str], Mapping[str, Any]] = {}
+
+    def for_item(self, item: SelectedResource) -> Callable[[str], Mapping[str, Any]]:
+        """The cached reader of ``item``'s sub-endpoints."""
+
+        def read(endpoint: str) -> Mapping[str, Any]:
+            key = (item.id, endpoint)
+            if key not in self._cache:
+                self._cache[key] = self._client.sub_endpoint_request(
+                    self._spec, item.id, endpoint, "GET"
+                )
+            return self._cache[key]
+
+        return read
 
 
 def launch_payload_preview(
-    client: ResourceClient,
-    spec: ResourceSpec,
-    item: SelectedResource,
-    payload: Mapping[str, Any],
+    payload: Mapping[str, Any], read: Callable[[str], Mapping[str, Any]]
 ) -> dict[str, Any]:
     """The launch payload as submitted, ``extra_vars`` decoded, with secrets redacted.
 
-    A variable is secret when the template's survey asks for it as a
-    ``password``, or when its name (at any depth) looks like one
-    (``vault_pass``, ``api_token``, ``db_password``, ...).
+    A variable is secret when the template's enabled survey asks for it as a
+    ``password`` (``read`` GETs the template's sub-endpoints), or when its
+    name, at any depth, :func:`looks_secret`.
     """
     preview = dict(payload)
     extra_vars = preview.get("extra_vars")
     if isinstance(extra_vars, str):
-        try:
-            extra_vars = json.loads(extra_vars)
-        except json.JSONDecodeError:
-            return preview
+        extra_vars = json.loads(extra_vars)
     if isinstance(extra_vars, dict):
-        passwords = _survey_passwords(client, spec, item)
+        passwords = _survey_passwords(read)
         preview["extra_vars"] = {
             key: REDACTED if key in passwords else _redact_secret_names(key, value)
             for key, value in extra_vars.items()
@@ -162,13 +203,11 @@ def launch_payload_preview(
     return preview
 
 
-def _survey_passwords(
-    client: ResourceClient, spec: ResourceSpec, item: SelectedResource
-) -> set[str]:
+def _survey_passwords(read: Callable[[str], Mapping[str, Any]]) -> set[str]:
     """Variables the template's enabled survey asks for as ``password`` questions."""
-    if not item.record.get("survey_enabled"):
+    if not read("launch").get("survey_enabled"):
         return set()
-    survey = client.sub_endpoint_request(spec, item.id, "survey_spec", "GET")
+    survey = read("survey_spec")
     questions = survey.get("spec") if isinstance(survey, Mapping) else None
     return {
         str(question["variable"])
@@ -178,7 +217,7 @@ def _survey_passwords(
 
 
 def _redact_secret_names(key: str, value: Any) -> Any:
-    if _SECRET_NAME.search(key):
+    if looks_secret(key):
         return REDACTED
     if isinstance(value, dict):
         return {k: _redact_secret_names(str(k), v) for k, v in value.items()}
@@ -263,6 +302,7 @@ def prepare_action_targets(
     *,
     action: str,
     payload: Mapping[str, Any] | None = None,
+    reads: TemplateReads | None = None,
 ) -> tuple[ResourceSpec, tuple[SelectedResource, ...]]:
     """Resolve every eligible source before any POST, never server-side aggregate sync.
 
@@ -274,7 +314,8 @@ def prepare_action_targets(
         raise UsageError(f"no {spec.kind} targets selected for {action}")
     if action == "launch":
         for item in selected:
-            preflight_launch(client, spec, item, payload or {})
+            read = reads.for_item(item) if reads is not None else None
+            preflight_launch(client, spec, item, payload or {}, read=read)
     if action != "sync":
         return spec, tuple(selected)
     targets = tuple(selected)

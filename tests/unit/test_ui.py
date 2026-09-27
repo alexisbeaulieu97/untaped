@@ -448,3 +448,18 @@ def test_styled_err_writes_to_stderr_and_ignores_quiet() -> None:
 
     assert stdout.getvalue() == ""
     assert stderr.getvalue() == "PLAY [all]\n"
+
+
+def test_styled_tail_follows_verbatim_unwrapped_and_unexpanded() -> None:
+    from rich.text import Text
+
+    tty = TtyStringIO()
+    tail = "\tweb01 : ok=1 " + "x" * 200
+
+    UiContext(stdout=tty).styled(Text("[deploy] ", style="dim cyan"), tail=tail)
+    UiContext(stdout=tty).styled(Text(""), tail=tail)
+
+    first, second = tty.getvalue().splitlines()
+    assert _has_ansi(first)
+    assert _strip_ansi(first) == f"[deploy] {tail}"
+    assert second == tail

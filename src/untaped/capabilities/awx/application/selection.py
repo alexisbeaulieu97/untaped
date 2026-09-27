@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from untaped.capabilities.awx.application.ports import Catalog, ResourceClient
-from untaped.capabilities.awx.application.resource_names import names_in_scope
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.domain.kinds import (
     RESOURCE_OUTCOME_PIPE_KINDS,
@@ -21,8 +20,12 @@ from untaped.capabilities.awx.domain.kinds import (
     unified_template_kind,
 )
 from untaped.capabilities.awx.domain.payloads import as_dict
-from untaped.capabilities.awx.errors import BadRequestError, ResourceNotFoundError
-from untaped.capability_api import ConfigError, PipeEnvelope, q
+from untaped.capabilities.awx.errors import (
+    BadRequestError,
+    ResourceNotFoundError,
+    default_organization_note,
+)
+from untaped.capability_api import ConfigError, PipeEnvelope
 
 
 @dataclass(frozen=True)
@@ -176,7 +179,7 @@ class SelectionResolver:
                 raise ResourceNotFoundError(
                     spec.kind,
                     {"name": name, **scope},
-                    candidates=names_in_scope(self._client, spec, scope),
+                    candidates=self._client.scoped_names(spec, scope),
                     note=note,
                 )
             values = as_dict(record)
@@ -228,10 +231,7 @@ def _default_scope_note(request: SelectionRequest) -> str | None:
     organization = request.scope.get("organization")
     if not request.default_organization or organization is None:
         return None
-    return (
-        f"searched in organization {q(organization)} (awx.default_organization); "
-        "pass --organization to search elsewhere"
-    )
+    return default_organization_note(organization)
 
 
 def _positive_id(raw_id: str) -> int:

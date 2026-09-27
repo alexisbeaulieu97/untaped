@@ -7,9 +7,11 @@ import re
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 from untaped.capabilities.awx.cli import app
+from untaped.settings import get_settings
 from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.integration
@@ -625,3 +627,155 @@ def test_track_is_replaced_by_follow(seeded_default_org: Any, args: list[str]) -
     result = CliInvoker().invoke(app, args)
     assert result.exit_code == 2, result.output
     assert seeded_default_org.actions_called == []
+
+
+def _dry_run(fake: Any, *args: str, fmt: str = "json") -> Any:
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "alpha", "--dry-run", "--format", fmt, *args]
+    )
+    assert result.exit_code == 0, result.output
+    assert fake.actions_called == []
+    return result
+
+
+def _survey_gets(fake: Any) -> int:
+    return sum(
+        call.request.method == "GET" and call.request.url.path.endswith("/survey_spec/")
+        for call in fake.router.calls
+    )
+
+
+@pytest.mark.parametrize("ask_variables", [True, False])
+def test_dry_run_redacts_survey_password_answers_whatever_their_name(
+    seeded_job_template_with_credentials: Any, ask_variables: bool
+) -> None:
+    """A ``password`` question hides its answer even under a plain name; the
+    survey read by the launch preflight is reused, never fetched twice."""
+    fake, _ids = seeded_job_template_with_credentials
+    template = fake.get_record("job_templates", 10)
+    template.update(survey_enabled=True, ask_variables_on_launch=ask_variables)
+    template["survey_spec"] = {
+        "spec": [{"variable": "answer", "type": "password"}, {"variable": "region"}]
+    }
+    result = _dry_run(fake, "--extra-vars", "answer=hunter2", "--extra-vars", "region=eu")
+    (row,) = json.loads(result.stdout)
+    assert row["payload"]["extra_vars"] == {"answer": "<redacted>", "region": "eu"}
+    assert "hunter2" not in result.output
+    assert _survey_gets(fake) == 1
+
+
+def test_dry_run_ignores_the_survey_of_a_template_whose_survey_is_disabled(
+    seeded_job_template_with_credentials: Any,
+) -> None:
+    fake, _ids = seeded_job_template_with_credentials
+    template = fake.get_record("job_templates", 10)
+    template["survey_spec"] = {"spec": [{"variable": "answer", "type": "password"}]}
+    result = _dry_run(fake, "--extra-vars", "answer=42")
+    (row,) = json.loads(result.stdout)
+    assert row["payload"]["extra_vars"] == {"answer": 42}
+    assert _survey_gets(fake) == 0
+
+
+def test_dry_run_redacts_secret_looking_names_at_any_depth(
+    seeded_job_template_with_credentials: Any,
+) -> None:
+    fake, _ids = seeded_job_template_with_credentials
+    result = _dry_run(
+        fake,
+        "--extra-vars",
+        'cfg={"db": {"password": "p1", "host": "h"}}',
+        "--extra-vars",
+        'items=[{"token": "t1", "name": "n"}]',
+        "--extra-vars",
+        "dbPassword=p2",
+        "--extra-vars",
+        "db-password=p3",
+        "--extra-vars",
+        "passphrase=p4",
+        "--extra-vars",
+        "ssh_key=p5",
+        "--extra-vars",
+        "private_key=p6",
+        "--extra-vars",
+        "passenger=kept",
+    )
+    (row,) = json.loads(result.stdout)
+    assert row["payload"]["extra_vars"] == {
+        "cfg": {"db": {"password": "<redacted>", "host": "h"}},
+        "items": [{"token": "<redacted>", "name": "n"}],
+        "dbPassword": "<redacted>",
+        "db-password": "<redacted>",
+        "passphrase": "<redacted>",
+        "ssh_key": "<redacted>",
+        "private_key": "<redacted>",
+        "passenger": "kept",
+    }
+
+
+def test_dry_run_table_formats_show_the_payload_as_compact_json(
+    seeded_job_template_with_credentials: Any,
+) -> None:
+    fake, _ids = seeded_job_template_with_credentials
+    result = _dry_run(fake, "--extra-vars", "region=eu", "--columns", "payload", fmt="raw")
+    assert result.stdout.strip() == '{"extra_vars":{"region":"eu"}}'
+
+
+def test_launch_inventory_miss_names_the_default_organization(
+    seeded_job_template_with_credentials: Any, aap_config: Path
+) -> None:
+    config = aap_config.read_text()
+    default = "api_prefix: /api/v2/\n              default_organization: Default"
+    aap_config.write_text(config.replace("api_prefix: /api/v2/", default))
+    get_settings.cache_clear()
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "alpha", "--launch-inventory", "prdo"]
+    )
+    assert result.exit_code == 1, result.output
+    assert "did you mean 'prod'?" in result.stderr
+    assert (
+        "searched in organization 'Default' (awx.default_organization); "
+        "pass --organization to search elsewhere" in result.stderr
+    )
+    explicit = CliInvoker().invoke(
+        app,
+        ["job-templates", "launch", "alpha", "--organization", "Default",
+         "--launch-inventory", "prdo"],
+    )  # fmt: skip
+    assert explicit.exit_code == 1, explicit.output
+    assert "awx.default_organization" not in explicit.stderr
+
+
+def _refuse_scoped_listing(fake: Any, monkeypatch: pytest.MonkeyPatch, api_path: str) -> None:
+    """The suggestion listing (no ``name`` filter) is refused with a 403."""
+    original = fake._list
+
+    def listing(path: str, params: dict[str, str]) -> Any:
+        if path == api_path and "name" not in params:
+            return httpx.Response(403, json={"detail": "forbidden"})
+        return original(path, params)
+
+    monkeypatch.setattr(fake, "_list", listing)
+
+
+@pytest.mark.parametrize(
+    ("api_path", "args", "message"),
+    [
+        ("job_templates", ["alph"], "JobTemplate not found: 'alph' in organization 'Default'"),
+        ("inventories", ["alpha", "--launch-inventory", "prdo"], "Inventory not found: 'prdo'"),
+    ],
+)
+def test_a_failed_suggestion_listing_keeps_the_not_found_error(
+    seeded_job_template_with_credentials: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    api_path: str,
+    args: list[str],
+    message: str,
+) -> None:
+    fake, _ids = seeded_job_template_with_credentials
+    _refuse_scoped_listing(fake, monkeypatch, api_path)
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", *args, "--organization", "Default"]
+    )
+    assert result.exit_code == 1, result.output
+    assert message in result.stderr
+    assert "did you mean" not in result.stderr

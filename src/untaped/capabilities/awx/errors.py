@@ -93,6 +93,7 @@ class ResourceNotFoundError(AwxApiError):
         body: str | None = None,
         url: str | None = None,
     ) -> None:
+        candidates = tuple(candidates)
         super().__init__(
             _not_found_message(kind, identity, candidates, note),
             status=status,
@@ -101,6 +102,27 @@ class ResourceNotFoundError(AwxApiError):
         )
         self.kind = kind
         self.identity = identity
+        self.candidates = candidates
+
+    def with_note(self, note: str) -> ResourceNotFoundError:
+        """This error with ``note`` as its second line (e.g. :func:`default_organization_note`)."""
+        return ResourceNotFoundError(
+            self.kind,
+            self.identity,
+            candidates=self.candidates,
+            note=note,
+            status=self.status_code,
+            body=self.body,
+            url=self.url,
+        )
+
+
+def default_organization_note(organization: str) -> str:
+    """Say that ``awx.default_organization``, not a flag, scoped a name lookup."""
+    return (
+        f"searched in organization {q(organization)} (awx.default_organization); "
+        "pass --organization to search elsewhere"
+    )
 
 
 def _not_found_message(

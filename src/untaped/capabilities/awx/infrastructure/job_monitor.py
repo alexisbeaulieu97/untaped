@@ -37,8 +37,10 @@ class PollingJobMonitor:
         sleep: SleepFn = time.sleep,
         poll_interval: float = 2.0,
         timeout: float | None = None,
+        warn: Callable[[str], None] | None = None,
     ) -> None:
         self._client = client
+        self._warn = warn
         self._sleep = sleep
         self._interval = poll_interval
         self._timeout = timeout
@@ -95,6 +97,12 @@ class PollingJobMonitor:
             lines = self.fetch_stdout(current)[cursor:]
             yield from lines
             cursor += len(lines)
+        if current.is_terminal and current.event_processing_finished is False and self._warn:
+            self._warn(
+                f"{current.kind} {current.id}: AWX is still saving its events; the log "
+                f"(and its PLAY RECAP) may be cut short; see `jobs logs {current.id} --kind "
+                f"{current.kind}` later"
+            )
 
     def stream_events(
         self,

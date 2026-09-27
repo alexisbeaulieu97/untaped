@@ -59,7 +59,8 @@ syntax. Names that remain ambiguous require a narrower scope or an ID. A name
 that is not found names its scope and suggests close names from that scope
 (`JobTemplate not found: 'deplyo' in organization 'Default'; did you mean
 'deploy'?`); when `awx.default_organization` supplied the organization, a
-second line says so and to pass `--organization` to search elsewhere. The
+second line says so and to pass `--organization` to search elsewhere (a
+missed `launch --launch-inventory` or `--credential` name too). The
 resolver de-duplicates a kind and ID, validates the complete selection before
 mutation, and performs no writes for an empty or invalid selection.
 
@@ -192,7 +193,8 @@ already in place, so CI can tell drift from failure (1). The rows show
 A directory contributes every `*.yml` and `*.yaml` file, so keep other YAML
 (for example CI or vars files) out of it; a file that cannot be read or parsed,
 or holds an unknown kind, fails the apply with its path (`<stdin>` for
-`apply -`) named. Empty stdin is an error.
+`apply -`) named. Stdin with no documents (empty, or only `---` and comments)
+is an error, and so is an unknown option (`apply --chekc`, exit 2).
 A document of an
 organization-scoped kind without `metadata.organization` is scoped by
 `awx.default_organization`, as selection and `awx test` are. With no default
@@ -343,11 +345,16 @@ untaped awx job-templates launch Deploy --launch-inventory Staging --dry-run -f 
 and `--credential` names). `--launch-inventory NAME|ID` is the inventory the
 job runs against; digits mean an AWX id. `--dry-run` resolves everything and
 submits nothing: each `planned` row carries the `payload` the launch would
-send, with names resolved to ids and `extra_vars` merged into a mapping.
+send, with names resolved to ids and `extra_vars` merged into a mapping
+(compact JSON in the `table` and `raw` formats).
 Secrets are shown as `<redacted>`: the answers to the template's `password`
-survey questions and any variable whose name looks secret (`password`,
-`pass`, `secret`, `token`, `api_key`, `private_key`, as a whole word or
-`_`-separated part, at any depth).
+survey questions and any variable, at any depth, whose name looks secret.
+A name is split into words at `_`, `-`, `.` and camelCase humps; it looks
+secret when a word is `pass`, `passwd`, `password`, `passphrase`, `pwd`,
+`secret` or `token`, a word ends in `password`, `passphrase`, `secret` or
+`token` (`dbpassword`), or two adjacent words form `api_key`, `access_key`,
+`private_key`, `secret_key` or `ssh_key` (`vault_pass`, `dbPassword`,
+`db-password`, `sshKey`).
 
 Before any POST, each target's `launch/` endpoint is read. A supplied flag
 whose template setting `ask_*_on_launch` is false (AWX would silently ignore
@@ -398,7 +405,9 @@ run` cancels them unless `--no-cancel`). A failed or unreachable host shows
 up in the followed log as Ansible prints it (`fatal: [host]: FAILED! => …`).
 AWX writes a finished job's log from its saved events, so `--follow` (and
 `jobs logs --follow`) keeps reading briefly after the job ends until they are
-all in. Workflow jobs, including sliced launches that return a workflow job,
+all in, and warns on stderr when AWX is still saving them after that (the log
+may be cut short; `jobs logs` later has it all). Log lines are written as
+AWX stores them: never wrapped or tab-expanded, whatever the terminal width. Workflow jobs, including sliced launches that return a workflow job,
 have no own events or stdout route, so following one prints its status
 transitions from the detail endpoint instead of requesting
 `workflow_events` or `stdout`. For structured per-task events, use
@@ -612,8 +621,9 @@ untaped awx test run other/tests/deploy-smoke.yml
   file, which wins over the default. A variable without a default is
   required: pass `--var`, `--vars-file`, or answer the prompt. Without a
   terminal, or with `--non-interactive`, a missing variable fails instead of
-  prompting. These fill the suite's template; the job's AWX extra vars come
-  from each case's `launch.extra_vars` (a suite's `launch --extra-vars`).
+  prompting. These fill the suite's template; the extra vars AWX gets are
+  each case's `launch.extra_vars`, the counterpart of `launch --extra-vars`
+  on the command line.
 - `expect` says what the job must produce, and every check must hold.
   - `status`: the job's final status (`successful`, the default, or `failed`,
     `error`, `canceled`).
