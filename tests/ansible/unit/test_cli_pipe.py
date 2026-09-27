@@ -21,7 +21,7 @@ from untaped.testing import CliInvoker
 @pytest.mark.parametrize(
     ("args", "kind", "field", "value"),
     [
-        (["alias", "list"], "ansible.alias", "alias", "common"),
+        (["source-alias", "list"], "ansible.source_alias", "alias", "common"),
         (["source", "list"], "ansible.source", "name", "prod"),
         (["source", "get", "prod"], "ansible.source", "name", "prod"),
         (["source", "status"], "ansible.source_status", "source", "prod"),

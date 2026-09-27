@@ -165,11 +165,18 @@ NDJSON.
 
 | Command | Writes |
 |---|---|
-| `ansible alias list` | `ansible.alias` |
-| `ansible alias set`, `alias remove` | `ansible.alias_outcome` |
+| `ansible deps` | `ansible.dependency` |
+| `ansible impact` | `ansible.dependent` |
+| `ansible find` | `ansible.dependency_match` (with the input record's `input_kind`, `input_id`, `input_name`) |
+| `ansible source-alias list` | `ansible.source_alias` |
+| `ansible source-alias set`, `source-alias remove` | `ansible.source_alias_outcome` |
 | `ansible source list`, `source get` | `ansible.source` |
 | `ansible source status` | `ansible.source_status` |
 | `ansible source set`, `source patch`, `source remove` | `ansible.source_outcome` |
+
+| Consumer | Reads | Field used |
+|---|---|---|
+| `ansible find --stdin` | any record kind; or `owner/repo@ref` lines | repository from `scm_url`, `repo_url`, `repo` or `full_name`; ref from `effective_scm_ref` or `ref`; identity from `id` and `name` |
 
 `ansible graph` has its own formats (`tree`, `mermaid`, `json`) and no pipe
 output.

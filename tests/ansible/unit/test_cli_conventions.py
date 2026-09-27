@@ -1,8 +1,8 @@
 """CLI convention tests for the Ansible capability (docs/conventions.md).
 
-Covers the renamed verbs and flags (with their deprecated spellings through the
-``untaped`` root), mutation outcome records, destructive confirmation and usage
-exit codes.
+Covers the renamed verbs and flags (removed spellings are usage errors through
+the ``untaped`` root), mutation outcome records, destructive confirmation and
+usage exit codes.
 """
 
 from __future__ import annotations
@@ -48,60 +48,72 @@ def _json(stdout: str) -> Any:
     return json.loads(stdout)
 
 
-# --- alias ---------------------------------------------------------------
+# --- source-alias --------------------------------------------------------
 
 
-def test_alias_set_emits_created_then_unchanged_then_updated(
+def test_source_alias_set_emits_created_then_unchanged_then_updated(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _config(tmp_path, monkeypatch)
 
-    first = invoke_cli(app, ["alias", "set", "common", "acme/common", "-f", "json"])
-    again = invoke_cli(app, ["alias", "set", "common", "acme/common", "-f", "json"])
-    moved = invoke_cli(app, ["alias", "set", "common", "acme/other", "-f", "pipe"])
+    first = invoke_cli(app, ["source-alias", "set", "common", "acme/common", "-f", "json"])
+    again = invoke_cli(app, ["source-alias", "set", "common", "acme/common", "-f", "json"])
+    moved = invoke_cli(app, ["source-alias", "set", "common", "acme/other", "-f", "pipe"])
 
     assert first.exit_code == 0, first.output
     assert _json(first.stdout) == {"action": "created", "alias": "common", "repo": "acme/common"}
     assert _json(again.stdout)["action"] == "unchanged"
     envelope = _json(moved.stdout)
-    assert envelope["kind"] == "ansible.alias_outcome"
+    assert envelope["kind"] == "ansible.source_alias_outcome"
     assert envelope["record"]["action"] == "updated"
     assert _state(tmp_path)["aliases"] == {"common": "acme/other"}
 
 
-def test_alias_set_rejects_non_repo_target_as_usage_error(
+def test_source_alias_set_rejects_non_repo_target_as_usage_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _config(tmp_path, monkeypatch)
 
-    result = invoke_cli(app, ["alias", "set", "foo", "bar"])
+    result = invoke_cli(app, ["source-alias", "set", "foo", "bar"])
 
     assert result.exit_code == 2
     assert "owner/name" in result.stderr
     assert "aliases" not in _state(tmp_path)
 
 
-def test_alias_add_is_a_deprecated_spelling_of_set(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["alias", "list"],
+        ["source-alias", "add", "common", "acme/common"],
+        ["source", "save", "prod", "--repo", "acme/site"],
+        ["source", "edit", "prod", "--add-repo", "acme/api"],
+        ["source", "show", "prod"],
+        ["source", "refresh", "prod", "--concurrency", "4"],
+        ["graph", "acme/site", "--concurrency", "4"],
+        ["graph", "acme/site", "--output", "graph.json"],
+        ["graph", "acme/site", "--contains", "acme/base"],
+        ["graph", "--stdin"],
+    ],
+)
+def test_removed_spellings_are_usage_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, args: list[str]
 ) -> None:
-    _config(tmp_path, monkeypatch)
+    _config(tmp_path, monkeypatch, state={**_ALIASES, **_SOURCES})
 
-    result = invoke_cli(
-        build_root_app(externals=[]), ["ansible", "alias", "add", "common", "acme/common"]
-    )
+    result = invoke_cli(build_root_app(externals=[]), ["ansible", *args], input="acme/site\n")
 
-    assert result.exit_code == 0, result.output
-    assert "`add` is deprecated" in result.stderr
-    assert "use `set`" in result.stderr
-    assert _state(tmp_path)["aliases"] == {"common": "acme/common"}
+    assert result.exit_code == 2, result.output
+    assert "deprecated" not in result.stderr
+    assert _state(tmp_path) == {**_ALIASES, **_SOURCES}
 
 
-# --- destructive removal (alias remove / source remove) ------------------
+# --- destructive removal (source-alias remove / source remove) -----------
 
 _REMOVALS = pytest.mark.parametrize(
     ("group", "name", "state", "record"),
     [
-        ("alias", "common", _ALIASES, {"alias": "common", "repo": "acme/common"}),
+        ("source-alias", "common", _ALIASES, {"alias": "common", "repo": "acme/common"}),
         ("source", "prod", _SOURCES, {"name": "prod", "changes": []}),
     ],
 )
@@ -176,8 +188,8 @@ def test_remove_dry_run_plans_without_prompting(
     ("args", "message"),
     [
         (
-            ["alias", "remove", "missing", "--yes"],
-            "error: alias not found: 'missing'; known: common",
+            ["source-alias", "remove", "missing", "--yes"],
+            "error: source alias not found: 'missing'; known: common",
         ),
         (["source", "get", "missing"], "error: source not found: 'missing'; known: prod"),
     ],
@@ -211,27 +223,6 @@ def test_source_set_emits_created_then_unchanged(
     envelope = json.loads(changed.stdout)
     assert envelope["kind"] == "ansible.source_outcome"
     assert envelope["record"]["action"] == "updated"
-
-
-@pytest.mark.parametrize(
-    ("old", "new_args"),
-    [
-        (["save", "prod", "--repo", "acme/site"], "set"),
-        (["edit", "prod", "--add-repo", "acme/api"], "patch"),
-        (["show", "prod"], "get"),
-    ],
-)
-def test_renamed_source_verbs_keep_deprecated_spellings(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, old: list[str], new_args: str
-) -> None:
-    _config(tmp_path, monkeypatch, state=_SOURCES)
-
-    result = invoke_cli(build_root_app(externals=[]), ["ansible", "source", *old])
-
-    assert result.exit_code == 0, result.output
-    assert f"`{old[0]}` is deprecated and will be removed in 8.0; use `{new_args}`" in (
-        result.stderr
-    )
 
 
 def test_source_patch_emits_changes_as_a_list(
@@ -275,22 +266,6 @@ def test_source_patch_flag_problems_are_usage_errors(
 # --- parallel / out flags -------------------------------------------------
 
 
-def test_source_refresh_concurrency_is_a_deprecated_spelling_of_parallel(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _config(tmp_path, monkeypatch)
-
-    result = invoke_cli(
-        build_root_app(externals=[]),
-        ["ansible", "source", "refresh", "missing", "--concurrency", "4"],
-    )
-
-    assert "`--concurrency` is deprecated and will be removed in 8.0; use `--parallel`" in (
-        result.stderr
-    )
-    assert "source not found: 'missing'" in result.stderr
-
-
 def test_graph_help_lists_current_flags_only() -> None:
     result = invoke_cli(app, ["graph", "--help"])
     output = " ".join(result.output.replace("│", " ").split())
@@ -298,12 +273,12 @@ def test_graph_help_lists_current_flags_only() -> None:
     assert result.exit_code == 0, result.output
     shown = "--upstream --downstream --both --source --refresh --cached --live --target-repo"
     shown += " --parallel --out"
-    hidden = "--concurrency --output --kind --cache-backend --scope --direction"
+    hidden = "--concurrency --output --kind --cache-backend --scope --direction --contains --stdin"
     assert [flag for flag in shown.split() if flag not in output] == []
     assert [flag for flag in hidden.split() if flag in output] == []
 
 
-def test_graph_output_is_a_deprecated_spelling_of_out(
+def test_graph_out_writes_the_rendered_graph(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _config(tmp_path, monkeypatch)
@@ -312,23 +287,12 @@ def test_graph_output_is_a_deprecated_spelling_of_out(
     out = tmp_path / "graph.json"
 
     result = invoke_cli(
-        build_root_app(externals=[]),
-        [
-            "ansible",
-            "graph",
-            str(target),
-            "--target-repo",
-            "acme/role",
-            "--downstream",
-            "-f",
-            "json",
-            "--output",
-            str(out),
-        ],
-    )
+        app,
+        ["graph", str(target), "--target-repo", "acme/role", "--downstream", "-f", "json",
+         "--out", str(out)],
+    )  # fmt: skip
 
     assert result.exit_code == 0, result.output
-    assert "`--output` is deprecated and will be removed in 8.0; use `--out`" in result.stderr
     assert json.loads(out.read_text())["target_id"]
 
 

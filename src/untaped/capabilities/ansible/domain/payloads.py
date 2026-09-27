@@ -183,7 +183,7 @@ class SourceIndexStatus(BaseModel):
 
 
 class AliasOutcome(OutcomeRecord):
-    """Result of ``alias set`` or ``alias remove`` (kind ``ansible.alias_outcome``)."""
+    """Result of ``source-alias set``/``remove`` (kind ``ansible.source_alias_outcome``)."""
 
     alias: str
     repo: str

@@ -90,13 +90,13 @@ variable shown.
 |---|---|---|---|---|
 | `ansible.index_path` | path | `~/.untaped/ansible-index.sqlite3` | `UNTAPED_ANSIBLE__INDEX_PATH` | SQLite cache of refreshed source data. |
 | `ansible.stale_after` | integer | `86400` | `UNTAPED_ANSIBLE__STALE_AFTER` | Seconds after which `source status` reports a source as `stale`. |
-| `ansible.freshness_ttl` | integer (optional) | unset | `UNTAPED_ANSIBLE__FRESHNESS_TTL` | Deprecated and ignored; `doctor` warns while it is set. |
+| `ansible.default_source` | string (optional) | unset | `UNTAPED_ANSIBLE__DEFAULT_SOURCE` | Saved source `deps`, `impact`, `find` and `graph` use when no `--source` or inline selector is given. |
 | `ansible.ref_scan_default` | `all` \| `default_branch` | `all` | `UNTAPED_ANSIBLE__REF_SCAN_DEFAULT` | Refs a source scans: `all` refs or each repo's default branch. |
 | `ansible.source_refresh_backend` | `auto` \| `graphql` \| `git` | `auto` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_BACKEND` | Ref probe backend for source refresh. |
 | `ansible.repo_cache_path` | path | `~/.untaped/ansible-repositories` | `UNTAPED_ANSIBLE__REPO_CACHE_PATH` | Git clone cache used by source refresh. |
 | `ansible.git_clone_protocol` | `https` \| `ssh` | `https` | `UNTAPED_ANSIBLE__GIT_CLONE_PROTOCOL` | Protocol for source refresh clones. |
 | `ansible.git_fetch_depth` | integer | `1` | `UNTAPED_ANSIBLE__GIT_FETCH_DEPTH` | Git fetch depth for source refresh; `0` is full history. |
-| `ansible.git_fetch_concurrency` | integer | `8` | `UNTAPED_ANSIBLE__GIT_FETCH_CONCURRENCY` | Default `--parallel` for `source refresh` and `graph`. |
+| `ansible.git_fetch_concurrency` | integer | `8` | `UNTAPED_ANSIBLE__GIT_FETCH_CONCURRENCY` | Default `--parallel` for `source refresh` and `--refresh`. |
 | `ansible.probe_concurrency` | integer | `8` | `UNTAPED_ANSIBLE__PROBE_CONCURRENCY` | Concurrent ref probes during source refresh. |
 | `ansible.source_refresh_repo_batch_size` | integer | `100` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_REPO_BATCH_SIZE` | Repos committed per source refresh batch. |
 | `ansible.source_refresh_rate_limit_floor` | integer | `500` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_RATE_LIMIT_FLOOR` | Stop a refresh (resumable) when the GraphQL budget drops below this. |
@@ -108,7 +108,7 @@ variable shown.
 | Key | Type | Description |
 |---|---|---|
 | `ansible.sources` | list | Saved sources. Managed by `ansible source` commands. |
-| `ansible.aliases` | mapping | Role or Galaxy name to `owner/repo` aliases. Managed by `ansible alias` commands. |
+| `ansible.aliases` | mapping | Role or Galaxy name to `owner/repo` aliases. Managed by `ansible source-alias` commands. |
 
 ## `recipe`
 
