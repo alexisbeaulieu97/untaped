@@ -9,11 +9,7 @@ from typing import Annotated, Literal
 from cyclopts import Parameter
 
 from untaped.capabilities.ansible.application.refresh_git_index import RefreshResult
-from untaped.capabilities.ansible.cli.refresh import (
-    GIT_PARALLEL_CAP,
-    run_source_refresh,
-    warn_deprecated_settings,
-)
+from untaped.capabilities.ansible.cli.refresh import GIT_PARALLEL_CAP, run_source_refresh
 from untaped.capabilities.ansible.domain.payloads import SourceOutcome
 from untaped.capabilities.ansible.infrastructure import (
     AliasRepository,
@@ -40,7 +36,6 @@ from untaped.capability_api import (
     app_context,
     clamp_parallel,
     create_app,
-    deprecated_alias,
     echo,
     emit,
     get_config_section,
@@ -362,7 +357,6 @@ def source_refresh_command(
         if source is None:
             raise UntapedError(_unknown_source(name, source_repo))
         settings = get_config_section("ansible", AnsibleSettings)
-        warn_deprecated_settings(settings, ui=ctx.ui(strict=False))
         aliases = AliasRepository().entries()
         git_parallel = clamp_parallel(
             parallel or settings.git_fetch_concurrency,
@@ -392,12 +386,6 @@ def source_refresh_command(
             raise UntapedError(_refresh_pause_message(result, name))
         if result.failures:
             raise UntapedError(_refresh_failure_message(result))
-
-
-deprecated_alias(app, "save", "set")
-deprecated_alias(app, "edit", "patch")
-deprecated_alias(app, "show", "get")
-deprecated_alias(app["refresh"], "--concurrency", "--parallel")
 
 
 def _unknown_source(name: str, source_repo: SourceRepository) -> str:

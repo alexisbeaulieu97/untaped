@@ -224,16 +224,6 @@ def ignored_collections_warning(names: Iterable[str]) -> str | None:
 _MAX_LISTED_COLLECTIONS = 10
 
 
-def warn_deprecated_settings(settings: AnsibleSettings, *, ui: UiContext) -> None:
-    """Warn about profile keys kept only for config compatibility."""
-    if settings.freshness_ttl is not None:
-        ui.message(
-            "warning",
-            "ansible.freshness_ttl is deprecated and ignored; pass --refresh or run "
-            "`untaped ansible source refresh NAME` to check remote data",
-        )
-
-
 def warn_skipped_files(result: RefreshResult, *, ui: UiContext) -> None:
     """Warn when dependency files were skipped during parsing."""
     for skipped in result.skipped_files:

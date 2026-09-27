@@ -395,25 +395,27 @@ def _seed_unchanged_scan(
     assert result.exit_code == (1 if missing else 0), result.output
 
 
-# --- alias / source management --------------------------------------------
+# --- source-alias / source management --------------------------------------------
 
 
-def test_alias_set_list_remove_updates_state(tmp_path: Path, monkeypatch) -> None:
+def test_source_alias_set_list_remove_updates_state(tmp_path: Path, monkeypatch) -> None:
     _use_config(tmp_path, monkeypatch)
 
-    assert _run("alias", "set", "common", "acme/common").exit_code == 0
+    assert _run("source-alias", "set", "common", "acme/common").exit_code == 0
 
-    listed = _run("alias", "list", "--format", "json")
+    listed = _run("source-alias", "list", "--format", "json")
     assert json.loads(listed.stdout) == [{"alias": "common", "repo": "acme/common"}]
 
-    assert _run("alias", "remove", "common", "--yes").exit_code == 0
+    assert _run("source-alias", "remove", "common", "--yes").exit_code == 0
     assert "aliases" not in _state(tmp_path)
 
 
-def test_alias_set_warns_that_saved_sources_need_refresh(tmp_path: Path, monkeypatch) -> None:
+def test_source_alias_set_warns_that_saved_sources_need_refresh(
+    tmp_path: Path, monkeypatch
+) -> None:
     _use_config(tmp_path, monkeypatch, {"sources": [{"name": "prod", "orgs": ["acme"]}]})
 
-    result = _run("alias", "set", "common", "acme/common")
+    result = _run("source-alias", "set", "common", "acme/common")
 
     assert result.exit_code == 0, result.output
     assert "untaped ansible source refresh" in result.stderr
@@ -422,7 +424,7 @@ def test_alias_set_warns_that_saved_sources_need_refresh(tmp_path: Path, monkeyp
 @pytest.mark.parametrize(
     ("group", "state", "line"),
     [
-        ("alias", {"aliases": {"common": "acme/common"}}, "common"),
+        ("source-alias", {"aliases": {"common": "acme/common"}}, "common"),
         ("source", _PLATFORM, "platform"),
     ],
 )
@@ -441,7 +443,7 @@ def test_list_raw_ignores_invalid_global_theme(
 @pytest.mark.parametrize(
     ("args", "hint"),
     [
-        (["alias", "list"], "No dependency aliases configured"),
+        (["source-alias", "list"], "No source aliases configured"),
         (["source", "list"], "No sources configured"),
         (["source", "status"], "No sources scanned yet"),
     ],
@@ -841,7 +843,7 @@ def test_graph_missing_source_cache_fails_naming_the_source(
 @pytest.mark.parametrize(
     ("args", "message"),
     [
-        (["--upstream"], "upstream requires --source NAME or inline selectors"),
+        (["--upstream"], "upstream requires --source NAME, inline selectors"),
         (["--source", "nope"], "source not found: 'nope'; known: ops, platform"),
         (
             ["--source", "platform", "--source", "ops"],
@@ -861,16 +863,13 @@ def test_graph_unusable_source_selection_fails(
     assert message in result.stderr
 
 
-@pytest.mark.parametrize(
-    ("ttl", "age"),
-    [(3600, timedelta(0)), (14400, timedelta(hours=3)), (60, timedelta(days=400))],
-)
-def test_graph_with_sources_uses_cache_and_ignores_deprecated_freshness_ttl(
-    tmp_path: Path, monkeypatch, ttl: int, age: timedelta
+@pytest.mark.parametrize("age", [timedelta(0), timedelta(hours=3), timedelta(days=400)])
+def test_graph_with_sources_uses_cache_without_refreshing(
+    tmp_path: Path, monkeypatch, age: timedelta
 ) -> None:
     _seed(tmp_path, "source:platform", _edge(), scanned_at=datetime.now(UTC) - age)
     _seed(tmp_path, "source:ops", _edge("acme/deploy"), scanned_at=datetime(2026, 1, 1, tzinfo=UTC))
-    _use_config(tmp_path, monkeypatch, _TWO_SOURCES, ansible={"freshness_ttl": ttl})
+    _use_config(tmp_path, monkeypatch, _TWO_SOURCES)
     calls = _fake_refresh(monkeypatch)
 
     with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
@@ -884,8 +883,7 @@ def test_graph_with_sources_uses_cache_and_ignores_deprecated_freshness_ttl(
     assert calls == []
     assert "    +-- acme/site@main" in result.stdout
     assert "    +-- acme/deploy@main" in result.stdout
-    (line,) = result.stderr.splitlines()
-    assert "ansible.freshness_ttl is deprecated" in line
+    assert result.stderr == ""
 
 
 def test_graph_stale_warning_includes_exact_refresh_command(tmp_path: Path, monkeypatch) -> None:
@@ -1688,7 +1686,7 @@ def test_warn_probe_fallbacks_groups_known_and_unknown_reasons(
     assert "future_reason (2)" in stderr
 
 
-# --- graph: many roots with --contains ------------------------------------
+# --- find: which roots contain a repository --------------------------------
 
 _CONTAINS_SOURCE = {
     "sources": [
@@ -1714,10 +1712,10 @@ def _seed_contains(tmp_path: Path) -> None:
     )
 
 
-def _contains(stdin: str, *args: str) -> CliResult:
+def _find(stdin: str, *args: str) -> CliResult:
     return CliInvoker().invoke(
         app,
-        ["graph", "--stdin", "--contains", "acme/target", "--source", "platform", *args],
+        ["find", "acme/target", "--stdin", "--source", "platform", *args],
         input=stdin,
     )
 
@@ -1730,13 +1728,13 @@ def _match_rows(result: CliResult) -> list[tuple[str, str | None, str | None, li
     )
 
 
-def test_graph_contains_reports_direct_intermediate_two_refs_and_skips_misses(
+def test_find_reports_direct_intermediate_two_refs_and_skips_misses(
     tmp_path: Path, monkeypatch
 ) -> None:
     _seed_contains(tmp_path)
     _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
 
-    result = _contains(
+    result = _find(
         "acme/site@main\nacme/app@main\nacme/multi@main\nacme/none@main\n", "--format", "json"
     )
 
@@ -1754,18 +1752,20 @@ def test_graph_contains_reports_direct_intermediate_two_refs_and_skips_misses(
     first = json.loads(result.stdout)[0]
     assert first["repo"] == "acme/target"
     assert first["declared_in"] == _REQS
+    # Bare lines have no record identity to carry.
+    assert (first["input_kind"], first["input_id"], first["input_name"]) == (None, None, None)
 
 
-def test_graph_contains_respects_depth(tmp_path: Path, monkeypatch) -> None:
+def test_find_respects_depth(tmp_path: Path, monkeypatch) -> None:
     _seed_contains(tmp_path)
     _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
 
-    result = _contains("acme/app@main\nacme/site@main\n", "--depth", "1", "--format", "json")
+    result = _find("acme/app@main\nacme/site@main\n", "--depth", "1", "--format", "json")
 
     assert [row[0] for row in _match_rows(result)] == ["acme/site"]
 
 
-def test_graph_contains_searches_the_full_graph_by_default(tmp_path: Path, monkeypatch) -> None:
+def test_find_searches_the_full_graph_by_default(tmp_path: Path, monkeypatch) -> None:
     chain = ["acme/r1", "acme/r2", "acme/r3", "acme/r4"]
     _seed(
         tmp_path,
@@ -1775,8 +1775,8 @@ def test_graph_contains_searches_the_full_graph_by_default(tmp_path: Path, monke
     )
     _use_config(tmp_path, monkeypatch, {"sources": [{"name": "platform", "repos": chain}]})
 
-    deep = _contains("acme/r1@main\n", "--format", "json")
-    bounded = _contains("acme/r1@main\n", "--depth", "3")
+    deep = _find("acme/r1@main\n", "--format", "json")
+    bounded = _find("acme/r1@main\n", "--depth", "3")
 
     assert _match_rows(deep) == [
         ("acme/r1", "main", "v1", [*(f"{repo}@main" for repo in chain), "acme/target@v1"])
@@ -1785,9 +1785,7 @@ def test_graph_contains_searches_the_full_graph_by_default(tmp_path: Path, monke
     assert "No matching roots found within --depth 3." in bounded.stdout + bounded.stderr
 
 
-def test_graph_contains_follows_unpinned_hops_through_the_default_branch(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_find_follows_unpinned_hops_through_the_default_branch(tmp_path: Path, monkeypatch) -> None:
     _seed(
         tmp_path,
         "source:platform",
@@ -1800,14 +1798,14 @@ def test_graph_contains_follows_unpinned_hops_through_the_default_branch(
     )  # fmt: skip
     _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
 
-    result = _contains("acme/site@main\n", "--format", "json")
+    result = _find("acme/site@main\n", "--format", "json")
 
     assert _match_rows(result) == [
         ("acme/site", "main", "v1", ["acme/site@main", "acme/lib@trunk", "acme/target@v1"])
     ]
 
 
-def test_graph_contains_follows_unpinned_hops_in_live_reads(tmp_path: Path, monkeypatch) -> None:
+def test_find_follows_unpinned_hops_in_live_reads(tmp_path: Path, monkeypatch) -> None:
     _use_config(tmp_path, monkeypatch, token=True)
 
     with respx.mock(base_url="https://api.github.com") as mock:
@@ -1815,9 +1813,7 @@ def test_graph_contains_follows_unpinned_hops_in_live_reads(tmp_path: Path, monk
         _mock_dependency_file(
             mock, "acme/lib", content="- src: https://github.com/acme/target\n  version: v1\n"
         )
-        result = CliInvoker().invoke(
-            app, ["graph", "acme/app", "--contains", "acme/target", "--depth", "2", "-f", "json"]
-        )
+        result = _run("find", "acme/target", "--root", "acme/app", "--depth", "2", "-f", "json")
 
     assert _match_rows(result) == [
         ("acme/app", "main", "v1", ["acme/app@main", "acme/lib@main", "acme/target@v1"])
@@ -1825,9 +1821,7 @@ def test_graph_contains_follows_unpinned_hops_in_live_reads(tmp_path: Path, monk
     assert "warning" not in result.stderr
 
 
-def test_graph_contains_reads_a_shared_dependency_live_once_across_roots(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_find_reads_a_shared_dependency_live_once_across_roots(tmp_path: Path, monkeypatch) -> None:
     _use_config(tmp_path, monkeypatch, token=True)
 
     with respx.mock(base_url="https://api.github.com") as mock:
@@ -1838,7 +1832,7 @@ def test_graph_contains_reads_a_shared_dependency_live_once_across_roots(
         )
         result = CliInvoker().invoke(
             app,
-            ["graph", "--stdin", "--contains", "acme/target", "--depth", "2", "-f", "json"],
+            ["find", "acme/target", "--stdin", "--depth", "2", "-f", "json"],
             input="acme/one\nacme/two\n",
         )
         lib_paths = [call.request.url.path for call in mock.calls if "acme/lib" in str(call)]
@@ -1847,9 +1841,7 @@ def test_graph_contains_reads_a_shared_dependency_live_once_across_roots(
     assert len(lib_paths) == len(set(lib_paths))
 
 
-def test_graph_without_contains_keeps_the_default_depth_of_three(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_graph_keeps_the_default_depth_of_three(tmp_path: Path, monkeypatch) -> None:
     chain = ["acme/r1", "acme/r2", "acme/r3", "acme/r4"]
     _seed(
         tmp_path,
@@ -1872,7 +1864,9 @@ def test_graph_without_contains_keeps_the_default_depth_of_three(
     ]
 
 
-def test_graph_contains_reads_pipe_records_with_scm_fields(tmp_path: Path, monkeypatch) -> None:
+def test_find_gives_each_input_record_its_own_rows_with_its_identity(
+    tmp_path: Path, monkeypatch
+) -> None:
     _seed_contains(tmp_path)
     _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
     records = [
@@ -1883,72 +1877,372 @@ def test_graph_contains_reads_pipe_records_with_scm_fields(tmp_path: Path, monke
          "effective_scm_ref": ""},
         {"id": 3, "name": "Other", "scm_url": "https://github.com/acme/none",
          "effective_scm_ref": "main"},
+        # Same repo and ref as template 1 in another spelling: its own row.
+        {"id": 4, "name": "Deploy copy", "scm_url": "https://github.com/acme/app",
+         "effective_scm_ref": "main"},
     ]  # fmt: skip
     stdin = "".join(
         json.dumps({"untaped": "1", "kind": "awx.job_template", "record": record}) + "\n"
         for record in records
     )
 
-    result = _contains(stdin, "--format", "pipe")
+    result = _find(stdin, "--format", "pipe")
 
     assert result.exit_code == 0, result.output + result.stderr
     envelopes = [json.loads(line) for line in result.stdout.splitlines()]
     assert {envelope["kind"] for envelope in envelopes} == {"ansible.dependency_match"}
-    assert sorted((e["record"]["root_repo"], e["record"]["root_ref"]) for e in envelopes) == [
-        ("acme/app", "main"),
-        ("acme/site", "main"),
+    rows = [envelope["record"] for envelope in envelopes]
+    assert sorted(
+        (row["input_kind"], row["input_id"], row["input_name"], row["root_repo"], row["root_ref"])
+        for row in rows
+    ) == [
+        ("awx.job_template", 1, "Deploy", "acme/app", "main"),
+        ("awx.job_template", 2, "Site", "acme/site", "main"),
+        ("awx.job_template", 4, "Deploy copy", "acme/app", "main"),
     ]
 
 
-def test_graph_contains_table_and_no_match(tmp_path: Path, monkeypatch) -> None:
+def test_find_table_and_no_match(tmp_path: Path, monkeypatch) -> None:
     _seed_contains(tmp_path)
     _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
 
-    table = _contains("acme/site@main\n")
+    table = _find("acme/site@main\n")
     assert table.exit_code == 0, table.output + table.stderr
     assert "acme/target" in table.stdout
     assert "v1" in table.stdout
 
-    none = _contains("acme/none@main\n")
+    none = _find("acme/none@main\n")
     assert none.exit_code == 0
     assert "No matching roots found." in none.stdout + none.stderr
 
 
-def test_graph_contains_single_target_argument(tmp_path: Path, monkeypatch) -> None:
+def test_find_accepts_several_targets_roots_and_alias_targets(tmp_path: Path, monkeypatch) -> None:
     _seed_contains(tmp_path)
-    _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
+    _use_config(tmp_path, monkeypatch, {**_CONTAINS_SOURCE, "aliases": {"target": "acme/target"}})
 
     result = _run(
-        "graph", "acme/site", "--ref", "main", "--contains", "acme/target", "--source",
-        "platform", "--format", "json",
+        "find", "target", "acme/lib", "--root", "acme/multi@main", "--root", "acme/none@main",
+        "--source", "platform", "--format", "json",
     )  # fmt: skip
 
-    assert [row[2] for row in _match_rows(result)] == ["v1"]
+    assert [row[:3] for row in _match_rows(result)] == [
+        ("acme/multi", "main", "1.0"),
+        ("acme/multi", "main", "feature/x"),
+        ("acme/multi", "main", "v1"),
+    ]
 
 
 @pytest.mark.parametrize(
     ("args", "message"),
     [
-        (["graph", "--stdin"], "--stdin requires --contains"),
-        (["graph", "acme/site", "--format", "table"], "--format table requires --contains"),
-        (["graph", "--stdin", "--contains", "a/b", "--upstream"], "downstream"),
-        (["graph", "--stdin", "--contains", "a/b", "--format", "tree"], "table, json or pipe"),
-        (["graph", "acme/site", "--stdin", "--contains", "a/b"], "not both"),
-        (["graph", "--stdin", "--contains", "a/b", "--ref", "main"], "on stdin"),
+        (["find", "a/b"], "provide --root or --stdin"),
+        (["find", "a/b", "--root", "acme/site", "--stdin"], "not both"),
+        (["find", "--stdin"], "requires an argument"),
+        (["find", "a/b", "--stdin", "--format", "tree"], "tree"),
+        (["deps", "acme/site", "--format", "mermaid"], "mermaid"),
+        (["impact", "acme/site", "--live"], "Unknown option"),
     ],
 )
-def test_graph_contains_usage_errors(args: list[str], message: str) -> None:
+def test_task_command_usage_errors(args: list[str], message: str) -> None:
     result = CliInvoker().invoke(app, args, input="acme/site\n")
 
     assert result.exit_code == 2, result.output
-    assert message in result.stderr
+    assert message in " ".join(result.stderr.replace("│", " ").split())
 
 
-def test_graph_contains_rejects_records_without_a_repository(tmp_path: Path, monkeypatch) -> None:
+def test_find_builds_one_graph_per_resolved_root(tmp_path: Path, monkeypatch) -> None:
+    _use_config(tmp_path, monkeypatch, token=True)
+    spellings = [
+        "https://github.com/acme/app.git",
+        "https://github.com/acme/app",
+        "git@github.com:acme/app.git",
+    ]
+    stdin = "".join(
+        json.dumps({"untaped": "1", "kind": "awx.job_template",
+                    "record": {"id": index, "scm_url": url}}) + "\n"
+        for index, url in enumerate(spellings, start=1)
+    )  # fmt: skip
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        _mock_dependency_file(mock, "acme/app", content="")
+        result = CliInvoker().invoke(app, ["find", "acme/target", "--stdin"], input=stdin)
+
+    assert result.exit_code == 0, result.output + result.stderr
+    # Each graph build reports its own empty-graph warning: one build, one line.
+    assert result.stderr.count("no declared downstream dependencies found") == 1
+
+
+def test_find_collapses_repeated_roots(tmp_path: Path, monkeypatch) -> None:
+    _use_config(tmp_path, monkeypatch, token=True)
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        _mock_dependency_file(mock, "acme/app", content="- src: https://github.com/acme/target\n")
+        _mock_dependency_file(mock, "acme/target", content="")
+        result = _run(
+            "find", "acme/target", "--root", "acme/app", "--root", "acme/app", "-f", "json"
+        )
+
+    assert [row[:2] for row in _match_rows(result)] == [("acme/app", "main")]
+
+
+def test_find_resolves_targets_before_refreshing(tmp_path: Path, monkeypatch) -> None:
+    _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
+    calls = _fake_refresh(monkeypatch)
+
+    result = _run("find", "./no-such-role", "--root", "acme/site", "--source", "platform",
+                  "--refresh")  # fmt: skip
+
+    assert result.exit_code == 1
+    assert "could not resolve target to a GitHub repo: './no-such-role'" in result.stderr
+    assert calls == []
+
+
+def test_find_without_cached_source_data_hints_refresh(tmp_path: Path, monkeypatch) -> None:
+    _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
+
+    result = _run("find", "acme/target", "--root", "acme/site", "--source", "platform")
+
+    assert result.exit_code == 1
+    assert "no cached source data found for source 'platform'" in result.stderr
+    assert "re-run this command with `--refresh`" in result.stderr
+
+
+def test_find_rejects_records_without_a_repository(tmp_path: Path, monkeypatch) -> None:
     _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
     stdin = json.dumps({"untaped": "1", "kind": "awx.job_template", "record": {"id": 1}}) + "\n"
 
-    result = _contains(stdin)
+    result = _find(stdin)
 
     assert result.exit_code == 2
     assert "line 1: record has no repository field" in result.stderr
+
+
+# --- deps / impact: one row per reached repository -------------------------
+
+
+_Row = tuple[str | None, str | None, str | None, int, list[str]]
+
+
+def _rows(result: CliResult) -> list[_Row]:
+    """``(repo, ref, declared_ref, depth, path)`` per row, by depth then repo."""
+    assert result.exit_code == 0, result.output + result.stderr
+    rows: list[_Row] = [
+        (row["repo"], row["ref"], row["declared_ref"], row["depth"], row["path"])
+        for row in json.loads(result.stdout)
+    ]
+    return sorted(rows, key=lambda row: (row[3], row[0] or "", row[4]))
+
+
+def test_deps_lists_every_reached_dependency_with_its_shortest_path(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _seed_contains(tmp_path)
+    _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
+
+    result = _run("deps", "acme/multi", "--ref", "main", "--source", "platform", "-f", "json")
+
+    assert _rows(result) == [
+        ("acme/lib", "1.0", "1.0", 1, ["acme/multi@main", "acme/lib@1.0"]),
+        ("acme/target", "v1", "v1", 1, ["acme/multi@main", "acme/target@v1"]),
+        (
+            "acme/target",
+            "feature/x",
+            "feature/x",
+            2,
+            ["acme/multi@main", "acme/lib@1.0", "acme/target@feature/x"],
+        ),
+    ]
+    assert json.loads(result.stdout)[0]["declared_in"] == _REQS
+
+
+def test_deps_follows_the_whole_graph_unless_depth_is_given(tmp_path: Path, monkeypatch) -> None:
+    chain = ["acme/r1", "acme/r2", "acme/r3", "acme/r4", "acme/target"]
+    _seed(
+        tmp_path,
+        "source:platform",
+        *(_edge(repo, dep, version="main") for repo, dep in pairwise(chain)),
+    )
+    _use_config(tmp_path, monkeypatch, {"sources": [{"name": "platform", "repos": chain}]})
+
+    deep = _run("deps", "acme/r1", "--ref", "main", "--source", "platform", "-f", "json")
+    bounded = _run("deps", "acme/r1", "--ref", "main", "--source", "platform", "--depth", "1")
+
+    assert [row[0] for row in _rows(deep)] == chain[1:]
+    assert bounded.exit_code == 0, bounded.output
+    assert "acme/r2" in bounded.stdout
+    assert "acme/r3" not in bounded.stdout
+
+
+def test_deps_pipe_rows_report_unresolved_dependencies(tmp_path: Path, monkeypatch) -> None:
+    _seed(
+        tmp_path,
+        "source:platform",
+        _edge(dependency_repo="acme/base"),
+        IndexedDependency(
+            source_repo="acme/site",
+            source_ref="main",
+            dependency_name="galaxy.role",
+            source_path=_REQS,
+            unresolved="galaxy.role",
+        ),
+    )
+    _use_config(tmp_path, monkeypatch, _PLATFORM)
+
+    result = _run("deps", "acme/site", "--ref", "main", "--source", "platform", "-f", "pipe")
+
+    assert result.exit_code == 0, result.output
+    envelopes = [json.loads(line) for line in result.stdout.splitlines()]
+    assert {envelope["kind"] for envelope in envelopes} == {"ansible.dependency"}
+    assert sorted((e["record"]["repo"] or "", e["record"]["unresolved"]) for e in envelopes) == [
+        ("", "galaxy.role"),
+        ("acme/base", None),
+    ]
+    assert "warning: unresolved dependency galaxy.role" in result.stderr
+
+
+def test_deps_reads_live_without_a_source(tmp_path: Path, monkeypatch) -> None:
+    _use_config(tmp_path, monkeypatch, token=True)
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        _mock_dependency_file(mock, "acme/site")
+        _mock_dependency_file(mock, "acme/base", content="")
+        result = _run("deps", "acme/site", "-f", "json")
+
+    assert [row[:2] for row in _rows(result)] == [("acme/base", "main")]
+
+
+def test_impact_lists_every_dependent_with_its_path_to_the_role(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _seed_contains(tmp_path)
+    _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
+
+    result = _run("impact", "acme/target", "--source", "platform", "-f", "json")
+
+    assert _rows(result) == [
+        ("acme/common", "main", "v2", 1, ["acme/common@main", "acme/target@v2"]),
+        ("acme/lib", "1.0", "feature/x", 1, ["acme/lib@1.0", "acme/target@feature/x"]),
+        ("acme/multi", "main", "v1", 1, ["acme/multi@main", "acme/target@v1"]),
+        ("acme/site", "main", "v1", 1, ["acme/site@main", "acme/target@v1"]),
+        ("acme/app", "main", "main", 2, ["acme/app@main", "acme/common@main", "acme/target@v2"]),
+        (
+            "acme/multi",
+            "main",
+            "1.0",
+            2,
+            ["acme/multi@main", "acme/lib@1.0", "acme/target@feature/x"],
+        ),
+    ]
+    # A ref-less ROLE is walked from each of its refs: root_ref tells them apart.
+    assert sorted(
+        row["root_ref"] for row in json.loads(result.stdout) if row["repo"] == "acme/multi"
+    ) == ["feature/x", "v1"]
+    pipe = _run("impact", "acme/target", "--source", "platform", "-f", "pipe")
+    assert {json.loads(line)["kind"] for line in pipe.stdout.splitlines()} == {"ansible.dependent"}
+
+
+def _seed_diamond_cycle(tmp_path: Path) -> list[str]:
+    """``a -> b, c``; ``b, c -> d``; ``d -> a`` (a cycle back to the root)."""
+    repos = ["acme/a", "acme/b", "acme/c", "acme/d"]
+    edges = [("acme/a", "acme/b"), ("acme/a", "acme/c"), ("acme/b", "acme/d"),
+             ("acme/c", "acme/d"), ("acme/d", "acme/a")]  # fmt: skip
+    _seed(tmp_path, "source:platform", *(_edge(s, d, version="main") for s, d in edges))
+    return repos
+
+
+@pytest.mark.parametrize(
+    ("command", "role", "expected"),
+    [
+        ("deps", "acme/a", [("acme/b", 1), ("acme/c", 1), ("acme/d", 2)]),
+        ("impact", "acme/d", [("acme/b", 1), ("acme/c", 1), ("acme/a", 2)]),
+    ],
+)
+def test_reach_reports_each_repo_once_through_diamonds_and_cycles(
+    tmp_path: Path, monkeypatch, command: str, role: str, expected: list[tuple[str, int]]
+) -> None:
+    repos = _seed_diamond_cycle(tmp_path)
+    _use_config(tmp_path, monkeypatch, {"sources": [{"name": "platform", "repos": repos}]})
+
+    result = _run(command, role, "--ref", "main", "--source", "platform", "-f", "json")
+
+    assert [(row[0], row[3]) for row in _rows(result)] == expected
+    assert {row["root_ref"] for row in json.loads(result.stdout)} == {"main"}
+
+
+def test_impact_without_any_source_names_the_default_source_setting(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _use_config(tmp_path, monkeypatch)
+
+    result = _run("impact", "acme/base")
+
+    assert result.exit_code == 1
+    assert "upstream requires --source NAME" in result.stderr
+    assert "ansible.default_source" in result.stderr
+
+
+# --- ansible.default_source -------------------------------------------------
+
+
+def test_default_source_stands_in_for_source(tmp_path: Path, monkeypatch) -> None:
+    _seed(tmp_path, "source:platform", _edge())
+    _use_config(tmp_path, monkeypatch, _PLATFORM, ansible={"default_source": "platform"})
+
+    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
+        impact = _run("impact", "acme/base", "-f", "json")
+        deps = _run("deps", "acme/site", "--ref", "main", "-f", "json")
+        graph = _run("graph", "acme/base")
+        assert len(mock.calls) == 0
+
+    assert [row[:2] for row in _rows(impact)] == [("acme/site", "main")]
+    assert [row[:2] for row in _rows(deps)] == [("acme/base", None)]
+    assert graph.exit_code == 0, graph.output
+    assert "+-- acme/site@main" in graph.stdout
+    assert "upstream omitted" not in graph.stdout
+
+
+def test_default_source_without_cache_fails_deps_until_live(tmp_path: Path, monkeypatch) -> None:
+    _use_config(
+        tmp_path, monkeypatch, _PLATFORM, token=True, ansible={"default_source": "platform"}
+    )
+
+    cached = _run("deps", "acme/site")
+    with respx.mock(base_url="https://api.github.com") as mock:
+        _mock_dependency_file(mock, "acme/site")
+        _mock_dependency_file(mock, "acme/base", content="")
+        live = _run("deps", "acme/site", "--live", "-f", "json")
+
+    assert cached.exit_code == 1
+    assert "no cached source data found for source 'platform'" in cached.stderr
+    assert "untaped ansible deps acme/site --source platform --refresh" in cached.stderr
+    assert "--live" in cached.stderr
+    assert [row[:2] for row in _rows(live)] == [("acme/base", "main")]
+
+
+def test_explicit_selection_overrides_default_source(tmp_path: Path, monkeypatch) -> None:
+    _seed(tmp_path, "source:platform", _edge())
+    _use_config(tmp_path, monkeypatch, _TWO_SOURCES, ansible={"default_source": "ops"})
+
+    result = _run("impact", "acme/base", "--source", "platform", "-f", "json")
+
+    assert [row[:2] for row in _rows(result)] == [("acme/site", "main")]
+
+
+def test_default_source_is_refreshed_by_refresh(tmp_path: Path, monkeypatch) -> None:
+    _use_config(tmp_path, monkeypatch, _PLATFORM, ansible={"default_source": "platform"})
+    calls = _fake_refresh(monkeypatch, (_edge(),))
+
+    result = _run("impact", "acme/base", "--refresh", "-f", "json")
+
+    assert [source.name for source in calls] == ["platform"]
+    assert [row[:2] for row in _rows(result)] == [("acme/site", "main")]
+
+
+def test_unknown_default_source_names_the_setting(tmp_path: Path, monkeypatch) -> None:
+    _use_config(tmp_path, monkeypatch, _PLATFORM, ansible={"default_source": "nope"})
+
+    result = _run("impact", "acme/base")
+
+    assert result.exit_code == 1
+    assert "source not found: 'nope'; known: platform" in result.stderr
+    assert "ansible.default_source" in result.stderr
