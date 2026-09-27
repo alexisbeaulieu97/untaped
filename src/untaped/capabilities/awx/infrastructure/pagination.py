@@ -3,7 +3,8 @@
 AWX returns ``{"count", "next", "previous", "results"}`` on every list
 endpoint. ``next`` is an absolute path (already including the
 configured ``api_prefix``) or ``null`` once exhausted. We follow it
-verbatim until exhausted.
+verbatim until exhausted; :meth:`AwxClient.get_absolute_json` refuses a
+``next`` URL outside the configured ``base_url`` origin.
 """
 
 from __future__ import annotations

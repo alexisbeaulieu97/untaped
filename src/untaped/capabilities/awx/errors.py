@@ -55,6 +55,14 @@ class ActionResponseError(AwxApiError):
         self.execution_kind = execution_kind
 
 
+class PartialWriteError(AwxApiError):
+    """A record write landed but a follow-up sub-document write for it failed."""
+
+    def __init__(self, message: str, *, record_id: int) -> None:
+        super().__init__(message)
+        self.record_id = record_id
+
+
 class LaunchPromptError(AwxApiError):
     """A launch supplies a field the template ignores, or omits a required survey var."""
 

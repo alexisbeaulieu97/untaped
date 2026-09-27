@@ -97,6 +97,17 @@
     defaults become `$encrypted$`. Applying an export as a new template drops
     those placeholders with a warning instead of refusing the create.
     `preserved_secrets` names the path `survey_spec.spec.*[type=password].default`.
+  - **Fix:** schedule apply keeps the `$encrypted$` survey password answers
+    AWX returns in `extra_data` instead of dropping them, so a PATCH no longer
+    wipes them. A change to another `extra_data` key beside a placeholder,
+    including removing another answer, is refused; `preserved_secrets` names
+    each kept answer (for example `extra_data.db_password`), and `get` shows
+    those answers as `<redacted>`. A real answer typed into `extra_data` is
+    not recognized as a secret and appears in plain text in previews.
+  - **Fix:** a template create or update whose survey write fails after the
+    record write is reported `partial` with the record's `id`, not `failed`.
+  - **Fix:** list pagination refuses a `next` URL whose scheme, host or port
+    differs from `awx.base_url`, so the token is never sent to another host.
   - New `job-templates copy SOURCE --name NEW` and `workflow-templates copy`
     copy one template through AWX's `copy/` endpoint. They refuse a name
     already used in the source's scope, or `can_copy: false`, before any

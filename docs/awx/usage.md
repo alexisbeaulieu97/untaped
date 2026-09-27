@@ -133,6 +133,12 @@ cannot be patched: use `apply` for create or declarative create/update, and
 Known current and newly entered secret values are redacted from previews,
 result changes, and controller errors. Saved specifications use
 `$encrypted$` placeholders where the controller does not return a secret.
+AWX returns a schedule's survey password answers in `extra_data` as
+`$encrypted$`: applying them back keeps the stored answers, a change to
+another `extra_data` key beside one (including removing another answer) is
+refused, and a new schedule drops them with a warning. untaped cannot tell
+which `extra_data` keys are passwords, so a real answer you type there is not
+redacted: previews and results show it in plain text.
 
 ## Edit different values together
 
@@ -676,7 +682,7 @@ close a race with a later controller request and provides no transaction or
 rollback. `delete` re-reads its targets only after an interactive prompt;
 with `--yes` the selection read just before the writes is the check. Resource bodies and memberships are verified separately, so a body
 success with a membership failure is reported as `partial` and retains the
-resource ID. Membership changes are additive for the membership commands;
+resource ID. So is a template write whose survey write then fails. Membership changes are additive for the membership commands;
 replacement membership fields verify the exact set or declared order while
 retaining unrelated members for additive operations.
 
