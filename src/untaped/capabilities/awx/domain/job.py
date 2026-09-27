@@ -12,8 +12,9 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 TERMINAL_STATUSES = frozenset({"successful", "failed", "error", "canceled"})
 
@@ -69,6 +70,10 @@ class Job(BaseModel):
     started: str | None = None
     finished: str | None = None
     failed: bool = False
+    scm_branch: str | None = None
+    """The branch, tag or commit a job was launched on (empty: its project's)."""
+    scm_revision: str | None = None
+    """The commit a job's project checkout resolved to."""
 
     @property
     def is_terminal(self) -> bool:
@@ -137,3 +142,14 @@ class JobEvent(BaseModel):
     failed: bool = False
     created: str | None = None
     stdout: str = ""
+    res: dict[str, Any] | None = Field(default=None, exclude=True)
+    """The module result (``event_data.res``); left out of rendered rows."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lift_result(cls, data: Any) -> Any:
+        if isinstance(data, dict) and isinstance(data.get("event_data"), dict):
+            res = data["event_data"].get("res")
+            if isinstance(res, dict):
+                return {**data, "res": res}
+        return data

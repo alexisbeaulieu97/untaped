@@ -16,6 +16,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from untaped.capabilities.awx.domain.job import JobEvent
+
 
 @dataclass(frozen=True)
 class RefSentinel:
@@ -205,6 +207,38 @@ class Suite(BaseModel):
         return value
 
 
+FAILED_TASK_EVENTS = ("runner_on_failed", "runner_on_async_failed", "runner_on_unreachable")
+"""Job events that end a task on a host in failure."""
+
+_MAX_DETAIL = 1000
+"""Characters of a failed task's ``msg`` / ``stderr`` kept in a result."""
+
+
+class FailedTask(BaseModel):
+    """A task that failed on a host, from its job event."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    host: str | None
+    task: str | None
+    status: Literal["failed", "unreachable"]
+    msg: str | None
+    stderr: str | None
+    """The end of the module's stderr (where errors usually are)."""
+
+    @classmethod
+    def from_event(cls, event: JobEvent) -> FailedTask:
+        res = event.res or {}
+        msg, stderr = _text(res.get("msg")), _text(res.get("stderr"))
+        return cls(
+            host=event.host_name,
+            task=event.task,
+            status="unreachable" if event.event == "runner_on_unreachable" else "failed",
+            msg=msg[:_MAX_DETAIL] + "…" if msg and len(msg) > _MAX_DETAIL else msg,
+            stderr="…" + stderr[-_MAX_DETAIL:] if stderr and len(stderr) > _MAX_DETAIL else stderr,
+        )
+
+
 class CaseResult(BaseModel):
     """One row of the test report."""
 
@@ -222,7 +256,11 @@ class CaseResult(BaseModel):
     expectations: tuple[ExpectationResult, ...] = ()
     log_tail: tuple[str, ...] | None = None
     """The last lines of the job's stdout, for a case that did not pass."""
+    failed_tasks: tuple[FailedTask, ...] | None = None
+    """The tasks that failed, for a case that did not pass (``None``: not read)."""
     job_url: str | None = None
+    scm_branch: str | None = None
+    scm_revision: str | None = None
 
 
 class SuiteRunOutcome(BaseModel):
@@ -250,3 +288,10 @@ def _log_result(
     if line is not None and len(line) > _MAX_ACTUAL:
         line = line[:_MAX_ACTUAL] + "…"
     return ExpectationResult(check=check, expected=expected, actual=line, passed=passed)
+
+
+def _text(value: Any) -> str | None:
+    """A module result value as text (``None`` and empty stay ``None``)."""
+    if value is None or value == "":
+        return None
+    return value if isinstance(value, str) else str(value)

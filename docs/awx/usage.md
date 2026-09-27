@@ -541,6 +541,7 @@ untaped awx test validate tests/awx/
 untaped awx test list tests/awx/deploy-smoke.yml --var env=prod
 untaped awx test run tests/awx/ --var env=prod --parallel 4 --show-logs
 untaped awx test run tests/awx/deploy-smoke.yml --case web --non-interactive
+untaped awx test run tests/awx/ --scm-branch HEAD --format json
 ```
 
 - `launch` holds the AWX launch payload fields. `!ref {kind, name}` resolves a
@@ -556,16 +557,29 @@ untaped awx test run tests/awx/deploy-smoke.yml --case web --non-interactive
 
   A case's `status` and each of its `log` lists replace the ones in
   `defaults.expect`; anything it leaves out is inherited.
+- `validate` and `run` preflight every case against its template before
+  anything launches: the template must exist, prompt on launch for each field
+  the case sets (AWX ignores the others), and get its required survey
+  variables. `run` launches nothing when a case fails the preflight and lists
+  every such case.
+- `--scm-branch REF` runs every case's job on that branch, tag or commit,
+  replacing any `scm_branch` in the suite. Each template must prompt for it
+  (`ask_scm_branch_on_launch`) and its project must allow branch override
+  (`allow_override`). `--scm-branch HEAD` is the current git branch as named
+  on its upstream; it is refused until HEAD is pushed there.
 - `run` exits 1 unless at least one case ran and every case passed.
 - Each `awx.test_result` row has `result` (`pass`, `fail`, `error` or
   `timeout`), `job_status`, `job_id`, `job_url` (the job's page in the web
-  UI), `failure_reason`, and `expectations`, one `{check, expected, actual,
-  passed}` per check, where `actual` is the job status or the log line that
-  decided the check (cut at 300 characters).
+  UI), `scm_branch` and `scm_revision` (the ref the job ran and the commit it
+  resolved to), `failure_reason`, and `expectations`, one `{check, expected,
+  actual, passed}` per check, where `actual` is the job status or the log line
+  that decided the check (cut at 300 characters).
   In `json`, `yaml` and `pipe` output, a case that did not pass also carries
-  `log_tail`, the last 40 lines of its stdout (`null` when the log could not
-  be read). `--show-logs` prints those tails to stderr in any format. The
-  table shows the summary columns only.
+  `failed_tasks`, one `{host, task, status, msg, stderr}` per task that failed
+  (`status` is `failed` or `unreachable`; `ignore_errors` failures are left
+  out), and `log_tail`, the last 40 lines of its stdout. Either is `null` when
+  it could not be read. `--show-logs` prints both to stderr in any format.
+  The table shows the summary columns only.
 - A case waits `--timeout` seconds when given (a positive number), else its
   own `timeout:`, else the suite's `defaults.timeout`, else `awx.test_timeout`
   (30 minutes). `--parallel` cases run at once (default

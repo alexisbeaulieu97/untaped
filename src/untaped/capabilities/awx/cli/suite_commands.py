@@ -181,6 +181,14 @@ def run_command(
             help="Cancel jobs the run stops watching (timeout, polling error, Ctrl-C).",
         ),
     ] = True,
+    scm_branch: Annotated[
+        str | None,
+        Parameter(
+            name="--scm-branch",
+            help="Run every case's job on this branch, tag or commit; HEAD is the current "
+            "branch, once pushed. Templates must prompt for it and projects allow override.",
+        ),
+    ] = None,
     show_logs: Annotated[
         bool,
         Parameter(
@@ -188,7 +196,7 @@ def run_command(
             # global ``--verbose``/``-v``, so the short alias would shadow it.
             name="--show-logs",
             negative="",
-            help="Print the log tail of each case that did not pass to stderr.",
+            help="Print the failed tasks and log tail of each case that did not pass to stderr.",
         ),
     ] = False,
     fmt: FormatOption = "table",
@@ -196,11 +204,15 @@ def run_command(
 ) -> None:
     """Render, resolve, launch and report on one or more test files."""
     from untaped.capabilities.awx.application import RunAction, WatchJob  # noqa: PLC0415
+    from untaped.capabilities.awx.application.suites.preflight import (  # noqa: PLC0415
+        PreflightLaunch,
+    )
     from untaped.capabilities.awx.application.suites.resolver import (  # noqa: PLC0415
         ResolveCasePayload,
     )
     from untaped.capabilities.awx.application.suites.runner import RunTestSuite  # noqa: PLC0415
     from untaped.capabilities.awx.cli._action_runner import report_interrupted  # noqa: PLC0415
+    from untaped.capabilities.awx.infrastructure import git_head  # noqa: PLC0415
     from untaped.capabilities.awx.infrastructure.web_ui import job_ui_url  # noqa: PLC0415
 
     cli_vars = parse_kv_pairs(var, flag="--var")
@@ -208,6 +220,8 @@ def run_command(
     case_filter = set(cases) if cases else None
 
     with report_errors(), open_context() as ctx:
+        if scm_branch == "HEAD":
+            scm_branch = git_head.pushed_branch()
         suites = _load_suites(
             files,
             cli_vars=cli_vars,
@@ -228,10 +242,12 @@ def run_command(
             jt_scope=_jt_scope(ctx, spec),
             stop=ctx.stop,
             canceller=ctx.jobs.cancel if cancel else None,
+            preflight=PreflightLaunch(ctx.repo, ctx.catalog),
             log_reader=ctx.monitor.fetch_stdout,
+            event_reader=ctx.monitor.stream_events,
             job_url=partial(job_ui_url, ctx.settings),
-            # Tails are hidden in the table and raw views unless printed.
-            log_tails=show_logs or fmt not in {"table", "raw"},
+            # Evidence is hidden in the table and raw views unless printed.
+            evidence=show_logs or fmt not in {"table", "raw"},
         )
         try:
             outcome = runner(
@@ -240,6 +256,7 @@ def run_command(
                 parallel=parallel if parallel is not None else ctx.settings.test_parallel,
                 timeout=timeout,
                 default_timeout=ctx.settings.test_timeout,
+                scm_branch=scm_branch,
             )
         except KeyboardInterrupt:
             report_interrupted(
@@ -252,6 +269,8 @@ def run_command(
             if result.result == "pass" or result.job_id is None:
                 continue
             header = f"--- {result.suite}/{result.case} job {result.job_id}"
+            for task in result.failed_tasks or ():
+                echo(f"{task.status}: [{task.host}] {task.task}: {task.msg}", err=True)
             if result.log_tail is None:
                 echo(f"{header}: log unavailable", err=True)
                 continue
@@ -313,7 +332,10 @@ def validate_command(
     vars_file: _VARS_FILE_OPT = None,
     non_interactive: _NON_INTERACTIVE_OPT = False,
 ) -> None:
-    """Render + parse + resolve each case; report errors without launching."""
+    """Render, parse, resolve and preflight each case; report errors without launching."""
+    from untaped.capabilities.awx.application.suites.preflight import (  # noqa: PLC0415
+        PreflightLaunch,
+    )
     from untaped.capabilities.awx.application.suites.resolver import (  # noqa: PLC0415
         ResolveCasePayload,
     )
@@ -332,11 +354,14 @@ def validate_command(
         resolver = ResolveCasePayload(
             ctx.fk, catalog=ctx.catalog, default_organization=ctx.default_organization
         )
+        preflight = PreflightLaunch(ctx.repo, ctx.catalog)
+        scope = _jt_scope(ctx, spec)
         any_errors = False
         for suite in suites:
             for case_name, case in suite.cases.items():
                 try:
-                    resolver(spec, case, defaults=suite.defaults)
+                    payload = resolver(spec, case, defaults=suite.defaults)
+                    preflight(spec, name=suite.job_template, scope=scope, payload=payload)
                 except (AwxApiError, ConfigError) as exc:
                     echo(f"{suite.name}/{case_name}: {exc}", err=True)
                     any_errors = True
