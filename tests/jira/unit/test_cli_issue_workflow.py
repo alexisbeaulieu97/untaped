@@ -1,13 +1,14 @@
 """CLI tests for the richer Jira issue workflow.
 
 Covers ``issues get --comments`` and its table columns, ``issues comments
-list``, assigning through ``issues patch``, ``transition --comment/--resolution``
-and ``issues links create``.
+list``, assigning through ``issues patch`` (the dedicated assignee endpoint),
+``transition --comment/--resolution`` and ``issues links create``.
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx
 import pytest
@@ -147,17 +148,73 @@ def test_comments_list_emits_comment_records() -> None:
     ("args", "expected"),
     [
         (["--assignee", "bob"], {"name": "bob"}),
-        (["--unassign"], None),
+        (["--unassign"], {"name": None}),
     ],
 )
-def test_patch_assignee_sets_the_assignee_field(args: list[str], expected: object) -> None:
-    with respx.mock(base_url=BASE) as mock:
-        route = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
+def test_patch_assignee_uses_the_dedicated_assignee_endpoint(
+    args: list[str], expected: object
+) -> None:
+    # The edit endpoint fails when the assignee field is not on the edit screen.
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        edit = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
+        route = mock.put("/rest/api/2/issue/ABC-1/assignee").mock(return_value=httpx.Response(204))
         result = invoke_cli(app, ["issues", "patch", "ABC-1", *args, "--yes", "--format", "json"])
 
     assert result.exit_code == 0, result.output
-    assert json.loads(route.calls[0].request.content) == {"fields": {"assignee": expected}}
+    assert json.loads(route.calls[0].request.content) == expected
+    assert len(edit.calls) == 0
     assert json.loads(result.stdout)["action"] == "updated"
+
+
+def test_patch_fields_and_assignee_edits_then_assigns() -> None:
+    with respx.mock(base_url=BASE) as mock:
+        edit = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
+        assign = mock.put("/rest/api/2/issue/ABC-1/assignee").mock(return_value=httpx.Response(204))
+        result = invoke_cli(
+            app, ["issues", "patch", "ABC-1", "--summary", "New", "--assignee", "bob", "--yes"]
+        )
+        order = [call.request.url.path for call in mock.calls]
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(edit.calls[0].request.content) == {"fields": {"summary": "New"}}
+    assert json.loads(assign.calls[0].request.content) == {"name": "bob"}
+    assert order == ["/rest/api/2/issue/ABC-1", "/rest/api/2/issue/ABC-1/assignee"]
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [(["--assignee", "bob"], {"name": "bob"}), (["--unassign"], {"name": None})],
+)
+def test_patch_assignee_flags_override_a_body_file_assignee(
+    tmp_path: Path, args: list[str], expected: object
+) -> None:
+    body_file = tmp_path / "edit.yml"
+    body_file.write_text("fields:\n  summary: New\n  assignee:\n    name: carol\n")
+    with respx.mock(base_url=BASE) as mock:
+        edit = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
+        assign = mock.put("/rest/api/2/issue/ABC-1/assignee").mock(return_value=httpx.Response(204))
+        result = invoke_cli(
+            app, ["issues", "patch", "ABC-1", "--body-file", str(body_file), *args, "--yes"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(edit.calls[0].request.content) == {"fields": {"summary": "New"}}
+    assert json.loads(assign.calls[0].request.content) == expected
+
+
+def test_patch_says_the_fields_changed_when_only_the_assignment_fails() -> None:
+    with respx.mock(base_url=BASE) as mock:
+        mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
+        mock.put("/rest/api/2/issue/ABC-1/assignee").mock(
+            return_value=httpx.Response(400, json={"errors": {"assignee": "cannot be assigned"}})
+        )
+        result = invoke_cli(
+            app, ["issues", "patch", "ABC-1", "--summary", "New", "--assignee", "bob", "--yes"]
+        )
+
+    assert result.exit_code == 1, result.output
+    assert "error: fields updated, but assigning failed: " in result.stderr
+    assert "cannot be assigned" in result.stderr
 
 
 def test_patch_assignee_me_resolves_the_authenticated_user() -> None:
@@ -165,24 +222,29 @@ def test_patch_assignee_me_resolves_the_authenticated_user() -> None:
         mock.get("/rest/api/2/myself").mock(
             return_value=httpx.Response(200, json={"name": "alexis", "displayName": "Alexis"})
         )
-        route = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
+        route = mock.put("/rest/api/2/issue/ABC-1/assignee").mock(return_value=httpx.Response(204))
         result = invoke_cli(app, ["issues", "patch", "ABC-1", "--assignee", "@me", "--yes"])
 
     assert result.exit_code == 0, result.output
-    sent = json.loads(route.calls[0].request.content)
-    assert sent == {"fields": {"assignee": {"name": "alexis"}}}
+    assert json.loads(route.calls[0].request.content) == {"name": "alexis"}
 
 
-def test_patch_assignee_me_dry_run_shows_the_resolved_name() -> None:
+def test_patch_dry_run_shows_the_edit_and_assignee_requests() -> None:
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         mock.get("/rest/api/2/myself").mock(
             return_value=httpx.Response(200, json={"name": "alexis"})
         )
-        route = mock.put("/rest/api/2/issue/ABC-1")
-        result = invoke_cli(app, ["issues", "patch", "ABC-1", "--assignee", "@me", "--dry-run"])
+        route = mock.put(url__regex=r"/rest/api/2/issue/ABC-1.*")
+        result = invoke_cli(
+            app,
+            ["issues", "patch", "ABC-1", "--summary", "New", "--assignee", "@me", "--dry-run"],
+        )
 
     assert result.exit_code == 0, result.output
+    assert "PUT /rest/api/2/issue/ABC-1\n" in result.stderr
+    assert "PUT /rest/api/2/issue/ABC-1/assignee\n" in result.stderr
     assert '"name": "alexis"' in result.stderr
+    assert '"assignee"' not in result.stderr
     assert len(route.calls) == 0
 
 

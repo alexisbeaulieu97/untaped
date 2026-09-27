@@ -14,9 +14,12 @@ from untaped.capabilities.jira.domain import (
     IssueOutcome,
     JiraIssueSearchFilters,
     browse_url,
+    build_assignee_payload,
     build_issue_payload,
     build_link_payload,
     build_transition_payload,
+    validate_issue_key,
+    validate_project_key,
 )
 from untaped.capabilities.jira.errors import JiraError
 from untaped.capability_api import (
@@ -170,9 +173,12 @@ def issue_get_command(
     from untaped.capabilities.jira.application import GetIssue  # noqa: PLC0415
 
     with report_errors():
-        resolved = read_identifiers(
-            list(keys or []), stdin=stdin, id_field="key", accept_kinds=ISSUE_KINDS
-        )
+        resolved = [
+            validate_issue_key(key)
+            for key in read_identifiers(
+                list(keys or []), stdin=stdin, id_field="key", accept_kinds=ISSUE_KINDS
+            )
+        ]
         single = not stdin and len(resolved) == 1
         with open_client() as (client, ui), ui.progress("Fetching issues…"):
             get_issue = GetIssue(client, comments=comments)
@@ -222,6 +228,7 @@ def comment_list_command(
     from untaped.capabilities.jira.application import ListComments  # noqa: PLC0415
 
     with report_errors():
+        key = validate_issue_key(key)
         with open_client() as (client, ui), ui.progress("Fetching comments…"):
             rows = ListComments(client)(key, limit=limit)
         table_columns = columns or (COMMENT_TABLE_COLUMNS if fmt == "table" else None)
@@ -327,7 +334,7 @@ def _show_request(method: str, path: str, body: object) -> None:
 
 def _send(
     verb: str,
-    request: tuple[str, str, object],
+    requests: Sequence[tuple[str, str, object]],
     send: Callable[[JiraClient], IssueOutcome],
     *,
     planned: IssueOutcome,
@@ -337,9 +344,14 @@ def _send(
     fmt: OutputFormat,
     columns: list[str] | None,
 ) -> None:
-    """Preview one write (``--dry-run``) or confirm and send it, then emit the outcome."""
+    """Preview one write's requests (``--dry-run``) or confirm and send them, then emit."""
+
+    def preview() -> None:
+        for request in requests:
+            _show_request(*request)
+
     if dry_run:
-        _show_request(*request)
+        preview()
         emit(planned, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
         return
     with open_client() as (client, ui):
@@ -347,7 +359,7 @@ def _send(
             "Send this request to Jira?",
             assume_yes=yes,
             refusal=f"{verb} requires --yes when not interactive",
-            preview=lambda: _show_request(*request),
+            preview=preview,
         )
         with ui.progress(progress):
             row = send(client)
@@ -401,7 +413,7 @@ def issue_create_command(
         )
         _send(
             "create",
-            ("POST", f"{settings.api_prefix}/issue", payload),
+            [("POST", f"{settings.api_prefix}/issue", payload)],
             lambda client: CreateIssue(client, base_url=settings.base_url)(payload),
             planned=IssueOutcome(action="planned"),
             progress="Creating issue…",
@@ -448,6 +460,7 @@ def issue_patch_command(
     from untaped.capabilities.jira.application import PatchIssue  # noqa: PLC0415
 
     with report_errors():
+        key = validate_issue_key(key)
         settings = current_jira_settings()
         base = read_structured_file(body_file) if body_file is not None else {}
         payload = build_issue_payload(
@@ -459,19 +472,30 @@ def issue_patch_command(
         )
         if assignee is not None and unassign:
             raise_usage("pass either --assignee or --unassign, not both")
-        if unassign:
-            payload["fields"]["assignee"] = None
-        if not payload.get("fields") and not payload.get("update") and assignee is None:
+        if assignee is not None or unassign:
+            payload["fields"].pop("assignee", None)  # the flag overrides the body file
+        has_fields = bool(payload.get("fields") or payload.get("update"))
+        if not has_fields and assignee is None and not unassign:
             raise_usage(
                 "nothing to update: pass --summary, --description, --assignee, --unassign, "
                 "--set, --set-json, or a --body-file with fields/update"
             )
+        assign = None
         if assignee is not None:
-            payload["fields"]["assignee"] = {"name": _username(assignee)}
+            assign = build_assignee_payload(_username(assignee))
+        elif unassign:
+            assign = build_assignee_payload(None)
+        requests: list[tuple[str, str, object]] = []
+        if has_fields:
+            requests.append(("PUT", f"{settings.api_prefix}/issue/{key}", payload))
+        if assign is not None:
+            requests.append(("PUT", f"{settings.api_prefix}/issue/{key}/assignee", assign))
         _send(
             "patch",
-            ("PUT", f"{settings.api_prefix}/issue/{key}", payload),
-            lambda client: PatchIssue(client, base_url=settings.base_url)(key, payload),
+            requests,
+            lambda client: PatchIssue(client, base_url=settings.base_url)(
+                key, payload if has_fields else None, assignee=assign
+            ),
             planned=IssueOutcome(action="planned", key=key, url=browse_url(settings.base_url, key)),
             progress="Updating issue…",
             yes=yes,
@@ -505,11 +529,12 @@ def issue_comment_command(
     from untaped.capabilities.jira.application import AddComment  # noqa: PLC0415
 
     with report_errors():
+        key = validate_issue_key(key)
         settings = current_jira_settings()
         resolved_body = resolve_text_input(value=body, file=body_file, what="body")
         _send(
             "comment",
-            ("POST", f"{settings.api_prefix}/issue/{key}/comment", {"body": resolved_body}),
+            [("POST", f"{settings.api_prefix}/issue/{key}/comment", {"body": resolved_body})],
             lambda client: AddComment(client, base_url=settings.base_url)(key, resolved_body),
             planned=IssueOutcome(action="planned", key=key, url=browse_url(settings.base_url, key)),
             progress="Adding comment…",
@@ -533,6 +558,7 @@ def issue_transitions_command(
     from untaped.capabilities.jira.application import ListTransitions  # noqa: PLC0415
 
     with report_errors():
+        key = validate_issue_key(key)
         with open_client() as (client, ui), ui.progress("Fetching available transitions…"):
             rows = ListTransitions(client)(key)
         emit(
@@ -570,9 +596,12 @@ def issue_transition_command(
 
     with report_errors():
         TransitionIssue.check_selector(transition_id, to)
-        resolved = read_identifiers(
-            list(keys or []), stdin=stdin, id_field="key", accept_kinds=ISSUE_KINDS
-        )
+        resolved = [
+            validate_issue_key(key)
+            for key in read_identifiers(
+                list(keys or []), stdin=stdin, id_field="key", accept_kinds=ISSUE_KINDS
+            )
+        ]
         settings = current_jira_settings()
         single = not stdin and len(resolved) == 1
         with open_client() as (client, ui):
@@ -645,13 +674,20 @@ def link_create_command(
     from untaped.capabilities.jira.application import LinkIssues  # noqa: PLC0415
 
     with report_errors():
+        key, other = validate_issue_key(key), validate_issue_key(other)
         settings = current_jira_settings()
         if dry_run or not yes:
             # The REST field names read backwards; say the direction in words.
             echo(f"reads as: {key} <outward phrase of {q(link_type)}> {other}", err=True)
         _send(
             "link",
-            ("POST", f"{settings.api_prefix}/issueLink", build_link_payload(key, link_type, other)),
+            [
+                (
+                    "POST",
+                    f"{settings.api_prefix}/issueLink",
+                    build_link_payload(key, link_type, other),
+                )
+            ],
             lambda client: LinkIssues(client, base_url=settings.base_url)(key, link_type, other),
             planned=IssueOutcome(
                 action="planned",
@@ -703,6 +739,7 @@ def project_get_command(
     from untaped.capabilities.jira.application import GetProject  # noqa: PLC0415
 
     with report_errors():
+        key = validate_project_key(key)
         with open_client() as (client, ui), ui.progress("Fetching project…"):
             row = GetProject(client)(key)
         emit(row, fmt=fmt, columns=columns, kind="jira.project")
