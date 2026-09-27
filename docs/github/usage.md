@@ -45,8 +45,9 @@ private repo there fails to fetch instead of receiving your token.
 ## Scopes and filters
 
 `repos list`, `search repos|code|issues`, `sweep` and `cache sync` take the
-same scope flags: repeatable `--org`, `--team ORG/SLUG` and `-r/--repo
-OWNER/NAME` (not on `repos list`), plus `--stdin` where noted below.
+same scope flags: repeatable `--org` and `--team ORG/SLUG`. All but
+`repos list` also take repeatable `-r/--repo OWNER/NAME` and `--stdin` (see
+[Output](#output) for the records `--stdin` reads).
 
 - With no scope flag, a command uses `github.default_org`:
   `untaped config set github.default_org acme` makes
@@ -56,12 +57,16 @@ OWNER/NAME` (not on `repos list`), plus `--stdin` where noted below.
 - Without `github.default_org`, `repos list`, `sweep` and `cache sync` fail
   with exit 2, and `search repos|code|issues` searches your own repositories
   (`user:@me`), saying so on stderr.
-- `--archived include|exclude|only` keeps archived repositories, drops them,
-  or keeps only them. Every command defaults to `exclude`.
+- `--archived include|exclude|only` on `repos list`, `search repos`, `sweep`
+  and `cache sync` keeps archived repositories, drops them, or keeps only
+  them. It defaults to `exclude` on all four, so `search repos` adds
+  `archived:false` unless the query already has an `archived:` qualifier.
 - `--limit N` caps the rows. When it cuts results off, a notice on stderr says
   so: `showing 50 of 312 repositories; omit --limit to list all` for
   `repos list`, `showing the first 30 results; more match, raise --limit to
-  see them` for `search`. `-q` mutes it.
+  see them` for `search`. `-q` mutes it. Search detects truncation by asking
+  for one row past `--limit`, except at a multiple of 100 or at 1000 and up,
+  where that row would cost an extra request; those limits print no notice.
 
 ## List an org's or team's repos
 
@@ -106,8 +111,7 @@ untaped github search users --kind org --location Montreal
 ```
 
 - `--limit` defaults to 30. GitHub never returns more than 1000 results, and
-  search has stricter rate limits than other API calls. To spot truncation,
-  a search asks GitHub for one row past `--limit`.
+  search has stricter rate limits than other API calls.
 - A long team or `--repo` scope is split into several requests and the
   results are merged. One command sends at most 9 code-search or 25
   repository- or issue-search requests; past that it warns that results cover

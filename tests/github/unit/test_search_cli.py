@@ -26,6 +26,7 @@ ENDPOINTS = {
 TEAMS = {
     "/orgs/acme/teams/backend/repos": [{"full_name": "acme/api"}, {"full_name": "acme/web"}],
     "/orgs/platform/teams/ops/repos": [{"full_name": "platform/deploy"}],
+    "/orgs/acme/teams/empty/repos": [],
 }
 
 
@@ -88,8 +89,14 @@ def _search(
     items: Sequence[dict[str, Any]] = (),
     pages: Sequence[Sequence[dict[str, Any]]] = (),
     input: str | None = None,
+    requests: list[str] | None = None,
+    root_args: Sequence[str] = (),
 ) -> tuple[CliResult, respx.Route]:
-    """Run ``search <args>`` against a mocked API; ``pages`` chain via ``Link`` headers."""
+    """Run ``search <args>`` against a mocked API; ``pages`` chain via ``Link`` headers.
+
+    ``requests`` collects every requested URL; ``root_args`` (such as ``-q``) run
+    the search through the ``untaped`` root instead of the github app.
+    """
     endpoint = ENDPOINTS[args[0]]
     with respx.mock(base_url=API, assert_all_called=False) as mock:
         for path, repos in TEAMS.items():
@@ -107,7 +114,13 @@ def _search(
                 200, json={"items": list(pages[0] if pages else items)}, headers=first
             )
         )
-        result = CliInvoker().invoke(app, ["search", *args], input=input)
+        if root_args:
+            argv = [*root_args, "github", "search", *args]
+            result = invoke_cli(build_root_app(externals=[]), argv, input=input)
+        else:
+            result = CliInvoker().invoke(app, ["search", *args], input=input)
+        if requests is not None:
+            requests.extend(str(call.request.url) for call in mock.calls)
     return result, route
 
 
@@ -126,6 +139,7 @@ def _q(route: respx.Route) -> str:
             "(repo:acme/api OR repo:acme/web)",
         ),
         (["repos", "--org", "acme", "--archived", "only"], None, "org:acme archived:true"),
+        (["repos", "archived:true", "--org", "acme"], None, "archived:true org:acme"),
         (["code", "TODO", "-r", "acme/api"], None, "TODO repo:acme/api"),
         (["code", "TODO", "--language", "python"], None, "TODO user:@me language:python"),
         (
@@ -210,24 +224,63 @@ def test_search_prints_no_truncation_notice_when_every_match_fits(kind: str) -> 
 
 
 @pytest.mark.parametrize("kind", ["repos", "code", "issues"])
-def test_search_without_scope_notes_the_user_me_fallback(kind: str) -> None:
-    unscoped, route = _search([kind, "q", "--format", "json"])
+@pytest.mark.parametrize(
+    "scope", [[], ["--team", "acme/empty"]], ids=["no-scope", "team-without-repos"]
+)
+def test_search_notes_the_user_me_fallback(kind: str, scope: list[str]) -> None:
+    unscoped, route = _search([kind, "q", *scope, "--format", "json"])
     scoped, _ = _search([kind, "q", "--org", "acme", "--format", "json"])
 
     assert unscoped.exit_code == scoped.exit_code == 0, unscoped.output
     assert "user:@me" in _q(route)
-    assert "no scope given; searching user:@me" in unscoped.stderr
+    assert "searching user:@me" in unscoped.stderr
     assert "github.default_org" in unscoped.stderr
     assert "user:@me" not in scoped.stderr
 
 
-def test_search_without_scope_uses_github_default_org(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    github:\n      token: t\n      default_org: acme\n")
-    get_settings.cache_clear()
+def test_quiet_mutes_the_fallback_and_truncation_notices() -> None:
+    items = [_repo(i) for i in range(5)]
 
+    loud, _ = _search(["repos", "--limit", "2", "--format", "json"], items=items)
+    quiet, _ = _search(["repos", "--limit", "2", "--format", "json"], items=items, root_args=["-q"])
+
+    assert "user:@me" in loud.stderr
+    assert "showing the first 2 results" in loud.stderr
+    assert quiet.exit_code == 0, quiet.output
+    assert len(json.loads(quiet.stdout)) == 2
+    assert quiet.stderr == ""
+
+
+@pytest.mark.parametrize("limit", [100, 200])
+def test_search_limit_on_a_page_boundary_skips_the_probe(limit: int) -> None:
+    # Probing one row past a multiple of 100 would cost a whole extra page.
+    pages = [[_repo(i) for i in range(p * 100, p * 100 + 100)] for p in range(limit // 100 + 1)]
+    requests: list[str] = []
+
+    result, _ = _search(
+        ["repos", "--limit", str(limit), "--format", "json"], pages=pages, requests=requests
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(json.loads(result.stdout)) == limit
+    assert len(requests) == limit // 100
+    assert "showing" not in result.stderr
+
+
+def test_search_limit_at_github_cap_skips_the_probe() -> None:
+    pages = [[_repo(i) for i in range(p * 100, p * 100 + 100)] for p in range(11)]
+    requests: list[str] = []
+
+    result, _ = _search(
+        ["repos", "--limit", "1000", "--format", "json"], pages=pages, requests=requests
+    )
+
+    assert len(json.loads(result.stdout)) == 1000
+    assert len(requests) == 10
+
+
+@pytest.mark.usefixtures("default_org")
+def test_search_without_scope_uses_github_default_org() -> None:
     unscoped, unscoped_route = _search(["code", "TODO", "--format", "json"])
     by_repo, repo_route = _search(["code", "TODO", "--repo", "x/y", "--format", "json"])
     by_user, user_route = _search(["code", "TODO", "--user", "bob", "--format", "json"])

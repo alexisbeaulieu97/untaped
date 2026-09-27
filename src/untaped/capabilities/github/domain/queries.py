@@ -9,6 +9,7 @@ the same query string.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -24,6 +25,53 @@ IssueSortOption = Literal[
     "updated",
 ]
 UserSortOption = Literal["followers", "repositories", "joined"]
+
+
+@dataclass(frozen=True)
+class SearchQueryToken:
+    """One whitespace-separated term of a raw search query."""
+
+    value: str
+    quoted: bool
+
+
+def tokenize_search_query(raw_query: str) -> tuple[SearchQueryToken, ...]:
+    """Split a raw query on whitespace outside double quotes, dropping the quotes."""
+    tokens: list[SearchQueryToken] = []
+    chars: list[str] = []
+    quoted = False
+    token_quoted = False
+
+    for char in raw_query:
+        if quoted:
+            if char == '"':
+                quoted = False
+            else:
+                chars.append(char)
+            continue
+        if char == '"':
+            quoted = True
+            token_quoted = True
+            continue
+        if char.isspace():
+            if chars or token_quoted:
+                tokens.append(SearchQueryToken("".join(chars), token_quoted))
+                chars = []
+                token_quoted = False
+            continue
+        chars.append(char)
+
+    if chars or token_quoted:
+        tokens.append(SearchQueryToken("".join(chars), token_quoted))
+    return tuple(tokens)
+
+
+def _has_qualifier(raw_query: str | None, key: str) -> bool:
+    """Whether ``raw_query`` holds an unquoted ``key:`` (or negated ``-key:``) qualifier."""
+    return any(
+        not token.quoted and token.value.removeprefix("-").lower().startswith(f"{key}:")
+        for token in tokenize_search_query(raw_query or "")
+    )
 
 
 def _quote(value: str) -> str:
@@ -86,6 +134,7 @@ class RepoSearchFilters(ScopedQueryBase):
 
     name: str | None = None
     language: str | None = None
+    # Neutral (no qualifier) by default; the CLI applies the user-facing "exclude".
     archived: ArchivedMode = "include"
     fork: bool | None = None
     visibility: Literal["public", "private"] | None = None
@@ -97,7 +146,7 @@ class RepoSearchFilters(ScopedQueryBase):
             extras.append(f"{_quote(self.name)} in:name")
         if self.language:
             extras.append(f"language:{_quote(self.language)}")
-        if self.archived != "include":
+        if self.archived != "include" and not _has_qualifier(self.raw_query, "archived"):
             extras.append(f"archived:{'true' if self.archived == 'only' else 'false'}")
         if self.fork is not None:
             extras.append("fork:true" if self.fork else "fork:false")

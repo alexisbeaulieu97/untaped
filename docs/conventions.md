@@ -73,7 +73,7 @@ Rules for parameters:
 To rename a command, group or flag, keep the old spelling as a hidden,
 deprecated alias until the next major release:
 `deprecated_alias(parent_app, "me", "whoami")` for a command or group, and
-`deprecated_alias(command_app, "--repo-stdin", "--stdin")` for a flag. The
+`deprecated_alias(command_app, "--old-flag", "--new-flag")` for a flag. The
 root shell rewrites the old token and prints
 ``warning: `me` is deprecated and will be removed in 8.0; use `whoami` ``.
 The old spelling never appears in `--help`. Aliases apply through the

@@ -12,7 +12,6 @@ import pytest
 import respx
 
 from untaped.capabilities.github.cli import app
-from untaped.settings import get_settings
 from untaped.testing import CliInvoker, CliResult, assert_destructive_contract
 
 SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
@@ -175,7 +174,10 @@ def test_cache_sync_failure_exits_1_and_names_the_repo(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("args", "message"),
     [
-        (["sync"], "cache sync requires --org, --team, --repo, or --stdin"),
+        (
+            ["sync"],
+            "cache sync requires --org, --team, --repo, --stdin, or a github.default_org setting",
+        ),
         (["delete"], "cache delete requires REPO arguments or --all"),
         (["delete", "acme/api", "--all", "--yes"], "pass REPO arguments or --all, not both"),
         (["prune", "--yes"], "cache prune requires --org"),
@@ -263,12 +265,9 @@ def test_cache_prune_deletes_departed_and_archived_repos(source_repo: SourceRepo
     assert _cached() == ["acme/api"]
 
 
-def test_cache_prune_falls_back_to_github_default_org(
-    source_repo: SourceRepo, _config: Path
-) -> None:
+@pytest.mark.usefixtures("default_org")
+def test_cache_prune_falls_back_to_github_default_org(source_repo: SourceRepo) -> None:
     listings = _populate(source_repo, "acme/api", "acme/old")
-    _config.write_text(_config.read_text() + "      default_org: acme\n")
-    get_settings.cache_clear()
 
     pruned = _cache(
         ["cache", "prune", "--yes", "--format", "json"], org={"acme": [listings["acme/api"]]}
@@ -286,15 +285,14 @@ def test_cache_prune_falls_back_to_github_default_org(
     ],
     ids=["default-excludes", "only", "include"],
 )
+@pytest.mark.usefixtures("default_org")
 def test_cache_sync_archived_modes_and_default_org(
-    source_repo: SourceRepo, _config: Path, args: list[str], synced: list[str]
+    source_repo: SourceRepo, args: list[str], synced: list[str]
 ) -> None:
     listing = [
         _repo("acme/api", source_repo("api", {"README.md": "x\n"})),
         _repo("acme/old", source_repo("old", {"README.md": "x\n"}), archived=True),
     ]
-    _config.write_text(_config.read_text() + "      default_org: acme\n")
-    get_settings.cache_clear()
 
     result = _cache(["cache", "sync", *args, "--format", "json"], org={"acme": listing})
 

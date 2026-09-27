@@ -139,10 +139,14 @@ def sync_command(
         settings = app_context().section("github", GithubSettings)
         stdin_repos, stdin_items = read_stdin_repos() if stdin else ((), ())
         repos = tuple(repo or ())
-        orgs = org_scope(org, scoped=bool(team or repos or stdin_repos or stdin_items))
+        piped = bool(stdin_repos or stdin_items)
+        orgs = org_scope(org, scoped=bool(team or repos or piped))
         teams = parse_team_scopes(team, orgs=orgs)
-        if not (orgs or teams or repos or stdin_repos or stdin_items):
-            raise UsageError("cache sync requires --org, --team, --repo, or --stdin")
+        if not (orgs or teams or repos or piped):
+            raise UsageError(
+                "cache sync requires --org, --team, --repo, --stdin, "
+                "or a github.default_org setting"
+            )
         options = CorpusSyncOptions(
             scope=RepositoryInventoryScope(orgs=orgs, teams=teams, repos=repos),
             stdin_repos=stdin_repos,

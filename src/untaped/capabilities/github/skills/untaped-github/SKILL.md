@@ -30,7 +30,7 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
 - `untaped github search issues` searches issues and pull requests.
 - `untaped github search users` searches users and organizations and emits `github.user_hit` records (`whoami` emits `github.user`).
 - Search commands support scoped selectors such as `--user`, repeatable `--org`, repeatable `-r/--repo`, and repeatable `--team ORG/SLUG` where applicable. `-r` always means `--repo` across `github` commands.
-- `--archived include|exclude|only` on `repos list`, `search repos`, `sweep` and `cache sync` keeps, drops, or isolates archived repos; the default is `exclude` everywhere. There are no `--no-archived` or bare `--archived` spellings.
+- `--archived include|exclude|only` on `repos list`, `search repos`, `sweep` and `cache sync` keeps, drops, or isolates archived repos; the default is `exclude` everywhere. There are no `--no-archived` or bare `--archived` spellings. An unquoted `archived:` qualifier in the `search repos` query wins over the flag.
 - Prefer `--team ORG/SLUG` for team-only operations. A bare `--team SLUG` is accepted only when exactly one `--org` is present and normalizes to `ORG/SLUG`.
 - `repos list` requires `--org` or `--team` scopes (or `github.default_org`); it does not default to the authenticated user's repositories.
 - `repos list` treats `--org` and `--team` as additive scopes: `--team acme/backend` is team-only, while `--org acme --team backend` includes the whole org plus that team.
@@ -71,8 +71,8 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
   also reads `github.repo`, `github.repo_hit` and `github.sweep_repo` pipe records
   (`untaped github search repos --org acme --format pipe | untaped workspace add --stdin`).
 - `--profile <name>` works in any token position (e.g. `untaped github --profile work whoami`).
-- Use `--limit` intentionally; GitHub search has stricter rate limits than normal REST reads. When `--limit` cuts results off, stderr says so (`showing 50 of 312 repositories; omit --limit to list all` for `repos list`; `showing the first 30 results; more match, raise --limit to see them` for search). No notice means you have every match (up to GitHub's 1000-result search cap).
-- When no repo/org/user/team/stdin scope is passed to repo/code/issue search, the CLI searches `github.default_org`, or else the authenticated user (`user:@me`) and prints `no scope given; searching user:@me ...` on stderr.
+- Use `--limit` intentionally; GitHub search has stricter rate limits than normal REST reads. When `--limit` cuts results off, stderr says so (`showing 50 of 312 repositories; omit --limit to list all` for `repos list`; `showing the first 30 results; more match, raise --limit to see them` for search). No notice means you have every match, except that search cannot tell at a `--limit` that is a multiple of 100 or 1000 and up (checking would cost an extra request), so use an odd limit such as 150 when completeness matters.
+- When no repo/org/user/team/stdin scope is passed to repo/code/issue search, the CLI searches `github.default_org`, or else the authenticated user (`user:@me`) and prints `no user, org or repository in scope; searching user:@me ...` on stderr (also when `--team` resolves to no repos).
 - Repeated repo scopes are ORed together; do not rewrite them as separate AND qualifiers.
 - `search repos` automatically batches large team-expanded repo scopes around
   GitHub's search validation limits: at most five `AND`/`OR`/`NOT` operators

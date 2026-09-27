@@ -277,7 +277,9 @@ def _scope(
     orgs = org_scope(org, scoped=bool(team or repos or stdin))
     team_scopes = parse_team_scopes(team, orgs=orgs)
     if not orgs and not team_scopes and not repos and not stdin:
-        raise UsageError("sweep requires --org, --team, --repo, or --stdin")
+        raise UsageError(
+            "sweep requires --org, --team, --repo, --stdin, or a github.default_org setting"
+        )
     return RepositoryInventoryScope(orgs=orgs, teams=team_scopes, repos=repos)
 
 
