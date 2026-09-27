@@ -7,9 +7,12 @@ from collections import Counter
 from collections.abc import Callable, Collection, Sequence
 from typing import Any, NoReturn
 
+from rich.text import Text
+
 from untaped.capabilities.awx.application import RunAction
 from untaped.capabilities.awx.application.mutation_values import redact_error
 from untaped.capabilities.awx.application.prepare_actions import (
+    TemplateReads,
     launch_payload_preview,
     prepare_action_targets,
 )
@@ -21,7 +24,7 @@ from untaped.capabilities.awx.application.selected_actions import (
 from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.cli._mutation_runner import confirm_batch
 from untaped.capabilities.awx.cli.context import AwxContext
-from untaped.capabilities.awx.cli.format import format_scope
+from untaped.capabilities.awx.cli.format import format_scope, format_value
 from untaped.capabilities.awx.cli.parallel import drain_parallel, wait_parallel
 from untaped.capabilities.awx.domain import Job, ResourceSpec
 from untaped.capabilities.awx.domain.job import still_running_detail
@@ -63,7 +66,8 @@ def run_action_selection(
     wait: an execution still running then fails its row and is named in a
     ``jobs wait`` hint.
     """
-    spec, targets = _prepare(ctx, spec, selected, action=action, payload=payload)
+    reads = TemplateReads(ctx.repo, spec)
+    spec, targets = _prepare(ctx, spec, selected, action=action, payload=payload, reads=reads)
     result_kinds = next(a.returns for a in spec.actions if a.name == action)
     result_kind = next(iter(result_kinds)) if len(result_kinds) == 1 else None
     rows: list[dict[str, Any]] = [
@@ -79,7 +83,7 @@ def run_action_selection(
         for item in targets
     ]
     if dry_run:
-        _preview_payloads(ctx, spec, rows, targets, payload)
+        _preview_payloads(rows, targets, payload, reads, fmt=fmt)
     if dry_run or (confirm and not yes and not _confirm_targets(ctx, targets, action=action)):
         emit(rows, fmt=fmt, columns=columns, kind=f"awx.{action}_outcome")
         return
@@ -127,17 +131,22 @@ def run_action_selection(
 
 
 def _preview_payloads(
-    ctx: AwxContext,
-    spec: ResourceSpec,
     rows: list[dict[str, Any]],
     targets: Sequence[SelectedResource],
     payload: dict[str, Any] | None,
+    reads: TemplateReads,
+    *,
+    fmt: FormatOption,
 ) -> None:
-    """Show each ``--dry-run`` row the payload its target would get (secrets hidden)."""
+    """Show each ``--dry-run`` row the payload its target would get (secrets hidden).
+
+    ``table`` and ``raw`` show it as compact JSON; structured formats keep the mapping.
+    """
     if payload is None:
         return
     for row, item in zip(rows, targets, strict=True):
-        row["payload"] = launch_payload_preview(ctx.repo, spec, item, payload)
+        preview = launch_payload_preview(payload, reads.for_item(item))
+        row["payload"] = format_value(preview) if fmt in ("table", "raw") else preview
 
 
 def _record_finals(
@@ -223,7 +232,8 @@ def _monitor(
             return drain_parallel(
                 ctx.job_monitor(timeout=timeout),
                 launched,
-                lambda line: ui.styled(line, err=True),
+                # Only the label is styled: log lines stay byte-for-byte.
+                lambda prefix, line: ui.styled(Text(prefix, style="dim cyan"), err=True, tail=line),
                 stop=ctx.stop,
                 finished=finished,
             )
@@ -313,11 +323,12 @@ def _prepare(
     *,
     action: str,
     payload: dict[str, Any] | None,
+    reads: TemplateReads,
 ) -> tuple[ResourceSpec, tuple[SelectedResource, ...]]:
     """Launch-prompt preflight failures are usage errors (exit 2), not API errors."""
     try:
         return prepare_action_targets(
-            ctx.repo, ctx.catalog, spec, selected, action=action, payload=payload
+            ctx.repo, ctx.catalog, spec, selected, action=action, payload=payload, reads=reads
         )
     except LaunchPromptError as exc:
         raise_usage(str(exc))

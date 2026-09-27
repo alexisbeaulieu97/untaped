@@ -14,9 +14,9 @@ from untaped.capabilities.awx.cli._mutation_runner import validate_controls
 from untaped.capabilities.awx.cli._selection import SELECTION_DEFAULTS, SelectionOptions
 from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.options import (
-    FOLLOW_HELP,
     ContinueOption,
     DryRunOption,
+    FollowOption,
     NamesArgument,
     ParallelOption,
     WaitTimeoutOption,
@@ -40,7 +40,7 @@ def _add_sync(app: App, spec: AwxResourceSpec) -> None:
         wait: Annotated[
             bool, Parameter(negative="", help="Wait for success; fail on unsuccessful execution.")
         ] = False,
-        follow: Annotated[bool, Parameter(name="--follow", negative="", help=FOLLOW_HELP)] = False,
+        follow: FollowOption = False,
         timeout: WaitTimeoutOption = None,
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,

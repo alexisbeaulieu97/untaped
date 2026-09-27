@@ -25,12 +25,12 @@ from untaped.capabilities.awx.cli._mutation_runner import validate_controls
 from untaped.capabilities.awx.cli._selection import select_resources
 from untaped.capabilities.awx.cli.context import open_context, scope_for_command
 from untaped.capabilities.awx.cli.options import (
-    FOLLOW_HELP,
     AllOption,
     ByIdOption,
     ContinueOption,
     DryRunOption,
     FilterOption,
+    FollowOption,
     NamesArgument,
     OrganizationOption,
     ParallelOption,
@@ -39,6 +39,7 @@ from untaped.capabilities.awx.cli.options import (
     WaitTimeoutOption,
     YesOption,
 )
+from untaped.capabilities.awx.errors import ResourceNotFoundError, default_organization_note
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capability_api import (
     ColumnsOption,
@@ -167,14 +168,7 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                 name="--wait", negative="", help="Wait for success; fail on unsuccessful execution."
             ),
         ] = False,
-        follow: Annotated[
-            bool,
-            Parameter(
-                name="--follow",
-                negative="",
-                help=FOLLOW_HELP,
-            ),
-        ] = False,
+        follow: FollowOption = False,
         timeout: WaitTimeoutOption = None,
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
@@ -208,14 +202,17 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                     organization=organization,
                 )
                 scope = scope_for_command(ctx, organization, spec)
-                payload = _build_launch_payload(
-                    accepts=accepts,
-                    extra_vars=extra_vars,
-                    limit=host_pattern,
-                    supplied=supplied,
-                    fk=ctx.fk,
-                    org_scope=scope,
-                )
+                try:
+                    payload = _build_launch_payload(
+                        accepts=accepts,
+                        extra_vars=extra_vars,
+                        limit=host_pattern,
+                        supplied=supplied,
+                        fk=ctx.fk,
+                        org_scope=scope,
+                    )
+                except ResourceNotFoundError as exc:
+                    raise _with_scope_note(exc, organization, scope) from None
                 run_action_selection(
                     ctx,
                     spec,
@@ -260,6 +257,14 @@ class LaunchFlag:
     flag: str
     accepts_key: str
     payload_builder: Callable[[Any, FkResolver, dict[str, str] | None], Any]
+
+
+def _with_scope_note(
+    exc: ResourceNotFoundError, organization: str | None, scope: dict[str, str] | None
+) -> ResourceNotFoundError:
+    """A missed FK name says so when ``awx.default_organization`` chose its scope."""
+    default = (scope or {}).get("organization") if organization is None else None
+    return exc.with_note(default_organization_note(default)) if default else exc
 
 
 def _inventory_id(value: str, fk: FkResolver, scope: dict[str, str] | None) -> Any:

@@ -13,8 +13,6 @@ import queue
 import threading
 from collections.abc import Callable
 
-from rich.text import Text
-
 from untaped.capabilities.awx.application import WatchJob
 from untaped.capabilities.awx.application.ports import JobMonitor, RawHttpResourceClient
 from untaped.capabilities.awx.application.scheduling import MAX_PARALLEL, idle
@@ -92,7 +90,7 @@ def drain_parallel_with_worker(
 def drain_parallel(
     monitor: JobMonitor,
     jobs: list[tuple[str, Job]],
-    write: Callable[[Text], None],
+    write: Callable[[str, str], None],
     *,
     stop: threading.Event | None = None,
     finished: dict[str, Job] | None = None,
@@ -101,12 +99,13 @@ def drain_parallel(
 
     Workers stream each job's stdout, or a workflow job's status changes,
     onto a queue; the main thread drains the queue and hands each line to
-    ``write`` (``ui.styled`` in the CLI). With several jobs every line is
-    prefixed with its label so concurrent logs stay disambiguable on a
-    shared stderr; a single job's log reads as ``ansible-playbook`` prints
-    it, ending with its PLAY RECAP. After every worker has signalled
-    completion (sentinel ``(name, None)``), each future's final
-    :class:`Job` (post ``monitor.fetch``) is collected in launch order
+    ``write(prefix, line)``. With several jobs ``prefix`` is ``[label] `` so
+    concurrent logs stay disambiguable on a shared stderr; a single job's
+    log (empty prefix) reads as ``ansible-playbook`` prints it, ending with
+    its PLAY RECAP. ``line`` is the raw log line, to be written verbatim.
+    After every worker has signalled completion (sentinel
+    ``(name, None)``), each future's final :class:`Job` (post
+    ``monitor.fetch``) is collected in launch order
     by :func:`drain_parallel_with_worker` so the caller's per-job
     error stderr rows + ``any_failed`` exit-code semantics stay stable.
 
@@ -135,8 +134,8 @@ def drain_parallel(
         return monitor.fetch(job)
 
     def _drain_queue() -> None:
-        # Single-threaded printing: queue drain runs only here so a
-        # multi-segment Rich Text never interleaves between workers.
+        # Single-threaded printing: queue drain runs only here so lines
+        # never interleave between workers.
         done = 0
         while done < len(jobs):
             name, item = q.get()
@@ -144,10 +143,7 @@ def drain_parallel(
                 done += 1
                 continue
             line = f"{item.kind}#{item.id}: {item.status}" if isinstance(item, Job) else item
-            if prefix:
-                write(Text.assemble(Text(f"[{name}] ", style="dim cyan"), line))
-            else:
-                write(Text(line))
+            write(f"[{name}] " if prefix else "", line)
 
     return drain_parallel_with_worker(
         jobs, _worker, while_running=_drain_queue, stop=stop, finished=finished

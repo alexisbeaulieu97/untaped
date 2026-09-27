@@ -7,9 +7,11 @@
     `awx apply` applies documents of every kind.
   - `awx apply -` reads the YAML documents from stdin, so
     `untaped --profile a awx export … | untaped --profile b awx apply -`
-    promotes resources between profiles. Empty stdin is an error.
+    promotes resources between profiles. Stdin with no documents is an
+    error.
   - `awx apply --check` computes the plan and writes nothing; it exits 3 when
-    any document would change the controller and 0 otherwise.
+    any document would change the controller and 0 otherwise (1 when a
+    document fails).
   - **Breaking:** the deprecated spellings kept until 8.0 are removed:
     `awx save`/`awx <kind> save` (use `export`), `launch --limit` (use
     `--host-pattern`), and `usage -r`/`nodes -r` (use `--recursive`).
@@ -27,19 +29,25 @@
     `--follow` has no short form.
   - **Breaking:** `launch`/`sync --track` (`-t`) is replaced by `--follow`,
     which waits like `--wait` while streaming each job's log to stderr,
-    ending with its PLAY RECAP (lines are `[template]`-prefixed when several
-    executions run; workflow jobs print status changes). `--timeout` now
+    ending with its PLAY RECAP, each line as AWX stores it (never wrapped or
+    tab-expanded; a styled `[template] ` prefix when several executions run;
+    workflow jobs print status changes). `--timeout` now
     needs `--wait` or `--follow`. Use `jobs events --follow` for structured
     per-task events.
   - `--follow` and `jobs logs --follow` keep reading a finished job's log
-    briefly until AWX has saved all its events, so the tail is not cut off.
+    briefly until AWX has saved all its events, so the tail is not cut off,
+    and warn when it may still be.
   - A name that is not found names its scope and suggests close names from
     it (`JobTemplate not found: 'deplyo' in organization 'Default'; did you
-    mean 'deploy'?`), and says when `awx.default_organization` chose the
-    organization. Other not-found messages keep their `(key=value)` form.
+    mean 'deploy'?`, drawn from one page of names), and says when
+    `awx.default_organization` chose the organization, for `launch
+    --launch-inventory`/`--credential` names too. Other not-found messages
+    keep their `(key=value)` form.
   - `launch --dry-run` rows carry the resolved `payload`: names resolved to
-    ids, `extra_vars` merged into a mapping, and survey passwords and
-    secret-looking variables shown as `<redacted>`.
+    ids, `extra_vars` merged into a mapping (compact JSON in `table`/`raw`),
+    and survey password answers and secret-looking names (`vault_pass`,
+    `dbPassword`, `db-password`, `ssh_key`, at any depth) shown as
+    `<redacted>`.
   - **Breaking:** `awx test` cases declare what their job must produce in
     `expect:`: a `status` (default `successful`) and `log` checks
     (`contains`, `not_contains`, `matches`). The checks can be set in
@@ -138,6 +146,10 @@
     `scm_url`/`effective_scm_ref` such as `awx job-templates list --with-scm
     --format pipe`). Supports `--format table|json|pipe`; single-target
     `tree`/`mermaid` output is unchanged.
+- SDK
+  - `UiContext.styled(text, tail=...)` prints `tail` verbatim after the
+    styled text (never wrapped or tab-expanded), for streamed log lines
+    behind a styled label.
 
 ## 7.1.0
 

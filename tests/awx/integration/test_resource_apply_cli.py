@@ -695,3 +695,35 @@ def test_schedule_apply_refuses_extra_data_change_beside_a_placeholder(
     assert "extra_data" in (result.stderr or "")
     assert not _patches(fake_aap)
     assert fake_aap.get_record("schedules", 60)["extra_data"]["db_password"] == "$encrypted$"
+
+
+@pytest.mark.parametrize("piped", ["---\n", "# only a comment\n---\n# another\n"])
+def test_apply_dash_with_no_documents_is_an_error(fake_aap: Any, piped: str) -> None:
+    _seed_basic(fake_aap)
+    result = CliInvoker().invoke(app, ["apply", "-", "--yes"], input=piped)
+    assert result.exit_code == 1, result.output
+    assert "no YAML documents on stdin" in result.stderr
+
+
+def test_apply_unknown_option_is_a_usage_error(fake_aap: Any) -> None:
+    result = CliInvoker().invoke(app, ["apply", "--chekc"])
+    assert result.exit_code == 2, result.output
+    assert "unknown option: --chekc" in result.stderr
+
+
+def test_apply_check_failure_wins_over_drift(fake_aap: Any, tmp_path: Path) -> None:
+    _seed_basic(fake_aap)
+    f = tmp_path / "jt.yml"
+    f.write_text(
+        _DEPLOY_DOC.replace("{description}", "drifted")
+        + "---\n"
+        + "kind: JobTemplate\n"
+        + "metadata: { name: broken, organization: Default }\n"
+        + "spec: { playbook: x.yml, project: playbooks, inventory: missing }\n"
+    )
+
+    result = CliInvoker().invoke(app, ["apply", str(f), "--check"])
+
+    assert result.exit_code == 1, result.output
+    assert _patches(fake_aap) == []
+    assert _posts(fake_aap) == []

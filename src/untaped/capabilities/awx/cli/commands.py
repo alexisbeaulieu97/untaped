@@ -98,6 +98,9 @@ def apply_command(
     controls: WriteControls = CONTROL_DEFAULTS,
 ) -> None:
     """Create/update YAML documents in dependency order, with one confirmation."""
+    if str(file).startswith("-") and str(file) != "-":
+        # ``-`` may lead the file (stdin), so a mistyped option lands here.
+        raise_usage(f"unknown option: {file}")
     with report_errors():
         controls = controls.validated()
         with open_context() as ctx:
