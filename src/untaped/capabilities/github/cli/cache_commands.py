@@ -23,7 +23,8 @@ from untaped.capabilities.github.cli.scopes import (
     parse_team_scopes,
     read_stdin_repos,
 )
-from untaped.capabilities.github.domain import CorpusRepoResult
+from untaped.capabilities.github.domain import CorpusRepoResult, github_web_host
+from untaped.capabilities.github.errors import GithubError
 from untaped.capabilities.github.settings import GithubSettings
 from untaped.capability_api import (
     ColumnsOption,
@@ -40,6 +41,7 @@ from untaped.capability_api import (
     echo,
     emit,
     finish,
+    not_found,
     plural,
     report_errors,
     summary,
@@ -162,7 +164,7 @@ def sync_command(
         with open_client() as (client, ui), ui.progress("Syncing repositories…") as progress:
             outcomes = SyncCorpus(
                 inventory=ResolveRepositoryInventory(client),
-                corpus=GitCorpusCache(),
+                corpus=GitCorpusCache(auth_host=github_web_host(settings.base_url)),
                 root=settings.corpus_path,
                 auth_header=corpus_auth_header(settings),
             )(options, progress=progress)
@@ -296,6 +298,10 @@ def _select(
         return _departed_or_archived(cached, live)
     if all_repos:
         return cached
+    known = {row.repo.casefold() for row in cached}
+    missing = [name for name in repos if name.casefold() not in known]
+    if missing:
+        raise GithubError("; ".join(not_found("cached repo", name) for name in missing))
     requested = {name.casefold() for name in repos}
     return tuple(row for row in cached if row.repo.casefold() in requested)
 

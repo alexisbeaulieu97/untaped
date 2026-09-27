@@ -54,11 +54,17 @@ METADATA_GLOB = f"*/*.git/{METADATA_FILE}"
 
 
 class GitCorpusCache:
-    """Maintain a managed bare Git corpus and search it with ``git grep``."""
+    """Maintain a managed bare Git corpus and search it with ``git grep``.
+
+    ``auth_host`` is the only host the auth header is sent to (the Git host
+    of ``github.base_url``); a remote on any other host, or any remote when
+    it is None, is fetched without credentials.
+    """
 
     def __init__(
         self,
         *,
+        auth_host: str | None = None,
         git: str = "git",
         timeout: float = DEFAULT_TIMEOUT,
         slow_timeout: float = DEFAULT_SLOW_TIMEOUT,
@@ -68,6 +74,7 @@ class GitCorpusCache:
         sleep: Callable[[float], None] = time.sleep,
         warn: Callable[[str], None] | None = None,
     ) -> None:
+        self._auth_host = auth_host
         self._git = git
         self._timeout = timeout
         self._slow_timeout = slow_timeout
@@ -91,7 +98,7 @@ class GitCorpusCache:
         with self._repo_lock(bare):
             branch = _default_branch(repo)
             url = _remote_url(repo)
-            scoped_auth_header = _auth_header_for_url(url, auth_header)
+            scoped_auth_header = _auth_header_for_url(url, auth_header, host=self._auth_host)
             if not (bare / "HEAD").is_file():
                 bare.parent.mkdir(parents=True, exist_ok=True)
                 self._run(["init", "--bare", str(bare)], timeout=self._slow_timeout)
@@ -134,7 +141,8 @@ class GitCorpusCache:
                     "profile": effective.profile,
                     "ref_globs": list(effective.globs),
                     "archived": repo.archived,
-                    "pushed_at": repo.pushed_at,
+                    # A source without pushed_at must not erase the stored one.
+                    "pushed_at": repo.pushed_at or (stored.pushed_at if stored else None),
                 },
             )
             return CorpusRepoResult(
@@ -179,9 +187,9 @@ class GitCorpusCache:
         with self._repo_lock(bare):
             data = _read_metadata(bare / METADATA_FILE)
             fetched = datetime.now(UTC)
-            data.update(
-                fetched_at=fetched.isoformat(), archived=repo.archived, pushed_at=repo.pushed_at
-            )
+            data.update(fetched_at=fetched.isoformat(), archived=repo.archived)
+            if repo.pushed_at is not None:
+                data["pushed_at"] = repo.pushed_at
             _write_metadata(bare, data)
         return fetched
 
@@ -671,12 +679,12 @@ def _first_blob(payload: bytes) -> str | None:
     return None
 
 
-def _auth_header_for_url(url: str, auth_header: str | None) -> str | None:
+def _auth_header_for_url(url: str, auth_header: str | None, *, host: str | None) -> str | None:
     if auth_header is None:
         return None
     parsed = urlparse(url)
     if parsed.scheme == "https" and parsed.netloc:
-        return auth_header
+        return auth_header if host is not None and parsed.hostname == host.lower() else None
     if parsed.scheme == "file":
         return None
     if parsed.scheme or url.startswith("git@"):

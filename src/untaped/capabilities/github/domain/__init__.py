@@ -12,6 +12,7 @@ from untaped.capabilities.github.domain.corpus import (
     covers,
     unchanged_upstream,
 )
+from untaped.capabilities.github.domain.hosts import github_web_host
 from untaped.capabilities.github.domain.models import (
     CodeResult,
     CorpusRepoResult,
@@ -67,6 +68,7 @@ __all__ = [
     "UserSearchFilters",
     "WorktreeResult",
     "covers",
+    "github_web_host",
     "parse_codeowners",
     "profile_join",
     "ref_display_names",

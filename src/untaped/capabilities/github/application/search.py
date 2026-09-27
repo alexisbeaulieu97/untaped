@@ -37,6 +37,7 @@ MAX_TEAM_REPO_QUALIFIERS = MAX_SEARCH_BOOLEAN_OPERATORS + 1
 # under those per invocation so large teams do not trip 403/429 responses.
 MAX_CODE_SEARCH_BATCHES = 9
 MAX_ISSUE_SEARCH_BATCHES = 25
+MAX_REPO_SEARCH_BATCHES = 25
 _REPOSITORY_SEARCH_ENDPOINT = "/search/repositories"
 _SEARCH_BOOLEAN_OPERATORS = {"AND", "OR", "NOT"}
 _REPO_SEARCH_QUALIFIER_KEYS = frozenset(
@@ -378,7 +379,12 @@ class SearchRepos(_ScopedSearch):
             )
 
         _ensure_search_query_fits(effective)
-        batches = _scoped_search_batches(effective, kind="repository")
+        batches = _cap_batches(
+            _scoped_search_batches(effective, kind="repository"),
+            kind="repository",
+            max_batches=MAX_REPO_SEARCH_BATCHES,
+            warn=self._warn,
+        )
         if effective.sort == "help-wanted-issues" and len(batches) > 1:
             self._warn(_HELP_WANTED_BATCH_WARNING)
         for batch in batches:

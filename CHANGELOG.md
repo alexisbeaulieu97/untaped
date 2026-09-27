@@ -47,6 +47,21 @@
     `scm_url`/`effective_scm_ref` such as `awx job-templates list --with-scm
     --format pipe`). Supports `--format table|json|pipe`; single-target
     `tree`/`mermaid` output is unchanged.
+- GitHub
+  - **Fix (security):** `sweep` and `cache sync` send the GitHub token only to
+    the Git host of `github.base_url` (`github.com`, or `HOST` for
+    `https://HOST/api/v3`). A piped `clone_url` on another HTTPS host used to
+    receive it; it is now fetched without credentials.
+  - **Fix:** `repos list` rows now carry `pushed_at`, so `repos list --format
+    pipe | sweep --stdin` (or `cache sync --stdin`) skips fetching unchanged
+    repos. A source without `pushed_at` no longer erases the one stored from
+    an earlier fetch.
+  - **Fix:** `search repos` now caps a large team scope at 25 requests with a
+    warning, like `search issues`, instead of tripping GitHub's per-minute
+    search limit.
+  - **Behavior change:** `cache delete OWNER/NAME` fails with `cached repo not
+    found` and exit 1, before deleting anything, when a named repo is not
+    cached or not in `--org`. It used to exit 0 silently.
 
 ## 7.1.0
 
