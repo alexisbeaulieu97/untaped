@@ -30,11 +30,16 @@ A rejected token (HTTP 401) fails with a hint to run `config set github.token`.
 | Setting | Default | Purpose |
 |---|---|---|
 | `github.base_url` | `https://api.github.com` | API URL. |
-| `github.token` | unset | Token for the API and for Git fetches. |
+| `github.token` | unset | Token for the API and for Git fetches from the `base_url` host. |
 | `github.token_command` | unset | Command (argv list) that prints the token when `github.token` is unset. |
 | `github.corpus_path` | `~/.untaped/github-corpus` | Where `sweep` keeps its Git copies. |
 | `github.sweep.max_age_seconds` | `3600` | `sweep` and `cache sync` refresh cached copies older than this. |
 | `github.sweep.sync_concurrency` | `12` | Default `sweep --parallel` and `cache sync --parallel`. |
+
+Git fetches send the token only to the Git host of `github.base_url`:
+`github.com` for `https://api.github.com`, `HOST` for `https://HOST/api/v3`.
+A piped `clone_url` on any other host is fetched without credentials, so a
+private repo there fails to fetch instead of receiving your token.
 
 ## List an org's or team's repos
 
@@ -53,6 +58,9 @@ untaped github repos list 'api|web' --org acme --regex
   (`acme/svc-*`); otherwise it matches the repo name.
 - `--team SLUG` without the org works when you pass exactly one `--org`;
   `--org acme --team backend` means all of `acme` plus that team.
+- The table shows `full_name`, `default_branch`, `private`, `archived`,
+  `fork` and `url`. Use `-c` or `--format json` for the rest (`clone_url`,
+  `ssh_url`, `pushed_at`, ...).
 
 Clone the result into a workspace:
 
@@ -77,8 +85,8 @@ untaped github search users --kind org --location Montreal
   search has stricter rate limits than other API calls.
 - A long team or `--repo` scope is split into several requests and the
   results are merged. One command sends at most 9 code-search or 25
-  issue-search requests; past that it warns that results cover only the first
-  repositories.
+  repository- or issue-search requests; past that it warns that results cover
+  only the first repositories.
 - Code search cannot sort, use regexes, or look past the default branch. Use
   `sweep` for that.
 
@@ -131,7 +139,9 @@ content (a tag on a branch tip, say) are scanned once and all reported.
 - Each repo is scanned as soon as its fetch ends, and the progress line shows
   `Sweeping 312/1400 repos (45 fetched, 3 failed)`.
 - `repos list --format pipe | sweep --stdin` reuses the piped records instead
-  of looking each repo up again.
+  of looking each repo up again; their `pushed_at` lets unchanged repos skip
+  the fetch. A record without `pushed_at` is fetched when stale, and never
+  erases the `pushed_at` stored from an earlier fetch.
 - Warm the corpus ahead of time, for example from a nightly job, with
   `cache sync` (see below). Two sweeps can run at once: each cached repo is
   locked while it is fetched.
@@ -182,6 +192,8 @@ untaped github cache prune --org acme
 - `cache worktree` checks out a cached ref and prints its path. It only uses
   refs already in the corpus.
 - `cache delete` removes the repos you name, or `--all` (narrowed by `--org`).
+  A named repo that is not cached (or not in `--org`) fails with
+  `cached repo not found` and exit 1 before anything is deleted.
 - `cache prune --org ORG` removes cached repos that left the org or were
   archived.
 - `delete` and `prune` preview and ask first; `--yes` skips the question and

@@ -93,6 +93,21 @@ def test_repos_list_pipe_record_carries_kind_urls_and_repo() -> None:
     assert record["ssh_url"] == "git@github.com:acme/a.git"
 
 
+def test_repos_list_table_shows_default_columns_and_json_every_field() -> None:
+    listed = [{**_repo("acme/a"), "pushed_at": "2026-07-01T00:00:00Z"}]
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=listed))
+        table = CliInvoker().invoke(app, ["repos", "list", "--org", "acme"])
+        as_json = CliInvoker().invoke(app, ["repos", "list", "--org", "acme", "-f", "json"])
+
+    assert table.exit_code == 0, table.output
+    assert "full_name" in table.stdout
+    assert "pushed_at" not in table.stdout
+    assert "ssh_url" not in table.stdout
+    [row] = json.loads(as_json.stdout)
+    assert row["pushed_at"] == "2026-07-01T00:00:00Z"
+
+
 @pytest.mark.parametrize(
     ("args", "messages"),
     [

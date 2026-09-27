@@ -378,10 +378,11 @@ def test_search_issues_merges_batches_by_sort_and_dedupes_by_id(
         (SearchCode, CodeSearchFilters(raw_query="TODO"), 100, 9, 54),
         (SearchCode, CodeSearchFilters(raw_query="TODO"), 54, 9, None),
         (SearchIssues, IssueSearchFilters(), 200, 25, 150),
+        (SearchRepos, RepoSearchFilters(), 200, 25, 150),
     ],
 )
 def test_large_teams_are_capped_to_the_per_minute_search_budget(
-    cls: type[SearchCode | SearchIssues],
+    cls: type[SearchRepos | SearchCode | SearchIssues],
     filters: Any,
     repo_count: int,
     requests: int,

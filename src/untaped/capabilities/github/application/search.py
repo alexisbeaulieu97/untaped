@@ -36,7 +36,7 @@ MAX_TEAM_REPO_QUALIFIERS = MAX_SEARCH_BOOLEAN_OPERATORS + 1
 # GitHub allows 10 code-search and 30 other search requests per minute; stay
 # under those per invocation so large teams do not trip 403/429 responses.
 MAX_CODE_SEARCH_BATCHES = 9
-MAX_ISSUE_SEARCH_BATCHES = 25
+MAX_SEARCH_BATCHES = 25
 _REPOSITORY_SEARCH_ENDPOINT = "/search/repositories"
 _SEARCH_BOOLEAN_OPERATORS = {"AND", "OR", "NOT"}
 _REPO_SEARCH_QUALIFIER_KEYS = frozenset(
@@ -378,7 +378,12 @@ class SearchRepos(_ScopedSearch):
             )
 
         _ensure_search_query_fits(effective)
-        batches = _scoped_search_batches(effective, kind="repository")
+        batches = _cap_batches(
+            _scoped_search_batches(effective, kind="repository"),
+            kind="repository",
+            max_batches=MAX_SEARCH_BATCHES,
+            warn=self._warn,
+        )
         if effective.sort == "help-wanted-issues" and len(batches) > 1:
             self._warn(_HELP_WANTED_BATCH_WARNING)
         for batch in batches:
@@ -448,7 +453,7 @@ class SearchIssues(_ScopedSearch):
         batches = _cap_batches(
             _scoped_search_batches(effective, kind="issue"),
             kind="issue",
-            max_batches=MAX_ISSUE_SEARCH_BATCHES,
+            max_batches=MAX_SEARCH_BATCHES,
             warn=self._warn,
         )
         sort_key = _ISSUE_SORT_KEYS.get(effective.sort) if effective.sort else None

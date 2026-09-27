@@ -18,6 +18,7 @@ from untaped.capabilities.github.cli.scopes import (
     parse_team_scopes,
     read_stdin_repos,
 )
+from untaped.capabilities.github.domain import github_web_host
 from untaped.capabilities.github.settings import GithubSettings
 from untaped.capability_api import (
     ColumnsOption,
@@ -199,7 +200,7 @@ def sweep_command(
             cap=32,
             policy="Git corpus worker cap",
         )
-        corpus = GitCorpusCache()
+        corpus = GitCorpusCache(auth_host=github_web_host(settings.base_url))
         _validate_content_patterns(corpus, settings, query)
 
         sync_mode: Literal["auto", "force", "off"]
