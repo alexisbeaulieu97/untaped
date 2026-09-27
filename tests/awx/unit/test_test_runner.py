@@ -10,7 +10,7 @@ import pytest
 
 from untaped.capabilities.awx.application.suites.ports import FkPrefetcher, Launcher, Watcher
 from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
-from untaped.capabilities.awx.application.suites.runner import RunTestSuite
+from untaped.capabilities.awx.application.suites.runner import LOG_TAIL_LINES, RunTestSuite
 from untaped.capabilities.awx.domain import Job
 from untaped.capabilities.awx.domain.suite import Case, Suite
 from untaped.capabilities.awx.errors import ActionResponseError
@@ -76,6 +76,21 @@ class StubCanceller:
             raise RuntimeError("405 Method not allowed")
 
 
+class StubLogReader:
+    """Returns ``lines`` as every job's stdout, or raises ``error``."""
+
+    def __init__(self, lines: list[str], *, error: Exception | None = None) -> None:
+        self.lines = lines
+        self.error = error
+        self.calls: list[int] = []
+
+    def __call__(self, job: Job) -> list[str]:
+        self.calls.append(job.id)
+        if self.error is not None:
+            raise self.error
+        return self.lines
+
+
 class StubWatcher:
     """Returns a final job per id."""
 
@@ -108,6 +123,7 @@ def _make_runner(
     watcher: StubWatcher,
     default_org: str | None = None,
     canceller: StubCanceller | None = None,
+    log_reader: StubLogReader | None = None,
 ) -> RunTestSuite:
     resolver = ResolveCasePayload(
         fk, catalog=AwxResourceCatalog(), default_organization=default_org
@@ -121,6 +137,8 @@ def _make_runner(
         fk_prefetcher=cast(FkPrefetcher, fk),
         jt_scope=jt_scope,
         canceller=canceller,
+        log_reader=log_reader or StubLogReader([]),
+        job_url=lambda job: f"https://aap.example.com/jobs/{job.id}",
     )
 
 
@@ -147,6 +165,8 @@ def test_parallel_interrupt_stops_watchers_and_cancels_queued_cases() -> None:
         watcher=cast(Watcher, BlockingWatcher()),
         spec=JOB_TEMPLATE_SPEC,
         fk_prefetcher=cast(FkPrefetcher, fk),
+        log_reader=StubLogReader([]),
+        job_url=lambda job: None,
         stop=stop,
     )
     suite = _suite("s", {f"c{i}": {"extra_vars": {"case_name": f"c{i}"}} for i in range(6)})
@@ -453,7 +473,7 @@ def test_timeout_cancels_the_job_and_says_so(canceller: StubCanceller | None, re
     )
     [result] = runner([_suite("s", {"a": {}})], timeout=60).results
     assert result.result == "timeout"
-    assert result.failure_reason == f"still running after --timeout 60s; {reason}"
+    assert result.failure_reason == f"still running after 60s; {reason}"
     if canceller is not None:
         assert canceller.calls == [5]
 
@@ -476,3 +496,131 @@ def test_polling_error_cancels_the_job() -> None:
         "503 Service Unavailable; cancel requested",
     )
     assert canceller.calls == [5]
+
+
+# ---- expectations ------------------------------------------------------
+
+
+def _expect_runner(
+    final_status: str, log_reader: StubLogReader | None = None
+) -> tuple[RunTestSuite, StubWatcher]:
+    watcher = StubWatcher(default=_job(id_=5, status=final_status))
+    runner = _make_runner(
+        fk=StubFk(),
+        launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
+        watcher=watcher,
+        log_reader=log_reader,
+    )
+    return runner, watcher
+
+
+def _case_suite(case: dict[str, Any], defaults: dict[str, Any] | None = None) -> Suite:
+    return Suite(
+        name="s",
+        job_template="JT",
+        defaults=Case.model_validate(defaults) if defaults is not None else None,
+        cases={"c": Case.model_validate(case)},
+    )
+
+
+def test_a_failed_job_passes_when_failure_is_expected() -> None:
+    reader = StubLogReader(["fatal: nope"])
+    runner, _ = _expect_runner("failed", reader)
+    [row] = runner([_case_suite({"expect": {"status": "failed"}})]).results
+    assert row.result == "pass"
+    assert [check.model_dump() for check in row.expectations] == [
+        {"check": "status", "expected": "failed", "actual": "failed", "passed": True}
+    ]
+    assert (row.log_tail, row.failure_reason) == (None, None)
+    assert reader.calls == []  # no log checks and nothing failed: no download
+    assert row.job_url == "https://aap.example.com/jobs/5"
+
+
+def test_failed_log_checks_fail_the_case_with_their_reasons_and_a_tail() -> None:
+    lines = [f"line {i}" for i in range(60)] + ["fatal: boom"]
+    runner, _ = _expect_runner("successful", StubLogReader(lines))
+    suite = _case_suite(
+        {"expect": {"log": {"contains": ["PLAY RECAP"]}}},
+        defaults={"expect": {"log": {"not_contains": ["fatal:"]}}},
+    )
+    [row] = runner([suite]).results
+    assert row.result == "fail"
+    assert row.failure_reason == (
+        "no log line contains 'PLAY RECAP'; log line contains 'fatal:': fatal: boom"
+    )
+    assert row.log_tail == tuple(lines[-LOG_TAIL_LINES:])
+
+
+def test_a_status_mismatch_downloads_the_log_for_its_tail() -> None:
+    runner, _ = _expect_runner("failed", StubLogReader(["a", "b"]))
+    [row] = runner([_case_suite({})]).results
+    assert (row.result, row.failure_reason, row.log_tail) == (
+        "fail",
+        "expected status successful, got failed",
+        ("a", "b"),
+    )
+
+
+def test_an_unreadable_log_errors_only_when_log_checks_need_it() -> None:
+    reader = StubLogReader([], error=RuntimeError("502 Bad Gateway"))
+    runner, _ = _expect_runner("failed", reader)
+    [row] = runner([_case_suite({})]).results
+    assert (row.result, row.log_tail) == ("fail", None)
+
+    runner, _ = _expect_runner("failed", reader)
+    [row] = runner([_case_suite({"expect": {"log": {"contains": ["x"]}}})]).results
+    assert (row.result, row.failure_reason) == (
+        "error",
+        "expected status successful, got failed; log fetch failed: 502 Bad Gateway",
+    )
+    assert [check.check for check in row.expectations] == ["status"]
+
+
+def test_tails_are_skipped_when_not_wanted() -> None:
+    reader = StubLogReader(["boom"])
+    runner = RunTestSuite(
+        resolver=ResolveCasePayload(StubFk(), catalog=AwxResourceCatalog()),
+        launcher=cast(Launcher, StubLauncher({})),
+        watcher=cast(Watcher, StubWatcher(default=_job(status="failed"))),
+        spec=JOB_TEMPLATE_SPEC,
+        fk_prefetcher=cast(FkPrefetcher, StubFk()),
+        log_reader=reader,
+        job_url=lambda job: None,
+        log_tails=False,
+    )
+    [row] = runner([_case_suite({})]).results
+    assert (row.result, row.log_tail, reader.calls) == ("fail", None, [])
+
+
+def test_a_timed_out_case_keeps_its_log_tail() -> None:
+    runner, _ = _expect_runner("running", StubLogReader(["TASK [slow]"]))
+    [row] = runner([_case_suite({})], timeout=5).results
+    assert (row.result, row.log_tail) == ("timeout", ("TASK [slow]",))
+
+
+@pytest.mark.parametrize(
+    ("cli", "case", "defaults", "expected"),
+    [
+        (None, None, None, 1800),
+        (None, None, 600, 600),
+        (None, 90, 600, 90),
+        (30, 90, 600, 30),
+    ],
+)
+def test_timeout_precedence(
+    cli: float | None, case: float | None, defaults: float | None, expected: float
+) -> None:
+    runner, watcher = _expect_runner("successful")
+    suite = _case_suite(
+        {"timeout": case} if case else {},
+        defaults={"timeout": defaults} if defaults else None,
+    )
+    runner([suite], timeout=cli, default_timeout=1800)
+    assert watcher.calls == [(5, expected)]
+
+
+def test_each_case_resolves_its_own_timeout() -> None:
+    runner, watcher = _expect_runner("successful")
+    suite = Suite(name="s", job_template="JT", cases={"slow": Case(timeout=90), "quick": Case()})
+    runner([suite], default_timeout=1800)
+    assert [timeout for _, timeout in watcher.calls] == [90, 1800]
