@@ -41,6 +41,9 @@ class InputResolutionConfig:
     prompt: PromptFunc | None = None
 
 
+_STRUCTURED = frozenset({"list", "dict"})
+
+
 @dataclass(frozen=True)
 class InputResolutionResult:
     """Resolved real inputs plus a redacted display/audit view."""
@@ -74,6 +77,23 @@ def prepare_input_resolution(
         recipe_sources=recipe_sources,
         interactive=interactive,
         prompt=prompt,
+    )
+
+
+def prompts_per_target(recipe: Recipe, config: InputResolutionConfig) -> bool:
+    """Whether planning a target may prompt, so targets must plan one at a time.
+
+    Only a required scalar target input with no ``--var``/``--vars-file``
+    value and no ``--input-from`` source can reach the prompt (a recipe
+    ``from`` may miss); global inputs prompt once, before planning.
+    """
+    return config.interactive and any(
+        spec.required
+        and spec.scope != "global"
+        and spec.type not in _STRUCTURED
+        and name not in config.fixed_values
+        and name not in config.cli_sources
+        for name, spec in recipe.inputs.items()
     )
 
 
@@ -160,27 +180,15 @@ def _resolve_one(
         rendered = _derive_source_value(recipe_source, target)
         if rendered is not UNRESOLVED:
             return _coerce_derived_value(name, spec, rendered)
-    if config.interactive:
-        if spec.type in {"list", "dict"}:
-            # Structured inputs cannot prompt, so they resolve exactly as in
-            # non-interactive mode; the error replaces "missing required input"
-            # only where a prompt would otherwise have been the last resort.
-            if spec.default is not None:
-                return _coerce_input(name, spec, spec.default)
-            if spec.required:
-                raise ConfigError(
-                    f"interactive prompting is not supported for structured input {name!r}; "
-                    "pass --var or --vars-file"
-                )
-            return _UNSET
-        prompt_target = None if target is None else target.path
-        prompted = _prompt_value(name, spec, prompt_target, config)
-        return _UNSET if prompted is _UNSET else _coerce_input(name, spec, prompted)
     if spec.default is not None:
         return _coerce_input(name, spec, spec.default)
-    if spec.required:
-        raise ValueError(f"missing required input: {name}")
-    return _UNSET
+    if not spec.required:
+        return _UNSET
+    # Structured inputs cannot be typed at a prompt.
+    if config.interactive and spec.type not in _STRUCTURED:
+        prompt_target = None if target is None else target.path
+        return _coerce_input(name, spec, _prompt_value(name, spec, prompt_target, config))
+    raise ValueError(f"missing required input: {name}; pass --var {name}=VALUE or --vars-file FILE")
 
 
 def _validate_config(
@@ -289,21 +297,6 @@ def _prompt_value(
 ) -> object:
     if config.prompt is None:
         raise NoPromptAvailableError("interactive input requires a terminal prompt backend")
-    details: list[str] = []
-    if spec.description:
-        details.append(spec.description)
-    if spec.default is not None and not spec.sensitive:
-        details.append(f"default: {spec.default}")
-    suffix = f" ({'; '.join(details)})" if details else ""
+    suffix = f" ({spec.description})" if spec.description else ""
     message = f"{name}{suffix}" if target is None else f"{name} for {target}{suffix}"
-    value = config.prompt(
-        message,
-        sensitive=spec.sensitive,
-        default=None if spec.sensitive else spec.default,
-        required=spec.required and spec.default is None,
-    )
-    if value == "" and spec.default is not None:
-        return spec.default
-    if value == "" and not spec.required:
-        return _UNSET
-    return value
+    return config.prompt(message, sensitive=spec.sensitive)

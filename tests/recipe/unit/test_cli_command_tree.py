@@ -1,0 +1,189 @@
+"""The ``untaped recipe`` command tree: recipe verbs plus ``packs``/``hooks``/``backups`` nouns."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+from cyclopts import App
+
+from untaped import bootstrap
+from untaped.capabilities.recipe.cli import app
+from untaped.capabilities.recipe.cli.common import library_root
+from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
+from untaped.testing import CliInvoker
+
+pytestmark = pytest.mark.usefixtures("isolate_config")
+
+
+def _commands(group: App) -> set[str]:
+    return {name for name in group if not name.startswith("-") and group[name].show is not False}
+
+
+def _write_pack(root: Path) -> None:
+    """A pack ``acme`` with recipe ``editorconfig`` and validate hook ``probe``."""
+    recipe = root / "recipes" / "editorconfig" / "recipe.yml"
+    recipe.parent.mkdir(parents=True)
+    recipe.write_text("version: 1\nsteps: []\n")
+    hook = root / "src" / "acme_pack" / "hooks" / "probe.py"
+    hook.parent.mkdir(parents=True)
+    (root / "src" / "acme_pack" / "__init__.py").write_text("")
+    (hook.parent / "__init__.py").write_text("")
+    hook.write_text("def validate(*, inputs, target, args, helpers):\n    return helpers.pass_()\n")
+    (root / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "acme"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        "dependencies = []\n\n"
+        "[tool.untaped_recipe]\n"
+        'requires_hook_api = ">=0.8,<1"\n\n'
+        "[tool.untaped_recipe.recipes]\n"
+        '"editorconfig" = { path = "recipes/editorconfig/recipe.yml" }\n\n'
+        "[tool.untaped_recipe.hooks]\n"
+        '"probe" = { module = "acme_pack.hooks.probe" }\n'
+    )
+    (root / "uv.lock").write_text("version = 1\n")
+
+
+def _install(tmp_path: Path) -> None:
+    source = tmp_path / "acme"
+    _write_pack(source)
+    PackLibrary(library_root=library_root()).add(
+        source, source=str(source), rev=None, name=None, force=False
+    )
+
+
+def test_recipe_verbs_stay_at_the_top_and_nouns_group_the_rest() -> None:
+    assert _commands(app) == {
+        "apply",
+        "backups",
+        "edit",
+        "get",
+        "hooks",
+        "init",
+        "list",
+        "packs",
+        "test",
+        "validate",
+    }
+    assert _commands(app["packs"]) == {"add", "edit", "get", "init", "list", "remove", "sync"}
+    assert _commands(app["hooks"]) == {"edit", "get", "init", "list", "run"}
+    assert _commands(app["backups"]) == {"get", "list", "prune", "restore"}
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["add", "./pack"], id="add"),
+        pytest.param(["sync", "--all"], id="sync"),
+        pytest.param(["remove", "acme", "--yes"], id="remove"),
+        pytest.param(["hook", "run", "yaml_edit"], id="hook"),
+        pytest.param(["backup", "list"], id="backup"),
+        pytest.param(["check"], id="check"),
+        pytest.param(["show", "yaml_edit"], id="show"),
+        pytest.param(["new", "pack", "demo"], id="new"),
+        pytest.param(["backups", "show", "latest"], id="backups-show"),
+        pytest.param(["list", "--packs"], id="list-packs"),
+        pytest.param(["list", "--hooks"], id="list-hooks"),
+        pytest.param(["init", "pack", "demo"], id="init-what"),
+        pytest.param(["apply", "r.yml", ".", "--vars", "v.yml"], id="apply-vars"),
+        pytest.param(["apply", "r.yml", ".", "--interactive"], id="apply-interactive"),
+    ],
+)
+def test_old_spellings_are_usage_errors_without_aliases(argv: list[str]) -> None:
+    root = bootstrap.build_root_app(externals=[])
+
+    result = CliInvoker().invoke(root, ["recipe", *argv])
+
+    assert result.exit_code == 2, result.output
+    assert "deprecated" not in result.output
+
+
+def test_each_noun_lists_gets_and_edits_its_own_kind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install(tmp_path)
+    invoker = CliInvoker()
+
+    recipes = invoker.invoke(app, ["list", "--format", "json"])
+    packs = invoker.invoke(app, ["packs", "list", "--format", "json"])
+    hooks = invoker.invoke(app, ["hooks", "list", "--format", "json"])
+    recipe = invoker.invoke(app, ["get", "acme/editorconfig", "--format", "json"])
+    pack = invoker.invoke(app, ["packs", "get", "acme", "--format", "json"])
+    hook = invoker.invoke(app, ["hooks", "get", "acme/probe", "--format", "json"])
+    builtin = invoker.invoke(app, ["hooks", "get", "yaml_edit", "--format", "json"])
+
+    assert [row["ref"] for row in json.loads(recipes.stdout)] == ["acme/editorconfig"]
+    assert [row["name"] for row in json.loads(packs.stdout)] == ["acme"]
+    assert [row["ref"] for row in json.loads(hooks.stdout)] == ["acme/probe", "yaml_edit"]
+    assert json.loads(recipe.stdout)["ref"] == "acme/editorconfig"
+    assert json.loads(pack.stdout)["name"] == "acme"
+    assert json.loads(hook.stdout)["ref"] == "acme/probe"
+    assert json.loads(builtin.stdout)["ref"] == "yaml_edit"
+
+    opened: list[Path] = []
+    monkeypatch.setattr(
+        "untaped.capabilities.recipe.cli.library_commands.run_editor",
+        lambda path, **_: opened.append(path),
+    )
+    for argv in (["edit", "acme/editorconfig"], ["packs", "edit", "acme"]):
+        assert invoker.invoke(app, argv).exit_code == 0
+    assert invoker.invoke(app, ["hooks", "edit", "acme/probe"]).exit_code == 0
+    pack_root = library_root() / "packs" / "acme"
+    assert opened == [
+        pack_root / "recipes" / "editorconfig" / "recipe.yml",
+        pack_root / "pyproject.toml",
+        pack_root / "src" / "acme_pack" / "hooks" / "probe.py",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        pytest.param(["get", "acme"], "recipe not found: acme", id="recipe-get-pack"),
+        pytest.param(["get", "acme/probe"], "recipe not found: acme/probe", id="recipe-get-hook"),
+        pytest.param(["get", "yaml_edit"], "recipe not found: yaml_edit", id="recipe-get-builtin"),
+        pytest.param(
+            ["packs", "get", "acme/editorconfig"],
+            "pack not found: 'acme/editorconfig'",
+            id="packs-get-recipe",
+        ),
+        pytest.param(
+            ["hooks", "get", "acme/editorconfig"],
+            "hook not found: acme/editorconfig",
+            id="hooks-get-recipe",
+        ),
+    ],
+)
+def test_nouns_do_not_resolve_each_others_refs(
+    tmp_path: Path, argv: list[str], message: str
+) -> None:
+    _install(tmp_path)
+
+    result = CliInvoker().invoke(app, argv)
+
+    assert result.exit_code == 1, result.output
+    assert message in result.stderr
+
+
+def test_init_scaffolds_each_noun_from_its_own_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    invoker = CliInvoker()
+
+    pack = invoker.invoke(app, ["packs", "init", "acme", "--no-lock"])
+    recipe = invoker.invoke(app, ["init", "./acme/editorconfig", "--no-lock"])
+    hook = invoker.invoke(app, ["hooks", "init", "./acme/probe", "--kind", "validate", "--no-lock"])
+
+    assert pack.exit_code == 0, pack.output
+    assert (tmp_path / "acme" / "pyproject.toml").is_file()
+    assert recipe.exit_code == 0, recipe.output
+    assert Path(recipe.stdout.strip()).name == "recipe.yml"
+    assert hook.exit_code == 0, hook.output
+    assert "scaffolded validate hook" in hook.stderr
+    pyproject = (tmp_path / "acme" / "pyproject.toml").read_text()
+    assert 'path = "recipes/editorconfig/recipe.yml"' in pyproject
+    assert 'module = "acme_pack.hooks.probe"' in pyproject

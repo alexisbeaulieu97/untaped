@@ -48,6 +48,29 @@
     --format pipe`). Supports `--format table|json|pipe`; single-target
     `tree`/`mermaid` output is unchanged.
 - Recipe
+  - **Breaking:** packs, hooks and backups are nouns. `add`, `sync`,
+    `remove` move to `recipe packs add|sync|remove`; `list --packs` is
+    `packs list`, and `packs get`/`packs edit`/`packs init NAME` show, edit
+    (`pyproject.toml`) and scaffold a pack. `hook run` is `recipe hooks run`;
+    `list --hooks` is `hooks list`, and `hooks get`/`hooks edit`/`hooks init
+    PACK/HOOK` cover hooks (including built-ins for `get`). `backup …` is
+    `recipe backups …`. Recipe verbs stay at the top: `list`, `get` and `edit`
+    now act on recipes only, and `init PACK/RECIPE` scaffolds a recipe (the
+    `pack|recipe|hook` positional is gone). Old spellings are usage errors
+    (exit 2); there are no aliases.
+  - **Breaking:** variable flags match `awx test`. `apply --vars-file`
+    repeats (a later file wins; `--var` wins over every file). `apply
+    --interactive` is gone: a required input that is still missing is
+    prompted for when stdin is a terminal, never without one (piped
+    `--stdin` targets included); `--non-interactive` (and `--check`) fail
+    instead. Optional
+    and defaulted inputs are no longer prompted. The error now reads `missing
+    required input: NAME; pass --var NAME=VALUE or --vars-file FILE`.
+    `hooks run` takes inputs with `--var`/`--vars-file` (were `--input`/
+    `--inputs`) and args with `--arg`/`--args-file` (was `--args`), all
+    repeatable.
+  - **Breaking:** removed the deprecated `check`, `show`, `new`, `backup
+    show` and `apply --vars` spellings, and the hidden no-op `add --yes`.
   - **Behavior change:** hook workers and `uv lock` runs on packs no longer
     inherit the whole environment. Only an allowlist passes through (`PATH`,
     `HOME`, locale, temp dirs, `UV_*`/`XDG_*`, TLS and proxy settings,

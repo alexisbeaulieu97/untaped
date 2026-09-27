@@ -9,7 +9,7 @@ Terms as `untaped` uses them in commands, output and these docs.
 - **alias (ansible)**: A mapping from an Ansible role or Galaxy name to a
   GitHub `owner/repo`, so the dependency graph can follow it.
 - **backup bundle (recipe)**: The copy of files that `recipe apply` takes
-  before it writes. Restore it with `recipe backup restore`.
+  before it writes. Restore it with `recipe backups restore`.
 - **capability**: One command subtree of `untaped` (`workspace`, `github`,
   `jira`, `awx`, `ansible`, `recipe`) together with its config section, state,
   agent skill and `doctor` checks. `untaped capabilities` lists them.

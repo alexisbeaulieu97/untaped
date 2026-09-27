@@ -21,16 +21,9 @@ if TYPE_CHECKING:
 
 
 class PromptFunc(Protocol):
-    """Prompt callback used by interactive input resolution."""
+    """Prompt callback asking for a missing required input on a terminal."""
 
-    def __call__(
-        self,
-        message: str,
-        *,
-        sensitive: bool,
-        default: object | None = None,
-        required: bool = True,
-    ) -> object: ...
+    def __call__(self, message: str, *, sensitive: bool) -> object: ...
 
 
 class HookWorkerPort(Protocol):

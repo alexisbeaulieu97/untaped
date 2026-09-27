@@ -457,8 +457,8 @@ def _reject_symlinks(source_dir: Path) -> None:
 def local_edits_message(installed_name: str) -> str:
     """Pinned guard message shared by the store and the CLI fail-fast."""
     return (
-        f"pack '{installed_name}' has local edits in the library (via edit or "
-        "init recipe/hook); re-run with --discard-edits to overwrite them"
+        f"pack '{installed_name}' has local edits in the library (via an edit "
+        "or init command); re-run with --discard-edits to overwrite them"
     )
 
 
