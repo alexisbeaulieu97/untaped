@@ -86,6 +86,7 @@ come from a closed set:
 - Write: `create`, `set`, `unset`, `add`, `remove`, `delete`, `prune`, `edit`,
   `patch`, `apply`, `copy`, `rename`
 - Update: `sync`, `refresh`
+- Query: `find`, `deps`, `impact`, `graph`
 - Other: `export`, `init`, `run`, `launch`, `wait`, `validate`, `test`,
   `cancel`, `relaunch`
 

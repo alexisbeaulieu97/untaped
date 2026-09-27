@@ -1,4 +1,4 @@
-"""Ansible doctor check for deprecated settings, run through the unified root."""
+"""Ansible settings as seen by root ``untaped doctor``, run through the unified root."""
 
 from __future__ import annotations
 
@@ -27,28 +27,30 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     get_settings.cache_clear()
 
 
+_ANSIBLE_PROFILE = "profiles:\n  default:\n    ansible:\n      {}\n"
+
+
 def _root() -> App:
     return bootstrap.build_root_app(builtins=(SPEC,), externals=())  # type: ignore[return-value]
 
 
-def _doctor_row(cfg: Path, body: str) -> dict[str, object]:
+def _doctor_rows(cfg: Path, body: str) -> dict[str, dict[str, object]]:
     cfg.write_text(body)
     get_settings.cache_clear()
     result = CliInvoker().invoke(_root().meta, ["doctor", "--format", "json"])
     assert result.exit_code == 0, result.output
-    rows = json.loads(result.stdout)
-    return next(row for row in rows if row["check"] == "ansible.deprecated-settings")
+    return {str(row["check"]): row for row in json.loads(result.stdout)}
 
 
-def test_doctor_warns_when_freshness_ttl_is_set(_isolate: Path) -> None:
-    row = _doctor_row(_isolate, "profiles:\n  default:\n    ansible:\n      freshness_ttl: 3600\n")
+def test_removed_freshness_ttl_is_reported_as_an_unknown_key(_isolate: Path) -> None:
+    rows = _doctor_rows(_isolate, _ANSIBLE_PROFILE.format("freshness_ttl: 3600"))
 
-    assert row["status"] == "warn"
-    assert "ansible.freshness_ttl is deprecated and ignored" in str(row["detail"])
-    assert "config unset ansible.freshness_ttl" in str(row["detail"])
+    assert "ansible.deprecated-settings" not in rows
+    assert rows["unknown-keys"]["status"] == "warn"
+    assert "ansible.freshness_ttl" in str(rows["unknown-keys"]["detail"])
 
 
-def test_doctor_passes_without_deprecated_settings(_isolate: Path) -> None:
-    row = _doctor_row(_isolate, "profiles:\n  default:\n    ansible: {}\n")
+def test_default_source_is_a_known_key(_isolate: Path) -> None:
+    rows = _doctor_rows(_isolate, _ANSIBLE_PROFILE.format("default_source: prod"))
 
-    assert row["status"] == "pass"
+    assert rows["unknown-keys"]["status"] == "pass"

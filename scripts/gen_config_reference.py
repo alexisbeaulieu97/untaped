@@ -91,13 +91,14 @@ DESCRIPTIONS: dict[str, str] = {
     "awx.test_parallel": "Default `test run --parallel`.",
     "ansible.index_path": "SQLite cache of refreshed source data.",
     "ansible.stale_after": "Seconds after which `source status` reports a source as `stale`.",
-    "ansible.freshness_ttl": "Deprecated and ignored; `doctor` warns while it is set.",
+    "ansible.default_source": "Saved source `deps`, `impact`, `find` and `graph` use when "
+    "no `--source` or inline selector is given.",
     "ansible.ref_scan_default": "Refs a source scans: `all` refs or each repo's default branch.",
     "ansible.source_refresh_backend": "Ref probe backend for source refresh.",
     "ansible.repo_cache_path": "Git clone cache used by source refresh.",
     "ansible.git_clone_protocol": "Protocol for source refresh clones.",
     "ansible.git_fetch_depth": "Git fetch depth for source refresh; `0` is full history.",
-    "ansible.git_fetch_concurrency": "Default `--parallel` for `source refresh` and `graph`.",
+    "ansible.git_fetch_concurrency": "Default `--parallel` for `source refresh` and `--refresh`.",
     "ansible.probe_concurrency": "Concurrent ref probes during source refresh.",
     "ansible.source_refresh_repo_batch_size": "Repos committed per source refresh batch.",
     "ansible.source_refresh_rate_limit_floor": "Stop a refresh (resumable) when the GraphQL "
@@ -106,7 +107,7 @@ DESCRIPTIONS: dict[str, str] = {
     "ansible.dependency_paths": "Dependency files scanned in each repo.",
     "ansible.sources": "Saved sources. Managed by `ansible source` commands.",
     "ansible.aliases": "Role or Galaxy name to `owner/repo` aliases. Managed by "
-    "`ansible alias` commands.",
+    "`ansible source-alias` commands.",
     "recipe.library_root": "Directory holding installed recipe packs.",
     "recipe.hook_timeout_seconds": "Per-hook request timeout; `0` disables it.",
     "recipe.hook_startup_timeout_seconds": "Timeout for preparing a hook environment.",

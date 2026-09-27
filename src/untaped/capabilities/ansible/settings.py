@@ -60,8 +60,7 @@ class AnsibleSettings(BaseModel):
 
     index_path: Path = Path("~/.untaped/ansible-index.sqlite3")
     stale_after: int = 86_400
-    # Deprecated and ignored; kept so existing configs still validate.
-    freshness_ttl: int | None = Field(default=None, ge=0)
+    default_source: str | None = None
     ref_scan_default: Literal["all", "default_branch"] = "all"
     source_refresh_backend: Literal["auto", "graphql", "git"] = "auto"
     repo_cache_path: Path = Path("~/.untaped/ansible-repositories")
