@@ -28,6 +28,8 @@ the version you have installed.
 
 - [Agent skills](./skills.md): install and update the skills that teach AI
   coding agents to use each capability.
+- [AWX agent profile](./awx/agent-profile.md): a dedicated AWX user, token and
+  profile for an agent that tests its changes with `awx test`.
 
 ## Reference
 
