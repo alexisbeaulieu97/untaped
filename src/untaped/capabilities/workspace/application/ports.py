@@ -27,6 +27,7 @@ class ManifestReader(Protocol):
 class ManifestRemover(ManifestReader, Protocol):
     """Read plus delete, for ``forget --prune``."""
 
+    def manifest_path(self, workspace_dir: Path) -> Path: ...
     def delete(self, workspace_dir: Path) -> None: ...
 
 

@@ -64,6 +64,21 @@ class ForgetWorkspace:
         self._registry.unregister(name)
         return ws
 
+    def preview(self, name: str, *, prune: bool = False) -> tuple[Workspace, list[Path]]:
+        """Run every check a real forget would, delete nothing (``--dry-run``).
+
+        Returns the workspace and the paths a prune would remove: clones,
+        symlinks, then the manifest. An unsafe clone raises exactly as
+        :meth:`__call__` does, so a dry run predicts a refusal.
+        """
+        ws = self._registry.get(name)
+        if not (prune and self._fs.is_dir(ws.path)):
+            return ws, []
+        plan = self._plan_prune(ws)
+        self._refuse_if_any_repo_unsafe(ws, plan)
+        clones = [local for local, _label in plan.clones.values()]
+        return ws, [*clones, *plan.links, self._manifests.manifest_path(ws.path)]
+
     def _plan_prune(self, ws: Workspace) -> _PrunePlan:
         if not self._manifests.exists(ws.path):
             raise WorkspaceError(

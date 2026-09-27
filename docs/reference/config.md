@@ -41,6 +41,7 @@ variable shown.
 |---|---|---|---|---|
 | `workspace.cache_dir` | path | `~/.untaped/repositories` | `UNTAPED_WORKSPACE__CACHE_DIR` | Bare-clone cache used as the reference for new workspace clones. |
 | `workspace.workspaces_dir` | path | `~/.untaped/workspaces` | `UNTAPED_WORKSPACE__WORKSPACES_DIR` | Parent directory for `workspace init NAME` without `--path`. |
+| `workspace.parallel` | integer (optional) | unset | `UNTAPED_WORKSPACE__PARALLEL` | Default `sync --parallel` and `foreach --parallel` workers. Unset means `min(8, 2 * CPUs)`; values above `2 * CPUs` are clamped. |
 
 ## `workspace` state
 

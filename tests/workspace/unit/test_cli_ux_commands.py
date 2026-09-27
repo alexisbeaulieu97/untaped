@@ -15,26 +15,17 @@ from untaped.testing import CliInvoker
 pytestmark = pytest.mark.usefixtures("isolate_config")
 
 
-def test_show_workspace_json_details(tmp_path: Path) -> None:
+def test_repos_list_json_details(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "main"])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/api.git", "--repo-name", "api"])
     runner.invoke(
         app,
-        [
-            "add",
-            "https://x/ui.git",
-            "--repo-name",
-            "ui",
-            "--branch",
-            "develop",
-            "--workspace",
-            "prod",
-        ],
+        ["repos", "add", "prod", "https://x/ui.git", "--repo-name", "ui", "--branch", "develop"],
     )
 
-    result = runner.invoke(app, ["get", "--workspace", "prod", "--format", "json"])
+    result = runner.invoke(app, ["repos", "list", "prod", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -63,13 +54,13 @@ def test_show_workspace_json_details(tmp_path: Path) -> None:
     ]
 
 
-def test_show_workspace_by_path_json_details(tmp_path: Path) -> None:
+def test_repos_list_by_path_json_details(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "main"])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/api.git", "--repo-name", "api"])
 
-    result = runner.invoke(app, ["get", "--path", str(target), "--format", "json"])
+    result = runner.invoke(app, ["repos", "list", str(target), "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -87,23 +78,12 @@ def test_show_workspace_by_path_json_details(tmp_path: Path) -> None:
     ]
 
 
-def test_show_rejects_workspace_and_path_together(tmp_path: Path) -> None:
-    runner = CliInvoker()
-    target = tmp_path / "ws"
-    runner.invoke(app, ["init", "prod", "--path", str(target)])
-
-    result = runner.invoke(app, ["get", "--workspace", "prod", "--path", str(target)])
-
-    assert result.exit_code != 0
-    assert "--workspace and --path are mutually exclusive" in result.output
-
-
-def test_show_empty_workspace_outputs_summary_row(tmp_path: Path) -> None:
+def test_repos_list_empty_workspace_outputs_summary_row(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "empty"
     runner.invoke(app, ["init", "empty", "--path", str(target)])
 
-    result = runner.invoke(app, ["get", "--workspace", "empty", "--format", "json"])
+    result = runner.invoke(app, ["repos", "list", "empty", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -120,28 +100,16 @@ def test_show_empty_workspace_outputs_summary_row(tmp_path: Path) -> None:
     ]
 
 
-def test_show_raw_columns_emit_repo_names(tmp_path: Path) -> None:
+def test_repos_list_raw_columns_emit_repo_names(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/api.git", "--repo-name", "api"])
 
-    result = runner.invoke(
-        app, ["get", "--workspace", "prod", "--format", "raw", "--columns", "repo"]
-    )
+    result = runner.invoke(app, ["repos", "list", "prod", "--format", "raw", "--columns", "repo"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines() == ["api"]
-
-
-def test_show_accepts_workspace_short_option(tmp_path: Path) -> None:
-    runner = CliInvoker()
-    target = tmp_path / "ws"
-    runner.invoke(app, ["init", "prod", "--path", str(target)])
-
-    result = runner.invoke(app, ["get", "-w", "prod", "--format", "json"])
-
-    assert result.exit_code == 0, result.output
 
 
 def test_path_prints_workspace_path(tmp_path: Path) -> None:
@@ -210,7 +178,7 @@ def test_edit_path_opens_unregistered_workspace(tmp_path: Path) -> None:
     target.mkdir()
     (target / "untaped.yml").write_text("name: prod\nrepos: []\n")
 
-    result = CliInvoker().invoke(app, ["edit", "--path", str(target), "--editor", editor])
+    result = CliInvoker().invoke(app, ["edit", str(target), "--editor", editor])
 
     assert result.exit_code == 0, result.output
     assert json.loads(record.read_text()) == [str(target.resolve())]
@@ -227,7 +195,7 @@ def test_edit_workspace_uses_visual_then_editor(
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
 
-    result = runner.invoke(app, ["edit", "--workspace", "prod"])
+    result = runner.invoke(app, ["edit", "prod"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(record.read_text()) == [str(target.resolve())]
@@ -243,7 +211,7 @@ def test_edit_without_editor_fails_with_hint(
     target.mkdir()
     (target / "untaped.yml").write_text("name: prod\nrepos: []\n")
 
-    result = CliInvoker().invoke(app, ["edit", "--path", str(target)])
+    result = CliInvoker().invoke(app, ["edit", str(target)])
 
     assert result.exit_code == 1
     assert "set $VISUAL or $EDITOR" in result.stderr
@@ -263,9 +231,7 @@ def test_edit_editor_not_found_errors(tmp_path: Path) -> None:
     target.mkdir()
     (target / "untaped.yml").write_text("name: prod\nrepos: []\n")
 
-    result = CliInvoker().invoke(
-        app, ["edit", "--path", str(target), "--editor", "definitely-missing-bin"]
-    )
+    result = CliInvoker().invoke(app, ["edit", str(target), "--editor", "definitely-missing-bin"])
 
     assert result.exit_code == 1
     assert "editor not found: definitely-missing-bin" in result.output

@@ -49,6 +49,7 @@ class RepoStatus(BaseModel):
 
 
 SyncAction = Literal[
+    "planned",
     "cloned",
     "pulled",
     "skipped",
@@ -73,6 +74,8 @@ identifier itself, so downstream consumers can filter on
 ``unavailable`` is the synthetic action emitted under bulk operations
 when a registered workspace exists but its manifest cannot be read. The
 ``repo`` field is empty because no repo was selected or inspected.
+
+``planned`` is a safe orphan clone ``sync --prune --dry-run`` would remove.
 """
 
 
@@ -111,6 +114,20 @@ class StatusEntry(TargetRecord):
     behind: int = 0
     modified: int = 0
     untracked: int = 0
+
+    @property
+    def dirty(self) -> bool:
+        """Uncommitted changes: modified tracked files or untracked files."""
+        return self.modified > 0 or self.untracked > 0
+
+    def needs_attention(self, *, dirty: bool, behind: bool) -> bool:
+        """Whether the row matches the ``status --dirty`` / ``--behind`` filters.
+
+        The filters combine as a union; passing neither checks both.
+        """
+        if not (dirty or behind):
+            dirty = behind = True
+        return (dirty and self.dirty) or (behind and self.behind > 0)
 
 
 class ForeachOutcome(TargetRecord):

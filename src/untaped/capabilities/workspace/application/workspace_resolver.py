@@ -1,12 +1,14 @@
 """Resolve which workspace a command should act on.
 
-Resolution order: explicit ``name`` (registry lookup) → explicit ``path``
-→ walk up from ``cwd`` looking for a workspace manifest → error.
+Every target-resolving command takes one optional ``WS`` argument, resolved
+here: omitted → walk up from ``cwd`` to the nearest workspace manifest; a
+path (``.``, ``..``, anything containing a path separator, or ``~``-prefixed)
+→ walk up from that path; anything else → registry lookup by name.
 
 Lives in ``application/`` because *how to name a workspace* is the
 package's ubiquitous language — every target-resolving command
-(``add``, ``remove``, ``sync``, ``status``, ``foreach``) inherits the
-same precedence. The resolver speaks only to its
+(``repos``, ``sync``, ``status``, ``foreach``, ``branch``, ``edit``) inherits
+the same rule. The resolver speaks only to its
 :class:`untaped.capabilities.workspace.application.ports.RegistryReader` and
 :class:`untaped.capabilities.workspace.application.ports.ManifestReader` ports;
 the CLI composition root wires the concrete repositories.
@@ -14,6 +16,7 @@ the CLI composition root wires the concrete repositories.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from untaped.capabilities.workspace.application.ports import ManifestReader, RegistryReader
@@ -21,44 +24,46 @@ from untaped.capabilities.workspace.domain import Workspace
 from untaped.capability_api import ConfigError
 
 
+def _looks_like_path(target: str) -> bool:
+    """Whether a ``WS`` argument names a directory rather than a registry name.
+
+    Workspace names are single path segments, so a separator, ``.``/``..``
+    or a leading ``~`` can only mean a path.
+    """
+    separators = {os.sep, "/"} | ({os.altsep} if os.altsep else set())
+    return target in {".", ".."} or target.startswith("~") or any(s in target for s in separators)
+
+
 class WorkspaceResolver:
     def __init__(self, *, registry: RegistryReader, manifests: ManifestReader) -> None:
         self._registry = registry
         self._manifests = manifests
 
-    def resolve(
-        self,
-        *,
-        name: str | None = None,
-        path: Path | None = None,
-        cwd: Path | None = None,
-    ) -> Workspace:
-        if name is not None:
-            return self._registry.get(name)
-        if path is not None:
-            return self._resolve_by_path(path)
-        return self._resolve_from_cwd(cwd or Path.cwd())
+    def resolve(self, target: str | None = None, *, cwd: Path | None = None) -> Workspace:
+        base = cwd or Path.cwd()
+        if target is None:
+            return self._resolve_from(
+                base,
+                error=(
+                    "not inside a workspace — pass a workspace name or path, or `cd` "
+                    "into a workspace directory containing untaped.yml"
+                ),
+            )
+        if _looks_like_path(target):
+            start = (base / Path(target).expanduser()).resolve()
+            return self._resolve_from(
+                start, error=f"no workspace manifest at or above {start} (untaped.yml)"
+            )
+        return self._registry.get(target)
 
     # internal -----------------------------------------------------------
 
-    def _resolve_by_path(self, path: Path) -> Workspace:
-        canonical = path.expanduser().resolve()
-        if not self._manifests.exists(canonical):
-            raise ConfigError(f"no workspace manifest at {canonical}/untaped.yml")
-        return self._workspace_for(canonical)
-
-    def _resolve_from_cwd(self, cwd: Path) -> Workspace:
-        cwd = cwd.expanduser().resolve()
-        for parent in [cwd, *cwd.parents]:
+    def _resolve_from(self, start: Path, *, error: str) -> Workspace:
+        start = start.expanduser().resolve()
+        for parent in [start, *start.parents]:
             if self._manifests.exists(parent):
-                # `parent` is already canonical (derived from `cwd.resolve()`)
-                # and we've just confirmed the manifest — skip the
-                # `_resolve_by_path` re-check + re-resolve.
                 return self._workspace_for(parent)
-        raise ConfigError(
-            "not inside a workspace — pass --workspace or --path, or `cd` into a "
-            "workspace directory containing untaped.yml"
-        )
+        raise ConfigError(error)
 
     def _workspace_for(self, canonical: Path) -> Workspace:
         existing = self._registry.find_by_path(canonical)

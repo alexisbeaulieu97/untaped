@@ -32,7 +32,7 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
 - `repos list` requires explicit `--org` or `--team` scopes; it does not default to the authenticated user's repositories.
 - `repos list` treats `--org` and `--team` as additive scopes: `--team acme/backend` is team-only, while `--org acme --team backend` includes the whole org plus that team.
 - In `repos list`, `PATTERN` is a case-insensitive whole-target glob by default; `--regex` switches it to a case-insensitive, unanchored regex substring match. Patterns with `/` match `full_name`, otherwise they match repo `name`.
-- Use `repos list --no-archived --no-fork --format raw --columns ssh_url` to produce cloneable inventory URL lines for `untaped workspace add --stdin`.
+- Use `repos list --no-archived --no-fork --format raw --columns ssh_url` to produce cloneable inventory URL lines for `untaped workspace repos add WS --stdin`.
 - Use `sweep` instead of GitHub `search code` for repeated team-wide code checks, regexes, path-scoped predicates, negation, and refs beyond the default branch.
 
 ## Agent Guidance
@@ -62,11 +62,11 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
   acme --format pipe | untaped github search code "BaseModel" --stdin`.
 - `sweep --stdin` and `cache sync --stdin` use piped `github.repo` records (from `repos list`) as-is, with no per-repo API call; other records and bare names are looked up. Refs sharing a tree are grepped once, all-predicate queries stop evaluating a ref at its first failed predicate, and concurrent sweeps are safe (each cached repo is locked while it is written).
 - Use `--format pipe` to chain sweep results into another sweep: `untaped github repos list 'svc-*' --org acme --format pipe | untaped github sweep --stdin --grep old_api --format pipe | untaped github sweep --stdin --not-grep new_api`.
-- For `untaped workspace add --stdin`, use raw URL lines:
+- For `untaped workspace repos add WS --stdin`, use raw URL lines:
   `untaped github sweep --org acme --grep old_api --format raw --columns clone_url |
-  untaped workspace add --stdin --workspace remediation`. `workspace add --stdin`
+  untaped workspace repos add remediation --stdin`. `workspace repos add --stdin`
   also reads `github.repo`, `github.repo_hit` and `github.sweep_repo` pipe records
-  (`untaped github search repos --org acme --format pipe | untaped workspace add --stdin`).
+  (`untaped github search repos --org acme --format pipe | untaped workspace repos add acme --stdin`).
 - `--profile <name>` works in any token position (e.g. `untaped github --profile work whoami`).
 - Use `--limit` intentionally; GitHub search has stricter rate limits than normal REST reads.
 - When no repo/org/user/team scope is passed to repo/code/issue search, the CLI defaults to the authenticated user.
