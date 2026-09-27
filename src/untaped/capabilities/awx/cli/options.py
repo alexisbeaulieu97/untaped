@@ -100,11 +100,16 @@ WaitTimeoutOption = Annotated[
     Parameter(
         name="--timeout",
         help=(
-            "Stop waiting after this many seconds per execution (needs --wait or --track); "
+            "Stop waiting after this many seconds per execution (needs --wait or --follow); "
             "unfinished executions fail the row and keep running."
         ),
     ),
 ]
+FOLLOW_HELP = (
+    "Stream each job's log to stderr until it ends with its PLAY RECAP (a workflow "
+    "job's status changes); fail on unsuccessful execution."
+)
+"""Help of the ``launch``/``sync --follow`` watch flag."""
 UnverifiedOption = Annotated[
     bool,
     Parameter(
@@ -116,6 +121,7 @@ UnverifiedOption = Annotated[
 
 
 __all__ = [
+    "FOLLOW_HELP",
     "AllOption",
     "ByIdOption",
     "ContinueOption",

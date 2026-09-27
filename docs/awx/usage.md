@@ -345,14 +345,14 @@ the same way. If AWX still lists
 `ignored_fields` in a launch response, that row fails with the ignored field
 names and keeps the execution ID; `awx test` reports such a case as an error.
 
-## Sync and track executions
+## Sync, wait for and follow executions
 
 Project, inventory-source, and inventory synchronization use `sync`:
 
 ```bash
 untaped awx projects sync Playbooks --wait
 untaped awx inventory-sources sync Cloud --inventory Production --wait
-untaped awx inventories sync Production --wait --track
+untaped awx inventories sync Production --follow
 ```
 
 Inventory sync first resolves and freezes the current source IDs (one
@@ -363,24 +363,29 @@ manual, or otherwise invalid target fails complete preflight with zero POSTs;
 invalid selection. `--dry-run` resolves and previews targets without
 submitting an action.
 
-`--wait` waits for terminal success and exits nonzero for failed, canceled, or
-error executions. `--timeout SECONDS` (with `--wait` or `--track`) stops
+`launch` and `sync` watch what they start with one flag family. `--wait`
+waits for terminal success and exits nonzero for failed, canceled, or error
+executions. `--follow` waits the same way and streams each job's log to
+stderr as it runs, ending with its PLAY RECAP (stdout keeps only the result
+rows). With several executions each log line is prefixed with its
+`[template]`. `--timeout SECONDS` (with `--wait` or `--follow`) stops
 waiting after that many seconds per execution: an execution still running
 fails its row (`still running after --timeout 600s; it keeps running`), and a
-`jobs wait` hint names it. Ctrl-C while waiting or tracking (including
+`jobs wait` hint names it. Ctrl-C while waiting or following (including
 `awx test run --parallel`) or while launches are still being submitted stops
 promptly, exits 130, and prints the IDs of executions not known to have
 finished (including ones AWX created while ignoring fields; "was launched"
 when their status is unknown) with an `untaped awx jobs wait ...` command to
 resume; the executions themselves keep running on the controller (`awx test
-run` cancels them unless `--no-cancel`). `--track`
-shows progress on stderr while waiting; a failed or unreachable host result
-is followed by the reason from that event's output (up to ten lines; `jobs
-events` has the rest). Ordinary
-jobs expose `job_events`; project and inventory updates expose their `events`
-routes. Workflow jobs, including sliced launches that return a workflow job,
-have no own events or stdout route, so tracking emits status transitions from
-the detail endpoint instead of requesting `workflow_events` or `stdout`.
+run` cancels them unless `--no-cancel`). A failed or unreachable host shows
+up in the followed log as Ansible prints it (`fatal: [host]: FAILED! => …`).
+AWX writes a finished job's log from its saved events, so `--follow` (and
+`jobs logs --follow`) keeps reading briefly after the job ends until they are
+all in. Workflow jobs, including sliced launches that return a workflow job,
+have no own events or stdout route, so following one prints its status
+transitions from the detail endpoint instead of requesting
+`workflow_events` or `stdout`. For structured per-task events, use
+`jobs events --follow`.
 
 For direct job inspection, non-default execution collections require an
 explicit kind:
@@ -713,7 +718,7 @@ untaped awx inventory-sources get DisposableSource \
 untaped awx inventory-sources edit DisposableSource \
   --inventory Disposable --inventory-organization Default --dry-run
 untaped awx inventory-sources sync DisposableSource \
-  --inventory Disposable --inventory-organization Default --wait --track
+  --inventory Disposable --inventory-organization Default --follow
 
 untaped awx inventory-sources apply disposable-source.yml --yes
 untaped awx inventories apply disposable-inventory.yml --yes

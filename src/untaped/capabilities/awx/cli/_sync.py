@@ -14,6 +14,7 @@ from untaped.capabilities.awx.cli._mutation_runner import validate_controls
 from untaped.capabilities.awx.cli._selection import SELECTION_DEFAULTS, SelectionOptions
 from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.options import (
+    FOLLOW_HELP,
     ContinueOption,
     DryRunOption,
     NamesArgument,
@@ -39,20 +40,13 @@ def _add_sync(app: App, spec: AwxResourceSpec) -> None:
         wait: Annotated[
             bool, Parameter(negative="", help="Wait for success; fail on unsuccessful execution.")
         ] = False,
-        track: Annotated[
-            bool,
-            Parameter(
-                name=["--track", "-t"],
-                negative="",
-                help="Stream events while waiting; fail on unsuccessful execution.",
-            ),
-        ] = False,
+        follow: Annotated[bool, Parameter(name="--follow", negative="", help=FOLLOW_HELP)] = False,
         timeout: WaitTimeoutOption = None,
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
         """Sync a fixed selection; inventories expand to their current source IDs."""
-        validate_wait_timeout(timeout, wait=wait, track=track)
+        validate_wait_timeout(timeout, wait=wait, follow=follow)
         with report_errors():
             parallel = validate_controls(yes=yes, dry_run=dry_run, parallel=parallel)
             with open_context() as ctx:
@@ -69,7 +63,7 @@ def _add_sync(app: App, spec: AwxResourceSpec) -> None:
                     parallel=parallel,
                     continue_on_error=continue_on_error,
                     wait=wait,
-                    track=track,
+                    follow=follow,
                     timeout=timeout,
                     fmt=fmt,
                     columns=columns,

@@ -74,7 +74,16 @@ def test_invalid_response_keeps_execution_id_without_retry_or_monitoring(
         201, json=response
     )
     fake_aap.install(fake_aap.router)
-    args = ["job-templates", "launch", "--yes", "sliced", "ordinary", "--track", "--format", "json"]
+    args = [
+        "job-templates",
+        "launch",
+        "--yes",
+        "sliced",
+        "ordinary",
+        "--follow",
+        "--format",
+        "json",
+    ]
     if continue_:
         args.append("--continue-on-error")
     result = CliInvoker().invoke(app, args)
@@ -105,7 +114,7 @@ def test_invalid_response_keeps_execution_id_without_retry_or_monitoring(
 )
 @pytest.mark.parametrize("status", ["successful", "failed", "canceled", "error"])
 @pytest.mark.parametrize("also_wait", [False, True])
-def test_track_pending_to_terminal_uses_only_supported_routes(
+def test_follow_pending_to_terminal_uses_only_supported_routes(
     fake_aap: Any,
     monkeypatch: pytest.MonkeyPatch,
     command: str,
@@ -134,7 +143,7 @@ def test_track_pending_to_terminal_uses_only_supported_routes(
         "PollingJobMonitor",
         lambda client, **_: PollingJobMonitor(client, sleep=lambda _: None),
     )
-    args = [command, action, name, "--track", "--format", "json"]
+    args = [command, action, name, "--follow", "--format", "json"]
     if also_wait:
         args.append("--wait")
     result = CliInvoker().invoke(app, args)
@@ -154,8 +163,7 @@ def test_track_pending_to_terminal_uses_only_supported_routes(
         assert paths and set(paths) == {detail}
         assert "pending" in result.stderr and status in result.stderr
     else:
-        events = "job_events" if kind == "job" else "events"
-        assert set(paths) == {detail, f"{detail}{events}/"}
+        assert set(paths) == {detail, f"{detail}stdout/"}
 
 
 @pytest.mark.parametrize("subpath", ["job_events", "events", "stdout"])

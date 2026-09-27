@@ -25,6 +25,7 @@ from untaped.capabilities.awx.cli._mutation_runner import validate_controls
 from untaped.capabilities.awx.cli._selection import select_resources
 from untaped.capabilities.awx.cli.context import open_context, scope_for_command
 from untaped.capabilities.awx.cli.options import (
+    FOLLOW_HELP,
     AllOption,
     ByIdOption,
     ContinueOption,
@@ -167,15 +168,12 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                 name="--wait", negative="", help="Wait for success; fail on unsuccessful execution."
             ),
         ] = False,
-        track: Annotated[
+        follow: Annotated[
             bool,
             Parameter(
-                name=["--track", "-t"],
+                name="--follow",
                 negative="",
-                help=(
-                    "Stream events (workflow status) to stderr while waiting; exit 1 "
-                    "if any tracked job ends in a non-successful terminal state."
-                ),
+                help=FOLLOW_HELP,
             ),
         ] = False,
         timeout: WaitTimeoutOption = None,
@@ -194,7 +192,7 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
             "--job-type": job_type,
         }
         _reject_unsupported_launch_flags(kind=spec.kind, accepts=accepts, supplied=supplied)
-        validate_wait_timeout(timeout, wait=wait, track=track)
+        validate_wait_timeout(timeout, wait=wait, follow=follow)
         with report_errors():
             parallel = validate_controls(yes=yes, dry_run=dry_run, parallel=parallel)
             with open_context() as ctx:
@@ -233,7 +231,7 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                     parallel=parallel,
                     continue_on_error=continue_on_error,
                     wait=wait,
-                    track=track,
+                    follow=follow,
                     timeout=timeout,
                     fmt=fmt,
                     columns=columns,
