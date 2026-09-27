@@ -18,7 +18,7 @@ from typing import Any
 from cyclopts import App
 from cyclopts.command_spec import CommandSpec
 from cyclopts.core import _apply_parent_defaults_to_app
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from untaped._root_options import (
     _consume_leading_root_options,
@@ -26,6 +26,8 @@ from untaped._root_options import (
     _root_callback_signature,
     _root_options,
     _RootOption,
+    expand_alias,
+    resolves_to_command,
 )
 from untaped.capabilities.registry import (
     ApplicationSpec,
@@ -40,6 +42,7 @@ from untaped.capabilities.registry import (
 from untaped.cli import apply_default_format, create_app, echo, report_errors, run_cyclopts_app
 from untaped.errors import ConfigError
 from untaped.management import (
+    build_root_alias_app,
     build_root_capabilities_app,
     build_root_config_app,
     build_root_doctor_app,
@@ -47,6 +50,7 @@ from untaped.management import (
     build_root_setup_app,
     build_root_skills_app,
 )
+from untaped.management.alias import check_aliases
 from untaped.management.skills import check_installed_skills, composed_skills
 from untaped.profile_resolver import set_profile_override
 from untaped.quiet import reset as _reset_quiet
@@ -92,7 +96,18 @@ def current_capability() -> str | None:
 
 
 class ShellProfileSettings(BaseModel):
-    """Reserved shell-level profile-scoped settings."""
+    """Shell-level profile-scoped settings (the ``shell`` section)."""
+
+    aliases: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description="Command aliases: `untaped NAME [ARGS…]` runs the argv stored under NAME. "
+        "Managed by `alias` commands.",
+    )
+
+    @field_validator("aliases")
+    @classmethod
+    def _valid_aliases(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        return check_aliases(value)
 
 
 def _shell_app() -> App:
@@ -217,6 +232,11 @@ def build_root_app(
     _mount(root, build_root_skills_app(shell=SHELL_SPEC, result=result), name="skills")
     _mount(root, build_root_doctor_app(shell=SHELL_SPEC, result=result), name="doctor")
     _mount(root, build_root_setup_app(shell=SHELL_SPEC, result=result), name="setup")
+    _mount(
+        root,
+        build_root_alias_app(is_builtin=lambda name: resolves_to_command(root, name)),
+        name="alias",
+    )
     _mount(
         root,
         build_root_capabilities_app(
@@ -362,6 +382,12 @@ def _install_root_callback(
                 )
                 if command_tokens[:1] == ["--"]:
                     command_tokens = command_tokens[1:]  # `untaped [opts] -- cmd …`
+                expanded = expand_alias(app, command_tokens)
+                if expanded is not command_tokens:
+                    # An alias may start with root options (`--profile prod awx …`).
+                    command_tokens = _consume_leading_root_options(
+                        expanded, root_options, applied_tokens
+                    )
                 selected = (
                     command_tokens[0]
                     if command_tokens and command_tokens[0] in capability_names

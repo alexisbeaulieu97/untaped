@@ -40,7 +40,10 @@ online and exits 1 if one fails. A new profile name creates that profile.
 untaped setup
 ```
 
-To script the same settings, use `config set` below.
+To script the same settings, use `config set` below. Shorten commands you
+repeat with [aliases](./configuration.md#command-aliases):
+`untaped alias set failed -- awx jobs list --status failed`, then
+`untaped failed`.
 
 ## Store your tokens
 
