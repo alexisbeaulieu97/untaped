@@ -64,11 +64,12 @@ Writes (`config set/unset`, `profile` commands, and capability state updates
 to `state.yml`) rewrite only the keys they change: your comments, key order, quoting, and
 indentation are kept. New keys are appended to their mapping, and new string
 values that YAML would read as another type (`no`, `0123`, `~`) are quoted.
-`config edit` saves exactly what you wrote: it opens a private copy, then
-writes it back like any other write (under the lock, owner-only, through a
-symlink) and validates it. If the result is invalid, or the file changed while
-you edited, `config.yml` is left as it was, the command exits 1, and the error
-names the copy that holds your edits.
+`config edit` saves exactly what you wrote, line endings included: it opens a
+private copy, validates your result, and only then writes it back like any
+other write (under the lock, owner-only, through a symlink). Saving without
+changes writes nothing. If the result is invalid, the file changed while you
+edited, or the save fails, `config.yml` is left as it was, the command exits 1,
+and the error names the copy that holds your edits.
 
 `config.yml` keeps profile-scoped settings under `profiles.<name>`. `active`
 is optional; when it is absent, `default` is the fallback profile.
@@ -131,8 +132,8 @@ reads it from `config.yml` and prints one deprecation warning per run. The
 next change to that section (for example `untaped workspace add`) moves it:
 untaped writes the section to `state.yml` first and then removes it from
 `config.yml`, holding both files' locks and keeping the rest of `config.yml`
-(comments included) as written. If `config.yml` cannot be rewritten (read-only
-directory, or a symlink untaped will not replace), the command still succeeds,
+(comments included) as written. If `config.yml` cannot be rewritten (for
+example a read-only directory), the command still succeeds,
 warns, and `state.yml` takes precedence; delete the stale section by hand.
 `untaped doctor` lists every section still in `config.yml`.
 
