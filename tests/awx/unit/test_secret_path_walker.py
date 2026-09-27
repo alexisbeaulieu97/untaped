@@ -64,6 +64,13 @@ def test_filtered_wildcard_matches_only_mappings_with_that_value() -> None:
     assert survey["spec"][1]["default"] == "$encrypted$"
 
 
+def test_value_filtered_wildcard_matches_only_slots_holding_that_value() -> None:
+    record: dict[str, Any] = {"extra_data": {"db_password": "$encrypted$", "env": "prod"}}
+    assert list(values_at(record, "extra_data.*[=$encrypted$]")) == ["$encrypted$"]
+    remove_at(record, "extra_data.*[=$encrypted$]")
+    assert record == {"extra_data": {"env": "prod"}}
+
+
 def test_strip_keeps_plain_survey_defaults_and_names_the_filtered_path() -> None:
     from untaped.capabilities.awx.application.secret_paths import strip_encrypted_in_place
     from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
