@@ -437,12 +437,9 @@ def test_status_honors_global_ui_collection_view_for_table_output(
     (target / "untaped.yml").write_text(
         "name: prod\nrepos:\n  - url: https://x/api.git\n    name: api\n"
     )
-    isolate_config.write_text(
+    isolate_config.write_text("profiles:\n  default:\n    ui:\n      collection_view: list\n")
+    isolate_config.with_name("state.yml").write_text(
         f"""
-        profiles:
-          default:
-            ui:
-              collection_view: list
         workspace:
           workspaces:
             - name: prod
@@ -476,7 +473,7 @@ def test_status_honors_global_ui_collection_view_for_table_output(
 
 
 def test_status_all_malformed_registry_entry_stays_hard_error(isolate_config: Path) -> None:
-    isolate_config.write_text(
+    isolate_config.with_name("state.yml").write_text(
         "workspace:\n  workspaces:\n    - name: prod\n",
         encoding="utf-8",
     )
@@ -707,7 +704,7 @@ def _register_alpha_and_ghost(isolate_config: Path, tmp_path: Path, url: str) ->
     (alpha / "untaped.yml").write_text(
         f"name: alpha\nrepos:\n  - url: {url}\n    name: upstream\n", encoding="utf-8"
     )
-    isolate_config.write_text(
+    isolate_config.with_name("state.yml").write_text(
         "workspace:\n  workspaces:\n"
         f"    - name: alpha\n      path: {alpha}\n"
         f"    - name: ghost\n      path: {tmp_path / 'ghost'}\n",

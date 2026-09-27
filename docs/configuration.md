@@ -45,8 +45,7 @@ $UNTAPED_STATE                    # one-process override
 ```
 
 `config` and `profile` commands only ever write `config.yml`; capability
-state writes only write `state.yml` (apart from the one-time move described
-under [Capability state](#capability-state)). `UNTAPED_STATE` must not name the
+state writes only write `state.yml`. `UNTAPED_STATE` must not name the
 config file itself.
 
 The document root, `profiles`, and each profile must be mappings; anything
@@ -116,26 +115,16 @@ workspace:
 ```
 
 Profile-scoped sections accidentally placed at the YAML top level are ignored
-by profile resolution and produce a warning. This applies to `log_level`,
-`http`, `ui`, and registered capability sections; move them under
-`profiles.default.<section>`.
+by profile resolution; `untaped doctor` flags them in its `unknown-keys` row.
+This applies to `http`, `ui`, `skills`, and registered capability sections;
+move them under `profiles.default.<section>`.
 
 The profile model and state model for a capability must have disjoint field
 sets. State is written by the owning capability and is not writable through
-`untaped config set`.
-
-### Capability state
-
-Earlier releases kept capability state at the top level of `config.yml`. Such
-a section keeps working: when `state.yml` has no copy of a section, untaped
-reads it from `config.yml` and prints one deprecation warning per run. The
-next change to that section (for example `untaped workspace add`) moves it:
-untaped writes the section to `state.yml` first and then removes it from
-`config.yml`, holding both files' locks and keeping the rest of `config.yml`
-(comments included) as written. If `config.yml` cannot be rewritten (for
-example a read-only directory), the command still succeeds,
-warns, and `state.yml` takes precedence; delete the stale section by hand.
-`untaped doctor` lists every section still in `config.yml`.
+`untaped config set`. State is only ever read from `state.yml`: a state
+section left at the top level of `config.yml` by a release before 8.0 is
+ignored like any other unknown top-level key (`untaped doctor` flags it);
+move it into `state.yml` by hand.
 
 The environment override shape is unchanged:
 
@@ -145,10 +134,8 @@ UNTAPED_<SECTION>__<FIELD>
 
 For example, `UNTAPED_GITHUB__TOKEN`, `UNTAPED_AWX__BASE_URL`,
 `UNTAPED_HTTP__VERIFY_SSL`, and `UNTAPED_UI__THEME` override one process's
-resolved values. The root scalar `log_level` is addressed as `log_level` and
-can be overridden with `UNTAPED_LOG_LEVEL`. It is deprecated and has no
-effect; `untaped doctor` warns when it is set. Capability fields still require
-their fully qualified section key. For a setting value, precedence is the
+resolved values. Capability fields still require their fully qualified
+section key. For a setting value, precedence is the
 environment override, the selected active profile, `profiles.default`, and
 then the schema default.
 
@@ -211,8 +198,8 @@ must exist before a write targets them.
 
 The root config command lists every composed section and requires a fully
 qualified key for capability reads and writes. Root keys are the documented
-exceptions: `log_level` is a root scalar, and `http.*` and `ui.*` are shared
-profile fields. Bare keys are never expanded to a capability section.
+exceptions: `http.*`, `ui.*` and `skills.*` are shared profile fields. Bare
+keys are never expanded to a capability section.
 
 ```bash
 untaped config list
@@ -292,20 +279,18 @@ broken section to hide the rest:
   mapping root);
 - `profile` — the selected profile (`--profile`, `UNTAPED_PROFILE`, or
   `active:`) exists;
-- `settings` for the shell — one row each for `log_level` (a warning when the
-  deprecated setting is set), `http` (including a readable `http.ca_bundle`),
-  and `ui` (including a known `ui.theme`);
+- `settings` for the shell — one row each for `http` (including a readable
+  `http.ca_bundle`), `ui` (including a known `ui.theme`) and `skills`;
 - `settings` per capability — the capability's profile section;
-- `state` per capability with a state model — its section in `state.yml` (or
-  the legacy copy in `config.yml`), naming the file on failure;
-- `legacy-state` — `warn` when capability state is still at the top level of
-  `config.yml`, saying whether the next state change moves it or it is
-  shadowed by `state.yml` and should be deleted; `warn` rows do not fail
-  `doctor`;
+- `state` per capability with a state model — its section in `state.yml`,
+  naming the file on failure;
 - `config` (permissions) — `warn` when other users can read or write the
-  config file (it can hold tokens); fix it with `chmod 600`;
+  config file (it can hold tokens); fix it with `chmod 600`; `warn` rows do
+  not fail `doctor`;
 - `unknown-keys` — `warn` naming every key, in any profile, that no settings
-  model declares (usually a typo, which is otherwise silently ignored);
+  model declares (usually a typo, which is otherwise silently ignored), and
+  every top-level key other than `active` and `profiles` (for example a
+  pre-8.0 state section or `log_level`);
 - `skills` — `warn` when a skill installed by `untaped skills install` (in the
   global Codex/Claude skill directories or the current git root's
   `.agents/skills`/`.claude/skills`) differs from the packaged copy or is no
@@ -419,8 +404,7 @@ login, set `github.token_command` as above.
   passed (the header itself never appears);
 - `untaped.auth`: which token source was used (never the token).
 
-The `log_level` setting stays deprecated and has no effect; `--verbose` is the
-only switch.
+`--verbose` is the only switch; there is no log-level setting.
 
 ## See also
 

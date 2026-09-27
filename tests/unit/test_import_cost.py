@@ -38,10 +38,6 @@ def test_public_api_import_does_not_load_prompt_toolkit_or_httpx() -> None:
     assert _loaded_heavy_modules("import untaped.capability_api") == ""
 
 
-def test_deprecated_api_shim_import_does_not_load_prompt_toolkit_or_httpx() -> None:
-    assert _loaded_heavy_modules("import untaped.api") == ""
-
-
 def test_building_and_rendering_a_ui_context_does_not_load_prompt_toolkit() -> None:
     snippet = (
         "from untaped.ui import UiContext\n"

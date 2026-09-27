@@ -49,7 +49,7 @@ def test_state_registry_round_trips_through_the_list_command(
 ) -> None:
     target = tmp_path / "prod"
     target.mkdir()
-    _isolate.write_text(
+    _isolate.with_name("state.yml").write_text(
         f"workspace:\n  workspaces:\n    - name: prod\n      path: {target}\n", encoding="utf-8"
     )
     get_settings.cache_clear()

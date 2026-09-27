@@ -65,7 +65,7 @@ BUILTIN_REF = ProviderRef(
     kind="built-in",
     distribution="untaped",
     entry_point="",
-    api_requires=(1.0, 2.0),
+    api_requires=((2, 0), (3, 0)),
 )
 
 

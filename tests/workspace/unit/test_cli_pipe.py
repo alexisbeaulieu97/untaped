@@ -124,7 +124,7 @@ def test_sync_all_unavailable_manifest_pipe_row(
         f"name: alpha\nrepos:\n  - url: file://{upstream}\n    name: upstream\n",
         encoding="utf-8",
     )
-    isolate_config.write_text(
+    isolate_config.with_name("state.yml").write_text(
         f"""
         workspace:
           workspaces:
@@ -206,7 +206,7 @@ def test_status_all_unavailable_manifest_pipe_row(
         "name: alpha\nrepos:\n  - url: https://x/api.git\n    name: api\n",
         encoding="utf-8",
     )
-    isolate_config.write_text(
+    isolate_config.with_name("state.yml").write_text(
         f"""
         workspace:
           workspaces:
