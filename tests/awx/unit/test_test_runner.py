@@ -765,3 +765,45 @@ def test_preflight_failures_stop_the_run_before_any_launch() -> None:
     )
     assert launcher.calls == []
     assert [name for name, _ in checked] == ["JT", "JT", "JT"]
+
+
+# ---- case selection and suite scope --------------------------------------
+
+
+def test_case_filter_accepts_suite_slash_case() -> None:
+    launcher = StubLauncher({})
+    runner = _make_runner(fk=StubFk(), launcher=launcher, watcher=StubWatcher())
+    one = _suite("one", {"smoke": {}, "full": {}})
+    two = _suite("two", {"smoke": {}, "full": {}})
+    outcome = runner([one, two], case_filter={"one/smoke", "full"})
+    assert [(row.suite, row.case) for row in outcome.results] == [
+        ("one", "smoke"),
+        ("one", "full"),
+        ("two", "full"),
+    ]
+    with pytest.raises(ConfigError, match="'three/smoke'"):
+        runner([one, two], case_filter={"one/smoke", "three/smoke"})
+
+
+def test_a_suite_organization_scopes_its_template() -> None:
+    launcher = StubLauncher({})
+    checked: list[dict[str, str] | None] = []
+
+    def preflight(
+        spec: object, *, name: str, scope: dict[str, str] | None, payload: dict[str, Any]
+    ) -> None:
+        checked.append(scope)
+
+    runner = _make_runner(
+        fk=StubFk(),
+        launcher=launcher,
+        watcher=StubWatcher(),
+        default_org="Default",
+        preflight=preflight,
+    )
+    ops = Suite(name="ops", job_template="JT", organization="Ops", cases={"c": Case()})
+    plain = Suite(name="plain", job_template="JT", cases={"c": Case()})
+    runner([ops, plain])
+    expected = [{"organization": "Ops"}, {"organization": "Default"}]
+    assert [call["scope"] for call in launcher.calls] == expected
+    assert checked == expected

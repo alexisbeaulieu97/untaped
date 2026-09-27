@@ -195,6 +195,8 @@ class Suite(BaseModel):
     kind: Literal["AwxTestSuite"] = "AwxTestSuite"
     name: str
     job_template: str = Field(alias="jobTemplate")
+    organization: str | None = None
+    """The job template's organization (default: ``awx.default_organization``)."""
     defaults: Case | None = None
     cases: dict[str, Case]
     variables: dict[str, VariableSpec] = Field(default_factory=dict)

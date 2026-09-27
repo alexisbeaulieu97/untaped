@@ -170,3 +170,10 @@ def test_failed_task_clips_long_messages_keeping_the_end_of_stderr() -> None:
     assert task.msg is not None and task.msg.endswith("…") and len(task.msg) == 1001
     assert task.stderr is not None and task.stderr.startswith("…")
     assert task.stderr.endswith("END") and len(task.stderr) == 1001
+
+
+def test_a_suite_may_name_its_template_organization() -> None:
+    suite = Suite.model_validate(
+        {"name": "s", "jobTemplate": "jt", "organization": "Ops", "cases": {"c": {}}}
+    )
+    assert suite.organization == "Ops"

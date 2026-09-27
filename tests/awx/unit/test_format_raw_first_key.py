@@ -7,10 +7,11 @@ that key is load-bearing for shell pipelines (``… --format raw | xargs``).
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from pathlib import Path
 
 import pytest
 
-from untaped.capabilities.awx.cli.suite_commands import case_row, suite_row
+from untaped.capabilities.awx.cli.suite_commands import case_row
 from untaped.capabilities.awx.domain import Job, JobEvent, WorkflowNode
 from untaped.capabilities.awx.domain.suite import CaseResult, Suite
 from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS
@@ -27,10 +28,9 @@ _SUITE = Suite.model_validate(
         (lambda: JobEvent.model_fields, "counter"),
         (lambda: WorkflowNode.model_fields, "id"),
         (lambda: CaseResult.model_fields, "suite"),
-        (lambda: case_row(_SUITE, "c1"), "suite"),
-        (lambda: suite_row(_SUITE), "suite"),
+        (lambda: case_row(Path("s.yml"), _SUITE, "c1"), "suite"),
     ],
-    ids=["Job", "JobEvent", "WorkflowNode", "CaseResult", "case_row", "suite_row"],
+    ids=["Job", "JobEvent", "WorkflowNode", "CaseResult", "case_row"],
 )
 def test_row_source_first_key(row_keys: Callable[[], Mapping[str, object]], expected: str) -> None:
     assert next(iter(row_keys())) == expected
