@@ -169,6 +169,13 @@ def test_apply_file_changes_keeps_mode_and_writes_through_symlinks(tmp_path: Pat
     assert stat.S_IMODE(real.stat().st_mode) == 0o750
 
 
+def test_atomic_write_creates_the_file_with_the_requested_mode(tmp_path: Path) -> None:
+    target = tmp_path / "private.txt"
+    atomic_write(target, "secret", mode=0o600)
+    assert target.stat().st_mode & 0o777 == 0o600
+    assert target.read_text(encoding="utf-8") == "secret"
+
+
 def test_apply_file_changes_writes_deletes_and_creates(tmp_path: Path) -> None:
     existing = tmp_path / "keep.txt"
     existing.write_text("old", encoding="utf-8")

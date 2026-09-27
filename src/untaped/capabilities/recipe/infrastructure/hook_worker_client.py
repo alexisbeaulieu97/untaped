@@ -21,6 +21,7 @@ from untaped.capabilities.recipe._worker import hook_worker
 from untaped.capabilities.recipe._worker import worker_protocol as protocol
 from untaped.capabilities.recipe.errors import RecipeError
 from untaped.capabilities.recipe.infrastructure.hook_resolver import UvHookRef
+from untaped.capabilities.recipe.infrastructure.uv_project import uv_environment
 
 APPLY_DIAGNOSTIC_LIMIT = 4000
 DEBUG_DIAGNOSTIC_LIMIT = 10 * 1024 * 1024
@@ -463,17 +464,11 @@ class UvHookWorker:
 
     def _start(self) -> subprocess.Popen[str]:
         worker_path = Path(hook_worker.__file__).resolve()
-        env = os.environ.copy()
-        # An inherited VIRTUAL_ENV makes uv target the caller's venv instead
-        # of the pack project environment.
-        env.pop("VIRTUAL_ENV", None)
-        project_src = str(self._project_root / "src")
-        existing_pythonpath = env.get("PYTHONPATH")
-        env["PYTHONPATH"] = (
-            project_src
-            if not existing_pythonpath
-            else os.pathsep.join([project_src, existing_pythonpath])
-        )
+        # Only what uv needs: never the caller's tokens. An inherited
+        # VIRTUAL_ENV or PYTHONPATH (not allowlisted) would point uv or the
+        # worker at the caller's environment instead of the pack's.
+        env = uv_environment()
+        env["PYTHONPATH"] = str(self._project_root / "src")
         try:
             return subprocess.Popen(
                 [
