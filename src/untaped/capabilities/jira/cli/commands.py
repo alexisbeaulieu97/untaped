@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+import textwrap
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal
@@ -16,8 +16,10 @@ from untaped.capabilities.jira.domain import (
     browse_url,
     build_assignee_payload,
     build_issue_payload,
-    build_link_payload,
-    build_transition_payload,
+    comment_lines,
+    is_destructive_patch,
+    needs_confirmation,
+    payload_changes,
     validate_issue_key,
     validate_project_key,
 )
@@ -32,7 +34,6 @@ from untaped.capability_api import (
     YesOption,
     batch_apply,
     create_app,
-    deprecated_alias,
     echo,
     emit,
     existing_file,
@@ -51,7 +52,10 @@ from untaped.capability_api import (
 if TYPE_CHECKING:
     from untaped.capabilities.jira.domain import IssueDetailResult
     from untaped.capabilities.jira.infrastructure import JiraClient
-    from untaped.capability_api import OutputFormat
+    from untaped.capability_api import OutputFormat, UiContext
+
+# One write request as previewed: method, path and its readable change lines.
+PreviewRequest = tuple[str, str, list[str]]
 
 SetOption = Annotated[
     list[str] | None,
@@ -88,6 +92,14 @@ SprintFilterOption = Annotated[
     Parameter(
         name="--sprint",
         help="Sprint id or name, or openSprints()/futureSprints()/closedSprints().",
+    ),
+]
+FieldsFileOption = Annotated[
+    Path | None,
+    Parameter(
+        name="--fields-file",
+        validator=existing_file,
+        help="Jira-shaped YAML/JSON document (fields/update); flags override it.",
     ),
 ]
 IssueKeyArgument = Annotated[str, Parameter(help="Issue key or id.")]
@@ -326,17 +338,20 @@ def _username(assignee: str) -> str:
     return name
 
 
-def _show_request(method: str, path: str, body: object) -> None:
-    """Print the REST request a write would send (stderr; stdout stays data)."""
-    echo(f"{method} {path}", err=True)
-    echo(json.dumps(body, indent=2, ensure_ascii=False, sort_keys=True), err=True)
+def _show(requests: Sequence[PreviewRequest]) -> None:
+    """Print each request a write would send with its readable changes (stderr)."""
+    for method, path, lines in requests:
+        echo(f"{method} {path}", err=True)
+        for line in lines:
+            echo(textwrap.indent(line, "  "), err=True)
 
 
 def _send(
     verb: str,
-    requests: Sequence[tuple[str, str, object]],
+    preview: Sequence[PreviewRequest] | Callable[[JiraClient], Sequence[PreviewRequest]],
     send: Callable[[JiraClient], IssueOutcome],
     *,
+    destructive: bool,
     planned: IssueOutcome,
     progress: str,
     yes: bool,
@@ -344,23 +359,37 @@ def _send(
     fmt: OutputFormat,
     columns: list[str] | None,
 ) -> None:
-    """Preview one write's requests (``--dry-run``) or confirm and send them, then emit."""
+    """Preview one write (``--dry-run``), or confirm it per ``jira.confirm`` and send it.
 
-    def preview() -> None:
-        for request in requests:
-            _show_request(*request)
+    A callable ``preview`` reads the issue's current values, so it runs only
+    when a preview is shown.
+    """
+
+    def show(client: JiraClient, ui: UiContext) -> None:
+        if not callable(preview):
+            _show(preview)
+            return
+        with ui.progress("Reading current values…"):
+            requests = preview(client)
+        _show(requests)
 
     if dry_run:
-        preview()
+        if callable(preview):
+            with open_client() as (client, ui):
+                show(client, ui)
+        else:
+            _show(preview)
         emit(planned, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
         return
+    policy = current_jira_settings().confirm
     with open_client() as (client, ui):
-        ui.confirm_or_cancel(
-            "Send this request to Jira?",
-            assume_yes=yes,
-            refusal=f"{verb} requires --yes when not interactive",
-            preview=preview,
-        )
+        if needs_confirmation(policy, destructive=destructive):
+            ui.confirm_or_cancel(
+                "Send this request to Jira?",
+                assume_yes=yes,
+                refusal=f"{verb} requires --yes when not interactive",
+                preview=lambda: show(client, ui),
+            )
         with ui.progress(progress):
             row = send(client)
     emit(row, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
@@ -369,14 +398,7 @@ def _send(
 @issues_app.command(name="create")
 def issue_create_command(
     *,
-    template: Annotated[
-        Path | None,
-        Parameter(
-            name="--template",
-            validator=existing_file,
-            help="Jira-shaped YAML/JSON payload file; flags override its fields.",
-        ),
-    ] = None,
+    fields_file: FieldsFileOption = None,
     project: Annotated[
         str | None,
         Parameter(name="--project", help="Project key; defaults to jira.default_project."),
@@ -395,13 +417,13 @@ def issue_create_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Create one issue from flags and an optional Jira-shaped template."""
+    """Create one issue from flags and an optional Jira-shaped fields file."""
 
     from untaped.capabilities.jira.application import CreateIssue  # noqa: PLC0415
 
     with report_errors():
         settings = current_jira_settings()
-        base = read_structured_file(template) if template is not None else {}
+        base = read_structured_file(fields_file) if fields_file is not None else {}
         payload = build_issue_payload(
             base=base,
             project=project or settings.default_project,
@@ -413,8 +435,9 @@ def issue_create_command(
         )
         _send(
             "create",
-            [("POST", f"{settings.api_prefix}/issue", payload)],
+            [("POST", f"{settings.api_prefix}/issue", payload_changes(payload))],
             lambda client: CreateIssue(client, base_url=settings.base_url)(payload),
+            destructive=False,
             planned=IssueOutcome(action="planned"),
             progress="Creating issue…",
             yes=yes,
@@ -429,14 +452,7 @@ def issue_patch_command(
     key: IssueKeyArgument,
     /,
     *,
-    body_file: Annotated[
-        Path | None,
-        Parameter(
-            name="--body-file",
-            validator=existing_file,
-            help="Jira-shaped YAML/JSON payload file (fields/update); flags override it.",
-        ),
-    ] = None,
+    fields_file: FieldsFileOption = None,
     summary: Annotated[str | None, Parameter(name="--summary", help="New issue summary.")] = None,
     description: Annotated[
         str | None, Parameter(name="--description", help="New issue description text.")
@@ -455,14 +471,14 @@ def issue_patch_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Update fields of one issue (including its assignee) from flags or a body file."""
+    """Update fields of one issue (including its assignee) from flags or a fields file."""
 
-    from untaped.capabilities.jira.application import PatchIssue  # noqa: PLC0415
+    from untaped.capabilities.jira.application import PatchIssue, PreviewPatch  # noqa: PLC0415
 
     with report_errors():
         key = validate_issue_key(key)
         settings = current_jira_settings()
-        base = read_structured_file(body_file) if body_file is not None else {}
+        base = read_structured_file(fields_file) if fields_file is not None else {}
         payload = build_issue_payload(
             base=base,
             summary=summary,
@@ -473,29 +489,38 @@ def issue_patch_command(
         if assignee is not None and unassign:
             raise_usage("pass either --assignee or --unassign, not both")
         if assignee is not None or unassign:
-            payload["fields"].pop("assignee", None)  # the flag overrides the body file
+            payload["fields"].pop("assignee", None)  # the flag overrides the fields file
         has_fields = bool(payload.get("fields") or payload.get("update"))
         if not has_fields and assignee is None and not unassign:
             raise_usage(
                 "nothing to update: pass --summary, --description, --assignee, --unassign, "
-                "--set, --set-json, or a --body-file with fields/update"
+                "--set, --set-json, or a --fields-file with fields/update"
             )
         assign = None
         if assignee is not None:
             assign = build_assignee_payload(_username(assignee))
         elif unassign:
             assign = build_assignee_payload(None)
-        requests: list[tuple[str, str, object]] = []
-        if has_fields:
-            requests.append(("PUT", f"{settings.api_prefix}/issue/{key}", payload))
-        if assign is not None:
-            requests.append(("PUT", f"{settings.api_prefix}/issue/{key}/assignee", assign))
+        edit = payload if has_fields else None
+
+        def preview(client: JiraClient) -> list[PreviewRequest]:
+            edit_lines, assign_lines = PreviewPatch(client)(key, edit, assignee=assign)
+            requests: list[PreviewRequest] = []
+            if edit is not None:
+                requests.append(("PUT", f"{settings.api_prefix}/issue/{key}", edit_lines))
+            if assign is not None:
+                requests.append(
+                    ("PUT", f"{settings.api_prefix}/issue/{key}/assignee", assign_lines)
+                )
+            return requests
+
         _send(
             "patch",
-            requests,
+            preview,
             lambda client: PatchIssue(client, base_url=settings.base_url)(
-                key, payload if has_fields else None, assignee=assign
+                key, edit, assignee=assign
             ),
+            destructive=is_destructive_patch(edit, assigns=assign is not None),
             planned=IssueOutcome(action="planned", key=key, url=browse_url(settings.base_url, key)),
             progress="Updating issue…",
             yes=yes,
@@ -534,8 +559,15 @@ def issue_comment_command(
         resolved_body = resolve_text_input(value=body, file=body_file, what="body")
         _send(
             "comment",
-            [("POST", f"{settings.api_prefix}/issue/{key}/comment", {"body": resolved_body})],
+            [
+                (
+                    "POST",
+                    f"{settings.api_prefix}/issue/{key}/comment",
+                    comment_lines(resolved_body),
+                )
+            ],
             lambda client: AddComment(client, base_url=settings.base_url)(key, resolved_body),
+            destructive=False,
             planned=IssueOutcome(action="planned", key=key, url=browse_url(settings.base_url, key)),
             progress="Adding comment…",
             yes=yes,
@@ -592,7 +624,10 @@ def issue_transition_command(
 ) -> None:
     """Apply one workflow transition, by name or id, to one or more issues."""
 
-    from untaped.capabilities.jira.application import TransitionIssue  # noqa: PLC0415
+    from untaped.capabilities.jira.application import (  # noqa: PLC0415
+        PreviewTransition,
+        TransitionIssue,
+    )
 
     with report_errors():
         TransitionIssue.check_selector(transition_id, to)
@@ -615,41 +650,47 @@ def issue_transition_command(
                     ),
                 )
 
-            def preview(rows: Sequence[dict[str, object]]) -> None:
-                for row in rows:
-                    _show_request(
-                        "POST",
-                        f"{settings.api_prefix}/issue/{row['key']}/transitions",
-                        build_transition_payload(
-                            str(row["transition_id"]), comment=comment, resolution=resolution
-                        ),
-                    )
+            def preview(_rows: Sequence[dict[str, object]]) -> None:
+                describe = PreviewTransition(client)
+                with ui.progress("Reading current values…"):
+                    requests: list[PreviewRequest] = [
+                        (
+                            "POST",
+                            f"{settings.api_prefix}/issue/{key}/transitions",
+                            describe(key, plan, comment=comment, resolution=resolution),
+                        )
+                        for key, plan in plans
+                    ]
+                _show(requests)
 
             outcome = batch_apply(
                 plans,
-                lambda plan: transition(*plan, comment=comment, resolution=resolution),
+                lambda plan: transition(
+                    plan[0], plan[1]["id"], comment=comment, resolution=resolution
+                ),
                 verb="transition",
                 noun="issue",
                 label=lambda plan: plan[0],
-                describe=lambda plan: {"key": plan[0], "transition_id": plan[1]},
+                describe=lambda plan: {"key": plan[0], "transition_id": plan[1]["id"]},
                 ui=ui,
-                destructive=True,
+                destructive=needs_confirmation(settings.confirm, destructive=True),
                 assume_yes=yes,
                 preview_only=dry_run,
                 preview=preview,
             )
+            if dry_run:
+                preview(outcome.planned_rows)
         if outcome.cancelled:
             finish(outcome)
         if dry_run:
-            preview(outcome.planned_rows)
             rows: list[Any] = [
                 IssueOutcome(
                     action="planned",
                     key=key,
                     url=browse_url(settings.base_url, key),
-                    transition_id=resolved_id,
+                    transition_id=plan["id"],
                 )
-                for key, resolved_id in plans
+                for key, plan in plans
             ]
         else:
             rows = [result for _, result in outcome.results]
@@ -676,19 +717,13 @@ def link_create_command(
     with report_errors():
         key, other = validate_issue_key(key), validate_issue_key(other)
         settings = current_jira_settings()
-        if dry_run or not yes:
-            # The REST field names read backwards; say the direction in words.
-            echo(f"reads as: {key} <outward phrase of {q(link_type)}> {other}", err=True)
+        # The REST field names read backwards; say the direction in words.
+        reads_as = f"reads as: {key} <outward phrase of {q(link_type)}> {other}"
         _send(
             "link",
-            [
-                (
-                    "POST",
-                    f"{settings.api_prefix}/issueLink",
-                    build_link_payload(key, link_type, other),
-                )
-            ],
+            [("POST", f"{settings.api_prefix}/issueLink", [reads_as])],
             lambda client: LinkIssues(client, base_url=settings.base_url)(key, link_type, other),
+            destructive=False,
             planned=IssueOutcome(
                 action="planned",
                 key=key,
@@ -815,14 +850,3 @@ app.command(issues_app, name="issues")
 app.command(projects_app, name="projects")
 app.command(boards_app, name="boards")
 app.command(sprints_app, name="sprints")
-
-# Old spellings stay as hidden, warning aliases until 8.0.
-deprecated_alias(app, "me", "whoami")
-deprecated_alias(app, "issue", "issues")
-deprecated_alias(app, "project", "projects")
-deprecated_alias(app, "board", "boards")
-deprecated_alias(app, "sprint", "sprints")
-deprecated_alias(issues_app, "edit", "patch")
-for _command in ("create", "patch"):
-    deprecated_alias(issues_app[_command], "--field", "--set")
-    deprecated_alias(issues_app[_command], "--json-field", "--set-json")

@@ -80,6 +80,7 @@ variable shown.
 | `jira.default_project` | string (optional) | unset | `UNTAPED_JIRA__DEFAULT_PROJECT` | Project key `issues create` uses when `--project` is omitted. |
 | `jira.default_board_id` | integer (optional) | unset | `UNTAPED_JIRA__DEFAULT_BOARD_ID` | Board `sprints list` uses when `--board-id` is omitted. |
 | `jira.page_size` | integer | `50` | `UNTAPED_JIRA__PAGE_SIZE` | Results requested per Jira API page. |
+| `jira.confirm` | `always` \| `destructive` \| `never` | `destructive` | `UNTAPED_JIRA__CONFIRM` | Which writes ask first: `always`, `destructive` (patches that replace or remove values, assignee changes, transitions) or `never`. `--yes` skips the prompt. |
 
 ## `awx`
 

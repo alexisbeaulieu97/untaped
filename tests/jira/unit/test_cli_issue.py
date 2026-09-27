@@ -164,9 +164,9 @@ def test_issue_search_and_assigned_send_rendered_jql(
     assert json.loads(route.calls[0].request.content)["jql"] == jql
 
 
-def test_issue_create_merges_template_and_flags(tmp_path: Path) -> None:
-    template = tmp_path / "bug.yml"
-    template.write_text(
+def test_issue_create_merges_fields_file_and_flags(tmp_path: Path) -> None:
+    fields_file = tmp_path / "bug.yml"
+    fields_file.write_text(
         "fields:\n  project:\n    key: OLD\n  summary: old\n  customfield_10000: old\n"
         "update:\n  labels:\n    - add: old\n"
     )
@@ -180,8 +180,8 @@ def test_issue_create_merges_template_and_flags(tmp_path: Path) -> None:
                 "issues",
                 "create",
                 "--yes",
-                "--template",
-                str(template),
+                "--fields-file",
+                str(fields_file),
                 "--project",
                 "ABC",
                 "--issue-type",
@@ -220,11 +220,11 @@ def test_issue_create_merges_template_and_flags(tmp_path: Path) -> None:
     ("args", "body", "message"),
     [
         (
-            ["create", "--project", "ABC", "--template"],
+            ["create", "--project", "ABC", "--fields-file"],
             "fields: []\n",
             "`fields` must be an object",
         ),
-        (["patch", "ABC-1", "--summary", "x", "--body-file"], "update: []\n", "`update` must be"),
+        (["patch", "ABC-1", "--summary", "x", "--fields-file"], "update: []\n", "`update` must be"),
     ],
 )
 def test_non_object_payload_sections_are_rejected(
@@ -241,9 +241,9 @@ def test_non_object_payload_sections_are_rejected(
     assert len(route.calls) == 0
 
 
-def test_issue_patch_sends_body_file_and_overlays_flags(tmp_path: Path) -> None:
-    body_file = tmp_path / "edit.yml"
-    body_file.write_text("fields:\n  summary: old\n")
+def test_issue_patch_sends_fields_file_and_overlays_flags(tmp_path: Path) -> None:
+    fields_file = tmp_path / "edit.yml"
+    fields_file.write_text("fields:\n  summary: old\n")
     with respx.mock(base_url=BASE) as mock:
         route = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
         result = CliInvoker().invoke(
@@ -253,8 +253,8 @@ def test_issue_patch_sends_body_file_and_overlays_flags(tmp_path: Path) -> None:
                 "patch",
                 "ABC-1",
                 "--yes",
-                "--body-file",
-                str(body_file),
+                "--fields-file",
+                str(fields_file),
                 "--summary",
                 "new",
                 "--set",
@@ -274,7 +274,7 @@ def test_issue_patch_without_changes_is_usage_error(tmp_path: Path) -> None:
         route = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
         bare = CliInvoker().invoke(app, ["issues", "patch", "ABC-1"])
         empty = CliInvoker().invoke(
-            app, ["issues", "patch", "ABC-1", "--body-file", str(empty_body)]
+            app, ["issues", "patch", "ABC-1", "--fields-file", str(empty_body)]
         )
 
     for result in (bare, empty):
@@ -284,12 +284,12 @@ def test_issue_patch_without_changes_is_usage_error(tmp_path: Path) -> None:
 
 
 def test_issue_patch_with_only_update_operations_is_sent(tmp_path: Path) -> None:
-    body_file = tmp_path / "labels.yml"
-    body_file.write_text("update:\n  labels:\n    - add: urgent\n")
+    fields_file = tmp_path / "labels.yml"
+    fields_file.write_text("update:\n  labels:\n    - add: urgent\n")
     with respx.mock(base_url=BASE) as mock:
         route = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
         result = CliInvoker().invoke(
-            app, ["issues", "patch", "ABC-1", "--yes", "--body-file", str(body_file)]
+            app, ["issues", "patch", "ABC-1", "--yes", "--fields-file", str(fields_file)]
         )
 
     assert result.exit_code == 0, result.output

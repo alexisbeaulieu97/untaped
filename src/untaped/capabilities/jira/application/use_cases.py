@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from untaped.capabilities.jira.application.ports import (
@@ -25,9 +26,13 @@ from untaped.capabilities.jira.domain import (
     browse_url,
     build_link_payload,
     build_transition_payload,
+    change_line,
+    payload_changes,
+    referenced_fields,
+    transition_changes,
 )
 from untaped.capabilities.jira.errors import JiraError, JiraTransitionError
-from untaped.capability_api import UsageError, not_found, q
+from untaped.capability_api import UntapedError, UsageError, not_found, q
 
 
 class WhoAmI:
@@ -132,6 +137,36 @@ class PatchIssue:
         )
 
 
+class PreviewPatch:
+    """Describe an issue edit and assignment against the issue's current values.
+
+    Reads only the fields the edit touches (plus ``assignee`` when assigning)
+    in one request; returns the edit's lines and the assignment's lines.
+    """
+
+    def __init__(self, client: JiraIssueReader) -> None:
+        self._client = client
+
+    def __call__(
+        self,
+        issue_key: str,
+        payload: dict[str, Any] | None,
+        *,
+        assignee: dict[str, Any] | None = None,
+    ) -> tuple[list[str], list[str]]:
+        names = referenced_fields(payload) + (["assignee"] if assignee is not None else [])
+        current = (
+            (self._client.get_issue(issue_key, fields=names).get("fields") or {}) if names else {}
+        )
+        edit = payload_changes(payload, current) if payload is not None else []
+        assign = (
+            [change_line("assignee", assignee, old=current.get("assignee"))]
+            if assignee is not None
+            else []
+        )
+        return edit, assign
+
+
 class AddComment:
     """Add one comment to an issue."""
 
@@ -199,10 +234,16 @@ class TransitionIssue:
         *,
         transition_id: str | None = None,
         transition_name: str | None = None,
-    ) -> str:
-        """The transition id to apply to ``issue_key`` (a name is looked up)."""
+    ) -> dict[str, Any]:
+        """The transition to apply to ``issue_key``: ``{"id": ...}`` for an id, else looked up.
+
+        A transition found by name keeps Jira's ``name`` and ``to`` (its
+        target status), so a preview need not list the transitions again.
+        """
         self.check_selector(transition_id, transition_name)
-        return transition_id or self._resolve_transition_name(issue_key, transition_name or "")
+        if transition_id:
+            return {"id": transition_id}
+        return self._resolve_transition_name(issue_key, transition_name or "")
 
     def __call__(
         self,
@@ -221,7 +262,7 @@ class TransitionIssue:
             transition_id=transition_id,
         )
 
-    def _resolve_transition_name(self, issue_key: str, name: str) -> str:
+    def _resolve_transition_name(self, issue_key: str, name: str) -> dict[str, Any]:
         transitions = self._client.list_transitions(issue_key)
         matches = [t for t in transitions if str(t.get("name", "")).casefold() == name.casefold()]
         if not matches:
@@ -233,7 +274,49 @@ class TransitionIssue:
             raise JiraTransitionError(
                 f"multiple transitions named {q(name)} are available for {issue_key}"
             )
-        return str(matches[0]["id"])
+        return {**matches[0], "id": str(matches[0]["id"])}
+
+
+class PreviewTransition:
+    """Describe a transition: its name, the status change, resolution and comment.
+
+    One read per issue: its status and resolution, plus (when ``transition``
+    came from an id, without its target) the transitions it offers. A failed
+    read shows ``(unknown)`` rather than failing the batch.
+    """
+
+    def __init__(self, client: JiraIssueReader) -> None:
+        self._client = client
+
+    def __call__(
+        self,
+        issue_key: str,
+        transition: Mapping[str, Any],
+        *,
+        comment: str | None = None,
+        resolution: str | None = None,
+    ) -> list[str]:
+        known = "to" in transition
+        try:
+            issue = self._client.get_issue(
+                issue_key,
+                fields=["status", "resolution"],
+                expand=None if known else "transitions",
+            )
+        except UntapedError:
+            return transition_changes(transition, None, comment=comment, resolution=resolution)
+        match, available = transition, True
+        if not known:
+            offered = {str(t.get("id")): t for t in issue.get("transitions") or []}
+            found = offered.get(str(transition["id"]))
+            match, available = found or transition, found is not None
+        return transition_changes(
+            match,
+            issue.get("fields") or {},
+            available=available,
+            comment=comment,
+            resolution=resolution,
+        )
 
 
 def _optional_str(value: Any) -> str | None:

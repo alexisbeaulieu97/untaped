@@ -6,6 +6,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
+from untaped.capabilities.jira.domain.changes import ConfirmPolicy
 from untaped.capability_api import TokenCommand, TokenSources
 
 DEFAULT_ASSIGNED_JQL = "assignee = currentUser() AND resolution = Unresolved"
@@ -27,6 +28,7 @@ class JiraSettings(BaseModel):
     default_project: str | None = None
     default_board_id: int | None = None
     page_size: int = Field(default=50, gt=0)
+    confirm: ConfirmPolicy = "destructive"
 
     @field_validator("api_prefix", "agile_prefix")
     @classmethod
