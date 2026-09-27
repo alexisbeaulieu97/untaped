@@ -20,9 +20,8 @@
     that did not pass carries `failed_tasks` (host, task, status, msg and
     stderr, from job events), which `--show-logs` prints too.
   - **Behavior change:** `test run` and `test validate` preflight every case
-    against its template's launch prompts, survey and (for another
-    `scm_branch`) its project's `allow_override`. `run` launches nothing when
-    a case would be rejected or have fields ignored.
+    against its template's launch prompts and survey. `run` launches nothing
+    when a case would have fields ignored or miss survey variables.
   - `launch`, `sync` and `jobs wait` rows add the execution's `scm_branch`
     and `scm_revision`.
   - **Behavior change:** `test run` now waits at most 30 minutes per case by

@@ -557,71 +557,53 @@ def test_run_reports_results_despite_an_unknown_column(
 # ---- failed tasks, --scm-branch ------------------------------------------
 
 
+def _failing_job(fake: FakeAap, event: dict[str, Any]) -> None:
+    _seed_jt(fake)
+    fake.next_action_status = "failed"
+    fake.next_action_stdout = "boom\n"
+    fake.next_action_events = [
+        {"event": "runner_on_ok", "failed": False, "host_name": "web1", "task": "Setup"},
+        {"failed": True, "host_name": "web1", "task": "Migrate", **event},
+    ]
+
+
 def test_run_reports_failed_tasks_from_job_events(
     cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
 ) -> None:
-    _seed_jt(fake_aap)
-    fake_aap.next_action_status = "failed"
-    fake_aap.next_action_stdout = "boom\n"
-    fake_aap.next_action_events = [
-        {"event": "runner_on_ok", "failed": False, "host_name": "web1", "task": "Setup"},
-        {
-            "event": "runner_on_failed",
-            "failed": True,
-            "host_name": "web1",
-            "task": "Migrate",
-            "event_data": {"res": {"msg": "non-zero return code", "stderr": "no table"}},
-        },
-    ]
+    _failing_job(fake_aap, {"event": "runner_on_failed", "event_data": {"res": {"msg": "no"}}})
 
     result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "-f", "json"])
 
     assert result.exit_code == 1, result.output
     [row] = json.loads(result.stdout)
-    assert row["failed_tasks"] == [
-        {
-            "host": "web1",
-            "task": "Migrate",
-            "status": "failed",
-            "msg": "non-zero return code",
-            "stderr": "no table",
-        }
-    ]
+    assert [task["msg"] for task in row["failed_tasks"]] == ["no"]
 
 
-def test_show_logs_prints_failed_tasks_before_the_tail(
+def test_show_logs_prints_failed_tasks_under_their_case(
     cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
 ) -> None:
-    _seed_jt(fake_aap)
-    fake_aap.next_action_status = "failed"
-    fake_aap.next_action_stdout = "boom\n"
-    fake_aap.next_action_events = [
-        {
-            "event": "runner_on_unreachable",
-            "failed": True,
-            "host_name": "db1",
-            "task": "Ping",
-            "event_data": {"res": {"msg": "ssh timeout"}},
-        }
-    ]
+    _failing_job(
+        fake_aap,
+        {"event": "runner_on_unreachable", "event_data": {"res": {"stderr": "ssh timeout"}}},
+    )
 
     result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "--show-logs"])
 
     assert result.exit_code == 1, result.output
-    assert "unreachable: [db1] Ping: ssh timeout\n" in result.stderr
-    assert result.stderr.index("ssh timeout") < result.stderr.index("boom")
+    lines = result.stderr.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("--- s/c job "))
+    assert lines[start].endswith("(last 1 log line)")
+    assert lines[start + 1 : start + 3] == ["unreachable: [web1] Migrate: ssh timeout", "boom"]
 
 
-def _branchable(fake: FakeAap, *, allow_override: bool = True) -> None:
-    project = fake.seed(
-        "projects", name="app", allow_override=allow_override, scm_revision="c0ffee"
-    )
+def _branchable(fake: FakeAap, *, ask_scm_branch: bool = True) -> None:
+    project = fake.seed("projects", name="app", allow_override=True, scm_revision="c0ffee")
     fake.seed(
         "job_templates",
         name="Deploy app",
         project=project["id"],
         scm_branch="",
-        ask_scm_branch_on_launch=True,
+        ask_scm_branch_on_launch=ask_scm_branch,
     )
 
 
@@ -641,15 +623,17 @@ def test_run_scm_branch_runs_every_case_on_that_ref(
     assert (row["scm_branch"], row["scm_revision"]) == ("fix", "c0ffee")
 
 
-def test_run_scm_branch_needs_a_project_that_allows_override(
+def test_run_scm_branch_needs_templates_that_prompt_for_it(
     cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
 ) -> None:
-    _branchable(fake_aap, allow_override=False)
+    _branchable(fake_aap, ask_scm_branch=False)
 
     result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "--scm-branch", "fix"])
 
     assert result.exit_code == 1
-    assert "s/c: project 'app' does not allow branch override" in result.stderr
+    assert "s/c: " in result.stderr
+    assert "ask_scm_branch_on_launch is false" in result.stderr
+    assert "drop scm_branch" in result.stderr
     assert fake_aap.actions_called == []
 
 

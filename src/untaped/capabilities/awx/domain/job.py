@@ -74,6 +74,8 @@ class Job(BaseModel):
     """The branch, tag or commit a job was launched on (empty: its project's)."""
     scm_revision: str | None = None
     """The commit a job's project checkout resolved to."""
+    event_processing_finished: bool | None = Field(default=None, exclude=True)
+    """``False`` while AWX is still saving a finished job's events."""
 
     @property
     def is_terminal(self) -> bool:

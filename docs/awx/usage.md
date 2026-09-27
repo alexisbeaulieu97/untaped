@@ -558,15 +558,17 @@ untaped awx test run tests/awx/ --scm-branch HEAD --format json
   A case's `status` and each of its `log` lists replace the ones in
   `defaults.expect`; anything it leaves out is inherited.
 - `validate` and `run` preflight every case against its template before
-  anything launches: the template must exist, prompt on launch for each field
-  the case sets (AWX ignores the others), and get its required survey
-  variables. `run` launches nothing when a case fails the preflight and lists
-  every such case.
+  anything launches. The template must exist and get its required survey
+  variables. It must also prompt on launch for each of `extra_vars`, `limit`,
+  `inventory`, `credentials`, `scm_branch`, `job_tags`, `skip_tags`,
+  `verbosity`, `diff_mode` and `job_type` that the case sets, since AWX
+  ignores the others. `run` launches nothing when a case fails the preflight
+  and lists every such case. A field the preflight does not know that AWX
+  still ignores fails its case as `error`.
 - `--scm-branch REF` runs every case's job on that branch, tag or commit,
   replacing any `scm_branch` in the suite. Each template must prompt for it
-  (`ask_scm_branch_on_launch`) and its project must allow branch override
-  (`allow_override`). `--scm-branch HEAD` is the current git branch as named
-  on its upstream; it is refused until HEAD is pushed there.
+  (`ask_scm_branch_on_launch`). `--scm-branch HEAD` is the current git branch
+  as named on its upstream remote; it is refused until HEAD is pushed there.
 - `run` exits 1 unless at least one case ran and every case passed.
 - Each `awx.test_result` row has `result` (`pass`, `fail`, `error` or
   `timeout`), `job_status`, `job_id`, `job_url` (the job's page in the web
@@ -578,7 +580,9 @@ untaped awx test run tests/awx/ --scm-branch HEAD --format json
   `failed_tasks`, one `{host, task, status, msg, stderr}` per task that failed
   (`status` is `failed` or `unreachable`; `ignore_errors` failures are left
   out), and `log_tail`, the last 40 lines of its stdout. Either is `null` when
-  it could not be read. `--show-logs` prints both to stderr in any format.
+  it could not be read (`failed_tasks` also while AWX is still saving the
+  job's events). `--show-logs` prints each such case's failed tasks (with
+  their `msg`, else `stderr`) and log tail to stderr in any format.
   The table shows the summary columns only.
 - A case waits `--timeout` seconds when given (a positive number), else its
   own `timeout:`, else the suite's `defaults.timeout`, else `awx.test_timeout`

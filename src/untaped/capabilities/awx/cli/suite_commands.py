@@ -185,8 +185,8 @@ def run_command(
         str | None,
         Parameter(
             name="--scm-branch",
-            help="Run every case's job on this branch, tag or commit; HEAD is the current "
-            "branch, once pushed. Templates must prompt for it and projects allow override.",
+            help="Run every case's job on this branch, tag or commit (templates must prompt "
+            "for it); HEAD is the current branch, once pushed.",
         ),
     ] = None,
     show_logs: Annotated[
@@ -268,14 +268,13 @@ def run_command(
         for result in outcome.results:
             if result.result == "pass" or result.job_id is None:
                 continue
-            header = f"--- {result.suite}/{result.case} job {result.job_id}"
+            tail = result.log_tail
+            shown = "log unavailable" if tail is None else f"last {plural(len(tail), 'log line')}"
+            echo(f"--- {result.suite}/{result.case} job {result.job_id} ({shown})", err=True)
             for task in result.failed_tasks or ():
-                echo(f"{task.status}: [{task.host}] {task.task}: {task.msg}", err=True)
-            if result.log_tail is None:
-                echo(f"{header}: log unavailable", err=True)
-                continue
-            echo(f"{header} (last {len(result.log_tail)} lines)", err=True)
-            for line in result.log_tail:
+                detail = task.msg or task.stderr or ""
+                echo(f"{task.status}: [{task.host or '?'}] {task.task or '?'}: {detail}", err=True)
+            for line in tail or ():
                 echo(line, err=True)
 
     emit(
