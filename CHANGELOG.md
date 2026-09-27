@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 8.0.0
+
+A clean breaking release: the spellings deprecated in 7.x are removed without
+aliases, and the capability SDK moves to API version 2.0 (`untaped.api` is
+gone; import from `untaped.capability_api`). Read the **Breaking** entries
+below before upgrading scripts or providers.
 
 - Core
   - **Breaking:** `config set` and `config unset` lost `--target-profile`;
