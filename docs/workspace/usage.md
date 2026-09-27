@@ -197,7 +197,8 @@ interactive`) and changes nothing; `--prune --dry-run` needs no
 terminal. A declined prompt exits `1`
 (`cancelled; no changes made`) without changing registry state or
 files. A forgotten workspace produces one `workspace.forget_outcome` row
-(`name`, `action: forgotten` or `pruned`, `target_path`).
+(`name`, `action: forgotten`, `pruned`, or `planned` under `--dry-run`,
+`target_path`).
 
 `--prune --dry-run` changes nothing (it wins over `--yes`): it runs the
 same checks, lists on stderr every path the prune would delete (and
