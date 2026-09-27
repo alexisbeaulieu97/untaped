@@ -62,8 +62,8 @@ override it field by field.
 
 ```bash
 untaped profile create prod --copy-from default
-untaped config set awx.base_url https://aap.prod.example.com --target-profile prod
-untaped config set awx.token --prompt --target-profile prod
+untaped --profile prod config set awx.base_url https://aap.prod.example.com
+untaped --profile prod config set awx.token --prompt
 
 untaped profile list
 untaped --profile prod awx ping

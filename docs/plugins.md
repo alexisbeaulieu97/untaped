@@ -195,7 +195,7 @@ root:
 ```bash
 untaped acme hello
 untaped profile create staging --copy-from default
-untaped config set acme.greeting "hello from staging" --target-profile staging
+untaped --profile staging config set acme.greeting "hello from staging"
 untaped --profile staging acme hello
 untaped capabilities
 untaped doctor

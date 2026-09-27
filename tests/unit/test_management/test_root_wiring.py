@@ -23,6 +23,7 @@ from test_management.support import (
     write_config,
 )
 from untaped import bootstrap
+from untaped.config_file import read_config_dict
 from untaped.profile_resolver import profile_override
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker
@@ -177,3 +178,45 @@ def test_profile_round_trip_through_root() -> None:
     assert use.exit_code == 0, use.output
     current = CliInvoker().invoke(root.meta, ["profile", "current"])  # type: ignore[union-attr]
     assert current.stdout.strip() == "work"
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--profile", "prod", "config", "set", "github.base_url", "https://p"],
+        ["config", "set", "github.base_url", "https://p", "--profile", "prod"],
+    ],
+)
+def test_config_set_writes_into_the_root_profile(_isolated_config: Path, argv: list[str]) -> None:
+    write_config(_isolated_config, "profiles:\n  default: {}\n  prod: {}\nactive: default\n")
+    root = _root(make_spec("github", profile_model=GithubProfile))
+    result = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
+    assert result.exit_code == 0, result.output
+    assert "in profile prod" in result.output
+    profiles = read_config_dict(_isolated_config)["profiles"]
+    assert profiles["prod"] == {"github": {"base_url": "https://p"}}
+    assert profiles["default"] == {}
+
+
+def test_config_unset_removes_from_the_root_profile(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    github: {mode: 'on'}\n  prod:\n    github: {mode: 'on'}\n",
+    )
+    root = _root(make_spec("github", profile_model=GithubProfile))
+    argv = ["--profile", "prod", "config", "unset", "github.mode"]
+    result = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
+    assert result.exit_code == 0, result.output
+    profiles = read_config_dict(_isolated_config)["profiles"]
+    assert profiles["prod"] == {}
+    assert profiles["default"] == {"github": {"mode": "on"}}
+
+
+@pytest.mark.parametrize("verb", [["set", "github.base_url", "x"], ["unset", "github.base_url"]])
+def test_target_profile_option_is_gone(_isolated_config: Path, verb: list[str]) -> None:
+    write_config(_isolated_config, "profiles:\n  default: {}\n  prod: {}\n")
+    root = _root(make_spec("github", profile_model=GithubProfile))
+    argv = ["config", *verb, "--target-profile", "prod"]
+    result = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
+    assert result.exit_code == 2
+    assert read_config_dict(_isolated_config)["profiles"] == {"default": {}, "prod": {}}
