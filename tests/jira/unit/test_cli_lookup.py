@@ -36,15 +36,3 @@ def test_sprint_list_uses_configured_default_board(jira_config: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert route.calls[0].request.url.params["state"] == "active"
-
-
-def test_project_get_percent_encodes_the_key_into_one_path_segment() -> None:
-    with respx.mock(base_url=BASE) as mock:
-        route = mock.route().mock(return_value=httpx.Response(200, json={"key": "X"}))
-        CliInvoker().invoke(app, ["projects", "get", "A/B?x=y"])
-        CliInvoker().invoke(app, ["projects", "get", ".."])
-
-    assert [call.request.url.raw_path for call in route.calls] == [
-        b"/rest/api/2/project/A%2FB%3Fx%3Dy",
-        b"/rest/api/2/project/%2E%2E",
-    ]

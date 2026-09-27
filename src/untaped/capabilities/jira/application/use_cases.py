@@ -26,7 +26,7 @@ from untaped.capabilities.jira.domain import (
     build_link_payload,
     build_transition_payload,
 )
-from untaped.capabilities.jira.errors import JiraTransitionError
+from untaped.capabilities.jira.errors import JiraError, JiraTransitionError
 from untaped.capability_api import UsageError, not_found, q
 
 
@@ -103,7 +103,8 @@ class PatchIssue:
     """Update fields of one issue from a Jira-shaped payload, then its assignee.
 
     The assignee goes through the dedicated assignee endpoint, which works
-    even when the assignee field is not on the issue's edit screen.
+    even when the assignee field is not on the issue's edit screen. A
+    ``None`` payload or assignee skips that request.
     """
 
     def __init__(self, client: JiraIssueWriter, *, base_url: str | None = None) -> None:
@@ -113,14 +114,19 @@ class PatchIssue:
     def __call__(
         self,
         issue_key: str,
-        payload: dict[str, Any],
+        payload: dict[str, Any] | None,
         *,
         assignee: dict[str, Any] | None = None,
     ) -> IssueOutcome:
-        if payload.get("fields") or payload.get("update"):
+        if payload is not None:
             self._client.edit_issue(issue_key, payload)
         if assignee is not None:
-            self._client.assign_issue(issue_key, assignee)
+            try:
+                self._client.assign_issue(issue_key, assignee)
+            except JiraError as err:
+                if payload is None:
+                    raise
+                raise JiraError(f"fields updated, but assigning failed: {err}") from err
         return IssueOutcome(
             action="updated", key=issue_key, url=browse_url(self._base_url, issue_key)
         )

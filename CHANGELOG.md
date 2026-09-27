@@ -42,11 +42,13 @@
     `PUT issue/KEY/assignee` endpoint instead of the issue edit, which failed
     when the assignee field was not on the edit screen. Combined with other
     field changes, the edit is sent first, then the assignment; the preview
-    and `--dry-run` show both requests.
-  - **Fix:** issue keys are validated before any request: they must be
-    `PROJECT-123` (any case; sent uppercase) or a numeric id, else the
-    command exits 2. Other path values, such as `projects get KEY`, are
-    percent-encoded, so no input can change the request path.
+    and `--dry-run` show both requests. The flags override a `fields.assignee`
+    in `--body-file`, and when only the assignment fails the error says the
+    fields were already updated.
+  - **Fix:** issue and project keys are validated before any request: an
+    issue key must be `PROJECT-123` and a project key `PROJECT` (any case;
+    sent uppercase), or a numeric id, else the command exits 2. The client
+    also percent-encodes every key it puts in a request path.
 - Ansible
   - `graph --contains OWNER/REPO` (repeatable) reports the roots whose
     downstream graph contains a repository: one `ansible.dependency_match`
