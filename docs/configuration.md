@@ -210,8 +210,8 @@ untaped config get github.token
 untaped config get github.token --show-secrets
 untaped config set github.token --prompt
 printf '%s\n' "$GITHUB_TOKEN" | untaped config set github.token --stdin
-untaped config set awx.base_url https://aap.example.com --target-profile default
-untaped config unset awx.token --target-profile prod
+untaped config set awx.base_url https://aap.example.com
+untaped --profile prod config unset awx.token
 untaped config set http.timeout 60 --dry-run --format json
 untaped config set ui.theme quiet
 untaped config set http.verify_ssl false
@@ -232,7 +232,8 @@ string setting stores `null` as text. To clear a value, use `config unset`.
 (`key`, `profile`, `action`) in any `--format`; the value itself is never
 echoed. `action` is `updated` for a set, `deleted` or `unchanged` for an unset,
 and `planned` under `--dry-run`, which validates the value and target profile
-without writing.
+without writing. Both write to the active profile; the root `--profile NAME`
+option (anywhere in the command) writes to another existing profile instead.
 
 Mapping and list settings (`ui.symbols`, `ui.color_roles`,
 `ansible.dependency_paths`) take the whole value as JSON or YAML
@@ -321,7 +322,7 @@ CA bundle when a corporate certificate needs to be trusted:
 
 ```bash
 untaped config set http.ca_bundle /path/to/corp-ca.pem
-untaped config set http.verify_hostname false --target-profile work
+untaped --profile work config set http.verify_hostname false
 ```
 
 `http.ca_bundle` must point to a readable PEM file; a missing, unreadable, or
@@ -350,8 +351,8 @@ untaped config set jira.base_url https://jira.example.com
 untaped config set jira.token --prompt
 
 untaped profile create prod --copy-from default
-untaped config set awx.base_url https://aap.prod.example.com --target-profile prod
-printf '%s\n' "$AWX_PROD_TOKEN" | untaped config set awx.token --stdin --target-profile prod
+untaped --profile prod config set awx.base_url https://aap.prod.example.com
+printf '%s\n' "$AWX_PROD_TOKEN" | untaped --profile prod config set awx.token --stdin
 
 untaped --profile prod awx ping
 ```

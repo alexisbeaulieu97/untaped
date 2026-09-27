@@ -3,6 +3,9 @@
 ## Unreleased
 
 - Core
+  - **Breaking:** `config set` and `config unset` lost `--target-profile`;
+    they write to the active profile, and the root `--profile NAME` selects
+    another one (`untaped --profile prod config set awx.token --prompt`).
   - **Breaking:** the capability API version is a `(major, minor)` tuple of
     ints, now `(2, 0)`, so `1.10` can no longer compare equal to `1.1`.
     Providers declare `api_requires = ((2, 0), (3, 0))`; float bounds and

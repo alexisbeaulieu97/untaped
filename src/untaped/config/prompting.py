@@ -7,7 +7,6 @@ from collections.abc import Sequence
 from typing import Literal, get_args, get_origin
 
 from untaped.cli import raise_usage
-from untaped.config.models import display_default, display_value
 from untaped.config.ports import SettingsReader
 from untaped.config.use_cases import GetSetting
 from untaped.config_schema import FieldDescriptor
@@ -24,7 +23,6 @@ def resolve_set_value(
     stdin: bool,
     prompt: bool,
     repo: SettingsReader,
-    target_profile: str | None,
 ) -> str:
     choices = (("VALUE", value is not None), ("--stdin", stdin), ("--prompt", prompt))
     sources = [name for name, selected in choices if selected]
@@ -35,7 +33,7 @@ def resolve_set_value(
     if stdin:
         return _read_stdin_value()
     if prompt:
-        return _prompt_value(full_key, repo, target_profile=target_profile)
+        return _prompt_value(full_key, repo)
     assert value is not None
     return value
 
@@ -51,13 +49,13 @@ def _read_stdin_value() -> str:
     return value
 
 
-def _prompt_value(full_key: str, repo: SettingsReader, *, target_profile: str | None) -> str:
+def _prompt_value(full_key: str, repo: SettingsReader) -> str:
     descriptor = repo.descriptor(full_key)
     message = f"Value for {full_key}"
     ui = ui_context(strict=False)
     if descriptor.is_secret:
         return ui.secret(message)
-    default = _prompt_default(full_key, descriptor, repo, target_profile=target_profile)
+    default = _prompt_default(full_key, descriptor, repo)
     if full_key == "ui.theme":
         return ui.select(message, _theme_choices(), default=default, search=True)
     literal_values = _literal_values(descriptor)
@@ -79,13 +77,7 @@ def _prompt_value(full_key: str, repo: SettingsReader, *, target_profile: str | 
     return ui.text(message, default=default)
 
 
-def _prompt_default(
-    full_key: str,
-    descriptor: FieldDescriptor,
-    repo: SettingsReader,
-    *,
-    target_profile: str | None,
-) -> str | None:
+def _prompt_default(full_key: str, descriptor: FieldDescriptor, repo: SettingsReader) -> str | None:
     value: object
     try:
         entry = GetSetting(repo)(full_key)
@@ -93,19 +85,10 @@ def _prompt_default(
         # The key's section is invalid (the very thing being repaired): offer
         # the raw stored value, if it is a scalar, instead of failing.
         value = repo.raw_setting_value(descriptor)
-        from_env = repo.env_value_for(descriptor) is not None
     else:
         value = entry.value
-        from_env = entry.source.kind == "env"
     if isinstance(value, dict | list):
         value = None
-    if target_profile is not None and not from_env:
-        scoped = repo.profile_value_for(descriptor, target_profile)
-        value = (
-            display_default(descriptor)
-            if scoped is None
-            else display_value(descriptor, scoped, reveal_secrets=False)
-        )
     if value is None or value in {"", "***"}:
         return None
     if isinstance(value, str) and ":***@" in value:

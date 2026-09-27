@@ -63,7 +63,7 @@ class ProfilesSettingsLayout:
         """Return the target profile's dict, creating only ``default``.
 
         Any other target must already exist — this is the guardrail that
-        keeps ``config set --target-profile typo`` from silently creating a
+        keeps ``untaped --profile typo config set`` from silently creating a
         new profile.
         """
         name = requested or effective_active_profile_name(raw) or DEFAULT_PROFILE
