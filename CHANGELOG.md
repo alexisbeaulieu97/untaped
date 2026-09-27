@@ -3,6 +3,17 @@
 ## Unreleased
 
 - AWX
+  - **Breaking:** the per-kind `awx <kind> apply FILE` commands are removed;
+    `awx apply` applies documents of every kind.
+  - `awx apply -` reads the YAML documents from stdin, so
+    `untaped --profile a awx export … | untaped --profile b awx apply -`
+    promotes resources between profiles. Empty stdin is an error.
+  - `awx apply --check` computes the plan and writes nothing; it exits 3 when
+    any document would change the controller and 0 otherwise.
+  - **Breaking:** the deprecated spellings kept until 8.0 are removed:
+    `awx save`/`awx <kind> save` (use `export`), `launch --limit` (use
+    `--host-pattern`), and `usage -r`/`nodes -r` (use `--recursive`).
+    `AwxApiError.status` is gone; use `status_code`.
   - **Breaking:** `launch --inventory` is now `launch --launch-inventory
     NAME|ID` (digits mean an AWX id), the inventory the job runs against.
     `--inventory` is only ever a lookup scope, and launch-capable kinds have

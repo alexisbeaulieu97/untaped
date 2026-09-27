@@ -164,18 +164,29 @@ can be reopened or cancelled. A no-op editor session does not prompt or write.
 
 ## Apply, export, and inventory lifecycle
 
-`apply FILE_OR_DIRECTORY` is the declarative create/update path. It accepts
-complete portable YAML documents, resolves dependencies, previews the full
-batch once, and writes only after confirmation:
+`awx apply FILE_OR_DIRECTORY` is the declarative create/update path, for
+every kind at once. It accepts complete portable YAML documents, resolves
+dependencies, previews the full batch once, and writes only after
+confirmation. `apply -` reads the documents from stdin, so an export from one
+profile can be applied to another without a file:
 
 ```bash
 untaped awx apply ./awx-specs --dry-run
-untaped awx inventories apply ./inventory.yml --yes
+untaped awx apply ./inventory.yml --yes
+untaped --profile staging awx export --kind job-templates --out-dir exported \
+  | untaped --profile prod awx apply - --yes
+untaped awx apply ./awx-specs --check
 ```
+
+`--check` computes the same plan and writes nothing: it exits 3 when any
+document would change the controller (drift) and 0 when everything is
+already in place, so CI can tell drift from failure (1). The rows show
+`planned` or `unchanged`.
 
 A directory contributes every `*.yml` and `*.yaml` file, so keep other YAML
 (for example CI or vars files) out of it; a file that cannot be read or parsed,
-or holds an unknown or unexpected kind, fails the apply with its path named.
+or holds an unknown kind, fails the apply with its path (`<stdin>` for
+`apply -`) named. Empty stdin is an error.
 A document of an
 organization-scoped kind without `metadata.organization` is scoped by
 `awx.default_organization`, as selection and `awx test` are. With no default
@@ -228,7 +239,7 @@ configuration:
 ```bash
 untaped awx job-templates export Deploy --organization Default --out deploy.yml
 # edit metadata.name to "Deploy next", then:
-untaped awx job-templates apply deploy.yml --yes
+untaped awx apply deploy.yml --yes
 ```
 
 Surveys are read from and written to the template's `survey_spec/` endpoint;
@@ -681,15 +692,11 @@ The old `apply --stdin --set ...` overlay interface is removed; use
 `--fail-fast` is removed; default runtime scheduling stops on failure, and
 `--continue-on-error` opts into best effort. There are no compatibility aliases.
 
-These spellings were renamed and keep working with a deprecation warning
-until 8.0:
-
-| Old | New |
-|---|---|
-| `awx save`, `awx <kind> save` | `awx export`, `awx <kind> export` |
-| `launch --limit` | `launch --host-pattern` |
-| `usage -r`, `nodes -r` | `--recursive` |
-| `inventories input_inventories`, `instance_groups` | `input-inventories`, `instance-groups` |
+8.0 removed these spellings: `awx save` and `awx <kind> save` (use
+`export`), `awx <kind> apply` (use `awx apply`), `launch --limit` (use
+`--host-pattern`), `launch --inventory` (use `--launch-inventory`),
+`launch`/`sync --track` (use `--follow`), `usage -r` and `nodes -r` (use
+`--recursive`), and `jobs logs -f` as `--follow` (`-f` is `--format`).
 
 `ping` options are keyword-only: use `awx ping -f json`, not `awx ping json`.
 
@@ -720,8 +727,8 @@ untaped awx inventory-sources edit DisposableSource \
 untaped awx inventory-sources sync DisposableSource \
   --inventory Disposable --inventory-organization Default --follow
 
-untaped awx inventory-sources apply disposable-source.yml --yes
-untaped awx inventories apply disposable-inventory.yml --yes
+untaped awx apply disposable-source.yml --yes
+untaped awx apply disposable-inventory.yml --yes
 ```
 
 Confirm that the cache timeout changed, `update_on_launch` stayed unchanged,

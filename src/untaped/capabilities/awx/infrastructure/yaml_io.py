@@ -1,7 +1,8 @@
 """Serialise / deserialise :class:`Resource` envelopes from YAML files.
 
 Single-doc and multi-doc YAML are both supported. ``read_resource_files``
-also accepts a directory and walks every ``*.yml`` / ``*.yaml`` it finds.
+also accepts a directory and walks every ``*.yml`` / ``*.yaml`` it finds;
+``read_resource_text`` parses documents already read (piped on stdin).
 """
 
 from __future__ import annotations
@@ -37,19 +38,24 @@ def _read_file(path: Path) -> Iterator[Resource]:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         raise ConfigError(f"cannot read {path}: {exc}") from exc
+    return read_resource_text(text, source=str(path))
+
+
+def read_resource_text(text: str, *, source: str) -> Iterator[Resource]:
+    """Yield each :class:`Resource` in YAML ``text``; errors name ``source``."""
     try:
         docs = list(yaml.safe_load_all(text))
     except yaml.YAMLError as exc:
-        raise ConfigError(f"invalid YAML in {path}: {exc}") from exc
+        raise ConfigError(f"invalid YAML in {source}: {exc}") from exc
     for doc in docs:
         if doc is None:
             continue
         if not isinstance(doc, dict):
-            raise ConfigError(f"{path}: each YAML doc must be a mapping")
+            raise ConfigError(f"{source}: each YAML doc must be a mapping")
         try:
             yield Resource.model_validate(doc)
         except Exception as exc:
-            raise ConfigError(f"{path}: {exc}") from exc
+            raise ConfigError(f"{source}: {exc}") from exc
 
 
 def dump_resource(resource: Resource, *, header_comment: str | None = None) -> str:

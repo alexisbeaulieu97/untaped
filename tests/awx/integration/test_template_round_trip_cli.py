@@ -88,7 +88,7 @@ def _without_secret_defaults(spec: dict[str, Any]) -> dict[str, Any]:
 
 
 def _apply(path: Path) -> None:
-    result = CliInvoker().invoke(app, ["job-templates", "apply", str(path), "--yes"])
+    result = CliInvoker().invoke(app, ["apply", str(path), "--yes"])
     assert result.exit_code == 0, result.output + (result.stderr or "")
 
 
@@ -138,9 +138,7 @@ def test_reapplying_an_export_leaves_the_template_unchanged(fake_aap: Any, tmp_p
     document = tmp_path / "deploy.yml"
     document.write_text(yaml.safe_dump(_export("Deploy"), sort_keys=False))
 
-    result = CliInvoker().invoke(
-        app, ["job-templates", "apply", str(document), "--dry-run", "--format", "json"]
-    )
+    result = CliInvoker().invoke(app, ["apply", str(document), "--dry-run", "--format", "json"])
 
     assert result.exit_code == 0, result.output + (result.stderr or "")
     assert '"unchanged"' in result.stdout
@@ -179,7 +177,7 @@ def test_apply_refuses_unknown_label_before_any_write(fake_aap: Any, tmp_path: P
         "spec: {description: changed, labels: [web, missing]}\n"
     )
 
-    result = CliInvoker().invoke(app, ["job-templates", "apply", str(document), "--yes"])
+    result = CliInvoker().invoke(app, ["apply", str(document), "--yes"])
 
     assert result.exit_code == 1
     assert "missing" in result.output + (result.stderr or "")

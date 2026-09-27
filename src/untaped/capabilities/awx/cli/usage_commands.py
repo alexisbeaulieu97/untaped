@@ -28,7 +28,6 @@ from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
     UntapedError,
-    deprecated_alias,
     emit,
     finish,
     parse_kv_pairs,
@@ -146,5 +145,3 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
         cols = list(columns) if columns else list(_DEFAULT_COLUMNS)
         emit(rows, fmt=fmt, columns=cols, kind="awx.template_usage")
         finish(any_failed)
-
-    deprecated_alias(parent["usage"], "-r", "--recursive")

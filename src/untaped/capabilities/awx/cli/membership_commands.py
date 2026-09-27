@@ -49,7 +49,6 @@ from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
     create_app,
-    deprecated_alias,
     echo,
     emit,
     finish,
@@ -73,8 +72,6 @@ def register_membership_subapp(parent_app: App, spec: AwxResourceSpec, ref: FkRe
     _add_membership_verb(sub, spec, ref, action="associate", verb="add")
     _add_membership_verb(sub, spec, ref, action="disassociate", verb="remove")
     parent_app.command(sub)
-    if name != ref.sub_endpoint:
-        deprecated_alias(parent_app, ref.sub_endpoint, name)
 
 
 def _words(kind: str) -> str:
