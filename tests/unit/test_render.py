@@ -11,7 +11,7 @@ import os
 import pytest
 import yaml
 
-from untaped.render import OutputFormat
+from untaped.theme import BUILTIN_THEMES, OutputFormat
 from untaped.ui import UiContext
 
 
@@ -196,6 +196,32 @@ def test_table_render_uses_detected_terminal_width_when_columns_unset(
     rows = [{"name": "x" * 200}]
     width = max(len(line) for line in _render(rows, fmt="table").splitlines())
     assert width >= 200
+
+
+@pytest.mark.parametrize("renderer", ["table", "list"])
+def test_output_does_not_wrap_when_stdout_is_not_a_terminal(
+    monkeypatch: pytest.MonkeyPatch, renderer: str
+) -> None:
+    """Piped output (no terminal size, no ``COLUMNS``) is never wrapped at 80."""
+    monkeypatch.delenv("COLUMNS", raising=False)
+
+    def _no_terminal(*_args: object) -> os.terminal_size:
+        raise OSError("not a terminal")
+
+    monkeypatch.setattr("os.get_terminal_size", _no_terminal)
+    if renderer == "list":
+        monkeypatch.setenv("FORCE_COLOR", "1")  # styled record lines render through Rich
+    rows = [{"name": "x" * 300, "description": "y " * 100}]
+    theme = BUILTIN_THEMES["default" if renderer == "table" else "quiet"]
+    lines = UiContext(theme=theme).collection(rows, fmt="table").splitlines()
+    assert any("x" * 300 in line for line in lines)
+    assert any(("y " * 100).strip() in line for line in lines)
+
+
+def test_columns_still_bounds_the_width_when_piped(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("COLUMNS", "60")
+    out = _render([{"name": "x" * 300}], fmt="table")
+    assert max(len(line) for line in out.splitlines()) <= 60
 
 
 def test_nested_list_falls_back_to_repr() -> None:

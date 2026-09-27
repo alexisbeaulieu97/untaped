@@ -32,7 +32,9 @@ from cyclopts import App
 
 from untaped.bootstrap import build_root_app
 
-ROOT_COMMANDS = frozenset({"config", "profile", "skills", "doctor", "capabilities"})
+ROOT_COMMANDS = frozenset(
+    {"config", "profile", "skills", "doctor", "capabilities", "setup", "alias"}
+)
 
 VERBS = frozenset(
     {

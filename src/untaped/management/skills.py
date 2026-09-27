@@ -36,7 +36,6 @@ from untaped.cli import (
 )
 from untaped.errors import ConfigError, UntapedError, UsageError
 from untaped.messages import hint, not_found, plural
-from untaped.render import OutputFormat
 from untaped.settings import SkillsSettings, load_settings_section
 from untaped.skills import (
     AllSkillsOption,
@@ -62,6 +61,7 @@ from untaped.skills import (
     update_installed_skill,
 )
 from untaped.stdin import read_identifiers
+from untaped.theme import OutputFormat
 from untaped.ui import ui_context
 
 _INSTALLED_KIND = "untaped.installed_skill"

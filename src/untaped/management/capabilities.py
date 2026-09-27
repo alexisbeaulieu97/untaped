@@ -30,7 +30,7 @@ from untaped.cli import (
 )
 from untaped.errors import ConfigError
 from untaped.management._render import emit_isolated
-from untaped.render import OutputFormat
+from untaped.theme import OutputFormat
 
 _UNKNOWN = "unknown"
 

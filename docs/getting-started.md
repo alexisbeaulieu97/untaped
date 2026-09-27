@@ -19,11 +19,31 @@ untaped --install-completion
 ```
 
 `untaped doctor` checks the install and your configuration without any
-network access. Run it whenever something looks wrong:
+network access. Run it whenever something looks wrong; `--online` also
+contacts each configured service and prints the command that fixes each
+failure:
 
 ```bash
 untaped doctor
+untaped doctor --online
 ```
+
+## Set up your services
+
+`untaped setup` walks you through a profile in a terminal: pick the services
+(`awx`, `github`, `jira`), enter each base URL, then type the token (stored
+like `config set KEY --prompt`), give a command that prints it
+(`token_command`), or keep the current one. It then checks each service
+online and exits 1 if one fails. A new profile name creates that profile.
+
+```bash
+untaped setup
+```
+
+To script the same settings, use `config set` below. Shorten commands you
+repeat with [aliases](./configuration.md#command-aliases):
+`untaped alias set failed -- awx jobs list --status failed`, then
+`untaped failed`.
 
 ## Store your tokens
 
@@ -62,8 +82,8 @@ override it field by field.
 
 ```bash
 untaped profile create prod --copy-from default
-untaped config set awx.base_url https://aap.prod.example.com --target-profile prod
-untaped config set awx.token --prompt --target-profile prod
+untaped --profile prod config set awx.base_url https://aap.prod.example.com
+untaped --profile prod config set awx.token --prompt
 
 untaped profile list
 untaped --profile prod awx ping
@@ -128,6 +148,16 @@ untaped github repos list --org acme --format raw --columns full_name
 - `raw` prints plain text with no header: the first field of each row, or the
   `--columns` you name separated by tabs. It suits `fzf`, `awk` and `xargs`.
 - `pipe` prints records that another `untaped` command reads with `--stdin`.
+
+To change the `table` default, set `ui.format` in your profile or export
+`UNTAPED_FORMAT` (which wins over the setting); an explicit `--format` always
+wins. A table written to a pipe or file is never wrapped to the terminal
+width.
+
+```bash
+untaped config set ui.format json
+UNTAPED_FORMAT=yaml untaped github repos list --org acme
+```
 
 Only data goes to stdout. Progress, warnings and errors go to stderr, so a
 pipe never carries noise. `-q`/`--quiet` mutes progress and success messages.

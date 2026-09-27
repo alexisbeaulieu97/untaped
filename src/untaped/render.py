@@ -23,9 +23,8 @@ from rich.table import Table
 from rich.text import Text
 
 from untaped.pipe import PIPE_ENVELOPE_VERSION, PIPE_MARKER_KEY
-from untaped.theme import DEFAULT_SYMBOLS, BorderStyle, ThemeSpec
+from untaped.theme import DEFAULT_SYMBOLS, BorderStyle, OutputFormat, ThemeSpec
 
-OutputFormat = Literal["json", "yaml", "table", "raw", "pipe"]
 MessageKind = Literal["success", "warning", "error", "info"]
 
 Row = dict[str, object]
@@ -319,7 +318,8 @@ def render_styled(text: Text | str, *, colorize: bool) -> str:
     """Render one Rich ``Text`` line (a plain ``str`` is taken literally).
 
     ANSI styling is kept only when ``colorize``; the line wraps at the
-    terminal width and carries no trailing newline.
+    terminal width (never when output is not a terminal) and carries no
+    trailing newline.
     """
     return _render_rich(text if isinstance(text, Text) else Text(text), colorize=colorize)
 
@@ -334,14 +334,28 @@ def _styled_text(value: str, style: str | None) -> Text:
     return Text(value, style=style)
 
 
+#: Rich needs a width; output that is not a terminal gets one no line reaches.
+_UNBOUNDED_WIDTH = 1_000_000
+
+
+def _output_size() -> tuple[int, int]:
+    """``COLUMNS``, else the terminal's size, else (piped) no wrapping at all."""
+    size = shutil.get_terminal_size(fallback=(0, 0))
+    if size.columns <= 0:
+        return _UNBOUNDED_WIDTH, 25
+    return size.columns, size.lines if size.lines > 0 else 25
+
+
 def _render_rich(renderable: Table | Text, *, colorize: bool) -> str:
     buf = io.StringIO()
-    width = shutil.get_terminal_size(fallback=(80, 24)).columns
+    # An explicit height too: with only a width Rich pins a TERM=dumb terminal to 80.
+    width, height = _output_size()
     Console(
         file=buf,
         force_terminal=colorize,
         color_system="standard" if colorize else None,
         no_color=not colorize,
         width=width,
+        height=height,
     ).print(renderable)
     return buf.getvalue().rstrip()

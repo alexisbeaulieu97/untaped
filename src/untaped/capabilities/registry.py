@@ -49,7 +49,17 @@ CAPABILITIES_ENTRY_POINT_GROUP = "untaped.capabilities"
 
 #: Reserved root command/layout names no capability may claim (spec §5 row 1).
 _RESERVED_COMMAND_ROOTS = frozenset(
-    {"profiles", "active", "config", "profile", "skills", "doctor", "capabilities"}
+    {
+        "profiles",
+        "active",
+        "config",
+        "profile",
+        "skills",
+        "doctor",
+        "capabilities",
+        "setup",
+        "alias",
+    }
 )
 
 
@@ -78,11 +88,16 @@ class SkillAsset:
 
 @dataclass(frozen=True)
 class DoctorCheck:
-    """A health check contributed by the shell or a capability (spec §3)."""
+    """A health check contributed by the shell or a capability (spec §3).
+
+    An ``online`` check contacts a remote service, so only
+    ``untaped doctor --online`` runs it; every other check stays offline.
+    """
 
     id: str
     title: str
     run: Callable[[CapabilityContext], DoctorResult]
+    online: bool = False
 
 
 @dataclass(frozen=True)
@@ -91,13 +106,16 @@ class DoctorResult:
 
     ``ok=False`` is a failed row (doctor exits 1). ``ok=True`` with
     ``warn=True`` is a ``warn`` row: worth attention (a deprecated setting,
-    say) but not a failure, so doctor still exits 0.
+    say) but not a failure, so doctor still exits 0. ``fix`` is the
+    ``untaped`` command (without the program name) that repairs a failed or
+    warned row; doctor appends it to the row's detail.
     """
 
     id: str
     ok: bool
     detail: str
     warn: bool = False
+    fix: str | None = None
 
 
 @dataclass(frozen=True)

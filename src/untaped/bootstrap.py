@@ -18,7 +18,6 @@ from typing import Any
 from cyclopts import App
 from cyclopts.command_spec import CommandSpec
 from cyclopts.core import _apply_parent_defaults_to_app
-from pydantic import BaseModel
 
 from untaped._root_options import (
     _consume_leading_root_options,
@@ -26,6 +25,8 @@ from untaped._root_options import (
     _root_callback_signature,
     _root_options,
     _RootOption,
+    expand_alias,
+    resolve_command,
 )
 from untaped.capabilities.registry import (
     ApplicationSpec,
@@ -37,13 +38,15 @@ from untaped.capabilities.registry import (
     compose,
     discover_external_providers,
 )
-from untaped.cli import create_app, echo, report_errors, run_cyclopts_app
+from untaped.cli import apply_default_format, create_app, echo, report_errors, run_cyclopts_app
 from untaped.errors import ConfigError
 from untaped.management import (
+    build_root_alias_app,
     build_root_capabilities_app,
     build_root_config_app,
     build_root_doctor_app,
     build_root_profile_app,
+    build_root_setup_app,
     build_root_skills_app,
 )
 from untaped.management.skills import check_installed_skills, composed_skills
@@ -57,6 +60,7 @@ from untaped.settings import (
     register_state_settings,
     reset_config_registry_for_tests,
 )
+from untaped.shell_settings import ShellProfileSettings
 from untaped.skills import InstallableSkill
 from untaped.verbose import reset as _reset_verbose
 
@@ -88,10 +92,6 @@ _active_capability: ContextVar[str | None] = ContextVar("untaped_active_capabili
 def current_capability() -> str | None:
     """Return the active capability name, or ``None`` outside dispatch."""
     return _active_capability.get()
-
-
-class ShellProfileSettings(BaseModel):
-    """Reserved shell-level profile-scoped settings."""
 
 
 def _shell_app() -> App:
@@ -215,6 +215,12 @@ def build_root_app(
     _mount(root, build_root_profile_app(command=SHELL_NAME), name="profile")
     _mount(root, build_root_skills_app(shell=SHELL_SPEC, result=result), name="skills")
     _mount(root, build_root_doctor_app(shell=SHELL_SPEC, result=result), name="doctor")
+    _mount(root, build_root_setup_app(shell=SHELL_SPEC, result=result), name="setup")
+    _mount(
+        root,
+        build_root_alias_app(builtin_for=lambda name: resolve_command(root, name)),
+        name="alias",
+    )
     _mount(
         root,
         build_root_capabilities_app(
@@ -227,6 +233,7 @@ def build_root_app(
     for capability in result.capabilities:
         _mount_capability(root, capability)
     root.version = _resolve_version
+    root.config = (apply_default_format,)
     capability_names = frozenset(capability.spec.name for capability in result.capabilities)
     skills = composed_skills(SHELL_SPEC, result)
     _install_root_callback(
@@ -359,6 +366,12 @@ def _install_root_callback(
                 )
                 if command_tokens[:1] == ["--"]:
                     command_tokens = command_tokens[1:]  # `untaped [opts] -- cmd …`
+                expanded = expand_alias(app, command_tokens)
+                if expanded is not command_tokens:
+                    # An alias may start with root options (`--profile prod awx …`).
+                    command_tokens = _consume_leading_root_options(
+                        expanded, root_options, applied_tokens
+                    )
                 selected = (
                     command_tokens[0]
                     if command_tokens and command_tokens[0] in capability_names

@@ -18,6 +18,7 @@ BorderStyle = Literal["rounded", "square", "ascii", "none"]
 CollectionView = Literal["table", "list"]
 DetailView = Literal["list", "table"]
 Density = Literal["normal", "compact"]
+OutputFormat = Literal["json", "yaml", "table", "raw", "pipe"]
 
 DEFAULT_SYMBOLS: dict[str, str] = {
     "success": "",
@@ -50,9 +51,12 @@ class UiSettings(BaseModel):
     ``theme`` must name a built-in theme. The check runs when the value is
     written (``config set``) and in ``doctor``; loading stays lenient so a
     stale theme only affects themed table output, not structured formats.
+    ``format`` replaces the ``table`` default of the shared ``--format``
+    option (``UNTAPED_FORMAT`` wins over it; an explicit flag wins over both).
     """
 
     theme: str = "default"
+    format: OutputFormat | None = None
     border: BorderStyle | None = None
     density: Density | None = None
     collection_view: CollectionView | None = None

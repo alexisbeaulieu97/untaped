@@ -100,6 +100,7 @@ EXPECTED_ALL = [
     "TokenSources",
     "connection_check",
     "executable_check",
+    "online_check",
 ]
 
 
