@@ -249,6 +249,31 @@
     kind accepts. `patch` still rejects `name`; `rename` joins the
     conventions' write verbs. Other kinds opt in through their spec.
 - Jira
+  - **Breaking:** the Jira-shaped YAML/JSON document flag is now
+    `--fields-file` on both `issues create` (was `--template`) and
+    `issues patch` (was `--body-file`), with no alias. `issues comment
+    --body-file` still reads the comment text.
+  - **Breaking:** the new `jira.confirm` setting (`always`, `destructive`,
+    `never`; default `destructive`) picks which writes ask first. By default
+    only destructive writes ask: `issues transition`, and an `issues patch`
+    that sets a field, changes the assignee or has an `update` operation other
+    than `add`. `issues create`, `issues comment`, `issues links create` and
+    add-only patches are now sent without asking and no longer need `--yes`
+    without a terminal; set `jira.confirm: always` for the old behavior.
+    `--yes` is unchanged.
+  - **Breaking:** write previews (before a prompt and under `--dry-run`) show
+    each request's changes as readable lines (`summary: "old" → "new"`,
+    `assignee: alice → bob`, `status: To Do → In Progress`) instead of the
+    raw JSON body. Patch and transition previews read the issue's current
+    values first (one read per issue; an unreadable issue shows `(unknown)`
+    in a transition preview); nothing is read when no preview is shown. So
+    `issues patch --dry-run` and `issues transition --dry-run` now need
+    working credentials, and a patch dry run exits 1 when the issue cannot be
+    read; create, comment and link dry runs stay offline.
+  - **Breaking:** the deprecated spellings are removed: `me`, `issue`,
+    `project`, `board`, `sprint`, `issues edit`, `--field` and
+    `--json-field`. Use `whoami`, `issues`, `projects`, `boards`, `sprints`,
+    `issues patch`, `--set` and `--set-json`.
   - `issues get` now includes the issue's `links`: for each, the linked
     issue's `key`, `summary`, `status` and `url`, the link `type`, this
     issue's `direction` (`outward`/`inward`) and the `relation` phrase Jira
@@ -259,7 +284,7 @@
     when the assignee field was not on the edit screen. Combined with other
     field changes, the edit is sent first, then the assignment; the preview
     and `--dry-run` show both requests. The flags override a `fields.assignee`
-    in `--body-file`, and when only the assignment fails the error says the
+    in `--fields-file`, and when only the assignment fails the error says the
     fields were already updated.
   - **Fix:** issue and project keys are validated before any request: an
     issue key must be `PROJECT-123` and a project key `PROJECT` (any case;

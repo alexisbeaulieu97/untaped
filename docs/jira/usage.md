@@ -24,6 +24,7 @@ untaped jira whoami
 | `jira.default_board_id` | unset | Board for `sprints list` without `--board-id`. |
 | `jira.api_prefix`, `jira.agile_prefix` | `/rest/api/2`, `/rest/agile/1.0` | Change only if your Jira is mounted under another path. |
 | `jira.page_size` | `50` | Results per API page. |
+| `jira.confirm` | `destructive` | Which writes ask first: `always`, `destructive` or `never`. See [Change issues](#change-issues). |
 
 ## Find issues
 
@@ -66,9 +67,46 @@ untaped jira issues comments list OPS-123
 
 ## Change issues
 
-Every write shows the REST request it will send and asks first. `--dry-run`
-shows it and sends nothing; `--yes` skips the question. Without a terminal,
-pass `--yes` or `--dry-run` (exit 2 otherwise).
+`jira.confirm` picks which writes ask first:
+
+| Value | Asks before |
+|---|---|
+| `destructive` (default) | Destructive writes only. |
+| `always` | Every write. |
+| `never` | No write. |
+
+A write is **destructive** when it can replace or remove what an issue holds
+now: `issues transition` (it changes the status and can set the resolution),
+an `issues patch` that sets any field (`--summary`, `--description`, `--set`,
+`--set-json`, `fields` in `--fields-file`), changes the assignee
+(`--assignee`, `--unassign`), or has an `update` operation other than `add`
+(`set`, `remove`, `edit`). `issues create`, `issues comment`, `issues links
+create` and a patch whose `update` operations only `add` (for example a
+label) only add, so they are sent without asking unless `jira.confirm` is
+`always`.
+
+Before asking, the write shows each REST request it will send and what it
+changes, one line per field. A patch first reads the current values of the
+fields it sets (none for an add-only patch) and names each old value the way
+the new one does (`priority: 2 → 3` for `{"id": "3"}`); long text is cut to
+60 characters for display but compared whole:
+
+```text
+PUT /rest/api/2/issue/OPS-123
+  summary: "Rotate the API certificate" → "Rotate the API and web certificates"
+  labels: + "tls"
+PUT /rest/api/2/issue/OPS-123/assignee
+  assignee: alice → bob
+```
+
+`--dry-run` shows the same preview on stderr, emits a `planned` outcome on
+stdout and sends nothing, whatever `jira.confirm` says. Because the preview
+reads the issue, `issues patch --dry-run` and `issues transition --dry-run`
+need working credentials, and a patch dry run exits 1 when the issue cannot
+be read. `issues create`, `comment` and `links create` dry runs stay offline.
+`--yes` skips the question and the preview (and its reads). Without a
+terminal, a write that must ask exits 2 unless you pass `--yes` or
+`--dry-run`.
 
 ```bash
 untaped jira issues create --project OPS --issue-type Task \
@@ -87,14 +125,15 @@ git log -1 --format=%B | untaped jira issues comment OPS-123 --yes
   assignee. Both use Jira's dedicated `issue/KEY/assignee` endpoint, so they
   work even when the assignee field is not on the edit screen. With other
   field changes, the field edit is sent first, then the assignment. The flags
-  override a `fields.assignee` in `--body-file`.
+  override a `fields.assignee` in `--fields-file`.
 - Issue keys must look like `PROJECT-123` and project keys like `PROJECT`
   (any case; sent uppercase), or be a numeric id; anything else exits 2
   before any request.
 - `--set KEY=VALUE` sets a string field; `--set-json KEY=JSON` sets any field
   from JSON. Both repeat.
-- `issues create --template FILE` and `issues patch --body-file FILE` start
-  from a Jira-shaped YAML or JSON payload; flags override its fields.
+- `issues create --fields-file FILE` and `issues patch --fields-file FILE`
+  start from a Jira-shaped YAML or JSON document (`fields` and `update`);
+  flags override its fields.
 - `issues comment` reads the body from `--body`, `--body-file`, or stdin.
 
 ### Transitions
@@ -108,7 +147,12 @@ untaped jira issues transition OPS-123 --to Done --resolution Fixed --comment "S
 
 Pass exactly one of `--to NAME` or `--id ID`. `--resolution NAME` sets the
 resolution (many Done screens require one) and `--comment TEXT` adds a comment
-in the same request. Several keys are transitioned in
+in the same request. The preview names the transition, shows the status
+change (`status: To Do → In Progress`) and the whole comment. It reads each
+issue once; a transition picked by `--to` reuses the lookup, and an `--id`
+the issue does not offer shows `(not available from this status)`. When an
+issue cannot be read, its preview shows `(unknown)` instead of stopping the
+batch. Several keys are transitioned in
 one batch; each failed key prints `error: KEY: ...` and the command exits 1.
 
 Transition every issue of a search:
@@ -129,7 +173,7 @@ example makes OPS-123 block OPS-124. `TYPE` is the link type name (`Blocks`,
 `Relates`, `Duplicate`, ...). The request sends KEY as `inwardIssue` and
 OTHER as `outwardIssue`, the pairing under which Jira shows the outward phrase
 on KEY. The preview and `--dry-run` print a `reads as:` line; check the
-direction on one pair before linking in bulk.
+direction on one pair with `--dry-run` before linking in bulk.
 
 ## Projects, boards and sprints
 
