@@ -134,7 +134,8 @@ def test_httpclient_construction_passes_verify() -> None:
 
 
 _HEADER = (
-    "from untaped import HttpClient\nfrom untaped.http import resolve_verify\nimport untaped\n"
+    "from untaped.capability_api import HttpClient, resolve_verify\n"
+    "import untaped.capability_api as capi\n"
 )
 
 
@@ -149,7 +150,7 @@ _HEADER = (
         # Regression: the bare, uncalled reference must not be accepted.
         ("HttpClient(base_url='x', verify=resolve_verify)", True),
         ("HttpClient(base_url='x', verify=resolve_verify(http))", False),
-        ("untaped.HttpClient(base_url='x', verify=untaped.resolve_verify(http))", False),
+        ("capi.HttpClient(base_url='x', verify=capi.resolve_verify(http))", False),
     ],
 )
 def test_verify_detector(call: str, flagged: bool) -> None:

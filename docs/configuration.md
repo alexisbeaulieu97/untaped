@@ -115,16 +115,16 @@ workspace:
 ```
 
 Profile-scoped sections accidentally placed at the YAML top level are ignored
-by profile resolution and produce a warning. This applies to `http`, `ui`,
-`skills`, and registered capability sections; move them under
-`profiles.default.<section>`.
+by profile resolution; `untaped doctor` flags them in its `unknown-keys` row.
+This applies to `http`, `ui`, `skills`, and registered capability sections;
+move them under `profiles.default.<section>`.
 
 The profile model and state model for a capability must have disjoint field
 sets. State is written by the owning capability and is not writable through
 `untaped config set`. State is only ever read from `state.yml`: a state
 section left at the top level of `config.yml` by a release before 8.0 is
-ignored like any other unknown top-level key; move it into `state.yml` by
-hand.
+ignored like any other unknown top-level key (`untaped doctor` flags it);
+move it into `state.yml` by hand.
 
 The environment override shape is unchanged:
 
@@ -288,7 +288,9 @@ broken section to hide the rest:
   config file (it can hold tokens); fix it with `chmod 600`; `warn` rows do
   not fail `doctor`;
 - `unknown-keys` — `warn` naming every key, in any profile, that no settings
-  model declares (usually a typo, which is otherwise silently ignored);
+  model declares (usually a typo, which is otherwise silently ignored), and
+  every top-level key other than `active` and `profiles` (for example a
+  pre-8.0 state section or `log_level`);
 - `skills` — `warn` when a skill installed by `untaped skills install` (in the
   global Codex/Claude skill directories or the current git root's
   `.agents/skills`/`.claude/skills`) differs from the packaged copy or is no

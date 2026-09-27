@@ -23,6 +23,9 @@ BUILTIN_CAPABILITIES = (
     "recipe",
 )
 MANAGEMENT_COMMANDS = ("config", "profile", "skills", "doctor", "capabilities")
+#: The ``api`` column ``untaped capabilities`` shows for built-ins (the
+#: registry's built-in range; pinned against the real CLI by the app tests).
+BUILTIN_API_RANGE = ">=2.0,<3.0"
 
 
 class ReleaseCheckError(RuntimeError):

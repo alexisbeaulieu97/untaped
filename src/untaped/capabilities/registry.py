@@ -323,16 +323,17 @@ def parse_api_range(requires: object) -> ApiRange:
     ``requires`` must be a pair of ``(major, minor)`` pairs of non-negative
     ints (tuples or lists). Raises an ``api-range`` quarantine otherwise.
     """
+    malformed = _Quarantine(
+        "api-range",
+        f"malformed api_requires {requires!r}: expected ((major, minor), (major, minor)) "
+        "int tuples as (min_inclusive, max_exclusive)",
+    )
     if (
         isinstance(requires, (str, bytes))
         or not isinstance(requires, (tuple, list))
         or len(requires) != 2
     ):
-        raise _Quarantine(
-            "api-range",
-            f"malformed api_requires {requires!r}: expected "
-            "((major, minor), (major, minor)) as (min_inclusive, max_exclusive)",
-        )
+        raise malformed
     bounds: list[ApiVersion] = []
     for bound in requires:
         if (
@@ -341,29 +342,32 @@ def parse_api_range(requires: object) -> ApiRange:
             or any(isinstance(part, bool) or not isinstance(part, int) for part in bound)
             or any(part < 0 for part in bound)
         ):
-            raise _Quarantine(
-                "api-range",
-                f"malformed api_requires {requires!r}: bounds must be (major, minor) "
-                "tuples of ints, e.g. ((2, 0), (3, 0))",
-            )
+            raise malformed
         bounds.append((bound[0], bound[1]))
     return (bounds[0], bounds[1])
 
 
 def check_api_range(requires: object, version: ApiVersion) -> ApiRange:
-    """Validate an ``api_requires`` range against ``version`` (spec §5 row 10)."""
+    """Validate an ``api_requires`` range against ``version`` (spec §5 row 10).
+
+    Missing, malformed and inverted ranges name the running version and a
+    range that admits it.
+    """
     shown = format_api_version(version)
+    hint = f"running SDK {shown}, declare e.g. (({version[0]}, 0), ({version[0] + 1}, 0))"
     if requires is None or requires is _MISSING:
         raise _Quarantine(
-            "api-range",
-            f"missing api_requires: provider declares no SDK range covering {shown}",
+            "api-range", f"missing api_requires: provider declares no SDK range; {hint}"
         )
-    lo, hi = parse_api_range(requires)
+    try:
+        lo, hi = parse_api_range(requires)
+    except _Quarantine as bad:
+        raise _Quarantine("api-range", f"{bad.detail}; {hint}") from None
     span = f">={format_api_version(lo)},<{format_api_version(hi)}"
     if not lo < hi:
         raise _Quarantine(
             "api-range",
-            f"inverted api_requires {span}: min_inclusive must be below max_exclusive",
+            f"inverted api_requires {span}: min_inclusive must be below max_exclusive; {hint}",
         )
     if not lo <= version < hi:
         raise _Quarantine(
