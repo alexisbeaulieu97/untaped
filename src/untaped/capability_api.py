@@ -48,7 +48,7 @@ from untaped.cli import (
 )
 from untaped.concurrency import bounded_map
 from untaped.diff import unified_diff_text
-from untaped.doctor_checks import connection_check, executable_check
+from untaped.doctor_checks import connection_check, executable_check, online_check
 from untaped.editor import run_editor
 from untaped.errors import (
     ConfigError,
@@ -193,4 +193,5 @@ __all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by
     "TokenSources",
     "connection_check",
     "executable_check",
+    "online_check",
 ]

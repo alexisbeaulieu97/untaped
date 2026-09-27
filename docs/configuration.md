@@ -307,8 +307,19 @@ broken section to hide the rest:
   - `workspace.git`, `github.git`, `ansible.git`, `recipe.git`, `recipe.uv` —
     `warn` when the program is not on `PATH`.
 
-`doctor` has no `--online` mode yet; use each capability's `whoami` or `ping`
-command to test a connection.
+`doctor --online` also runs the online checks capabilities contribute:
+`awx.api`, `github.api` and `jira.api` authenticate against the configured
+service (the same call as `awx ping`, `github whoami` and `jira whoami`) for
+the selected profile. A section with no token and no URL of its own (a
+built-in default such as GitHub's does not count) passes as `not configured`. A failed row ends with the command that fixes it, for
+example ``run `untaped config set awx.token --prompt` `` for a rejected token,
+`config set http.ca_bundle PATH` for a TLS failure, or
+`config set awx.base_url URL` when the service cannot be reached. Plain
+`doctor` never touches the network.
+
+`untaped setup` writes a profile's service settings interactively and then
+runs the same checks for the services it configured; see
+[Getting started](./getting-started.md#set-up-your-services).
 
 Settings rows apply `UNTAPED_*` environment overrides on top of the file and
 name the variable when an override is the invalid value (for example

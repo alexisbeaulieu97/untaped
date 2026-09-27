@@ -19,11 +19,28 @@ untaped --install-completion
 ```
 
 `untaped doctor` checks the install and your configuration without any
-network access. Run it whenever something looks wrong:
+network access. Run it whenever something looks wrong; `--online` also
+contacts each configured service and prints the command that fixes each
+failure:
 
 ```bash
 untaped doctor
+untaped doctor --online
 ```
+
+## Set up your services
+
+`untaped setup` walks you through a profile in a terminal: pick the services
+(`awx`, `github`, `jira`), enter each base URL, then type the token (stored
+like `config set KEY --prompt`), give a command that prints it
+(`token_command`), or keep the current one. It then checks each service
+online and exits 1 if one fails. A new profile name creates that profile.
+
+```bash
+untaped setup
+```
+
+To script the same settings, use `config set` below.
 
 ## Store your tokens
 

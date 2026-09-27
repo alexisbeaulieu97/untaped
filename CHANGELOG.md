@@ -11,6 +11,16 @@
     `--format` option; an explicit `--format` still wins.
   - **Behavior change:** table and styled output that does not go to a
     terminal is no longer wrapped at 80 columns; `COLUMNS` still bounds it.
+  - **New:** `untaped setup`, an interactive wizard that configures a profile's
+    service capabilities (base URL plus a typed token, a `token_command`, or
+    the current one), creating the profile when new, then checks them online.
+    Without a terminal it exits 2.
+  - **New:** `untaped doctor --online` also runs online checks
+    (`awx.api`, `github.api`, `jira.api` authenticate against the service),
+    and each failed row names the command that fixes it. Providers contribute
+    them with `online_check(...)` or `DoctorCheck(..., online=True)`;
+    `DoctorResult(..., fix=...)` appends the fix. `setup` and `alias` are now
+    reserved root command names.
   - **Breaking:** the capability API version is a `(major, minor)` tuple of
     ints, now `(2, 0)`, so `1.10` can no longer compare equal to `1.1`.
     Providers declare `api_requires = ((2, 0), (3, 0))`; float bounds and

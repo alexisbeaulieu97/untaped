@@ -2,7 +2,10 @@
 
 A terminal command (not a group): it runs the shell plus every composed
 capability's health checks OFFLINE — config-file reads plus in-process model
-validation only, never network I/O. Each row is isolated: invalid settings
+validation only, never network I/O. ``--online`` adds the checks
+capabilities contribute with ``DoctorCheck(online=True)``, which contact the
+configured services. A check's ``DoctorResult.fix`` is appended to its row
+detail as the command to run. Each row is isolated: invalid settings
 for one capability surface as failed rows while every other row still runs.
 Quarantine records render as failed rows (nonzero exit). A config file other
 users can read renders as a ``warn`` row, which does not fail the run; so do
@@ -18,9 +21,9 @@ import stat
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from cyclopts import App
+from cyclopts import App, Parameter
 from pydantic import BaseModel, ValidationError
 
 from untaped.capabilities.registry import (
@@ -84,12 +87,20 @@ def build_root_doctor_app(*, shell: ApplicationSpec, result: CompositionResult) 
     @app.default
     def run_command(
         *,
+        online: Annotated[
+            bool,
+            Parameter(
+                name="--online",
+                negative="",
+                help="Also contact each configured service (tokens, URLs, TLS).",
+            ),
+        ] = False,
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
         """Run every health check and report one row per check."""
         with report_errors():
-            _run(shell, result, fmt=fmt, columns=columns)
+            _run(shell, result, online=online, fmt=fmt, columns=columns)
 
     return app
 
@@ -98,14 +109,22 @@ def _run(
     shell: ApplicationSpec,
     result: CompositionResult,
     *,
+    online: bool,
     fmt: OutputFormat,
     columns: list[str] | None,
 ) -> None:
-    rows = _collect(shell, result)
+    rows = collect_doctor_rows(shell, result, online=online)
+    report_check_rows(rows, op="doctor", fmt=fmt, columns=columns)
+
+
+def report_check_rows(
+    rows: list[dict[str, object]], *, op: str, fmt: OutputFormat, columns: list[str] | None
+) -> None:
+    """Emit ``untaped.doctor_check`` rows; exit 1 naming ``op`` when any failed."""
     emit_isolated(rows, fmt=fmt, columns=columns, kind="untaped.doctor_check")
     failed = [row for row in rows if row["status"] == _FAIL]
     if failed:
-        echo(f"doctor: {len(failed)} of {plural(len(rows), 'check')} failed", err=True)
+        echo(f"{op}: {len(failed)} of {plural(len(rows), 'check')} failed", err=True)
         raise SystemExit(ExitCode.FAILURE)
 
 
@@ -143,7 +162,18 @@ def _scopes(shell: ApplicationSpec, result: CompositionResult) -> list[_SectionS
     return scopes
 
 
-def _collect(shell: ApplicationSpec, result: CompositionResult) -> list[dict[str, object]]:
+def collect_doctor_rows(
+    shell: ApplicationSpec,
+    result: CompositionResult,
+    *,
+    online: bool = False,
+    capabilities: frozenset[str] | None = None,
+) -> list[dict[str, object]]:
+    """Every doctor row, offline unless ``online``.
+
+    ``capabilities`` limits the capability-contributed checks to those
+    capabilities (``setup`` checks only what it configured).
+    """
     rows: list[dict[str, object]] = []
     raw, config_row = _config_row(shell)
     rows.append(config_row)
@@ -177,13 +207,27 @@ def _collect(shell: ApplicationSpec, result: CompositionResult) -> list[dict[str
         contexts.append((scope, settings))
         if scope.state_model is not None:
             rows.append(_state_row(scope, scope.state_model, state))
-    for scope, settings in contexts:
-        for check_item in scope.checks:
-            rows.append(_run_check(scope, check_item, settings))
+    rows.extend(_check_rows(contexts, online=online, capabilities=capabilities))
     rows.append(_skills_row(shell, result))
     for record in result.quarantine:
         rows.append(_quarantine_row(record))
     return rows
+
+
+def _check_rows(
+    contexts: list[tuple[_SectionScope, BaseModel | None]],
+    *,
+    online: bool,
+    capabilities: frozenset[str] | None,
+) -> list[dict[str, object]]:
+    """Run the contributed checks (online ones only when ``online``)."""
+    return [
+        _run_check(scope, check_item, settings)
+        for scope, settings in contexts
+        if capabilities is None or scope.capability in capabilities
+        for check_item in scope.checks
+        if online or not check_item.online
+    ]
 
 
 def _permissions_row(shell: ApplicationSpec) -> dict[str, object]:
@@ -391,10 +435,13 @@ def _run_check(
             check_item.title,
             f"check returned id {outcome.id!r}, expected {check_item.id!r}",
         )
+    detail = outcome.detail
+    if outcome.fix and (not outcome.ok or outcome.warn):
+        detail = f"{detail}; run `untaped {outcome.fix}`"
     if not outcome.ok:
-        return _row(check_item.id, scope.capability, _FAIL, check_item.title, outcome.detail)
+        return _row(check_item.id, scope.capability, _FAIL, check_item.title, detail)
     if outcome.warn:
-        return _row(check_item.id, scope.capability, _WARN, check_item.title, outcome.detail)
+        return _row(check_item.id, scope.capability, _WARN, check_item.title, detail)
     return _row(check_item.id, scope.capability, _PASS, check_item.title, outcome.detail or "OK")
 
 
@@ -405,4 +452,4 @@ def _quarantine_row(record: QuarantineRecord) -> dict[str, object]:
     return _row("quarantine", record.distribution, _FAIL, record.reason, detail)
 
 
-__all__ = ["build_root_doctor_app"]
+__all__ = ["build_root_doctor_app", "collect_doctor_rows", "report_check_rows"]
