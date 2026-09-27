@@ -6,7 +6,7 @@ consumer does not have to parse table text.
 
 ```bash
 untaped github repos list --org acme --format pipe \
-  | untaped workspace add --stdin --workspace acme
+  | untaped workspace repos add acme --stdin
 ```
 
 ## Envelope format
@@ -55,23 +55,26 @@ reads. Commands not listed write no records.
 | `profile list` | `untaped.profile` |
 | `profile create`, `profile delete`, `profile rename` | `untaped.profile_outcome` (`name`, `previous_name`, `copied_from`, `action`) |
 | `skills list` | `untaped.skill` |
-| `doctor` | `untaped.doctor_check` |
+| `doctor`, `setup` | `untaped.doctor_check` |
 | `capabilities` | `untaped.capability` |
+| `alias list` | `untaped.alias` (`name`, `command`, `argv`, `profile`) |
+| `alias set`, `alias remove` | `untaped.alias_outcome` (`name`, `profile`, `action`) |
 
 `skills install --stdin` reads bare skill names, one per line. With
-`--dry-run`, `config set/unset` and `profile create/delete/rename` validate,
-write nothing and print their outcome with `action` `planned`.
+`--dry-run`, `config set/unset`, `profile create/delete/rename` and
+`alias set/remove` validate, write nothing and print their outcome with
+`action` `planned`.
 
 ### workspace
 
 | Command | Writes |
 |---|---|
 | `workspace list` | `workspace.workspace` |
-| `workspace get` | `workspace.repo`; `workspace.repo.summary` for an empty manifest |
+| `workspace repos list` | `workspace.repo`; `workspace.repo.summary` for an empty manifest |
 | `workspace init` | `workspace.init_outcome` |
 | `workspace forget` | `workspace.forget_outcome` |
-| `workspace add` | `workspace.add_outcome` (`workspace.sync_outcome` with `--sync`) |
-| `workspace remove` | `workspace.remove_outcome` |
+| `workspace repos add` | `workspace.add_outcome` (`workspace.sync_outcome` with `--sync`) |
+| `workspace repos remove` | `workspace.remove_outcome` |
 | `workspace branch set`, `workspace branch apply` | `workspace.branch_outcome` |
 | `workspace branch unset` | `workspace.branch_unset_outcome` |
 | `workspace sync` | `workspace.sync_outcome` |
@@ -80,8 +83,9 @@ write nothing and print their outcome with `action` `planned`.
 
 | Consumer | Reads | Field used |
 |---|---|---|
-| `workspace add --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`, `workspace.repo`; or URL lines | `clone_url`, else `url` |
-| `workspace remove --stdin` | `workspace.repo`, `workspace.sync_outcome`; or repo lines | `repo` |
+| `workspace repos add --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`, `workspace.repo`; or URL lines | `clone_url`, else `url` |
+| `workspace repos remove --stdin` | `workspace.repo`, `workspace.sync_outcome`; or repo lines | `repo` |
+| `workspace foreach --stdin` | `workspace.repo`, `workspace.status`, `workspace.sync_outcome`; or repo lines | `repo` |
 | `workspace path --stdin` | `workspace.workspace`; or name lines | `name` |
 
 ### github
@@ -131,7 +135,7 @@ Resource kinds are `awx.<snake_case kind>`: `awx.organization`,
 |---|---|
 | `awx <resource> list`, `awx <resource> get` | that resource's kind |
 | `awx <resource> export --format json` or `--format pipe` | `awx.document` (YAML by default) |
-| `awx apply`, `awx <resource> apply`, `patch`, `edit` | `awx.apply_outcome` |
+| `awx apply`, `awx <resource> patch`, `edit` | `awx.apply_outcome` |
 | `awx <resource> delete` | `awx.delete_outcome` |
 | `awx <resource> <members> add/remove` | `awx.membership_outcome` |
 | `awx job-templates launch`, `awx workflow-templates launch` | `awx.launch_outcome` |
@@ -165,11 +169,18 @@ NDJSON.
 
 | Command | Writes |
 |---|---|
-| `ansible alias list` | `ansible.alias` |
-| `ansible alias set`, `alias remove` | `ansible.alias_outcome` |
+| `ansible deps` | `ansible.dependency` (with the ROLE ref it was reached from, `root_ref`) |
+| `ansible impact` | `ansible.dependent` (with `root_ref`) |
+| `ansible find` | `ansible.dependency_match` (with the input record's `input_kind`, `input_id`, `input_name`) |
+| `ansible source-alias list` | `ansible.source_alias` |
+| `ansible source-alias set`, `source-alias remove` | `ansible.source_alias_outcome` |
 | `ansible source list`, `source get` | `ansible.source` |
 | `ansible source status` | `ansible.source_status` |
 | `ansible source set`, `source patch`, `source remove` | `ansible.source_outcome` |
+
+| Consumer | Reads | Field used |
+|---|---|---|
+| `ansible find --stdin` | any record kind; or `owner/repo@ref` lines | repository from `scm_url`, `repo_url`, `repo` or `full_name`; ref from `effective_scm_ref` or `ref`; identity from `id` and `name` |
 
 `ansible graph` has its own formats (`tree`, `mermaid`, `json`) and no pipe
 output.
@@ -179,21 +190,26 @@ output.
 | Command | Writes |
 |---|---|
 | `recipe apply` | `recipe.apply_outcome` |
-| `recipe list`, `recipe get` | `recipe.recipe`, `recipe.hook` or `recipe.pack` |
-| `recipe add` | `recipe.add_outcome` |
-| `recipe sync` | `recipe.sync_outcome` |
-| `recipe remove` | `recipe.remove_outcome` |
+| `recipe list`, `recipe get` | `recipe.recipe` |
+| `recipe packs list`, `recipe packs get` | `recipe.pack` |
+| `recipe packs add` | `recipe.add_outcome` |
+| `recipe packs sync` | `recipe.sync_outcome` |
+| `recipe packs remove` | `recipe.remove_outcome` |
+| `recipe hooks list`, `recipe hooks get` | `recipe.hook` |
 | `recipe validate` | `recipe.check` |
 | `recipe test` | `recipe.test` |
-| `recipe hook run` | `recipe.hook_run` |
-| `recipe backup list/get/restore/prune` | `recipe.backup` |
+| `recipe hooks run` | `recipe.hook_run` |
+| `recipe backups list/get/restore/prune` | `recipe.backup` |
+
+`recipe packs sync --stdin` and `recipe packs remove --stdin` read pack
+names, or `recipe.pack` records from `recipe packs list --format pipe`.
 
 `recipe apply --stdin` reads target directories: path lines, or records of any
 kind that carry an absolute `target_path` (else `path`), such as
 `workspace.repo`, `workspace.status` or `workspace.sync_outcome`.
 
 ```bash
-untaped workspace get --workspace prod --format pipe \
+untaped workspace repos list prod --format pipe \
   | untaped recipe apply acme/ci-baseline --stdin --dry-run
 ```
 

@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from untaped.capabilities.github.settings import GithubSettings
+from untaped.capability_api import GitResult
 from untaped.settings import get_settings, register_profile_settings
 
 
@@ -34,6 +37,15 @@ def _commit_file(repo: Path, rel: str, content: str, message: str = "change") ->
     path.write_text(content)
     _git(repo, "add", rel)
     _git(repo, "commit", "-q", "-m", message)
+
+
+@pytest.fixture
+def default_org() -> str:
+    """Set ``github.default_org: acme`` in the test config, whose ``github`` section is last."""
+    cfg = Path(os.environ["UNTAPED_CONFIG"])
+    cfg.write_text(cfg.read_text() + "      default_org: acme\n")
+    get_settings.cache_clear()
+    return "acme"
 
 
 @pytest.fixture
@@ -72,3 +84,21 @@ def source_repo(tmp_path: Path) -> Callable[[str, dict[str, str | bytes]], Path]
         return repo
 
     return create
+
+
+@pytest.fixture
+def git_auth(monkeypatch: pytest.MonkeyPatch) -> dict[str, str | None]:
+    """Stub the corpus's Git calls; map each fetched remote URL to the auth header it got."""
+    seen: dict[str, str | None] = {}
+
+    def fake_run_git(args: list[str], **kwargs: Any) -> GitResult:
+        if args[:2] == ["init", "--bare"]:
+            Path(args[2]).mkdir(parents=True, exist_ok=True)
+        if args[0] in {"fetch", "ls-remote"}:
+            seen[kwargs["auth_url"]] = kwargs.get("auth_header")
+        return GitResult(returncode=0, stdout=b"", stderr="")
+
+    monkeypatch.setattr(
+        "untaped.capabilities.github.infrastructure.git_corpus.run_git", fake_run_git
+    )
+    return seen

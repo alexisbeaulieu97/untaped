@@ -30,6 +30,7 @@ from untaped.capabilities.github.ansible import (
     ResolveRepositoryInventory,
     TeamScope,
     github_settings,
+    github_web_host,
     is_global_github_failure,
     normalize_team_scopes,
 )
@@ -48,6 +49,7 @@ EXPECTED_ALL = [
     "ResolveRepositoryInventory",
     "TeamScope",
     "github_settings",
+    "github_web_host",
     "is_global_github_failure",
     "normalize_team_scopes",
 ]
@@ -61,6 +63,7 @@ def test_exports_are_canonical_objects() -> None:
     import untaped.capabilities.github.application.inventory as inventory
     import untaped.capabilities.github.application.scopes as scopes
     import untaped.capabilities.github.domain.errors as errors
+    import untaped.capabilities.github.domain.hosts as hosts
     import untaped.capabilities.github.domain.models as models
     import untaped.capabilities.github.infrastructure.github_client as client
     import untaped.capabilities.github.settings as settings
@@ -73,6 +76,7 @@ def test_exports_are_canonical_objects() -> None:
     assert GithubGraphqlError is errors.GithubGraphqlError
     assert GithubGraphqlErrorKind is errors.GithubGraphqlErrorKind
     assert is_global_github_failure is errors.is_global_github_failure
+    assert github_web_host is hosts.github_web_host
     assert BatchRepoRefsResult is models.BatchRepoRefsResult
     assert BatchRepoRefsFailure is models.BatchRepoRefsFailure
     assert RepoRefs is models.RepoRefs

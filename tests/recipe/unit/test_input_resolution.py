@@ -9,7 +9,6 @@ import pytest
 from untaped.capabilities.recipe.application.inputs import (
     InputResolutionConfig,
     InputResolutionResult,
-    NoPromptAvailableError,
     has_sensitive_inputs,
     prepare_input_resolution,
     redact_inputs,
@@ -28,17 +27,8 @@ class PromptRecorder:
         self.answers = answers
         self.messages: list[str] = []
 
-    def ask(
-        self,
-        message: str,
-        *,
-        sensitive: bool,
-        default: object | None = None,
-        required: bool = True,
-    ) -> str:
-        self.messages.append(
-            f"{message}|sensitive={sensitive}|default={default}|required={required}"
-        )
+    def ask(self, message: str, *, sensitive: bool) -> str:
+        self.messages.append(f"{message}|sensitive={sensitive}")
         try:
             return self.answers[message]
         except KeyError as exc:
@@ -88,14 +78,12 @@ def _config(
     *,
     fixed_values: dict[str, object] | None = None,
     input_from: dict[str, str] | None = None,
-    interactive: bool = False,
     prompt: PromptRecorder | None = None,
 ) -> InputResolutionConfig:
     return prepare_input_resolution(
         recipe,
         fixed_values=fixed_values or {},
         input_from=input_from or {},
-        interactive=interactive,
         prompt=None if prompt is None else prompt.ask,
     )
 
@@ -106,14 +94,12 @@ def _resolve(
     *,
     fixed_values: dict[str, object] | None = None,
     input_from: dict[str, str] | None = None,
-    interactive: bool = False,
     prompt: PromptRecorder | None = None,
 ) -> InputResolutionResult:
     config = _config(
         recipe,
         fixed_values=fixed_values,
         input_from=input_from,
-        interactive=interactive,
         prompt=prompt,
     )
     return resolve_target_inputs(
@@ -200,7 +186,9 @@ def test_resolve_target_inputs_treats_missing_required_target_input_as_target_er
         }
     )
 
-    with pytest.raises(ValueError, match="missing required input: team"):
+    with pytest.raises(
+        ValueError, match="missing required input: team; pass --var team=VALUE or --vars-file FILE"
+    ):
         _resolve(
             recipe,
             Target(path=Path("/work/acme/api")),
@@ -296,187 +284,77 @@ def test_interactive_prompts_for_global_and_target_inputs() -> None:
     result = _resolve(
         recipe,
         Target(path=Path("/work/acme/api")),
-        interactive=True,
         prompt=prompt,
     )
 
     assert result.values == {"owner": "platform", "service": "api"}
     assert prompt.messages == [
-        "owner (Owning team.)|sensitive=False|default=None|required=True",
-        "service for /work/acme/api (Service name.)|sensitive=False|default=None|required=True",
+        "owner (Owning team.)|sensitive=False",
+        "service for /work/acme/api (Service name.)|sensitive=False",
     ]
 
 
-def test_interactive_prompt_runs_before_default_and_empty_uses_default() -> None:
+def test_prompting_never_asks_for_defaulted_or_optional_inputs() -> None:
     recipe = Recipe.model_validate(
         {
             "version": 1,
             "inputs": {
                 "replicas": {"type": "int", "default": 2},
-                "owner": {"type": "str", "default": "platform"},
+                "token": {"type": "str", "scope": "global", "sensitive": True, "default": "x"},
+                "cols": {"type": "list", "default": ["name", "path"]},
+                "label": {"type": "str"},
+                "tags": {"type": "list"},
             },
         }
     )
-    prompt = PromptRecorder(
-        {
-            "replicas (default: 2)": "5",
-            "owner (default: platform)": "",
-        }
-    )
+    prompt = PromptRecorder({})
 
     result = _resolve(
         recipe,
         Target(path=Path("/work/acme/api")),
-        interactive=True,
         prompt=prompt,
     )
 
-    assert result.values == {"replicas": 5, "owner": "platform"}
-    assert prompt.messages == [
-        "replicas (default: 2)|sensitive=False|default=2|required=False",
-        "owner (default: platform)|sensitive=False|default=platform|required=False",
-    ]
+    assert result.values == {"replicas": 2, "token": "x", "cols": ["name", "path"]}
+    assert prompt.messages == []
 
 
-def test_interactive_prompts_optional_inputs_and_empty_optional_stays_unset() -> None:
+def test_required_sensitive_input_prompts_as_a_secret() -> None:
     recipe = Recipe.model_validate(
         {
             "version": 1,
             "inputs": {
-                "owner": {"type": "str"},
-                "label": {"type": "str", "scope": "target"},
+                "token": {"type": "str", "scope": "global", "sensitive": True, "required": True}
             },
         }
     )
-    prompt = PromptRecorder(
-        {
-            "owner": "platform",
-            "label for /work/acme/api": "",
-        }
-    )
+    prompt = PromptRecorder({"token": "s3cret"})
 
     result = _resolve(
         recipe,
         Target(path=Path("/work/acme/api")),
-        interactive=True,
         prompt=prompt,
     )
 
-    assert result.values == {"owner": "platform"}
-    assert prompt.messages == [
-        "owner|sensitive=False|default=None|required=False",
-        "label for /work/acme/api|sensitive=False|default=None|required=False",
-    ]
+    assert result.values == {"token": "s3cret"}
+    assert result.display_values == {"token": "***"}
+    assert prompt.messages == ["token|sensitive=True"]
 
 
-def test_interactive_prompting_rejects_structured_inputs() -> None:
+def test_missing_required_structured_input_never_prompts() -> None:
     recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "inputs": {
-                "cols": {"type": "list", "required": True},
-            },
-        }
+        {"version": 1, "inputs": {"cols": {"type": "list", "required": True}}}
     )
     prompt = PromptRecorder({"cols": "[]"})
 
-    with pytest.raises(
-        ConfigError,
-        match=r"interactive prompting is not supported for structured input 'cols'; "
-        r"pass --var or --vars",
-    ):
+    with pytest.raises(ValueError, match="missing required input: cols; pass --var cols=VALUE"):
         _resolve(
             recipe,
             Target(path=Path("/work/acme/api")),
-            interactive=True,
             prompt=prompt,
         )
 
     assert prompt.messages == []
-
-
-def test_interactive_resolution_uses_structured_default_without_prompting() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "inputs": {
-                "cols": {"type": "list", "default": ["name", "path"]},
-            },
-        }
-    )
-    prompt = PromptRecorder({})
-
-    result = _resolve(
-        recipe,
-        Target(path=Path("/work/acme/api")),
-        interactive=True,
-        prompt=prompt,
-    )
-
-    assert result.values == {"cols": ["name", "path"]}
-    assert prompt.messages == []
-
-
-def test_interactive_resolution_skips_optional_structured_input() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "inputs": {
-                "cols": {"type": "list", "required": False},
-            },
-        }
-    )
-    prompt = PromptRecorder({})
-
-    result = _resolve(
-        recipe,
-        Target(path=Path("/work/acme/api")),
-        interactive=True,
-        prompt=prompt,
-    )
-
-    assert "cols" not in result.values
-    assert prompt.messages == []
-
-
-def test_sensitive_default_is_not_shown_or_passed_to_prompt_backend() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "inputs": {
-                "token": {
-                    "type": "str",
-                    "scope": "global",
-                    "sensitive": True,
-                    "default": "TOP-SECRET-9000",
-                },
-            },
-        }
-    )
-    prompt = PromptRecorder({"token": ""})
-
-    result = _resolve(
-        recipe,
-        Target(path=Path("/work/acme/api")),
-        interactive=True,
-        prompt=prompt,
-    )
-
-    assert result.values == {"token": "TOP-SECRET-9000"}
-    assert prompt.messages == ["token|sensitive=True|default=None|required=False"]
-
-
-def test_interactive_without_prompt_backend_fails_clearly() -> None:
-    recipe = Recipe.model_validate(
-        {"version": 1, "inputs": {"service": {"type": "str", "required": True}}}
-    )
-
-    with pytest.raises(NoPromptAvailableError, match="interactive input requires a terminal"):
-        _resolve(
-            recipe,
-            Target(path=Path("/work/acme/api")),
-            interactive=True,
-        )
 
 
 @pytest.mark.parametrize(

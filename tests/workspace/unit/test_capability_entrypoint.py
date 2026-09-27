@@ -1,4 +1,4 @@
-"""Workspace composition checks: the deprecated ``show`` alias and state-backed settings."""
+"""Workspace composition checks: the `repos` group through the root and state-backed settings."""
 
 from __future__ import annotations
 
@@ -31,16 +31,15 @@ def _root() -> App:
     return bootstrap.build_root_app(builtins=(SPEC,), externals=())  # type: ignore[return-value]
 
 
-def test_show_is_a_deprecated_alias_of_get(_isolate: Path, tmp_path: Path) -> None:
+def test_repos_group_mounts_through_the_root(_isolate: Path, tmp_path: Path) -> None:
     root = _root()
     invoker = CliInvoker()
     invoker.invoke(root.meta, ["workspace", "init", "prod", "--path", str(tmp_path / "ws")])
 
-    result = invoker.invoke(root.meta, ["workspace", "show", "-w", "prod", "--format", "json"])
+    result = invoker.invoke(root.meta, ["workspace", "repos", "list", "prod", "--format", "json"])
 
     assert result.exit_code == 0, result.output
-    assert "warning: `show` is deprecated" in result.stderr
-    assert "use `get`" in result.stderr
+    assert result.stderr == ""
     assert json.loads(result.stdout)[0]["workspace"] == "prod"
 
 
@@ -49,7 +48,7 @@ def test_state_registry_round_trips_through_the_list_command(
 ) -> None:
     target = tmp_path / "prod"
     target.mkdir()
-    _isolate.write_text(
+    _isolate.with_name("state.yml").write_text(
         f"workspace:\n  workspaces:\n    - name: prod\n      path: {target}\n", encoding="utf-8"
     )
     get_settings.cache_clear()

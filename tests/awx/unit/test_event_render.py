@@ -1,6 +1,6 @@
 """Unit tests for :mod:`untaped.capabilities.awx.cli.event_render`.
 
-Pins the plain text of :func:`render_event_text` (byte-stable ``--track``
+Pins the plain text of :func:`render_event_text` (byte-stable ``jobs events --follow``
 output) and the style of each runner verdict so the colours don't drift.
 """
 
@@ -86,7 +86,7 @@ def test_render_event_failure_reason_is_capped_and_prefixed() -> None:
 
 
 def test_render_event_text_with_prefix_prepends_bracketed_name() -> None:
-    """Concurrent multi-template ``--track`` output stays disambiguable."""
+    """Prefixed event lines stay disambiguable on a shared stream."""
     text = render_event_text(_ev("playbook_on_play_start", play="X"), prefix="deploy")
     assert text.plain == "[deploy] PLAY [X]"
     assert ("[deploy] ", "dim cyan") in _spans(text)

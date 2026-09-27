@@ -25,7 +25,9 @@ pipe keeps its own exit code.
 |---|---|
 | `untaped github sweep --fail-on-match` | Any repository matched the query. |
 | `untaped github sweep --strict` | Any repository could not be scanned. |
+| `untaped awx apply --check` | Any document would change the controller. |
 | `untaped recipe apply --check` | Any target would change. |
+| `untaped workspace status --check` | Any repo is dirty or behind its upstream (only the `--dirty` / `--behind` condition when one is given); exits 1 instead when a repo cannot be inspected. |
 
 Use these in CI to tell "the check found something" (3) apart from "the tool
 failed" (1):

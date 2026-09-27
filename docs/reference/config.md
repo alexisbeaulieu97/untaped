@@ -20,13 +20,13 @@ variable shown.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `log_level` | string | `INFO` | `UNTAPED_LOG_LEVEL` | Deprecated and ignored (removed in 8.0); `untaped doctor` warns when set. |
 | `http.ca_bundle` | path (optional) | unset | `UNTAPED_HTTP__CA_BUNDLE` | PEM file of extra CA certificates to trust instead of the OS trust store. |
 | `http.verify_ssl` | boolean | `true` | `UNTAPED_HTTP__VERIFY_SSL` | Verify TLS certificates. `false` disables all certificate checks. |
 | `http.verify_hostname` | boolean | `true` | `UNTAPED_HTTP__VERIFY_HOSTNAME` | Check the certificate host name. `false` keeps chain validation. |
 | `http.timeout` | number | `30.0` | `UNTAPED_HTTP__TIMEOUT` | HTTP request timeout in seconds. |
 | `http.proxy` | string (optional) | unset | `UNTAPED_HTTP__PROXY` | Proxy URL for HTTP clients. When unset, standard proxy variables apply. |
 | `ui.theme` | string | `default` | `UNTAPED_UI__THEME` | Built-in theme: `default`, `plain`, `compact`, `high-contrast`, `quiet`, `classic`. |
+| `ui.format` | `json` \| `yaml` \| `table` \| `raw` \| `pipe` (optional) | unset | `UNTAPED_UI__FORMAT` | Default `--format` for commands whose default is `table`. `UNTAPED_FORMAT` wins over it; an explicit `--format` wins over both. |
 | `ui.border` | `rounded` \| `square` \| `ascii` \| `none` (optional) | unset | `UNTAPED_UI__BORDER` | Table border style; overrides the theme. |
 | `ui.density` | `normal` \| `compact` (optional) | unset | `UNTAPED_UI__DENSITY` | Table density; overrides the theme. |
 | `ui.collection_view` | `table` \| `list` (optional) | unset | `UNTAPED_UI__COLLECTION_VIEW` | How lists render in `table` format; overrides the theme. |
@@ -35,12 +35,19 @@ variable shown.
 | `ui.color_roles` | mapping | empty | `UNTAPED_UI__COLOR_ROLES` | Color-role overrides merged over the theme's colors. |
 | `skills.updates` | `warn` \| `auto` \| `off` | `warn` | `UNTAPED_SKILLS__UPDATES` | What each run does when installed agent skills differ from this version: `warn` (print a warning), `auto` (update them in place), or `off`. |
 
+## `shell`
+
+| Key | Type | Default | Environment | Description |
+|---|---|---|---|---|
+| `shell.aliases` | mapping | empty | `UNTAPED_SHELL__ALIASES` | Command aliases: `untaped NAME [ARGS…]` runs the argv stored under NAME. Managed by `alias` commands. |
+
 ## `workspace`
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
 | `workspace.cache_dir` | path | `~/.untaped/repositories` | `UNTAPED_WORKSPACE__CACHE_DIR` | Bare-clone cache used as the reference for new workspace clones. |
 | `workspace.workspaces_dir` | path | `~/.untaped/workspaces` | `UNTAPED_WORKSPACE__WORKSPACES_DIR` | Parent directory for `workspace init NAME` without `--path`. |
+| `workspace.parallel` | integer (optional) | unset | `UNTAPED_WORKSPACE__PARALLEL` | Default `sync --parallel` and `foreach --parallel` workers. Unset means `min(8, 2 * CPUs)`; values above `2 * CPUs` are clamped. |
 
 ## `workspace` state
 
@@ -55,6 +62,7 @@ variable shown.
 | `github.base_url` | string | `https://api.github.com` | `UNTAPED_GITHUB__BASE_URL` | GitHub API URL. GitHub Enterprise Server uses `https://HOST/api/v3`. |
 | `github.token` | secret (optional) | unset | `UNTAPED_GITHUB__TOKEN` | GitHub token for API calls and Git fetches. Falls back to `token_command`, then `GH_TOKEN`, then `GITHUB_TOKEN`. |
 | `github.token_command` | list (optional) | unset | `UNTAPED_GITHUB__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `github.token` is unset. |
+| `github.default_org` | string (optional) | unset | `UNTAPED_GITHUB__DEFAULT_ORG` | Org scope for `repos list`, `search` (repos, code, issues), `sweep`, `cache sync` and `cache prune` when no scope flag is given. Without it, search uses `@me`. |
 | `github.corpus_path` | path | `~/.untaped/github-corpus` | `UNTAPED_GITHUB__CORPUS_PATH` | Local Git corpus that `github sweep` and `github cache` manage. |
 | `github.sweep.max_age_seconds` | integer | `3600` | `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS` | `sweep` and `cache sync` refresh cached repos older than this that GitHub reports as pushed since. |
 | `github.sweep.sync_concurrency` | integer | `12` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | Default `sweep --parallel` and `cache sync --parallel` Git workers. |
@@ -72,6 +80,7 @@ variable shown.
 | `jira.default_project` | string (optional) | unset | `UNTAPED_JIRA__DEFAULT_PROJECT` | Project key `issues create` uses when `--project` is omitted. |
 | `jira.default_board_id` | integer (optional) | unset | `UNTAPED_JIRA__DEFAULT_BOARD_ID` | Board `sprints list` uses when `--board-id` is omitted. |
 | `jira.page_size` | integer | `50` | `UNTAPED_JIRA__PAGE_SIZE` | Results requested per Jira API page. |
+| `jira.confirm` | `always` \| `destructive` \| `never` | `destructive` | `UNTAPED_JIRA__CONFIRM` | Which writes ask first: `always`, `destructive` (patches that replace or remove values, assignee changes, transitions) or `never`. `--yes` skips the prompt. |
 
 ## `awx`
 
@@ -92,13 +101,13 @@ variable shown.
 |---|---|---|---|---|
 | `ansible.index_path` | path | `~/.untaped/ansible-index.sqlite3` | `UNTAPED_ANSIBLE__INDEX_PATH` | SQLite cache of refreshed source data. |
 | `ansible.stale_after` | integer | `86400` | `UNTAPED_ANSIBLE__STALE_AFTER` | Seconds after which `source status` reports a source as `stale`. |
-| `ansible.freshness_ttl` | integer (optional) | unset | `UNTAPED_ANSIBLE__FRESHNESS_TTL` | Deprecated and ignored; `doctor` warns while it is set. |
+| `ansible.default_source` | string (optional) | unset | `UNTAPED_ANSIBLE__DEFAULT_SOURCE` | Saved source `deps`, `impact`, `find` and `graph` use when no `--source` or inline selector is given. |
 | `ansible.ref_scan_default` | `all` \| `default_branch` | `all` | `UNTAPED_ANSIBLE__REF_SCAN_DEFAULT` | Refs a source scans: `all` refs or each repo's default branch. |
 | `ansible.source_refresh_backend` | `auto` \| `graphql` \| `git` | `auto` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_BACKEND` | Ref probe backend for source refresh. |
 | `ansible.repo_cache_path` | path | `~/.untaped/ansible-repositories` | `UNTAPED_ANSIBLE__REPO_CACHE_PATH` | Git clone cache used by source refresh. |
 | `ansible.git_clone_protocol` | `https` \| `ssh` | `https` | `UNTAPED_ANSIBLE__GIT_CLONE_PROTOCOL` | Protocol for source refresh clones. |
 | `ansible.git_fetch_depth` | integer | `1` | `UNTAPED_ANSIBLE__GIT_FETCH_DEPTH` | Git fetch depth for source refresh; `0` is full history. |
-| `ansible.git_fetch_concurrency` | integer | `8` | `UNTAPED_ANSIBLE__GIT_FETCH_CONCURRENCY` | Default `--parallel` for `source refresh` and `graph`. |
+| `ansible.git_fetch_concurrency` | integer | `8` | `UNTAPED_ANSIBLE__GIT_FETCH_CONCURRENCY` | Default `--parallel` for `source refresh` and `--refresh`. |
 | `ansible.probe_concurrency` | integer | `8` | `UNTAPED_ANSIBLE__PROBE_CONCURRENCY` | Concurrent ref probes during source refresh. |
 | `ansible.source_refresh_repo_batch_size` | integer | `100` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_REPO_BATCH_SIZE` | Repos committed per source refresh batch. |
 | `ansible.source_refresh_rate_limit_floor` | integer | `500` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_RATE_LIMIT_FLOOR` | Stop a refresh (resumable) when the GraphQL budget drops below this. |
@@ -110,7 +119,7 @@ variable shown.
 | Key | Type | Description |
 |---|---|---|
 | `ansible.sources` | list | Saved sources. Managed by `ansible source` commands. |
-| `ansible.aliases` | mapping | Role or Galaxy name to `owner/repo` aliases. Managed by `ansible alias` commands. |
+| `ansible.aliases` | mapping | Role or Galaxy name to `owner/repo` aliases. Managed by `ansible source-alias` commands. |
 
 ## `recipe`
 

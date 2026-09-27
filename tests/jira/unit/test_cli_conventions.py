@@ -1,97 +1,27 @@
 """CLI tests for the jira command conventions (``docs/conventions.md``).
 
-Covers the renamed commands and flags (old spellings stay as warning
-aliases through the root), usage errors (exit 2), the write confirmation
-contract (``--yes`` / ``--dry-run``), ``--stdin`` identifiers, and HTTP
-error mapping.
+Covers usage errors (exit 2), the write confirmation contract (``--yes`` /
+``--dry-run``, under ``jira.confirm: always``), ``--stdin`` identifiers, and
+HTTP error mapping.
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx
 import pytest
 import respx
 
-from untaped import bootstrap
 from untaped.capabilities.jira.cli import app
 from untaped.testing import CliInvoker, ScriptedPromptBackend, invoke_cli
 
 BASE = "https://jira.example.com"
 
 
-def _root() -> object:
-    return bootstrap.build_root_app(externals=[])
-
-
 def _issue(key: str) -> dict[str, object]:
     return {"key": key, "self": f"{BASE}/rest/api/2/issue/{key}", "fields": {"summary": key}}
-
-
-# --- renamed commands and flags -------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("args", "old", "new"),
-    [
-        (["me"], "me", "whoami"),
-        (["issue", "get", "ABC-1"], "issue", "issues"),
-        (["project", "list"], "project", "projects"),
-        (["board", "list"], "board", "boards"),
-        (["sprint", "list", "--board-id", "7"], "sprint", "sprints"),
-    ],
-)
-def test_old_command_names_are_hidden_warning_aliases(args: list[str], old: str, new: str) -> None:
-    page = {"startAt": 0, "maxResults": 50, "isLast": True, "values": []}
-    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
-        mock.get("/rest/api/2/myself").mock(return_value=httpx.Response(200, json={"name": "a"}))
-        mock.get("/rest/api/2/issue/ABC-1").mock(
-            return_value=httpx.Response(200, json=_issue("ABC-1"))
-        )
-        mock.get("/rest/api/2/project").mock(return_value=httpx.Response(200, json=[]))
-        mock.get(path__startswith="/rest/agile/1.0/board").mock(
-            return_value=httpx.Response(200, json=page)
-        )
-        result = invoke_cli(_root(), ["jira", *args, "--format", "json"])  # type: ignore[arg-type]
-
-    assert result.exit_code == 0, result.output
-    assert f"warning: `{old}` is deprecated and will be removed in 8.0; use `{new}`" in (
-        result.stderr
-    )
-    help_text = invoke_cli(_root(), ["jira", "--help"]).stdout  # type: ignore[arg-type]
-    assert new in help_text
-    assert f" {old} " not in help_text
-
-
-def test_issue_edit_and_field_flags_alias_patch_and_set() -> None:
-    with respx.mock(base_url=BASE) as mock:
-        route = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
-        result = invoke_cli(
-            _root(),  # type: ignore[arg-type]
-            [
-                "jira",
-                "issue",
-                "edit",
-                "ABC-1",
-                "--field",
-                "summary=new",
-                "--json-field",
-                'labels=["a"]',
-                "--yes",
-                "--format",
-                "json",
-            ],
-        )
-
-    assert result.exit_code == 0, result.output
-    for old, new in (("issue", "issues"), ("edit", "patch"), ("--field", "--set")):
-        assert f"`{old}` is deprecated and will be removed in 8.0; use `{new}`" in result.stderr
-    assert "`--json-field` is deprecated" in result.stderr
-    assert json.loads(route.calls[0].request.content) == {
-        "fields": {"summary": "new", "labels": ["a"]}
-    }
-    assert json.loads(result.stdout)["action"] == "updated"
 
 
 # --- usage errors ----------------------------------------------------------------
@@ -123,6 +53,15 @@ def test_issue_edit_and_field_flags_alias_patch_and_set() -> None:
             ["issues", "create", "--yes", "--project", "ABC", "--set-json", "cf={broken"],
             "--set-json cf contains invalid JSON",
         ),
+        (["issues", "get", "ABC-1", "../../x"], "invalid issue key '../../x'"),
+        (["issues", "patch", "A-1?x=y", "--summary", "x", "--yes"], "invalid issue key"),
+        (["issues", "comment", "ABC-1/..", "--body", "hi", "--yes"], "invalid issue key"),
+        (["issues", "comments", "list", "ABC-1#x"], "invalid issue key"),
+        (["issues", "transitions", "1ABC-1"], "invalid issue key"),
+        (["issues", "transition", "ABC-1", "ABC-", "--id", "31"], "invalid issue key"),
+        (["issues", "links", "create", "ABC-1", "Blocks", "x y", "--yes"], "invalid issue key"),
+        (["projects", "get", "A/B?x=y"], "invalid project key 'A/B?x=y'"),
+        (["projects", "get", ".."], "invalid project key"),
     ],
 )
 def test_usage_errors_exit_2_before_any_request(args: list[str], message: str) -> None:
@@ -134,6 +73,48 @@ def test_usage_errors_exit_2_before_any_request(args: list[str], message: str) -
     assert result.stdout == ""
     assert message in result.stderr
     assert len(route.calls) == 0
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["issues", "comments", "list", "../x"],
+        ["issues", "transitions", "../x"],
+        ["issues", "get", "../x"],
+        ["projects", "get", "../x"],
+    ],
+)
+def test_invalid_keys_exit_2_even_without_jira_config(jira_config: Path, args: list[str]) -> None:
+    jira_config.write_text("profiles:\n  default: {}\n")
+    result = CliInvoker().invoke(app, args)
+
+    assert result.exit_code == 2, result.output
+    assert "invalid" in result.stderr
+
+
+def test_transition_rejects_an_invalid_piped_key_before_any_request() -> None:
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        route = mock.route().mock(return_value=httpx.Response(200, json={}))
+        result = invoke_cli(
+            app, ["issues", "transition", "--stdin", "--id", "31", "--yes"], input="ABC-1\n../x\n"
+        )
+
+    assert result.exit_code == 2, result.output
+    assert "invalid issue key '../x'" in result.stderr
+    assert len(route.calls) == 0
+
+
+@pytest.mark.parametrize(
+    ("key", "path"),
+    [("abc_2-7", "/rest/api/2/issue/ABC_2-7"), ("10001", "/rest/api/2/issue/10001")],
+)
+def test_issue_keys_accept_lowercase_and_numeric_ids(key: str, path: str) -> None:
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.get(path).mock(return_value=httpx.Response(200, json=_issue("ABC_2-7")))
+        result = CliInvoker().invoke(app, ["issues", "get", key, "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert len(route.calls) == 1
 
 
 # --- write confirmation ------------------------------------------------------------
@@ -152,11 +133,24 @@ WRITES = {
 
 
 def _mock_writes(mock: respx.MockRouter) -> respx.Route:
+    """Mock the writes and the reads their previews make; return the write route."""
+    mock.get("/rest/api/2/issue/ABC-1").mock(
+        return_value=httpx.Response(200, json={"key": "ABC-1", "fields": {"summary": "old"}})
+    )
+    mock.get("/rest/api/2/issue/ABC-1/transitions").mock(
+        return_value=httpx.Response(200, json={"transitions": [{"id": "31", "name": "Done"}]})
+    )
     return mock.route(method__in=["POST", "PUT"]).mock(
         return_value=httpx.Response(201, json={"id": "9", "key": "ABC-1"})
     )
 
 
+@pytest.fixture
+def confirm_always(jira_config: Path) -> None:
+    jira_config.write_text(jira_config.read_text() + "      confirm: always\n")
+
+
+@pytest.mark.usefixtures("confirm_always")
 @pytest.mark.parametrize("verb", sorted(WRITES))
 def test_writes_require_yes_when_not_interactive(verb: str) -> None:
     args, _, _ = WRITES[verb]
@@ -169,6 +163,7 @@ def test_writes_require_yes_when_not_interactive(verb: str) -> None:
     assert len(route.calls) == 0
 
 
+@pytest.mark.usefixtures("confirm_always")
 @pytest.mark.parametrize("verb", sorted(WRITES))
 def test_writes_prompt_and_honour_a_decline(verb: str) -> None:
     args, method, path = WRITES[verb]
@@ -184,6 +179,7 @@ def test_writes_prompt_and_honour_a_decline(verb: str) -> None:
     assert len(route.calls) == 0
 
 
+@pytest.mark.usefixtures("confirm_always")
 @pytest.mark.parametrize("verb", sorted(WRITES))
 def test_writes_proceed_after_confirmation(verb: str) -> None:
     args, _, _ = WRITES[verb]
@@ -214,7 +210,7 @@ def test_comment_dry_run_shows_the_body() -> None:
     result = invoke_cli(app, ["issues", "comment", "ABC-1", "--dry-run"], input="hello\n")
 
     assert result.exit_code == 0, result.output
-    assert '"body": "hello"' in result.stderr
+    assert "  comment:\n    hello\n" in result.stderr
 
 
 # --- stdin -------------------------------------------------------------------------

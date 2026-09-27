@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -39,6 +39,21 @@ def load_yaml_mapping_file(path: Path, *, flag: str) -> dict[str, object]:
     if not isinstance(loaded, dict):
         raise ConfigError(f"{flag} file must contain a YAML mapping")
     return {str(key): value for key, value in loaded.items()}
+
+
+def merge_vars(
+    files: Sequence[Path], values: Mapping[str, object], *, file_flag: str
+) -> dict[str, object]:
+    """Merge YAML mapping ``files`` in order (later wins), then ``values`` on top.
+
+    The ``--vars-file``/``--var`` precedence ``awx test`` suites use: CLI
+    pairs win over every file, and a later file wins over an earlier one.
+    """
+    merged: dict[str, object] = {}
+    for path in files:
+        merged.update(load_yaml_mapping_file(path, flag=file_flag))
+    merged.update(values)
+    return merged
 
 
 def hook_timeout_seconds(override: float | None) -> float:

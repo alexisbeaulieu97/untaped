@@ -19,11 +19,31 @@ untaped --install-completion
 ```
 
 `untaped doctor` checks the install and your configuration without any
-network access. Run it whenever something looks wrong:
+network access. Run it whenever something looks wrong; `--online` also
+contacts each configured service and prints the command that fixes each
+failure:
 
 ```bash
 untaped doctor
+untaped doctor --online
 ```
+
+## Set up your services
+
+`untaped setup` walks you through a profile in a terminal: pick the services
+(`awx`, `github`, `jira`), enter each base URL, then type the token (stored
+like `config set KEY --prompt`), give a command that prints it
+(`token_command`), or keep the current one. It then checks each service
+online and exits 1 if one fails. A new profile name creates that profile.
+
+```bash
+untaped setup
+```
+
+To script the same settings, use `config set` below. Shorten commands you
+repeat with [aliases](./configuration.md#command-aliases):
+`untaped alias set failed -- awx jobs list --status failed`, then
+`untaped failed`.
 
 ## Store your tokens
 
@@ -62,8 +82,8 @@ override it field by field.
 
 ```bash
 untaped profile create prod --copy-from default
-untaped config set awx.base_url https://aap.prod.example.com --target-profile prod
-untaped config set awx.token --prompt --target-profile prod
+untaped --profile prod config set awx.base_url https://aap.prod.example.com
+untaped --profile prod config set awx.token --prompt
 
 untaped profile list
 untaped --profile prod awx ping
@@ -83,8 +103,8 @@ Each capability has a guide with the full workflow.
 ```bash
 # workspace: register a directory of Git clones and sync it
 untaped workspace init demo
-untaped workspace add git@github.com:acme/api.git --workspace demo --sync
-untaped workspace status --workspace demo
+untaped workspace repos add demo git@github.com:acme/api.git --sync
+untaped workspace status demo
 
 # github: check the token, then list an org's repos
 untaped github whoami
@@ -99,7 +119,7 @@ untaped awx ping
 untaped awx job-templates list
 
 # ansible: show what a role depends on
-untaped ansible graph acme/base-role --downstream
+untaped ansible deps acme/base-role
 
 # recipe: see installed recipes
 untaped recipe list
@@ -129,13 +149,23 @@ untaped github repos list --org acme --format raw --columns full_name
   `--columns` you name separated by tabs. It suits `fzf`, `awk` and `xargs`.
 - `pipe` prints records that another `untaped` command reads with `--stdin`.
 
+To change the `table` default, set `ui.format` in your profile or export
+`UNTAPED_FORMAT` (which wins over the setting); an explicit `--format` always
+wins. A table written to a pipe or file is never wrapped to the terminal
+width.
+
+```bash
+untaped config set ui.format json
+UNTAPED_FORMAT=yaml untaped github repos list --org acme
+```
+
 Only data goes to stdout. Progress, warnings and errors go to stderr, so a
 pipe never carries noise. `-q`/`--quiet` mutes progress and success messages.
 
 ```bash
 # Clone every non-archived repo of a GitHub team into a workspace
-untaped github repos list --team acme/platform --no-archived --format pipe \
-  | untaped workspace add --stdin --workspace demo --sync
+untaped github repos list --team acme/platform --format pipe \
+  | untaped workspace repos add demo --stdin --sync
 
 # Pick a job template with fzf and show it as YAML
 untaped awx job-templates list --format raw --columns name \

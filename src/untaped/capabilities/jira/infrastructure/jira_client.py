@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from types import TracebackType
 from typing import Any
+from urllib.parse import quote
 
 from untaped.capabilities.jira.domain.models import ISSUE_DETAIL_FIELDS, ISSUE_ROW_FIELDS
 from untaped.capabilities.jira.infrastructure.errors import map_jira_errors
@@ -18,6 +19,11 @@ from untaped.capability_api import HttpSettings, RetryPolicy, connected_client, 
 _SEARCH_RETRY = RetryPolicy(
     idempotent_methods=frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE", "POST"})
 )
+
+
+def _segment(value: str) -> str:
+    """``value`` percent-encoded as exactly one URL path segment (dots too, so no ``..``)."""
+    return quote(value, safe="").replace(".", "%2E")
 
 
 class JiraClient:
@@ -47,11 +53,20 @@ class JiraClient:
         with map_jira_errors():
             return self._http.get_json_dict(self._api("myself"))
 
-    def get_issue(self, issue_key: str) -> dict[str, Any]:
+    def get_issue(
+        self,
+        issue_key: str,
+        *,
+        fields: Sequence[str] | None = None,
+        expand: str | None = None,
+    ) -> dict[str, Any]:
+        params = {"fields": ",".join(fields or ISSUE_DETAIL_FIELDS)}
+        if expand:
+            params["expand"] = expand
         with map_jira_errors(noun="issue", name=issue_key):
             return self._http.get_json_dict(
-                self._api(f"issue/{issue_key}"),
-                params={"fields": ",".join(ISSUE_DETAIL_FIELDS)},
+                self._api(f"issue/{_segment(issue_key)}"),
+                params=params,
             )
 
     def search_issues(self, jql: str, *, limit: int | None = None) -> Iterator[dict[str, Any]]:
@@ -76,7 +91,7 @@ class JiraClient:
             yield from paginate_offset(
                 self._http,
                 "GET",
-                self._api(f"issue/{issue_key}/comment"),
+                self._api(f"issue/{_segment(issue_key)}/comment"),
                 item_key="comments",
                 page_size=self._page_size,
                 limit=limit,
@@ -90,12 +105,18 @@ class JiraClient:
 
     def edit_issue(self, issue_key: str, payload: dict[str, Any]) -> None:
         with map_jira_errors(noun="issue", name=issue_key):
-            self._http.request_json("PUT", self._api(f"issue/{issue_key}"), json=payload)
+            self._http.request_json("PUT", self._api(f"issue/{_segment(issue_key)}"), json=payload)
+
+    def assign_issue(self, issue_key: str, payload: dict[str, Any]) -> None:
+        with map_jira_errors(noun="issue", name=issue_key):
+            self._http.request_json(
+                "PUT", self._api(f"issue/{_segment(issue_key)}/assignee"), json=payload
+            )
 
     def add_comment(self, issue_key: str, body: str) -> dict[str, Any]:
         with map_jira_errors(noun="issue", name=issue_key):
             return self._http.post_json(  # type: ignore[no-any-return]
-                self._api(f"issue/{issue_key}/comment"),
+                self._api(f"issue/{_segment(issue_key)}/comment"),
                 json={"body": body},
             )
 
@@ -105,13 +126,15 @@ class JiraClient:
 
     def list_transitions(self, issue_key: str) -> list[dict[str, Any]]:
         with map_jira_errors(noun="issue", name=issue_key):
-            payload = self._http.get_json_dict(self._api(f"issue/{issue_key}/transitions"))
+            payload = self._http.get_json_dict(
+                self._api(f"issue/{_segment(issue_key)}/transitions")
+            )
         return list(payload.get("transitions") or [])
 
     def transition_issue(self, issue_key: str, payload: dict[str, Any]) -> None:
         with map_jira_errors(noun="issue", name=issue_key):
             self._http.request_json(
-                "POST", self._api(f"issue/{issue_key}/transitions"), json=payload
+                "POST", self._api(f"issue/{_segment(issue_key)}/transitions"), json=payload
             )
 
     def list_projects(self) -> Iterator[dict[str, Any]]:
@@ -120,7 +143,7 @@ class JiraClient:
 
     def get_project(self, project_key: str) -> dict[str, Any]:
         with map_jira_errors(noun="project", name=project_key):
-            return self._http.get_json_dict(self._api(f"project/{project_key}"))
+            return self._http.get_json_dict(self._api(f"project/{_segment(project_key)}"))
 
     def list_boards(
         self,

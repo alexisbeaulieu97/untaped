@@ -4,7 +4,7 @@ Files under ``src/untaped/capabilities/<name>/`` are provider-side code:
 every ``untaped``-rooted import in them must resolve to the kernel-only
 surface — ``untaped.capability_api`` (the single public SDK surface) — or
 the capability's own subtree. Anything else (kernel internals by module
-path, the deprecated ``untaped.api`` shim, the composition kernel
+path, the removed ``untaped.api`` shim, the composition kernel
 ``untaped.capabilities.registry``, sibling capabilities, or the bare
 ``untaped`` root) fails this suite. The surface itself is pinned in
 ``test_capability_api.py``.
@@ -219,7 +219,7 @@ def test_bare_root_and_direct_module_imports_fail(tmp_path: Path) -> None:
     assert len(violations) == 2
 
 
-def test_deprecated_api_shim_import_fails(tmp_path: Path) -> None:
+def test_removed_api_shim_import_fails(tmp_path: Path) -> None:
     src = _probe_tree(
         tmp_path,
         {

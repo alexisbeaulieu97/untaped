@@ -8,9 +8,11 @@ messages). These types are surfaced to the CLI via
 
 from __future__ import annotations
 
+import difflib
+from collections.abc import Iterable
 from typing import Any
 
-from untaped.capability_api import UntapedError
+from untaped.capability_api import UntapedError, not_found, q
 
 
 class AwxError(UntapedError):
@@ -20,8 +22,7 @@ class AwxError(UntapedError):
 class AwxApiError(AwxError):
     """Raised when the AWX API returns an error or behaves unexpectedly.
 
-    ``status_code`` names the HTTP status like :class:`HttpError` does;
-    ``status`` is its older spelling, kept for one release.
+    ``status_code`` names the HTTP status like :class:`HttpError` does.
     """
 
     def __init__(
@@ -33,14 +34,10 @@ class AwxApiError(AwxError):
         url: str | None = None,
     ) -> None:
         super().__init__(message)
-        self.status = status
+        self.status_code = status
+        """The HTTP status of the failed response, when there was one."""
         self.body = body
         self.url = url
-
-    @property
-    def status_code(self) -> int | None:
-        """The HTTP status of the failed response, when there was one."""
-        return self.status
 
 
 class ActionResponseError(AwxApiError):
@@ -56,6 +53,14 @@ class ActionResponseError(AwxApiError):
         super().__init__(message)
         self.execution_id = execution_id
         self.execution_kind = execution_kind
+
+
+class PartialWriteError(AwxApiError):
+    """A record write landed but a follow-up sub-document write for it failed."""
+
+    def __init__(self, message: str, *, record_id: int) -> None:
+        super().__init__(message)
+        self.record_id = record_id
 
 
 class LaunchPromptError(AwxApiError):
@@ -82,19 +87,67 @@ class ResourceNotFoundError(AwxApiError):
         kind: str,
         identity: dict[str, Any],
         *,
+        candidates: Iterable[str] = (),
+        note: str | None = None,
         status: int | None = 404,
         body: str | None = None,
         url: str | None = None,
     ) -> None:
-        identity_str = ", ".join(f"{k}={v!r}" for k, v in identity.items())
+        candidates = tuple(candidates)
         super().__init__(
-            f"{kind} not found ({identity_str})",
+            _not_found_message(kind, identity, candidates, note),
             status=status,
             body=body,
             url=url,
         )
         self.kind = kind
         self.identity = identity
+        self.candidates = candidates
+
+    def with_note(self, note: str) -> ResourceNotFoundError:
+        """This error with ``note`` as its second line (e.g. :func:`default_organization_note`)."""
+        return ResourceNotFoundError(
+            self.kind,
+            self.identity,
+            candidates=self.candidates,
+            note=note,
+            status=self.status_code,
+            body=self.body,
+            url=self.url,
+        )
+
+
+def default_organization_note(organization: str) -> str:
+    """Say that ``awx.default_organization``, not a flag, scoped a name lookup."""
+    return (
+        f"searched in organization {q(organization)} (awx.default_organization); "
+        "pass --organization to search elsewhere"
+    )
+
+
+def _not_found_message(
+    kind: str, identity: dict[str, Any], candidates: Iterable[str], note: str | None
+) -> str:
+    """``<Kind> not found: 'x' in organization 'O'; did you mean 'y'?`` plus ``note``.
+
+    Suggestions are the ``candidates`` (names in the searched scope) closest
+    to the missing name. Identities without a name (an id lookup) keep the
+    ``key=value`` listing.
+    """
+    if "name" not in identity:
+        identity_str = ", ".join(f"{k}={v!r}" for k, v in identity.items())
+        return f"{kind} not found ({identity_str})"
+    scope = ", ".join(
+        f"{key.replace('__', ' ').replace('_', ' ')} {q(value)}"
+        for key, value in identity.items()
+        if key != "name"
+    )
+    name = str(identity["name"])
+    message = not_found(kind, name) + (f" in {scope}" if scope else "")
+    suggestions = difflib.get_close_matches(name, list(dict.fromkeys(candidates)), n=3)
+    if suggestions:
+        message += f"; did you mean {', '.join(map(q, suggestions))}?"
+    return f"{message}\n{note}" if note else message
 
 
 class ConflictError(AwxApiError):

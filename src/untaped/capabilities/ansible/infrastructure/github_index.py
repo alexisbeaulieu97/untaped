@@ -24,6 +24,9 @@ if TYPE_CHECKING:
         GitHubDependencyReader,
     )
 
+# Read ref used when GitHub reports no default branch; never recorded as one.
+_NO_DEFAULT_BRANCH = "HEAD"
+
 
 @dataclass
 class _LiveRead:
@@ -32,6 +35,7 @@ class _LiveRead:
     edges: list[IndexedDependency] = field(default_factory=list)
     skipped: list[SkippedDependencyFile] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    default_branch: str | None = None
 
 
 class GithubDependencyIndex:
@@ -59,6 +63,8 @@ class GithubDependencyIndex:
         self._aliases = aliases
         self._dependency_paths = dependency_paths
         self._cache: dict[tuple[str, str | None], list[IndexedDependency]] = {}
+        # Default branch resolved by each ref-less read, keyed by repo_key.
+        self._default_branches: dict[str, str] = {}
         self._warnings: list[SkippedDependencyFile] = []
         self._errors: list[str] = []
 
@@ -97,6 +103,11 @@ class GithubDependencyIndex:
         source_key: str | None,
     ) -> dict[tuple[str, str | None], list[IndexedDependency]]:
         requested = list(dict.fromkeys(pairs))
+        for repo, ref in requested:
+            # A ref-less read already read the default branch: reuse it.
+            key = repo_key(repo)
+            if ref is not None and self._default_branches.get(key) == ref:
+                self._cache.setdefault((key, ref), self._cache[(key, None)])
         pending = list(
             {
                 (repo_key(repo), ref): (repo, ref)
@@ -120,6 +131,8 @@ class GithubDependencyIndex:
         for repo, ref in pending:
             read = reads[(repo, ref)]
             self._cache[(repo_key(repo), ref)] = read.edges
+            if read.default_branch is not None:
+                self._default_branches[repo_key(repo)] = read.default_branch
             self._warnings.extend(read.skipped)
             self._errors.extend(read.errors)
         return {(repo, ref): self._cache[(repo_key(repo), ref)] for repo, ref in requested}
@@ -170,7 +183,17 @@ class GithubDependencyIndex:
             if cached_repo != repo_key(repo) or cached_ref is None or (cached_ref, None) in known:
                 continue
             metadata.append(CachedRef(name=cached_ref))
-        return tuple(metadata)
+        default = self._default_branches.get(repo_key(repo))
+        if default is None:
+            return tuple(metadata)
+        if all(cached_ref.name != default for cached_ref in metadata):
+            metadata.append(CachedRef(name=default))
+        return tuple(
+            cached_ref
+            if cached_ref.default_branch is not None
+            else cached_ref.model_copy(update={"default_branch": default})
+            for cached_ref in metadata
+        )
 
     def _live_read(self, repo: str, ref: str | None) -> _LiveRead:
         read = _LiveRead()
@@ -190,6 +213,8 @@ class GithubDependencyIndex:
     def _read_into(self, read: _LiveRead, repo: str, ref: str | None) -> None:
         owner, name = _split_repo(repo)
         read_ref = self._read_ref(owner, name, ref)
+        if ref is None and read_ref != _NO_DEFAULT_BRANCH:
+            read.default_branch = read_ref
         source_ref = ref or read_ref
         paths, truncated = self._tree_paths(owner, name, read_ref)
         if truncated:
@@ -275,4 +300,4 @@ def _default_branch(repository: dict[str, object]) -> str:
     default_branch = repository.get("default_branch")
     if isinstance(default_branch, str) and default_branch:
         return default_branch
-    return "HEAD"
+    return _NO_DEFAULT_BRANCH

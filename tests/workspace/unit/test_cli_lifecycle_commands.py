@@ -294,7 +294,7 @@ def test_forget_prune_refuses_dirty_repo(tmp_path: Path, monkeypatch: pytest.Mon
         capture_output=True,
     )
     runner.invoke(app, ["init", "lab", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/svc-a.git", "--repo-name", "svc-a", "--workspace", "lab"])
+    runner.invoke(app, ["repos", "add", "lab", "https://x/svc-a.git", "--repo-name", "svc-a"])
     (repo / "f.txt").write_text("dirty")  # uncommitted
 
     forget = runner.invoke(app, ["forget", "lab", "--prune", "--yes"])
@@ -371,7 +371,7 @@ def test_import_sync_scopes_to_imported_repos(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """``import --sync`` must pass ``only=`` matching the imported
-    manifest's repo names — same contract as ``add --sync``. Pinned
+    manifest's repo names — same contract as ``repos add --sync``. Pinned
     here so a future change can't silently revert to the
     "sync the whole manifest" shape."""
     captured: dict[str, object] = {}

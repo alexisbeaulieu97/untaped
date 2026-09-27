@@ -6,7 +6,7 @@ for externals (quarantine, never raise); built-in violations are fatal
 (an SDK bug).
 
 Built-ins (§7.1): ``kind == "built-in"``, ``distribution == "untaped"``,
-``entry_point == ""``, ``api_requires == (1.0, 2.0)``, and the reported
+``entry_point == ""``, ``api_requires == ((2, 0), (3, 0))``, and the reported
 version is always the unified product version — never per-capability.
 
 Externals (§7.2, checked without importing provider code): capabilities
@@ -43,7 +43,7 @@ def test_builtin_commit_carries_builtin_ref() -> None:
     result = compose(make_shell(), [make_spec(name="builtin")], [])
     (registered,) = result.capabilities
     assert registered.provider_ref == ProviderRef(
-        kind="built-in", distribution="untaped", entry_point="", api_requires=(1.0, 2.0)
+        kind="built-in", distribution="untaped", entry_point="", api_requires=((2, 0), (3, 0))
     )
     assert result.quarantine == ()
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Any, Protocol
 
 
@@ -15,7 +15,13 @@ class JiraMeService(Protocol):
 class JiraIssueReader(Protocol):
     """Issue read and search contract."""
 
-    def get_issue(self, issue_key: str) -> dict[str, Any]: ...
+    def get_issue(
+        self,
+        issue_key: str,
+        *,
+        fields: Sequence[str] | None = None,
+        expand: str | None = None,
+    ) -> dict[str, Any]: ...
 
     def search_issues(self, jql: str, *, limit: int | None = None) -> Iterator[dict[str, Any]]: ...
 
@@ -30,6 +36,8 @@ class JiraIssueWriter(Protocol):
     def create_issue(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
     def edit_issue(self, issue_key: str, payload: dict[str, Any]) -> None: ...
+
+    def assign_issue(self, issue_key: str, payload: dict[str, Any]) -> None: ...
 
     def add_comment(self, issue_key: str, body: str) -> dict[str, Any]: ...
 

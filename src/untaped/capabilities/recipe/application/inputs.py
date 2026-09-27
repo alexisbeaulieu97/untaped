@@ -19,15 +19,10 @@ from untaped.capabilities.recipe.domain.input_jinja import (
     ensure_derived_value_within_bound,
 )
 from untaped.capabilities.recipe.domain.recipe import InputSpec, Recipe
-from untaped.capabilities.recipe.errors import RecipeError
 from untaped.capability_api import ConfigError
 
 REDACTED = "***"
 _UNSET = object()
-
-
-class NoPromptAvailableError(RecipeError):
-    """Raised when interactive input is requested without a prompt backend."""
 
 
 @dataclass(frozen=True)
@@ -37,8 +32,10 @@ class InputResolutionConfig:
     fixed_values: Mapping[str, object] = field(default_factory=dict)
     cli_sources: Mapping[str, CompiledInputSource] = field(default_factory=dict)
     recipe_sources: Mapping[str, CompiledInputSource] = field(default_factory=dict)
-    interactive: bool = False
     prompt: PromptFunc | None = None
+
+
+_STRUCTURED = frozenset({"list", "dict"})
 
 
 @dataclass(frozen=True)
@@ -54,7 +51,6 @@ def prepare_input_resolution(
     *,
     fixed_values: Mapping[str, object],
     input_from: Mapping[str, str],
-    interactive: bool = False,
     prompt: PromptFunc | None = None,
 ) -> InputResolutionConfig:
     """Validate and compile invocation-level input resolution settings."""
@@ -72,7 +68,6 @@ def prepare_input_resolution(
         fixed_values=typed_fixed_values,
         cli_sources=cli_sources,
         recipe_sources=recipe_sources,
-        interactive=interactive,
         prompt=prompt,
     )
 
@@ -160,27 +155,15 @@ def _resolve_one(
         rendered = _derive_source_value(recipe_source, target)
         if rendered is not UNRESOLVED:
             return _coerce_derived_value(name, spec, rendered)
-    if config.interactive:
-        if spec.type in {"list", "dict"}:
-            # Structured inputs cannot prompt, so they resolve exactly as in
-            # non-interactive mode; the error replaces "missing required input"
-            # only where a prompt would otherwise have been the last resort.
-            if spec.default is not None:
-                return _coerce_input(name, spec, spec.default)
-            if spec.required:
-                raise ConfigError(
-                    f"interactive prompting is not supported for structured input {name!r}; "
-                    "pass --var or --vars-file"
-                )
-            return _UNSET
-        prompt_target = None if target is None else target.path
-        prompted = _prompt_value(name, spec, prompt_target, config)
-        return _UNSET if prompted is _UNSET else _coerce_input(name, spec, prompted)
     if spec.default is not None:
         return _coerce_input(name, spec, spec.default)
-    if spec.required:
-        raise ValueError(f"missing required input: {name}")
-    return _UNSET
+    if not spec.required:
+        return _UNSET
+    # Structured inputs cannot be typed at a prompt.
+    if config.prompt is not None and spec.type not in _STRUCTURED:
+        prompt_target = None if target is None else target.path
+        return _coerce_input(name, spec, _prompt_value(name, spec, prompt_target, config.prompt))
+    raise ValueError(f"missing required input: {name}; pass --var {name}=VALUE or --vars-file FILE")
 
 
 def _validate_config(
@@ -285,25 +268,8 @@ def _prompt_value(
     name: str,
     spec: InputSpec,
     target: Path | None,
-    config: InputResolutionConfig,
+    prompt: PromptFunc,
 ) -> object:
-    if config.prompt is None:
-        raise NoPromptAvailableError("interactive input requires a terminal prompt backend")
-    details: list[str] = []
-    if spec.description:
-        details.append(spec.description)
-    if spec.default is not None and not spec.sensitive:
-        details.append(f"default: {spec.default}")
-    suffix = f" ({'; '.join(details)})" if details else ""
+    suffix = f" ({spec.description})" if spec.description else ""
     message = f"{name}{suffix}" if target is None else f"{name} for {target}{suffix}"
-    value = config.prompt(
-        message,
-        sensitive=spec.sensitive,
-        default=None if spec.sensitive else spec.default,
-        required=spec.required and spec.default is None,
-    )
-    if value == "" and spec.default is not None:
-        return spec.default
-    if value == "" and not spec.required:
-        return _UNSET
-    return value
+    return prompt(message, sensitive=spec.sensitive)

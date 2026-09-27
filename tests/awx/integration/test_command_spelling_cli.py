@@ -1,4 +1,4 @@
-"""Renamed AWX commands and flags keep their old spelling as deprecated aliases."""
+"""Renamed and removed AWX commands and flags are gone in 8.0: no deprecated aliases."""
 
 from __future__ import annotations
 
@@ -11,63 +11,38 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.mark.parametrize(
-    ("old", "new", "usage"),
+    "old",
     [
-        (["awx", "save"], "`export`", "untaped awx export"),
-        (["awx", "job-templates", "save"], "`export`", "untaped awx job-templates export"),
-        (
-            ["awx", "inventories", "input_inventories"],
-            "`input-inventories`",
-            "untaped awx inventories input-inventories",
-        ),
-        (
-            ["awx", "inventories", "instance_groups"],
-            "`instance-groups`",
-            "untaped awx inventories instance-groups",
-        ),
-        (["awx", "jobs", "logs", "-f"], "`--follow`", "untaped awx jobs logs"),
-        (
-            ["awx", "job-templates", "usage", "-r"],
-            "`--recursive`",
-            "untaped awx job-templates usage",
-        ),
-        (
-            ["awx", "workflow-templates", "nodes", "-r"],
-            "`--recursive`",
-            "untaped awx workflow-templates nodes",
-        ),
-        (
-            ["awx", "job-templates", "launch", "--limit", "web"],
-            "`--host-pattern`",
-            "untaped awx job-templates launch",
-        ),
+        ["awx", "save", "--all-kinds", "--out-dir", "out"],
+        ["awx", "job-templates", "save", "deploy"],
+        ["awx", "job-templates", "usage", "deploy", "-r"],
+        ["awx", "workflow-templates", "nodes", "flow", "-r"],
+        ["awx", "job-templates", "launch", "deploy", "--limit", "web"],
+        ["awx", "job-templates", "launch", "deploy", "--track"],
+        ["awx", "projects", "sync", "playbooks", "-t"],
+        ["awx", "job-templates", "apply", "deploy.yml"],
     ],
 )
-def test_old_spelling_warns_and_resolves_to_the_new_one(
-    old: list[str], new: str, usage: str
-) -> None:
-    result = invoke_cli(build_root_app(externals=[]), [*old, "--help"])
+def test_old_spellings_are_usage_errors(old: list[str]) -> None:
+    result = invoke_cli(build_root_app(externals=[]), old)
 
-    assert result.exit_code == 0, result.output
-    assert f"is deprecated and will be removed in 8.0; use {new}" in result.stderr
-    assert f"Usage: {usage}" in result.stdout
+    assert result.exit_code == 2, result.output
+    assert "deprecated" not in result.stderr
 
 
-def test_old_spellings_are_hidden_from_help() -> None:
+def test_help_lists_only_the_current_spellings() -> None:
     root = build_root_app(externals=[])
 
     awx_help = invoke_cli(root, ["awx", "--help"]).stdout
     inventories_help = invoke_cli(root, ["awx", "inventories", "--help"]).stdout
-    logs_help = invoke_cli(root, ["awx", "jobs", "logs", "--help"]).stdout
-    launch_help = invoke_cli(root, ["awx", "job-templates", "launch", "--help"]).stdout
+    templates_help = invoke_cli(root, ["awx", "job-templates", "--help"]).stdout
 
     assert " save " not in awx_help
     assert " export " in awx_help
-    assert "│ input_inventories" not in inventories_help
+    assert " apply " in awx_help
     assert "input-inventories" in inventories_help
-    assert " -f " not in logs_help
-    assert "--limit" not in launch_help
-    assert "--host-pattern" in launch_help
+    assert " apply " not in templates_help
+    assert " export " in templates_help
 
 
 def test_ping_options_are_keyword_only() -> None:

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from typing import Annotated
 
 from cyclopts import Parameter
 
+from untaped.capabilities.awx.cli.context import supported_scopes
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capability_api import (
     DryRunOption,
@@ -99,8 +101,19 @@ WaitTimeoutOption = Annotated[
     Parameter(
         name="--timeout",
         help=(
-            "Stop waiting after this many seconds per execution (needs --wait or --track); "
+            "Stop waiting after this many seconds per execution (needs --wait or --follow); "
             "unfinished executions fail the row and keep running."
+        ),
+    ),
+]
+FollowOption = Annotated[
+    bool,
+    Parameter(
+        name="--follow",
+        negative="",
+        help=(
+            "Stream each job's log to stderr until it ends with its PLAY RECAP (a workflow "
+            "job's status changes); fail on unsuccessful execution."
         ),
     ),
 ]
@@ -120,6 +133,7 @@ __all__ = [
     "ContinueOption",
     "DryRunOption",
     "FilterOption",
+    "FollowOption",
     "InventoryOption",
     "InventoryOrganizationOption",
     "NamesArgument",
@@ -144,3 +158,17 @@ WITH_SCM_HELP = (
 def offers_with_scm(spec: ResourceSpec) -> bool:
     """``--with-scm`` applies to kinds that run a project's playbook."""
     return any(ref.field == "project" and ref.kind == "Project" for ref in spec.fk_refs)
+
+
+def scope_parameter(spec: ResourceSpec, *, parent: str = "parent") -> Parameter:
+    """A default ``Parameter`` that drops the scope options ``spec`` cannot use.
+
+    Set it as an app's ``default_parameter``: every command below then leaves
+    those options out of ``--help`` and rejects them as unknown (exit 2).
+    ``parent`` names the parameter that carries ``--parent`` in that app.
+    """
+    supported = {parent if name == "parent" else name for name in supported_scopes(spec)}
+    unsupported = sorted(
+        {"organization", "inventory", "inventory_organization", parent} - supported
+    )
+    return Parameter(parse=re.compile(rf"^(?!(?:{'|'.join(unsupported)})$)"))

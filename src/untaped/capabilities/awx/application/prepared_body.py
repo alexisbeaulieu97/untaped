@@ -16,7 +16,10 @@ from untaped.capabilities.awx.application.apply_field_diff import PRESERVED_SECR
 from untaped.capabilities.awx.application.apply_secret_policy import SecretPreservationPolicy
 from untaped.capabilities.awx.application.apply_verifier import ApplyVerifier
 from untaped.capabilities.awx.application.ports import RawHttpResourceClient
-from untaped.capabilities.awx.application.secret_paths import strip_encrypted_in_place
+from untaped.capabilities.awx.application.secret_paths import (
+    covered_by,
+    strip_encrypted_in_place,
+)
 from untaped.capabilities.awx.domain import FieldChange, Resource, ResourceSpec
 from untaped.capabilities.awx.errors import AwxApiError, BadRequestError
 from untaped.capability_api import plural
@@ -65,7 +68,11 @@ class BodyOperations:
                 "declare in spec.secret_paths to silence"
             )
         if existing is None and preserved:
-            required = [path for path in preserved if path not in spec.optional_secret_paths]
+            required = [
+                path
+                for path in preserved
+                if not any(covered_by(path, optional) for optional in spec.optional_secret_paths)
+            ]
             if required:
                 raise BadRequestError(
                     f"{spec.kind} {resource.metadata.name!r} has placeholder secrets "

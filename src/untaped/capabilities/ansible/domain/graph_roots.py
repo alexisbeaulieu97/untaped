@@ -4,7 +4,8 @@ A bare line is a repository reference (``owner/repo``, a Git URL, an alias)
 with an optional ``@ref`` after an ``owner/repo`` slug. A pipe record names
 its repository in the first present field of :data:`REPO_FIELDS` and its ref
 in the first present field of :data:`REF_FIELDS`; an empty ref means the
-repository's default branch.
+repository's default branch. Its kind, ``id`` and ``name`` are kept as the
+:class:`RootInput` identity its results carry.
 """
 
 from __future__ import annotations
@@ -32,6 +33,16 @@ class GraphRoot(BaseModel):
     ref: str | None = None
 
 
+class RootInput(BaseModel):
+    """Identity of the pipe record that named a root (all ``None`` otherwise)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: str | None = None
+    id: int | str | None = None
+    name: str | None = None
+
+
 def root_from_line(text: str) -> GraphRoot:
     """Parse ``owner/repo@ref``; anything else is a ref-less reference."""
     line = text.strip()
@@ -56,4 +67,23 @@ def root_from_record(record: Mapping[str, object]) -> GraphRoot | None:
     return GraphRoot(target=target, ref=ref or None)
 
 
-__all__ = ["REF_FIELDS", "REPO_FIELDS", "GraphRoot", "root_from_line", "root_from_record"]
+def input_from_record(kind: str | None, record: Mapping[str, object]) -> RootInput:
+    """The identifying ``kind``/``id``/``name`` of a pipe record."""
+    record_id = record.get("id")
+    name = record.get("name")
+    return RootInput(
+        kind=kind,
+        id=record_id if isinstance(record_id, int | str) else None,
+        name=name if isinstance(name, str) else None,
+    )
+
+
+__all__ = [
+    "REF_FIELDS",
+    "REPO_FIELDS",
+    "GraphRoot",
+    "RootInput",
+    "input_from_record",
+    "root_from_line",
+    "root_from_record",
+]

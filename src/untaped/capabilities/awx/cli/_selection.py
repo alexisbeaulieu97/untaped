@@ -146,6 +146,9 @@ def select_resources(
         all=all_ or (default_all and sources == 0),
         require_explicit=require_explicit,
         limit=limit,
+        default_organization=scope is None
+        and organization is None
+        and selected_scope.get("organization") is not None,
     )
     selected = SelectionResolver(ctx.repo, ctx.catalog).resolve(spec, request)
     # Selected records already name their organization; later ancestry and

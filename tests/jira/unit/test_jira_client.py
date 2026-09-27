@@ -9,6 +9,7 @@ import pytest
 import respx
 from pydantic import SecretStr, ValidationError
 
+from untaped.capabilities.jira.domain.models import ISSUE_DETAIL_FIELDS
 from untaped.capabilities.jira.errors import JiraError
 from untaped.capabilities.jira.infrastructure import JiraClient
 from untaped.capabilities.jira.settings import JiraSettings
@@ -156,3 +157,17 @@ def test_client_maps_errors_raised_while_paginating() -> None:
             list(client.list_boards())
 
     assert "permission denied" in str(caught.value)
+
+
+def test_client_percent_encodes_path_values_into_one_segment() -> None:
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.route().mock(return_value=httpx.Response(200, json={"key": "X"}))
+        with JiraClient(_settings()) as client:
+            client.get_project("A/B?x=y")
+            client.get_issue("..")
+
+    assert [call.request.url.raw_path for call in route.calls] == [
+        b"/rest/api/2/project/A%2FB%3Fx%3Dy",
+        b"/rest/api/2/issue/%2E%2E?fields="
+        + b"%2C".join(field.encode() for field in ISSUE_DETAIL_FIELDS),
+    ]

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from hashlib import sha256
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from untaped.capabilities.ansible.domain.identity import repo_key
 
 EdgeRelation = Literal["requires", "impacts"]
 CycleKind = Literal["cycle", "scc_group"]
@@ -83,3 +86,28 @@ class DependencyGraph(BaseModel):
     edges: tuple[GraphEdge, ...] = ()
     cycles: tuple[GraphCycle, ...] = ()
     warnings: tuple[str, ...] = ()
+
+
+def walk_root_ids(
+    target: GraphNode, nodes: Mapping[str, GraphNode], parent_ids: Iterable[str]
+) -> list[str]:
+    """Where a walk from ``target`` starts, among the nodes with edges to follow.
+
+    That is the target itself and, for a ref-less target, every concrete ref
+    of its repo that the graph expanded.
+    """
+    return [
+        node_id
+        for node_id in parent_ids
+        if node_id == target.id or _is_concrete_ref_of(nodes[node_id], target)
+    ]
+
+
+def _is_concrete_ref_of(node: GraphNode, target: GraphNode) -> bool:
+    return (
+        target.ref is None
+        and target.repo is not None
+        and node.repo is not None
+        and repo_key(node.repo) == repo_key(target.repo)
+        and node.ref is not None
+    )

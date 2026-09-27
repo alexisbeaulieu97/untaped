@@ -269,18 +269,33 @@ def test_core_settings_rows_pass_on_empty_config(_isolated_config: Path) -> None
     code, rows = _rows(_doctor_app())
     assert code == 0
     titles = [row["title"] for row in rows if row["capability"] == "untaped"]
-    for title in ("validate log_level", "validate http", "validate ui", "resolve active profile"):
+    for title in ("validate http", "validate ui", "resolve active profile"):
         assert title in titles
+    assert "validate log_level" not in titles
 
 
-def test_set_log_level_warns_that_it_is_deprecated(_isolated_config: Path) -> None:
+def test_removed_log_level_is_reported_as_an_unknown_key(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default:\n    log_level: DEBUG\n")
     code, rows = _rows(_doctor_app())
     assert code == 0
-    (row,) = [row for row in rows if row["title"] == "validate log_level"]
+    (row,) = [row for row in rows if row["check"] == "unknown-keys"]
     assert row["status"] == "warn"
-    assert "deprecated" in row["detail"]
-    assert "untaped config unset log_level" in row["detail"]
+    assert "profiles.default.log_level" in row["detail"]
+
+
+def test_top_level_keys_other_than_active_and_profiles_are_unknown(
+    _isolated_config: Path,
+) -> None:
+    """A top-level ``log_level`` or pre-8.0 state section is flagged, not read."""
+    write_config(
+        _isolated_config,
+        "active: default\nprofiles:\n  default: {}\nlog_level: DEBUG\nworkspace:\n  x: 1\n",
+    )
+    code, rows = _rows(_doctor_app())
+    assert code == 0
+    (row,) = [row for row in rows if row["check"] == "unknown-keys"]
+    assert row["status"] == "warn"
+    assert row["detail"] == "ignored: log_level, workspace"
 
 
 def test_unknown_ui_theme_fails_ui_row(_isolated_config: Path) -> None:
@@ -319,15 +334,6 @@ def test_active_profile_missing_without_profiles_fails_profile_row(
     assert "'prod'" in _failed(rows)["resolve active profile"]
 
 
-def test_invalid_state_section_fails_state_row(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "github:\n  cursor: [not, a, string]\n")
-    code, rows = _rows(
-        _doctor_app(make_spec("github", profile_model=GithubProfile, state_model=GithubState))
-    )
-    assert code == 1
-    assert "cursor" in _failed(rows)["validate state"]
-
-
 def test_invalid_state_in_state_file_names_the_file(_isolated_config: Path) -> None:
     state_file = _isolated_config.parent / "state.yml"
     state_file.write_text("github:\n  cursor: [not, a, string]\n")
@@ -350,38 +356,22 @@ def test_unreadable_state_file_fails_its_row(_isolated_config: Path) -> None:
     assert failed["validate state"] == "state file could not be read"
 
 
-def test_legacy_state_in_config_warns_without_failing(
+def test_state_left_in_config_is_ignored(
     _isolated_config: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    write_config(_isolated_config, "github:\n  cursor: abc\n")
+    """The pre-8.0 layout (state at the top level of config.yml) is not read."""
+    write_config(_isolated_config, "github:\n  cursor: [not, a, string]\n")
     code, rows = _rows(
         _doctor_app(make_spec("github", profile_model=GithubProfile, state_model=GithubState))
     )
     assert code == 0
-    (legacy,) = [row for row in rows if row["check"] == "legacy-state"]
-    assert legacy["status"] == "warn"
-    assert "'github' moves to" in legacy["detail"]
-    assert "state.yml on its next state change" in legacy["detail"]
+    assert not [row for row in rows if row["check"] == "legacy-state"]
+    (state,) = [row for row in rows if row["title"] == "validate state"]
+    assert state["detail"] == "no state"
+    (unknown,) = [row for row in rows if row["check"] == "unknown-keys"]
+    assert unknown["status"] == "warn"
+    assert "github" in unknown["detail"]
     assert "warning: capability state" not in capsys.readouterr().err
-
-
-def test_shadowed_legacy_state_is_reported(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "github:\n  cursor: old\n")
-    (_isolated_config.parent / "state.yml").write_text("github:\n  cursor: new\n")
-    code, rows = _rows(
-        _doctor_app(make_spec("github", profile_model=GithubProfile, state_model=GithubState))
-    )
-    assert code == 0
-    (legacy,) = [row for row in rows if row["check"] == "legacy-state"]
-    assert legacy["status"] == "warn"
-    assert "is ignored because" in legacy["detail"]
-
-
-def test_no_legacy_state_passes(_isolated_config: Path) -> None:
-    code, rows = _rows(_doctor_app())
-    assert code == 0
-    (legacy,) = [row for row in rows if row["check"] == "legacy-state"]
-    assert legacy["status"] == _PASS
 
 
 def test_missing_ca_bundle_fails_http_row(_isolated_config: Path, tmp_path: Path) -> None:

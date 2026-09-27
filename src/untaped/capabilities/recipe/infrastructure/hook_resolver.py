@@ -16,6 +16,7 @@ from untaped.capabilities.recipe.infrastructure.pack_files import (
     read_hook_project,
 )
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
+from untaped.capability_api import not_found
 
 
 @dataclass(frozen=True)
@@ -75,7 +76,7 @@ class HookResolver:
         builtin = self._builtins.get(name)
         if builtin is not None:
             return BuiltinHookRef(name=name, exports=builtin.exports, module=builtin.module)
-        raise ValueError(f"hook not found: {name}")
+        raise ValueError(not_found("hook", name))
 
     def _resolve_qualified(self, name: str) -> HookRef:
         if is_path_ref(name):
@@ -88,7 +89,7 @@ class HookResolver:
             raise ValueError(f"hook must be a safe hook name: {name}")
         library_ref = self._resolve_library(name)
         if library_ref is None:
-            raise ValueError(f"hook not found: {name}")
+            raise ValueError(not_found("hook", name))
         return library_ref
 
     def _resolve_library(self, name: str) -> UvHookRef | None:

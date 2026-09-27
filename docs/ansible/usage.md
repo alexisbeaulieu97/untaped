@@ -1,10 +1,14 @@
 # Ansible dependency graphs
 
-`untaped ansible graph` shows how Ansible roles and projects depend on each
-other through their requirements files:
+`untaped ansible` answers questions about how Ansible roles and projects
+depend on each other through their requirements files:
 
-- **downstream**: what a role or repo depends on;
-- **upstream**: which repos depend on it, which is the impact of changing it.
+| Command | Question | Output |
+|---|---|---|
+| `deps ROLE` | What does ROLE depend on (downstream)? | one `ansible.dependency` row per repo reached, per ROLE ref |
+| `impact ROLE` | What depends on ROLE (upstream)? | one `ansible.dependent` row per repo reached, per ROLE ref |
+| `find REPO --root ROOT` / `--stdin` | Which roots contain REPO downstream? | one `ansible.dependency_match` row per match |
+| `graph TARGET` | The whole picture, both directions | a tree, Mermaid diagram or JSON graph |
 
 Downstream works from live GitHub reads. Upstream needs a *source*: a saved
 set of orgs, teams or repos whose dependency files `untaped` scans and caches.
@@ -21,17 +25,38 @@ untaped config set github.token --prompt
 Private repos also need Git access over HTTPS with that token, or over SSH
 when `ansible.git_clone_protocol` is `ssh`.
 
+Save a source, refresh it once, and make it the default so you can leave out
+`--source`:
+
+```bash
+untaped ansible source set platform --org acme --team acme/platform
+untaped ansible source refresh platform
+untaped config set ansible.default_source platform
+```
+
+`ansible.default_source` is used by `deps`, `impact`, `find` and `graph`
+whenever you give neither `--source` nor an inline selector. With a source
+selected, every command reads the cached data and never touches GitHub; pass
+`--live` to read downstream dependencies from GitHub anyway.
+
 ## Show what a role depends on
 
 ```bash
-untaped ansible graph acme/base-role --downstream
-untaped ansible graph acme/base-role --downstream --ref v2.1.0 --depth unlimited
-untaped ansible graph ./roles/web --target-repo acme/web --downstream
+untaped ansible deps acme/base-role
+untaped ansible deps acme/base-role --ref v2.1.0 --depth 2
+untaped ansible deps ./roles/web --target-repo acme/web --format json
 ```
 
-`TARGET` is `owner/repo`, a GitHub URL, an alias, or a local path. A local
-path resolves its repo from the Git remote only at the top of a checkout; for
-a subdirectory pass `--target-repo OWNER/NAME`.
+`ROLE` is `owner/repo`, a GitHub URL, a source alias, or a local path. A
+local path resolves its repo from the Git remote only at the top of a
+checkout; for a subdirectory pass `--target-repo OWNER/NAME`.
+
+Without a source, `deps` reads GitHub live. Once a source is selected,
+including through `ansible.default_source`, it reads that source's cache
+instead: a role outside the source gets a "not cached" warning and no rows,
+and before the source's first refresh the command fails with the refresh
+command to run. Pass `--live` to read GitHub anyway. The same holds for
+`find` and for `graph`'s downstream half.
 
 Scanned files are, in each repo: `roles/requirements.yml`, `requirements.yml`,
 `meta/requirements.yml` and `meta/main.yml` (`.yaml` too). Change the list
@@ -40,75 +65,94 @@ followed; the command warns once and lists them.
 
 ## Find what depends on a role
 
-Save a source, refresh it once, then graph upstream:
-
 ```bash
-untaped ansible source set platform --org acme --team acme/platform
-untaped ansible source refresh platform
-untaped ansible graph acme/base-role --source platform --upstream
+untaped ansible impact acme/base-role
+untaped ansible impact acme/base-role --source platform --refresh
+untaped ansible impact acme/base-role --ref main --format pipe
 ```
 
-Graphs read the cached source data by default and never touch GitHub. Pass
-`--refresh` (or run `source refresh`) when you want current data:
+`impact` reads cached source data only: from `--source NAME` (repeat to
+combine), from inline selectors, or from `ansible.default_source`. Pass
+`--refresh` (or run `source refresh`) when you want current data. For a
+one-off question, use inline selectors instead of a saved source; the scan is
+cached, so repeating the same command reuses it:
 
 ```bash
-untaped ansible graph acme/base-role --source platform --upstream --refresh
+untaped ansible impact acme/base-role --org acme --refresh
 ```
 
-For a one-off question, use inline selectors instead of a saved source. The
-scan is cached, so repeating the same command reuses it:
-
-```bash
-untaped ansible graph acme/base-role --org acme --upstream --refresh
-```
-
-| Flag | Meaning |
-|---|---|
-| `--upstream`, `--downstream`, `--both` | Direction. Default `--both`; upstream needs a source. |
-| `--source NAME` | Saved source to use. Repeat to combine. |
-| `--org`, `--team`, `--repo`, `--path`, `--ref-kind`, `--ref-pattern`, `--ref-scan-default` | Inline source instead of a saved one. |
-| `--refresh`, `--cached`, `--live` | Refresh the source first; read the cache only (the default); or read downstream live from GitHub even with a source. |
-| `--ref REF` | Branch, tag or SHA of the target. |
-| `--depth N\|unlimited` | Traversal depth. Default 3. |
-| `--format tree\|mermaid\|json`, `--out FILE` | Output shape and destination. |
-| `--contains OWNER/REPO`, `--stdin` | Report the roots whose downstream graph contains a repository (below). |
-
-Conflicting flags (two directions, or two of `--refresh`/`--cached`/`--live`)
-exit 2.
+`--ref R` also includes consumers that declare the role without a version
+when `R` is the role's cached default branch.
 
 ## Find which roots contain a repository
 
-`--contains OWNER/REPO` (repeatable) turns `graph` into a search over many
-roots: it walks each root's downstream graph and prints one row per node of a
-wanted repository, and nothing for roots that never reach it. Give one root
-as `TARGET`, or many through `--stdin`:
+`find REPO` walks the downstream graph of each root and prints one row per
+node of REPO it reaches, and nothing for roots that never reach it. Give
+roots with `--root` (repeatable) or through `--stdin`, and one or more repos
+to look for:
 
 ```bash
+untaped ansible find acme/base-role --root acme/site@main --root acme/app
 printf 'acme/site@main\nacme/app@v2.1.0\nacme/tools\n' \
-  | untaped ansible graph --stdin --contains acme/base-role --source platform
+  | untaped ansible find acme/base-role --stdin
 untaped awx job-templates list --organization Default --with-scm --format pipe \
-  | untaped ansible graph --stdin --contains acme/base-role --source platform
+  | untaped ansible find acme/base-role --stdin --format pipe
 ```
 
-Stdin carries either bare `owner/repo@ref` lines (the ref is optional; a Git
-URL or alias is also accepted, without a ref) or `--format pipe` records. A
-record names its repository in `scm_url`, `repo_url`, `repo` or `full_name`
-and its ref in `effective_scm_ref` or `ref`; an empty or missing ref means the
-default branch, and every cached ref of that root is walked.
+A root is `owner/repo@ref` (the ref is optional), a Git URL, a source alias,
+or a local path. Stdin carries either such lines or `--format pipe` records.
+A record names its repository in `scm_url`, `repo_url`, `repo` or
+`full_name` and its ref in `effective_scm_ref` or `ref`; an empty or missing
+ref means the default branch, and every cached ref of that root is walked.
 
-Each row (`ansible.dependency_match`) has `root_repo`, `root_ref`, the matched
-`repo`, `declared_ref` (the ref string exactly as declared on the edge that
-reaches it, or `null` when unpinned, never interpreted), `declared_in` (the
-dependency file) and `path` (the shortest path from the root, as node
-labels). A repository reached through two different declared refs gives two
-rows. `--depth`, `--source`, inline selectors and `--refresh`/`--cached`/`--live`
-apply as for a single graph; each root's graph warnings are printed on stderr
-prefixed with the root.
+Each row (`ansible.dependency_match`) has `root_repo`, `root_ref`, the
+matched `repo`, `declared_ref` (the ref string exactly as declared on the
+edge that reaches it, or `null` when unpinned, never interpreted),
+`declared_in` (the dependency file), `path` (the shortest path from the
+root, as node labels) and the input that named the root: `input_kind`,
+`input_id` and `input_name` are the pipe record's kind, `id` and `name`
+(`null` for `--root` and plain lines). Every input record gets its own rows,
+even when several records name the same root, so a pipeline can join the
+results back to its inputs; identical plain lines collapse.
 
-This mode is downstream only (`--upstream` and `--both` are usage errors) and
-prints `--format table` (default), `json` or `pipe`; `tree`, `mermaid` and
-`--out` stay with the single-target graph. `--stdin` requires `--contains`,
-and `--ref`/`--target-repo` apply only to `TARGET`.
+A repository reached through two different declared refs gives two rows. An
+unpinned declaration and one pinned to the default branch reach the same
+node, so they give one row, whose `declared_ref` comes from the first edge
+the search reached. Live reads are shared across roots, so each repo and ref
+is read from GitHub once per command. Each root's graph warnings are printed
+on stderr prefixed with the root.
+
+## Draw the graph
+
+```bash
+untaped ansible graph acme/base-role
+untaped ansible graph acme/base-role --downstream --format mermaid --out deps.mmd
+untaped ansible graph acme/base-role --upstream --format json
+```
+
+`graph` shows both directions by default (`--upstream`, `--downstream` or
+`--both` picks one), with a default `--depth` of 3. Without a source it shows
+only downstream and warns that upstream was omitted.
+
+## Flags
+
+`deps`, `impact`, `find` and `graph` share these flags:
+
+| Flag | Meaning |
+|---|---|
+| `--source NAME` | Saved source to use. Repeat to combine. Defaults to `ansible.default_source`. |
+| `--org`, `--team`, `--repo`, `--path`, `--ref-kind`, `--ref-pattern`, `--ref-scan-default` | Inline source instead of a saved one. |
+| `--refresh`, `--live` | Refresh the source first; or read downstream live from GitHub even with a source (`impact` has no `--live`). |
+| `--parallel N`, `--backend auto\|graphql\|git` | Git fetch limit and ref probe backend for `--refresh`. |
+| `--depth N\|unlimited` | Traversal depth. `deps`, `impact` and `find` default to `unlimited`, `graph` to 3. |
+
+`deps`, `impact` and `graph` also take `--ref REF` (branch, tag or SHA of the
+target) and `--target-repo OWNER/NAME`. `deps`, `impact` and `find` print
+`--format table` (default), `json`, `yaml`, `pipe` or `raw`, with
+`--columns`; `graph` prints `--format tree` (default), `mermaid` or `json`,
+optionally to `--out FILE`, and keeps `--cached` (reading the cache is
+already the default). Conflicting flags (two directions, or two of
+`--refresh`/`--cached`/`--live`) exit 2.
 
 ## Manage sources
 
@@ -133,21 +177,30 @@ untaped ansible source remove platform --yes
   default, `ansible.source_refresh_backend`) falls back to `git ls-remote`
   when the GraphQL rate limit runs out.
 
-## Aliases
+## Source aliases
 
 When a requirements file names a role by Galaxy name rather than a Git URL,
 map it to its repo:
 
 ```bash
-untaped ansible alias set acme.base acme/ansible-role-base
-untaped ansible alias list
-untaped ansible alias remove acme.base --yes
+untaped ansible source-alias set acme.base acme/ansible-role-base
+untaped ansible source-alias list
+untaped ansible source-alias remove acme.base --yes
 ```
 
-Aliases apply when a source is refreshed; run `source refresh` afterwards.
+Source aliases apply when a source is refreshed; run `source refresh`
+afterwards.
 
 ## Read the output
 
+- `deps` rows (`ansible.dependency`) and `impact` rows (`ansible.dependent`)
+  have `repo`, `ref`, `unresolved` (the declared name of a dependency that
+  names no GitHub repo), `declared_ref` and `declared_in` (from the edge that
+  reached the repo, verbatim), `depth`, `path` and `root_ref`. `path` reads
+  in dependency order: from ROLE for `deps`, towards ROLE for `impact`. Each
+  repo appears once per root, at its shortest path; a ref-less ROLE is walked
+  from each of its refs, and `root_ref` says which ROLE ref a row was reached
+  from.
 - `tree` prints a shared subtree once and marks later occurrences
   `(see above)`.
 - `json` has `nodes`, `edges` (with stable `id`s), `cycles` and `warnings`.
@@ -155,13 +208,15 @@ Aliases apply when a source is refreshed; run `source refresh` afterwards.
   look for longer loops.
 - `mermaid` prints a Mermaid diagram.
 - A dependency at `repo@v1` and one at `repo@main` are different nodes.
+- An unpinned dependency points at the node for the dependency's default
+  branch (`repo@main`), so the walk continues through it. Cached reads take
+  the default branch the source recorded; live reads (`--live`, or no
+  source) take it from GitHub. When no default branch is known (the repo is
+  not in the source, or GitHub reports none), the node stays ref-less
+  (`repo`). When a source scans only tags, the default-branch node is not
+  cached, so the walk stops there with a "ref is not cached" warning.
 - A malformed or templated dependency file is skipped with a warning; it
-  never fails the graph.
-
-`graph` supports `--format pipe` only with `--contains`
-(`ansible.dependency_match`). The `source` and `alias` commands
-do (`ansible.source`, `ansible.source_status`, `ansible.alias`, and the
-`ansible.source_outcome` and `ansible.alias_outcome` results).
+  never fails the command.
 
 ## Troubleshooting
 
@@ -169,9 +224,9 @@ do (`ansible.source`, `ansible.source_status`, `ansible.alias`, and the
   `source refresh` command the error prints, or add `--refresh`.
 - **An older index is rebuilt**: after an upgrade the SQLite cache
   (`ansible.index_path`) may be rebuilt empty with a warning. Refresh each
-  source again.
-- **`ansible.freshness_ttl` warning**: the setting is ignored; remove it with
-  `untaped config unset ansible.freshness_ttl`.
+  source again. When the dependency parser changes, the next refresh
+  re-parses every ref once instead of reusing cached results, and a refresh
+  that was interrupted before the upgrade starts over.
 
 ## See also
 

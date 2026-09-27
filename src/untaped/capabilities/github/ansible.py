@@ -6,7 +6,8 @@ types. The closed :data:`__all__` keeps that boundary explicit.
 
 The exported types cover repository inventory, GitHub client operations,
 reference-probe results, settings (and :func:`github_settings` to read them),
-and GitHub error classification.
+the Git host behind the configured base URL (:func:`github_web_host`), and
+GitHub error classification.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from untaped.capabilities.github.domain.errors import (
     GithubGraphqlErrorKind,
     is_global_github_failure,
 )
+from untaped.capabilities.github.domain.hosts import github_web_host
 from untaped.capabilities.github.domain.models import (
     BatchRepoRefsFailure,
     BatchRepoRefsResult,
@@ -46,6 +48,7 @@ __all__ = [
     "ResolveRepositoryInventory",
     "TeamScope",
     "github_settings",
+    "github_web_host",
     "is_global_github_failure",
     "normalize_team_scopes",
 ]

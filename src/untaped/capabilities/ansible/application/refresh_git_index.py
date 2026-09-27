@@ -59,6 +59,13 @@ ProbeMode = Literal["all", "default_branch"]
 # HTTP-specific error type belongs here.
 _REPO_FAILURE_ERRORS = (GitCacheError, UntapedError)
 
+# Version of what a ref snapshot stores: dependency-file parsing, identity
+# resolution and the resulting edge shape. It is folded into the dependency
+# paths fingerprint, so bumping it makes the next refresh re-parse every ref
+# instead of reusing a snapshot parsed by older code. Bump it whenever a
+# change can yield different edges for the same file content.
+PARSER_VERSION = 1
+
 
 class RefreshResult(BaseModel):
     """Summary of an index refresh."""
@@ -693,7 +700,9 @@ def repo_candidate(row: dict[str, object], *, fallback: str | None) -> ProbeTarg
 
 
 def _dependency_paths_fingerprint(paths: list[str]) -> str:
-    payload = json.dumps(paths, separators=(",", ":")).encode()
+    """Fingerprint of which dependency files are read and how they are parsed."""
+    inputs = {"paths": paths, "parser_version": PARSER_VERSION}
+    payload = json.dumps(inputs, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(payload).hexdigest()
 
 

@@ -78,13 +78,18 @@ _CASE_OPT = Annotated[
 ]
 _VAR_OPT = Annotated[
     list[str] | None,
-    Parameter(name="--var", help="KEY=VALUE (repeatable).", consume_multiple=False, negative=""),
+    Parameter(
+        name="--var",
+        help="KEY=VALUE (repeatable); wins over --vars-file and the default.",
+        consume_multiple=False,
+        negative="",
+    ),
 ]
 _VARS_FILE_OPT = Annotated[
     list[Path] | None,
     Parameter(
         name="--vars-file",
-        help="YAML file of variable values (repeatable).",
+        help="YAML file of variable values (repeatable; a later file wins).",
         consume_multiple=False,
         negative="",
     ),

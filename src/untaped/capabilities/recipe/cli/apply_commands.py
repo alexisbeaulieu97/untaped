@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, TextIO
 
 from cyclopts import Parameter
 
@@ -15,13 +14,14 @@ from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
 from untaped.capabilities.recipe.application.files import read_recipe_file
 from untaped.capabilities.recipe.application.ports import PromptFunc
 from untaped.capabilities.recipe.application.resolution import resolve_apply_recipe
+from untaped.capabilities.recipe.application.run_bulk import resolve_targets
 from untaped.capabilities.recipe.application.targets import Target, resolve_target_lines
 from untaped.capabilities.recipe.cli._context import recipe_ui
 from untaped.capabilities.recipe.cli.common import (
     hook_startup_notice,
     hook_timeout_seconds,
     library_root,
-    load_yaml_mapping_file,
+    merge_vars,
     report_config_errors,
     settings,
 )
@@ -59,7 +59,6 @@ from untaped.capability_api import (
     parse_kv_pairs,
     read_stdin,
     render_rows,
-    ui_context,
 )
 
 MessageKind = Literal["success", "warning", "error", "info"]
@@ -127,13 +126,18 @@ def apply_command(
         Parameter(
             name="--var",
             negative="",
-            help="Input override as key=value.",
+            help="Input value as KEY=VALUE (repeatable; wins over --vars-file).",
             consume_multiple=False,
         ),
     ] = None,
     vars_file: Annotated[
-        Path | None,
-        Parameter(name="--vars-file", help="YAML file containing input overrides."),
+        list[Path] | None,
+        Parameter(
+            name="--vars-file",
+            negative="",
+            help="YAML mapping of input values (repeatable; later files win).",
+            consume_multiple=False,
+        ),
     ] = None,
     input_from: Annotated[
         list[str] | None,
@@ -144,17 +148,29 @@ def apply_command(
             consume_multiple=False,
         ),
     ] = None,
-    interactive: Annotated[
+    non_interactive: Annotated[
         bool,
-        Parameter(name="--interactive", negative="", help="Prompt for unresolved inputs."),
+        Parameter(
+            name="--non-interactive",
+            negative="",
+            help="Fail on missing required inputs instead of prompting on a terminal.",
+        ),
     ] = False,
-    dry_run: DryRunOption = False,
+    dry_run: Annotated[
+        DryRunOption,
+        Parameter(
+            help=(
+                "Preview the changes without writing them. Pack hooks still run "
+                "to compute the plan."
+            )
+        ),
+    ] = False,
     check: Annotated[
         bool,
         Parameter(
             name="--check",
             negative="",
-            help="Preview and exit 3 when changes would be made.",
+            help="Preview and exit 3 when changes would be made; pack hooks still run.",
         ),
     ] = False,
     yes: YesOption = False,
@@ -182,41 +198,38 @@ def apply_command(
 ) -> None:
     """Apply a recipe to target directories."""
     with report_config_errors():
-        if interactive and check:
-            raise UsageError("--interactive cannot be combined with --check")
         if stdin and not (yes or dry_run or check):
             # Refuse before any hook runs when the confirmation could never be
             # answered: stdin carries the targets and there is no terminal.
             with recipe_ui().terminal(refusal="apply requires --yes when not interactive"):
                 pass
-        with ExitStack() as stack:
-            prompt = _interactive_prompt(interactive=interactive, stack=stack)
-            context = _apply_context(
-                recipe_ref,
-                dirs=list(dirs or []),
-                stdin=stdin,
-                raw_vars=var or [],
-                vars_file=vars_file,
-                raw_input_from=input_from or [],
-                interactive=interactive,
-                prompt=prompt,
-                parallel=parallel,
-                hook_timeout_seconds=hook_timeout_seconds(hook_timeout),
-                recipe_id=recipe_id,
-            )
-            render_preview(
-                context.recipe,
-                context.plans,
-                # --check defaults to no preview; everything else to a table.
-                preview=preview or ("none" if check else "table"),
-                preview_max_rows=settings().preview_max_rows,
-            )
-            outcome = _execute_plans(
-                context,
-                backup=backup and not check,
-                yes=yes or check,
-                dry_run=dry_run or check,
-            )
+        # --check is the CI mode: it asks nothing, like --non-interactive.
+        prompt = None if non_interactive or check else _terminal_prompt()
+        context = _apply_context(
+            recipe_ref,
+            dirs=list(dirs or []),
+            stdin=stdin,
+            raw_vars=var or [],
+            vars_files=vars_file or [],
+            raw_input_from=input_from or [],
+            prompt=prompt,
+            parallel=parallel,
+            hook_timeout_seconds=hook_timeout_seconds(hook_timeout),
+            recipe_id=recipe_id,
+        )
+        render_preview(
+            context.recipe,
+            context.plans,
+            # --check defaults to no preview; everything else to a table.
+            preview=preview or ("none" if check else "table"),
+            preview_max_rows=settings().preview_max_rows,
+        )
+        outcome = _execute_plans(
+            context,
+            backup=backup and not check,
+            yes=yes or check,
+            dry_run=dry_run or check,
+        )
         rows = _outcome_rows(
             context.plans,
             outcome,
@@ -251,9 +264,8 @@ def _apply_context(
     dirs: list[Path],
     stdin: bool,
     raw_vars: list[str],
-    vars_file: Path | None,
+    vars_files: list[Path],
     raw_input_from: list[str],
-    interactive: bool,
     prompt: PromptFunc | None,
     parallel: int,
     hook_timeout_seconds: float,
@@ -276,8 +288,14 @@ def _apply_context(
                 plans=[],
             )
         raise UsageError("at least one target directory is required (or use --stdin)")
-    inputs = _input_values(raw_vars, vars_file)
-    input_from = _input_sources(raw_input_from)
+    inputs = merge_vars(vars_files, parse_kv_pairs(raw_vars, flag="--var"), file_flag="--vars-file")
+    # Prompts run here, serially and before the progress display starts.
+    try:
+        resolved = resolve_targets(
+            loaded, targets, inputs=inputs, input_from=_input_sources(raw_input_from), prompt=prompt
+        )
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
     workers = clamp_parallel(parallel, cap=32, policy="recipe planning cap")
     ui = recipe_ui()
     with UvHookWorkerPool(
@@ -295,24 +313,17 @@ def _apply_context(
             )
         )
         with ui.progress("Planning targets") as progress:
-            try:
-                plans = runner.plan(
-                    recipe=loaded,
-                    recipe_dir=recipe_path.parent,
-                    local_hook_project=recipe_resolution.local_hook_project,
-                    targets=targets,
-                    inputs=inputs,
-                    input_from=input_from,
-                    interactive=interactive,
-                    prompt=prompt,
-                    parallel=workers,
-                    on_progress=lambda done, total: progress.update(
-                        f"{done}/{total}",
-                        fraction=done / total if total else None,
-                    ),
-                )
-            except ValueError as exc:
-                raise ConfigError(str(exc)) from exc
+            plans = runner.plan_resolved(
+                recipe=loaded,
+                recipe_dir=recipe_path.parent,
+                local_hook_project=recipe_resolution.local_hook_project,
+                resolved=resolved,
+                parallel=workers,
+                on_progress=lambda done, total: progress.update(
+                    f"{done}/{total}",
+                    fraction=done / total if total else None,
+                ),
+            )
     return ApplyContext(
         root=root,
         recipe=loaded,
@@ -444,43 +455,33 @@ def _targets(positional: list[Path], *, stdin: bool) -> TargetInput:
         raise ConfigError(str(exc)) from exc
 
 
-def _input_values(raw_vars: list[str], vars_file: Path | None) -> dict[str, object]:
-    values: dict[str, object] = {}
-    if vars_file is not None:
-        values.update(load_yaml_mapping_file(vars_file, flag="--vars-file"))
-    values.update(parse_kv_pairs(raw_vars, flag="--var"))
-    return values
-
-
 def _input_sources(raw_sources: list[str]) -> dict[str, str]:
     parsed = parse_kv_pairs(raw_sources, flag="--input-from")
     return {name: str(template) for name, template in parsed.items()}
 
 
-def _interactive_prompt(
-    *,
-    interactive: bool,
-    stack: ExitStack,
-) -> PromptFunc | None:
-    if not interactive:
-        return None
-    ui = stack.enter_context(
-        ui_context(strict=True).terminal(refusal="interactive input requires a terminal")
-    )
+def _terminal_prompt() -> PromptFunc | None:
+    """Prompt for missing required inputs, or ``None`` when stdin is not a terminal.
 
-    def ask(
-        message: str,
-        *,
-        sensitive: bool,
-        default: object | None = None,
-        required: bool = True,
-    ) -> object:
-        if sensitive:
-            return ui.secret(message, required=required)
-        text_default = None if default is None else str(default)
-        return ui.text(message, default=text_default, required=required)
+    Like ``awx test`` variables: never prompt without a TTY (piped ``--stdin``
+    targets included); the missing input then fails with a ``--var`` hint.
+    """
+    ui = recipe_ui()
+    if not _is_terminal(ui.stdin):
+        return None
+
+    def ask(message: str, *, sensitive: bool) -> object:
+        return ui.secret(message) if sensitive else ui.text(message)
 
     return ask
+
+
+def _is_terminal(stream: TextIO) -> bool:
+    """``stream.isatty()`` that treats a closed or broken stream as no terminal."""
+    try:
+        return stream.isatty()
+    except OSError, ValueError:
+        return False
 
 
 def _render_result_summary(

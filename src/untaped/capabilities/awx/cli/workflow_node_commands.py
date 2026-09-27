@@ -23,7 +23,6 @@ from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
     UntapedError,
-    deprecated_alias,
     emit,
     finish,
     parse_kv_pairs,
@@ -157,5 +156,3 @@ def register_nodes_command(parent: App) -> None:
         cols = list(columns) if columns else list(_DEFAULT_COLUMNS)
         emit(rows, fmt=fmt, columns=cols, kind="awx.workflow_node")
         finish(any_failed)
-
-    deprecated_alias(parent["nodes"], "-r", "--recursive")

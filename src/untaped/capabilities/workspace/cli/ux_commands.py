@@ -9,25 +9,18 @@ from cyclopts import App, Parameter
 from untaped.capabilities.workspace.application import (
     ListWorkspaces,
     ShellInit,
-    ShowWorkspace,
     WorkspacePath,
 )
-from untaped.capabilities.workspace.cli.common import (
-    WorkspaceNameOption,
-    WorkspacePathOption,
-    resolve_workspace,
-)
-from untaped.capabilities.workspace.domain import Workspace, WorkspaceSummaryRow
+from untaped.capabilities.workspace.cli.common import WorkspaceArg, resolve_workspace
+from untaped.capabilities.workspace.domain import Workspace
 from untaped.capabilities.workspace.infrastructure import (
     WorkspaceRegistryRepository,
-    YamlManifestRepository,
     resolve_editor_argv,
 )
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
     StdinOption,
-    deprecated_alias,
     echo,
     emit,
     finish,
@@ -40,8 +33,6 @@ from untaped.capability_api import (
 
 def register_display_commands(app: App) -> None:
     app.command(list_command, name="list")
-    app.command(get_command, name="get")
-    deprecated_alias(app, "show", "get")
 
 
 def register_ux_commands(app: App) -> None:
@@ -66,25 +57,6 @@ def list_command(
             kind="workspace.workspace",
             empty="No workspaces registered. Create one with `untaped workspace init <name>`.",
         )
-
-
-def get_command(
-    *,
-    workspace: WorkspaceNameOption = None,
-    path: WorkspacePathOption = None,
-    fmt: FormatOption = "table",
-    columns: ColumnsOption = None,
-) -> None:
-    """Show manifest details for one workspace."""
-    with report_errors():
-        ws = resolve_workspace(workspace, path)
-        details = ShowWorkspace(YamlManifestRepository())(ws)
-        kind = (
-            "workspace.repo.summary"
-            if any(isinstance(row, WorkspaceSummaryRow) for row in details)
-            else "workspace.repo"
-        )
-        emit(details, fmt=fmt, columns=columns, kind=kind)
 
 
 def path_command(
@@ -130,9 +102,9 @@ def shell_init_command(
 
 
 def edit_command(
+    workspace: WorkspaceArg = None,
+    /,
     *,
-    workspace: WorkspaceNameOption = None,
-    path: WorkspacePathOption = None,
     editor: Annotated[
         str | None,
         Parameter(name=["--editor", "-e"], help="Override $VISUAL/$EDITOR."),
@@ -140,7 +112,7 @@ def edit_command(
 ) -> None:
     """Open the workspace directory in your editor."""
     with report_errors():
-        ws = resolve_workspace(workspace, path)
+        ws = resolve_workspace(workspace)
         run_editor(ws.path, argv=None if editor is None else resolve_editor_argv(editor))
 
 

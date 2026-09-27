@@ -232,7 +232,7 @@ def test_noop_batch_with_secret_and_existing_membership_never_prompts(
     backend = ScriptedPromptBackend(confirms=[])
     result = CliInvoker().invoke(
         app,
-        ["job-templates", command, *args, "--format", "json"],
+        [*([] if command == "apply" else ["job-templates"]), command, *args, "--format", "json"],
         prompt_backend=backend,
         terminal=True,
     )

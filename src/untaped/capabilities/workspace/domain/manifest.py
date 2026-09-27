@@ -247,6 +247,19 @@ def check_path_segment(value: str, *, kind: str) -> str:
     return value
 
 
+def check_workspace_name(value: str) -> str:
+    """Return ``value`` if it is a valid workspace name, else raise ``ValueError``.
+
+    A workspace name is a safe path segment that also cannot start with
+    ``~``: a ``WS`` argument starting with ``~`` is read as a home path, so
+    such a workspace could never be addressed by name.
+    """
+    check_path_segment(value, kind="workspace name")
+    if value.startswith("~"):
+        raise ValueError(f"workspace name {value!r} must not start with '~'")
+    return value
+
+
 def derive_repo_name(url: str) -> str:
     """Derive a default local directory name from a git URL.
 

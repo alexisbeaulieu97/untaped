@@ -15,9 +15,11 @@ from untaped.capabilities.github.cli.scopes import (
     OrgOption,
     RepoOption,
     TeamOption,
+    org_scope,
     parse_team_scopes,
     read_stdin_repos,
 )
+from untaped.capabilities.github.domain import github_web_host
 from untaped.capabilities.github.settings import GithubSettings
 from untaped.capability_api import (
     ColumnsOption,
@@ -46,7 +48,7 @@ def sweep_command(
     team: TeamOption = None,
     repo: RepoOption = None,
     stdin: StdinOption = False,
-    archived: ArchivedOption = False,
+    archived: ArchivedOption = "exclude",
     grep: Annotated[
         list[str] | None,
         Parameter(
@@ -199,7 +201,7 @@ def sweep_command(
             cap=32,
             policy="Git corpus worker cap",
         )
-        corpus = GitCorpusCache()
+        corpus = GitCorpusCache(auth_host=github_web_host(settings.base_url))
         _validate_content_patterns(corpus, settings, query)
 
         sync_mode: Literal["auto", "force", "off"]
@@ -207,7 +209,7 @@ def sweep_command(
         options = SweepOptions(
             scope=scope,
             stdin_repos=stdin_repos,
-            include_archived=archived,
+            archived=archived,
             query=query,
             sync=sync_mode,
             max_age_seconds=settings.sweep.max_age_seconds,
@@ -271,11 +273,13 @@ def _scope(
     repo: list[str] | None,
     stdin: bool,
 ) -> RepositoryInventoryScope:
-    orgs = tuple(org or ())
-    team_scopes = parse_team_scopes(team, orgs=orgs)
     repos = tuple(repo or ())
+    orgs = org_scope(org, scoped=bool(team or repos or stdin))
+    team_scopes = parse_team_scopes(team, orgs=orgs)
     if not orgs and not team_scopes and not repos and not stdin:
-        raise UsageError("sweep requires --org, --team, --repo, or --stdin")
+        raise UsageError(
+            "sweep requires --org, --team, --repo, --stdin, or a github.default_org setting"
+        )
     return RepositoryInventoryScope(orgs=orgs, teams=team_scopes, repos=repos)
 
 

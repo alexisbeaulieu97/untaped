@@ -113,7 +113,7 @@ def test_launch_query_and_deduplicated_typed_id_pipe(fake_aap: Any) -> None:
     assert [i for _, i, _, _ in fake_aap.actions_called] == [50]
 
 
-@pytest.mark.parametrize("flag", ["--wait", "--track"])
+@pytest.mark.parametrize("flag", ["--wait", "--follow"])
 @pytest.mark.parametrize("status", ["failed", "canceled", "error"])
 @pytest.mark.parametrize("command,action,name,path,target,kind", CASES)
 def test_action_terminal_failures_are_nonzero(
@@ -368,7 +368,7 @@ def test_monitoring_concurrency_is_bounded() -> None:
                 active -= 1
             return job.model_copy(update={"status": "successful"})
 
-        def stream_events(self, job: Job, **kwargs: Any) -> list[Any]:
+        def stream_stdout(self, job: Job, **kwargs: Any) -> list[str]:
             return []
 
     jobs = [(str(i), Job(id=i, kind="job", status="successful")) for i in range(1, 26)]
@@ -521,7 +521,7 @@ def test_single_named_launch_does_not_prompt(fake_aap: Any) -> None:
     assert backend.calls == []
 
 
-@pytest.mark.parametrize("flag", ["--wait", "--track"])
+@pytest.mark.parametrize("flag", ["--wait", "--follow"])
 @pytest.mark.parametrize(
     ("command", "name"), [("job-templates launch", "deploy"), ("projects sync", "playbooks")]
 )
@@ -544,7 +544,7 @@ def test_timeout_stops_waiting_and_names_the_running_execution(
 
 
 @pytest.mark.parametrize("command", ["job-templates launch deploy", "projects sync playbooks"])
-def test_timeout_needs_wait_or_track_and_a_non_negative_value(fake_aap: Any, command: str) -> None:
+def test_timeout_needs_wait_or_follow_and_a_non_negative_value(fake_aap: Any, command: str) -> None:
     seed(fake_aap)
     for extra in (["--timeout", "5"], ["--wait", "--timeout", "-1"]):
         result = CliInvoker().invoke(app, [*command.split(), *extra])
