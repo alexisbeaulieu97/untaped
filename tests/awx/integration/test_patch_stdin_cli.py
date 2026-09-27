@@ -102,13 +102,13 @@ def test_patch_stdin_requires_set_or_patch_file(seeded_default_org: Any) -> None
 def test_apply_file_with_set_is_usage_error(seeded_default_org: Any, tmp_path: Path) -> None:
     f = tmp_path / "x.yml"
     f.write_text("kind: JobTemplate\nmetadata: {name: deploy}\nspec: {}\n")
-    result = CliInvoker().invoke(app, ["job-templates", "apply", str(f), "--set", "verbosity=2"])
+    result = CliInvoker().invoke(app, ["apply", str(f), "--set", "verbosity=2"])
     assert result.exit_code == 2
     assert "--set" in (result.stderr or result.output)
 
 
 def test_apply_neither_file_nor_stdin_is_usage_error(seeded_default_org: Any) -> None:
-    result = CliInvoker().invoke(app, ["job-templates", "apply"])
+    result = CliInvoker().invoke(app, ["apply"])
     assert result.exit_code == 2
     assert "requires an argument" in (result.stderr or result.output)
 

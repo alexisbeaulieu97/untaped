@@ -133,7 +133,7 @@ The `skills.updates` setting picks what the check does:
 | Value | Behavior |
 |---|---|
 | `warn` (default) | Print the warning above. |
-| `auto` | Update outdated skills in place, then print `updated N outdated skills`. |
+| `auto` | Update outdated skills in place, then print `updated N outdated skills`. After a failed command or a preview (`--dry-run`, `--check`), only warn. |
 | `off` | Do nothing. |
 
 ```bash

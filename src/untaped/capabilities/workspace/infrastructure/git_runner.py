@@ -13,7 +13,11 @@ git never falls through to a repository enclosing the target directory.
 from __future__ import annotations
 
 import shutil
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+
+from filelock import FileLock, Timeout
 
 from untaped.capabilities.workspace.domain import BareCacheEntry, RepoStatus
 from untaped.capabilities.workspace.domain.prune_safety import (
@@ -30,6 +34,14 @@ DEFAULT_TIMEOUT = 60.0
 
 DEFAULT_SLOW_TIMEOUT = 600.0
 """Per-call timeout (seconds) for network ops (clone, fetch)."""
+
+
+_LOCK_QUEUE = 4
+"""How many other processes' cache operations a bare-cache lock wait allows for."""
+
+
+def _is_bare_repo(path: Path) -> bool:
+    return path.is_dir() and (path / "HEAD").is_file()
 
 
 class GitRunner:
@@ -54,24 +66,51 @@ class GitRunner:
     def ensure_bare(self, url: str, *, cache_dir: Path) -> BareCacheEntry:
         """Ensure a bare clone of ``url`` exists in the cache."""
         bare = cache_path_for(url, cache_dir=cache_dir)
-        if bare.is_dir() and (bare / "HEAD").is_file():
+        # A ready cache needs no lock (nothing is written); re-checked under it.
+        if _is_bare_repo(bare):
             return BareCacheEntry(path=bare, created=False)
         # Must stay idempotent: parallel syncs of different URLs race here.
         bare.parent.mkdir(parents=True, exist_ok=True)
-        self._clone(["clone", "--bare", url, str(bare)], dest=bare)
-        self._protect_cache_objects(bare)
+        with self._cache_lock(bare):
+            if _is_bare_repo(bare):
+                return BareCacheEntry(path=bare, created=False)
+            self._clone(["clone", "--bare", url, str(bare)], dest=bare)
+            self._protect_cache_objects(bare)
         return BareCacheEntry(path=bare, created=True)
 
     def bare_fetch(self, bare_path: Path) -> None:
         # ``clone --bare`` configures no fetch refspec, so a bare
         # ``fetch --all`` would only update FETCH_HEAD. Mirror branches
         # explicitly (also repairs caches created before this refspec).
-        self._run(
-            ["fetch", "--prune", "origin", "+refs/heads/*:refs/heads/*"],
-            cwd=bare_path,
-            timeout=self._slow_timeout,
-        )
-        self._protect_cache_objects(bare_path)
+        with self._cache_lock(bare_path):
+            self._run(
+                ["fetch", "--prune", "origin", "+refs/heads/*:refs/heads/*"],
+                cwd=bare_path,
+                timeout=self._slow_timeout,
+            )
+            self._protect_cache_objects(bare_path)
+
+    @contextmanager
+    def _cache_lock(self, bare: Path) -> Iterator[None]:
+        """Hold ``<bare>.lock`` so untaped processes sharing a cache never race.
+
+        Without it a second process could clone into, fetch, or remove the
+        partial clone of a first one. One holder takes at most a clone or
+        fetch plus the cache-protection config calls; the wait allows a short
+        queue of such holders (``_LOCK_QUEUE``) before giving up.
+        """
+        hold = self._slow_timeout + 2 * self._timeout
+        lock = FileLock(f"{bare}.lock", timeout=_LOCK_QUEUE * hold)
+        try:
+            lock.acquire()
+        except Timeout as exc:
+            raise GitError(f"bare cache is locked by another untaped process: {bare}") from exc
+        except OSError as exc:
+            raise GitError(f"could not lock bare cache {bare}: {exc.strerror or exc}") from exc
+        try:
+            yield
+        finally:
+            lock.release()
 
     def _protect_cache_objects(self, bare_path: Path) -> None:
         """Never auto-gc or prune the cache's objects.

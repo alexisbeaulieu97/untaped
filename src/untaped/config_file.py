@@ -3,8 +3,7 @@
 These are the lowest-level primitives behind the root ``untaped config
 set/unset`` commands and capability state writes. They never validate
 against the Settings schema — that's the caller's job. Settings writes only
-touch the config file; state writes only touch the state file, except the
-one-time move of a legacy state section out of ``config.yml``.
+touch the config file; state writes only touch the state file.
 
 Writes are round-trips (see :mod:`untaped.yaml_roundtrip`): only the keys a
 mutation changed are rewritten, so the user's comments, key order and
@@ -17,8 +16,6 @@ import contextlib
 import copy
 import math
 import os
-import sys
-import tempfile
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -27,13 +24,13 @@ from filelock import FileLock, Timeout
 from pydantic import SecretStr
 
 from untaped.errors import ConfigError
+from untaped.fs import atomic_write
 from untaped.settings import (
     check_state_section_name,
     get_settings,
     load_config_yaml,
     resolve_config_path,
     resolve_state_path,
-    state_section_source,
 )
 from untaped.yaml_roundtrip import plain_dump, render_preserving
 
@@ -56,26 +53,14 @@ def write_config_dict(data: dict[str, Any], path: Path | None = None) -> None:
 
     Only keys that differ from the file's current content are rewritten;
     comments, key order and formatting of everything else are preserved.
-    Creates parent directories if needed. The data is written to a unique
-    temp file created with permissions ``0o600`` (so secrets are never
-    world-readable, even briefly) and atomically renamed over the target;
-    a failed write leaves the original untouched and no temp file behind.
+    Creates parent directories if needed. The write goes through
+    :func:`~untaped.fs.atomic_write` with permissions ``0o600`` (so secrets
+    are never world-readable, even briefly): it is durable, writes through a
+    symlinked config file, and a failed write leaves the original untouched
+    and no temp file behind.
     """
     target = path or resolve_config_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    text = _render(data, target)
-    # A unique temp file created 0600 from the start (O_EXCL, never
-    # world-readable, even briefly) in the target's directory so the final
-    # ``os.replace`` is atomic; removed again if anything fails.
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(text)
-        os.replace(tmp_name, target)
-    except BaseException:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp_name)
-        raise
+    atomic_write(target, _render(data, target), mode=0o600)
 
 
 def _render(data: dict[str, Any], target: Path) -> str:
@@ -160,6 +145,39 @@ def _lock_timeout() -> float:
     return timeout
 
 
+def read_config_text(path: Path | None = None) -> str | None:
+    """Return the config file's text verbatim (newlines untranslated), or ``None`` if absent."""
+    target = path or resolve_config_path()
+    try:
+        with target.open(encoding="utf-8", newline="") as handle:
+            return handle.read()
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ConfigError(f"could not read {target}: {exc}") from exc
+
+
+def replace_config_text(text: str, *, expected: str | None, path: Path | None = None) -> None:
+    """Save ``text`` verbatim as the config file; the caller validated it.
+
+    Runs under the config lock. ``expected`` is the content the caller
+    started from (``None``: no file); if the file changed since, nothing is
+    written and :class:`ConfigError` is raised so another write is never
+    silently lost. The text is written like every other config write
+    (atomically, owner-only, through a symlink); a failed write raises
+    :class:`ConfigError` and leaves the file as it was.
+    """
+    target = path or resolve_config_path()
+    with _locked(target):
+        if read_config_text(target) != expected:
+            raise ConfigError(f"{target} changed while it was being edited")
+        try:
+            atomic_write(target, text, mode=0o600)
+        except OSError as exc:
+            raise ConfigError(f"could not write {target}: {exc.strerror or exc}") from exc
+        get_settings.cache_clear()
+
+
 def ensure_config(path: Path | None = None) -> Path:
     """Create an empty config file (and its parent dir) if absent. Idempotent.
 
@@ -173,31 +191,14 @@ def ensure_config(path: Path | None = None) -> Path:
     return target
 
 
-def read_tool_state(
-    section: str, path: Path | None = None, *, config_path: Path | None = None
-) -> dict[str, Any]:
+def read_tool_state(section: str, path: Path | None = None) -> dict[str, Any]:
     """Return a copy of a tool's state ``section`` dict, or ``{}``.
 
     State is read from ``state.yml`` (``path``, default
-    :func:`~untaped.settings.resolve_state_path`). When that file lacks the
-    section, a legacy copy at the top level of the config file is returned
-    with a once-per-process deprecation warning; ``config_path`` names that
-    file (default: the resolved config file when ``path`` is also default,
-    otherwise no legacy lookup).
+    :func:`~untaped.settings.resolve_state_path`).
     """
     check_state_section_name(section)
-    state_path = path or resolve_state_path()
-    legacy_path = _legacy_path(path, config_path)
-    state_raw = read_config_dict(state_path)
-    config_raw = read_config_dict(legacy_path) if legacy_path and section not in state_raw else {}
-    found = state_section_source(
-        section,
-        state_raw,
-        config_raw,
-        state_path=state_path,
-        config_path=legacy_path or state_path,
-    )
-    raw = found[0] if found is not None else None
+    raw = read_config_dict(path or resolve_state_path()).get(section)
     return copy.deepcopy(raw) if isinstance(raw, dict) else {}
 
 
@@ -205,8 +206,6 @@ def mutate_tool_state(
     section: str,
     fn: Callable[[dict[str, Any]], None],
     path: Path | None = None,
-    *,
-    config_path: Path | None = None,
 ) -> None:
     """Safely mutate a tool's state ``section`` in ``state.yml`` under its lock.
 
@@ -215,130 +214,28 @@ def mutate_tool_state(
     preserved. Independent tools share one state file (possibly across SDK
     versions), so a write must never drop data it doesn't understand. The section
     is removed when ``fn`` leaves it empty; nothing is written when ``fn``
-    changes nothing.
-
-    ``path``/``config_path`` resolve as in :func:`read_tool_state`. When the
-    state file lacks the section but the config file still has it at the top
-    level, the first changing write moves it: both files are locked (state
-    first, then config), the result is written to the state file, and only
-    then is the section removed from the config file (a round-trip rewrite that
-    keeps comments). A failure before the state write changes nothing. If the
-    legacy copy cannot be removed (unwritable, or the config file is a
-    symlink), a warning says so and the state file shadows it — an emptied
-    section is then kept as ``section: {}`` so the stale copy never returns.
+    changes nothing. ``path`` resolves as in :func:`read_tool_state`.
     """
     check_state_section_name(section)
     state_path = path or resolve_state_path()
-    legacy_path = _legacy_path(path, config_path)
     with _locked(state_path):
         state = read_config_dict(state_path)
-        if section in state or legacy_path is None:
-            _write_section(
-                state_path,
-                state,
-                section,
-                state.get(section),
-                fn,
-                keep_empty=lambda: _has_legacy_copy(legacy_path, section),
+        existing = state.get(section)
+        if existing is not None and not isinstance(existing, dict):
+            raise ConfigError(
+                f"invalid state: section {section!r} in {state_path} must be a mapping"
             )
+        before: dict[str, Any] = copy.deepcopy(existing) if existing is not None else {}
+        sub = copy.deepcopy(before)
+        fn(sub)
+        if sub == before:
             return
-        with _locked(legacy_path):
-            config = read_config_dict(legacy_path)
-            if section not in config:
-                _write_section(state_path, state, section, None, fn, keep_empty=lambda: False)
-                return
-            legacy = config[section]
-            if legacy is not None and not isinstance(legacy, dict):
-                raise ConfigError(
-                    f"invalid state: section {section!r} in {legacy_path} must be a "
-                    "mapping; fix or remove it before untaped moves it to "
-                    f"{state_path}"
-                )
-            if _write_section(state_path, state, section, legacy, fn, keep_empty=lambda: True):
-                _drop_legacy_section(legacy_path, config, section, state_path)
-
-
-def _legacy_path(path: Path | None, config_path: Path | None) -> Path | None:
-    if config_path is not None:
-        return config_path
-    return resolve_config_path() if path is None else None
-
-
-def _has_legacy_copy(legacy_path: Path | None, section: str) -> bool:
-    """Whether the config file still holds ``section`` (unreadable: assume yes)."""
-    if legacy_path is None:
-        return False
-    try:
-        return section in read_config_dict(legacy_path)
-    except ConfigError:
-        return True
-
-
-def _write_section(
-    target: Path,
-    data: dict[str, Any],
-    section: str,
-    existing: Any,
-    fn: Callable[[dict[str, Any]], None],
-    *,
-    keep_empty: Callable[[], bool],
-) -> bool:
-    """Apply ``fn`` to ``section`` (seeded from ``existing``); report a change.
-
-    ``data`` is ``target``'s current content; it is written back only when
-    ``fn`` changed the section. An emptied section is removed unless
-    ``keep_empty()`` says a legacy copy would then resurface.
-    """
-    if existing is not None and not isinstance(existing, dict):
-        raise ConfigError(f"invalid state: section {section!r} in {target} must be a mapping")
-    before: dict[str, Any] = copy.deepcopy(existing) if existing is not None else {}
-    sub = copy.deepcopy(before)
-    fn(sub)
-    if sub == before:
-        return False
-    updated = dict(data)
-    if sub or keep_empty():
-        updated[section] = sub
-    else:
-        updated.pop(section, None)
-    if updated != data:
-        write_config_dict(updated, target)
-    get_settings.cache_clear()
-    return True
-
-
-def _drop_legacy_section(
-    config_path: Path, config: dict[str, Any], section: str, state_path: Path
-) -> None:
-    """Remove a migrated state section from the config file (both files locked).
-
-    A failure only warns: the state file already holds (and so shadows) the
-    section. After a successful removal an empty placeholder left in the state
-    file is dropped.
-    """
-    problem: str | None = None
-    if config_path.is_symlink():
-        problem = "it is a symlink, which untaped will not replace"
-    else:
-        remaining = dict(config)
-        del remaining[section]
-        try:
-            write_config_dict(remaining, config_path)
-        except OSError as exc:
-            problem = str(exc.strerror or exc)
-    get_settings.cache_clear()
-    if problem is not None:
-        print(
-            f"warning: state section {section!r} was saved to {state_path} but could "
-            f"not be removed from {config_path} ({problem}); the copy there is now "
-            "ignored — delete it by hand.",
-            file=sys.stderr,
-        )
-        return
-    state = read_config_dict(state_path)
-    if state.get(section) == {}:
-        del state[section]
+        if sub:
+            state[section] = sub
+        else:
+            state.pop(section, None)
         write_config_dict(state, state_path)
+        get_settings.cache_clear()
 
 
 def set_at_path(data: dict[str, Any], path: tuple[str, ...], value: Any) -> None:

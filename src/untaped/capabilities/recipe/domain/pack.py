@@ -152,6 +152,8 @@ class InstalledPack:
     source: str
     rev: str
     installed_version: str
+    # The resolved commit a git-sourced pack was installed at ("" otherwise).
+    commit: str = ""
 
     @classmethod
     def local(cls, path: Path, manifest: PackManifest) -> InstalledPack:

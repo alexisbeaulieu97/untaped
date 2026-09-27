@@ -8,7 +8,7 @@ from pathlib import Path
 from untaped.capabilities.recipe.application.ports import PackLibraryPort
 from untaped.capabilities.recipe.domain.pack import InstalledPack, parse_ref
 from untaped.capabilities.recipe.domain.paths import is_path_ref
-from untaped.capability_api import plural, q
+from untaped.capability_api import not_found, plural, q
 
 
 @dataclass(frozen=True)
@@ -102,7 +102,7 @@ def resolve_explicit_recipe(
         if recipe_id is not None:
             entry = library.local_pack(path).manifest.recipes.get(recipe_id)
             if entry is None:
-                raise ValueError(f"recipe not found: {recipe_id}")
+                raise ValueError(not_found("recipe", recipe_id))
             return ResolvedRecipe(
                 path=path / entry.path,
                 ref=f"{_dir_name(path)}/{recipe_id}",

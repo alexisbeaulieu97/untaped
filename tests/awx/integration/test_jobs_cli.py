@@ -180,6 +180,8 @@ _LINES = ["line-0", "line-1", "line-2"]
         (["--follow", "--format", "raw", "--columns", "line"], _LINES),
         (["--tail", "2"], _LINES[1:]),
         (["--format", "json", "--columns", "line"], [json.dumps([{"line": x} for x in _LINES])]),
+        # -f is --format, as on every other command
+        (["-f", "json", "-c", "line"], [json.dumps([{"line": x} for x in _LINES])]),
         # --follow json is NDJSON: one bare object per line, straight into ``jq``
         (["--follow", "--format", "json"], [json.dumps({"job": 42, "line": x}) for x in _LINES]),
         (["--follow", "--format", "json", "--columns", "line"],
@@ -335,53 +337,81 @@ def _seed_two_jts(fake: Any) -> None:
 
 
 def _prefixing_stub_stream(_monitor: Any, job: Any, **_kwargs: Any) -> Any:
-    """Stand-in for ``JobMonitor.stream_events`` that yields one identifiable
-    event per worker. The play name carries the materialised job id so
-    a failing assertion's stderr dump tells us which worker emitted
-    what. Used by every test that asserts on prefixed output.
+    """Stand-in for ``JobMonitor.stream_stdout`` that yields one identifiable
+    log line per worker, naming the materialised job id so a failing
+    assertion's stderr dump tells us which worker emitted what.
     """
-    from untaped.capabilities.awx.domain import JobEvent
-
-    return iter([JobEvent(counter=1, event="playbook_on_play_start", play=f"job-{job.id}")])
+    return iter([f"PLAY [job-{job.id}]"])
 
 
-def test_launch_track_exits_zero_on_successful_job(fake_aap: Any) -> None:
+_LOG = (
+    "PLAY [deploy] ******\n"
+    "TASK [install] ******\n"
+    'fatal: [web-01]: FAILED! => {"msg": "disk full"}\n'
+    "PLAY RECAP ******\n"
+    "web-01 : ok=1 changed=0 unreachable=0 failed=1\n"
+)
+
+
+def test_launch_follow_exits_zero_on_successful_job(fake_aap: Any) -> None:
     _seed_basic_jt(fake_aap, job_status="successful")
-    result = CliInvoker().invoke(app, ["job-templates", "launch", "deploy", "--track"])
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "deploy", "--follow"])
     assert result.exit_code == 0, result.output
 
 
-def test_launch_track_exits_one_on_job_failure(fake_aap: Any) -> None:
+def test_launch_follow_exits_one_on_job_failure(fake_aap: Any) -> None:
     _seed_basic_jt(fake_aap, job_status="failed")
-    result = CliInvoker().invoke(app, ["job-templates", "launch", "deploy", "--track"])
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "deploy", "--follow"])
     assert result.exit_code == 1
 
 
-def test_launch_track_shows_the_failure_reason(
-    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from untaped.capabilities.awx.domain import JobEvent
-
+def test_launch_follow_streams_the_log_to_stderr_ending_with_the_recap(fake_aap: Any) -> None:
+    """One job's log streams unprefixed to stderr; stdout keeps only the result row."""
     _seed_basic_jt(fake_aap, job_status="failed")
-    failed = JobEvent(
-        counter=1,
-        event="runner_on_failed",
-        host_name="web-01",
-        stdout='fatal: [web-01]: FAILED! => {"msg": "disk full"}',
+    fake_aap.next_action_stdout = _LOG
+
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "deploy", "--follow", "--format", "json"]
     )
-    monkeypatch.setattr(PollingJobMonitor, "stream_events", lambda *_a, **_k: iter([failed]))
-
-    result = CliInvoker().invoke(app, ["job-templates", "launch", "deploy", "--track"])
 
     assert result.exit_code == 1
-    assert "[deploy]   failed: web-01" in result.stderr
-    assert '[deploy]     fatal: [web-01]: FAILED! => {"msg": "disk full"}' in result.stderr
+    assert 'fatal: [web-01]: FAILED! => {"msg": "disk full"}' in result.stderr
+    log_lines = [line for line in result.stderr.splitlines() if not line.startswith("failed:")]
+    assert log_lines[-2:] == ["PLAY RECAP ******", "web-01 : ok=1 changed=0 unreachable=0 failed=1"]
+    assert json.loads(result.stdout)[0]["status"] == "failed"
+    assert "PLAY RECAP" not in result.stdout
 
 
-def test_launch_track_parallel_drains_concurrently(
+_LONG_LINE = 'fatal: [web01]: FAILED! => {"msg": "' + "disk full " * 20 + '"}'
+
+
+@pytest.mark.parametrize(
+    ("names", "prefix"), [(["deploy"], ""), (["deploy-a", "deploy-b"], "[deploy-")]
+)
+def test_launch_follow_writes_log_lines_verbatim(
+    fake_aap: Any, names: list[str], prefix: str
+) -> None:
+    """Lines longer than the terminal and tabs survive byte-for-byte."""
+    _seed_fk_prereqs(fake_aap)
+    for index, name in enumerate(names):
+        _seed_jt(fake_aap, name=name, id=30 + index, playbook="p.yml")
+    fake_aap.next_action_stdout = f"{_LONG_LINE}\n\tweb01 : ok=1 changed=0\n"
+
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "--yes", *names, "--follow"])
+
+    assert result.exit_code == 0, result.output
+    lines = result.stderr.splitlines()
+    long_line = next(line for line in lines if line.endswith(_LONG_LINE))
+    assert long_line.startswith(prefix)
+    assert long_line == (f"{long_line.split('] ')[0]}] {_LONG_LINE}" if prefix else _LONG_LINE)
+    tab_line = next(line for line in lines if "web01 : ok=1" in line)
+    assert tab_line.endswith("\tweb01 : ok=1 changed=0")
+
+
+def test_launch_follow_parallel_drains_concurrently(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Two ``--track`` jobs must drain concurrently. We prove it by
+    """Two ``--follow`` jobs must drain concurrently. We prove it by
     blocking each worker on a 2-party :class:`threading.Barrier`: a
     sequential implementation can never reach the second worker, the
     barrier times out, and the test fails.
@@ -395,37 +425,37 @@ def test_launch_track_parallel_drains_concurrently(
         barrier.wait()
         return iter(())
 
-    monkeypatch.setattr(PollingJobMonitor, "stream_events", _barrier_stream)
+    monkeypatch.setattr(PollingJobMonitor, "stream_stdout", _barrier_stream)
 
     result = CliInvoker().invoke(
-        app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--track"]
+        app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--follow"]
     )
     assert result.exit_code == 0, result.output
 
 
 @pytest.mark.parametrize(("status", "exit_code"), [("successful", 0), ("failed", 1)])
-def test_launch_track_prefixes_every_template_and_fails_on_any_failure(
+def test_launch_follow_prefixes_every_template_and_fails_on_any_failure(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch, status: str, exit_code: int
 ) -> None:
-    """Concurrent ``--track`` output carries each template's name on the shared
+    """Concurrent ``--follow`` logs carry each template's name on the shared
     stderr; one failed execution (the first launch only) exits 1 while the
-    other template's events still stream."""
+    other template's log still streams."""
     _seed_two_jts(fake_aap)
     fake_aap.next_action_status = status
-    monkeypatch.setattr(PollingJobMonitor, "stream_events", _prefixing_stub_stream)
+    monkeypatch.setattr(PollingJobMonitor, "stream_stdout", _prefixing_stub_stream)
 
     result = CliInvoker().invoke(
-        app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--track"]
+        app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--follow"]
     )
     assert result.exit_code == exit_code, result.output
-    assert "[deploy-a]" in result.stderr
-    assert "[deploy-b]" in result.stderr
+    assert "[deploy-a] PLAY [job-" in result.stderr
+    assert "[deploy-b] PLAY [job-" in result.stderr
 
 
 def test_launch_wait_parallel_returns_results_in_launch_order(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``--wait`` (no ``--track``) for two templates exercises
+    """``--wait`` (no ``--follow``) for two templates exercises
     ``wait_parallel``. The collected ``jobs`` list must be in launch
     order so the table-output rows mirror the user-supplied ``ids``.
 
@@ -478,20 +508,18 @@ def test_launch_wait_parallel_returns_results_in_launch_order(
     assert rows == ["deploy-a-launch", "deploy-b-launch"], result.output
 
 
-def test_launch_track_worker_exception_wraps_to_untaped_error(
+def test_launch_follow_worker_exception_wraps_to_untaped_error(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A non-``UntapedError`` raised inside one ``--track`` worker must
+    """A non-``UntapedError`` raised inside one ``--follow`` worker must
     not abort the whole batch as a raw traceback. The worker wraps it
     as ``UntapedError(f"{type(exc).__name__}: {exc}")``, the caller
     echoes ``error: <name>: <wrapped>``, ``any_failed`` flips, and the
-    other worker's events still reach stderr.
+    other worker's log still reaches stderr.
 
     Pins the wrap-message format so the ``error: deploy-a: deploy-a:
     ...`` double-prefix bug (round-2 review) cannot regress.
     """
-    from untaped.capabilities.awx.domain import JobEvent
-
     _seed_two_jts(fake_aap)
 
     def _stub_stream_with_deploy_a_failure(_monitor: Any, job: Any, **_kwargs: Any) -> Any:
@@ -500,19 +528,19 @@ def test_launch_track_worker_exception_wraps_to_untaped_error(
         # so the test isn't coupled to FakeAap's id sequencing.
         if job.id % 2 == 0:
             raise RuntimeError("boom")
-        return iter([JobEvent(counter=1, event="playbook_on_play_start", play=f"job-{job.id}")])
+        return iter([f"PLAY [job-{job.id}]"])
 
-    monkeypatch.setattr(PollingJobMonitor, "stream_events", _stub_stream_with_deploy_a_failure)
+    monkeypatch.setattr(PollingJobMonitor, "stream_stdout", _stub_stream_with_deploy_a_failure)
 
     result = CliInvoker().invoke(
-        app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--track"]
+        app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--follow"]
     )
     assert result.exit_code == 1, result.output
     # Single-prefix error row, with the original exception class name
     # preserved for debuggability.
     assert "failed: deploy-a: RuntimeError: boom" in result.stderr
     # The other worker isn't aborted by deploy-a's failure: deploy-b's
-    # event still streams with its prefix.
+    # log still streams with its prefix.
     assert "[deploy-b]" in result.stderr
 
 

@@ -100,6 +100,15 @@ class ResourceClient(Protocol):
         """Look up a record by ``name`` plus optional FK-name scope."""
         ...
 
+    def scoped_names(
+        self, spec: ResourceSpec, scope: dict[str, str] | None = None
+    ) -> tuple[str, ...]:
+        """Names of (a first page of) ``spec`` records in an FK-name ``scope``.
+
+        Feeds "did you mean" suggestions; an API error yields ``()``.
+        """
+        ...
+
     def create(self, spec: ResourceSpec, payload: WritePayload) -> ServerRecord: ...
 
     def update(self, spec: ResourceSpec, id_: int, payload: WritePayload) -> ServerRecord: ...

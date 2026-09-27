@@ -18,7 +18,6 @@ from typing import Any
 from cyclopts import App
 from cyclopts.command_spec import CommandSpec
 from cyclopts.core import _apply_parent_defaults_to_app
-from pydantic import BaseModel
 
 from untaped._root_options import (
     _consume_leading_root_options,
@@ -26,6 +25,8 @@ from untaped._root_options import (
     _root_callback_signature,
     _root_options,
     _RootOption,
+    expand_alias,
+    resolve_command,
 )
 from untaped.capabilities.registry import (
     ApplicationSpec,
@@ -37,13 +38,15 @@ from untaped.capabilities.registry import (
     compose,
     discover_external_providers,
 )
-from untaped.cli import create_app, echo, report_errors, run_cyclopts_app
+from untaped.cli import apply_default_format, create_app, echo, report_errors, run_cyclopts_app
 from untaped.errors import ConfigError
 from untaped.management import (
+    build_root_alias_app,
     build_root_capabilities_app,
     build_root_config_app,
     build_root_doctor_app,
     build_root_profile_app,
+    build_root_setup_app,
     build_root_skills_app,
 )
 from untaped.management.skills import check_installed_skills, composed_skills
@@ -57,6 +60,7 @@ from untaped.settings import (
     register_state_settings,
     reset_config_registry_for_tests,
 )
+from untaped.shell_settings import ShellProfileSettings
 from untaped.skills import InstallableSkill
 from untaped.verbose import reset as _reset_verbose
 
@@ -88,10 +92,6 @@ _active_capability: ContextVar[str | None] = ContextVar("untaped_active_capabili
 def current_capability() -> str | None:
     """Return the active capability name, or ``None`` outside dispatch."""
     return _active_capability.get()
-
-
-class ShellProfileSettings(BaseModel):
-    """Reserved shell-level profile-scoped settings."""
 
 
 def _shell_app() -> App:
@@ -215,6 +215,12 @@ def build_root_app(
     _mount(root, build_root_profile_app(command=SHELL_NAME), name="profile")
     _mount(root, build_root_skills_app(shell=SHELL_SPEC, result=result), name="skills")
     _mount(root, build_root_doctor_app(shell=SHELL_SPEC, result=result), name="doctor")
+    _mount(root, build_root_setup_app(shell=SHELL_SPEC, result=result), name="setup")
+    _mount(
+        root,
+        build_root_alias_app(builtin_for=lambda name: resolve_command(root, name)),
+        name="alias",
+    )
     _mount(
         root,
         build_root_capabilities_app(
@@ -227,13 +233,14 @@ def build_root_app(
     for capability in result.capabilities:
         _mount_capability(root, capability)
     root.version = _resolve_version
+    root.config = (apply_default_format,)
     capability_names = frozenset(capability.spec.name for capability in result.capabilities)
     skills = composed_skills(SHELL_SPEC, result)
     _install_root_callback(
         root,
         _root_options(),
         capability_names,
-        after_command=lambda tokens: _check_skills_after(tokens, skills),
+        after_command=lambda tokens, failed: _check_skills_after(tokens, skills, failed=failed),
     )
     root.register_install_completion_command()
     return root
@@ -301,18 +308,27 @@ def _mount_capability(root: App, capability: RegisteredCapability) -> None:
 #: Root commands that manage or diagnose skills themselves: the per-run
 #: skills check stays quiet after them.
 _SKILLS_CHECK_EXEMPT = frozenset({"skills", "doctor"})
+#: Flags that make a command a preview (``recipe apply --check``, every
+#: ``--dry-run``): the skills check must not write after one.
+_PREVIEW_FLAGS = frozenset({"--dry-run", "--check"})
 
 
-def _check_skills_after(tokens: list[str], skills: Mapping[str, InstallableSkill]) -> None:
+def _check_skills_after(
+    tokens: list[str], skills: Mapping[str, InstallableSkill], *, failed: bool
+) -> None:
     """Run the per-run installed-skills check after a command.
 
     Skipped for bare ``untaped``, root flags (``--help``, ``--version``) and
-    the skills-managing commands. Never lets the check break the command.
+    the skills-managing commands. After a failed or previewing command (a
+    ``_PREVIEW_FLAGS`` option before any ``--``) it only reports, never
+    updates. Never lets the check break the command.
     """
     if not tokens or tokens[0].startswith("-") or tokens[0] in _SKILLS_CHECK_EXEMPT:
         return
+    options = tokens[: tokens.index("--")] if "--" in tokens else tokens
     try:
-        check_installed_skills(skills)
+        preview = not _PREVIEW_FLAGS.isdisjoint(options)
+        check_installed_skills(skills, allow_updates=not (failed or preview))
     except Exception:
         return
 
@@ -322,7 +338,7 @@ def _install_root_callback(
     root_options: dict[str, _RootOption],
     capability_names: frozenset[str],
     *,
-    after_command: Callable[[list[str]], None] | None = None,
+    after_command: Callable[[list[str], bool], None] | None = None,
 ) -> None:
     # The meta app must not intercept --help/--version: that would render the
     # meta callback instead of the inner app's command listing. The inner app
@@ -342,6 +358,7 @@ def _install_root_callback(
         applied_tokens: list[tuple[_RootOption, object]] = []
         identity_token: Token[str | None] | None = None
         command_tokens: list[str] = []
+        failed = True
         try:
             with report_errors():
                 command_tokens = _consume_leading_root_options(
@@ -349,19 +366,30 @@ def _install_root_callback(
                 )
                 if command_tokens[:1] == ["--"]:
                     command_tokens = command_tokens[1:]  # `untaped [opts] -- cmd …`
+                expanded = expand_alias(app, command_tokens)
+                if expanded is not command_tokens:
+                    # An alias may start with root options (`--profile prod awx …`).
+                    command_tokens = _consume_leading_root_options(
+                        expanded, root_options, applied_tokens
+                    )
                 selected = (
                     command_tokens[0]
                     if command_tokens and command_tokens[0] in capability_names
                     else SHELL_NAME
                 )
                 identity_token = _active_capability.set(selected)
-                return _dispatch_with_root_options(
+                result = _dispatch_with_root_options(
                     app, command_tokens, root_options, applied_tokens
                 )
+                failed = False
+                return result
+        except SystemExit as exc:
+            failed = exc.code not in (0, None)
+            raise
         finally:
             # Runs on failures too: a stale skill is a likely cause of one.
             if after_command is not None and identity_token is not None:
-                after_command(command_tokens)
+                after_command(command_tokens, failed)
             if identity_token is not None:
                 _active_capability.reset(identity_token)
             for option, token in reversed(applied_tokens):

@@ -36,7 +36,6 @@ from untaped.cli import (
 )
 from untaped.errors import ConfigError, UntapedError, UsageError
 from untaped.messages import hint, not_found, plural
-from untaped.render import OutputFormat
 from untaped.settings import SkillsSettings, load_settings_section
 from untaped.skills import (
     AllSkillsOption,
@@ -62,6 +61,7 @@ from untaped.skills import (
     update_installed_skill,
 )
 from untaped.stdin import read_identifiers
+from untaped.theme import OutputFormat
 from untaped.ui import ui_context
 
 _INSTALLED_KIND = "untaped.installed_skill"
@@ -234,15 +234,21 @@ def build_root_skills_app(*, shell: ApplicationSpec, result: CompositionResult) 
     return app
 
 
-def check_installed_skills(skills: Mapping[str, InstallableSkill]) -> None:
+def check_installed_skills(
+    skills: Mapping[str, InstallableSkill], *, allow_updates: bool = True
+) -> None:
     """Report installed skills that no longer match this version.
 
     Runs after every root command. ``skills.updates`` picks the behaviour:
     ``warn`` (default) prints a warning, ``auto`` updates outdated skills in
-    place, ``off`` does nothing. Skills this version no longer ships are only
-    ever reported: removing them is left to ``untaped skills remove``.
+    place, ``off`` does nothing. Without ``allow_updates`` (after a failed or
+    ``--dry-run`` command) ``auto`` only warns, so nothing is written. Skills
+    this version no longer ships are only ever reported: removing them is left
+    to ``untaped skills remove``.
     """
     mode = _updates_mode()
+    if mode == "auto" and not allow_updates:
+        mode = "warn"
     if mode == "off":
         return
     stale = outdated_skills(skills, project_dir=project_root(Path.cwd()))

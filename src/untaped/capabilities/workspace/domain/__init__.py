@@ -6,6 +6,7 @@ from untaped.capabilities.workspace.domain.manifest import (
     Repo,
     WorkspaceManifest,
     check_path_segment,
+    check_workspace_name,
     derive_repo_name,
 )
 from untaped.capabilities.workspace.domain.models import Workspace
@@ -61,5 +62,6 @@ __all__ = [
     "WorkspaceOutcome",
     "WorkspaceSummaryRow",
     "check_path_segment",
+    "check_workspace_name",
     "derive_repo_name",
 ]

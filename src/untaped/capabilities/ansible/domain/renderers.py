@@ -7,8 +7,7 @@ from collections.abc import Iterable
 from functools import cmp_to_key
 from typing import Literal
 
-from untaped.capabilities.ansible.domain.graph import DependencyGraph, GraphNode
-from untaped.capabilities.ansible.domain.identity import repo_key
+from untaped.capabilities.ansible.domain.graph import DependencyGraph, GraphNode, walk_root_ids
 from untaped.capabilities.ansible.domain.ref_display import (
     RefDisplay,
     compare_ref_displays,
@@ -95,22 +94,7 @@ def _target_roots(
     nodes: dict[str, GraphNode],
     target: GraphNode,
 ) -> list[str]:
-    roots: list[str] = []
-    for parent_id in adjacency:
-        node = nodes[parent_id]
-        if parent_id == target.id or _is_concrete_target_ref(node, target):
-            roots.append(parent_id)
-    return _sort_node_ids(roots, nodes)
-
-
-def _is_concrete_target_ref(node: GraphNode, target: GraphNode) -> bool:
-    return (
-        target.ref is None
-        and target.repo is not None
-        and node.repo is not None
-        and repo_key(node.repo) == repo_key(target.repo)
-        and node.ref is not None
-    )
+    return _sort_node_ids(walk_root_ids(target, nodes, adjacency), nodes)
 
 
 def _append_tree_roots(

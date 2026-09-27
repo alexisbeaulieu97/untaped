@@ -102,21 +102,6 @@ class SettingsFileRepository:
     def profile_data(self, name: str) -> dict[str, Any] | None:
         return active_settings_layout().profile_data(self.yaml_dict(), name)
 
-    def profile_value_for(self, descriptor: FieldDescriptor, profile: str) -> Any:
-        """Raw value at ``descriptor.path`` in ``profile``'s effective view.
-
-        Resolves through the layout's layering (e.g. ``profiles.default``
-        beneath ``profiles.<profile>``); returns ``None`` when the profile's
-        view doesn't set the leaf.
-        """
-        effective = active_settings_layout().effective(self.yaml_dict(), profile=profile)
-        cursor: Any = effective
-        for segment in descriptor.path:
-            if not isinstance(cursor, dict) or segment not in cursor:
-                return None
-            cursor = cursor[segment]
-        return cursor
-
     def env_var_for(self, descriptor: FieldDescriptor) -> str:
         return "UNTAPED_" + "__".join(descriptor.path).upper()
 
@@ -163,7 +148,7 @@ class SettingsFileRepository:
 
         Returns ``(removed, target)``; under ``dry_run`` ``removed`` says
         whether it would be removed and nothing is written. An explicit
-        ``--target-profile`` the layout cannot satisfy raises ``ConfigError``. Removing a key that
+        ``profile`` the layout cannot satisfy raises ``ConfigError``. Removing a key that
         simply isn't set in the resolved scope is a no-op
         (``removed=False``).
         """

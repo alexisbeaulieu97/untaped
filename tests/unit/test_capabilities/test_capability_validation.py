@@ -70,7 +70,6 @@ def _failing_factory() -> Any:
 
 
 RESERVED = [
-    "log_level",
     "http",
     "ui",
     "profiles",
@@ -315,56 +314,92 @@ def test_duplicate_skill_across_externals_keeps_the_first() -> None:
 @pytest.mark.parametrize(
     ("rng", "expected"),
     [
-        ((1.0, 2.0), (1.0, 2.0)),
-        ((0.0, 99.0), (0.0, 99.0)),
-        ((1.0, 1.5), (1.0, 1.5)),
-        ([1.0, 2.0], (1.0, 2.0)),
-        ((1, 2), (1.0, 2.0)),
+        (((2, 0), (3, 0)), ((2, 0), (3, 0))),
+        (((0, 0), (99, 0)), ((0, 0), (99, 0))),
+        (((2, 0), (2, 5)), ((2, 0), (2, 5))),
+        ([[2, 0], [3, 0]], ((2, 0), (3, 0))),
     ],
 )
 def test_api_range_accepts_covering_ranges(rng: Any, expected: Any) -> None:
-    # Checked against 1.0: the lower bound is inclusive.
-    assert check_api_range(rng, 1.0) == expected
+    # Checked against 2.0: the lower bound is inclusive.
+    assert check_api_range(rng, (2, 0)) == expected
     spec = make_spec(name="ranged")
     result = compose(make_shell(), [], [make_external(spec, api_requires=rng)])
     assert [c.spec.name for c in result.capabilities] == ["ranged"]
     assert result.quarantine == ()
 
 
-def test_api_1_1_accepts_1_0_providers_and_additive_ranges() -> None:
-    """1.1 is additive: ranges written for 1.0 still compose; 1.1 floors do too."""
-    for rng in ((1.0, 2.0), (1.1, 2.0)):
-        spec = make_spec(name="ranged")
-        result = compose(make_shell(), [], [make_external(spec, api_requires=rng)])
-        assert [c.spec.name for c in result.capabilities] == ["ranged"], rng
+def test_api_versions_compare_as_tuples_not_floats() -> None:
+    """``(1, 10)`` is newer than ``(1, 9)``; as floats 1.10 == 1.1 < 1.9."""
+    assert check_api_range(((1, 9), (2, 0)), (1, 10)) == ((1, 9), (2, 0))
+    with pytest.raises(ConfigError, match=r"does not admit SDK version 1\.10"):
+        check_api_range(((1, 0), (1, 10)), (1, 10))
+
+
+def test_api_2_0_rejects_1_x_providers() -> None:
+    """8.0 broke the SDK: ranges capped below 2.0 no longer compose."""
     capped = compose(
-        make_shell(), [], [make_external(make_spec(name="old"), api_requires=(1.0, 1.1))]
+        make_shell(), [], [make_external(make_spec(name="old"), api_requires=((1, 0), (2, 0)))]
     )
-    assert [record.reason for record in capped.quarantine] == ["api-range"]
+    (record,) = capped.quarantine
+    assert record.reason == "api-range"
+    assert "does not admit SDK version 2.0" in record.detail
+
+
+@pytest.mark.parametrize(
+    ("rng", "detail"),
+    [
+        (
+            (1.0, 2.0),
+            "malformed api_requires (1.0, 2.0): expected ((major, minor), (major, minor)) "
+            "int tuples as (min_inclusive, max_exclusive); running SDK 5.1, "
+            "declare e.g. ((5, 0), (6, 0))",
+        ),
+        (
+            ((6, 0), (5, 0)),
+            "inverted api_requires >=6.0,<5.0: min_inclusive must be below max_exclusive; "
+            "running SDK 5.1, declare e.g. ((5, 0), (6, 0))",
+        ),
+        (
+            None,
+            "missing api_requires: provider declares no SDK range; "
+            "running SDK 5.1, declare e.g. ((5, 0), (6, 0))",
+        ),
+    ],
+)
+def test_bad_range_messages_name_the_running_sdk(rng: Any, detail: str) -> None:
+    """Float (1.x), inverted and missing ranges name the running version and an example."""
+    with pytest.raises(ConfigError) as excinfo:
+        check_api_range(rng, (5, 1))
+    assert str(excinfo.value) == f"api-range: {detail}"
 
 
 @pytest.mark.parametrize(
     "rng",
     [
-        (1.0, 1.0),  # inverted
-        (2.0, 1.0),
-        ("1.0", 2.0),  # non-numeric
-        (True, 2.0),
-        (float("nan"), 2.0),
-        (1.0, float("inf")),  # non-finite
-        (1.0,),  # not a pair
-        (1.0, 2.0, 3.0),
-        "1.0",
-        {"lo": 1.0},
-        (0.5, 1.0),  # does not admit the running API
-        (1.5, 2.0),
-        (0.5, 0.9),
+        ((2, 0), (2, 0)),  # inverted
+        ((3, 0), (2, 0)),
+        (("2", 0), (3, 0)),  # non-int
+        ((True, 0), (3, 0)),
+        ((2.0, 0), (3, 0)),
+        ((2, -1), (3, 0)),  # negative
+        ((2,), (3, 0)),  # bound not a pair
+        ((2, 0, 0), (3, 0)),
+        "2.0",
+        (2, 3),  # bare majors
+        (1.0, 2.0),  # 1.x float bounds
+        ((2, 0),),  # not a pair
+        ((2, 0), (3, 0), (4, 0)),
+        {"lo": (2, 0)},
+        ((1, 0), (2, 0)),  # does not admit the running API
+        ((2, 1), (3, 0)),
+        ((0, 5), (1, 9)),
         None,  # missing
     ],
 )
 def test_api_range_rejects_bad_ranges(rng: Any) -> None:
     with pytest.raises(ConfigError, match="api-range"):
-        check_api_range(rng, 1.0)
+        check_api_range(rng, (2, 0))
     spec = make_spec(name="ranged")
     result = compose(make_shell(), [], [make_external(spec, api_requires=rng)])
     assert result.capabilities == ()
@@ -386,7 +421,7 @@ def test_api_range_missing_attribute_quarantine() -> None:
 
 
 def test_api_range_builtin_fatal(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(registry, "CAPABILITY_API_VERSION", 5.0)
+    monkeypatch.setattr(registry, "CAPABILITY_API_VERSION", (5, 0))
     with pytest.raises(ConfigError, match="api-range"):
         compose(make_shell(), [make_spec(name="built")])
 
@@ -398,7 +433,7 @@ def _needs_arg(value: str) -> CapabilitySpec:
     return make_spec(name="argful")
 
 
-_needs_arg.api_requires = (1.0, 2.0)  # type: ignore[attr-defined]
+_needs_arg.api_requires = ((2, 0), (3, 0))  # type: ignore[attr-defined]
 
 
 @pytest.mark.parametrize(

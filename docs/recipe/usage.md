@@ -9,6 +9,10 @@ backup of every file it touches.
 Recipes work on plain directories. They run no shell commands and never
 commit, push or open pull requests.
 
+Recipe verbs (`apply`, `list`, `get`, `edit`, `init`, `validate`, `test`) sit
+directly under `untaped recipe`. Packs, hooks and backups have their own
+nouns: `recipe packs …`, `recipe hooks …` and `recipe backups …`.
+
 ## Apply a recipe
 
 ```bash
@@ -26,8 +30,8 @@ it has exactly one.
 
 | Flag | Effect |
 |---|---|
-| `--dry-run` | Plan and preview; write nothing, back up nothing. |
-| `--check` | Write nothing, ask nothing; exit 3 if any target would change. For CI. |
+| `--dry-run` | Plan and preview; write nothing, back up nothing. Pack hooks still run, because they compute the plan. |
+| `--check` | Write nothing, ask nothing; exit 3 if any target would change. For CI. Pack hooks still run. |
 | `--yes` | Skip the confirmation. |
 | `--preview table\|diff\|none` | Preview style on stderr. `diff` prints unified diffs. |
 | `--no-backup` | Skip the backup bundle. |
@@ -41,7 +45,7 @@ other targets still run. Within one target, writes roll back on failure.
 `--stdin` reads target paths, or records with a `target_path`:
 
 ```bash
-untaped workspace get --workspace prod --format pipe \
+untaped workspace repos list prod --format pipe \
   | untaped recipe apply acme/editorconfig --stdin --dry-run
 ```
 
@@ -50,56 +54,98 @@ With `--stdin` the confirmation reads the terminal. Without one, pass
 
 ### Inputs
 
-Recipes declare inputs. Give them values with `--var` or a YAML file:
+Recipes declare inputs. Give them values with `--var KEY=VALUE` or YAML
+files, the same flags `awx test` uses for suite variables:
 
 ```bash
 untaped recipe apply acme/codeowners ~/work/api --var owner=@acme/platform
-untaped recipe apply acme/codeowners ~/work/api --vars-file inputs.yml
+untaped recipe apply acme/codeowners ~/work/api --vars-file base.yml --vars-file prod.yml
 untaped recipe apply acme/labels ~/work/api --var 'labels=[infra, tls]'
 untaped recipe apply acme/readme --stdin --input-from 'service={{ target.name }}' < dirs.txt
 ```
 
-- `--var` wins over `--vars-file`. Unknown input names are rejected.
-- `list` and `dict` inputs parse `--var` values as YAML.
+- `--var` and `--vars-file` repeat. A later file wins over an earlier one,
+  and `--var` wins over every file. Unknown input names are rejected.
+- `list` and `dict` inputs parse `--var` values as YAML. Other `--var`
+  values are plain strings, but `--vars-file` values are YAML: `3.10`
+  becomes `3.1` and `on` becomes `true` before a `str` input sees them.
+  Quote them (`python_version: "3.10"`).
 - `--input-from NAME=TEMPLATE` derives a value per target from
   `target.path`, `target.name`, `target.parent_path`, `target.parent_name` or
   the piped `record`.
-- `--interactive` prompts for inputs that are still missing.
 - For each input, the first value found wins: `--var`/`--vars-file` or
-  `--input-from`, the recipe's `from`, the prompt, the recipe's `default`.
-  Otherwise the target fails with `missing required input`.
+  `--input-from`, the recipe's `from`, the recipe's `default`.
+- A required input still missing is prompted for when stdin is a terminal
+  (sensitive inputs as a hidden secret; `list`/`dict` inputs are never
+  prompted). Without a terminal (including with `--stdin`), or with
+  `--non-interactive` or `--check`, it fails with
+  `missing required input: NAME; pass --var NAME=VALUE or --vars-file FILE`.
 
 Sensitive inputs show as `***` in rows, previews and backups.
 
 ## Install and manage packs
 
 Installing a pack installs code: its hooks run on your machine with no
-sandbox. Inspect a pack before you trust it (`recipe get`, `recipe validate`,
-`recipe test`).
+sandbox, including during `apply --dry-run` and `--check`, since hooks compute
+the planned changes. Inspect a pack before you trust it (`recipe packs get`,
+`recipe validate`, `recipe test`).
+
+Hooks, and the `uv` commands untaped runs on a pack (`uv run`, `uv lock`,
+`uv lock --check`), get a reduced environment. Only `PATH`, `HOME`,
+`USER`/`LOGNAME`, locale (`LANG`, `LANGUAGE`, `LC_*`), `TZ`, temp directories,
+`UV_*` and `XDG_*` settings, `NETRC`, TLS trust (`SSL_CERT_FILE`,
+`SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`), proxies (`HTTP_PROXY`,
+`HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`) and, for `git+ssh` dependencies,
+`SSH_AUTH_SOCK` and `GIT_SSH_COMMAND` are passed through. Hook workers get
+`PYTHONPATH` set to the pack's `src/` only. Tokens held in other variables,
+such as `GITHUB_TOKEN` or untaped's Jira, AWX and GitHub credentials
+(`UNTAPED_*`), are not in a hook's environment.
+
+This limits what leaks through the environment only. `UV_*` variables are
+passed, and they can hold package-index credentials. Hooks also run as you,
+with full file access: they can read `~/.netrc`, your untaped `config.yml`,
+and git credential stores.
+
+Anything a hook writes to stdout, even at the file-descriptor level or from a
+subprocess, is shown as hook diagnostics; hooks read an empty stdin.
 
 ```bash
-untaped recipe add https://github.com/acme/untaped-recipes.git --rev v1.2.0
-untaped recipe add ./my-pack --name acme --force
-untaped recipe sync --all --dry-run
-untaped recipe sync acme
-untaped recipe list --packs
+untaped recipe packs add https://github.com/acme/untaped-recipes.git --rev v1.2.0
+untaped recipe packs add ./my-pack --name acme --force
+untaped recipe packs sync --all --dry-run
+untaped recipe packs sync acme
+untaped recipe packs list
+untaped recipe packs get acme
+untaped recipe packs edit acme
 untaped recipe get acme/editorconfig
-untaped recipe validate
 untaped recipe edit acme/editorconfig
-untaped recipe remove acme --yes
+untaped recipe validate
+untaped recipe packs remove acme --yes
+untaped recipe packs list --format pipe | untaped recipe packs sync --stdin
 ```
 
-- A pack must contain a `uv.lock`. Reinstalling needs `--force`; local edits
+`packs edit` opens the pack's `pyproject.toml`; `edit` opens a recipe file.
+
+- A pack must contain a `uv.lock` and no symlinks (outside ignored build
+  directories such as `.venv`). Reinstalling needs `--force`; local edits
   to the installed copy also need `--discard-edits`.
-- `recipe sync PACK...` or `recipe sync --all` re-fetches packs from the
+- For a git source, `add` records both the `--rev` you asked for and the
+  resolved `commit` it installed; both appear in `packs list` and in the
+  `add`/`sync` rows. `sync` also records a new commit when the pack's files
+  did not change.
+- `packs sync PACK...` or `packs sync --all` re-fetches packs from the
   source and `--rev` recorded at install (a branch or tag moves forward; a
   local path source is re-read). Packs whose files would change are listed
-  and confirmed first (`--yes` skips the question, `--dry-run` only lists
-  them); the rest report `unchanged`. Local edits to an installed copy need
-  `--discard-edits`.
-- `recipe add` records a local path source as an absolute path. `recipe sync`
+  and confirmed first, with the commit move (`old -> new`) and the hook-code
+  files that change. Hook code is everything under `src/`, any `*.py` at the
+  pack root (build scripts such as `setup.py`), and `pyproject.toml`,
+  `uv.lock`, `uv.toml`, `.python-version` and `setup.cfg`. Recipe files and
+  test cases are not hook code. `--yes` skips the question and `--dry-run`
+  only lists them; the rest report `unchanged`. Local edits to an installed
+  copy need `--discard-edits`.
+- `packs add` records a local path source as an absolute path. `packs sync`
   refuses a pack recorded with a relative path (older installs); re-add it
-  with `recipe add PATH --force`.
+  with `packs add PATH --force`.
 - Packs are installed under `recipe.library_root`.
 - `recipe validate` checks the whole library, or one pack, recipe or path,
   without importing hook code.
@@ -107,12 +153,12 @@ untaped recipe remove acme --yes
 ## Write a pack
 
 ```bash
-untaped recipe init pack acme
-untaped recipe init recipe ./acme/editorconfig
-untaped recipe init hook ./acme/pin_python --kind transform
+untaped recipe packs init acme
+untaped recipe init ./acme/editorconfig
+untaped recipe hooks init ./acme/pin_python --kind transform
 ```
 
-`init` refreshes the pack's `uv.lock`, which needs access to a package index.
+Each `init` refreshes the pack's `uv.lock`, which needs access to a package index.
 `--no-lock` skips that, but hooks cannot run until `uv lock` succeeds.
 
 A pack is a Python project. Its `pyproject.toml` lists recipes and hooks under
@@ -171,12 +217,23 @@ steps:
 
 ### Hooks
 
-A hook module exports `transform()`, `validate()`, or both. `init hook`
-writes a typed stub and a pytest for it. Debug one hook without a recipe:
+A hook module exports `transform()`, `validate()`, or both. `hooks init`
+writes a typed stub and a pytest for it. `hooks list` shows installed and
+built-in hooks, `hooks get` one hook, and `hooks edit` opens a pack hook's
+module. Debug one hook without a recipe:
 
 ```bash
-untaped recipe hook run acme/pin_python --target ~/work/api --file pyproject.toml --diff
+untaped recipe hooks run acme/pin_python --target ~/work/api --file pyproject.toml --diff
+untaped recipe hooks run acme/pin_python --target ~/work/api --file pyproject.toml \
+  --var python_version=3.14 --args-file args.yml
 ```
+
+`hooks run` takes hook inputs with `--var KEY=YAML`/`--vars-file FILE` and
+hook args with `--arg KEY=YAML`/`--args-file FILE`. Both repeat with the same
+precedence as `apply`; values are parsed as YAML because a hook has no
+declared input types. YAML typing applies: `--var python_version=3.10` gives
+the number `3.1` and `--var enabled=on` gives `true`. Quote a value to keep it
+a string: `--var 'python_version="3.10"'`.
 
 Validate hooks return `helpers.pass_()`, `helpers.fail(msg)` or
 `helpers.skip(msg)`; a skipped target is not a failure. `helpers.warn(msg)`
@@ -190,7 +247,7 @@ content would not change is left byte-identical.
 
 ### Golden tests
 
-`init recipe` also creates a test case under `tests/RECIPE/CASE/`: `given/`
+`recipe init` also creates a test case under `tests/RECIPE/CASE/`: `given/`
 is the starting directory, `expected/` the full expected result (omit it to
 assert no change), and an optional `case.yml` sets inputs and expectations.
 
@@ -206,15 +263,17 @@ untaped recipe test acme/editorconfig --update
 Each apply writes one backup bundle unless you pass `--no-backup`.
 
 ```bash
-untaped recipe backup list
-untaped recipe backup get latest
-untaped recipe backup restore latest --dry-run
-untaped recipe backup restore latest
-untaped recipe backup prune --keep 20
+untaped recipe backups list
+untaped recipe backups get latest
+untaped recipe backups restore latest --dry-run
+untaped recipe backups restore latest
+untaped recipe backups prune --keep 20
 ```
 
 `restore` refuses to overwrite a file that changed after the backup unless
 you pass `--force`. Backups hold file content only, not modes or times.
+Bundles are readable only by you: directories are created `0700`, files
+`0600`, and each bundle's `metadata.json` is replaced atomically.
 `prune` falls back to `recipe.backup_keep` and `recipe.backup_max_age_days`.
 
 ## Output
@@ -232,7 +291,7 @@ commands.
 | `recipe.hook_timeout_seconds` | `60` | Per-hook timeout; `0` disables. `apply --hook-timeout` overrides it. |
 | `recipe.hook_startup_timeout_seconds` | `300` | Time allowed to prepare a hook environment. |
 | `recipe.preview_max_rows` | `50` | Preview rows before per-file rows collapse; `0` is unlimited. |
-| `recipe.backup_keep`, `recipe.backup_max_age_days` | unset | Defaults for `backup prune`. |
+| `recipe.backup_keep`, `recipe.backup_max_age_days` | unset | Defaults for `backups prune`. |
 
 ## See also
 

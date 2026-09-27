@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import re
-from itertools import islice
 from typing import Annotated
 
 from cyclopts import Parameter
 
 from untaped.capabilities.github.application.scopes import TeamScope
 from untaped.capabilities.github.cli._client import open_client
-from untaped.capabilities.github.cli.scopes import OrgOption, TeamOption, parse_team_scopes
+from untaped.capabilities.github.cli.scopes import (
+    ArchivedOption,
+    OrgOption,
+    TeamOption,
+    org_scope,
+    parse_team_scopes,
+)
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
@@ -18,6 +23,7 @@ from untaped.capability_api import (
     UsageError,
     create_app,
     emit,
+    plural,
     report_errors,
 )
 
@@ -31,6 +37,8 @@ PatternArgument = Annotated[
     ),
 ]
 app = create_app(name="repos", help="List GitHub repository inventory from org/team scopes.")
+# The table shows these; structured formats and -c/--columns reach every field.
+_TABLE_COLUMNS = ["full_name", "default_branch", "private", "archived", "fork", "url"]
 
 
 def _validate_args(
@@ -41,10 +49,7 @@ def _validate_args(
     team_scopes: tuple[TeamScope, ...],
 ) -> None:
     if not orgs and not team_scopes:
-        raise UsageError(
-            "repos list requires --org or --team; user-owned repository inventory is not "
-            "supported in v1"
-        )
+        raise UsageError("repos list requires --org or --team, or a github.default_org setting")
     if regex and not pattern:
         raise UsageError("--regex requires PATTERN")
     if regex and pattern:
@@ -72,14 +77,7 @@ def list_command(
             ),
         ),
     ] = False,
-    archived: Annotated[
-        bool | None,
-        Parameter(
-            name="--archived",
-            negative="--no-archived",
-            help="Only archived repos; --no-archived excludes them.",
-        ),
-    ] = None,
+    archived: ArchivedOption = "exclude",
     fork: Annotated[
         bool | None,
         Parameter(name="--fork", negative="--no-fork", help="Only forks; --no-fork excludes them."),
@@ -92,17 +90,20 @@ def list_command(
     from untaped.capabilities.github.application import ListRepos, RepoListFilters  # noqa: PLC0415
 
     with report_errors():
-        orgs = tuple(org or ())
+        orgs = org_scope(org, scoped=bool(team))
         team_scopes = parse_team_scopes(team, orgs=orgs)
         _validate_args(pattern, regex=regex, orgs=orgs, team_scopes=team_scopes)
         filters = RepoListFilters(pattern=pattern, regex=regex, archived=archived, fork=fork)
         with open_client() as (client, ui), ui.progress("Listing repositories…"):
-            repos = ListRepos(client)(filters, orgs=orgs, team_scopes=team_scopes)
-            rows = [repo.model_dump() for repo in islice(repos, limit)]
+            repos = list(ListRepos(client)(filters, orgs=orgs, team_scopes=team_scopes))
+            rows = [repo.model_dump(mode="json") for repo in repos[:limit]]
         emit(
             rows,
             fmt=fmt,
-            columns=columns,
+            columns=columns or (_TABLE_COLUMNS if fmt == "table" else None),
             kind="github.repo",
             empty="No repositories found. Broaden your pattern or scope filters.",
         )
+        if len(rows) < len(repos):
+            total = plural(len(repos), "repository", "repositories")
+            ui.message("info", f"showing {len(rows)} of {total}; omit --limit to list all")

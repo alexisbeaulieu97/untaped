@@ -51,6 +51,11 @@ class _StubRepo:
             params[f"{k}__name"] = v
         return self.find(spec, params=params)
 
+    def scoped_names(
+        self, spec: ResourceSpec, scope: dict[str, str] | None = None
+    ) -> tuple[str, ...]:
+        return tuple(str(record["name"]) for record in self.store.get(spec.kind, []))
+
     def get(self, spec: ResourceSpec, id_: int) -> dict[str, Any]:
         self.get_calls.append((spec.kind, id_))
         for record in self.store.get(spec.kind, []):
@@ -133,9 +138,9 @@ def test_name_to_id_with_scope_uses_nested_lookup() -> None:
 
 
 def test_name_to_id_raises_when_missing() -> None:
-    repo = _StubRepo({"Organization": []})
+    repo = _StubRepo({"Organization": [{"id": 1, "name": "Nop"}]})
     fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
-    with pytest.raises(ResourceNotFoundError):
+    with pytest.raises(ResourceNotFoundError, match="did you mean 'Nop'"):
         fk.name_to_id("Organization", "Nope")
 
 

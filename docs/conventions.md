@@ -38,7 +38,7 @@ stdout carries data only. Everything else goes to stderr.
 | Summary | `<op>: 2 cloned, 1 failed` | `summary("sync", counts)` |
 | Decline | `cancelled; no changes made` (exit 1) | `raise OperationCancelledError`, or `finish(outcome)` after `batch_apply` |
 | Empty list | `No <plural> found.`, in table format only | `emit(rows, …, empty="No repos found.")` |
-| Styled line | A Rich `Text` line (live job events), ANSI only on a terminal | `ui.styled(text)` for stdout, `ui.styled(text, err=True)` for stderr |
+| Styled line | A Rich `Text` line (live job events), ANSI only on a terminal; `tail=` text follows it verbatim (unwrapped) | `ui.styled(text)` for stdout, `ui.styled(text, err=True)` for stderr |
 
 Do not call `echo()` for `error:` or `warning:` lines, `print()`, or build a
 `rich.console.Console` yourself.
@@ -49,7 +49,7 @@ Use the shared option aliases instead of declaring your own copy:
 
 | Alias | Flag |
 |---|---|
-| `FormatOption` | `-f/--format` (default `table`) |
+| `FormatOption` | `-f/--format` (default `table`, or the user's `UNTAPED_FORMAT`/`ui.format`) |
 | `ColumnsOption` | `-c/--columns` |
 | `YesOption` | `-y/--yes`: skips only the prompt. `--dry-run` still wins. |
 | `DryRunOption` | `--dry-run`: preview, then exit 0 |
@@ -59,7 +59,7 @@ Use the shared option aliases instead of declaring your own copy:
 
 These short flags are reserved and have one meaning each: `-f --format`,
 `-c --columns`, `-y --yes`, `-j --parallel`, `-o --out`, `-i --ignore-case`,
-`-r --repo`, `-w --workspace`.
+`-r --repo`.
 
 Rules for parameters:
 
@@ -73,9 +73,9 @@ Rules for parameters:
 To rename a command, group or flag, keep the old spelling as a hidden,
 deprecated alias until the next major release:
 `deprecated_alias(parent_app, "me", "whoami")` for a command or group, and
-`deprecated_alias(command_app, "--repo-stdin", "--stdin")` for a flag. The
+`deprecated_alias(command_app, "--old-flag", "--new-flag")` for a flag. The
 root shell rewrites the old token and prints
-``warning: `me` is deprecated and will be removed in 8.0; use `whoami` ``.
+``warning: `me` is deprecated and will be removed in the next major release; use `whoami` ``.
 The old spelling never appears in `--help`. Aliases apply through the
 `untaped` root, so test them with `build_root_app()`.
 
@@ -86,6 +86,7 @@ come from a closed set:
 - Write: `create`, `set`, `unset`, `add`, `remove`, `delete`, `prune`, `edit`,
   `patch`, `apply`, `copy`, `rename`
 - Update: `sync`, `refresh`
+- Query: `find`, `deps`, `impact`, `graph`
 - Other: `export`, `init`, `run`, `launch`, `wait`, `validate`, `test`,
   `cancel`, `relaunch`
 

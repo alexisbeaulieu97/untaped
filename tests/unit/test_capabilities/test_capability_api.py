@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 import untaped.capability_api as capi
-from untaped import api as sdk_api
 
 EXPECTED_ALL = [
     "ApplicationSpec",
@@ -101,12 +100,13 @@ EXPECTED_ALL = [
     "TokenSources",
     "connection_check",
     "executable_check",
+    "online_check",
 ]
 
 
 def test_all_contains_exact_surface() -> None:
     assert capi.__all__ == EXPECTED_ALL
-    assert capi.CAPABILITY_API_VERSION == 1.1
+    assert capi.CAPABILITY_API_VERSION == (2, 0)
 
 
 def test_no_extra_module_level_names_leak() -> None:
@@ -119,9 +119,3 @@ def test_no_extra_module_level_names_leak() -> None:
 def test_every_name_is_a_reexport_of_its_core_module(name: str) -> None:
     """The SDK module only re-exports; nothing is (re)defined there."""
     assert getattr(getattr(capi, name), "__module__", None) != capi.__name__
-
-
-def test_sdk_api_does_not_expose_capability_composition_types() -> None:
-    assert "SkillAsset" not in sdk_api.__all__
-    assert "ToolSpec" not in sdk_api.__all__
-    assert "capability_api" not in sdk_api.__all__

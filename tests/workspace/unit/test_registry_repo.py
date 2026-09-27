@@ -80,14 +80,16 @@ def test_find_by_path_canonical_match(_isolate_config: Path, tmp_path: Path) -> 
 
 
 def test_entries_raise_clean_error_on_malformed_entry(_isolate_config: Path) -> None:
-    _isolate_config.write_text("workspace:\n  workspaces:\n    - name: prod\n")
+    _isolate_config.with_name("state.yml").write_text(
+        "workspace:\n  workspaces:\n    - name: prod\n"
+    )
     repo = WorkspaceRegistryRepository()
     with pytest.raises(RegistryError, match=r"missing or empty 'path'"):
         repo.entries()
 
 
 def test_entries_raise_clean_error_on_missing_name(_isolate_config: Path, tmp_path: Path) -> None:
-    _isolate_config.write_text(
+    _isolate_config.with_name("state.yml").write_text(
         f"workspace:\n  workspaces:\n    - path: {tmp_path}\n",
     )
     repo = WorkspaceRegistryRepository()
@@ -96,7 +98,7 @@ def test_entries_raise_clean_error_on_missing_name(_isolate_config: Path, tmp_pa
 
 
 def test_entries_raise_clean_error_when_registry_is_not_list(_isolate_config: Path) -> None:
-    _isolate_config.write_text("workspace:\n  workspaces: bad\n")
+    _isolate_config.with_name("state.yml").write_text("workspace:\n  workspaces: bad\n")
     repo = WorkspaceRegistryRepository()
     with pytest.raises(
         ConfigError,
@@ -106,7 +108,7 @@ def test_entries_raise_clean_error_when_registry_is_not_list(_isolate_config: Pa
 
 
 def test_entries_raise_clean_error_on_non_mapping_entry(_isolate_config: Path) -> None:
-    _isolate_config.write_text("workspace:\n  workspaces:\n    - bad\n")
+    _isolate_config.with_name("state.yml").write_text("workspace:\n  workspaces:\n    - bad\n")
     repo = WorkspaceRegistryRepository()
     with pytest.raises(ConfigError, match=r"`workspace\.workspaces` must be a list of mappings"):
         repo.entries()

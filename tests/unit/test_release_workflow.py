@@ -7,13 +7,19 @@ ordering), not step names or incidental shell.
 
 from __future__ import annotations
 
+import importlib.util
+import json
 import tomllib
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from untaped.bootstrap import build_root_app
+from untaped.testing import invoke_cli
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
+RELEASE_CORE = REPO_ROOT / ".github" / "release" / "_release_core.py"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 RELEASE_MANIFEST = REPO_ROOT / "release-manifest.toml"
@@ -154,3 +160,16 @@ def test_project_metadata_declares_pypi_release_fields() -> None:
     assert project["license-files"] == ["LICENSE"]
     assert project.get("readme") == "README.md"
     assert not any(str(item).startswith("License ::") for item in project.get("classifiers", []))
+
+
+def test_release_smoke_expects_the_real_builtin_capability_rows() -> None:
+    """The release smoke's expected built-in ``capabilities`` rows match the real CLI."""
+    spec = importlib.util.spec_from_file_location("_release_core", RELEASE_CORE)
+    assert spec is not None and spec.loader is not None
+    core = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(core)
+
+    result = invoke_cli(build_root_app(externals=[]), ["capabilities", "--format", "json"])
+    rows = json.loads(result.stdout)
+    assert [row["name"] for row in rows] == list(core.BUILTIN_CAPABILITIES)
+    assert {row["api"] for row in rows} == {core.BUILTIN_API_RANGE}

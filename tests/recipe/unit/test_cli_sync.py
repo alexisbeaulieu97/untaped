@@ -1,4 +1,4 @@
-"""CLI tests for ``untaped recipe sync`` (re-fetch installed packs from their source)."""
+"""CLI tests for ``untaped recipe packs sync`` (re-fetch installed packs from their source)."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ def _write_pack(root: Path, *, name: str, body: str = "version: 1\nsteps: []\n")
 
 
 def _add(source: Path) -> None:
-    result = CliInvoker().invoke(app, ["add", str(source)])
+    result = CliInvoker().invoke(app, ["packs", "add", str(source)])
     assert result.exit_code == 0, result.output
 
 
@@ -42,17 +42,25 @@ def _installed_recipe(name: str) -> Path:
 
 
 _CHANGED = "version: 1\ndescription: changed\nsteps: []\n"
+_OLD_SHA = "1111111111111111111111111111111111111111"
+_NEW_SHA = "2222222222222222222222222222222222222222"
 
 
 def test_sync_reports_unchanged_packs_without_prompting(tmp_path: Path) -> None:
     _write_pack(tmp_path / "alpha", name="alpha")
     _add(tmp_path / "alpha")
 
-    result = invoke_cli(app, ["sync", "alpha", "--format", "json"])
+    result = invoke_cli(app, ["packs", "sync", "alpha", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
-        {"action": "unchanged", "name": "alpha", "source": str(tmp_path / "alpha"), "rev": None}
+        {
+            "action": "unchanged",
+            "name": "alpha",
+            "source": str(tmp_path / "alpha"),
+            "rev": None,
+            "commit": None,
+        }
     ]
 
 
@@ -64,7 +72,7 @@ def test_sync_updates_changed_packs_after_confirmation(tmp_path: Path) -> None:
     backend = ScriptedPromptBackend(confirms=[True])
 
     result = invoke_cli(
-        app, ["sync", "--all", "--format", "json"], terminal=True, prompt_backend=backend
+        app, ["packs", "sync", "--all", "--format", "json"], terminal=True, prompt_backend=backend
     )
 
     assert result.exit_code == 0, result.output
@@ -82,7 +90,7 @@ def test_sync_dry_run_plans_and_changes_nothing(tmp_path: Path) -> None:
     _add(tmp_path / "alpha")
     (tmp_path / "alpha" / "recipes" / "seed.yml").write_text(_CHANGED)
 
-    result = invoke_cli(app, ["sync", "alpha", "--dry-run", "--yes", "--format", "json"])
+    result = invoke_cli(app, ["packs", "sync", "alpha", "--dry-run", "--yes", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)[0]["action"] == "planned"
@@ -95,7 +103,7 @@ def test_sync_decline_changes_nothing(tmp_path: Path) -> None:
     (tmp_path / "alpha" / "recipes" / "seed.yml").write_text(_CHANGED)
     backend = ScriptedPromptBackend(confirms=[False])
 
-    result = invoke_cli(app, ["sync", "alpha"], terminal=True, prompt_backend=backend)
+    result = invoke_cli(app, ["packs", "sync", "alpha"], terminal=True, prompt_backend=backend)
 
     assert result.exit_code == 1, result.output
     assert "cancelled; no changes made" in result.stderr
@@ -107,7 +115,7 @@ def test_sync_requires_yes_without_a_terminal(tmp_path: Path) -> None:
     _add(tmp_path / "alpha")
     (tmp_path / "alpha" / "recipes" / "seed.yml").write_text(_CHANGED)
 
-    result = invoke_cli(app, ["sync", "alpha"])
+    result = invoke_cli(app, ["packs", "sync", "alpha"])
 
     assert result.exit_code == 2, result.output
     assert "sync requires --yes when not interactive" in result.stderr
@@ -119,8 +127,8 @@ def test_sync_keeps_local_edits_unless_discarded(tmp_path: Path) -> None:
     (tmp_path / "alpha" / "recipes" / "seed.yml").write_text(_CHANGED)
     _installed_recipe("alpha").write_text("version: 1\ndescription: mine\nsteps: []\n")
 
-    kept = invoke_cli(app, ["sync", "alpha", "--yes"])
-    discarded = invoke_cli(app, ["sync", "alpha", "--yes", "--discard-edits"])
+    kept = invoke_cli(app, ["packs", "sync", "alpha", "--yes"])
+    discarded = invoke_cli(app, ["packs", "sync", "alpha", "--yes", "--discard-edits"])
 
     assert kept.exit_code == 1, kept.output
     assert "error: alpha: pack 'alpha' has local edits" in kept.stderr
@@ -135,7 +143,7 @@ def test_sync_reports_a_missing_source_and_continues(tmp_path: Path) -> None:
     shutil.rmtree(tmp_path / "alpha")
     (tmp_path / "beta" / "recipes" / "seed.yml").write_text(_CHANGED)
 
-    result = invoke_cli(app, ["sync", "--all", "--yes", "--format", "json"])
+    result = invoke_cli(app, ["packs", "sync", "--all", "--yes", "--format", "json"])
 
     assert result.exit_code == 1, result.output
     assert f"error: alpha: pack source not found: {tmp_path / 'alpha'}" in result.stderr
@@ -147,13 +155,13 @@ def test_add_records_a_relative_path_source_as_absolute(
 ) -> None:
     _write_pack(tmp_path / "alpha", name="alpha")
     monkeypatch.chdir(tmp_path)
-    added = CliInvoker().invoke(app, ["add", "./alpha", "--format", "json"])
+    added = CliInvoker().invoke(app, ["packs", "add", "./alpha", "--format", "json"])
     (tmp_path / "alpha" / "recipes" / "seed.yml").write_text(_CHANGED)
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)
 
-    result = invoke_cli(app, ["sync", "alpha", "--yes", "--format", "json"])
+    result = invoke_cli(app, ["packs", "sync", "alpha", "--yes", "--format", "json"])
 
     assert added.exit_code == 0, added.output
     assert json.loads(added.stdout)["source"] == str(tmp_path / "alpha")
@@ -174,24 +182,121 @@ def test_sync_refetches_git_sources_at_the_recorded_rev(
         return dest
 
     monkeypatch.setattr(library_commands, "fetch_pack_source", fake_fetch)
+    commits = iter([_OLD_SHA, _NEW_SHA])
+    monkeypatch.setattr(library_commands, "checkout_commit", lambda checkout: next(commits))
     url = "https://example.test/alpha.git"
-    added = CliInvoker().invoke(app, ["add", url, "--rev", "v1"])
+    added = CliInvoker().invoke(app, ["packs", "add", url, "--rev", "v1", "--format", "json"])
     assert added.exit_code == 0, added.output
     (upstream / "recipes" / "seed.yml").write_text(_CHANGED)
 
-    result = invoke_cli(app, ["sync", "alpha", "--yes", "--format", "json"])
+    result = invoke_cli(app, ["packs", "sync", "alpha", "--yes", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert fetched == [(url, "v1"), (url, "v1")]
+    assert json.loads(added.stdout)["commit"] == _OLD_SHA
     assert json.loads(result.stdout) == [
-        {"action": "updated", "name": "alpha", "source": url, "rev": "v1"}
+        {"action": "updated", "name": "alpha", "source": url, "rev": "v1", "commit": _NEW_SHA}
     ]
     assert _installed_recipe("alpha").read_text() == _CHANGED
+    assert PackLibrary(library_root=library_root()).packs()[0].commit == _NEW_SHA
+
+
+def _add_hook(root: Path, body: str = "    return content\n") -> None:
+    module = root / "src" / "alpha_hooks" / "tweak.py"
+    module.parent.mkdir(parents=True, exist_ok=True)
+    (module.parent / "__init__.py").write_text("")
+    module.write_text("def transform(content, *, inputs, target, file, args, helpers):\n" + body)
+    (root / "uv.lock").write_text("version = 1\n")
+    with (root / "pyproject.toml").open("a") as pyproject:
+        pyproject.write(
+            '\n[tool.untaped_recipe.hooks]\n"tweak" = { module = "alpha_hooks.tweak" }\n'
+        )
+
+
+def test_sync_confirmation_shows_the_commit_move_and_changed_hook_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    upstream = tmp_path / "upstream"
+    _write_pack(upstream, name="alpha")
+    _add_hook(upstream)
+
+    def fake_fetch(url: str, *, rev: str | None, dest: Path) -> Path:
+        shutil.copytree(upstream, dest)
+        return dest
+
+    monkeypatch.setattr(library_commands, "fetch_pack_source", fake_fetch)
+    commits = iter([_OLD_SHA, _NEW_SHA, _NEW_SHA])
+    monkeypatch.setattr(library_commands, "checkout_commit", lambda checkout: next(commits))
+    url = "https://example.test/alpha.git"
+    assert CliInvoker().invoke(app, ["packs", "add", url, "--rev", "main"]).exit_code == 0
+    module = upstream / "src" / "alpha_hooks" / "tweak.py"
+    module.write_text(module.read_text().replace("return content", "return content + 'x'"))
+    backend = ScriptedPromptBackend(confirms=[False])
+
+    dry_run = invoke_cli(app, ["packs", "sync", "alpha", "--dry-run"])
+    declined = invoke_cli(app, ["packs", "sync", "alpha"], terminal=True, prompt_backend=backend)
+
+    for result in (dry_run, declined):
+        assert f"  - alpha from {url}@main ({_OLD_SHA[:12]} -> {_NEW_SHA[:12]})" in result.stderr
+        assert "    hook code changed: src/alpha_hooks/tweak.py" in result.stderr
+    assert dry_run.exit_code == 0, dry_run.output
+    assert declined.exit_code == 1, declined.output
+    assert "cancelled; no changes made" in declined.stderr
+    installed = library_root() / "packs" / "alpha" / "src" / "alpha_hooks" / "tweak.py"
+    assert "'x'" not in installed.read_text()
+
+
+@pytest.mark.parametrize("recorded", [None, _OLD_SHA])
+def test_sync_records_a_moved_commit_when_content_is_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded: str | None
+) -> None:
+    upstream = tmp_path / "upstream"
+    _write_pack(upstream, name="alpha")
+    url = "https://example.test/alpha.git"
+    # None: a row written before commits were recorded.
+    PackLibrary(library_root=library_root()).add(
+        upstream, source=url, rev="main", commit=recorded, name="alpha", force=False
+    )
+
+    def fake_fetch(url: str, *, rev: str | None, dest: Path) -> Path:
+        shutil.copytree(upstream, dest)
+        return dest
+
+    monkeypatch.setattr(library_commands, "fetch_pack_source", fake_fetch)
+    monkeypatch.setattr(library_commands, "checkout_commit", lambda checkout: _NEW_SHA)
+
+    dry_run = invoke_cli(app, ["packs", "sync", "alpha", "--dry-run", "--format", "json"])
+    unchanged_commit = PackLibrary(library_root=library_root()).packs()[0].commit
+    result = invoke_cli(app, ["packs", "sync", "alpha", "--format", "json"])
+
+    assert dry_run.exit_code == 0, dry_run.output
+    assert unchanged_commit == (recorded or "")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)[0] == {
+        "action": "unchanged",
+        "name": "alpha",
+        "source": url,
+        "rev": "main",
+        "commit": _NEW_SHA,
+    }
+    assert PackLibrary(library_root=library_root()).packs()[0].commit == _NEW_SHA
+
+
+def test_sync_preview_says_when_hook_code_is_unchanged(tmp_path: Path) -> None:
+    _write_pack(tmp_path / "alpha", name="alpha")
+    _add_hook(tmp_path / "alpha")
+    _add(tmp_path / "alpha")
+    (tmp_path / "alpha" / "recipes" / "seed.yml").write_text(_CHANGED)
+
+    result = invoke_cli(app, ["packs", "sync", "alpha", "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    assert f"  - alpha from {tmp_path / 'alpha'}\n    hook code unchanged" in result.stderr
 
 
 @pytest.mark.parametrize(
     "args",
-    [["sync"], ["sync", "alpha", "--all"]],
+    [["packs", "sync"], ["packs", "sync", "alpha", "--all"]],
 )
 def test_sync_needs_names_or_all(args: list[str]) -> None:
     result = invoke_cli(app, args)
@@ -200,7 +305,7 @@ def test_sync_needs_names_or_all(args: list[str]) -> None:
 
 
 def test_sync_unknown_pack_fails(tmp_path: Path) -> None:
-    result = invoke_cli(app, ["sync", "ghost", "--yes"])
+    result = invoke_cli(app, ["packs", "sync", "ghost", "--yes"])
 
     assert result.exit_code == 1, result.output
     assert "pack not found: 'ghost'" in result.stderr
@@ -218,7 +323,7 @@ def test_sync_refuses_a_legacy_relative_source(
     _write_pack(elsewhere / "alpha", name="alpha", body=_CHANGED)
     monkeypatch.chdir(elsewhere)
 
-    result = invoke_cli(app, ["sync", "alpha", "--yes"])
+    result = invoke_cli(app, ["packs", "sync", "alpha", "--yes"])
 
     assert result.exit_code == 1, result.output
     assert "recorded source 'alpha' is a relative path" in result.stderr

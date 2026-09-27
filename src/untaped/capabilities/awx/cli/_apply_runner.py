@@ -1,19 +1,25 @@
-"""Compose declarative file preparation with the shared CLI mutation gate."""
+"""Compose declarative file (or stdin) preparation with the shared CLI mutation gate."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import replace
 from pathlib import Path
 
 from untaped.capabilities.awx.application import BatchMutationEngine, prepare_apply_file
 from untaped.capabilities.awx.cli._mutation_runner import (
     WriteControls,
+    emit_outcomes,
+    preview_and_execute,
     run_mutation_plan,
 )
 from untaped.capabilities.awx.cli.context import AwxContext
 from untaped.capabilities.awx.domain import Resource
-from untaped.capabilities.awx.infrastructure.yaml_io import read_resource_files
-from untaped.capability_api import ConfigError
+from untaped.capabilities.awx.infrastructure.yaml_io import (
+    read_resource_files,
+    read_resource_text,
+)
+from untaped.capability_api import ConfigError, resolve_text_input
 
 
 def build_mutation_engine(
@@ -53,31 +59,53 @@ def _with_default_organization(ctx: AwxContext, doc: Resource) -> Resource:
     return doc.model_copy(update={"metadata": metadata})
 
 
-def run_apply(
-    ctx: AwxContext,
-    file: Path,
-    controls: WriteControls,
-    *,
-    kind_filter: str | None = None,
-) -> None:
-    """Prepare once, confirm once, execute the same complete batch."""
+STDIN = Path("-")
+"""``apply -``: read the YAML documents from stdin."""
+
+
+def _read_documents(path: Path) -> list[tuple[str, Resource]]:
+    """Every document of ``path`` (a file, a directory, or ``-`` for stdin) and its source."""
+    if path != STDIN:
+        return [(str(source), doc) for source, doc in read_resource_files(path)]
+    empty = ConfigError("no YAML documents on stdin; pipe them into `apply -`")
+    try:
+        text = resolve_text_input(value=None, file=None, what="documents")
+    except ConfigError:
+        raise empty from None
+    docs = [("<stdin>", doc) for doc in read_resource_text(text, source="<stdin>")]
+    if not docs:
+        raise empty
+    return docs
+
+
+def run_apply(ctx: AwxContext, file: Path, controls: WriteControls, *, check: bool = False) -> None:
+    """Prepare once, confirm once, execute the same complete batch.
+
+    ``check`` only computes the plan: nothing is written, and the command
+    exits 3 when any document would change the controller.
+    """
 
     known = set(ctx.catalog.kinds())
 
     def reader(path: Path) -> Iterable[Resource]:
-        docs = list(read_resource_files(path))
+        docs = _read_documents(path)
         for source, doc in docs:
             # Name the file: a directory apply reads every *.yml and *.yaml.
             if doc.kind not in known:
                 raise ConfigError(
                     f"{source}: unknown kind {doc.kind!r} (available: {', '.join(sorted(known))})"
                 )
-            if kind_filter and doc.kind != kind_filter:
-                raise ConfigError(
-                    f"{source}: expected only {kind_filter} documents; found {doc.kind}"
-                )
         return [_with_default_organization(ctx, doc) for _source, doc in docs]
 
     engine = build_mutation_engine(ctx, allow_unverified=controls.allow_unverified)
     plan = prepare_apply_file(engine, reader, file, catalog=ctx.catalog, fk=ctx.fk)
-    run_mutation_plan(ctx, engine, plan, controls)
+    if not check:
+        run_mutation_plan(ctx, engine, plan, controls)
+        return
+    previews = preview_and_execute(ctx, engine, plan, replace(controls, dry_run=True))
+    emit_outcomes(
+        previews,
+        fmt=controls.fmt,
+        columns=controls.columns,
+        predicate_hit=any(outcome.action != "unchanged" for outcome in previews),
+    )

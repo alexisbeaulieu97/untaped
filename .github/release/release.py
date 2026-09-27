@@ -29,6 +29,7 @@ from _publication import (  # noqa: E402
     verify_index_artifacts,
 )
 from _release_core import (  # noqa: E402
+    BUILTIN_API_RANGE,
     BUILTIN_CAPABILITIES,
     FULL_SHA_RE,
     MANAGEMENT_COMMANDS,
@@ -110,7 +111,7 @@ def smoke_unified_app(
             "status": "ready",
             "distribution": package_name,
             "version": version,
-            "api": ">=1.0,<2.0",
+            "api": BUILTIN_API_RANGE,
         }
         for command in BUILTIN_CAPABILITIES
     ]

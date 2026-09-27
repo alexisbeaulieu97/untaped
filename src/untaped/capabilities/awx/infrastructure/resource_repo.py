@@ -4,6 +4,8 @@ The repository never branches on kind — it follows the spec verbatim
 to derive paths and parameters. Per-kind variation is handled in
 strategies + apply hooks.
 
+``scoped_names`` lists the names in a scope for "did you mean" hints.
+
 Single-record reads (``get`` / ``find`` / ``find_by_identity``) wrap
 raw httpx JSON in :class:`ServerRecord` so callers can use typed
 attribute access. The bulk ``list`` skips the wrap — its callers
@@ -27,15 +29,27 @@ contravariant parameter type holds while the runtime read of
 from __future__ import annotations
 
 from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from untaped.capabilities.awx.domain import ActionPayload, ResourceSpec, ServerRecord, WritePayload
 from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
-from untaped.capabilities.awx.errors import AmbiguousIdentityError, BadRequestError
+from untaped.capabilities.awx.errors import (
+    AmbiguousIdentityError,
+    AwxApiError,
+    BadRequestError,
+    PartialWriteError,
+)
 from untaped.capabilities.awx.infrastructure.awx_client import AwxClient
 from untaped.capabilities.awx.infrastructure.errors import map_awx_errors
 from untaped.capabilities.awx.infrastructure.pagination import paginate
 from untaped.capabilities.awx.infrastructure.spec import awx_api_path, awx_relationship_path
+from untaped.capability_api import ConfigError
+
+
+def scope_params(scope: dict[str, str] | None) -> dict[str, str]:
+    """AWX's ``<scope_field>__name=<value>`` filters for an FK-name scope."""
+    return {f"{key}__name": value for key, value in (scope or {}).items()}
 
 
 def _split_sub_documents(
@@ -44,6 +58,20 @@ def _split_sub_documents(
     """Separate record fields from the fields written through their own endpoint."""
     documents = {field: body.pop(field) for field in spec.sub_document_fields if field in body}
     return body, documents
+
+
+@contextmanager
+def _partial_write(step: str, record_id: int) -> Iterator[None]:
+    """Raise :class:`PartialWriteError` naming ``step`` when an AWX call fails.
+
+    A 401 (:class:`ConfigError`) is wrapped too, so the row keeps its ID;
+    it stays the cause, and the mutation engine still aborts the batch on it.
+    """
+    try:
+        with map_awx_errors():
+            yield
+    except (AwxApiError, ConfigError) as exc:
+        raise PartialWriteError(f"{step} failed: {exc}", record_id=record_id) from exc
 
 
 class ResourceRepository:
@@ -115,10 +143,22 @@ class ResourceRepository:
         don't have to reconstruct the convention. Ambiguity behaviour
         comes from :meth:`find`.
         """
-        params: dict[str, str] = {"name": name}
-        for k, v in (scope or {}).items():
-            params[f"{k}__name"] = v
-        return self.find(spec, params=params)
+        return self.find(spec, params={"name": name, **scope_params(scope)})
+
+    def scoped_names(
+        self, spec: ResourceSpec, scope: dict[str, str] | None = None
+    ) -> tuple[str, ...]:
+        """Names on the first page of ``spec`` records in ``scope`` ("did you mean" pool).
+
+        Exactly one request; an API error yields no names so it never hides
+        the lookup failure it decorates.
+        """
+        params = scope_params(scope)
+        try:
+            records = self.list(spec, params=params or None, limit=self._page_size)
+            return tuple(str(record["name"]) for record in records if record.get("name"))
+        except AwxApiError:
+            return ()
 
     def create(self, spec: ResourceSpec, payload: WritePayload) -> ServerRecord:
         body, documents = _split_sub_documents(spec, payload.model_dump(exclude_none=False))
@@ -147,16 +187,21 @@ class ResourceRepository:
         """Replace (POST) or clear (DELETE) each sub-document, then read it back.
 
         An empty or null value clears the document: AWX rejects an empty
-        POST body but a DELETE resets the document to ``{}``.
+        POST body but a DELETE resets the document to ``{}``. The record
+        write already landed, so a failure here raises
+        :class:`PartialWriteError` carrying the record's ID.
         """
         observed: dict[str, Any] = {}
         for field, value in documents.items():
             path = f"{awx_relationship_path(spec)}/{id_}/{field}/"
-            if value:
-                self._client.request_json("POST", path, json=value)
-            else:
-                self._client.delete(path)
-            observed[field] = self._client.get_json(path)
+            written = f"{spec.kind} #{id_} was written but"
+            with _partial_write(f"{written} its {field} write", id_):
+                if value:
+                    self._client.request_json("POST", path, json=value)
+                else:
+                    self._client.delete(path)
+            with _partial_write(f"{written} reading its {field} back", id_):
+                observed[field] = self._client.get_json(path)
         return observed
 
     def delete(self, spec: ResourceSpec, id_: int) -> DeleteReceipt:

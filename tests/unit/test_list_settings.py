@@ -43,24 +43,24 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     ("config", "env", "key", "source", "value"),
     [
         ("", None, "demo.token", Source(kind="unset"), None),
-        ("", None, "log_level", Source(kind="default"), "INFO"),
+        ("", None, "skills.updates", Source(kind="default"), "warn"),
         ("", None, "demo.api_prefix", Source(kind="default"), "/api/demo/v1/"),
         ("", None, "demo.directory", Source(kind="default"), "~/.demo"),
         # Profile-scoped values are attributed to the supplying profile.
         (
-            "profiles:\n  default:\n    log_level: DEBUG\n",
+            "profiles:\n  default:\n    skills:\n      updates: auto\n",
             None,
-            "log_level",
+            "skills.updates",
             Source(kind="profile", profile="default"),
-            "DEBUG",
+            "auto",
         ),
         (
-            "profiles:\n  default:\n    log_level: INFO\n  prod:\n    log_level: WARNING\n"
-            "active: prod\n",
+            "profiles:\n  default:\n    skills:\n      updates: warn\n"
+            "  prod:\n    skills:\n      updates: auto\nactive: prod\n",
             None,
-            "log_level",
+            "skills.updates",
             Source(kind="profile", profile="prod"),
-            "WARNING",
+            "auto",
         ),
         (
             "profiles:\n  default:\n    http:\n      verify_ssl: false\n",
@@ -69,7 +69,13 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
             Source(kind="profile", profile="default"),
             False,
         ),
-        ("log_level: DEBUG\n", "WARNING", "log_level", Source(kind="env"), "WARNING"),
+        (
+            "profiles:\n  default:\n    skills:\n      updates: auto\n",
+            "off",
+            "skills.updates",
+            Source(kind="env"),
+            "off",
+        ),
     ],
     ids=[
         "unset",
@@ -93,7 +99,7 @@ def test_list_attributes_each_value_to_its_source(
 ) -> None:
     _isolate_settings.write_text(config)
     if env is not None:
-        monkeypatch.setenv("UNTAPED_LOG_LEVEL", env)
+        monkeypatch.setenv("UNTAPED_SKILLS__UPDATES", env)
     entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
     assert entries[key].source == source
     assert entries[key].value == value
@@ -116,7 +122,8 @@ def test_collection_fields_skipped() -> None:
 
 
 @pytest.mark.parametrize(
-    ("key", "env_var"), [("log_level", "UNTAPED_LOG_LEVEL"), ("demo.token", "UNTAPED_DEMO__TOKEN")]
+    ("key", "env_var"),
+    [("skills.updates", "UNTAPED_SKILLS__UPDATES"), ("demo.token", "UNTAPED_DEMO__TOKEN")],
 )
 def test_env_var_naming(key: str, env_var: str) -> None:
     repo = SettingsFileRepository()
@@ -126,16 +133,16 @@ def test_env_var_naming(key: str, env_var: str) -> None:
 def test_all_profiles_shows_one_row_per_profile_and_key(_isolate_settings: Path) -> None:
     _isolate_settings.write_text(
         "profiles:\n"
-        "  default:\n    log_level: INFO\n"
-        "  prod:\n    log_level: DEBUG\n    demo:\n      page_size: 50\n"
+        "  default:\n    skills:\n      updates: warn\n"
+        "  prod:\n    skills:\n      updates: auto\n    demo:\n      page_size: 50\n"
         "active: prod\n"
     )
 
     entries = ListAllProfilesSettings(SettingsFileRepository())()
     rows = {(e.profile, e.key, e.value) for e in entries}
     assert rows == {
-        ("default", "log_level", "INFO"),
-        ("prod", "log_level", "DEBUG"),
+        ("default", "skills.updates", "warn"),
+        ("prod", "skills.updates", "auto"),
         ("prod", "demo.page_size", 50),
     }
     assert all(e.source.kind == "profile" for e in entries)

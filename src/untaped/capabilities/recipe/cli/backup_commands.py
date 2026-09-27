@@ -23,7 +23,6 @@ from untaped.capability_api import (
     UsageError,
     YesOption,
     batch_apply,
-    create_app,
     echo,
     emit,
     finish,
@@ -31,10 +30,7 @@ from untaped.capability_api import (
     render_rows,
 )
 
-app = create_app(name="backup", help="Manage recipe backups.")
 
-
-@app.command(name="list")
 def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
     """List backup bundles."""
     with report_config_errors():
@@ -47,7 +43,6 @@ def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) 
             echo(rendered)
 
 
-@app.command(name="get")
 def get_command(
     backup_id: Annotated[str, Parameter(help="Backup id, prefix, or latest.")],
     /,
@@ -79,7 +74,6 @@ def get_command(
                     echo(f"  - {entry}")
 
 
-@app.command(name="restore")
 def restore_command(
     backup_id: Annotated[str, Parameter(help="Backup id, prefix, or latest.")],
     /,
@@ -130,7 +124,6 @@ def restore_command(
         finish(outcome)
 
 
-@app.command(name="prune")
 def prune_command(
     *,
     keep: Annotated[
@@ -156,7 +149,8 @@ def prune_command(
         resolved_age = settings().backup_max_age_days if older_than is None else older_than
         if resolved_keep is None and resolved_age is None:
             raise ConfigError(
-                "backup prune needs --keep/--older-than or backup_keep/backup_max_age_days settings"
+                "backups prune needs --keep/--older-than "
+                "or backup_keep/backup_max_age_days settings"
             )
         store = BackupStore(library_root() / "backups")
         bundles = store.list()

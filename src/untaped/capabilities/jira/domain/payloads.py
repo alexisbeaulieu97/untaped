@@ -55,6 +55,12 @@ def build_transition_payload(
     return payload
 
 
+def build_assignee_payload(username: str | None) -> dict[str, Any]:
+    """The body of ``PUT issue/{key}/assignee``; ``None`` unassigns the issue."""
+
+    return {"name": username}
+
+
 def build_link_payload(key: str, link_type: str, other: str) -> dict[str, Any]:
     """The body of ``POST issueLink``: ``key`` <link_type's outward phrase> ``other``.
 

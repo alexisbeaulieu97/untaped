@@ -20,10 +20,12 @@ from untaped.capabilities.github.cli.scopes import (
     OrgOption,
     RepoOption,
     TeamOption,
+    org_scope,
     parse_team_scopes,
     read_stdin_repos,
 )
-from untaped.capabilities.github.domain import CorpusRepoResult
+from untaped.capabilities.github.domain import CorpusRepoResult, github_web_host
+from untaped.capabilities.github.errors import GithubError
 from untaped.capabilities.github.settings import GithubSettings
 from untaped.capability_api import (
     ColumnsOption,
@@ -40,6 +42,7 @@ from untaped.capability_api import (
     echo,
     emit,
     finish,
+    not_found,
     plural,
     report_errors,
     summary,
@@ -48,10 +51,6 @@ from untaped.capability_api import (
 AllOption = Annotated[
     bool,
     Parameter(name="--all", negative="", help="Select every cached repository."),
-]
-PruneOption = Annotated[
-    bool,
-    Parameter(name="--prune", negative="", help="Clean departed or archived repos in scope."),
 ]
 FilterOrgOption = Annotated[
     list[str] | None,
@@ -78,7 +77,7 @@ def status_command(
 
     with report_errors():
         settings = app_context().section("github", GithubSettings)
-        rows = StatusCorpus(GitCorpusCache())(root=settings.corpus_path)
+        rows = StatusCorpus(GitCorpusCache(auth_host=None))(root=settings.corpus_path)
         records = [row.model_dump() for row in rows]
         emit(
             _status_display(records) if fmt == "table" and not columns else records,
@@ -97,7 +96,7 @@ def sync_command(
     team: TeamOption = None,
     repo: RepoOption = None,
     stdin: StdinOption = False,
-    archived: ArchivedOption = False,
+    archived: ArchivedOption = "exclude",
     refs: Annotated[
         Literal["default", "branches", "tags", "all"],
         Parameter(name="--refs", help="Ref profile to fetch."),
@@ -139,16 +138,20 @@ def sync_command(
     with report_errors():
         settings = app_context().section("github", GithubSettings)
         stdin_repos, stdin_items = read_stdin_repos() if stdin else ((), ())
-        orgs = tuple(org or ())
-        teams = parse_team_scopes(team, orgs=orgs)
         repos = tuple(repo or ())
-        if not (orgs or teams or repos or stdin_repos or stdin_items):
-            raise UsageError("cache sync requires --org, --team, --repo, or --stdin")
+        piped = bool(stdin_repos or stdin_items)
+        orgs = org_scope(org, scoped=bool(team or repos or piped))
+        teams = parse_team_scopes(team, orgs=orgs)
+        if not (orgs or teams or repos or piped):
+            raise UsageError(
+                "cache sync requires --org, --team, --repo, --stdin, "
+                "or a github.default_org setting"
+            )
         options = CorpusSyncOptions(
             scope=RepositoryInventoryScope(orgs=orgs, teams=teams, repos=repos),
             stdin_repos=stdin_repos,
             stdin_items=stdin_items,
-            include_archived=archived,
+            archived=archived,
             refs=RefSelector(profile=refs, globs=tuple(ref or ())),
             refresh=refresh,
             max_age_seconds=settings.sweep.max_age_seconds,
@@ -162,7 +165,7 @@ def sync_command(
         with open_client() as (client, ui), ui.progress("Syncing repositories…") as progress:
             outcomes = SyncCorpus(
                 inventory=ResolveRepositoryInventory(client),
-                corpus=GitCorpusCache(),
+                corpus=GitCorpusCache(auth_host=github_web_host(settings.base_url)),
                 root=settings.corpus_path,
                 auth_header=corpus_auth_header(settings),
             )(options, progress=progress)
@@ -218,7 +221,10 @@ def prune_command(
         list[str] | None,
         Parameter(
             name="--org",
-            help="Org whose departed or archived cached repos to delete. Repeatable; required.",
+            help=(
+                "Org whose departed or archived cached repos to delete. Repeatable; "
+                "defaults to github.default_org."
+            ),
             consume_multiple=False,
             negative="",
         ),
@@ -230,44 +236,13 @@ def prune_command(
 ) -> None:
     """Delete cached repositories that left or were archived in their org."""
     with report_errors():
-        if not org:
-            raise UsageError("cache prune requires --org")
+        orgs = org_scope(org, scoped=False)
+        if not orgs:
+            raise UsageError("cache prune requires --org or a github.default_org setting")
         _delete(
-            _select((), all_repos=False, prune=True, org=org),
+            _select((), all_repos=False, prune=True, org=list(orgs)),
             yes=yes,
             dry_run=dry_run,
-            fmt=fmt,
-            columns=columns,
-        )
-
-
-@app.command(name="clean")
-def clean_command(
-    *,
-    repo: RepoOption = None,
-    all_repos: AllOption = False,
-    prune: PruneOption = False,
-    org: FilterOrgOption = None,
-    yes: YesOption = False,
-    fmt: FormatOption = "table",
-    columns: ColumnsOption = None,
-) -> None:
-    """Deprecated: use ``cache delete`` or ``cache prune``; removed in 8.0."""
-    with report_errors():
-        app_context().ui(strict=False).message(
-            "warning",
-            "`cache clean` is deprecated and will be removed in 8.0; "
-            "use `cache delete` or `cache prune`",
-        )
-        repos = tuple(repo or ())
-        if sum(bool(value) for value in (repos, all_repos, prune)) != 1:
-            raise UsageError("cache clean requires exactly one of --repo, --all, or --prune")
-        if prune and not org:
-            raise UsageError("cache clean --prune requires --org")
-        _delete(
-            _select(repos, all_repos=all_repos, prune=prune, org=org),
-            yes=yes,
-            dry_run=False,
             fmt=fmt,
             columns=columns,
         )
@@ -287,7 +262,9 @@ def _select(
     from untaped.capabilities.github.infrastructure import GitCorpusCache  # noqa: PLC0415
 
     settings = app_context().section("github", GithubSettings)
-    cached = _in_orgs(GitCorpusCache().list_repos(root=settings.corpus_path), orgs=tuple(org or ()))
+    cached = _in_orgs(
+        GitCorpusCache(auth_host=None).list_repos(root=settings.corpus_path), orgs=tuple(org or ())
+    )
     if prune:
         with open_client() as (client, ui), ui.progress("Resolving repository inventory…"):
             live = ResolveRepositoryInventory(client)(
@@ -296,6 +273,10 @@ def _select(
         return _departed_or_archived(cached, live)
     if all_repos:
         return cached
+    known = {row.repo.casefold() for row in cached}
+    missing = [name for name in repos if name.casefold() not in known]
+    if missing:
+        raise GithubError("; ".join(not_found("cached repo", name) for name in missing))
     requested = {name.casefold() for name in repos}
     return tuple(row for row in cached if row.repo.casefold() in requested)
 
@@ -314,7 +295,7 @@ def _delete(
 
     ctx = app_context()
     settings = ctx.section("github", GithubSettings)
-    cleaner = CleanCorpus(GitCorpusCache())
+    cleaner = CleanCorpus(GitCorpusCache(auth_host=None))
     outcome = batch_apply(
         selected,
         lambda row: cleaner(root=settings.corpus_path, repo=row),
@@ -356,7 +337,7 @@ def worktree_command(
         ui = ctx.ui()
         settings = ctx.section("github", GithubSettings)
         with ui.progress("Materializing worktree…"):
-            result = WorktreeCorpus(GitCorpusCache())(
+            result = WorktreeCorpus(GitCorpusCache(auth_host=None))(
                 repo,
                 root=settings.corpus_path,
                 ref=ref,

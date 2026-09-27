@@ -1,13 +1,12 @@
-"""``untaped.capability_api`` is the SDK surface; the root only forwards (deprecated)."""
+"""``untaped.capability_api`` is the only SDK surface; the root re-exports nothing."""
 
+import importlib
 import subprocess
 import sys
 
 import pytest
 
 import untaped
-import untaped.api
-import untaped.capability_api as capi
 
 
 def test_package_root_has_no_star_export() -> None:
@@ -15,26 +14,17 @@ def test_package_root_has_no_star_export() -> None:
     assert "__all__" not in vars(untaped)
 
 
-def test_deprecated_root_names_forward_lazily() -> None:
-    """``from untaped import X`` keeps working (deprecated) for SDK names."""
-    from untaped import ConfigError, bounded_map, get_settings
-
-    assert ConfigError is capi.ConfigError
-    assert bounded_map is capi.bounded_map
-    assert get_settings is untaped.api.get_settings
-    # ``app_context`` is also a submodule name; the submodule wins at the root.
-    for name in {*capi.__all__, *untaped.api.__all__} - {"app_context"}:
-        source = capi if name in capi.__all__ else untaped.api
-        assert getattr(untaped, name) is getattr(source, name), name
-
-
-def test_unknown_root_names_still_raise() -> None:
+def test_root_no_longer_forwards_sdk_names() -> None:
+    """``from untaped import X`` was removed in 8.0; import from ``capability_api``."""
     with pytest.raises(AttributeError):
-        _ = untaped.definitely_not_exported  # type: ignore[attr-defined]
+        _ = untaped.ConfigError  # type: ignore[attr-defined]
     with pytest.raises(ImportError):
-        from untaped import (
-            definitely_not_exported,  # type: ignore[attr-defined]  # noqa: F401
-        )
+        from untaped import bounded_map  # type: ignore[attr-defined]  # noqa: F401
+
+
+def test_api_shim_module_is_gone() -> None:
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("untaped.api")
 
 
 def test_package_import_loads_no_sdk_modules() -> None:

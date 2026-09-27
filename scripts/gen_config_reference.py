@@ -1,7 +1,7 @@
 """Generate ``docs/reference/config.md`` from the composed settings models.
 
-The page lists every setting of the root shell (``log_level``, ``http.*``,
-``ui.*``, ``skills.*``) and of each built-in capability's profile model, plus each
+The page lists every setting of the root shell (``http.*``, ``ui.*``,
+``skills.*``) and of each built-in capability's profile model, plus each
 capability's state model. Types, defaults and environment variables come from
 the Pydantic models; a description comes from ``Field(description=...)`` when
 the model declares one, else from :data:`DESCRIPTIONS` below.
@@ -32,12 +32,13 @@ OUTPUT = REPO_ROOT / "docs" / "reference" / "config.md"
 
 #: Descriptions for settings whose model field has no ``description``.
 DESCRIPTIONS: dict[str, str] = {
-    "log_level": "Deprecated and ignored (removed in 8.0); `untaped doctor` warns when set.",
     "http.ca_bundle": "PEM file of extra CA certificates to trust instead of the OS trust store.",
     "http.verify_ssl": "Verify TLS certificates. `false` disables all certificate checks.",
     "http.verify_hostname": "Check the certificate host name. `false` keeps chain validation.",
     "http.timeout": "HTTP request timeout in seconds.",
     "http.proxy": "Proxy URL for HTTP clients. When unset, standard proxy variables apply.",
+    "ui.format": "Default `--format` for commands whose default is `table`. "
+    "`UNTAPED_FORMAT` wins over it; an explicit `--format` wins over both.",
     "ui.theme": "Built-in theme: `default`, `plain`, `compact`, `high-contrast`, `quiet`, "
     "`classic`.",
     "ui.border": "Table border style; overrides the theme.",
@@ -50,6 +51,8 @@ DESCRIPTIONS: dict[str, str] = {
     "version: `warn` (print a warning), `auto` (update them in place), or `off`.",
     "workspace.cache_dir": "Bare-clone cache used as the reference for new workspace clones.",
     "workspace.workspaces_dir": "Parent directory for `workspace init NAME` without `--path`.",
+    "workspace.parallel": "Default `sync --parallel` and `foreach --parallel` workers. Unset "
+    "means `min(8, 2 * CPUs)`; values above `2 * CPUs` are clamped.",
     "workspace.workspaces": "Registered workspaces (`name`, `path`). Managed by `workspace` "
     "commands.",
     "github.base_url": "GitHub API URL. GitHub Enterprise Server uses `https://HOST/api/v3`.",
@@ -57,6 +60,9 @@ DESCRIPTIONS: dict[str, str] = {
     "`token_command`, then `GH_TOKEN`, then `GITHUB_TOKEN`.",
     "github.token_command": "Command (argv list, no shell) that prints the token; "
     "used when `github.token` is unset.",
+    "github.default_org": "Org scope for `repos list`, `search` (repos, code, issues), "
+    "`sweep`, `cache sync` and `cache prune` when no scope flag is given. Without it, "
+    "search uses `@me`.",
     "github.corpus_path": "Local Git corpus that `github sweep` and `github cache` manage.",
     "github.sweep.max_age_seconds": "`sweep` and `cache sync` refresh cached repos older than "
     "this that GitHub reports as pushed since.",
@@ -72,6 +78,8 @@ DESCRIPTIONS: dict[str, str] = {
     "jira.default_project": "Project key `issues create` uses when `--project` is omitted.",
     "jira.default_board_id": "Board `sprints list` uses when `--board-id` is omitted.",
     "jira.page_size": "Results requested per Jira API page.",
+    "jira.confirm": "Which writes ask first: `always`, `destructive` (patches that replace or "
+    "remove values, assignee changes, transitions) or `never`. `--yes` skips the prompt.",
     "awx.base_url": "AWX/AAP URL, for example `https://aap.example.com`.",
     "awx.token": "AWX/AAP API token.",
     "awx.token_command": "Command (argv list, no shell) that prints the token; "
@@ -85,13 +93,14 @@ DESCRIPTIONS: dict[str, str] = {
     "awx.test_parallel": "Default `test run --parallel`.",
     "ansible.index_path": "SQLite cache of refreshed source data.",
     "ansible.stale_after": "Seconds after which `source status` reports a source as `stale`.",
-    "ansible.freshness_ttl": "Deprecated and ignored; `doctor` warns while it is set.",
+    "ansible.default_source": "Saved source `deps`, `impact`, `find` and `graph` use when "
+    "no `--source` or inline selector is given.",
     "ansible.ref_scan_default": "Refs a source scans: `all` refs or each repo's default branch.",
     "ansible.source_refresh_backend": "Ref probe backend for source refresh.",
     "ansible.repo_cache_path": "Git clone cache used by source refresh.",
     "ansible.git_clone_protocol": "Protocol for source refresh clones.",
     "ansible.git_fetch_depth": "Git fetch depth for source refresh; `0` is full history.",
-    "ansible.git_fetch_concurrency": "Default `--parallel` for `source refresh` and `graph`.",
+    "ansible.git_fetch_concurrency": "Default `--parallel` for `source refresh` and `--refresh`.",
     "ansible.probe_concurrency": "Concurrent ref probes during source refresh.",
     "ansible.source_refresh_repo_batch_size": "Repos committed per source refresh batch.",
     "ansible.source_refresh_rate_limit_floor": "Stop a refresh (resumable) when the GraphQL "
@@ -100,7 +109,7 @@ DESCRIPTIONS: dict[str, str] = {
     "ansible.dependency_paths": "Dependency files scanned in each repo.",
     "ansible.sources": "Saved sources. Managed by `ansible source` commands.",
     "ansible.aliases": "Role or Galaxy name to `owner/repo` aliases. Managed by "
-    "`ansible alias` commands.",
+    "`ansible source-alias` commands.",
     "recipe.library_root": "Directory holding installed recipe packs.",
     "recipe.hook_timeout_seconds": "Per-hook request timeout; `0` disables it.",
     "recipe.hook_startup_timeout_seconds": "Timeout for preparing a hook environment.",
@@ -221,10 +230,18 @@ def _env_name(key: str) -> str:
 
 def collect_sections() -> list[tuple[str, str, type[BaseModel], bool]]:
     """``(title, prefix, model, is_state)`` for the shell and every built-in."""
-    from untaped.bootstrap import BUILTIN_CAPABILITIES  # noqa: PLC0415
+    from untaped.bootstrap import BUILTIN_CAPABILITIES, SHELL_SPEC  # noqa: PLC0415
     from untaped.settings import Settings  # noqa: PLC0415
 
-    sections: list[tuple[str, str, type[BaseModel], bool]] = [("Root", "", Settings, False)]
+    sections: list[tuple[str, str, type[BaseModel], bool]] = [
+        ("Root", "", Settings, False),
+        (
+            f"`{SHELL_SPEC.config_section}`",
+            SHELL_SPEC.config_section,
+            SHELL_SPEC.profile_model,
+            False,
+        ),
+    ]
     for spec in BUILTIN_CAPABILITIES:
         sections.append(
             (f"`{spec.config_section}`", spec.config_section, spec.profile_model, False)
@@ -258,9 +275,7 @@ def _section_rows(prefix: str, model: type[BaseModel]) -> list[Row]:
     rows = _leaf_rows(model, (prefix,) if prefix else ())
     if not prefix:
         # Root model: keep the shell's own settings, not the pydantic-settings base.
-        rows = [
-            row for row in rows if row.key.split(".")[0] in {"log_level", "http", "ui", "skills"}
-        ]
+        rows = [row for row in rows if row.key.split(".")[0] in {"http", "ui", "skills"}]
     return rows
 
 

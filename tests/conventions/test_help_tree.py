@@ -32,7 +32,9 @@ from cyclopts import App
 
 from untaped.bootstrap import build_root_app
 
-ROOT_COMMANDS = frozenset({"config", "profile", "skills", "doctor", "capabilities"})
+ROOT_COMMANDS = frozenset(
+    {"config", "profile", "skills", "doctor", "capabilities", "setup", "alias"}
+)
 
 VERBS = frozenset(
     {
@@ -58,6 +60,11 @@ VERBS = frozenset(
         # update
         "sync",
         "refresh",
+        # query
+        "find",
+        "deps",
+        "impact",
+        "graph",
         # other
         "export",
         "init",
@@ -94,7 +101,6 @@ RESERVED_SHORTS = {
     "-o": "--out",
     "-i": "--ignore-case",
     "-r": "--repo",
-    "-w": "--workspace",
     "-v": "--verbose",
     "-q": "--quiet",
     "-h": "--help",

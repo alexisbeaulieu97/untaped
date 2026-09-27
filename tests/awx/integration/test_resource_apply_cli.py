@@ -70,7 +70,7 @@ def test_apply_writes_only_with_yes(
         "metadata: { name: deploy, organization: Default }\n"
         "spec: { description: new, playbook: deploy.yml, project: playbooks, inventory: prod }\n"
     )
-    result = CliInvoker().invoke(app, ["job-templates", "apply", flag, str(f)])
+    result = CliInvoker().invoke(app, ["apply", flag, str(f)])
     assert result.exit_code == 0, result.output
     assert fake_aap.get_record("job_templates", 30)["description"] == description
 
@@ -95,7 +95,7 @@ def test_apply_under_scoped_file_raises_ambiguity(fake_aap: Any, tmp_path: Path)
         "  project: playbooks\n"
         "  inventory: prod\n"
     )
-    result = CliInvoker().invoke(app, ["job-templates", "apply", str(f), "--yes"])
+    result = CliInvoker().invoke(app, ["apply", str(f), "--yes"])
     output = result.output + (result.stderr or "")
     assert result.exit_code != 0, output
     assert "ambiguous" in output.lower(), output
@@ -139,7 +139,7 @@ def test_apply_real_secret_masking_and_survey_enrichment_do_not_false_fail(
         "        default: actual-secret\n"
     )
 
-    result = CliInvoker().invoke(app, ["job-templates", "apply", str(f), "--yes"])
+    result = CliInvoker().invoke(app, ["apply", str(f), "--yes"])
 
     assert result.exit_code == 0, result.output + (result.stderr or "")
     jt = fake_aap.get_record("job_templates", 30)
@@ -164,7 +164,7 @@ def test_job_template_credentials_apply_reconciles_membership_not_body(
         "  credentials: [ssh, vault]\n"
     )
 
-    result = CliInvoker().invoke(app, ["job-templates", "apply", str(f), "--yes"])
+    result = CliInvoker().invoke(app, ["apply", str(f), "--yes"])
 
     assert result.exit_code == 0, result.output + (result.stderr or "")
     for patch in _patches(fake_aap):
@@ -194,7 +194,7 @@ def test_job_template_credential_replacement_with_same_type_succeeds(
         "  credentials: [ssh-new]\n"
     )
 
-    result = CliInvoker().invoke(app, ["job-templates", "apply", str(f), "--yes"])
+    result = CliInvoker().invoke(app, ["apply", str(f), "--yes"])
 
     assert result.exit_code == 0, result.output + (result.stderr or "")
     assert fake_aap.memberships[("job_templates", 30, "credentials")] == {41}
@@ -225,7 +225,7 @@ def test_credential_replacement_associates_before_removing_other_types(
     fake_aap.forbidden_associate_ids.add(41)
 
     result = CliInvoker().invoke(
-        app, ["job-templates", "apply", str(_jt_credentials_doc(tmp_path, "vault")), "--yes"]
+        app, ["apply", str(_jt_credentials_doc(tmp_path, "vault")), "--yes"]
     )
 
     assert result.exit_code != 0, result.output
@@ -247,7 +247,6 @@ def test_same_type_replacement_restores_the_old_credential_when_associate_fails(
     result = CliInvoker().invoke(
         app,
         [
-            "job-templates",
             "apply",
             str(_jt_credentials_doc(tmp_path, "ssh-new")),
             "--yes",
@@ -285,7 +284,7 @@ def test_group_host_replacement_associates_first(fake_aap: Any, tmp_path: Path) 
         "spec: { hosts: [web-02] }\n"
     )
 
-    result = CliInvoker().invoke(app, ["groups", "apply", str(f), "--yes"])
+    result = CliInvoker().invoke(app, ["apply", str(f), "--yes"])
 
     assert result.exit_code != 0, result.output
     assert fake_aap.memberships[("groups", 50, "hosts")] == {7}
@@ -332,34 +331,6 @@ def test_job_templates_credentials_add_remove_command_scopes_members_by_org(
     assert fake_aap.memberships[("job_templates", 30, "credentials")] == set()
 
 
-def test_per_resource_apply_rejects_wrong_kind_before_writing(
-    fake_aap: Any, tmp_path: Path
-) -> None:
-    """A `job-templates apply` must NOT write Project docs that share the file."""
-    _seed_basic(fake_aap)
-    original_project = dict(fake_aap.get_record("projects", 10))
-    f = tmp_path / "mixed.yml"
-    f.write_text(
-        "kind: JobTemplate\n"
-        "metadata: { name: deploy, organization: Default }\n"
-        "spec: { playbook: changed.yml, project: playbooks, inventory: prod }\n"
-        "---\n"
-        "kind: Project\n"
-        "metadata: { name: playbooks, organization: Default }\n"
-        "spec: { scm_type: hg, scm_url: 'https://elsewhere/x.git' }\n"
-    )
-    result = CliInvoker().invoke(app, ["job-templates", "apply", str(f), "--yes"])
-    assert result.exit_code != 0, result.output
-    # The entire batch is rejected.
-    jt = fake_aap.get_record("job_templates", 30)
-    assert jt["playbook"] == "deploy.yml"
-    # Project untouched — no scm_type=hg leaked through
-    project = fake_aap.get_record("projects", 10)
-    assert project["scm_type"] == original_project["scm_type"] == "git"
-    # Wrong-kind error visible
-    assert "Project" in result.stderr
-
-
 def test_apply_creates_when_missing(seeded_default_org: Any, tmp_path: Path) -> None:
     f = tmp_path / "p.yml"
     f.write_text(
@@ -369,7 +340,7 @@ def test_apply_creates_when_missing(seeded_default_org: Any, tmp_path: Path) -> 
         "  scm_type: git\n"
         "  scm_url: https://example.com/x.git\n"
     )
-    result = CliInvoker().invoke(app, ["projects", "apply", str(f), "--yes"])
+    result = CliInvoker().invoke(app, ["apply", str(f), "--yes"])
     assert result.exit_code == 0, result.output
     new_proj = next(
         r for r in seeded_default_org.list_records("projects") if r["name"] == "new-proj"
@@ -391,7 +362,7 @@ def test_apply_preserves_encrypted_secret(fake_aap: Any, tmp_path: Path) -> None
         "  inventory: prod\n"
         "  webhook_key: $encrypted$\n"
     )
-    result = CliInvoker().invoke(app, ["job-templates", "apply", str(f), "--yes"])
+    result = CliInvoker().invoke(app, ["apply", str(f), "--yes"])
     assert result.exit_code == 0, result.output
     jt = fake_aap.get_record("job_templates", 30)
     assert jt["webhook_key"] == "$encrypted$"  # untouched
@@ -418,10 +389,6 @@ def _two_orgs_with_project(fake: Any) -> None:
         (b"\xff\xfe not utf-8", ["apply"]),
         (b"kind: [\n", ["apply"]),
         (b"kind: Nope\nmetadata: { name: x }\n", ["apply"]),
-        (
-            b"kind: Project\nmetadata: { name: p, organization: Default }\n",
-            ["job-templates", "apply"],
-        ),
     ],
 )
 def test_directory_apply_errors_name_the_offending_file(
@@ -464,7 +431,7 @@ def test_apply_spec_organization_wins_over_default_organization(
         "spec: { scm_type: git, description: mine, organization: Other }\n"
     )
 
-    result = CliInvoker().invoke(app, ["projects", "apply", str(doc), "--yes"])
+    result = CliInvoker().invoke(app, ["apply", str(doc), "--yes"])
 
     assert result.exit_code == 0, result.output + (result.stderr or "")
     assert [(p["id"], p["description"]) for p in fake_aap.list_records("projects")] == [
@@ -492,7 +459,7 @@ def test_save_apply_round_trip_keeps_org_less_workflow(
     out.write_text(out.read_text().replace("description: old", "description: new"))
     _set_default_organization(aap_config)
 
-    result = CliInvoker().invoke(app, ["workflow-templates", "apply", str(out), "--yes"])
+    result = CliInvoker().invoke(app, ["apply", str(out), "--yes"])
 
     assert result.exit_code == 0, result.output + (result.stderr or "")
     records = {r["id"]: r for r in fake_aap.list_records("workflow_job_templates")}
@@ -517,9 +484,246 @@ def test_apply_without_org_uses_default_organization(
         "kind: Project\nmetadata: { name: playbooks }\nspec: { scm_type: git, description: mine }\n"
     )
 
-    result = CliInvoker().invoke(app, ["projects", "apply", str(doc), "--yes"])
+    result = CliInvoker().invoke(app, ["apply", str(doc), "--yes"])
 
     assert result.exit_code == 0, result.output + (result.stderr or "")
     assert fake_aap.get_record("projects", 10)["description"] == "other-org"
     created = [p for p in fake_aap.list_records("projects") if p["id"] != 10]
     assert [(p["name"], p["organization"]) for p in created] == [("playbooks", 1)]
+
+
+_DEPLOY_DOC = (
+    "kind: JobTemplate\n"
+    "metadata: { name: deploy, organization: Default }\n"
+    "spec: { description: {description}, playbook: deploy.yml, project: playbooks, "
+    "inventory: prod }\n"
+)
+
+
+def test_apply_dash_reads_documents_from_stdin(fake_aap: Any) -> None:
+    """``export | apply -`` promotes documents between profiles without a file."""
+    _seed_basic(fake_aap)
+    result = CliInvoker().invoke(
+        app, ["apply", "-", "--yes"], input=_DEPLOY_DOC.replace("{description}", "piped")
+    )
+    assert result.exit_code == 0, result.output
+    assert fake_aap.get_record("job_templates", 30)["description"] == "piped"
+
+
+def test_apply_dash_with_nothing_piped_is_an_error(fake_aap: Any) -> None:
+    _seed_basic(fake_aap)
+    result = CliInvoker().invoke(app, ["apply", "-", "--yes"], input="")
+    assert result.exit_code == 1, result.output
+    assert "no YAML documents on stdin" in result.stderr
+    assert _patches(fake_aap) == []
+
+
+def test_apply_dash_names_stdin_in_document_errors(fake_aap: Any) -> None:
+    _seed_basic(fake_aap)
+    result = CliInvoker().invoke(
+        app, ["apply", "-", "--yes"], input="kind: Nope\nmetadata: { name: x }\n"
+    )
+    assert result.exit_code == 1, result.output
+    assert "<stdin>: unknown kind 'Nope'" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("description", "exit_code", "action"),
+    [("deploy the app", 0, "unchanged"), ("drifted", 3, "planned")],
+)
+def test_apply_check_exits_3_on_drift_and_writes_nothing(
+    fake_aap: Any, tmp_path: Path, description: str, exit_code: int, action: str
+) -> None:
+    _seed_basic(fake_aap)
+    f = tmp_path / "jt.yml"
+    f.write_text(_DEPLOY_DOC.replace("{description}", description))
+
+    result = CliInvoker().invoke(app, ["apply", str(f), "--check", "--format", "json"])
+
+    assert result.exit_code == exit_code, result.output
+    assert [row["action"] for row in json.loads(result.stdout)] == [action]
+    assert _patches(fake_aap) == []
+    assert _posts(fake_aap) == []
+    assert fake_aap.get_record("job_templates", 30)["description"] == "deploy the app"
+
+
+_SURVEY = "{ name: s, spec: [{ variable: region, type: text, default: eu }] }"
+
+
+@pytest.mark.parametrize(
+    ("name", "survey", "errors", "detail"),
+    [
+        ("fresh", _SURVEY, {"POST": 400}, "its survey_spec write failed"),
+        ("deploy", _SURVEY, {"POST": 400}, "its survey_spec write failed"),
+        ("deploy", "{}", {"DELETE": 400}, "its survey_spec write failed"),
+        ("fresh", _SURVEY, {"GET": 400}, "reading its survey_spec back failed"),
+        ("fresh", _SURVEY, {"POST": 401}, "rejected the token"),
+    ],
+)
+def test_write_whose_survey_write_fails_is_partial_with_the_record_id(
+    fake_aap: Any, tmp_path: Path, name: str, survey: str, errors: dict[str, int], detail: str
+) -> None:
+    _seed_basic(fake_aap)
+    fake_aap.get_record("job_templates", 30)["survey_spec"] = {"name": "old", "spec": []}
+    fake_aap.survey_errors = errors
+    doc = tmp_path / "jt.yml"
+    doc.write_text(
+        "kind: JobTemplate\n"
+        f"metadata: {{ name: {name}, organization: Default }}\n"
+        "spec:\n"
+        "  playbook: deploy.yml\n"
+        "  project: playbooks\n"
+        "  inventory: prod\n"
+        f"  survey_spec: {survey}\n"
+    )
+
+    result = CliInvoker().invoke(app, ["apply", str(doc), "--yes", "--format", "json"])
+
+    assert result.exit_code != 0
+    written = [t for t in fake_aap.list_records("job_templates") if t["name"] == name]
+    row = json.loads(result.stdout)[0]
+    assert row["action"] == "partial"
+    assert row["id"] == written[0]["id"]
+    assert detail in row["detail"]
+
+
+def test_rejected_token_during_survey_write_still_stops_the_batch(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    _seed_basic(fake_aap)
+    fake_aap.survey_errors = {"POST": 401}
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "a.yml").write_text(
+        "kind: JobTemplate\n"
+        "metadata: { name: fresh, organization: Default }\n"
+        "spec: { playbook: deploy.yml, project: playbooks, inventory: prod,\n"
+        f"        survey_spec: {_SURVEY} }}\n"
+    )
+    (docs / "b.yml").write_text(
+        "kind: JobTemplate\n"
+        "metadata: { name: later, organization: Default }\n"
+        "spec: { playbook: deploy.yml, project: playbooks, inventory: prod }\n"
+    )
+
+    result = CliInvoker().invoke(
+        app, ["apply", str(docs), "--yes", "--continue-on-error", "--format", "json"]
+    )
+
+    rows = {row["name"]: row for row in json.loads(result.stdout)}
+    assert result.exit_code != 0
+    assert rows["fresh"]["action"] == "partial"
+    assert rows["later"]["action"] == "skipped"
+    assert not [t for t in fake_aap.list_records("job_templates") if t["name"] == "later"]
+
+
+def _seed_schedule_with_survey_password(fake: Any) -> None:
+    _seed_basic(fake)
+    # AWX masks survey password answers in a schedule's extra_data.
+    fake.seed(
+        "schedules",
+        id=60,
+        name="nightly",
+        unified_job_template=30,
+        rrule="FREQ=DAILY",
+        extra_data={"db_password": "$encrypted$", "env": "prod"},
+    )
+
+
+def _schedule_doc(tmp_path: Path, extra_data: str) -> Path:
+    doc = tmp_path / "schedule.yml"
+    doc.write_text(
+        "kind: Schedule\n"
+        "metadata:\n"
+        "  name: nightly\n"
+        "  parent: { kind: JobTemplate, name: deploy, organization: Default }\n"
+        "spec:\n"
+        "  rrule: FREQ=DAILY\n"
+        f"  extra_data: {extra_data}\n"
+    )
+    return doc
+
+
+def test_schedule_apply_keeps_encrypted_survey_answers(fake_aap: Any, tmp_path: Path) -> None:
+    _seed_schedule_with_survey_password(fake_aap)
+    doc = _schedule_doc(tmp_path, "{ db_password: $encrypted$, env: prod }")
+
+    result = CliInvoker().invoke(app, ["apply", str(doc), "--yes", "--format", "json"])
+
+    assert result.exit_code == 0, result.output + (result.stderr or "")
+    assert not _patches(fake_aap)
+    assert "undeclared" not in (result.stderr or "")
+    assert json.loads(result.stdout)[0]["preserved_secrets"] == ["extra_data.db_password"]
+
+
+def test_schedule_apply_refuses_removing_one_of_several_placeholders(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    _seed_schedule_with_survey_password(fake_aap)
+    fake_aap.get_record("schedules", 60)["extra_data"]["api_key"] = "$encrypted$"
+    doc = _schedule_doc(tmp_path, "{ db_password: $encrypted$, env: prod }")
+
+    result = CliInvoker().invoke(app, ["apply", str(doc), "--yes"])
+
+    assert result.exit_code != 0
+    assert "extra_data" in (result.stderr or "")
+    assert not _patches(fake_aap)
+
+
+def test_schedule_create_drops_placeholders_with_a_warning(fake_aap: Any, tmp_path: Path) -> None:
+    _seed_basic(fake_aap)
+    doc = _schedule_doc(tmp_path, "{ db_password: $encrypted$, env: prod }")
+
+    result = CliInvoker().invoke(app, ["apply", str(doc), "--yes"])
+
+    assert result.exit_code == 0, result.output + (result.stderr or "")
+    assert "extra_data.db_password placeholders dropped" in (result.stderr or "")
+    [created] = fake_aap.list_records("schedules")
+    assert created["extra_data"] == {"env": "prod"}
+    assert created["unified_job_template"] == 30
+
+
+def test_schedule_apply_refuses_extra_data_change_beside_a_placeholder(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    _seed_schedule_with_survey_password(fake_aap)
+    doc = _schedule_doc(tmp_path, "{ db_password: $encrypted$, env: staging }")
+
+    result = CliInvoker().invoke(app, ["apply", str(doc), "--yes"])
+
+    assert result.exit_code != 0
+    assert "extra_data" in (result.stderr or "")
+    assert not _patches(fake_aap)
+    assert fake_aap.get_record("schedules", 60)["extra_data"]["db_password"] == "$encrypted$"
+
+
+@pytest.mark.parametrize("piped", ["---\n", "# only a comment\n---\n# another\n"])
+def test_apply_dash_with_no_documents_is_an_error(fake_aap: Any, piped: str) -> None:
+    _seed_basic(fake_aap)
+    result = CliInvoker().invoke(app, ["apply", "-", "--yes"], input=piped)
+    assert result.exit_code == 1, result.output
+    assert "no YAML documents on stdin" in result.stderr
+
+
+def test_apply_unknown_option_is_a_usage_error(fake_aap: Any) -> None:
+    result = CliInvoker().invoke(app, ["apply", "--chekc"])
+    assert result.exit_code == 2, result.output
+    assert "unknown option: --chekc" in result.stderr
+
+
+def test_apply_check_failure_wins_over_drift(fake_aap: Any, tmp_path: Path) -> None:
+    _seed_basic(fake_aap)
+    f = tmp_path / "jt.yml"
+    f.write_text(
+        _DEPLOY_DOC.replace("{description}", "drifted")
+        + "---\n"
+        + "kind: JobTemplate\n"
+        + "metadata: { name: broken, organization: Default }\n"
+        + "spec: { playbook: x.yml, project: playbooks, inventory: missing }\n"
+    )
+
+    result = CliInvoker().invoke(app, ["apply", str(f), "--check"])
+
+    assert result.exit_code == 1, result.output
+    assert _patches(fake_aap) == []
+    assert _posts(fake_aap) == []

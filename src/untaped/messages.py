@@ -56,6 +56,14 @@ def not_found(noun: str, name: object, *, known: Iterable[object] | None = None)
     return f"{message}; known: {', '.join(names) if names else 'none'}"
 
 
+def command_line(command: str) -> str:
+    """``command`` as an ``untaped …`` command line (a leading ``untaped`` is kept once)."""
+    text = command.strip()
+    if text != _ROOT_COMMAND and not text.startswith(f"{_ROOT_COMMAND} "):
+        text = f"{_ROOT_COMMAND} {text}"
+    return text
+
+
 def hint(command: str) -> str:
     """A follow-up hint line: ``hint: run `untaped <command>```.
 
@@ -63,10 +71,7 @@ def hint(command: str) -> str:
     error on its own line (``f"{message}\\n{hint(...)}"``) or print it as a
     separate stderr line.
     """
-    text = command.strip()
-    if text != _ROOT_COMMAND and not text.startswith(f"{_ROOT_COMMAND} "):
-        text = f"{_ROOT_COMMAND} {text}"
-    return f"hint: run `{text}`"
+    return f"hint: run `{command_line(command)}`"
 
 
 def summary(operation: str, counts: Mapping[str, int]) -> str:
@@ -79,4 +84,4 @@ def summary(operation: str, counts: Mapping[str, int]) -> str:
     return f"{operation}: {', '.join(parts) if parts else 'nothing to do'}"
 
 
-__all__ = ["hint", "not_found", "plural", "q", "summary"]
+__all__ = ["command_line", "hint", "not_found", "plural", "q", "summary"]

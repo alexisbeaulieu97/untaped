@@ -10,15 +10,17 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
 ## Setup
 
 - The command is `untaped github`. It ships with the unified `untaped` CLI (no separate install).
-- Settings live under `profiles.<name>.github`: `base_url`, `token`, `corpus_path`, and `sweep` freshness/concurrency settings.
+- Settings live under `profiles.<name>.github`: `base_url`, `token`, `default_org`, `corpus_path`, and `sweep` freshness/concurrency settings.
+- `untaped config set github.default_org ORG` gives `repos list`, `search repos|code|issues`, `sweep`, `cache sync` and `cache prune` an org scope when none of `--org`, `--team`, `--repo`, `--user` or `--stdin` is passed. Any explicit scope replaces it (never adds to it).
 - `base_url` defaults to `https://api.github.com`; GitHub Enterprise Server usually uses `https://HOST/api/v3`.
+- Git fetches (`sweep`, `cache sync`) send the token only to the Git host of `base_url` (`github.com`, or `HOST` for `https://HOST/api/v3`); a piped `clone_url` on another host is fetched without credentials.
 - Set the token with `untaped config set github.token --prompt` or `--stdin`, or point `github.token_command` at a command that prints it (`'["gh", "auth", "token"]'`). `GH_TOKEN`/`GITHUB_TOKEN` are the last fallback. A rejected token (HTTP 401) fails with a hint to run that command.
 - Set the base URL with `untaped config set github.base_url https://HOST/api/v3`.
 
 ## Command Patterns
 
 - `untaped github whoami` verifies the authenticated token and returns the current user — a single entity, so it renders as a vertical detail view under `--format table` and a bare JSON object (`{…}`) under `--format json`.
-- `untaped github repos list [PATTERN] [--org ORG]... [--team ORG/SLUG|SLUG]... [--limit N]` lists complete org/team repository inventory from GitHub list APIs with at least one repeatable scope, emitting `github.repo` records (`full_name` plus `repo`, `html_url` plus `url`).
+- `untaped github repos list [PATTERN] [--org ORG]... [--team ORG/SLUG|SLUG]... [--limit N]` lists complete org/team repository inventory from GitHub list APIs with at least one repeatable scope, emitting `github.repo` records (`full_name` plus `repo`, `html_url` plus `url`, `clone_url`, `ssh_url`, `pushed_at`, ...); the table shows only `full_name`, `default_branch`, `private`, `archived`, `fork` and `url`, so pass `-c` for other fields.
 - `untaped github sweep --org ORG|--team ORG/SLUG|--repo OWNER/NAME --grep PATTERN` asks a question over the local Git corpus and emits matching `github.sweep_repo` rows by default.
 - `untaped github sweep --org ORG --show matches --grep PATTERN` emits deduped `github.sweep_match` rows with `full_name`, `refs`, `path`, `line`, and `text`. `--show files` emits one `github.sweep_file` row per matching file (`full_name`, `path`, `refs`, `hits` = matching lines).
 - `untaped github cache sync --org ORG|--team ORG/SLUG|--repo OWNER/NAME|--stdin [--refs ...] [--refresh]` warms the corpus without a query (nightly prewarm) and emits one `github.sync_outcome` per repo with `action` `synced`, `unchanged`, `skipped`, or `failed` (exit `1` on any failure).
@@ -27,12 +29,13 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
 - `untaped github search code` searches GitHub's indexed code search and does not support sort, regex, or exhaustive multi-ref sweeps.
 - `untaped github search issues` searches issues and pull requests.
 - `untaped github search users` searches users and organizations and emits `github.user_hit` records (`whoami` emits `github.user`).
-- Search commands support scoped selectors such as `--user`, repeatable `--org`, repeatable `--repo`, and repeatable `--team ORG/SLUG` where applicable.
+- Search commands support scoped selectors such as `--user`, repeatable `--org`, repeatable `-r/--repo`, and repeatable `--team ORG/SLUG` where applicable. `-r` always means `--repo` across `github` commands.
+- `--archived include|exclude|only` on `repos list`, `search repos`, `sweep` and `cache sync` keeps, drops, or isolates archived repos; the default is `exclude` everywhere. There are no `--no-archived` or bare `--archived` spellings. An unquoted `archived:` qualifier in the `search repos` query wins over the flag.
 - Prefer `--team ORG/SLUG` for team-only operations. A bare `--team SLUG` is accepted only when exactly one `--org` is present and normalizes to `ORG/SLUG`.
-- `repos list` requires explicit `--org` or `--team` scopes; it does not default to the authenticated user's repositories.
+- `repos list` requires `--org` or `--team` scopes (or `github.default_org`); it does not default to the authenticated user's repositories.
 - `repos list` treats `--org` and `--team` as additive scopes: `--team acme/backend` is team-only, while `--org acme --team backend` includes the whole org plus that team.
 - In `repos list`, `PATTERN` is a case-insensitive whole-target glob by default; `--regex` switches it to a case-insensitive, unanchored regex substring match. Patterns with `/` match `full_name`, otherwise they match repo `name`.
-- Use `repos list --no-archived --no-fork --format raw --columns ssh_url` to produce cloneable inventory URL lines for `untaped workspace add --stdin`.
+- Use `repos list --no-fork --format raw --columns ssh_url` to produce cloneable inventory URL lines for `untaped workspace repos add WS --stdin`.
 - Use `sweep` instead of GitHub `search code` for repeated team-wide code checks, regexes, path-scoped predicates, negation, and refs beyond the default branch.
 
 ## Agent Guidance
@@ -52,7 +55,7 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
 - Sweep content predicates use local `git grep -I --extended-regexp`: patterns are POSIX extended regexes regardless of the user's `grep.patternType` (`a|b` alternates, `\(` matches a literal parenthesis, Perl classes such as `\d` are unsupported — use `[0-9]`). Binary files are skipped. `-i`, `-F`, and `--word-regexp` apply to every `--grep` and `--not-grep` in the query. `--any` ORs positive predicates only; negative predicates remain ANDed.
 - `github.sweep_repo` rows contain `full_name`, `clone_url`, `refs_matched`, `hits`, `owners`, and `synced_at`. `github.sweep_match` rows contain `full_name`, plural `refs`, `path`, `line`, and `text`. Refs are reported by short name (`main`, `v1.2`); when a branch and a tag share a name, both are scanned and shown as `heads/NAME` and `tags/NAME`.
 - The sweep corpus lives under `github.corpus_path` (default `~/.untaped/github-corpus`) and is managed by `untaped github`. Use `cache worktree OWNER/NAME` for a one-off checkout path; it reads cached metadata locally and only materializes refs already present in the corpus. Use `untaped workspace` for human development workspaces.
-- `cache status` emits `github.corpus_repo` rows (raw `disk_bytes`/`fetched_at`; the table shows a readable size and fetch age) and prints cache count, total size, and freshness spread. `cache delete` takes `OWNER/NAME` arguments or `--all` (not both); it prompts unless `--yes`/`-y` is passed, and `--dry-run` lists the selection without deleting. `cache prune --org ORG` removes cached repos in the org that departed or are now archived. With `cache delete`, `--org` (repeatable, case-insensitive) narrows the selection to repos owned by those orgs. There is no `--team` option because corpus metadata does not record team membership.
+- `cache status` emits `github.corpus_repo` rows (raw `disk_bytes`/`fetched_at`; the table shows a readable size and fetch age) and prints cache count, total size, and freshness spread. `cache delete` takes `OWNER/NAME` arguments or `--all` (not both); a named repo that is not cached (or not in `--org`) fails with `cached repo not found` and exit `1` before anything is deleted; it prompts unless `--yes`/`-y` is passed, and `--dry-run` lists the selection without deleting. `cache prune --org ORG` removes cached repos in the org that departed or are now archived. With `cache delete`, `--org` (repeatable, case-insensitive) narrows the selection to repos owned by those orgs. There is no `--team` option because corpus metadata does not record team membership.
 - Sweep and cache commands shell out to `git`; Git must be installed and available on `PATH`.
 - Use `--format pipe` to chain a search into another untaped tool: each
   record is tagged (`github.repo_hit`/`github.code`/...), and `--stdin` reads a
@@ -60,16 +63,16 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
   `github.sweep_repo` records back (mapping `full_name`; other kinds exit `2`)
   as well as bare `owner/name` lines — e.g. `untaped github search repos --org
   acme --format pipe | untaped github search code "BaseModel" --stdin`.
-- `sweep --stdin` and `cache sync --stdin` use piped `github.repo` records (from `repos list`) as-is, with no per-repo API call; other records and bare names are looked up. Refs sharing a tree are grepped once, all-predicate queries stop evaluating a ref at its first failed predicate, and concurrent sweeps are safe (each cached repo is locked while it is written).
+- `sweep --stdin` and `cache sync --stdin` use piped `github.repo` records (from `repos list`, which carry `pushed_at` for the unchanged-repo fast path) as-is, with no per-repo API call; other records and bare names are looked up. Refs sharing a tree are grepped once, all-predicate queries stop evaluating a ref at its first failed predicate, and concurrent sweeps are safe (each cached repo is locked while it is written).
 - Use `--format pipe` to chain sweep results into another sweep: `untaped github repos list 'svc-*' --org acme --format pipe | untaped github sweep --stdin --grep old_api --format pipe | untaped github sweep --stdin --not-grep new_api`.
-- For `untaped workspace add --stdin`, use raw URL lines:
+- For `untaped workspace repos add WS --stdin`, use raw URL lines:
   `untaped github sweep --org acme --grep old_api --format raw --columns clone_url |
-  untaped workspace add --stdin --workspace remediation`. `workspace add --stdin`
+  untaped workspace repos add remediation --stdin`. `workspace repos add --stdin`
   also reads `github.repo`, `github.repo_hit` and `github.sweep_repo` pipe records
-  (`untaped github search repos --org acme --format pipe | untaped workspace add --stdin`).
+  (`untaped github search repos --org acme --format pipe | untaped workspace repos add acme --stdin`).
 - `--profile <name>` works in any token position (e.g. `untaped github --profile work whoami`).
-- Use `--limit` intentionally; GitHub search has stricter rate limits than normal REST reads.
-- When no repo/org/user/team scope is passed to repo/code/issue search, the CLI defaults to the authenticated user.
+- Use `--limit` intentionally; GitHub search has stricter rate limits than normal REST reads. When `--limit` cuts results off, stderr says so (`showing 50 of 312 repositories; omit --limit to list all` for `repos list`; `showing the first 30 results; more match, raise --limit to see them` for search). No notice means you have every match, except that search cannot tell at a `--limit` that is a multiple of 100 or 1000 and up (checking would cost an extra request), so use an odd limit such as 150 when completeness matters.
+- When no repo/org/user/team/stdin scope is passed to repo/code/issue search, the CLI searches `github.default_org`, or else the authenticated user (`user:@me`) and prints `no user, org or repository in scope; searching user:@me ...` on stderr (also when `--team` resolves to no repos).
 - Repeated repo scopes are ORed together; do not rewrite them as separate AND qualifiers.
 - `search repos` automatically batches large team-expanded repo scopes around
   GitHub's search validation limits: at most five `AND`/`OR`/`NOT` operators
@@ -84,7 +87,7 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
   scopes the same way (at most five boolean operators per request, counting
   unquoted `AND`/`OR`/`NOT` in the query). To stay under GitHub's per-minute
   search limits, one invocation sends at most 9 code-search or 25 issue-search
-  batch requests; beyond that it warns that results cover only the first N
+  batch requests (`search repos` is capped at 25 the same way); beyond that it warns that results cover only the first N
   repositories — narrow the scope to search the rest. A rate limit after the
   first batch returns the partial merged results with a warning. Code results
   are deduped by `html_url` and issue results by `id`; `--limit` applies across

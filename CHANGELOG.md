@@ -2,7 +2,172 @@
 
 ## Unreleased
 
+- Core
+  - **Breaking:** `config set` and `config unset` lost `--target-profile`;
+    they write to the active profile, and the root `--profile NAME` selects
+    another one (`untaped --profile prod config set awx.token --prompt`).
+  - **New:** the `ui.format` setting and the `UNTAPED_FORMAT` environment
+    variable (which wins) replace the `table` default of the shared
+    `--format` option; an explicit `--format` still wins.
+  - **Behavior change:** table and styled output that does not go to a
+    terminal is no longer wrapped at 80 columns; `COLUMNS` still bounds it.
+  - **New:** `untaped setup`, an interactive wizard that configures a profile's
+    service capabilities (base URL plus a typed token, a `token_command`, or
+    the current one), creating the profile when new, then checks them online.
+    Without a terminal it exits 2.
+  - **New:** `untaped doctor --online` also runs online checks
+    (`awx.api`, `github.api`, `jira.api` authenticate against the service),
+    each with one attempt and a timeout capped at 10 seconds, and each failed
+    row names the command that fixes it. Providers contribute
+    them with `online_check(...)` or `DoctorCheck(..., online=True)`;
+    `DoctorResult(..., fix=...)` appends the fix.
+  - **New:** `untaped alias set NAME -- COMMAND ARGS…`, `alias list` and
+    `alias remove NAME` manage per-profile command aliases in the new
+    `shell.aliases` setting; `untaped NAME [ARGS…]` runs the stored argv with
+    `ARGS` appended. Aliases never shadow built-in commands and never expand
+    another alias.
+  - **Breaking:** the capability API version is a `(major, minor)` tuple of
+    ints, now `(2, 0)`, so `1.10` can no longer compare equal to `1.1`.
+    Providers declare `api_requires = ((2, 0), (3, 0))`; float bounds and
+    ranges capped below 2.0 are quarantined with an `api-range` reason that
+    names the running version (and, for a missing, malformed or inverted
+    range, a range that admits it); `untaped capabilities` shows a malformed
+    declaration as written instead of `unknown`.
+  - **Breaking:** removed the deprecated `untaped.api` module and the
+    `from untaped import X` forwarding at the package root; import from
+    `untaped.capability_api`. Names only `untaped.api` published are no
+    longer part of the SDK: `ensure_config`, `get_settings`,
+    `invalidate_settings_cache`, `read_tool_state`, `mutate_tool_state`,
+    `existing_directory`, `missing_setting_error`, `read_stdin_text`,
+    `common_kind`, `ThemeSpec`, `DiffStats`/`diff_stats`, and
+    `FileChange`/`FileWriteError`/`apply_file_changes`. Use `StateCollection`/
+    `StateMap` for state.
+  - **Breaking:** capability state is only read from `state.yml`; the
+    one-time move of a state section left at the top level of `config.yml`
+    (and its warning and `legacy-state` doctor row) is gone. Such a section
+    is now an ignored unknown key that `doctor`'s `unknown-keys` row flags:
+    move it into `state.yml` by hand before upgrading. (Internally,
+    `read_tool_state`/`mutate_tool_state` lost their `config_path` argument.)
+  - **Breaking:** removed the `log_level` setting and `UNTAPED_LOG_LEVEL`
+    (it never had an effect); `--verbose` is the only logging switch. A leftover
+    `log_level` key, in a profile or at the top level, is reported by
+    `doctor` as an unknown key.
+  - `doctor`'s `unknown-keys` row also flags top-level `config.yml` keys other
+    than `active` and `profiles`.
+  - The `deprecated_alias` warning now says an old spelling will be removed
+    "in the next major release" instead of naming 8.0. No built-in command
+    has deprecated spellings left; the helper remains for providers.
+  - **New:** `UiContext.styled(text, tail=...)` prints `tail` verbatim after
+    the styled text (never wrapped or tab-expanded), for streamed log lines
+    behind a styled label.
+  - **Fix:** config and state writes go through a symlinked `config.yml` or
+    `state.yml` instead of replacing the link with a regular file.
+  - **Fix:** `config edit` edits a private copy, validates it, and only then
+    saves it under the config lock, owner-only (`0600`), through a symlink and
+    with its line endings. An invalid result, a config file changed meanwhile,
+    or a failed save leaves `config.yml` unchanged (exit 1) and names the copy
+    holding your edits; before, the invalid file was kept. Saving without
+    changes writes nothing.
+  - **Fix:** `atomic_write` (and `apply_file_changes`) now fsync the file and
+    its directory, keep an existing file's permission bits (or apply `mode=`,
+    which the file has from the moment it is created), and write through
+    symlinks (never creating directories for a dangling link's target).
+    Config writes, file transactions and the GitHub corpus metadata use this
+    one helper.
+  - **Fix:** with `skills.updates: auto`, the per-run skills check only warns
+    after a failed command or a preview (`--dry-run`, `--check`); it no
+    longer rewrites installed skills then.
+  - **Fix:** git's `core.sshCommand` is looked up in the repository a git
+    command runs in, not the current directory, before untaped defaults ssh
+    to `BatchMode`.
+- Workspace
+  - **Breaking:** repo membership commands moved under a `repos` noun:
+    `workspace add` → `workspace repos add`, `workspace remove` →
+    `workspace repos remove`, and `workspace get` (which listed the declared
+    repos) → `workspace repos list`. The deprecated `show` alias is gone. No
+    aliases are kept for the old spellings.
+  - **Breaking:** the workspace is now the first positional argument, `WS`,
+    of every command that acts on one (`repos add|remove|list`, `sync`,
+    `status`, `foreach`, `edit`, `branch set|unset|apply`); the
+    `--workspace/-w` and `--path/-p` options are removed. `WS` is a
+    registered name or a path inside a workspace (`.` is the current
+    directory); omitted, it is the workspace containing the current
+    directory. `repos add WS URL...` / `repos remove WS REPO...` need it
+    before positional repos; `foreach [WS] CMD` and `branch set [WS] BRANCH`
+    take it before the command or branch. A path must exist, and workspace
+    names can no longer start with `~`.
+  - **Breaking:** `sync` and `foreach` run in parallel by default: the new
+    `workspace.parallel` profile setting sets the default worker count,
+    `min(8, 2 × CPUs)` when unset; `--parallel` overrides it (`-j 1` restores
+    serial runs).
+  - **New:** `--dry-run` on every prune (it requires `--prune`).
+    `forget --prune --dry-run` runs the same safety checks, lists the paths
+    it would delete and prints a `planned` row; `sync --prune --dry-run`
+    skips the sync and prints `planned` (safe), `skipped` (unsafe) and,
+    under `--all`, `unavailable` rows. Neither writes anything.
+  - **New:** `status --dirty` and `--behind` keep only repos with
+    uncommitted changes or behind their upstream (either matches when both
+    are given; repos that cannot be inspected stay visible);
+    `status --check` exits 3 when any repo is dirty or behind, or 1 when a
+    repo cannot be inspected.
+  - **New:** `foreach --stdin` reads the repos to run in (names, or
+    `workspace.repo` / `workspace.status` / `workspace.sync_outcome`
+    records of that workspace) and `foreach --all` runs in every
+    registered workspace, with `--repo` as a per-workspace filter.
+    `--stdin` cannot be combined with `--repo` or `--all`.
+  - **Fix:** `sync --prune` without a terminal and without `--yes` prints the
+    sync summary and rows before exiting 2, as documented; they were lost.
+  - **Fix:** declining the `sync --prune` confirmation exits 1 with
+    `cancelled; no changes made`, per the conventions (it exited 0).
+  - **Fix:** the bare-repo cache is locked across processes, so two
+    concurrent syncs of the same URL no longer clone into, fetch, or delete
+    each other's partial clone.
 - AWX
+  - **Breaking:** the per-kind `awx <kind> apply FILE` commands are removed;
+    `awx apply` applies documents of every kind.
+  - `awx apply -` reads the YAML documents from stdin, so
+    `untaped --profile a awx export … | untaped --profile b awx apply -`
+    promotes resources between profiles. Stdin with no documents is an
+    error.
+  - `awx apply --check` computes the plan and writes nothing; it exits 3 when
+    any document would change the controller and 0 otherwise (1 when a
+    document fails).
+  - **Breaking:** the deprecated spellings kept until 8.0 are removed:
+    `awx save`/`awx <kind> save` (use `export`), `launch --limit` (use
+    `--host-pattern`), and `usage -r`/`nodes -r` (use `--recursive`).
+    `AwxApiError.status` is gone; use `status_code`.
+  - **Breaking:** `launch --inventory` is now `launch --launch-inventory
+    NAME|ID` (digits mean an AWX id), the inventory the job runs against.
+    `--inventory` is only ever a lookup scope, and launch-capable kinds have
+    none.
+  - **Breaking:** each resource group offers only the scope options it
+    supports: `--organization` on organization-scoped kinds, `--inventory`,
+    `--inventory-organization` and `--parent` on hosts, groups and inventory
+    sources, `--parent` on schedules. Any other scope option is gone from
+    `--help` and is an unknown option (exit 2) instead of a runtime error.
+  - **Breaking:** `jobs logs -f` means `--format`, as on every other command;
+    `--follow` has no short form.
+  - **Breaking:** `launch`/`sync --track` (`-t`) is replaced by `--follow`,
+    which waits like `--wait` while streaming each job's log to stderr,
+    ending with its PLAY RECAP, each line as AWX stores it (never wrapped or
+    tab-expanded; a styled `[template] ` prefix when several executions run;
+    workflow jobs print status changes). `--timeout` now
+    needs `--wait` or `--follow`. Use `jobs events --follow` for structured
+    per-task events.
+  - `--follow` and `jobs logs --follow` keep reading a finished job's log
+    briefly until AWX has saved all its events, so the tail is not cut off,
+    and warn when it may still be.
+  - A name that is not found names its scope and suggests close names from
+    it (`JobTemplate not found: 'deplyo' in organization 'Default'; did you
+    mean 'deploy'?`, drawn from one page of names), and says when
+    `awx.default_organization` chose the organization, for `launch
+    --launch-inventory`/`--credential` names too. Other not-found messages
+    keep their `(key=value)` form.
+  - `launch --dry-run` rows carry the resolved `payload`: names resolved to
+    ids, `extra_vars` merged into a mapping (compact JSON in `table`/`raw`),
+    and survey password answers and secret-looking names (`vault_pass`,
+    `dbPassword`, `db-password`, `ssh_key`, at any depth) shown as
+    `<redacted>`.
   - **Breaking:** `awx test` cases declare what their job must produce in
     `expect:`: a `status` (default `successful`) and `log` checks
     (`contains`, `not_contains`, `matches`). The checks can be set in
@@ -60,6 +225,17 @@
     defaults become `$encrypted$`. Applying an export as a new template drops
     those placeholders with a warning instead of refusing the create.
     `preserved_secrets` names the path `survey_spec.spec.*[type=password].default`.
+  - **Fix:** schedule apply keeps the `$encrypted$` survey password answers
+    AWX returns in `extra_data` instead of dropping them, so a PATCH no longer
+    wipes them. A change to another `extra_data` key beside a placeholder,
+    including removing another answer, is refused; `preserved_secrets` names
+    each kept answer (for example `extra_data.db_password`), and `get` shows
+    those answers as `<redacted>`. A real answer typed into `extra_data` is
+    not recognized as a secret and appears in plain text in previews.
+  - **Fix:** a template create or update whose survey write fails after the
+    record write is reported `partial` with the record's `id`, not `failed`.
+  - **Fix:** list pagination refuses a `next` URL whose scheme, host or port
+    differs from `awx.base_url`, so the token is never sent to another host.
   - New `job-templates copy SOURCE --name NEW` and `workflow-templates copy`
     copy one template through AWX's `copy/` endpoint. They refuse a name
     already used in the source's scope, or `can_copy: false`, before any
@@ -76,20 +252,193 @@
     kind accepts. `patch` still rejects `name`; `rename` joins the
     conventions' write verbs. Other kinds opt in through their spec.
 - Jira
+  - **Breaking:** the Jira-shaped YAML/JSON document flag is now
+    `--fields-file` on both `issues create` (was `--template`) and
+    `issues patch` (was `--body-file`), with no alias. `issues comment
+    --body-file` still reads the comment text.
+  - **Breaking:** the new `jira.confirm` setting (`always`, `destructive`,
+    `never`; default `destructive`) picks which writes ask first. By default
+    only destructive writes ask: `issues transition`, and an `issues patch`
+    that sets a field, changes the assignee or has an `update` operation other
+    than `add`. `issues create`, `issues comment`, `issues links create` and
+    add-only patches are now sent without asking and no longer need `--yes`
+    without a terminal; set `jira.confirm: always` for the old behavior.
+    `--yes` is unchanged.
+  - **Breaking:** write previews (before a prompt and under `--dry-run`) show
+    each request's changes as readable lines (`summary: "old" → "new"`,
+    `assignee: alice → bob`, `status: To Do → In Progress`) instead of the
+    raw JSON body. Patch and transition previews read the issue's current
+    values first (one read per issue; an unreadable issue shows `(unknown)`
+    in a transition preview); nothing is read when no preview is shown. So
+    `issues patch --dry-run` and `issues transition --dry-run` now need
+    working credentials, and a patch dry run exits 1 when the issue cannot be
+    read; create, comment and link dry runs stay offline.
+  - **Breaking:** the deprecated spellings are removed: `me`, `issue`,
+    `project`, `board`, `sprint`, `issues edit`, `--field` and
+    `--json-field`. Use `whoami`, `issues`, `projects`, `boards`, `sprints`,
+    `issues patch`, `--set` and `--set-json`.
   - `issues get` now includes the issue's `links`: for each, the linked
     issue's `key`, `summary`, `status` and `url`, the link `type`, this
     issue's `direction` (`outward`/`inward`) and the `relation` phrase Jira
     shows for it. JSON and YAML carry a list (empty when there are none); the
     detail table shows one line per link. Linked issues are not fetched.
+  - **Fix:** `issues patch --assignee/--unassign` now uses Jira's dedicated
+    `PUT issue/KEY/assignee` endpoint instead of the issue edit, which failed
+    when the assignee field was not on the edit screen. Combined with other
+    field changes, the edit is sent first, then the assignment; the preview
+    and `--dry-run` show both requests. The flags override a `fields.assignee`
+    in `--fields-file`, and when only the assignment fails the error says the
+    fields were already updated.
+  - **Fix:** issue and project keys are validated before any request: an
+    issue key must be `PROJECT-123` and a project key `PROJECT` (any case;
+    sent uppercase), or a numeric id, else the command exits 2. The client
+    also percent-encodes every key it puts in a request path.
 - Ansible
-  - `graph --contains OWNER/REPO` (repeatable) reports the roots whose
-    downstream graph contains a repository: one `ansible.dependency_match`
-    row per match with the root, the matched repo, the ref exactly as
-    declared, the dependency file and the shortest path. Roots come from
-    `TARGET` or `--stdin` (`owner/repo@ref` lines, or pipe records carrying
+  - New task-shaped commands answer the common graph questions as rows
+    (`--format table|json|yaml|pipe|raw`, `--columns`), searching the full
+    graph unless `--depth N` is given (the empty message then names the
+    depth). `deps ROLE` lists what ROLE depends on (`ansible.dependency`) and
+    `impact ROLE` what depends on it (`ansible.dependent`, cached source data
+    only, no `--live`). Each row has `repo`, `ref`, `unresolved`, the
+    verbatim `declared_ref`/`declared_in`, `depth`, the shortest `path` and
+    the `root_ref` it was reached from (a ref-less ROLE is walked from each
+    of its cached refs). `graph` stays for the whole picture (`tree`, `mermaid`,
+    `json`, `--out`, both directions, default depth 3).
+  - `find REPO...` reports the roots whose downstream graph contains a
+    repository: one `ansible.dependency_match` row per match with the root,
+    the matched repo, the ref exactly as declared, the dependency file and
+    the shortest path. Roots come from repeatable `--root owner/repo[@ref]`
+    or `--stdin` (`owner/repo@ref` lines, or pipe records carrying
     `scm_url`/`effective_scm_ref` such as `awx job-templates list --with-scm
-    --format pipe`). Supports `--format table|json|pipe`; single-target
-    `tree`/`mermaid` output is unchanged.
+    --format pipe`). REPO may be a source alias. Rows carry the input
+    record's `input_kind`, `input_id` and `input_name`, and every input
+    record gets its own rows even when records share a root, so a pipeline
+    can join results back to its inputs. Live reads are shared across roots,
+    so each repo and ref is read from GitHub once per command.
+  - New `ansible.default_source` setting: the saved source `deps`, `impact`,
+    `find` and `graph` use (and `--refresh` refreshes) when neither
+    `--source` nor inline selectors are given. Setting it switches the
+    downstream reads of `deps`, `find` and `graph` from live GitHub to that
+    source's cache: roles outside the source get "not cached" warnings and no
+    rows, and before the source's first refresh these commands fail with the
+    refresh command to run. `--live` still reads GitHub.
+  - **Breaking:** `ansible alias` is renamed `ansible source-alias`, with
+    record kinds `ansible.source_alias` and `ansible.source_alias_outcome`.
+    The old name is gone (`alias` is now the root `untaped alias` command).
+  - **Breaking:** the deprecated spellings are removed: `alias add`,
+    `source save`/`edit`/`show`, and `--concurrency` (`source refresh`,
+    `graph`) and `--output` (`graph`). Use `source-alias set`,
+    `source set`/`patch`/`get`, `--parallel` and `--out`.
+  - **Breaking:** the ignored `ansible.freshness_ttl` setting and its
+    `ansible.deprecated-settings` doctor check are removed; `doctor`'s
+    `unknown-keys` row now reports a leftover key.
+  - **Fix:** an unpinned dependency now points at the dependency's
+    default-branch node (the source's recorded default branch, or GitHub's
+    for live reads), so downstream graphs, `find` and cycle detection
+    continue past it instead of stopping at a ref-less node. With no known
+    default branch the node stays ref-less; a tags-only source stops at the
+    default-branch node with a "ref is not cached" warning. An unpinned and a
+    default-branch-pinned declaration of one repo now give one `find` row.
+  - **Fix:** cached ref snapshots record the dependency parser version, so a
+    parser change re-parses refs on the next refresh instead of reusing stale
+    results. The first refresh after upgrading re-parses every ref once, and
+    a refresh interrupted before the upgrade starts over.
+- Recipe
+  - **Breaking:** packs, hooks and backups are nouns. `add`, `sync`,
+    `remove` move to `recipe packs add|sync|remove`; `list --packs` is
+    `packs list`, and `packs get`/`packs edit`/`packs init NAME` show, edit
+    (`pyproject.toml`) and scaffold a pack. `hook run` is `recipe hooks run`;
+    `list --hooks` is `hooks list`, and `hooks get`/`hooks edit`/`hooks init
+    PACK/HOOK` cover hooks (including built-ins for `get`). `backup …` is
+    `recipe backups …`. Recipe verbs stay at the top: `list`, `get` and `edit`
+    now act on recipes only, and `init PACK/RECIPE` scaffolds a recipe (the
+    `pack|recipe|hook` positional is gone). Old spellings are usage errors
+    (exit 2); there are no aliases. `get`/`edit` on a pack or hook name, and
+    `init NAME` without a `/`, hint at the `packs`/`hooks` command.
+  - `packs sync` and `packs remove` accept `--stdin` (pack names, or
+    `recipe.pack` records from `packs list --format pipe`), and `packs
+    remove` takes several names.
+  - **Breaking:** variable flags match `awx test`. `apply --vars-file`
+    repeats (a later file wins; `--var` wins over every file). `apply
+    --interactive` is gone: a required input that is still missing is
+    prompted for when stdin is a terminal, never without one (piped
+    `--stdin` targets included); `--non-interactive` (and `--check`) fail
+    instead. Optional and defaulted inputs are no longer prompted. Prompts
+    now run for every target, in order, before planning starts, so `-j N`
+    planning stays parallel and Ctrl-C at a prompt exits 130. The error now
+    reads `missing required input: NAME; pass --var NAME=VALUE or
+    --vars-file FILE`. `hooks run` takes inputs with `--var`/`--vars-file`
+    (were `--input`/`--inputs`) and args with `--arg`/`--args-file` (was
+    `--args`), all repeatable.
+  - **Breaking:** removed the deprecated `check`, `show`, `new`, `backup
+    show` and `apply --vars` spellings, and the hidden no-op `add --yes`.
+  - "recipe not found" and "hook not found" errors quote the name
+    (`recipe not found: 'x'`), like other not-found errors.
+  - **Behavior change:** hook workers and `uv lock` runs on packs no longer
+    inherit the whole environment. Only an allowlist passes through (`PATH`,
+    `HOME`, locale, temp dirs, `UV_*`/`XDG_*`, TLS and proxy settings,
+    `SSH_AUTH_SOCK`/`GIT_SSH_COMMAND`); `PYTHONPATH` is the pack's `src/`
+    only. Tokens such as `GITHUB_TOKEN` or untaped's `UNTAPED_*` credentials
+    are no longer in a hook's environment. `UV_*` (which may hold index
+    credentials) still is, and hooks still run as you with full file access.
+  - **Fix:** a hook that writes to stdout at the file-descriptor level (or
+    spawns a process that does) no longer corrupts the worker protocol; the
+    output becomes hook diagnostics, and hooks read an empty stdin.
+  - **Behavior change:** `packs add` and `packs sync` refuse a pack
+    containing symlinks (outside ignored dirs such as `.venv`) instead of
+    copying their targets.
+  - `packs add` and `packs sync` record the resolved `commit` of a git source
+    next to the requested `rev` (also when the pack's files did not change);
+    `packs list` and the `packs add`/`packs sync` rows show it. The `packs
+    sync` confirmation (and `--dry-run`) shows each pack's commit move and the
+    hook-code files that change (`src/`, root `*.py`, and the uv/Python
+    project files).
+  - **Fix:** backup bundles are created owner-only (dirs `0700`, files
+    `0600`) and their `metadata.json` is written atomically.
+  - `apply --dry-run`/`--check` help and docs now state that pack hooks still
+    run to compute the plan.
+- GitHub
+  - **Fix (security):** `sweep` and `cache sync` send the GitHub token only to
+    the Git host of `github.base_url` (`github.com`, or `HOST` for
+    `https://HOST/api/v3`). A piped `clone_url` on another HTTPS host used to
+    receive it; it is now fetched without credentials.
+  - **Fix:** `repos list` rows now carry `pushed_at`, so `repos list --format
+    pipe | sweep --stdin` (or `cache sync --stdin`) skips fetching unchanged
+    repos. A source without `pushed_at` no longer erases the one stored from
+    an earlier fetch.
+  - **Behavior change:** the `repos list` table shows `full_name`,
+    `default_branch`, `private`, `archived`, `fork` and `url`; `-c` and the
+    structured formats still reach every field, including `pushed_at`.
+  - **Fix:** `search repos` now caps a large team scope at 25 requests with a
+    warning, like `search issues`, instead of tripping GitHub's per-minute
+    search limit.
+  - **Behavior change:** `cache delete OWNER/NAME` fails with `cached repo not
+    found` and exit 1, before deleting anything, when a named repo is not
+    cached or not in `--org`. It used to exit 0 silently.
+  - **Breaking:** `--archived` is now `--archived include|exclude|only` on
+    `repos list`, `search repos`, `sweep` and `cache sync`, defaulting to
+    `exclude` everywhere. It used to mean "only archived" on `repos list` and
+    `search repos` (which included archived repos by default) but "include
+    archived" on `sweep` and `cache sync`. `--no-archived` and the bare
+    `--archived` flag are gone: drop `--no-archived`, and use `--archived
+    only` or `--archived include` for the old meanings. `search repos` now
+    adds `archived:false` to the query by default, unless the query already
+    has an `archived:` qualifier.
+  - **Breaking:** removed the deprecated `cache clean` (use `cache delete` or
+    `cache prune`), `search --repo-stdin` (use `--stdin`), and the `sweep`
+    spellings `-w` (use `--word-regexp`), `--sync` (use `--refresh`) and
+    `--no-sync` (use `--cached`).
+  - `-r` is now short for `--repo` on `search repos|code|issues`, `sweep` and
+    `cache sync`, matching the reserved short flag.
+  - New `github.default_org` setting: `repos list`, `search repos|code|issues`,
+    `sweep`, `cache sync` and `cache prune` use it when no scope flag is
+    given. A search with no scope and no default org (or a `--team` with no
+    repos) still searches `user:@me`, and now says so on stderr.
+  - When `--limit` cuts results off, `repos list` and `search` print a notice
+    on stderr (`showing 2 of 3 repositories; omit --limit to list all`).
+    Search asks GitHub for one row past `--limit` to detect this, except at a
+    multiple of 100 or at 1000 and up, where that row would cost an extra
+    request; those limits print no notice.
 
 ## 7.1.0
 

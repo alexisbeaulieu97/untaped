@@ -42,8 +42,6 @@ def _reset_registry() -> Iterator[None]:
 def test_walks_nested_models() -> None:
     descriptors = walk_settings(get_settings_model())
     keys = {d.key for d in descriptors}
-    # Top-level scalar
-    assert "log_level" in keys
     # HttpSettings
     assert "http.ca_bundle" in keys
     assert "http.verify_ssl" in keys
@@ -90,17 +88,17 @@ def test_secrets_are_marked() -> None:
     assert token.is_secret is True
     assert token.annotation is SecretStr
 
-    log_level = find_descriptor(descriptors, "log_level")
-    assert log_level is not None
-    assert log_level.is_secret is False
+    updates = find_descriptor(descriptors, "skills.updates")
+    assert updates is not None
+    assert updates.is_secret is False
 
 
 def test_defaults_are_captured() -> None:
     descriptors = walk_settings(get_settings_model())
-    log_level = find_descriptor(descriptors, "log_level")
-    assert log_level is not None
-    assert log_level.has_default
-    assert log_level.default == "INFO"
+    updates = find_descriptor(descriptors, "skills.updates")
+    assert updates is not None
+    assert updates.has_default
+    assert updates.default == "warn"
 
     verify = find_descriptor(descriptors, "http.verify_ssl")
     assert verify is not None

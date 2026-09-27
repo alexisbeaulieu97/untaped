@@ -12,6 +12,7 @@ from untaped.capabilities.github.domain.corpus import (
     covers,
     unchanged_upstream,
 )
+from untaped.capabilities.github.domain.hosts import github_web_host
 from untaped.capabilities.github.domain.models import (
     CodeResult,
     CorpusRepoResult,
@@ -29,6 +30,7 @@ from untaped.capabilities.github.domain.queries import (
     RepoSearchFilters,
     UserSearchFilters,
 )
+from untaped.capabilities.github.domain.repo_filters import ArchivedMode, archived_allows
 from untaped.capabilities.github.domain.sweep import (
     RefEvaluation,
     RefProfile,
@@ -42,6 +44,7 @@ from untaped.capabilities.github.domain.sweep import (
 
 __all__ = [
     "CODEOWNERS_LOCATIONS",
+    "ArchivedMode",
     "CodeResult",
     "CodeSearchFilters",
     "CorpusFailure",
@@ -66,7 +69,9 @@ __all__ = [
     "UserResult",
     "UserSearchFilters",
     "WorktreeResult",
+    "archived_allows",
     "covers",
+    "github_web_host",
     "parse_codeowners",
     "profile_join",
     "ref_display_names",

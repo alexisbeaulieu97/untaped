@@ -57,7 +57,7 @@ class BareCacheEntry(BaseModel):
 
 
 class WorkspaceSummaryRow(BaseModel):
-    """The single ``workspace get`` row of a workspace with no repos.
+    """The single ``workspace repos list`` row of a workspace with no repos.
 
     Emitted as ``workspace.repo.summary``: like every ``.summary`` row it
     carries no ``target_path``, so filesystem consumers can skip it.
@@ -76,7 +76,7 @@ class WorkspaceSummaryRow(BaseModel):
 
 
 class WorkspaceDetailRow(TargetRecord):
-    """One repo row of ``workspace get`` output; ``target_path`` is the clone directory."""
+    """One repo row of ``workspace repos list`` output; ``target_path`` is the clone directory."""
 
     workspace: str
     path: str
@@ -100,7 +100,8 @@ class BranchChange(OutcomeRecord):
 class WorkspaceOutcome(OutcomeRecord, TargetRecord):
     """One row of ``workspace init`` / ``workspace forget`` output.
 
-    ``action`` is ``created`` (init), ``forgotten`` or ``pruned`` (forget);
+    ``action`` is ``created`` (init), ``forgotten``, ``pruned`` or ``planned``
+    (``forget --dry-run``);
     ``target_path`` is the workspace directory.
     """
 
@@ -109,7 +110,7 @@ class WorkspaceOutcome(OutcomeRecord, TargetRecord):
 
 
 class RepoAddOutcome(OutcomeRecord, TargetRecord):
-    """One row of ``workspace add`` output; ``target_path`` is the clone directory."""
+    """One row of ``workspace repos add`` output; ``target_path`` is the clone directory."""
 
     workspace: str
     repo: str
@@ -119,7 +120,7 @@ class RepoAddOutcome(OutcomeRecord, TargetRecord):
 
 
 class RepoRemoveOutcome(OutcomeRecord):
-    """One row of ``workspace remove`` output.
+    """One row of ``workspace repos remove`` output.
 
     ``repo`` is the identifier as given for ``planned`` (``--dry-run``)
     rows and the manifest name for ``removed`` rows; ``pruned`` says

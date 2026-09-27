@@ -35,11 +35,11 @@ untaped github whoami
 
 # List an org's repos and clone them into a workspace
 untaped workspace init acme
-untaped github repos list --org acme --no-archived --format pipe \
-  | untaped workspace add --stdin --workspace acme --sync
+untaped github repos list --org acme --format pipe \
+  | untaped workspace repos add acme --stdin --sync
 
 # Run a command in every repo
-untaped workspace foreach 'git status -s' --workspace acme
+untaped workspace foreach acme 'git status -s'
 ```
 
 Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.

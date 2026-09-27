@@ -2,12 +2,14 @@
 
 A terminal command (not a group): it runs the shell plus every composed
 capability's health checks OFFLINE — config-file reads plus in-process model
-validation only, never network I/O. Each row is isolated: invalid settings
+validation only, never network I/O. ``--online`` adds the checks
+capabilities contribute with ``DoctorCheck(online=True)``, which contact the
+configured services. A check's ``DoctorResult.fix`` is appended to its row
+detail as the command to run. Each row is isolated: invalid settings
 for one capability surface as failed rows while every other row still runs.
-Quarantine records render as failed rows (nonzero exit). Capability state
-sections still at the top level of ``config.yml`` (the pre-``state.yml``
-layout) render as a ``warn`` row, which does not fail the run; so do a
-config file other users can read, profile keys no settings model declares,
+Quarantine records render as failed rows (nonzero exit). A config file other
+users can read renders as a ``warn`` row, which does not fail the run; so do
+profile keys no settings model declares,
 installed skills that differ from their packaged copy, and a capability
 check that returns ``DoctorResult(..., warn=True)``.
 """
@@ -19,9 +21,9 @@ import stat
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from cyclopts import App
+from cyclopts import App, Parameter
 from pydantic import BaseModel, ValidationError
 
 from untaped.capabilities.registry import (
@@ -45,10 +47,10 @@ from untaped.errors import ConfigError, ExitCode, first_validation_error
 from untaped.http import resolve_verify
 from untaped.management._render import emit_isolated
 from untaped.management.skills import composed_skills
-from untaped.messages import plural
+from untaped.messages import command_line, plural
 from untaped.profile_resolver import classify_active_profile
-from untaped.render import OutputFormat
 from untaped.settings import (
+    RESERVED_STATE_SECTIONS,
     HttpSettings,
     Settings,
     active_settings_layout,
@@ -56,18 +58,13 @@ from untaped.settings import (
     get_profile_settings_model,
     resolve_config_path,
     resolve_state_path,
-    state_section_source,
 )
 from untaped.skills import SkillState, outdated_skills, project_root
-from untaped.theme import UiSettings, resolve_theme
+from untaped.theme import OutputFormat, UiSettings, resolve_theme
 
 _PASS = "pass"
 _FAIL = "fail"
 _WARN = "warn"
-_LOG_LEVEL_DEPRECATED = (
-    "log_level is deprecated and has no effect (removed in 8.0); "
-    "run `untaped config unset log_level` or drop UNTAPED_LOG_LEVEL"
-)
 
 
 @dataclass(frozen=True)
@@ -91,12 +88,20 @@ def build_root_doctor_app(*, shell: ApplicationSpec, result: CompositionResult) 
     @app.default
     def run_command(
         *,
+        online: Annotated[
+            bool,
+            Parameter(
+                name="--online",
+                negative="",
+                help="Also contact each configured service (tokens, URLs, TLS).",
+            ),
+        ] = False,
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
         """Run every health check and report one row per check."""
         with report_errors():
-            _run(shell, result, fmt=fmt, columns=columns)
+            _run(shell, result, online=online, fmt=fmt, columns=columns)
 
     return app
 
@@ -105,14 +110,22 @@ def _run(
     shell: ApplicationSpec,
     result: CompositionResult,
     *,
+    online: bool,
     fmt: OutputFormat,
     columns: list[str] | None,
 ) -> None:
-    rows = _collect(shell, result)
+    rows = collect_doctor_rows(shell, result, online=online)
+    report_check_rows(rows, op="doctor", fmt=fmt, columns=columns)
+
+
+def report_check_rows(
+    rows: list[dict[str, object]], *, op: str, fmt: OutputFormat, columns: list[str] | None
+) -> None:
+    """Emit ``untaped.doctor_check`` rows; exit 1 naming ``op`` when any failed."""
     emit_isolated(rows, fmt=fmt, columns=columns, kind="untaped.doctor_check")
     failed = [row for row in rows if row["status"] == _FAIL]
     if failed:
-        echo(f"doctor: {len(failed)} of {plural(len(rows), 'check')} failed", err=True)
+        echo(f"{op}: {len(failed)} of {plural(len(rows), 'check')} failed", err=True)
         raise SystemExit(ExitCode.FAILURE)
 
 
@@ -150,7 +163,18 @@ def _scopes(shell: ApplicationSpec, result: CompositionResult) -> list[_SectionS
     return scopes
 
 
-def _collect(shell: ApplicationSpec, result: CompositionResult) -> list[dict[str, object]]:
+def collect_doctor_rows(
+    shell: ApplicationSpec,
+    result: CompositionResult,
+    *,
+    online: bool = False,
+    capabilities: frozenset[str] | None = None,
+) -> list[dict[str, object]]:
+    """Every doctor row, offline unless ``online``.
+
+    ``capabilities`` limits the capability-contributed checks to those
+    capabilities (``setup`` checks only what it configured).
+    """
     rows: list[dict[str, object]] = []
     raw, config_row = _config_row(shell)
     rows.append(config_row)
@@ -182,17 +206,29 @@ def _collect(shell: ApplicationSpec, result: CompositionResult) -> list[dict[str
                 _row("settings", scope.capability, _PASS, "validate settings", "settings OK")
             )
         contexts.append((scope, settings))
-        if scope.state_model is not None and raw is not None:
-            rows.append(_state_row(scope, scope.state_model, raw, state))
-    if raw is not None and state is not None:
-        rows.append(_legacy_state_row(shell, scopes, raw, state))
-    for scope, settings in contexts:
-        for check_item in scope.checks:
-            rows.append(_run_check(scope, check_item, settings))
+        if scope.state_model is not None:
+            rows.append(_state_row(scope, scope.state_model, state))
+    rows.extend(_check_rows(contexts, online=online, capabilities=capabilities))
     rows.append(_skills_row(shell, result))
     for record in result.quarantine:
         rows.append(_quarantine_row(record))
     return rows
+
+
+def _check_rows(
+    contexts: list[tuple[_SectionScope, BaseModel | None]],
+    *,
+    online: bool,
+    capabilities: frozenset[str] | None,
+) -> list[dict[str, object]]:
+    """Run the contributed checks (online ones only when ``online``)."""
+    return [
+        _run_check(scope, check_item, settings)
+        for scope, settings in contexts
+        if capabilities is None or scope.capability in capabilities
+        for check_item in scope.checks
+        if online or not check_item.online
+    ]
 
 
 def _permissions_row(shell: ApplicationSpec) -> dict[str, object]:
@@ -209,12 +245,16 @@ def _permissions_row(shell: ApplicationSpec) -> dict[str, object]:
 
 
 def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[str, object]:
-    """Warn about profile keys that no registered settings model declares (typos)."""
+    """Warn about keys no settings model reads: typos in profiles, stray top-level keys.
+
+    Only ``active`` and ``profiles`` are read at the top level, so anything
+    else there (a pre-8.0 state section, ``log_level``) is flagged, not moved.
+    """
     title = "unknown config keys"
     model = get_profile_settings_model()
     leaves = {d.path for d in walk_settings(model, include_collections=True)}
     prefixes = {path[:depth] for path in leaves for depth in range(1, len(path))}
-    unknown: list[str] = []
+    unknown = [str(key) for key in raw if key not in RESERVED_STATE_SECTIONS]
     profiles = raw.get("profiles")
     for name, data in profiles.items() if isinstance(profiles, dict) else ():
         if isinstance(data, dict):
@@ -280,34 +320,6 @@ def _state_file_row(
     return (raw, path), _row("config", shell.name, _PASS, title, str(path))
 
 
-def _legacy_state_row(
-    shell: ApplicationSpec,
-    scopes: list[_SectionScope],
-    raw: Mapping[str, Any],
-    state: tuple[dict[str, Any], Path],
-) -> dict[str, object]:
-    """Report state sections left at the top level of ``config.yml``."""
-    title = "state migrated to state file"
-    state_raw, state_path = state
-    notes: list[str] = []
-    for scope in scopes:
-        if scope.state_model is None or scope.section not in raw:
-            continue
-        if scope.section in state_raw:
-            notes.append(
-                f"{scope.section!r} is ignored because {state_path} has it; "
-                f"delete it from {resolve_config_path()}"
-            )
-        else:
-            notes.append(
-                f"{scope.section!r} moves to {state_path} on its next state change "
-                f"(until then it is read from {resolve_config_path()})"
-            )
-    if not notes:
-        return _row("legacy-state", shell.name, _PASS, title, "no state in config file")
-    return _row("legacy-state", shell.name, _WARN, title, "; ".join(notes))
-
-
 def _profile_row(
     shell: ApplicationSpec, raw: dict[str, Any], settings_error: str | None
 ) -> dict[str, object]:
@@ -325,7 +337,7 @@ def _core_row(
     effective: Mapping[str, Any] | None,
     settings_error: str | None,
 ) -> dict[str, object]:
-    """Validate one core setting (``log_level``/``http``/``ui``) plus env overrides."""
+    """Validate one core setting (``http``/``ui``/``skills``) plus env overrides."""
     title = f"validate {field}"
     if effective is None:
         return _row("settings", shell.name, _FAIL, title, settings_error or "config unreadable")
@@ -337,39 +349,22 @@ def _core_row(
             resolve_verify(value)
     except ConfigError as exc:
         return _row("settings", shell.name, _FAIL, title, str(exc))
-    if field == "log_level" and (
-        effective.get(field) is not None or os.environ.get("UNTAPED_LOG_LEVEL")
-    ):
-        return _row("settings", shell.name, _WARN, title, _LOG_LEVEL_DEPRECATED)
     return _row("settings", shell.name, _PASS, title, "settings OK")
 
 
 def _state_row(
     scope: _SectionScope,
     state_model: type[BaseModel],
-    raw: Mapping[str, Any],
     state: tuple[dict[str, Any], Path] | None,
 ) -> dict[str, object]:
-    """Validate a capability's state section (profile-independent).
-
-    Reads ``state.yml``, falling back to a legacy top-level copy in
-    ``config.yml``; failures name the file the section came from.
-    """
+    """Validate a capability's state section in ``state.yml`` (profile-independent)."""
     title = "validate state"
     if state is None:
         return _row("state", scope.capability, _FAIL, title, "state file could not be read")
-    state_raw, state_path = state
-    found = state_section_source(
-        scope.section,
-        state_raw,
-        raw,
-        state_path=state_path,
-        config_path=resolve_config_path(),
-        warn=False,
-    )
-    if found is None or found[0] is None:
+    state_raw, source = state
+    node = state_raw.get(scope.section)
+    if node is None:
         return _row("state", scope.capability, _PASS, title, "no state")
-    node, source = found
     if not isinstance(node, dict):
         detail = f"state section {scope.section!r} in {source} must be a mapping"
         return _row("state", scope.capability, _FAIL, title, detail)
@@ -445,10 +440,13 @@ def _run_check(
             check_item.title,
             f"check returned id {outcome.id!r}, expected {check_item.id!r}",
         )
+    detail = outcome.detail
+    if outcome.fix and (not outcome.ok or outcome.warn):
+        detail = f"{detail}; run `{command_line(outcome.fix)}`"
     if not outcome.ok:
-        return _row(check_item.id, scope.capability, _FAIL, check_item.title, outcome.detail)
+        return _row(check_item.id, scope.capability, _FAIL, check_item.title, detail)
     if outcome.warn:
-        return _row(check_item.id, scope.capability, _WARN, check_item.title, outcome.detail)
+        return _row(check_item.id, scope.capability, _WARN, check_item.title, detail)
     return _row(check_item.id, scope.capability, _PASS, check_item.title, outcome.detail or "OK")
 
 
@@ -459,4 +457,4 @@ def _quarantine_row(record: QuarantineRecord) -> dict[str, object]:
     return _row("quarantine", record.distribution, _FAIL, record.reason, detail)
 
 
-__all__ = ["build_root_doctor_app"]
+__all__ = ["build_root_doctor_app", "collect_doctor_rows", "report_check_rows"]

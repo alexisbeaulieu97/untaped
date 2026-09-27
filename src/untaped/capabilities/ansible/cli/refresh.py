@@ -11,7 +11,6 @@ from untaped.capabilities.ansible.application.refresh_git_index import (
     RefreshGitSourceIndex,
     RefreshResult,
 )
-from untaped.capabilities.ansible.domain.identity import github_web_host
 from untaped.capabilities.ansible.domain.payloads import (
     GRAPHQL_RATE_LIMIT_FALLBACK,
     GRAPHQL_TRANSIENT_FALLBACK,
@@ -26,7 +25,7 @@ from untaped.capabilities.ansible.infrastructure import (
     SqliteDependencyIndex,
 )
 from untaped.capabilities.ansible.settings import AnsibleSettings, SourceDefinition
-from untaped.capabilities.github.ansible import GithubClient, GithubSettings
+from untaped.capabilities.github.ansible import GithubClient, GithubSettings, github_web_host
 from untaped.capability_api import HttpSettings, ProgressHandle, UiContext, git_auth_header, plural
 
 GIT_PARALLEL_CAP = 32
@@ -223,16 +222,6 @@ def ignored_collections_warning(names: Iterable[str]) -> str | None:
 
 
 _MAX_LISTED_COLLECTIONS = 10
-
-
-def warn_deprecated_settings(settings: AnsibleSettings, *, ui: UiContext) -> None:
-    """Warn about profile keys kept only for config compatibility."""
-    if settings.freshness_ttl is not None:
-        ui.message(
-            "warning",
-            "ansible.freshness_ttl is deprecated and ignored; pass --refresh or run "
-            "`untaped ansible source refresh NAME` to check remote data",
-        )
 
 
 def warn_skipped_files(result: RefreshResult, *, ui: UiContext) -> None:

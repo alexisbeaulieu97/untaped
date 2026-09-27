@@ -36,7 +36,7 @@ def test_sigint_terminates_running_parallel_commands(tmp_path: Path) -> None:
     assert cli.invoke(app, ["init", "prod", "--path", str(target)]).exit_code == 0
     for name in ("a", "b", "c"):
         added = cli.invoke(
-            app, ["add", f"https://x/{name}.git", "--repo-name", name, "--workspace", "prod"]
+            app, ["repos", "add", "prod", f"https://x/{name}.git", "--repo-name", name]
         )
         assert added.exit_code == 0, added.output
         (target / name).mkdir()
@@ -45,8 +45,8 @@ def test_sigint_terminates_running_parallel_commands(tmp_path: Path) -> None:
 
     proc = subprocess.Popen(
         [
-            *(sys.executable, "-m", "untaped", "workspace", "foreach", command),
-            *("--workspace", "prod", "-j", "2"),
+            *(sys.executable, "-m", "untaped", "workspace", "foreach", "prod", command),
+            *("-j", "2"),
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

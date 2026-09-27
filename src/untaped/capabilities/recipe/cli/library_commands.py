@@ -1,4 +1,4 @@
-"""Library commands: ``add``, ``sync``, ``list``, ``get``, ``validate``, ``remove``, ``edit``."""
+"""Library commands: recipe ``list``/``get``/``edit``/``validate``, ``packs …`` and hook reads."""
 
 from __future__ import annotations
 
@@ -34,6 +34,8 @@ from untaped.capabilities.recipe.infrastructure.pack_files import hook_exports, 
 from untaped.capabilities.recipe.infrastructure.pack_inspector import PackInspector
 from untaped.capabilities.recipe.infrastructure.pack_store import (
     PackLibrary,
+    changed_hook_files,
+    checkout_commit,
     fetch_pack_source,
     is_git_url,
     local_edits_message,
@@ -46,23 +48,27 @@ from untaped.capability_api import (
     DryRunOption,
     FormatOption,
     OutcomeRecord,
+    OutputFormat,
+    StdinOption,
     UsageError,
     YesOption,
     batch_apply,
     echo,
     emit,
     finish,
+    hint,
     not_found,
     plural,
     q,
+    read_identifiers,
     render_rows,
     resolve_each,
     run_editor,
 )
 
 _EMPTY_LIBRARY_HINT = (
-    "no packs installed; scaffold one with `untaped recipe init pack NAME` "
-    "or install one with `untaped recipe add PATH|GIT_URL`"
+    "no packs installed; scaffold one with `untaped recipe packs init NAME` "
+    "or install one with `untaped recipe packs add PATH|GIT_URL`"
 )
 
 
@@ -72,31 +78,33 @@ class PackOutcomeRecord(OutcomeRecord):
     Kinds ``recipe.add_outcome`` (``action``: ``created``/``updated``),
     ``recipe.sync_outcome`` (``updated``/``unchanged``, or ``planned`` with
     --dry-run) and ``recipe.remove_outcome`` (``removed``, or ``planned``).
+    ``commit`` is the resolved commit of a git source (``rev`` is the one asked for).
     """
 
     name: str
     source: str | None = None
     rev: str | None = None
+    commit: str | None = None
 
 
 @dataclass(frozen=True)
 class _SyncPlan:
-    """An installed pack and its freshly fetched source tree."""
+    """An installed pack and its freshly fetched source tree (at ``commit`` for git)."""
 
     pack: InstalledPack
     source_dir: Path
     changed: bool
+    commit: str | None = None
+    hook_changes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
-class _ResolvedTarget:
-    """A pack/recipe/hook/builtin ref resolved for `get` and `edit`."""
+class _ResolvedHook:
+    """A hook ref resolved for ``hooks get``/``hooks edit``: a pack hook or a built-in."""
 
+    name: str
     pack: InstalledPack | None = None
-    name: str | None = None
-    recipe: RecipeEntry | None = None
     hook: HookEntry | None = None
-    builtin: str | None = None
 
 
 def add_command(
@@ -120,15 +128,6 @@ def add_command(
             help="With --force, overwrite local edits made to the library copy.",
         ),
     ] = False,
-    yes: Annotated[
-        bool,
-        Parameter(
-            name=["--yes", "-y"],
-            negative="",
-            show=False,
-            help="Accepted for compatibility; add never prompts.",
-        ),
-    ] = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -137,7 +136,6 @@ def add_command(
     Installing never prompts: only --force (and --discard-edits for a library
     copy with local edits) replaces an installed pack.
     """
-    del yes
     with report_config_errors(), tempfile.TemporaryDirectory() as temp_root:
         if rev is not None and not is_git_url(source):
             raise UsageError("--rev is only valid for git URL sources")
@@ -149,6 +147,7 @@ def add_command(
             if is_git_url(source)
             else Path(source)
         )
+        commit = checkout_commit(source_dir) if is_git_url(source) else None
         manifest = read_pack_manifest(source_dir)
         # Validate before printing the pack summary: error output leads, and
         # the summary follows only on a pack that will actually install.
@@ -164,6 +163,7 @@ def add_command(
             source_dir,
             source=source,
             rev=rev,
+            commit=commit,
             name=name,
             force=force,
             discard_edits=discard_edits,
@@ -173,6 +173,7 @@ def add_command(
             action="updated" if replaced else "created",
             source=source,
             rev=rev,
+            commit=commit,
         )
         emit(record.model_dump(), fmt=fmt, columns=columns, kind="recipe.add_outcome")
 
@@ -186,6 +187,9 @@ def sync_command(
     *,
     all_packs: Annotated[
         bool, Parameter(name="--all", negative="", help="Sync every installed pack.")
+    ] = False,
+    stdin: Annotated[
+        StdinOption, Parameter(help="Read pack names, or recipe.pack pipe records, from stdin.")
     ] = False,
     discard_edits: Annotated[
         bool,
@@ -202,12 +206,15 @@ def sync_command(
 ) -> None:
     """Re-fetch installed packs from their recorded source and rev.
 
-    Packs whose content would change are listed and confirmed first; the rest
-    report ``unchanged``.
+    Packs whose content would change are listed and confirmed first, with the
+    commit move and the hook-code files that change; the rest report
+    ``unchanged``.
     """
     with report_config_errors(), tempfile.TemporaryDirectory() as temp_root:
         library = PackLibrary(library_root=library_root())
-        selected = _sync_selection(library, names or [], all_packs=all_packs)
+        selected = _sync_selection(
+            library, _pack_names(names, stdin=stdin) if stdin else names or [], all_packs=all_packs
+        )
         plans, fetch_failed = resolve_each(
             list(selected),
             _as_config_error(
@@ -216,8 +223,11 @@ def sync_command(
                 )
             ),
         )
+        changed = [plan for plan in plans if plan.changed]
+        if dry_run and changed:
+            _sync_preview(changed)
         outcome = batch_apply(
-            [plan for plan in plans if plan.changed],
+            changed,
             _as_config_error(
                 lambda plan: _install_for_sync(library, plan, discard_edits=discard_edits)
             ),
@@ -229,10 +239,16 @@ def sync_command(
             destructive=True,
             assume_yes=yes,
             preview_only=dry_run,
-            preview=_sync_preview,
+            preview=lambda _rows: _sync_preview(changed),
         )
         if outcome.cancelled:
             finish(outcome)
+        if not dry_run:
+            # An unchanged pack still moved to the fetched commit (older
+            # installs recorded none; a commit may touch only ignored files).
+            for plan in plans:
+                if not plan.changed and plan.commit and plan.commit != plan.pack.commit:
+                    library.record_commit(plan.pack.name, plan.commit)
         synced = {plan.pack.name for plan, _ in outcome.results}
         rows = [
             _sync_row(plan, action=action)
@@ -277,17 +293,33 @@ def _install_for_sync(library: PackLibrary, plan: _SyncPlan, *, discard_edits: b
         plan.source_dir,
         source=plan.pack.source,
         rev=plan.pack.rev or None,
+        commit=plan.commit,
         name=plan.pack.name,
         force=True,
         discard_edits=discard_edits,
     )
 
 
-def _sync_preview(rows: Sequence[dict[str, object]]) -> None:
-    echo(f"About to sync {plural(len(rows), 'pack')}:", err=True)
-    for row in rows:
-        at = f"@{row['rev']}" if row["rev"] else ""
-        echo(f"  - {row['name']} from {row['source']}{at}", err=True)
+def _sync_preview(plans: Sequence[_SyncPlan]) -> None:
+    """List the packs about to sync: source, commit move, and changed hook code."""
+    echo(f"About to sync {plural(len(plans), 'pack')}:", err=True)
+    for plan in plans:
+        pack = plan.pack
+        at = f"@{pack.rev}" if pack.rev else ""
+        move = (
+            f" ({_short_commit(pack.commit)} -> {_short_commit(plan.commit)})"
+            if plan.commit
+            else ""
+        )
+        echo(f"  - {pack.name} from {pack.source}{at}{move}", err=True)
+        if plan.hook_changes:
+            echo(f"    hook code changed: {', '.join(plan.hook_changes)}", err=True)
+        else:
+            echo("    hook code unchanged", err=True)
+
+
+def _short_commit(commit: str | None) -> str:
+    return commit[:12] if commit else "unrecorded"
 
 
 def _sync_action(plan: _SyncPlan, *, synced: set[str], dry_run: bool) -> str | None:
@@ -304,11 +336,13 @@ def _fetch_for_sync(
 ) -> _SyncPlan:
     """Fetch ``pack``'s recorded source and tell whether installing it changes files."""
     if not pack.source:
-        raise ValueError("no recorded source; reinstall the pack with `untaped recipe add`")
+        raise ValueError("no recorded source; reinstall the pack with `untaped recipe packs add`")
+    commit = None
     if is_git_url(pack.source):
         source_dir = fetch_pack_source(
             pack.source, rev=pack.rev or None, dest=temp_root / pack.name
         )
+        commit = checkout_commit(source_dir)
     else:
         source_dir = Path(pack.source).expanduser()
         if not source_dir.is_absolute():
@@ -316,7 +350,7 @@ def _fetch_for_sync(
             # today's working directory could install a different pack.
             raise ValueError(
                 f"recorded source {q(pack.source)} is a relative path; "
-                "reinstall the pack with `untaped recipe add --force`"
+                "reinstall the pack with `untaped recipe packs add --force`"
             )
         if not source_dir.is_dir():
             raise ValueError(f"pack source not found: {pack.source}")
@@ -324,7 +358,14 @@ def _fetch_for_sync(
     changed = pack_content_hash(source_dir) != pack_content_hash(pack.root)
     if changed and not discard_edits and library.local_edits(pack.name):
         raise ValueError(local_edits_message(pack.name))
-    return _SyncPlan(pack=pack, source_dir=source_dir, changed=changed)
+    hook_changes = tuple(changed_hook_files(pack.root, source_dir)) if changed else ()
+    return _SyncPlan(
+        pack=pack,
+        source_dir=source_dir,
+        changed=changed,
+        commit=commit,
+        hook_changes=hook_changes,
+    )
 
 
 def _sync_row(plan: _SyncPlan, *, action: str) -> dict[str, object]:
@@ -333,116 +374,134 @@ def _sync_row(plan: _SyncPlan, *, action: str) -> dict[str, object]:
         action=action,
         source=plan.pack.source,
         rev=plan.pack.rev or None,
+        commit=plan.commit,
     ).model_dump()
 
 
-def list_command(
+def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
+    """List installed recipes."""
+    _list_rows(
+        lambda installed: [
+            _recipe_row(pack, name, entry) for pack in installed for name, entry in _recipes(pack)
+        ],
+        kind="recipe.recipe",
+        fmt=fmt,
+        columns=columns,
+    )
+
+
+def list_packs_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
+    """List installed packs."""
+    _list_rows(
+        lambda installed: [_pack_row(pack) for pack in installed],
+        kind="recipe.pack",
+        fmt=fmt,
+        columns=columns,
+    )
+
+
+def list_hooks_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
+    """List installed hooks, then the built-in ones."""
+    _list_rows(
+        lambda installed: [
+            *(_hook_row(pack, name, entry) for pack in installed for name, entry in _hooks(pack)),
+            *(_builtin_hook_row(name) for name in sorted(BUILTIN_HOOKS)),
+        ],
+        kind="recipe.hook",
+        fmt=fmt,
+        columns=columns,
+        hint_when_empty=not BUILTIN_HOOKS,
+    )
+
+
+def _list_rows(
+    rows_of: Callable[[list[InstalledPack]], list[dict[str, object]]],
     *,
-    hooks: Annotated[
-        bool,
-        Parameter(name="--hooks", negative="", help="List hooks instead of recipes."),
-    ] = False,
-    packs: Annotated[
-        bool,
-        Parameter(name="--packs", negative="", help="List installed packs."),
-    ] = False,
-    fmt: FormatOption = "table",
-    columns: ColumnsOption = None,
+    kind: str,
+    fmt: OutputFormat,
+    columns: list[str] | None,
+    hint_when_empty: bool = True,
 ) -> None:
-    """List installed recipes, hooks, or packs."""
+    """Render one row kind for every loadable installed pack, warning about the rest."""
     with report_config_errors():
-        if hooks and packs:
-            raise UsageError("--hooks and --packs cannot be combined")
         library = PackLibrary(library_root=library_root())
         installed = library.packs()
         for name, error in library.load_errors().items():
             recipe_ui().message("warning", f"skipping pack '{name}': {error}")
-        if packs:
-            rows = [_pack_row(pack) for pack in installed]
-            kind = "recipe.pack"
-        elif hooks:
-            rows = [
-                _hook_row(pack, name, entry) for pack in installed for name, entry in _hooks(pack)
-            ]
-            rows.extend(_builtin_hook_row(name) for name in sorted(BUILTIN_HOOKS))
-            kind = "recipe.hook"
-        else:
-            rows = [
-                _recipe_row(pack, name, entry)
-                for pack in installed
-                for name, entry in _recipes(pack)
-            ]
-            kind = "recipe.recipe"
-        rendered = render_rows(rows, fmt=fmt, columns=columns, kind=kind)
+        rendered = render_rows(rows_of(installed), fmt=fmt, columns=columns, kind=kind)
         if rendered:
             echo(rendered)
         # The hint is human guidance: structured formats stay machine-clean.
-        if fmt == "table" and not installed and not (hooks and BUILTIN_HOOKS):
-            recipe_ui().message(
-                "info",
-                _EMPTY_LIBRARY_HINT,
-            )
+        if fmt == "table" and not installed and hint_when_empty:
+            recipe_ui().message("info", _EMPTY_LIBRARY_HINT)
 
 
 def get_command(
-    ref_text: Annotated[str, Parameter(help="Pack, recipe, or hook ref.")],
+    ref_text: Annotated[str, Parameter(help="Recipe name or PACK/RECIPE reference.")],
     /,
     *,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Show an installed pack, recipe, or hook."""
+    """Show an installed recipe."""
     with report_config_errors():
         library = PackLibrary(library_root=library_root())
-        target = _resolve_target(library, ref_text)
-        if target.builtin is not None:
-            builtin = BUILTIN_HOOKS[target.builtin]
-            emit(
-                hook_detail(
-                    target.builtin,
-                    HookEntry(module=builtin.module.__name__),
-                    builtin.exports,
-                    Path(builtin.module.__file__ or ""),
-                ),
-                fmt=fmt,
-                columns=columns,
-                kind="recipe.hook",
-            )
-            return
-        assert target.pack is not None
-        if target.recipe is not None:
-            recipe_path = target.pack.root / target.recipe.path
-            detail = recipe_detail(
-                f"{target.pack.name}/{target.name}",
-                read_recipe_file(recipe_path),
-                recipe_path,
-            )
-            emit(
-                table_recipe_detail(detail) if fmt == "table" else detail,
-                fmt=fmt,
-                columns=columns,
-                kind="recipe.recipe",
-            )
-        elif target.hook is not None:
-            module_file = hook_module_file(target.pack.root, target.hook.module)
-            emit(
-                hook_detail(
-                    f"{target.pack.name}/{target.name}",
-                    target.hook,
-                    hook_exports(module_file),
-                    module_file,
-                ),
-                fmt=fmt,
-                columns=columns,
-                kind="recipe.hook",
+        pack, name, recipe = _find_recipe(library, ref_text, verb="get")
+        recipe_path = pack.root / recipe.path
+        detail = recipe_detail(f"{pack.name}/{name}", read_recipe_file(recipe_path), recipe_path)
+        emit(
+            table_recipe_detail(detail) if fmt == "table" else detail,
+            fmt=fmt,
+            columns=columns,
+            kind="recipe.recipe",
+        )
+
+
+def get_pack_command(
+    name: Annotated[str, Parameter(help="Installed pack identity.")],
+    /,
+    *,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Show an installed pack."""
+    with report_config_errors():
+        pack = _find_pack(PackLibrary(library_root=library_root()), name)
+        emit(
+            pack_detail(pack.name, pack.manifest, pack.root),
+            fmt=fmt,
+            columns=columns,
+            kind="recipe.pack",
+        )
+
+
+def get_hook_command(
+    ref_text: Annotated[str, Parameter(help="Hook name, PACK/HOOK reference, or built-in.")],
+    /,
+    *,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Show an installed or built-in hook."""
+    with report_config_errors():
+        target = _find_hook(PackLibrary(library_root=library_root()), ref_text)
+        if target.pack is None or target.hook is None:
+            builtin = BUILTIN_HOOKS[target.name]
+            detail = hook_detail(
+                target.name,
+                HookEntry(module=builtin.module.__name__),
+                builtin.exports,
+                Path(builtin.module.__file__ or ""),
             )
         else:
-            emit(
-                pack_detail(target.pack.name, target.pack.manifest, target.pack.root),
-                fmt=fmt,
-                columns=columns,
-                kind="recipe.pack",
+            module_file = hook_module_file(target.pack.root, target.hook.module)
+            detail = hook_detail(
+                f"{target.pack.name}/{target.name}",
+                target.hook,
+                hook_exports(module_file),
+                module_file,
             )
+        emit(detail, fmt=fmt, columns=columns, kind="recipe.hook")
 
 
 def validate_command(
@@ -477,17 +536,27 @@ def validate_command(
 
 
 def remove_command(
-    name: Annotated[str, Parameter(help="Installed pack identity.")],
+    names: Annotated[
+        list[str] | None, Parameter(help="Installed pack identities.", negative="")
+    ] = None,
     /,
     *,
+    stdin: Annotated[
+        StdinOption, Parameter(help="Read pack names, or recipe.pack pipe records, from stdin.")
+    ] = False,
     yes: YesOption = False,
     dry_run: DryRunOption = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Remove an installed pack."""
+    """Remove installed packs."""
     with report_config_errors():
         library = PackLibrary(library_root=library_root())
+        selected = _pack_names(names, stdin=stdin)
+        known = {pack.name for pack in library.packs()} | set(library.load_errors())
+        for name in selected:
+            if name not in known:
+                raise ConfigError(not_found("pack", name, known=sorted(known)))
 
         def _remove(item: str) -> str:
             library.remove(item)
@@ -497,15 +566,16 @@ def remove_command(
             echo(f"About to remove {plural(len(rows), 'pack')}:", err=True)
             for row in rows:
                 echo(f"  - {row['name']}", err=True)
-            if library.local_edits(name):
-                recipe_ui().message(
-                    "warning",
-                    f"pack {q(name)} has local edits in the library "
-                    "(via edit or init recipe/hook); removing discards them",
-                )
+            for name in selected:
+                if library.local_edits(name):
+                    recipe_ui().message(
+                        "warning",
+                        f"pack {q(name)} has local edits in the library "
+                        "(via an edit or init command); removing discards them",
+                    )
 
         outcome = batch_apply(
-            [name],
+            selected,
             _remove,
             verb="remove",
             noun="pack",
@@ -518,7 +588,9 @@ def remove_command(
             preview=_preview,
         )
         if dry_run:
-            rows = [PackOutcomeRecord(name=name, action="planned").model_dump()]
+            rows = [
+                PackOutcomeRecord(name=name, action="planned").model_dump() for name in selected
+            ]
         else:
             rows = [
                 PackOutcomeRecord(name=item, action="removed").model_dump()
@@ -530,43 +602,87 @@ def remove_command(
         finish(outcome)
 
 
-def edit_command(ref_text: Annotated[str, Parameter(help="Pack, recipe, or hook ref.")], /) -> None:
-    """Open a pack pyproject, recipe file, or hook module in $VISUAL or $EDITOR."""
+def _pack_names(names: list[str] | None, *, stdin: bool) -> list[str]:
+    """Pack names from positionals or stdin (bare names or ``recipe.pack`` records)."""
+    return read_identifiers(names or [], stdin=stdin, id_field="name", accept_kinds={"recipe.pack"})
+
+
+def edit_command(
+    ref_text: Annotated[str, Parameter(help="Recipe name or PACK/RECIPE reference.")], /
+) -> None:
+    """Open an installed recipe file in $VISUAL or $EDITOR."""
     with report_config_errors():
         library = PackLibrary(library_root=library_root())
-        target = _resolve_target(library, ref_text)
-        if target.builtin is not None:
+        pack, _name, recipe = _find_recipe(library, ref_text, verb="edit")
+        run_editor(pack.root / recipe.path)
+
+
+def edit_pack_command(name: Annotated[str, Parameter(help="Installed pack identity.")], /) -> None:
+    """Open an installed pack's pyproject.toml in $VISUAL or $EDITOR."""
+    with report_config_errors():
+        pack = _find_pack(PackLibrary(library_root=library_root()), name)
+        run_editor(pack.root / "pyproject.toml")
+
+
+def edit_hook_command(
+    ref_text: Annotated[str, Parameter(help="Hook name or PACK/HOOK reference.")], /
+) -> None:
+    """Open an installed hook module in $VISUAL or $EDITOR."""
+    with report_config_errors():
+        target = _find_hook(PackLibrary(library_root=library_root()), ref_text)
+        if target.pack is None or target.hook is None:
             raise ConfigError(
-                f"built-in hooks are engine-owned and cannot be edited: {target.builtin}"
+                f"built-in hooks are engine-owned and cannot be edited: {target.name}"
             )
-        assert target.pack is not None
-        if target.recipe is not None:
-            run_editor(target.pack.root / target.recipe.path)
-        elif target.hook is not None:
-            run_editor(hook_module_file(target.pack.root, target.hook.module))
-        else:
-            run_editor(target.pack.root / "pyproject.toml")
+        run_editor(hook_module_file(target.pack.root, target.hook.module))
 
 
-def _resolve_target(library: PackLibrary, ref_text: str) -> _ResolvedTarget:
-    """Resolve a ref to a pack, recipe, or hook, preferring recipes' not-found error."""
-    pack = library.find_pack(ref_text)
-    if pack is not None:
-        return _ResolvedTarget(pack=pack)
+def _find_pack(library: PackLibrary, name: str) -> InstalledPack:
+    pack = library.find_pack(name)
+    if pack is None:
+        raise ConfigError(
+            not_found("pack", name, known=sorted(pack.name for pack in library.packs()))
+        )
+    return pack
+
+
+def _find_recipe(
+    library: PackLibrary, ref_text: str, *, verb: str
+) -> tuple[InstalledPack, str, RecipeEntry]:
     ref = parse_ref(ref_text)
     try:
-        recipe_pack, recipe = library.find_recipe(ref)
-    except ValueError as recipe_error:
-        try:
-            hook_pack, hook = library.find_hook(ref)
-        except ValueError:
-            if "/" not in ref_text and ref_text in BUILTIN_HOOKS:
-                return _ResolvedTarget(name=ref_text, builtin=ref_text)
-            if str(recipe_error).startswith("recipe not found"):
-                raise ValueError(f"{recipe_error}{existing_path_hint(ref_text)}") from None
-            raise recipe_error from None
-        return _ResolvedTarget(pack=hook_pack, name=ref.name, hook=hook)
-    return _ResolvedTarget(pack=recipe_pack, name=ref.name, recipe=recipe)
+        pack, recipe = library.find_recipe(ref)
+    except ValueError as exc:
+        if str(exc).startswith("recipe not found"):
+            message = f"{exc}{existing_path_hint(ref_text)}"
+            if (noun := _other_noun(library, ref_text)) is not None:
+                message = f"{message}\n{hint(f'recipe {noun} {verb} {ref_text}')}"
+            raise ValueError(message) from None
+        raise
+    return pack, ref.name, recipe
+
+
+def _other_noun(library: PackLibrary, ref_text: str) -> str | None:
+    """``packs``/``hooks`` when a missed recipe ref names a pack or hook instead."""
+    if library.find_pack(ref_text) is not None:
+        return "packs"
+    try:
+        _find_hook(library, ref_text)
+    except ValueError:
+        return None
+    return "hooks"
+
+
+def _find_hook(library: PackLibrary, ref_text: str) -> _ResolvedHook:
+    """Resolve a hook ref: an installed pack's hook first, then a bare built-in name."""
+    ref = parse_ref(ref_text)
+    try:
+        pack, hook = library.find_hook(ref)
+    except ValueError:
+        if "/" not in ref_text and ref_text in BUILTIN_HOOKS:
+            return _ResolvedHook(name=ref_text)
+        raise
+    return _ResolvedHook(name=ref.name, pack=pack, hook=hook)
 
 
 def _recipes(pack: InstalledPack) -> list[tuple[str, RecipeEntry]]:
@@ -584,6 +700,7 @@ def _pack_row(pack: InstalledPack) -> dict[str, object]:
         "path": str(pack.root),
         "source": pack.source,
         "rev": pack.rev,
+        "commit": pack.commit,
         "recipes": len(pack.manifest.recipes),
         "hooks": len(pack.manifest.hooks),
     }

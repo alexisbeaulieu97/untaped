@@ -142,7 +142,7 @@ _USES_LONG = f"uses: {_LONG}/.github/actions/set-constants-url"
         ),
         pytest.param(
             SearchRepos,
-            RepoSearchFilters(raw_query=_USES_LONG, archived=True),
+            RepoSearchFilters(raw_query=_USES_LONG, archived="only"),
             {("Desjardins", f"team{i}"): _repos(7, f"{_LONG}-{i}-") for i in range(3)},
             [6, 6, 6, 3],
             "archived:true",
@@ -378,10 +378,11 @@ def test_search_issues_merges_batches_by_sort_and_dedupes_by_id(
         (SearchCode, CodeSearchFilters(raw_query="TODO"), 100, 9, 54),
         (SearchCode, CodeSearchFilters(raw_query="TODO"), 54, 9, None),
         (SearchIssues, IssueSearchFilters(), 200, 25, 150),
+        (SearchRepos, RepoSearchFilters(), 200, 25, 150),
     ],
 )
 def test_large_teams_are_capped_to_the_per_minute_search_budget(
-    cls: type[SearchCode | SearchIssues],
+    cls: type[SearchRepos | SearchCode | SearchIssues],
     filters: Any,
     repo_count: int,
     requests: int,

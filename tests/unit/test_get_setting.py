@@ -37,19 +37,19 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
         # Profile-scoped fields are only effective under ``profiles.<name>``;
         # the resolved source names the profile that supplied the value.
         (
-            "profiles:\n  default:\n    log_level: DEBUG\n",
-            "log_level",
-            "DEBUG",
-            "INFO",
+            "profiles:\n  default:\n    skills:\n      updates: auto\n",
+            "skills.updates",
+            "auto",
+            "warn",
             "profile:default",
             "default",
         ),
         (
-            "profiles:\n  default:\n    log_level: INFO\n"
-            "  stage:\n    log_level: DEBUG\nactive: stage\n",
-            "log_level",
-            "DEBUG",
-            "INFO",
+            "profiles:\n  default:\n    skills:\n      updates: warn\n"
+            "  stage:\n    skills:\n      updates: auto\nactive: stage\n",
+            "skills.updates",
+            "auto",
+            "warn",
             "profile:stage",
             "stage",
         ),
@@ -112,13 +112,13 @@ def test_get_honours_environment_override(
     _isolate_settings: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _isolate_settings.write_text("log_level: INFO\n")
-    monkeypatch.setenv("UNTAPED_LOG_LEVEL", "WARNING")
+    _isolate_settings.write_text("profiles:\n  default:\n    skills:\n      updates: warn\n")
+    monkeypatch.setenv("UNTAPED_SKILLS__UPDATES", "off")
     get_settings.cache_clear()
 
-    entry = GetSetting(SettingsFileRepository())("log_level")
+    entry = GetSetting(SettingsFileRepository())("skills.updates")
 
-    assert entry.value == "WARNING"
+    assert entry.value == "off"
     assert entry.source.label == "env"
     assert entry.profile is None
 

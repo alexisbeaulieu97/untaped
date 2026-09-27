@@ -55,6 +55,9 @@ SCHEDULE_SPEC = AwxResourceSpec(
         FkRef(field="inventory", kind="Inventory", scope_field="organization"),
         FkRef(field="execution_environment", kind="ExecutionEnvironment"),
     ),
+    # AWX masks survey password answers in extra_data as ``$encrypted$``.
+    secret_paths=("extra_data.*[=$encrypted$]",),
+    optional_secret_paths=("extra_data.*[=$encrypted$]",),
     apply_strategy="schedule",
     parent_field="unified_job_template",
     list_columns=("id", "name", "last_run", "next_run", "enabled"),

@@ -12,7 +12,6 @@ stable surface from :mod:`untaped.capability_api` instead.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from importlib import import_module
@@ -30,11 +29,17 @@ from pydantic import BaseModel
 from untaped.errors import ConfigError
 from untaped.settings import Settings, validate_disjoint_settings_sections
 
+#: A capability-API version: ``(major, minor)``, compared as a tuple.
+type ApiVersion = tuple[int, int]
+
+#: An ``api_requires`` range: ``(min_inclusive, max_exclusive)`` versions.
+type ApiRange = tuple[ApiVersion, ApiVersion]
+
 #: SDK capability-API version providers build against (spec §2).
-CAPABILITY_API_VERSION: float = 1.1
+CAPABILITY_API_VERSION: ApiVersion = (2, 0)
 
 #: Declared API range for built-in capabilities (spec §7.1).
-_BUILTIN_API_REQUIRES: tuple[float, float] = (1.0, 2.0)
+_BUILTIN_API_REQUIRES: ApiRange = ((2, 0), (3, 0))
 
 #: Distribution label used for built-in provider references (spec §7.1).
 _BUILTIN_DISTRIBUTION = "untaped"
@@ -44,14 +49,24 @@ CAPABILITIES_ENTRY_POINT_GROUP = "untaped.capabilities"
 
 #: Reserved root command/layout names no capability may claim (spec §5 row 1).
 _RESERVED_COMMAND_ROOTS = frozenset(
-    {"profiles", "active", "config", "profile", "skills", "doctor", "capabilities"}
+    {
+        "profiles",
+        "active",
+        "config",
+        "profile",
+        "skills",
+        "doctor",
+        "capabilities",
+        "setup",
+        "alias",
+    }
 )
 
 
 class CapabilityProvider(Protocol):
     """Entry-point contract for external capabilities (spec §2)."""
 
-    api_requires: tuple[float, float]
+    api_requires: ApiRange
 
     def __call__(self) -> CapabilitySpec: ...
 
@@ -73,11 +88,16 @@ class SkillAsset:
 
 @dataclass(frozen=True)
 class DoctorCheck:
-    """A health check contributed by the shell or a capability (spec §3)."""
+    """A health check contributed by the shell or a capability (spec §3).
+
+    An ``online`` check contacts a remote service, so only
+    ``untaped doctor --online`` runs it; every other check stays offline.
+    """
 
     id: str
     title: str
     run: Callable[[CapabilityContext], DoctorResult]
+    online: bool = False
 
 
 @dataclass(frozen=True)
@@ -86,13 +106,16 @@ class DoctorResult:
 
     ``ok=False`` is a failed row (doctor exits 1). ``ok=True`` with
     ``warn=True`` is a ``warn`` row: worth attention (a deprecated setting,
-    say) but not a failure, so doctor still exits 0.
+    say) but not a failure, so doctor still exits 0. ``fix`` is the
+    ``untaped`` command (without the program name) that repairs a failed or
+    warned row; doctor appends it to the row's detail.
     """
 
     id: str
     ok: bool
     detail: str
     warn: bool = False
+    fix: str | None = None
 
 
 @dataclass(frozen=True)
@@ -189,7 +212,7 @@ class ProviderRef:
     kind: str
     distribution: str
     entry_point: str
-    api_requires: tuple[float, float]
+    api_requires: ApiRange
 
     def __post_init__(self) -> None:
         if self.kind not in ("built-in", "external"):
@@ -307,46 +330,69 @@ class _Quarantine(ConfigError):
 _MISSING: Any = object()
 
 
-def check_api_range(requires: object, version: float) -> tuple[float, float]:
-    """Validate an ``api_requires`` range against ``version`` (spec §5 row 10)."""
-    if requires is None or requires is _MISSING:
-        raise _Quarantine(
-            "api-range",
-            f"missing api_requires: provider declares no SDK range covering {version}",
-        )
+def format_api_version(version: ApiVersion) -> str:
+    """Render ``(major, minor)`` as ``major.minor``."""
+    return f"{version[0]}.{version[1]}"
+
+
+def parse_api_range(requires: object) -> ApiRange:
+    """Normalize an ``api_requires`` declaration's shape (not its bounds' order).
+
+    ``requires`` must be a pair of ``(major, minor)`` pairs of non-negative
+    ints (tuples or lists). Raises an ``api-range`` quarantine otherwise.
+    """
+    malformed = _Quarantine(
+        "api-range",
+        f"malformed api_requires {requires!r}: expected ((major, minor), (major, minor)) "
+        "int tuples as (min_inclusive, max_exclusive)",
+    )
     if (
         isinstance(requires, (str, bytes))
         or not isinstance(requires, (tuple, list))
         or len(requires) != 2
     ):
+        raise malformed
+    bounds: list[ApiVersion] = []
+    for bound in requires:
+        if (
+            not isinstance(bound, (tuple, list))
+            or len(bound) != 2
+            or any(isinstance(part, bool) or not isinstance(part, int) for part in bound)
+            or any(part < 0 for part in bound)
+        ):
+            raise malformed
+        bounds.append((bound[0], bound[1]))
+    return (bounds[0], bounds[1])
+
+
+def check_api_range(requires: object, version: ApiVersion) -> ApiRange:
+    """Validate an ``api_requires`` range against ``version`` (spec §5 row 10).
+
+    Missing, malformed and inverted ranges name the running version and a
+    range that admits it.
+    """
+    shown = format_api_version(version)
+    hint = f"running SDK {shown}, declare e.g. (({version[0]}, 0), ({version[0] + 1}, 0))"
+    if requires is None or requires is _MISSING:
+        raise _Quarantine(
+            "api-range", f"missing api_requires: provider declares no SDK range; {hint}"
+        )
+    try:
+        lo, hi = parse_api_range(requires)
+    except _Quarantine as bad:
+        raise _Quarantine("api-range", f"{bad.detail}; {hint}") from None
+    span = f">={format_api_version(lo)},<{format_api_version(hi)}"
+    if not lo < hi:
         raise _Quarantine(
             "api-range",
-            f"malformed api_requires {requires!r}: expected (min_inclusive, max_exclusive)",
+            f"inverted api_requires {span}: min_inclusive must be below max_exclusive; {hint}",
         )
-    lo, hi = requires[0], requires[1]
-    for bound in (lo, hi):
-        if isinstance(bound, bool) or not isinstance(bound, (int, float)):
-            raise _Quarantine(
-                "api-range",
-                f"non-numeric api_requires {requires!r}: bounds must be finite numbers",
-            )
-        if not math.isfinite(bound):
-            raise _Quarantine(
-                "api-range",
-                f"non-finite api_requires {requires!r}: bounds must be finite numbers",
-            )
-    lo_f, hi_f = float(lo), float(hi)
-    if not lo_f < hi_f:
+    if not lo <= version < hi:
         raise _Quarantine(
             "api-range",
-            f"inverted api_requires {(lo_f, hi_f)!r}: min_inclusive must be below max_exclusive",
+            f"api_requires {span} does not admit SDK version {shown}",
         )
-    if not lo_f <= version < hi_f:
-        raise _Quarantine(
-            "api-range",
-            f"api_requires {(lo_f, hi_f)!r} does not admit SDK version {version}",
-        )
-    return (lo_f, hi_f)
+    return (lo, hi)
 
 
 def _parse_requirement(requirement: object) -> Requirement | None:
