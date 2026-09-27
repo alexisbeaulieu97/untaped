@@ -305,7 +305,7 @@ def test_preview_lists_prune_targets_and_changes_nothing(tmp_path: Path) -> None
         reg, YamlManifestRepository(), fs=LocalFilesystem(), prune_safety=_PruneSafety()
     )
 
-    ws, doomed = use_case.preview("prod", prune=True)
+    ws, doomed = use_case.preview_prune("prod")
 
     assert ws.name == "prod"
     assert sorted(doomed) == sorted([clone.resolve(), orphan.resolve(), ws_path / "untaped.yml"])
@@ -313,17 +313,14 @@ def test_preview_lists_prune_targets_and_changes_nothing(tmp_path: Path) -> None
     assert reg.unregistered == []
 
 
-def test_preview_without_prune_lists_nothing(tmp_path: Path) -> None:
-    ws_path = tmp_path / "prod"
-    (ws_path / "svc-a" / ".git").mkdir(parents=True)
-    _seed_manifest(ws_path, repos=[("svc-a", "https://x/svc-a.git")])
-    ws = Workspace(name="prod", path=ws_path)
+def test_preview_of_a_missing_directory_lists_nothing(tmp_path: Path) -> None:
+    ws = Workspace(name="prod", path=tmp_path / "gone")
     reg = StubRegistry([ws])
     use_case = ForgetWorkspace(
         reg, YamlManifestRepository(), fs=LocalFilesystem(), prune_safety=_PruneSafety()
     )
 
-    assert use_case.preview("prod") == (ws, [])
+    assert use_case.preview_prune("prod") == (ws, [])
     assert reg.unregistered == []
 
 
@@ -338,4 +335,4 @@ def test_preview_refuses_unsafe_clone_like_a_real_prune(tmp_path: Path) -> None:
     with pytest.raises(WorkspaceError, match="unsafe local state"):
         ForgetWorkspace(
             reg, YamlManifestRepository(), fs=LocalFilesystem(), prune_safety=status
-        ).preview("prod", prune=True)
+        ).preview_prune("prod")

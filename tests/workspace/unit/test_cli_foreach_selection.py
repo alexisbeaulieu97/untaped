@@ -124,7 +124,6 @@ def test_foreach_stdin_rejects_other_record_kinds(tmp_path: Path) -> None:
     "args",
     [
         ["--all", "--stdin"],
-        ["--all", "--repo", "api"],
         ["--stdin", "--repo", "api"],
     ],
 )
@@ -153,3 +152,61 @@ def test_foreach_requires_a_command() -> None:
 
     assert result.exit_code == 2
     assert "missing argument CMD" in result.stderr
+
+
+def test_foreach_stdin_rejects_records_of_another_workspace(tmp_path: Path) -> None:
+    runner = CliInvoker()
+    _workspace(runner, tmp_path, "prod", ("api",))
+    _workspace(runner, tmp_path, "lab", ("api",))
+    piped = _pipe("workspace.status", workspace="prod", repo="api")
+
+    result = runner.invoke(app, ["foreach", "lab", "true", "--stdin"], input=piped)
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "'prod'" in result.stderr and "'lab'" in result.stderr
+
+
+def test_foreach_all_repo_filters_per_workspace(tmp_path: Path) -> None:
+    runner = CliInvoker()
+    _workspace(runner, tmp_path, "prod", ("api", "ui"))
+    _workspace(runner, tmp_path, "lab", ("db",))
+    _workspace(runner, tmp_path, "edge", ("api",))
+
+    result = runner.invoke(app, ["foreach", "--all", "true", "--repo", "api", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert _ran(result.stdout) == [("prod", "api"), ("edge", "api")]
+
+
+def test_foreach_all_repo_matching_no_workspace_is_an_error(tmp_path: Path) -> None:
+    runner = CliInvoker()
+    _workspace(runner, tmp_path, "prod", ("api",))
+
+    result = runner.invoke(app, ["foreach", "--all", "true", "--repo", "nope"])
+
+    assert result.exit_code == 1
+    assert "nope" in result.stderr
+    assert result.stdout == ""
+
+
+def test_foreach_all_fail_fast_stops_before_the_next_workspace(tmp_path: Path) -> None:
+    runner = CliInvoker()
+    _workspace(runner, tmp_path, "prod", ("api",))
+    _workspace(runner, tmp_path, "lab", ("ui",))
+
+    result = runner.invoke(app, ["foreach", "--all", "false", "-j", "1", "--format", "json"])
+
+    assert result.exit_code == 1
+    assert _ran(result.stdout) == [("prod", "api")]
+
+
+def test_foreach_unknown_workspace_hints_to_quote_the_command(tmp_path: Path) -> None:
+    runner = CliInvoker()
+    _workspace(runner, tmp_path, "prod", ("api",))
+
+    result = runner.invoke(app, ["foreach", "build", "make"])
+
+    assert result.exit_code == 1
+    assert "unknown workspace: 'build'" in result.stderr
+    assert "quote" in result.stderr

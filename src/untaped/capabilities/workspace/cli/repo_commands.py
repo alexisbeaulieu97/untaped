@@ -13,6 +13,7 @@ from untaped.capabilities.workspace.application import (
     SyncWorkspace,
 )
 from untaped.capabilities.workspace.cli.common import (
+    LeadingWorkspaceArg,
     WorkspaceArg,
     resolve_workspace,
     workspace_settings,
@@ -60,18 +61,6 @@ REMOVE_STDIN_KINDS = frozenset({"workspace.repo", "workspace.sync_outcome"})
 """Pipe kinds ``remove --stdin`` reads repo names from (``repo``)."""
 
 
-RequiredWorkspaceArg = Annotated[
-    str | None,
-    Parameter(
-        name="WS",
-        help=(
-            "Workspace name, or a path inside one (`.` is the current directory). "
-            "Required before positional repos; with --stdin it defaults to the "
-            "workspace containing the current directory."
-        ),
-    ),
-]
-
 app = create_app(
     name="repos",
     help="List, add, and remove the repos declared in a workspace's manifest.",
@@ -103,19 +92,19 @@ def list_command(
 
 
 def _require_workspace_first(
-    workspace: str | None, idents: list[str], *, stdin: bool, usage: str
+    workspace: str | None, idents: list[str], *, stdin: bool, what: str
 ) -> None:
     """Positional repos need the workspace before them; only ``--stdin`` may omit it."""
     if not stdin and workspace is not None and not idents:
         raise UsageError(
-            f"pass the workspace first: `untaped workspace repos {usage}` "
+            f"missing {what} (or --stdin); the first argument is the workspace "
             "(`.` is the workspace containing the current directory)"
         )
 
 
 @app.command(name="add")
 def add_command(
-    workspace: RequiredWorkspaceArg = None,
+    workspace: LeadingWorkspaceArg = None,
     urls: Annotated[
         list[str] | None,
         Parameter(negative="", help="Repo URLs to add."),
@@ -169,7 +158,7 @@ def add_command(
     add_repo = AddRepo(YamlManifestRepository())
     any_failed = False
     with report_errors():
-        _require_workspace_first(workspace, list(urls or []), stdin=stdin, usage="add WS URL...")
+        _require_workspace_first(workspace, list(urls or []), stdin=stdin, what="URL")
         idents = _read_add_urls(list(urls or []), stdin=stdin)
         if repo_name is not None and len(idents) > 1:
             raise UsageError(
@@ -229,7 +218,7 @@ def _read_add_urls(urls: list[str], *, stdin: bool) -> list[str]:
 
 @app.command(name="remove")
 def remove_command(
-    workspace: RequiredWorkspaceArg = None,
+    workspace: LeadingWorkspaceArg = None,
     repos: Annotated[
         list[str] | None,
         Parameter(negative="", help="Repo URLs or aliases to remove."),
@@ -260,9 +249,7 @@ def remove_command(
 ) -> None:
     """Remove one or more repos from a workspace's manifest."""
     with report_errors():
-        _require_workspace_first(
-            workspace, list(repos or []), stdin=stdin, usage="remove WS REPO..."
-        )
+        _require_workspace_first(workspace, list(repos or []), stdin=stdin, what="REPO")
         idents = read_identifiers(
             list(repos or []),
             stdin=stdin,

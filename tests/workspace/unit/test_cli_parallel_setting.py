@@ -25,7 +25,7 @@ def seen_workers(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     """Record the ``parallel`` value each command passes to its use case."""
     seen: list[int] = []
     real_sync = SyncWorkspaces.__call__
-    real_foreach = Foreach.__call__
+    real_foreach = Foreach.run_many
 
     def _sync(self: SyncWorkspaces, *args: object, parallel: int = 1, **kw: object) -> object:
         seen.append(parallel)
@@ -36,7 +36,7 @@ def seen_workers(monkeypatch: pytest.MonkeyPatch) -> list[int]:
         return real_foreach(self, *args, parallel=parallel, **kw)  # type: ignore[arg-type]
 
     monkeypatch.setattr(SyncWorkspaces, "__call__", _sync)
-    monkeypatch.setattr(Foreach, "__call__", _foreach)
+    monkeypatch.setattr(Foreach, "run_many", _foreach)
     return seen
 
 

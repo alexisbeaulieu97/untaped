@@ -59,7 +59,7 @@ Use the shared option aliases instead of declaring your own copy:
 
 These short flags are reserved and have one meaning each: `-f --format`,
 `-c --columns`, `-y --yes`, `-j --parallel`, `-o --out`, `-i --ignore-case`,
-`-r --repo`, `-w --workspace`.
+`-r --repo`.
 
 Rules for parameters:
 

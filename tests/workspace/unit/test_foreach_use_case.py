@@ -342,3 +342,56 @@ def test_unknown_repo_filter_raises_before_running_command(tmp_path: Path) -> No
         )
 
     assert calls == []
+
+
+def _seed_named(tmp_path: Path, name: str, repos: list[str]) -> Workspace:
+    ws = tmp_path / name
+    ws.mkdir()
+    YamlManifestRepository().write(
+        ws, WorkspaceManifest(repos=[Repo(url=f"https://x/{r}.git") for r in repos])
+    )
+    for repo in repos:
+        (ws / repo).mkdir()
+    return Workspace(name=name, path=ws)
+
+
+def test_run_many_filters_per_workspace_and_skips_unreadable_manifests(tmp_path: Path) -> None:
+    prod = _seed_named(tmp_path, "prod", ["api", "ui"])
+    lab = _seed_named(tmp_path, "lab", ["db"])
+    broken = _seed_named(tmp_path, "broken", [])
+    (broken.path / "untaped.yml").write_text("repos: [\n")
+    warnings: list[str] = []
+
+    outcomes = Foreach(
+        YamlManifestRepository(), runner=_runner_factory(), fs=_FS, warn=warnings.append
+    ).run_many(
+        [prod, broken, lab],
+        command="x",
+        only=["api", "db"],
+        strict_only=False,
+        skip_manifest_errors=True,
+    )
+
+    assert [(o.workspace, o.repo) for o in outcomes] == [("prod", "api"), ("lab", "db")]
+    assert len(warnings) == 1 and "'broken'" in warnings[0]
+
+
+def test_run_many_rejects_a_filter_no_workspace_declares(tmp_path: Path) -> None:
+    prod = _seed_named(tmp_path, "prod", ["api"])
+    lab = _seed_named(tmp_path, "lab", ["db"])
+
+    with pytest.raises(WorkspaceError, match="ghost"):
+        Foreach(YamlManifestRepository(), runner=_runner_factory(), fs=_FS).run_many(
+            [prod, lab], command="x", only=["api", "ghost"], strict_only=False
+        )
+
+
+def test_run_many_fail_fast_stops_later_workspaces(tmp_path: Path) -> None:
+    prod = _seed_named(tmp_path, "prod", ["api"])
+    lab = _seed_named(tmp_path, "lab", ["db"])
+
+    outcomes = Foreach(
+        YamlManifestRepository(), runner=_runner_factory(returncode={"api": 1}), fs=_FS
+    ).run_many([prod, lab], command="x")
+
+    assert [o.repo for o in outcomes] == ["api"]

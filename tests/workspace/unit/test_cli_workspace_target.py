@@ -103,14 +103,14 @@ def test_repos_add_with_stdin_accepts_an_omitted_workspace(
     assert _repos(runner) == ["api"]
 
 
-def test_repos_add_single_positional_names_the_workspace_first(tmp_path: Path) -> None:
+def test_repos_add_single_positional_needs_a_url(tmp_path: Path) -> None:
     runner = CliInvoker()
     _init(runner, tmp_path)
 
     result = runner.invoke(app, ["repos", "add", "https://x/api.git"])
 
     assert result.exit_code == 2
-    assert "repos add WS URL" in result.stderr
+    assert "missing URL (or --stdin)" in result.stderr
     assert _repos(runner, "prod") == []
 
 
@@ -121,7 +121,7 @@ def test_repos_remove_single_positional_names_the_workspace_first(tmp_path: Path
     result = runner.invoke(app, ["repos", "remove", "api"])
 
     assert result.exit_code == 2
-    assert "repos remove WS REPO" in result.stderr
+    assert "missing REPO (or --stdin)" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -189,3 +189,52 @@ def test_old_spellings_have_no_aliases(tmp_path: Path, old: list[str]) -> None:
 
     assert result.exit_code == 2, result.output
     assert "deprecated" not in result.stderr
+
+
+def test_unknown_user_home_is_a_clean_error() -> None:
+    result = CliInvoker().invoke(app, ["status", "~nosuchuser-untaped"])
+
+    assert result.exit_code == 1
+    assert result.stderr.startswith("error: ")
+    assert "~nosuchuser-untaped" in result.stderr
+
+
+def test_missing_workspace_path_does_not_fall_back_to_the_enclosing_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = CliInvoker()
+    target = _init(runner, tmp_path)
+    monkeypatch.chdir(target)
+
+    result = runner.invoke(app, ["repos", "list", "./nonexistent/dir"])
+
+    assert result.exit_code == 1
+    assert "does not exist" in result.stderr
+    assert result.stdout == ""
+
+
+def test_init_rejects_names_that_look_like_a_home_path(tmp_path: Path) -> None:
+    result = CliInvoker().invoke(app, ["init", "~x", "--path", str(tmp_path / "ws")])
+
+    assert result.exit_code == 1
+    assert "'~x'" in result.stderr
+    assert not (tmp_path / "ws").exists()
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["repos", "add", "prod"], "missing URL (or --stdin)"),
+        (["repos", "remove", "prod"], "missing REPO (or --stdin)"),
+    ],
+)
+def test_repos_mutations_name_the_missing_argument(
+    tmp_path: Path, args: list[str], message: str
+) -> None:
+    runner = CliInvoker()
+    _init(runner, tmp_path)
+
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 2
+    assert message in result.stderr

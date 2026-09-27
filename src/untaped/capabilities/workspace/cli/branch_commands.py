@@ -12,11 +12,11 @@ from untaped.capabilities.workspace.application import (
     UnsetWorkspaceBranch,
 )
 from untaped.capabilities.workspace.cli.common import (
-    WORKSPACE_ARG_HELP,
+    LeadingWorkspaceArg,
     RepoSelectorOption,
     WorkspaceArg,
+    leading_workspace,
     resolve_workspace,
-    split_leading_workspace,
 )
 from untaped.capabilities.workspace.domain import BranchApplyOutcome
 from untaped.capabilities.workspace.infrastructure import (
@@ -32,7 +32,6 @@ from untaped.capability_api import (
     emit,
     finish,
     q,
-    raise_usage,
     report_errors,
     ui_context,
 )
@@ -57,10 +56,7 @@ app = create_app(
 
 @app.command(name="set")
 def branch_set_command(
-    workspace: Annotated[
-        str | None,
-        Parameter(name="WS", help=f"{WORKSPACE_ARG_HELP} Pass it before BRANCH."),
-    ] = None,
+    workspace: LeadingWorkspaceArg = None,
     branch: Annotated[
         str | None,
         Parameter(name="BRANCH", help="Branch name to record in the manifest."),
@@ -87,9 +83,7 @@ def branch_set_command(
     columns: ColumnsOption = None,
 ) -> None:
     """Set the default branch or a repo branch override in ``untaped.yml``."""
-    workspace, branch = split_leading_workspace(workspace, branch)
-    if branch is None:
-        raise_usage("missing argument BRANCH")
+    workspace, branch = leading_workspace(workspace, branch, missing="BRANCH")
     with report_errors():
         ws = resolve_workspace(workspace)
         change = SetWorkspaceBranch(YamlManifestRepository())(ws, branch=branch, repo=repo)
