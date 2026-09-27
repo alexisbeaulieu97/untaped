@@ -26,6 +26,7 @@ from untaped.capabilities.awx.cli._save import _add_save
 from untaped.capabilities.awx.cli._sync import _add_sync
 from untaped.capabilities.awx.cli.launch import _add_launch
 from untaped.capabilities.awx.cli.membership_commands import register_membership_subapp
+from untaped.capabilities.awx.cli.options import scope_parameter
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capability_api import create_app, deprecated_alias
 
@@ -36,6 +37,7 @@ def make_resource_app(spec: AwxResourceSpec) -> App:
         name=spec.cli_name,
         help=f"Manage {spec.kind} resources.",
     )
+    app.default_parameter = scope_parameter(spec)
 
     if "list" in spec.commands:
         _add_list(app, spec)

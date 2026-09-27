@@ -9,7 +9,10 @@ from typing import Any, NoReturn
 
 from untaped.capabilities.awx.application import RunAction
 from untaped.capabilities.awx.application.mutation_values import redact_error
-from untaped.capabilities.awx.application.prepare_actions import prepare_action_targets
+from untaped.capabilities.awx.application.prepare_actions import (
+    launch_payload_preview,
+    prepare_action_targets,
+)
 from untaped.capabilities.awx.application.selected_actions import (
     ActionsInterruptedError,
     SelectedActionOutcome,
@@ -75,6 +78,8 @@ def run_action_selection(
         }
         for item in targets
     ]
+    if dry_run:
+        _preview_payloads(ctx, spec, rows, targets, payload)
     if dry_run or (confirm and not yes and not _confirm_targets(ctx, targets, action=action)):
         emit(rows, fmt=fmt, columns=columns, kind=f"awx.{action}_outcome")
         return
@@ -119,6 +124,20 @@ def run_action_selection(
         echo(hint(f"awx jobs wait {' '.join(ids)} --kind {kind}"), err=True)
     emit(rows, fmt=fmt, columns=columns, kind=f"awx.{action}_outcome")
     finish(any(row["action"] != "completed" for row in rows))
+
+
+def _preview_payloads(
+    ctx: AwxContext,
+    spec: ResourceSpec,
+    rows: list[dict[str, Any]],
+    targets: Sequence[SelectedResource],
+    payload: dict[str, Any] | None,
+) -> None:
+    """Show each ``--dry-run`` row the payload its target would get (secrets hidden)."""
+    if payload is None:
+        return
+    for row, item in zip(rows, targets, strict=True):
+        row["payload"] = launch_payload_preview(ctx.repo, spec, item, payload)
 
 
 def _record_finals(

@@ -3,6 +3,24 @@
 ## Unreleased
 
 - AWX
+  - **Breaking:** `launch --inventory` is now `launch --launch-inventory
+    NAME|ID` (digits mean an AWX id), the inventory the job runs against.
+    `--inventory` is only ever a lookup scope, and launch-capable kinds have
+    none.
+  - **Breaking:** each resource group offers only the scope options it
+    supports: `--organization` on organization-scoped kinds, `--inventory`,
+    `--inventory-organization` and `--parent` on hosts, groups and inventory
+    sources, `--parent` on schedules. Any other scope option is gone from
+    `--help` and is an unknown option (exit 2) instead of a runtime error.
+  - **Breaking:** `jobs logs -f` means `--format`, as on every other command;
+    `--follow` has no short form.
+  - A name that is not found names its scope and suggests close names from
+    it (`JobTemplate not found: 'deplyo' in organization 'Default'; did you
+    mean 'deploy'?`), and says when `awx.default_organization` chose the
+    organization. Other not-found messages keep their `(key=value)` form.
+  - `launch --dry-run` rows carry the resolved `payload`: names resolved to
+    ids, `extra_vars` merged into a mapping, and survey passwords and
+    secret-looking variables shown as `<redacted>`.
   - **Breaking:** `awx test` cases declare what their job must produce in
     `expect:`: a `status` (default `successful`) and `log` checks
     (`contains`, `not_contains`, `matches`). The checks can be set in

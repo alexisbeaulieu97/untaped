@@ -44,6 +44,8 @@ if TYPE_CHECKING:
     from untaped.capabilities.awx.application.ports import ResourceClient
 
 WarnFn = Callable[[str], None]
+_SUGGESTION_POOL = 1000
+"""Names in scope a "did you mean" suggestion is drawn from (``SUGGESTION_POOL``)."""
 
 
 def _noop_warn(_msg: str) -> None: ...
@@ -104,11 +106,22 @@ class HttpFkResolver:
             spec = self._catalog.get(kind)
             record = self._repo.find_by_identity(spec, name=name, scope=scope)
             if record is None:
-                raise ResourceNotFoundError(kind, {"name": name, **scope})
+                raise ResourceNotFoundError(
+                    kind, {"name": name, **scope}, candidates=self._names_in(spec, scope)
+                )
             id_ = int(record["id"])
             self._name_cache[key] = id_
             self._id_cache[(kind, id_)] = name
             return id_
+
+    def _names_in(self, spec: AwxResourceSpec, scope: dict[str, str]) -> list[str]:
+        """Names in ``scope`` for "did you mean" (the adapter side of ``names_in_scope``)."""
+        params = {f"{key}__name": value for key, value in scope.items()}
+        try:
+            records = self._repo.list(spec, params=params or None, limit=_SUGGESTION_POOL)
+            return [str(record["name"]) for record in records if record.get("name")]
+        except AwxApiError:
+            return []
 
     def validate_id(self, kind: str, id_: int, *, scope: dict[str, str] | None = None) -> int:
         if isinstance(id_, bool) or not isinstance(id_, int) or id_ <= 0:

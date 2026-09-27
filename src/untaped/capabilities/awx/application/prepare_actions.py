@@ -1,11 +1,13 @@
-"""Validate a complete action selection and freeze inventory source expansion."""
+"""Validate a complete action selection, freeze inventory source expansion, preview launches."""
 
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
+from untaped.capabilities.awx.application.mutation_values import REDACTED
 from untaped.capabilities.awx.application.ports import Catalog, ResourceClient
 from untaped.capabilities.awx.application.selection import (
     SelectedResource,
@@ -20,7 +22,7 @@ from untaped.capability_api import ConfigError, UsageError, q
 LAUNCH_PROMPTS: dict[str, tuple[str, str]] = {
     "extra_vars": ("ask_variables_on_launch", "--extra-vars"),
     "limit": ("ask_limit_on_launch", "--host-pattern"),
-    "inventory": ("ask_inventory_on_launch", "--inventory"),
+    "inventory": ("ask_inventory_on_launch", "--launch-inventory"),
     "credentials": ("ask_credential_on_launch", "--credential"),
     "scm_branch": ("ask_scm_branch_on_launch", "--scm-branch"),
     "job_tags": ("ask_tags_on_launch", "--job-tag"),
@@ -125,6 +127,64 @@ def _is_template_value(field: str, supplied: Any, current: Any) -> bool:
     if isinstance(current, Mapping):
         current = current.get("id")
     return bool(supplied == current)
+
+
+_SECRET_NAME = re.compile(
+    r"(?:^|_)(?:password|passwd|pass|secret|token|api_?key|private_?key)(?:$|_)", re.IGNORECASE
+)
+
+
+def launch_payload_preview(
+    client: ResourceClient,
+    spec: ResourceSpec,
+    item: SelectedResource,
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """The launch payload as submitted, ``extra_vars`` decoded, with secrets redacted.
+
+    A variable is secret when the template's survey asks for it as a
+    ``password``, or when its name (at any depth) looks like one
+    (``vault_pass``, ``api_token``, ``db_password``, ...).
+    """
+    preview = dict(payload)
+    extra_vars = preview.get("extra_vars")
+    if isinstance(extra_vars, str):
+        try:
+            extra_vars = json.loads(extra_vars)
+        except json.JSONDecodeError:
+            return preview
+    if isinstance(extra_vars, dict):
+        passwords = _survey_passwords(client, spec, item)
+        preview["extra_vars"] = {
+            key: REDACTED if key in passwords else _redact_secret_names(key, value)
+            for key, value in extra_vars.items()
+        }
+    return preview
+
+
+def _survey_passwords(
+    client: ResourceClient, spec: ResourceSpec, item: SelectedResource
+) -> set[str]:
+    """Variables the template's enabled survey asks for as ``password`` questions."""
+    if not item.record.get("survey_enabled"):
+        return set()
+    survey = client.sub_endpoint_request(spec, item.id, "survey_spec", "GET")
+    questions = survey.get("spec") if isinstance(survey, Mapping) else None
+    return {
+        str(question["variable"])
+        for question in questions or []
+        if isinstance(question, Mapping) and question.get("type") == "password"
+    }
+
+
+def _redact_secret_names(key: str, value: Any) -> Any:
+    if _SECRET_NAME.search(key):
+        return REDACTED
+    if isinstance(value, dict):
+        return {k: _redact_secret_names(str(k), v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_secret_names("", v) for v in value]
+    return value
 
 
 def _extra_var_names(value: Any) -> set[str]:

@@ -25,7 +25,6 @@ pytestmark = pytest.mark.integration
             "`instance-groups`",
             "untaped awx inventories instance-groups",
         ),
-        (["awx", "jobs", "logs", "-f"], "`--follow`", "untaped awx jobs logs"),
         (
             ["awx", "job-templates", "usage", "-r"],
             "`--recursive`",
@@ -58,14 +57,12 @@ def test_old_spellings_are_hidden_from_help() -> None:
 
     awx_help = invoke_cli(root, ["awx", "--help"]).stdout
     inventories_help = invoke_cli(root, ["awx", "inventories", "--help"]).stdout
-    logs_help = invoke_cli(root, ["awx", "jobs", "logs", "--help"]).stdout
     launch_help = invoke_cli(root, ["awx", "job-templates", "launch", "--help"]).stdout
 
     assert " save " not in awx_help
     assert " export " in awx_help
     assert "│ input_inventories" not in inventories_help
     assert "input-inventories" in inventories_help
-    assert " -f " not in logs_help
     assert "--limit" not in launch_help
     assert "--host-pattern" in launch_help
 

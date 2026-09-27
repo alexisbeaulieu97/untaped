@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Annotated
 
 from cyclopts import Parameter
@@ -144,3 +145,29 @@ WITH_SCM_HELP = (
 def offers_with_scm(spec: ResourceSpec) -> bool:
     """``--with-scm`` applies to kinds that run a project's playbook."""
     return any(ref.field == "project" and ref.kind == "Project" for ref in spec.fk_refs)
+
+
+def supported_scopes(spec: ResourceSpec) -> frozenset[str]:
+    """The scope options, by parameter name, that can narrow a ``spec`` lookup."""
+    scopes: set[str] = set()
+    if "organization" in spec.identity_keys:
+        scopes.add("organization")
+    if spec.apply_strategy == "inventory_child":
+        scopes.update({"inventory", "inventory_organization"})
+    if spec.parent_field is not None:
+        scopes.add("parent")
+    return frozenset(scopes)
+
+
+def scope_parameter(spec: ResourceSpec, *, parent: str = "parent") -> Parameter:
+    """A default ``Parameter`` that drops the scope options ``spec`` cannot use.
+
+    Set it as an app's ``default_parameter``: every command below then leaves
+    those options out of ``--help`` and rejects them as unknown (exit 2).
+    ``parent`` names the parameter that carries ``--parent`` in that app.
+    """
+    supported = {parent if name == "parent" else name for name in supported_scopes(spec)}
+    unsupported = sorted(
+        {"organization", "inventory", "inventory_organization", parent} - supported
+    )
+    return Parameter(parse=re.compile(rf"^(?!(?:{'|'.join(unsupported)})$)"))

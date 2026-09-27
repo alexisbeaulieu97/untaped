@@ -499,10 +499,7 @@ def jobs_logs(
         Parameter(name=["--ignore-case", "-i"], negative="", help="Case-insensitive --grep."),
     ] = False,
     kind: JobKindOption = "job",
-    fmt: Annotated[
-        OutputFormat,
-        Parameter(name="--format", help="Output format."),
-    ] = "raw",
+    fmt: FormatOption = "raw",
     columns: ColumnsOption = None,
 ) -> None:
     """Print the stdout of one or more jobs. Supports follow / tail / grep.
@@ -598,7 +595,6 @@ def jobs_wait(
 register_job_actions(jobs_app)
 app.command(jobs_app, name="jobs")
 deprecated_alias(app, "save", "export")
-deprecated_alias(jobs_app["logs"], "-f", "--follow")
 app.command(unified_templates_app, name="unified-templates")
 app.command(test_app, name="test")
 

@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from untaped.capabilities.awx.application.ports import Catalog, ResourceClient
+from untaped.capabilities.awx.application.resource_names import names_in_scope
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.domain.kinds import (
     RESOURCE_OUTCOME_PIPE_KINDS,
@@ -21,7 +22,7 @@ from untaped.capabilities.awx.domain.kinds import (
 )
 from untaped.capabilities.awx.domain.payloads import as_dict
 from untaped.capabilities.awx.errors import BadRequestError, ResourceNotFoundError
-from untaped.capability_api import ConfigError, PipeEnvelope
+from untaped.capability_api import ConfigError, PipeEnvelope, q
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,8 @@ class SelectionRequest:
     require_explicit: bool = False
     limit: int | None = None
     """Cap for query selections, pushed to the paginator (reads only)."""
+    default_organization: bool = False
+    """``scope["organization"]`` came from ``awx.default_organization``, not a flag."""
 
 
 @dataclass(frozen=True)
@@ -101,7 +104,9 @@ class SelectionResolver:
         if request.pipe is not None:
             return self._from_pipe(spec, request.pipe, effective_scope)
         if request.names:
-            return self._from_names(spec, request.names, effective_scope)
+            return self._from_names(
+                spec, request.names, effective_scope, note=_default_scope_note(request)
+            )
         if request.ids:
             return self._from_ids(spec, request.ids, effective_scope)
         if request.filters or request.search is not None or request.all:
@@ -161,12 +166,19 @@ class SelectionResolver:
         spec: ResourceSpec,
         names: tuple[str, ...],
         scope: dict[str, str],
+        *,
+        note: str | None = None,
     ) -> tuple[SelectedResource, ...]:
         selected: list[SelectedResource] = []
         for name in names:
             record = self._client.find_by_identity(spec, name=name, scope=scope or None)
             if record is None:
-                raise ResourceNotFoundError(spec.kind, {"name": name, **scope})
+                raise ResourceNotFoundError(
+                    spec.kind,
+                    {"name": name, **scope},
+                    candidates=names_in_scope(self._client, spec, scope),
+                    note=note,
+                )
             values = as_dict(record)
             self._validate(spec, values, scope)
             selected.append(_selected(spec, values, scope))
@@ -209,6 +221,17 @@ class SelectionResolver:
             self._validate(spec, values, scope)
             selected.append(_selected(spec, values, scope))
         return _dedupe(selected)
+
+
+def _default_scope_note(request: SelectionRequest) -> str | None:
+    """Say so when ``awx.default_organization``, not a flag, narrowed a name lookup."""
+    organization = request.scope.get("organization")
+    if not request.default_organization or organization is None:
+        return None
+    return (
+        f"searched in organization {q(organization)} (awx.default_organization); "
+        "pass --organization to search elsewhere"
+    )
 
 
 def _positive_id(raw_id: str) -> int:

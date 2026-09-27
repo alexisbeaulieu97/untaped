@@ -30,11 +30,9 @@ from untaped.capabilities.awx.cli.options import (
     ContinueOption,
     DryRunOption,
     FilterOption,
-    InventoryOrganizationOption,
     NamesArgument,
     OrganizationOption,
     ParallelOption,
-    ParentOption,
     SearchOption,
     StdinOption,
     WaitTimeoutOption,
@@ -69,8 +67,6 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
         search: SearchOption = None,
         filter_: FilterOption = None,
         all_: AllOption = False,
-        parent: ParentOption = None,
-        inventory_organization: InventoryOrganizationOption = None,
         dry_run: DryRunOption = False,
         yes: YesOption = False,
         continue_on_error: ContinueOption = False,
@@ -94,12 +90,12 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
             str | None,
             Parameter(name="--host-pattern", help="Limit the run to hosts matching this pattern."),
         ] = None,
-        inventory: Annotated[
+        launch_inventory: Annotated[
             str | None,
             Parameter(
-                name="--inventory",
-                help="Override inventory by name (resolved to id).",
-                show=not hidden_by_flag["--inventory"],
+                name="--launch-inventory",
+                help="Inventory to run against: a name, or digits for an AWX id.",
+                show=not hidden_by_flag["--launch-inventory"],
             ),
         ] = None,
         credential: Annotated[
@@ -188,7 +184,7 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
     ) -> None:
         """Launch one or more resources and (optionally) wait for each job."""
         supplied: dict[str, object] = {
-            "--inventory": inventory,
+            "--launch-inventory": launch_inventory,
             "--credential": credential,
             "--scm-branch": scm_branch,
             "--job-tag": job_tag,
@@ -202,7 +198,6 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
         with report_errors():
             parallel = validate_controls(yes=yes, dry_run=dry_run, parallel=parallel)
             with open_context() as ctx:
-                # --inventory remains a payload override, never template scope.
                 selected = select_resources(
                     ctx,
                     spec,
@@ -214,8 +209,6 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                     all_=all_,
                     require_explicit=True,
                     organization=organization,
-                    inventory_organization=inventory_organization,
-                    parent=parent,
                 )
                 scope = scope_for_command(ctx, organization, spec)
                 payload = _build_launch_payload(
@@ -274,17 +267,20 @@ class LaunchFlag:
     payload_builder: Callable[[Any, FkResolver, dict[str, str] | None], Any]
 
 
+def _inventory_id(value: str, fk: FkResolver, scope: dict[str, str] | None) -> Any:
+    """``--launch-inventory``: digits are an AWX id, anything else a name in scope."""
+    if value.isdecimal():
+        return fk.validate_id("Inventory", int(value))
+    return fk.name_to_id("Inventory", value, scope=scope)
+
+
 # Source of truth for the launch CLI flag → payload-field mapping.
 # ``extra_vars`` and ``limit`` stay outside the table — both are
 # accepted by every launch-capable kind today, so they don't need
 # per-kind visibility / rejection logic. If a future kind drops one,
 # fold it in here.
 LAUNCH_FLAGS: tuple[LaunchFlag, ...] = (
-    LaunchFlag(
-        "--inventory",
-        "inventory",
-        lambda v, fk, scope: fk.name_to_id("Inventory", v, scope=scope),
-    ),
+    LaunchFlag("--launch-inventory", "inventory", _inventory_id),
     LaunchFlag(
         "--credential",
         "credentials",
@@ -346,7 +342,7 @@ def _build_launch_payload(
 
     Only fields listed in this kind's ``ActionSpec.accepts`` are
     forwarded; flags for fields not in ``accepts`` are silently
-    ignored. FK flags (``--inventory``, ``--credential``) resolve
+    ignored. FK flags (``--launch-inventory``, ``--credential``) resolve
     names to ids using the per-process :class:`FkResolver` via each
     row's ``payload_builder``.
     """
