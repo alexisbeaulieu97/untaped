@@ -67,9 +67,8 @@
     changes writes nothing.
   - **Fix:** `atomic_write` (and `apply_file_changes`) now fsync the file and
     its directory, keep an existing file's permission bits (or apply `mode=`,
-    which the file has from the moment it is created),
-    and write through symlinks (never creating directories for a dangling
-    link's target). Config writes, file transactions and the GitHub corpus
+    which the file has from the moment it is created), and write through
+    symlinks (never creating directories for a dangling link's target). Config writes, file transactions and the GitHub corpus
     metadata use this one helper.
   - **Fix:** with `skills.updates: auto`, the per-run skills check only warns
     after a failed command or a preview (`--dry-run`, `--check`); it no
@@ -321,7 +320,7 @@
     refresh command to run. `--live` still reads GitHub.
   - **Breaking:** `ansible alias` is renamed `ansible source-alias`, with
     record kinds `ansible.source_alias` and `ansible.source_alias_outcome`.
-    The old name is gone (`alias` is reserved for a future root command).
+    The old name is gone (`alias` is now the root `untaped alias` command).
   - **Breaking:** the deprecated spellings are removed: `alias add`,
     `source save`/`edit`/`show`, and `--concurrency` (`source refresh`,
     `graph`) and `--output` (`graph`). Use `source-alias set`,
@@ -381,13 +380,15 @@
   - **Fix:** a hook that writes to stdout at the file-descriptor level (or
     spawns a process that does) no longer corrupts the worker protocol; the
     output becomes hook diagnostics, and hooks read an empty stdin.
-  - **Behavior change:** `add` and `sync` refuse a pack containing symlinks
-    (outside ignored dirs such as `.venv`) instead of copying their targets.
-  - `add` and `sync` record the resolved `commit` of a git source next to the
-    requested `rev` (also when the pack's files did not change); `list
-    --packs` and the `add`/`sync` rows show it. The `sync` confirmation (and
-    `--dry-run`) shows each pack's commit move and the hook-code files that
-    change (`src/`, root `*.py`, and the uv/Python project files).
+  - **Behavior change:** `packs add` and `packs sync` refuse a pack
+    containing symlinks (outside ignored dirs such as `.venv`) instead of
+    copying their targets.
+  - `packs add` and `packs sync` record the resolved `commit` of a git source
+    next to the requested `rev` (also when the pack's files did not change);
+    `packs list` and the `packs add`/`packs sync` rows show it. The `packs
+    sync` confirmation (and `--dry-run`) shows each pack's commit move and the
+    hook-code files that change (`src/`, root `*.py`, and the uv/Python
+    project files).
   - **Fix:** backup bundles are created owner-only (dirs `0700`, files
     `0600`) and their `metadata.json` is written atomically.
   - `apply --dry-run`/`--check` help and docs now state that pack hooks still
