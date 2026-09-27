@@ -288,6 +288,7 @@ class _GraphBuilder:
         # Must mirror the read conditions of _expand_deps + _node_metadata.
         self._prefetch_edges(level, cache=self._dependencies, batch=self._index.dependencies_batch)
         repos: set[str] = set()
+        unpinned: set[str] = set()
         for entry in level:
             if entry.remaining == 0:
                 continue
@@ -297,7 +298,34 @@ class _GraphBuilder:
                     repos.add(entry.repo)
                 if indexed.dependency_repo is not None:
                     repos.add(indexed.dependency_repo)
+                    if indexed.dependency_version is None and entry.remaining != 1:
+                        unpinned.add(indexed.dependency_repo)
         self._prefetch_ref_metadata(repos)
+        self._prefetch_unpinned_default_branches(unpinned)
+
+    def _prefetch_unpinned_default_branches(self, repos: set[str]) -> None:
+        """Read unpinned dependencies with no known default branch ref-less, early.
+
+        An unbridged child walk makes exactly this read one level later; doing
+        it now lets a live index record the default branch it resolved, so
+        the metadata re-read below can bridge the hop (see :meth:`_dependency_ref`).
+        """
+        source_key = self._request.source_key
+        unknown = sorted(
+            repo
+            for repo in repos
+            if _first_default_branch(self._cached_ref_metadata[(repo, source_key)]) is None
+        )
+        pairs = [
+            (repo, None) for repo in unknown if (repo, None, source_key) not in self._dependencies
+        ]
+        if not pairs:
+            return
+        loaded = self._index.dependencies_batch(pairs, source_key=source_key)
+        for repo, ref in pairs:
+            self._dependencies[(repo, ref, source_key)] = loaded[(repo, ref)]
+            del self._cached_ref_metadata[(repo, source_key)]
+        self._prefetch_ref_metadata({repo for repo, _ in pairs})
 
     def _prefetch_impact_level(self, level: list[_Walk]) -> None:
         # Must mirror the read conditions of _expand_impact + _node_metadata.
@@ -365,7 +393,7 @@ class _GraphBuilder:
         if indexed.dependency_repo is not None:
             self._add_node(indexed.dependency_repo, ref)
             return
-        node_id = _dependency_target_id(indexed, ref)
+        node_id = _unresolved_id(indexed)
         unresolved = indexed.unresolved or indexed.dependency_name
         self._nodes.setdefault(
             node_id,
@@ -559,6 +587,10 @@ def _dependency_target_id(indexed: IndexedDependency, ref: str | None) -> str:
     """Compute a dependency's target node id at ``ref`` without emitting the node."""
     if indexed.dependency_repo is not None:
         return _node_id(indexed.dependency_repo, ref)
+    return _unresolved_id(indexed)
+
+
+def _unresolved_id(indexed: IndexedDependency) -> str:
     return f"unresolved:{indexed.unresolved or indexed.dependency_name}"
 
 

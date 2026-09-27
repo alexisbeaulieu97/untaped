@@ -1807,6 +1807,71 @@ def test_graph_contains_follows_unpinned_hops_through_the_default_branch(
     ]
 
 
+def test_graph_contains_follows_unpinned_hops_in_live_reads(tmp_path: Path, monkeypatch) -> None:
+    _use_config(tmp_path, monkeypatch, token=True)
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        _mock_dependency_file(mock, "acme/app", content="- src: https://github.com/acme/lib\n")
+        _mock_dependency_file(
+            mock, "acme/lib", content="- src: https://github.com/acme/target\n  version: v1\n"
+        )
+        result = CliInvoker().invoke(
+            app, ["graph", "acme/app", "--contains", "acme/target", "--depth", "2", "-f", "json"]
+        )
+
+    assert _match_rows(result) == [
+        ("acme/app", "main", "v1", ["acme/app@main", "acme/lib@main", "acme/target@v1"])
+    ]
+    assert "warning" not in result.stderr
+
+
+def test_graph_contains_reads_a_shared_dependency_live_once_across_roots(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _use_config(tmp_path, monkeypatch, token=True)
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        for root in ("acme/one", "acme/two"):
+            _mock_dependency_file(mock, root, content="- src: https://github.com/acme/lib\n")
+        _mock_dependency_file(
+            mock, "acme/lib", content="- src: https://github.com/acme/target\n  version: v1\n"
+        )
+        result = CliInvoker().invoke(
+            app,
+            ["graph", "--stdin", "--contains", "acme/target", "--depth", "2", "-f", "json"],
+            input="acme/one\nacme/two\n",
+        )
+        lib_paths = [call.request.url.path for call in mock.calls if "acme/lib" in str(call)]
+
+    assert [row[0] for row in _match_rows(result)] == ["acme/one", "acme/two"]
+    assert len(lib_paths) == len(set(lib_paths))
+
+
+def test_graph_without_contains_keeps_the_default_depth_of_three(
+    tmp_path: Path, monkeypatch
+) -> None:
+    chain = ["acme/r1", "acme/r2", "acme/r3", "acme/r4"]
+    _seed(
+        tmp_path,
+        "source:platform",
+        *(_edge(repo, dep, version="main") for repo, dep in pairwise(chain)),
+        _edge("acme/r4", "acme/target", version="v1"),
+    )
+    _use_config(tmp_path, monkeypatch, {"sources": [{"name": "platform", "repos": chain}]})
+
+    result = _run(
+        "graph", "acme/r1", "--ref", "main", "--source", "platform", "--downstream",
+        "--format", "json",
+    )  # fmt: skip
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert [edge["target_id"] for edge in json.loads(result.stdout)["edges"]] == [
+        "acme/r2@main",
+        "acme/r3@main",
+        "acme/r4@main",
+    ]
+
+
 def test_graph_contains_reads_pipe_records_with_scm_fields(tmp_path: Path, monkeypatch) -> None:
     _seed_contains(tmp_path)
     _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
