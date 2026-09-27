@@ -313,8 +313,31 @@
     search limit.
   - **Behavior change:** `cache delete OWNER/NAME` fails with `cached repo not
     found` and exit 1, before deleting anything, when a named repo is not
-    cached or not in `--org`. It used to exit 0 silently. The deprecated
-    `cache clean --repo` fails the same way.
+    cached or not in `--org`. It used to exit 0 silently.
+  - **Breaking:** `--archived` is now `--archived include|exclude|only` on
+    `repos list`, `search repos`, `sweep` and `cache sync`, defaulting to
+    `exclude` everywhere. It used to mean "only archived" on `repos list` and
+    `search repos` (which included archived repos by default) but "include
+    archived" on `sweep` and `cache sync`. `--no-archived` and the bare
+    `--archived` flag are gone: drop `--no-archived`, and use `--archived
+    only` or `--archived include` for the old meanings. `search repos` now
+    adds `archived:false` to the query by default, unless the query already
+    has an `archived:` qualifier.
+  - **Breaking:** removed the deprecated `cache clean` (use `cache delete` or
+    `cache prune`), `search --repo-stdin` (use `--stdin`), and the `sweep`
+    spellings `-w` (use `--word-regexp`), `--sync` (use `--refresh`) and
+    `--no-sync` (use `--cached`).
+  - `-r` is now short for `--repo` on `search repos|code|issues`, `sweep` and
+    `cache sync`, matching the reserved short flag.
+  - New `github.default_org` setting: `repos list`, `search repos|code|issues`,
+    `sweep`, `cache sync` and `cache prune` use it when no scope flag is
+    given. A search with no scope and no default org (or a `--team` with no
+    repos) still searches `user:@me`, and now says so on stderr.
+  - When `--limit` cuts results off, `repos list` and `search` print a notice
+    on stderr (`showing 2 of 3 repositories; omit --limit to list all`).
+    Search asks GitHub for one row past `--limit` to detect this, except at a
+    multiple of 100 or at 1000 and up, where that row would cost an extra
+    request; those limits print no notice.
 
 ## 7.1.0
 

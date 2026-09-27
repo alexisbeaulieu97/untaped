@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -36,6 +37,15 @@ def _commit_file(repo: Path, rel: str, content: str, message: str = "change") ->
     path.write_text(content)
     _git(repo, "add", rel)
     _git(repo, "commit", "-q", "-m", message)
+
+
+@pytest.fixture
+def default_org() -> str:
+    """Set ``github.default_org: acme`` in the test config, whose ``github`` section is last."""
+    cfg = Path(os.environ["UNTAPED_CONFIG"])
+    cfg.write_text(cfg.read_text() + "      default_org: acme\n")
+    get_settings.cache_clear()
+    return "acme"
 
 
 @pytest.fixture

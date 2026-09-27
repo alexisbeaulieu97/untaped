@@ -5,10 +5,18 @@ from __future__ import annotations
 import fnmatch
 import re
 from collections.abc import Callable
+from typing import Literal
 
 from untaped.capabilities.github.domain.models import RepoListResult
 
 RepoMatcher = Callable[[RepoListResult], bool]
+ArchivedMode = Literal["include", "exclude", "only"]
+"""How a command treats archived repositories: keep them, drop them, or keep only them."""
+
+
+def archived_allows(mode: ArchivedMode, archived: bool) -> bool:
+    """Whether a repository with this ``archived`` flag passes ``mode``."""
+    return mode == "include" or archived is (mode == "only")
 
 
 def compile_repo_pattern(pattern: str, *, regex: bool = False) -> RepoMatcher:

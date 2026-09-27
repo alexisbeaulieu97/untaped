@@ -26,6 +26,7 @@ ENDPOINTS = {
 TEAMS = {
     "/orgs/acme/teams/backend/repos": [{"full_name": "acme/api"}, {"full_name": "acme/web"}],
     "/orgs/platform/teams/ops/repos": [{"full_name": "platform/deploy"}],
+    "/orgs/acme/teams/empty/repos": [],
 }
 
 
@@ -88,8 +89,14 @@ def _search(
     items: Sequence[dict[str, Any]] = (),
     pages: Sequence[Sequence[dict[str, Any]]] = (),
     input: str | None = None,
+    requests: list[str] | None = None,
+    root_args: Sequence[str] = (),
 ) -> tuple[CliResult, respx.Route]:
-    """Run ``search <args>`` against a mocked API; ``pages`` chain via ``Link`` headers."""
+    """Run ``search <args>`` against a mocked API; ``pages`` chain via ``Link`` headers.
+
+    ``requests`` collects every requested URL; ``root_args`` (such as ``-q``) run
+    the search through the ``untaped`` root instead of the github app.
+    """
     endpoint = ENDPOINTS[args[0]]
     with respx.mock(base_url=API, assert_all_called=False) as mock:
         for path, repos in TEAMS.items():
@@ -107,7 +114,13 @@ def _search(
                 200, json={"items": list(pages[0] if pages else items)}, headers=first
             )
         )
-        result = CliInvoker().invoke(app, ["search", *args], input=input)
+        if root_args:
+            argv = [*root_args, "github", "search", *args]
+            result = invoke_cli(build_root_app(externals=[]), argv, input=input)
+        else:
+            result = CliInvoker().invoke(app, ["search", *args], input=input)
+        if requests is not None:
+            requests.extend(str(call.request.url) for call in mock.calls)
     return result, route
 
 
@@ -118,9 +131,16 @@ def _q(route: respx.Route) -> str:
 @pytest.mark.parametrize(
     ("args", "stdin", "expected_q"),
     [
-        (["repos", "--language", "python"], None, "user:@me language:python"),
-        (["repos", "--org", "acme"], None, "org:acme"),
-        (["repos", "--team", "acme/backend"], None, "(repo:acme/api OR repo:acme/web)"),
+        (["repos", "--language", "python"], None, "user:@me language:python archived:false"),
+        (["repos", "--org", "acme"], None, "org:acme archived:false"),
+        (
+            ["repos", "--team", "acme/backend", "--archived", "include"],
+            None,
+            "(repo:acme/api OR repo:acme/web)",
+        ),
+        (["repos", "--org", "acme", "--archived", "only"], None, "org:acme archived:true"),
+        (["repos", "archived:true", "--org", "acme"], None, "archived:true org:acme"),
+        (["code", "TODO", "-r", "acme/api"], None, "TODO repo:acme/api"),
         (["code", "TODO", "--language", "python"], None, "TODO user:@me language:python"),
         (
             ["code", "TODO", "--team", "acme/backend", "--team", "platform/ops"],
@@ -180,8 +200,10 @@ def test_search_defaults_to_30_results_per_command(kind: str) -> None:
 
     assert result.exit_code == 0, result.output
     assert len(json.loads(result.stdout)) == 30
-    assert route.calls[0].request.url.params["per_page"] == "30"
+    # One row past the limit reveals truncation without a second request.
+    assert route.calls[0].request.url.params["per_page"] == "31"
     assert route.call_count == 1
+    assert "showing the first 30 results; more match, raise --limit" in result.stderr
 
 
 def test_search_limit_caps_results() -> None:
@@ -191,6 +213,83 @@ def test_search_limit_caps_results() -> None:
 
     assert result.exit_code == 0, result.output
     assert len(json.loads(result.stdout)) == 2
+
+
+@pytest.mark.parametrize("kind", list(ENDPOINTS))
+def test_search_prints_no_truncation_notice_when_every_match_fits(kind: str) -> None:
+    result, _ = _search([kind, "q", "--limit", "3", "--format", "json"], items=[ROW[kind](1)])
+
+    assert result.exit_code == 0, result.output
+    assert "showing" not in result.stderr
+
+
+@pytest.mark.parametrize("kind", ["repos", "code", "issues"])
+@pytest.mark.parametrize(
+    "scope", [[], ["--team", "acme/empty"]], ids=["no-scope", "team-without-repos"]
+)
+def test_search_notes_the_user_me_fallback(kind: str, scope: list[str]) -> None:
+    unscoped, route = _search([kind, "q", *scope, "--format", "json"])
+    scoped, _ = _search([kind, "q", "--org", "acme", "--format", "json"])
+
+    assert unscoped.exit_code == scoped.exit_code == 0, unscoped.output
+    assert "user:@me" in _q(route)
+    assert "searching user:@me" in unscoped.stderr
+    assert "github.default_org" in unscoped.stderr
+    assert "user:@me" not in scoped.stderr
+
+
+def test_quiet_mutes_the_fallback_and_truncation_notices() -> None:
+    items = [_repo(i) for i in range(5)]
+
+    loud, _ = _search(["repos", "--limit", "2", "--format", "json"], items=items)
+    quiet, _ = _search(["repos", "--limit", "2", "--format", "json"], items=items, root_args=["-q"])
+
+    assert "user:@me" in loud.stderr
+    assert "showing the first 2 results" in loud.stderr
+    assert quiet.exit_code == 0, quiet.output
+    assert len(json.loads(quiet.stdout)) == 2
+    assert quiet.stderr == ""
+
+
+@pytest.mark.parametrize("limit", [100, 200])
+def test_search_limit_on_a_page_boundary_skips_the_probe(limit: int) -> None:
+    # Probing one row past a multiple of 100 would cost a whole extra page.
+    pages = [[_repo(i) for i in range(p * 100, p * 100 + 100)] for p in range(limit // 100 + 1)]
+    requests: list[str] = []
+
+    result, _ = _search(
+        ["repos", "--limit", str(limit), "--format", "json"], pages=pages, requests=requests
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(json.loads(result.stdout)) == limit
+    assert len(requests) == limit // 100
+    assert "showing" not in result.stderr
+
+
+def test_search_limit_at_github_cap_skips_the_probe() -> None:
+    pages = [[_repo(i) for i in range(p * 100, p * 100 + 100)] for p in range(11)]
+    requests: list[str] = []
+
+    result, _ = _search(
+        ["repos", "--limit", "1000", "--format", "json"], pages=pages, requests=requests
+    )
+
+    assert len(json.loads(result.stdout)) == 1000
+    assert len(requests) == 10
+
+
+@pytest.mark.usefixtures("default_org")
+def test_search_without_scope_uses_github_default_org() -> None:
+    unscoped, unscoped_route = _search(["code", "TODO", "--format", "json"])
+    by_repo, repo_route = _search(["code", "TODO", "--repo", "x/y", "--format", "json"])
+    by_user, user_route = _search(["code", "TODO", "--user", "bob", "--format", "json"])
+
+    assert _q(unscoped_route) == "TODO org:acme"
+    assert "user:@me" not in unscoped.stderr
+    assert _q(repo_route) == "TODO repo:x/y"
+    assert _q(user_route) == "TODO user:bob"
+    assert by_repo.exit_code == by_user.exit_code == 0
 
 
 @pytest.mark.parametrize("limit", ["1000", "5000"])
@@ -348,18 +447,21 @@ def test_search_stdin_rejects_records_of_another_kind() -> None:
     assert "github.user" in result.stderr
 
 
-def test_search_repo_stdin_is_a_deprecated_alias_of_stdin() -> None:
-    with respx.mock(base_url=API) as mock:
-        route = mock.get("/search/code").mock(return_value=httpx.Response(200, json={"items": []}))
-        result = invoke_cli(
-            build_root_app(externals=[]),
-            ["github", "search", "code", "TODO", "--repo-stdin", "--format", "json"],
-            input="acme/api\n",
-        )
+def test_search_repo_stdin_alias_is_gone() -> None:
+    result = invoke_cli(
+        build_root_app(externals=[]),
+        ["github", "search", "code", "TODO", "--repo-stdin"],
+        input="acme/api\n",
+    )
 
-    assert result.exit_code == 0, result.output
-    assert "`--repo-stdin` is deprecated" in result.stderr
-    assert _q(route) == "TODO repo:acme/api"
+    assert result.exit_code == 2, result.output
+    assert "deprecated" not in result.stderr
+
+
+def test_search_repos_rejects_the_old_boolean_archived_spellings() -> None:
+    result = CliInvoker().invoke(app, ["search", "repos", "--no-archived"])
+
+    assert result.exit_code == 2, result.output
 
 
 def test_search_repos_rejects_oversized_query_before_http_and_explains_422() -> None:

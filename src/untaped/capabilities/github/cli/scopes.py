@@ -1,4 +1,4 @@
-"""Shared CLI scope option aliases and parsers."""
+"""Shared CLI scope option aliases, parsers, and the ``github.default_org`` fallback."""
 
 from __future__ import annotations
 
@@ -8,7 +8,15 @@ from cyclopts import Parameter, validators
 
 from untaped.capabilities.github.application.inventory import RepositoryInventoryItem
 from untaped.capabilities.github.application.scopes import TeamScope, normalize_team_scopes
-from untaped.capability_api import ConfigError, ParallelOption, UsageError, read_stdin_input
+from untaped.capabilities.github.domain import ArchivedMode
+from untaped.capabilities.github.settings import GithubSettings
+from untaped.capability_api import (
+    ConfigError,
+    ParallelOption,
+    UsageError,
+    app_context,
+    read_stdin_input,
+)
 
 REPO_KINDS = frozenset({"github.repo", "github.repo_hit", "github.sweep_repo"})
 """Pipe record kinds whose ``full_name`` names a repository for ``--stdin``."""
@@ -16,7 +24,10 @@ REPO_KINDS = frozenset({"github.repo", "github.repo_hit", "github.sweep_repo"})
 OrgOption = Annotated[
     list[str] | None,
     Parameter(
-        name="--org", help="GitHub org scope. Repeatable.", consume_multiple=False, negative=""
+        name="--org",
+        help="GitHub org scope. Repeatable. Defaults to github.default_org without another scope.",
+        consume_multiple=False,
+        negative="",
     ),
 ]
 TeamOption = Annotated[
@@ -32,14 +43,15 @@ TeamOption = Annotated[
 RepoOption = Annotated[
     list[str] | None,
     Parameter(
-        name="--repo",
+        name=["--repo", "-r"],
         help="Repository OWNER/NAME. Repeatable.",
         consume_multiple=False,
         negative="",
     ),
 ]
 ArchivedOption = Annotated[
-    bool, Parameter(name="--archived", negative="", help="Include archived repositories.")
+    ArchivedMode,
+    Parameter(name="--archived", help="Keep, drop, or keep only archived repositories."),
 ]
 DepthOption = Annotated[
     int,
@@ -61,6 +73,14 @@ def parse_team_scopes(
         return normalize_team_scopes(values, orgs=orgs)
     except ValueError as exc:
         raise UsageError("--team must be ORG/SLUG unless exactly one --org is provided") from exc
+
+
+def org_scope(org: list[str] | None, *, scoped: bool) -> tuple[str, ...]:
+    """``--org`` values, else ``github.default_org`` when no other scope was given."""
+    if org or scoped:
+        return tuple(org or ())
+    default = app_context().section("github", GithubSettings).default_org
+    return (default,) if default else ()
 
 
 def read_stdin_repos() -> tuple[tuple[str, ...], tuple[RepositoryInventoryItem, ...]]:

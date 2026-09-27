@@ -181,7 +181,10 @@ def test_content_modifiers_and_path_reach_the_grep(source_repo: SourceRepo) -> N
         ),
         (["--org", "acme", "--path", "src/**"], "use --has-file"),
         (["--repo", "acme/api", "--has-file", "README.md", "--parallel", "0"], "--parallel"),
-        (["--grep", "needle"], "sweep requires --org, --team, --repo, or --stdin"),
+        (
+            ["--grep", "needle"],
+            "sweep requires --org, --team, --repo, --stdin, or a github.default_org setting",
+        ),
     ],
 )
 def test_sweep_usage_errors_fail_before_any_request(args: list[str], message: str) -> None:
@@ -223,20 +226,63 @@ def test_exit_code_matrix(
     assert unscanned_strict.exit_code == 3, unscanned_strict.output
 
 
-def test_sweep_old_flag_spellings_are_deprecated_aliases() -> None:
-    root = build_root_app(externals=[])
-
-    cached = invoke_cli(
-        root, ["github", "sweep", "--org", "acme", "--grep", "x", "-w", "--no-sync"]
+@pytest.mark.parametrize(
+    "old", [["-w"], ["--sync"], ["--no-sync"], ["--archived"], ["--archived", "yes"]]
+)
+def test_sweep_old_flag_spellings_are_gone(old: list[str]) -> None:
+    result = invoke_cli(
+        build_root_app(externals=[]), ["github", "sweep", "--org", "acme", "--grep", "x", *old]
     )
-    refreshed = invoke_cli(root, ["github", "sweep", "--org", "acme", "--grep", "[", "--sync"])
 
-    assert cached.exit_code == 1, cached.output
-    assert "`-w` is deprecated" in cached.stderr
-    assert "`--no-sync` is deprecated" in cached.stderr
-    assert "corpus has no repos in scope; run without --cached" in cached.stderr
-    assert refreshed.exit_code == 2, refreshed.output
-    assert "`--sync` is deprecated" in refreshed.stderr
+    assert result.exit_code == 2, result.output
+    assert "deprecated" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("archived", "expected"),
+    [
+        ([], ["acme/api"]),
+        (["--archived", "include"], ["acme/api", "acme/old"]),
+        (["--archived", "only"], ["acme/old"]),
+    ],
+    ids=["default-excludes", "include", "only"],
+)
+def test_sweep_archived_is_include_exclude_or_only(
+    source_repo: SourceRepo, archived: list[str], expected: list[str]
+) -> None:
+    api = source_repo("api", {"README.md": "x\n"})
+    old = source_repo("old", {"README.md": "x\n"})
+    listing = [_repo("acme/api", api), {**_repo("acme/old", old), "archived": True}]
+
+    result, _ = _sweep(
+        ["--org", "acme", "--has-file", "README.md", *archived, "--format", "json"], org=listing
+    )
+
+    assert [row["full_name"] for row in _json(result)] == expected
+
+
+def test_sweep_short_r_means_repo(source_repo: SourceRepo) -> None:
+    source = source_repo("api", {"README.md": "x\n"})
+
+    result, paths = _sweep(
+        ["-r", "acme/api", "--has-file", "README.md", "--format", "json"],
+        repos={"acme/api": httpx.Response(200, json=_repo("acme/api", source))},
+    )
+
+    assert [row["full_name"] for row in _json(result)] == ["acme/api"]
+    assert paths == ["/repos/acme/api"]
+
+
+@pytest.mark.usefixtures("default_org")
+def test_sweep_default_org_fills_an_empty_scope(source_repo: SourceRepo) -> None:
+    source = source_repo("api", {"README.md": "x\n"})
+
+    result, paths = _sweep(
+        ["--has-file", "README.md", "--format", "json"], org=[_repo("acme/api", source)]
+    )
+
+    assert [row["full_name"] for row in _json(result)] == ["acme/api"]
+    assert paths == ["/orgs/acme/repos"]
 
 
 def test_missing_explicit_repo_is_unscanned_and_strict_fails(source_repo: SourceRepo) -> None:

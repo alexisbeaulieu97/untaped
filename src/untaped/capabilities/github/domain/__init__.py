@@ -30,6 +30,7 @@ from untaped.capabilities.github.domain.queries import (
     RepoSearchFilters,
     UserSearchFilters,
 )
+from untaped.capabilities.github.domain.repo_filters import ArchivedMode, archived_allows
 from untaped.capabilities.github.domain.sweep import (
     RefEvaluation,
     RefProfile,
@@ -43,6 +44,7 @@ from untaped.capabilities.github.domain.sweep import (
 
 __all__ = [
     "CODEOWNERS_LOCATIONS",
+    "ArchivedMode",
     "CodeResult",
     "CodeSearchFilters",
     "CorpusFailure",
@@ -67,6 +69,7 @@ __all__ = [
     "UserResult",
     "UserSearchFilters",
     "WorktreeResult",
+    "archived_allows",
     "covers",
     "github_web_host",
     "parse_codeowners",

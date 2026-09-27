@@ -62,6 +62,7 @@ variable shown.
 | `github.base_url` | string | `https://api.github.com` | `UNTAPED_GITHUB__BASE_URL` | GitHub API URL. GitHub Enterprise Server uses `https://HOST/api/v3`. |
 | `github.token` | secret (optional) | unset | `UNTAPED_GITHUB__TOKEN` | GitHub token for API calls and Git fetches. Falls back to `token_command`, then `GH_TOKEN`, then `GITHUB_TOKEN`. |
 | `github.token_command` | list (optional) | unset | `UNTAPED_GITHUB__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `github.token` is unset. |
+| `github.default_org` | string (optional) | unset | `UNTAPED_GITHUB__DEFAULT_ORG` | Org scope for `repos list`, `search` (repos, code, issues), `sweep`, `cache sync` and `cache prune` when no scope flag is given. Without it, search uses `@me`. |
 | `github.corpus_path` | path | `~/.untaped/github-corpus` | `UNTAPED_GITHUB__CORPUS_PATH` | Local Git corpus that `github sweep` and `github cache` manage. |
 | `github.sweep.max_age_seconds` | integer | `3600` | `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS` | `sweep` and `cache sync` refresh cached repos older than this that GitHub reports as pushed since. |
 | `github.sweep.sync_concurrency` | integer | `12` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | Default `sweep --parallel` and `cache sync --parallel` Git workers. |

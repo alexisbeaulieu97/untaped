@@ -60,6 +60,9 @@ DESCRIPTIONS: dict[str, str] = {
     "`token_command`, then `GH_TOKEN`, then `GITHUB_TOKEN`.",
     "github.token_command": "Command (argv list, no shell) that prints the token; "
     "used when `github.token` is unset.",
+    "github.default_org": "Org scope for `repos list`, `search` (repos, code, issues), "
+    "`sweep`, `cache sync` and `cache prune` when no scope flag is given. Without it, "
+    "search uses `@me`.",
     "github.corpus_path": "Local Git corpus that `github sweep` and `github cache` manage.",
     "github.sweep.max_age_seconds": "`sweep` and `cache sync` refresh cached repos older than "
     "this that GitHub reports as pushed since.",

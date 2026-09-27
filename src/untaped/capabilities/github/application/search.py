@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel
@@ -21,7 +20,7 @@ from untaped.capabilities.github.domain import (
     UserSearchFilters,
 )
 from untaped.capabilities.github.domain.errors import is_rate_limited
-from untaped.capabilities.github.domain.queries import ScopedQueryBase
+from untaped.capabilities.github.domain.queries import ScopedQueryBase, tokenize_search_query
 from untaped.capability_api import HttpStatusError, UntapedError
 
 WarnFn = Callable[[str], None]
@@ -66,16 +65,13 @@ _REPO_SEARCH_QUALIFIER_KEYS = frozenset(
     }
 )
 _GLOBAL_REPO_SORTS = {"stars", "forks", "updated"}
+_USER_FALLBACK_NOTE = (
+    "no user, org or repository in scope; searching user:@me (pass --org or set github.default_org)"
+)
 _HELP_WANTED_BATCH_WARNING = (
     "search repos --sort help-wanted-issues is applied per GitHub request; "
     "multi-batch team searches may return batch-order-dependent selections"
 )
-
-
-@dataclass(frozen=True)
-class _SearchQueryToken:
-    value: str
-    quoted: bool
 
 
 def _noop(_: str) -> None:
@@ -122,13 +118,16 @@ def _resolve_team_repos(
     return tuple(all_repos)
 
 
-def _apply_scope_defaults[F: ScopedQueryBase](filters: F, team_repos: tuple[str, ...]) -> F:
-    """Merge team-resolved repos and inject ``user:@me`` when no scope set."""
+def _apply_scope_defaults[F: ScopedQueryBase](
+    filters: F, team_repos: tuple[str, ...], *, note: WarnFn
+) -> F:
+    """Merge team-resolved repos and inject ``user:@me`` (saying so) when no scope set."""
     repos = tuple(dict.fromkeys((*filters.repos, *team_repos)))
     has_scope = bool(filters.user or filters.orgs or repos)
     overrides: dict[str, object] = {"repos": repos}
     if not has_scope:
         overrides["user"] = "@me"
+        note(_USER_FALLBACK_NOTE)
     return filters.model_copy(update=overrides)
 
 
@@ -162,7 +161,7 @@ def _ensure_search_boolean_operators_fit(filters: ScopedQueryBase, *, kind: str)
 def _search_boolean_operator_count(filters: ScopedQueryBase) -> int:
     return sum(
         1
-        for token in _tokenize_search_query(filters.raw_query or "")
+        for token in tokenize_search_query(filters.raw_query or "")
         if not token.quoted and token.value in _SEARCH_BOOLEAN_OPERATORS
     )
 
@@ -171,7 +170,7 @@ def _search_query_text_length(filters: RepoSearchFilters) -> int:
     """Length of the free text GitHub counts: no operators, no supported qualifiers."""
     parts = [
         token.value
-        for token in _tokenize_search_query(filters.raw_query or "")
+        for token in tokenize_search_query(filters.raw_query or "")
         if token.quoted
         or (
             token.value not in _SEARCH_BOOLEAN_OPERATORS
@@ -181,36 +180,6 @@ def _search_query_text_length(filters: RepoSearchFilters) -> int:
     if filters.name and filters.name.strip():
         parts.append(filters.name.strip())
     return len(" ".join(part for part in parts if part))
-
-
-def _tokenize_search_query(raw_query: str) -> tuple[_SearchQueryToken, ...]:
-    tokens: list[_SearchQueryToken] = []
-    chars: list[str] = []
-    quoted = False
-    token_quoted = False
-
-    for char in raw_query:
-        if quoted:
-            if char == '"':
-                quoted = False
-            else:
-                chars.append(char)
-            continue
-        if char == '"':
-            quoted = True
-            token_quoted = True
-            continue
-        if char.isspace():
-            if chars or token_quoted:
-                tokens.append(_SearchQueryToken("".join(chars), token_quoted))
-                chars = []
-                token_quoted = False
-            continue
-        chars.append(char)
-
-    if chars or token_quoted:
-        tokens.append(_SearchQueryToken("".join(chars), token_quoted))
-    return tuple(tokens)
 
 
 def _is_repo_search_qualifier(value: str) -> bool:
@@ -274,7 +243,7 @@ def _cap_batches[F: ScopedQueryBase](
 def _raw_issue_sort(raw_query: str | None) -> tuple[str, bool] | None:
     """Return the last ``sort:<field>[-asc|-desc]`` qualifier as (field, descending)."""
     found: tuple[str, bool] | None = None
-    for token in _tokenize_search_query(raw_query or ""):
+    for token in tokenize_search_query(raw_query or ""):
         if token.quoted or not token.value.lower().startswith("sort:"):
             continue
         value = token.value[len("sort:") :].lower()
@@ -351,10 +320,12 @@ class _ScopedSearch:
         teams: GithubTeamService,
         *,
         warn: WarnFn = _noop,
+        note: WarnFn = _noop,
     ) -> None:
         self._search = search
         self._teams = teams
         self._warn = warn
+        self._note = note
 
 
 class SearchRepos(_ScopedSearch):
@@ -367,7 +338,7 @@ class SearchRepos(_ScopedSearch):
         team_scopes: tuple[TeamScope, ...] = (),
     ) -> Iterator[RepoResult]:
         team_repos = _resolve_team_repos(self._teams, team_scopes=team_scopes)
-        effective = _apply_scope_defaults(filters, team_repos)
+        effective = _apply_scope_defaults(filters, team_repos, note=self._note)
         rows: list[RepoResult] = []
         seen: set[str] = set()
         globally_sort = effective.sort in _GLOBAL_REPO_SORTS
@@ -421,7 +392,7 @@ class SearchCode(_ScopedSearch):
         team_scopes: tuple[TeamScope, ...] = (),
     ) -> Iterator[CodeResult]:
         team_repos = _resolve_team_repos(self._teams, team_scopes=team_scopes)
-        effective = _apply_scope_defaults(filters, team_repos)
+        effective = _apply_scope_defaults(filters, team_repos, note=self._note)
         batches = _cap_batches(
             _scoped_search_batches(effective, kind="code"),
             kind="code",
@@ -449,7 +420,7 @@ class SearchIssues(_ScopedSearch):
         team_scopes: tuple[TeamScope, ...] = (),
     ) -> Iterator[IssueResult]:
         team_repos = _resolve_team_repos(self._teams, team_scopes=team_scopes)
-        effective = _apply_scope_defaults(filters, team_repos)
+        effective = _apply_scope_defaults(filters, team_repos, note=self._note)
         batches = _cap_batches(
             _scoped_search_batches(effective, kind="issue"),
             kind="issue",
