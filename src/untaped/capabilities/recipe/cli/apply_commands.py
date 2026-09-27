@@ -148,13 +148,21 @@ def apply_command(
         bool,
         Parameter(name="--interactive", negative="", help="Prompt for unresolved inputs."),
     ] = False,
-    dry_run: DryRunOption = False,
+    dry_run: Annotated[
+        DryRunOption,
+        Parameter(
+            help=(
+                "Preview the changes without writing them. Pack hooks still run "
+                "to compute the plan."
+            )
+        ),
+    ] = False,
     check: Annotated[
         bool,
         Parameter(
             name="--check",
             negative="",
-            help="Preview and exit 3 when changes would be made.",
+            help="Preview and exit 3 when changes would be made; pack hooks still run.",
         ),
     ] = False,
     yes: YesOption = False,

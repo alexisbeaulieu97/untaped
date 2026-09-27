@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import stat
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -134,6 +136,38 @@ def test_pack_add_ignores_dev_and_build_junk(tmp_path: Path) -> None:
     assert not (installed / "__pycache__").exists()
     assert not (installed / "dist").exists()
     assert not (installed / "pack.egg-info").exists()
+
+
+@pytest.mark.parametrize("kind", ["file", "dir"])
+def test_pack_add_rejects_symlinks_instead_of_copying_their_targets(
+    tmp_path: Path, kind: str
+) -> None:
+    library_root = tmp_path / "library"
+    pack_source = tmp_path / "pack-source"
+    _write_hook_project(pack_source, hook_name="pick")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("secret\n")
+    link = pack_source / "src" / "project_hooks" / "leak"
+    link.symlink_to(outside / "secret.txt" if kind == "file" else outside)
+
+    with pytest.raises(ValueError, match="symlink") as excinfo:
+        _add_pack(library_root, pack_source, name="leaky")
+
+    assert "src/project_hooks/leak" in str(excinfo.value)
+    assert not (library_root / "packs" / "leaky").exists()
+
+
+def test_pack_add_allows_symlinks_inside_ignored_dev_directories(tmp_path: Path) -> None:
+    library_root = tmp_path / "library"
+    pack_source = tmp_path / "pack-source"
+    _write_hook_project(pack_source, hook_name="pick")
+    (pack_source / ".venv" / "bin").mkdir(parents=True)
+    (pack_source / ".venv" / "bin" / "python").symlink_to("/usr/bin/python3")
+
+    _add_pack(library_root, pack_source, name="venv")
+
+    assert not (library_root / "packs" / "venv" / ".venv").exists()
 
 
 def _add_pack(library_root: Path, source: Path, *, name: str, **kwargs: object) -> None:
@@ -370,6 +404,54 @@ def test_backup_draft_keeps_created_at_across_commits(tmp_path: Path) -> None:
     )
 
     assert store.metadata(draft.id)["created_at"] == created_at
+
+
+def test_backup_bundles_are_private_to_the_owner(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "a.txt").write_text("secret\n")
+    store = BackupStore(tmp_path / "backups")
+
+    draft = _create_backup(
+        store,
+        recipe_name="demo",
+        inputs={},
+        changes=[
+            FileChange(target=target, relative_path=Path("a.txt"), before="secret\n", after="b\n")
+        ],
+    )
+
+    def mode(path: Path) -> int:
+        return stat.S_IMODE(path.stat().st_mode)
+
+    assert mode(tmp_path / "backups") == 0o700
+    assert mode(draft.path) == 0o700
+    assert mode(draft.files_dir) == 0o700
+    assert mode(draft.path / "metadata.json") == 0o600
+    assert [mode(path) for path in draft.files_dir.iterdir()] == [0o600]
+
+
+def test_backup_metadata_write_is_atomic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    store = BackupStore(tmp_path / "backups")
+    draft = store.start(recipe_name="demo", inputs={})
+    before = (draft.path / "metadata.json").read_text()
+
+    def failing_replace(src: object, dst: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr("untaped.fs.os.replace", failing_replace)
+    with pytest.raises(OSError, match="disk full"):
+        draft.commit(
+            draft.stage(
+                [FileChange(target=target, relative_path=Path("a.txt"), before=None, after="a\n")]
+            )
+        )
+
+    assert (draft.path / "metadata.json").read_text() == before
+    assert json.loads(before)["files"] == []
+    assert sorted(path.name for path in draft.path.iterdir()) == ["files", "metadata.json"]
 
 
 @pytest.mark.parametrize("content", ["{}", "not json", "[]", '{"files": [{"target": 1}]}'])

@@ -118,6 +118,7 @@ def test_add_pack_installs_without_prompting_and_prints_summary(tmp_path: Path) 
         "name": "demo",
         "source": str(pack),
         "rev": None,
+        "commit": None,
     }
     assert (library_root() / "packs" / "demo").exists()
 
@@ -262,7 +263,7 @@ def test_remove_dry_run_previews_without_removing(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
-        {"action": "planned", "name": "demo", "source": None, "rev": None}
+        {"action": "planned", "name": "demo", "source": None, "rev": None, "commit": None}
     ]
     assert (library_root() / "packs" / "demo").exists()
 
@@ -2892,6 +2893,15 @@ def test_help_placeholders_and_ref_grammar_render_meaningfully(tmp_path: Path) -
         assert "REF  /." not in result.stdout
     assert "pack/recipe" in apply_help.stdout
     assert "pack:recipe" not in apply_help.stdout
+
+
+def test_apply_help_says_dry_run_and_check_still_run_hooks() -> None:
+    result = CliInvoker().invoke(app, ["apply", "--help"])
+
+    help_text = " ".join(result.stdout.split())
+    assert "--dry-run" in help_text
+    assert "Pack hooks still run to compute the plan." in help_text
+    assert "pack hooks still run." in help_text
 
 
 @pytest.mark.parametrize(

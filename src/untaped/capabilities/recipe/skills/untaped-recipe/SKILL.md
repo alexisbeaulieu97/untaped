@@ -24,7 +24,10 @@ no control flow in recipes, and no state or inventory.
   The same target directory given twice (in any spelling) is planned once.
 - Pass `--yes`/`-y` for non-interactive applies. Backups are on by default;
   use `--no-backup` only when the target tree is protected another way.
-- `--dry-run` plans and previews without writing or creating backups.
+- `--dry-run` plans and previews without writing or creating backups. Pack
+  hooks still execute for real during `--dry-run` (and `--check`): they
+  compute the planned changes, so a dry run is not a way to inspect an
+  untrusted pack.
 - `--check` is the CI/drift mode: writes nothing, creates no backups, prompts
   for nothing, exits 3 when any target would change, and exits 1 when any
   target fails. Rows carry `action: planned` (or `unchanged`). Combining it
@@ -121,14 +124,19 @@ no control flow in recipes, and no state or inventory.
   stderr; it never prompts. `--rev` picks a git revision (git URL sources
   only), `--name` overrides the installed key (the pack identity everywhere).
   The row's `action` is `created`, or `updated` for a `--force` reinstall.
-  The pack must load and contain a `uv.lock`. Reinstalling needs `--force`, which still refuses to
+  The pack must load, contain a `uv.lock`, and contain no symlinks (outside
+  ignored dirs such as `.venv`). Reinstalling needs `--force`, which still refuses to
   overwrite a library copy with local edits unless `--discard-edits` is added.
-  A local path source is recorded as an absolute path.
+  A local path source is recorded as an absolute path; a git source records
+  the requested `rev` and the resolved `commit` (shown in `list --packs` and
+  the `add`/`sync` rows; `sync` updates it even when no file changed).
 - `sync <pack>...` or `sync --all` re-fetches each installed pack from its
   recorded source and `--rev` (a branch or tag moves forward). Packs whose
-  content would change are listed and need confirmation or `--yes`
-  (`--dry-run` previews); rows carry `action` `updated`, `unchanged` or
-  `planned`. A pack with local edits in the library fails unless
+  content would change are listed on stderr with the commit move
+  (`old -> new`) and the hook-code files that change (`src/`, root `*.py`,
+  `pyproject.toml`, `uv.lock`, `uv.toml`, `.python-version`, `setup.cfg`;
+  not recipe files or tests), and need confirmation or `--yes` (`--dry-run` previews); rows
+  carry `action` `updated`, `unchanged` or `planned`. A pack with local edits in the library fails unless
   `--discard-edits` is passed; a failed pack prints `error: PACK: ...`, the
   others still sync, and the command exits 1.
 - `list [--packs|--hooks]`, `get <ref>`, `edit <ref>`, `remove <pack>` operate
@@ -238,14 +246,23 @@ no control flow in recipes, and no state or inventory.
   previews and confirms like apply, applies the
   whole bundle as one transaction, and refuses to overwrite files changed after
   the backup unless `--force` is passed. Backups store text content only; mode
-  and mtime are not preserved. `prune [--keep N] [--older-than DAYS]` falls
+  and mtime are not preserved. Bundles are owner-only (dirs `0700`, files
+  `0600`) and their metadata is replaced atomically. `prune [--keep N] [--older-than DAYS]` falls
   back to the `recipe.backup_keep`/`recipe.backup_max_age_days` settings.
 - All recipe-local and target-relative paths must be safe relative paths:
   absolute paths, `..` segments, and symlink traversal are rejected before any
   engine-mediated read or write, again after path-field rendering.
 - Installing a pack is installing code (same trust model as `pip install`, no
   sandbox). Evaluate before trusting: the `add` summary, `get`, `validate`'s
-  no-import scan, and the golden test harness.
+  no-import scan, and the golden test harness. Hook workers get an
+  allowlisted environment (`PATH`, `HOME`, locale, temp dirs, `UV_*`/`XDG_*`,
+  TLS and proxy settings, `SSH_AUTH_SOCK`/`GIT_SSH_COMMAND`, and `PYTHONPATH`
+  set to the pack's `src/` only), as do `uv lock` runs on packs. Tokens such as
+  `GITHUB_TOKEN` or untaped's `UNTAPED_*` Jira/AWX/GitHub credentials are not
+  in the environment, but `UV_*` (possibly index credentials) is, and hooks
+  run as the user with full file access (`~/.netrc`, `config.yml`, git
+  credential stores). Hook stdout (even raw fd 1 or a
+  subprocess) becomes diagnostics and never corrupts the worker protocol.
 - Run `untaped skills install --all` (or `untaped skills install untaped-recipe`)
   to install this packaged skill.
 - Old spellings (`check`, `show`, `new`, `backup show`, `apply --vars`) still

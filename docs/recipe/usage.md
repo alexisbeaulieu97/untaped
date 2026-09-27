@@ -26,8 +26,8 @@ it has exactly one.
 
 | Flag | Effect |
 |---|---|
-| `--dry-run` | Plan and preview; write nothing, back up nothing. |
-| `--check` | Write nothing, ask nothing; exit 3 if any target would change. For CI. |
+| `--dry-run` | Plan and preview; write nothing, back up nothing. Pack hooks still run, because they compute the plan. |
+| `--check` | Write nothing, ask nothing; exit 3 if any target would change. For CI. Pack hooks still run. |
 | `--yes` | Skip the confirmation. |
 | `--preview table\|diff\|none` | Preview style on stderr. `diff` prints unified diffs. |
 | `--no-backup` | Skip the backup bundle. |
@@ -74,8 +74,28 @@ Sensitive inputs show as `***` in rows, previews and backups.
 ## Install and manage packs
 
 Installing a pack installs code: its hooks run on your machine with no
-sandbox. Inspect a pack before you trust it (`recipe get`, `recipe validate`,
-`recipe test`).
+sandbox, including during `apply --dry-run` and `--check`, since hooks compute
+the planned changes. Inspect a pack before you trust it (`recipe get`,
+`recipe validate`, `recipe test`).
+
+Hooks, and the `uv` commands untaped runs on a pack (`uv run`, `uv lock`,
+`uv lock --check`), get a reduced environment. Only `PATH`, `HOME`,
+`USER`/`LOGNAME`, locale (`LANG`, `LANGUAGE`, `LC_*`), `TZ`, temp directories,
+`UV_*` and `XDG_*` settings, `NETRC`, TLS trust (`SSL_CERT_FILE`,
+`SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`), proxies (`HTTP_PROXY`,
+`HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`) and, for `git+ssh` dependencies,
+`SSH_AUTH_SOCK` and `GIT_SSH_COMMAND` are passed through. Hook workers get
+`PYTHONPATH` set to the pack's `src/` only. Tokens held in other variables,
+such as `GITHUB_TOKEN` or untaped's Jira, AWX and GitHub credentials
+(`UNTAPED_*`), are not in a hook's environment.
+
+This limits what leaks through the environment only. `UV_*` variables are
+passed, and they can hold package-index credentials. Hooks also run as you,
+with full file access: they can read `~/.netrc`, your untaped `config.yml`,
+and git credential stores.
+
+Anything a hook writes to stdout, even at the file-descriptor level or from a
+subprocess, is shown as hook diagnostics; hooks read an empty stdin.
 
 ```bash
 untaped recipe add https://github.com/acme/untaped-recipes.git --rev v1.2.0
@@ -89,14 +109,23 @@ untaped recipe edit acme/editorconfig
 untaped recipe remove acme --yes
 ```
 
-- A pack must contain a `uv.lock`. Reinstalling needs `--force`; local edits
+- A pack must contain a `uv.lock` and no symlinks (outside ignored build
+  directories such as `.venv`). Reinstalling needs `--force`; local edits
   to the installed copy also need `--discard-edits`.
+- For a git source, `add` records both the `--rev` you asked for and the
+  resolved `commit` it installed; both appear in `list --packs` and in the
+  `add`/`sync` rows. `sync` also records a new commit when the pack's files
+  did not change.
 - `recipe sync PACK...` or `recipe sync --all` re-fetches packs from the
   source and `--rev` recorded at install (a branch or tag moves forward; a
   local path source is re-read). Packs whose files would change are listed
-  and confirmed first (`--yes` skips the question, `--dry-run` only lists
-  them); the rest report `unchanged`. Local edits to an installed copy need
-  `--discard-edits`.
+  and confirmed first, with the commit move (`old -> new`) and the hook-code
+  files that change. Hook code is everything under `src/`, any `*.py` at the
+  pack root (build scripts such as `setup.py`), and `pyproject.toml`,
+  `uv.lock`, `uv.toml`, `.python-version` and `setup.cfg`. Recipe files and
+  test cases are not hook code. `--yes` skips the question and `--dry-run`
+  only lists them; the rest report `unchanged`. Local edits to an installed
+  copy need `--discard-edits`.
 - `recipe add` records a local path source as an absolute path. `recipe sync`
   refuses a pack recorded with a relative path (older installs); re-add it
   with `recipe add PATH --force`.
@@ -215,6 +244,8 @@ untaped recipe backup prune --keep 20
 
 `restore` refuses to overwrite a file that changed after the backup unless
 you pass `--force`. Backups hold file content only, not modes or times.
+Bundles are readable only by you: directories are created `0700`, files
+`0600`, and each bundle's `metadata.json` is replaced atomically.
 `prune` falls back to `recipe.backup_keep` and `recipe.backup_max_age_days`.
 
 ## Output

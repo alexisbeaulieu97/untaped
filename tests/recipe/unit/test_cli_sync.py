@@ -42,6 +42,8 @@ def _installed_recipe(name: str) -> Path:
 
 
 _CHANGED = "version: 1\ndescription: changed\nsteps: []\n"
+_OLD_SHA = "1111111111111111111111111111111111111111"
+_NEW_SHA = "2222222222222222222222222222222222222222"
 
 
 def test_sync_reports_unchanged_packs_without_prompting(tmp_path: Path) -> None:
@@ -52,7 +54,13 @@ def test_sync_reports_unchanged_packs_without_prompting(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
-        {"action": "unchanged", "name": "alpha", "source": str(tmp_path / "alpha"), "rev": None}
+        {
+            "action": "unchanged",
+            "name": "alpha",
+            "source": str(tmp_path / "alpha"),
+            "rev": None,
+            "commit": None,
+        }
     ]
 
 
@@ -174,8 +182,10 @@ def test_sync_refetches_git_sources_at_the_recorded_rev(
         return dest
 
     monkeypatch.setattr(library_commands, "fetch_pack_source", fake_fetch)
+    commits = iter([_OLD_SHA, _NEW_SHA])
+    monkeypatch.setattr(library_commands, "checkout_commit", lambda checkout: next(commits))
     url = "https://example.test/alpha.git"
-    added = CliInvoker().invoke(app, ["add", url, "--rev", "v1"])
+    added = CliInvoker().invoke(app, ["add", url, "--rev", "v1", "--format", "json"])
     assert added.exit_code == 0, added.output
     (upstream / "recipes" / "seed.yml").write_text(_CHANGED)
 
@@ -183,10 +193,105 @@ def test_sync_refetches_git_sources_at_the_recorded_rev(
 
     assert result.exit_code == 0, result.output
     assert fetched == [(url, "v1"), (url, "v1")]
+    assert json.loads(added.stdout)["commit"] == _OLD_SHA
     assert json.loads(result.stdout) == [
-        {"action": "updated", "name": "alpha", "source": url, "rev": "v1"}
+        {"action": "updated", "name": "alpha", "source": url, "rev": "v1", "commit": _NEW_SHA}
     ]
     assert _installed_recipe("alpha").read_text() == _CHANGED
+    assert PackLibrary(library_root=library_root()).packs()[0].commit == _NEW_SHA
+
+
+def _add_hook(root: Path, body: str = "    return content\n") -> None:
+    module = root / "src" / "alpha_hooks" / "tweak.py"
+    module.parent.mkdir(parents=True, exist_ok=True)
+    (module.parent / "__init__.py").write_text("")
+    module.write_text("def transform(content, *, inputs, target, file, args, helpers):\n" + body)
+    (root / "uv.lock").write_text("version = 1\n")
+    with (root / "pyproject.toml").open("a") as pyproject:
+        pyproject.write(
+            '\n[tool.untaped_recipe.hooks]\n"tweak" = { module = "alpha_hooks.tweak" }\n'
+        )
+
+
+def test_sync_confirmation_shows_the_commit_move_and_changed_hook_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    upstream = tmp_path / "upstream"
+    _write_pack(upstream, name="alpha")
+    _add_hook(upstream)
+
+    def fake_fetch(url: str, *, rev: str | None, dest: Path) -> Path:
+        shutil.copytree(upstream, dest)
+        return dest
+
+    monkeypatch.setattr(library_commands, "fetch_pack_source", fake_fetch)
+    commits = iter([_OLD_SHA, _NEW_SHA, _NEW_SHA])
+    monkeypatch.setattr(library_commands, "checkout_commit", lambda checkout: next(commits))
+    url = "https://example.test/alpha.git"
+    assert CliInvoker().invoke(app, ["add", url, "--rev", "main"]).exit_code == 0
+    module = upstream / "src" / "alpha_hooks" / "tweak.py"
+    module.write_text(module.read_text().replace("return content", "return content + 'x'"))
+    backend = ScriptedPromptBackend(confirms=[False])
+
+    dry_run = invoke_cli(app, ["sync", "alpha", "--dry-run"])
+    declined = invoke_cli(app, ["sync", "alpha"], terminal=True, prompt_backend=backend)
+
+    for result in (dry_run, declined):
+        assert f"  - alpha from {url}@main ({_OLD_SHA[:12]} -> {_NEW_SHA[:12]})" in result.stderr
+        assert "    hook code changed: src/alpha_hooks/tweak.py" in result.stderr
+    assert dry_run.exit_code == 0, dry_run.output
+    assert declined.exit_code == 1, declined.output
+    assert "cancelled; no changes made" in declined.stderr
+    installed = library_root() / "packs" / "alpha" / "src" / "alpha_hooks" / "tweak.py"
+    assert "'x'" not in installed.read_text()
+
+
+@pytest.mark.parametrize("recorded", [None, _OLD_SHA])
+def test_sync_records_a_moved_commit_when_content_is_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded: str | None
+) -> None:
+    upstream = tmp_path / "upstream"
+    _write_pack(upstream, name="alpha")
+    url = "https://example.test/alpha.git"
+    # None: a row written before commits were recorded.
+    PackLibrary(library_root=library_root()).add(
+        upstream, source=url, rev="main", commit=recorded, name="alpha", force=False
+    )
+
+    def fake_fetch(url: str, *, rev: str | None, dest: Path) -> Path:
+        shutil.copytree(upstream, dest)
+        return dest
+
+    monkeypatch.setattr(library_commands, "fetch_pack_source", fake_fetch)
+    monkeypatch.setattr(library_commands, "checkout_commit", lambda checkout: _NEW_SHA)
+
+    dry_run = invoke_cli(app, ["sync", "alpha", "--dry-run", "--format", "json"])
+    unchanged_commit = PackLibrary(library_root=library_root()).packs()[0].commit
+    result = invoke_cli(app, ["sync", "alpha", "--format", "json"])
+
+    assert dry_run.exit_code == 0, dry_run.output
+    assert unchanged_commit == (recorded or "")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)[0] == {
+        "action": "unchanged",
+        "name": "alpha",
+        "source": url,
+        "rev": "main",
+        "commit": _NEW_SHA,
+    }
+    assert PackLibrary(library_root=library_root()).packs()[0].commit == _NEW_SHA
+
+
+def test_sync_preview_says_when_hook_code_is_unchanged(tmp_path: Path) -> None:
+    _write_pack(tmp_path / "alpha", name="alpha")
+    _add_hook(tmp_path / "alpha")
+    _add(tmp_path / "alpha")
+    (tmp_path / "alpha" / "recipes" / "seed.yml").write_text(_CHANGED)
+
+    result = invoke_cli(app, ["sync", "alpha", "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    assert f"  - alpha from {tmp_path / 'alpha'}\n    hook code unchanged" in result.stderr
 
 
 @pytest.mark.parametrize(
