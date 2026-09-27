@@ -8,7 +8,7 @@ import shutil
 import tomllib
 import uuid
 from collections.abc import Callable, Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import tomlkit
@@ -33,7 +33,9 @@ from untaped.capability_api import GitCommandError, atomic_write, run_git
 _GIT_URL_PREFIXES = ("https://", "git@", "ssh://")
 _GIT_CLONE_TIMEOUT = 600.0
 _GIT_REV_PARSE_TIMEOUT = 30.0
-_HOOK_ENVIRONMENT_FILES = frozenset({"pyproject.toml", "uv.lock"})
+_HOOK_ENVIRONMENT_FILES = frozenset(
+    {"pyproject.toml", "uv.lock", "uv.toml", ".python-version", "setup.cfg"}
+)
 
 # Dev/build junk excluded from library installs; pack_content_hash prunes the
 # same names so the recorded install hash and the copied tree always agree.
@@ -92,25 +94,33 @@ def pack_content_hash(root: Path) -> str:
 def changed_hook_files(installed_root: Path, source_root: Path) -> list[str]:
     """Hook-code files added, removed, or modified between two pack trees.
 
-    Hook code is what the hook worker executes: everything under ``src/``
-    plus ``pyproject.toml`` and ``uv.lock``, which define its environment.
+    Hook code is what uv builds and the hook worker executes: everything
+    under ``src/``, any ``*.py`` at the pack root (build-backend scripts such
+    as ``setup.py``), and the files that define the environment
+    (``pyproject.toml``, ``uv.lock``, ``uv.toml``, ``.python-version``,
+    ``setup.cfg``). Recipe files and golden tests are data, not hook code.
     """
-    installed = {
-        relative: hashlib.sha256(content).digest()
-        for relative, content in _pack_files(installed_root)
-    }
-    source = {
-        relative: hashlib.sha256(content).digest() for relative, content in _pack_files(source_root)
-    }
+    installed = _hook_code_digests(installed_root)
+    source = _hook_code_digests(source_root)
     return sorted(
         relative
         for relative in installed.keys() | source.keys()
-        if _is_hook_code(relative) and installed.get(relative) != source.get(relative)
+        if installed.get(relative) != source.get(relative)
     )
 
 
+def _hook_code_digests(root: Path) -> dict[str, bytes]:
+    return {
+        relative: hashlib.sha256(content).digest()
+        for relative, content in _pack_files(root)
+        if _is_hook_code(relative)
+    }
+
+
 def _is_hook_code(relative: str) -> bool:
-    return relative.startswith("src/") or relative in _HOOK_ENVIRONMENT_FILES
+    if relative.startswith("src/") or relative in _HOOK_ENVIRONMENT_FILES:
+        return True
+    return "/" not in relative and relative.endswith(".py")
 
 
 class PackLibrary:
@@ -180,13 +190,21 @@ class PackLibrary:
 
         The copy lands in a staging directory beside ``packs/`` first; only a
         complete copy is renamed over the destination, and a replaced pack is
-        moved aside (not deleted) until the swap succeeds.
+        moved aside (not deleted) until the swap succeeds. Symlinks are
+        copied as links and the staged copy is re-checked, so one appearing
+        after validation is refused rather than followed.
         """
         token = uuid.uuid4().hex
         staging = self._library_root / f".pack-staging-{token}"
         retired = self._library_root / f".pack-retired-{token}"
         try:
-            shutil.copytree(source_dir, staging, ignore=shutil.ignore_patterns(*PACK_COPY_IGNORE))
+            shutil.copytree(
+                source_dir,
+                staging,
+                symlinks=True,
+                ignore=shutil.ignore_patterns(*PACK_COPY_IGNORE),
+            )
+            _reject_symlinks(staging)
             content_hash = pack_content_hash(staging)
             if dest.exists():
                 dest.rename(retired)
@@ -209,6 +227,17 @@ class PackLibrary:
         finally:
             shutil.rmtree(staging, ignore_errors=True)
         return content_hash
+
+    def record_commit(self, name: str, commit: str) -> None:
+        """Record the resolved ``commit`` of an installed pack whose files did not change."""
+        installed_name = safe_library_name(name, field="pack")
+        index = self._read_index()
+        entry = index.get(installed_name)
+        if entry is None:
+            raise ValueError(f"pack not found: {name}")
+        index[installed_name] = replace(entry, commit=commit)
+        self._write_index(index)
+        self._packs_cache = None
 
     def local_edits(self, name: str) -> bool:
         """Return true when the installed copy diverged from its install hash.

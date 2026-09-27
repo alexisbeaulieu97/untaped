@@ -246,8 +246,45 @@ def test_sync_confirmation_shows_the_commit_move_and_changed_hook_code(
     assert "'x'" not in installed.read_text()
 
 
+@pytest.mark.parametrize("recorded", [None, _OLD_SHA])
+def test_sync_records_a_moved_commit_when_content_is_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded: str | None
+) -> None:
+    upstream = tmp_path / "upstream"
+    _write_pack(upstream, name="alpha")
+    url = "https://example.test/alpha.git"
+    # None: a row written before commits were recorded.
+    PackLibrary(library_root=library_root()).add(
+        upstream, source=url, rev="main", commit=recorded, name="alpha", force=False
+    )
+
+    def fake_fetch(url: str, *, rev: str | None, dest: Path) -> Path:
+        shutil.copytree(upstream, dest)
+        return dest
+
+    monkeypatch.setattr(library_commands, "fetch_pack_source", fake_fetch)
+    monkeypatch.setattr(library_commands, "checkout_commit", lambda checkout: _NEW_SHA)
+
+    dry_run = invoke_cli(app, ["sync", "alpha", "--dry-run", "--format", "json"])
+    unchanged_commit = PackLibrary(library_root=library_root()).packs()[0].commit
+    result = invoke_cli(app, ["sync", "alpha", "--format", "json"])
+
+    assert dry_run.exit_code == 0, dry_run.output
+    assert unchanged_commit == (recorded or "")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)[0] == {
+        "action": "unchanged",
+        "name": "alpha",
+        "source": url,
+        "rev": "main",
+        "commit": _NEW_SHA,
+    }
+    assert PackLibrary(library_root=library_root()).packs()[0].commit == _NEW_SHA
+
+
 def test_sync_preview_says_when_hook_code_is_unchanged(tmp_path: Path) -> None:
     _write_pack(tmp_path / "alpha", name="alpha")
+    _add_hook(tmp_path / "alpha")
     _add(tmp_path / "alpha")
     (tmp_path / "alpha" / "recipes" / "seed.yml").write_text(_CHANGED)
 

@@ -431,7 +431,8 @@ def test_worker_env_scrubs_virtual_env(
 
     assert result.result == "after"
     assert "VIRTUAL_ENV" not in captured
-    assert captured["PYTHONPATH"].endswith("existing")
+    # The caller's PYTHONPATH would leak its modules into the pack env.
+    assert captured["PYTHONPATH"] == str(tmp_path / "src")
 
 
 def test_worker_env_passes_only_allowlisted_variables(
@@ -451,6 +452,8 @@ def test_worker_env_passes_only_allowlisted_variables(
         "SSL_CERT_FILE": str(tmp_path / "ca.pem"),
         "HTTPS_PROXY": "http://proxy.test:3128",
         "no_proxy": "localhost",
+        "SSH_AUTH_SOCK": str(tmp_path / "agent.sock"),
+        "GIT_SSH_COMMAND": "ssh -o IdentitiesOnly=yes",
     }
     for name, value in kept.items():
         monkeypatch.setenv(name, value)
