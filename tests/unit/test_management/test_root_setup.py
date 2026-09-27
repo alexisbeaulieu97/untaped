@@ -131,6 +131,38 @@ def test_setup_creates_a_new_profile_with_a_token_command(_isolated_config: Path
         "token_command": ["pass", "show", "wiz", "token"],
     }
     assert "profile prod is ready" in result.stderr
+    assert "untaped --profile prod" in result.stderr
+    assert "untaped profile use prod" in result.stderr
+
+
+def test_an_inherited_token_would_override_the_token_command(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    wiz:\n      token: shared\nactive: default\n"
+    )
+    backend = ScriptedPromptBackend(
+        texts=["prod", "https://wiz.prod", "pass show wiz"],
+        multiselects=[["wiz"]],
+        selections=["command"],
+    )
+    result = _setup(backend)
+    assert result.exit_code == 1
+    assert "wiz.token is set in profile default" in result.stderr
+    assert "untaped --profile default config unset wiz.token" in result.stderr
+    assert "wiz" not in (read_config_dict(_isolated_config)["profiles"].get("prod") or {})
+    assert _PROBES == []
+
+
+def test_a_malformed_token_command_writes_nothing(_isolated_config: Path) -> None:
+    backend = ScriptedPromptBackend(
+        texts=["default", "https://wiz", 'pass show "wiz'],
+        multiselects=[["wiz"]],
+        selections=["command"],
+    )
+    result = _setup(backend)
+    assert result.exit_code == 1
+    assert "error: invalid wiz token command" in result.stderr
+    assert "Traceback" not in result.output
+    assert not _isolated_config.exists()
 
 
 def test_setup_can_keep_the_current_token(_isolated_config: Path) -> None:

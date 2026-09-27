@@ -17,7 +17,8 @@
     Without a terminal it exits 2.
   - **New:** `untaped doctor --online` also runs online checks
     (`awx.api`, `github.api`, `jira.api` authenticate against the service),
-    and each failed row names the command that fixes it. Providers contribute
+    each with one attempt and a timeout capped at 10 seconds, and each failed
+    row names the command that fixes it. Providers contribute
     them with `online_check(...)` or `DoctorCheck(..., online=True)`;
     `DoctorResult(..., fix=...)` appends the fix. `setup` and `alias` are now
     reserved root command names.

@@ -12,9 +12,11 @@ from pathlib import Path
 
 import pytest
 import yaml
+from cyclopts import App
 
 from test_management.support import GithubProfile, make_spec, write_config
 from untaped import bootstrap
+from untaped.capability_api import CapabilitySpec, FormatOption, create_app, emit
 from untaped.testing import CliInvoker, CliResult
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -84,6 +86,45 @@ def test_invalid_untaped_format_is_a_usage_error(
     assert result.exit_code == 2
     assert "error: UNTAPED_FORMAT" in result.stderr
     assert "'xml'" in result.stderr
+
+
+@pytest.mark.parametrize("command", [["doctor"], ["setup"]])
+def test_an_invalid_untaped_format_does_not_block_diagnosis(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch, command: list[str]
+) -> None:
+    write_config(_isolated_config, _CONFIG)
+    monkeypatch.setenv("UNTAPED_FORMAT", "xml")
+    result = _invoke(command)
+    assert "UNTAPED_FORMAT" not in result.stderr
+    assert result.exit_code != 2 or "terminal" in result.stderr
+
+
+def _lazy_spec() -> CapabilitySpec:
+    def factory() -> App:
+        app = create_app(name="lazy", help="Lazy capability.")
+
+        @app.command(name="list")
+        def list_command(*, fmt: FormatOption = "table") -> None:
+            """List one row."""
+            emit([{"name": "row"}], fmt=fmt)
+
+        return app
+
+    return CapabilitySpec(
+        name="lazy",
+        app_factory=factory,
+        config_section="lazy",
+        profile_model=GithubProfile,
+        help="Lazy capability.",
+    )
+
+
+def test_ui_format_reaches_a_lazily_mounted_capability(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      format: json\n")
+    root = bootstrap.build_root_app(builtins=(_lazy_spec(),), externals=())
+    result = CliInvoker().invoke(root.meta, ["lazy", "list"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == [{"name": "row"}]
 
 
 def test_an_invalid_ui_section_falls_back_so_it_can_be_repaired(_isolated_config: Path) -> None:

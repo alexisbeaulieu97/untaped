@@ -26,18 +26,19 @@ from untaped.capabilities.registry import ApplicationSpec, CapabilitySpec, Compo
 from untaped.cli import ColumnsOption, FormatOption, create_app, report_errors
 from untaped.config.repository import SettingsFileRepository
 from untaped.config_file import read_config_dict
+from untaped.doctor_checks import service_configured
 from untaped.errors import ConfigError
 from untaped.management.doctor import collect_doctor_rows, report_check_rows
+from untaped.messages import hint
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile.use_cases import CreateProfile
 from untaped.profile_resolver import (
     DEFAULT_PROFILE,
     effective_active_profile_name,
-    reset_profile_override,
-    set_profile_override,
+    profile_scope,
 )
 from untaped.prompts import PromptChoice
-from untaped.settings import active_settings_layout, get_settings
+from untaped.settings import active_settings_layout
 from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context
 
@@ -74,10 +75,8 @@ def _run(
         raise ConfigError("no composed capability takes a base URL and token to set up")
     with ui.terminal(refusal="setup requires an interactive terminal"):
         raw = read_config_dict()
-        profile = ui.text(
-            "Profile to configure",
-            default=effective_active_profile_name(raw) or DEFAULT_PROFILE,
-        ).strip()
+        active = effective_active_profile_name(raw) or DEFAULT_PROFILE
+        profile = ui.text("Profile to configure", default=active).strip()
         values = _profile_view(raw, profile)
         current = {
             name: _current(spec, values.get(spec.config_section)) for name, spec in services.items()
@@ -99,7 +98,13 @@ def _run(
             _configure(ui, repo, services[name], profile, current[name])
     rows = _check_rows(shell, result, profile, frozenset(selected))
     report_check_rows(rows, op="setup", fmt=fmt, columns=columns)
-    ui.success(f"profile {profile} is ready")
+    if profile == active:
+        ui.success(f"profile {profile} is ready")
+    else:
+        ui.success(
+            f"profile {profile} is ready; use it with `untaped --profile {profile} …` "
+            f"or make it the default with `untaped profile use {profile}`"
+        )
 
 
 def _profile_view(raw: dict[str, Any], profile: str) -> dict[str, Any]:
@@ -124,7 +129,7 @@ class _ServiceState:
     """Where the token would come from (``describe_token_source``), if anywhere."""
 
     configured: bool
-    """Whether the profile sets a URL or a token source is available."""
+    """Whether the section is set up (:func:`untaped.doctor_checks.service_configured`)."""
 
 
 def _current(spec: CapabilitySpec, node: object) -> _ServiceState:
@@ -136,11 +141,11 @@ def _current(spec: CapabilitySpec, node: object) -> _ServiceState:
     except ValidationError:
         return _ServiceState(configured_url, None, configured_url is not None)
     url = getattr(settings, "base_url", None)
-    source = describe_token_source(settings, section=spec.config_section)
+    section = spec.config_section
     return _ServiceState(
         url if isinstance(url, str) and url else configured_url,
-        source,
-        configured_url is not None or source is not None,
+        describe_token_source(settings, section=section),
+        service_configured(settings, section=section),
     )
 
 
@@ -151,25 +156,48 @@ def _configure(
     profile: str,
     current: _ServiceState,
 ) -> None:
+    """Ask for one service's URL and token, validate every answer, then write."""
     section = spec.config_section
     source = current.token_source
-    url = ui.text(f"{spec.name} base URL", default=current.base_url)
-    repo.set_value(f"{section}.base_url", url.strip(), profile=profile)
+    url = ui.text(f"{spec.name} base URL", default=current.base_url).strip()
     choices = [PromptChoice(value="enter", label="Enter a token (stored in config.yml)")]
     if "token_command" in spec.profile_model.model_fields:
         choices.append(PromptChoice(value="command", label="Run a command that prints the token"))
     if source is not None:
         choices.insert(0, PromptChoice(value="keep", label=f"Keep the current token ({source})"))
     how = ui.select(f"{spec.name} token", choices, default="keep" if source else "enter")
-    if how == "enter":
-        repo.set_value(f"{section}.token", ui.secret(f"{spec.name} token"), profile=profile)
-    elif how == "command":
-        argv = shlex.split(ui.text(f"{spec.name} token command"))
-        if not argv:
-            raise ConfigError(f"{spec.name} token command is empty")
+    token = ui.secret(f"{spec.name} token") if how == "enter" else None
+    argv = _token_command(ui, spec, profile) if how == "command" else None
+    repo.set_value(f"{section}.base_url", url, profile=profile)
+    if token is not None:
+        repo.set_value(f"{section}.token", token, profile=profile)
+    if argv is not None:
         repo.set_value(f"{section}.token_command", json.dumps(argv), profile=profile)
         # A stored token wins over the command; drop it so the command is used.
         repo.unset_value(f"{section}.token", profile=profile)
+
+
+def _token_command(ui: UiContext, spec: CapabilitySpec, profile: str) -> list[str]:
+    """Read and check a token command before anything is written for the service."""
+    section = spec.config_section
+    try:
+        argv = shlex.split(ui.text(f"{spec.name} token command"))
+    except ValueError as exc:
+        raise ConfigError(f"invalid {spec.name} token command: {exc}") from exc
+    if not argv:
+        raise ConfigError(f"{spec.name} token command is empty")
+    default = ProfileFileRepository().read(DEFAULT_PROFILE) or {}
+    inherited = default.get(section) if profile != DEFAULT_PROFILE else None
+    if isinstance(inherited, dict) and inherited.get("token"):
+        # Only the target profile's own token is removed; default's would still
+        # win over the command (and be sent to this profile's URL).
+        raise ConfigError(
+            f"{section}.token is set in profile {DEFAULT_PROFILE} and would override the "
+            f"token command in profile {profile}; enter the token instead, or remove it "
+            f"from {DEFAULT_PROFILE}\n"
+            f"{hint(f'--profile {DEFAULT_PROFILE} config unset {section}.token')}"
+        )
+    return argv
 
 
 def _check_rows(
@@ -179,13 +207,8 @@ def _check_rows(
     selected: frozenset[str],
 ) -> list[dict[str, object]]:
     """The selected capabilities' doctor rows, online checks included, for ``profile``."""
-    token = set_profile_override(profile)
-    get_settings.cache_clear()
-    try:
+    with profile_scope(profile):
         rows = collect_doctor_rows(shell, result, online=True, capabilities=selected)
-    finally:
-        reset_profile_override(token)
-        get_settings.cache_clear()
     return [row for row in rows if row["capability"] in selected]
 
 

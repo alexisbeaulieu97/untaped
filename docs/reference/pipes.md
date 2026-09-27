@@ -55,12 +55,15 @@ reads. Commands not listed write no records.
 | `profile list` | `untaped.profile` |
 | `profile create`, `profile delete`, `profile rename` | `untaped.profile_outcome` (`name`, `previous_name`, `copied_from`, `action`) |
 | `skills list` | `untaped.skill` |
-| `doctor` | `untaped.doctor_check` |
+| `doctor`, `setup` | `untaped.doctor_check` |
 | `capabilities` | `untaped.capability` |
+| `alias list` | `untaped.alias` (`name`, `command`, `argv`, `profile`) |
+| `alias set`, `alias remove` | `untaped.alias_outcome` (`name`, `profile`, `action`) |
 
 `skills install --stdin` reads bare skill names, one per line. With
-`--dry-run`, `config set/unset` and `profile create/delete/rename` validate,
-write nothing and print their outcome with `action` `planned`.
+`--dry-run`, `config set/unset`, `profile create/delete/rename` and
+`alias set/remove` validate, write nothing and print their outcome with
+`action` `planned`.
 
 ### workspace
 

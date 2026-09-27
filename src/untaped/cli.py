@@ -31,6 +31,9 @@ FormatOption = Annotated[
 
 #: Environment variable naming the default ``--format`` (wins over ``ui.format``).
 FORMAT_ENV = "UNTAPED_FORMAT"
+#: Root commands that diagnose the setup: an invalid ``UNTAPED_FORMAT`` is
+#: ignored there instead of blocking them.
+_FORMAT_ENV_LENIENT = frozenset({"doctor", "setup"})
 
 
 def apply_default_format(
@@ -43,9 +46,10 @@ def apply_default_format(
     or ``yaml`` keeps it): ``UNTAPED_FORMAT`` first, then the ``ui.format``
     setting. An explicit ``--format`` has tokens already and always wins. A
     ``ui`` section that fails to load is ignored here so ``config set`` can
-    still repair it; ``doctor`` reports it.
+    still repair it; ``doctor`` reports it. An invalid ``UNTAPED_FORMAT`` is
+    a usage error, except under ``doctor`` and ``setup``, which ignore it.
     """
-    del app, commands
+    del app
     argument = next(
         (
             argument
@@ -63,7 +67,10 @@ def apply_default_format(
     value = os.environ.get(FORMAT_ENV) or None
     source = FORMAT_ENV
     if value is not None and value not in choices:
-        raise_usage(f"{FORMAT_ENV} must be one of {', '.join(choices)}; got {value!r}")
+        if commands[:1] and commands[0] in _FORMAT_ENV_LENIENT:
+            value = None
+        else:
+            raise_usage(f"{FORMAT_ENV} must be one of {', '.join(choices)}; got {value!r}")
     if value is None:
         # Keep settings lazy: only commands printing rows need them here.
         from untaped.settings import load_settings_section  # noqa: PLC0415

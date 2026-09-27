@@ -8,10 +8,13 @@ and names the ``untaped`` command that fixes a failure.
 from __future__ import annotations
 
 import json
+import ssl
 from pathlib import Path
 from typing import Any, ClassVar
 
+import httpx
 import pytest
+import respx
 from pydantic import BaseModel, SecretStr
 
 from test_management.support import GithubProfile, compose, make_spec, write_config
@@ -21,8 +24,10 @@ from untaped.capability_api import (
     ConfigError,
     DoctorCheck,
     DoctorResult,
+    HttpClient,
     HttpStatusError,
     HttpTransportError,
+    RetryPolicy,
     TokenCommand,
     TokenSources,
     online_check,
@@ -127,6 +132,19 @@ def _raise(exc: Exception) -> Any:
     return probe
 
 
+def _tls(verify_code: int) -> Exception:
+    """A transport error caused by an ``ssl`` certificate verification failure."""
+    cause = ssl.SSLCertVerificationError(1, "certificate verify failed")
+    cause.verify_code = verify_code
+    try:
+        raise cause
+    except ssl.SSLCertVerificationError as err:
+        try:
+            raise HttpTransportError("[SSL] handshake failed for https://svc") from err
+        except HttpTransportError as exc:
+            return exc
+
+
 def _rejected() -> Exception:
     try:
         raise HttpStatusError("HTTP 401 from https://svc/me", status_code=401)
@@ -160,9 +178,27 @@ def _rejected() -> Exception:
         ),
         (
             {"base_url": "https://svc", "token": "t"},
-            HttpTransportError("TLS error: CERTIFICATE_VERIFY_FAILED for https://svc"),
-            "TLS error: CERTIFICATE_VERIFY_FAILED for https://svc",
+            _tls(20),  # X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY
+            "[SSL] handshake failed for https://svc",
             "config set http.ca_bundle PATH",
+        ),
+        (
+            {"base_url": "https://svc", "token": "t"},
+            _tls(62),  # X509_V_ERR_HOSTNAME_MISMATCH: the URL names the wrong host
+            "[SSL] handshake failed for https://svc",
+            "config set svc.base_url URL",
+        ),
+        (
+            {"base_url": "https://svc", "token": "t"},
+            HttpTransportError("certificate problem mentioned, but no ssl cause"),
+            "certificate problem mentioned, but no ssl cause",
+            "config set svc.base_url URL",
+        ),
+        (
+            {"base_url": "https://svc", "token": "t"},
+            ValueError("1 validation error for SvcUser\nlogin\n  input_value={'body': 'secret'}"),
+            "ValueError: 1 validation error for SvcUser",
+            "config set svc.base_url URL",
         ),
         (
             {"token": "t"},
@@ -171,7 +207,16 @@ def _rejected() -> Exception:
             "config set svc.base_url URL",
         ),
     ],
-    ids=["rejected-token", "no-token", "unreachable", "tls", "no-base-url"],
+    ids=[
+        "rejected-token",
+        "no-token",
+        "unreachable",
+        "tls-untrusted",
+        "tls-hostname",
+        "certificate-word-only",
+        "unexpected-response",
+        "no-base-url",
+    ],
 )
 def test_online_check_failures_name_the_fix(
     _isolated_config: Path,
@@ -187,6 +232,27 @@ def test_online_check_failures_name_the_fix(
     row = _row(result, "svc.api")
     assert row["status"] == "fail"
     assert row["detail"] == f"{detail}; run `untaped {fix}`"
+
+
+def test_online_probes_do_not_retry_and_use_a_short_timeout(_isolated_config: Path) -> None:
+    _configured(_isolated_config, base_url="https://svc", token="t")
+    timeouts: list[object] = []
+
+    def refuse(request: httpx.Request) -> httpx.Response:
+        timeouts.append(request.extensions["timeout"]["connect"])
+        raise httpx.ConnectError("connection refused", request=request)
+
+    def probe() -> str:
+        client = HttpClient("https://svc", timeout=30.0, retry=RetryPolicy(backoff_base=0))
+        client.request("GET", "/me")
+        return "unreachable"
+
+    with respx.mock(base_url="https://svc") as mock:
+        route = mock.get("/me").mock(side_effect=refuse)
+        result = _doctor((_probe_check(probe),), "--online")
+    assert _row(result, "svc.api")["status"] == "fail"
+    assert route.call_count == 1
+    assert timeouts == [10.0]
 
 
 def test_online_check_is_skipped_when_settings_are_invalid(_isolated_config: Path) -> None:

@@ -250,8 +250,10 @@ The shared runtime helpers are exported from the same module:
   probe=...)` runs only under `untaped doctor --online` (and `untaped setup`):
   `probe` is a nullary callable doing your authenticated `whoami`-style call
   (import your CLI lazily inside it) that returns the pass detail and raises
-  `UntapedError` on failure, and the check names the fix (`config set
-  <section>.token --prompt`, `<section>.base_url`, or `http.ca_bundle`). Your
+  on failure. It runs inside `quick_probe()`, so `HttpClient` requests make
+  one attempt with a timeout of at most 10 seconds. The check keeps one line
+  of the error and names the fix (`config set <section>.token --prompt`,
+  `<section>.base_url`, or `http.ca_bundle`). Your
   own `DoctorCheck(..., online=True)` is online-only too, and
   `DoctorResult(..., fix="config set acme.token --prompt")` appends the
   command to run to a failed or `warn` row.
