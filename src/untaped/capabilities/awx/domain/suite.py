@@ -76,36 +76,44 @@ class VariableSpec(BaseModel):
         return self
 
 
+CheckName = Literal["status", "log.contains", "log.not_contains", "log.matches"]
+
+_MAX_ACTUAL = 300
+"""Characters of a deciding log line kept in a result (lines can be huge)."""
+
+
 class ExpectationResult(BaseModel):
     """One evaluated check: what was expected, what the job produced."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    check: str
-    """``status``, ``log.contains``, ``log.not_contains`` or ``log.matches``."""
+    check: CheckName
     expected: str
     actual: str | None
     """The job status, or the log line that decided a log check (``None``: no line)."""
     passed: bool
 
     def describe_failure(self) -> str:
-        if self.check == "status":
-            return f"expected status {self.expected}, got {self.actual}"
-        if self.check == "log.not_contains":
-            return f"log contains {self.expected!r}: {self.actual}"
-        verb = "contain" if self.check == "log.contains" else "match"
-        return f"log does not {verb} {self.expected!r}"
+        match self.check:
+            case "status":
+                return f"expected status {self.expected}, got {self.actual}"
+            case "log.contains":
+                return f"no log line contains '{self.expected}'"
+            case "log.not_contains":
+                return f"log line contains '{self.expected}': {self.actual}"
+            case "log.matches":
+                return f"no log line matches '{self.expected}'"
 
 
 class LogExpectation(BaseModel):
-    """Checks on the job's stdout; every entry must hold."""
+    """Checks on the job's stdout, applied line by line; every entry must hold."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     contains: tuple[str, ...] = ()
     not_contains: tuple[str, ...] = ()
     matches: tuple[str, ...] = ()
-    """Regular expressions searched line by line."""
+    """Regular expressions searched in each line."""
 
     @field_validator("matches")
     @classmethod
@@ -120,24 +128,16 @@ class LogExpectation(BaseModel):
     def evaluate(self, log: Sequence[str]) -> list[ExpectationResult]:
         """One result per entry; ``actual`` is the first line containing or matching it."""
         results: list[ExpectationResult] = []
-        for check, needles in (
-            ("log.contains", self.contains),
-            ("log.not_contains", self.not_contains),
-        ):
-            for text in needles:
-                line = next((line for line in log if text in line), None)
-                passed = (line is None) == (check == "log.not_contains")
-                results.append(
-                    ExpectationResult(check=check, expected=text, actual=line, passed=passed)
-                )
+        for text in self.contains:
+            line = next((line for line in log if text in line), None)
+            results.append(_log_result("log.contains", text, line, passed=line is not None))
+        for text in self.not_contains:
+            line = next((line for line in log if text in line), None)
+            results.append(_log_result("log.not_contains", text, line, passed=line is None))
         for pattern in self.matches:
-            regex = re.compile(pattern)
+            regex = re.compile(pattern)  # ``re`` caches compiled patterns
             line = next((line for line in log if regex.search(line)), None)
-            results.append(
-                ExpectationResult(
-                    check="log.matches", expected=pattern, actual=line, passed=line is not None
-                )
-            )
+            results.append(_log_result("log.matches", pattern, line, passed=line is not None))
         return results
 
 
@@ -157,28 +157,18 @@ class Expectation(BaseModel):
     def needs_log(self) -> bool:
         return bool(self.log.contains or self.log.not_contains or self.log.matches)
 
-    def over(self, defaults: Expectation | None) -> Expectation:
+    def over(self, defaults: Expectation) -> Expectation:
         """This expectation with anything it leaves unset taken from ``defaults``."""
-        if defaults is None:
-            return self
         log = defaults.log.model_copy(
             update={field: getattr(self.log, field) for field in self.log.model_fields_set}
         )
         return Expectation(status=self.status or defaults.status, log=log)
 
-    def evaluate(self, *, status: str, log: Sequence[str] | None) -> list[ExpectationResult]:
-        """Check a finished job; ``log`` is required when :attr:`needs_log`."""
+    def check_status(self, status: str) -> ExpectationResult:
         expected = self.status or "successful"
-        results = [
-            ExpectationResult(
-                check="status", expected=expected, actual=status, passed=status == expected
-            )
-        ]
-        if self.needs_log:
-            if log is None:
-                raise ValueError("log checks need the job's stdout")
-            results.extend(self.log.evaluate(log))
-        return results
+        return ExpectationResult(
+            check="status", expected=expected, actual=status, passed=status == expected
+        )
 
 
 class Case(BaseModel):
@@ -190,7 +180,7 @@ class Case(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     launch: dict[str, Any] = Field(default_factory=dict)
-    expect: Expectation | None = None
+    expect: Expectation = Field(default_factory=Expectation)
     timeout: float | None = Field(default=None, gt=0)
     """Seconds to wait for the job before it counts as timed out."""
 
@@ -252,3 +242,11 @@ class SuiteRunOutcome(BaseModel):
         if not self.results:
             return 1
         return 0 if all(r.result == "pass" for r in self.results) else 1
+
+
+def _log_result(
+    check: CheckName, expected: str, line: str | None, *, passed: bool
+) -> ExpectationResult:
+    if line is not None and len(line) > _MAX_ACTUAL:
+        line = line[:_MAX_ACTUAL] + "…"
+    return ExpectationResult(check=check, expected=expected, actual=line, passed=passed)

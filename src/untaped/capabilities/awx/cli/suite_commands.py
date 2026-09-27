@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from functools import partial
 from pathlib import Path
 from typing import Annotated, Any
 
 from cyclopts import Parameter
 from cyclopts.validators import Number
 
+from untaped.capabilities.awx.cli._get import default_get_columns
 from untaped.capabilities.awx.cli.context import AwxContext, open_context
 from untaped.capabilities.awx.domain.suite import Suite
 from untaped.capabilities.awx.errors import AwxApiError
@@ -167,8 +169,8 @@ def run_command(
         float | None,
         Parameter(
             name="--timeout",
-            help="Seconds each case waits before its job is cancelled; overrides each case's "
-            "timeout: (default: the case's timeout:, else awx.test_timeout).",
+            help="Seconds each case waits before its job is cancelled (default: the case's "
+            "timeout:, else the suite's defaults.timeout, else awx.test_timeout).",
             validator=Number(gt=0),
         ),
     ] = None,
@@ -199,6 +201,7 @@ def run_command(
     )
     from untaped.capabilities.awx.application.suites.runner import RunTestSuite  # noqa: PLC0415
     from untaped.capabilities.awx.cli._action_runner import report_interrupted  # noqa: PLC0415
+    from untaped.capabilities.awx.infrastructure.web_ui import job_ui_url  # noqa: PLC0415
 
     cli_vars = parse_kv_pairs(var, flag="--var")
     files = _expand_paths(paths)
@@ -226,7 +229,9 @@ def run_command(
             stop=ctx.stop,
             canceller=ctx.jobs.cancel if cancel else None,
             log_reader=ctx.monitor.fetch_stdout,
-            job_url=ctx.job_url,
+            job_url=partial(job_ui_url, ctx.settings),
+            # Tails are hidden in the table and raw views unless printed.
+            log_tails=show_logs or fmt not in {"table", "raw"},
         )
         try:
             outcome = runner(
@@ -244,16 +249,20 @@ def run_command(
 
     if show_logs:
         for result in outcome.results:
-            if result.log_tail is not None:
-                header = f"--- {result.suite}/{result.case} job {result.job_id}"
-                echo(f"{header} (last {len(result.log_tail)} lines)", err=True)
-                for line in result.log_tail:
-                    echo(line, err=True)
+            if result.result == "pass" or result.job_id is None:
+                continue
+            header = f"--- {result.suite}/{result.case} job {result.job_id}"
+            if result.log_tail is None:
+                echo(f"{header}: log unavailable", err=True)
+                continue
+            echo(f"{header} (last {len(result.log_tail)} lines)", err=True)
+            for line in result.log_tail:
+                echo(line, err=True)
 
     emit(
-        outcome.results,
+        [result.model_dump() for result in outcome.results],
         fmt=fmt,
-        columns=columns or (_RESULT_TABLE_COLUMNS if fmt == "table" else None),
+        columns=columns or default_get_columns(fmt, _RESULT_TABLE_COLUMNS),
         kind="awx.test_result",
     )
     finish(outcome.exit_code() != 0)
