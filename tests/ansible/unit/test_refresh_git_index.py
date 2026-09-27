@@ -11,7 +11,9 @@ from typing import Any
 
 import pytest
 
+from untaped.capabilities.ansible.application import refresh_git_index
 from untaped.capabilities.ansible.application.refresh_git_index import (
+    PARSER_VERSION,
     RefreshGitSourceIndex,
     RefreshResult,
     repo_candidate,
@@ -770,6 +772,20 @@ def test_git_refresh_reindexes_unchanged_ref_when_aliases_change(h: Harness) -> 
     assert h.git.reads == [("site", "sha-main", _REQS, None)] * 2
     assert h.dependents("acme/common")
     assert not h.index.dependencies("acme/site", "main", source_key="source:prod")[0].unresolved
+
+
+def test_git_refresh_reparses_unchanged_ref_when_parser_version_changes(
+    h: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    h.set_refs("acme/site", ("main", "sha-main", _base()))
+    h.run()
+    h.run()
+
+    monkeypatch.setattr(refresh_git_index, "PARSER_VERSION", PARSER_VERSION + 1)
+    third = h.run()
+
+    assert h.git.reads == [("site", "sha-main", _REQS, None)] * 2
+    assert third.changed_refs == 1
 
 
 def test_git_refresh_reindexes_moved_tags_and_prunes_unselected_refs(h: Harness) -> None:

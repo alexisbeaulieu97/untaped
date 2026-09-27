@@ -46,7 +46,14 @@
     `TARGET` or `--stdin` (`owner/repo@ref` lines, or pipe records carrying
     `scm_url`/`effective_scm_ref` such as `awx job-templates list --with-scm
     --format pipe`). Supports `--format table|json|pipe`; single-target
-    `tree`/`mermaid` output is unchanged.
+    `tree`/`mermaid` output is unchanged. It searches the full downstream
+    graph unless `--depth N` is given; the empty message then names the depth.
+  - **Fix:** an unpinned dependency now points at the dependency's cached
+    default-branch node, so downstream graphs, `--contains` and cycle
+    detection continue past it instead of stopping at a ref-less node.
+  - **Fix:** cached ref snapshots record the dependency parser version, so a
+    parser change re-parses refs on the next refresh instead of reusing stale
+    results. The first refresh after upgrading re-parses every ref once.
 
 ## 7.1.0
 
