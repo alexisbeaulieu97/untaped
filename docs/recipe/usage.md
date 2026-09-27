@@ -6,8 +6,10 @@ list of steps; *packs* bundle recipes with Python *hooks*. Every change is
 planned in memory, previewed, and written only after you confirm, with a
 backup of every file it touches.
 
-Recipes work on plain directories. They run no shell commands and never
-commit, push or open pull requests.
+Recipes work on plain directories and never commit, push or open pull
+requests. No recipe step runs a shell command, but pack hooks are Python
+code that runs on your machine (see [Install and manage
+packs](#install-and-manage-packs)).
 
 Recipe verbs (`apply`, `list`, `get`, `edit`, `init`, `validate`, `test`) sit
 directly under `untaped recipe`. Packs, hooks and backups have their own
