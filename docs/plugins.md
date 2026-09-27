@@ -246,7 +246,15 @@ The shared runtime helpers are exported from the same module:
   See [Tokens](configuration.md#tokens).
 - Doctor checks: `connection_check(id, section=...)` reports the resolved
   `base_url` and token source; `executable_check(id, program, purpose=...)`
-  warns when a program is not on `PATH`.
+  warns when a program is not on `PATH`; `online_check(id, section=...,
+  probe=...)` runs only under `untaped doctor --online` (and `untaped setup`):
+  `probe` is a nullary callable doing your authenticated `whoami`-style call
+  (import your CLI lazily inside it) that returns the pass detail and raises
+  `UntapedError` on failure, and the check names the fix (`config set
+  <section>.token --prompt`, `<section>.base_url`, or `http.ca_bundle`). Your
+  own `DoctorCheck(..., online=True)` is online-only too, and
+  `DoctorResult(..., fix="config set acme.token --prompt")` appends the
+  command to run to a failed or `warn` row.
 - Records: `OutcomeRecord`, `TargetRecord`, `CheckRecord`, and the
   `UtcTimestamp` and `AbsolutePath` field types.
 - Settings and context: `get_config_section`, `get_core_settings`,

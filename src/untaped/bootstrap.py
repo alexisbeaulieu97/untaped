@@ -44,6 +44,7 @@ from untaped.management import (
     build_root_config_app,
     build_root_doctor_app,
     build_root_profile_app,
+    build_root_setup_app,
     build_root_skills_app,
 )
 from untaped.management.skills import check_installed_skills, composed_skills
@@ -215,6 +216,7 @@ def build_root_app(
     _mount(root, build_root_profile_app(command=SHELL_NAME), name="profile")
     _mount(root, build_root_skills_app(shell=SHELL_SPEC, result=result), name="skills")
     _mount(root, build_root_doctor_app(shell=SHELL_SPEC, result=result), name="doctor")
+    _mount(root, build_root_setup_app(shell=SHELL_SPEC, result=result), name="setup")
     _mount(
         root,
         build_root_capabilities_app(
