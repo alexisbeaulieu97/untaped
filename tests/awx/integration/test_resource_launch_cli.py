@@ -96,7 +96,7 @@ def test_launch_forwards_full_action_payload(
     seeded_job_template_with_credentials: Any,
 ) -> None:
     """Every flag listed in JobTemplate.launch.accepts must reach the
-    POST body, with FK names (--inventory, --credential) resolved via
+    POST body, with FK names (--launch-inventory, --credential) resolved via
     the FkResolver and list flags (--job-tag/--skip-tag/--credential)
     accumulated correctly."""
     fake_aap, ids = seeded_job_template_with_credentials
@@ -113,7 +113,7 @@ def test_launch_forwards_full_action_payload(
             "foo=1",
             "--host-pattern",
             "web*",
-            "--inventory",
+            "--launch-inventory",
             "prod",
             "--credential",
             "ssh",
@@ -220,7 +220,7 @@ def test_launch_help_narrows_flags_by_accepts() -> None:
         )
     # Visible — in accepts (or always-on).
     for visible_flag in (
-        "--inventory",
+        "--launch-inventory",
         "--scm-branch",
         "--job-tag",
         "--skip-tag",
@@ -238,7 +238,7 @@ def test_launch_help_narrows_flags_by_accepts() -> None:
     # JobTemplate's accepts contains every narrowable field — full
     # parser stays advertised.
     for narrowable_flag in (
-        "--inventory",
+        "--launch-inventory",
         "--credential",
         "--scm-branch",
         "--job-tag",
@@ -545,3 +545,72 @@ def test_launch_pipe_output_feeds_jobs_stdin(seeded_default_org: Any) -> None:
 
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == str(json.loads(launched.stdout)["record"]["id"])
+
+
+def test_launch_inventory_takes_a_name_or_an_id(
+    seeded_job_template_with_credentials: Any,
+) -> None:
+    """``--launch-inventory`` is the inventory to run against; digits mean an id."""
+    fake, ids = seeded_job_template_with_credentials
+    assert _launch_body(fake, "--launch-inventory", "prod")["inventory"] == ids["inventory"]
+    fake.actions_called.clear()
+    assert _launch_body(fake, "--launch-inventory", "20")["inventory"] == 20
+
+
+def test_launch_dry_run_shows_the_resolved_payload_with_secrets_redacted(
+    seeded_job_template_with_credentials: Any,
+) -> None:
+    fake, ids = seeded_job_template_with_credentials
+    template = fake.get_record("job_templates", 10)
+    template["survey_enabled"] = True
+    template["survey_spec"] = {
+        "spec": [{"variable": "vault_pass", "type": "password"}, {"variable": "region"}]
+    }
+    result = CliInvoker().invoke(
+        app,
+        [
+            "job-templates",
+            "launch",
+            "alpha",
+            "--dry-run",
+            "--format",
+            "json",
+            "--launch-inventory",
+            "prod",
+            "--credential",
+            "ssh",
+            "--extra-vars",
+            "region=eu",
+            "--extra-vars",
+            "vault_pass=hunter2",
+            "--extra-vars",
+            "api_token=abc123",
+            "--host-pattern",
+            "web",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert fake.actions_called == []
+    (row,) = json.loads(result.stdout)
+    assert row["action"] == "planned"
+    assert row["payload"] == {
+        "extra_vars": {"region": "eu", "vault_pass": "<redacted>", "api_token": "<redacted>"},
+        "limit": "web",
+        "inventory": ids["inventory"],
+        "credentials": [ids["ssh"]],
+    }
+    assert "hunter2" not in result.output
+    assert "abc123" not in result.output
+
+
+def test_launch_inventory_not_found_suggests_close_names(
+    seeded_job_template_with_credentials: Any,
+) -> None:
+    fake, _ids = seeded_job_template_with_credentials
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "alpha", "--launch-inventory", "prdo"]
+    )
+    assert result.exit_code == 1, result.output
+    assert "Inventory not found: 'prdo'" in result.stderr
+    assert "did you mean 'prod'?" in result.stderr
+    assert fake.actions_called == []

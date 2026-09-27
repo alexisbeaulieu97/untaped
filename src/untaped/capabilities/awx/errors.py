@@ -8,9 +8,11 @@ messages). These types are surfaced to the CLI via
 
 from __future__ import annotations
 
+import difflib
+from collections.abc import Iterable
 from typing import Any
 
-from untaped.capability_api import UntapedError
+from untaped.capability_api import UntapedError, not_found, q
 
 
 class AwxError(UntapedError):
@@ -82,19 +84,45 @@ class ResourceNotFoundError(AwxApiError):
         kind: str,
         identity: dict[str, Any],
         *,
+        candidates: Iterable[str] = (),
+        note: str | None = None,
         status: int | None = 404,
         body: str | None = None,
         url: str | None = None,
     ) -> None:
-        identity_str = ", ".join(f"{k}={v!r}" for k, v in identity.items())
         super().__init__(
-            f"{kind} not found ({identity_str})",
+            _not_found_message(kind, identity, candidates, note),
             status=status,
             body=body,
             url=url,
         )
         self.kind = kind
         self.identity = identity
+
+
+def _not_found_message(
+    kind: str, identity: dict[str, Any], candidates: Iterable[str], note: str | None
+) -> str:
+    """``<Kind> not found: 'x' in organization 'O'; did you mean 'y'?`` plus ``note``.
+
+    Suggestions are the ``candidates`` (names in the searched scope) closest
+    to the missing name. Identities without a name (an id lookup) keep the
+    ``key=value`` listing.
+    """
+    if "name" not in identity:
+        identity_str = ", ".join(f"{k}={v!r}" for k, v in identity.items())
+        return f"{kind} not found ({identity_str})"
+    scope = ", ".join(
+        f"{key.replace('__', ' ').replace('_', ' ')} {q(value)}"
+        for key, value in identity.items()
+        if key != "name"
+    )
+    name = str(identity["name"])
+    message = not_found(kind, name) + (f" in {scope}" if scope else "")
+    suggestions = difflib.get_close_matches(name, list(dict.fromkeys(candidates)), n=3)
+    if suggestions:
+        message += f"; did you mean {', '.join(map(q, suggestions))}?"
+    return f"{message}\n{note}" if note else message
 
 
 class ConflictError(AwxApiError):

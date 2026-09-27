@@ -180,6 +180,8 @@ _LINES = ["line-0", "line-1", "line-2"]
         (["--follow", "--format", "raw", "--columns", "line"], _LINES),
         (["--tail", "2"], _LINES[1:]),
         (["--format", "json", "--columns", "line"], [json.dumps([{"line": x} for x in _LINES])]),
+        # -f is --format, as on every other command
+        (["-f", "json", "-c", "line"], [json.dumps([{"line": x} for x in _LINES])]),
         # --follow json is NDJSON: one bare object per line, straight into ``jq``
         (["--follow", "--format", "json"], [json.dumps({"job": 42, "line": x}) for x in _LINES]),
         (["--follow", "--format", "json", "--columns", "line"],
