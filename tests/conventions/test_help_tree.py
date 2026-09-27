@@ -58,6 +58,11 @@ VERBS = frozenset(
         # update
         "sync",
         "refresh",
+        # query
+        "find",
+        "deps",
+        "impact",
+        "graph",
         # other
         "export",
         "init",

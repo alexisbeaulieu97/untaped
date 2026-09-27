@@ -1877,7 +1877,7 @@ def test_find_gives_each_input_record_its_own_rows_with_its_identity(
          "effective_scm_ref": ""},
         {"id": 3, "name": "Other", "scm_url": "https://github.com/acme/none",
          "effective_scm_ref": "main"},
-        # Same root as template 1: it still gets its own row.
+        # Same repo and ref as template 1 in another spelling: its own row.
         {"id": 4, "name": "Deploy copy", "scm_url": "https://github.com/acme/app",
          "effective_scm_ref": "main"},
     ]  # fmt: skip
@@ -1940,7 +1940,7 @@ def test_find_accepts_several_targets_roots_and_alias_targets(tmp_path: Path, mo
         (["find", "--stdin"], "requires an argument"),
         (["find", "a/b", "--stdin", "--format", "tree"], "tree"),
         (["deps", "acme/site", "--format", "mermaid"], "mermaid"),
-        (["impact", "acme/site", "--live"], "--live reads downstream dependencies only"),
+        (["impact", "acme/site", "--live"], "Unknown option"),
     ],
 )
 def test_task_command_usage_errors(args: list[str], message: str) -> None:
@@ -1948,6 +1948,63 @@ def test_task_command_usage_errors(args: list[str], message: str) -> None:
 
     assert result.exit_code == 2, result.output
     assert message in " ".join(result.stderr.replace("│", " ").split())
+
+
+def test_find_builds_one_graph_per_resolved_root(tmp_path: Path, monkeypatch) -> None:
+    _use_config(tmp_path, monkeypatch, token=True)
+    spellings = [
+        "https://github.com/acme/app.git",
+        "https://github.com/acme/app",
+        "git@github.com:acme/app.git",
+    ]
+    stdin = "".join(
+        json.dumps({"untaped": "1", "kind": "awx.job_template",
+                    "record": {"id": index, "scm_url": url}}) + "\n"
+        for index, url in enumerate(spellings, start=1)
+    )  # fmt: skip
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        _mock_dependency_file(mock, "acme/app", content="")
+        result = CliInvoker().invoke(app, ["find", "acme/target", "--stdin"], input=stdin)
+
+    assert result.exit_code == 0, result.output + result.stderr
+    # Each graph build reports its own empty-graph warning: one build, one line.
+    assert result.stderr.count("no declared downstream dependencies found") == 1
+
+
+def test_find_collapses_repeated_roots(tmp_path: Path, monkeypatch) -> None:
+    _use_config(tmp_path, monkeypatch, token=True)
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        _mock_dependency_file(mock, "acme/app", content="- src: https://github.com/acme/target\n")
+        _mock_dependency_file(mock, "acme/target", content="")
+        result = _run(
+            "find", "acme/target", "--root", "acme/app", "--root", "acme/app", "-f", "json"
+        )
+
+    assert [row[:2] for row in _match_rows(result)] == [("acme/app", "main")]
+
+
+def test_find_resolves_targets_before_refreshing(tmp_path: Path, monkeypatch) -> None:
+    _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
+    calls = _fake_refresh(monkeypatch)
+
+    result = _run("find", "./no-such-role", "--root", "acme/site", "--source", "platform",
+                  "--refresh")  # fmt: skip
+
+    assert result.exit_code == 1
+    assert "could not resolve target to a GitHub repo: './no-such-role'" in result.stderr
+    assert calls == []
+
+
+def test_find_without_cached_source_data_hints_refresh(tmp_path: Path, monkeypatch) -> None:
+    _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
+
+    result = _run("find", "acme/target", "--root", "acme/site", "--source", "platform")
+
+    assert result.exit_code == 1
+    assert "no cached source data found for source 'platform'" in result.stderr
+    assert "re-run this command with `--refresh`" in result.stderr
 
 
 def test_find_rejects_records_without_a_repository(tmp_path: Path, monkeypatch) -> None:
@@ -2076,8 +2133,40 @@ def test_impact_lists_every_dependent_with_its_path_to_the_role(
             ["acme/multi@main", "acme/lib@1.0", "acme/target@feature/x"],
         ),
     ]
+    # A ref-less ROLE is walked from each of its refs: root_ref tells them apart.
+    assert sorted(
+        row["root_ref"] for row in json.loads(result.stdout) if row["repo"] == "acme/multi"
+    ) == ["feature/x", "v1"]
     pipe = _run("impact", "acme/target", "--source", "platform", "-f", "pipe")
     assert {json.loads(line)["kind"] for line in pipe.stdout.splitlines()} == {"ansible.dependent"}
+
+
+def _seed_diamond_cycle(tmp_path: Path) -> list[str]:
+    """``a -> b, c``; ``b, c -> d``; ``d -> a`` (a cycle back to the root)."""
+    repos = ["acme/a", "acme/b", "acme/c", "acme/d"]
+    edges = [("acme/a", "acme/b"), ("acme/a", "acme/c"), ("acme/b", "acme/d"),
+             ("acme/c", "acme/d"), ("acme/d", "acme/a")]  # fmt: skip
+    _seed(tmp_path, "source:platform", *(_edge(s, d, version="main") for s, d in edges))
+    return repos
+
+
+@pytest.mark.parametrize(
+    ("command", "role", "expected"),
+    [
+        ("deps", "acme/a", [("acme/b", 1), ("acme/c", 1), ("acme/d", 2)]),
+        ("impact", "acme/d", [("acme/b", 1), ("acme/c", 1), ("acme/a", 2)]),
+    ],
+)
+def test_reach_reports_each_repo_once_through_diamonds_and_cycles(
+    tmp_path: Path, monkeypatch, command: str, role: str, expected: list[tuple[str, int]]
+) -> None:
+    repos = _seed_diamond_cycle(tmp_path)
+    _use_config(tmp_path, monkeypatch, {"sources": [{"name": "platform", "repos": repos}]})
+
+    result = _run(command, role, "--ref", "main", "--source", "platform", "-f", "json")
+
+    assert [(row[0], row[3]) for row in _rows(result)] == expected
+    assert {row["root_ref"] for row in json.loads(result.stdout)} == {"main"}
 
 
 def test_impact_without_any_source_names_the_default_source_setting(
@@ -2110,6 +2199,24 @@ def test_default_source_stands_in_for_source(tmp_path: Path, monkeypatch) -> Non
     assert graph.exit_code == 0, graph.output
     assert "+-- acme/site@main" in graph.stdout
     assert "upstream omitted" not in graph.stdout
+
+
+def test_default_source_without_cache_fails_deps_until_live(tmp_path: Path, monkeypatch) -> None:
+    _use_config(
+        tmp_path, monkeypatch, _PLATFORM, token=True, ansible={"default_source": "platform"}
+    )
+
+    cached = _run("deps", "acme/site")
+    with respx.mock(base_url="https://api.github.com") as mock:
+        _mock_dependency_file(mock, "acme/site")
+        _mock_dependency_file(mock, "acme/base", content="")
+        live = _run("deps", "acme/site", "--live", "-f", "json")
+
+    assert cached.exit_code == 1
+    assert "no cached source data found for source 'platform'" in cached.stderr
+    assert "untaped ansible deps acme/site --source platform --refresh" in cached.stderr
+    assert "--live" in cached.stderr
+    assert [row[:2] for row in _rows(live)] == [("acme/base", "main")]
 
 
 def test_explicit_selection_overrides_default_source(tmp_path: Path, monkeypatch) -> None:

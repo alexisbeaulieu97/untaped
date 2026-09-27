@@ -5,8 +5,8 @@ depend on each other through their requirements files:
 
 | Command | Question | Output |
 |---|---|---|
-| `deps ROLE` | What does ROLE depend on (downstream)? | one `ansible.dependency` row per repo reached |
-| `impact ROLE` | What depends on ROLE (upstream)? | one `ansible.dependent` row per repo reached |
+| `deps ROLE` | What does ROLE depend on (downstream)? | one `ansible.dependency` row per repo reached, per ROLE ref |
+| `impact ROLE` | What depends on ROLE (upstream)? | one `ansible.dependent` row per repo reached, per ROLE ref |
 | `find REPO --root ROOT` / `--stdin` | Which roots contain REPO downstream? | one `ansible.dependency_match` row per match |
 | `graph TARGET` | The whole picture, both directions | a tree, Mermaid diagram or JSON graph |
 
@@ -50,6 +50,13 @@ untaped ansible deps ./roles/web --target-repo acme/web --format json
 `ROLE` is `owner/repo`, a GitHub URL, a source alias, or a local path. A
 local path resolves its repo from the Git remote only at the top of a
 checkout; for a subdirectory pass `--target-repo OWNER/NAME`.
+
+Without a source, `deps` reads GitHub live. Once a source is selected,
+including through `ansible.default_source`, it reads that source's cache
+instead: a role outside the source gets a "not cached" warning and no rows,
+and before the source's first refresh the command fails with the refresh
+command to run. Pass `--live` to read GitHub anyway. The same holds for
+`find` and for `graph`'s downstream half.
 
 Scanned files are, in each repo: `roles/requirements.yml`, `requirements.yml`,
 `meta/requirements.yml` and `meta/main.yml` (`.yaml` too). Change the list
@@ -135,7 +142,7 @@ only downstream and warns that upstream was omitted.
 |---|---|
 | `--source NAME` | Saved source to use. Repeat to combine. Defaults to `ansible.default_source`. |
 | `--org`, `--team`, `--repo`, `--path`, `--ref-kind`, `--ref-pattern`, `--ref-scan-default` | Inline source instead of a saved one. |
-| `--refresh`, `--live` | Refresh the source first; or read downstream live from GitHub even with a source (`impact` rejects `--live`). |
+| `--refresh`, `--live` | Refresh the source first; or read downstream live from GitHub even with a source (`impact` has no `--live`). |
 | `--parallel N`, `--backend auto\|graphql\|git` | Git fetch limit and ref probe backend for `--refresh`. |
 | `--depth N\|unlimited` | Traversal depth. `deps`, `impact` and `find` default to `unlimited`, `graph` to 3. |
 
@@ -189,10 +196,11 @@ afterwards.
 - `deps` rows (`ansible.dependency`) and `impact` rows (`ansible.dependent`)
   have `repo`, `ref`, `unresolved` (the declared name of a dependency that
   names no GitHub repo), `declared_ref` and `declared_in` (from the edge that
-  reached the repo, verbatim), `depth` and `path`. `path` reads in dependency
-  order: from ROLE for `deps`, towards ROLE for `impact`. Each repo appears
-  once per root, at its shortest path; a ref-less ROLE is walked from each of
-  its refs.
+  reached the repo, verbatim), `depth`, `path` and `root_ref`. `path` reads
+  in dependency order: from ROLE for `deps`, towards ROLE for `impact`. Each
+  repo appears once per root, at its shortest path; a ref-less ROLE is walked
+  from each of its refs, and `root_ref` says which ROLE ref a row was reached
+  from.
 - `tree` prints a shared subtree once and marks later occurrences
   `(see above)`.
 - `json` has `nodes`, `edges` (with stable `id`s), `cycles` and `warnings`.
