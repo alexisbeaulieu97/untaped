@@ -12,9 +12,10 @@ from untaped.capabilities.workspace.application import (
     UnsetWorkspaceBranch,
 )
 from untaped.capabilities.workspace.cli.common import (
+    LeadingWorkspaceArg,
     RepoSelectorOption,
-    WorkspaceNameOption,
-    WorkspacePathOption,
+    WorkspaceArg,
+    leading_workspace,
     resolve_workspace,
 )
 from untaped.capabilities.workspace.domain import BranchApplyOutcome
@@ -55,7 +56,11 @@ app = create_app(
 
 @app.command(name="set")
 def branch_set_command(
-    branch: Annotated[str, Parameter(help="Branch name to record in the manifest.")],
+    workspace: LeadingWorkspaceArg = None,
+    branch: Annotated[
+        str | None,
+        Parameter(name="BRANCH", help="Branch name to record in the manifest."),
+    ] = None,
     /,
     *,
     repo: Annotated[
@@ -74,14 +79,13 @@ def branch_set_command(
         ),
     ] = False,
     create: CreateOption = False,
-    workspace: WorkspaceNameOption = None,
-    path: WorkspacePathOption = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Set the default branch or a repo branch override in ``untaped.yml``."""
+    workspace, branch = leading_workspace(workspace, branch, missing="BRANCH")
     with report_errors():
-        ws = resolve_workspace(workspace, path)
+        ws = resolve_workspace(workspace)
         change = SetWorkspaceBranch(YamlManifestRepository())(ws, branch=branch, repo=repo)
         ui = ui_context(strict=False)
         if change.repo is None:
@@ -103,6 +107,8 @@ def branch_set_command(
 
 @app.command(name="unset")
 def branch_unset_command(
+    workspace: WorkspaceArg = None,
+    /,
     *,
     repo: Annotated[
         str | None,
@@ -111,14 +117,12 @@ def branch_unset_command(
             help="Repo name or URL to unset; omit for the workspace default.",
         ),
     ] = None,
-    workspace: WorkspaceNameOption = None,
-    path: WorkspacePathOption = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Unset the default branch or a repo branch override in ``untaped.yml``."""
     with report_errors():
-        ws = resolve_workspace(workspace, path)
+        ws = resolve_workspace(workspace)
         change = UnsetWorkspaceBranch(YamlManifestRepository())(ws, repo=repo)
         ui = ui_context(strict=False)
         if change.repo is None:
@@ -135,17 +139,17 @@ def branch_unset_command(
 
 @app.command(name="apply")
 def branch_apply_command(
+    workspace: WorkspaceArg = None,
+    /,
     *,
     repo: RepoSelectorOption = None,
     create: CreateOption = False,
-    workspace: WorkspaceNameOption = None,
-    path: WorkspacePathOption = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Checkout existing repos to the branch declared in ``untaped.yml``."""
     with report_errors():
-        ws = resolve_workspace(workspace, path)
+        ws = resolve_workspace(workspace)
         with ui_context(strict=False).progress("Applying branches…"):
             outcomes = ApplyWorkspaceBranch(
                 YamlManifestRepository(),

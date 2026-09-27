@@ -51,6 +51,8 @@ DESCRIPTIONS: dict[str, str] = {
     "version: `warn` (print a warning), `auto` (update them in place), or `off`.",
     "workspace.cache_dir": "Bare-clone cache used as the reference for new workspace clones.",
     "workspace.workspaces_dir": "Parent directory for `workspace init NAME` without `--path`.",
+    "workspace.parallel": "Default `sync --parallel` and `foreach --parallel` workers. Unset "
+    "means `min(8, 2 * CPUs)`; values above `2 * CPUs` are clamped.",
     "workspace.workspaces": "Registered workspaces (`name`, `path`). Managed by `workspace` "
     "commands.",
     "github.base_url": "GitHub API URL. GitHub Enterprise Server uses `https://HOST/api/v3`.",

@@ -13,7 +13,7 @@ The two homes of workspace state:
   source of truth for what belongs in a workspace.
 - **Central registry** — a `workspace.workspaces` list in
   `~/.untaped/state.yml` mapping `name → path`. Just enough state to
-  power `list`, `path <name>`, and `--workspace X` lookups.
+  power `list`, `path <name>`, and workspace-name lookups.
 
 Manifests are checked into a shared directory or a git repo if you
 want; the registry is local-only.
@@ -22,11 +22,11 @@ want; the registry is local-only.
 
 ```bash
 untaped workspace init prod                     # new workspace at ~/.untaped/workspaces/prod
-untaped workspace add git@github.com:acme/api --workspace prod  # add a repo
-untaped workspace get --workspace prod                          # inspect manifest details
-untaped workspace branch set main --workspace prod              # update manifest default branch
-untaped workspace sync --workspace prod              # clone everything in the manifest
-untaped workspace status --workspace prod            # per-repo git status
+untaped workspace repos add prod git@github.com:acme/api  # add a repo
+untaped workspace repos list prod               # inspect the declared repos
+untaped workspace branch set prod main          # update manifest default branch
+untaped workspace sync prod                     # clone everything in the manifest
+untaped workspace status prod                   # per-repo git status
 ```
 
 To use another profile's settings (for example its `workspace.workspaces_dir`),
@@ -35,12 +35,30 @@ after `--` belong to the command):
 
 ```bash
 untaped --profile work workspace init prod
-untaped workspace sync --workspace prod --profile work
+untaped workspace sync prod --profile work
 ```
 
-If you `cd` into a workspace directory, the `--workspace` flag becomes
-optional — most commands walk up from the current directory looking
-for an `untaped.yml`.
+### Choosing the workspace
+
+Every command that acts on one workspace takes it as its first
+positional argument, `WS`:
+
+- a registered name (`prod`);
+- a path inside a workspace (`.`, `..`, `~/work/prod`, `./prod`, or
+  anything containing `/`); the path must exist, and untaped walks up
+  from it to the nearest `untaped.yml`, so an unregistered workspace
+  works too. Workspace names therefore cannot start with `~`;
+- omitted: the workspace containing the current directory (the same
+  walk-up as `.`).
+
+`repos add` and `repos remove` take the repos after the workspace, so
+they need `WS` whenever repos are given positionally
+(`untaped workspace repos add . <url>`; a lone argument is the
+workspace, so `repos add prod` exits `2` with `missing URL (or --stdin)`);
+with `--stdin` it may be omitted. `foreach [WS] CMD` and `branch set [WS] BRANCH` read one
+positional as the command or branch and two as the workspace followed by
+it. `sync`, `status` and `foreach` take `--all` instead of `WS` to act
+on every registered workspace.
 
 ## The manifest — `untaped.yml`
 
@@ -73,7 +91,7 @@ repo with a warning, so a stale `defaults.branch` can't kidnap a repo
 you've moved to a feature branch.
 
 `repos[].name` is what shows up on disk under the workspace directory
-and what you pass to `--repo` / `remove`. Names and URLs must both be
+and what you pass to `--repo` / `repos remove`. Names and URLs must both be
 unique within a manifest; names are compared case-insensitively, since
 `api` and `API` are the same directory on macOS and Windows. A repo name
 (explicit, via `--repo-name`, or derived from the URL) must be a single
@@ -93,24 +111,20 @@ untaped workspace list --profile work --format raw --columns name
 Lists the central registry — every workspace `untaped workspace` knows about
 by name and path.
 
-### `get`
+### `repos list`
 
 ```bash
-untaped workspace get [--workspace <ws> | --path <dir>]
-                      [--format json|yaml|table|raw|pipe] [--columns ...]
+untaped workspace repos list [WS] [--format json|yaml|table|raw|pipe] [--columns ...]
 ```
 
-Show the manifest details for one workspace. Each repo produces one
-`workspace.repo` row with the workspace name, manifest path, default
+List the repos declared in one workspace's manifest. Each repo produces
+one `workspace.repo` row with the workspace name, manifest path, default
 branch, repo name, repo URL, per-repo branch override, effective target
 branch, and the clone's absolute `target_path`. Empty manifests still
 emit a single `workspace.repo.summary` row with `repo_count: 0` and no
 `target_path`.
 
-`get` was called `show` before; `show` still works as a hidden,
-deprecated alias that prints a warning.
-
-`get` reads `untaped.yml` only. It does not inspect git status or
+`repos list` reads `untaped.yml` only. It does not inspect git status or
 remote state; use `untaped workspace status` for live checkout data.
 
 ### `init`
@@ -168,7 +182,8 @@ untaped workspace adopt ~/work/prod
 ### `forget`
 
 ```bash
-untaped workspace forget <name> [--prune] [--yes] [--format ...] [--columns ...]
+untaped workspace forget <name> [--prune] [--yes] [--dry-run]
+                               [--format ...] [--columns ...]
 ```
 
 Remove a workspace from the central registry. The on-disk manifest and
@@ -180,6 +195,13 @@ operation unless `--yes` / `-y` is passed. A declined prompt exits `1`
 (`cancelled; no changes made`) without changing registry state or
 files. A forgotten workspace produces one `workspace.forget_outcome` row
 (`name`, `action: forgotten` or `pruned`, `target_path`).
+
+`--prune --dry-run` changes nothing (it wins over `--yes`): it runs the
+same checks, lists on stderr every path the prune would delete (and
+notes that the workspace directory goes too if nothing else is left),
+and prints one `planned` row. An unsafe clone fails the dry run exactly
+as it would fail the prune. `--dry-run` without `--prune` is a usage
+error (exit `2`), as for `sync`.
 
 `forget --prune` deletes only:
 
@@ -212,15 +234,14 @@ untaped workspace import <source.yml> <dest> [--name <name>] [--sync]
 Adopt an existing manifest into a new workspace directory. Useful when
 a colleague shares a YAML file describing their workspace setup. Pass
 `--sync` to clone the imported repos immediately (only the repos in
-the imported manifest — same scope as `add --sync`).
+the imported manifest — same scope as `repos add --sync`).
 
-### `add`
+### `repos add`
 
 ```bash
-untaped workspace add <url>... [--workspace <ws>] [--path <ws-dir>]
-                               [--branch <b>] [--repo-name <alias>]
-                               [--sync] [--format ...] [--columns ...]
-untaped workspace add --stdin --workspace <ws>
+untaped workspace repos add WS <url>... [--branch <b>] [--repo-name <alias>]
+                                        [--sync] [--format ...] [--columns ...]
+untaped workspace repos add [WS] --stdin
 ```
 
 Add one or more repo URLs to the workspace's manifest. Multiple URLs
@@ -238,15 +259,14 @@ the add rows.
 `github.repo`, `github.repo_hit` or `github.sweep_repo` records (their
 `clone_url`, else `url`) or `workspace.repo` records (their `url`), so
 `untaped github search repos --org acme --format pipe | untaped workspace
-add --stdin` works. A pipe record of any other kind exits `2`.
+repos add prod --stdin` works. A pipe record of any other kind exits `2`.
 
-### `remove`
+### `repos remove`
 
 ```bash
-untaped workspace remove <repo>... [--workspace <ws> | --path <dir>]
-                                  [--prune] [--yes] [--dry-run]
-                                  [--format ...] [--columns ...]
-untaped workspace remove --stdin [--workspace <ws> | --path <dir>]
+untaped workspace repos remove WS <repo>... [--prune] [--yes] [--dry-run]
+                                            [--format ...] [--columns ...]
+untaped workspace repos remove [WS] --stdin
 ```
 
 Remove one or more repos from the manifest, identified by URL or
@@ -270,20 +290,17 @@ a `workspace.repo` / `workspace.sync_outcome` pipe stream — works
 nicely with `fzf`:
 
 ```bash
-untaped workspace status --workspace prod --format raw --columns repo \
+untaped workspace status prod --format raw --columns repo \
   | fzf -m \
-  | untaped workspace remove --stdin --workspace prod
+  | untaped workspace repos remove prod --stdin
 ```
 
 ### `branch`
 
 ```bash
-untaped workspace branch set <branch> [--workspace <ws> | --path <dir>]
-                                [--repo <repo>] [--apply [--create]]
-untaped workspace branch unset [--workspace <ws> | --path <dir>] [--repo <repo>]
-                               [--format ...] [--columns ...]
-untaped workspace branch apply [--workspace <ws> | --path <dir>] [--repo <repo>]...
-                               [--create]
+untaped workspace branch set [WS] <branch> [--repo <repo>] [--apply [--create]]
+untaped workspace branch unset [WS] [--repo <repo>] [--format ...] [--columns ...]
+untaped workspace branch apply [WS] [--repo <repo>]... [--create]
 ```
 
 Set or unset branch metadata in `untaped.yml`. Without `--repo`, the
@@ -300,11 +317,11 @@ Use `branch apply` to checkout existing local clones to the manifest's
 target branch:
 
 ```bash
-untaped workspace branch set main --workspace prod
-untaped workspace branch apply --workspace prod
+untaped workspace branch set prod main
+untaped workspace branch apply prod
 
 # or do both steps in one command
-untaped workspace branch set main --workspace prod --apply
+untaped workspace branch set prod main --apply
 ```
 
 `branch apply` fetches first, refuses dirty or diverged repos, and emits
@@ -323,9 +340,9 @@ instead.
 ### `sync`
 
 ```bash
-untaped workspace sync [--workspace <ws> | --path <dir>]
-                       [--repo <repo>]... [--prune [--yes]]
-                       [--timeout <seconds>] [--parallel N] [--all]
+untaped workspace sync [WS | --all]
+                       [--repo <repo>]... [--prune [--yes | --dry-run]]
+                       [--timeout <seconds>] [--parallel N]
 ```
 
 Reconcile each repo on disk with the manifest:
@@ -338,6 +355,7 @@ Reconcile each repo on disk with the manifest:
 | `skipped`    | Deliberately left alone: dirty, diverged, on a different branch, not a git repository, or an unsafe orphan (with a reason). |
 | `failed`     | A clone, fetch, status, or pull errored; `detail` names the step and git's error. |
 | `removed`    | Local clone is not in the manifest, and `--prune` is set. |
+| `planned`    | `--prune --dry-run`: a safe orphan clone `--prune` would remove. |
 | `unmatched`  | `--all --repo <repo>` was passed and `<repo>` isn't in this workspace's manifest — `repo` carries the unmatched identifier. |
 | `unavailable` | `--all` hit a registered workspace whose manifest could not be read — `repo` is empty and `detail` explains the manifest failure. |
 
@@ -385,9 +403,13 @@ remotes.
 
 `--parallel N` / `-j N` runs up to `N` repo sync jobs concurrently.
 This works for a single workspace and for `--all`; the cap is global
-across every selected repo, not per workspace. The value is clamped to
-`2 * os.cpu_count()` with a stderr warning when needed; a value below
-`1` is a usage error (exit `2`). Default sync is still serial.
+across every selected repo, not per workspace. Without `--parallel`,
+sync uses the `workspace.parallel` profile setting, or
+`min(8, 2 × CPUs)` when it is unset, so sync is parallel by default
+(`-j 1` or `untaped config set workspace.parallel 1` makes it serial).
+The value is clamped to `2 * os.cpu_count()` with a stderr warning when
+needed. `-j` below `1` is a usage error (exit `2`); a `workspace.parallel`
+below `1` is an invalid config value (exit `1`).
 
 Sync output remains deterministic even when repo jobs finish out of
 order: workspace input order first, then unmatched selector rows,
@@ -416,6 +438,13 @@ re-checked right before each delete. The same local remote-tracking ref
 boundary applies here: `sync --prune` does not fetch during the prune
 phase.
 
+`sync --prune --dry-run` skips the sync phase entirely (nothing is
+cloned, pulled or deleted) and prints the prune plan: a `planned` row
+for each safe orphan, a `skipped` row for each unsafe one, and under
+`--all` an `unavailable` row for each unreadable manifest. It exits
+`0` and never prompts. `--dry-run` without `--prune` is a usage error
+(exit `2`).
+
 Known limitations:
 
 - `-j` is a global cap, not host-aware. Pick values that fit your git
@@ -443,8 +472,8 @@ and abort the command.
 ### `status`
 
 ```bash
-untaped workspace status [--workspace <ws> | --path <dir>] [--all]
-                         [--repo <repo>]...
+untaped workspace status [WS | --all] [--repo <repo>]...
+                         [--dirty] [--behind] [--check]
                          [--format json|yaml|table|raw|pipe] [--columns ...]
 ```
 
@@ -461,20 +490,34 @@ fall through to a repository enclosing the workspace (`sync` and
 `branch apply` skip such directories with the same detail). A clone
 whose `git status` fails keeps `cloned=true` and carries the error in
 `detail`.
-Pipe-friendly:
+
+Filters and checks:
+
+- `--dirty` keeps only repos with uncommitted changes (`modified` or
+  `untracked` above zero).
+- `--behind` keeps only repos behind their upstream (`behind` above
+  zero), as of the last fetch; `status` never fetches.
+- Together, a repo matches either filter.
+- The filters never hide a repo whose state could not be read: an
+  uncloned repo, a failed `git status`, or an `unavailable` workspace.
+- `--check` exits `3` when any repo is dirty or behind (only the
+  `--dirty` / `--behind` condition when one is given), and `0` otherwise.
+  It exits `1` instead when any repo could not be inspected, since the
+  check could not be answered. Without a filter it still prints every
+  row.
 
 ```bash
 # Repos with upstream commits you haven't pulled
-untaped workspace status --all --format raw \
-    --columns workspace --columns repo --columns behind \
-  | awk '$3 > 0 { print }'
+untaped workspace status --all --behind --format raw --columns workspace --columns repo
+
+# CI gate: fail when any repo has uncommitted work
+untaped workspace status prod --dirty --check
 ```
 
 ### `foreach`
 
 ```bash
-untaped workspace foreach <cmd> [--workspace <ws> | --path <dir>]
-                                [--repo <repo>]...
+untaped workspace foreach [WS | --all] <cmd> [--repo <repo>... | --stdin]
                                 [--timeout <seconds>]
                                 [--parallel N]
                                 [--continue-on-error | --ignore-errors]
@@ -491,6 +534,28 @@ anything until each repo exits. `--format json|yaml|raw|pipe` emits one
 repo's `target_path`) for
 piping into `jq` / `awk` or another command.
 
+Pick the repos:
+
+- `--repo <repo>` / `-r <repo>` (repeatable): only these repos.
+- `--stdin`: repo names, one per line, or the `repo` field of a
+  `workspace.repo`, `workspace.status` or `workspace.sync_outcome` pipe
+  stream. Names are matched in `WS`; a record whose `workspace` field
+  names another workspace exits `2`, as does any other record kind.
+  `--stdin` cannot be combined with `--repo` or `--all`.
+- `--all`: every registered workspace, in registry order, instead of
+  `WS`. `--repo` then filters per workspace (an identifier no workspace
+  declares is an error). Table output and the `failed in:` summary name
+  repos as `<workspace>/<repo>`. A workspace whose manifest cannot be
+  read is skipped with a warning. Fail-fast stops the later workspaces
+  too.
+
+A first argument that is not a registered workspace fails with a hint
+to quote the command: `foreach build make` looks up a workspace named
+`build`; write `foreach 'build make'`.
+
+`--parallel N` / `-j N` defaults to the `workspace.parallel` setting, or
+`min(8, 2 × CPUs)`, like `sync`; pass `-j 1` to run repos one at a time.
+
 Child commands run with stdin closed (`DEVNULL`), so interactive
 programs receive EOF instead of hanging the sweep. Each repo command
 has a 600s timeout by default; raise it with `--timeout <seconds>` for
@@ -502,9 +567,13 @@ descendants or OS-level uninterruptible waits can delay the final pipe
 drain after the timeout fires.
 
 ```bash
-untaped workspace foreach 'git status -s' --workspace prod
-untaped workspace foreach 'git status -s' --workspace prod --repo api --repo ui
-untaped workspace foreach 'git pull --ff-only' --workspace prod --parallel 4
+untaped workspace foreach prod 'git status -s'
+untaped workspace foreach prod 'git status -s' --repo api --repo ui
+untaped workspace foreach --all 'git pull --ff-only' --parallel 4
+
+# Stash only the dirty repos
+untaped workspace status prod --dirty --format pipe \
+  | untaped workspace foreach prod 'git stash' --stdin
 ```
 
 Three error-handling modes:
@@ -567,12 +636,12 @@ uwcd prod          # cd ~/work/prod
 ### `edit`
 
 ```bash
-untaped workspace edit [--workspace <ws> | --path <dir>] [--editor <cmd>]
+untaped workspace edit [WS] [--editor <cmd>]
 ```
 
 Opens the resolved workspace root in your editor. With no explicit
 target, `edit` walks up from the current directory until it finds
-`untaped.yml`, matching `get`, `sync`, `status`, and `foreach`.
+`untaped.yml`, matching `repos`, `sync`, `status`, and `foreach`.
 Honours `$VISUAL` then `$EDITOR`, overrideable with `--editor`. With
 none of them set, `edit` fails with
 `error: set $VISUAL or $EDITOR to use an external editor` (exit `1`), like
@@ -585,9 +654,7 @@ with `error: editor exited with status N` (exit `1`).
 
 ```bash
 untaped workspace sync --all
-untaped workspace status --all --format raw \
-    --columns workspace --columns repo --columns behind --columns modified \
-  | awk '$3 > 0 || $4 > 0 { print }'
+untaped workspace status --all --dirty --behind
 ```
 
 Brings every registered workspace up to date, then flags any repo
@@ -596,8 +663,8 @@ that's behind upstream or has uncommitted changes.
 ### Pick a repo with `fzf` and run a command in just that one
 
 ```bash
-repo="$(untaped workspace status --workspace prod --format raw --columns repo | fzf)"
-untaped workspace foreach 'git log --oneline -10' --workspace prod --repo "$repo"
+repo="$(untaped workspace status prod --format raw --columns repo | fzf)"
+untaped workspace foreach prod 'git log --oneline -10' --repo "$repo"
 ```
 
 ### Adopt a colleague's workspace
@@ -614,7 +681,7 @@ mkdir -p ~/work/prod && cd ~/work/prod
 git clone git@github.com:acme/api
 git clone git@github.com:acme/web
 untaped workspace adopt . --name prod
-untaped workspace status --workspace prod        # already populated
+untaped workspace status prod                    # already populated
 ```
 
 ## Storage

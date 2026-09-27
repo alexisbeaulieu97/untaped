@@ -78,6 +78,40 @@
     command runs in, not the current directory, before untaped defaults ssh
     to `BatchMode`.
 - Workspace
+  - **Breaking:** repo membership commands moved under a `repos` noun:
+    `workspace add` → `workspace repos add`, `workspace remove` →
+    `workspace repos remove`, and `workspace get` (which listed the declared
+    repos) → `workspace repos list`. The deprecated `show` alias is gone. No
+    aliases are kept for the old spellings.
+  - **Breaking:** the workspace is now the first positional argument, `WS`,
+    of every command that acts on one (`repos add|remove|list`, `sync`,
+    `status`, `foreach`, `edit`, `branch set|unset|apply`); the
+    `--workspace/-w` and `--path/-p` options are removed. `WS` is a
+    registered name or a path inside a workspace (`.` is the current
+    directory); omitted, it is the workspace containing the current
+    directory. `repos add WS URL...` / `repos remove WS REPO...` need it
+    before positional repos; `foreach [WS] CMD` and `branch set [WS] BRANCH`
+    take it before the command or branch. A path must exist, and workspace
+    names can no longer start with `~`.
+  - **Breaking:** `sync` and `foreach` run in parallel by default: the new
+    `workspace.parallel` profile setting sets the default worker count,
+    `min(8, 2 × CPUs)` when unset; `--parallel` overrides it (`-j 1` restores
+    serial runs).
+  - **New:** `--dry-run` on every prune (it requires `--prune`).
+    `forget --prune --dry-run` runs the same safety checks, lists the paths
+    it would delete and prints a `planned` row; `sync --prune --dry-run`
+    skips the sync and prints `planned` (safe), `skipped` (unsafe) and,
+    under `--all`, `unavailable` rows. Neither writes anything.
+  - **New:** `status --dirty` and `--behind` keep only repos with
+    uncommitted changes or behind their upstream (either matches when both
+    are given; repos that cannot be inspected stay visible);
+    `status --check` exits 3 when any repo is dirty or behind, or 1 when a
+    repo cannot be inspected.
+  - **New:** `foreach --stdin` reads the repos to run in (names, or
+    `workspace.repo` / `workspace.status` / `workspace.sync_outcome`
+    records of that workspace) and `foreach --all` runs in every
+    registered workspace, with `--repo` as a per-workspace filter.
+    `--stdin` cannot be combined with `--repo` or `--all`.
   - **Fix:** `sync --prune` without a terminal and without `--yes` prints the
     sync summary and rows before exiting 2, as documented; they were lost.
   - **Fix:** declining the `sync --prune` confirmation exits 1 with

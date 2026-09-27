@@ -8,7 +8,7 @@ from untaped.capabilities.workspace.cli.lifecycle_commands import (
     register_lifecycle_commands,
 )
 from untaped.capabilities.workspace.cli.ops_commands import register_operation_commands
-from untaped.capabilities.workspace.cli.repo_commands import register_repo_commands
+from untaped.capabilities.workspace.cli.repo_commands import app as repos_app
 from untaped.capabilities.workspace.cli.ux_commands import (
     register_display_commands,
     register_ux_commands,
@@ -22,9 +22,9 @@ app = create_app(
 
 
 app.command(branch_app, name="branch")
+app.command(repos_app, name="repos")
 register_display_commands(app)
 register_lifecycle_commands(app)
-register_repo_commands(app)
 register_operation_commands(app)
 register_import_command(app)
 register_ux_commands(app)

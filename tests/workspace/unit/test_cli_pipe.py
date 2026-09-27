@@ -32,9 +32,9 @@ def test_show_pipe_tags_repo(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "main"])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/api.git", "--repo-name", "api"])
 
-    result = runner.invoke(app, ["get", "--workspace", "prod", "--format", "pipe"])
+    result = runner.invoke(app, ["repos", "list", "prod", "--format", "pipe"])
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip().splitlines()[0])
@@ -49,7 +49,7 @@ def test_show_pipe_empty_workspace_tags_summary_and_omits_target_path(tmp_path: 
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "main"])
 
-    result = runner.invoke(app, ["get", "--workspace", "prod", "--format", "pipe"])
+    result = runner.invoke(app, ["repos", "list", "prod", "--format", "pipe"])
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip())
@@ -96,9 +96,9 @@ def test_sync_pipe_tags_sync_outcome(tmp_path: Path, upstream: Path, isolated_ca
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
 
-    result = runner.invoke(app, ["sync", "--workspace", "smoke", "--format", "pipe"])
+    result = runner.invoke(app, ["sync", "smoke", "--format", "pipe"])
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip().splitlines()[0])
@@ -165,7 +165,7 @@ def test_sync_prune_pipe_reports_unsafe_orphan_skip(tmp_path: Path, upstream: Pa
         capture_output=True,
     )
 
-    result = runner.invoke(app, ["sync", "--workspace", "smoke", "--prune", "--format", "pipe"])
+    result = runner.invoke(app, ["sync", "smoke", "--prune", "--format", "pipe"])
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip())
@@ -184,10 +184,10 @@ def test_status_pipe_tags_status(tmp_path: Path, upstream: Path, isolated_cache:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    runner.invoke(app, ["sync", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+    runner.invoke(app, ["sync", "smoke"])
 
-    result = runner.invoke(app, ["status", "--workspace", "smoke", "--format", "pipe"])
+    result = runner.invoke(app, ["status", "smoke", "--format", "pipe"])
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip().splitlines()[0])
@@ -236,12 +236,12 @@ def test_foreach_pipe_tags_foreach_outcome(
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    runner.invoke(app, ["sync", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+    runner.invoke(app, ["sync", "smoke"])
 
     result = runner.invoke(
         app,
-        ["foreach", "git rev-parse --abbrev-ref HEAD", "--workspace", "smoke", "--format", "pipe"],
+        ["foreach", "smoke", "git rev-parse --abbrev-ref HEAD", "--format", "pipe"],
     )
 
     assert result.exit_code == 0, result.output
@@ -253,9 +253,9 @@ def test_branch_apply_pipe_tags_branch_outcome(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "develop"])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/api.git", "--repo-name", "api"])
 
-    result = runner.invoke(app, ["branch", "apply", "--workspace", "prod", "--format", "pipe"])
+    result = runner.invoke(app, ["branch", "apply", "prod", "--format", "pipe"])
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip().splitlines()[0])

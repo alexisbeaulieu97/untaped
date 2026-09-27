@@ -29,17 +29,16 @@ def test_sync_repo_filter_limits_cloned_repos(
     other_upstream = tmp_path / "other.git"
     shutil.copytree(upstream, other_upstream)
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
     runner.invoke(
         app,
-        ["add", f"file://{other_upstream}", "--repo-name", "ui", "--workspace", "smoke"],
+        ["repos", "add", "smoke", f"file://{other_upstream}", "--repo-name", "ui"],
     )
 
     result = runner.invoke(
         app,
         [
             "sync",
-            "--workspace",
             "smoke",
             "--repo",
             "upstream",
@@ -64,20 +63,13 @@ def test_sync_failed_clone_is_failed_row_and_exit_one(
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
     runner.invoke(
         app,
-        [
-            "add",
-            f"file://{tmp_path / 'missing.git'}",
-            "--repo-name",
-            "gone",
-            "--workspace",
-            "smoke",
-        ],
+        ["repos", "add", "smoke", f"file://{tmp_path / 'missing.git'}", "--repo-name", "gone"],
     )
 
-    result = runner.invoke(app, ["sync", "--workspace", "smoke", "--format", "json"])
+    result = runner.invoke(app, ["sync", "smoke", "--format", "json"])
 
     assert result.exit_code == 1, result.output
     rows = {row["repo"]: row for row in json.loads(result.stdout)}
@@ -92,10 +84,10 @@ def _workspace_with_safe_orphan(tmp_path: Path, upstream: Path) -> Path:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    synced = runner.invoke(app, ["sync", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+    synced = runner.invoke(app, ["sync", "smoke"])
     assert synced.exit_code == 0, synced.output
-    removed = runner.invoke(app, ["remove", "upstream", "--workspace", "smoke"])
+    removed = runner.invoke(app, ["repos", "remove", "smoke", "upstream"])
     assert removed.exit_code == 0, removed.output
     return target / "upstream"
 
@@ -105,7 +97,7 @@ def test_sync_prune_requires_yes_when_non_interactive(
 ) -> None:
     orphan = _workspace_with_safe_orphan(tmp_path, upstream)
 
-    result = CliInvoker().invoke(app, ["sync", "--workspace", "smoke", "--prune"])
+    result = CliInvoker().invoke(app, ["sync", "smoke", "--prune"])
 
     assert result.exit_code == 2, result.output
     assert "--yes" in result.output
@@ -119,9 +111,9 @@ def test_sync_prune_refusal_without_terminal_still_emits_sync_rows(
     kept = tmp_path / "kept.git"
     shutil.copytree(upstream, kept)
     runner = CliInvoker()
-    runner.invoke(app, ["add", f"file://{kept}", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{kept}"])
 
-    result = runner.invoke(app, ["sync", "--workspace", "smoke", "--prune", "--format", "json"])
+    result = runner.invoke(app, ["sync", "smoke", "--prune", "--format", "json"])
 
     assert result.exit_code == 2, result.output
     assert "--yes" in result.stderr
@@ -137,9 +129,7 @@ def test_sync_prune_with_yes_removes_safe_orphan(
 ) -> None:
     orphan = _workspace_with_safe_orphan(tmp_path, upstream)
 
-    result = CliInvoker().invoke(
-        app, ["sync", "--workspace", "smoke", "--prune", "--yes", "--format", "json"]
-    )
+    result = CliInvoker().invoke(app, ["sync", "smoke", "--prune", "--yes", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -162,7 +152,7 @@ def test_sync_prune_decline_keeps_orphan(
 
     result = CliInvoker().invoke(
         app,
-        ["sync", "--workspace", "smoke", "--prune"],
+        ["sync", "smoke", "--prune"],
         interactive=True,
         prompt_backend=backend,
     )
@@ -188,7 +178,7 @@ def test_sync_all_repo_filter_emits_warning_and_per_workspace_outcomes(
     # Workspace alpha: has the upstream repo.
     ws_alpha = tmp_path / "ws-alpha"
     runner.invoke(app, ["init", "alpha", "--path", str(ws_alpha)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "alpha"])
+    runner.invoke(app, ["repos", "add", "alpha", f"file://{upstream}"])
 
     # Workspace beta: empty manifest — does NOT have upstream.
     ws_beta = tmp_path / "ws-beta"
@@ -238,26 +228,16 @@ def test_sync_parallel_single_workspace_uses_repo_workers_in_manifest_order(
     runner.invoke(app, ["init", "prod", "--path", str(target)])
     runner.invoke(
         app,
-        ["add", f"file://{upstream}", "--repo-name", "z-repo", "--workspace", "prod"],
+        ["repos", "add", "prod", f"file://{upstream}", "--repo-name", "z-repo"],
     )
     runner.invoke(
         app,
-        ["add", f"file://{other_upstream}", "--repo-name", "a-repo", "--workspace", "prod"],
+        ["repos", "add", "prod", f"file://{other_upstream}", "--repo-name", "a-repo"],
     )
 
     result = runner.invoke(
         app,
-        [
-            "sync",
-            "--workspace",
-            "prod",
-            "-j",
-            "2",
-            "--format",
-            "raw",
-            "--columns",
-            "repo",
-        ],
+        ["sync", "prod", "-j", "2", "--format", "raw", "--columns", "repo"],
     )
 
     assert result.exit_code == 0, result.output
@@ -274,10 +254,10 @@ def test_sync_quiet_suppresses_progress_and_summary(
     other_upstream = tmp_path / "other.git"
     shutil.copytree(upstream, other_upstream)
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
     runner.invoke(
         app,
-        ["add", f"file://{other_upstream}", "--repo-name", "ui", "--workspace", "smoke"],
+        ["repos", "add", "smoke", f"file://{other_upstream}", "--repo-name", "ui"],
     )
 
     bootstrap._clear_for_tests()
@@ -288,9 +268,8 @@ def test_sync_quiet_suppresses_progress_and_summary(
             [
                 "workspace",
                 "sync",
-                "--quiet",
-                "--workspace",
                 "smoke",
+                "--quiet",
                 "-j",
                 "2",
                 "--format",
@@ -313,8 +292,8 @@ def test_sync_stale_bare_cache_clones_remote_created_branch(
     runner = CliInvoker()
     warm = tmp_path / "warm"
     runner.invoke(app, ["init", "warm", "--path", str(warm)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "warm"])
-    warmed = runner.invoke(app, ["sync", "--workspace", "warm"])
+    runner.invoke(app, ["repos", "add", "warm", f"file://{upstream}"])
+    warmed = runner.invoke(app, ["sync", "warm"])
     assert warmed.exit_code == 0, warmed.output
 
     seed = tmp_path / "_branch_seed"
@@ -345,9 +324,9 @@ def test_sync_stale_bare_cache_clones_remote_created_branch(
     runner.invoke(app, ["init", "target", "--path", str(target)])
     runner.invoke(
         app,
-        ["add", f"file://{upstream}", "--workspace", "target", "--branch", "develop"],
+        ["repos", "add", "target", f"file://{upstream}", "--branch", "develop"],
     )
-    synced = runner.invoke(app, ["sync", "--workspace", "target"])
+    synced = runner.invoke(app, ["sync", "target"])
 
     assert synced.exit_code == 0, synced.output
     head = subprocess.run(
@@ -381,22 +360,12 @@ def test_status_after_sync(tmp_path: Path, upstream: Path, isolated_cache: Path)
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    runner.invoke(app, ["sync", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+    runner.invoke(app, ["sync", "smoke"])
 
     result = runner.invoke(
         app,
-        [
-            "status",
-            "--workspace",
-            "smoke",
-            "--format",
-            "raw",
-            "--columns",
-            "repo",
-            "--columns",
-            "branch",
-        ],
+        ["status", "smoke", "--format", "raw", "--columns", "repo", "--columns", "branch"],
     )
     assert result.exit_code == 0
     assert "upstream\tmain" in result.stdout
@@ -406,22 +375,12 @@ def test_status_repo_filter_outputs_only_selected_repo(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
-    runner.invoke(app, ["add", "https://x/ui.git", "--repo-name", "ui", "--workspace", "prod"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/api.git", "--repo-name", "api"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/ui.git", "--repo-name", "ui"])
 
     result = runner.invoke(
         app,
-        [
-            "status",
-            "--workspace",
-            "prod",
-            "--repo",
-            "api",
-            "--format",
-            "raw",
-            "--columns",
-            "repo",
-        ],
+        ["status", "prod", "--repo", "api", "--format", "raw", "--columns", "repo"],
     )
 
     assert result.exit_code == 0, result.output
@@ -451,7 +410,6 @@ def test_status_honors_global_ui_collection_view_for_table_output(
         app,
         [
             "status",
-            "--workspace",
             "prod",
             "--format",
             "table",
@@ -499,12 +457,10 @@ def test_foreach_runs_command_in_each_repo(
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    runner.invoke(app, ["sync", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+    runner.invoke(app, ["sync", "smoke"])
 
-    result = runner.invoke(
-        app, ["foreach", "git rev-parse --abbrev-ref HEAD", "--workspace", "smoke"]
-    )
+    result = runner.invoke(app, ["foreach", "smoke", "git rev-parse --abbrev-ref HEAD"])
     assert result.exit_code == 0, result.output
     # Output is prefixed `[upstream] main`
     assert "[upstream] main" in result.stdout
@@ -524,14 +480,14 @@ def test_foreach_repo_filter_runs_command_once(
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
-    runner.invoke(app, ["add", "https://x/ui.git", "--repo-name", "ui", "--workspace", "prod"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/api.git", "--repo-name", "api"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/ui.git", "--repo-name", "ui"])
     (target / "api").mkdir()
     (target / "ui").mkdir()
 
     result = runner.invoke(
         app,
-        ["foreach", "echo ok", "--workspace", "prod", "--repo", "api", "--format", "json"],
+        ["foreach", "prod", "echo ok", "--repo", "api", "--format", "json"],
     )
 
     assert result.exit_code == 0, result.output
@@ -553,10 +509,10 @@ def test_foreach_unknown_repo_filter_exits_before_running_command(
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/api.git", "--repo-name", "api"])
     (target / "api").mkdir()
 
-    result = runner.invoke(app, ["foreach", "echo ok", "--workspace", "prod", "--repo", "ghost"])
+    result = runner.invoke(app, ["foreach", "prod", "echo ok", "--repo", "ghost"])
 
     assert result.exit_code == 1
     assert "1 unknown repo identifier for --repo: ghost" in result.stderr
@@ -571,19 +527,12 @@ def test_foreach_structured_format(tmp_path: Path, upstream: Path, isolated_cach
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    runner.invoke(app, ["sync", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+    runner.invoke(app, ["sync", "smoke"])
 
     result = runner.invoke(
         app,
-        [
-            "foreach",
-            "git rev-parse --abbrev-ref HEAD",
-            "--workspace",
-            "smoke",
-            "--format",
-            "json",
-        ],
+        ["foreach", "smoke", "git rev-parse --abbrev-ref HEAD", "--format", "json"],
     )
     assert result.exit_code == 0, result.output
     parsed = _json.loads(result.stdout)
@@ -609,7 +558,7 @@ def test_foreach_timeout_zero_is_rejected(tmp_path: Path) -> None:
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
 
-    result = runner.invoke(app, ["foreach", "true", "--workspace", "prod", "--timeout", "0"])
+    result = runner.invoke(app, ["foreach", "prod", "true", "--timeout", "0"])
 
     assert result.exit_code != 0
     assert "--timeout must be positive" in result.output
@@ -625,12 +574,12 @@ def test_foreach_summary_suppressed_in_structured_format(
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    runner.invoke(app, ["sync", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+    runner.invoke(app, ["sync", "smoke"])
 
     result = runner.invoke(
         app,
-        ["foreach", "false", "--workspace", "smoke", "--ignore-errors", "--format", "json"],
+        ["foreach", "smoke", "false", "--ignore-errors", "--format", "json"],
     )
     assert result.exit_code == 0, result.output
     parsed = _json.loads(result.stdout)
@@ -645,9 +594,9 @@ def test_sync_json_stdout_shape_stays_data_only(
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
 
-    result = runner.invoke(app, ["sync", "--workspace", "smoke", "--format", "json"])
+    result = runner.invoke(app, ["sync", "smoke", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     (row,) = json.loads(result.stdout)
@@ -668,11 +617,11 @@ def test_repo_operating_commands_expose_repo_filter(args: list[str]) -> None:
 
 
 @pytest.mark.parametrize("command", ["sync", "status"])
-@pytest.mark.parametrize("target", [["--workspace", "smoke"], ["--path", "."]])
-def test_all_rejects_explicit_target(command: str, target: list[str]) -> None:
-    result = CliInvoker().invoke(app, [command, "--all", *target])
+@pytest.mark.parametrize("target", ["smoke", "."])
+def test_all_rejects_explicit_target(command: str, target: str) -> None:
+    result = CliInvoker().invoke(app, [command, target, "--all"])
     assert result.exit_code == 2
-    assert "--all cannot be combined with --workspace or --path" in result.stderr
+    assert "--all cannot be combined with a workspace argument" in result.stderr
 
 
 def test_sync_all_parallel_covers_every_workspace_in_registry_order(
@@ -684,7 +633,7 @@ def test_sync_all_parallel_covers_every_workspace_in_registry_order(
     names = ("alpha", "beta", "gamma", "delta")
     for name in names:
         runner.invoke(app, ["init", name, "--path", str(tmp_path / f"ws-{name}")])
-        runner.invoke(app, ["add", f"file://{upstream}", "--workspace", name])
+        runner.invoke(app, ["repos", "add", name, f"file://{upstream}"])
 
     result = runner.invoke(
         app,
@@ -787,7 +736,7 @@ def test_status_all_unreadable_manifest_does_not_abort_valid_workspace(
 def _workspace_with_api_dir(tmp_path: Path) -> None:
     runner = CliInvoker()
     runner.invoke(app, ["init", "prod", "--path", str(tmp_path / "ws")])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
+    runner.invoke(app, ["repos", "add", "prod", "https://x/api.git", "--repo-name", "api"])
     (tmp_path / "ws" / "api").mkdir()
 
 
@@ -804,7 +753,7 @@ def test_foreach_timeout_wires_to_runner(
     _patch_shell_runner(monkeypatch, _runner)
     _workspace_with_api_dir(tmp_path)
 
-    result = CliInvoker().invoke(app, ["foreach", "echo ok", "--workspace", "prod", *extra])
+    result = CliInvoker().invoke(app, ["foreach", "prod", "echo ok", *extra])
 
     assert result.exit_code == 0, result.output
     assert seen == [expected]
@@ -815,7 +764,7 @@ def test_foreach_timeout_json_output(tmp_path: Path) -> None:
     command = f"{shlex.quote(sys.executable)} -c {shlex.quote('import time; time.sleep(60)')}"
 
     result = CliInvoker().invoke(
-        app, ["foreach", command, "--workspace", "prod", "--timeout", "0.1", "--format", "json"]
+        app, ["foreach", "prod", command, "--timeout", "0.1", "--format", "json"]
     )
 
     assert result.exit_code == 1
@@ -835,17 +784,17 @@ def test_foreach_failure_summary_and_exit_code(
     exits 0 (``--continue-on-error`` keeps going but still exits 1)."""
     runner = CliInvoker()
     runner.invoke(app, ["init", "smoke", "--path", str(tmp_path / "ws")])
-    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
-    runner.invoke(app, ["sync", "--workspace", "smoke"])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+    runner.invoke(app, ["sync", "smoke"])
 
-    result = runner.invoke(app, ["foreach", "false", "--workspace", "smoke", *flags])
+    result = runner.invoke(app, ["foreach", "smoke", "false", *flags])
 
     assert result.exit_code == exit_code, result.output
     assert "failed in: upstream" in result.stderr
 
 
 def test_foreach_parallel_zero_is_a_usage_error() -> None:
-    result = CliInvoker().invoke(app, ["foreach", "true", "--workspace", "smoke", "-j", "0"])
+    result = CliInvoker().invoke(app, ["foreach", "smoke", "true", "-j", "0"])
     assert result.exit_code == 2, result.output
     assert "Must be >= 1" in result.stderr
 
@@ -853,9 +802,9 @@ def test_foreach_parallel_zero_is_a_usage_error() -> None:
 @pytest.mark.parametrize(
     ("command", "hints"),
     [
-        (["sync"], ["Syncing repos", "sync: nothing to do", "Nothing to sync"]),
-        (["status"], ["No cloned repos"]),
-        (["foreach", "true"], ["No repos matched"]),
+        (["sync", "solo"], ["Syncing repos", "sync: nothing to do", "Nothing to sync"]),
+        (["status", "solo"], ["No cloned repos"]),
+        (["foreach", "solo", "true"], ["No repos matched"]),
     ],
 )
 def test_empty_workspace_guides_with_stderr_hint(
@@ -865,7 +814,7 @@ def test_empty_workspace_guides_with_stderr_hint(
     runner = CliInvoker()
     runner.invoke(app, ["init", "solo", "--path", str(tmp_path / "solo")])
 
-    result = runner.invoke(app, [*command, "--workspace", "solo"])
+    result = runner.invoke(app, command)
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
