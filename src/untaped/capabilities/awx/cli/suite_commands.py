@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from cyclopts import Parameter
+from cyclopts.validators import Number
 
 from untaped.capabilities.awx.cli.context import AwxContext, open_context
 from untaped.capabilities.awx.domain import Job
@@ -154,13 +155,22 @@ def run_command(
     var: _VAR_OPT = None,
     vars_file: _VARS_FILE_OPT = None,
     non_interactive: _NON_INTERACTIVE_OPT = False,
-    parallel: Annotated[
-        ParallelOption, Parameter(help="Maximum number of concurrent launches.")
-    ] = 1,
+    parallel: ParallelOption | None = None,
     timeout: Annotated[
         float | None,
-        Parameter(name="--timeout", help="Per-case wait timeout in seconds."),
+        Parameter(
+            name="--timeout",
+            help="Seconds each case waits before its job is cancelled (default: awx.test_timeout).",
+            validator=Number(gt=0),
+        ),
     ] = None,
+    cancel: Annotated[
+        bool,
+        Parameter(
+            name="--cancel",
+            help="Cancel jobs the run stops watching (timeout, polling error, Ctrl-C).",
+        ),
+    ] = True,
     show_logs: Annotated[
         bool,
         Parameter(
@@ -206,16 +216,20 @@ def run_command(
             fk_prefetcher=ctx.fk,
             jt_scope=_jt_scope(ctx, spec),
             stop=ctx.stop,
+            canceller=ctx.jobs.cancel if cancel else None,
         )
         try:
             outcome = runner(
                 suites,
                 case_filter=case_filter,
-                parallel=parallel,
-                timeout=timeout,
+                parallel=parallel if parallel is not None else ctx.settings.test_parallel,
+                timeout=timeout if timeout is not None else ctx.settings.test_timeout,
             )
         except KeyboardInterrupt:
-            report_interrupted([(None, job) for job in runner.known_executions()])
+            report_interrupted(
+                [(None, job) for job in runner.known_executions()],
+                cancelled=runner.cancelled,
+            )
 
         if show_logs:
             for result in outcome.results:

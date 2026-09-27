@@ -68,6 +68,11 @@ class Job(BaseModel):
         return self.status in TERMINAL_STATUSES
 
 
+def still_running_detail(job: Job, timeout: float | None) -> str:
+    """Describe an execution a timed-out wait left unfinished."""
+    return f"still {job.status} after --timeout {timeout or 0:g}s"
+
+
 def poll_until_terminal(
     job: Job,
     fetch: Callable[[Job], Job],

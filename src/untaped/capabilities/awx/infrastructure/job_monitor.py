@@ -60,14 +60,16 @@ class PollingJobMonitor:
                 yield current
             previous = current.status
 
-    def fetch_stdout(self, job: Job, *, start_line: int = 0) -> list[str]:
+    def fetch_stdout(self, job: Job) -> list[str]:
         api_path = _api_path_for(job)
         if not JOB_ROUTES[job.kind].stdout:
             raise AwxApiError(f"{job.kind} does not expose stdout; use jobs get/wait for status")
+        # ``txt`` answers large logs with a "too large to display" stub, and
+        # neither honours ``start_line``; ``txt_download`` has no size cap.
         text = self._client.request_text(
             "GET",
             f"{api_path}/{job.id}/stdout/",
-            params={"format": "txt", "start_line": str(start_line)},
+            params={"format": "txt_download"},
         )
         return text.splitlines()
 
@@ -77,7 +79,7 @@ class PollingJobMonitor:
         # state drains a final time so we never miss the tail emitted
         # between the last poll and the status transition.
         for current in self._poll(job):
-            lines = self.fetch_stdout(current, start_line=cursor)
+            lines = self.fetch_stdout(current)[cursor:]
             yield from lines
             cursor += len(lines)
 

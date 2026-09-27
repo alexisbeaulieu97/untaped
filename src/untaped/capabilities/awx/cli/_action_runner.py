@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from typing import Any, NoReturn
 
 from untaped.capabilities.awx.application import RunAction
@@ -21,6 +21,7 @@ from untaped.capabilities.awx.cli.context import AwxContext
 from untaped.capabilities.awx.cli.format import format_scope
 from untaped.capabilities.awx.cli.parallel import drain_parallel, wait_parallel
 from untaped.capabilities.awx.domain import Job, ResourceSpec
+from untaped.capabilities.awx.domain.job import still_running_detail
 from untaped.capabilities.awx.errors import ActionResponseError, LaunchPromptError
 from untaped.capability_api import (
     ColumnsOption,
@@ -140,7 +141,7 @@ def _record_finals(
         if not job.is_terminal:
             row.update(
                 action="failed",
-                detail=f"still {job.status} after --timeout {timeout or 0:g}s; it keeps running",
+                detail=f"{still_running_detail(job, timeout)}; it keeps running",
             )
             unfinished.setdefault(job.kind, []).append(str(job.id))
         elif job.status != "successful":
@@ -224,19 +225,27 @@ def _monitor(
 _ACTIVE_STATUSES = frozenset({"new", "pending", "waiting", "running"})
 
 
-def report_interrupted(executions: Sequence[tuple[str | None, Job]]) -> NoReturn:
+def report_interrupted(
+    executions: Sequence[tuple[str | None, Job]],
+    *,
+    cancelled: Collection[tuple[str, int]] = (),
+) -> NoReturn:
     """Name every execution not known to have ended, with a ``jobs wait`` hint; exit 130.
 
-    A status known locally to be terminal is skipped; an active one "keeps
-    running"; an unknown status (e.g. a job AWX created while ignoring
-    fields) is reported as "was launched".
+    A status known locally to be terminal is skipped; one in ``cancelled``
+    (``(kind, id)``) had a "cancel requested" and needs no hint; an active
+    one "keeps running"; an unknown status (e.g. a job AWX created while
+    ignoring fields) is reported as "was launched".
     """
     by_kind: dict[str, list[str]] = {}
     for label, job in executions:
         if job.is_terminal:
             continue
-        state = "keeps running" if job.status in _ACTIVE_STATUSES else "was launched"
         prefix = f"{label}: " if label else ""
+        if (job.kind, job.id) in cancelled:
+            echo(f"interrupted: {prefix}{job.kind} {job.id} cancel requested", err=True)
+            continue
+        state = "keeps running" if job.status in _ACTIVE_STATUSES else "was launched"
         echo(f"interrupted: {prefix}{job.kind} {job.id} {state}", err=True)
         by_kind.setdefault(job.kind, []).append(str(job.id))
     for kind, ids in by_kind.items():

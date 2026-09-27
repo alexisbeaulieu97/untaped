@@ -83,6 +83,8 @@ variable shown.
 | `awx.api_prefix` | string | `/api/controller/v2/` | `UNTAPED_AWX__API_PREFIX` | API prefix. Standalone AWX usually uses `/api/v2/`. |
 | `awx.default_organization` | string (optional) | unset | `UNTAPED_AWX__DEFAULT_ORGANIZATION` | Organization that scopes name lookups and `apply` documents without one. |
 | `awx.page_size` | integer | `200` | `UNTAPED_AWX__PAGE_SIZE` | Results requested per AWX API page. |
+| `awx.test_timeout` | number | `1800` | `UNTAPED_AWX__TEST_TIMEOUT` | Default `test run --timeout`: seconds each case waits before its job is cancelled. |
+| `awx.test_parallel` | integer | `4` | `UNTAPED_AWX__TEST_PARALLEL` | Default `test run --parallel`. |
 
 ## `ansible`
 

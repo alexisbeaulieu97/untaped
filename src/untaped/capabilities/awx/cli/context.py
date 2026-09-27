@@ -45,6 +45,7 @@ class AwxContext:
         context = context or app_context()
         self._context = context
         config = context.section("awx", AwxSettings)
+        self.settings = config
         self.client = AwxClient(config, http=context.http)
         self.repo = ResourceRepository(self.client, page_size=config.page_size)
         self.catalog = AwxResourceCatalog()

@@ -81,30 +81,30 @@ def test_fetch_uses_kind_specific_api_path_for_workflow_jobs() -> None:
     assert client.json_calls[0][1] == "workflow_jobs/9/"
 
 
-def test_fetch_stdout_passes_start_line_param() -> None:
-    client = _FakeClient(text_responses=["line-3\nline-4\n"])
+def test_fetch_stdout_downloads_the_full_log() -> None:
+    """``txt_download`` has no size cap (``txt`` returns a "too large" stub)."""
+    client = _FakeClient(text_responses=["line-1\nline-2\n"])
     monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=lambda _: None)
-    lines = monitor.fetch_stdout(_running(), start_line=2)
-    assert lines == ["line-3", "line-4"]
+    lines = monitor.fetch_stdout(_running())
+    assert lines == ["line-1", "line-2"]
     method, path, params = client.text_calls[0]
     assert method == "GET"
     assert path == "jobs/7/stdout/"
-    assert params == {"format": "txt", "start_line": "2"}
+    assert params == {"format": "txt_download"}
 
 
 def test_stream_stdout_polls_until_terminal_then_drains() -> None:
     """Two text-poll cycles: first while running, second after terminal."""
     client = _FakeClient(
-        text_responses=["a\nb\n", "c\nd\n"],
+        text_responses=["a\nb\n", "a\nb\nc\nd\n"],
         json_responses=[_terminal_record(status="successful")],
     )
     sleeps: list[float] = []
     monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=sleeps.append)
     lines = list(monitor.stream_stdout(_running()))
+    # The second download repeats the first two lines; only new ones are yielded.
     assert lines == ["a", "b", "c", "d"]
-    # First text call had cursor 0; second had cursor 2 (after the 2 lines we got).
-    assert client.text_calls[0][2]["start_line"] == "0"
-    assert client.text_calls[1][2]["start_line"] == "2"
+    assert len(client.text_calls) == 2
     # We slept exactly once between the two polls.
     assert sleeps == [2.0]
 
