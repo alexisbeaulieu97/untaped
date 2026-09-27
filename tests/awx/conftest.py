@@ -63,6 +63,8 @@ class FakeAap:
         self.copy_checks: dict[tuple[str, int], dict[str, Any]] = {}
         self.mask_secret_write_response = False
         self.enrich_survey_spec_response = False
+        # When set, ``POST <template>/<id>/survey_spec/`` answers 400 with it.
+        self.survey_post_error: str | None = None
 
     def seed(self, api_path: str, **fields: Any) -> dict[str, Any]:
         record_id = fields.pop("id", None) or self._next_id
@@ -257,6 +259,8 @@ class FakeAap:
         record = self.store.get(api_path, {}).get(id_)
         if record is None:
             return _err(404, f"{api_path}/{id_}/survey_spec/ not found")
+        if self.survey_post_error is not None:
+            return _err(400, self.survey_post_error)
         old = {
             q.get("variable"): q
             for q in (record.get("survey_spec") or {}).get("spec") or []
