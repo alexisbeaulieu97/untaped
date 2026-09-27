@@ -208,6 +208,12 @@ class Suite(BaseModel):
             raise ValueError("a test suite must declare at least one case")
         return value
 
+    def scope(self, default: dict[str, str] | None) -> dict[str, str] | None:
+        """The job template's lookup scope: ``organization`` over ``default``."""
+        if self.organization is None:
+            return default
+        return {**(default or {}), "organization": self.organization}
+
 
 FAILED_TASK_EVENTS = ("runner_on_failed", "runner_on_async_failed", "runner_on_unreachable")
 """Job events that end a task on a host in failure."""
