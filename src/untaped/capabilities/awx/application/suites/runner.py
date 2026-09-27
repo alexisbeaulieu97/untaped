@@ -1,5 +1,8 @@
 """RunTestSuite: load → plan → prefetch → resolve → launch+wait.
 
+With a :class:`Canceller`, every execution the run stops watching before it
+ends (timeout, polling error, Ctrl-C) is cancelled rather than left running.
+
 Resolution finishes in the main thread before any worker is spawned so
 the launch+wait pool only sees fully-baked, immutable launch dicts —
 keeps workers free of FK lookups entirely. (:class:`FkResolver`'s caches
@@ -14,9 +17,15 @@ import time
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
-from untaped.capabilities.awx.application.suites.ports import FkPrefetcher, Launcher, Watcher
+from untaped.capabilities.awx.application.suites.ports import (
+    Canceller,
+    FkPrefetcher,
+    Launcher,
+    Watcher,
+)
 from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
 from untaped.capabilities.awx.domain import Job, ResourceSpec
+from untaped.capabilities.awx.domain.job import still_running_detail
 from untaped.capabilities.awx.domain.suite import (
     Case,
     CaseResult,
@@ -59,6 +68,7 @@ class RunTestSuite:
         jt_scope: dict[str, str] | None = None,
         clock: Callable[[], float] = time.monotonic,
         stop: threading.Event | None = None,
+        canceller: Canceller | None = None,
     ) -> None:
         self._resolve = resolver
         self._launch = launcher
@@ -68,8 +78,12 @@ class RunTestSuite:
         self._jt_scope = jt_scope
         self._clock = clock
         self._stop = stop
+        self._cancel = canceller
+        """``None`` leaves executions the run stops watching still running."""
         self.launched: list[Job] = []
         """Executions submitted so far (for reporting after an interrupt)."""
+        self.cancelled: set[tuple[str, int]] = set()
+        """``(kind, id)`` of executions whose cancel AWX accepted."""
         self._finals: dict[tuple[str, int], Job] = {}
 
     def __call__(
@@ -85,20 +99,40 @@ class RunTestSuite:
         resolved = self._resolve_all(plan)
 
         results: dict[int, CaseResult] = {}
-        bounded_map(
-            lambda index: self._launch_and_wait(resolved[index], timeout),
-            range(len(resolved)),
-            concurrency=max(1, parallel),
-            on_each=results.__setitem__,
-            # Ctrl-C stops polling workers; queued cases are never launched.
-            on_abort=self._stop.set if self._stop is not None else None,
-        )
+        try:
+            bounded_map(
+                lambda index: self._launch_and_wait(resolved[index], timeout),
+                range(len(resolved)),
+                concurrency=max(1, parallel),
+                on_each=results.__setitem__,
+                # Ctrl-C stops polling workers; queued cases are never launched.
+                on_abort=self._stop.set if self._stop is not None else None,
+            )
+        except KeyboardInterrupt:
+            self._cancel_unfinished()
+            raise
         # Indexed by declaration order, so the report ignores completion order.
         return SuiteRunOutcome(results=[results[index] for index in range(len(resolved))])
 
     def known_executions(self) -> list[Job]:
         """Every submitted execution with its latest locally known status."""
         return [self._finals.get((job.kind, job.id), job) for job in self.launched]
+
+    def _cancel_unfinished(self) -> None:
+        for job in self.known_executions():
+            if not job.is_terminal and (job.kind, job.id) not in self.cancelled:
+                self._abandon(job)
+
+    def _abandon(self, job: Job) -> str:
+        """Cancel an execution the run stops watching; say what became of it."""
+        if self._cancel is None:
+            return "it keeps running"
+        try:
+            self._cancel(kind=job.kind, job_id=job.id)
+        except Exception as exc:
+            return f"cancel failed: {exc}"
+        self.cancelled.add((job.kind, job.id))
+        return "cancel requested"
 
     def _build_plan(
         self,
@@ -193,12 +227,28 @@ class RunTestSuite:
                 result="error",
                 job_id=job.id,
                 duration_s=self._clock() - started_clock,
-                failure_reason=str(exc),
+                failure_reason=f"{exc}; {self._abandon(job)}",
             )
-        return _classify(item.suite_name, item.case_name, final, self._clock() - started_clock)
+        if final.is_terminal:
+            return _classify(item.suite_name, item.case_name, final, self._clock() - started_clock)
+        reason = f"{still_running_detail(final, timeout)}; {self._abandon(final)}"
+        return _classify(
+            item.suite_name,
+            item.case_name,
+            final,
+            self._clock() - started_clock,
+            failure_reason=reason,
+        )
 
 
-def _classify(suite_name: str, case_name: str, job: Job, duration_s: float) -> CaseResult:
+def _classify(
+    suite_name: str,
+    case_name: str,
+    job: Job,
+    duration_s: float,
+    *,
+    failure_reason: str | None = None,
+) -> CaseResult:
     if not job.is_terminal:
         return CaseResult(
             suite=suite_name,
@@ -209,6 +259,7 @@ def _classify(suite_name: str, case_name: str, job: Job, duration_s: float) -> C
             duration_s=duration_s,
             started_at=job.started,
             finished_at=job.finished,
+            failure_reason=failure_reason,
         )
     result: CaseStatus = "pass" if job.status == "successful" else "fail"
     return CaseResult(
