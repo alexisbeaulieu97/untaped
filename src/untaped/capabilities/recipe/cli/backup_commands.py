@@ -31,7 +31,7 @@ from untaped.capability_api import (
     render_rows,
 )
 
-app = create_app(name="backup", help="Manage recipe backups.")
+app = create_app(name="backups", help="Manage recipe backups.")
 
 
 @app.command(name="list")
@@ -156,7 +156,8 @@ def prune_command(
         resolved_age = settings().backup_max_age_days if older_than is None else older_than
         if resolved_keep is None and resolved_age is None:
             raise ConfigError(
-                "backup prune needs --keep/--older-than or backup_keep/backup_max_age_days settings"
+                "backups prune needs --keep/--older-than "
+                "or backup_keep/backup_max_age_days settings"
             )
         store = BackupStore(library_root() / "backups")
         bundles = store.list()

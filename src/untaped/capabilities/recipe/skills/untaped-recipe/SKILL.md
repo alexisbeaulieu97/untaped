@@ -11,6 +11,12 @@ VCS-agnostic: it plans every change in memory, previews it, and only writes
 after confirmation. Planning is the only execution — there are no shell steps,
 no control flow in recipes, and no state or inventory.
 
+Command tree: recipe verbs sit at `untaped recipe <verb>` (`apply`, `list`,
+`get`, `edit`, `init`, `validate`, `test`); packs, hooks, and backups have
+their own nouns: `recipe packs add|sync|list|get|edit|remove|init`,
+`recipe hooks list|get|edit|init|run`, and `recipe backups
+list|get|restore|prune`.
+
 ## Applying recipes
 
 - `untaped recipe apply <recipe> <dir>...` plans, previews on stderr, confirms,
@@ -30,8 +36,7 @@ no control flow in recipes, and no state or inventory.
   untrusted pack.
 - `--check` is the CI/drift mode: writes nothing, creates no backups, prompts
   for nothing, exits 3 when any target would change, and exits 1 when any
-  target fails. Rows carry `action: planned` (or `unchanged`). Combining it
-  with `--interactive` is a usage error (exit 2).
+  target fails. Rows carry `action: planned` (or `unchanged`).
 - Declining the confirmation exits 1 with `cancelled; no changes made`; rows
   for the targets that would have changed carry `action: cancelled`.
 - Preview goes to stderr; stdout carries only data rows. Normal apply and
@@ -56,8 +61,10 @@ no control flow in recipes, and no state or inventory.
 
 ## Inputs
 
-- Provide fixed values with repeated `--var KEY=VALUE` or a `--vars-file file.yml`
-  YAML mapping (`--var` wins on conflict). Unknown input names are rejected.
+- Provide fixed values with repeated `--var KEY=VALUE` and repeated
+  `--vars-file file.yml` YAML mappings: a later file wins over an earlier one,
+  and `--var` wins over every file (the same flags and precedence as `awx
+  test`). Unknown input names are rejected.
 - For inputs declared `list` or `dict`, `--var` parses the value as YAML first:
   `--var 'cols=[name, owner]'`, `--var 'labels={team: platform}'`. Scalar
   inputs keep literal-string semantics. `--vars-file` files may hold native lists
@@ -69,14 +76,20 @@ no control flow in recipes, and no state or inventory.
   control blocks) and must resolve for every target, unlike recipe `from`
   candidates which fall through silently.
 - Precedence per input: fixed value or source override → recipe `from` →
-  `--interactive` prompt → recipe default → `missing required input` error.
+  recipe default → prompt (required inputs only) → `missing required input`
+  error.
   Combining `--var`/`--vars-file` with `--input-from` for one input is a usage
   error. `scope: global` inputs reject `--input-from` but accept `--var`.
   A `default:` must coerce to the input's `type` (checked at load, so `validate`
   reports it) and cannot be combined with `required: true`.
-- `--interactive` prompts for unresolved inputs (empty answer accepts the
-  default; sensitive defaults are hidden but an empty answer still accepts).
-  Structured (`list`/`dict`) inputs cannot be prompted — pass `--var`/`--vars-file`.
+- A required input with no value is prompted for only when stdin is a
+  terminal (sensitive inputs as a hidden secret); optional and defaulted
+  inputs are never prompted, and structured (`list`/`dict`) inputs never are.
+  Without a TTY (piped `--stdin` targets included), or with
+  `--non-interactive` or `--check`, the input fails with `missing required input: NAME;
+  pass --var NAME=VALUE or --vars-file FILE` (a global input fails the run, a
+  target input fails that target's row). Agents should pass every required
+  input explicitly or use `--non-interactive`.
 - Sensitive inputs render as `***` in rows, warnings, errors, and backup
   metadata, and file-level preview detail and diffs are suppressed for targets
   that resolve a sensitive input (not overridable by `--preview diff`). Real
@@ -92,9 +105,9 @@ no control flow in recipes, and no state or inventory.
   `record.path`. Records whose `kind` ends in `.summary` are skipped as
   non-targets. Repo-grain records such as `workspace.repo` must provide
   `target_path`; records without it are rejected before planning.
-- With `--stdin`, the confirmation and `--interactive` prompts read the
-  controlling terminal. Without one, apply refuses before planning (exit 2)
-  unless `--yes`, `--dry-run`, or `--check` is given.
+- With `--stdin`, the confirmation reads the controlling terminal; input
+  prompts never run. Without a terminal, apply refuses before planning (exit
+  2) unless `--yes`, `--dry-run`, or `--check` is given.
 - Input `from` expressions can read the per-target pipe `record`, so upstream
   tool output can drive both target selection and input values.
 - Prefer `--format json` for machine-readable summaries and `--format pipe`
@@ -102,11 +115,11 @@ no control flow in recipes, and no state or inventory.
   into other untaped tools. `--columns`/`-c` narrows row fields. `--format`
   and `--columns` affect stdout rows only, never the stderr preview.
 - Emit kinds: `apply` → `recipe.apply_outcome` (one row per target);
-  `validate` → `recipe.check`; `test` → `recipe.test`; `hook run` →
-  `recipe.hook_run`; `list`/`get` → `recipe.recipe`, `recipe.hook`,
-  `recipe.pack`; `add` → `recipe.add_outcome`; `sync` →
-  `recipe.sync_outcome`; `remove` →
-  `recipe.remove_outcome`; `backup` → `recipe.backup`.
+  `validate` → `recipe.check`; `test` → `recipe.test`; `list`/`get` →
+  `recipe.recipe`; `packs list`/`packs get` → `recipe.pack`; `hooks
+  list`/`hooks get` → `recipe.hook`; `hooks run` → `recipe.hook_run`; `packs
+  add` → `recipe.add_outcome`; `packs sync` → `recipe.sync_outcome`; `packs
+  remove` → `recipe.remove_outcome`; `backups` → `recipe.backup`.
 - `recipe.apply_outcome` rows carry absolute `target_path`, `action`,
   `files_changed`, `warnings` (a list: accumulated `helpers.warn(...)`
   messages, skipped optional transforms, a skip reason), `error` (`null`
@@ -120,7 +133,7 @@ no control flow in recipes, and no state or inventory.
 
 ## Library and packs
 
-- `add <path|git-url>` installs a pack and prints its recipes and hooks on
+- `packs add <path|git-url>` installs a pack and prints its recipes and hooks on
   stderr; it never prompts. `--rev` picks a git revision (git URL sources
   only), `--name` overrides the installed key (the pack identity everywhere).
   The row's `action` is `created`, or `updated` for a `--force` reinstall.
@@ -128,9 +141,9 @@ no control flow in recipes, and no state or inventory.
   ignored dirs such as `.venv`). Reinstalling needs `--force`, which still refuses to
   overwrite a library copy with local edits unless `--discard-edits` is added.
   A local path source is recorded as an absolute path; a git source records
-  the requested `rev` and the resolved `commit` (shown in `list --packs` and
+  the requested `rev` and the resolved `commit` (shown in `packs list` and
   the `add`/`sync` rows; `sync` updates it even when no file changed).
-- `sync <pack>...` or `sync --all` re-fetches each installed pack from its
+- `packs sync <pack>...` or `packs sync --all` re-fetches each installed pack from its
   recorded source and `--rev` (a branch or tag moves forward). Packs whose
   content would change are listed on stderr with the commit move
   (`old -> new`) and the hook-code files that change (`src/`, root `*.py`,
@@ -139,11 +152,14 @@ no control flow in recipes, and no state or inventory.
   carry `action` `updated`, `unchanged` or `planned`. A pack with local edits in the library fails unless
   `--discard-edits` is passed; a failed pack prints `error: PACK: ...`, the
   others still sync, and the command exits 1.
-- `list [--packs|--hooks]`, `get <ref>`, `edit <ref>`, `remove <pack>` operate
-  on the unified library. `list --hooks` and `get` cover built-ins such as
-  `yaml_edit` (marked `(builtin)`; not editable). `remove` is destructive,
-  requires confirmation or `--yes` (`--dry-run` previews), exits 1 on a
-  declined prompt, and warns when the copy has local edits.
+- Each noun reads and edits only its own kind: `list`/`get <recipe>`/`edit
+  <recipe>` for recipes, `packs list`/`packs get <pack>`/`packs edit <pack>`
+  (opens `pyproject.toml`) for packs, and `hooks list`/`hooks get
+  <hook>`/`hooks edit <hook>` for hooks. `hooks list` and `hooks get` cover
+  built-ins such as `yaml_edit` (marked `(builtin)`; not editable). `packs
+  remove <pack>` is destructive, requires confirmation or `--yes`
+  (`--dry-run` previews), exits 1 on a declined prompt, and warns when the
+  copy has local edits.
 - `validate [ref|path]` is static preflight: no ref validates the whole library
   and `packs.toml`; a ref validates one pack, recipe, path, or built-in. It
   AST-scans hook modules without importing them, and for hook-declaring
@@ -165,12 +181,12 @@ no control flow in recipes, and no state or inventory.
 
 ## Authoring packs
 
-- `init pack <name>`, `init recipe <pack>/<recipe>`, `init hook <pack>/<hook>`
-  scaffold pack projects; explicit local paths like `init hook ./my-pack/probe`
-  target `./my-pack`. `init recipe` also scaffolds a starter golden case;
-  `init hook` writes a typed stub plus a direct-call pytest (naming the kind and
+- `packs init <name>`, `init <pack>/<recipe>`, `hooks init <pack>/<hook>`
+  scaffold pack projects; explicit local paths like `hooks init ./my-pack/probe`
+  target `./my-pack`. `init` also scaffolds a starter golden case;
+  `hooks init` writes a typed stub plus a direct-call pytest (naming the kind and
   `--kind` on success), and packs ship `pytest` with `pythonpath = ["src"]` so
-  `uv run --project <pack> pytest` works immediately. `init hook --kind X --force`
+  `uv run --project <pack> pytest` works immediately. `hooks init --kind X --force`
   replaces both the stub and the paired pytest (e.g. to fix a wrong `--kind`);
   without `--force` an existing hook is refused.
 - Scaffolding refreshes the pack `uv.lock` and needs package-index access (or a
@@ -206,7 +222,7 @@ no control flow in recipes, and no state or inventory.
   runtime hook dependencies go in `[project].dependencies`.
 - Hook refs in a pack's recipes: a bare name resolves to the pack's own hook,
   else a built-in — never to another installed pack. Reference another pack's
-  hook as `pack/hook`. (Only recipes without a project, and `hook run` without
+  hook as `pack/hook`. (Only recipes without a project, and `hooks run` without
   `--project`, look bare names up across installed packs.)
   Hooks must stay pure at planning time: read only the target tree and their
   own pack, never write or reach the network.
@@ -217,7 +233,7 @@ no control flow in recipes, and no state or inventory.
   replace the verdict. Call it for its side effect, then return a pass, fail, or
   skip verdict. `None` remains an implicit pass and a plain string is a fail
   message; unknown verdict objects and status values are rejected.
-- `hook run <ref> --target DIR` debugs one hook without a recipe: transforms
+- `hooks run <ref> --target DIR` debugs one hook without a recipe: transforms
   need `--file` (stdout is exact transformed content, or `--diff`); validates
   emit a `recipe.hook_run` verdict (`pass`/`fail`/`skip`) and exit 1 only
   on `fail`; a hook that raises prints its traceback as an `error:` and exits 1. The ref accepts the `./pack/hook` path form (resolves as
@@ -225,9 +241,10 @@ no control flow in recipes, and no state or inventory.
   error). A local hook project is used only when named with `--project PATH`
   or a `./path` ref — never adopted implicitly from the current directory, so
   running inside a cloned repo does not execute its hooks.
-  `--content`/`--content-file` supply fixture content; `--inputs`/
-  `--args` load YAML fixture files and repeated `--input`/`--arg` KEY=VALUE
-  overrides are YAML-parsed. Context echo (including fixture values) and
+  `--content`/`--content-file` supply fixture content; hook inputs come from
+  repeated `--vars-file`/`--var KEY=YAML` and hook args from repeated
+  `--args-file`/`--arg KEY=YAML` (later files win, flags win over files;
+  values are YAML-parsed). Context echo (including fixture values) and
   accumulated warnings go to stderr — use `--quiet` in shared terminals when
   values are sensitive.
 - For common YAML edits use the built-in `yaml_edit` transform hook: `edits`
@@ -240,7 +257,7 @@ no control flow in recipes, and no state or inventory.
 
 ## Backups and safety
 
-- Every apply creates one backup bundle by default. `backup list|get|restore
+- Every apply creates one backup bundle by default. `backups list|get|restore
   <id>|prune` manage bundles; `get`/`restore` accept full ids, unambiguous
   prefixes, or `latest`. `restore` and `prune` take `--dry-run`. Restore
   previews and confirms like apply, applies the
@@ -253,7 +270,7 @@ no control flow in recipes, and no state or inventory.
   absolute paths, `..` segments, and symlink traversal are rejected before any
   engine-mediated read or write, again after path-field rendering.
 - Installing a pack is installing code (same trust model as `pip install`, no
-  sandbox). Evaluate before trusting: the `add` summary, `get`, `validate`'s
+  sandbox). Evaluate before trusting: the `packs add` summary, `packs get`, `validate`'s
   no-import scan, and the golden test harness. Hook workers get an
   allowlisted environment (`PATH`, `HOME`, locale, temp dirs, `UV_*`/`XDG_*`,
   TLS and proxy settings, `SSH_AUTH_SOCK`/`GIT_SSH_COMMAND`, and `PYTHONPATH`
@@ -265,5 +282,3 @@ no control flow in recipes, and no state or inventory.
   subprocess) becomes diagnostics and never corrupts the worker protocol.
 - Run `untaped skills install --all` (or `untaped skills install untaped-recipe`)
   to install this packaged skill.
-- Old spellings (`check`, `show`, `new`, `backup show`, `apply --vars`) still
-  work with a deprecation warning until 8.0.

@@ -11,6 +11,7 @@ from untaped.capabilities.recipe.application.inputs import (
     InputResolutionResult,
     has_sensitive_inputs,
     prepare_input_resolution,
+    prompts_per_target,
     resolve_global_values,
     resolve_target_inputs,
 )
@@ -68,7 +69,7 @@ class RunBulkApply:
                 recipe, recipe_dir, local_hook_project, targets[index], config, global_values
             ),
             range(len(targets)),
-            concurrency=1 if interactive else max(1, parallel),
+            concurrency=1 if prompts_per_target(recipe, config) else max(1, parallel),
             on_each=record,
         )
         return [plans[index] for index in range(len(targets))]

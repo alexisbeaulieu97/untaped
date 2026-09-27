@@ -108,7 +108,7 @@ def test_add_pack_installs_without_prompting_and_prints_summary(tmp_path: Path) 
     pack = tmp_path / "pack"
     _write_pack_project(pack)
 
-    result = CliInvoker().invoke(app, ["add", str(pack), "--format", "json"])
+    result = CliInvoker().invoke(app, ["packs", "add", str(pack), "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert "demo-recipe" in result.stderr
@@ -122,7 +122,7 @@ def test_add_pack_installs_without_prompting_and_prints_summary(tmp_path: Path) 
     }
     assert (library_root() / "packs" / "demo").exists()
 
-    again = CliInvoker().invoke(app, ["add", str(pack), "--force", "-f", "pipe"])
+    again = CliInvoker().invoke(app, ["packs", "add", str(pack), "--force", "-f", "pipe"])
     assert again.exit_code == 0, again.output
     envelope = json.loads(again.stdout)
     assert envelope["kind"] == "recipe.add_outcome"
@@ -154,7 +154,7 @@ def test_add_and_check_hookless_pack_without_lock(tmp_path: Path) -> None:
     check = CliInvoker().invoke(app, ["validate", str(pack)])
     assert check.exit_code == 0, check.output
 
-    added = CliInvoker().invoke(app, ["add", str(pack), "--yes"])
+    added = CliInvoker().invoke(app, ["packs", "add", str(pack)])
     assert added.exit_code == 0, added.output
     assert (library_root() / "packs" / "hygiene").exists()
 
@@ -164,7 +164,7 @@ def test_add_hooked_pack_without_lock_leads_with_error_no_summary(tmp_path: Path
     _write_pack_project(pack)
     (pack / "uv.lock").unlink()
 
-    result = CliInvoker().invoke(app, ["add", str(pack), "--yes"])
+    result = CliInvoker().invoke(app, ["packs", "add", str(pack)])
 
     assert result.exit_code == 1
     assert "pack project is missing uv.lock" in result.stderr
@@ -179,11 +179,11 @@ def test_edit_uses_shared_editor_and_reports_bad_quoting(
 ) -> None:
     pack = tmp_path / "pack"
     _write_pack_project(pack)
-    assert CliInvoker().invoke(app, ["add", str(pack), "--yes"]).exit_code == 0
+    assert CliInvoker().invoke(app, ["packs", "add", str(pack)]).exit_code == 0
     monkeypatch.delenv("VISUAL", raising=False)
     monkeypatch.setenv("EDITOR", "'unclosed")
 
-    result = CliInvoker().invoke(app, ["edit", "demo"])
+    result = CliInvoker().invoke(app, ["packs", "edit", "demo"])
 
     assert result.exit_code == 1, result.output
     assert "error: invalid quoting in $VISUAL or $EDITOR" in result.stderr
@@ -194,12 +194,12 @@ def test_add_force_fails_fast_on_local_edits_before_confirm(
 ) -> None:
     pack = tmp_path / "pack"
     _write_pack_project(pack)
-    result = CliInvoker().invoke(app, ["add", str(pack), "--yes"])
+    result = CliInvoker().invoke(app, ["packs", "add", str(pack)])
     assert result.exit_code == 0, result.output
     installed_recipe = library_root() / "packs" / "demo" / "recipes" / "demo" / "recipe.yml"
     installed_recipe.write_text("version: 1\ndescription: 'edited'\nsteps: []\n")
 
-    result = CliInvoker().invoke(app, ["add", str(pack), "--force", "--yes"])
+    result = CliInvoker().invoke(app, ["packs", "add", str(pack), "--force"])
 
     assert result.exit_code == 1
     assert "pack 'demo' has local edits in the library" in result.stderr
@@ -213,13 +213,13 @@ def test_add_force_discard_edits_warns_in_preview_and_overwrites(
 ) -> None:
     pack = tmp_path / "pack"
     _write_pack_project(pack)
-    CliInvoker().invoke(app, ["add", str(pack), "--yes"])
+    CliInvoker().invoke(app, ["packs", "add", str(pack)])
     installed_recipe = library_root() / "packs" / "demo" / "recipes" / "demo" / "recipe.yml"
     installed_recipe.write_text("version: 1\ndescription: 'edited'\nsteps: []\n")
 
     result = CliInvoker().invoke(
         app,
-        ["add", str(pack), "--force", "--discard-edits", "--yes"],
+        ["packs", "add", str(pack), "--force", "--discard-edits"],
     )
 
     assert result.exit_code == 0, result.output
@@ -228,26 +228,28 @@ def test_add_force_discard_edits_warns_in_preview_and_overwrites(
     )
     assert installed_recipe.read_text() == "version: 1\nsteps: []\n"
 
-    result = CliInvoker().invoke(app, ["add", str(pack), "--force", "--yes"])
+    result = CliInvoker().invoke(app, ["packs", "add", str(pack), "--force"])
     assert result.exit_code == 0, result.output
 
 
 def test_remove_warns_on_local_edits_before_confirm(tmp_path: Path) -> None:
     pack = tmp_path / "pack"
     _write_pack_project(pack)
-    result = CliInvoker().invoke(app, ["add", str(pack)])
+    result = CliInvoker().invoke(app, ["packs", "add", str(pack)])
     assert result.exit_code == 0, result.output
     installed_recipe = library_root() / "packs" / "demo" / "recipes" / "demo" / "recipe.yml"
     installed_recipe.write_text("version: 1\ndescription: 'edited'\nsteps: []\n")
     backend = ScriptedPromptBackend(confirms=[False])
 
-    result = CliInvoker().invoke(app, ["remove", "demo"], interactive=True, prompt_backend=backend)
+    result = CliInvoker().invoke(
+        app, ["packs", "remove", "demo"], interactive=True, prompt_backend=backend
+    )
 
     assert result.exit_code == 1, result.output
     assert "About to remove 1 pack:\n  - demo\n" in result.stderr
     assert (
-        "warning: pack 'demo' has local edits in the library (via edit or init "
-        "recipe/hook); removing discards them"
+        "warning: pack 'demo' has local edits in the library (via an edit or init "
+        "command); removing discards them"
     ) in result.stderr
     assert "cancelled; no changes made" in result.stderr
     assert backend.calls == [("confirm", "Continue?")]
@@ -257,9 +259,9 @@ def test_remove_warns_on_local_edits_before_confirm(tmp_path: Path) -> None:
 def test_remove_dry_run_previews_without_removing(tmp_path: Path) -> None:
     pack = tmp_path / "pack"
     _write_pack_project(pack)
-    assert CliInvoker().invoke(app, ["add", str(pack)]).exit_code == 0
+    assert CliInvoker().invoke(app, ["packs", "add", str(pack)]).exit_code == 0
 
-    result = CliInvoker().invoke(app, ["remove", "demo", "--dry-run", "--format", "json"])
+    result = CliInvoker().invoke(app, ["packs", "remove", "demo", "--dry-run", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -267,12 +269,12 @@ def test_remove_dry_run_previews_without_removing(tmp_path: Path) -> None:
     ]
     assert (library_root() / "packs" / "demo").exists()
 
-    refused = CliInvoker().invoke(app, ["remove", "demo"])
+    refused = CliInvoker().invoke(app, ["packs", "remove", "demo"])
     assert refused.exit_code != 0
     assert "requires --yes" in refused.output
     assert (library_root() / "packs" / "demo").exists()
 
-    removed = CliInvoker().invoke(app, ["remove", "demo", "--yes", "-f", "pipe"])
+    removed = CliInvoker().invoke(app, ["packs", "remove", "demo", "--yes", "-f", "pipe"])
     assert removed.exit_code == 0, removed.output
     envelope = json.loads(removed.stdout)
     assert envelope["kind"] == "recipe.remove_outcome"
@@ -285,7 +287,7 @@ def test_remove_rejects_index_rows_without_content_hash(
 ) -> None:
     pack = tmp_path / "pack"
     _write_pack_project(pack)
-    result = CliInvoker().invoke(app, ["add", str(pack), "--yes"])
+    result = CliInvoker().invoke(app, ["packs", "add", str(pack)])
     assert result.exit_code == 0, result.output
     index_path = library_root() / "packs.toml"
     index_path.write_text(
@@ -293,7 +295,7 @@ def test_remove_rejects_index_rows_without_content_hash(
         encoding="utf-8",
     )
 
-    result = CliInvoker().invoke(app, ["remove", "demo", "--yes"])
+    result = CliInvoker().invoke(app, ["packs", "remove", "demo", "--yes"])
 
     assert result.exit_code != 0
     assert "content_hash" in result.output
@@ -305,12 +307,12 @@ def test_remove_yes_skips_local_edits_warning(
 ) -> None:
     pack = tmp_path / "pack"
     _write_pack_project(pack)
-    result = CliInvoker().invoke(app, ["add", str(pack), "--yes"])
+    result = CliInvoker().invoke(app, ["packs", "add", str(pack)])
     assert result.exit_code == 0, result.output
     installed_recipe = library_root() / "packs" / "demo" / "recipes" / "demo" / "recipe.yml"
     installed_recipe.write_text("version: 1\ndescription: 'edited'\nsteps: []\n")
 
-    result = CliInvoker().invoke(app, ["remove", "demo", "--yes"])
+    result = CliInvoker().invoke(app, ["packs", "remove", "demo", "--yes"])
 
     assert result.exit_code == 0, result.output
     assert "local edits" not in result.stderr
@@ -1127,6 +1129,115 @@ def test_apply_rejects_bad_vars_file_and_hook_timeout(
     assert "Traceback" not in result.output
 
 
+def test_apply_vars_files_merge_in_order_and_var_wins(tmp_path: Path) -> None:
+    recipe = tmp_path / "recipe.yml"
+    recipe.write_text(
+        "version: 1\ninputs:\n  a: {type: str}\n  b: {type: str}\n  c: {type: str}\nsteps: []\n"
+    )
+    first = tmp_path / "first.yml"
+    first.write_text("a: first\nb: first\n")
+    second = tmp_path / "second.yml"
+    second.write_text("b: second\nc: second\n")
+    target = tmp_path / "target"
+    target.mkdir()
+
+    result = CliInvoker().invoke(
+        app,
+        [
+            *("apply", str(recipe), str(target), "--dry-run", "--format", "json"),
+            *("--var", "c=cli", "--vars-file", str(first), "--vars-file", str(second)),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)[0]["inputs"] == {"a": "first", "b": "second", "c": "cli"}
+
+
+_PROMPTED_RECIPE = (
+    "version: 1\n"
+    "inputs:\n"
+    "  owner: {type: str, scope: global, required: true, description: Owning team.}\n"
+    "  token: {type: str, scope: global, required: true, sensitive: true}\n"
+    "  service: {type: str, scope: target, required: true}\n"
+    "  region: {type: str, default: eu}\n"
+    "  note: {type: str}\n"
+    "steps: []\n"
+)
+
+
+def test_apply_prompts_only_for_missing_required_inputs_on_a_terminal(tmp_path: Path) -> None:
+    recipe = tmp_path / "recipe.yml"
+    recipe.write_text(_PROMPTED_RECIPE)
+    target = tmp_path / "api"
+    target.mkdir()
+    backend = ScriptedPromptBackend(texts=["platform", "api"], secrets=["s3cret"])
+
+    result = CliInvoker().invoke(
+        app,
+        ["apply", str(recipe), str(target), "--dry-run", "--format", "json"],
+        interactive=True,
+        prompt_backend=backend,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert backend.calls == [
+        ("text", "owner (Owning team.)"),
+        ("secret", "token"),
+        ("text", f"service for {target}"),
+    ]
+    assert json.loads(result.stdout)[0]["inputs"] == {
+        "owner": "platform",
+        "token": "***",
+        "service": "api",
+        "region": "eu",
+    }
+
+
+@pytest.mark.parametrize(
+    ("interactive", "extra"),
+    [
+        pytest.param(False, [], id="no-terminal"),
+        pytest.param(True, ["--non-interactive"], id="non-interactive"),
+        pytest.param(True, ["--check"], id="check-asks-nothing"),
+    ],
+)
+def test_apply_never_prompts_without_a_terminal_or_with_non_interactive(
+    tmp_path: Path, interactive: bool, extra: list[str]
+) -> None:
+    recipe = tmp_path / "recipe.yml"
+    recipe.write_text(_PROMPTED_RECIPE)
+    target = tmp_path / "api"
+    target.mkdir()
+    backend = ScriptedPromptBackend()
+
+    missing_global = CliInvoker().invoke(
+        app,
+        ["apply", str(recipe), str(target), "--dry-run", *extra],
+        interactive=interactive,
+        prompt_backend=backend,
+    )
+    missing_target = CliInvoker().invoke(
+        app,
+        [
+            *("apply", str(recipe), str(target), "--dry-run", "--format", "json", *extra),
+            *("--var", "owner=platform", "--var", "token=s3cret"),
+        ],
+        interactive=interactive,
+        prompt_backend=backend,
+    )
+
+    assert backend.calls == []
+    assert missing_global.exit_code == 1, missing_global.output
+    assert (
+        "error: missing required input: owner; pass --var owner=VALUE or --vars-file FILE"
+        in missing_global.stderr
+    )
+    assert missing_target.exit_code == 1, missing_target.output
+    row = json.loads(missing_target.stdout)[0]
+    assert row["action"] == "failed"
+    assert row["error"].startswith("missing required input: service;")
+
+
 def test_apply_derives_target_inputs_and_redacts_outcome_rows(tmp_path: Path) -> None:
     recipe = tmp_path / "recipe.yml"
     recipe.write_text(
@@ -1774,7 +1885,7 @@ def test_apply_derives_structured_input_from_pipe_record(
     assert next(iter(row["record"])) == "target_path"
 
 
-def test_apply_rejects_input_from_conflicts_global_scope_and_interactive_check(
+def test_apply_rejects_input_from_conflicts_and_global_scope(
     tmp_path: Path,
 ) -> None:
     recipe = tmp_path / "recipe.yml"
@@ -1820,15 +1931,8 @@ def test_apply_rejects_input_from_conflicts_global_scope_and_interactive_check(
     assert global_source.exit_code != 0
     assert "scope global" in global_source.output
 
-    interactive_check = CliInvoker().invoke(
-        app,
-        ["apply", str(recipe), str(target), "--interactive", "--check"],
-    )
-    assert interactive_check.exit_code == 2
-    assert "--interactive cannot be combined with --check" in interactive_check.output
 
-
-def test_apply_stdin_interactive_without_tty_fails_before_prompting(
+def test_apply_stdin_targets_never_prompt_for_missing_inputs(
     tmp_path: Path,
 ) -> None:
     recipe = tmp_path / "recipe.yml"
@@ -1840,12 +1944,12 @@ def test_apply_stdin_interactive_without_tty_fails_before_prompting(
 
     result = CliInvoker().invoke(
         app,
-        ["apply", str(recipe), "--stdin", "--interactive", "--dry-run"],
+        ["apply", str(recipe), "--stdin", "--dry-run", "--format", "json"],
         input=str(target) + "\n",
     )
 
-    assert result.exit_code != 0
-    assert "interactive input requires a terminal" in result.output
+    assert result.exit_code == 1, result.output
+    assert json.loads(result.stdout)[0]["error"].startswith("missing required input: service;")
 
 
 def test_apply_backup_metadata_records_redacted_per_target_inputs(tmp_path: Path) -> None:
@@ -2028,7 +2132,7 @@ def test_hook_run_accepts_path_ref_form_like_new_hook(
     ok = CliInvoker().invoke(
         app,
         [
-            "hook",
+            "hooks",
             "run",
             "./collections-ensure/has_playbooks",
             "--target",
@@ -2043,7 +2147,7 @@ def test_hook_run_accepts_path_ref_form_like_new_hook(
     conflict = CliInvoker().invoke(
         app,
         [
-            "hook",
+            "hooks",
             "run",
             "./collections-ensure/has_playbooks",
             "--project",
@@ -2075,7 +2179,7 @@ def test_hook_run_transform_reads_disk_and_emits_exact_content(tmp_path: Path) -
     result = CliInvoker().invoke(
         app,
         [
-            "hook",
+            "hooks",
             "run",
             "append",
             *_ctx(hook_project, target),
@@ -2116,7 +2220,7 @@ def test_hook_run_transform_content_overrides_do_not_require_existing_file(
     literal = CliInvoker().invoke(
         app,
         [
-            "hook",
+            "hooks",
             "run",
             "show_context",
             *_ctx(hook_project, target),
@@ -2129,7 +2233,7 @@ def test_hook_run_transform_content_overrides_do_not_require_existing_file(
     stdin = CliInvoker().invoke(
         app,
         [
-            "hook",
+            "hooks",
             "run",
             "show_context",
             *_ctx(hook_project, target),
@@ -2143,7 +2247,7 @@ def test_hook_run_transform_content_overrides_do_not_require_existing_file(
     file_result = CliInvoker().invoke(
         app,
         [
-            "hook",
+            "hooks",
             "run",
             "show_context",
             *_ctx(hook_project, target),
@@ -2188,7 +2292,7 @@ def test_hook_run_bad_flag_values_are_reported_cleanly(
 
     result = CliInvoker().invoke(
         app,
-        ["hook", "run", "types", *_ctx(hook_project, target), "--file", "local.txt", *extra],
+        ["hooks", "run", "types", *_ctx(hook_project, target), "--file", "local.txt", *extra],
     )
 
     assert result.exit_code != 0
@@ -2213,12 +2317,12 @@ def test_hook_run_transform_diff_and_structured_output(tmp_path: Path) -> None:
 
     diff = CliInvoker().invoke(
         app,
-        ["hook", "run", "replace", *_ctx(hook_project, target), "--file", "local.txt", "--diff"],
+        ["hooks", "run", "replace", *_ctx(hook_project, target), "--file", "local.txt", "--diff"],
     )
     structured = CliInvoker().invoke(
         app,
         [
-            "hook",
+            "hooks",
             "run",
             "replace",
             *_ctx(hook_project, target),
@@ -2262,12 +2366,12 @@ def test_hook_run_validate_records_and_fail_exit(tmp_path: Path) -> None:
 
     warn = CliInvoker().invoke(
         app,
-        ["hook", "run", "ready", *_ctx(hook_project, target), "--format", "json"],
+        ["hooks", "run", "ready", *_ctx(hook_project, target), "--format", "json"],
     )
     failed = CliInvoker().invoke(
         app,
         [
-            "hook",
+            "hooks",
             "run",
             "ready",
             *_ctx(hook_project, target),
@@ -2314,16 +2418,16 @@ def test_hook_run_dual_export_infers_or_requires_kind(tmp_path: Path) -> None:
 
     inferred_transform = CliInvoker().invoke(
         app,
-        ["hook", "run", "dual", *_ctx(hook_project, target), "--file", "local.txt"],
+        ["hooks", "run", "dual", *_ctx(hook_project, target), "--file", "local.txt"],
     )
     ambiguous = CliInvoker().invoke(
         app,
-        ["hook", "run", "dual", *_ctx(hook_project, target)],
+        ["hooks", "run", "dual", *_ctx(hook_project, target)],
     )
     explicit_validate = CliInvoker().invoke(
         app,
         [
-            "hook",
+            "hooks",
             "run",
             "dual",
             *_ctx(hook_project, target),
@@ -2368,21 +2472,21 @@ def test_hook_run_rejects_kind_specific_context_options(tmp_path: Path) -> None:
 
     validate_with_file = CliInvoker().invoke(
         app,
-        ["hook", "run", "ready", *_ctx(hook_project, target), "--file", "local.txt"],
+        ["hooks", "run", "ready", *_ctx(hook_project, target), "--file", "local.txt"],
     )
     validate_with_diff = CliInvoker().invoke(
         app,
-        ["hook", "run", "ready", *_ctx(hook_project, target), "--diff"],
+        ["hooks", "run", "ready", *_ctx(hook_project, target), "--diff"],
     )
     transform_without_file = CliInvoker().invoke(
         app,
         [
-            "hook",
+            "hooks",
             "run",
             "yaml_edit",
             "--target",
             str(target),
-            "--args",
+            "--args-file",
             str(tmp_path / "missing.yml"),
         ],
     )
@@ -2422,19 +2526,19 @@ def test_hook_run_inputs_and_args_merge_files_and_yaml_flags(tmp_path: Path) -> 
     result = CliInvoker().invoke(
         app,
         [
-            "hook",
+            "hooks",
             "run",
             "types",
             *_ctx(hook_project, target),
             "--file",
             "local.txt",
-            "--inputs",
+            "--vars-file",
             str(inputs),
-            "--input",
+            "--var",
             "enabled=yes",
-            "--input",
+            "--var",
             "count=3",
-            "--args",
+            "--args-file",
             str(args),
             "--arg",
             "mode=new",
@@ -2460,7 +2564,7 @@ def test_hook_run_explicit_project_must_be_valid_before_global_or_builtin_fallba
     result = CliInvoker().invoke(
         app,
         [
-            "hook",
+            "hooks",
             "run",
             "yaml_edit",
             "--project",
@@ -2469,7 +2573,7 @@ def test_hook_run_explicit_project_must_be_valid_before_global_or_builtin_fallba
             str(target),
             "--file",
             "local.yml",
-            "--args",
+            "--args-file",
             str(args),
         ],
     )
@@ -2514,12 +2618,12 @@ def test_hook_run_never_adopts_cwd_project_without_explicit_project(
     monkeypatch.chdir(cwd_project)
     implicit = CliInvoker().invoke(
         app,
-        ["hook", "run", "shadow", "--target", str(target), "--file", "local.txt"],
+        ["hooks", "run", "shadow", "--target", str(target), "--file", "local.txt"],
     )
     explicit = CliInvoker().invoke(
         app,
         [
-            "hook",
+            "hooks",
             "run",
             "shadow",
             "--project",
@@ -2532,7 +2636,7 @@ def test_hook_run_never_adopts_cwd_project_without_explicit_project(
     )
     path_ref = CliInvoker().invoke(
         app,
-        ["hook", "run", "../cwd/shadow", "--target", str(target), "--file", "local.txt"],
+        ["hooks", "run", "../cwd/shadow", "--target", str(target), "--file", "local.txt"],
     )
 
     # The cwd's hook project is only used when named explicitly.
@@ -2566,7 +2670,7 @@ def test_hook_run_builtin_is_not_shadowed_by_cwd_project(
     result = CliInvoker().invoke(
         app,
         [
-            "hook",
+            "hooks",
             "run",
             "yaml_edit",
             "--target",
@@ -2600,7 +2704,7 @@ def test_hook_run_external_failure_prints_traceback(tmp_path: Path) -> None:
 
     result = CliInvoker().invoke(
         app,
-        ["hook", "run", "broken", *_ctx(hook_project, target), "--file", "local.txt"],
+        ["hooks", "run", "broken", *_ctx(hook_project, target), "--file", "local.txt"],
     )
 
     assert result.exit_code != 0
@@ -2632,7 +2736,7 @@ def test_hook_run_builtin_stdout_is_redirected_to_stderr(
 
     result = CliInvoker().invoke(
         app,
-        ["hook", "run", "debug_builtin", "--target", str(target), "--file", "local.txt"],
+        ["hooks", "run", "debug_builtin", "--target", str(target), "--file", "local.txt"],
     )
 
     assert result.exit_code == 0, result.output
@@ -2662,7 +2766,7 @@ def test_hook_run_quiet_suppresses_context_but_not_hook_diagnostics(tmp_path: Pa
         [
             "--quiet",
             "recipe",
-            "hook",
+            "hooks",
             "run",
             "noisy",
             "--project",
@@ -2685,7 +2789,7 @@ def test_hook_run_quiet_suppresses_context_but_not_hook_diagnostics(tmp_path: Pa
     "args",
     [
         ["get", "missing"],
-        ["backup", "get", "latest"],
+        ["backups", "get", "latest"],
     ],
 )
 def test_library_command_value_errors_are_reported_cleanly(args: list[str]) -> None:
@@ -2884,12 +2988,14 @@ def test_help_placeholders_and_ref_grammar_render_meaningfully(tmp_path: Path) -
     invoker = CliInvoker()
 
     init_help = invoker.invoke(app, ["init", "--help"])
-    hook_run_help = invoker.invoke(app, ["hook", "run", "--help"])
+    hook_init_help = invoker.invoke(app, ["hooks", "init", "--help"])
+    hook_run_help = invoker.invoke(app, ["hooks", "run", "--help"])
     apply_help = invoker.invoke(app, ["apply", "--help"])
 
-    assert "PACK/RECIPE or PACK/HOOK reference" in init_help.stdout
+    assert "PACK/RECIPE reference" in init_help.stdout
+    assert "PACK/HOOK reference" in hook_init_help.stdout
     assert "PACK/HOOK reference." in hook_run_help.stdout
-    for result in (init_help, hook_run_help):
+    for result in (init_help, hook_init_help, hook_run_help):
         assert "REF  /." not in result.stdout
     assert "pack/recipe" in apply_help.stdout
     assert "pack:recipe" not in apply_help.stdout
@@ -2967,23 +3073,23 @@ def test_backup_commands_show_list_and_restore(tmp_path: Path) -> None:
     bundle, config = _config_backup(tmp_path)
     invoker = CliInvoker()
 
-    listed = invoker.invoke(app, ["backup", "list", "--format", "json"])
+    listed = invoker.invoke(app, ["backups", "list", "--format", "json"])
     assert listed.exit_code == 0, listed.output
     assert json.loads(listed.stdout)[0]["id"] == bundle.id
-    shown = invoker.invoke(app, ["backup", "get", bundle.id])
+    shown = invoker.invoke(app, ["backups", "get", bundle.id])
     assert shown.exit_code == 0, shown.output
     assert "recipe: demo" in shown.stdout
     assert f"files:\n  - {config}" in shown.stdout
     assert "[{" not in shown.stdout
-    shown_json = invoker.invoke(app, ["backup", "get", bundle.id, "--format", "json"])
+    shown_json = invoker.invoke(app, ["backups", "get", bundle.id, "--format", "json"])
     assert shown_json.exit_code == 0, shown_json.output
     assert json.loads(shown_json.stdout)["id"] == bundle.id
 
-    refused = invoker.invoke(app, ["backup", "restore", bundle.id])
+    refused = invoker.invoke(app, ["backups", "restore", bundle.id])
     assert refused.exit_code != 0
     assert "requires --yes" in refused.output
     assert config.read_text() == "after\n"
-    restored = invoker.invoke(app, ["backup", "restore", bundle.id, "--yes"])
+    restored = invoker.invoke(app, ["backups", "restore", bundle.id, "--yes"])
     assert restored.exit_code == 0, restored.output
     assert config.read_text() == "before\n"
 
@@ -2991,10 +3097,10 @@ def test_backup_commands_show_list_and_restore(tmp_path: Path) -> None:
 def test_backup_restore_dry_run_and_decline_change_nothing(tmp_path: Path) -> None:
     bundle, config = _config_backup(tmp_path)
 
-    dry_run = CliInvoker().invoke(app, ["backup", "restore", bundle.id, "--dry-run"])
+    dry_run = CliInvoker().invoke(app, ["backups", "restore", bundle.id, "--dry-run"])
     declined = CliInvoker().invoke(
         app,
-        ["backup", "restore", bundle.id],
+        ["backups", "restore", bundle.id],
         interactive=True,
         prompt_backend=ScriptedPromptBackend(confirms=[False]),
     )
@@ -3049,7 +3155,7 @@ def test_backup_restore_failing_item_exits_nonzero(
 
     monkeypatch.setattr(file_writer_module.os, "replace", fail_second_replace)
 
-    result = CliInvoker().invoke(app, ["backup", "restore", bundle.id, "--yes"])
+    result = CliInvoker().invoke(app, ["backups", "restore", bundle.id, "--yes"])
 
     assert result.exit_code == 1, result.output
     assert "disk full" in result.output
@@ -3097,7 +3203,7 @@ def test_backup_prune_policies(
         monkeypatch.setenv("UNTAPED_RECIPE__BACKUP_KEEP", env_keep)
         get_settings.cache_clear()
 
-    result = CliInvoker().invoke(app, ["backup", "prune", *args, "--yes"])
+    result = CliInvoker().invoke(app, ["backups", "prune", *args, "--yes"])
 
     assert result.exit_code == 0, result.output
     assert {key for key, bundle_id in ids.items() if (backups / bundle_id).exists()} == survivors
@@ -3110,10 +3216,10 @@ def test_backup_prune_policies(
 def test_backup_prune_requires_a_policy(tmp_path: Path) -> None:
     _seed_bundle(library_root() / "backups", "20250101T000000000000Z-aaaaaaaa")
 
-    result = CliInvoker().invoke(app, ["backup", "prune", "--yes"])
+    result = CliInvoker().invoke(app, ["backups", "prune", "--yes"])
 
     assert result.exit_code != 0
-    assert "backup prune needs --keep/--older-than" in result.output
+    assert "backups prune needs --keep/--older-than" in result.output
 
 
 def test_backup_prune_conforms_to_destructive_contract(tmp_path: Path) -> None:
@@ -3127,50 +3233,22 @@ def test_backup_prune_conforms_to_destructive_contract(tmp_path: Path) -> None:
 
     assert_destructive_contract(
         app,
-        ["backup", "prune", "--keep", "1"],
+        ["backups", "prune", "--keep", "1"],
         assert_unchanged=assert_unchanged,
     )
 
 
-def test_init_rejects_hook_only_flags_for_packs_and_recipes(tmp_path: Path) -> None:
-    result = CliInvoker().invoke(app, ["init", "pack", "demo", "--kind", "validate"])
+@pytest.mark.parametrize("command", [["packs", "init", "demo"], ["init", "demo/playbook"]])
+def test_hook_only_init_flags_are_usage_errors_elsewhere(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: list[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = CliInvoker().invoke(app, [*command, "--kind", "validate"])
 
     assert result.exit_code == 2
-    assert "error: --kind and --force apply only to init hook" in result.stderr
+    assert "--kind" in result.stderr
     assert not (tmp_path / "demo").exists()
-
-
-def test_renamed_commands_keep_deprecated_aliases(tmp_path: Path) -> None:
-    root = bootstrap.build_root_app(externals=[])
-    recipe = tmp_path / "recipe.yml"
-    recipe.write_text("version: 1\nsteps: []\n")
-    vars_file = tmp_path / "vars.yml"
-    vars_file.write_text("{}\n")
-    target = tmp_path / "target"
-    target.mkdir()
-
-    checked = CliInvoker().invoke(root, ["recipe", "check", str(recipe), "-f", "json"])
-    shown = CliInvoker().invoke(root, ["recipe", "show", "yaml_edit", "-f", "json"])
-    applied = CliInvoker().invoke(
-        root,
-        ["recipe", "apply", str(recipe), str(target), "--vars", str(vars_file), "--dry-run"],
-    )
-
-    assert checked.exit_code == 0, checked.output
-    assert "warning: `check` is deprecated" in checked.stderr
-    assert "use `validate`" in checked.stderr
-    assert shown.exit_code == 0, shown.output
-    assert "use `get`" in shown.stderr
-    assert applied.exit_code == 0, applied.output
-    assert "use `--vars-file`" in applied.stderr
-    backups = CliInvoker().invoke(root, ["recipe", "backup", "show", "latest"])
-    assert "use `get`" in backups.stderr
-    with pytest.MonkeyPatch.context() as patch:
-        patch.chdir(tmp_path)
-        scaffolded = CliInvoker().invoke(root, ["recipe", "new", "pack", "demo", "--no-lock"])
-    assert scaffolded.exit_code == 0, scaffolded.output
-    assert "use `init`" in scaffolded.stderr
-    assert (tmp_path / "demo" / "pyproject.toml").is_file()
 
 
 def test_apply_unchanged_targets_report_unchanged_status(tmp_path: Path) -> None:
@@ -3212,7 +3290,7 @@ def test_backup_prune_counts_failed_deletions_and_continues(
 
     monkeypatch.setattr(BackupStore, "delete", flaky_delete)
 
-    result = CliInvoker().invoke(app, ["backup", "prune", "--keep", "1", "--yes"])
+    result = CliInvoker().invoke(app, ["backups", "prune", "--keep", "1", "--yes"])
 
     assert result.exit_code == 1, result.output
     assert "error: 20250101T000000000000Z-aaaaaaaa" in result.stderr
@@ -3251,7 +3329,7 @@ def test_add_rejects_rev_for_local_path_source(tmp_path: Path) -> None:
     pack = tmp_path / "pack"
     _write_pack_project(pack)
 
-    result = CliInvoker().invoke(app, ["add", str(pack), "--rev", "v1", "--yes"])
+    result = CliInvoker().invoke(app, ["packs", "add", str(pack), "--rev", "v1"])
 
     assert result.exit_code == 2
     assert "--rev is only valid for git URL sources" in result.stderr
@@ -3343,25 +3421,25 @@ def test_show_prefers_library_hook_over_builtin(tmp_path: Path) -> None:
     )
     _install_pack(source)
 
-    result = CliInvoker().invoke(app, ["get", "yaml_edit", "--format", "json"])
+    result = CliInvoker().invoke(app, ["hooks", "get", "yaml_edit", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["module"] == "shadow_pack.hooks.yaml_edit"
 
 
 def test_edit_rejects_builtin_hook(tmp_path: Path) -> None:
-    result = CliInvoker().invoke(app, ["edit", "yaml_edit"])
+    result = CliInvoker().invoke(app, ["hooks", "edit", "yaml_edit"])
 
     assert result.exit_code == 1
     assert "built-in hooks are engine-owned and cannot be edited: yaml_edit" in result.stderr
 
 
-def test_unified_show_pack_and_recipe(tmp_path: Path) -> None:
+def test_get_pack_and_recipe(tmp_path: Path) -> None:
     source = tmp_path / "source"
     _write_pack(source, manifest_name="ansible", recipes={"playbook": "recipes/playbook.yml"})
     _install_pack(source)
 
-    pack = CliInvoker().invoke(app, ["get", "ansible", "--format", "json"])
+    pack = CliInvoker().invoke(app, ["packs", "get", "ansible", "--format", "json"])
     recipe = CliInvoker().invoke(app, ["get", "ansible/playbook", "--format", "json"])
 
     assert pack.exit_code == 0, pack.output
@@ -3571,7 +3649,7 @@ def test_resolution_ignores_unparsable_pack_unless_named(tmp_path: Path) -> None
     _install_good_and_broken_packs(tmp_path)
 
     shown = CliInvoker().invoke(app, ["get", "playbook", "--format", "json"])
-    named = CliInvoker().invoke(app, ["get", "broken"])
+    named = CliInvoker().invoke(app, ["packs", "get", "broken"])
     qualified = CliInvoker().invoke(app, ["get", "broken/other"])
 
     assert shown.exit_code == 0, shown.output
@@ -3620,7 +3698,7 @@ def test_apply_copies_and_removes_binary_files_byte_exact(tmp_path: Path) -> Non
     assert (target / "assets" / "logo.png").read_bytes() == _BINARY
     assert not (target / "old.png").exists()
 
-    restored = CliInvoker().invoke(app, ["backup", "restore", "latest", "--yes"])
+    restored = CliInvoker().invoke(app, ["backups", "restore", "latest", "--yes"])
 
     assert restored.exit_code == 0, restored.output
     assert (target / "old.png").read_bytes() == _BINARY[::-1]
@@ -3660,8 +3738,8 @@ def test_unified_list_recipes_hooks_and_packs(tmp_path: Path) -> None:
     _install_pack(source)
 
     recipes = CliInvoker().invoke(app, ["list", "--format", "json"])
-    hooks = CliInvoker().invoke(app, ["list", "--hooks", "--format", "json"])
-    packs = CliInvoker().invoke(app, ["list", "--packs", "--format", "json"])
+    hooks = CliInvoker().invoke(app, ["hooks", "list", "--format", "json"])
+    packs = CliInvoker().invoke(app, ["packs", "list", "--format", "json"])
 
     assert recipes.exit_code == 0, recipes.output
     assert json.loads(recipes.stdout) == [
@@ -3678,7 +3756,7 @@ def test_unified_list_recipes_hooks_and_packs(tmp_path: Path) -> None:
 
 
 def test_list_hooks_shows_builtins_even_on_empty_library(tmp_path: Path) -> None:
-    result = CliInvoker().invoke(app, ["list", "--hooks", "--format", "json"])
+    result = CliInvoker().invoke(app, ["hooks", "list", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
@@ -3695,7 +3773,7 @@ def test_list_hooks_shows_builtins_even_on_empty_library(tmp_path: Path) -> None
     assert "no packs installed" not in result.stderr
 
 
-@pytest.mark.parametrize("args", [["list"], ["list", "--packs"], ["validate"]])
+@pytest.mark.parametrize("args", [["list"], ["packs", "list"], ["validate"]])
 def test_empty_library_prints_guidance(tmp_path: Path, args: list[str]) -> None:
     table = CliInvoker().invoke(app, args)
     as_json = CliInvoker().invoke(app, [*args, "--format", "json"])
@@ -3703,7 +3781,7 @@ def test_empty_library_prints_guidance(tmp_path: Path, args: list[str]) -> None:
     assert table.exit_code == 0, table.output
     assert table.stdout == ""
     assert "no packs installed" in table.stderr
-    assert "untaped recipe init pack NAME" in table.stderr
+    assert "untaped recipe packs init NAME" in table.stderr
     assert "add" in table.stderr
     assert as_json.exit_code == 0, as_json.output
     # validate without a ref never enumerates the built-ins; list keeps
@@ -3713,7 +3791,7 @@ def test_empty_library_prints_guidance(tmp_path: Path, args: list[str]) -> None:
 
 
 def test_builtin_hook_get_and_validate_render_detail_and_pass_row(tmp_path: Path) -> None:
-    shown = CliInvoker().invoke(app, ["get", "yaml_edit", "--format", "json"])
+    shown = CliInvoker().invoke(app, ["hooks", "get", "yaml_edit", "--format", "json"])
     checked = CliInvoker().invoke(app, ["validate", "yaml_edit", "--format", "json"])
 
     assert shown.exit_code == 0, shown.output

@@ -1,4 +1,4 @@
-"""Hook library commands."""
+"""``recipe hooks run``: run one hook against explicit fixture context."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from untaped.capabilities.recipe.cli.common import (
     hook_startup_notice,
     hook_timeout_seconds,
     library_root,
-    load_yaml_mapping_file,
+    merge_vars,
     report_config_errors,
     settings,
 )
@@ -44,7 +44,7 @@ from untaped.capability_api import (
     unified_diff_text,
 )
 
-app = create_app(name="hook", help="Run installed recipe hooks.")
+app = create_app(name="hooks", help="Inspect, scaffold, and run recipe hooks.")
 HookRunFormat = Literal["json", "yaml", "table", "pipe"]
 
 
@@ -81,20 +81,21 @@ def run_command(
         Path | None,
         Parameter(name="--content-file", help="Read transform fixture content from a file."),
     ] = None,
-    inputs_file: Annotated[
-        Path | None,
-        Parameter(name="--inputs", help="YAML mapping of hook inputs."),
-    ] = None,
-    args_file: Annotated[
-        Path | None,
-        Parameter(name="--args", help="YAML mapping of hook args."),
-    ] = None,
-    raw_inputs: Annotated[
+    raw_vars: Annotated[
         list[str] | None,
         Parameter(
-            name="--input",
+            name="--var",
             negative="",
-            help="Input override as key=YAML.",
+            help="Hook input as KEY=YAML (repeatable; wins over --vars-file).",
+            consume_multiple=False,
+        ),
+    ] = None,
+    vars_files: Annotated[
+        list[Path] | None,
+        Parameter(
+            name="--vars-file",
+            negative="",
+            help="YAML mapping of hook inputs (repeatable; later files win).",
             consume_multiple=False,
         ),
     ] = None,
@@ -103,7 +104,16 @@ def run_command(
         Parameter(
             name="--arg",
             negative="",
-            help="Arg override as key=YAML.",
+            help="Hook arg as KEY=YAML (repeatable; wins over --args-file).",
+            consume_multiple=False,
+        ),
+    ] = None,
+    args_files: Annotated[
+        list[Path] | None,
+        Parameter(
+            name="--args-file",
+            negative="",
+            help="YAML mapping of hook args (repeatable; later files win).",
             consume_multiple=False,
         ),
     ] = None,
@@ -143,13 +153,12 @@ def run_command(
             content=content,
             content_file=content_file,
         )
-        inputs = _fixture_mapping(
-            inputs_file,
-            raw_inputs or [],
-            file_flag="--inputs",
-            kv_flag="--input",
+        inputs = merge_vars(
+            vars_files or [], _yaml_kv_pairs(raw_vars or [], flag="--var"), file_flag="--vars-file"
         )
-        args = _fixture_mapping(args_file, raw_args or [], file_flag="--args", kv_flag="--arg")
+        args = merge_vars(
+            args_files or [], _yaml_kv_pairs(raw_args or [], flag="--arg"), file_flag="--args-file"
+        )
         prepared_content = _content_value(content)
         with UvHookWorkerPool(
             hook_timeout_seconds=hook_timeout_seconds(hook_timeout),
@@ -250,7 +259,7 @@ def _run_validate(
 
 
 def _split_project_hook_ref(name: str, project: Path | None) -> tuple[Path | None, str]:
-    """Accept the ``./pack/hook`` form ``init hook`` accepts for ``hook run``.
+    """Accept the ``./pack/hook`` form ``hooks init`` accepts for ``hooks run``.
 
     A path-shaped ref resolves as ``--project <parent>`` plus the trailing hook
     name; an explicit ``--project`` keeps precedence and the two forms may not
@@ -280,20 +289,6 @@ def _local_hook_project(project: Path | None) -> Path | None:
     # Never adopt the cwd's hook project implicitly: running code from
     # whatever repository happens to be checked out requires --project/./path.
     return None
-
-
-def _fixture_mapping(
-    path: Path | None,
-    raw_pairs: list[str],
-    *,
-    file_flag: str,
-    kv_flag: str,
-) -> dict[str, object]:
-    values: dict[str, object] = {}
-    if path is not None:
-        values.update(load_yaml_mapping_file(path, flag=file_flag))
-    values.update(_yaml_kv_pairs(raw_pairs, flag=kv_flag))
-    return values
 
 
 def _content_value(content: str | None) -> str | None:
