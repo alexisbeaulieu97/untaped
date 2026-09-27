@@ -283,6 +283,21 @@ def test_removed_log_level_is_reported_as_an_unknown_key(_isolated_config: Path)
     assert "profiles.default.log_level" in row["detail"]
 
 
+def test_top_level_keys_other_than_active_and_profiles_are_unknown(
+    _isolated_config: Path,
+) -> None:
+    """A top-level ``log_level`` or pre-8.0 state section is flagged, not read."""
+    write_config(
+        _isolated_config,
+        "active: default\nprofiles:\n  default: {}\nlog_level: DEBUG\nworkspace:\n  x: 1\n",
+    )
+    code, rows = _rows(_doctor_app())
+    assert code == 0
+    (row,) = [row for row in rows if row["check"] == "unknown-keys"]
+    assert row["status"] == "warn"
+    assert row["detail"] == "ignored: log_level, workspace"
+
+
 def test_unknown_ui_theme_fails_ui_row(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      theme: bogus\n")
     code, rows = _rows(_doctor_app())
@@ -353,6 +368,9 @@ def test_state_left_in_config_is_ignored(
     assert not [row for row in rows if row["check"] == "legacy-state"]
     (state,) = [row for row in rows if row["title"] == "validate state"]
     assert state["detail"] == "no state"
+    (unknown,) = [row for row in rows if row["check"] == "unknown-keys"]
+    assert unknown["status"] == "warn"
+    assert "github" in unknown["detail"]
     assert "warning: capability state" not in capsys.readouterr().err
 
 

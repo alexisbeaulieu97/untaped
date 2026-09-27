@@ -146,13 +146,16 @@ def _candidate_version(candidate: ExternalProvider | None) -> str:
 
 
 def _api_text(requires: object) -> str:
-    """Render an ``(min_inclusive, max_exclusive)`` range; ``unknown`` when absent."""
+    """Render an ``(min_inclusive, max_exclusive)`` range.
+
+    ``unknown`` when absent; a malformed declaration is shown as declared.
+    """
+    if requires is None:
+        return _UNKNOWN
     try:
         low, high = parse_api_range(requires)
     except ConfigError:
-        return _UNKNOWN
-    if low == high == (0, 0):
-        return _UNKNOWN
+        return repr(requires)
     return f">={format_api_version(low)},<{format_api_version(high)}"
 
 
