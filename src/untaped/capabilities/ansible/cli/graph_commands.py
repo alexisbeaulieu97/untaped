@@ -205,7 +205,16 @@ def graph_command(
             ),
         ),
     ] = False,
-    depth: Annotated[str, Parameter(name="--depth", help="Traversal depth or 'unlimited'.")] = "3",
+    depth: Annotated[
+        str | None,
+        Parameter(
+            name="--depth",
+            help=(
+                "Traversal depth or 'unlimited' (default 3; --contains searches the full graph "
+                "unless given)."
+            ),
+        ),
+    ] = None,
     target_repo: Annotated[
         str | None,
         Parameter(name="--target-repo", help="Canonical owner/repo override for local targets."),
@@ -290,7 +299,7 @@ def graph_command(
         untaped ansible graph acme/app --source prod --both --cached
         untaped ansible graph ./roles/web --target-repo acme/web --downstream
     """
-    depth_limit = _parse_depth(depth)
+    depth_limit = _parse_depth(depth, default=None if contains else 3)
     if contains:
         _check_contains_usage(
             target=target,
@@ -397,7 +406,11 @@ def graph_command(
             matches,
             fmt=cast(OutputFormat, fmt or "table"),
             kind="ansible.dependency_match",
-            empty="No matching roots found.",
+            empty=(
+                "No matching roots found."
+                if depth_limit is None
+                else f"No matching roots found within --depth {depth_limit}."
+            ),
         )
 
 
@@ -1011,7 +1024,9 @@ def _emit_graph(graph: DependencyGraph, *, fmt: GraphFormat, output: Path | None
     output.expanduser().write_text(rendered)
 
 
-def _parse_depth(value: str) -> int | None:
+def _parse_depth(value: str | None, *, default: int | None) -> int | None:
+    if value is None:
+        return default
     if value == "unlimited":
         return None
     try:

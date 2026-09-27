@@ -287,6 +287,46 @@ def test_transitive_dependency_traversal_uses_exact_cached_refs() -> None:
     assert graph.warnings == ()
 
 
+_B_REFS = {
+    "acme/b": (
+        CachedRef(name="trunk", kind="heads", default_branch="trunk"),
+        CachedRef(name="v1", kind="tags", default_branch="trunk"),
+    )
+}
+
+
+def test_unpinned_dependency_bridges_to_the_cached_default_branch_node() -> None:
+    index = StubIndex(
+        [
+            _dep("acme/a", "acme/b", version=None),
+            _dep("acme/b", "acme/a", ref="trunk"),
+            _dep("acme/b", "acme/c", ref="trunk"),
+            _dep("acme/b", "acme/old", ref="v1"),
+        ],
+        cached_ref_metadata=_B_REFS,
+    )
+
+    graph = _build(index, "acme/a", "main", source_key="source:prod", direction="deps", depth=3)
+
+    assert _edges(graph) == [
+        ("acme/a@main", "acme/b@trunk", "requires"),
+        ("acme/b@trunk", "acme/a@main", "requires"),
+        ("acme/b@trunk", "acme/c@main", "requires"),
+    ]
+    assert graph.edges[0].version is None
+    assert [cycle.node_ids for cycle in graph.cycles] == [
+        ("acme/a@main", "acme/b@trunk", "acme/a@main")
+    ]
+
+
+def test_unpinned_dependency_without_a_cached_default_branch_stays_ref_less() -> None:
+    index = StubIndex([_dep("acme/a", "acme/b", version=None), _dep("acme/b", "acme/c")])
+
+    graph = _build(index, "acme/a", "main", source_key="source:prod", direction="deps", depth=3)
+
+    assert _edges(graph)[0] == ("acme/a@main", "acme/b", "requires")
+
+
 @pytest.mark.parametrize(
     ("direction", "edges", "expected"),
     [

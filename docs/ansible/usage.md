@@ -69,7 +69,7 @@ untaped ansible graph acme/base-role --org acme --upstream --refresh
 | `--org`, `--team`, `--repo`, `--path`, `--ref-kind`, `--ref-pattern`, `--ref-scan-default` | Inline source instead of a saved one. |
 | `--refresh`, `--cached`, `--live` | Refresh the source first; read the cache only (the default); or read downstream live from GitHub even with a source. |
 | `--ref REF` | Branch, tag or SHA of the target. |
-| `--depth N\|unlimited` | Traversal depth. Default 3. |
+| `--depth N\|unlimited` | Traversal depth. Default 3; `--contains` searches the full graph unless given. |
 | `--format tree\|mermaid\|json`, `--out FILE` | Output shape and destination. |
 | `--contains OWNER/REPO`, `--stdin` | Report the roots whose downstream graph contains a repository (below). |
 
@@ -101,9 +101,10 @@ Each row (`ansible.dependency_match`) has `root_repo`, `root_ref`, the matched
 reaches it, or `null` when unpinned, never interpreted), `declared_in` (the
 dependency file) and `path` (the shortest path from the root, as node
 labels). A repository reached through two different declared refs gives two
-rows. `--depth`, `--source`, inline selectors and `--refresh`/`--cached`/`--live`
-apply as for a single graph; each root's graph warnings are printed on stderr
-prefixed with the root.
+rows. The search follows the whole downstream graph; an explicit `--depth N`
+bounds it, and an empty result then names that depth. `--source`, inline
+selectors and `--refresh`/`--cached`/`--live` apply as for a single graph;
+each root's graph warnings are printed on stderr prefixed with the root.
 
 This mode is downstream only (`--upstream` and `--both` are usage errors) and
 prints `--format table` (default), `json` or `pipe`; `tree`, `mermaid` and
@@ -155,6 +156,10 @@ Aliases apply when a source is refreshed; run `source refresh` afterwards.
   look for longer loops.
 - `mermaid` prints a Mermaid diagram.
 - A dependency at `repo@v1` and one at `repo@main` are different nodes.
+- An unpinned dependency points at the node for the dependency's cached
+  default branch (`repo@main`), so the walk continues through it. When the
+  source has no default branch recorded for that repo, the node stays
+  ref-less (`repo`).
 - A malformed or templated dependency file is skipped with a warning; it
   never fails the graph.
 
@@ -169,7 +174,8 @@ do (`ansible.source`, `ansible.source_status`, `ansible.alias`, and the
   `source refresh` command the error prints, or add `--refresh`.
 - **An older index is rebuilt**: after an upgrade the SQLite cache
   (`ansible.index_path`) may be rebuilt empty with a warning. Refresh each
-  source again.
+  source again. When the dependency parser changes, the next refresh
+  re-parses every ref once instead of reusing cached results.
 - **`ansible.freshness_ttl` warning**: the setting is ignored; remove it with
   `untaped config unset ansible.freshness_ttl`.
 
