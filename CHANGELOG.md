@@ -10,9 +10,9 @@
     is gone. A case may set `timeout:` (or `defaults.timeout` for the suite),
     and `launch:` may be omitted.
   - `awx.test_result` rows add `expectations` (each check's expected and
-    actual value), `job_url`, and, for a case that did not pass, `log_tail`.
-    `failure_reason` names the failed checks. `--show-logs` prints the tails
-    without downloading the logs again, and the table shows the summary
+    actual value) and `job_url`. In `json`/`yaml`/`pipe` output, or with
+    `--show-logs`, a case that did not pass also carries `log_tail`.
+    `failure_reason` names the failed checks. The table shows the summary
     columns.
   - **Behavior change:** `test run` now waits at most 30 minutes per case by
     default (`awx.test_timeout`) and runs 4 cases at once by default

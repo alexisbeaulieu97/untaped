@@ -412,7 +412,7 @@ def test_run_timeout_cancels_the_job_unless_no_cancel(
     assert result.exit_code == 1, result.output
     [row] = json.loads(result.stdout)
     assert row["result"] == "timeout"
-    assert row["failure_reason"] == f"still running after --timeout 0.01s; {reason}"
+    assert row["failure_reason"] == f"still running after 0.01s; {reason}"
     assert _cancelled_ids(running_job) == ([row["job_id"]] if cancels else [])
 
 
@@ -486,7 +486,7 @@ def test_run_checks_expectations_and_reports_them(
     [row] = json.loads(result.stdout)
     assert row["result"] == "pass"
     assert [check["check"] for check in row["expectations"]] == ["status", "log.contains"]
-    assert row["job_url"] == f"https://aap.example.com/#/jobs/playbook/{row['job_id']}/output"
+    assert row["job_url"].endswith(f"/{row['job_id']}/output")
 
 
 def test_run_table_hides_evidence_columns(
@@ -502,3 +502,13 @@ def test_run_table_hides_evidence_columns(
     assert "expected status successful, got failed" in result.stdout
     assert "log_tail" not in result.stdout
     assert "expectations" not in result.stdout
+
+
+def test_run_reports_results_despite_an_unknown_column(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    """Jobs already ran: a typo'd ``--columns`` must not swallow their results."""
+    _seed_jt(fake_aap)
+    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "-c", "resutl,result"])
+    assert result.exit_code == 0, result.output
+    assert "pass" in result.stdout

@@ -72,9 +72,8 @@ def test_case_expectation_overrides_defaults_per_key() -> None:
     assert merged.log.not_contains == ("WARN",)
 
 
-def test_evaluate_defaults_to_expecting_success() -> None:
-    [check] = Expectation().evaluate(status="failed", log=None)
-    assert check.model_dump() == {
+def test_status_defaults_to_expecting_success() -> None:
+    assert Expectation().check_status("failed").model_dump() == {
         "check": "status",
         "expected": "successful",
         "actual": "failed",
@@ -82,10 +81,9 @@ def test_evaluate_defaults_to_expecting_success() -> None:
     }
 
 
-def test_evaluate_log_checks_report_the_line_that_decided_them() -> None:
+def test_log_checks_report_the_line_that_decided_them() -> None:
     expect = Expectation.model_validate(
         {
-            "status": "failed",
             "log": {
                 "contains": ["msg: boom", "absent"],
                 "not_contains": ["fatal:"],
@@ -94,19 +92,21 @@ def test_evaluate_log_checks_report_the_line_that_decided_them() -> None:
         }
     )
     log = ["TASK [x]", "fatal: [web1]: FAILED! => msg: boom", "web1 : ok=1 changed=2"]
-    checks = [c.model_dump() for c in expect.evaluate(status="failed", log=log)]
-    assert checks == [
-        {"check": "status", "expected": "failed", "actual": "failed", "passed": True},
+    assert expect.needs_log
+    assert [c.model_dump() for c in expect.log.evaluate(log)] == [
         {"check": "log.contains", "expected": "msg: boom", "actual": log[1], "passed": True},
         {"check": "log.contains", "expected": "absent", "actual": None, "passed": False},
         {"check": "log.not_contains", "expected": "fatal:", "actual": log[1], "passed": False},
         {"check": "log.matches", "expected": r"changed=\d+", "actual": log[2], "passed": True},
     ]
+    assert not Expectation().needs_log
 
 
-def test_needs_log_only_with_log_checks() -> None:
-    assert Expectation().needs_log is False
-    assert Expectation.model_validate({"log": {"contains": ["x"]}}).needs_log is True
+def test_failure_descriptions_quote_patterns_verbatim_and_clip_long_lines() -> None:
+    expect = Expectation.model_validate({"log": {"matches": [r"ok=\d+"], "not_contains": ["x"]}})
+    contained, matched = expect.log.evaluate(["x" * 1000])
+    assert matched.describe_failure() == r"no log line matches 'ok=\d+'"
+    assert len(contained.actual or "") == 301
 
 
 @pytest.mark.parametrize(

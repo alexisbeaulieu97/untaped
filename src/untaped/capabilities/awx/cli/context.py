@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from types import TracebackType
 from typing import TYPE_CHECKING
 
-from untaped.capabilities.awx.domain import Job, ResourceSpec
+from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.errors import WaitCancelledError
 from untaped.capabilities.awx.infrastructure import AwxClient, AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.fk_resolver import HttpFkResolver
@@ -28,7 +28,6 @@ from untaped.capabilities.awx.infrastructure.strategy_resolver import StaticStra
 from untaped.capabilities.awx.infrastructure.unified_template_repo import (
     HttpUnifiedTemplateRepository,
 )
-from untaped.capabilities.awx.infrastructure.web_ui import job_ui_url
 from untaped.capabilities.awx.infrastructure.workflow_node_repo import HttpWorkflowNodeRepository
 from untaped.capabilities.awx.settings import AwxSettings
 from untaped.capability_api import AppContext, ConfigError, UsageError, app_context
@@ -68,10 +67,6 @@ class AwxContext:
         """Poll-interval sleep that ends early (raising) once :attr:`stop` is set."""
         if self.stop.wait(seconds):
             raise WaitCancelledError("wait interrupted")
-
-    def job_url(self, job: Job) -> str | None:
-        """The execution's page in the controller web UI."""
-        return job_ui_url(self.settings, job)
 
     def job_monitor(self, *, timeout: float | None = None) -> PollingJobMonitor:
         """The job monitor; with ``timeout`` each follow loop stops after that many seconds."""

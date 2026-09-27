@@ -550,8 +550,9 @@ untaped awx test run tests/awx/deploy-smoke.yml --case web --non-interactive
 - `expect` says what the job must produce, and every check must hold.
   - `status`: the job's final status (`successful`, the default, or `failed`,
     `error`, `canceled`).
-  - `log.contains` and `log.not_contains`: substrings of the job's full stdout.
-  - `log.matches`: regular expressions searched line by line.
+  - `log.contains` and `log.not_contains`: text that some line of the job's
+    full stdout must, or must not, contain.
+  - `log.matches`: regular expressions that some line must match.
 
   A case's `status` and each of its `log` lists replace the ones in
   `defaults.expect`; anything it leaves out is inherited.
@@ -560,10 +561,11 @@ untaped awx test run tests/awx/deploy-smoke.yml --case web --non-interactive
   `timeout`), `job_status`, `job_id`, `job_url` (the job's page in the web
   UI), `failure_reason`, and `expectations`, one `{check, expected, actual,
   passed}` per check, where `actual` is the job status or the log line that
-  decided the check.
-  A case that did not pass also carries `log_tail`, the last 40 lines of its
-  stdout. `--show-logs` prints those tails to stderr, and the table shows
-  the summary columns only.
+  decided the check (cut at 300 characters).
+  In `json`, `yaml` and `pipe` output, a case that did not pass also carries
+  `log_tail`, the last 40 lines of its stdout (`null` when the log could not
+  be read). `--show-logs` prints those tails to stderr in any format. The
+  table shows the summary columns only.
 - A case waits `--timeout` seconds when given (a positive number), else its
   own `timeout:`, else the suite's `defaults.timeout`, else `awx.test_timeout`
   (30 minutes). `--parallel` cases run at once (default
