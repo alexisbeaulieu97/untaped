@@ -18,7 +18,6 @@ import copy
 import math
 import os
 import sys
-import tempfile
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -27,6 +26,7 @@ from filelock import FileLock, Timeout
 from pydantic import SecretStr
 
 from untaped.errors import ConfigError
+from untaped.fs import atomic_write
 from untaped.settings import (
     check_state_section_name,
     get_settings,
@@ -56,26 +56,14 @@ def write_config_dict(data: dict[str, Any], path: Path | None = None) -> None:
 
     Only keys that differ from the file's current content are rewritten;
     comments, key order and formatting of everything else are preserved.
-    Creates parent directories if needed. The data is written to a unique
-    temp file created with permissions ``0o600`` (so secrets are never
-    world-readable, even briefly) and atomically renamed over the target;
-    a failed write leaves the original untouched and no temp file behind.
+    Creates parent directories if needed. The write goes through
+    :func:`~untaped.fs.atomic_write` with permissions ``0o600`` (so secrets
+    are never world-readable, even briefly): it is durable, writes through a
+    symlinked config file, and a failed write leaves the original untouched
+    and no temp file behind.
     """
     target = path or resolve_config_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    text = _render(data, target)
-    # A unique temp file created 0600 from the start (O_EXCL, never
-    # world-readable, even briefly) in the target's directory so the final
-    # ``os.replace`` is atomic; removed again if anything fails.
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(text)
-        os.replace(tmp_name, target)
-    except BaseException:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp_name)
-        raise
+    atomic_write(target, _render(data, target), mode=0o600)
 
 
 def _render(data: dict[str, Any], target: Path) -> str:
@@ -158,6 +146,46 @@ def _lock_timeout() -> float:
             "number of seconds"
         )
     return timeout
+
+
+def read_config_text(path: Path | None = None) -> str | None:
+    """Return the config file's text verbatim, or ``None`` when it does not exist."""
+    target = path or resolve_config_path()
+    try:
+        return target.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ConfigError(f"could not read {target}: {exc}") from exc
+
+
+def replace_config_text(text: str, *, expected: str | None, path: Path | None = None) -> None:
+    """Save ``text`` verbatim as the config file if the result validates.
+
+    Runs under the config lock. ``expected`` is the content the caller
+    started from (``None``: no file); if the file changed since, nothing is
+    written and :class:`ConfigError` is raised so another write is never
+    silently lost. The text is written like every other config write
+    (atomically, owner-only, through a symlink), then the settings are
+    validated; on failure the previous content is restored and the
+    :class:`ConfigError` propagates.
+    """
+    target = path or resolve_config_path()
+    with _locked(target):
+        if read_config_text(target) != expected:
+            raise ConfigError(f"{target} changed while it was being edited")
+        if text != expected:
+            atomic_write(target, text, mode=0o600)
+        get_settings.cache_clear()
+        try:
+            get_settings()
+        except ConfigError:
+            if expected is None:
+                Path(os.path.realpath(target)).unlink(missing_ok=True)
+            elif text != expected:
+                atomic_write(target, expected, mode=0o600)
+            get_settings.cache_clear()
+            raise
 
 
 def ensure_config(path: Path | None = None) -> Path:

@@ -112,6 +112,25 @@ def test_sync_prune_requires_yes_when_non_interactive(
     assert orphan.is_dir()
 
 
+def test_sync_prune_refusal_without_terminal_still_emits_sync_rows(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    orphan = _workspace_with_safe_orphan(tmp_path, upstream)
+    kept = tmp_path / "kept.git"
+    shutil.copytree(upstream, kept)
+    runner = CliInvoker()
+    runner.invoke(app, ["add", f"file://{kept}", "--workspace", "smoke"])
+
+    result = runner.invoke(app, ["sync", "--workspace", "smoke", "--prune", "--format", "json"])
+
+    assert result.exit_code == 2, result.output
+    assert "--yes" in result.stderr
+    assert [(row["repo"], row["action"]) for row in json.loads(result.stdout)] == [
+        ("kept", "cloned")
+    ]
+    assert orphan.is_dir()
+
+
 def test_sync_prune_with_yes_removes_safe_orphan(
     tmp_path: Path, upstream: Path, isolated_cache: Path
 ) -> None:
