@@ -13,6 +13,7 @@ import respx
 
 from untaped.bootstrap import build_root_app
 from untaped.capabilities.github.cli import app
+from untaped.settings import get_settings
 from untaped.testing import CliInvoker, CliResult, invoke_cli
 
 SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
@@ -223,20 +224,60 @@ def test_exit_code_matrix(
     assert unscanned_strict.exit_code == 3, unscanned_strict.output
 
 
-def test_sweep_old_flag_spellings_are_deprecated_aliases() -> None:
-    root = build_root_app(externals=[])
-
-    cached = invoke_cli(
-        root, ["github", "sweep", "--org", "acme", "--grep", "x", "-w", "--no-sync"]
+@pytest.mark.parametrize(
+    "old", [["-w"], ["--sync"], ["--no-sync"], ["--archived"], ["--archived", "yes"]]
+)
+def test_sweep_old_flag_spellings_are_gone(old: list[str]) -> None:
+    result = invoke_cli(
+        build_root_app(externals=[]), ["github", "sweep", "--org", "acme", "--grep", "x", *old]
     )
-    refreshed = invoke_cli(root, ["github", "sweep", "--org", "acme", "--grep", "[", "--sync"])
 
-    assert cached.exit_code == 1, cached.output
-    assert "`-w` is deprecated" in cached.stderr
-    assert "`--no-sync` is deprecated" in cached.stderr
-    assert "corpus has no repos in scope; run without --cached" in cached.stderr
-    assert refreshed.exit_code == 2, refreshed.output
-    assert "`--sync` is deprecated" in refreshed.stderr
+    assert result.exit_code == 2, result.output
+    assert "deprecated" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("archived", "expected"),
+    [
+        ([], ["acme/api"]),
+        (["--archived", "include"], ["acme/api", "acme/old"]),
+        (["--archived", "only"], ["acme/old"]),
+    ],
+    ids=["default-excludes", "include", "only"],
+)
+def test_sweep_archived_is_include_exclude_or_only(
+    source_repo: SourceRepo, archived: list[str], expected: list[str]
+) -> None:
+    api = source_repo("api", {"README.md": "x\n"})
+    old = source_repo("old", {"README.md": "x\n"})
+    listing = [_repo("acme/api", api), {**_repo("acme/old", old), "archived": True}]
+
+    result, _ = _sweep(
+        ["--org", "acme", "--has-file", "README.md", *archived, "--format", "json"], org=listing
+    )
+
+    assert [row["full_name"] for row in _json(result)] == expected
+
+
+def test_sweep_short_r_is_repo_and_default_org_fills_an_empty_scope(
+    tmp_path: Path, source_repo: SourceRepo
+) -> None:
+    source = source_repo("api", {"README.md": "x\n"})
+    by_short, short_paths = _sweep(
+        ["-r", "acme/api", "--has-file", "README.md", "--format", "json"],
+        repos={"acme/api": httpx.Response(200, json=_repo("acme/api", source))},
+    )
+    cfg = tmp_path / "config.yml"
+    cfg.write_text(cfg.read_text() + "      default_org: acme\n")
+    get_settings.cache_clear()
+    by_default, default_paths = _sweep(
+        ["--has-file", "README.md", "--format", "json"], org=[_repo("acme/api", source)]
+    )
+
+    assert [row["full_name"] for row in _json(by_short)] == ["acme/api"]
+    assert short_paths == ["/repos/acme/api"]
+    assert [row["full_name"] for row in _json(by_default)] == ["acme/api"]
+    assert default_paths == ["/orgs/acme/repos"]
 
 
 def test_missing_explicit_repo_is_unscanned_and_strict_fails(source_repo: SourceRepo) -> None:

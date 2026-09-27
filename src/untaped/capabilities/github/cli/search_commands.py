@@ -8,15 +8,17 @@ the use cases own the orchestration.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from cyclopts import Parameter, validators
 
 from untaped.capabilities.github.cli._client import open_client
 from untaped.capabilities.github.cli.scopes import (
     REPO_KINDS,
+    ArchivedOption,
     OrgOption,
     TeamOption,
+    org_scope,
     parse_team_scopes,
 )
 from untaped.capability_api import (
@@ -24,11 +26,14 @@ from untaped.capability_api import (
     FormatOption,
     StdinOption,
     create_app,
-    deprecated_alias,
     emit,
+    plural,
     read_identifiers,
     report_errors,
 )
+
+if TYPE_CHECKING:
+    from untaped.capability_api import UiContext
 
 # Shared across all four search subcommands. GitHub-specific (the
 # 1000-result cap belongs to GitHub, not untaped), so it lives
@@ -47,12 +52,18 @@ SearchLimitOption = Annotated[
 FreeTextArgument = Annotated[str | None, Parameter(help="Free-text query (passed verbatim).")]
 UserOption = Annotated[
     str | None,
-    Parameter(name="--user", help="user:LOGIN. Defaults to @me when no other scope is set."),
+    Parameter(
+        name="--user",
+        help="user:LOGIN. Without any scope: github.default_org, else @me.",
+    ),
 ]
 RepoOption = Annotated[
     list[str] | None,
     Parameter(
-        name="--repo", help="repo:OWNER/NAME. Repeatable.", consume_multiple=False, negative=""
+        name=["--repo", "-r"],
+        help="repo:OWNER/NAME. Repeatable.",
+        consume_multiple=False,
+        negative="",
     ),
 ]
 LanguageOption = Annotated[
@@ -65,6 +76,11 @@ app = create_app(
 )
 
 
+# GitHub serves at most this many results per search, so no row past it
+# can reveal that a --limit truncated the output.
+_GITHUB_SEARCH_CAP = 1000
+
+
 def _repo_scopes(values: list[str] | None, *, stdin: bool) -> tuple[str, ...]:
     """Merge explicit ``--repo`` values with optional stdin repo scopes."""
     repos = list(values or ())
@@ -73,6 +89,30 @@ def _repo_scopes(values: list[str] | None, *, stdin: bool) -> tuple[str, ...]:
             read_identifiers([], stdin=True, id_field="full_name", accept_kinds=REPO_KINDS)
         )
     return tuple(repos)
+
+
+def _probe(limit: int) -> int:
+    """Ask for one row past ``limit`` so :func:`_cap` can tell whether more match."""
+    return limit + 1 if limit < _GITHUB_SEARCH_CAP else limit
+
+
+def _cap(rows: list[dict[str, object]], limit: int, ui: UiContext) -> list[dict[str, object]]:
+    """Keep ``limit`` rows; note on stderr when the probe row shows more match."""
+    if len(rows) > limit:
+        ui.message(
+            "info",
+            f"showing the first {plural(limit, 'result')}; more match, raise --limit to see them",
+        )
+    return rows[:limit]
+
+
+def _note_user_fallback(ui: UiContext, *scopes: object) -> None:
+    """Say so on stderr when no scope was given and the search falls back to ``user:@me``."""
+    if not any(scopes):
+        ui.message(
+            "info",
+            "no scope given; searching user:@me (pass --org or set github.default_org)",
+        )
 
 
 @app.command(name="repos")
@@ -90,14 +130,7 @@ def repos_command(
         Parameter(name="--name", help="Match against repo name (in:name)."),
     ] = None,
     language: LanguageOption = None,
-    archived: Annotated[
-        bool | None,
-        Parameter(
-            name="--archived",
-            negative="--no-archived",
-            help="Only archived repos; --no-archived excludes them.",
-        ),
-    ] = None,
+    archived: ArchivedOption = "exclude",
     fork: Annotated[
         bool | None,
         Parameter(name="--fork", negative="--no-fork", help="Only forks; --no-fork excludes them."),
@@ -119,25 +152,28 @@ def repos_command(
     from untaped.capabilities.github.domain import RepoSearchFilters  # noqa: PLC0415
 
     with report_errors():
-        orgs = tuple(org or ())
+        repos = _repo_scopes(repo, stdin=stdin)
+        orgs = org_scope(org, scoped=bool(user or team or repos))
         filters = RepoSearchFilters(
             raw_query=query,
             user=user,
             orgs=orgs,
-            repos=_repo_scopes(repo, stdin=stdin),
+            repos=repos,
             name=name,
             language=language,
             archived=archived,
             fork=fork,
             visibility=visibility,
             sort=sort,
-            limit=limit,
+            limit=_probe(limit),
         )
         with open_client() as (client, ui):
             use_case = SearchRepos(client, client, warn=lambda text: ui.message("warning", text))
             team_scopes = parse_team_scopes(team, orgs=orgs)
+            _note_user_fallback(ui, user, orgs, team_scopes, repos)
             with ui.progress("Searching repositories…"):
                 rows = [r.model_dump() for r in use_case(filters, team_scopes=team_scopes)]
+            rows = _cap(rows, limit, ui)
         emit(
             rows,
             fmt=fmt,
@@ -184,23 +220,26 @@ def code_command(
     from untaped.capabilities.github.domain import CodeSearchFilters  # noqa: PLC0415
 
     with report_errors():
-        orgs = tuple(org or ())
+        repos = _repo_scopes(repo, stdin=stdin)
+        orgs = org_scope(org, scoped=bool(user or team or repos))
         filters = CodeSearchFilters(
             raw_query=query,
             user=user,
             orgs=orgs,
-            repos=_repo_scopes(repo, stdin=stdin),
+            repos=repos,
             language=language,
             filename=filename,
             path=path,
             extension=extension,
-            limit=limit,
+            limit=_probe(limit),
         )
         with open_client() as (client, ui):
             use_case = SearchCode(client, client, warn=lambda text: ui.message("warning", text))
             team_scopes = parse_team_scopes(team, orgs=orgs)
+            _note_user_fallback(ui, user, orgs, team_scopes, repos)
             with ui.progress("Searching code…"):
                 rows = [r.model_dump() for r in use_case(filters, team_scopes=team_scopes)]
+            rows = _cap(rows, limit, ui)
         emit(
             rows,
             fmt=fmt,
@@ -256,12 +295,13 @@ def issues_command(
     from untaped.capabilities.github.domain import IssueSearchFilters  # noqa: PLC0415
 
     with report_errors():
-        orgs = tuple(org or ())
+        repos = _repo_scopes(repo, stdin=stdin)
+        orgs = org_scope(org, scoped=bool(user or team or repos))
         filters = IssueSearchFilters(
             raw_query=query,
             user=user,
             orgs=orgs,
-            repos=_repo_scopes(repo, stdin=stdin),
+            repos=repos,
             state=state,
             kind=kind,
             author=author,
@@ -269,13 +309,15 @@ def issues_command(
             labels=tuple(label or ()),
             mentions=mentions,
             sort=sort,
-            limit=limit,
+            limit=_probe(limit),
         )
         with open_client() as (client, ui):
             use_case = SearchIssues(client, client, warn=lambda text: ui.message("warning", text))
             team_scopes = parse_team_scopes(team, orgs=orgs)
+            _note_user_fallback(ui, user, orgs, team_scopes, repos)
             with ui.progress("Searching issues and pull requests…"):
                 rows = [r.model_dump() for r in use_case(filters, team_scopes=team_scopes)]
+            rows = _cap(rows, limit, ui)
         emit(
             rows,
             fmt=fmt,
@@ -318,10 +360,11 @@ def users_command(
             location=location,
             language=language,
             sort=sort,
-            limit=limit,
+            limit=_probe(limit),
         )
         with open_client() as (client, ui), ui.progress("Searching users…"):
             rows = [r.model_dump() for r in SearchUsers(client)(filters)]
+        rows = _cap(rows, limit, ui)
         emit(
             rows,
             fmt=fmt,
@@ -329,7 +372,3 @@ def users_command(
             kind="github.user_hit",
             empty="No users or organizations found. Try different keywords or filters.",
         )
-
-
-for _command in ("repos", "code", "issues"):
-    deprecated_alias(app[_command], "--repo-stdin", "--stdin")

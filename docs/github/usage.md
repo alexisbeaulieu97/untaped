@@ -32,6 +32,7 @@ A rejected token (HTTP 401) fails with a hint to run `config set github.token`.
 | `github.base_url` | `https://api.github.com` | API URL. |
 | `github.token` | unset | Token for the API and for Git fetches from the `base_url` host. |
 | `github.token_command` | unset | Command (argv list) that prints the token when `github.token` is unset. |
+| `github.default_org` | unset | Org scope used when a command gets no `--org`, `--team`, `--repo`, `--user` or `--stdin` (see [Scopes](#scopes-and-filters)). |
 | `github.corpus_path` | `~/.untaped/github-corpus` | Where `sweep` keeps its Git copies. |
 | `github.sweep.max_age_seconds` | `3600` | `sweep` and `cache sync` refresh cached copies older than this. |
 | `github.sweep.sync_concurrency` | `12` | Default `sweep --parallel` and `cache sync --parallel`. |
@@ -41,14 +42,36 @@ Git fetches send the token only to the Git host of `github.base_url`:
 A piped `clone_url` on any other host is fetched without credentials, so a
 private repo there fails to fetch instead of receiving your token.
 
+## Scopes and filters
+
+`repos list`, `search repos|code|issues`, `sweep` and `cache sync` take the
+same scope flags: repeatable `--org`, `--team ORG/SLUG` and `-r/--repo
+OWNER/NAME` (not on `repos list`), plus `--stdin` where noted below.
+
+- With no scope flag, a command uses `github.default_org`:
+  `untaped config set github.default_org acme` makes
+  `untaped github sweep --grep old_api` sweep `acme`. Any scope flag replaces
+  the default org; it never adds to it. `cache prune` uses it when `--org` is
+  omitted too.
+- Without `github.default_org`, `repos list`, `sweep` and `cache sync` fail
+  with exit 2, and `search repos|code|issues` searches your own repositories
+  (`user:@me`), saying so on stderr.
+- `--archived include|exclude|only` keeps archived repositories, drops them,
+  or keeps only them. Every command defaults to `exclude`.
+- `--limit N` caps the rows. When it cuts results off, a notice on stderr says
+  so: `showing 50 of 312 repositories; omit --limit to list all` for
+  `repos list`, `showing the first 30 results; more match, raise --limit to
+  see them` for `search`. `-q` mutes it.
+
 ## List an org's or team's repos
 
 `repos list` returns the complete inventory of the scopes you name. It needs
-at least one `--org` or `--team`; scopes add up.
+at least one `--org` or `--team` (or `github.default_org`); scopes add up.
 
 ```bash
 untaped github repos list --org acme
-untaped github repos list --team acme/platform --no-archived --no-fork
+untaped github repos list --team acme/platform --no-fork
+untaped github repos list --org acme --archived only
 untaped github repos list 'svc-*' --org acme
 untaped github repos list 'api|web' --org acme --regex
 ```
@@ -65,14 +88,15 @@ untaped github repos list 'api|web' --org acme --regex
 Clone the result into a workspace:
 
 ```bash
-untaped github repos list --team acme/platform --no-archived --format pipe \
+untaped github repos list --team acme/platform --format pipe \
   | untaped workspace add --stdin --workspace platform --sync
 ```
 
 ## Search GitHub
 
-`search` calls GitHub's search API. With no `--user`, `--org`, `--team` or
-`--repo`, it searches your own repositories (`@me`).
+`search` calls GitHub's search API. With no `--user`, `--org`, `--team`,
+`--repo` or `--stdin`, it searches `github.default_org`, or else your own
+repositories (`user:@me`) with a note on stderr.
 
 ```bash
 untaped github search repos --org acme --language python
@@ -82,7 +106,8 @@ untaped github search users --kind org --location Montreal
 ```
 
 - `--limit` defaults to 30. GitHub never returns more than 1000 results, and
-  search has stricter rate limits than other API calls.
+  search has stricter rate limits than other API calls. To spot truncation,
+  a search asks GitHub for one row past `--limit`.
 - A long team or `--repo` scope is split into several requests and the
   results are merged. One command sends at most 9 code-search or 25
   repository- or issue-search requests; past that it warns that results cover

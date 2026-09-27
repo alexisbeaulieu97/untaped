@@ -142,7 +142,7 @@ _USES_LONG = f"uses: {_LONG}/.github/actions/set-constants-url"
         ),
         pytest.param(
             SearchRepos,
-            RepoSearchFilters(raw_query=_USES_LONG, archived=True),
+            RepoSearchFilters(raw_query=_USES_LONG, archived="only"),
             {("Desjardins", f"team{i}"): _repos(7, f"{_LONG}-{i}-") for i in range(3)},
             [6, 6, 6, 3],
             "archived:true",

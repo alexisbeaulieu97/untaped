@@ -118,9 +118,15 @@ def _q(route: respx.Route) -> str:
 @pytest.mark.parametrize(
     ("args", "stdin", "expected_q"),
     [
-        (["repos", "--language", "python"], None, "user:@me language:python"),
-        (["repos", "--org", "acme"], None, "org:acme"),
-        (["repos", "--team", "acme/backend"], None, "(repo:acme/api OR repo:acme/web)"),
+        (["repos", "--language", "python"], None, "user:@me language:python archived:false"),
+        (["repos", "--org", "acme"], None, "org:acme archived:false"),
+        (
+            ["repos", "--team", "acme/backend", "--archived", "include"],
+            None,
+            "(repo:acme/api OR repo:acme/web)",
+        ),
+        (["repos", "--org", "acme", "--archived", "only"], None, "org:acme archived:true"),
+        (["code", "TODO", "-r", "acme/api"], None, "TODO repo:acme/api"),
         (["code", "TODO", "--language", "python"], None, "TODO user:@me language:python"),
         (
             ["code", "TODO", "--team", "acme/backend", "--team", "platform/ops"],
@@ -180,8 +186,10 @@ def test_search_defaults_to_30_results_per_command(kind: str) -> None:
 
     assert result.exit_code == 0, result.output
     assert len(json.loads(result.stdout)) == 30
-    assert route.calls[0].request.url.params["per_page"] == "30"
+    # One row past the limit reveals truncation without a second request.
+    assert route.calls[0].request.url.params["per_page"] == "31"
     assert route.call_count == 1
+    assert "showing the first 30 results; more match, raise --limit" in result.stderr
 
 
 def test_search_limit_caps_results() -> None:
@@ -191,6 +199,44 @@ def test_search_limit_caps_results() -> None:
 
     assert result.exit_code == 0, result.output
     assert len(json.loads(result.stdout)) == 2
+
+
+@pytest.mark.parametrize("kind", list(ENDPOINTS))
+def test_search_prints_no_truncation_notice_when_every_match_fits(kind: str) -> None:
+    result, _ = _search([kind, "q", "--limit", "3", "--format", "json"], items=[ROW[kind](1)])
+
+    assert result.exit_code == 0, result.output
+    assert "showing" not in result.stderr
+
+
+@pytest.mark.parametrize("kind", ["repos", "code", "issues"])
+def test_search_without_scope_notes_the_user_me_fallback(kind: str) -> None:
+    unscoped, route = _search([kind, "q", "--format", "json"])
+    scoped, _ = _search([kind, "q", "--org", "acme", "--format", "json"])
+
+    assert unscoped.exit_code == scoped.exit_code == 0, unscoped.output
+    assert "user:@me" in _q(route)
+    assert "no scope given; searching user:@me" in unscoped.stderr
+    assert "github.default_org" in unscoped.stderr
+    assert "user:@me" not in scoped.stderr
+
+
+def test_search_without_scope_uses_github_default_org(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("profiles:\n  default:\n    github:\n      token: t\n      default_org: acme\n")
+    get_settings.cache_clear()
+
+    unscoped, unscoped_route = _search(["code", "TODO", "--format", "json"])
+    by_repo, repo_route = _search(["code", "TODO", "--repo", "x/y", "--format", "json"])
+    by_user, user_route = _search(["code", "TODO", "--user", "bob", "--format", "json"])
+
+    assert _q(unscoped_route) == "TODO org:acme"
+    assert "user:@me" not in unscoped.stderr
+    assert _q(repo_route) == "TODO repo:x/y"
+    assert _q(user_route) == "TODO user:bob"
+    assert by_repo.exit_code == by_user.exit_code == 0
 
 
 @pytest.mark.parametrize("limit", ["1000", "5000"])
@@ -348,18 +394,21 @@ def test_search_stdin_rejects_records_of_another_kind() -> None:
     assert "github.user" in result.stderr
 
 
-def test_search_repo_stdin_is_a_deprecated_alias_of_stdin() -> None:
-    with respx.mock(base_url=API) as mock:
-        route = mock.get("/search/code").mock(return_value=httpx.Response(200, json={"items": []}))
-        result = invoke_cli(
-            build_root_app(externals=[]),
-            ["github", "search", "code", "TODO", "--repo-stdin", "--format", "json"],
-            input="acme/api\n",
-        )
+def test_search_repo_stdin_alias_is_gone() -> None:
+    result = invoke_cli(
+        build_root_app(externals=[]),
+        ["github", "search", "code", "TODO", "--repo-stdin"],
+        input="acme/api\n",
+    )
 
-    assert result.exit_code == 0, result.output
-    assert "`--repo-stdin` is deprecated" in result.stderr
-    assert _q(route) == "TODO repo:acme/api"
+    assert result.exit_code == 2, result.output
+    assert "deprecated" not in result.stderr
+
+
+def test_search_repos_rejects_the_old_boolean_archived_spellings() -> None:
+    result = CliInvoker().invoke(app, ["search", "repos", "--no-archived"])
+
+    assert result.exit_code == 2, result.output
 
 
 def test_search_repos_rejects_oversized_query_before_http_and_explains_422() -> None:

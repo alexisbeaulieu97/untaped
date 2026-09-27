@@ -22,6 +22,7 @@ from untaped.capabilities.github.application.sweep import (
     SyncCorpus,
 )
 from untaped.capabilities.github.domain import (
+    ArchivedMode,
     CorpusFailure,
     CorpusFreshness,
     CorpusRepoResult,
@@ -186,7 +187,7 @@ def _sweep(
     defaults: dict[str, Any] = {
         "scope": RepositoryInventoryScope(orgs=("acme",)),
         "stdin_repos": (),
-        "include_archived": False,
+        "archived": "exclude",
         "sync": "auto",
         "max_age_seconds": 3600,
         "depth": 1,
@@ -209,20 +210,21 @@ _CACHED = (_row("acme/api"), _row("acme/old", archived=True), _row("Other/Tool")
 
 
 @pytest.mark.parametrize(
-    ("scope", "include_archived", "expected"),
+    ("scope", "archived", "expected"),
     [
-        (RepositoryInventoryScope(orgs=("acme",)), False, ["acme/api"]),
-        (RepositoryInventoryScope(orgs=("ACME", "other")), False, ["Other/Tool", "acme/api"]),
-        (RepositoryInventoryScope(repos=("Acme/API",)), False, ["acme/api"]),
-        (RepositoryInventoryScope(orgs=("acme",)), True, ["acme/api", "acme/old"]),
+        (RepositoryInventoryScope(orgs=("acme",)), "exclude", ["acme/api"]),
+        (RepositoryInventoryScope(orgs=("ACME", "other")), "exclude", ["Other/Tool", "acme/api"]),
+        (RepositoryInventoryScope(repos=("Acme/API",)), "exclude", ["acme/api"]),
+        (RepositoryInventoryScope(orgs=("acme",)), "include", ["acme/api", "acme/old"]),
+        (RepositoryInventoryScope(orgs=("acme",)), "only", ["acme/old"]),
     ],
 )
 def test_cached_sweep_scopes_corpus_rows_case_insensitively(
-    scope: RepositoryInventoryScope, include_archived: bool, expected: list[str]
+    scope: RepositoryInventoryScope, archived: ArchivedMode, expected: list[str]
 ) -> None:
     corpus = _readme(_Corpus(cached_rows=_CACHED), *(row.repo for row in _CACHED))
 
-    report = _sweep(corpus, scope=scope, include_archived=include_archived, sync="off")
+    report = _sweep(corpus, scope=scope, archived=archived, sync="off")
 
     assert _names(report) == expected
     assert report.rows[0].clone_url == f"https://github.example.com/{expected[0]}.git"
@@ -617,7 +619,7 @@ def test_sync_corpus_reports_one_outcome_per_repo() -> None:
         CorpusSyncOptions(
             scope=RepositoryInventoryScope(orgs=("acme",), repos=("acme/gone",)),
             stdin_repos=(),
-            include_archived=False,
+            archived="exclude",
             refs=RefSelector(),
             refresh=False,
             max_age_seconds=3600,

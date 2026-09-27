@@ -29,5 +29,6 @@ class GithubSettings(BaseModel):
     base_url: str = "https://api.github.com"
     token: SecretStr | None = None
     token_command: TokenCommand = None
+    default_org: str | None = None
     corpus_path: Path = Path("~/.untaped/github-corpus")
     sweep: SweepSettings = Field(default_factory=SweepSettings)

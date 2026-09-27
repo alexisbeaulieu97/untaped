@@ -17,6 +17,8 @@ from untaped.capabilities.github.domain import (
     ("filters", "expected"),
     [
         (RepoSearchFilters(), ""),
+        (RepoSearchFilters(archived="include"), ""),
+        (RepoSearchFilters(archived="only"), "archived:true"),
         (RepoSearchFilters(raw_query="hello world"), "hello world"),
         (RepoSearchFilters(user="@me"), "user:@me"),
         (
@@ -24,7 +26,7 @@ from untaped.capabilities.github.domain import (
             "org:acme org:globex repo:a/b",
         ),
         (
-            RepoSearchFilters(language="python", archived=False),
+            RepoSearchFilters(language="python", archived="exclude"),
             "language:python archived:false",
         ),
         (
@@ -40,7 +42,7 @@ from untaped.capabilities.github.domain import (
                 raw_query="TODO",
                 user="@me",
                 language="python",
-                archived=False,
+                archived="exclude",
             ),
             "TODO user:@me language:python archived:false",
         ),
