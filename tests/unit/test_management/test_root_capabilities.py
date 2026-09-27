@@ -38,7 +38,7 @@ class _Provider:
     """Nullary external provider double."""
 
     def __init__(self, spec: object) -> None:
-        self.api_requires = (1.0, 2.0)
+        self.api_requires = ((2, 0), (3, 0))
         self._spec = spec
 
     def __call__(self) -> object:
@@ -84,7 +84,7 @@ def test_lists_ready_builtin_and_external() -> None:
     assert rows["ext"]["origin"] == "external"
     assert rows["ext"]["distribution"] == "example-dist"
     assert rows["ext"]["version"] == "1.2.3"
-    assert rows["ext"]["api"] == ">=1.0,<2.0"
+    assert rows["ext"]["api"] == ">=2.0,<3.0"
 
 
 def test_quarantined_provider_lists_with_entry_point_name() -> None:

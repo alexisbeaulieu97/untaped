@@ -160,12 +160,9 @@ def test_branch_apply_honors_global_ui_collection_view_for_table_output(
         "  - url: https://x/api.git\n"
         "    name: api\n"
     )
-    isolate_config.write_text(
+    isolate_config.write_text("profiles:\n  default:\n    ui:\n      collection_view: list\n")
+    isolate_config.with_name("state.yml").write_text(
         f"""
-        profiles:
-          default:
-            ui:
-              collection_view: list
         workspace:
           workspaces:
             - name: prod

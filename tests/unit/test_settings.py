@@ -44,7 +44,7 @@ def _reset_cache() -> Iterator[None]:
 def test_defaults_when_no_config_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
     s = get_settings()
-    assert s.log_level == "INFO"
+    assert s.skills.updates == "warn"
     assert s.demo.base_url is None
     assert s.demo.token is None
     assert s.http.verify_ssl is True
@@ -53,13 +53,14 @@ def test_defaults_when_no_config_file(tmp_path: Path, monkeypatch: pytest.Monkey
 
 def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    # ``log_level``, ``http`` and tool sections (``demo``) are all profile-scoped
+    # ``skills``, ``http`` and tool sections (``demo``) are all profile-scoped
     # now, so they live under ``profiles.default``.
     cfg.write_text(
         """
         profiles:
           default:
-            log_level: DEBUG
+            skills:
+              updates: auto
             http:
               ca_bundle: /etc/ssl/corp-ca.pem
               verify_ssl: true
@@ -70,7 +71,7 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings()
-    assert s.log_level == "DEBUG"
+    assert s.skills.updates == "auto"
     assert s.http.ca_bundle == Path("/etc/ssl/corp-ca.pem")
     assert s.demo.base_url == "https://aap.example.com"
     assert s.demo.token is not None
@@ -133,13 +134,14 @@ def test_ui_settings_load_from_profile_yaml(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = tmp_path / "config.yml"
-    # ``ui`` (like ``log_level``) is profile-scoped now and lives under
+    # ``ui`` (like ``skills``) is profile-scoped now and lives under
     # ``profiles.default``.
     cfg.write_text(
         """
         profiles:
           default:
-            log_level: DEBUG
+            skills:
+              updates: auto
             ui:
               theme: compact
               border: square
@@ -150,7 +152,7 @@ def test_ui_settings_load_from_profile_yaml(
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings()
-    assert s.log_level == "DEBUG"
+    assert s.skills.updates == "auto"
     assert s.ui.theme == "compact"
     assert s.ui.border == "square"
     assert s.ui.collection_view == "list"
@@ -211,7 +213,7 @@ def test_get_settings_translates_yaml_error_to_config_error(
     as ``ConfigError`` (clean ``error: …``) — not as a ``yaml.YAMLError``
     bubbling out of ``LayoutSettingsSource._load_raw_yaml``."""
     cfg = tmp_path / "config.yml"
-    cfg.write_text("log_level: [unterminated\n")
+    cfg.write_text("skills: [unterminated\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     with pytest.raises(ConfigError, match=str(cfg)):
         get_settings()
@@ -263,8 +265,8 @@ def test_validate_settings_section_ignores_other_sections(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
-    data = {"log_level": "DEBUG", "demo": {"page_size": "lots"}}
-    assert validate_settings_section(data, "log_level") == "DEBUG"
+    data = {"skills": {"updates": "auto"}, "demo": {"page_size": "lots"}}
+    assert validate_settings_section(data, "skills").updates == "auto"
     with pytest.raises(ValidationError):
         validate_settings_section(data, "demo")
 

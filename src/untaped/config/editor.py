@@ -40,7 +40,7 @@ def run_config_editor() -> None:
                 shutil.rmtree(workdir, ignore_errors=True)
                 ui_context(strict=False).message("info", f"no changes; config unchanged ({path})")
                 return
-            validate_config_file(draft, config_path=path)
+            validate_config_file(draft)
             replace_config_text(edited, expected=original, path=path)
         except (ConfigError, OSError, UnicodeDecodeError) as exc:
             if not edited_by_user:

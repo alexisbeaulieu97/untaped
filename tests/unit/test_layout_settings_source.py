@@ -2,7 +2,7 @@
 
 These exercise ``Settings`` against the default profiles layout and registered
 plugin sections: profile-scoped key loading (under ``profiles.default``), YAML
-error translation, and generic top-level plugin state splicing.
+error translation, and generic plugin state splicing from ``state.yml``.
 """
 
 from __future__ import annotations
@@ -51,7 +51,8 @@ def test_loads_profile_default_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         """
         profiles:
           default:
-            log_level: DEBUG
+            skills:
+              updates: auto
             demo:
               base_url: https://aap.local
               token: secret-value
@@ -59,7 +60,7 @@ def test_loads_profile_default_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings()
-    assert s.log_level == "DEBUG"
+    assert s.skills.updates == "auto"
     assert s.demo.base_url == "https://aap.local"
     assert s.demo.token is not None
     assert s.demo.token.get_secret_value() == "secret-value"
@@ -77,13 +78,13 @@ def test_untaped_field_env_still_beats_yaml(
     assert s.demo.token.get_secret_value() == "from-env"
 
 
-def test_registered_state_lives_at_top_level(
+def test_registered_state_lives_in_the_state_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     register_profile_settings("demo", DemoProfileSettings)
     register_state_settings("demo", DemoStateSettings)
     cfg = tmp_path / "config.yml"
-    cfg.write_text(
+    (tmp_path / "state.yml").write_text(
         """
         demo:
           entries:
@@ -100,8 +101,8 @@ def test_state_and_profile_fields_share_one_section(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Profiles layout: a section's user-tunable fields live under
-    ``profiles.default.<section>`` while its app state stays at the top-level
-    ``<section>`` block; the state splice must merge, not clobber."""
+    ``profiles.default.<section>`` while its app state lives in ``state.yml``
+    under ``<section>``; the state splice must merge, not clobber."""
     register_profile_settings("demo", DemoProfileSettings)
     register_state_settings("demo", DemoStateSettings)
     cfg = tmp_path / "config.yml"
@@ -111,11 +112,9 @@ def test_state_and_profile_fields_share_one_section(
           default:
             demo:
               cache_dir: /from/config
-        demo:
-          entries:
-            - prod
         """
     )
+    (tmp_path / "state.yml").write_text("demo:\n  entries:\n    - prod\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings()
     assert s.demo.cache_dir == Path("/from/config")
@@ -128,7 +127,7 @@ def test_invalid_state_section_raises_config_error(
     register_profile_settings("demo", DemoProfileSettings)
     register_state_settings("demo", DemoStateSettings)
     cfg = tmp_path / "config.yml"
-    cfg.write_text(
+    (tmp_path / "state.yml").write_text(
         """
         demo:
           entries: not-a-list
@@ -144,7 +143,7 @@ def test_empty_config_file_yields_schema_defaults(
 ) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
     s = get_settings()
-    assert s.log_level == "INFO"
+    assert s.skills.updates == "warn"
     assert s.demo.token is None
 
 
@@ -166,7 +165,7 @@ def test_empty_yaml_document_is_treated_as_empty(
     cfg.write_text("# only a comment\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings_model()()
-    assert s.log_level == "INFO"
+    assert s.skills.updates == "warn"
 
 
 def test_source_translates_yaml_error_to_config_error(
@@ -175,7 +174,7 @@ def test_source_translates_yaml_error_to_config_error(
     """Broken YAML must surface as ``ConfigError`` naming the file, straight
     from the source — not as a raw ``yaml.YAMLError`` traceback."""
     cfg = tmp_path / "config.yml"
-    cfg.write_text("log_level: [unterminated\n")
+    cfg.write_text("skills: [unterminated\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     with pytest.raises(ConfigError, match=str(cfg)):
         LayoutSettingsSource(get_settings_model(), yaml_file=cfg)

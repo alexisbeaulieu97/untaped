@@ -1,8 +1,8 @@
 """Capability state lives in ``state.yml``, separate from ``config.yml``.
 
-Covers path resolution, the legacy fallback (state still at the top level of
-``config.yml``) with its one-time warning, the move on the first state write,
-and the isolation between settings writes and state writes.
+Covers path resolution, reads and writes of ``state.yml``, and the isolation
+between settings writes and state writes. A state section left at the top
+level of ``config.yml`` (the pre-8.0 layout) is an unknown key: ignored.
 """
 
 from __future__ import annotations
@@ -15,9 +15,8 @@ import pytest
 import yaml
 from pydantic import BaseModel
 
-import untaped.config_file as config_file
 from untaped.config.repository import SettingsFileRepository
-from untaped.config_file import mutate_tool_state, read_config_dict, read_tool_state
+from untaped.config_file import mutate_tool_state, read_tool_state
 from untaped.errors import ConfigError
 from untaped.settings import (
     get_config_section,
@@ -96,8 +95,8 @@ def test_sibling_configs_keep_separate_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     a, b = tmp_path / "a.yml", tmp_path / "b.yml"
-    a.write_text("demo:\n  items:\n    - name: from-a\n")
-    b.write_text("demo:\n  items:\n    - name: from-b\n")
+    (tmp_path / "a.state.yml").write_text("demo:\n  items:\n    - name: from-a\n")
+    (tmp_path / "b.state.yml").write_text("demo:\n  items:\n    - name: from-b\n")
     items = StateCollection("demo", "items")
     monkeypatch.setenv("UNTAPED_CONFIG", str(a))
     items.upsert({"name": "a2"})
@@ -105,7 +104,7 @@ def test_sibling_configs_keep_separate_state(
     assert items.entries() == [{"name": "from-b"}]
     items.upsert({"name": "b2"})
     assert items.entries() == [{"name": "from-b"}, {"name": "b2"}]
-    assert "demo" not in (yaml.safe_load(b.read_text()) or {})
+    assert not b.exists()
     monkeypatch.setenv("UNTAPED_CONFIG", str(a))
     assert items.entries() == [{"name": "from-a"}, {"name": "a2"}]
 
@@ -137,7 +136,7 @@ def test_state_path_must_not_be_the_config_file(cfg: Path, monkeypatch: pytest.M
         resolve_state_path()
 
 
-@pytest.mark.parametrize("section", ["profiles", "active", "http", "ui", "log_level"])
+@pytest.mark.parametrize("section", ["profiles", "active", "http", "ui", "skills"])
 def test_reserved_sections_are_never_state(cfg: Path, section: str) -> None:
     cfg.write_text("profiles:\n  default: {}\nactive: default\n")
     with pytest.raises(ConfigError, match="reserved"):
@@ -153,27 +152,37 @@ def test_reserved_names_cannot_register_state(cfg: Path, section: str) -> None:
         register_state_settings(section, DemoState)
 
 
-# ── legacy reads ─────────────────────────────────────────────────────────────
+# ── the pre-8.0 layout is ignored ────────────────────────────────────────────
 
 
-def test_state_file_wins_over_legacy_copy(cfg: Path) -> None:
+def test_state_left_in_config_is_not_read(cfg: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    cfg.write_text(LEGACY)
+    assert StateCollection("demo", "items").entries() == []
+    assert read_tool_state("demo") == {}
+    assert capsys.readouterr().err == ""
+
+
+def test_state_file_is_used_even_with_a_copy_in_config(cfg: Path) -> None:
     cfg.write_text(LEGACY)
     (cfg.parent / "state.yml").write_text("demo:\n  items:\n    - name: fresh\n")
     assert StateCollection("demo", "items").entries() == [{"name": "fresh"}]
 
 
-def test_legacy_state_is_read_with_one_warning(
-    cfg: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_settings_splice_ignores_state_left_in_config(cfg: Path) -> None:
+    register_profile_settings("demo", DemoProfile)
+    register_state_settings("demo", DemoState)
     cfg.write_text(LEGACY)
-    items = StateCollection("demo", "items")
-    assert items.entries() == [{"name": "alpha"}]
-    assert items.entries() == [{"name": "alpha"}]
-    err = capsys.readouterr().err
-    assert err.count("warning: capability state section 'demo'") == 1
-    assert str(cfg) in err
-    assert str(cfg.parent / "state.yml") in err
-    assert cfg.read_text() == LEGACY  # a read never migrates
+    assert get_settings().demo.items == []  # type: ignore[attr-defined]
+
+
+def test_state_write_never_touches_config(cfg: Path) -> None:
+    cfg.write_text(LEGACY)
+    StateCollection("demo", "items").upsert({"name": "beta"})
+    assert cfg.read_text() == LEGACY
+    assert _state(cfg) == {"demo": {"items": [{"name": "beta"}]}}
+    assert StateCollection("demo", "items").remove("beta") is True
+    assert cfg.read_text() == LEGACY
+    assert _state(cfg) == {}
 
 
 def test_settings_splice_reads_state_file(cfg: Path) -> None:
@@ -184,13 +193,6 @@ def test_settings_splice_reads_state_file(cfg: Path) -> None:
     section = get_settings().demo  # type: ignore[attr-defined]
     assert section.url == "https://x"  # type: ignore[attr-defined]
     assert section.items == [{"name": "s"}]  # type: ignore[attr-defined]
-
-
-def test_settings_splice_falls_back_to_legacy(cfg: Path) -> None:
-    register_profile_settings("demo", DemoProfile)
-    register_state_settings("demo", DemoState)
-    cfg.write_text(LEGACY)
-    assert get_settings().demo.items == [{"name": "alpha"}]  # type: ignore[attr-defined]
 
 
 def test_invalid_state_error_names_the_state_file(cfg: Path) -> None:
@@ -211,48 +213,7 @@ def test_broken_state_file_does_not_block_settings_only_sections(cfg: Path) -> N
     assert get_config_section("other", DemoProfile).url == "https://o"
 
 
-# ── migration on write ───────────────────────────────────────────────────────
-
-
-def test_first_write_moves_legacy_section(cfg: Path) -> None:
-    cfg.write_text(LEGACY)
-    StateCollection("demo", "items").upsert({"name": "beta"})
-    assert _state(cfg) == {"demo": {"items": [{"name": "alpha"}, {"name": "beta"}]}}
-    text = cfg.read_text()
-    assert "demo" not in yaml.safe_load(text)
-    assert "# my config\n" in text
-    assert "url: https://example.com   # keep me" in text
-
-
-def test_noop_write_does_not_migrate(cfg: Path) -> None:
-    cfg.write_text(LEGACY)
-    assert StateCollection("demo", "items").remove("ghost") is False
-    assert cfg.read_text() == LEGACY
-    assert not (cfg.parent / "state.yml").exists()
-
-
-def test_emptying_legacy_section_removes_it_everywhere(cfg: Path) -> None:
-    cfg.write_text(LEGACY)
-    assert StateCollection("demo", "items").remove("alpha") is True
-    assert "demo" not in yaml.safe_load(cfg.read_text())
-    assert "demo" not in _state(cfg)
-    assert StateCollection("demo", "items").entries() == []
-
-
-def test_write_with_both_copies_leaves_config_alone(cfg: Path) -> None:
-    cfg.write_text(LEGACY)
-    (cfg.parent / "state.yml").write_text("demo:\n  items:\n    - name: fresh\n")
-    StateCollection("demo", "items").upsert({"name": "beta"})
-    assert cfg.read_text() == LEGACY
-    assert _state(cfg)["demo"]["items"] == [{"name": "fresh"}, {"name": "beta"}]
-
-
-def test_malformed_legacy_section_is_not_overwritten(cfg: Path) -> None:
-    cfg.write_text("demo: [1, 2]\n")
-    with pytest.raises(ConfigError, match="must be a mapping"):
-        mutate_tool_state("demo", lambda state: state.update(items=[]))
-    assert cfg.read_text() == "demo: [1, 2]\n"
-    assert not (cfg.parent / "state.yml").exists()
+# ── writes ───────────────────────────────────────────────────────────────────
 
 
 def test_malformed_state_section_is_not_overwritten(cfg: Path) -> None:
@@ -261,81 +222,6 @@ def test_malformed_state_section_is_not_overwritten(cfg: Path) -> None:
     with pytest.raises(ConfigError, match="must be a mapping"):
         mutate_tool_state("demo", lambda state: state.update(items=[]))
     assert state_file.read_text() == "demo: [1, 2]\n"
-
-
-def test_failed_state_write_leaves_config_untouched(
-    cfg: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    cfg.write_text(LEGACY)
-    real = config_file.write_config_dict
-
-    def _fail_state(data: dict[str, Any], path: Path | None = None) -> None:
-        if path is not None and path.name == "state.yml":
-            raise OSError(28, "No space left on device")
-        real(data, path)
-
-    monkeypatch.setattr(config_file, "write_config_dict", _fail_state)
-    with pytest.raises(OSError, match="No space"):
-        StateCollection("demo", "items").upsert({"name": "beta"})
-    assert cfg.read_text() == LEGACY
-
-
-def test_failed_legacy_removal_warns_and_keeps_state(
-    cfg: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    cfg.write_text(LEGACY)
-    real = config_file.write_config_dict
-
-    def _fail_config(data: dict[str, Any], path: Path | None = None) -> None:
-        if path == cfg:
-            raise OSError(30, "Read-only file system")
-        real(data, path)
-
-    monkeypatch.setattr(config_file, "write_config_dict", _fail_config)
-    StateCollection("demo", "items").upsert({"name": "beta"})
-    assert cfg.read_text() == LEGACY
-    assert [row["name"] for row in _state(cfg)["demo"]["items"]] == ["alpha", "beta"]
-    assert "could not be removed" in capsys.readouterr().err
-    assert StateCollection("demo", "items").entries() == [{"name": "alpha"}, {"name": "beta"}]
-
-
-def test_failed_legacy_removal_of_emptied_section_keeps_placeholder(
-    cfg: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    cfg.write_text(LEGACY)
-    real = config_file.write_config_dict
-
-    def _fail_config(data: dict[str, Any], path: Path | None = None) -> None:
-        if path == cfg:
-            raise OSError(30, "Read-only file system")
-        real(data, path)
-
-    monkeypatch.setattr(config_file, "write_config_dict", _fail_config)
-    items = StateCollection("demo", "items")
-    assert items.remove("alpha") is True
-    assert "could not be removed" in capsys.readouterr().err
-    assert cfg.read_text() == LEGACY
-    assert _state(cfg) == {"demo": {}}  # shadows the stale copy
-    assert items.entries() == []
-    items.upsert({"name": "x"})
-    assert items.remove("x") is True
-    assert _state(cfg) == {"demo": {}}  # still shadowing while the copy exists
-    assert items.entries() == []
-
-
-def test_legacy_state_moves_out_of_a_symlinked_config(
-    cfg: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    real = tmp_path / "dotfiles" / "config.yml"
-    real.parent.mkdir()
-    real.write_text(LEGACY)
-    cfg.symlink_to(real)
-    StateCollection("demo", "items").upsert({"name": "beta"})
-    assert cfg.is_symlink()
-    assert "demo" not in read_config_dict(real)
-    assert "# my config" in real.read_text()
-    assert "could not be removed" not in capsys.readouterr().err
-    assert StateCollection("demo", "items").entries() == [{"name": "alpha"}, {"name": "beta"}]
 
 
 def test_state_write_creates_missing_directories(
@@ -362,12 +248,3 @@ def test_config_set_does_not_touch_state_file(cfg: Path) -> None:
     assert yaml.safe_load(cfg.read_text()) == {
         "profiles": {"default": {"demo": {"url": "https://new"}}}
     }
-
-
-def test_config_set_leaves_legacy_state_in_place(cfg: Path) -> None:
-    register_profile_settings("demo", DemoProfile)
-    register_state_settings("demo", DemoState)
-    cfg.write_text(LEGACY)
-    SettingsFileRepository().set_value("demo.url", "https://new")
-    assert yaml.safe_load(cfg.read_text())["demo"] == {"items": [{"name": "alpha"}]}
-    assert not (cfg.parent / "state.yml").exists()

@@ -37,22 +37,22 @@ class TestDefaultLayout:
     ) -> None:
         """With no tool-registered layout, the default profiles layout resolves profiles.default."""
         cfg = tmp_path / "config.yml"
-        cfg.write_text("profiles:\n  default:\n    log_level: DEBUG\nactive: default\n")
+        cfg.write_text("profiles:\n  default:\n    skills:\n      updates: auto\nactive: default\n")
         monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
         get_settings.cache_clear()
 
-        assert get_settings().log_level == "DEBUG"
+        assert get_settings().skills.updates == "auto"
 
     def test_top_level_keys_outside_profiles_fall_to_defaults(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Profiles-first: a bare top-level key (no profile) is not effective."""
         cfg = tmp_path / "config.yml"
-        cfg.write_text("log_level: DEBUG\n")
+        cfg.write_text("skills:\n  updates: auto\n")
         monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
         get_settings.cache_clear()
 
-        assert get_settings().log_level == "INFO"
+        assert get_settings().skills.updates == "warn"
 
     def test_active_layout_is_a_singleton(self) -> None:
         """There is one layout instance; repeated calls return the same object."""
