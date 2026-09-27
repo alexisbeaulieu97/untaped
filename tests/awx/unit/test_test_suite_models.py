@@ -172,8 +172,9 @@ def test_failed_task_clips_long_messages_keeping_the_end_of_stderr() -> None:
     assert task.stderr.endswith("END") and len(task.stderr) == 1001
 
 
-def test_a_suite_may_name_its_template_organization() -> None:
-    suite = Suite.model_validate(
-        {"name": "s", "jobTemplate": "jt", "organization": "Ops", "cases": {"c": {}}}
-    )
-    assert suite.organization == "Ops"
+def test_a_suite_organization_overrides_the_default_scope() -> None:
+    suite = Suite.model_validate({"name": "s", "jobTemplate": "jt", "cases": {"c": {}}})
+    assert suite.scope({"organization": "Default"}) == {"organization": "Default"}
+    ops = suite.model_copy(update={"organization": "Ops"})
+    assert ops.scope(None) == {"organization": "Ops"}
+    assert ops.scope({"organization": "Default"}) == {"organization": "Ops"}

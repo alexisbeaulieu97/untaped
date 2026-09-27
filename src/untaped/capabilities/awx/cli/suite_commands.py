@@ -17,6 +17,10 @@ from untaped.capabilities.awx.domain.suite import CaseStatus, Suite, SuiteRunOut
 from untaped.capabilities.awx.errors import AwxApiError
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
+from untaped.capabilities.awx.infrastructure.suites.filesystem import (
+    DEFAULT_SUITE_DIR,
+    suites_under,
+)
 from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
@@ -31,6 +35,7 @@ from untaped.capability_api import (
     q,
     raise_usage,
     report_errors,
+    summary,
     ui_context,
 )
 
@@ -53,16 +58,13 @@ _RESULT_TABLE_COLUMNS = [
     "failure_reason",
 ]
 
-DEFAULT_SUITE_DIR = Path(".untaped/awx/tests")
-"""Where suites live when no path is given, relative to the git checkout root."""
-
 _CASE_TABLE_COLUMNS = ["suite", "case", "job_template"]
 
 _PATHS_ARG = Annotated[
     list[Path] | None,
     Parameter(
-        help="Test files, or directories searched recursively "
-        "(default: .untaped/awx/tests/ at the git checkout root)."
+        help="Test files, or directories searched recursively for suites "
+        f"(default: {DEFAULT_SUITE_DIR}/ at the git checkout root)."
     ),
 ]
 _CASE_OPT = Annotated[
@@ -101,6 +103,7 @@ _NON_INTERACTIVE_OPT = Annotated[
 
 
 def _expand_paths(paths: Iterable[Path] | None) -> list[Path]:
+    """Named files and the suites under named directories, each file once."""
     if not paths:
         from untaped.capabilities.awx.infrastructure import git_head  # noqa: PLC0415
 
@@ -108,19 +111,19 @@ def _expand_paths(paths: Iterable[Path] | None) -> list[Path]:
         if not default.is_dir():
             raise_usage(f"no test paths given and no {default} directory")
         paths = [default]
-    out: list[Path] = []
+    out: dict[Path, Path] = {}
     for path in paths:
         if path.is_dir():
-            for child in sorted(path.rglob("*")):
-                if child.suffix.lower() in {".yml", ".yaml"} and child.is_file():
-                    out.append(child)
+            found = suites_under(path)
         elif path.is_file():
-            out.append(path)
+            found = [path]
         else:
             raise_usage(f"{path} does not exist")
+        for file in found:
+            out.setdefault(file.resolve(), file)
     if not out:
         raise_usage("no test files found")
-    return out
+    return list(out.values())
 
 
 def _load_suites(
@@ -129,7 +132,7 @@ def _load_suites(
     cli_vars: dict[str, str],
     vars_files: tuple[Path, ...],
     non_interactive: bool,
-) -> list[tuple[Path, Suite]]:
+) -> dict[Path, Suite]:
     """Each file's suite; suite names must be unique (``--case SUITE/CASE`` needs it)."""
     from untaped.capabilities.awx.application.suites.loader import LoadTestSuite  # noqa: PLC0415
     from untaped.capabilities.awx.infrastructure.suites import (  # noqa: PLC0415
@@ -152,7 +155,7 @@ def _load_suites(
     union_names: set[str] = set()
     for path in file_list:
         union_names.update(loader.parse_specs(path).keys())
-    loaded: list[tuple[Path, Suite]] = []
+    loaded: dict[Path, Suite] = {}
     seen: dict[str, Path] = {}
     for path in file_list:
         suite = loader(
@@ -163,7 +166,7 @@ def _load_suites(
                 f"suite {q(suite.name)} is defined in both {seen[suite.name]} and {path}"
             )
         seen[suite.name] = path
-        loaded.append((path, suite))
+        loaded[path] = suite
     return loaded
 
 
@@ -247,15 +250,12 @@ def run_command(
     with report_errors(), open_context() as ctx:
         if scm_branch == "HEAD":
             scm_branch = git_head.pushed_branch()
-        suites = [
-            suite
-            for _, suite in _load_suites(
-                files,
-                cli_vars=cli_vars,
-                vars_files=tuple(vars_file or []),
-                non_interactive=non_interactive,
-            )
-        ]
+        suites = _load_suites(
+            files,
+            cli_vars=cli_vars,
+            vars_files=tuple(vars_file or []),
+            non_interactive=non_interactive,
+        ).values()
         spec = _jt_spec(ctx)
         runner = RunTestSuite(
             resolver=ResolveCasePayload(
@@ -318,8 +318,10 @@ def run_command(
 def _summary(outcome: SuiteRunOutcome) -> str:
     """``4 cases: 2 pass, 1 fail, 1 timeout`` (verdicts that occurred, in order)."""
     counts = Counter(result.result for result in outcome.results)
-    tallies = [f"{counts[status]} {status}" for status in get_args(CaseStatus) if counts[status]]
-    return f"{plural(len(outcome.results), 'case')}: {', '.join(tallies) or 'none ran'}"
+    return summary(
+        plural(len(outcome.results), "case"),
+        {status: counts[status] for status in get_args(CaseStatus)},
+    )
 
 
 # ---- list ----------------------------------------------------------------
@@ -348,7 +350,7 @@ def list_command(
             non_interactive=non_interactive,
         )
 
-    rows = [case_row(path, suite, case) for path, suite in loaded for case in suite.cases]
+    rows = [case_row(path, suite, case) for path, suite in loaded.items() for case in suite.cases]
     emit(
         rows,
         fmt=fmt,
@@ -376,21 +378,17 @@ def validate_command(
     from untaped.capabilities.awx.application.suites.resolver import (  # noqa: PLC0415
         ResolveCasePayload,
     )
-    from untaped.capabilities.awx.application.suites.runner import suite_scope  # noqa: PLC0415
 
     cli_vars = parse_kv_pairs(var, flag="--var")
     files = _expand_paths(paths)
 
     with report_errors(), open_context() as ctx:
-        suites = [
-            suite
-            for _, suite in _load_suites(
-                files,
-                cli_vars=cli_vars,
-                vars_files=tuple(vars_file or []),
-                non_interactive=non_interactive,
-            )
-        ]
+        suites = _load_suites(
+            files,
+            cli_vars=cli_vars,
+            vars_files=tuple(vars_file or []),
+            non_interactive=non_interactive,
+        ).values()
         spec = _jt_spec(ctx)
         resolver = ResolveCasePayload(
             ctx.fk, catalog=ctx.catalog, default_organization=ctx.default_organization
@@ -399,7 +397,7 @@ def validate_command(
         default_scope = _jt_scope(ctx, spec)
         any_errors = False
         for suite in suites:
-            scope = suite_scope(suite, default_scope)
+            scope = suite.scope(default_scope)
             for case_name, case in suite.cases.items():
                 try:
                     payload = resolver(spec, case, defaults=suite.defaults)

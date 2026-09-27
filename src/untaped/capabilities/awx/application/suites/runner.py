@@ -235,7 +235,7 @@ class RunTestSuite:
                     suite.name,
                     case_name,
                     suite.job_template,
-                    suite_scope(suite, self._jt_scope),
+                    suite.scope(self._jt_scope),
                     payload,
                     expect,
                     case_timeout,
@@ -371,13 +371,6 @@ class RunTestSuite:
             except Exception:
                 return None
         return tuple(log[-LOG_TAIL_LINES:])
-
-
-def suite_scope(suite: Suite, default: dict[str, str] | None) -> dict[str, str] | None:
-    """The lookup scope of ``suite``'s job template: its ``organization`` over ``default``."""
-    if suite.organization is None:
-        return default
-    return {**(default or {}), "organization": suite.organization}
 
 
 def _collect_ref_sentinels(

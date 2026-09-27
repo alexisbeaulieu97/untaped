@@ -547,10 +547,13 @@ untaped awx test run --scm-branch HEAD --format json
 untaped awx test run other/tests/deploy-smoke.yml
 ```
 
-- Without paths, `run`, `list` and `validate` read every `*.yml`/`*.yaml`
-  file under `.untaped/awx/tests/` at the root of the current git checkout
-  (the current directory outside one). A directory path is searched
-  recursively too. Suite names must be unique across the files read.
+- Without paths, `run`, `list` and `validate` read every suite under
+  `.untaped/awx/tests/` at the root of the current git checkout (the current
+  directory outside one). A directory path is searched the same way: every
+  `*.yml`/`*.yaml` file below it with a `kind: AwxTestSuite` line, skipping
+  hidden entries (and not following directory symlinks), so vars files can
+  live beside the suites. A file named directly must be a suite. Each file is
+  read once, and suite names must be unique across the files read.
 - `--case` selects cases by `CASE` (in every suite) or `SUITE/CASE`, and is
   repeatable. A `--case` that matches nothing is an error before any launch.
 - `organization` names the job template's organization when its name is not

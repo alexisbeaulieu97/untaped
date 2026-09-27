@@ -51,12 +51,7 @@ git push -u origin HEAD
 untaped --profile agent awx test run --scm-branch HEAD --format json
 ```
 
-- `--scm-branch HEAD` runs every job on the current branch as pushed; it is
-  refused until HEAD is on the remote, so the jobs test the agent's commit.
-- Without a terminal nothing prompts: a missing suite variable is an error.
-- stdout is one JSON `awx.test_result` row per case with the evidence: the
-  `expectations`, `failed_tasks`, `log_tail`, `job_url`, `scm_branch` and
-  `scm_revision`. stderr ends with a summary. The exit code is 0 only when
-  every case passed.
-- A case that runs past its timeout, or a run interrupted with Ctrl-C,
-  cancels its job.
+`--scm-branch HEAD` is refused until HEAD is pushed, so the jobs test the
+agent's commit. Nothing prompts without a terminal, the exit code is 0 only
+when every case passed, and each JSON row carries the evidence to read; see
+[Test suites](./usage.md#test-suites).

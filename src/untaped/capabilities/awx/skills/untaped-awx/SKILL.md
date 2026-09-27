@@ -70,7 +70,7 @@ Suites in `.untaped/awx/tests/` launch job templates with parameter variants and
 - A case is `expect: {status, log: {contains, not_contains, matches}}` over its `launch:` payload; `defaults` apply to every case, and a case's `status` or `log` list replaces the default's. `status: failed` tests an intended failure.
 - Results are `pass`, `fail` (expectation not met), `error` (launch, polling or log problem), or `timeout` (job cancelled after `--timeout`, the case's `timeout:`, or `awx.test_timeout`). `--no-cancel` leaves timed-out jobs running.
 - Nothing prompts without a terminal: supply suite variables with `--var KEY=VALUE` or `--vars-file`.
-- Run as the dedicated agent profile when one is configured (`--profile agent`); see `docs/awx/agent-profile.md`.
+- Run as the dedicated agent profile when one is configured (`--profile agent`); see `docs/awx/agent-profile.md` in the untaped repository.
 
 ## Confirmations and output
 

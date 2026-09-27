@@ -702,6 +702,15 @@ def test_no_paths_and_no_tests_directory_is_a_usage_error(
     assert f"no test paths given and no {tmp_path / '.untaped/awx/tests'}" in result.stderr
 
 
+def test_overlapping_paths_read_each_file_once(cli: CliInvoker, tmp_path: Path) -> None:
+    suite = _write(tmp_path / "one.yml", _suite_text("one"))
+
+    result = cli.invoke(app, ["test", "list", str(tmp_path), str(suite), "-f", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert [row["case"] for row in json.loads(result.stdout)] == ["smoke", "full"]
+
+
 def test_suite_names_must_be_unique(cli: CliInvoker, tmp_path: Path) -> None:
     first = _write(tmp_path / "one.yml", _suite_text("dup"))
     second = _write(tmp_path / "two.yml", _suite_text("dup"))
