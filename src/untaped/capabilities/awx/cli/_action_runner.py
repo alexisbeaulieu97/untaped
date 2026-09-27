@@ -51,7 +51,7 @@ def run_action_selection(
     parallel: int = 1,
     continue_on_error: bool = False,
     wait: bool = False,
-    track: bool = False,
+    follow: bool = False,
     timeout: float | None = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
@@ -109,9 +109,9 @@ def run_action_selection(
             launched.append((label, outcome.result))
             row_by_label[label] = index
     unfinished: dict[str, list[str]] = {}
-    if launched and (wait or track):
+    if launched and (wait or follow):
         finals, errors = _monitor(
-            ctx, launched, _unmonitored(outcomes, labels), track=track, timeout=timeout
+            ctx, launched, _unmonitored(outcomes, labels), follow=follow, timeout=timeout
         )
         unfinished = _record_finals(rows, row_by_label, finals, timeout=timeout)
         for label, exc in errors:
@@ -168,12 +168,12 @@ def _record_finals(
     return unfinished
 
 
-def validate_wait_timeout(timeout: float | None, *, wait: bool, track: bool) -> None:
-    """``--timeout`` bounds ``--wait``/``--track`` and cannot be negative (usage errors)."""
+def validate_wait_timeout(timeout: float | None, *, wait: bool, follow: bool) -> None:
+    """``--timeout`` bounds ``--wait``/``--follow`` and cannot be negative (usage errors)."""
     if timeout is None:
         return
-    if not (wait or track):
-        raise_usage("--timeout needs --wait or --track")
+    if not (wait or follow):
+        raise_usage("--timeout needs --wait or --follow")
     if timeout < 0:
         raise_usage("--timeout must be non-negative")
 
@@ -212,13 +212,13 @@ def _monitor(
     launched: list[tuple[str, Job]],
     unmonitored: list[tuple[str, Job]],
     *,
-    track: bool,
+    follow: bool,
     timeout: float | None = None,
 ) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
     """Wait on launched executions; Ctrl-C stops polling and names what still runs."""
     finished: dict[str, Job] = {}
     try:
-        if track:
+        if follow:
             ui = ctx.progress_ui()
             return drain_parallel(
                 ctx.job_monitor(timeout=timeout),

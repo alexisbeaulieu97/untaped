@@ -2,7 +2,7 @@
 
 Ordinary jobs expose job_events; project/inventory updates and ad-hoc commands
 expose events. Workflow jobs expose status only: they have neither events nor
-stdout, so tracking uses stream_status without inventing child routes.
+stdout, so following one uses stream_status without inventing child routes.
 """
 
 from __future__ import annotations
@@ -23,6 +23,8 @@ if TYPE_CHECKING:
 SleepFn = Callable[[float], None]
 _EVENT_PAGE_SIZE = 200
 _EVENT_MAX_PAGES = 10_000
+_SETTLE_POLLS = 5
+"""Extra polls a finished job's log gets while AWX still saves its events."""
 
 
 class PollingJobMonitor:
@@ -75,10 +77,21 @@ class PollingJobMonitor:
 
     def stream_stdout(self, job: Job, *, start_line: int = 0) -> Iterator[str]:
         cursor = start_line
+        current = job
         # Emit existing lines first, then poll until terminal; the terminal
         # state drains a final time so we never miss the tail emitted
         # between the last poll and the status transition.
         for current in self._poll(job):
+            lines = self.fetch_stdout(current)[cursor:]
+            yield from lines
+            cursor += len(lines)
+        # AWX builds the log from saved events, which can trail the terminal
+        # status: keep reading (briefly) until they are all in, PLAY RECAP included.
+        for _ in range(_SETTLE_POLLS):
+            if not (current.is_terminal and current.event_processing_finished is False):
+                return
+            self._sleep(self._interval)
+            current = self.fetch(current)
             lines = self.fetch_stdout(current)[cursor:]
             yield from lines
             cursor += len(lines)

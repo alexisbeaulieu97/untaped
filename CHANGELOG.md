@@ -14,6 +14,14 @@
     `--help` and is an unknown option (exit 2) instead of a runtime error.
   - **Breaking:** `jobs logs -f` means `--format`, as on every other command;
     `--follow` has no short form.
+  - **Breaking:** `launch`/`sync --track` (`-t`) is replaced by `--follow`,
+    which waits like `--wait` while streaming each job's log to stderr,
+    ending with its PLAY RECAP (lines are `[template]`-prefixed when several
+    executions run; workflow jobs print status changes). `--timeout` now
+    needs `--wait` or `--follow`. Use `jobs events --follow` for structured
+    per-task events.
+  - `--follow` and `jobs logs --follow` keep reading a finished job's log
+    briefly until AWX has saved all its events, so the tail is not cut off.
   - A name that is not found names its scope and suggests close names from
     it (`JobTemplate not found: 'deplyo' in organization 'Default'; did you
     mean 'deploy'?`), and says when `awx.default_organization` chose the

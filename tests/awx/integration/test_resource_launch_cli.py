@@ -227,7 +227,7 @@ def test_launch_help_narrows_flags_by_accepts() -> None:
         "--extra-vars",
         "--host-pattern",
         "--wait",
-        "--track",
+        "--follow",
     ):
         assert _flag_in_help(visible_flag, wjt_help.output), (
             f"{visible_flag} missing from WJT launch --help"
@@ -614,3 +614,14 @@ def test_launch_inventory_not_found_suggests_close_names(
     assert "Inventory not found: 'prdo'" in result.stderr
     assert "did you mean 'prod'?" in result.stderr
     assert fake.actions_called == []
+
+
+@pytest.mark.parametrize(
+    "args",
+    [["job-templates", "launch", "alpha", "--track"], ["job-templates", "launch", "alpha", "-t"]],
+)
+def test_track_is_replaced_by_follow(seeded_default_org: Any, args: list[str]) -> None:
+    seeded_default_org.seed("job_templates", id=10, name="alpha", organization=1)
+    result = CliInvoker().invoke(app, args)
+    assert result.exit_code == 2, result.output
+    assert seeded_default_org.actions_called == []

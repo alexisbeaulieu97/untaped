@@ -10,7 +10,7 @@ What integration tests *cannot* observe is the timing seam: that
 *before* result collection, so a caller can drain a shared queue
 while workers are still pending. If a refactor accidentally moved
 ``while_running()`` after the collection loop, every existing
-``--track`` integration test would still pass — events would still
+``--follow`` integration test would still pass — logs would still
 print, just at the end — yet the helper's documented contract would be
 silently broken. This one stub-driven test pins that invariant.
 """
