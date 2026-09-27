@@ -35,7 +35,7 @@ untaped github whoami
 
 # List an org's repos and clone them into a workspace
 untaped workspace init acme
-untaped github repos list --org acme --no-archived --format pipe \
+untaped github repos list --org acme --format pipe \
   | untaped workspace repos add acme --stdin --sync
 
 # Run a command in every repo
