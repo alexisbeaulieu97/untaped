@@ -266,6 +266,14 @@ def test_source_patch_flag_problems_are_usage_errors(
 # --- parallel / out flags -------------------------------------------------
 
 
+def test_impact_help_hides_live() -> None:
+    result = invoke_cli(app, ["impact", "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "--live" not in result.output
+    assert "--refresh" in result.output
+
+
 def test_graph_help_lists_current_flags_only() -> None:
     result = invoke_cli(app, ["graph", "--help"])
     output = " ".join(result.output.replace("│", " ").split())

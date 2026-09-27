@@ -44,9 +44,10 @@
     graph unless `--depth N` is given (the empty message then names the
     depth). `deps ROLE` lists what ROLE depends on (`ansible.dependency`) and
     `impact ROLE` what depends on it (`ansible.dependent`, cached source data
-    only; `--live` is a usage error). Each row has `repo`, `ref`,
-    `unresolved`, the verbatim `declared_ref`/`declared_in`, `depth` and the
-    shortest `path`. `graph` stays for the whole picture (`tree`, `mermaid`,
+    only, no `--live`). Each row has `repo`, `ref`, `unresolved`, the
+    verbatim `declared_ref`/`declared_in`, `depth`, the shortest `path` and
+    the `root_ref` it was reached from (a ref-less ROLE is walked from each
+    of its cached refs). `graph` stays for the whole picture (`tree`, `mermaid`,
     `json`, `--out`, both directions, default depth 3).
   - `find REPO...` reports the roots whose downstream graph contains a
     repository: one `ansible.dependency_match` row per match with the root,
@@ -61,7 +62,11 @@
     so each repo and ref is read from GitHub once per command.
   - New `ansible.default_source` setting: the saved source `deps`, `impact`,
     `find` and `graph` use (and `--refresh` refreshes) when neither
-    `--source` nor inline selectors are given.
+    `--source` nor inline selectors are given. Setting it switches the
+    downstream reads of `deps`, `find` and `graph` from live GitHub to that
+    source's cache: roles outside the source get "not cached" warnings and no
+    rows, and before the source's first refresh these commands fail with the
+    refresh command to run. `--live` still reads GitHub.
   - **Breaking:** `ansible alias` is renamed `ansible source-alias`, with
     record kinds `ansible.source_alias` and `ansible.source_alias_outcome`.
     The old name is gone (`alias` is reserved for a future root command).

@@ -1,7 +1,0 @@
-# Known violations of the help_tree convention check for 'ansible'.
-# This list may only shrink: fix an entry and delete its line.
-# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
-ansible deps::verb::deps
-ansible find::verb::find
-ansible graph::verb::graph
-ansible impact::verb::impact
