@@ -98,7 +98,7 @@ def test_run_hook_absolutizes_relative_target(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # `hook run --target app-alpha` (relative) must reach the executor as an
+    # `hooks run --target app-alpha` (relative) must reach the executor as an
     # absolute directory so the hook never depends on the worker's cwd.
     (tmp_path / "app-alpha").mkdir()
     monkeypatch.chdir(tmp_path)

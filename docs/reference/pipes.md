@@ -190,6 +190,9 @@ output.
 | `recipe hooks run` | `recipe.hook_run` |
 | `recipe backups list/get/restore/prune` | `recipe.backup` |
 
+`recipe packs sync --stdin` and `recipe packs remove --stdin` read pack
+names, or `recipe.pack` records from `recipe packs list --format pipe`.
+
 `recipe apply --stdin` reads target directories: path lines, or records of any
 kind that carry an absolute `target_path` (else `path`), such as
 `workspace.repo`, `workspace.status` or `workspace.sync_outcome`.

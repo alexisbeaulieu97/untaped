@@ -36,7 +36,6 @@ from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
     UsageError,
-    create_app,
     echo,
     emit,
     finish,
@@ -44,11 +43,9 @@ from untaped.capability_api import (
     unified_diff_text,
 )
 
-app = create_app(name="hooks", help="Inspect, scaffold, and run recipe hooks.")
 HookRunFormat = Literal["json", "yaml", "table", "pipe"]
 
 
-@app.command(name="run")
 def run_command(
     name: Annotated[str, Parameter(help="Hook name or PACK/HOOK reference.")],
     /,

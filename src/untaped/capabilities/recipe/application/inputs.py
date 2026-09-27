@@ -19,15 +19,10 @@ from untaped.capabilities.recipe.domain.input_jinja import (
     ensure_derived_value_within_bound,
 )
 from untaped.capabilities.recipe.domain.recipe import InputSpec, Recipe
-from untaped.capabilities.recipe.errors import RecipeError
 from untaped.capability_api import ConfigError
 
 REDACTED = "***"
 _UNSET = object()
-
-
-class NoPromptAvailableError(RecipeError):
-    """Raised when interactive input is requested without a prompt backend."""
 
 
 @dataclass(frozen=True)
@@ -37,7 +32,6 @@ class InputResolutionConfig:
     fixed_values: Mapping[str, object] = field(default_factory=dict)
     cli_sources: Mapping[str, CompiledInputSource] = field(default_factory=dict)
     recipe_sources: Mapping[str, CompiledInputSource] = field(default_factory=dict)
-    interactive: bool = False
     prompt: PromptFunc | None = None
 
 
@@ -57,7 +51,6 @@ def prepare_input_resolution(
     *,
     fixed_values: Mapping[str, object],
     input_from: Mapping[str, str],
-    interactive: bool = False,
     prompt: PromptFunc | None = None,
 ) -> InputResolutionConfig:
     """Validate and compile invocation-level input resolution settings."""
@@ -75,25 +68,7 @@ def prepare_input_resolution(
         fixed_values=typed_fixed_values,
         cli_sources=cli_sources,
         recipe_sources=recipe_sources,
-        interactive=interactive,
         prompt=prompt,
-    )
-
-
-def prompts_per_target(recipe: Recipe, config: InputResolutionConfig) -> bool:
-    """Whether planning a target may prompt, so targets must plan one at a time.
-
-    Only a required scalar target input with no ``--var``/``--vars-file``
-    value and no ``--input-from`` source can reach the prompt (a recipe
-    ``from`` may miss); global inputs prompt once, before planning.
-    """
-    return config.interactive and any(
-        spec.required
-        and spec.scope != "global"
-        and spec.type not in _STRUCTURED
-        and name not in config.fixed_values
-        and name not in config.cli_sources
-        for name, spec in recipe.inputs.items()
     )
 
 
@@ -185,9 +160,9 @@ def _resolve_one(
     if not spec.required:
         return _UNSET
     # Structured inputs cannot be typed at a prompt.
-    if config.interactive and spec.type not in _STRUCTURED:
+    if config.prompt is not None and spec.type not in _STRUCTURED:
         prompt_target = None if target is None else target.path
-        return _coerce_input(name, spec, _prompt_value(name, spec, prompt_target, config))
+        return _coerce_input(name, spec, _prompt_value(name, spec, prompt_target, config.prompt))
     raise ValueError(f"missing required input: {name}; pass --var {name}=VALUE or --vars-file FILE")
 
 
@@ -293,10 +268,8 @@ def _prompt_value(
     name: str,
     spec: InputSpec,
     target: Path | None,
-    config: InputResolutionConfig,
+    prompt: PromptFunc,
 ) -> object:
-    if config.prompt is None:
-        raise NoPromptAvailableError("interactive input requires a terminal prompt backend")
     suffix = f" ({spec.description})" if spec.description else ""
     message = f"{name}{suffix}" if target is None else f"{name} for {target}{suffix}"
-    return config.prompt(message, sensitive=spec.sensitive)
+    return prompt(message, sensitive=spec.sensitive)

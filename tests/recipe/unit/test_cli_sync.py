@@ -1,4 +1,4 @@
-"""CLI tests for ``untaped recipe sync`` (re-fetch installed packs from their source)."""
+"""CLI tests for ``untaped recipe packs sync`` (re-fetch installed packs from their source)."""
 
 from __future__ import annotations
 

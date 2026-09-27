@@ -73,7 +73,7 @@ def _write_hook_project(
 
 
 def _ctx(project: Path, target: Path) -> list[str]:
-    """``hook run`` options naming the hook project and target directory."""
+    """``hooks run`` options naming the hook project and target directory."""
     return ["--project", str(project), "--target", str(target)]
 
 
@@ -969,7 +969,7 @@ def test_apply_missing_recipe_is_reported_cleanly(tmp_path: Path) -> None:
     result = CliInvoker().invoke(app, ["apply", "missing", str(target), "--yes"])
 
     assert result.exit_code != 0
-    assert "error: recipe not found: missing" in result.output
+    assert "error: recipe not found: 'missing'" in result.output
     assert "Traceback" not in result.output
 
 
@@ -1236,6 +1236,36 @@ def test_apply_never_prompts_without_a_terminal_or_with_non_interactive(
     row = json.loads(missing_target.stdout)[0]
     assert row["action"] == "failed"
     assert row["error"].startswith("missing required input: service;")
+
+
+class _InterruptingPromptBackend(ScriptedPromptBackend):
+    """Answers every text prompt with Ctrl-C."""
+
+    def text(self, message: str, *, default: str | None) -> str:
+        self.calls.append(("text", message))
+        raise KeyboardInterrupt
+
+
+def test_apply_ctrl_c_at_a_prompt_exits_130_without_further_prompts(tmp_path: Path) -> None:
+    recipe = tmp_path / "recipe.yml"
+    recipe.write_text(
+        "version: 1\ninputs:\n  service: {type: str, scope: target, required: true}\nsteps: []\n"
+    )
+    targets = [tmp_path / name for name in ("api", "web", "worker")]
+    for target in targets:
+        target.mkdir()
+    backend = _InterruptingPromptBackend()
+
+    result = CliInvoker().invoke(
+        app,
+        ["apply", str(recipe), *map(str, targets), "--dry-run", "--format", "json"],
+        interactive=True,
+        prompt_backend=backend,
+    )
+
+    assert result.exit_code == 130, result.output
+    assert backend.calls == [("text", f"service for {targets[0]}")]
+    assert result.stdout == ""
 
 
 def test_apply_derives_target_inputs_and_redacts_outcome_rows(tmp_path: Path) -> None:
@@ -2071,7 +2101,7 @@ def test_explicit_single_file_recipe_does_not_use_sibling_hook_project(tmp_path:
     )
 
     assert result.exit_code != 0
-    assert "hook not found: sibling" in result.output
+    assert "hook not found: 'sibling'" in result.output
     assert (target / "local.yml").read_text() == "---\n"
 
 
@@ -2116,7 +2146,7 @@ def test_hook_run_accepts_path_ref_form_like_new_hook(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Exercise S1: `hook run ./pack/hook` must resolve like `new hook` does.
+    # Exercise S1: `hooks run ./pack/hook` must resolve like `hooks init` does.
     project = tmp_path / "collections-ensure"
     project.mkdir()
     _write_hook_project(
@@ -3408,7 +3438,7 @@ def test_check_unknown_bare_ref_keeps_recipe_miss(tmp_path: Path) -> None:
     result = CliInvoker().invoke(app, ["validate", "not_a_builtin", "--format", "json"])
 
     assert result.exit_code == 1
-    assert "recipe not found: not_a_builtin" in result.stderr
+    assert "recipe not found: 'not_a_builtin'" in result.stderr
 
 
 def test_show_prefers_library_hook_over_builtin(tmp_path: Path) -> None:
@@ -3887,9 +3917,9 @@ def test_check_hookless_pack_without_lock_passes_every_ref_form(tmp_path: Path) 
 @pytest.mark.parametrize(
     ("ref", "make_dir", "expected", "hint"),
     [
-        ("demo", True, "recipe not found: demo", "a path named 'demo' exists"),
-        ("demo", False, "recipe not found: demo", None),
-        ("foo bar", False, "not found: foo bar", None),
+        ("demo", True, "recipe not found: 'demo'", "a path named 'demo' exists"),
+        ("demo", False, "recipe not found: 'demo'", None),
+        ("foo bar", False, "not found: 'foo bar'", None),
     ],
 )
 def test_library_miss_hints_only_at_an_existing_path(

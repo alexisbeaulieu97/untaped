@@ -13,7 +13,7 @@ from untaped.capabilities.recipe.domain.pack import parse_ref
 from untaped.capabilities.recipe.domain.paths import is_path_ref, safe_library_name
 from untaped.capabilities.recipe.infrastructure import pack_scaffold
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
-from untaped.capability_api import echo
+from untaped.capability_api import echo, hint
 
 _NO_LOCK_NOTE = "uv.lock was not created/refreshed for {path}; hooks need `uv lock` before running"
 
@@ -50,6 +50,10 @@ def init_recipe_command(
 ) -> None:
     """Scaffold a recipe, with a starter golden test case, inside a pack."""
     with report_config_errors():
+        if "/" not in ref:
+            raise ValueError(
+                f"recipe refs must use <pack>/<recipe>\n{hint(f'recipe packs init {ref}')}"
+            )
         pack_dir, name = _new_pack_child(ref)
         path = pack_scaffold.scaffold_recipe(pack_dir, name, lock=lock)
         if not lock:

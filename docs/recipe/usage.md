@@ -66,7 +66,10 @@ untaped recipe apply acme/readme --stdin --input-from 'service={{ target.name }}
 
 - `--var` and `--vars-file` repeat. A later file wins over an earlier one,
   and `--var` wins over every file. Unknown input names are rejected.
-- `list` and `dict` inputs parse `--var` values as YAML.
+- `list` and `dict` inputs parse `--var` values as YAML. Other `--var`
+  values are plain strings, but `--vars-file` values are YAML: `3.10`
+  becomes `3.1` and `on` becomes `true` before a `str` input sees them.
+  Quote them (`python_version: "3.10"`).
 - `--input-from NAME=TEMPLATE` derives a value per target from
   `target.path`, `target.name`, `target.parent_path`, `target.parent_name` or
   the piped `record`.
@@ -118,6 +121,7 @@ untaped recipe get acme/editorconfig
 untaped recipe edit acme/editorconfig
 untaped recipe validate
 untaped recipe packs remove acme --yes
+untaped recipe packs list --format pipe | untaped recipe packs sync --stdin
 ```
 
 `packs edit` opens the pack's `pyproject.toml`; `edit` opens a recipe file.
@@ -227,7 +231,9 @@ untaped recipe hooks run acme/pin_python --target ~/work/api --file pyproject.to
 `hooks run` takes hook inputs with `--var KEY=YAML`/`--vars-file FILE` and
 hook args with `--arg KEY=YAML`/`--args-file FILE`. Both repeat with the same
 precedence as `apply`; values are parsed as YAML because a hook has no
-declared input types.
+declared input types. YAML typing applies: `--var python_version=3.10` gives
+the number `3.1` and `--var enabled=on` gives `true`. Quote a value to keep it
+a string: `--var 'python_version="3.10"'`.
 
 Validate hooks return `helpers.pass_()`, `helpers.fail(msg)` or
 `helpers.skip(msg)`; a skipped target is not a failure. `helpers.warn(msg)`

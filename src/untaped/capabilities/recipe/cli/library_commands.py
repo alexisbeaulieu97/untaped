@@ -49,15 +49,18 @@ from untaped.capability_api import (
     FormatOption,
     OutcomeRecord,
     OutputFormat,
+    StdinOption,
     UsageError,
     YesOption,
     batch_apply,
     echo,
     emit,
     finish,
+    hint,
     not_found,
     plural,
     q,
+    read_identifiers,
     render_rows,
     resolve_each,
     run_editor,
@@ -185,6 +188,9 @@ def sync_command(
     all_packs: Annotated[
         bool, Parameter(name="--all", negative="", help="Sync every installed pack.")
     ] = False,
+    stdin: Annotated[
+        StdinOption, Parameter(help="Read pack names, or recipe.pack pipe records, from stdin.")
+    ] = False,
     discard_edits: Annotated[
         bool,
         Parameter(
@@ -206,7 +212,9 @@ def sync_command(
     """
     with report_config_errors(), tempfile.TemporaryDirectory() as temp_root:
         library = PackLibrary(library_root=library_root())
-        selected = _sync_selection(library, names or [], all_packs=all_packs)
+        selected = _sync_selection(
+            library, _pack_names(names, stdin=stdin) if stdin else names or [], all_packs=all_packs
+        )
         plans, fetch_failed = resolve_each(
             list(selected),
             _as_config_error(
@@ -437,7 +445,8 @@ def get_command(
 ) -> None:
     """Show an installed recipe."""
     with report_config_errors():
-        pack, name, recipe = _find_recipe(PackLibrary(library_root=library_root()), ref_text)
+        library = PackLibrary(library_root=library_root())
+        pack, name, recipe = _find_recipe(library, ref_text, verb="get")
         recipe_path = pack.root / recipe.path
         detail = recipe_detail(f"{pack.name}/{name}", read_recipe_file(recipe_path), recipe_path)
         emit(
@@ -527,17 +536,27 @@ def validate_command(
 
 
 def remove_command(
-    name: Annotated[str, Parameter(help="Installed pack identity.")],
+    names: Annotated[
+        list[str] | None, Parameter(help="Installed pack identities.", negative="")
+    ] = None,
     /,
     *,
+    stdin: Annotated[
+        StdinOption, Parameter(help="Read pack names, or recipe.pack pipe records, from stdin.")
+    ] = False,
     yes: YesOption = False,
     dry_run: DryRunOption = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Remove an installed pack."""
+    """Remove installed packs."""
     with report_config_errors():
         library = PackLibrary(library_root=library_root())
+        selected = _pack_names(names, stdin=stdin)
+        known = {pack.name for pack in library.packs()} | set(library.load_errors())
+        for name in selected:
+            if name not in known:
+                raise ConfigError(not_found("pack", name, known=sorted(known)))
 
         def _remove(item: str) -> str:
             library.remove(item)
@@ -547,15 +566,16 @@ def remove_command(
             echo(f"About to remove {plural(len(rows), 'pack')}:", err=True)
             for row in rows:
                 echo(f"  - {row['name']}", err=True)
-            if library.local_edits(name):
-                recipe_ui().message(
-                    "warning",
-                    f"pack {q(name)} has local edits in the library "
-                    "(via an edit or init command); removing discards them",
-                )
+            for name in selected:
+                if library.local_edits(name):
+                    recipe_ui().message(
+                        "warning",
+                        f"pack {q(name)} has local edits in the library "
+                        "(via an edit or init command); removing discards them",
+                    )
 
         outcome = batch_apply(
-            [name],
+            selected,
             _remove,
             verb="remove",
             noun="pack",
@@ -568,7 +588,9 @@ def remove_command(
             preview=_preview,
         )
         if dry_run:
-            rows = [PackOutcomeRecord(name=name, action="planned").model_dump()]
+            rows = [
+                PackOutcomeRecord(name=name, action="planned").model_dump() for name in selected
+            ]
         else:
             rows = [
                 PackOutcomeRecord(name=item, action="removed").model_dump()
@@ -580,12 +602,18 @@ def remove_command(
         finish(outcome)
 
 
+def _pack_names(names: list[str] | None, *, stdin: bool) -> list[str]:
+    """Pack names from positionals or stdin (bare names or ``recipe.pack`` records)."""
+    return read_identifiers(names or [], stdin=stdin, id_field="name", accept_kinds={"recipe.pack"})
+
+
 def edit_command(
     ref_text: Annotated[str, Parameter(help="Recipe name or PACK/RECIPE reference.")], /
 ) -> None:
     """Open an installed recipe file in $VISUAL or $EDITOR."""
     with report_config_errors():
-        pack, _name, recipe = _find_recipe(PackLibrary(library_root=library_root()), ref_text)
+        library = PackLibrary(library_root=library_root())
+        pack, _name, recipe = _find_recipe(library, ref_text, verb="edit")
         run_editor(pack.root / recipe.path)
 
 
@@ -618,15 +646,31 @@ def _find_pack(library: PackLibrary, name: str) -> InstalledPack:
     return pack
 
 
-def _find_recipe(library: PackLibrary, ref_text: str) -> tuple[InstalledPack, str, RecipeEntry]:
+def _find_recipe(
+    library: PackLibrary, ref_text: str, *, verb: str
+) -> tuple[InstalledPack, str, RecipeEntry]:
     ref = parse_ref(ref_text)
     try:
         pack, recipe = library.find_recipe(ref)
     except ValueError as exc:
         if str(exc).startswith("recipe not found"):
-            raise ValueError(f"{exc}{existing_path_hint(ref_text)}") from None
+            message = f"{exc}{existing_path_hint(ref_text)}"
+            if (noun := _other_noun(library, ref_text)) is not None:
+                message = f"{message}\n{hint(f'recipe {noun} {verb} {ref_text}')}"
+            raise ValueError(message) from None
         raise
     return pack, ref.name, recipe
+
+
+def _other_noun(library: PackLibrary, ref_text: str) -> str | None:
+    """``packs``/``hooks`` when a missed recipe ref names a pack or hook instead."""
+    if library.find_pack(ref_text) is not None:
+        return "packs"
+    try:
+        _find_hook(library, ref_text)
+    except ValueError:
+        return None
+    return "hooks"
 
 
 def _find_hook(library: PackLibrary, ref_text: str) -> _ResolvedHook:
