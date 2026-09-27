@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from untaped.capabilities.recipe.domain.pack import InstalledPack, parse_ref
+from untaped.capabilities.recipe.domain.pack import InstalledPack, PackManifest, parse_ref
+from untaped.capabilities.recipe.infrastructure import pack_store
 from untaped.capabilities.recipe.infrastructure.pack_store import (
     PackLibrary,
     changed_hook_files,
@@ -204,13 +205,59 @@ def test_changed_hook_files_lists_hook_code_that_differs(tmp_path: Path) -> None
     (fetched / "recipes" / "r.yml").write_text("version: 1\ndescription: x\nsteps: []\n")
     (fetched / "__pycache__").mkdir()
     (fetched / "__pycache__" / "junk.pyc").write_text("")
+    for build_file in ("setup.py", "hatch_build.py", ".python-version", "uv.toml", "setup.cfg"):
+        (fetched / build_file).write_text("changed\n")
+    (fetched / "recipes" / "helper.py").write_text("# template, not executed\n")
 
     assert changed_hook_files(installed, fetched) == [
+        ".python-version",
+        "hatch_build.py",
+        "setup.cfg",
+        "setup.py",
         "src/pack_hooks/extra.py",
         "src/pack_hooks/hooks/a.py",
         "src/pack_hooks/hooks/b.py",
         "uv.lock",
+        "uv.toml",
     ]
+
+
+def test_pack_library_rejects_a_symlink_that_appears_after_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source"
+    _write_pack(source, manifest_name="ansible", recipes={"r": "recipes/r.yml"})
+    secret = tmp_path / "secret.txt"
+    secret.write_text("secret\n")
+    real_validate = pack_store.validate_pack
+
+    def validate_then_swap(source_dir: Path, manifest: PackManifest) -> None:
+        real_validate(source_dir, manifest)
+        (source_dir / "recipes" / "leak.txt").symlink_to(secret)
+
+    monkeypatch.setattr(pack_store, "validate_pack", validate_then_swap)
+    library = PackLibrary(library_root=tmp_path / "library")
+
+    with pytest.raises(ValueError, match=r"symlinks: recipes/leak\.txt"):
+        library.add(source, source=str(source), rev=None, name=None, force=False)
+
+    assert not (library.packs_dir / "ansible").exists()
+    assert [path.name for path in (tmp_path / "library").iterdir()] == ["packs"]
+
+
+def test_pack_library_record_commit_fills_a_legacy_row_without_commit(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    _write_pack(source, manifest_name="ansible")
+    library = PackLibrary(library_root=tmp_path / "library")
+    library.add(source, source="https://example.test/p.git", rev="main", name=None, force=False)
+    assert "commit" not in library.index_path.read_text(encoding="utf-8")
+    assert library.packs()[0].commit == ""
+
+    library.record_commit("ansible", "3" * 40)
+
+    assert PackLibrary(library_root=tmp_path / "library").packs()[0].commit == "3" * 40
+    with pytest.raises(ValueError, match="pack not found: ghost"):
+        library.record_commit("ghost", "3" * 40)
 
 
 @pytest.mark.parametrize(

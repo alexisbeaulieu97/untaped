@@ -129,12 +129,13 @@ no control flow in recipes, and no state or inventory.
   overwrite a library copy with local edits unless `--discard-edits` is added.
   A local path source is recorded as an absolute path; a git source records
   the requested `rev` and the resolved `commit` (shown in `list --packs` and
-  the `add`/`sync` rows).
+  the `add`/`sync` rows; `sync` updates it even when no file changed).
 - `sync <pack>...` or `sync --all` re-fetches each installed pack from its
   recorded source and `--rev` (a branch or tag moves forward). Packs whose
   content would change are listed on stderr with the commit move
-  (`old -> new`) and the hook-code files that change (`src/`, `pyproject.toml`,
-  `uv.lock`), and need confirmation or `--yes` (`--dry-run` previews); rows
+  (`old -> new`) and the hook-code files that change (`src/`, root `*.py`,
+  `pyproject.toml`, `uv.lock`, `uv.toml`, `.python-version`, `setup.cfg`;
+  not recipe files or tests), and need confirmation or `--yes` (`--dry-run` previews); rows
   carry `action` `updated`, `unchanged` or `planned`. A pack with local edits in the library fails unless
   `--discard-edits` is passed; a failed pack prints `error: PACK: ...`, the
   others still sync, and the command exits 1.
@@ -255,8 +256,12 @@ no control flow in recipes, and no state or inventory.
   sandbox). Evaluate before trusting: the `add` summary, `get`, `validate`'s
   no-import scan, and the golden test harness. Hook workers get an
   allowlisted environment (`PATH`, `HOME`, locale, temp dirs, `UV_*`/`XDG_*`,
-  TLS and proxy settings, `PYTHONPATH`); tokens such as `GITHUB_TOKEN` or
-  `UNTAPED_*` credentials are not passed. Hook stdout (even raw fd 1 or a
+  TLS and proxy settings, `SSH_AUTH_SOCK`/`GIT_SSH_COMMAND`, and `PYTHONPATH`
+  set to the pack's `src/` only), as do `uv lock` runs on packs. Tokens such as
+  `GITHUB_TOKEN` or untaped's `UNTAPED_*` Jira/AWX/GitHub credentials are not
+  in the environment, but `UV_*` (possibly index credentials) is, and hooks
+  run as the user with full file access (`~/.netrc`, `config.yml`, git
+  credential stores). Hook stdout (even raw fd 1 or a
   subprocess) becomes diagnostics and never corrupts the worker protocol.
 - Run `untaped skills install --all` (or `untaped skills install untaped-recipe`)
   to install this packaged skill.

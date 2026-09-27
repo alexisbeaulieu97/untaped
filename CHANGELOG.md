@@ -48,20 +48,23 @@
     --format pipe`). Supports `--format table|json|pipe`; single-target
     `tree`/`mermaid` output is unchanged.
 - Recipe
-  - **Behavior change:** hook workers no longer inherit the whole
-    environment. Only an allowlist passes through (`PATH`, `HOME`, locale,
-    temp dirs, `UV_*`/`XDG_*`, TLS and proxy settings, `PYTHONPATH`), so
-    tokens such as `GITHUB_TOKEN` or `UNTAPED_*` credentials never reach hook
-    code.
+  - **Behavior change:** hook workers and `uv lock` runs on packs no longer
+    inherit the whole environment. Only an allowlist passes through (`PATH`,
+    `HOME`, locale, temp dirs, `UV_*`/`XDG_*`, TLS and proxy settings,
+    `SSH_AUTH_SOCK`/`GIT_SSH_COMMAND`); `PYTHONPATH` is the pack's `src/`
+    only. Tokens such as `GITHUB_TOKEN` or untaped's `UNTAPED_*` credentials
+    are no longer in a hook's environment. `UV_*` (which may hold index
+    credentials) still is, and hooks still run as you with full file access.
   - **Fix:** a hook that writes to stdout at the file-descriptor level (or
     spawns a process that does) no longer corrupts the worker protocol; the
     output becomes hook diagnostics, and hooks read an empty stdin.
   - **Behavior change:** `add` and `sync` refuse a pack containing symlinks
     (outside ignored dirs such as `.venv`) instead of copying their targets.
   - `add` and `sync` record the resolved `commit` of a git source next to the
-    requested `rev`; `list --packs` and the `add`/`sync` rows show it. The
-    `sync` confirmation (and `--dry-run`) shows each pack's commit move and
-    the hook-code files that change.
+    requested `rev` (also when the pack's files did not change); `list
+    --packs` and the `add`/`sync` rows show it. The `sync` confirmation (and
+    `--dry-run`) shows each pack's commit move and the hook-code files that
+    change (`src/`, root `*.py`, and the uv/Python project files).
   - **Fix:** backup bundles are created owner-only (dirs `0700`, files
     `0600`) and their `metadata.json` is written atomically.
   - `apply --dry-run`/`--check` help and docs now state that pack hooks still

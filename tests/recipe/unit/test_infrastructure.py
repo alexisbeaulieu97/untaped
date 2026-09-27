@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import errno
+import os
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -719,3 +721,27 @@ def test_check_lock_reports_stale_or_unverifiable_lockfiles(
     with pytest.raises(ValueError) as exc_info:
         uv_project.check_lock(tmp_path)
     assert str(exc_info.value) == message.format(root=tmp_path)
+
+
+@pytest.mark.parametrize("operation", [uv_project.check_lock, uv_project.lock_project])
+def test_uv_lock_runs_with_the_allowlisted_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: Callable[[Path], None],
+) -> None:
+    monkeypatch.setenv("GITHUB_TOKEN", "s3cret")
+    monkeypatch.setenv("UV_INDEX_URL", "https://index.test/simple")
+    seen: list[dict[str, str]] = []
+
+    def run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        seen.append(kwargs["env"])  # type: ignore[arg-type]
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(uv_project.subprocess, "run", run)
+
+    operation(tmp_path)
+
+    [env] = seen
+    assert "GITHUB_TOKEN" not in env
+    assert env["UV_INDEX_URL"] == "https://index.test/simple"
+    assert env["PATH"] == os.environ["PATH"]

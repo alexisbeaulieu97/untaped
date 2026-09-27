@@ -246,6 +246,12 @@ def sync_command(
         )
         if outcome.cancelled:
             finish(outcome)
+        if not dry_run:
+            # An unchanged pack still moved to the fetched commit (older
+            # installs recorded none; a commit may touch only ignored files).
+            for plan in plans:
+                if not plan.changed and plan.commit and plan.commit != plan.pack.commit:
+                    library.record_commit(plan.pack.name, plan.commit)
         synced = {plan.pack.name for plan, _ in outcome.results}
         rows = [
             _sync_row(plan, action=action)
