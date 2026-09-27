@@ -28,6 +28,7 @@ from untaped.capabilities.registry import (
     QuarantineRecord,
 )
 from untaped.management.capabilities import build_root_capabilities_app
+from untaped.management.doctor import build_root_doctor_app
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker
 
@@ -85,6 +86,30 @@ def test_lists_ready_builtin_and_external() -> None:
     assert rows["ext"]["distribution"] == "example-dist"
     assert rows["ext"]["version"] == "1.2.3"
     assert rows["ext"]["api"] == ">=2.0,<3.0"
+
+
+def test_float_range_external_shows_its_raw_range_and_the_running_sdk() -> None:
+    """A 1.x float ``api_requires`` quarantines; the listing shows what it declared
+    and the doctor row names the running SDK version plus a valid example."""
+    external = _external("legacy")
+    external.target.api_requires = (1.0, 2.0)  # type: ignore[union-attr]
+    result = bootstrap.compose_root(builtins=(), externals=(external,))
+    app = build_root_capabilities_app(
+        result=result, candidates=(external,), shell_distribution="untaped"
+    )
+    invoked = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
+    (row,) = _rows(invoked.stdout)
+    assert row["status"] == "quarantined"
+    assert row["api"] == "(1.0, 2.0)"
+    doctor = build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=result)
+    invoked = CliInvoker().invoke(doctor, ["--format", "json"])  # type: ignore[arg-type]
+    (quarantined,) = [r for r in _rows(invoked.stdout) if r["check"] == "quarantine"]
+    assert quarantined["title"] == "api-range"
+    assert str(quarantined["detail"]).startswith(
+        "malformed api_requires (1.0, 2.0): expected ((major, minor), (major, minor)) "
+        "int tuples as (min_inclusive, max_exclusive); running SDK 2.0, "
+        "declare e.g. ((2, 0), (3, 0))"
+    )
 
 
 def test_quarantined_provider_lists_with_entry_point_name() -> None:

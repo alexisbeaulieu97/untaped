@@ -220,36 +220,22 @@ def mutate_tool_state(
     state_path = path or resolve_state_path()
     with _locked(state_path):
         state = read_config_dict(state_path)
-        _write_section(state_path, state, section, state.get(section), fn)
-
-
-def _write_section(
-    target: Path,
-    data: dict[str, Any],
-    section: str,
-    existing: Any,
-    fn: Callable[[dict[str, Any]], None],
-) -> None:
-    """Apply ``fn`` to ``section`` (seeded from ``existing``).
-
-    ``data`` is ``target``'s current content; it is written back only when
-    ``fn`` changed the section. An emptied section is removed.
-    """
-    if existing is not None and not isinstance(existing, dict):
-        raise ConfigError(f"invalid state: section {section!r} in {target} must be a mapping")
-    before: dict[str, Any] = copy.deepcopy(existing) if existing is not None else {}
-    sub = copy.deepcopy(before)
-    fn(sub)
-    if sub == before:
-        return
-    updated = dict(data)
-    if sub:
-        updated[section] = sub
-    else:
-        updated.pop(section, None)
-    if updated != data:
-        write_config_dict(updated, target)
-    get_settings.cache_clear()
+        existing = state.get(section)
+        if existing is not None and not isinstance(existing, dict):
+            raise ConfigError(
+                f"invalid state: section {section!r} in {state_path} must be a mapping"
+            )
+        before: dict[str, Any] = copy.deepcopy(existing) if existing is not None else {}
+        sub = copy.deepcopy(before)
+        fn(sub)
+        if sub == before:
+            return
+        if sub:
+            state[section] = sub
+        else:
+            state.pop(section, None)
+        write_config_dict(state, state_path)
+        get_settings.cache_clear()
 
 
 def set_at_path(data: dict[str, Any], path: tuple[str, ...], value: Any) -> None:

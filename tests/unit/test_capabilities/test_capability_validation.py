@@ -346,9 +346,32 @@ def test_api_2_0_rejects_1_x_providers() -> None:
     assert "does not admit SDK version 2.0" in record.detail
 
 
-def test_float_bounds_from_api_1_x_are_rejected_clearly() -> None:
-    with pytest.raises(ConfigError, match=r"\(major, minor\) tuples of ints"):
-        check_api_range((1.0, 2.0), (2, 0))
+@pytest.mark.parametrize(
+    ("rng", "detail"),
+    [
+        (
+            (1.0, 2.0),
+            "malformed api_requires (1.0, 2.0): expected ((major, minor), (major, minor)) "
+            "int tuples as (min_inclusive, max_exclusive); running SDK 5.1, "
+            "declare e.g. ((5, 0), (6, 0))",
+        ),
+        (
+            ((6, 0), (5, 0)),
+            "inverted api_requires >=6.0,<5.0: min_inclusive must be below max_exclusive; "
+            "running SDK 5.1, declare e.g. ((5, 0), (6, 0))",
+        ),
+        (
+            None,
+            "missing api_requires: provider declares no SDK range; "
+            "running SDK 5.1, declare e.g. ((5, 0), (6, 0))",
+        ),
+    ],
+)
+def test_bad_range_messages_name_the_running_sdk(rng: Any, detail: str) -> None:
+    """Float (1.x), inverted and missing ranges name the running version and an example."""
+    with pytest.raises(ConfigError) as excinfo:
+        check_api_range(rng, (5, 1))
+    assert str(excinfo.value) == f"api-range: {detail}"
 
 
 @pytest.mark.parametrize(
