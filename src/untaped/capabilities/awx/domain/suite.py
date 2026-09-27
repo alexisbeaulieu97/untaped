@@ -195,6 +195,8 @@ class Suite(BaseModel):
     kind: Literal["AwxTestSuite"] = "AwxTestSuite"
     name: str
     job_template: str = Field(alias="jobTemplate")
+    organization: str | None = None
+    """The job template's organization (default: ``awx.default_organization``)."""
     defaults: Case | None = None
     cases: dict[str, Case]
     variables: dict[str, VariableSpec] = Field(default_factory=dict)
@@ -205,6 +207,12 @@ class Suite(BaseModel):
         if not value:
             raise ValueError("a test suite must declare at least one case")
         return value
+
+    def scope(self, default: dict[str, str] | None) -> dict[str, str] | None:
+        """The job template's lookup scope: ``organization`` over ``default``."""
+        if self.organization is None:
+            return default
+        return {**(default or {}), "organization": self.organization}
 
 
 FAILED_TASK_EVENTS = ("runner_on_failed", "runner_on_async_failed", "runner_on_unreachable")

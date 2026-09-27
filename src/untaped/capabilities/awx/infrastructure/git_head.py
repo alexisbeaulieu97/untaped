@@ -1,7 +1,8 @@
-"""Resolve ``--scm-branch HEAD`` to the current branch as named on its remote.
+"""Local git facts for ``awx test``: the checkout root and the pushed HEAD branch.
 
-AWX checks out what the remote has, so HEAD is only usable once pushed:
-the branch needs an upstream whose remote ref points at HEAD's commit.
+``--scm-branch HEAD`` resolves to the current branch as named on its remote.
+AWX checks out what the remote has, so HEAD is only usable once pushed: the
+branch needs an upstream whose remote ref points at HEAD's commit.
 """
 
 from __future__ import annotations
@@ -11,6 +12,16 @@ from pathlib import Path
 from untaped.capability_api import ConfigError, GitCommandError, q, run_git
 
 _TIMEOUT = 30.0
+
+
+def repo_root(cwd: Path | None = None) -> Path:
+    """The top of the git checkout containing ``cwd``, else ``cwd`` itself."""
+    here = cwd or Path.cwd()
+    try:
+        top = _git(here, "rev-parse", "--show-toplevel", check=False)
+    except GitCommandError:  # git missing: not a checkout we can see
+        top = ""
+    return Path(top) if top else here
 
 
 def pushed_branch(cwd: Path | None = None) -> str:

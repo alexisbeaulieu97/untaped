@@ -14,6 +14,19 @@
     `--show-logs`, a case that did not pass also carries `log_tail`.
     `failure_reason` names the failed checks. The table shows the summary
     columns.
+  - **Behavior change:** `awx test run`, `list` and `validate` without paths
+    read every suite under `.untaped/awx/tests/` at the git checkout root.
+    Directories are searched recursively for files with a
+    `kind: AwxTestSuite` line; other YAML and hidden entries are skipped.
+    Suite names must be unique.
+    `--case` also takes `SUITE/CASE`. A suite may set `organization:` for its
+    job template. `run` ends with a result summary on stderr.
+  - **Breaking:** `awx test list` writes one `awx.test_case` row per case in
+    every format (`suite`, `case`, `job_template`, `organization`, `path`,
+    `variables`); the per-suite json/yaml rows with a `cases` list are gone.
+  - The `untaped-awx` skill describes the "test your change" workflow, and
+    [AWX agent profile](docs/awx/agent-profile.md) sets up a dedicated AWX
+    user and token for agents.
   - `test run --scm-branch REF` runs every case's job on a branch, tag or
     commit; `--scm-branch HEAD` uses the current git branch once it is pushed.
     `awx.test_result` rows add `scm_branch` and `scm_revision`, and a case
