@@ -1,6 +1,6 @@
 """Pure domain models and helpers for the Jira tool."""
 
-from untaped.capabilities.jira.domain.keys import validate_issue_key
+from untaped.capabilities.jira.domain.keys import validate_issue_key, validate_project_key
 from untaped.capabilities.jira.domain.models import (
     BoardResult,
     CommentResult,
@@ -40,4 +40,5 @@ __all__ = [
     "build_link_payload",
     "build_transition_payload",
     "validate_issue_key",
+    "validate_project_key",
 ]

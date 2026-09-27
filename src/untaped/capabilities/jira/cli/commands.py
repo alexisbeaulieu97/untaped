@@ -19,6 +19,7 @@ from untaped.capabilities.jira.domain import (
     build_link_payload,
     build_transition_payload,
     validate_issue_key,
+    validate_project_key,
 )
 from untaped.capabilities.jira.errors import JiraError
 from untaped.capability_api import (
@@ -227,8 +228,9 @@ def comment_list_command(
     from untaped.capabilities.jira.application import ListComments  # noqa: PLC0415
 
     with report_errors():
+        key = validate_issue_key(key)
         with open_client() as (client, ui), ui.progress("Fetching comments…"):
-            rows = ListComments(client)(validate_issue_key(key), limit=limit)
+            rows = ListComments(client)(key, limit=limit)
         table_columns = columns or (COMMENT_TABLE_COLUMNS if fmt == "table" else None)
         emit(rows, fmt=fmt, columns=table_columns, kind="jira.comment", empty="No comments found.")
 
@@ -470,6 +472,8 @@ def issue_patch_command(
         )
         if assignee is not None and unassign:
             raise_usage("pass either --assignee or --unassign, not both")
+        if assignee is not None or unassign:
+            payload["fields"].pop("assignee", None)  # the flag overrides the body file
         has_fields = bool(payload.get("fields") or payload.get("update"))
         if not has_fields and assignee is None and not unassign:
             raise_usage(
@@ -490,7 +494,7 @@ def issue_patch_command(
             "patch",
             requests,
             lambda client: PatchIssue(client, base_url=settings.base_url)(
-                key, payload, assignee=assign
+                key, payload if has_fields else None, assignee=assign
             ),
             planned=IssueOutcome(action="planned", key=key, url=browse_url(settings.base_url, key)),
             progress="Updating issue…",
@@ -554,8 +558,9 @@ def issue_transitions_command(
     from untaped.capabilities.jira.application import ListTransitions  # noqa: PLC0415
 
     with report_errors():
+        key = validate_issue_key(key)
         with open_client() as (client, ui), ui.progress("Fetching available transitions…"):
-            rows = ListTransitions(client)(validate_issue_key(key))
+            rows = ListTransitions(client)(key)
         emit(
             rows,
             fmt=fmt,
@@ -734,6 +739,7 @@ def project_get_command(
     from untaped.capabilities.jira.application import GetProject  # noqa: PLC0415
 
     with report_errors():
+        key = validate_project_key(key)
         with open_client() as (client, ui), ui.progress("Fetching project…"):
             row = GetProject(client)(key)
         emit(row, fmt=fmt, columns=columns, kind="jira.project")
