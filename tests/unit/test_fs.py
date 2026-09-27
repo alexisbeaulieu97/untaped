@@ -124,6 +124,39 @@ def test_atomic_write_fsyncs_the_file_and_its_directory(
     assert synced == ["file", "dir"]
 
 
+def test_atomic_write_through_a_dangling_symlink_creates_no_directories(tmp_path: Path) -> None:
+    link = tmp_path / "out.txt"
+    link.symlink_to(tmp_path / "missing" / "out.txt")
+    with pytest.raises(FileNotFoundError):
+        atomic_write(link, "new")
+    assert not (tmp_path / "missing").exists()
+    link.unlink()
+    link.symlink_to(tmp_path / "target.txt")
+    atomic_write(link, "new")
+    assert link.is_symlink()
+    assert (tmp_path / "target.txt").read_text() == "new"
+
+
+def test_apply_file_changes_rollback_removes_a_file_created_through_a_dangling_link(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target.txt"
+    link = tmp_path / "link.txt"
+    link.symlink_to(target)
+    blocker = tmp_path / "blocker"
+    blocker.mkdir()
+    (blocker / "occupant.txt").write_text("here")
+    with pytest.raises(FileWriteError):
+        apply_file_changes(
+            [
+                FileChange(path=link, before=None, after="born"),
+                FileChange(path=blocker, before=None, after="never"),
+            ]
+        )
+    assert link.is_symlink()
+    assert not target.exists()
+
+
 def test_apply_file_changes_keeps_mode_and_writes_through_symlinks(tmp_path: Path) -> None:
     real = tmp_path / "real.sh"
     real.write_text("v1")

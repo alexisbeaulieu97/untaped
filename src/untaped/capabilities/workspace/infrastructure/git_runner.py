@@ -36,6 +36,14 @@ DEFAULT_SLOW_TIMEOUT = 600.0
 """Per-call timeout (seconds) for network ops (clone, fetch)."""
 
 
+_LOCK_QUEUE = 4
+"""How many other processes' cache operations a bare-cache lock wait allows for."""
+
+
+def _is_bare_repo(path: Path) -> bool:
+    return path.is_dir() and (path / "HEAD").is_file()
+
+
 class GitRunner:
     def __init__(
         self,
@@ -58,10 +66,13 @@ class GitRunner:
     def ensure_bare(self, url: str, *, cache_dir: Path) -> BareCacheEntry:
         """Ensure a bare clone of ``url`` exists in the cache."""
         bare = cache_path_for(url, cache_dir=cache_dir)
+        # A ready cache needs no lock (nothing is written); re-checked under it.
+        if _is_bare_repo(bare):
+            return BareCacheEntry(path=bare, created=False)
         # Must stay idempotent: parallel syncs of different URLs race here.
         bare.parent.mkdir(parents=True, exist_ok=True)
         with self._cache_lock(bare):
-            if bare.is_dir() and (bare / "HEAD").is_file():
+            if _is_bare_repo(bare):
                 return BareCacheEntry(path=bare, created=False)
             self._clone(["clone", "--bare", url, str(bare)], dest=bare)
             self._protect_cache_objects(bare)
@@ -84,14 +95,18 @@ class GitRunner:
         """Hold ``<bare>.lock`` so untaped processes sharing a cache never race.
 
         Without it a second process could clone into, fetch, or remove the
-        partial clone of a first one. The wait is bounded by what one holder
-        may take (a clone or fetch plus the cache-protection config calls).
+        partial clone of a first one. One holder takes at most a clone or
+        fetch plus the cache-protection config calls; the wait allows a short
+        queue of such holders (``_LOCK_QUEUE``) before giving up.
         """
-        lock = FileLock(f"{bare}.lock", timeout=self._slow_timeout + 2 * self._timeout)
+        hold = self._slow_timeout + 2 * self._timeout
+        lock = FileLock(f"{bare}.lock", timeout=_LOCK_QUEUE * hold)
         try:
             lock.acquire()
         except Timeout as exc:
             raise GitError(f"bare cache is locked by another untaped process: {bare}") from exc
+        except OSError as exc:
+            raise GitError(f"could not lock bare cache {bare}: {exc.strerror or exc}") from exc
         try:
             yield
         finally:

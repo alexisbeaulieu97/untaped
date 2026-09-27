@@ -41,6 +41,7 @@ from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
     FormatOption,
+    OperationCancelledError,
     OutputFormat,
     ParallelOption,
     UsageError,
@@ -143,7 +144,7 @@ def sync_command(
                 skip_manifest_errors=all_workspaces,
                 parallel=workers,
             )
-        prune_failed = False
+        prune_failed = prune_cancelled = False
         if prune:
             # Prune after the sync phase (no racing in-flight clones) and
             # outside the spinner, behind the same batch confirmation as
@@ -167,13 +168,17 @@ def sync_command(
                     assume_yes=yes,
                 )
             except ConfigError, UsageError:
-                # Emit the sync rows already produced before the refusal exits.
+                # A refused or interrupted prompt still reports the sync phase.
+                ui.message("info", _sync_summary(outcomes))
                 print_sync_outcomes(outcomes, fmt=fmt, columns=columns)
                 raise
             outcomes.extend(row for _, row in pruned.results)
             prune_failed = pruned.any_failed
+            prune_cancelled = pruned.cancelled
         ui.message("info", _sync_summary(outcomes))
         print_sync_outcomes(outcomes, fmt=fmt, columns=columns)
+        if prune_cancelled:
+            raise OperationCancelledError
     finish(any_sync_failed(outcomes) or prune_failed)
 
 

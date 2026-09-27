@@ -11,38 +11,46 @@ from untaped.config_file import read_config_text, replace_config_text
 from untaped.editor import run_editor
 from untaped.errors import ConfigError
 from untaped.fs import atomic_write
-from untaped.settings import resolve_config_path
+from untaped.settings import resolve_config_path, validate_config_file
 from untaped.ui import ui_context
 
 
 def run_config_editor() -> None:
     """Edit a private copy of the config file in $VISUAL/$EDITOR; save it if valid.
 
-    The save is an ordinary config write (under the config lock, atomic,
-    owner-only, through a symlink) followed by validation. An invalid edit,
-    or a config file changed meanwhile, leaves the config file as it was and
-    keeps the edited copy so the work is not lost.
+    The copy is validated before anything is written; a valid change is saved
+    like any other config write (under the config lock, atomic, owner-only,
+    through a symlink), line endings untouched. After the editor returns,
+    any failure leaves the config file as it was and keeps the edited copy
+    so the work is not lost.
     """
     with report_errors():
         path = resolve_config_path()
         original = read_config_text(path)
         workdir = Path(tempfile.mkdtemp(prefix="untaped-config-edit-"))
         draft = workdir / path.name
-        keep = False
+        edited_by_user = False
         try:
             atomic_write(draft, original or "", mode=0o600)
             run_editor(draft)
-            edited = draft.read_text(encoding="utf-8")
-            try:
-                replace_config_text(edited, expected=original, path=path)
-            except ConfigError as exc:
-                keep = True
-                raise ConfigError(
-                    f"{exc}\nconfig left unchanged; your edits are in {draft}"
-                ) from exc
-        except OSError as exc:
-            raise ConfigError(f"could not edit {path}: {exc.strerror or exc}") from exc
-        finally:
-            if not keep:
+            edited_by_user = True
+            with draft.open(encoding="utf-8", newline="") as handle:
+                edited = handle.read()
+            if edited == (original or ""):
                 shutil.rmtree(workdir, ignore_errors=True)
+                ui_context(strict=False).message("info", f"no changes; config unchanged ({path})")
+                return
+            validate_config_file(draft, config_path=path)
+            replace_config_text(edited, expected=original, path=path)
+        except (ConfigError, OSError, UnicodeDecodeError) as exc:
+            if not edited_by_user:
+                shutil.rmtree(workdir, ignore_errors=True)
+                if isinstance(exc, ConfigError):
+                    raise
+                raise ConfigError(f"could not edit {path}: {exc}") from exc
+            detail = str(exc) if isinstance(exc, ConfigError) else f"could not save {path}: {exc}"
+            raise ConfigError(
+                f"{detail}\nconfig left unchanged; your edits are in {draft}"
+            ) from exc
+        shutil.rmtree(workdir, ignore_errors=True)
         ui_context(strict=False).message("success", f"config saved and validated (config: {path})")

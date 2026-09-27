@@ -125,6 +125,7 @@ def test_sync_prune_refusal_without_terminal_still_emits_sync_rows(
 
     assert result.exit_code == 2, result.output
     assert "--yes" in result.stderr
+    assert "sync: 1 cloned" in result.stderr
     assert [(row["repo"], row["action"]) for row in json.loads(result.stdout)] == [
         ("kept", "cloned")
     ]
@@ -166,9 +167,10 @@ def test_sync_prune_decline_keeps_orphan(
         prompt_backend=backend,
     )
 
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 1, result.output
     assert backend.calls == [("confirm", "Continue?")]
     assert str(orphan) in result.output
+    assert "cancelled; no changes made" in result.stderr
     assert orphan.is_dir()
 
 

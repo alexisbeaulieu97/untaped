@@ -301,6 +301,9 @@ def _mount_capability(root: App, capability: RegisteredCapability) -> None:
 #: Root commands that manage or diagnose skills themselves: the per-run
 #: skills check stays quiet after them.
 _SKILLS_CHECK_EXEMPT = frozenset({"skills", "doctor"})
+#: Flags that make a command a preview (``recipe apply --check``, every
+#: ``--dry-run``): the skills check must not write after one.
+_PREVIEW_FLAGS = frozenset({"--dry-run", "--check"})
 
 
 def _check_skills_after(
@@ -309,14 +312,16 @@ def _check_skills_after(
     """Run the per-run installed-skills check after a command.
 
     Skipped for bare ``untaped``, root flags (``--help``, ``--version``) and
-    the skills-managing commands. After a failed or ``--dry-run`` command it
-    only reports, never updates. Never lets the check break the command.
+    the skills-managing commands. After a failed or previewing command (a
+    ``_PREVIEW_FLAGS`` option before any ``--``) it only reports, never
+    updates. Never lets the check break the command.
     """
     if not tokens or tokens[0].startswith("-") or tokens[0] in _SKILLS_CHECK_EXEMPT:
         return
     options = tokens[: tokens.index("--")] if "--" in tokens else tokens
     try:
-        check_installed_skills(skills, allow_updates=not failed and "--dry-run" not in options)
+        preview = not _PREVIEW_FLAGS.isdisjoint(options)
+        check_installed_skills(skills, allow_updates=not (failed or preview))
     except Exception:
         return
 

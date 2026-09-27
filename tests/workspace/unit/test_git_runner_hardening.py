@@ -157,7 +157,7 @@ def test_bare_cache_is_locked_across_processes(tmp_path: Path, operation: str) -
     # remove a partial clone of one bare cache at the same time.
     url = "https://x.example/org/svc-a.git"
     cache = tmp_path / "cache"
-    runner = GitRunner(timeout=0.1, slow_timeout=0.1)
+    runner = GitRunner(timeout=0.02, slow_timeout=0.02)
     bare = runner.bare_cache_path(url, cache_dir=cache)
     bare.mkdir(parents=True)
     holder = subprocess.Popen(
@@ -191,3 +191,26 @@ def test_bare_cache_is_locked_across_processes(tmp_path: Path, operation: str) -
     with patch("subprocess.run", side_effect=fake_run):
         runner.bare_fetch(bare)
     assert calls
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="POSIX permissions")
+def test_unlockable_bare_cache_is_a_git_error_but_a_ready_cache_needs_no_lock(
+    tmp_path: Path,
+) -> None:
+    url = "https://x.example/org/svc-a.git"
+    cache = tmp_path / "cache"
+    runner = GitRunner()
+    bare = runner.bare_cache_path(url, cache_dir=cache)
+    bare.mkdir(parents=True)
+    (bare / "HEAD").write_text("ref: refs/heads/main\n")
+    bare.parent.chmod(0o555)  # a read-only shared cache: no lock file can be created
+    calls, fake_run = _record_calls()
+    try:
+        with patch("subprocess.run", side_effect=fake_run):
+            assert runner.ensure_bare(url, cache_dir=cache).created is False
+            with pytest.raises(GitError, match="could not lock bare cache"):
+                runner.bare_fetch(bare)
+    finally:
+        bare.parent.chmod(0o755)
+    assert calls == []
+    assert sorted(p.name for p in bare.parent.iterdir()) == [bare.name]

@@ -58,10 +58,12 @@ def atomic_write(
     survives and the file it points at gets the content. An existing file
     keeps its permission bits; ``mode`` sets them instead (the temp file never
     has looser ones, even briefly); a new file otherwise gets the default mode
-    (``0o666`` minus the umask). Creates parent directories. ``newline=""``
-    disables newline translation so the caller's line endings land on disk
-    verbatim.
+    (``0o666`` minus the umask). Creates ``path``'s missing parent
+    directories, never those of a symlink's target: a link into a missing
+    directory raises :class:`FileNotFoundError`. ``newline=""`` disables
+    newline translation so the caller's line endings land on disk verbatim.
     """
+    path.parent.mkdir(parents=True, exist_ok=True)
     target = _write_target(path)
     tmp = _write_temp(target, content, encoding=encoding, newline=newline, mode=mode)
     try:
@@ -88,7 +90,6 @@ def _write_temp(
     The temp file gets ``mode``, else ``target``'s current mode, else the
     default mode for a new file.
     """
-    target.parent.mkdir(parents=True, exist_ok=True)
     if mode is None:
         with suppress(FileNotFoundError):
             mode = stat.S_IMODE(target.stat().st_mode)
@@ -181,6 +182,7 @@ def _stage_replacements(changes: Sequence[FileChange]) -> dict[int, Path]:
         for index, change in enumerate(changes):
             if change.after is None:
                 continue
+            change.path.parent.mkdir(parents=True, exist_ok=True)
             staged[index] = _write_temp(_write_target(change.path), change.after)
     except BaseException as exc:
         _remove_staged(staged.values())
@@ -195,8 +197,10 @@ def _rollback(applied: list[FileChange]) -> list[str]:
     for change in reversed(applied):
         try:
             if change.before is None:
-                if change.path.exists():
-                    change.path.unlink()
+                # Remove what was created, not a (formerly dangling) link to it.
+                created = _write_target(change.path)
+                if created.exists():
+                    created.unlink()
                 continue
             atomic_write(change.path, change.before)
         except OSError as exc:
