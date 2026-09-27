@@ -177,6 +177,12 @@ def _rejected() -> Exception:
             "config set svc.base_url URL",
         ),
         (
+            {"base_url": "https://svc"},
+            HttpTransportError("cannot connect to https://svc: connection refused"),
+            "cannot connect to https://svc: connection refused",
+            "config set svc.base_url URL",
+        ),
+        (
             {"base_url": "https://svc", "token": "t"},
             _tls(20),  # X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY
             "[SSL] handshake failed for https://svc",
@@ -211,6 +217,7 @@ def _rejected() -> Exception:
         "rejected-token",
         "no-token",
         "unreachable",
+        "unreachable-without-token",
         "tls-untrusted",
         "tls-hostname",
         "certificate-word-only",

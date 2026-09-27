@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from untaped.auth import describe_token_source
 from untaped.capabilities.registry import CapabilityContext, DoctorCheck, DoctorResult
-from untaped.errors import HttpError, UntapedError
+from untaped.errors import HttpError, HttpTransportError, UntapedError
 
 
 def executable_check(check_id: str, program: str, *, purpose: str) -> DoctorCheck:
@@ -150,7 +150,7 @@ def _online_fix(exc: BaseException, *, section: str, has_token: bool) -> str:
     rejected = any(
         isinstance(error, HttpError) and error.status_code in (401, 403) for error in chain
     )
-    if rejected or not has_token:
+    if rejected:
         return f"config set {section}.token --prompt"
     if any(
         isinstance(error, ssl.SSLCertVerificationError)
@@ -158,6 +158,9 @@ def _online_fix(exc: BaseException, *, section: str, has_token: bool) -> str:
         for error in chain
     ):
         return "config set http.ca_bundle PATH"
+    # An unreachable service is a URL problem even when no token is set yet.
+    if not has_token and not any(isinstance(error, HttpTransportError) for error in chain):
+        return f"config set {section}.token --prompt"
     return f"config set {section}.base_url URL"
 
 
