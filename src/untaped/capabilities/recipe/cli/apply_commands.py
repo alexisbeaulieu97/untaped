@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, TextIO
 
 from cyclopts import Parameter
 
@@ -14,6 +14,7 @@ from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
 from untaped.capabilities.recipe.application.files import read_recipe_file
 from untaped.capabilities.recipe.application.ports import PromptFunc
 from untaped.capabilities.recipe.application.resolution import resolve_apply_recipe
+from untaped.capabilities.recipe.application.run_bulk import resolve_targets
 from untaped.capabilities.recipe.application.targets import Target, resolve_target_lines
 from untaped.capabilities.recipe.cli._context import recipe_ui
 from untaped.capabilities.recipe.cli.common import (
@@ -58,7 +59,6 @@ from untaped.capability_api import (
     parse_kv_pairs,
     read_stdin,
     render_rows,
-    ui_context,
 )
 
 MessageKind = Literal["success", "warning", "error", "info"]
@@ -289,7 +289,13 @@ def _apply_context(
             )
         raise UsageError("at least one target directory is required (or use --stdin)")
     inputs = merge_vars(vars_files, parse_kv_pairs(raw_vars, flag="--var"), file_flag="--vars-file")
-    input_from = _input_sources(raw_input_from)
+    # Prompts run here, serially and before the progress display starts.
+    try:
+        resolved = resolve_targets(
+            loaded, targets, inputs=inputs, input_from=_input_sources(raw_input_from), prompt=prompt
+        )
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
     workers = clamp_parallel(parallel, cap=32, policy="recipe planning cap")
     ui = recipe_ui()
     with UvHookWorkerPool(
@@ -307,24 +313,17 @@ def _apply_context(
             )
         )
         with ui.progress("Planning targets") as progress:
-            try:
-                plans = runner.plan(
-                    recipe=loaded,
-                    recipe_dir=recipe_path.parent,
-                    local_hook_project=recipe_resolution.local_hook_project,
-                    targets=targets,
-                    inputs=inputs,
-                    input_from=input_from,
-                    interactive=prompt is not None,
-                    prompt=prompt,
-                    parallel=workers,
-                    on_progress=lambda done, total: progress.update(
-                        f"{done}/{total}",
-                        fraction=done / total if total else None,
-                    ),
-                )
-            except ValueError as exc:
-                raise ConfigError(str(exc)) from exc
+            plans = runner.plan_resolved(
+                recipe=loaded,
+                recipe_dir=recipe_path.parent,
+                local_hook_project=recipe_resolution.local_hook_project,
+                resolved=resolved,
+                parallel=workers,
+                on_progress=lambda done, total: progress.update(
+                    f"{done}/{total}",
+                    fraction=done / total if total else None,
+                ),
+            )
     return ApplyContext(
         root=root,
         recipe=loaded,
@@ -467,14 +466,22 @@ def _terminal_prompt() -> PromptFunc | None:
     Like ``awx test`` variables: never prompt without a TTY (piped ``--stdin``
     targets included); the missing input then fails with a ``--var`` hint.
     """
-    ui = ui_context(strict=False)
-    if not ui.stdin.isatty():
+    ui = recipe_ui()
+    if not _is_terminal(ui.stdin):
         return None
 
     def ask(message: str, *, sensitive: bool) -> object:
         return ui.secret(message) if sensitive else ui.text(message)
 
     return ask
+
+
+def _is_terminal(stream: TextIO) -> bool:
+    """``stream.isatty()`` that treats a closed or broken stream as no terminal."""
+    try:
+        return stream.isatty()
+    except OSError, ValueError:
+        return False
 
 
 def _render_result_summary(

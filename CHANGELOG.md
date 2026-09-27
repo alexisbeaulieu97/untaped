@@ -57,20 +57,27 @@
     `recipe backups …`. Recipe verbs stay at the top: `list`, `get` and `edit`
     now act on recipes only, and `init PACK/RECIPE` scaffolds a recipe (the
     `pack|recipe|hook` positional is gone). Old spellings are usage errors
-    (exit 2); there are no aliases.
+    (exit 2); there are no aliases. `get`/`edit` on a pack or hook name, and
+    `init NAME` without a `/`, hint at the `packs`/`hooks` command.
+  - `packs sync` and `packs remove` accept `--stdin` (pack names, or
+    `recipe.pack` records from `packs list --format pipe`), and `packs
+    remove` takes several names.
   - **Breaking:** variable flags match `awx test`. `apply --vars-file`
     repeats (a later file wins; `--var` wins over every file). `apply
     --interactive` is gone: a required input that is still missing is
     prompted for when stdin is a terminal, never without one (piped
     `--stdin` targets included); `--non-interactive` (and `--check`) fail
-    instead. Optional
-    and defaulted inputs are no longer prompted. The error now reads `missing
-    required input: NAME; pass --var NAME=VALUE or --vars-file FILE`.
-    `hooks run` takes inputs with `--var`/`--vars-file` (were `--input`/
-    `--inputs`) and args with `--arg`/`--args-file` (was `--args`), all
-    repeatable.
+    instead. Optional and defaulted inputs are no longer prompted. Prompts
+    now run for every target, in order, before planning starts, so `-j N`
+    planning stays parallel and Ctrl-C at a prompt exits 130. The error now
+    reads `missing required input: NAME; pass --var NAME=VALUE or
+    --vars-file FILE`. `hooks run` takes inputs with `--var`/`--vars-file`
+    (were `--input`/`--inputs`) and args with `--arg`/`--args-file` (was
+    `--args`), all repeatable.
   - **Breaking:** removed the deprecated `check`, `show`, `new`, `backup
     show` and `apply --vars` spellings, and the hidden no-op `add --yes`.
+  - "recipe not found" and "hook not found" errors quote the name
+    (`recipe not found: 'x'`), like other not-found errors.
   - **Behavior change:** hook workers and `uv lock` runs on packs no longer
     inherit the whole environment. Only an allowlist passes through (`PATH`,
     `HOME`, locale, temp dirs, `UV_*`/`XDG_*`, TLS and proxy settings,

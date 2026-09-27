@@ -64,7 +64,8 @@ list|get|restore|prune`.
 - Provide fixed values with repeated `--var KEY=VALUE` and repeated
   `--vars-file file.yml` YAML mappings: a later file wins over an earlier one,
   and `--var` wins over every file (the same flags and precedence as `awx
-  test`). Unknown input names are rejected.
+  test`). Unknown input names are rejected. `--vars-file` values are YAML
+  (`3.10` → `3.1`, `on` → `true`): quote version-like strings.
 - For inputs declared `list` or `dict`, `--var` parses the value as YAML first:
   `--var 'cols=[name, owner]'`, `--var 'labels={team: platform}'`. Scalar
   inputs keep literal-string semantics. `--vars-file` files may hold native lists
@@ -88,8 +89,10 @@ list|get|restore|prune`.
   Without a TTY (piped `--stdin` targets included), or with
   `--non-interactive` or `--check`, the input fails with `missing required input: NAME;
   pass --var NAME=VALUE or --vars-file FILE` (a global input fails the run, a
-  target input fails that target's row). Agents should pass every required
-  input explicitly or use `--non-interactive`.
+  target input fails that target's row). Prompts run serially in target
+  order before planning starts (planning stays parallel with `-j`), and
+  Ctrl-C at a prompt aborts the run with exit 130. Agents should pass every
+  required input explicitly or use `--non-interactive`.
 - Sensitive inputs render as `***` in rows, warnings, errors, and backup
   metadata, and file-level preview detail and diffs are suppressed for targets
   that resolve a sensitive input (not overridable by `--preview diff`). Real
@@ -157,9 +160,12 @@ list|get|restore|prune`.
   (opens `pyproject.toml`) for packs, and `hooks list`/`hooks get
   <hook>`/`hooks edit <hook>` for hooks. `hooks list` and `hooks get` cover
   built-ins such as `yaml_edit` (marked `(builtin)`; not editable). `packs
-  remove <pack>` is destructive, requires confirmation or `--yes`
+  remove <pack>...` is destructive, requires confirmation or `--yes`
   (`--dry-run` previews), exits 1 on a declined prompt, and warns when the
-  copy has local edits.
+  copy has local edits. `packs sync` and `packs remove` take `--stdin`
+  (pack names or `recipe.pack` records, e.g. `packs list --format pipe`).
+  `get`/`edit` on a pack or hook name, and `init NAME` without `/`, fail
+  with a hint naming the `packs`/`hooks` command.
 - `validate [ref|path]` is static preflight: no ref validates the whole library
   and `packs.toml`; a ref validates one pack, recipe, path, or built-in. It
   AST-scans hook modules without importing them, and for hook-declaring
@@ -244,7 +250,7 @@ list|get|restore|prune`.
   `--content`/`--content-file` supply fixture content; hook inputs come from
   repeated `--vars-file`/`--var KEY=YAML` and hook args from repeated
   `--args-file`/`--arg KEY=YAML` (later files win, flags win over files;
-  values are YAML-parsed). Context echo (including fixture values) and
+  values are YAML-parsed, so quote strings such as `'v="3.10"'`). Context echo (including fixture values) and
   accumulated warnings go to stderr — use `--quiet` in shared terminals when
   values are sensitive.
 - For common YAML edits use the built-in `yaml_edit` transform hook: `edits`

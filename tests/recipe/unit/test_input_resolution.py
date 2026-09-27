@@ -9,10 +9,8 @@ import pytest
 from untaped.capabilities.recipe.application.inputs import (
     InputResolutionConfig,
     InputResolutionResult,
-    NoPromptAvailableError,
     has_sensitive_inputs,
     prepare_input_resolution,
-    prompts_per_target,
     redact_inputs,
     resolve_global_values,
     resolve_target_inputs,
@@ -80,14 +78,12 @@ def _config(
     *,
     fixed_values: dict[str, object] | None = None,
     input_from: dict[str, str] | None = None,
-    interactive: bool = False,
     prompt: PromptRecorder | None = None,
 ) -> InputResolutionConfig:
     return prepare_input_resolution(
         recipe,
         fixed_values=fixed_values or {},
         input_from=input_from or {},
-        interactive=interactive,
         prompt=None if prompt is None else prompt.ask,
     )
 
@@ -98,14 +94,12 @@ def _resolve(
     *,
     fixed_values: dict[str, object] | None = None,
     input_from: dict[str, str] | None = None,
-    interactive: bool = False,
     prompt: PromptRecorder | None = None,
 ) -> InputResolutionResult:
     config = _config(
         recipe,
         fixed_values=fixed_values,
         input_from=input_from,
-        interactive=interactive,
         prompt=prompt,
     )
     return resolve_target_inputs(
@@ -290,7 +284,6 @@ def test_interactive_prompts_for_global_and_target_inputs() -> None:
     result = _resolve(
         recipe,
         Target(path=Path("/work/acme/api")),
-        interactive=True,
         prompt=prompt,
     )
 
@@ -319,7 +312,6 @@ def test_prompting_never_asks_for_defaulted_or_optional_inputs() -> None:
     result = _resolve(
         recipe,
         Target(path=Path("/work/acme/api")),
-        interactive=True,
         prompt=prompt,
     )
 
@@ -341,7 +333,6 @@ def test_required_sensitive_input_prompts_as_a_secret() -> None:
     result = _resolve(
         recipe,
         Target(path=Path("/work/acme/api")),
-        interactive=True,
         prompt=prompt,
     )
 
@@ -360,87 +351,10 @@ def test_missing_required_structured_input_never_prompts() -> None:
         _resolve(
             recipe,
             Target(path=Path("/work/acme/api")),
-            interactive=True,
             prompt=prompt,
         )
 
     assert prompt.messages == []
-
-
-_TARGET_STR = {"type": "str", "scope": "target", "required": True}
-
-
-@pytest.mark.parametrize(
-    ("inputs", "fixed", "input_from", "interactive", "expected"),
-    [
-        pytest.param({"s": _TARGET_STR}, {}, {}, True, True, id="missing"),
-        pytest.param({"s": _TARGET_STR}, {}, {}, False, False, id="no-tty"),
-        pytest.param({"s": _TARGET_STR}, {"s": "x"}, {}, True, False, id="fixed"),
-        pytest.param(
-            {"s": _TARGET_STR},
-            {},
-            {"s": "{{ target.name }}"},
-            True,
-            False,
-            id="input-from",
-        ),
-        pytest.param(
-            {"s": {"type": "str", "required": True, "from": "{{ record.s }}"}},
-            {},
-            {},
-            True,
-            True,
-            id="recipe-from-may-miss",
-        ),
-        pytest.param(
-            {"s": {"type": "str", "scope": "global", "required": True}},
-            {},
-            {},
-            True,
-            False,
-            id="global-prompts-before-planning",
-        ),
-        pytest.param({"s": {**_TARGET_STR, "type": "list"}}, {}, {}, True, False, id="structured"),
-        pytest.param(
-            {"s": {"type": "str", "scope": "target", "default": "d"}},
-            {},
-            {},
-            True,
-            False,
-            id="default",
-        ),
-    ],
-)
-def test_prompts_per_target_only_when_a_target_input_may_still_be_missing(
-    inputs: dict[str, object],
-    fixed: dict[str, object],
-    input_from: dict[str, str],
-    interactive: bool,
-    expected: bool,
-) -> None:
-    recipe = Recipe.model_validate({"version": 1, "inputs": inputs})
-    config = _config(
-        recipe,
-        fixed_values=fixed,
-        input_from=input_from,
-        interactive=interactive,
-        prompt=PromptRecorder({}),
-    )
-
-    assert prompts_per_target(recipe, config) is expected
-
-
-def test_interactive_without_prompt_backend_fails_clearly() -> None:
-    recipe = Recipe.model_validate(
-        {"version": 1, "inputs": {"service": {"type": "str", "required": True}}}
-    )
-
-    with pytest.raises(NoPromptAvailableError, match="interactive input requires a terminal"):
-        _resolve(
-            recipe,
-            Target(path=Path("/work/acme/api")),
-            interactive=True,
-        )
 
 
 @pytest.mark.parametrize(

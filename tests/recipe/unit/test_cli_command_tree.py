@@ -139,12 +139,30 @@ def test_each_noun_lists_gets_and_edits_its_own_kind(
     ]
 
 
+_HINT = "\nhint: run `untaped recipe {noun} {verb} {ref}`"
+
+
 @pytest.mark.parametrize(
     ("argv", "message"),
     [
-        pytest.param(["get", "acme"], "recipe not found: acme", id="recipe-get-pack"),
-        pytest.param(["get", "acme/probe"], "recipe not found: acme/probe", id="recipe-get-hook"),
-        pytest.param(["get", "yaml_edit"], "recipe not found: yaml_edit", id="recipe-get-builtin"),
+        pytest.param(
+            ["get", "acme"],
+            "recipe not found: 'acme'" + _HINT.format(noun="packs", verb="get", ref="acme"),
+            id="recipe-get-pack",
+        ),
+        pytest.param(
+            ["edit", "acme/probe"],
+            "recipe not found: 'acme/probe'"
+            + _HINT.format(noun="hooks", verb="edit", ref="acme/probe"),
+            id="recipe-edit-hook",
+        ),
+        pytest.param(
+            ["get", "yaml_edit"],
+            "recipe not found: 'yaml_edit'"
+            + _HINT.format(noun="hooks", verb="get", ref="yaml_edit"),
+            id="recipe-get-builtin",
+        ),
+        pytest.param(["get", "nothing"], "recipe not found: 'nothing'\n", id="no-hint"),
         pytest.param(
             ["packs", "get", "acme/editorconfig"],
             "pack not found: 'acme/editorconfig'",
@@ -152,8 +170,13 @@ def test_each_noun_lists_gets_and_edits_its_own_kind(
         ),
         pytest.param(
             ["hooks", "get", "acme/editorconfig"],
-            "hook not found: acme/editorconfig",
+            "hook not found: 'acme/editorconfig'",
             id="hooks-get-recipe",
+        ),
+        pytest.param(
+            ["init", "acme"],
+            "recipe refs must use <pack>/<recipe>\nhint: run `untaped recipe packs init acme`",
+            id="init-pack-name",
         ),
     ],
 )
@@ -187,3 +210,27 @@ def test_init_scaffolds_each_noun_from_its_own_command(
     pyproject = (tmp_path / "acme" / "pyproject.toml").read_text()
     assert 'path = "recipes/editorconfig/recipe.yml"' in pyproject
     assert 'module = "acme_pack.hooks.probe"' in pyproject
+
+
+def test_packs_list_pipe_composes_into_sync_and_remove(tmp_path: Path) -> None:
+    _install(tmp_path)
+    invoker = CliInvoker()
+    packs = invoker.invoke(app, ["packs", "list", "--format", "pipe"]).stdout
+    recipes = invoker.invoke(app, ["list", "--format", "pipe"]).stdout
+
+    synced = invoker.invoke(app, ["packs", "sync", "--stdin", "--format", "json"], input=packs)
+    wrong_kind = invoker.invoke(app, ["packs", "remove", "--stdin", "--yes"], input=recipes)
+    removed = invoker.invoke(
+        app, ["packs", "remove", "--stdin", "--yes", "--format", "json"], input=packs
+    )
+
+    assert synced.exit_code == 0, synced.output
+    assert [(row["name"], row["action"]) for row in json.loads(synced.stdout)] == [
+        ("acme", "unchanged")
+    ]
+    assert wrong_kind.exit_code == 2, wrong_kind.output
+    assert removed.exit_code == 0, removed.output
+    assert [(row["name"], row["action"]) for row in json.loads(removed.stdout)] == [
+        ("acme", "removed")
+    ]
+    assert not (library_root() / "packs" / "acme").exists()

@@ -5,6 +5,7 @@ from __future__ import annotations
 import errno
 import os
 import subprocess
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -15,7 +16,7 @@ from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
 from untaped.capabilities.recipe.application.run_bulk import RunBulkApply
 from untaped.capabilities.recipe.application.targets import Target
 from untaped.capabilities.recipe.builtins.hooks import yaml_edit
-from untaped.capabilities.recipe.domain.plan import FileChange
+from untaped.capabilities.recipe.domain.plan import FileChange, TargetPlan
 from untaped.capabilities.recipe.domain.recipe import Recipe
 from untaped.capabilities.recipe.hook_worker import HookHelpers, dump_yaml, load_yaml
 from untaped.capabilities.recipe.infrastructure import uv_project
@@ -489,6 +490,71 @@ def test_bulk_plan_input_resolution_errors_have_empty_inputs(tmp_path: Path) -> 
 
     assert plans[0].status == "error"
     assert plans[0].display_inputs == {}
+
+
+class _BarrierPlanner(ApplyRecipe):
+    """A planner whose calls each wait for every other target: serial planning times out."""
+
+    def __init__(self, parties: int, log: list[str]) -> None:
+        super().__init__(HookExecutor(HookResolver(), workers=UvHookWorkerPool()))
+        self._barrier = threading.Barrier(parties, timeout=5)
+        self._log = log
+
+    def __call__(
+        self,
+        *,
+        recipe: Recipe,
+        recipe_dir: Path,
+        target: Path,
+        inputs: dict[str, object],
+        local_hook_project: Path | None = None,
+    ) -> TargetPlan:
+        self._log.append(f"plan {target.name}")
+        self._barrier.wait()
+        return super().__call__(
+            recipe=recipe,
+            recipe_dir=recipe_dir,
+            target=target,
+            inputs=inputs,
+            local_hook_project=local_hook_project,
+        )
+
+
+def test_bulk_plan_prompts_in_target_order_before_planning_targets_in_parallel(
+    tmp_path: Path,
+) -> None:
+    recipe = Recipe.model_validate(
+        {
+            "version": 1,
+            "inputs": {
+                "service": {"type": "str", "required": True, "from": "{{ record.repo }}"},
+            },
+            "steps": [],
+        }
+    )
+    targets = [tmp_path / "api", tmp_path / "web"]
+    for target in targets:
+        target.mkdir()
+    log: list[str] = []
+
+    def prompt(message: str, *, sensitive: bool) -> object:
+        log.append(message)
+        return Path(message.removeprefix("service for ")).name
+
+    plans = RunBulkApply(_BarrierPlanner(len(targets), log)).plan(
+        recipe=recipe,
+        recipe_dir=tmp_path,
+        local_hook_project=None,
+        targets=[Target(path=target) for target in targets],
+        inputs={},
+        prompt=prompt,
+        parallel=len(targets),
+    )
+
+    assert [plan.status for plan in plans] == ["planned", "planned"], plans
+    assert [plan.display_inputs["service"] for plan in plans] == ["api", "web"]
+    assert log[:2] == [f"service for {targets[0]}", f"service for {targets[1]}"]
+    assert sorted(log[2:]) == ["plan api", "plan web"]
 
 
 def test_flush_changes_reports_rollback_failures(
