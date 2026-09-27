@@ -78,7 +78,7 @@ def corpus(
 ) -> Callable[..., _Corpus]:
     def create(files: dict[str, str | bytes], **cache_options: Any) -> _Corpus:
         source = source_repo("source", files)
-        return _Corpus(source, tmp_path / "corpus", GitCorpusCache(**cache_options))
+        return _Corpus(source, tmp_path / "corpus", GitCorpusCache(auth_host=None, **cache_options))
 
     return create
 
@@ -474,7 +474,7 @@ def test_tree_paths_and_first_blob_read_the_cached_tree(corpus: Callable[..., _C
 def test_validate_pattern_uses_extended_regex_and_checks_pathspecs(
     tmp_path: Path, pattern: str, paths: tuple[str, ...], error: str | None
 ) -> None:
-    found = GitCorpusCache().validate_pattern(
+    found = GitCorpusCache(auth_host=None).validate_pattern(
         root=tmp_path / "corpus", pattern=pattern, paths=paths, fixed_strings=False
     )
 
@@ -535,7 +535,7 @@ def test_listing_reads_only_bare_repo_metadata_and_warns_on_corrupt_files(
     assert all("could not read corpus metadata" in warning for warning in warnings)
     assert capfd.readouterr().err == ""
 
-    GitCorpusCache().list_repos(root=env.root)
+    GitCorpusCache(auth_host=None).list_repos(root=env.root)
     assert "warning: could not read corpus metadata" in capfd.readouterr().err
 
 
@@ -565,7 +565,7 @@ def test_ensure_origin_does_not_send_auth_header_to_local_commands(
     url = "https://github.example.com/acme/api.git"
     root = tmp_path / "corpus"
     safe_cache_path(url, root=root).mkdir(parents=True)
-    cache = GitCorpusCache()
+    cache = GitCorpusCache(auth_host="github.example.com")
     seen: list[tuple[str, str | None]] = []
 
     def fake_run(args: list[str], **kwargs: Any) -> GitResult:
@@ -584,6 +584,56 @@ def test_ensure_origin_does_not_send_auth_header_to_local_commands(
 
     assert [auth for command, auth in seen if command.startswith("remote ")] == [None, None]
     assert any(auth is not None for command, auth in seen if command.startswith("fetch"))
+
+
+@pytest.mark.parametrize(
+    ("url", "auth_host", "sent"),
+    [
+        ("https://github.com/acme/api.git", "github.com", True),
+        ("https://GitHub.com:443/acme/api.git", "github.com", True),
+        ("https://ghe.example/acme/api.git", "ghe.example", True),
+        ("https://evil.example/acme/api.git", "github.com", False),
+        ("https://github.com.evil.example/acme/api.git", "github.com", False),
+        ("https://github.com@evil.example/acme/api.git", "github.com", False),
+        ("https://github.com/acme/api.git", None, False),
+    ],
+    ids=["github", "port-and-case", "enterprise", "other", "suffix", "userinfo", "no-host"],
+)
+def test_sync_sends_the_token_only_to_the_github_git_host(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, url: str, auth_host: str | None, sent: bool
+) -> None:
+    # Security: a piped clone_url on another host must not receive the token.
+    cache = GitCorpusCache(auth_host=auth_host)
+    network: list[str | None] = []
+
+    def fake_run(args: list[str], **kwargs: Any) -> GitResult:
+        if args[0] in {"fetch", "ls-remote"}:
+            network.append(kwargs.get("auth_header"))
+        return GitResult(returncode=0, stdout=b"", stderr="")
+
+    monkeypatch.setattr(cache, "_run", fake_run)
+
+    cache.sync_repo(
+        CorpusRepoTarget(full_name="acme/api", clone_url=url, default_branch="main"),
+        root=tmp_path / "corpus",
+        selector=RefSelector(),
+        depth=1,
+        auth_header="AUTHORIZATION: basic secret",
+    )
+
+    assert network
+    assert all((auth is not None) is sent for auth in network)
+
+
+def test_sync_without_pushed_at_keeps_the_stored_one(corpus: Callable[..., _Corpus]) -> None:
+    # A piped record without pushed_at must not erase what GitHub last reported.
+    env = corpus({"README.md": "hello\n"})
+    env.sync(repo=replace(env.repo, pushed_at="2026-07-01T00:00:00Z"))
+
+    env.sync()
+    freshness = env.cache.repo_freshness(env.repo, root=env.root)
+
+    assert freshness is not None and freshness.pushed_at == "2026-07-01T00:00:00Z"
 
 
 def test_sync_records_pushed_at_and_touch_marks_copy_current(

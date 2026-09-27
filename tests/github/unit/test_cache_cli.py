@@ -117,6 +117,49 @@ def test_cache_sync_skips_fetch_when_github_reports_no_push(
     assert actions == ["synced", "unchanged"]
 
 
+def test_cache_sync_of_piped_repos_list_skips_fetch_when_github_reports_no_push(
+    _config: Path, source_repo: SourceRepo
+) -> None:
+    _config.write_text(_config.read_text() + "      sweep:\n        max_age_seconds: 0\n")
+    listed = [_repo("acme/api", source_repo("api", {"README.md": "hello\n"}))]
+    piped = _cache(["repos", "list", "--org", "acme", "-f", "pipe"], org={"acme": listed})
+    args = ["cache", "sync", "--stdin", "-f", "json"]
+
+    # The first fetch stores GitHub's own pushed_at; piped records must match it.
+    synced = _cache(["cache", "sync", "--org", "acme", "-f", "json"], org={"acme": listed})
+    actions = [
+        json.loads(CliInvoker().invoke(app, args, input=piped.stdout).stdout)[0]["action"]
+        for _ in range(2)
+    ]
+
+    assert '"pushed_at": "2026-07-01T00:00:00Z"' in piped.stdout
+    assert json.loads(synced.stdout)[0]["action"] == "synced"
+    assert actions == ["unchanged", "unchanged"]
+
+
+def test_cache_sync_sends_the_token_only_to_the_enterprise_git_host(
+    _config: Path, git_auth: dict[str, str | None]
+) -> None:
+    _config.write_text(_config.read_text() + "      base_url: https://ghe.example/api/v3\n")
+    records = [
+        {"untaped": "1", "kind": "github.repo", "record": {**row, "default_branch": "main"}}
+        for row in (
+            {"full_name": "acme/api", "clone_url": "https://ghe.example/acme/api.git"},
+            {"full_name": "acme/web", "clone_url": "https://other.example/acme/web.git"},
+        )
+    ]
+
+    result = CliInvoker().invoke(
+        app,
+        ["cache", "sync", "--stdin", "-f", "json"],
+        input="".join(f"{json.dumps(record)}\n" for record in records),
+    )
+
+    assert result.exit_code == 0, result.output
+    assert git_auth["https://ghe.example/acme/api.git"] is not None
+    assert git_auth["https://other.example/acme/web.git"] is None
+
+
 def test_cache_sync_failure_exits_1_and_names_the_repo(tmp_path: Path) -> None:
     listed = [_repo("acme/gone", tmp_path / "missing")]
 
@@ -152,12 +195,11 @@ def test_cache_selection_usage_errors_exit_2(args: list[str], message: str) -> N
     ("args", "deleted", "remaining"),
     [
         (["--all", "--org", "ACME"], ["acme/api"], ["other/tool"]),
-        (["acme/api", "--org", "other"], [], ["acme/api", "other/tool"]),
         (["ACME/Api"], ["acme/api"], ["other/tool"]),
         (["--all"], ["acme/api", "other/tool"], []),
         (["--all", "--dry-run"], ["acme/api", "other/tool"], ["acme/api", "other/tool"]),
     ],
-    ids=["all-in-org", "org-filters-names", "case-insensitive", "all", "dry-run"],
+    ids=["all-in-org", "case-insensitive", "all", "dry-run"],
 )
 def test_cache_delete_selects_cached_repos(
     source_repo: SourceRepo, args: list[str], deleted: list[str], remaining: list[str]
@@ -168,6 +210,28 @@ def test_cache_delete_selects_cached_repos(
 
     assert _rows(result) == deleted
     assert _cached() == remaining
+
+
+@pytest.mark.parametrize(
+    ("args", "missing"),
+    [
+        (["acme/typo"], "acme/typo"),
+        (["acme/api", "acme/typo"], "acme/typo"),
+        (["acme/api", "--org", "other"], "acme/api"),
+    ],
+    ids=["typo", "mixed", "outside-org"],
+)
+def test_cache_delete_of_an_uncached_repo_fails_before_deleting(
+    source_repo: SourceRepo, args: list[str], missing: str
+) -> None:
+    _populate(source_repo, "acme/api")
+
+    result = CliInvoker().invoke(app, ["cache", "delete", *args, "--yes", "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    assert f"error: cached repo not found: '{missing}'" in result.stderr
+    assert result.stdout == ""
+    assert _cached() == ["acme/api"]
 
 
 def test_cache_delete_repo_conforms_to_destructive_contract(source_repo: SourceRepo) -> None:

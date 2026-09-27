@@ -23,7 +23,8 @@ from untaped.capabilities.github.cli.scopes import (
     parse_team_scopes,
     read_stdin_repos,
 )
-from untaped.capabilities.github.domain import CorpusRepoResult
+from untaped.capabilities.github.domain import CorpusRepoResult, github_web_host
+from untaped.capabilities.github.errors import GithubError
 from untaped.capabilities.github.settings import GithubSettings
 from untaped.capability_api import (
     ColumnsOption,
@@ -40,6 +41,7 @@ from untaped.capability_api import (
     echo,
     emit,
     finish,
+    not_found,
     plural,
     report_errors,
     summary,
@@ -78,7 +80,7 @@ def status_command(
 
     with report_errors():
         settings = app_context().section("github", GithubSettings)
-        rows = StatusCorpus(GitCorpusCache())(root=settings.corpus_path)
+        rows = StatusCorpus(GitCorpusCache(auth_host=None))(root=settings.corpus_path)
         records = [row.model_dump() for row in rows]
         emit(
             _status_display(records) if fmt == "table" and not columns else records,
@@ -162,7 +164,7 @@ def sync_command(
         with open_client() as (client, ui), ui.progress("Syncing repositories…") as progress:
             outcomes = SyncCorpus(
                 inventory=ResolveRepositoryInventory(client),
-                corpus=GitCorpusCache(),
+                corpus=GitCorpusCache(auth_host=github_web_host(settings.base_url)),
                 root=settings.corpus_path,
                 auth_header=corpus_auth_header(settings),
             )(options, progress=progress)
@@ -287,7 +289,9 @@ def _select(
     from untaped.capabilities.github.infrastructure import GitCorpusCache  # noqa: PLC0415
 
     settings = app_context().section("github", GithubSettings)
-    cached = _in_orgs(GitCorpusCache().list_repos(root=settings.corpus_path), orgs=tuple(org or ()))
+    cached = _in_orgs(
+        GitCorpusCache(auth_host=None).list_repos(root=settings.corpus_path), orgs=tuple(org or ())
+    )
     if prune:
         with open_client() as (client, ui), ui.progress("Resolving repository inventory…"):
             live = ResolveRepositoryInventory(client)(
@@ -296,6 +300,10 @@ def _select(
         return _departed_or_archived(cached, live)
     if all_repos:
         return cached
+    known = {row.repo.casefold() for row in cached}
+    missing = [name for name in repos if name.casefold() not in known]
+    if missing:
+        raise GithubError("; ".join(not_found("cached repo", name) for name in missing))
     requested = {name.casefold() for name in repos}
     return tuple(row for row in cached if row.repo.casefold() in requested)
 
@@ -314,7 +322,7 @@ def _delete(
 
     ctx = app_context()
     settings = ctx.section("github", GithubSettings)
-    cleaner = CleanCorpus(GitCorpusCache())
+    cleaner = CleanCorpus(GitCorpusCache(auth_host=None))
     outcome = batch_apply(
         selected,
         lambda row: cleaner(root=settings.corpus_path, repo=row),
@@ -356,7 +364,7 @@ def worktree_command(
         ui = ctx.ui()
         settings = ctx.section("github", GithubSettings)
         with ui.progress("Materializing worktree…"):
-            result = WorktreeCorpus(GitCorpusCache())(
+            result = WorktreeCorpus(GitCorpusCache(auth_host=None))(
                 repo,
                 root=settings.corpus_path,
                 ref=ref,

@@ -11,4 +11,4 @@ version = 1
 [[allow]]
 importer = "untaped.capabilities.ansible"
 imported = "untaped.capabilities.github.ansible"
-reason = "Wave 2 slice 4: ansible consumes github behavior only through the reviewed closed API module (client, repository inventory, ref-probe outcome types, settings models); no github implementation-module imports"
+reason = "Wave 2 slice 4: ansible consumes github behavior only through the reviewed closed API module (client, repository inventory, ref-probe outcome types, settings models, Git host derivation from base_url); no github implementation-module imports"
