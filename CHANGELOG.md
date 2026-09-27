@@ -44,12 +44,16 @@
     than `add`. `issues create`, `issues comment`, `issues links create` and
     add-only patches are now sent without asking and no longer need `--yes`
     without a terminal; set `jira.confirm: always` for the old behavior.
-    `--yes` and `--dry-run` are unchanged.
+    `--yes` is unchanged.
   - **Breaking:** write previews (before a prompt and under `--dry-run`) show
     each request's changes as readable lines (`summary: "old" → "new"`,
     `assignee: alice → bob`, `status: To Do → In Progress`) instead of the
     raw JSON body. Patch and transition previews read the issue's current
-    values first; nothing is read when no preview is shown.
+    values first (one read per issue; an unreadable issue shows `(unknown)`
+    in a transition preview); nothing is read when no preview is shown. So
+    `issues patch --dry-run` and `issues transition --dry-run` now need
+    working credentials, and a patch dry run exits 1 when the issue cannot be
+    read; create, comment and link dry runs stay offline.
   - **Breaking:** the deprecated spellings are removed: `me`, `issue`,
     `project`, `board`, `sprint`, `issues edit`, `--field` and
     `--json-field`. Use `whoami`, `issues`, `projects`, `boards`, `sprints`,

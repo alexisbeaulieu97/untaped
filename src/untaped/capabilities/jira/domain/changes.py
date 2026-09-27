@@ -8,8 +8,12 @@ from the caller (the issue as it is now) and are ``None`` when not fetched.
 from __future__ import annotations
 
 import json
+import textwrap
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
+
+# ``jira.confirm``: which writes ask first.
+ConfirmPolicy = Literal["always", "destructive", "never"]
 
 _ARROW = "→"
 _TEXT_LIMIT = 60
@@ -20,7 +24,7 @@ _ADDITIVE_OPS = frozenset({"add"})
 _OP_SIGNS = {"add": "+", "remove": "-"}
 
 
-def needs_confirmation(policy: str, *, destructive: bool) -> bool:
+def needs_confirmation(policy: ConfirmPolicy, *, destructive: bool) -> bool:
     """Whether a write asks first under ``jira.confirm`` (``--yes`` still skips the prompt)."""
     return policy == "always" or (policy == "destructive" and destructive)
 
@@ -48,36 +52,51 @@ def is_destructive_patch(payload: Mapping[str, Any] | None, *, assigns: bool) ->
     )
 
 
-def render_value(value: Any) -> str:
-    """One short, human-readable rendering of a Jira field value."""
+def render_value(value: Any, *, key: str | None = None, limit: int | None = _TEXT_LIMIT) -> str:
+    """One human-readable rendering of a Jira field value.
+
+    A Jira object renders as its ``key`` when it has one (else its first
+    naming key); text longer than ``limit`` is cut (``None`` keeps it whole).
+    """
     if value is None:
         return "(none)"
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, str):
-        text = value if len(value) <= _TEXT_LIMIT else value[: _TEXT_LIMIT - 1] + "…"
-        return json.dumps(text, ensure_ascii=False)
+        if limit is not None and len(value) > limit:
+            value = value[: limit - 1] + "…"
+        return json.dumps(value, ensure_ascii=False)
     if isinstance(value, Mapping):
-        for key in _NAME_KEYS:
-            if value.get(key) is not None:
-                return str(value[key])
+        for name in (key, *_NAME_KEYS) if key else _NAME_KEYS:
+            if value.get(name) is not None:
+                return str(value[name])
         if all(item is None for item in value.values()):
             return "(none)"
         return json.dumps(value, ensure_ascii=False, sort_keys=True)
     if isinstance(value, list | tuple):
-        return "[" + ", ".join(render_value(item) for item in value) + "]"
+        return "[" + ", ".join(render_value(item, key=key, limit=limit) for item in value) + "]"
     return str(value)
 
 
 def change_line(name: str, new: Any, *, old: Any = None, compare: bool = True) -> str:
-    """``name: old → new``, ``name: new (unchanged)``, or ``name: new`` without ``compare``."""
-    rendered = render_value(new)
+    """``name: old → new``, ``name: new (unchanged)``, or ``name: new`` without ``compare``.
+
+    The old value is named the way the new one is (``{"id": "2"}`` shows the
+    current priority's id, not its name), and whole values are compared even
+    though long text is shown cut.
+    """
+    key = _naming_key(new)
+    rendered = render_value(new, key=key)
     if not compare:
         return f"{name}: {rendered}"
-    before = render_value(old)
-    if before == rendered:
+    if render_value(old, key=key, limit=None) == render_value(new, key=key, limit=None):
         return f"{name}: {rendered} (unchanged)"
-    return f"{name}: {before} {_ARROW} {rendered}"
+    return f"{name}: {render_value(old, key=key)} {_ARROW} {rendered}"
+
+
+def comment_lines(body: str) -> list[str]:
+    """A comment's preview: a ``comment:`` line, then the whole body indented."""
+    return ["comment:", textwrap.indent(body, "  ")]
 
 
 def payload_changes(
@@ -104,34 +123,61 @@ def payload_changes(
 
 
 def referenced_fields(payload: Mapping[str, Any] | None) -> list[str]:
-    """The field ids an edit body touches, in order (what a diff must read)."""
+    """The field ids whose current value an edit's diff shows (set or ``set`` op), in order.
+
+    Fields touched only by ``add``/``remove``/``edit`` operations are left
+    out: their preview does not show the old value.
+    """
     if not payload:
         return []
-    names = [*(payload.get("fields") or {}), *(payload.get("update") or {})]
+    names = list(payload.get("fields") or {})
+    for name, operations in (payload.get("update") or {}).items():
+        if any(isinstance(op, Mapping) and "set" in op for op in _as_list(operations)):
+            names.append(name)
     return list(dict.fromkeys(names))
 
 
 def transition_changes(
-    transition: Mapping[str, Any] | None,
-    transition_id: str,
-    current: Mapping[str, Any],
+    transition: Mapping[str, Any],
+    current: Mapping[str, Any] | None,
     *,
+    available: bool = True,
     comment: str | None = None,
     resolution: str | None = None,
 ) -> list[str]:
-    """Lines for a transition: its name, the status change, resolution and comment."""
-    name = (transition or {}).get("name")
-    target = (transition or {}).get("to")
+    """Lines for a transition: its name, the status change, resolution and comment.
+
+    ``current`` is the issue's fields, ``None`` when they could not be read;
+    ``available=False`` says the transition is not offered from its status.
+    """
+    transition_id, name, target = transition.get("id"), transition.get("name"), transition.get("to")
+    if not available:
+        after = "(not available from this status)"
+    else:
+        after = render_value(target) if target else "(unknown)"
+    before = "(unknown)" if current is None else render_value(current.get("status"))
     lines = [
         f"transition: {name} ({transition_id})" if name else f"transition: {transition_id}",
-        f"status: {render_value(current.get('status'))} {_ARROW} "
-        + (render_value(target) if target else "(unknown)"),
+        f"status: {before} {_ARROW} {after}",
     ]
     if resolution is not None:
-        lines.append(change_line("resolution", {"name": resolution}, old=current.get("resolution")))
+        new = {"name": resolution}
+        if current is None:
+            lines.append(f"resolution: (unknown) {_ARROW} {render_value(new)}")
+        else:
+            lines.append(change_line("resolution", new, old=current.get("resolution")))
     if comment is not None:
-        lines.append(f"comment: + {render_value(comment)}")
+        lines.extend(comment_lines(comment))
     return lines
+
+
+def _naming_key(value: Any) -> str | None:
+    """The key that names a Jira object (or a list's first object), if any."""
+    if isinstance(value, list | tuple):
+        return next((k for item in value if (k := _naming_key(item))), None)
+    if isinstance(value, Mapping):
+        return next((k for k in _NAME_KEYS if value.get(k) is not None), None)
+    return None
 
 
 def _as_list(value: Any) -> list[Any]:

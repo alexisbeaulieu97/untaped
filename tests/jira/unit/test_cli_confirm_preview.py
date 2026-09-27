@@ -39,6 +39,9 @@ CURRENT = {
         "status": {"name": "To Do"},
         "resolution": None,
         "labels": ["infra"],
+        "priority": {"name": "High", "id": "2"},
+        "components": [{"name": "API", "id": "10"}],
+        "description": "a" * 70 + "x",
     },
 }
 TRANSITIONS = {
@@ -50,9 +53,23 @@ def _set_confirm(config: Path, policy: str) -> None:
     config.write_text(config.read_text() + f"      confirm: {policy}\n")
 
 
+def _issue_response(request: httpx.Request) -> httpx.Response:
+    """The issue, with its transitions only when ``expand=transitions`` asks for them."""
+    body: dict[str, Any] = dict(CURRENT)
+    if "transitions" in request.url.params.get("expand", ""):
+        body["transitions"] = TRANSITIONS["transitions"]
+    return httpx.Response(200, json=body)
+
+
+def _preview(stderr: str, header: str) -> list[str]:
+    """The preview lines from ``header`` on (a progress line may come first)."""
+    lines = stderr.splitlines()
+    return lines[lines.index(header) :]
+
+
 def _mock_jira(mock: respx.MockRouter) -> tuple[respx.Route, respx.Route]:
     """Mock every read the previews make; return the (issue GET, write) routes."""
-    issue = mock.get("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(200, json=CURRENT))
+    issue = mock.get("/rest/api/2/issue/ABC-1").mock(side_effect=_issue_response)
     mock.get("/rest/api/2/issue/ABC-1/transitions").mock(
         return_value=httpx.Response(200, json=TRANSITIONS)
     )
@@ -181,7 +198,7 @@ def test_patch_preview_diffs_current_values() -> None:
     )
 
     assert result.exit_code == 0, result.output
-    assert result.stderr.splitlines() == [
+    assert _preview(result.stderr, "PUT /rest/api/2/issue/ABC-1") == [
         "PUT /rest/api/2/issue/ABC-1",
         '  summary: "Old title" → "New title"',
         '  labels: ["infra"] (unchanged)',
@@ -204,7 +221,7 @@ def test_patch_preview_shows_update_operations_and_unassign(tmp_path: Path) -> N
     )
 
     assert result.exit_code == 0, result.output
-    assert result.stderr.splitlines() == [
+    assert _preview(result.stderr, "PUT /rest/api/2/issue/ABC-1") == [
         "PUT /rest/api/2/issue/ABC-1",
         '  labels: + "urgent"',
         '  labels: - "infra"',
@@ -218,10 +235,11 @@ def test_patch_preview_shortens_long_text() -> None:
     result, _, _ = _run(["issues", "patch", "ABC-1", "--description", "x" * 200, "--dry-run"])
 
     assert result.exit_code == 0, result.output
-    line = result.stderr.splitlines()[1]
-    assert line.startswith('  description: (none) → "xxx')
+    line = _preview(result.stderr, "PUT /rest/api/2/issue/ABC-1")[1]
+    assert line.startswith('  description: "aaa')
+    assert '…" → "xxx' in line
     assert line.endswith('…"')
-    assert len(line) < 100
+    assert len(line) < 150  # both sides cut to 60 characters
 
 
 def test_confirmation_prompt_shows_the_readable_preview() -> None:
@@ -253,14 +271,159 @@ def test_transition_preview_shows_the_status_change() -> None:
     )
 
     assert result.exit_code == 0, result.output
-    lines = result.stderr.splitlines()
-    assert lines[lines.index("POST /rest/api/2/issue/ABC-1/transitions") :] == [
+    assert _preview(result.stderr, "POST /rest/api/2/issue/ABC-1/transitions") == [
         "POST /rest/api/2/issue/ABC-1/transitions",
         "  transition: Start Progress (31)",
         "  status: To Do → In Progress",
         "  resolution: (none) → Fixed",
-        '  comment: + "Shipped."',
+        "  comment:",
+        "    Shipped.",
     ]
+
+
+def test_patch_preview_compares_whole_values_but_shows_them_short() -> None:
+    new = "a" * 70 + "y"
+    result, _, _ = _run(["issues", "patch", "ABC-1", "--description", new, "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    line = _preview(result.stderr, "PUT /rest/api/2/issue/ABC-1")[1]
+    assert "(unchanged)" not in line
+    assert " → " in line
+
+
+@pytest.mark.parametrize(
+    ("assignment", "expected"),
+    [
+        ('priority={"id":"2"}', "priority: 2 (unchanged)"),
+        ('priority={"id":"3"}', "priority: 2 → 3"),
+        ('priority={"name":"Low"}', "priority: High → Low"),
+        ('components=[{"id":"10"}]', "components: [10] (unchanged)"),
+        ('components=[{"name":"UI"}]', "components: [API] → [UI]"),
+    ],
+)
+def test_patch_preview_names_old_values_the_way_the_new_value_does(
+    assignment: str, expected: str
+) -> None:
+    result, _, _ = _run(["issues", "patch", "ABC-1", "--set-json", assignment, "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    assert _preview(result.stderr, "PUT /rest/api/2/issue/ABC-1")[1] == f"  {expected}"
+
+
+def test_patch_preview_reads_only_fields_it_diffs(tmp_path: Path) -> None:
+    fields_file = tmp_path / "edit.yml"
+    fields_file.write_text(
+        "update:\n  comment:\n    - add:\n        body: hi\n  labels:\n    - add: x\n"
+        "  components:\n    - set: [{name: UI}]\n"
+    )
+    result, issue, _ = _run(
+        ["issues", "patch", "ABC-1", "--fields-file", str(fields_file), "--dry-run"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert issue.calls[0].request.url.params["fields"] == "components"
+
+
+def test_add_only_patch_preview_reads_nothing(tmp_path: Path) -> None:
+    fields_file = tmp_path / "edit.yml"
+    fields_file.write_text("update:\n  labels:\n    - add: x\n")
+    result, issue, _ = _run(
+        ["issues", "patch", "ABC-1", "--fields-file", str(fields_file), "--dry-run"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(issue.calls) == 0
+    assert '  labels: + "x"' in result.stderr
+
+
+def _transition_mock(
+    mock: respx.MockRouter, key: str, *, status: int = 200
+) -> tuple[respx.Route, respx.Route]:
+    """Mock one issue's preview read and its transitions; return (issue, transitions)."""
+    body = {**CURRENT, "key": key, "transitions": TRANSITIONS["transitions"]}
+    issue = mock.get(f"/rest/api/2/issue/{key}").mock(
+        return_value=httpx.Response(status, json=body if status == 200 else {})
+    )
+    listing = mock.get(f"/rest/api/2/issue/{key}/transitions").mock(
+        return_value=httpx.Response(200, json=TRANSITIONS)
+    )
+    return issue, listing
+
+
+def test_transition_preview_reuses_the_resolved_transition_for_each_key() -> None:
+    with respx.mock(base_url=BASE) as mock:
+        routes = [_transition_mock(mock, key) for key in ("ABC-1", "ABC-2")]
+        result = invoke_cli(
+            app, ["issues", "transition", "ABC-1", "ABC-2", "--to", "start progress", "--dry-run"]
+        )
+
+    assert result.exit_code == 0, result.output
+    for key in ("ABC-1", "ABC-2"):
+        assert _preview(result.stderr, f"POST /rest/api/2/issue/{key}/transitions")[1:3] == [
+            "  transition: Start Progress (31)",
+            "  status: To Do → In Progress",
+        ]
+    for issue, listing in routes:
+        assert len(listing.calls) == 1  # resolving by name; the preview reuses it
+        assert len(issue.calls) == 1
+        assert "expand" not in issue.calls[0].request.url.params
+
+
+def test_transition_preview_by_id_reads_the_issue_once() -> None:
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        issue, listing = _transition_mock(mock, "ABC-1")
+        result = invoke_cli(app, ["issues", "transition", "ABC-1", "--id", "31", "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    assert len(issue.calls) == 1
+    assert issue.calls[0].request.url.params["expand"] == "transitions"
+    assert len(listing.calls) == 0
+
+
+def test_a_failed_preview_read_shows_unknown_instead_of_aborting() -> None:
+    with respx.mock(base_url=BASE) as mock:
+        _transition_mock(mock, "ABC-1")
+        _transition_mock(mock, "ABC-2", status=500)
+        result = invoke_cli(
+            app, ["issues", "transition", "ABC-1", "ABC-2", "--to", "Start Progress", "--dry-run"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert _preview(result.stderr, "POST /rest/api/2/issue/ABC-1/transitions")[2] == (
+        "  status: To Do → In Progress"
+    )
+    assert _preview(result.stderr, "POST /rest/api/2/issue/ABC-2/transitions")[2] == (
+        "  status: (unknown) → In Progress"
+    )
+
+
+def test_transition_preview_flags_an_unavailable_id() -> None:
+    result, _, _ = _run(["issues", "transition", "ABC-1", "--id", "99", "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    assert _preview(result.stderr, "POST /rest/api/2/issue/ABC-1/transitions")[1:] == [
+        "  transition: 99",
+        "  status: To Do → (not available from this status)",
+    ]
+
+
+def test_transition_preview_shows_the_whole_comment() -> None:
+    comment = "c" * 100
+    result, _, _ = _run(
+        ["issues", "transition", "ABC-1", "--id", "31", "--comment", comment, "--dry-run"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert f"  comment:\n    {comment}\n" in result.stderr
+
+
+def test_create_dry_run_stays_offline() -> None:
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        route = mock.route()
+        result = invoke_cli(app, [*WRITES["create"], "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    assert len(route.calls) == 0
 
 
 def test_create_preview_lists_the_new_values() -> None:

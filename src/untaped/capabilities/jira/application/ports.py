@@ -16,7 +16,11 @@ class JiraIssueReader(Protocol):
     """Issue read and search contract."""
 
     def get_issue(
-        self, issue_key: str, *, fields: Sequence[str] | None = None
+        self,
+        issue_key: str,
+        *,
+        fields: Sequence[str] | None = None,
+        expand: str | None = None,
     ) -> dict[str, Any]: ...
 
     def search_issues(self, jql: str, *, limit: int | None = None) -> Iterator[dict[str, Any]]: ...
@@ -46,10 +50,6 @@ class JiraTransitionService(Protocol):
     def list_transitions(self, issue_key: str) -> list[dict[str, Any]]: ...
 
     def transition_issue(self, issue_key: str, payload: dict[str, Any]) -> None: ...
-
-
-class JiraTransitionReader(JiraIssueReader, JiraTransitionService, Protocol):
-    """Issue reads plus the available transitions, for transition previews."""
 
 
 class JiraLookupService(Protocol):

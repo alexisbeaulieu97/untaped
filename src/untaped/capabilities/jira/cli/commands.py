@@ -16,6 +16,7 @@ from untaped.capabilities.jira.domain import (
     browse_url,
     build_assignee_payload,
     build_issue_payload,
+    comment_lines,
     is_destructive_patch,
     needs_confirmation,
     payload_changes,
@@ -51,7 +52,7 @@ from untaped.capability_api import (
 if TYPE_CHECKING:
     from untaped.capabilities.jira.domain import IssueDetailResult
     from untaped.capabilities.jira.infrastructure import JiraClient
-    from untaped.capability_api import OutputFormat
+    from untaped.capability_api import OutputFormat, UiContext
 
 # One write request as previewed: method, path and its readable change lines.
 PreviewRequest = tuple[str, str, list[str]]
@@ -364,13 +365,18 @@ def _send(
     when a preview is shown.
     """
 
-    def show(client: JiraClient) -> None:
-        _show(preview(client) if callable(preview) else preview)
+    def show(client: JiraClient, ui: UiContext) -> None:
+        if not callable(preview):
+            _show(preview)
+            return
+        with ui.progress("Reading current values…"):
+            requests = preview(client)
+        _show(requests)
 
     if dry_run:
         if callable(preview):
-            with open_client() as (client, _ui):
-                show(client)
+            with open_client() as (client, ui):
+                show(client, ui)
         else:
             _show(preview)
         emit(planned, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
@@ -382,7 +388,7 @@ def _send(
                 "Send this request to Jira?",
                 assume_yes=yes,
                 refusal=f"{verb} requires --yes when not interactive",
-                preview=lambda: show(client),
+                preview=lambda: show(client, ui),
             )
         with ui.progress(progress):
             row = send(client)
@@ -557,7 +563,7 @@ def issue_comment_command(
                 (
                     "POST",
                     f"{settings.api_prefix}/issue/{key}/comment",
-                    ["comment:", textwrap.indent(resolved_body, "  ")],
+                    comment_lines(resolved_body),
                 )
             ],
             lambda client: AddComment(client, base_url=settings.base_url)(key, resolved_body),
@@ -644,31 +650,28 @@ def issue_transition_command(
                     ),
                 )
 
-            def preview(rows: Sequence[dict[str, object]]) -> None:
+            def preview(_rows: Sequence[dict[str, object]]) -> None:
                 describe = PreviewTransition(client)
-                _show(
-                    [
+                with ui.progress("Reading current values…"):
+                    requests: list[PreviewRequest] = [
                         (
                             "POST",
-                            f"{settings.api_prefix}/issue/{row['key']}/transitions",
-                            describe(
-                                str(row["key"]),
-                                str(row["transition_id"]),
-                                comment=comment,
-                                resolution=resolution,
-                            ),
+                            f"{settings.api_prefix}/issue/{key}/transitions",
+                            describe(key, plan, comment=comment, resolution=resolution),
                         )
-                        for row in rows
+                        for key, plan in plans
                     ]
-                )
+                _show(requests)
 
             outcome = batch_apply(
                 plans,
-                lambda plan: transition(*plan, comment=comment, resolution=resolution),
+                lambda plan: transition(
+                    plan[0], plan[1]["id"], comment=comment, resolution=resolution
+                ),
                 verb="transition",
                 noun="issue",
                 label=lambda plan: plan[0],
-                describe=lambda plan: {"key": plan[0], "transition_id": plan[1]},
+                describe=lambda plan: {"key": plan[0], "transition_id": plan[1]["id"]},
                 ui=ui,
                 destructive=needs_confirmation(settings.confirm, destructive=True),
                 assume_yes=yes,
@@ -685,9 +688,9 @@ def issue_transition_command(
                     action="planned",
                     key=key,
                     url=browse_url(settings.base_url, key),
-                    transition_id=resolved_id,
+                    transition_id=plan["id"],
                 )
-                for key, resolved_id in plans
+                for key, plan in plans
             ]
         else:
             rows = [result for _, result in outcome.results]
