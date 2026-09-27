@@ -48,6 +48,7 @@ from untaped.messages import plural
 from untaped.profile_resolver import classify_active_profile
 from untaped.render import OutputFormat
 from untaped.settings import (
+    RESERVED_STATE_SECTIONS,
     HttpSettings,
     Settings,
     active_settings_layout,
@@ -201,12 +202,16 @@ def _permissions_row(shell: ApplicationSpec) -> dict[str, object]:
 
 
 def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[str, object]:
-    """Warn about profile keys that no registered settings model declares (typos)."""
+    """Warn about keys no settings model reads: typos in profiles, stray top-level keys.
+
+    Only ``active`` and ``profiles`` are read at the top level, so anything
+    else there (a pre-8.0 state section, ``log_level``) is flagged, not moved.
+    """
     title = "unknown config keys"
     model = get_profile_settings_model()
     leaves = {d.path for d in walk_settings(model, include_collections=True)}
     prefixes = {path[:depth] for path in leaves for depth in range(1, len(path))}
-    unknown: list[str] = []
+    unknown = [str(key) for key in raw if key not in RESERVED_STATE_SECTIONS]
     profiles = raw.get("profiles")
     for name, data in profiles.items() if isinstance(profiles, dict) else ():
         if isinstance(data, dict):
