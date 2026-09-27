@@ -58,6 +58,9 @@ untaped github repos list 'api|web' --org acme --regex
   (`acme/svc-*`); otherwise it matches the repo name.
 - `--team SLUG` without the org works when you pass exactly one `--org`;
   `--org acme --team backend` means all of `acme` plus that team.
+- The table shows `full_name`, `default_branch`, `private`, `archived`,
+  `fork` and `url`. Use `-c` or `--format json` for the rest (`clone_url`,
+  `ssh_url`, `pushed_at`, ...).
 
 Clone the result into a workspace:
 

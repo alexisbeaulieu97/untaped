@@ -80,7 +80,7 @@ def status_command(
 
     with report_errors():
         settings = app_context().section("github", GithubSettings)
-        rows = StatusCorpus(GitCorpusCache())(root=settings.corpus_path)
+        rows = StatusCorpus(GitCorpusCache(auth_host=None))(root=settings.corpus_path)
         records = [row.model_dump() for row in rows]
         emit(
             _status_display(records) if fmt == "table" and not columns else records,
@@ -289,7 +289,9 @@ def _select(
     from untaped.capabilities.github.infrastructure import GitCorpusCache  # noqa: PLC0415
 
     settings = app_context().section("github", GithubSettings)
-    cached = _in_orgs(GitCorpusCache().list_repos(root=settings.corpus_path), orgs=tuple(org or ()))
+    cached = _in_orgs(
+        GitCorpusCache(auth_host=None).list_repos(root=settings.corpus_path), orgs=tuple(org or ())
+    )
     if prune:
         with open_client() as (client, ui), ui.progress("Resolving repository inventory…"):
             live = ResolveRepositoryInventory(client)(
@@ -320,7 +322,7 @@ def _delete(
 
     ctx = app_context()
     settings = ctx.section("github", GithubSettings)
-    cleaner = CleanCorpus(GitCorpusCache())
+    cleaner = CleanCorpus(GitCorpusCache(auth_host=None))
     outcome = batch_apply(
         selected,
         lambda row: cleaner(root=settings.corpus_path, repo=row),
@@ -362,7 +364,7 @@ def worktree_command(
         ui = ctx.ui()
         settings = ctx.section("github", GithubSettings)
         with ui.progress("Materializing worktree…"):
-            result = WorktreeCorpus(GitCorpusCache())(
+            result = WorktreeCorpus(GitCorpusCache(auth_host=None))(
                 repo,
                 root=settings.corpus_path,
                 ref=ref,

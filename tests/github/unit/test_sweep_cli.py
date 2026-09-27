@@ -65,6 +65,25 @@ def _json(result: CliResult) -> list[dict[str, object]]:
     return rows
 
 
+def test_sweep_sends_the_token_only_to_the_enterprise_git_host(
+    tmp_path: Path, git_auth: dict[str, str | None]
+) -> None:
+    cfg = tmp_path / "config.yml"
+    cfg.write_text(cfg.read_text() + "      base_url: https://ghe.example/api/v3\n")
+    piped = "".join(
+        json.dumps({"untaped": "1", "kind": "github.repo", "record": record}) + "\n"
+        for record in (
+            _repo("acme/api", tmp_path, clone_url="https://ghe.example/acme/api.git"),
+            _repo("acme/web", tmp_path, clone_url="https://other.example/acme/web.git"),
+        )
+    )
+
+    CliInvoker().invoke(app, ["sweep", "--stdin", "--grep", "needle"], input=piped)
+
+    assert git_auth["https://ghe.example/acme/api.git"] is not None
+    assert git_auth["https://other.example/acme/web.git"] is None
+
+
 @pytest.mark.parametrize(
     ("show", "kind", "records"),
     [

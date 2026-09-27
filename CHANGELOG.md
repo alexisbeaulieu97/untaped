@@ -56,12 +56,16 @@
     pipe | sweep --stdin` (or `cache sync --stdin`) skips fetching unchanged
     repos. A source without `pushed_at` no longer erases the one stored from
     an earlier fetch.
+  - **Behavior change:** the `repos list` table shows `full_name`,
+    `default_branch`, `private`, `archived`, `fork` and `url`; `-c` and the
+    structured formats still reach every field, including `pushed_at`.
   - **Fix:** `search repos` now caps a large team scope at 25 requests with a
     warning, like `search issues`, instead of tripping GitHub's per-minute
     search limit.
   - **Behavior change:** `cache delete OWNER/NAME` fails with `cached repo not
     found` and exit 1, before deleting anything, when a named repo is not
-    cached or not in `--org`. It used to exit 0 silently.
+    cached or not in `--org`. It used to exit 0 silently. The deprecated
+    `cache clean --repo` fails the same way.
 
 ## 7.1.0
 

@@ -81,9 +81,9 @@ class RepoListResult(BaseModel):
     private: bool = False
     archived: bool = False
     fork: bool = False
-    # GitHub's last push, as reported; piped into sweep/cache sync it lets an
-    # unchanged repo skip the fetch.
-    pushed_at: str | None = None
+    # GitHub's last push; renders in GitHub's own ``…Z`` form, so piped into
+    # sweep/cache sync it matches the stored value and skips an unchanged repo.
+    pushed_at: UtcTimestamp | None = None
     repo: str = ""
     url: str | None = None
 

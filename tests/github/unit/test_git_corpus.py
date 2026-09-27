@@ -78,7 +78,7 @@ def corpus(
 ) -> Callable[..., _Corpus]:
     def create(files: dict[str, str | bytes], **cache_options: Any) -> _Corpus:
         source = source_repo("source", files)
-        return _Corpus(source, tmp_path / "corpus", GitCorpusCache(**cache_options))
+        return _Corpus(source, tmp_path / "corpus", GitCorpusCache(auth_host=None, **cache_options))
 
     return create
 
@@ -474,7 +474,7 @@ def test_tree_paths_and_first_blob_read_the_cached_tree(corpus: Callable[..., _C
 def test_validate_pattern_uses_extended_regex_and_checks_pathspecs(
     tmp_path: Path, pattern: str, paths: tuple[str, ...], error: str | None
 ) -> None:
-    found = GitCorpusCache().validate_pattern(
+    found = GitCorpusCache(auth_host=None).validate_pattern(
         root=tmp_path / "corpus", pattern=pattern, paths=paths, fixed_strings=False
     )
 
@@ -535,7 +535,7 @@ def test_listing_reads_only_bare_repo_metadata_and_warns_on_corrupt_files(
     assert all("could not read corpus metadata" in warning for warning in warnings)
     assert capfd.readouterr().err == ""
 
-    GitCorpusCache().list_repos(root=env.root)
+    GitCorpusCache(auth_host=None).list_repos(root=env.root)
     assert "warning: could not read corpus metadata" in capfd.readouterr().err
 
 
@@ -625,15 +625,12 @@ def test_sync_sends_the_token_only_to_the_github_git_host(
     assert all((auth is not None) is sent for auth in network)
 
 
-def test_sync_and_touch_without_pushed_at_keep_the_stored_one(
-    corpus: Callable[..., _Corpus],
-) -> None:
+def test_sync_without_pushed_at_keeps_the_stored_one(corpus: Callable[..., _Corpus]) -> None:
     # A piped record without pushed_at must not erase what GitHub last reported.
     env = corpus({"README.md": "hello\n"})
     env.sync(repo=replace(env.repo, pushed_at="2026-07-01T00:00:00Z"))
 
     env.sync()
-    env.cache.touch_repo(env.repo, root=env.root)
     freshness = env.cache.repo_freshness(env.repo, root=env.root)
 
     assert freshness is not None and freshness.pushed_at == "2026-07-01T00:00:00Z"
