@@ -51,6 +51,7 @@ from untaped.capabilities.awx.errors import (
     AwxError,
     BadRequestError,
     MutationConflictError,
+    PartialWriteError,
 )
 from untaped.capability_api import ConfigError
 
@@ -358,6 +359,8 @@ class BatchMutationEngine:
         except Exception as exc:
             # Any per-item failure (API, strategy bug) is this row's outcome;
             # BaseException (KeyboardInterrupt, SystemExit) still propagates.
+            if isinstance(exc, PartialWriteError):
+                wrote, target_id = True, exc.record_id
             outcome = base.model_copy(
                 update={
                     "action": "partial" if wrote else "failed",

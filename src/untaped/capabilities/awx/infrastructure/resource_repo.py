@@ -31,7 +31,12 @@ from typing import Any
 
 from untaped.capabilities.awx.domain import ActionPayload, ResourceSpec, ServerRecord, WritePayload
 from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
-from untaped.capabilities.awx.errors import AmbiguousIdentityError, BadRequestError
+from untaped.capabilities.awx.errors import (
+    AmbiguousIdentityError,
+    AwxApiError,
+    BadRequestError,
+    PartialWriteError,
+)
 from untaped.capabilities.awx.infrastructure.awx_client import AwxClient
 from untaped.capabilities.awx.infrastructure.errors import map_awx_errors
 from untaped.capabilities.awx.infrastructure.pagination import paginate
@@ -147,16 +152,25 @@ class ResourceRepository:
         """Replace (POST) or clear (DELETE) each sub-document, then read it back.
 
         An empty or null value clears the document: AWX rejects an empty
-        POST body but a DELETE resets the document to ``{}``.
+        POST body but a DELETE resets the document to ``{}``. The record
+        write already landed, so a failure here raises
+        :class:`PartialWriteError` carrying the record's ID.
         """
         observed: dict[str, Any] = {}
         for field, value in documents.items():
             path = f"{awx_relationship_path(spec)}/{id_}/{field}/"
-            if value:
-                self._client.request_json("POST", path, json=value)
-            else:
-                self._client.delete(path)
-            observed[field] = self._client.get_json(path)
+            try:
+                with map_awx_errors():
+                    if value:
+                        self._client.request_json("POST", path, json=value)
+                    else:
+                        self._client.delete(path)
+                    observed[field] = self._client.get_json(path)
+            except AwxApiError as exc:
+                raise PartialWriteError(
+                    f"{spec.kind} #{id_} was written but its {field} write failed: {exc}",
+                    record_id=id_,
+                ) from exc
         return observed
 
     def delete(self, spec: ResourceSpec, id_: int) -> DeleteReceipt:

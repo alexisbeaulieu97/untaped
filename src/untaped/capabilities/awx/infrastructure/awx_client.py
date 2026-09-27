@@ -9,10 +9,14 @@ from __future__ import annotations
 
 from types import TracebackType
 from typing import Any
+from urllib.parse import urlsplit
 
+from untaped.capabilities.awx.errors import AwxApiError
 from untaped.capabilities.awx.infrastructure.errors import map_awx_errors
 from untaped.capabilities.awx.settings import AwxSettings
 from untaped.capability_api import HttpSettings, connected_client
+
+_DEFAULT_PORTS = {"http": 80, "https": 443}
 
 
 class AwxClient:
@@ -30,6 +34,7 @@ class AwxClient:
             http=http,
         )
         self._api_prefix = config.api_prefix
+        self._base_url = str(config.base_url)
 
     def _url(self, path: str) -> str:
         """Join ``api_prefix`` with a relative resource path.
@@ -83,8 +88,14 @@ class AwxClient:
 
         Used to follow AWX's pagination ``next`` URLs, which come back
         as full paths and would double-prefix if passed through
-        :meth:`_url`.
+        :meth:`_url`. A URL naming another scheme, host or port than the
+        configured ``base_url`` is refused, so the token never leaves it.
         """
+        if _origin(absolute_path) not in {None, _origin(self._base_url)}:
+            raise AwxApiError(
+                f"refusing to follow {absolute_path!r}: its origin differs from "
+                f"the configured awx.base_url {self._base_url!r}"
+            )
         return self._http.get_json(absolute_path, **kwargs)
 
     def close(self) -> None:
@@ -100,3 +111,16 @@ class AwxClient:
         tb: TracebackType | None,
     ) -> None:
         self.close()
+
+
+def _origin(url: str) -> tuple[str, str | None, int | None] | None:
+    """``(scheme, host, port)`` of ``url``; ``None`` for a host-less relative path."""
+    parts = urlsplit(url.strip())
+    if not parts.scheme and not parts.netloc:
+        return None
+    scheme = parts.scheme.lower()
+    try:
+        port = parts.port or _DEFAULT_PORTS.get(scheme)
+    except ValueError:
+        port = -1  # an unparsable port never matches a configured origin
+    return scheme, parts.hostname, port

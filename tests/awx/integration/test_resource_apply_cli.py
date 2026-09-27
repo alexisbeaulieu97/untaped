@@ -523,3 +523,86 @@ def test_apply_without_org_uses_default_organization(
     assert fake_aap.get_record("projects", 10)["description"] == "other-org"
     created = [p for p in fake_aap.list_records("projects") if p["id"] != 10]
     assert [(p["name"], p["organization"]) for p in created] == [("playbooks", 1)]
+
+
+@pytest.mark.parametrize("name", ["fresh", "deploy"])
+def test_write_whose_survey_write_fails_is_partial_with_the_record_id(
+    fake_aap: Any, tmp_path: Path, name: str
+) -> None:
+    _seed_basic(fake_aap)
+    fake_aap.survey_post_error = "survey rejected"
+    doc = tmp_path / "jt.yml"
+    doc.write_text(
+        "kind: JobTemplate\n"
+        f"metadata: {{ name: {name}, organization: Default }}\n"
+        "spec:\n"
+        "  playbook: deploy.yml\n"
+        "  project: playbooks\n"
+        "  inventory: prod\n"
+        "  survey_spec:\n"
+        "    name: s\n"
+        "    spec:\n"
+        "      - { variable: region, type: text, default: eu }\n"
+    )
+
+    result = CliInvoker().invoke(app, ["apply", str(doc), "--yes", "--format", "json"])
+
+    assert result.exit_code != 0
+    written = [t for t in fake_aap.list_records("job_templates") if t["name"] == name]
+    row = json.loads(result.stdout)[0]
+    assert row["action"] == "partial"
+    assert row["id"] == written[0]["id"]
+    assert "survey rejected" in row["detail"]
+
+
+def _seed_schedule_with_survey_password(fake: Any) -> None:
+    _seed_basic(fake)
+    # AWX masks survey password answers in a schedule's extra_data.
+    fake.seed(
+        "schedules",
+        id=60,
+        name="nightly",
+        unified_job_template=30,
+        rrule="FREQ=DAILY",
+        extra_data={"db_password": "$encrypted$", "env": "prod"},
+    )
+
+
+def _schedule_doc(tmp_path: Path, extra_data: str) -> Path:
+    doc = tmp_path / "schedule.yml"
+    doc.write_text(
+        "kind: Schedule\n"
+        "metadata:\n"
+        "  name: nightly\n"
+        "  parent: { kind: JobTemplate, name: deploy, organization: Default }\n"
+        "spec:\n"
+        "  rrule: FREQ=DAILY\n"
+        f"  extra_data: {extra_data}\n"
+    )
+    return doc
+
+
+def test_schedule_apply_keeps_encrypted_survey_answers(fake_aap: Any, tmp_path: Path) -> None:
+    _seed_schedule_with_survey_password(fake_aap)
+    doc = _schedule_doc(tmp_path, "{ db_password: $encrypted$, env: prod }")
+
+    result = CliInvoker().invoke(app, ["apply", str(doc), "--yes", "--format", "json"])
+
+    assert result.exit_code == 0, result.output + (result.stderr or "")
+    assert not _patches(fake_aap)
+    assert "undeclared" not in (result.stderr or "")
+    assert json.loads(result.stdout)[0]["preserved_secrets"] == ["extra_data.*[=$encrypted$]"]
+
+
+def test_schedule_apply_refuses_extra_data_change_beside_a_placeholder(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    _seed_schedule_with_survey_password(fake_aap)
+    doc = _schedule_doc(tmp_path, "{ db_password: $encrypted$, env: staging }")
+
+    result = CliInvoker().invoke(app, ["apply", str(doc), "--yes"])
+
+    assert result.exit_code != 0
+    assert "extra_data" in (result.stderr or "")
+    assert not _patches(fake_aap)
+    assert fake_aap.get_record("schedules", 60)["extra_data"]["db_password"] == "$encrypted$"

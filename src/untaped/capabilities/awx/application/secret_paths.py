@@ -1,8 +1,9 @@
 """Secret-path patterns: the one walker and ``$encrypted$`` placeholder stripping.
 
 ``ResourceSpec.secret_paths`` patterns use dot notation with ``*`` matching
-any list element or dict key, and ``*[key=value]`` matching only the elements
-that are mappings whose ``key`` equals ``value``; :func:`path_slots` is the
+any list element or dict key, ``*[key=value]`` matching only the elements
+that are mappings whose ``key`` equals ``value``, and ``*[=value]`` matching
+only the elements that equal ``value``; :func:`path_slots` is the
 single walker every read, redact, strip, and remove of a secret path goes
 through:
 
@@ -10,6 +11,7 @@ through:
 - ``inputs.*``                   — any direct child of ``inputs``
 - ``survey_spec.spec.*[type=password].default`` — ``default`` key on the
                                    password questions under ``survey_spec.spec``
+- ``extra_data.*[=$encrypted$]`` — the masked answers in ``extra_data``
 
 The walker drops matched ``$encrypted$`` values from the payload and
 returns the dotted paths that were preserved, plus any
@@ -52,7 +54,11 @@ def path_slots(value: Any, pattern: str) -> Iterator[tuple[Any, Any]]:
         keys = [
             key
             for key in keys
-            if isinstance(value[key], Mapping) and value[key].get(field) == expected
+            if (
+                isinstance(value[key], Mapping) and value[key].get(field) == expected
+                if field
+                else value[key] == expected
+            )
         ]
     for key in keys:
         if rest:
@@ -62,7 +68,7 @@ def path_slots(value: Any, pattern: str) -> Iterator[tuple[Any, Any]]:
 
 
 def _wildcard(segment: str) -> tuple[bool, tuple[str, str] | None]:
-    """Split a pattern segment into (is wildcard, optional ``key=value`` filter)."""
+    """Split a pattern segment into (is wildcard, optional ``[key]=value`` filter)."""
     if segment == "*":
         return True, None
     if segment.startswith("*[") and segment.endswith("]") and "=" in segment:
