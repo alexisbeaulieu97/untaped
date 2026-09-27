@@ -13,8 +13,8 @@ the same output and piping rules:
 - **`ansible`**: Ansible role dependency graphs and upstream impact.
 - **`recipe`**: plan, preview and apply file changes across many directories.
 
-Root commands manage the tool itself: `config`, `profile`, `skills`,
-`doctor` and `capabilities`.
+Root commands manage the tool itself: `setup`, `config`, `profile`, `alias`,
+`skills`, `doctor` and `capabilities`.
 
 ## Install
 
