@@ -6,6 +6,8 @@ import re
 
 from pydantic import BaseModel, ConfigDict
 
+from untaped.capabilities.jira.domain.keys import PROJECT_KEY_PATTERN
+
 
 class JiraIssueSearchFilters(BaseModel):
     """Common issue search shortcuts plus an optional raw JQL base.
@@ -94,7 +96,7 @@ def _find_order_by(jql: str) -> int | None:
 
 
 def _quote_project(value: str) -> str:
-    return value if re.fullmatch(r"[A-Z][A-Z0-9_]*", value) else _quote(value)
+    return value if re.fullmatch(PROJECT_KEY_PATTERN, value) else _quote(value)
 
 
 def _quote_or_current_user(value: str) -> str:

@@ -84,7 +84,13 @@ git log -1 --format=%B | untaped jira issues comment OPS-123 --yes
 ```
 
 - `--assignee USER` assigns the issue (`@me` is you); `--unassign` clears the
-  assignee.
+  assignee. Both use Jira's dedicated `issue/KEY/assignee` endpoint, so they
+  work even when the assignee field is not on the edit screen. With other
+  field changes, the field edit is sent first, then the assignment. The flags
+  override a `fields.assignee` in `--body-file`.
+- Issue keys must look like `PROJECT-123` and project keys like `PROJECT`
+  (any case; sent uppercase), or be a numeric id; anything else exits 2
+  before any request.
 - `--set KEY=VALUE` sets a string field; `--set-json KEY=JSON` sets any field
   from JSON. Both repeat.
 - `issues create --template FILE` and `issues patch --body-file FILE` start
