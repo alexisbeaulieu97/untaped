@@ -123,11 +123,33 @@ def test_run_passes_when_job_succeeds(cli: CliInvoker, fake_aap: FakeAap, tmp_pa
     assert any(action == "launch" for _, _, action, _ in fake_aap.actions_called)
 
 
+def test_run_preflights_every_case_before_launching(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    """A limit AWX would ignore runs against the whole inventory: nothing launches."""
+    fake_aap.seed("job_templates", name="Deploy app")
+    test_file = _write(
+        tmp_path / "smoke.yml",
+        "kind: AwxTestSuite\nname: smoke\njobTemplate: Deploy app\n"
+        "cases:\n  one:\n    launch:\n      limit: web-*\n  two: {}\n",
+    )
+
+    result = cli.invoke(app, ["test", "run", str(test_file), "--non-interactive"])
+
+    assert result.exit_code == 1
+    assert "preflight failed, nothing launched:" in result.stderr
+    assert "smoke/one: " in result.stderr
+    assert "ask_limit_on_launch is false" in result.stderr
+    assert "smoke/two" not in result.stderr
+    assert fake_aap.actions_called == []
+
+
 def test_run_errors_when_awx_ignores_launch_fields(
     cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
 ) -> None:
-    """A case whose limit AWX ignored ran against the whole inventory: not a pass."""
-    fake_aap.seed("job_templates", name="Deploy app")
+    """AWX can still ignore a field the preflight let through: not a pass."""
+    _seed_jt(fake_aap)
+    fake_aap.next_action_ignored_fields = {"limit": "web-*"}
     test_file = _write(
         tmp_path / "smoke.yml",
         "kind: AwxTestSuite\nname: smoke\njobTemplate: Deploy app\n"
@@ -294,6 +316,24 @@ def test_validate_renders_without_launching(
     assert result.exit_code == 0, result.stderr or result.output
     # No launches issued
     assert all(action != "launch" for _, _, action, _ in fake_aap.actions_called)
+
+
+def test_validate_reports_launches_awx_would_reject(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    fake_aap.seed("job_templates", name="Deploy app")
+    test_file = _write(
+        tmp_path / "v.yml",
+        "kind: AwxTestSuite\nname: v\njobTemplate: Deploy app\n"
+        "cases:\n  c:\n    launch:\n      limit: x\n  ok: {}\n",
+    )
+
+    result = cli.invoke(app, ["test", "validate", str(test_file), "--non-interactive"])
+
+    assert result.exit_code == 1
+    assert "v/c: " in result.stderr
+    assert "ask_limit_on_launch is false" in result.stderr
+    assert "v/ok" not in result.stderr
 
 
 def test_show_logs_prints_stdout_tail_for_failed_case(
@@ -512,3 +552,101 @@ def test_run_reports_results_despite_an_unknown_column(
     result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "-c", "resutl,result"])
     assert result.exit_code == 0, result.output
     assert "pass" in result.stdout
+
+
+# ---- failed tasks, --scm-branch ------------------------------------------
+
+
+def _failing_job(fake: FakeAap, event: dict[str, Any]) -> None:
+    _seed_jt(fake)
+    fake.next_action_status = "failed"
+    fake.next_action_stdout = "boom\n"
+    fake.next_action_events = [
+        {"event": "runner_on_ok", "failed": False, "host_name": "web1", "task": "Setup"},
+        {"failed": True, "host_name": "web1", "task": "Migrate", **event},
+    ]
+
+
+def test_run_reports_failed_tasks_from_job_events(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _failing_job(fake_aap, {"event": "runner_on_failed", "event_data": {"res": {"msg": "no"}}})
+
+    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "-f", "json"])
+
+    assert result.exit_code == 1, result.output
+    [row] = json.loads(result.stdout)
+    assert [task["msg"] for task in row["failed_tasks"]] == ["no"]
+
+
+def test_show_logs_prints_failed_tasks_under_their_case(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _failing_job(
+        fake_aap,
+        {"event": "runner_on_unreachable", "event_data": {"res": {"stderr": "ssh timeout"}}},
+    )
+
+    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "--show-logs"])
+
+    assert result.exit_code == 1, result.output
+    lines = result.stderr.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("--- s/c job "))
+    assert lines[start].endswith("(last 1 log line)")
+    assert lines[start + 1 : start + 3] == ["unreachable: [web1] Migrate: ssh timeout", "boom"]
+
+
+def _branchable(fake: FakeAap, *, ask_scm_branch: bool = True) -> None:
+    project = fake.seed("projects", name="app", allow_override=True, scm_revision="c0ffee")
+    fake.seed(
+        "job_templates",
+        name="Deploy app",
+        project=project["id"],
+        scm_branch="",
+        ask_scm_branch_on_launch=ask_scm_branch,
+    )
+
+
+def test_run_scm_branch_runs_every_case_on_that_ref(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _branchable(fake_aap)
+
+    result = cli.invoke(
+        app, ["test", "run", str(_smoke(tmp_path)), "--scm-branch", "fix", "-f", "json"]
+    )
+
+    assert result.exit_code == 0, result.output
+    [(_, _, _, body)] = fake_aap.actions_called
+    assert body["scm_branch"] == "fix"
+    [row] = json.loads(result.stdout)
+    assert (row["scm_branch"], row["scm_revision"]) == ("fix", "c0ffee")
+
+
+def test_run_scm_branch_needs_templates_that_prompt_for_it(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _branchable(fake_aap, ask_scm_branch=False)
+
+    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "--scm-branch", "fix"])
+
+    assert result.exit_code == 1
+    assert "s/c: " in result.stderr
+    assert "ask_scm_branch_on_launch is false" in result.stderr
+    assert "drop scm_branch" in result.stderr
+    assert fake_aap.actions_called == []
+
+
+def test_run_scm_branch_head_runs_the_pushed_branch(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.capabilities.awx.infrastructure import git_head
+
+    _branchable(fake_aap)
+    monkeypatch.setattr(git_head, "pushed_branch", lambda cwd=None: "feature/x")
+
+    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "--scm-branch", "HEAD"])
+
+    assert result.exit_code == 0, result.output
+    [(_, _, _, body)] = fake_aap.actions_called
+    assert body["scm_branch"] == "feature/x"

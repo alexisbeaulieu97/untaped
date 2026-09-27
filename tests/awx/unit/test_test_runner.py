@@ -8,15 +8,21 @@ from typing import Any, cast
 
 import pytest
 
-from untaped.capabilities.awx.application.suites.ports import FkPrefetcher, Launcher, Watcher
+from untaped.capabilities.awx.application.suites.ports import (
+    FkPrefetcher,
+    LaunchCheck,
+    Launcher,
+    Watcher,
+)
 from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
 from untaped.capabilities.awx.application.suites.runner import LOG_TAIL_LINES, RunTestSuite
-from untaped.capabilities.awx.domain import Job
+from untaped.capabilities.awx.domain import Job, JobEvent
 from untaped.capabilities.awx.domain.suite import Case, Suite
-from untaped.capabilities.awx.errors import ActionResponseError
+from untaped.capabilities.awx.errors import ActionResponseError, LaunchPromptError
 from untaped.capabilities.awx.infrastructure import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
+from untaped.capability_api import ConfigError
 
 
 class StubFk:
@@ -91,6 +97,23 @@ class StubLogReader:
         return self.lines
 
 
+class StubEventReader:
+    """Returns ``events`` for every job, or raises ``error``."""
+
+    def __init__(self, events: list[JobEvent], *, error: Exception | None = None) -> None:
+        self.events = events
+        self.error = error
+        self.calls: list[tuple[int, dict[str, str] | None, bool]] = []
+
+    def __call__(
+        self, job: Job, *, params: dict[str, str] | None = None, follow: bool = True
+    ) -> list[JobEvent]:
+        self.calls.append((job.id, params, follow))
+        if self.error is not None:
+            raise self.error
+        return self.events
+
+
 class StubWatcher:
     """Returns a final job per id."""
 
@@ -124,6 +147,8 @@ def _make_runner(
     default_org: str | None = None,
     canceller: StubCanceller | None = None,
     log_reader: StubLogReader | None = None,
+    event_reader: StubEventReader | None = None,
+    preflight: LaunchCheck | None = None,
 ) -> RunTestSuite:
     resolver = ResolveCasePayload(
         fk, catalog=AwxResourceCatalog(), default_organization=default_org
@@ -138,7 +163,9 @@ def _make_runner(
         jt_scope=jt_scope,
         canceller=canceller,
         log_reader=log_reader or StubLogReader([]),
+        event_reader=event_reader or StubEventReader([]),
         job_url=lambda job: f"https://aap.example.com/jobs/{job.id}",
+        preflight=preflight,
     )
 
 
@@ -166,6 +193,7 @@ def test_parallel_interrupt_stops_watchers_and_cancels_queued_cases() -> None:
         spec=JOB_TEMPLATE_SPEC,
         fk_prefetcher=cast(FkPrefetcher, fk),
         log_reader=StubLogReader([]),
+        event_reader=StubEventReader([]),
         job_url=lambda job: None,
         stop=stop,
     )
@@ -502,7 +530,9 @@ def test_polling_error_cancels_the_job() -> None:
 
 
 def _expect_runner(
-    final_status: str, log_reader: StubLogReader | None = None
+    final_status: str,
+    log_reader: StubLogReader | None = None,
+    event_reader: StubEventReader | None = None,
 ) -> tuple[RunTestSuite, StubWatcher]:
     watcher = StubWatcher(default=_job(id_=5, status=final_status))
     runner = _make_runner(
@@ -510,6 +540,7 @@ def _expect_runner(
         launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
         watcher=watcher,
         log_reader=log_reader,
+        event_reader=event_reader,
     )
     return runner, watcher
 
@@ -576,8 +607,9 @@ def test_an_unreadable_log_errors_only_when_log_checks_need_it() -> None:
     assert [check.check for check in row.expectations] == ["status"]
 
 
-def test_tails_are_skipped_when_not_wanted() -> None:
+def test_evidence_is_skipped_when_not_wanted() -> None:
     reader = StubLogReader(["boom"])
+    events = StubEventReader([])
     runner = RunTestSuite(
         resolver=ResolveCasePayload(StubFk(), catalog=AwxResourceCatalog()),
         launcher=cast(Launcher, StubLauncher({})),
@@ -585,11 +617,13 @@ def test_tails_are_skipped_when_not_wanted() -> None:
         spec=JOB_TEMPLATE_SPEC,
         fk_prefetcher=cast(FkPrefetcher, StubFk()),
         log_reader=reader,
+        event_reader=events,
         job_url=lambda job: None,
-        log_tails=False,
+        evidence=False,
     )
     [row] = runner([_case_suite({})]).results
-    assert (row.result, row.log_tail, reader.calls) == ("fail", None, [])
+    assert (row.result, row.log_tail, row.failed_tasks) == ("fail", None, None)
+    assert (reader.calls, events.calls) == ([], [])
 
 
 def test_a_timed_out_case_keeps_its_log_tail() -> None:
@@ -624,3 +658,110 @@ def test_each_case_resolves_its_own_timeout() -> None:
     suite = Suite(name="s", job_template="JT", cases={"slow": Case(timeout=90), "quick": Case()})
     runner([suite], default_timeout=1800)
     assert [timeout for _, timeout in watcher.calls] == [90, 1800]
+
+
+# ---- failed tasks, scm branch, preflight ---------------------------------
+
+
+def _event(event: str, *, failed: bool, host: str, msg: str) -> JobEvent:
+    return JobEvent.model_validate(
+        {
+            "counter": 1,
+            "event": event,
+            "failed": failed,
+            "host_name": host,
+            "task": "Deploy",
+            "event_data": {"res": {"msg": msg}},
+        }
+    )
+
+
+def test_a_case_that_did_not_pass_lists_its_failed_tasks() -> None:
+    events = StubEventReader(
+        [
+            _event("playbook_on_task_start", failed=True, host="web1", msg=""),
+            _event("runner_on_failed", failed=True, host="web1", msg="boom"),
+            # ``ignore_errors`` failures are not failures.
+            _event("runner_on_failed", failed=False, host="web2", msg="ignored"),
+            _event("runner_on_unreachable", failed=True, host="db1", msg="ssh timeout"),
+        ]
+    )
+    runner, _ = _expect_runner("failed", event_reader=events)
+    [row] = runner([_case_suite({})]).results
+    assert row.failed_tasks is not None
+    assert [(task.host, task.status, task.msg) for task in row.failed_tasks] == [
+        ("web1", "failed", "boom"),
+        ("db1", "unreachable", "ssh timeout"),
+    ]
+    assert events.calls == [
+        (
+            5,
+            {"event__in": "runner_on_failed,runner_on_async_failed,runner_on_unreachable"},
+            False,
+        )
+    ]
+
+
+def test_passing_cases_skip_events_and_unreadable_events_leave_no_list() -> None:
+    events = StubEventReader([])
+    runner, _ = _expect_runner("successful", event_reader=events)
+    [row] = runner([_case_suite({})]).results
+    assert (row.failed_tasks, events.calls) == (None, [])
+
+    runner, _ = _expect_runner("failed", event_reader=StubEventReader([], error=RuntimeError()))
+    [row] = runner([_case_suite({})]).results
+    assert (row.result, row.failed_tasks) == ("fail", None)
+
+
+@pytest.mark.parametrize(("processed", "expected"), [(True, ()), (False, None)])
+def test_no_failed_tasks_is_only_trusted_once_events_are_saved(
+    processed: bool, expected: tuple[()] | None
+) -> None:
+    final = Job.model_validate(
+        {"id": 5, "kind": "job", "status": "failed", "event_processing_finished": processed}
+    )
+    runner = _make_runner(
+        fk=StubFk(),
+        launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
+        watcher=StubWatcher(default=final),
+    )
+    [row] = runner([_case_suite({})]).results
+    assert row.failed_tasks == expected
+
+
+def test_scm_branch_overrides_every_case_and_rows_report_what_ran() -> None:
+    launcher = StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}})
+    final = Job.model_validate(
+        {"id": 5, "kind": "job", "status": "successful", "scm_branch": "fix", "scm_revision": "c0"}
+    )
+    runner = _make_runner(fk=StubFk(), launcher=launcher, watcher=StubWatcher(default=final))
+    suite = _case_suite({"launch": {"scm_branch": "main", "limit": "web"}})
+    [row] = runner([suite], scm_branch="fix").results
+    assert [call["payload"] for call in launcher.calls] == [{"scm_branch": "fix", "limit": "web"}]
+    assert (row.scm_branch, row.scm_revision) == ("fix", "c0")
+
+
+def test_preflight_failures_stop_the_run_before_any_launch() -> None:
+    checked: list[tuple[str, dict[str, Any]]] = []
+
+    def preflight(
+        spec: object, *, name: str, scope: dict[str, str] | None, payload: dict[str, Any]
+    ) -> None:
+        checked.append((name, payload))
+        if "limit" in payload:
+            raise LaunchPromptError("does not prompt for limit")
+
+    launcher = StubLauncher({})
+    runner = _make_runner(
+        fk=StubFk(), launcher=launcher, watcher=StubWatcher(), preflight=preflight
+    )
+    suite = _suite("s", {"ok": {}, "bad": {"limit": "web"}, "worse": {"limit": "db"}})
+    with pytest.raises(ConfigError) as info:
+        runner([suite])
+    assert str(info.value) == (
+        "preflight failed, nothing launched:\n"
+        "  s/bad: does not prompt for limit\n"
+        "  s/worse: does not prompt for limit"
+    )
+    assert launcher.calls == []
+    assert [name for name, _ in checked] == ["JT", "JT", "JT"]

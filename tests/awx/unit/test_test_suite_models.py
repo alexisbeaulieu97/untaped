@@ -7,10 +7,12 @@ from collections.abc import Callable
 import pytest
 from pydantic import ValidationError
 
+from untaped.capabilities.awx.domain import JobEvent
 from untaped.capabilities.awx.domain.suite import (
     Case,
     CaseResult,
     Expectation,
+    FailedTask,
     RefSentinel,
     Suite,
     SuiteRunOutcome,
@@ -125,3 +127,46 @@ def test_outcome_exit_code(results: tuple[str, ...], code: int) -> None:
         results=tuple(CaseResult(suite="s", case=str(i), result=r) for i, r in enumerate(results))
     )
     assert outcome.exit_code() == code
+
+
+def _failure_event(event: str, res: dict[str, object] | None, **fields: object) -> JobEvent:
+    return JobEvent.model_validate(
+        {"counter": 1, "event": event, "failed": True, "event_data": {"res": res}, **fields}
+    )
+
+
+def test_failed_task_names_host_task_and_messages() -> None:
+    event = _failure_event(
+        "runner_on_failed",
+        {"msg": "non-zero return code", "stderr": "missing file"},
+        host_name="web1",
+        task="Run migrations",
+    )
+    assert FailedTask.from_event(event).model_dump() == {
+        "host": "web1",
+        "task": "Run migrations",
+        "status": "failed",
+        "msg": "non-zero return code",
+        "stderr": "missing file",
+    }
+
+
+def test_unreachable_hosts_and_bare_events_still_make_failed_tasks() -> None:
+    unreachable = _failure_event("runner_on_unreachable", {"msg": ["ssh", "timeout"]})
+    assert FailedTask.from_event(unreachable).model_dump() == {
+        "host": None,
+        "task": None,
+        "status": "unreachable",
+        "msg": "['ssh', 'timeout']",
+        "stderr": None,
+    }
+    assert FailedTask.from_event(_failure_event("runner_on_failed", None)).msg is None
+
+
+def test_failed_task_clips_long_messages_keeping_the_end_of_stderr() -> None:
+    task = FailedTask.from_event(
+        _failure_event("runner_on_failed", {"msg": "m" * 5000, "stderr": "s" * 5000 + "END"})
+    )
+    assert task.msg is not None and task.msg.endswith("…") and len(task.msg) == 1001
+    assert task.stderr is not None and task.stderr.startswith("…")
+    assert task.stderr.endswith("END") and len(task.stderr) == 1001

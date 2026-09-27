@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from untaped.capabilities.awx.application.ports import Catalog, ResourceClient
@@ -31,13 +31,27 @@ LAUNCH_PROMPTS: dict[str, tuple[str, str]] = {
 }
 
 
-def _preflight_launch(
+def preflight_launch(
     client: ResourceClient,
     spec: ResourceSpec,
     item: SelectedResource,
     payload: Mapping[str, Any],
+    *,
+    read: Callable[[str], Mapping[str, Any]] | None = None,
+    name_fields: bool = False,
 ) -> None:
-    info = client.sub_endpoint_request(spec, item.id, "launch", "GET")
+    """Raise :class:`LaunchPromptError` when AWX would ignore a field or lacks a survey var.
+
+    ``read`` GETs one of the template's sub-endpoints (``launch``, ``survey_spec``),
+    so a caller checking many payloads can cache them. Messages name the
+    ``launch`` CLI flags, or with ``name_fields`` the payload fields.
+    """
+    if read is None:
+
+        def read(endpoint: str) -> Mapping[str, Any]:
+            return client.sub_endpoint_request(spec, item.id, endpoint, "GET")
+
+    info = read("launch")
     label = f"{spec.kind} {item.name!r} (id={item.id})"
     needed = info.get("variables_needed_to_start") or []
     supplied = _extra_var_names(payload.get("extra_vars"))
@@ -45,13 +59,15 @@ def _preflight_launch(
     if missing:
         raise LaunchPromptError(
             f"{label} requires survey variables {', '.join(map(str, missing))}; "
-            "pass them with --extra-vars KEY=VAL"
+            + ("set them in extra_vars" if name_fields else "pass them with --extra-vars KEY=VAL")
         )
     for field, value in payload.items():
         prompt = LAUNCH_PROMPTS.get(field)
         if prompt is None:
             continue
         ask_key, flag = prompt
+        if name_fields:
+            flag = field
         if info.get(ask_key) is not False:
             continue
         if field == "extra_vars":
@@ -59,7 +75,7 @@ def _preflight_launch(
             if not names:
                 continue
             if info.get("survey_enabled"):
-                _check_survey_variables(client, spec, item, label, names)
+                _check_survey_variables(read, label, names)
                 continue
         elif _is_template_value(field, value, _template_value(field, info, item.record)):
             # AWX treats a value equal to the template's own as a no-op.
@@ -71,14 +87,12 @@ def _preflight_launch(
 
 
 def _check_survey_variables(
-    client: ResourceClient,
-    spec: ResourceSpec,
-    item: SelectedResource,
+    read: Callable[[str], Mapping[str, Any]],
     label: str,
     names: set[str],
 ) -> None:
     """Without ``ask_variables_on_launch`` AWX keeps only the survey's variables."""
-    survey = client.sub_endpoint_request(spec, item.id, "survey_spec", "GET")
+    survey = read("survey_spec")
     questions = survey.get("spec") if isinstance(survey, Mapping) else None
     allowed = {
         str(question["variable"])
@@ -200,7 +214,7 @@ def prepare_action_targets(
         raise UsageError(f"no {spec.kind} targets selected for {action}")
     if action == "launch":
         for item in selected:
-            _preflight_launch(client, spec, item, payload or {})
+            preflight_launch(client, spec, item, payload or {})
     if action != "sync":
         return spec, tuple(selected)
     targets = tuple(selected)
