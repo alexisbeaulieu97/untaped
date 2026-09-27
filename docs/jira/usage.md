@@ -86,8 +86,10 @@ label) only add, so they are sent without asking unless `jira.confirm` is
 `always`.
 
 Before asking, the write shows each REST request it will send and what it
-changes, one line per field; a patch or transition first reads the issue's
-current values for the diff:
+changes, one line per field. A patch first reads the current values of the
+fields it sets (none for an add-only patch) and names each old value the way
+the new one does (`priority: 2 → 3` for `{"id": "3"}`); long text is cut to
+60 characters for display but compared whole:
 
 ```text
 PUT /rest/api/2/issue/OPS-123
@@ -98,9 +100,13 @@ PUT /rest/api/2/issue/OPS-123/assignee
 ```
 
 `--dry-run` shows the same preview on stderr, emits a `planned` outcome on
-stdout and sends nothing, whatever `jira.confirm` says. `--yes` skips the
-question and the preview. Without a terminal, a write that must ask exits 2
-unless you pass `--yes` or `--dry-run`.
+stdout and sends nothing, whatever `jira.confirm` says. Because the preview
+reads the issue, `issues patch --dry-run` and `issues transition --dry-run`
+need working credentials, and a patch dry run exits 1 when the issue cannot
+be read. `issues create`, `comment` and `links create` dry runs stay offline.
+`--yes` skips the question and the preview (and its reads). Without a
+terminal, a write that must ask exits 2 unless you pass `--yes` or
+`--dry-run`.
 
 ```bash
 untaped jira issues create --project OPS --issue-type Task \
@@ -141,8 +147,12 @@ untaped jira issues transition OPS-123 --to Done --resolution Fixed --comment "S
 
 Pass exactly one of `--to NAME` or `--id ID`. `--resolution NAME` sets the
 resolution (many Done screens require one) and `--comment TEXT` adds a comment
-in the same request. The preview names the transition and shows the status
-change (`status: To Do → In Progress`). Several keys are transitioned in
+in the same request. The preview names the transition, shows the status
+change (`status: To Do → In Progress`) and the whole comment. It reads each
+issue once; a transition picked by `--to` reuses the lookup, and an `--id`
+the issue does not offer shows `(not available from this status)`. When an
+issue cannot be read, its preview shows `(unknown)` instead of stopping the
+batch. Several keys are transitioned in
 one batch; each failed key prints `error: KEY: ...` and the command exits 1.
 
 Transition every issue of a search:

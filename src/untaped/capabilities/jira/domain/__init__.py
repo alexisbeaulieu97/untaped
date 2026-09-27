@@ -1,7 +1,9 @@
 """Pure domain models and helpers for the Jira tool."""
 
 from untaped.capabilities.jira.domain.changes import (
+    ConfirmPolicy,
     change_line,
+    comment_lines,
     is_destructive_patch,
     needs_confirmation,
     payload_changes,
@@ -33,6 +35,7 @@ from untaped.capabilities.jira.domain.search import JiraIssueSearchFilters
 __all__ = [
     "BoardResult",
     "CommentResult",
+    "ConfirmPolicy",
     "IssueDetailResult",
     "IssueLink",
     "IssueOutcome",
@@ -48,6 +51,7 @@ __all__ = [
     "build_link_payload",
     "build_transition_payload",
     "change_line",
+    "comment_lines",
     "is_destructive_patch",
     "needs_confirmation",
     "payload_changes",
