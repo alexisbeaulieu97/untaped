@@ -38,6 +38,15 @@
     issue's `direction` (`outward`/`inward`) and the `relation` phrase Jira
     shows for it. JSON and YAML carry a list (empty when there are none); the
     detail table shows one line per link. Linked issues are not fetched.
+  - **Fix:** `issues patch --assignee/--unassign` now uses Jira's dedicated
+    `PUT issue/KEY/assignee` endpoint instead of the issue edit, which failed
+    when the assignee field was not on the edit screen. Combined with other
+    field changes, the edit is sent first, then the assignment; the preview
+    and `--dry-run` show both requests.
+  - **Fix:** issue keys are validated before any request: they must be
+    `PROJECT-123` (any case; sent uppercase) or a numeric id, else the
+    command exits 2. Other path values, such as `projects get KEY`, are
+    percent-encoded, so no input can change the request path.
 - Ansible
   - `graph --contains OWNER/REPO` (repeatable) reports the roots whose
     downstream graph contains a repository: one `ansible.dependency_match`
