@@ -253,8 +253,8 @@ The shared runtime helpers are exported from the same module:
 - Input and pipes: `read_identifiers`, `read_stdin_input`, `StdinInput`,
   `read_records`, `read_stdin`, `resolve_text_input`, `is_envelope_line`,
   `parse_envelope_line`, `PipeEnvelope`.
-- Files and state: `atomic_write`, `read_structured_file`, `unified_diff_text`,
-  `StateCollection`, `StateMap`.
+- Files and state: `atomic_write` (pass `mode=0o600` for owner-only files),
+  `read_structured_file`, `unified_diff_text`, `StateCollection`, `StateMap`.
 - UI: `UiContext` (including `success`, `styled`, `confirm_action`,
   `confirm_or_cancel` and `terminal`), `ui_context`, `ProgressHandle`, `PromptChoice`.
 - Batches and concurrency: `batch_apply`, `BatchOutcome`, `finish`,

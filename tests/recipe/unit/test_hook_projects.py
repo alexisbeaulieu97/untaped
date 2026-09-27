@@ -324,15 +324,18 @@ def test_uv_hook_worker_times_out_and_closes_hung_process(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake = _SlowProcess(delay=0.2)
+    # The hung worker never answers within the test's lifetime, so only the
+    # timeout can end the request; the generous wall-clock bound just proves
+    # it did not wait for the stall (CI scheduling jitter stays well inside).
+    fake = _SlowProcess(delay=60)
     monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
     worker = UvHookWorker(tmp_path, hook_timeout_seconds=0.01)
 
     start = time.monotonic()
-    with pytest.raises(worker_client.FatalHookWorkerError, match="timed out"):
+    with pytest.raises(worker_client.FatalHookWorkerError, match=r"timed out after 0\.01s"):
         worker.request({"kind": "transform", "module": "hooks.sample"})
 
-    assert time.monotonic() - start < 0.15
+    assert time.monotonic() - start < 10
     assert fake.killed
 
 
@@ -429,6 +432,65 @@ def test_worker_env_scrubs_virtual_env(
     assert result.result == "after"
     assert "VIRTUAL_ENV" not in captured
     assert captured["PYTHONPATH"].endswith("existing")
+
+
+def test_worker_env_passes_only_allowlisted_variables(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secrets = ("GITHUB_TOKEN", "UNTAPED_AWX__TOKEN", "AWS_SECRET_ACCESS_KEY", "OPENAI_API_KEY")
+    for name in secrets:
+        monkeypatch.setenv(name, "s3cret")
+    kept = {
+        "HOME": str(tmp_path / "home"),
+        "LANG": "C.UTF-8",
+        "LC_CTYPE": "C.UTF-8",
+        "TMPDIR": str(tmp_path / "tmp"),
+        "UV_CACHE_DIR": str(tmp_path / "uv-cache"),
+        "XDG_CACHE_HOME": str(tmp_path / "cache"),
+        "SSL_CERT_FILE": str(tmp_path / "ca.pem"),
+        "HTTPS_PROXY": "http://proxy.test:3128",
+        "no_proxy": "localhost",
+    }
+    for name, value in kept.items():
+        monkeypatch.setenv(name, value)
+    captured: dict[str, str] = {}
+
+    def _capture(*args: object, **kwargs: object) -> _FakeProcess:
+        captured.update(kwargs["env"])  # type: ignore[call-overload]
+        return _FakeProcess(stdout="")
+
+    monkeypatch.setattr(subprocess, "Popen", _capture)
+    UvHookWorker(tmp_path)
+
+    assert not set(secrets) & set(captured)
+    assert captured["PATH"] == os.environ["PATH"]
+    assert {name: captured.get(name) for name in kept} == kept
+    assert captured["PYTHONPATH"].startswith(str(tmp_path / "src"))
+
+
+def test_worker_script_keeps_fd_level_hook_output_off_the_protocol(tmp_path: Path) -> None:
+    response, stderr = _run_worker_script(
+        tmp_path,
+        {
+            "worker_hooks/noisy.py": (
+                "import os, subprocess, sys\n"
+                "os.write(1, b'raw fd write\\n')\n"
+                "def transform(content, *, inputs, target, file, args, helpers):\n"
+                "    os.write(1, b'raw fd write from hook\\n')\n"
+                "    child = [sys.executable, '-c', 'print(\"child output\")']\n"
+                "    subprocess.run(child, check=True)\n"
+                "    assert sys.stdin.read() == ''\n"
+                "    return content\n"
+            )
+        },
+        {"kind": "transform", "module": "worker_hooks.noisy", "content": "same", "file": "f"},
+    )
+
+    assert response == {"id": "1", "ok": True, "result": "same", "warnings": []}
+    assert "raw fd write\n" in stderr
+    assert "raw fd write from hook" in stderr
+    assert "child output" in stderr
 
 
 def test_uv_hook_worker_rejects_non_json_serializable_request_values(

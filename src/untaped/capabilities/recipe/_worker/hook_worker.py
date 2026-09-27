@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import sys
 import traceback
 from collections.abc import Mapping
 from contextlib import redirect_stdout
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 
 def _load_sibling(name: str) -> Any:  # pragma: no cover - script mode only
@@ -92,12 +93,13 @@ def handle_request(request: dict[str, Any]) -> dict[str, Any]:
 def main() -> int:
     """Run the NDJSON worker loop."""
     _configure_standard_streams()
+    requests, responses = _protocol_channel()
     # The ready line ends the client's startup wait: everything before it
     # (uv env creation on first use, module imports) is environment setup,
     # charged against the startup bound rather than the per-hook timeout.
-    sys.stdout.write(json.dumps({protocol.READY: True}) + "\n")
-    sys.stdout.flush()
-    for line in sys.stdin:
+    responses.write(json.dumps({protocol.READY: True}) + "\n")
+    responses.flush()
+    for line in requests:
         line = line.strip()
         if not line:
             continue
@@ -115,9 +117,28 @@ def main() -> int:
                 protocol.OK: False,
                 protocol.ERROR: f"{type(exc).__name__}: {exc}",
             }
-        sys.stdout.write(json.dumps(response) + "\n")
-        sys.stdout.flush()
+        responses.write(json.dumps(response) + "\n")
+        responses.flush()
     return 0
+
+
+def _protocol_channel() -> tuple[TextIO, TextIO]:
+    """Move the NDJSON protocol onto private descriptors.
+
+    Hook code (and any process it spawns) can write to fd 1 or read fd 0
+    below Python's ``sys.stdout``/``sys.stdin``; that would corrupt or steal
+    protocol lines. The real stdin/stdout are duplicated onto private,
+    non-inheritable descriptors for the protocol, then fd 1 is pointed at
+    stderr (so stray output becomes diagnostics) and fd 0 at the null device.
+    """
+    sys.stdout.flush()
+    requests = open(os.dup(0), encoding="utf-8", errors="replace")  # noqa: SIM115
+    responses = open(os.dup(1), "w", encoding="utf-8", errors="replace")  # noqa: SIM115
+    os.dup2(2, 1)
+    null = os.open(os.devnull, os.O_RDONLY)
+    os.dup2(null, 0)
+    os.close(null)
+    return requests, responses
 
 
 def _configure_standard_streams() -> None:

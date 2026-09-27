@@ -47,6 +47,28 @@
     `scm_url`/`effective_scm_ref` such as `awx job-templates list --with-scm
     --format pipe`). Supports `--format table|json|pipe`; single-target
     `tree`/`mermaid` output is unchanged.
+- Recipe
+  - **Behavior change:** hook workers no longer inherit the whole
+    environment. Only an allowlist passes through (`PATH`, `HOME`, locale,
+    temp dirs, `UV_*`/`XDG_*`, TLS and proxy settings, `PYTHONPATH`), so
+    tokens such as `GITHUB_TOKEN` or `UNTAPED_*` credentials never reach hook
+    code.
+  - **Fix:** a hook that writes to stdout at the file-descriptor level (or
+    spawns a process that does) no longer corrupts the worker protocol; the
+    output becomes hook diagnostics, and hooks read an empty stdin.
+  - **Behavior change:** `add` and `sync` refuse a pack containing symlinks
+    (outside ignored dirs such as `.venv`) instead of copying their targets.
+  - `add` and `sync` record the resolved `commit` of a git source next to the
+    requested `rev`; `list --packs` and the `add`/`sync` rows show it. The
+    `sync` confirmation (and `--dry-run`) shows each pack's commit move and
+    the hook-code files that change.
+  - **Fix:** backup bundles are created owner-only (dirs `0700`, files
+    `0600`) and their `metadata.json` is written atomically.
+  - `apply --dry-run`/`--check` help and docs now state that pack hooks still
+    run to compute the plan.
+- Core
+  - `atomic_write` accepts `mode=` to create the file with those permissions
+    from the start.
 
 ## 7.1.0
 
