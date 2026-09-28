@@ -9,12 +9,13 @@ from untaped.capabilities.recipe.application.harness import orphaned_test_dirs
 from untaped.capabilities.recipe.application.inputs import validate_recipe_input_sources
 from untaped.capabilities.recipe.application.ports import PackInspectorPort, PackLibraryPort
 from untaped.capabilities.recipe.application.resolution import (
+    find_library_recipe,
     is_explicit_recipe_path,
     resolve_explicit_recipe,
 )
 from untaped.capabilities.recipe.builtins.registry import BUILTIN_HOOKS
 from untaped.capabilities.recipe.domain.hook_project import ensure_hook_supports
-from untaped.capabilities.recipe.domain.pack import InstalledPack, parse_ref
+from untaped.capabilities.recipe.domain.pack import InstalledPack
 from untaped.capabilities.recipe.domain.paths import confined_path
 from untaped.capabilities.recipe.domain.recipe import (
     CopyStep,
@@ -23,6 +24,7 @@ from untaped.capabilities.recipe.domain.recipe import (
     TransformStep,
     ValidateStep,
 )
+from untaped.capabilities.recipe.errors import RecipeNotFoundError
 from untaped.capability_api import ConfigError
 
 
@@ -46,16 +48,15 @@ def check_ref(
     pack = library.find_pack(ref_text)
     if pack is not None:
         return _check_pack(pack, inspector)
-    ref = parse_ref(ref_text)
     try:
-        pack, recipe = library.find_recipe(ref)
-    except ValueError as exc:
-        if str(exc).startswith("recipe not found") and "/" not in ref_text:
+        pack, name, recipe = find_library_recipe(library, ref_text)
+    except RecipeNotFoundError:
+        if "/" not in ref_text:
             builtin = BUILTIN_HOOKS.get(ref_text)
             if builtin is not None:
                 return _builtin_check_row(ref_text, Path(builtin.module.__file__ or ""))
         raise
-    return _check_recipe(pack.root / recipe.path, f"{pack.name}/{ref.name}", pack.root, inspector)
+    return _check_recipe(pack.root / recipe.path, f"{pack.name}/{name}", pack.root, inspector)
 
 
 def check_library(
@@ -64,7 +65,10 @@ def check_library(
     inspector: PackInspectorPort,
 ) -> list[dict[str, object]]:
     """Check every installed pack plus index/directory reconciliation."""
-    rows = [_check_reconcile_problem(library.packs_dir, problem) for problem in library.reconcile()]
+    rows = [
+        _pack_check_row(name, library.packs_dir / name, status="error", error=problem)
+        for name, problem in library.reconcile().items()
+    ]
     pack_rows = [_check_pack(pack, inspector) for pack in library.packs()]
     pack_rows.extend(
         _pack_check_row(name, library.packs_dir / name, status="error", error=error)
@@ -72,21 +76,6 @@ def check_library(
     )
     rows.extend(sorted(pack_rows, key=lambda row: str(row["pack"])))
     return rows
-
-
-def _check_reconcile_problem(packs_dir: Path, problem: str) -> dict[str, object]:
-    name = _quoted_name(problem)
-    return _pack_check_row(
-        name,
-        packs_dir / name if name else None,
-        status="error",
-        error=problem,
-    )
-
-
-def _quoted_name(message: str) -> str:
-    parts = message.split("'", maxsplit=2)
-    return parts[1] if len(parts) == 3 else ""
 
 
 def _builtin_check_row(name: str, path: Path) -> dict[str, object]:
@@ -100,7 +89,7 @@ def _builtin_check_row(name: str, path: Path) -> dict[str, object]:
 
 def _pack_check_row(
     name: str,
-    path: Path | None,
+    path: Path,
     *,
     status: str,
     recipes: int = 0,
@@ -110,7 +99,7 @@ def _pack_check_row(
     return {
         "pack": name,
         "status": status,
-        "path": str(path) if path is not None else "",
+        "path": str(path),
         "recipes": recipes,
         "hooks": hooks,
         "error": error,

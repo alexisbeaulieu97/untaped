@@ -16,7 +16,10 @@ from untaped.capabilities.recipe.application.harness import (
     run_case,
     update_case,
 )
-from untaped.capabilities.recipe.application.resolution import resolve_explicit_recipe
+from untaped.capabilities.recipe.application.resolution import (
+    find_library_recipe,
+    resolve_explicit_recipe,
+)
 from untaped.capabilities.recipe.cli._context import recipe_ui
 from untaped.capabilities.recipe.cli.common import (
     hook_startup_notice,
@@ -25,7 +28,7 @@ from untaped.capabilities.recipe.cli.common import (
     report_config_errors,
     settings,
 )
-from untaped.capabilities.recipe.domain.pack import InstalledPack, parse_ref
+from untaped.capabilities.recipe.domain.pack import InstalledPack
 from untaped.capabilities.recipe.domain.paths import is_path_ref
 from untaped.capabilities.recipe.infrastructure import HookExecutor, HookResolver
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
@@ -112,9 +115,8 @@ def _select(root: Path, ref_text: str | None) -> _Selection:
     pack_match = library.find_pack(ref_text)
     if pack_match is not None:
         return _explicit_selection(pack_match, recipe=None)
-    ref = parse_ref(ref_text)
-    recipe_pack, _entry = library.find_recipe(ref)
-    return _explicit_selection(recipe_pack, recipe=ref.name)
+    recipe_pack, name, _entry = find_library_recipe(library, ref_text)
+    return _explicit_selection(recipe_pack, recipe=name)
 
 
 def _explicit_selection(pack: InstalledPack, *, recipe: str | None) -> _Selection:
