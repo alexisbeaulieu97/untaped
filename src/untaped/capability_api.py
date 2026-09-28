@@ -61,7 +61,7 @@ from untaped.errors import (
     UsageError,
     first_validation_error,
 )
-from untaped.fs import atomic_write, file_lock, load_vars_file, read_structured_file
+from untaped.fs import atomic_write, file_lock, read_structured_file
 from untaped.git import (
     GitCommandError,
     GitResult,
@@ -95,7 +95,6 @@ from untaped.stdin import (
     read_stdin,
     read_stdin_input,
     resolve_text_input,
-    stdin_is_terminal,
 )
 from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context
@@ -200,7 +199,5 @@ __all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by
     # 2.1 shared helpers.
     "file_lock",
     "git_toplevel",
-    "load_vars_file",
     "same_origin",
-    "stdin_is_terminal",
 ]

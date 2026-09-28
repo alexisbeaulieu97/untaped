@@ -316,10 +316,12 @@ def run_git(
 def git_toplevel(path: Path, *, git: str = "git", timeout: float = 30.0) -> Path | None:
     """Return the resolved root of the git work tree containing directory ``path``.
 
-    ``None`` means git ran and found no work tree there (outside any checkout,
-    or inside a bare repository). Failures to run git at all (binary missing,
-    launch failure, timeout) raise :class:`GitCommandError`, so callers never
-    mistake a broken git for "not a checkout".
+    ``path`` must be an existing directory: git runs there, so a missing path
+    cannot launch it. ``None`` means git ran and found no work tree there
+    (outside any checkout, or inside a bare repository). Failures to run git
+    at all (binary missing, launch failure, timeout) raise
+    :class:`GitCommandError`, so callers never mistake a broken git for "not a
+    checkout".
     """
     result = run_git(
         ["rev-parse", "--show-toplevel"],
@@ -328,6 +330,7 @@ def git_toplevel(path: Path, *, git: str = "git", timeout: float = 30.0) -> Path
         timeout=timeout,
         capture=True,
         check=False,
+        batch_ssh=False,  # purely local: skip the core.sshCommand probe
     )
     top = result.text.strip() if result.returncode == 0 else ""
     return Path(top).resolve() if top else None

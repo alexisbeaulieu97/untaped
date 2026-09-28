@@ -12,7 +12,7 @@ from untaped.capability_api import (
     UiContext,
     UsageError,
     get_config_section,
-    load_vars_file,
+    read_structured_file,
     report_errors,
 )
 
@@ -37,7 +37,7 @@ def merge_vars(
     """
     merged: dict[str, object] = {}
     for path in files:
-        merged.update(load_vars_file(path, flag=file_flag))
+        merged.update(read_structured_file(path, flag=file_flag))
     merged.update(values)
     return merged
 

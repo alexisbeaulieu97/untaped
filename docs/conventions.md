@@ -105,12 +105,12 @@ come from a closed set:
   `--yes`.
 - Read identifiers with `read_identifiers(names, stdin=stdin,
   id_field="…", accept_kinds={"<cap>.<noun>"})`. A pipe record of another
-  kind exits 2. Empty stdin is an error, except with `allow_empty=True` for
-  commands that act on a filtered selection (such as `workspace foreach
-  --stdin`): an empty pipe then does nothing, reports like an empty list, and
-  exits 0.
-- Before prompting, check `stdin_is_terminal()`; without a terminal, fail with
-  a hint naming the flag that supplies the value.
+  kind exits 2. Empty stdin is an error, except for commands that act on a
+  filtered selection (such as `workspace foreach --stdin`), which read it with
+  `read_stdin_input(allow_empty=True)`: an empty pipe then does nothing,
+  reports like an empty list, and exits 0.
+- Before prompting, check `ui.can_prompt` on the `UiContext` that will prompt;
+  without a terminal, fail with a hint naming the flag that supplies the value.
 - Commands that need whole records or a mixed input use
   `read_stdin_input(accept_kinds=…)` or `read_records(accept_kinds=…)`.
   Never read `sys.stdin` directly.

@@ -263,6 +263,18 @@ def test_git_toplevel_finds_the_checkout_root_from_a_subdirectory(tmp_path: Path
     assert git_toplevel(repo) == repo.resolve()
 
 
+def test_git_toplevel_is_local_so_it_skips_the_ssh_setup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.delenv("GIT_SSH_COMMAND", raising=False)
+    monkeypatch.setattr(subprocess, "run", _recording_run(calls, stdout=f"{tmp_path}\n"))
+    monkeypatch.setattr(subprocess, "Popen", lambda *_a, **_k: pytest.fail("probed ssh config"))
+
+    assert git_toplevel(tmp_path) == tmp_path.resolve()
+    assert "GIT_SSH_COMMAND" not in calls[0]["env"]
+
+
 def test_git_toplevel_is_none_outside_a_checkout(tmp_path: Path) -> None:
     assert git_toplevel(tmp_path) is None
 

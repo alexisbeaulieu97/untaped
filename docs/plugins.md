@@ -84,8 +84,8 @@ malformed (for example the float bounds of 1.x) or non-covering range
 quarantines the provider with an `api-range` reason naming the running
 version. Version `2.0` (untaped 8.0) removed the `untaped.api` module and the
 `from untaped import X` forwarding; 1.x ranges no longer compose. Version
-`2.1` added `git_toplevel`, `file_lock`, `load_vars_file`, `same_origin`,
-`stdin_is_terminal`, and the `allow_empty` flag of `read_identifiers` and
+`2.1` added `git_toplevel`, `file_lock`, `same_origin`, `UiContext.can_prompt`,
+the `flag` option of `read_structured_file`, and the `allow_empty` flag of
 `read_stdin_input`.
 
 A built-in capability follows the same `SPEC` and `build_app()` shape but is
@@ -270,20 +270,20 @@ The shared runtime helpers are exported from the same module:
   scheme, host and port; check it before following a link with credentials).
 - Input and pipes: `read_identifiers`, `read_stdin_input`, `StdinInput`,
   `read_records`, `read_stdin`, `resolve_text_input`, `is_envelope_line`,
-  `parse_envelope_line`, `PipeEnvelope`, and `stdin_is_terminal()` (whether
-  stdin is an interactive terminal, so a command may prompt; a closed or
-  missing stdin is not).
+  `parse_envelope_line`, `PipeEnvelope`.
 - Files and state: `atomic_write` (durable; keeps the file's mode unless
   given `mode=`, e.g. `mode=0o600` for owner-only files; writes through a
-  symlink), `read_structured_file`, `unified_diff_text`, `StateCollection`,
-  `StateMap`, `load_vars_file(path, flag="--vars-file")` (one YAML or JSON
-  mapping with string keys; errors name the flag and file), and
-  `file_lock(path, timeout=..., error_factory=...)`, a context manager holding
-  an advisory lock file: when the lock is not acquired within `timeout` seconds
-  it raises `error_factory(exc)`, where a `TimeoutError` means another process
-  holds it and any other `OSError` that the lock file could not be opened.
+  symlink), `read_structured_file(path, flag=None)` (one YAML mapping, or JSON
+  for a `.json` file, with string keys; `~` is expanded, a blank file is `{}`,
+  and with `flag="--vars-file"` every error names the flag and file),
+  `unified_diff_text`, `StateCollection`, `StateMap`, and
+  `file_lock(path, *, timeout, error, busy, failed)`, a context manager holding
+  an advisory lock file: when another process still holds it after `timeout`
+  seconds it raises `error(busy)`, and when the lock file cannot be opened
+  `error(f"{failed}: <reason>")`.
 - UI: `UiContext` (including `success`, `styled`, `confirm_action`,
-  `confirm_or_cancel` and `terminal`), `ui_context`, `ProgressHandle`, `PromptChoice`.
+  `confirm_or_cancel`, `terminal` and `can_prompt`, which says whether its stdin
+  is a terminal a prompt can read), `ui_context`, `ProgressHandle`, `PromptChoice`.
 - Batches and concurrency: `batch_apply`, `BatchOutcome`, `finish`,
   `bounded_map`.
 
@@ -369,10 +369,10 @@ identifiers = read_identifiers(
 
 `read_stdin_input(accept_kinds=...)` returns either the bare values or the
 parsed envelopes (a `StdinInput`), for commands that need whole records.
-Both raise on an empty stdin. Pass `allow_empty=True` when an empty pipe
-(say, a filter that matched nothing) should do nothing instead: it then yields
-no identifiers, which the command must treat as "nothing to do", never as
-"everything". A terminal stdin with nothing piped still raises.
+Both raise on an empty stdin. Pass `read_stdin_input(allow_empty=True)` when an
+empty pipe (say, a filter that matched nothing) should do nothing instead: it
+then returns no values, which the command must treat as "nothing to do", never
+as "everything". A terminal stdin with nothing piped still raises.
 
 A composed capability can participate in a root pipeline without another
 executable:

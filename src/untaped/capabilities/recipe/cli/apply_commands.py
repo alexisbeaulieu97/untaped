@@ -59,7 +59,6 @@ from untaped.capability_api import (
     parse_kv_pairs,
     read_stdin,
     render_rows,
-    stdin_is_terminal,
 )
 
 MessageKind = Literal["success", "warning", "error", "info"]
@@ -467,9 +466,9 @@ def _terminal_prompt() -> PromptFunc | None:
     Like ``awx test`` variables: never prompt without a TTY (piped ``--stdin``
     targets included); the missing input then fails with a ``--var`` hint.
     """
-    if not stdin_is_terminal():
-        return None
     ui = recipe_ui()
+    if not ui.can_prompt:
+        return None
 
     def ask(message: str, *, sensitive: bool) -> object:
         return ui.secret(message) if sensitive else ui.text(message)

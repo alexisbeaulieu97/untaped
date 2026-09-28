@@ -103,9 +103,7 @@ EXPECTED_ALL = [
     "online_check",
     "file_lock",
     "git_toplevel",
-    "load_vars_file",
     "same_origin",
-    "stdin_is_terminal",
 ]
 
 

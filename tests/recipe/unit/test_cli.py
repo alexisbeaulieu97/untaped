@@ -1108,7 +1108,7 @@ def test_apply_var_values_parse_by_declared_type(
     [
         (None, [], 1, "--vars-file file not found"),
         ("[unclosed\n", [], 1, "--vars-file file {path} is invalid YAML"),
-        ("- a\n", [], 1, "--vars-file file {path} must contain a YAML mapping"),
+        ("- a\n", [], 1, "--vars-file file {path} must contain a mapping"),
         ("{}\n", ["--hook-timeout", "-1"], 2, "--hook-timeout must be greater than or equal to 0"),
     ],
 )

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from untaped.capabilities.awx.domain.suite import VariableSpec
-from untaped.capability_api import ConfigError, load_vars_file, plural
+from untaped.capability_api import ConfigError, plural, read_structured_file
 
 if TYPE_CHECKING:
     from untaped.capabilities.awx.application.suites.ports import Prompt
@@ -44,7 +44,7 @@ def resolve_variables(
 
     file_values: dict[str, Any] = {}
     for path in files:
-        loaded = load_vars_file(path)
+        loaded = read_structured_file(path, flag="--vars-file")
         _reject_unknown(loaded.keys(), known_names, f"vars-file {path}")
         file_values.update(loaded)
 
