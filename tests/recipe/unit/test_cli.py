@@ -3476,6 +3476,25 @@ def test_get_hook_reports_an_ambiguous_library_hook_instead_of_the_builtin(
     assert "ambiguous hook ref 'yaml_edit'" in result.stderr
 
 
+@pytest.mark.parametrize("hook", ["yaml_edit", "shared"])
+def test_recipe_get_hints_hooks_for_an_ambiguous_library_hook(tmp_path: Path, hook: str) -> None:
+    for name in ("one", "two"):
+        source = tmp_path / name
+        _write_pack(
+            source,
+            manifest_name=name,
+            recipes={"playbook": "recipes/playbook.yml"},
+            hooks={hook: f"{name}_pack.hooks.{hook}"},
+        )
+        _install_pack(source)
+
+    result = CliInvoker().invoke(app, ["get", hook])
+
+    assert result.exit_code == 1, result.output
+    assert f"recipe not found: '{hook}'" in result.stderr
+    assert f"hint: run `untaped recipe hooks get {hook}`" in result.stderr
+
+
 def test_edit_rejects_builtin_hook(tmp_path: Path) -> None:
     result = CliInvoker().invoke(app, ["hooks", "edit", "yaml_edit"])
 

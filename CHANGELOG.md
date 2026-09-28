@@ -7,9 +7,12 @@
     the same resolver as `apply`, `get` and `edit`, so a miss on a name that
     is also an on-disk path now carries the same "pass it as an explicit
     path" hint.
-  - **Behavior change:** `recipe hooks get|edit NAME` reports an ambiguous
-    hook ref when several installed packs export `NAME`, instead of falling
-    back to the built-in hook of the same name (`apply` already refused it).
+  - **Behavior change:** `recipe hooks get|edit NAME` for a built-in hook
+    name falls back to the built-in only when no installed pack exports
+    `NAME`; other library errors (an ambiguous ref, an unreadable
+    `packs.toml`) are now reported instead, as `apply` already did.
+  - `recipe get|edit NAME` hints at `recipe hooks get|edit NAME` when `NAME`
+    is a hook exported by several installed packs.
 
 ## 8.0.0
 
