@@ -275,6 +275,7 @@ def run_command(
             jt_scope=_jt_scope(ctx, spec),
             stop=ctx.stop,
             canceller=ctx.jobs.cancel if cancel else None,
+            refresher=ctx.monitor.fetch,
             preflight=PreflightLaunch(ctx.repo, ctx.catalog),
             log_reader=ctx.monitor.fetch_stdout,
             event_reader=ctx.monitor.stream_events,

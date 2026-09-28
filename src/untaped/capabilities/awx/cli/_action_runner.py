@@ -95,7 +95,7 @@ def run_action_selection(
         return _action_error(exc, spec, target, payload)
 
     labels = _monitor_labels(targets)
-    abandon = AbandonJobs(ctx.jobs.cancel if cancel else None)
+    abandon = AbandonJobs(ctx.jobs.cancel if cancel else None, refresher=ctx.monitor.fetch)
     outcomes = _submit(
         targets,
         labels,
@@ -106,7 +106,6 @@ def run_action_selection(
         abandon=abandon,
     )
     launched: list[tuple[str, Job]] = []
-    row_by_label: dict[str, int] = {}
     for index, outcome in enumerate(outcomes):
         row = rows[index]
         row.update(action=outcome.action, detail=outcome.detail)
@@ -114,25 +113,20 @@ def run_action_selection(
             row.update(id=outcome.error.execution_id, kind=outcome.error.execution_kind)
         if outcome.result is not None:
             row.update(outcome.result.model_dump())
-            label = labels[index]
-            launched.append((label, outcome.result))
-            row_by_label[label] = index
+            launched.append((labels[index], outcome.result))
     unfinished: dict[str, list[str]] = {}
-    if launched and (wait or follow):
-        finals, errors = _monitor(
+    if wait or follow:
+        unfinished = _watch(
             ctx,
+            rows,
+            labels,
             launched,
             _unmonitored(outcomes, labels),
             follow=follow,
             timeout=timeout,
             abandon=abandon,
+            error_detail=lambda exc, index: safe_error(exc, targets[index]),
         )
-        unfinished = _record_finals(rows, row_by_label, finals, timeout=timeout, abandon=abandon)
-        jobs = dict(launched)
-        for label, exc in errors:
-            index = row_by_label[label]
-            detail = safe_error(exc, targets[index])
-            rows[index].update(action="failed", detail=_abandoned(detail, jobs[label], abandon))
     for row in rows:
         if row.get("detail"):
             echo(f"{row['action']}: {row['target_name']}: {row['detail']}", err=True)
@@ -161,9 +155,54 @@ def _preview_payloads(
         row["payload"] = format_value(preview) if fmt in ("table", "raw") else preview
 
 
+def _watch(
+    ctx: AwxContext,
+    rows: list[dict[str, Any]],
+    labels: list[str],
+    launched: list[tuple[str, Job]],
+    unmonitored: list[tuple[str, Job]],
+    *,
+    follow: bool,
+    timeout: float | None,
+    abandon: AbandonJobs,
+    error_detail: Callable[[Exception, int], str],
+) -> dict[str, list[str]]:
+    """Monitor ``launched``, fold what it learns into ``rows``, abandon what it stops watching.
+
+    Executions AWX created for failed rows (``unmonitored``) are abandoned
+    too. Ctrl-C during the cancel requests is reported like Ctrl-C while
+    waiting. Returns the ids, by execution kind, that need a ``jobs wait`` hint.
+    """
+    finals, errors = (
+        _monitor(ctx, launched, unmonitored, follow=follow, timeout=timeout, abandon=abandon)
+        if launched
+        else ([], [])
+    )
+    row_of = {label: index for index, label in enumerate(labels)}
+    try:
+        unfinished = _record_finals(
+            rows, row_of, launched, finals, timeout=timeout, abandon=abandon
+        )
+        jobs = dict(launched)
+        for label, exc in errors:
+            index = row_of[label]
+            _fail_abandoned(rows[index], error_detail(exc, index), jobs[label], abandon)
+        for label, job in unmonitored:
+            row = rows[row_of[label]]
+            _fail_abandoned(row, row["detail"], job, abandon)
+    except KeyboardInterrupt:
+        last = {(job.kind, job.id): job for job in finals}
+        _interrupted(
+            [(label, last.get((job.kind, job.id), job)) for label, job in launched] + unmonitored,
+            abandon,
+        )
+    return unfinished
+
+
 def _record_finals(
     rows: list[dict[str, Any]],
-    row_by_label: dict[str, int],
+    row_of: dict[str, int],
+    launched: list[tuple[str, Job]],
     finals: list[Job],
     *,
     timeout: float | None,
@@ -172,28 +211,32 @@ def _record_finals(
     """Fold each monitored execution's last state into its row.
 
     An execution still running when ``timeout`` ended the wait fails its row
-    and is abandoned. Returns the ids, by execution kind, of those not
-    cancelled: they keep running on the controller.
+    and is abandoned. Returns the ids, by execution kind, of those neither
+    cancelled nor ended since: they keep running on the controller.
     """
-    row_by_job = {(rows[i]["kind"], rows[i]["id"]): i for i in row_by_label.values()}
+    row_by_job = {(job.kind, job.id): row_of[label] for label, job in launched}
     unfinished: dict[str, list[str]] = {}
     for job in finals:
         row = rows[row_by_job[(job.kind, job.id)]]
         row.update(job.model_dump())
         if not job.is_terminal:
-            row.update(
-                action="failed", detail=f"{still_running_detail(job, timeout)}; {abandon(job)}"
-            )
-            if (job.kind, job.id) not in abandon.cancelled:
+            detail = f"{still_running_detail(job, timeout)}; {abandon(job)}"
+            latest = abandon.latest(job)
+            row.update(latest.model_dump(), action="failed", detail=detail)
+            if not latest.is_terminal and (job.kind, job.id) not in abandon.cancelled:
                 unfinished.setdefault(job.kind, []).append(str(job.id))
         elif job.status != "successful":
             row.update(action="failed", detail=f"execution ended with status {job.status}")
     return unfinished
 
 
-def _abandoned(detail: str, job: Job, abandon: AbandonJobs) -> str:
-    """A polling error's row detail; with ``--cancel``, plus what became of ``job``."""
-    return f"{detail}; {abandon(job)}" if abandon.cancels else detail
+def _fail_abandoned(row: dict[str, Any], detail: str, job: Job, abandon: AbandonJobs) -> None:
+    """Fail ``row``; with ``--cancel``, cancel ``job`` and say what became of it."""
+    if abandon.cancels:
+        detail = f"{detail}; {abandon(job)}"
+        if (latest := abandon.latest(job)) is not job:
+            row.update(latest.model_dump())
+    row.update(action="failed", detail=detail)
 
 
 def validate_wait_flags(*, timeout: float | None, cancel: bool, wait: bool, follow: bool) -> None:
@@ -274,9 +317,17 @@ def _monitor(
 
 
 def _interrupted(executions: Sequence[tuple[str, Job]], abandon: AbandonJobs) -> NoReturn:
-    """Abandon every execution not known to have ended, then name them; exit 130."""
-    abandon.unfinished(job for _, job in executions)
-    report_interrupted(executions, cancelled=abandon.cancelled)
+    """Abandon every execution not known to have ended, then name them; exit 130.
+
+    Another Ctrl-C during the cancel requests stops them, but still names them.
+    """
+    try:
+        abandon.unfinished(job for _, job in executions)
+    finally:
+        report_interrupted(
+            [(label, abandon.latest(job)) for label, job in executions],
+            cancelled=abandon.cancelled,
+        )
 
 
 _ACTIVE_STATUSES = frozenset({"new", "pending", "waiting", "running"})
