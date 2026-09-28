@@ -463,3 +463,30 @@ def test_styled_tail_follows_verbatim_unwrapped_and_unexpanded() -> None:
     assert _has_ansi(first)
     assert _strip_ansi(first) == f"[deploy] {tail}"
     assert second == tail
+
+
+def _closed() -> io.StringIO:
+    stream = io.StringIO()
+    stream.close()
+    return stream
+
+
+@pytest.mark.parametrize(
+    ("stdin", "expected"),
+    [(TtyStringIO(), True), (io.StringIO(), False), (_closed(), False)],
+    ids=["terminal", "pipe", "closed"],
+)
+def test_can_prompt_follows_the_context_stdin(stdin: io.StringIO, expected: bool) -> None:
+    assert UiContext(stdin=stdin).can_prompt is expected
+
+
+def test_can_prompt_is_true_inside_terminal_even_with_piped_stdin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("untaped.ui.open_controlling_terminal", TtyStringIO)
+    ui = UiContext(stdin=io.StringIO("piped data"))
+
+    assert ui.can_prompt is False
+    with ui.terminal():
+        assert ui.can_prompt is True
+    assert ui.can_prompt is False

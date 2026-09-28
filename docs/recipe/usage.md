@@ -67,7 +67,8 @@ untaped recipe apply acme/readme --stdin --input-from 'service={{ target.name }}
 ```
 
 - `--var` and `--vars-file` repeat. A later file wins over an earlier one,
-  and `--var` wins over every file. Unknown input names are rejected.
+  and `--var` wins over every file. Each file is a YAML or JSON mapping with
+  string keys. Unknown input names are rejected.
 - `list` and `dict` inputs parse `--var` values as YAML. Other `--var`
   values are plain strings, but `--vars-file` values are YAML: `3.10`
   becomes `3.1` and `on` becomes `true` before a `str` input sees them.
