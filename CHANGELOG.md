@@ -18,12 +18,16 @@
 - AWX
   - **Behavior change:** `test run`/`list`/`validate` without paths report a
     missing `git` instead of silently searching the current directory.
-  - **Behavior change:** `--vars-file` errors name the flag
-    (`--vars-file file not found: vars.yml`).
+  - **Behavior change:** `--vars-file` errors name the flag and the file
+    (`--vars-file file not found: vars.yml`, and `could not read --vars-file
+    file vars.yml: …` for any other read error), and a leading `~` in the path
+    is expanded.
 - Recipe
   - **Behavior change:** `--vars-file`/`--args-file` errors name the file,
-    an unreadable file is no longer reported as not found, and non-string keys
-    are rejected instead of being turned into strings.
+    an unreadable file is reported as `could not read …` instead of
+    `… file not found`, and non-string keys are rejected instead of being
+    turned into strings. A file holding an empty list (`[]`) is now an error
+    (`must contain a YAML mapping`) instead of being read as no values.
 - GitHub
   - **Fix:** a corpus repo lock that cannot be created is reported as an
     error instead of a traceback.
