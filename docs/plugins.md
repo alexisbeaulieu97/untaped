@@ -84,9 +84,9 @@ malformed (for example the float bounds of 1.x) or non-covering range
 quarantines the provider with an `api-range` reason naming the running
 version. Version `2.0` (untaped 8.0) removed the `untaped.api` module and the
 `from untaped import X` forwarding; 1.x ranges no longer compose. Version
-`2.1` added `git_toplevel`, `file_lock`, `same_origin`, `UiContext.can_prompt`,
-the `flag` option of `read_structured_file`, and the `allow_empty` flag of
-`read_stdin_input`.
+`2.1` (untaped 8.1) added `git_toplevel`, `file_lock`, `same_origin`,
+`UiContext.can_prompt`, the `flag` option of `read_structured_file`, and the
+`allow_empty` flag of `read_stdin_input`.
 
 A built-in capability follows the same `SPEC` and `build_app()` shape but is
 constructed in the `untaped` source tree and listed in the root composition.
