@@ -67,6 +67,15 @@ class UiContext:
         self._default_prompt_backend: PromptToolkitPromptBackend | None = None
 
     @property
+    def can_prompt(self) -> bool:
+        """Whether this context's stdin is a terminal, so prompts can read from it.
+
+        Only stdin matters (a redirected stderr still prompts); a closed or
+        broken stream is no terminal. Inside :meth:`terminal` it is ``True``.
+        """
+        return stream_is_tty(self.stdin)
+
+    @property
     def prompt_backend(self) -> PromptBackend:
         """The interactive prompt backend, built lazily on first use.
 
@@ -254,7 +263,7 @@ class UiContext:
         terminal (``/dev/tty``) and restored afterwards. Raises
         :class:`UsageError` with ``refusal`` when no terminal is available.
         """
-        if stream_is_tty(self.stdin):
+        if self.can_prompt:
             yield self
             return
         try:
@@ -340,7 +349,7 @@ class UiContext:
         return values
 
     def _ensure_promptable(self) -> None:
-        if not stream_is_tty(self.stdin):
+        if not self.can_prompt:
             raise ConfigError("interactive prompt requires a TTY on stdin")
 
     @staticmethod

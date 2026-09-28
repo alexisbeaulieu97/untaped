@@ -17,8 +17,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from filelock import FileLock, Timeout
-
 from untaped.capabilities.workspace.domain import BareCacheEntry, RepoStatus
 from untaped.capabilities.workspace.domain.prune_safety import (
     DIRTY_WORKTREE_BLOCKER,
@@ -27,7 +25,7 @@ from untaped.capabilities.workspace.domain.prune_safety import (
 )
 from untaped.capabilities.workspace.errors import GitError
 from untaped.capabilities.workspace.infrastructure.bare_cache import cache_path_for
-from untaped.capability_api import GitCommandError, run_git
+from untaped.capability_api import GitCommandError, file_lock, run_git
 
 DEFAULT_TIMEOUT = 60.0
 """Per-call timeout (seconds) for fast/local git ops (status, config, …)."""
@@ -100,17 +98,14 @@ class GitRunner:
         queue of such holders (``_LOCK_QUEUE``) before giving up.
         """
         hold = self._slow_timeout + 2 * self._timeout
-        lock = FileLock(f"{bare}.lock", timeout=_LOCK_QUEUE * hold)
-        try:
-            lock.acquire()
-        except Timeout as exc:
-            raise GitError(f"bare cache is locked by another untaped process: {bare}") from exc
-        except OSError as exc:
-            raise GitError(f"could not lock bare cache {bare}: {exc.strerror or exc}") from exc
-        try:
+        with file_lock(
+            Path(f"{bare}.lock"),
+            timeout=_LOCK_QUEUE * hold,
+            error=GitError,
+            busy=f"bare cache is locked by another untaped process: {bare}",
+            failed=f"could not lock bare cache {bare}",
+        ):
             yield
-        finally:
-            lock.release()
 
     def _protect_cache_objects(self, bare_path: Path) -> None:
         """Never auto-gc or prune the cache's objects.

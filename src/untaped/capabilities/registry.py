@@ -36,7 +36,7 @@ type ApiVersion = tuple[int, int]
 type ApiRange = tuple[ApiVersion, ApiVersion]
 
 #: SDK capability-API version providers build against (spec §2).
-CAPABILITY_API_VERSION: ApiVersion = (2, 0)
+CAPABILITY_API_VERSION: ApiVersion = (2, 1)
 
 #: Declared API range for built-in capabilities (spec §7.1).
 _BUILTIN_API_REQUIRES: ApiRange = ((2, 0), (3, 0))

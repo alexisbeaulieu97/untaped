@@ -15,8 +15,6 @@ from pathlib import Path
 from typing import cast
 from urllib.parse import urlparse
 
-from filelock import FileLock, Timeout
-
 from untaped.capabilities.github.domain import (
     CorpusFreshness,
     CorpusRepoResult,
@@ -34,6 +32,7 @@ from untaped.capability_api import (
     GitCommandError,
     GitResult,
     atomic_write,
+    file_lock,
     run_git,
     safe_cache_path,
     safe_path_segment,
@@ -417,13 +416,14 @@ class GitCorpusCache:
     def _repo_lock(self, bare: Path) -> Iterator[None]:
         """Hold one bare repo's lock so concurrent sweeps never write it at once."""
         bare.mkdir(parents=True, exist_ok=True)
-        try:
-            with FileLock(str(bare / LOCK_FILE), timeout=self._lock_timeout):
-                yield
-        except Timeout as exc:
-            raise GitCorpusError(
-                f"corpus repo is locked by another untaped process: {bare}"
-            ) from exc
+        with file_lock(
+            bare / LOCK_FILE,
+            timeout=self._lock_timeout,
+            error=GitCorpusError,
+            busy=f"corpus repo is locked by another untaped process: {bare}",
+            failed=f"could not lock corpus repo {bare}",
+        ):
+            yield
 
     def _ensure_origin(self, bare: Path, url: str) -> None:
         # Purely local config commands: never hand them the auth header.
