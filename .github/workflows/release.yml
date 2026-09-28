@@ -224,6 +224,7 @@ jobs:
 
   smoke-published:
     needs: publish
+    if: always() && needs.publish.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
