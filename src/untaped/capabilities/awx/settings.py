@@ -12,7 +12,10 @@ from untaped.capability_api import TokenCommand, TokenSources
 class AwxSettings(BaseModel):
     """Connection + behaviour configuration for a single AWX/AAP target."""
 
-    token_sources: ClassVar[TokenSources] = TokenSources(env=())
+    # The ansible.controller / awx.awx collection's variables, in its order.
+    token_sources: ClassVar[TokenSources] = TokenSources(
+        env=("CONTROLLER_OAUTH_TOKEN", "TOWER_OAUTH_TOKEN", "AAP_TOKEN")
+    )
 
     model_config = ConfigDict(frozen=True)
 

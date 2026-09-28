@@ -15,7 +15,7 @@ DEFAULT_ASSIGNED_JQL = "assignee = currentUser() AND resolution = Unresolved"
 class JiraSettings(BaseModel):
     """Connection and behavior settings for one Jira Data Center target."""
 
-    token_sources: ClassVar[TokenSources] = TokenSources(env=())
+    token_sources: ClassVar[TokenSources] = TokenSources(env=("JIRA_API_TOKEN",))
 
     model_config = ConfigDict(frozen=True)
 

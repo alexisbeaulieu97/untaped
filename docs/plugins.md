@@ -245,7 +245,8 @@ The shared runtime helpers are exported from the same module:
   lazily, once per process) and then from the listed environment variables.
   See [Tokens](configuration.md#tokens).
 - Doctor checks: `connection_check(id, section=...)` reports the resolved
-  `base_url` and token source; `executable_check(id, program, purpose=...)`
+  `base_url` and token source, and warns when the token is stored in plain
+  text in `config.yml` (`<section>.token`); `executable_check(id, program, purpose=...)`
   warns when a program is not on `PATH`; `online_check(id, section=...,
   probe=...)` runs only under `untaped doctor --online` (and `untaped setup`):
   `probe` is a nullary callable doing your authenticated `whoami`-style call

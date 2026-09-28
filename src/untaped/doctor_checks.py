@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterator
 
 from pydantic import BaseModel
 
-from untaped.auth import describe_token_source
+from untaped.auth import TokenSources, describe_token_source
 from untaped.capabilities.registry import CapabilityContext, DoctorCheck, DoctorResult
 from untaped.errors import HttpError, HttpTransportError, UntapedError
 
@@ -41,7 +41,9 @@ def connection_check(check_id: str, *, section: str) -> DoctorCheck:
     """Check the resolved profile's ``<section>.base_url`` and token source.
 
     A section with neither is simply unused and passes; one with only half
-    of the pair is a warning. ``token_command`` is reported, never run.
+    of the pair is a warning, and so is a token stored in plain text in the
+    config file (``<section>.token``), which names ``token_command`` and an
+    environment variable instead. ``token_command`` is reported, never run.
     """
 
     def run(ctx: CapabilityContext) -> DoctorResult:
@@ -67,9 +69,28 @@ def connection_check(check_id: str, *, section: str) -> DoctorCheck:
                     f"{section} commands that call the API will fail"
                 ),
             )
+        if source == f"{section}.token":
+            return DoctorResult(
+                id=check_id,
+                ok=True,
+                warn=True,
+                detail=(
+                    f"{base_url}; token from {source}, stored in plain text in config.yml; "
+                    f"use {_token_alternatives(settings, section=section)} instead"
+                ),
+            )
         return DoctorResult(id=check_id, ok=True, detail=f"{base_url}; token from {source}")
 
     return DoctorCheck(id=check_id, title=f"{section} connection settings", run=run)
+
+
+def _token_alternatives(settings: BaseModel, *, section: str) -> str:
+    """Name the keep-it-out-of-config.yml token sources ``section`` accepts."""
+    sources = getattr(type(settings), "token_sources", None)
+    env = sources.env if isinstance(sources, TokenSources) else ()
+    names = [f"{section}.token_command"] if "token_command" in type(settings).model_fields else []
+    names.append(f"${env[0] if env else f'UNTAPED_{section.upper()}__TOKEN'}")
+    return " or ".join(names)
 
 
 def service_configured(settings: BaseModel, *, section: str) -> bool:

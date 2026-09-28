@@ -302,9 +302,10 @@ broken section to hide the rest:
   capabilities contribute:
   - `github.connection`, `jira.connection`, `awx.connection` — the resolved
     profile's `base_url` and where the token comes from (see
-    [Tokens](#tokens)); `warn` when only one of the pair is set. A section
-    with neither passes as `not configured`. `token_command` is named, never
-    run;
+    [Tokens](#tokens)); `warn` when only one of the pair is set, or when the
+    token is stored in plain text in `config.yml` (`<section>.token`). A
+    section with neither passes as `not configured`. `token_command` is
+    named, never run;
   - `workspace.git`, `github.git`, `ansible.git`, `recipe.git`, `recipe.uv` —
     `warn` when the program is not on `PATH`.
 
@@ -426,8 +427,14 @@ is set:
 1. `<section>.token`, from the active profile or its
    `UNTAPED_<SECTION>__TOKEN` override;
 2. `<section>.token_command`, a command whose standard output is the token;
-3. for `github` only, the `GH_TOKEN` and then the `GITHUB_TOKEN` environment
-   variable.
+3. the service's conventional environment variables, in this order:
+   - `github`: `GH_TOKEN`, then `GITHUB_TOKEN` (as the GitHub CLI reads them);
+   - `jira`: `JIRA_API_TOKEN` (as `jira-cli` reads it);
+   - `awx`: `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN`
+     (as the `ansible.controller` and `awx.awx` collections read them).
+
+These variables are not tied to a profile: one applies to every profile that
+sets neither `token` nor `token_command`, whatever its `base_url`.
 
 `token_command` keeps the token out of `config.yml`. It is an argv list, run
 without a shell, at most once per process and only when a command first needs
@@ -447,6 +454,15 @@ goes straight to your terminal.
 
 untaped does not run `gh auth token` on its own. To reuse the GitHub CLI's
 login, set `github.token_command` as above.
+
+A token in `<section>.token` is stored in plain text in `config.yml`, which is
+what `config set <section>.token` and `untaped setup`'s "Enter a token"
+choice do. `untaped doctor` reports it as a `warn` row (which does not fail
+`doctor`) naming `token_command` and an environment variable to use instead,
+for example `token from awx.token, stored in plain text in config.yml; use
+awx.token_command or $CONTROLLER_OAUTH_TOKEN instead`. A token set by
+`UNTAPED_<SECTION>__TOKEN` is not stored in the file and is reported as
+`token from $UNTAPED_<SECTION>__TOKEN`.
 
 ## Debug logs
 
