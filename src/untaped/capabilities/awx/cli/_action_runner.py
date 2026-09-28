@@ -10,6 +10,7 @@ from typing import Any, NoReturn
 from rich.text import Text
 
 from untaped.capabilities.awx.application import RunAction
+from untaped.capabilities.awx.application.abandon_jobs import AbandonJobs
 from untaped.capabilities.awx.application.mutation_values import redact_error
 from untaped.capabilities.awx.application.prepare_actions import (
     TemplateReads,
@@ -56,6 +57,7 @@ def run_action_selection(
     wait: bool = False,
     follow: bool = False,
     timeout: float | None = None,
+    cancel: bool = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -64,7 +66,8 @@ def run_action_selection(
     ``confirm`` (mass selections) previews the targets and asks once unless
     ``yes``; a declined prompt submits nothing. ``timeout`` bounds each
     wait: an execution still running then fails its row and is named in a
-    ``jobs wait`` hint.
+    ``jobs wait`` hint. With ``cancel``, an execution the wait stops
+    watching (timeout, polling error, Ctrl-C) is cancelled instead.
     """
     reads = TemplateReads(ctx.repo, spec)
     spec, targets = _prepare(ctx, spec, selected, action=action, payload=payload, reads=reads)
@@ -92,6 +95,7 @@ def run_action_selection(
         return _action_error(exc, spec, target, payload)
 
     labels = _monitor_labels(targets)
+    abandon = AbandonJobs(ctx.jobs.cancel if cancel else None)
     outcomes = _submit(
         targets,
         labels,
@@ -99,6 +103,7 @@ def run_action_selection(
         parallel=parallel,
         continue_on_error=continue_on_error,
         error_detail=safe_error,
+        abandon=abandon,
     )
     launched: list[tuple[str, Job]] = []
     row_by_label: dict[str, int] = {}
@@ -115,12 +120,19 @@ def run_action_selection(
     unfinished: dict[str, list[str]] = {}
     if launched and (wait or follow):
         finals, errors = _monitor(
-            ctx, launched, _unmonitored(outcomes, labels), follow=follow, timeout=timeout
+            ctx,
+            launched,
+            _unmonitored(outcomes, labels),
+            follow=follow,
+            timeout=timeout,
+            abandon=abandon,
         )
-        unfinished = _record_finals(rows, row_by_label, finals, timeout=timeout)
+        unfinished = _record_finals(rows, row_by_label, finals, timeout=timeout, abandon=abandon)
+        jobs = dict(launched)
         for label, exc in errors:
             index = row_by_label[label]
-            rows[index].update(action="failed", detail=safe_error(exc, targets[index]))
+            detail = safe_error(exc, targets[index])
+            rows[index].update(action="failed", detail=_abandoned(detail, jobs[label], abandon))
     for row in rows:
         if row.get("detail"):
             echo(f"{row['action']}: {row['target_name']}: {row['detail']}", err=True)
@@ -155,11 +167,13 @@ def _record_finals(
     finals: list[Job],
     *,
     timeout: float | None,
+    abandon: AbandonJobs,
 ) -> dict[str, list[str]]:
     """Fold each monitored execution's last state into its row.
 
-    Returns the ids, by execution kind, still running when ``timeout`` ended
-    the wait; their rows fail and they keep running on the controller.
+    An execution still running when ``timeout`` ended the wait fails its row
+    and is abandoned. Returns the ids, by execution kind, of those not
+    cancelled: they keep running on the controller.
     """
     row_by_job = {(rows[i]["kind"], rows[i]["id"]): i for i in row_by_label.values()}
     unfinished: dict[str, list[str]] = {}
@@ -168,23 +182,28 @@ def _record_finals(
         row.update(job.model_dump())
         if not job.is_terminal:
             row.update(
-                action="failed",
-                detail=f"{still_running_detail(job, timeout)}; it keeps running",
+                action="failed", detail=f"{still_running_detail(job, timeout)}; {abandon(job)}"
             )
-            unfinished.setdefault(job.kind, []).append(str(job.id))
+            if (job.kind, job.id) not in abandon.cancelled:
+                unfinished.setdefault(job.kind, []).append(str(job.id))
         elif job.status != "successful":
             row.update(action="failed", detail=f"execution ended with status {job.status}")
     return unfinished
 
 
-def validate_wait_timeout(timeout: float | None, *, wait: bool, follow: bool) -> None:
-    """``--timeout`` bounds ``--wait``/``--follow`` and cannot be negative (usage errors)."""
-    if timeout is None:
+def _abandoned(detail: str, job: Job, abandon: AbandonJobs) -> str:
+    """A polling error's row detail; with ``--cancel``, plus what became of ``job``."""
+    return f"{detail}; {abandon(job)}" if abandon.cancels else detail
+
+
+def validate_wait_flags(*, timeout: float | None, cancel: bool, wait: bool, follow: bool) -> None:
+    """``--timeout`` and ``--cancel`` only shape a ``--wait``/``--follow`` (usage errors)."""
+    if wait or follow:
         return
-    if not (wait or follow):
+    if timeout is not None:
         raise_usage("--timeout needs --wait or --follow")
-    if timeout < 0:
-        raise_usage("--timeout must be non-negative")
+    if cancel:
+        raise_usage("--cancel needs --wait or --follow")
 
 
 def _submit(
@@ -195,8 +214,9 @@ def _submit(
     parallel: int,
     continue_on_error: bool,
     error_detail: Callable[[Exception, SelectedResource], str],
+    abandon: AbandonJobs,
 ) -> list[SelectedActionOutcome[Job]]:
-    """Run the POST phase; Ctrl-C names the executions submitted so far."""
+    """Run the POST phase; Ctrl-C abandons and names the executions submitted so far."""
     try:
         return run_selected_actions(
             targets,
@@ -207,12 +227,13 @@ def _submit(
         )
     except ActionsInterruptedError as interrupted:
         label_by_target = {id(item): label for item, label in zip(targets, labels, strict=True)}
-        report_interrupted(
+        _interrupted(
             [
                 (label_by_target[id(outcome.target)], job)
                 for outcome in interrupted.outcomes
                 if (job := _submitted_execution(outcome)) is not None
-            ]
+            ],
+            abandon,
         )
 
 
@@ -223,8 +244,9 @@ def _monitor(
     *,
     follow: bool,
     timeout: float | None = None,
+    abandon: AbandonJobs,
 ) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
-    """Wait on launched executions; Ctrl-C stops polling and names what still runs."""
+    """Wait on launched executions; Ctrl-C stops polling, abandons and names what still runs."""
     finished: dict[str, Job] = {}
     try:
         if follow:
@@ -246,9 +268,15 @@ def _monitor(
             timeout=timeout,
         )
     except KeyboardInterrupt:
-        report_interrupted(
-            [(label, finished.get(label, job)) for label, job in launched] + unmonitored
+        _interrupted(
+            [(label, finished.get(label, job)) for label, job in launched] + unmonitored, abandon
         )
+
+
+def _interrupted(executions: Sequence[tuple[str, Job]], abandon: AbandonJobs) -> NoReturn:
+    """Abandon every execution not known to have ended, then name them; exit 130."""
+    abandon.unfinished(job for _, job in executions)
+    report_interrupted(executions, cancelled=abandon.cancelled)
 
 
 _ACTIVE_STATUSES = frozenset({"new", "pending", "waiting", "running"})

@@ -392,16 +392,21 @@ waits for terminal success and exits nonzero for failed, canceled, or error
 executions. `--follow` waits the same way and streams each job's log to
 stderr as it runs, ending with its PLAY RECAP (stdout keeps only the result
 rows). With several executions each log line is prefixed with its
-`[template]`. `--timeout SECONDS` (with `--wait` or `--follow`) stops
-waiting after that many seconds per execution: an execution still running
-fails its row (`still running after --timeout 600s; it keeps running`), and a
-`jobs wait` hint names it. Ctrl-C while waiting or following (including
+`[template]`. `--timeout SECONDS` (with `--wait` or `--follow`; zero or
+more) stops waiting after that many seconds per execution: an execution still
+running fails its row (`still running after --timeout 600s; it keeps running`),
+and a `jobs wait` hint names it. Ctrl-C while waiting or following (including
 `awx test run --parallel`) or while launches are still being submitted stops
 promptly, exits 130, and prints the IDs of executions not known to have
 finished (including ones AWX created while ignoring fields; "was launched"
 when their status is unknown) with an `untaped awx jobs wait ...` command to
 resume; the executions themselves keep running on the controller (`awx test
-run` cancels them unless `--no-cancel`). A failed or unreachable host shows
+run` cancels them unless `--no-cancel`). `--cancel` (with `--wait` or
+`--follow`, and with or without `--timeout`) cancels instead every execution
+the command stops watching: on a timeout or a polling error its row still
+fails, and its `detail` ends with `cancel requested` (or `cancel failed: …`,
+when AWX refuses, with the `jobs wait` hint); Ctrl-C prints
+`interrupted: <template>: job 101 cancel requested` without a hint. A failed or unreachable host shows
 up in the followed log as Ansible prints it (`fatal: [host]: FAILED! => …`).
 AWX writes a finished job's log from its saved events, so `--follow` (and
 `jobs logs --follow`) keeps reading briefly after the job ends until they are

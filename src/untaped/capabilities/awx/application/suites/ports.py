@@ -2,8 +2,7 @@
 
 Concrete implementations live in :mod:`untaped.capabilities.awx.infrastructure.suites`,
 except ``Launcher`` / ``Watcher`` (which reuse the existing
-:class:`RunAction` / :class:`WatchJob` use cases), ``Canceller`` (the
-job record repository's ``cancel``), ``LogReader`` / ``EventReader`` (the
+:class:`RunAction` / :class:`WatchJob` use cases), ``LogReader`` / ``EventReader`` (the
 job monitor's ``fetch_stdout`` / ``stream_events``), ``LaunchCheck``
 (:class:`PreflightLaunch`) and ``FkPrefetcher`` /
 ``FkLookup`` (narrow views of :class:`FkResolver`, implemented by
@@ -56,13 +55,6 @@ class Watcher(Protocol):
     """Poll a :class:`Job` until it reaches a terminal state."""
 
     def __call__(self, job: Job, *, timeout: float | None = None) -> Job: ...
-
-
-@runtime_checkable
-class Canceller(Protocol):
-    """Ask AWX to cancel a running execution (raises when AWX refuses)."""
-
-    def __call__(self, *, kind: str, job_id: int) -> None: ...
 
 
 @runtime_checkable

@@ -23,8 +23,9 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from untaped.capabilities.awx.application.abandon_jobs import AbandonJobs
+from untaped.capabilities.awx.application.ports import Canceller
 from untaped.capabilities.awx.application.suites.ports import (
-    Canceller,
     EventReader,
     FkPrefetcher,
     LaunchCheck,
@@ -90,8 +91,8 @@ class RunTestSuite:
         self._jt_scope = jt_scope
         self._clock = clock
         self._stop = stop
-        self._cancel = canceller
-        """``None`` leaves executions the run stops watching still running."""
+        self._abandon = AbandonJobs(canceller)
+        """Cancels (or, without ``canceller``, leaves) what the run stops watching."""
         self._read_log = log_reader
         self._read_events = event_reader
         self._job_url = job_url
@@ -100,7 +101,7 @@ class RunTestSuite:
         """Attach ``failed_tasks`` and ``log_tail`` to cases that did not pass."""
         self.launched: list[Job] = []
         """Executions submitted so far (for reporting after an interrupt)."""
-        self.cancelled: set[tuple[str, int]] = set()
+        self.cancelled = self._abandon.cancelled
         """``(kind, id)`` of executions whose cancel AWX accepted."""
         self._finals: dict[tuple[str, int], Job] = {}
 
@@ -138,7 +139,7 @@ class RunTestSuite:
                 on_abort=self._stop.set if self._stop is not None else None,
             )
         except KeyboardInterrupt:
-            self._cancel_unfinished()
+            self._abandon.unfinished(self.known_executions())
             raise
         # Indexed by declaration order, so the report ignores completion order.
         return SuiteRunOutcome(results=[results[index] for index in range(len(resolved))])
@@ -146,22 +147,6 @@ class RunTestSuite:
     def known_executions(self) -> list[Job]:
         """Every submitted execution with its latest locally known status."""
         return [self._finals.get((job.kind, job.id), job) for job in self.launched]
-
-    def _cancel_unfinished(self) -> None:
-        for job in self.known_executions():
-            if not job.is_terminal and (job.kind, job.id) not in self.cancelled:
-                self._abandon(job)
-
-    def _abandon(self, job: Job) -> str:
-        """Cancel an execution the run stops watching; say what became of it."""
-        if self._cancel is None:
-            return "it keeps running"
-        try:
-            self._cancel(kind=job.kind, job_id=job.id)
-        except Exception as exc:
-            return f"cancel failed: {exc}"
-        self.cancelled.add((job.kind, job.id))
-        return "cancel requested"
 
     def _build_plan(
         self,

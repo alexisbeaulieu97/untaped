@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- AWX
+  - `launch` and `sync --cancel` (with `--wait` or `--follow`) cancel every
+    execution the command stops watching (timeout, polling error, Ctrl-C)
+    instead of leaving it running, as `awx test run` does: the row's `detail`
+    ends with `cancel requested` (or `cancel failed: …`), and a cancelled
+    execution gets no `jobs wait` hint.
+  - A negative `launch`/`sync --timeout` is now rejected by the option parser
+    (`Invalid value "-1.0" for --timeout. Must be >= 0.`, exit 2).
+
 ## 8.0.0
 
 A clean breaking release: the spellings deprecated in 7.x are removed without
