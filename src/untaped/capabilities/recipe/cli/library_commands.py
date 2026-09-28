@@ -30,7 +30,11 @@ from untaped.capabilities.recipe.domain.pack import (
     RecipeEntry,
     parse_ref,
 )
-from untaped.capabilities.recipe.errors import HookNotFoundError, RecipeNotFoundError
+from untaped.capabilities.recipe.errors import (
+    AmbiguousRefError,
+    HookNotFoundError,
+    RecipeNotFoundError,
+)
 from untaped.capabilities.recipe.infrastructure.pack_files import hook_exports, read_pack_manifest
 from untaped.capabilities.recipe.infrastructure.pack_inspector import PackInspector
 from untaped.capabilities.recipe.infrastructure.pack_store import (
@@ -664,6 +668,8 @@ def _other_noun(library: PackLibrary, ref_text: str) -> str | None:
         return "packs"
     try:
         _find_hook(library, ref_text)
+    except AmbiguousRefError:
+        return "hooks"
     except ValueError:
         return None
     return "hooks"

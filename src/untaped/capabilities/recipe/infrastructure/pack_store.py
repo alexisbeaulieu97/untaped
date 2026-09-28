@@ -23,7 +23,11 @@ from untaped.capabilities.recipe.domain.pack import (
 )
 from untaped.capabilities.recipe.domain.paths import safe_library_name
 from untaped.capabilities.recipe.domain.recipe import parse_recipe
-from untaped.capabilities.recipe.errors import HookNotFoundError, RecipeError, RecipeNotFoundError
+from untaped.capabilities.recipe.errors import (
+    AmbiguousRefError,
+    HookNotFoundError,
+    RecipeNotFoundError,
+)
 from untaped.capabilities.recipe.infrastructure.pack_files import (
     check_hook_project,
     hook_exports,
@@ -352,13 +356,21 @@ class PackLibrary:
         return InstalledPack.local(path, read_pack_manifest(path))
 
     def find_recipe(self, ref: PackRef) -> tuple[InstalledPack, RecipeEntry]:
-        """Resolve a bare or qualified recipe reference."""
+        """Resolve a bare or qualified recipe reference.
+
+        A miss raises :class:`RecipeNotFoundError`; a bare ref several packs
+        export raises :class:`AmbiguousRefError` (both are ``ValueError``).
+        """
         return self._find_entry(
             ref, table=lambda manifest: manifest.recipes, noun="recipe", missing=RecipeNotFoundError
         )
 
     def find_hook(self, ref: PackRef) -> tuple[InstalledPack, HookEntry]:
-        """Resolve a bare or qualified hook reference."""
+        """Resolve a bare or qualified hook reference.
+
+        A miss raises :class:`HookNotFoundError`; a bare ref several packs
+        export raises :class:`AmbiguousRefError` (both are ``ValueError``).
+        """
         return self._find_entry(
             ref, table=lambda manifest: manifest.hooks, noun="hook", missing=HookNotFoundError
         )
@@ -369,7 +381,7 @@ class PackLibrary:
         *,
         table: Callable[[PackManifest], Mapping[str, EntryT]],
         noun: str,
-        missing: type[RecipeError],
+        missing: type[RecipeNotFoundError] | type[HookNotFoundError],
     ) -> tuple[InstalledPack, EntryT]:
         matches = [
             (pack, entry)
@@ -380,7 +392,7 @@ class PackLibrary:
             return matches[0]
         if len(matches) > 1:
             candidates = ", ".join(f"{pack.name}/{ref.name}" for pack, _ in matches)
-            raise ValueError(f"ambiguous {noun} ref {ref.name!r}; candidates: {candidates}")
+            raise AmbiguousRefError(f"ambiguous {noun} ref {ref.name!r}; candidates: {candidates}")
         raise missing(not_found(noun, _ref_text(ref)))
 
     def _candidate_packs(self, pack: str | None) -> list[InstalledPack]:

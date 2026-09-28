@@ -10,7 +10,11 @@ from pathlib import Path
 import pytest
 
 from untaped.capabilities.recipe.domain.pack import InstalledPack, PackManifest, parse_ref
-from untaped.capabilities.recipe.errors import HookNotFoundError, RecipeNotFoundError
+from untaped.capabilities.recipe.errors import (
+    AmbiguousRefError,
+    HookNotFoundError,
+    RecipeNotFoundError,
+)
 from untaped.capabilities.recipe.infrastructure import pack_store
 from untaped.capabilities.recipe.infrastructure.pack_store import (
     PackLibrary,
@@ -161,6 +165,24 @@ def test_pack_library_misses_raise_typed_not_found_errors(tmp_path: Path, ref: s
         library.find_recipe(parse_ref(ref))
     with pytest.raises(HookNotFoundError, match=f"hook not found: '{ref}'"):
         library.find_hook(parse_ref(ref))
+
+
+def test_pack_library_ambiguous_bare_refs_raise_typed_errors(tmp_path: Path) -> None:
+    library = PackLibrary(library_root=tmp_path / "library")
+    for name in ("one", "two"):
+        source = tmp_path / name
+        _write_pack(
+            source,
+            manifest_name=name,
+            recipes={"shared": "recipes/shared.yml"},
+            hooks={"shared": f"{name}_hooks.hooks.shared"},
+        )
+        library.add(source, source=str(source), rev=None, name=None, force=False)
+
+    with pytest.raises(AmbiguousRefError, match="ambiguous recipe ref 'shared'"):
+        library.find_recipe(parse_ref("shared"))
+    with pytest.raises(AmbiguousRefError, match="ambiguous hook ref 'shared'"):
+        library.find_hook(parse_ref("shared"))
 
 
 def test_pack_library_remove_deletes_pack_and_index_row(tmp_path: Path) -> None:

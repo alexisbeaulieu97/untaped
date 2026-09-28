@@ -65,7 +65,7 @@ def _library_ref_hint(library: PackLibraryPort, ref_text: str) -> str:
     # (unsafe name, unloadable pack, ...) simply means "no hint".
     try:
         if library.find_pack(name) is None:
-            find_library_recipe(library, name)
+            library.find_recipe(parse_ref(name))
     except ValueError:
         return ""
     return f" (did you mean the library ref '{name}'?)"

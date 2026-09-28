@@ -25,3 +25,7 @@ class RecipeFileNotFoundError(RecipeError, ValueError):
 
 class HookNotFoundError(RecipeError, ValueError):
     """A hook ref names no library, project, or built-in hook."""
+
+
+class AmbiguousRefError(RecipeError, ValueError):
+    """A bare recipe or hook ref matches entries in several installed packs."""
