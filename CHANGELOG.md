@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 8.1.0
+
+A backwards-compatible release: shared core helpers (capability SDK 2.1),
+`launch`/`sync --cancel`, plain-text token warnings in `doctor`, and AWX/Jira
+token environment variables. Several `--vars-file` error messages and edge
+cases changed; see the **Behavior change** entries.
 
 - Core
   - **New:** the capability SDK adds `git_toplevel`, `file_lock`,
