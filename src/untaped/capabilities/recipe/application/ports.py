@@ -83,8 +83,8 @@ class PackLibraryPort(Protocol):
     def load_errors(self) -> dict[str, str]:
         """``{pack name: error}`` for installed packs that failed to load."""
 
-    def reconcile(self) -> list[str]:
-        """Index/directory consistency problems."""
+    def reconcile(self) -> dict[str, str]:
+        """``{pack name: problem}`` for index/directory consistency problems."""
 
     def find_pack(self, name: str) -> InstalledPack | None:
         """The installed pack named ``name``, if any."""

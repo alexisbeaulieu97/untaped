@@ -23,6 +23,7 @@ from untaped.capabilities.recipe.domain.pack import (
 )
 from untaped.capabilities.recipe.domain.paths import safe_library_name
 from untaped.capabilities.recipe.domain.recipe import parse_recipe
+from untaped.capabilities.recipe.errors import HookNotFoundError, RecipeError, RecipeNotFoundError
 from untaped.capabilities.recipe.infrastructure.pack_files import (
     check_hook_project,
     hook_exports,
@@ -316,18 +317,18 @@ class PackLibrary:
         if error is not None:
             raise ValueError(f"pack '{installed_name}' cannot be loaded: {error}")
 
-    def reconcile(self) -> list[str]:
-        """Return index/directory consistency problems for the pack library."""
+    def reconcile(self) -> dict[str, str]:
+        """Return ``{pack name: problem}`` for index/directory consistency problems."""
         index = self._read_index()
-        problems: list[str] = []
+        problems: dict[str, str] = {}
         for name in sorted(index):
             if not (self.packs_dir / name).is_dir():
-                problems.append(f"pack '{name}' is in packs.toml but missing from packs/")
+                problems[name] = f"pack '{name}' is in packs.toml but missing from packs/"
         if not self.packs_dir.is_dir():
             return problems
         for root in sorted(self.packs_dir.iterdir(), key=lambda path: path.name):
             if root.is_dir() and root.name not in index:
-                problems.append(f"pack directory '{root.name}' is not recorded in packs.toml")
+                problems[root.name] = f"pack directory '{root.name}' is not recorded in packs.toml"
         return problems
 
     def find_pack(self, name: str) -> InstalledPack | None:
@@ -352,11 +353,15 @@ class PackLibrary:
 
     def find_recipe(self, ref: PackRef) -> tuple[InstalledPack, RecipeEntry]:
         """Resolve a bare or qualified recipe reference."""
-        return self._find_entry(ref, table=lambda manifest: manifest.recipes, noun="recipe")
+        return self._find_entry(
+            ref, table=lambda manifest: manifest.recipes, noun="recipe", missing=RecipeNotFoundError
+        )
 
     def find_hook(self, ref: PackRef) -> tuple[InstalledPack, HookEntry]:
         """Resolve a bare or qualified hook reference."""
-        return self._find_entry(ref, table=lambda manifest: manifest.hooks, noun="hook")
+        return self._find_entry(
+            ref, table=lambda manifest: manifest.hooks, noun="hook", missing=HookNotFoundError
+        )
 
     def _find_entry[EntryT](
         self,
@@ -364,6 +369,7 @@ class PackLibrary:
         *,
         table: Callable[[PackManifest], Mapping[str, EntryT]],
         noun: str,
+        missing: type[RecipeError],
     ) -> tuple[InstalledPack, EntryT]:
         matches = [
             (pack, entry)
@@ -375,7 +381,7 @@ class PackLibrary:
         if len(matches) > 1:
             candidates = ", ".join(f"{pack.name}/{ref.name}" for pack, _ in matches)
             raise ValueError(f"ambiguous {noun} ref {ref.name!r}; candidates: {candidates}")
-        raise ValueError(not_found(noun, _ref_text(ref)))
+        raise missing(not_found(noun, _ref_text(ref)))
 
     def _candidate_packs(self, pack: str | None) -> list[InstalledPack]:
         installed = self.packs()

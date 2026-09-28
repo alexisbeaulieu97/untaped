@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Recipe
+  - `recipe validate NAME` and `recipe test NAME` resolve recipe refs through
+    the same resolver as `apply`, `get` and `edit`, so a miss on a name that
+    is also an on-disk path now carries the same "pass it as an explicit
+    path" hint.
+  - **Behavior change:** `recipe hooks get|edit NAME` reports an ambiguous
+    hook ref when several installed packs export `NAME`, instead of falling
+    back to the built-in hook of the same name (`apply` already refused it).
+
 ## 8.0.0
 
 A clean breaking release: the spellings deprecated in 7.x are removed without
