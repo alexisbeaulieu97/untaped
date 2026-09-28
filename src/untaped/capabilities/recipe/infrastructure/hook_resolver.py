@@ -10,6 +10,7 @@ from untaped.capabilities.recipe.builtins.registry import BUILTIN_HOOKS, Builtin
 from untaped.capabilities.recipe.domain.hook_project import hook_module_file, is_valid_dotted_name
 from untaped.capabilities.recipe.domain.pack import PackManifest, parse_ref
 from untaped.capabilities.recipe.domain.paths import is_path_ref
+from untaped.capabilities.recipe.errors import HookNotFoundError
 from untaped.capabilities.recipe.infrastructure.pack_files import (
     check_hook_project,
     hook_exports,
@@ -76,20 +77,17 @@ class HookResolver:
         builtin = self._builtins.get(name)
         if builtin is not None:
             return BuiltinHookRef(name=name, exports=builtin.exports, module=builtin.module)
-        raise ValueError(not_found("hook", name))
+        raise HookNotFoundError(not_found("hook", name))
 
     def _resolve_qualified(self, name: str) -> HookRef:
         if is_path_ref(name):
             raise ValueError(f"hook must be a safe hook name: {name}")
-        try:
-            ref = parse_ref(name)
-        except ValueError as exc:
-            raise ValueError(str(exc)) from exc
+        ref = parse_ref(name)
         if ref.pack is None:
             raise ValueError(f"hook must be a safe hook name: {name}")
         library_ref = self._resolve_library(name)
         if library_ref is None:
-            raise ValueError(not_found("hook", name))
+            raise HookNotFoundError(not_found("hook", name))
         return library_ref
 
     def _resolve_library(self, name: str) -> UvHookRef | None:
@@ -98,10 +96,8 @@ class HookResolver:
         ref = parse_ref(name)
         try:
             pack, hook = self._library.find_hook(ref)
-        except ValueError as exc:
+        except HookNotFoundError:
             if ref.pack is not None:
-                raise
-            if not str(exc).startswith("hook not found:"):
                 raise
             return None
         return self._uv_ref(

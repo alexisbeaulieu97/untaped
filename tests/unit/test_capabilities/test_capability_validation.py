@@ -343,7 +343,7 @@ def test_api_2_0_rejects_1_x_providers() -> None:
     )
     (record,) = capped.quarantine
     assert record.reason == "api-range"
-    assert "does not admit SDK version 2.0" in record.detail
+    assert "does not admit SDK version 2.1" in record.detail
 
 
 @pytest.mark.parametrize(
@@ -392,7 +392,7 @@ def test_bad_range_messages_name_the_running_sdk(rng: Any, detail: str) -> None:
         ((2, 0), (3, 0), (4, 0)),
         {"lo": (2, 0)},
         ((1, 0), (2, 0)),  # does not admit the running API
-        ((2, 1), (3, 0)),
+        ((2, 2), (3, 0)),
         ((0, 5), (1, 9)),
         None,  # missing
     ],

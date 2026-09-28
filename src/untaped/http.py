@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, SecretStr
 
@@ -50,6 +51,7 @@ VerifyTypes = bool | str | ssl.SSLContext
 PageFetcher = Callable[[str | None], tuple[list[dict[str, Any]], str | None]]
 
 _LOG = logging.getLogger("untaped.http")
+_DEFAULT_PORTS = {"http": 80, "https": 443}
 
 
 @dataclass(frozen=True)
@@ -603,6 +605,29 @@ def _parse_link_value(value: str) -> tuple[str, dict[str, str]]:
     return value[1:end], params
 
 
+def same_origin(url: str, base: str) -> bool:
+    """Whether following ``url`` from ``base`` stays on ``base``'s origin.
+
+    The origin is the scheme, host and port, with a default port equal to an
+    omitted one; a host-less relative ``url`` always stays. Refuse a
+    server-supplied link that fails this before sending credentials to it.
+    """
+    return _origin(url) in {None, _origin(base)}
+
+
+def _origin(url: str) -> tuple[str, str | None, int | None] | None:
+    """``(scheme, host, port)`` of ``url``; ``None`` for a host-less relative path."""
+    parts = urlsplit(url.strip())
+    if not parts.scheme and not parts.netloc:
+        return None
+    scheme = parts.scheme.lower()
+    try:
+        port = parts.port or _DEFAULT_PORTS.get(scheme)
+    except ValueError:
+        port = -1  # an unparsable port never matches a well-formed origin
+    return scheme, parts.hostname, port
+
+
 def _same_origin_next(response: httpx.Response) -> str | None:
     """Resolve the ``rel="next"`` link, refusing to leave the current origin.
 
@@ -615,7 +640,7 @@ def _same_origin_next(response: httpx.Response) -> str | None:
         return None
     current = response.request.url
     target = current.join(link)
-    if (target.scheme, target.host, target.port) != (current.scheme, current.host, current.port):
+    if not same_origin(str(target), str(current)):
         raise HttpError(
             f"refusing to follow cross-origin pagination link {target} from {current}",
             url=str(current),

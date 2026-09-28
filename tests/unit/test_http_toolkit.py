@@ -18,6 +18,7 @@ from untaped.http import (
     paginate_link,
     paginate_offset,
     paginate_pages,
+    same_origin,
 )
 from untaped.settings import HttpSettings, reset_config_registry_for_tests
 
@@ -308,6 +309,23 @@ def test_paginate_link_refuses_cross_origin_next_link(next_url: str) -> None:
     ):
         list(paginate_link(client, "/things"))
     assert not other.called
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("/api/v2/jobs/?page=2", True),
+        ("https://aap.example.com/api/v2/jobs/?page=2", True),
+        ("HTTPS://AAP.example.com:443/api/v2/jobs/", True),
+        ("https://evil.example.net/api/v2/jobs/", False),
+        ("http://aap.example.com/api/v2/jobs/", False),
+        ("https://aap.example.com:8443/api/v2/jobs/", False),
+        ("https://aap.example.com:bad/api/v2/jobs/", False),
+        ("//evil.example.net/api/v2/jobs/", False),
+    ],
+)
+def test_same_origin(url: str, expected: bool) -> None:
+    assert same_origin(url, "https://aap.example.com") is expected
 
 
 @respx.mock

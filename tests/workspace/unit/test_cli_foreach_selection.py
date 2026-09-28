@@ -107,6 +107,30 @@ def test_foreach_stdin_reads_status_records(tmp_path: Path) -> None:
     assert _ran(result.stdout) == [("prod", "ui")]
 
 
+@pytest.mark.parametrize(
+    ("fmt", "stdout"),
+    [("table", ""), ("json", "[]\n")],
+)
+def test_foreach_stdin_with_an_empty_pipe_runs_nowhere(
+    tmp_path: Path, fmt: str, stdout: str
+) -> None:
+    runner = CliInvoker()
+    target = _workspace(runner, tmp_path, "prod", ("api", "ui"))
+
+    result = runner.invoke(
+        app,
+        ["foreach", "prod", "touch ran", "--stdin", "--format", fmt],
+        input="",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == stdout
+    assert not (target / "api" / "ran").exists()
+    assert not (target / "ui" / "ran").exists()
+    if fmt == "table":
+        assert "No repos received on stdin." in result.stderr
+
+
 def test_foreach_stdin_rejects_other_record_kinds(tmp_path: Path) -> None:
     runner = CliInvoker()
     _workspace(runner, tmp_path, "prod", ("api",))
