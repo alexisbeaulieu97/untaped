@@ -1107,8 +1107,8 @@ def test_apply_var_values_parse_by_declared_type(
     ("vars_file", "extra", "code", "message"),
     [
         (None, [], 1, "--vars-file file not found"),
-        ("[unclosed\n", [], 1, "--vars-file file is invalid YAML"),
-        ("- a\n", [], 1, "--vars-file file must contain a YAML mapping"),
+        ("[unclosed\n", [], 1, "--vars-file file {path} is invalid YAML"),
+        ("- a\n", [], 1, "--vars-file file {path} must contain a mapping"),
         ("{}\n", ["--hook-timeout", "-1"], 2, "--hook-timeout must be greater than or equal to 0"),
     ],
 )
@@ -1125,7 +1125,7 @@ def test_apply_rejects_bad_vars_file_and_hook_timeout(
     )
 
     assert result.exit_code == code, result.output
-    assert message in result.stderr
+    assert message.format(path=path) in result.stderr
     assert "Traceback" not in result.output
 
 

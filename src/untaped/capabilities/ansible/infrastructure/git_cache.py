@@ -6,7 +6,13 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from untaped.capabilities.ansible.errors import GitCacheError as GitCacheError
-from untaped.capability_api import GitCommandError, GitResult, run_git, safe_cache_path
+from untaped.capability_api import (
+    GitCommandError,
+    GitResult,
+    git_toplevel,
+    run_git,
+    safe_cache_path,
+)
 
 DEFAULT_TIMEOUT = 60.0
 DEFAULT_SLOW_TIMEOUT = 600.0
@@ -252,8 +258,11 @@ def local_remote_url(
             return ""
         return result.text.strip() if result.returncode == 0 else ""
 
-    top = lookup("rev-parse", "--show-toplevel")
-    if not top or Path(top).resolve() != cwd.resolve():
+    try:
+        top = git_toplevel(cwd, git=git, timeout=timeout)
+    except GitCommandError:
+        return None
+    if top != cwd.resolve():
         return None
     lines = lookup("config", "--get", "remote.origin.url").splitlines()
     if lines:

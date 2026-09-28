@@ -100,6 +100,7 @@ def test_run_with_broken_vars_file_emits_clean_error(
     assert result.exit_code != 0
     combined = (result.stderr or "") + (result.output or "")
     assert "Traceback" not in combined
+    assert f"--vars-file file {bad_vars} is invalid YAML" in result.stderr
 
 
 def test_run_passes_when_job_succeeds(cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path) -> None:
@@ -700,6 +701,19 @@ def test_no_paths_and_no_tests_directory_is_a_usage_error(
     result = cli.invoke(app, ["test", "list"])
     assert result.exit_code == 2
     assert f"no test paths given and no {tmp_path / '.untaped/awx/tests'}" in result.stderr
+
+
+def test_no_paths_without_git_names_the_failure_instead_of_guessing(
+    cli: CliInvoker, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("shutil.which", lambda _: None)
+
+    result = cli.invoke(app, ["test", "list"])
+
+    assert result.exit_code == 1
+    assert "`git` not found on PATH; pass test paths explicitly" in result.stderr
+    assert "Traceback" not in result.output
 
 
 def test_overlapping_paths_read_each_file_once(cli: CliInvoker, tmp_path: Path) -> None:

@@ -14,9 +14,10 @@ def select_repos(
     """Return manifest repos matching ``identifiers`` plus unmatched values.
 
     Identifiers may be repo names or URLs. Matched repos keep manifest order
-    so command output stays stable regardless of option order.
+    so command output stays stable regardless of option order. ``None`` (no
+    filter) selects every repo; an empty filter selects none.
     """
-    if not identifiers:
+    if identifiers is None:
         return list(manifest.repos), ()
     wanted = set(identifiers)
     known = {repo.name for repo in manifest.repos} | {repo.url for repo in manifest.repos}
