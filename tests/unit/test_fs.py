@@ -2,12 +2,21 @@
 
 import os
 import stat
+from contextlib import AbstractContextManager
 from pathlib import Path
 
 import pytest
 
 import untaped.fs as fs_module
-from untaped.fs import FileChange, FileWriteError, apply_file_changes, atomic_write
+from untaped.errors import ConfigError
+from untaped.fs import (
+    FileChange,
+    FileWriteError,
+    apply_file_changes,
+    atomic_write,
+    file_lock,
+    read_structured_file,
+)
 
 
 def test_read_structured_file_yaml(tmp_path: Path) -> None:
@@ -40,7 +49,7 @@ def test_read_structured_file_rejects_non_object(tmp_path: Path) -> None:
 
     f = tmp_path / "list.yml"
     f.write_text("- 1\n- 2\n", encoding="utf-8")
-    with pytest.raises(ConfigError, match="must contain an object"):
+    with pytest.raises(ConfigError, match=r"^file .*list\.yml must contain a mapping$"):
         read_structured_file(f)
 
 
@@ -48,7 +57,7 @@ def test_read_structured_file_missing_file_is_config_error(tmp_path: Path) -> No
     from untaped.errors import ConfigError
     from untaped.fs import read_structured_file
 
-    with pytest.raises(ConfigError, match="could not read"):
+    with pytest.raises(ConfigError, match=r"^file not found: .*absent\.yml$"):
         read_structured_file(tmp_path / "absent.yml")
 
 
@@ -260,3 +269,115 @@ def test_apply_file_changes_rolls_back_non_oserror_apply_failure(
 
     assert first.read_text(encoding="utf-8") == "v1"
     assert second.read_text(encoding="utf-8") == "old"
+
+
+# ---- file_lock ---------------------------------------------------------------
+
+
+def _locked(path: Path, *, timeout: float) -> AbstractContextManager[None]:
+    return file_lock(
+        path, timeout=timeout, error=ConfigError, busy="busy lock", failed="broken lock"
+    )
+
+
+def test_file_lock_holds_the_lock_file_and_releases_it(tmp_path: Path) -> None:
+    lock = tmp_path / "state.lock"
+
+    with _locked(lock, timeout=1):
+        assert lock.exists()
+    with _locked(lock, timeout=0):
+        pass
+
+
+def test_file_lock_contention_raises_the_busy_message(tmp_path: Path) -> None:
+    lock = tmp_path / "state.lock"
+
+    with (
+        _locked(lock, timeout=1),
+        pytest.raises(ConfigError) as excinfo,
+        _locked(lock, timeout=0),
+    ):
+        pass  # pragma: no cover - never acquired
+    assert str(excinfo.value) == "busy lock"
+    assert isinstance(excinfo.value.__cause__, TimeoutError)
+
+
+def test_file_lock_os_failure_raises_the_failed_message_with_the_reason(tmp_path: Path) -> None:
+    blocker = tmp_path / "file"
+    blocker.write_text("")
+
+    with (
+        pytest.raises(ConfigError, match=r"^broken lock: .+"),
+        _locked(blocker / "state.lock", timeout=0),
+    ):
+        pass  # pragma: no cover - never acquired
+
+
+def test_file_lock_leaves_errors_from_the_body_alone(tmp_path: Path) -> None:
+    with (
+        pytest.raises(TimeoutError, match="from the body"),
+        _locked(tmp_path / "state.lock", timeout=0),
+    ):
+        raise TimeoutError("from the body")
+
+
+# ---- read_structured_file with a CLI flag ------------------------------------
+
+
+def test_read_structured_file_parses_json_by_suffix_even_with_tabs(tmp_path: Path) -> None:
+    jsn = tmp_path / "vars.json"
+    jsn.write_text('{\n\t"env": "stage",\n\t"tags": ["a"]\n}\n')
+
+    assert read_structured_file(jsn, flag="--vars-file") == {"env": "stage", "tags": ["a"]}
+
+
+@pytest.mark.parametrize("name", ["empty.yml", "empty.json"])
+def test_read_structured_file_blank_document_is_empty(tmp_path: Path, name: str) -> None:
+    empty = tmp_path / name
+    empty.write_text("\n")
+
+    assert read_structured_file(empty) == {}
+
+
+def test_read_structured_file_expands_the_home_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "vars.yml").write_text("env: prod\n")
+
+    assert read_structured_file(Path("~/vars.yml"), flag="--vars-file") == {"env": "prod"}
+
+
+@pytest.mark.parametrize(
+    ("name", "content", "message"),
+    [
+        ("vars.yml", None, "--args-file file not found: {path}"),
+        ("vars.yml", "[unclosed\n", "--args-file file {path} is invalid YAML: "),
+        ("vars.json", "{nope", "--args-file file {path} is invalid JSON: "),
+        ("vars.yml", "- a\n", "--args-file file {path} must contain a mapping"),
+        (
+            "vars.yml",
+            "2: x\ntrue: y\nok: 1\n",
+            "--args-file file {path}: keys must be strings (got 2, True)",
+        ),
+        ("vars.yml", b"\xff\xfe", "could not read --args-file file {path}: 'utf-8' codec"),
+    ],
+    ids=["missing", "invalid-yaml", "invalid-json", "not-a-mapping", "non-string-keys", "not-utf8"],
+)
+def test_read_structured_file_errors_name_the_flag_and_file(
+    tmp_path: Path, name: str, content: str | bytes | None, message: str
+) -> None:
+    path = tmp_path / name
+    if isinstance(content, bytes):
+        path.write_bytes(content)
+    elif content is not None:
+        path.write_text(content)
+
+    with pytest.raises(ConfigError) as excinfo:
+        read_structured_file(path, flag="--args-file")
+    assert message.format(path=path) in str(excinfo.value)
+
+
+def test_read_structured_file_unreadable_is_not_reported_as_missing(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match=r"could not read --vars-file file .*: Is a directory"):
+        read_structured_file(tmp_path, flag="--vars-file")

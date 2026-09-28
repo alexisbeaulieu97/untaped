@@ -292,7 +292,7 @@ def stream_is_tty(stream: TextIO) -> bool:
         return False
     try:
         return bool(isatty())
-    except OSError:
+    except OSError, ValueError:  # ValueError: a closed stream
         return False
 
 
