@@ -25,11 +25,13 @@ from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
     FormatOption,
+    GitCommandError,
     ParallelOption,
     create_app,
     echo,
     emit,
     finish,
+    git_toplevel,
     parse_kv_pairs,
     plural,
     q,
@@ -107,12 +109,20 @@ _NON_INTERACTIVE_OPT = Annotated[
 # ---- shared helpers ------------------------------------------------------
 
 
+def _checkout_root() -> Path:
+    """The git checkout containing the working directory, else the directory itself."""
+    cwd = Path.cwd()
+    with report_errors():
+        try:
+            return git_toplevel(cwd) or cwd
+        except GitCommandError as exc:
+            raise ConfigError(f"{exc}; pass test paths explicitly") from exc
+
+
 def _expand_paths(paths: Iterable[Path] | None) -> list[Path]:
     """Named files and the suites under named directories, each file once."""
     if not paths:
-        from untaped.capabilities.awx.infrastructure import git_head  # noqa: PLC0415
-
-        default = git_head.repo_root() / DEFAULT_SUITE_DIR
+        default = _checkout_root() / DEFAULT_SUITE_DIR
         if not default.is_dir():
             raise_usage(f"no test paths given and no {default} directory")
         paths = [default]

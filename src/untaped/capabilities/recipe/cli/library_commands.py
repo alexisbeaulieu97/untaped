@@ -12,7 +12,7 @@ from cyclopts import Parameter
 
 from untaped.capabilities.recipe.application.check_pack import check_library, check_ref
 from untaped.capabilities.recipe.application.files import read_recipe_file
-from untaped.capabilities.recipe.application.resolution import existing_path_hint
+from untaped.capabilities.recipe.application.resolution import find_library_recipe
 from untaped.capabilities.recipe.builtins.registry import BUILTIN_HOOKS
 from untaped.capabilities.recipe.cli._context import recipe_ui
 from untaped.capabilities.recipe.cli.common import library_root, report_config_errors
@@ -29,6 +29,11 @@ from untaped.capabilities.recipe.domain.pack import (
     PackManifest,
     RecipeEntry,
     parse_ref,
+)
+from untaped.capabilities.recipe.errors import (
+    AmbiguousRefError,
+    HookNotFoundError,
+    RecipeNotFoundError,
 )
 from untaped.capabilities.recipe.infrastructure.pack_files import hook_exports, read_pack_manifest
 from untaped.capabilities.recipe.infrastructure.pack_inspector import PackInspector
@@ -649,17 +654,12 @@ def _find_pack(library: PackLibrary, name: str) -> InstalledPack:
 def _find_recipe(
     library: PackLibrary, ref_text: str, *, verb: str
 ) -> tuple[InstalledPack, str, RecipeEntry]:
-    ref = parse_ref(ref_text)
     try:
-        pack, recipe = library.find_recipe(ref)
-    except ValueError as exc:
-        if str(exc).startswith("recipe not found"):
-            message = f"{exc}{existing_path_hint(ref_text)}"
-            if (noun := _other_noun(library, ref_text)) is not None:
-                message = f"{message}\n{hint(f'recipe {noun} {verb} {ref_text}')}"
-            raise ValueError(message) from None
-        raise
-    return pack, ref.name, recipe
+        return find_library_recipe(library, ref_text)
+    except RecipeNotFoundError as exc:
+        if (noun := _other_noun(library, ref_text)) is None:
+            raise
+        raise RecipeNotFoundError(f"{exc}\n{hint(f'recipe {noun} {verb} {ref_text}')}") from None
 
 
 def _other_noun(library: PackLibrary, ref_text: str) -> str | None:
@@ -668,6 +668,8 @@ def _other_noun(library: PackLibrary, ref_text: str) -> str | None:
         return "packs"
     try:
         _find_hook(library, ref_text)
+    except AmbiguousRefError:
+        return "hooks"
     except ValueError:
         return None
     return "hooks"
@@ -678,7 +680,7 @@ def _find_hook(library: PackLibrary, ref_text: str) -> _ResolvedHook:
     ref = parse_ref(ref_text)
     try:
         pack, hook = library.find_hook(ref)
-    except ValueError:
+    except HookNotFoundError:
         if "/" not in ref_text and ref_text in BUILTIN_HOOKS:
             return _ResolvedHook(name=ref_text)
         raise

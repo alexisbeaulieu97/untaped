@@ -150,6 +150,26 @@ def test_read_stdin_input_names_what_was_expected_when_empty() -> None:
         read_stdin_input(what="names")
 
 
+@pytest.mark.parametrize("payload", ["", "\n  \n"], ids=["empty", "blank-lines"])
+def test_allow_empty_turns_an_empty_pipe_into_no_values(payload: str) -> None:
+    with _feed(payload):
+        assert read_stdin_input(allow_empty=True) == StdinInput(values=(), records=None)
+
+
+def test_allow_empty_still_refuses_a_terminal_with_nothing_piped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("sys.stdin", TtyStringIO("never read"))
+    with pytest.raises(ConfigError, match="no identifiers received on stdin"):
+        read_stdin_input(allow_empty=True)
+
+
+def test_read_records_refuses_a_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.stdin", TtyStringIO("never read"))
+    with pytest.raises(ConfigError, match="no records received on stdin"):
+        read_records()
+
+
 # ---- raw text input --------------------------------------------------------
 
 
