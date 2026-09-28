@@ -5,6 +5,11 @@ needed by tools that actually prompt or make requests. Importing the public API
 — or rendering output — must not drag either into the interpreter, so commands
 that only ``list``/``get``/pipe pay nothing for them.
 
+It also holds ``untaped --help`` and ``untaped --version`` to a module-count
+budget: the number of modules a run imports is deterministic for a given lock
+file, unlike wall-clock time, so a startup regression fails here instead of
+flaking on a slow CI runner.
+
 These checks run in a **clean subprocess** (via ``sys.executable``): the pytest
 process itself has long since imported both libraries, so an in-process
 ``sys.modules`` assertion would be meaningless.
@@ -14,6 +19,8 @@ from __future__ import annotations
 
 import subprocess
 import sys
+
+import pytest
 
 
 def _loaded_heavy_modules(snippet: str) -> str:
@@ -79,3 +86,31 @@ def test_capability_help_imports_only_its_own_cli() -> None:
     loaded = _capability_cli_modules(["workspace", "--help"])
     assert loaded
     assert {module.split(".")[2] for module in loaded} == {"workspace"}
+
+
+_STARTUP_PROBE = (
+    "import contextlib, io\n"
+    "baseline = set(sys.modules)\n"
+    "from untaped.bootstrap import main\n"
+    "with contextlib.redirect_stdout(io.StringIO()), contextlib.suppress(SystemExit):\n"
+    "    main({argv!r})\n"
+    "new = set(sys.modules) - baseline\n"
+    "print(len(new), sum(1 for m in new if m.partition('.')[0] == 'untaped'))\n"
+)
+
+#: Modules imported on top of interpreter startup (a coverage run preloads
+#: some, so it only lowers these). Measured 2026-09-27 on Python 3.14: 639
+#: total / 103 ``untaped.*`` for ``--help``, 642 / 103 for ``--version``.
+#: The headroom absorbs dependency and patch-release drift; a new built-in
+#: capability adds a few ``untaped.*`` modules (its SPEC and settings).
+_TOTAL_BUDGET = 700
+_UNTAPED_BUDGET = 115
+
+
+@pytest.mark.parametrize("flag", ["--help", "--version"])
+def test_startup_stays_within_its_module_budget(flag: str) -> None:
+    counts, _, heavy = _loaded_heavy_modules(_STARTUP_PROBE.format(argv=[flag])).partition("\n")
+    assert heavy == ""
+    total, own = map(int, counts.split())
+    assert own <= _UNTAPED_BUDGET, f"untaped {flag} imported {own} untaped.* modules"
+    assert total <= _TOTAL_BUDGET, f"untaped {flag} imported {total} modules"

@@ -6,14 +6,13 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
-import yaml
-
 from untaped.capabilities.recipe.settings import RecipeSettings
 from untaped.capability_api import (
     ConfigError,
     UiContext,
     UsageError,
     get_config_section,
+    read_structured_file,
     report_errors,
 )
 
@@ -28,19 +27,6 @@ def library_root() -> Path:
     return settings().library_root.expanduser()
 
 
-def load_yaml_mapping_file(path: Path, *, flag: str) -> dict[str, object]:
-    """Load a YAML mapping from a CLI file flag."""
-    try:
-        loaded = yaml.safe_load(path.expanduser().read_text(encoding="utf-8")) or {}
-    except OSError as exc:
-        raise ConfigError(f"{flag} file not found: {path}") from exc
-    except yaml.YAMLError as exc:
-        raise ConfigError(f"{flag} file is invalid YAML: {exc}") from exc
-    if not isinstance(loaded, dict):
-        raise ConfigError(f"{flag} file must contain a YAML mapping")
-    return {str(key): value for key, value in loaded.items()}
-
-
 def merge_vars(
     files: Sequence[Path], values: Mapping[str, object], *, file_flag: str
 ) -> dict[str, object]:
@@ -51,7 +37,7 @@ def merge_vars(
     """
     merged: dict[str, object] = {}
     for path in files:
-        merged.update(load_yaml_mapping_file(path, flag=file_flag))
+        merged.update(read_structured_file(path, flag=file_flag))
     merged.update(values)
     return merged
 

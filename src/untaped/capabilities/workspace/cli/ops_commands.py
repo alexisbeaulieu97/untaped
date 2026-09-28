@@ -333,7 +333,7 @@ def foreach_command(
             help=(
                 "Read the repos to run in from stdin: names, one per line, or a --format "
                 "pipe stream of workspace.repo, workspace.status or workspace.sync_outcome "
-                "records (repo)."
+                "records (repo). An empty pipe runs nothing."
             ),
         ),
     ] = False,
@@ -404,6 +404,16 @@ def foreach_command(
                 + hint(f"workspace foreach {quoted}")
             ) from exc
         only = _stdin_repos(targets[0]) if stdin else repo
+        if stdin and not only:
+            # An empty pipe selects nothing; say so rather than "No repos matched".
+            emit(
+                [],
+                fmt=fmt,
+                columns=columns,
+                kind="workspace.foreach_outcome",
+                empty="No repos received on stdin.",
+            )
+            return
         workers = parallel_workers(parallel)
         keep_going = continue_on_error or ignore_errors
         shell = InterruptibleShellRunner()
@@ -441,7 +451,7 @@ def foreach_command(
 
 def _stdin_repos(ws: Workspace) -> list[str]:
     """Repo names piped to ``foreach --stdin``; records must belong to ``ws``."""
-    piped = read_stdin_input(accept_kinds=FOREACH_STDIN_KINDS)
+    piped = read_stdin_input(accept_kinds=FOREACH_STDIN_KINDS, allow_empty=True)
     if piped.records is None:
         return list(piped.values)
     names: list[str] = []

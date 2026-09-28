@@ -2,7 +2,45 @@
 
 ## Unreleased
 
+- Core
+  - **New:** the capability SDK adds `git_toplevel`, `file_lock`,
+    `same_origin` and `UiContext.can_prompt`; `read_structured_file` gains
+    `flag=` (errors name the CLI flag, as in `--vars-file file <path> …`) and
+    `read_stdin_input` gains `allow_empty` (an empty pipe yields nothing
+    instead of an error). The additions are backwards compatible:
+    `CAPABILITY_API_VERSION` is now `(2, 1)`, and providers declaring
+    `((2, 0), (3, 0))` keep composing. Built-in capabilities use these instead
+    of their own copies.
+  - **Behavior change:** `read_structured_file` (jira `--fields-file`, awx
+    `--patch-file` and `--extra-vars @file`, and now every `--vars-file`)
+    expands `~`, reads a blank file as no values, rejects non-string keys,
+    reports a non-UTF-8 file as `could not read file <path>: …` instead of a
+    traceback, and words its errors `file not found: <path>`,
+    `file <path> is invalid YAML|JSON: …` and `file <path> must contain a
+    mapping`.
+  - **Fix:** `skills install --scope local` finds the project root through
+    the hardened git runner (an inherited `GIT_DIR` no longer redirects it).
+  - **New:** `untaped doctor` warns (a `warn` row, which does not fail it)
+    when the config file stores a service token in plain text
+    (`<section>.token`), naming `token_command` and an environment variable
+    to use instead. A missing token, and one `doctor --online` finds
+    rejected, name the same alternatives.
+  - A token environment variable alone (such as `JIRA_API_TOKEN`) does not
+    make a service configured for `doctor`, `doctor --online` or `setup`:
+    the section also needs a `base_url`.
+- Workspace
+  - **Behavior change:** `foreach --stdin` with an empty pipe runs nothing
+    and exits 0 (it used to fail with `no identifiers received on stdin`).
 - AWX
+  - **Behavior change:** `test run`/`list`/`validate` without paths report a
+    missing `git` instead of silently searching the current directory.
+  - **Behavior change:** `--vars-file` errors name the flag and the file
+    (`--vars-file file not found: vars.yml`, and `could not read --vars-file
+    file vars.yml: …` for any other read error), a leading `~` in the path
+    is expanded, and a `.json` vars file is parsed as JSON.
+  - **New:** without `awx.token` or `awx.token_command`, the token comes from
+    `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN`, the
+    variables the `ansible.controller` collection reads, in its order.
   - `launch --cancel` and `sync --cancel` (with `--wait` or `--follow`)
     cancel every execution the command stops watching (timeout, polling
     error, Ctrl-C, or one AWX created while ignoring fields) instead of
@@ -14,6 +52,30 @@
     before the cancel` with its final status, instead of `cancel failed`.
   - A negative `launch`/`sync --timeout` is now rejected by the option parser
     (`Invalid value "-1.0" for --timeout. Must be >= 0.`, exit 2).
+- Recipe
+  - `recipe validate NAME` and `recipe test NAME` resolve recipe refs through
+    the same resolver as `apply`, `get` and `edit`, so a miss on a name that
+    is also an on-disk path now carries the same "pass it as an explicit
+    path" hint.
+  - **Behavior change:** `recipe hooks get|edit NAME` for a built-in hook
+    name falls back to the built-in only when no installed pack exports
+    `NAME`; other library errors (an ambiguous ref, an unreadable
+    `packs.toml`) are now reported instead, as `apply` already did.
+  - `recipe get|edit NAME` hints at `recipe hooks get|edit NAME` when `NAME`
+    is a hook exported by several installed packs.
+  - **Behavior change:** `--vars-file`/`--args-file` errors name the file,
+    an unreadable file is reported as `could not read …` instead of
+    `… file not found`, non-string keys are rejected instead of being
+    turned into strings, and a `.json` file is parsed as JSON (tab indentation
+    works). A file holding an empty list or other non-mapping value (`[]`,
+    `false`, `0`, `''`) is now an error (`must contain a mapping`) instead of
+    being read as no values.
+- GitHub
+  - **Fix:** a corpus repo lock that cannot be created is reported as an
+    error instead of a traceback.
+- Jira
+  - **New:** without `jira.token` or `jira.token_command`, the token comes from
+    `JIRA_API_TOKEN` (as `jira-cli` reads it).
 
 ## 8.0.0
 

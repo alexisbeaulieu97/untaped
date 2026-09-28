@@ -11,6 +11,7 @@ from pathlib import Path
 from untaped.errors import ConfigError, UsageError
 from untaped.messages import q
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
+from untaped.render import stream_is_tty
 
 
 def read_stdin() -> list[str]:
@@ -74,15 +75,16 @@ def _require_text(text: str, *, what: str) -> str:
     return text
 
 
-def _read_raw_lines() -> list[tuple[int, str]]:
+def _read_raw_lines() -> list[tuple[int, str]] | None:
     """Read stdin as ``(1-based line number, stripped line)`` pairs.
 
-    Returns an empty list when stdin is a tty (never blocks). Blank lines are
-    skipped but the line numbers track the original physical line, so envelope
-    parse errors point at the right place.
+    Returns ``None`` when stdin is a terminal (never blocks), so callers can
+    tell "nothing piped" from an empty pipe (``[]``). Blank lines are skipped
+    but the line numbers track the original physical line, so envelope parse
+    errors point at the right place.
     """
-    if sys.stdin.isatty():
-        return []
+    if stream_is_tty(sys.stdin):
+        return None
     pairs: list[tuple[int, str]] = []
     for lineno, line in enumerate(sys.stdin, start=1):
         stripped = line.strip()
@@ -105,7 +107,10 @@ class StdinInput:
 
 
 def read_stdin_input(
-    *, accept_kinds: Collection[str] | None = None, what: str = "identifiers"
+    *,
+    accept_kinds: Collection[str] | None = None,
+    what: str = "identifiers",
+    allow_empty: bool = False,
 ) -> StdinInput:
     """Read stdin as bare values or a pipe stream, detected from the first line.
 
@@ -113,6 +118,9 @@ def read_stdin_input(
     name/ID list or another command's ``--format pipe`` output). Raises
     :class:`ConfigError` on empty stdin (``no <what> received on stdin``), on
     mixed bare/envelope input, and on malformed envelopes (line-precise).
+    With ``allow_empty`` an empty (or blank) pipe is no values instead, for
+    commands where "nothing piped" means "nothing to do"; a terminal stdin
+    (nothing piped at all) still raises.
     ``accept_kinds`` declares the record kinds the command understands: an
     envelope whose ``kind`` is set and not listed is a :class:`UsageError`
     (exit 2), so ``awx hosts list -f pipe | awx jobs get --stdin`` can never
@@ -120,7 +128,9 @@ def read_stdin_input(
     """
     pairs = _read_raw_lines()
     if not pairs:
-        raise ConfigError(f"no {what} received on stdin")
+        if pairs is None or not allow_empty:
+            raise ConfigError(f"no {what} received on stdin")
+        return StdinInput(values=(), records=None)
     _, first_text = pairs[0]
     if _looks_like_envelope(first_text):
         records = tuple(parse_envelope_line(lineno, text) for lineno, text in pairs)

@@ -22,7 +22,17 @@ from untaped.settings import get_settings
 
 _TERMINAL_ENV = {"TERM": "dumb", "NO_COLOR": "1", "COLUMNS": "200"}
 # Ambient token fallbacks (``GH_TOKEN``) would otherwise leak a real token in.
-_AMBIENT_ENV = frozenset({"GIT_CONFIG", "GH_TOKEN", "GITHUB_TOKEN"})
+_AMBIENT_ENV = frozenset(
+    {
+        "GIT_CONFIG",
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "JIRA_API_TOKEN",
+        "CONTROLLER_OAUTH_TOKEN",
+        "TOWER_OAUTH_TOKEN",
+        "AAP_TOKEN",
+    }
+)
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 

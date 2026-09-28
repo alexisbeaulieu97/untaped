@@ -1107,8 +1107,8 @@ def test_apply_var_values_parse_by_declared_type(
     ("vars_file", "extra", "code", "message"),
     [
         (None, [], 1, "--vars-file file not found"),
-        ("[unclosed\n", [], 1, "--vars-file file is invalid YAML"),
-        ("- a\n", [], 1, "--vars-file file must contain a YAML mapping"),
+        ("[unclosed\n", [], 1, "--vars-file file {path} is invalid YAML"),
+        ("- a\n", [], 1, "--vars-file file {path} must contain a mapping"),
         ("{}\n", ["--hook-timeout", "-1"], 2, "--hook-timeout must be greater than or equal to 0"),
     ],
 )
@@ -1125,7 +1125,7 @@ def test_apply_rejects_bad_vars_file_and_hook_timeout(
     )
 
     assert result.exit_code == code, result.output
-    assert message in result.stderr
+    assert message.format(path=path) in result.stderr
     assert "Traceback" not in result.output
 
 
@@ -3457,6 +3457,44 @@ def test_show_prefers_library_hook_over_builtin(tmp_path: Path) -> None:
     assert json.loads(result.stdout)["module"] == "shadow_pack.hooks.yaml_edit"
 
 
+def test_get_hook_reports_an_ambiguous_library_hook_instead_of_the_builtin(
+    tmp_path: Path,
+) -> None:
+    for name in ("one", "two"):
+        source = tmp_path / name
+        _write_pack(
+            source,
+            manifest_name=name,
+            recipes={"playbook": "recipes/playbook.yml"},
+            hooks={"yaml_edit": f"{name}_pack.hooks.yaml_edit"},
+        )
+        _install_pack(source)
+
+    result = CliInvoker().invoke(app, ["hooks", "get", "yaml_edit", "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    assert "ambiguous hook ref 'yaml_edit'" in result.stderr
+
+
+@pytest.mark.parametrize("hook", ["yaml_edit", "shared"])
+def test_recipe_get_hints_hooks_for_an_ambiguous_library_hook(tmp_path: Path, hook: str) -> None:
+    for name in ("one", "two"):
+        source = tmp_path / name
+        _write_pack(
+            source,
+            manifest_name=name,
+            recipes={"playbook": "recipes/playbook.yml"},
+            hooks={hook: f"{name}_pack.hooks.{hook}"},
+        )
+        _install_pack(source)
+
+    result = CliInvoker().invoke(app, ["get", hook])
+
+    assert result.exit_code == 1, result.output
+    assert f"recipe not found: '{hook}'" in result.stderr
+    assert f"hint: run `untaped recipe hooks get {hook}`" in result.stderr
+
+
 def test_edit_rejects_builtin_hook(tmp_path: Path) -> None:
     result = CliInvoker().invoke(app, ["hooks", "edit", "yaml_edit"])
 
@@ -3922,9 +3960,11 @@ def test_check_hookless_pack_without_lock_passes_every_ref_form(tmp_path: Path) 
         ("foo bar", False, "not found: 'foo bar'", None),
     ],
 )
+@pytest.mark.parametrize("command", ["get", "edit", "validate", "test"])
 def test_library_miss_hints_only_at_an_existing_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    command: str,
     ref: str,
     make_dir: bool,
     expected: str,
@@ -3934,7 +3974,7 @@ def test_library_miss_hints_only_at_an_existing_path(
     if make_dir:
         (tmp_path / ref).mkdir()
 
-    result = CliInvoker().invoke(app, ["get", ref])
+    result = CliInvoker().invoke(app, [command, ref])
 
     assert result.exit_code == 1
     assert expected in result.stderr

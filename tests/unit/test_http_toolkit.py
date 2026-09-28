@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 import pytest
 import respx
 from pydantic import BaseModel, SecretStr, ValidationError
 
+from untaped.auth import TokenCommand, TokenSources
 from untaped.errors import ConfigError, HttpError, UntapedError
 from untaped.http import (
     connected_client,
@@ -17,6 +18,7 @@ from untaped.http import (
     paginate_link,
     paginate_offset,
     paginate_pages,
+    same_origin,
 )
 from untaped.settings import HttpSettings, reset_config_registry_for_tests
 
@@ -122,6 +124,22 @@ def test_missing_setting_error_names_every_field_and_prompts_for_secrets() -> No
     assert "<token>" not in error
     assert "UNTAPED_DEMO__BASE_URL" in error
     assert "UNTAPED_DEMO__TOKEN" in error
+
+
+class SourcedSettings(BaseModel):
+    token_sources: ClassVar[TokenSources] = TokenSources(env=("DEMO_TOKEN",))
+
+    base_url: str = "https://api.example.com"
+    token: SecretStr | None = None
+    token_command: TokenCommand = None
+
+
+def test_a_missing_token_names_the_sources_that_keep_it_out_of_the_config_file() -> None:
+    with pytest.raises(ConfigError) as caught:
+        connected_client(SourcedSettings(), section="demo")
+    message = str(caught.value)
+    assert "`untaped config set demo.token --prompt`" in message
+    assert "demo.token_command or $DEMO_TOKEN" in message
 
 
 class NoUrlSettings(BaseModel):
@@ -291,6 +309,23 @@ def test_paginate_link_refuses_cross_origin_next_link(next_url: str) -> None:
     ):
         list(paginate_link(client, "/things"))
     assert not other.called
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("/api/v2/jobs/?page=2", True),
+        ("https://aap.example.com/api/v2/jobs/?page=2", True),
+        ("HTTPS://AAP.example.com:443/api/v2/jobs/", True),
+        ("https://evil.example.net/api/v2/jobs/", False),
+        ("http://aap.example.com/api/v2/jobs/", False),
+        ("https://aap.example.com:8443/api/v2/jobs/", False),
+        ("https://aap.example.com:bad/api/v2/jobs/", False),
+        ("//evil.example.net/api/v2/jobs/", False),
+    ],
+)
+def test_same_origin(url: str, expected: bool) -> None:
+    assert same_origin(url, "https://aap.example.com") is expected
 
 
 @respx.mock
