@@ -81,6 +81,10 @@ def test_release_workflow_uses_least_privilege_jobs() -> None:
 
     assert jobs[SMOKE_JOB]["needs"] == PUBLISH_JOB
     assert jobs[SMOKE_JOB]["permissions"] == {"contents": "read"}
+    # TestPyPI skips the draft job upstream of publish; without always() GitHub
+    # would skip the published smoke on every rehearsal.
+    assert "always()" in jobs[SMOKE_JOB]["if"]
+    assert "needs.publish.result == 'success'" in jobs[SMOKE_JOB]["if"]
 
     # The GitHub release is cut only for PyPI, only after the published smoke.
     github_release = jobs[GITHUB_RELEASE_JOB]
