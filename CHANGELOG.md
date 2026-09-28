@@ -3,8 +3,20 @@
 ## Unreleased
 
 - Core
+  - **New:** `untaped doctor` warns (a `warn` row, which does not fail it)
+    when a service token is stored in plain text in `config.yml`
+    (`<section>.token`), naming `token_command` and an environment variable
+    to use instead. A token set by `UNTAPED_<SECTION>__TOKEN` is now reported
+    as `token from $UNTAPED_<SECTION>__TOKEN` rather than `<section>.token`.
   - Tests hold `untaped --help` and `untaped --version` to a budget of
     imported modules, so a startup-cost regression fails CI.
+- AWX
+  - **New:** without `awx.token` or `awx.token_command`, the token comes from
+    `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN`, the
+    variables the `ansible.controller` collection reads, in its order.
+- Jira
+  - **New:** without `jira.token` or `jira.token_command`, the token comes from
+    `JIRA_API_TOKEN` (as `jira-cli` reads it).
 
 ## 8.0.0
 

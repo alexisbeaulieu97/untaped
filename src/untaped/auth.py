@@ -105,10 +105,13 @@ def resolve_token[T: BaseModel](settings: T, *, section: str) -> T:
 def describe_token_source(settings: BaseModel, *, section: str) -> str | None:
     """Name where the token would come from, without running anything.
 
+    An explicit token set by its ``UNTAPED_<SECTION>__TOKEN`` override is
+    named by that variable, so ``<section>.token`` means the config file.
     Returns ``None`` when no source is configured. For doctor checks.
     """
     if _explicit_token(settings):
-        return f"{section}.token"
+        override = f"UNTAPED_{section.upper()}__TOKEN"
+        return f"${override}" if os.environ.get(override, "").strip() else f"{section}.token"
     if getattr(settings, "token_command", None):
         return f"{section}.token_command"
     sources = getattr(type(settings), "token_sources", None)

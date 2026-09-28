@@ -56,6 +56,14 @@ def test_explicit_token_wins_over_command_and_env(monkeypatch: pytest.MonkeyPatc
     assert describe_token_source(settings, section="demo") == "demo.token"
 
 
+def test_explicit_token_from_its_untaped_override_names_the_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("UNTAPED_DEMO__TOKEN", "from-override")
+    settings = DemoSettings(token=SecretStr("from-override"))
+    assert describe_token_source(settings, section="demo") == "$UNTAPED_DEMO__TOKEN"
+
+
 def test_command_wins_over_env_and_runs_once_lazily(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
