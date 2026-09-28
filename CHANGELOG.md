@@ -41,6 +41,17 @@
   - **New:** without `awx.token` or `awx.token_command`, the token comes from
     `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN`, the
     variables the `ansible.controller` collection reads, in its order.
+  - `launch --cancel` and `sync --cancel` (with `--wait` or `--follow`)
+    cancel every execution the command stops watching (timeout, polling
+    error, Ctrl-C, or one AWX created while ignoring fields) instead of
+    leaving it running, as `awx test run` does: the row's `detail` ends with
+    `cancel requested` (or `cancel failed: …`), and a cancelled execution gets
+    no `jobs wait` hint.
+  - When AWX refuses to cancel a job because it just ended, `launch`/`sync
+    --cancel` and `awx test run` re-read it and report `it ended (<status>)
+    before the cancel` with its final status, instead of `cancel failed`.
+  - A negative `launch`/`sync --timeout` is now rejected by the option parser
+    (`Invalid value "-1.0" for --timeout. Must be >= 0.`, exit 2).
 - Recipe
   - `recipe validate NAME` and `recipe test NAME` resolve recipe refs through
     the same resolver as `apply`, `get` and `edit`, so a miss on a name that

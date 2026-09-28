@@ -146,6 +146,7 @@ def _make_runner(
     watcher: StubWatcher,
     default_org: str | None = None,
     canceller: StubCanceller | None = None,
+    refresher: Any = None,
     log_reader: StubLogReader | None = None,
     event_reader: StubEventReader | None = None,
     preflight: LaunchCheck | None = None,
@@ -162,6 +163,7 @@ def _make_runner(
         fk_prefetcher=cast(FkPrefetcher, fk),
         jt_scope=jt_scope,
         canceller=canceller,
+        refresher=refresher,
         log_reader=log_reader or StubLogReader([]),
         event_reader=event_reader or StubEventReader([]),
         job_url=lambda job: f"https://aap.example.com/jobs/{job.id}",
@@ -504,6 +506,22 @@ def test_timeout_cancels_the_job_and_says_so(canceller: StubCanceller | None, re
     assert result.failure_reason == f"still running after 60s; {reason}"
     if canceller is not None:
         assert canceller.calls == [5]
+
+
+def test_timeout_reports_a_job_that_ended_before_its_cancel() -> None:
+    runner = _make_runner(
+        fk=StubFk(),
+        launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
+        watcher=StubWatcher(default=_job(id_=5, status="running")),
+        canceller=StubCanceller(fail_ids=frozenset({5})),
+        refresher=lambda job: _job(id_=job.id, status="successful"),
+    )
+    [result] = runner([_suite("s", {"a": {}})], timeout=60).results
+    assert result.result == "timeout"
+    assert result.job_status == "successful"
+    assert result.failure_reason == (
+        "still running after 60s; it ended (successful) before the cancel"
+    )
 
 
 def test_polling_error_cancels_the_job() -> None:

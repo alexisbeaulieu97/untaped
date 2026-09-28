@@ -6,6 +6,7 @@ import re
 from typing import Annotated
 
 from cyclopts import Parameter
+from cyclopts.validators import Number
 
 from untaped.capabilities.awx.cli.context import supported_scopes
 from untaped.capabilities.awx.domain import ResourceSpec
@@ -102,7 +103,19 @@ WaitTimeoutOption = Annotated[
         name="--timeout",
         help=(
             "Stop waiting after this many seconds per execution (needs --wait or --follow); "
-            "unfinished executions fail the row and keep running."
+            "unfinished executions fail the row and keep running unless --cancel."
+        ),
+        validator=Number(gte=0),
+    ),
+]
+CancelOption = Annotated[
+    bool,
+    Parameter(
+        name="--cancel",
+        negative="",
+        help=(
+            "Cancel executions the wait stops watching (timeout, polling error, Ctrl-C) "
+            "instead of leaving them running (needs --wait or --follow)."
         ),
     ),
 ]
@@ -130,6 +143,7 @@ UnverifiedOption = Annotated[
 __all__ = [
     "AllOption",
     "ByIdOption",
+    "CancelOption",
     "ContinueOption",
     "DryRunOption",
     "FilterOption",
