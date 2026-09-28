@@ -83,14 +83,20 @@ class PackLibraryPort(Protocol):
     def load_errors(self) -> dict[str, str]:
         """``{pack name: error}`` for installed packs that failed to load."""
 
-    def reconcile(self) -> list[str]:
-        """Index/directory consistency problems."""
+    def reconcile(self) -> dict[str, str]:
+        """``{pack name: problem}`` for index/directory consistency problems."""
 
     def find_pack(self, name: str) -> InstalledPack | None:
         """The installed pack named ``name``, if any."""
 
     def find_recipe(self, ref: PackRef) -> tuple[InstalledPack, RecipeEntry]:
-        """Resolve a bare or qualified recipe reference."""
+        """Resolve a bare or qualified recipe reference.
+
+        A miss raises :class:`~untaped.capabilities.recipe.errors.RecipeNotFoundError`;
+        a bare ref several packs export raises
+        :class:`~untaped.capabilities.recipe.errors.AmbiguousRefError`. Both are
+        ``ValueError`` subclasses.
+        """
 
     def local_pack(self, path: Path) -> InstalledPack:
         """Read an explicit-path pack that is not tracked by the library index."""

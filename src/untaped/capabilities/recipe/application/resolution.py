@@ -6,8 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from untaped.capabilities.recipe.application.ports import PackLibraryPort
-from untaped.capabilities.recipe.domain.pack import InstalledPack, parse_ref
+from untaped.capabilities.recipe.domain.pack import InstalledPack, RecipeEntry, parse_ref
 from untaped.capabilities.recipe.domain.paths import is_path_ref
+from untaped.capabilities.recipe.errors import RecipeFileNotFoundError, RecipeNotFoundError
 from untaped.capability_api import not_found, plural, q
 
 
@@ -25,7 +26,7 @@ def is_explicit_recipe_path(value: str) -> bool:
     return is_path_ref(value) or value.endswith((".yml", ".yaml"))
 
 
-def existing_path_hint(ref_text: str) -> str:
+def _existing_path_hint(ref_text: str) -> str:
     """Suffix for a library-ref miss when the ref also names an on-disk path."""
     if not Path(ref_text).expanduser().exists():
         return ""
@@ -35,10 +36,24 @@ def existing_path_hint(ref_text: str) -> str:
     )
 
 
-def _library_ref_hint(library: PackLibraryPort, ref_text: str, error: ValueError) -> str:
+def find_library_recipe(
+    library: PackLibraryPort, ref_text: str
+) -> tuple[InstalledPack, str, RecipeEntry]:
+    """Resolve a library recipe ref (``name`` or ``pack/name``) to its pack, name, and entry.
+
+    A miss raises :class:`RecipeNotFoundError`, hinting when ``ref_text`` also
+    names an on-disk path.
+    """
+    ref = parse_ref(ref_text)
+    try:
+        pack, entry = library.find_recipe(ref)
+    except RecipeNotFoundError as exc:
+        raise RecipeNotFoundError(f"{exc}{_existing_path_hint(ref_text)}") from exc
+    return pack, ref.name, entry
+
+
+def _library_ref_hint(library: PackLibraryPort, ref_text: str) -> str:
     """Suffix for an explicit-path miss whose basename is an installed ref."""
-    if not str(error).startswith("recipe file not found"):
-        return ""
     if ref_text.startswith(("/", "~")):
         return ""
     name = Path(ref_text).name
@@ -70,21 +85,18 @@ def resolve_apply_recipe(
     if is_explicit_recipe_path(ref_text):
         try:
             return resolve_explicit_recipe(library, Path(ref_text).expanduser(), recipe_id=None)
-        except ValueError as exc:
-            raise ValueError(f"{exc}{_library_ref_hint(library, ref_text, exc)}") from exc
-    ref = parse_ref(ref_text)
+        except RecipeFileNotFoundError as exc:
+            raise RecipeFileNotFoundError(f"{exc}{_library_ref_hint(library, ref_text)}") from exc
     try:
-        pack, recipe = library.find_recipe(ref)
-    except ValueError as exc:
-        if not str(exc).startswith("recipe not found"):
-            raise
+        pack, name, recipe = find_library_recipe(library, ref_text)
+    except RecipeNotFoundError:
         named_pack = library.find_pack(ref_text)
         if named_pack is not None:
             return _only_recipe(named_pack, ref_prefix=named_pack.name)
-        raise ValueError(f"{exc}{existing_path_hint(ref_text)}") from exc
+        raise
     return ResolvedRecipe(
         path=pack.root / recipe.path,
-        ref=f"{pack.name}/{ref.name}",
+        ref=f"{pack.name}/{name}",
         local_hook_project=pack.root,
     )
 
@@ -97,12 +109,12 @@ def resolve_explicit_recipe(
 ) -> ResolvedRecipe:
     """Resolve an explicit path to a recipe file, pack recipe, or bare recipe.yml."""
     if not path.exists():
-        raise ValueError(f"recipe file not found: {path}")
+        raise RecipeFileNotFoundError(f"recipe file not found: {path}")
     if path.is_dir():
         if recipe_id is not None:
             entry = library.local_pack(path).manifest.recipes.get(recipe_id)
             if entry is None:
-                raise ValueError(not_found("recipe", recipe_id))
+                raise RecipeNotFoundError(not_found("recipe", recipe_id))
             return ResolvedRecipe(
                 path=path / entry.path,
                 ref=f"{_dir_name(path)}/{recipe_id}",
@@ -112,7 +124,7 @@ def resolve_explicit_recipe(
         if not recipe_path.is_file() and (path / "pyproject.toml").is_file():
             return _only_recipe(library.local_pack(path), ref_prefix=_dir_name(path))
         if not recipe_path.is_file():
-            raise ValueError(f"recipe file not found: {recipe_path}")
+            raise RecipeFileNotFoundError(f"recipe file not found: {recipe_path}")
         return ResolvedRecipe(
             path=recipe_path,
             ref=_dir_name(path),

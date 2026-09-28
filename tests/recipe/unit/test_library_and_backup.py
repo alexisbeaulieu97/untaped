@@ -12,6 +12,7 @@ import pytest
 from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
 from untaped.capabilities.recipe.domain.plan import FileChange
 from untaped.capabilities.recipe.domain.recipe import Recipe
+from untaped.capabilities.recipe.errors import HookNotFoundError
 from untaped.capabilities.recipe.infrastructure.backup import (
     BackupBundle,
     BackupDraft,
@@ -69,12 +70,18 @@ def test_hook_resolver_bare_name_in_pack_does_not_fall_through_to_other_packs(
     )
     resolver = HookResolver(library_root=library_root)
 
-    with pytest.raises(ValueError, match="hook not found: 'pick'"):
+    with pytest.raises(HookNotFoundError, match="hook not found: 'pick'"):
         resolver.resolve("pick", own_pack)
     qualified = resolver.resolve("other/pick", own_pack)
 
     assert isinstance(qualified, UvHookRef)
     assert qualified.project_root == library_root / "packs" / "other"
+
+
+@pytest.mark.parametrize("name", ["nope", "acme/nope"])
+def test_hook_resolver_misses_raise_hook_not_found(name: str) -> None:
+    with pytest.raises(HookNotFoundError, match=f"hook not found: '{name}'"):
+        HookResolver().resolve(name, None)
 
 
 def test_hook_resolver_rejects_hook_paths_that_escape_recipe(tmp_path: Path) -> None:
