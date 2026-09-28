@@ -121,9 +121,30 @@ def test_skill_no_longer_shipped_warns(tmp_path: Path) -> None:
     ("config", "env", "status", "detail"),
     [
         ("{}", {}, "pass", "not configured"),
+        ("{}", {"API_TOKEN": "e"}, "pass", "not configured"),
         ("{base_url: https://a}", {}, "warn", "api.token not configured"),
         ("{token: t}", {}, "warn", "api.base_url not configured"),
-        ("{base_url: https://a, token: t}", {}, "pass", "https://a; token from api.token"),
+        (
+            "{base_url: https://a, token: t}",
+            {},
+            "warn",
+            "https://a; api.token is stored in plain text in config.yml; "
+            "use api.token_command or $API_TOKEN instead",
+        ),
+        (
+            "{base_url: https://a, token: t}",
+            {"UNTAPED_API__TOKEN": "o"},
+            "warn",
+            "https://a; api.token is stored in plain text in config.yml",
+        ),
+        ("{base_url: https://a}", {"UNTAPED_API__TOKEN": "o"}, "pass", "token from api.token"),
+        ("{base_url: https://a}", {"untaped_api__token": "o"}, "pass", "token from api.token"),
+        (
+            "{base_url: https://a}",
+            {"UNTAPED_API": '{"token": "o"}'},
+            "pass",
+            "token from api.token",
+        ),
         (
             "{base_url: https://a, token_command: [x]}",
             {},
@@ -152,6 +173,32 @@ def test_connection_check(
     row = _row(_rows(spec), "api.connection")
     assert row["status"] == status
     assert detail in row["detail"]
+
+
+class BareProfile(BaseModel):
+    """Token-bearing profile double with no ``token_command`` or env fallbacks."""
+
+    base_url: str | None = None
+    token: SecretStr | None = None
+
+
+def test_plaintext_token_without_fallbacks_points_at_the_untaped_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = tmp_path / "work.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(config))
+    write_config(config, "profiles:\n  default:\n    bare: {base_url: https://b, token: t}\n")
+    spec = make_spec(
+        "bare",
+        profile_model=BareProfile,
+        doctor_checks=(connection_check("bare.connection", section="bare"),),
+    )
+    row = _row(_rows(spec), "bare.connection")
+    assert row["status"] == "warn"
+    assert row["detail"] == (
+        "https://b; bare.token is stored in plain text in work.yml; "
+        "use $UNTAPED_BARE__TOKEN instead"
+    )
 
 
 def test_executable_check_warns_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:

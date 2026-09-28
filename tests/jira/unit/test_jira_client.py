@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx
 import pytest
@@ -13,7 +14,7 @@ from untaped.capabilities.jira.domain.models import ISSUE_DETAIL_FIELDS
 from untaped.capabilities.jira.errors import JiraError
 from untaped.capabilities.jira.infrastructure import JiraClient
 from untaped.capabilities.jira.settings import JiraSettings
-from untaped.capability_api import ConfigError, HttpStatusError
+from untaped.capability_api import ConfigError, HttpStatusError, get_config_section
 
 BASE = "https://jira.example.com"
 
@@ -50,6 +51,16 @@ def test_client_sends_pat_bearer_header_and_joins_api_prefix() -> None:
 def test_client_requires_base_url_and_non_blank_token(config: JiraSettings, setting: str) -> None:
     with pytest.raises(ConfigError, match=setting):
         JiraClient(config)
+
+
+def test_token_falls_back_to_jira_api_token(
+    jira_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    jira_config.write_text(f"profiles:\n  default:\n    jira:\n      base_url: {BASE}\n")
+    monkeypatch.setenv("JIRA_API_TOKEN", "from-env")
+    token = get_config_section("jira", JiraSettings).token
+    assert token is not None
+    assert token.get_secret_value() == "from-env"
 
 
 @pytest.mark.parametrize(

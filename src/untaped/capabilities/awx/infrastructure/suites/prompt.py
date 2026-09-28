@@ -15,7 +15,7 @@ class UiPrompt:
             return False
         # Only ``stdin`` matters: stderr being redirected (``2>/dev/null``)
         # is normal log practice and must not silently disable prompts.
-        return ui_context(strict=False).stdin.isatty()
+        return ui_context(strict=False).can_prompt
 
     def ask(self, spec: VariableSpec) -> str:
         prompt_text = spec.description or spec.name

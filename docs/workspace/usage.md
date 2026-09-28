@@ -546,8 +546,9 @@ Pick the repos:
 - `--stdin`: repo names, one per line, or the `repo` field of a
   `workspace.repo`, `workspace.status` or `workspace.sync_outcome` pipe
   stream. Names are matched in `WS`; a record whose `workspace` field
-  names another workspace exits `2`, as does any other record kind.
-  `--stdin` cannot be combined with `--repo` or `--all`.
+  names another workspace exits `2`, as does any other record kind. An
+  empty pipe (say, a `status --dirty` that matched nothing) runs nothing
+  and exits `0`. `--stdin` cannot be combined with `--repo` or `--all`.
 - `--all`: every registered workspace, in registry order, instead of
   `WS`. `--repo` then filters per workspace (an identifier no workspace
   declares is an error). Table output and the `failed in:` summary name

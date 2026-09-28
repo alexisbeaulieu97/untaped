@@ -26,9 +26,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, SecretStr
 
+from untaped.auth import token_alternatives
 from untaped.config_schema import redact_url_password, walk_settings
 from untaped.errors import (
     ConfigError,
@@ -49,6 +51,7 @@ VerifyTypes = bool | str | ssl.SSLContext
 PageFetcher = Callable[[str | None], tuple[list[dict[str, Any]], str | None]]
 
 _LOG = logging.getLogger("untaped.http")
+_DEFAULT_PORTS = {"http": 80, "https": 443}
 
 
 @dataclass(frozen=True)
@@ -427,14 +430,22 @@ def _decode_json_dict(response: httpx.Response) -> dict[str, Any]:
 
 
 def missing_setting_error(
-    section: str, field: str, *more_fields: str, secret: Collection[str] = ()
+    section: str,
+    field: str,
+    *more_fields: str,
+    secret: Collection[str] = (),
+    token_sources: str = "",
 ) -> ConfigError:
     """Return the standard error for missing capability settings.
 
     Names every missing field with the root command (and env var) that sets
     it. Fields listed in ``secret`` suggest ``config set … --prompt`` so the
-    value never lands in shell history.
+    value never lands in shell history. ``token_sources`` (from
+    :func:`untaped.auth.token_alternatives`) names the sources that keep a
+    missing token out of the config file.
     """
+    tail = f"; to keep the token out of the config file, use {token_sources}"
+    tail = tail if token_sources else ""
     fields = (field, *more_fields)
     keys = [f"{section}.{name}" for name in fields]
     commands = [
@@ -446,11 +457,11 @@ def missing_setting_error(
     env_vars = [f"UNTAPED_{section.upper()}__{name.upper()}" for name in fields]
     if len(fields) == 1:
         return ConfigError(
-            f"{keys[0]} is not configured (set it via {commands[0]} or {env_vars[0]})"
+            f"{keys[0]} is not configured (set it via {commands[0]} or {env_vars[0]}{tail})"
         )
     return ConfigError(
         f"{', '.join(keys[:-1])} and {keys[-1]} are not configured (set them via "
-        f"{' and '.join(commands)}, or {' / '.join(env_vars)})"
+        f"{' and '.join(commands)}, or {' / '.join(env_vars)}{tail})"
     )
 
 
@@ -494,7 +505,8 @@ def connected_client(
         values[field] = value
     if missing:
         secret = [d.path[0] for d in walk_settings(type(config)) if d.is_secret]
-        raise missing_setting_error(section, *missing, secret=secret)
+        sources = token_alternatives(config, section=section) if "token" in missing else ""
+        raise missing_setting_error(section, *missing, secret=secret, token_sources=sources)
 
     request_headers = dict(headers or {})
     if bearer_token_field is not None:
@@ -593,6 +605,29 @@ def _parse_link_value(value: str) -> tuple[str, dict[str, str]]:
     return value[1:end], params
 
 
+def same_origin(url: str, base: str) -> bool:
+    """Whether following ``url`` from ``base`` stays on ``base``'s origin.
+
+    The origin is the scheme, host and port, with a default port equal to an
+    omitted one; a host-less relative ``url`` always stays. Refuse a
+    server-supplied link that fails this before sending credentials to it.
+    """
+    return _origin(url) in {None, _origin(base)}
+
+
+def _origin(url: str) -> tuple[str, str | None, int | None] | None:
+    """``(scheme, host, port)`` of ``url``; ``None`` for a host-less relative path."""
+    parts = urlsplit(url.strip())
+    if not parts.scheme and not parts.netloc:
+        return None
+    scheme = parts.scheme.lower()
+    try:
+        port = parts.port or _DEFAULT_PORTS.get(scheme)
+    except ValueError:
+        port = -1  # an unparsable port never matches a well-formed origin
+    return scheme, parts.hostname, port
+
+
 def _same_origin_next(response: httpx.Response) -> str | None:
     """Resolve the ``rel="next"`` link, refusing to leave the current origin.
 
@@ -605,7 +640,7 @@ def _same_origin_next(response: httpx.Response) -> str | None:
         return None
     current = response.request.url
     target = current.join(link)
-    if (target.scheme, target.host, target.port) != (current.scheme, current.host, current.port):
+    if not same_origin(str(target), str(current)):
         raise HttpError(
             f"refusing to follow cross-origin pagination link {target} from {current}",
             url=str(current),

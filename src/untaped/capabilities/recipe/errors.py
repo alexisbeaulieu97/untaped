@@ -13,3 +13,19 @@ from untaped.capability_api import UntapedError
 
 class RecipeError(UntapedError):
     """Base for recipe capability errors."""
+
+
+class RecipeNotFoundError(RecipeError, ValueError):
+    """A recipe ref names no recipe in the library (or in an explicit pack)."""
+
+
+class RecipeFileNotFoundError(RecipeError, ValueError):
+    """An explicit recipe path does not exist on disk."""
+
+
+class HookNotFoundError(RecipeError, ValueError):
+    """A hook ref names no library, project, or built-in hook."""
+
+
+class AmbiguousRefError(RecipeError, ValueError):
+    """A bare recipe or hook ref matches entries in several installed packs."""

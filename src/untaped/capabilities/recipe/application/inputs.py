@@ -225,10 +225,7 @@ def _compile_named_source(name: str, candidates: tuple[str, ...]) -> CompiledInp
 
 
 def _derive_source_value(source: CompiledInputSource, target: Target) -> object:
-    try:
-        return derive_input_value(source, context=_target_context(target))
-    except InputSourceError as exc:
-        raise ValueError(str(exc)) from exc
+    return derive_input_value(source, context=_target_context(target))
 
 
 def _coerce_input(name: str, spec: InputSpec, value: object) -> object:
@@ -241,12 +238,9 @@ def _coerce_input(name: str, spec: InputSpec, value: object) -> object:
 
 def _coerce_derived_value(name: str, spec: InputSpec, value: object) -> object:
     structured = spec.type in {"list", "dict"}
-    try:
-        ensure_derived_value_within_bound(value, structured=structured)
-        coerced = _coerce_input(name, spec, value)
-        ensure_derived_value_within_bound(coerced, structured=structured)
-    except InputSourceError as exc:
-        raise ValueError(str(exc)) from exc
+    ensure_derived_value_within_bound(value, structured=structured)
+    coerced = _coerce_input(name, spec, value)
+    ensure_derived_value_within_bound(coerced, structured=structured)
     return coerced
 
 
