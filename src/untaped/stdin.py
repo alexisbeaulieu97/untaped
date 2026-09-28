@@ -1,4 +1,4 @@
-"""Stdin helpers for piping values into commands, and the stdin terminal check."""
+"""Stdin helpers for piping values into commands."""
 
 from __future__ import annotations
 
@@ -12,14 +12,6 @@ from untaped.errors import ConfigError, UsageError
 from untaped.messages import q
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.render import stream_is_tty
-
-
-def stdin_is_terminal() -> bool:
-    """Whether stdin is an interactive terminal, so prompting may read from it.
-
-    A missing, closed or broken stdin counts as no terminal.
-    """
-    return stream_is_tty(sys.stdin)
 
 
 def read_stdin() -> list[str]:
@@ -83,15 +75,16 @@ def _require_text(text: str, *, what: str) -> str:
     return text
 
 
-def _read_raw_lines() -> list[tuple[int, str]]:
+def _read_raw_lines() -> list[tuple[int, str]] | None:
     """Read stdin as ``(1-based line number, stripped line)`` pairs.
 
-    Returns an empty list when stdin is a tty (never blocks). Blank lines are
-    skipped but the line numbers track the original physical line, so envelope
-    parse errors point at the right place.
+    Returns ``None`` when stdin is a terminal (never blocks), so callers can
+    tell "nothing piped" from an empty pipe (``[]``). Blank lines are skipped
+    but the line numbers track the original physical line, so envelope parse
+    errors point at the right place.
     """
-    if sys.stdin.isatty():
-        return []
+    if stream_is_tty(sys.stdin):
+        return None
     pairs: list[tuple[int, str]] = []
     for lineno, line in enumerate(sys.stdin, start=1):
         stripped = line.strip()
@@ -135,9 +128,9 @@ def read_stdin_input(
     """
     pairs = _read_raw_lines()
     if not pairs:
-        if allow_empty and not stdin_is_terminal():
-            return StdinInput(values=(), records=None)
-        raise ConfigError(f"no {what} received on stdin")
+        if pairs is None or not allow_empty:
+            raise ConfigError(f"no {what} received on stdin")
+        return StdinInput(values=(), records=None)
     _, first_text = pairs[0]
     if _looks_like_envelope(first_text):
         records = tuple(parse_envelope_line(lineno, text) for lineno, text in pairs)
@@ -189,7 +182,6 @@ def read_identifiers(
     stdin: bool,
     id_field: str | None = None,
     accept_kinds: Collection[str] | None = None,
-    allow_empty: bool = False,
 ) -> list[str]:
     """Resolve identifiers from positional args or stdin (exactly one).
 
@@ -198,10 +190,7 @@ def read_identifiers(
     Mixing positional + ``--stdin`` is a :class:`UsageError`: a misplaced flag
     would silently act on the wrong set. No identifiers at all is also a
     usage error, and empty stdin a :class:`ConfigError`, so commands don't
-    no-op when given nothing to do. ``allow_empty`` opts a command whose
-    input is typically a filtered pipe into returning ``[]`` for an empty
-    one (see :func:`read_stdin_input`); the caller must then treat ``[]`` as
-    "nothing to do", never as "everything".
+    no-op when given nothing to do.
 
     On stdin the input may be either bare newline-separated identifiers or an
     untaped ``--format pipe`` stream (see :func:`read_stdin_input`). In
@@ -212,7 +201,7 @@ def read_identifiers(
     if stdin and positional:
         raise UsageError("provide identifiers as positional args or via --stdin, not both")
     if stdin:
-        piped = read_stdin_input(accept_kinds=accept_kinds, allow_empty=allow_empty)
+        piped = read_stdin_input(accept_kinds=accept_kinds)
         if piped.records is None:
             return list(piped.values)
         if id_field is None:

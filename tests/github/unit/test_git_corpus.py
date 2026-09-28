@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from collections.abc import Callable
@@ -665,3 +666,18 @@ def test_writers_wait_for_the_repo_lock_and_time_out(corpus: Callable[..., _Corp
             env.cache.touch_repo(env.repo, root=env.root)
 
     assert env.sync().status == "synced"
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="POSIX permissions")
+def test_an_unlockable_repo_is_a_corpus_error(corpus: Callable[..., _Corpus]) -> None:
+    env = corpus({"README.md": "hello\n"})
+    env.sync()
+    (env.bare / "untaped.lock").unlink(missing_ok=True)
+    env.bare.chmod(0o555)  # a read-only shared corpus: no lock file can be created
+    try:
+        with pytest.raises(
+            GitCorpusError, match=r"^could not lock corpus repo .+: Permission denied$"
+        ):
+            env.sync()
+    finally:
+        env.bare.chmod(0o755)

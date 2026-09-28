@@ -217,70 +217,62 @@ def _remove_staged(paths: Iterable[Path]) -> None:
 
 @contextmanager
 def file_lock(
-    path: Path, *, timeout: float, error_factory: Callable[[OSError], UntapedError]
+    path: Path,
+    *,
+    timeout: float,
+    error: Callable[[str], UntapedError],
+    busy: str,
+    failed: str,
 ) -> Iterator[None]:
     """Hold the advisory lock file ``path`` (its directory must exist) for the block.
 
-    Waits up to ``timeout`` seconds for other processes holding it. If the lock
-    cannot be taken, raises ``error_factory(exc)`` chained from ``exc``: a
-    :class:`TimeoutError` means another process still holds it, any other
-    :class:`OSError` that the lock file could not be opened. Errors raised by
-    the block itself pass through untouched.
+    Waits up to ``timeout`` seconds for other processes holding it. If another
+    process still holds it, raises ``error(busy)``; if the lock file cannot be
+    opened, ``error(f"{failed}: <reason>")``. Errors raised by the block itself
+    pass through untouched.
     """
     lock = FileLock(str(path), timeout=timeout)
     try:
         lock.acquire()
-    except OSError as exc:  # filelock's ``Timeout`` is a ``TimeoutError``
-        raise error_factory(exc) from exc
+    except TimeoutError as exc:  # filelock's ``Timeout``
+        raise error(busy) from exc
+    except OSError as exc:
+        raise error(f"{failed}: {exc.strerror or exc}") from exc
     try:
         yield
     finally:
         lock.release()
 
 
-def load_vars_file(path: Path, *, flag: str = "--vars-file") -> dict[str, Any]:
-    """Read one ``--vars-file``-style YAML (or JSON) mapping named by CLI ``flag``.
+def read_structured_file(path: Path, *, flag: str | None = None) -> dict[str, Any]:
+    """Read a YAML-or-JSON mapping file (``.json`` suffix → JSON parser).
 
-    ``~`` is expanded and an empty file is an empty mapping. Raises
-    :class:`ConfigError` naming ``flag`` and ``path`` when the file is missing
-    or unreadable, is not valid YAML, is not a mapping, or has non-string keys.
+    ``~`` is expanded and a blank document is an empty dict. ``flag`` names the
+    CLI option the path came from (``--vars-file``) so messages read
+    ``--vars-file file <path> …``. Raises :class:`ConfigError` when the file is
+    missing or unreadable, does not parse, is not a mapping, or has non-string
+    keys.
     """
+    what = f"{flag} file" if flag else "file"
     try:
         text = path.expanduser().read_text(encoding="utf-8")
     except FileNotFoundError as exc:
-        raise ConfigError(f"{flag} file not found: {path}") from exc
-    except OSError as exc:
-        raise ConfigError(f"could not read {flag} file {path}: {exc.strerror or exc}") from exc
+        raise ConfigError(f"{what} not found: {path}") from exc
+    except (OSError, UnicodeDecodeError) as exc:
+        reason = getattr(exc, "strerror", None) or exc
+        raise ConfigError(f"could not read {what} {path}: {reason}") from exc
+    is_json = path.suffix.lower() == ".json"
     try:
-        loaded = yaml.safe_load(text)
-    except yaml.YAMLError as exc:
-        raise ConfigError(f"{flag} file {path} is invalid YAML: {exc}") from exc
-    if loaded is None:
-        return {}
-    if not isinstance(loaded, dict):
-        raise ConfigError(f"{flag} file {path} must contain a YAML mapping")
-    non_string = [repr(key) for key in loaded if not isinstance(key, str)]
-    if non_string:
-        raise ConfigError(f"{flag} file {path}: keys must be strings (got {', '.join(non_string)})")
-    return loaded
-
-
-def read_structured_file(path: Path) -> dict[str, Any]:
-    """Read a YAML-or-JSON mapping file (``.json`` suffix → JSON parser).
-
-    Raises :class:`ConfigError` on read failure, parse failure, or a
-    non-mapping document. An empty document is an empty dict.
-    """
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise ConfigError(f"could not read {path}: {exc}") from exc
-    try:
-        raw = json.loads(text) if path.suffix.lower() == ".json" else yaml.safe_load(text)
+        raw = (json.loads(text) if is_json else yaml.safe_load(text)) if text.strip() else None
     except (json.JSONDecodeError, yaml.YAMLError) as exc:
-        raise ConfigError(f"could not parse {path}: {exc}") from exc
+        raise ConfigError(
+            f"{what} {path} is invalid {'JSON' if is_json else 'YAML'}: {exc}"
+        ) from exc
     if raw is None:
         return {}
     if not isinstance(raw, dict):
-        raise ConfigError(f"{path} must contain an object")
-    return dict(raw)
+        raise ConfigError(f"{what} {path} must contain a mapping")
+    non_string = [repr(key) for key in raw if not isinstance(key, str)]
+    if non_string:
+        raise ConfigError(f"{what} {path}: keys must be strings (got {', '.join(non_string)})")
+    return raw

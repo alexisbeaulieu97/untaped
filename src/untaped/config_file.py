@@ -112,16 +112,16 @@ def _locked(target: Path) -> Iterator[None]:
             f"could not create the directory for {target}: {exc.strerror or exc}"
         ) from exc
     timeout = _lock_timeout()
-
-    def lock_error(exc: OSError) -> ConfigError:
-        if isinstance(exc, TimeoutError):
-            return ConfigError(
-                f"could not acquire lock on {target}; another untaped process is "
-                f"writing to it (waited {timeout}s)."
-            )
-        return ConfigError(f"could not lock {target}: {exc.strerror or exc}")
-
-    with file_lock(Path(f"{target}.lock"), timeout=timeout, error_factory=lock_error):
+    with file_lock(
+        Path(f"{target}.lock"),
+        timeout=timeout,
+        error=ConfigError,
+        busy=(
+            f"could not acquire lock on {target}; another untaped process is "
+            f"writing to it (waited {timeout}s)."
+        ),
+        failed=f"could not lock {target}",
+    ):
         yield
 
 

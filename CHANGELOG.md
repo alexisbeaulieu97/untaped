@@ -4,12 +4,20 @@
 
 - Core
   - **New:** the capability SDK adds `git_toplevel`, `file_lock`,
-    `load_vars_file`, `same_origin` and `stdin_is_terminal`, and
-    `read_identifiers`/`read_stdin_input` gain `allow_empty` (an empty pipe
-    yields nothing instead of an error). The additions are backwards
-    compatible: `CAPABILITY_API_VERSION` is now `(2, 1)`, and providers
-    declaring `((2, 0), (3, 0))` keep composing. Built-in capabilities use
-    these instead of their own copies.
+    `same_origin` and `UiContext.can_prompt`; `read_structured_file` gains
+    `flag=` (errors name the CLI flag, as in `--vars-file file <path> …`) and
+    `read_stdin_input` gains `allow_empty` (an empty pipe yields nothing
+    instead of an error). The additions are backwards compatible:
+    `CAPABILITY_API_VERSION` is now `(2, 1)`, and providers declaring
+    `((2, 0), (3, 0))` keep composing. Built-in capabilities use these instead
+    of their own copies.
+  - **Behavior change:** `read_structured_file` (jira `--fields-file`, awx
+    `--patch-file` and `--extra-vars @file`, and now every `--vars-file`)
+    expands `~`, reads a blank file as no values, rejects non-string keys,
+    reports a non-UTF-8 file as `could not read file <path>: …` instead of a
+    traceback, and words its errors `file not found: <path>`,
+    `file <path> is invalid YAML|JSON: …` and `file <path> must contain a
+    mapping`.
   - **Fix:** `skills install --scope local` finds the project root through
     the hardened git runner (an inherited `GIT_DIR` no longer redirects it).
 - Workspace
@@ -20,14 +28,16 @@
     missing `git` instead of silently searching the current directory.
   - **Behavior change:** `--vars-file` errors name the flag and the file
     (`--vars-file file not found: vars.yml`, and `could not read --vars-file
-    file vars.yml: …` for any other read error), and a leading `~` in the path
-    is expanded.
+    file vars.yml: …` for any other read error), a leading `~` in the path
+    is expanded, and a `.json` vars file is parsed as JSON.
 - Recipe
   - **Behavior change:** `--vars-file`/`--args-file` errors name the file,
     an unreadable file is reported as `could not read …` instead of
-    `… file not found`, and non-string keys are rejected instead of being
-    turned into strings. A file holding an empty list (`[]`) is now an error
-    (`must contain a YAML mapping`) instead of being read as no values.
+    `… file not found`, non-string keys are rejected instead of being
+    turned into strings, and a `.json` file is parsed as JSON (tab indentation
+    works). A file holding an empty list or other non-mapping value (`[]`,
+    `false`, `0`, `''`) is now an error (`must contain a mapping`) instead of
+    being read as no values.
 - GitHub
   - **Fix:** a corpus repo lock that cannot be created is reported as an
     error instead of a traceback.

@@ -416,13 +416,13 @@ class GitCorpusCache:
     def _repo_lock(self, bare: Path) -> Iterator[None]:
         """Hold one bare repo's lock so concurrent sweeps never write it at once."""
         bare.mkdir(parents=True, exist_ok=True)
-
-        def lock_error(exc: OSError) -> GitCorpusError:
-            if isinstance(exc, TimeoutError):
-                return GitCorpusError(f"corpus repo is locked by another untaped process: {bare}")
-            return GitCorpusError(f"could not lock corpus repo {bare}: {exc.strerror or exc}")
-
-        with file_lock(bare / LOCK_FILE, timeout=self._lock_timeout, error_factory=lock_error):
+        with file_lock(
+            bare / LOCK_FILE,
+            timeout=self._lock_timeout,
+            error=GitCorpusError,
+            busy=f"corpus repo is locked by another untaped process: {bare}",
+            failed=f"could not lock corpus repo {bare}",
+        ):
             yield
 
     def _ensure_origin(self, bare: Path, url: str) -> None:

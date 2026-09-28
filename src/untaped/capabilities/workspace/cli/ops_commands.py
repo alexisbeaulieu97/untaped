@@ -405,7 +405,7 @@ def foreach_command(
             ) from exc
         only = _stdin_repos(targets[0]) if stdin else repo
         if stdin and not only:
-            # An empty pipe selects nothing: never fall back to every repo.
+            # An empty pipe selects nothing; say so rather than "No repos matched".
             emit(
                 [],
                 fmt=fmt,

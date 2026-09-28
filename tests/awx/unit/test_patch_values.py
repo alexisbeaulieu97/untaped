@@ -57,7 +57,7 @@ def test_build_patch_set_overrides_patch_file_under_home(
 
 
 @pytest.mark.parametrize(
-    ("content", "message"), [("- a\n- b\n", "must contain an object"), (None, "could not read")]
+    ("content", "message"), [("- a\n- b\n", "must contain a mapping"), (None, "file not found")]
 )
 def test_build_patch_rejects_bad_patch_files(
     tmp_path: Path, content: str | None, message: str

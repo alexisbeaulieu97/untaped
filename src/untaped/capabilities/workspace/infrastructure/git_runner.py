@@ -98,13 +98,13 @@ class GitRunner:
         queue of such holders (``_LOCK_QUEUE``) before giving up.
         """
         hold = self._slow_timeout + 2 * self._timeout
-
-        def lock_error(exc: OSError) -> GitError:
-            if isinstance(exc, TimeoutError):
-                return GitError(f"bare cache is locked by another untaped process: {bare}")
-            return GitError(f"could not lock bare cache {bare}: {exc.strerror or exc}")
-
-        with file_lock(Path(f"{bare}.lock"), timeout=_LOCK_QUEUE * hold, error_factory=lock_error):
+        with file_lock(
+            Path(f"{bare}.lock"),
+            timeout=_LOCK_QUEUE * hold,
+            error=GitError,
+            busy=f"bare cache is locked by another untaped process: {bare}",
+            failed=f"could not lock bare cache {bare}",
+        ):
             yield
 
     def _protect_cache_objects(self, bare_path: Path) -> None:
