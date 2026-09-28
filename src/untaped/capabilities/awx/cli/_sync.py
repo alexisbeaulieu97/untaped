@@ -8,12 +8,13 @@ from cyclopts import App, Parameter
 
 from untaped.capabilities.awx.cli._action_runner import (
     run_action_selection,
-    validate_wait_timeout,
+    validate_wait_flags,
 )
 from untaped.capabilities.awx.cli._mutation_runner import validate_controls
 from untaped.capabilities.awx.cli._selection import SELECTION_DEFAULTS, SelectionOptions
 from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.options import (
+    CancelOption,
     ContinueOption,
     DryRunOption,
     FollowOption,
@@ -42,11 +43,12 @@ def _add_sync(app: App, spec: AwxResourceSpec) -> None:
         ] = False,
         follow: FollowOption = False,
         timeout: WaitTimeoutOption = None,
+        cancel: CancelOption = False,
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
         """Sync a fixed selection; inventories expand to their current source IDs."""
-        validate_wait_timeout(timeout, wait=wait, follow=follow)
+        validate_wait_flags(timeout=timeout, cancel=cancel, wait=wait, follow=follow)
         with report_errors():
             parallel = validate_controls(yes=yes, dry_run=dry_run, parallel=parallel)
             with open_context() as ctx:
@@ -65,6 +67,7 @@ def _add_sync(app: App, spec: AwxResourceSpec) -> None:
                     wait=wait,
                     follow=follow,
                     timeout=timeout,
+                    cancel=cancel,
                     fmt=fmt,
                     columns=columns,
                 )

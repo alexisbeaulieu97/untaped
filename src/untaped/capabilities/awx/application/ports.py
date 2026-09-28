@@ -347,6 +347,12 @@ class StrategyResolver(Protocol):
     def get(self, name: str) -> ApplyStrategy: ...
 
 
+class Canceller(Protocol):
+    """Ask AWX to cancel a running execution (raises when AWX refuses)."""
+
+    def __call__(self, *, kind: str, job_id: int) -> None: ...
+
+
 class JobMonitor(Protocol):
     """Polls a Job, its stdout, and its structured events until terminal.
 
@@ -469,6 +475,7 @@ class ResourceDocumentReader(Protocol):
 __all__ = [
     "ApplyStrategy",
     "AwxPingService",
+    "Canceller",
     "Catalog",
     "FkResolver",
     "JobMonitor",
