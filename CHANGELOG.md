@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Core
+  - Tests hold `untaped --help` and `untaped --version` to a budget of
+    imported modules, so a startup-cost regression fails CI.
+
 ## 8.0.0
 
 A clean breaking release: the spellings deprecated in 7.x are removed without
