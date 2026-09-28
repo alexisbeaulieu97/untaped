@@ -24,7 +24,10 @@ Use `untaped --profile <name> awx ...` to select a different configured
 profile. Tokens are secret settings; do not put them in a manifest or command
 history. To keep the token out of `config.yml` too, set `awx.token_command`
 to a command that prints it, for example
-`untaped config set awx.token_command '["pass", "show", "aap/token"]'`; see
+`untaped config set awx.token_command '["pass", "show", "aap/token"]'`, or
+export `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN` or `AAP_TOKEN` (the
+variables the `ansible.controller` collection reads). `awx.token` wins over
+`awx.token_command`, which wins over the variables, tried in that order; see
 [Tokens](../configuration.md#tokens).
 
 The writable resource groups are job templates, workflow templates, projects,

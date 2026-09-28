@@ -72,7 +72,7 @@ variable shown.
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
 | `jira.base_url` | string (optional) | unset | `UNTAPED_JIRA__BASE_URL` | Jira Data Center URL, for example `https://jira.example.com`. |
-| `jira.token` | secret (optional) | unset | `UNTAPED_JIRA__TOKEN` | Jira personal access token. |
+| `jira.token` | secret (optional) | unset | `UNTAPED_JIRA__TOKEN` | Jira personal access token. Falls back to `token_command`, then `JIRA_API_TOKEN`. |
 | `jira.token_command` | list (optional) | unset | `UNTAPED_JIRA__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `jira.token` is unset. |
 | `jira.api_prefix` | string | `/rest/api/2` | `UNTAPED_JIRA__API_PREFIX` | Jira platform REST prefix. |
 | `jira.agile_prefix` | string | `/rest/agile/1.0` | `UNTAPED_JIRA__AGILE_PREFIX` | Jira Software (boards, sprints) REST prefix. |
@@ -87,7 +87,7 @@ variable shown.
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
 | `awx.base_url` | string (optional) | unset | `UNTAPED_AWX__BASE_URL` | AWX/AAP URL, for example `https://aap.example.com`. |
-| `awx.token` | secret (optional) | unset | `UNTAPED_AWX__TOKEN` | AWX/AAP API token. |
+| `awx.token` | secret (optional) | unset | `UNTAPED_AWX__TOKEN` | AWX/AAP API token. Falls back to `token_command`, then `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN`. |
 | `awx.token_command` | list (optional) | unset | `UNTAPED_AWX__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `awx.token` is unset. |
 | `awx.api_prefix` | string | `/api/controller/v2/` | `UNTAPED_AWX__API_PREFIX` | API prefix. Standalone AWX usually uses `/api/v2/`. |
 | `awx.default_organization` | string (optional) | unset | `UNTAPED_AWX__DEFAULT_ORGANIZATION` | Organization that scopes name lookups and `apply` documents without one. |

@@ -69,7 +69,8 @@ DESCRIPTIONS: dict[str, str] = {
     "github.sweep.sync_concurrency": "Default `sweep --parallel` and `cache sync --parallel` Git "
     "workers.",
     "jira.base_url": "Jira Data Center URL, for example `https://jira.example.com`.",
-    "jira.token": "Jira personal access token.",
+    "jira.token": "Jira personal access token. Falls back to `token_command`, then "
+    "`JIRA_API_TOKEN`.",
     "jira.token_command": "Command (argv list, no shell) that prints the token; "
     "used when `jira.token` is unset.",
     "jira.api_prefix": "Jira platform REST prefix.",
@@ -81,7 +82,8 @@ DESCRIPTIONS: dict[str, str] = {
     "jira.confirm": "Which writes ask first: `always`, `destructive` (patches that replace or "
     "remove values, assignee changes, transitions) or `never`. `--yes` skips the prompt.",
     "awx.base_url": "AWX/AAP URL, for example `https://aap.example.com`.",
-    "awx.token": "AWX/AAP API token.",
+    "awx.token": "AWX/AAP API token. Falls back to `token_command`, then "
+    "`CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN`.",
     "awx.token_command": "Command (argv list, no shell) that prints the token; "
     "used when `awx.token` is unset.",
     "awx.api_prefix": "API prefix. Standalone AWX usually uses `/api/v2/`.",

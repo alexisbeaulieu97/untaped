@@ -56,6 +56,16 @@ def test_explicit_token_wins_over_command_and_env(monkeypatch: pytest.MonkeyPatc
     assert describe_token_source(settings, section="demo") == "demo.token"
 
 
+def test_ambient_false_ignores_the_conventional_variables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEMO_TOKEN", "from-env")
+    assert describe_token_source(DemoSettings(), section="demo") == "$DEMO_TOKEN"
+    assert describe_token_source(DemoSettings(), section="demo", ambient=False) is None
+    command = DemoSettings(token_command=["x"])
+    assert describe_token_source(command, section="demo", ambient=False) == "demo.token_command"
+
+
 def test_command_wins_over_env_and_runs_once_lazily(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
