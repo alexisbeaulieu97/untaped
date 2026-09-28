@@ -94,7 +94,7 @@ def resolve_token[T: BaseModel](settings: T, *, section: str) -> T:
     if argv:
         token: SecretStr = CommandToken(argv, section=section)
     else:
-        env_name = _env_source(sources)
+        env_name = _env_source(sources.env)
         if env_name is None:
             return settings
         _LOG.debug("%s.token: using $%s", section, env_name)
@@ -102,24 +102,38 @@ def resolve_token[T: BaseModel](settings: T, *, section: str) -> T:
     return settings.model_copy(update={"token": token})
 
 
-def describe_token_source(settings: BaseModel, *, section: str) -> str | None:
+def describe_token_source(settings: BaseModel, *, section: str, ambient: bool = True) -> str | None:
     """Name where the token would come from, without running anything.
 
-    An explicit token set by its ``UNTAPED_<SECTION>__TOKEN`` override is
-    named by that variable, so ``<section>.token`` means the config file.
-    Returns ``None`` when no source is configured. For doctor checks.
+    ``ambient=False`` leaves out the conventional environment variables:
+    they are not tied to a profile, so alone they do not make a section
+    configured. Returns ``None`` when no source is configured. For doctor
+    checks.
     """
     if _explicit_token(settings):
-        override = f"UNTAPED_{section.upper()}__TOKEN"
-        return f"${override}" if os.environ.get(override, "").strip() else f"{section}.token"
+        return f"{section}.token"
     if getattr(settings, "token_command", None):
         return f"{section}.token_command"
+    env_name = _env_source(token_env_names(settings)) if ambient else None
+    return None if env_name is None else f"${env_name}"
+
+
+def token_env_names(settings: BaseModel) -> tuple[str, ...]:
+    """The conventional token variables ``settings``' model declares, in order."""
     sources = getattr(type(settings), "token_sources", None)
-    if isinstance(sources, TokenSources):
-        env_name = _env_source(sources)
-        if env_name is not None:
-            return f"${env_name}"
-    return None
+    return sources.env if isinstance(sources, TokenSources) else ()
+
+
+def token_alternatives(settings: BaseModel, *, section: str) -> str:
+    """Name the token sources that keep a token out of the config file.
+
+    ``<section>.token_command`` (when the model has it) and the first
+    conventional variable, joined with ``or``; empty when the model has
+    neither.
+    """
+    names = [f"{section}.token_command"] if "token_command" in type(settings).model_fields else []
+    names.extend(f"${name}" for name in token_env_names(settings)[:1])
+    return " or ".join(names)
 
 
 def clear_token_cache() -> None:
@@ -134,8 +148,8 @@ def _explicit_token(settings: BaseModel) -> bool:
     return isinstance(token, SecretStr) and bool(token.get_secret_value().strip())
 
 
-def _env_source(sources: TokenSources) -> str | None:
-    return next((name for name in sources.env if os.environ.get(name, "").strip()), None)
+def _env_source(names: tuple[str, ...]) -> str | None:
+    return next((name for name in names if os.environ.get(name, "").strip()), None)
 
 
 def _run_token_command(argv: tuple[str, ...], *, section: str) -> str:
@@ -174,4 +188,6 @@ __all__ = [
     "clear_token_cache",
     "describe_token_source",
     "resolve_token",
+    "token_alternatives",
+    "token_env_names",
 ]

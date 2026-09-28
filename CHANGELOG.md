@@ -4,12 +4,13 @@
 
 - Core
   - **New:** `untaped doctor` warns (a `warn` row, which does not fail it)
-    when a service token is stored in plain text in `config.yml`
+    when the config file stores a service token in plain text
     (`<section>.token`), naming `token_command` and an environment variable
-    to use instead. A token set by `UNTAPED_<SECTION>__TOKEN` is now reported
-    as `token from $UNTAPED_<SECTION>__TOKEN` rather than `<section>.token`.
-  - Tests hold `untaped --help` and `untaped --version` to a budget of
-    imported modules, so a startup-cost regression fails CI.
+    to use instead. A missing token, and one `doctor --online` finds
+    rejected, name the same alternatives.
+  - A token environment variable alone (such as `JIRA_API_TOKEN`) does not
+    make a service configured for `doctor`, `doctor --online` or `setup`:
+    the section also needs a `base_url`.
 - AWX
   - **New:** without `awx.token` or `awx.token_command`, the token comes from
     `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN`, the
