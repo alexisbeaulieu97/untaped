@@ -1,4 +1,4 @@
-"""Stdin helpers for piping values into commands."""
+"""Stdin helpers for piping values into commands, and the stdin terminal check."""
 
 from __future__ import annotations
 
@@ -11,6 +11,15 @@ from pathlib import Path
 from untaped.errors import ConfigError, UsageError
 from untaped.messages import q
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
+from untaped.render import stream_is_tty
+
+
+def stdin_is_terminal() -> bool:
+    """Whether stdin is an interactive terminal, so prompting may read from it.
+
+    A missing, closed or broken stdin counts as no terminal.
+    """
+    return stream_is_tty(sys.stdin)
 
 
 def read_stdin() -> list[str]:
@@ -105,7 +114,10 @@ class StdinInput:
 
 
 def read_stdin_input(
-    *, accept_kinds: Collection[str] | None = None, what: str = "identifiers"
+    *,
+    accept_kinds: Collection[str] | None = None,
+    what: str = "identifiers",
+    allow_empty: bool = False,
 ) -> StdinInput:
     """Read stdin as bare values or a pipe stream, detected from the first line.
 
@@ -113,6 +125,9 @@ def read_stdin_input(
     name/ID list or another command's ``--format pipe`` output). Raises
     :class:`ConfigError` on empty stdin (``no <what> received on stdin``), on
     mixed bare/envelope input, and on malformed envelopes (line-precise).
+    With ``allow_empty`` an empty (or blank) pipe is no values instead, for
+    commands where "nothing piped" means "nothing to do"; a terminal stdin
+    (nothing piped at all) still raises.
     ``accept_kinds`` declares the record kinds the command understands: an
     envelope whose ``kind`` is set and not listed is a :class:`UsageError`
     (exit 2), so ``awx hosts list -f pipe | awx jobs get --stdin`` can never
@@ -120,6 +135,8 @@ def read_stdin_input(
     """
     pairs = _read_raw_lines()
     if not pairs:
+        if allow_empty and not stdin_is_terminal():
+            return StdinInput(values=(), records=None)
         raise ConfigError(f"no {what} received on stdin")
     _, first_text = pairs[0]
     if _looks_like_envelope(first_text):
@@ -172,6 +189,7 @@ def read_identifiers(
     stdin: bool,
     id_field: str | None = None,
     accept_kinds: Collection[str] | None = None,
+    allow_empty: bool = False,
 ) -> list[str]:
     """Resolve identifiers from positional args or stdin (exactly one).
 
@@ -180,7 +198,10 @@ def read_identifiers(
     Mixing positional + ``--stdin`` is a :class:`UsageError`: a misplaced flag
     would silently act on the wrong set. No identifiers at all is also a
     usage error, and empty stdin a :class:`ConfigError`, so commands don't
-    no-op when given nothing to do.
+    no-op when given nothing to do. ``allow_empty`` opts a command whose
+    input is typically a filtered pipe into returning ``[]`` for an empty
+    one (see :func:`read_stdin_input`); the caller must then treat ``[]`` as
+    "nothing to do", never as "everything".
 
     On stdin the input may be either bare newline-separated identifiers or an
     untaped ``--format pipe`` stream (see :func:`read_stdin_input`). In
@@ -191,7 +212,7 @@ def read_identifiers(
     if stdin and positional:
         raise UsageError("provide identifiers as positional args or via --stdin, not both")
     if stdin:
-        piped = read_stdin_input(accept_kinds=accept_kinds)
+        piped = read_stdin_input(accept_kinds=accept_kinds, allow_empty=allow_empty)
         if piped.records is None:
             return list(piped.values)
         if id_field is None:

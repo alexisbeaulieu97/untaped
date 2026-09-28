@@ -20,11 +20,10 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
-from filelock import FileLock, Timeout
 from pydantic import SecretStr
 
 from untaped.errors import ConfigError
-from untaped.fs import atomic_write
+from untaped.fs import atomic_write, file_lock
 from untaped.settings import (
     check_state_section_name,
     get_settings,
@@ -113,20 +112,17 @@ def _locked(target: Path) -> Iterator[None]:
             f"could not create the directory for {target}: {exc.strerror or exc}"
         ) from exc
     timeout = _lock_timeout()
-    lock = FileLock(str(target) + ".lock", timeout=timeout)
-    try:
-        lock.acquire()
-    except Timeout as exc:
-        raise ConfigError(
-            f"could not acquire lock on {target}; another untaped process is "
-            f"writing to it (waited {timeout}s)."
-        ) from exc
-    except OSError as exc:
-        raise ConfigError(f"could not lock {target}: {exc.strerror or exc}") from exc
-    try:
+
+    def lock_error(exc: OSError) -> ConfigError:
+        if isinstance(exc, TimeoutError):
+            return ConfigError(
+                f"could not acquire lock on {target}; another untaped process is "
+                f"writing to it (waited {timeout}s)."
+            )
+        return ConfigError(f"could not lock {target}: {exc.strerror or exc}")
+
+    with file_lock(Path(f"{target}.lock"), timeout=timeout, error_factory=lock_error):
         yield
-    finally:
-        lock.release()
 
 
 def _lock_timeout() -> float:

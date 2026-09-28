@@ -101,12 +101,17 @@ EXPECTED_ALL = [
     "connection_check",
     "executable_check",
     "online_check",
+    "file_lock",
+    "git_toplevel",
+    "load_vars_file",
+    "same_origin",
+    "stdin_is_terminal",
 ]
 
 
 def test_all_contains_exact_surface() -> None:
     assert capi.__all__ == EXPECTED_ALL
-    assert capi.CAPABILITY_API_VERSION == (2, 0)
+    assert capi.CAPABILITY_API_VERSION == (2, 1)
 
 
 def test_no_extra_module_level_names_leak() -> None:

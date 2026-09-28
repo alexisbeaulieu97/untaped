@@ -7,7 +7,15 @@ from pathlib import Path
 import pytest
 
 import untaped.fs as fs_module
-from untaped.fs import FileChange, FileWriteError, apply_file_changes, atomic_write
+from untaped.errors import ConfigError
+from untaped.fs import (
+    FileChange,
+    FileWriteError,
+    apply_file_changes,
+    atomic_write,
+    file_lock,
+    load_vars_file,
+)
 
 
 def test_read_structured_file_yaml(tmp_path: Path) -> None:
@@ -260,3 +268,103 @@ def test_apply_file_changes_rolls_back_non_oserror_apply_failure(
 
     assert first.read_text(encoding="utf-8") == "v1"
     assert second.read_text(encoding="utf-8") == "old"
+
+
+# ---- file_lock ---------------------------------------------------------------
+
+
+def _lock_error(exc: OSError) -> ConfigError:
+    kind = "busy" if isinstance(exc, TimeoutError) else "broken"
+    return ConfigError(f"{kind}: {type(exc).__name__}")
+
+
+def test_file_lock_holds_the_lock_file_and_releases_it(tmp_path: Path) -> None:
+    lock = tmp_path / "state.lock"
+
+    with file_lock(lock, timeout=1, error_factory=_lock_error):
+        assert lock.exists()
+    with file_lock(lock, timeout=0, error_factory=_lock_error):
+        pass
+
+
+def test_file_lock_contention_reports_through_the_error_factory(tmp_path: Path) -> None:
+    lock = tmp_path / "state.lock"
+
+    with (
+        file_lock(lock, timeout=1, error_factory=_lock_error),
+        pytest.raises(ConfigError, match="busy") as excinfo,
+        file_lock(lock, timeout=0, error_factory=_lock_error),
+    ):
+        pass  # pragma: no cover - never acquired
+    assert isinstance(excinfo.value.__cause__, TimeoutError)
+
+
+def test_file_lock_os_failure_reports_through_the_error_factory(tmp_path: Path) -> None:
+    blocker = tmp_path / "file"
+    blocker.write_text("")
+
+    with (
+        pytest.raises(ConfigError, match="broken"),
+        file_lock(blocker / "state.lock", timeout=0, error_factory=_lock_error),
+    ):
+        pass  # pragma: no cover - never acquired
+
+
+def test_file_lock_leaves_errors_from_the_body_alone(tmp_path: Path) -> None:
+    with (
+        pytest.raises(TimeoutError, match="from the body"),
+        file_lock(tmp_path / "state.lock", timeout=0, error_factory=_lock_error),
+    ):
+        raise TimeoutError("from the body")
+
+
+# ---- load_vars_file ------------------------------------------------------------
+
+
+def test_load_vars_file_reads_a_yaml_or_json_mapping(tmp_path: Path) -> None:
+    yml = tmp_path / "vars.yml"
+    yml.write_text("env: prod\nport: 8080\n")
+    jsn = tmp_path / "vars.json"
+    jsn.write_text('{"env": "stage", "tags": ["a"]}')
+    empty = tmp_path / "empty.yml"
+    empty.write_text("")
+
+    assert load_vars_file(yml) == {"env": "prod", "port": 8080}
+    assert load_vars_file(jsn) == {"env": "stage", "tags": ["a"]}
+    assert load_vars_file(empty) == {}
+
+
+def test_load_vars_file_expands_the_home_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "vars.yml").write_text("env: prod\n")
+
+    assert load_vars_file(Path("~/vars.yml")) == {"env": "prod"}
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        (None, "--args-file file not found: {path}"),
+        ("[unclosed\n", "--args-file file {path} is invalid YAML: "),
+        ("- a\n", "--args-file file {path} must contain a YAML mapping"),
+        ("2: x\ntrue: y\nok: 1\n", "--args-file file {path}: keys must be strings (got 2, True)"),
+    ],
+    ids=["missing", "invalid", "not-a-mapping", "non-string-keys"],
+)
+def test_load_vars_file_errors_name_the_flag_and_file(
+    tmp_path: Path, content: str | None, message: str
+) -> None:
+    path = tmp_path / "vars.yml"
+    if content is not None:
+        path.write_text(content)
+
+    with pytest.raises(ConfigError) as excinfo:
+        load_vars_file(path, flag="--args-file")
+    assert message.format(path=path) in str(excinfo.value)
+
+
+def test_load_vars_file_unreadable_is_not_reported_as_missing(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match=r"could not read --vars-file file .*: Is a directory"):
+        load_vars_file(tmp_path)

@@ -6,8 +6,9 @@ stdin closed, ssh ``BatchMode`` unless the user configured ssh, C locale so
 stderr parsing is locale-independent, inherited repository-redirecting
 variables dropped), transient scoped HTTP auth via a private include file,
 timeout and exit-status mapping to :class:`GitCommandError` with the auth
-header redacted, a bounded retry for transient transport failures, and
-deterministic cache paths confined under a managed root.
+header redacted, a bounded retry for transient transport failures, the
+work-tree root lookup, and deterministic cache paths confined under a
+managed root.
 """
 
 from __future__ import annotations
@@ -310,6 +311,26 @@ def run_git(
                 stderr=result.stderr,
             )
     raise AssertionError("unreachable")  # pragma: no cover
+
+
+def git_toplevel(path: Path, *, git: str = "git", timeout: float = 30.0) -> Path | None:
+    """Return the resolved root of the git work tree containing directory ``path``.
+
+    ``None`` means git ran and found no work tree there (outside any checkout,
+    or inside a bare repository). Failures to run git at all (binary missing,
+    launch failure, timeout) raise :class:`GitCommandError`, so callers never
+    mistake a broken git for "not a checkout".
+    """
+    result = run_git(
+        ["rev-parse", "--show-toplevel"],
+        cwd=path,
+        git=git,
+        timeout=timeout,
+        capture=True,
+        check=False,
+    )
+    top = result.text.strip() if result.returncode == 0 else ""
+    return Path(top).resolve() if top else None
 
 
 def redact(value: str, auth_header: str | None) -> str:

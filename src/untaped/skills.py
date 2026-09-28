@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
 import tempfile
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
@@ -18,6 +17,7 @@ from cyclopts import Parameter
 
 from untaped.cli import existing_directory
 from untaped.errors import ConfigError
+from untaped.git import GitCommandError, git_toplevel
 from untaped.stdin import read_identifiers
 
 
@@ -531,23 +531,10 @@ def _local_project_root(project_dir: Path | None) -> Path:
     if project_dir is not None:
         return project_dir.expanduser().resolve()
     cwd = Path.cwd().resolve()
-    return _git_root(cwd) or cwd
-
-
-def _git_root(path: Path) -> Path | None:
     try:
-        result = subprocess.run(
-            ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            check=False,
-            text=True,
-        )
-    except OSError as exc:
+        return git_toplevel(cwd) or cwd
+    except GitCommandError as exc:
         raise ConfigError(
-            f"could not run git to find the project root ({exc.strerror or exc}); "
+            f"could not run git to find the project root ({exc}); "
             "pass --project-dir to choose the project directory"
         ) from exc
-    if result.returncode != 0:
-        return None
-    root = result.stdout.strip()
-    return Path(root).resolve() if root else None

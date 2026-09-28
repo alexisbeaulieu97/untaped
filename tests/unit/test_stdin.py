@@ -15,6 +15,7 @@ from untaped.stdin import (
     read_stdin_input,
     read_stdin_text,
     resolve_text_input,
+    stdin_is_terminal,
 )
 from untaped.testing import TtyStringIO
 
@@ -148,6 +149,48 @@ def test_read_stdin_input_returns_bare_values_or_records() -> None:
 def test_read_stdin_input_names_what_was_expected_when_empty() -> None:
     with _feed(""), pytest.raises(ConfigError, match="no names received on stdin"):
         read_stdin_input(what="names")
+
+
+@pytest.mark.parametrize("payload", ["", "\n  \n"], ids=["empty", "blank-lines"])
+def test_allow_empty_turns_an_empty_pipe_into_no_identifiers(payload: str) -> None:
+    with _feed(payload):
+        assert read_identifiers([], stdin=True, allow_empty=True) == []
+    with _feed(payload):
+        assert read_stdin_input(allow_empty=True) == StdinInput(values=(), records=None)
+
+
+def test_allow_empty_still_refuses_a_terminal_with_nothing_piped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("sys.stdin", TtyStringIO(""))
+    with pytest.raises(ConfigError, match="no identifiers received on stdin"):
+        read_identifiers([], stdin=True, allow_empty=True)
+
+
+def test_allow_empty_keeps_the_positional_rules() -> None:
+    with pytest.raises(UsageError, match="at least one identifier is required"):
+        read_identifiers([], stdin=False, allow_empty=True)
+
+
+# ---- stdin_is_terminal -----------------------------------------------------
+
+
+def test_stdin_is_terminal_follows_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.stdin", TtyStringIO(""))
+    assert stdin_is_terminal() is True
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    assert stdin_is_terminal() is False
+
+
+def test_stdin_is_terminal_treats_a_closed_or_missing_stream_as_no_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    closed = io.StringIO("")
+    closed.close()
+    monkeypatch.setattr("sys.stdin", closed)
+    assert stdin_is_terminal() is False
+    monkeypatch.setattr("sys.stdin", None)
+    assert stdin_is_terminal() is False
 
 
 # ---- raw text input --------------------------------------------------------

@@ -12,10 +12,8 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import yaml
-
 from untaped.capabilities.awx.domain.suite import VariableSpec
-from untaped.capability_api import ConfigError, plural
+from untaped.capability_api import ConfigError, load_vars_file, plural
 
 if TYPE_CHECKING:
     from untaped.capabilities.awx.application.suites.ports import Prompt
@@ -46,7 +44,7 @@ def resolve_variables(
 
     file_values: dict[str, Any] = {}
     for path in files:
-        loaded = _load_vars_file(path)
+        loaded = load_vars_file(path)
         _reject_unknown(loaded.keys(), known_names, f"vars-file {path}")
         file_values.update(loaded)
 
@@ -86,27 +84,6 @@ def _reject_unknown(names: Iterable[str], known: Iterable[str], origin: str) -> 
             f"unknown {plural(len(unknown), 'variable')} in {origin}: {joined}; "
             f"declared variables: {', '.join(sorted(known_set)) or '(none)'}"
         )
-
-
-def _load_vars_file(path: Path) -> dict[str, Any]:
-    try:
-        raw = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise ConfigError(f"failed to read vars-file {path}: {exc}") from exc
-    try:
-        parsed = yaml.safe_load(raw)
-    except yaml.YAMLError as exc:
-        raise ConfigError(f"vars-file {path} is not valid YAML: {exc}") from exc
-    if parsed is None:
-        return {}
-    if not isinstance(parsed, dict):
-        raise ConfigError(f"vars-file {path} must be a YAML mapping")
-    non_string = sorted(repr(key) for key in parsed if not isinstance(key, str))
-    if non_string:
-        raise ConfigError(
-            f"vars-file {path}: variable names must be strings (got {', '.join(non_string)})"
-        )
-    return parsed
 
 
 def _coerce(spec: VariableSpec, value: Any, *, source: str) -> Any:

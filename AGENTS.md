@@ -137,8 +137,9 @@ what it owns (re-export stubs exempt). Lazy imports on CLI startup paths
 (`# noqa: PLC0415` only where Ruff flags it). Absolute imports only
 (`ban-relative-imports = "all"`, tests included). Secrets are
 `pydantic.SecretStr`; HTTP clients resolve TLS via `resolve_verify`. Git
-subprocesses go through `untaped.git` (`run_git`, re-exported by
+subprocesses go through `untaped.git` (`run_git`, `git_toplevel`, re-exported by
 `untaped.capability_api`); never fork your own `subprocess` git plumbing.
+Advisory lock files go through `file_lock` (`untaped.fs`).
 
 ## Planning and decisions
 
