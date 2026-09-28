@@ -395,16 +395,26 @@ waits for terminal success and exits nonzero for failed, canceled, or error
 executions. `--follow` waits the same way and streams each job's log to
 stderr as it runs, ending with its PLAY RECAP (stdout keeps only the result
 rows). With several executions each log line is prefixed with its
-`[template]`. `--timeout SECONDS` (with `--wait` or `--follow`) stops
-waiting after that many seconds per execution: an execution still running
-fails its row (`still running after --timeout 600s; it keeps running`), and a
-`jobs wait` hint names it. Ctrl-C while waiting or following (including
+`[template]`. `--timeout SECONDS` (with `--wait` or `--follow`; zero or
+more) stops waiting after that many seconds per execution: an execution still
+running fails its row (`still running after --timeout 600s; it keeps running`),
+and a `jobs wait` hint names it. Ctrl-C while waiting or following (including
 `awx test run --parallel`) or while launches are still being submitted stops
 promptly, exits 130, and prints the IDs of executions not known to have
 finished (including ones AWX created while ignoring fields; "was launched"
 when their status is unknown) with an `untaped awx jobs wait ...` command to
 resume; the executions themselves keep running on the controller (`awx test
-run` cancels them unless `--no-cancel`). A failed or unreachable host shows
+run` cancels them unless `--no-cancel`). `--cancel` (with `--wait` or
+`--follow`, with or without `--timeout`) instead cancels every execution the
+command stops watching: one still running at `--timeout`, one whose polling
+failed, and one AWX created while ignoring fields. Its row still fails, and
+its `detail` ends with `cancel requested`, `it ended (successful) before the
+cancel` (the row then shows that status), or `cancel failed: …` when AWX
+refuses. Only a timed-out execution whose cancel failed keeps its `jobs wait`
+hint. With `--cancel`, Ctrl-C cancels every execution not known to have
+finished and prints `interrupted: <target>: job 101 cancel requested` without
+a hint; a second Ctrl-C stops the cancel requests and names what may still
+run. A failed or unreachable host shows
 up in the followed log as Ansible prints it (`fatal: [host]: FAILED! => …`).
 AWX writes a finished job's log from its saved events, so `--follow` (and
 `jobs logs --follow`) keeps reading briefly after the job ends until they are

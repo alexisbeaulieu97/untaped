@@ -543,12 +543,81 @@ def test_timeout_stops_waiting_and_names_the_running_execution(
     assert f"hint: run `untaped awx jobs wait {row['id']} --kind {kind}`" in result.stderr
 
 
-@pytest.mark.parametrize("command", ["job-templates launch deploy", "projects sync playbooks"])
-def test_timeout_needs_wait_or_follow_and_a_non_negative_value(fake_aap: Any, command: str) -> None:
+@pytest.mark.parametrize("flag", ["--wait", "--follow"])
+@pytest.mark.parametrize(
+    ("command", "name"), [("job-templates launch", "deploy"), ("projects sync", "playbooks")]
+)
+def test_cancel_cancels_the_execution_a_timeout_stops_watching(
+    fake_aap: Any, flag: str, command: str, name: str
+) -> None:
     seed(fake_aap)
-    for extra in (["--timeout", "5"], ["--wait", "--timeout", "-1"]):
-        result = CliInvoker().invoke(app, [*command.split(), *extra])
-        assert result.exit_code == 2, result.output
+    fake_aap.next_action_status = "running"
+
+    result = CliInvoker().invoke(
+        app, [*command.split(), name, flag, "--timeout", "0", "--cancel", "--format", "json"]
+    )
+
+    assert result.exit_code == 1, result.output
+    row = json.loads(result.stdout)[0]
+    assert (row["status"], row["action"]) == ("running", "failed")
+    assert row["detail"] == "still running after --timeout 0s; cancel requested"
+    assert "jobs wait" not in result.stderr
+    path, execution_id, action, _ = fake_aap.actions_called[-1]
+    assert (execution_id, action) == (row["id"], "cancel")
+    assert fake_aap.get_record(path, row["id"])["status"] == "canceled"
+
+
+def test_refused_cancel_fails_the_row_and_keeps_the_jobs_wait_hint(fake_aap: Any) -> None:
+    seed(fake_aap)
+    fake_aap.next_action_status = "running"
+    fake_aap.refuse_cancel_ids = set(range(1000))
+
+    result = CliInvoker().invoke(
+        app,
+        ["job-templates", "launch", "deploy", "--wait", "--timeout", "0", "--cancel", "-f", "json"],
+    )
+
+    assert result.exit_code == 1, result.output
+    row = json.loads(result.stdout)[0]
+    assert row["detail"].startswith("still running after --timeout 0s; cancel failed: ")
+    assert f"untaped awx jobs wait {row['id']} --kind job" in result.stderr
+
+
+def test_cancel_cancels_the_execution_whose_polling_failed(fake_aap: Any) -> None:
+    seed(fake_aap)
+    fake_aap.next_action_status = "running"
+    fake_aap.router.routes.clear()
+    fake_aap.router.get(url__regex=r".*/jobs/\d+/$").respond(403, json={"detail": "denied"})
+    fake_aap.install(fake_aap.router)
+
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "deploy", "--wait", "--cancel", "--format", "json"]
+    )
+
+    assert result.exit_code == 1, result.output
+    row = json.loads(result.stdout)[0]
+    assert row["action"] == "failed"
+    assert row["detail"].endswith("; cancel requested")
+    assert fake_aap.get_record("jobs", row["id"])["status"] == "canceled"
+
+
+@pytest.mark.parametrize("command", ["job-templates launch deploy", "projects sync playbooks"])
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        (["--timeout", "5"], "--timeout needs --wait or --follow"),
+        (["--cancel"], "--cancel needs --wait or --follow"),
+        (["--wait", "--timeout", "-1"], "for --timeout. Must be >= 0"),
+    ],
+)
+def test_timeout_and_cancel_need_wait_or_follow_and_a_non_negative_timeout(
+    fake_aap: Any, command: str, extra: list[str], message: str
+) -> None:
+    seed(fake_aap)
+    result = CliInvoker().invoke(app, [*command.split(), *extra])
+    assert result.exit_code == 2, result.output
+    assert result.stderr.startswith("error: ")
+    assert message in result.stderr
     assert fake_aap.actions_called == []
 
 
@@ -612,3 +681,177 @@ def test_ctrl_c_during_submission_names_executions_already_submitted(
     (job,) = fake_aap.list_records("jobs")
     assert f"job {job['id']} keeps running" in result.stderr
     assert f"untaped awx jobs wait {job['id']} --kind job" in result.stderr
+
+
+def test_ctrl_c_while_waiting_with_cancel_cancels_the_running_executions(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seed(fake_aap)
+    fake_aap.seed("job_templates", id=51, name="other", organization=1)
+    fake_aap.next_action_status = "running"  # first launch only; the second finishes
+
+    def interrupt() -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(parallel, "idle", interrupt)
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "deploy", "other", "--yes", "--wait", "--cancel"]
+    )
+
+    assert result.exit_code == 130, result.output
+    running, finished = (job["id"] for job in fake_aap.list_records("jobs"))
+    assert f"interrupted: deploy: job {running} cancel requested" in result.stderr
+    assert f"job {finished} " not in result.stderr
+    assert "jobs wait" not in result.stderr
+    assert [(i, a) for _, i, a, _ in fake_aap.actions_called if a == "cancel"] == [
+        (running, "cancel")
+    ]
+
+
+def test_ctrl_c_during_submission_with_cancel_cancels_executions_already_submitted(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.capabilities.awx.application import RunAction
+
+    seed(fake_aap)
+    fake_aap.seed("job_templates", id=51, name="other", organization=1)
+    fake_aap.next_action_status = "pending"
+    real_execute = RunAction.execute
+    calls: list[int] = []
+
+    def interrupt_second(self: Any, *args: Any, **kwargs: Any) -> Any:
+        calls.append(1)
+        if len(calls) == 2:
+            raise KeyboardInterrupt
+        return real_execute(self, *args, **kwargs)
+
+    monkeypatch.setattr(RunAction, "execute", interrupt_second)
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "deploy", "other", "--yes", "--wait", "--cancel"]
+    )
+
+    assert result.exit_code == 130, result.output
+    (job,) = fake_aap.list_records("jobs")
+    assert f"job {job['id']} cancel requested" in result.stderr
+    assert "jobs wait" not in result.stderr
+    assert job["status"] == "canceled"
+
+
+def _cancel_raises_keyboard_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
+    from untaped.capabilities.awx.infrastructure.job_record_repo import JobRecordRepository
+
+    def interrupt(self: Any, *, kind: str, job_id: int) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(JobRecordRepository, "cancel", interrupt)
+
+
+def test_second_ctrl_c_while_cancelling_still_names_the_executions(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seed(fake_aap)
+    fake_aap.next_action_status = "running"
+
+    def interrupt() -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(parallel, "idle", interrupt)
+    _cancel_raises_keyboard_interrupt(monkeypatch)
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "deploy", "--wait", "--cancel"])
+
+    assert result.exit_code == 130, result.output
+    (job,) = fake_aap.list_records("jobs")
+    assert f"interrupted: deploy: job {job['id']} keeps running" in result.stderr
+    assert f"untaped awx jobs wait {job['id']} --kind job" in result.stderr
+
+
+@pytest.mark.parametrize("abandoned_by", ["timeout", "polling error"])
+def test_ctrl_c_while_cancelling_after_the_wait_names_the_executions(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch, abandoned_by: str
+) -> None:
+    seed(fake_aap)
+    fake_aap.next_action_status = "running"
+    args = ["job-templates", "launch", "deploy", "--wait", "--cancel"]
+    if abandoned_by == "timeout":
+        args += ["--timeout", "0"]
+    else:
+        fake_aap.router.routes.clear()
+        fake_aap.router.get(url__regex=r".*/jobs/\d+/$").respond(403, json={"detail": "denied"})
+        fake_aap.install(fake_aap.router)
+    _cancel_raises_keyboard_interrupt(monkeypatch)
+
+    result = CliInvoker().invoke(app, args)
+
+    assert result.exit_code == 130, result.output
+    (job,) = fake_aap.list_records("jobs")
+    assert f"interrupted: deploy: job {job['id']} keeps running" in result.stderr
+    assert f"untaped awx jobs wait {job['id']} --kind job" in result.stderr
+
+
+def test_job_that_ends_before_its_cancel_reports_its_final_status(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.capabilities.awx.infrastructure.job_record_repo import JobRecordRepository
+
+    seed(fake_aap)
+    fake_aap.next_action_status = "running"
+    real_cancel = JobRecordRepository.cancel
+
+    def finish_then_cancel(self: Any, *, kind: str, job_id: int) -> None:
+        fake_aap.get_record("jobs", job_id)["status"] = "successful"
+        real_cancel(self, kind=kind, job_id=job_id)  # AWX now answers 405
+
+    monkeypatch.setattr(JobRecordRepository, "cancel", finish_then_cancel)
+    result = CliInvoker().invoke(
+        app,
+        ["job-templates", "launch", "deploy", "--wait", "--timeout", "0", "--cancel", "-f", "json"],
+    )
+
+    assert result.exit_code == 1, result.output
+    row = json.loads(result.stdout)[0]
+    assert (row["status"], row["action"]) == ("successful", "failed")
+    assert row["detail"] == (
+        "still running after --timeout 0s; it ended (successful) before the cancel"
+    )
+    assert "jobs wait" not in result.stderr
+
+
+def test_refused_cancel_after_a_polling_error_says_so(fake_aap: Any) -> None:
+    seed(fake_aap)
+    fake_aap.next_action_status = "running"
+    fake_aap.refuse_cancel_ids = set(range(1000))
+    fake_aap.router.routes.clear()
+    fake_aap.router.get(url__regex=r".*/jobs/\d+/$").respond(403, json={"detail": "denied"})
+    fake_aap.install(fake_aap.router)
+
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "deploy", "--wait", "--cancel", "--format", "json"]
+    )
+
+    assert result.exit_code == 1, result.output
+    row = json.loads(result.stdout)[0]
+    assert row["action"] == "failed"
+    assert "; cancel failed: " in row["detail"]
+
+
+@pytest.mark.parametrize("cancel", [True, False])
+def test_cancel_cancels_executions_awx_created_while_ignoring_fields(
+    fake_aap: Any, cancel: bool
+) -> None:
+    seed(fake_aap)
+    fake_aap.get_record("job_templates", 50)["ask_limit_on_launch"] = True
+    fake_aap.next_action_status = "running"
+    fake_aap.next_action_ignored_fields = {"limit": "web1"}
+
+    result = CliInvoker().invoke(
+        app,
+        ["job-templates", "launch", "deploy", "--host-pattern", "web1", "--wait", "-f", "json"]
+        + (["--cancel"] if cancel else []),
+    )
+
+    assert result.exit_code == 1, result.output
+    row = json.loads(result.stdout)[0]
+    assert row["action"] == "failed"
+    assert "limit" in row["detail"]
+    assert row["detail"].endswith("; cancel requested") is cancel
+    assert fake_aap.get_record("jobs", row["id"])["status"] == ("canceled" if cancel else "running")
