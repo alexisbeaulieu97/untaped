@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from untaped.capabilities.recipe.domain.pack import InstalledPack, PackManifest, parse_ref
+from untaped.capabilities.recipe.errors import HookNotFoundError, RecipeNotFoundError
 from untaped.capabilities.recipe.infrastructure import pack_store
 from untaped.capabilities.recipe.infrastructure.pack_store import (
     PackLibrary,
@@ -145,8 +146,21 @@ def test_pack_library_name_override_is_installed_identity(tmp_path: Path) -> Non
     assert installed.name == "alias"
     assert installed.manifest.name == "ansible"
     assert library.find_recipe(parse_ref("alias/playbook"))[0].name == "alias"
-    with pytest.raises(ValueError, match="recipe not found: 'ansible/playbook'"):
+    with pytest.raises(RecipeNotFoundError, match="recipe not found: 'ansible/playbook'"):
         library.find_recipe(parse_ref("ansible/playbook"))
+
+
+@pytest.mark.parametrize("ref", ["missing", "ansible/missing"])
+def test_pack_library_misses_raise_typed_not_found_errors(tmp_path: Path, ref: str) -> None:
+    source = tmp_path / "source"
+    _write_pack(source, manifest_name="ansible", recipes={"playbook": "recipes/playbook.yml"})
+    library = PackLibrary(library_root=tmp_path / "library")
+    library.add(source, source=str(source), rev=None, name=None, force=False)
+
+    with pytest.raises(RecipeNotFoundError, match=f"recipe not found: '{ref}'"):
+        library.find_recipe(parse_ref(ref))
+    with pytest.raises(HookNotFoundError, match=f"hook not found: '{ref}'"):
+        library.find_hook(parse_ref(ref))
 
 
 def test_pack_library_remove_deletes_pack_and_index_row(tmp_path: Path) -> None:
@@ -293,10 +307,10 @@ def test_pack_library_reconcile_reports_stale_index_and_orphan_directory(
     shutil.rmtree(library.packs_dir / "stale")
     _write_pack(library.packs_dir / "orphan", manifest_name="orphan")
 
-    assert library.reconcile() == [
-        "pack 'stale' is in packs.toml but missing from packs/",
-        "pack directory 'orphan' is not recorded in packs.toml",
-    ]
+    assert library.reconcile() == {
+        "stale": "pack 'stale' is in packs.toml but missing from packs/",
+        "orphan": "pack directory 'orphan' is not recorded in packs.toml",
+    }
 
 
 @pytest.mark.parametrize(
