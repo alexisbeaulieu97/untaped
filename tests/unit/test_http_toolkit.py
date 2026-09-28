@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 import pytest
 import respx
 from pydantic import BaseModel, SecretStr, ValidationError
 
+from untaped.auth import TokenCommand, TokenSources
 from untaped.errors import ConfigError, HttpError, UntapedError
 from untaped.http import (
     connected_client,
@@ -122,6 +123,22 @@ def test_missing_setting_error_names_every_field_and_prompts_for_secrets() -> No
     assert "<token>" not in error
     assert "UNTAPED_DEMO__BASE_URL" in error
     assert "UNTAPED_DEMO__TOKEN" in error
+
+
+class SourcedSettings(BaseModel):
+    token_sources: ClassVar[TokenSources] = TokenSources(env=("DEMO_TOKEN",))
+
+    base_url: str = "https://api.example.com"
+    token: SecretStr | None = None
+    token_command: TokenCommand = None
+
+
+def test_a_missing_token_names_the_sources_that_keep_it_out_of_the_config_file() -> None:
+    with pytest.raises(ConfigError) as caught:
+        connected_client(SourcedSettings(), section="demo")
+    message = str(caught.value)
+    assert "`untaped config set demo.token --prompt`" in message
+    assert "demo.token_command or $DEMO_TOKEN" in message
 
 
 class NoUrlSettings(BaseModel):

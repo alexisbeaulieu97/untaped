@@ -121,20 +121,29 @@ def test_skill_no_longer_shipped_warns(tmp_path: Path) -> None:
     ("config", "env", "status", "detail"),
     [
         ("{}", {}, "pass", "not configured"),
+        ("{}", {"API_TOKEN": "e"}, "pass", "not configured"),
         ("{base_url: https://a}", {}, "warn", "api.token not configured"),
         ("{token: t}", {}, "warn", "api.base_url not configured"),
         (
             "{base_url: https://a, token: t}",
             {},
             "warn",
-            "https://a; token from api.token, stored in plain text in config.yml; "
+            "https://a; api.token is stored in plain text in config.yml; "
             "use api.token_command or $API_TOKEN instead",
         ),
         (
-            "{base_url: https://a}",
+            "{base_url: https://a, token: t}",
             {"UNTAPED_API__TOKEN": "o"},
+            "warn",
+            "https://a; api.token is stored in plain text in config.yml",
+        ),
+        ("{base_url: https://a}", {"UNTAPED_API__TOKEN": "o"}, "pass", "token from api.token"),
+        ("{base_url: https://a}", {"untaped_api__token": "o"}, "pass", "token from api.token"),
+        (
+            "{base_url: https://a}",
+            {"UNTAPED_API": '{"token": "o"}'},
             "pass",
-            "https://a; token from $UNTAPED_API__TOKEN",
+            "token from api.token",
         ),
         (
             "{base_url: https://a, token_command: [x]}",
@@ -174,11 +183,11 @@ class BareProfile(BaseModel):
 
 
 def test_plaintext_token_without_fallbacks_points_at_the_untaped_override(
-    _isolated_config: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    bare: {base_url: https://b, token: t}\n"
-    )
+    config = tmp_path / "work.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(config))
+    write_config(config, "profiles:\n  default:\n    bare: {base_url: https://b, token: t}\n")
     spec = make_spec(
         "bare",
         profile_model=BareProfile,
@@ -186,7 +195,10 @@ def test_plaintext_token_without_fallbacks_points_at_the_untaped_override(
     )
     row = _row(_rows(spec), "bare.connection")
     assert row["status"] == "warn"
-    assert row["detail"].endswith("use $UNTAPED_BARE__TOKEN instead")
+    assert row["detail"] == (
+        "https://b; bare.token is stored in plain text in work.yml; "
+        "use $UNTAPED_BARE__TOKEN instead"
+    )
 
 
 def test_executable_check_warns_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
