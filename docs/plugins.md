@@ -75,7 +75,7 @@ The entry-point name must equal the `CapabilitySpec.name`. The resolved object
 must be callable, expose an `api_requires` range, and return one
 `CapabilitySpec` when called without arguments. `CAPABILITY_API_VERSION` (in
 `src/untaped/capability_api.py`) is a `(major, minor)` tuple of ints, currently
-`(2, 0)`, and `api_requires` is a `(min_inclusive, max_exclusive)` pair of such
+`(2, 1)`, and `api_requires` is a `(min_inclusive, max_exclusive)` pair of such
 tuples, compared as tuples (so `(1, 10)` is newer than `(1, 9)`). New exports
 are additive and bump the minor version; removing or breaking an export bumps
 the major, so `((2, 0), (3, 0))` stays compatible across 2.x. A provider that
@@ -83,7 +83,10 @@ relies on an export added in `2.N` declares `((2, N), (3, 0))`. A missing,
 malformed (for example the float bounds of 1.x) or non-covering range
 quarantines the provider with an `api-range` reason naming the running
 version. Version `2.0` (untaped 8.0) removed the `untaped.api` module and the
-`from untaped import X` forwarding; 1.x ranges no longer compose.
+`from untaped import X` forwarding; 1.x ranges no longer compose. Version
+`2.1` added `git_toplevel`, `file_lock`, `load_vars_file`, `same_origin`,
+`stdin_is_terminal`, and the `allow_empty` flag of `read_identifiers` and
+`read_stdin_input`.
 
 A built-in capability follows the same `SPEC` and `build_app()` shape but is
 constructed in the `untaped` source tree and listed in the root composition.
@@ -261,15 +264,24 @@ The shared runtime helpers are exported from the same module:
   `UtcTimestamp` and `AbsolutePath` field types.
 - Settings and context: `get_config_section`, `get_core_settings`,
   `HttpSettings`, `app_context`, `AppContext`.
-- HTTP: `connected_client`, `HttpClient`, `RetryPolicy`, `resolve_verify`, and
-  the `paginate_link`, `paginate_offset`, and `paginate_pages` cursor loops.
+- HTTP: `connected_client`, `HttpClient`, `RetryPolicy`, `resolve_verify`, the
+  `paginate_link`, `paginate_offset`, and `paginate_pages` cursor loops, and
+  `same_origin(url, base)` (whether a server-supplied link stays on `base`'s
+  scheme, host and port; check it before following a link with credentials).
 - Input and pipes: `read_identifiers`, `read_stdin_input`, `StdinInput`,
   `read_records`, `read_stdin`, `resolve_text_input`, `is_envelope_line`,
-  `parse_envelope_line`, `PipeEnvelope`.
+  `parse_envelope_line`, `PipeEnvelope`, and `stdin_is_terminal()` (whether
+  stdin is an interactive terminal, so a command may prompt; a closed or
+  missing stdin is not).
 - Files and state: `atomic_write` (durable; keeps the file's mode unless
   given `mode=`, e.g. `mode=0o600` for owner-only files; writes through a
   symlink), `read_structured_file`, `unified_diff_text`, `StateCollection`,
-  `StateMap`.
+  `StateMap`, `load_vars_file(path, flag="--vars-file")` (one YAML or JSON
+  mapping with string keys; errors name the flag and file), and
+  `file_lock(path, timeout=..., error_factory=...)`, a context manager holding
+  an advisory lock file: when the lock is not acquired within `timeout` seconds
+  it raises `error_factory(exc)`, where a `TimeoutError` means another process
+  holds it and any other `OSError` that the lock file could not be opened.
 - UI: `UiContext` (including `success`, `styled`, `confirm_action`,
   `confirm_or_cancel` and `terminal`), `ui_context`, `ProgressHandle`, `PromptChoice`.
 - Batches and concurrency: `batch_apply`, `BatchOutcome`, `finish`,
@@ -310,6 +322,10 @@ file, is redacted from errors, and disables Git trace variables.
 `retry_transient=True` retries transport failures of idempotent network commands
 with backoff. `safe_cache_path(url, root=...)` and `safe_path_segment(value)`
 give deterministic cache paths that cannot escape `root`.
+`git_toplevel(path)` returns the resolved root of the work tree containing the
+directory `path`, or `None` outside any checkout; it raises `GitCommandError`
+when git itself cannot run, so a missing git is never mistaken for "not a
+checkout".
 
 Use a provider's own dependency for domain-specific HTTP or filesystem adapters;
 do not reach into `untaped` internals to obtain an unexported helper. Shared
@@ -353,6 +369,10 @@ identifiers = read_identifiers(
 
 `read_stdin_input(accept_kinds=...)` returns either the bare values or the
 parsed envelopes (a `StdinInput`), for commands that need whole records.
+Both raise on an empty stdin. Pass `allow_empty=True` when an empty pipe
+(say, a filter that matched nothing) should do nothing instead: it then yields
+no identifiers, which the command must treat as "nothing to do", never as
+"everything". A terminal stdin with nothing piped still raises.
 
 A composed capability can participate in a root pipeline without another
 executable:

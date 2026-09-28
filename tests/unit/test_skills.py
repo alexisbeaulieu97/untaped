@@ -9,6 +9,7 @@ import pytest
 import untaped.skills as skills_module
 from untaped.capability_api import SkillAsset
 from untaped.errors import ConfigError
+from untaped.git import run_git
 from untaped.skills import SkillInstallScope, SkillInstallTarget
 
 
@@ -94,6 +95,60 @@ def test_install_skills_all_targets_return_deterministic_results(tmp_path: Path)
         ("untaped-two", "codex", project_root / ".agents" / "skills" / "untaped-two"),
         ("untaped-two", "claude", project_root / ".claude" / "skills" / "untaped-two"),
     ]
+
+
+def _install_local_from_cwd(source: Path) -> list[skills_module.SkillInstallResult]:
+    return skills_module.install_skills(
+        {source.name: _asset(source)},
+        [source.name],
+        stdin=False,
+        all_skills=False,
+        target=SkillInstallTarget.codex,
+        force=False,
+        scope=SkillInstallScope.local,
+        project_dir=None,
+        target_dir=None,
+    )
+
+
+def test_local_install_without_project_dir_uses_the_git_checkout_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _skill_dir(tmp_path)
+    repo = tmp_path / "repo"
+    run_git(["init", "-q", str(repo)], timeout=30)
+    nested = repo / "sub"
+    nested.mkdir()
+    monkeypatch.chdir(nested)
+
+    [result] = _install_local_from_cwd(source)
+
+    assert result.root == repo.resolve() / ".agents" / "skills"
+
+
+def test_local_install_outside_a_checkout_uses_the_current_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _skill_dir(tmp_path)
+    here = tmp_path / "plain"
+    here.mkdir()
+    monkeypatch.chdir(here)
+
+    [result] = _install_local_from_cwd(source)
+
+    assert result.root == here.resolve() / ".agents" / "skills"
+
+
+def test_local_install_without_git_asks_for_project_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _skill_dir(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("shutil.which", lambda _: None)
+
+    with pytest.raises(ConfigError, match="pass --project-dir to choose the project directory"):
+        _install_local_from_cwd(source)
+    assert not (tmp_path / ".agents").exists()
 
 
 def test_install_skills_missing_source_aborts_before_any_copy(tmp_path: Path) -> None:

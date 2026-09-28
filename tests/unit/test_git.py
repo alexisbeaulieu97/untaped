@@ -17,6 +17,7 @@ from untaped.git import (
     GitCommandError,
     git_auth_header,
     git_env,
+    git_toplevel,
     is_transient_failure,
     run_git,
     safe_cache_path,
@@ -250,6 +251,28 @@ def test_run_really_executes_git(tmp_path: Path) -> None:
         ["rev-parse", "--is-bare-repository"], cwd=tmp_path / "r", timeout=30, capture=True
     )
     assert result.text.strip() == "false"
+
+
+def test_git_toplevel_finds_the_checkout_root_from_a_subdirectory(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    run_git(["init", "-q", str(repo)], timeout=30)
+    nested = repo / "a" / "b"
+    nested.mkdir(parents=True)
+
+    assert git_toplevel(nested) == repo.resolve()
+    assert git_toplevel(repo) == repo.resolve()
+
+
+def test_git_toplevel_is_none_outside_a_checkout(tmp_path: Path) -> None:
+    assert git_toplevel(tmp_path) is None
+
+
+def test_git_toplevel_surfaces_a_missing_git(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("shutil.which", lambda _: None)
+    with pytest.raises(GitCommandError, match="`git` not found on PATH"):
+        git_toplevel(tmp_path)
 
 
 def test_missing_git_binary_is_an_untaped_error(monkeypatch: pytest.MonkeyPatch) -> None:

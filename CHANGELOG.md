@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+- Core
+  - **New:** the capability SDK adds `git_toplevel`, `file_lock`,
+    `load_vars_file`, `same_origin` and `stdin_is_terminal`, and
+    `read_identifiers`/`read_stdin_input` gain `allow_empty` (an empty pipe
+    yields nothing instead of an error). The additions are backwards
+    compatible: `CAPABILITY_API_VERSION` is now `(2, 1)`, and providers
+    declaring `((2, 0), (3, 0))` keep composing. Built-in capabilities use
+    these instead of their own copies.
+  - **Fix:** `skills install --scope local` finds the project root through
+    the hardened git runner (an inherited `GIT_DIR` no longer redirects it).
+- Workspace
+  - **Behavior change:** `foreach --stdin` with an empty pipe runs nothing
+    and exits 0 (it used to fail with `no identifiers received on stdin`).
+- AWX
+  - **Behavior change:** `test run`/`list`/`validate` without paths report a
+    missing `git` instead of silently searching the current directory.
+  - **Behavior change:** `--vars-file` errors name the flag
+    (`--vars-file file not found: vars.yml`).
+- Recipe
+  - **Behavior change:** `--vars-file`/`--args-file` errors name the file,
+    an unreadable file is no longer reported as not found, and non-string keys
+    are rejected instead of being turned into strings.
+- GitHub
+  - **Fix:** a corpus repo lock that cannot be created is reported as an
+    error instead of a traceback.
+
 ## 8.0.0
 
 A clean breaking release: the spellings deprecated in 7.x are removed without

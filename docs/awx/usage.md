@@ -601,7 +601,8 @@ untaped awx test run other/tests/deploy-smoke.yml
 
 - Without paths, `run`, `list` and `validate` read every suite under
   `.untaped/awx/tests/` at the root of the current git checkout (the current
-  directory outside one). A directory path is searched the same way: every
+  directory outside one; without `git` on `PATH`, pass the paths). A
+  directory path is searched the same way: every
   `*.yml`/`*.yaml` file below it with a `kind: AwxTestSuite` line, skipping
   hidden entries (and not following directory symlinks), so vars files can
   live beside the suites. A file named directly must be a suite. Each file is
@@ -617,8 +618,9 @@ untaped awx test run other/tests/deploy-smoke.yml
 - `launch` holds the AWX launch payload fields. `!ref {kind, name}` resolves a
   resource name to its ID.
 - Suite variables come from `--var KEY=VALUE`, then `--vars-file` (repeatable;
-  a later file wins), then the variable's default: `--var` wins over a vars
-  file, which wins over the default. A variable without a default is
+  a later file wins; each is a YAML or JSON mapping with string keys), then
+  the variable's default: `--var` wins over a vars file, which wins over the
+  default. A variable without a default is
   required: pass `--var`, `--vars-file`, or answer the prompt. Without a
   terminal, or with `--non-interactive`, a missing variable fails instead of
   prompting. These fill the suite's template; the extra vars AWX gets are

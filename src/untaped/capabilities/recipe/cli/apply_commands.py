@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal, TextIO
+from typing import Annotated, Literal
 
 from cyclopts import Parameter
 
@@ -59,6 +59,7 @@ from untaped.capability_api import (
     parse_kv_pairs,
     read_stdin,
     render_rows,
+    stdin_is_terminal,
 )
 
 MessageKind = Literal["success", "warning", "error", "info"]
@@ -466,22 +467,14 @@ def _terminal_prompt() -> PromptFunc | None:
     Like ``awx test`` variables: never prompt without a TTY (piped ``--stdin``
     targets included); the missing input then fails with a ``--var`` hint.
     """
-    ui = recipe_ui()
-    if not _is_terminal(ui.stdin):
+    if not stdin_is_terminal():
         return None
+    ui = recipe_ui()
 
     def ask(message: str, *, sensitive: bool) -> object:
         return ui.secret(message) if sensitive else ui.text(message)
 
     return ask
-
-
-def _is_terminal(stream: TextIO) -> bool:
-    """``stream.isatty()`` that treats a closed or broken stream as no terminal."""
-    try:
-        return stream.isatty()
-    except OSError, ValueError:
-        return False
 
 
 def _render_result_summary(

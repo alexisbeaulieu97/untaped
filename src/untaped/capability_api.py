@@ -3,7 +3,7 @@
 Every capability — built-in or external provider — imports untaped helpers
 from this module only. It carries the composition set, the provider
 ``CAPABILITY_API_VERSION``, and the supported runtime helpers (output,
-errors and exit codes, settings, HTTP, git, stdin/pipe, state, UI, batch,
+errors and exit codes, settings, HTTP, git, stdin/pipe, files and locks, state, UI, batch,
 concurrency, shared options, message wording, record bases, token sources
 and doctor-check factories).
 Additions are backwards compatible; removals or signature breaks require a
@@ -61,11 +61,12 @@ from untaped.errors import (
     UsageError,
     first_validation_error,
 )
-from untaped.fs import atomic_write, read_structured_file
+from untaped.fs import atomic_write, file_lock, load_vars_file, read_structured_file
 from untaped.git import (
     GitCommandError,
     GitResult,
     git_auth_header,
+    git_toplevel,
     run_git,
     safe_cache_path,
     safe_path_segment,
@@ -78,6 +79,7 @@ from untaped.http import (
     paginate_offset,
     paginate_pages,
     resolve_verify,
+    same_origin,
 )
 from untaped.messages import hint, not_found, plural, q, summary
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
@@ -93,6 +95,7 @@ from untaped.stdin import (
     read_stdin,
     read_stdin_input,
     resolve_text_input,
+    stdin_is_terminal,
 )
 from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context
@@ -194,4 +197,10 @@ __all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by
     "connection_check",
     "executable_check",
     "online_check",
+    # 2.1 shared helpers.
+    "file_lock",
+    "git_toplevel",
+    "load_vars_file",
+    "same_origin",
+    "stdin_is_terminal",
 ]

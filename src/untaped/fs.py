@@ -1,4 +1,4 @@
-"""Filesystem helpers for SDK commands: structured reads and durable atomic writes."""
+"""Filesystem helpers for SDK commands: structured reads, atomic writes and file locks."""
 
 from __future__ import annotations
 
@@ -6,13 +6,14 @@ import json
 import os
 import stat
 import uuid
-from collections.abc import Iterable, Sequence
-from contextlib import suppress
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
+from filelock import FileLock
 
 from untaped.errors import ConfigError, UntapedError
 
@@ -212,6 +213,56 @@ def _remove_staged(paths: Iterable[Path]) -> None:
     for path in paths:
         with suppress(OSError):
             path.unlink(missing_ok=True)
+
+
+@contextmanager
+def file_lock(
+    path: Path, *, timeout: float, error_factory: Callable[[OSError], UntapedError]
+) -> Iterator[None]:
+    """Hold the advisory lock file ``path`` (its directory must exist) for the block.
+
+    Waits up to ``timeout`` seconds for other processes holding it. If the lock
+    cannot be taken, raises ``error_factory(exc)`` chained from ``exc``: a
+    :class:`TimeoutError` means another process still holds it, any other
+    :class:`OSError` that the lock file could not be opened. Errors raised by
+    the block itself pass through untouched.
+    """
+    lock = FileLock(str(path), timeout=timeout)
+    try:
+        lock.acquire()
+    except OSError as exc:  # filelock's ``Timeout`` is a ``TimeoutError``
+        raise error_factory(exc) from exc
+    try:
+        yield
+    finally:
+        lock.release()
+
+
+def load_vars_file(path: Path, *, flag: str = "--vars-file") -> dict[str, Any]:
+    """Read one ``--vars-file``-style YAML (or JSON) mapping named by CLI ``flag``.
+
+    ``~`` is expanded and an empty file is an empty mapping. Raises
+    :class:`ConfigError` naming ``flag`` and ``path`` when the file is missing
+    or unreadable, is not valid YAML, is not a mapping, or has non-string keys.
+    """
+    try:
+        text = path.expanduser().read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise ConfigError(f"{flag} file not found: {path}") from exc
+    except OSError as exc:
+        raise ConfigError(f"could not read {flag} file {path}: {exc.strerror or exc}") from exc
+    try:
+        loaded = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"{flag} file {path} is invalid YAML: {exc}") from exc
+    if loaded is None:
+        return {}
+    if not isinstance(loaded, dict):
+        raise ConfigError(f"{flag} file {path} must contain a YAML mapping")
+    non_string = [repr(key) for key in loaded if not isinstance(key, str)]
+    if non_string:
+        raise ConfigError(f"{flag} file {path}: keys must be strings (got {', '.join(non_string)})")
+    return loaded
 
 
 def read_structured_file(path: Path) -> dict[str, Any]:
