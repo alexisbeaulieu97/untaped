@@ -302,9 +302,10 @@ broken section to hide the rest:
   capabilities contribute:
   - `github.connection`, `jira.connection`, `awx.connection` — the resolved
     profile's `base_url` and where the token comes from (see
-    [Tokens](#tokens)); `warn` when only one of the pair is set. A section
-    with neither passes as `not configured`. `token_command` is named, never
-    run;
+    [Tokens](#tokens)); `warn` when only one of the pair is set, or when the
+    token is stored in plain text in `config.yml` (`<section>.token`). A
+    section with neither passes as `not configured`; a token environment
+    variable alone does not count. `token_command` is named, never run;
   - `workspace.git`, `github.git`, `ansible.git`, `recipe.git`, `recipe.uv` —
     `warn` when the program is not on `PATH`.
 
@@ -312,7 +313,9 @@ broken section to hide the rest:
 `awx.api`, `github.api` and `jira.api` authenticate against the configured
 service (the same call as `awx ping`, `github whoami` and `jira whoami`) for
 the selected profile. A section with no token and no URL of its own (a
-built-in default such as GitHub's does not count) passes as `not configured`.
+built-in default such as GitHub's does not count) passes as `not configured`,
+as does one whose only token source is an environment variable such as
+`JIRA_API_TOKEN`.
 Each probe makes one attempt, with no retries, and its timeout is capped at 10
 seconds, so an unreachable service fails quickly. A failed row keeps one line
 of the error and ends with the command that fixes it, for example
@@ -426,8 +429,16 @@ is set:
 1. `<section>.token`, from the active profile or its
    `UNTAPED_<SECTION>__TOKEN` override;
 2. `<section>.token_command`, a command whose standard output is the token;
-3. for `github` only, the `GH_TOKEN` and then the `GITHUB_TOKEN` environment
-   variable.
+3. the service's conventional environment variables, in this order:
+   - `github`: `GH_TOKEN`, then `GITHUB_TOKEN` (as the GitHub CLI reads them);
+   - `jira`: `JIRA_API_TOKEN` (as `jira-cli` reads it);
+   - `awx`: `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN`
+     (as the `ansible.controller` and `awx.awx` collections read them).
+
+These variables are not tied to a profile: one applies to every profile that
+sets neither `token` nor `token_command`, whatever its `base_url`. For the
+same reason, `doctor` and `setup` count one as configuring a service only
+when the section also has a `base_url`.
 
 `token_command` keeps the token out of `config.yml`. It is an argv list, run
 without a shell, at most once per process and only when a command first needs
@@ -447,6 +458,18 @@ goes straight to your terminal.
 
 untaped does not run `gh auth token` on its own. To reuse the GitHub CLI's
 login, set `github.token_command` as above.
+
+A token in `<section>.token` is stored in plain text in `config.yml`, which is
+what `config set <section>.token` and `untaped setup`'s "Enter a token"
+choice do. `untaped doctor` reports it as a `warn` row (which does not fail
+`doctor`) naming `token_command` and an environment variable to use instead,
+for example `awx.token is stored in plain text in config.yml; use
+awx.token_command or $CONTROLLER_OAUTH_TOKEN instead`. The check reads the
+config file itself: a token stored there is reported even while
+`UNTAPED_<SECTION>__TOKEN` overrides it, and a token set only by that
+variable is not. A missing token, and a token the service rejects under
+`doctor --online`, name the same alternatives next to `config set
+<section>.token --prompt`.
 
 ## Debug logs
 

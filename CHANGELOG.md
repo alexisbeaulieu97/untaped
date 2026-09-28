@@ -20,6 +20,14 @@
     mapping`.
   - **Fix:** `skills install --scope local` finds the project root through
     the hardened git runner (an inherited `GIT_DIR` no longer redirects it).
+  - **New:** `untaped doctor` warns (a `warn` row, which does not fail it)
+    when the config file stores a service token in plain text
+    (`<section>.token`), naming `token_command` and an environment variable
+    to use instead. A missing token, and one `doctor --online` finds
+    rejected, name the same alternatives.
+  - A token environment variable alone (such as `JIRA_API_TOKEN`) does not
+    make a service configured for `doctor`, `doctor --online` or `setup`:
+    the section also needs a `base_url`.
 - Workspace
   - **Behavior change:** `foreach --stdin` with an empty pipe runs nothing
     and exits 0 (it used to fail with `no identifiers received on stdin`).
@@ -30,6 +38,9 @@
     (`--vars-file file not found: vars.yml`, and `could not read --vars-file
     file vars.yml: …` for any other read error), a leading `~` in the path
     is expanded, and a `.json` vars file is parsed as JSON.
+  - **New:** without `awx.token` or `awx.token_command`, the token comes from
+    `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN`, the
+    variables the `ansible.controller` collection reads, in its order.
 - Recipe
   - `recipe validate NAME` and `recipe test NAME` resolve recipe refs through
     the same resolver as `apply`, `get` and `edit`, so a miss on a name that
@@ -51,6 +62,9 @@
 - GitHub
   - **Fix:** a corpus repo lock that cannot be created is reported as an
     error instead of a traceback.
+- Jira
+  - **New:** without `jira.token` or `jira.token_command`, the token comes from
+    `JIRA_API_TOKEN` (as `jira-cli` reads it).
 
 ## 8.0.0
 

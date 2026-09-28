@@ -65,6 +65,11 @@ In scripts, pipe the token in instead:
 printf '%s\n' "$GITHUB_TOKEN" | untaped config set github.token --stdin
 ```
 
+A token set this way is stored in plain text in `config.yml`, and
+`untaped doctor` warns about it. To keep it out of the file, give each
+service a `token_command` or export its token variable instead; see
+[Tokens](./configuration.md#tokens).
+
 Check what is set. Secrets show as `***`:
 
 ```bash

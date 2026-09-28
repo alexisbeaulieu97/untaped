@@ -113,6 +113,19 @@ def test_online_check_skips_an_unconfigured_service(_isolated_config: Path) -> N
     assert _row(result, "svc.api")["detail"] == "not configured"
 
 
+def test_an_ambient_token_variable_without_a_base_url_is_not_configured(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SVC_TOKEN", "ambient")
+
+    def probe() -> str:
+        raise AssertionError("must not probe")
+
+    result = _doctor((_probe_check(probe),), "--online")
+    assert result.exit_code == 0, result.output
+    assert _row(result, "svc.api")["detail"] == "not configured"
+
+
 def test_a_default_base_url_without_a_token_is_not_configured(_isolated_config: Path) -> None:
     def probe() -> str:
         raise AssertionError("must not probe")
@@ -161,13 +174,15 @@ def _rejected() -> Exception:
         (
             {"base_url": "https://svc", "token": "t"},
             _rejected(),
-            "svc rejected the configured token",
+            "svc rejected the configured token "
+            "(the token can also come from svc.token_command or $SVC_TOKEN)",
             "config set svc.token --prompt",
         ),
         (
             {"base_url": "https://svc"},
             HttpStatusError("HTTP 403 from https://svc/me", status_code=403),
-            "HTTP 403 from https://svc/me",
+            "HTTP 403 from https://svc/me "
+            "(the token can also come from svc.token_command or $SVC_TOKEN)",
             "config set svc.token --prompt",
         ),
         (
