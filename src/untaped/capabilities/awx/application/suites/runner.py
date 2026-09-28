@@ -80,6 +80,7 @@ class RunTestSuite:
         clock: Callable[[], float] = time.monotonic,
         stop: threading.Event | None = None,
         canceller: Canceller | None = None,
+        refresher: Callable[[Job], Job] | None = None,
         preflight: LaunchCheck | None = None,
         evidence: bool = True,
     ) -> None:
@@ -91,7 +92,7 @@ class RunTestSuite:
         self._jt_scope = jt_scope
         self._clock = clock
         self._stop = stop
-        self._abandon = AbandonJobs(canceller)
+        self._abandon = AbandonJobs(canceller, refresher=refresher)
         """Cancels (or, without ``canceller``, leaves) what the run stops watching."""
         self._read_log = log_reader
         self._read_events = event_reader
@@ -296,6 +297,9 @@ class RunTestSuite:
             else:
                 waited = f"still {final.status} after {item.timeout or 0:g}s"
                 fields.update(result="timeout", failure_reason=f"{waited}; {self._abandon(final)}")
+                # A refused cancel re-reads the job: it may have ended meanwhile.
+                final = self._finals[(final.kind, final.id)] = self._abandon.latest(final)
+                fields.update(job_status=final.status, finished_at=final.finished)
         if fields["result"] != "pass" and self._evidence:
             fields["failed_tasks"] = self._failed_tasks(final)
             fields["log_tail"] = self._tail(final, log)
