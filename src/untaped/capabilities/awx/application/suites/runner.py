@@ -21,6 +21,7 @@ import threading
 import time
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
+from functools import partial
 from typing import Any
 
 from untaped.capabilities.awx.application.abandon_jobs import AbandonJobs
@@ -192,12 +193,16 @@ class RunTestSuite:
         fk_index = ResolveCasePayload.fk_index_for(self._spec)
         for suite, _, case in plan:
             merged = _merge_top_level(suite.defaults, case)
+            org = suite.organization
             for field, value in merged.items():
                 ref = fk_index.get(field)
                 if ref is not None and _is_resolvable_fk_value(value):
                     assert ref.kind is not None
-                    by_kind.setdefault(ref.kind, []).append(self._resolve.scope_for_fk_field(ref))
-                _collect_ref_sentinels(value, by_kind, self._resolve.scope_for_ref)
+                    scope = self._resolve.scope_for_fk_field(ref, organization=org)
+                    by_kind.setdefault(ref.kind, []).append(scope)
+                _collect_ref_sentinels(
+                    value, by_kind, partial(self._resolve.scope_for_ref, organization=org)
+                )
         return by_kind
 
     def _resolve_all(
@@ -211,7 +216,9 @@ class RunTestSuite:
         out: list[_ResolvedCase] = []
         for suite, case_name, case in plan:
             defaults = suite.defaults or Case()
-            payload = self._resolve(self._spec, case, defaults=suite.defaults)
+            payload = self._resolve(
+                self._spec, case, defaults=suite.defaults, organization=suite.organization
+            )
             if scm_branch is not None:
                 payload["scm_branch"] = scm_branch
             expect = case.expect.over(defaults.expect)

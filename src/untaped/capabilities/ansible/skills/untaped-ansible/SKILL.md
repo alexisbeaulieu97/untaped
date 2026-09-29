@@ -1,11 +1,18 @@
 ---
 name: untaped-ansible
-description: Use the built-in `untaped ansible` capability for Ansible analysis.
+description: Use the `untaped ansible` command to map Ansible role and project dependencies across GitHub repositories (what a role depends on, what depends on it, which projects reach a repo, and dependency graphs). Use when the user mentions Ansible roles, requirements.yml, meta/main.yml dependencies, impact or blast-radius analysis, who uses a role, or a dependency graph.
 ---
 
 # Untaped Ansible
 
 Use this skill when the user wants an agent to operate the `untaped ansible` CLI for Ansible dependency graphing and impact analysis.
+
+Details that do not fit here ship next to this file:
+
+| File | Read it when |
+|---|---|
+| [references/sources.md](references/sources.md) | managing saved sources, source aliases, refresh backends, partial or resumable refreshes, the SQLite cache |
+| [references/graphs.md](references/graphs.md) | ref and repo resolution, unpinned dependencies, local targets, tree and JSON graph output, skipped dependency files |
 
 ## Setup
 
@@ -21,29 +28,12 @@ Use this skill when the user wants an agent to operate the `untaped ansible` CLI
 - `ansible.default_source` names the saved source `deps`, `impact`, `find` and `graph` use whenever neither `--source` nor inline selectors are given; an unknown name fails naming the setting. `impact` without any source fails; `graph` without one omits upstream with a warning. Setting it switches `deps`/`find`/`graph` downstream reads from live GitHub to the source cache (roles outside it warn "not cached" and give no rows; before the first refresh they fail with the refresh command); `--live` reads GitHub anyway.
 - Saved sources are selected with repeatable `--source NAME`; repeated sources are additive.
 - Inline selectors such as `--org`, `--team`, `--repo`, `--path`, `--ref-kind`, `--ref-pattern`, and `--ref-scan-default` are also additive where accepted.
-- Source-backed graphing is cache-first: it reads completed SQLite source data by default and touches GitHub only when `--refresh` is passed or `source refresh` is run. If no completed baseline exists, the command fails with the exact refresh command instead of rendering partial upstream output.
-- Source refresh ref probing is backend-selectable. The default is `ansible.source_refresh_backend: auto`; use `source refresh NAME --backend auto|graphql|git` or `--refresh --backend auto|graphql|git` on `deps`/`impact`/`find`/`graph` for a per-run override. `--backend` without `--refresh` is a usage error. Backend choice is not persisted on sources.
-- `graph --cached` reads the SQLite cache as-is. That is already the default for source-backed commands; the flag only makes it explicit.
 - `--live` is the explicit opt-in for live GitHub downstream reads when a source is selected; it works even before the source's first refresh (with `graph --both`, upstream is then omitted with a warning). `impact` has no `--live`. Without any source, downstream reads are always live, for remote and local targets alike; a local target with no GitHub token stays offline and warns that transitive dependencies were not expanded.
-- Live reads that fail for one repo (deleted repo or tag, lost access) become graph warnings and leave that node unexpanded; auth (401) and rate-limit (429, or 403 with a rate-limit message) failures still abort.
-- A local path target resolves its repo from the Git remote only when the path is the top level of a checkout (linked worktrees included); for a subdirectory such as `./roles/web` in a monorepo, pass `--target-repo OWNER/NAME`.
 - `--refresh`, `--cached`, and `--live` are mutually exclusive, as are `--upstream`, `--downstream`, and `--both`; conflicting flags are usage errors (exit 2). `--refresh` also requires `--source`, inline source boundary selectors (`--org`, `--team`, or `--repo`), or `ansible.default_source`; modifiers such as `--path`, `--ref-kind`, `--ref-pattern`, and `--ref-scan-default` do not count by themselves.
 - `--team` accepts ORG/SLUG; a bare SLUG is allowed when exactly one `--org` is given and normalizes to ORG/SLUG.
 - Repeating the identical command with inline source selectors reuses the cached scan.
-- `impact --ref R` (and `graph --ref R --upstream`) also includes consumers that declare the target without a version when `R` is the target's cached default branch; if that default branch is unknown, the graph warns how many unpinned dependents were omitted.
-- Repo ids match case-insensitively (`Acme/Base` equals `acme/base`); graph node ids use the lowercase form while labels keep display casing. URLs on the GitHub host derived from `github.base_url` (GitHub Enterprise) resolve like `github.com` URLs; path-like sources such as `./local` stay unresolved.
 - `find REPO...` (owner/repo, URL, or source alias; several to find any) searches downstream from roots given with repeatable `--root owner/repo[@ref]` or read with `--stdin` (bare `owner/repo@ref` lines, or pipe records with `scm_url`/`repo_url`/`repo`/`full_name` and `effective_scm_ref`/`ref`, e.g. `awx job-templates list --with-scm --format pipe`). It prints one `ansible.dependency_match` row per matched node (`root_repo`, `root_ref`, `repo`, `declared_ref` verbatim, `declared_in`, shortest `path`, plus the input record's `input_kind`/`input_id`/`input_name`, `null` for `--root` and bare lines), and nothing for roots that never reach it. Every input record gets its own rows even when records share a root, so results join back to the inputs (for example to the job templates to test). Searches the full graph unless `--depth N` is given (then an empty result says `within --depth N`); honors `--source` and the refresh flags.
-- An unpinned dependency (no version) resolves to the dependency's default-branch node (`repo@main`: the source's recorded default branch, or GitHub's for live reads), so downstream, `find` and cycle detection continue through it; with no known default branch the node stays ref-less, and a tags-only source stops there with a "ref is not cached" warning. An unpinned and a default-branch-pinned declaration of one repo give one `find` row.
-- Tree output prints a shared subtree once and marks later occurrences `(see above)`.
-- Source aliases are applied when sources are refreshed; after `source-alias set`/`source-alias remove`, run `untaped ansible source refresh NAME` for cached graphs to pick up the change.
-- Saved sources are managed with `source set NAME` (create or replace), `source patch NAME --add-*/--remove-*/--clear-*` (edit in place), `source get NAME`, `source list`, and `source remove NAME`. `source-alias set NAME OWNER/REPO` creates or replaces a source alias.
-- `source-alias set`, `source-alias remove`, `source set`, `source patch`, and `source remove` accept `--format`/`--columns` and print one outcome record on stdout (`ansible.source_alias_outcome` with `action`, `alias`, `repo`; `ansible.source_outcome` with `action`, `name`, `changes`). `action` is `created`, `updated`, `unchanged`, `deleted`, or `planned` (`--dry-run`).
-- `source-alias remove` and `source remove` ask for confirmation; pass `--yes` when not interactive (otherwise they exit 2), or `--dry-run` to preview. Declining exits 1 with `cancelled; no changes made`.
 - Row-style commands (`deps`, `impact`, `find`, `source-alias list`, `source list`, `source get`, `source status`) accept `--format pipe` for typed NDJSON: `untaped ansible source list --format pipe` emits one `{"untaped":"1","kind":"ansible.source","record":{...}}` line per row (kinds: `ansible.dependency`, `ansible.dependent`, `ansible.dependency_match`, `ansible.source_alias`, `ansible.source`, `ansible.source_status`). `graph` has no pipe output.
-- Graph JSON includes stable `edges[].id` values and `cycles`. An edge ID is the same for every declaration of one dependency (relation, source and target), so duplicate declarations collapse to one edge. Cycle records use `kind`, `relation`, `node_ids`, and `edge_ids`: `kind="cycle"` is a closed ordered path, while `kind="scc_group"` is a sorted open SCC node set with sorted internal edge IDs when the component has too many elementary cycles to enumerate. Cycles are detected only inside the emitted depth-bounded graph, so increase `--depth` or use `--depth unlimited` when looking for longer loops.
-- Malformed, templated, or wrong-shape dependency files are skipped with warnings instead of becoming repo failures. Empty files and missing/null/empty dependency sections remain warning-free; present non-list `dependencies`, `roles`, or `collections` sections warn and are skipped. Local/live graph reads surface parse skips as graph warnings; live warnings include `repo@ref path`, and `source refresh` prints skipped files to stderr for that run without persisting them into cached graph output.
-- `source status` rows report `state` as `fresh`, `stale`, or `not_refreshed` and `scanned_at` as UTC (`2026-01-02T03:04:05Z`).
-- `source get` is a single entity: under `--format table` it renders a vertical key:value detail view, and under `--format json` it emits a bare object (`{…}`, not a one-element `[{…}]`). The collection commands (`source list`/`status`, `source-alias list`) still render tables and JSON arrays.
 
 ## Agent Guidance
 
@@ -51,11 +41,5 @@ Use this skill when the user wants an agent to operate the `untaped ansible` CLI
 - Do not collapse refs. A dependency at `repo@v1` is distinct from `repo@main`.
 - Treat graph cycle reports as depth-bounded evidence, not proof that no longer cycle exists outside the emitted traversal horizon.
 - `impact` requires refreshed source data; if unavailable, prompt the user to refresh or configure sources.
-- In `auto` mode, primary GraphQL rate-limit exhaustion falls back to Git `ls-remote` for the whole active probe target set. Secondary rate limiting, auth, request-level forbidden, and unknown global GitHub GraphQL access failures still abort `source refresh` and source-backed commands with one error. Do not treat these as per-repo failures or proceed with stale graph output.
-- `source refresh` expands orgs/teams/repos with the `github` profile settings. The `git` backend still needs GitHub credentials for private sources; it only replaces the ref probe transport.
-- `source refresh` is resilient to per-repo failures: successes are saved, each `failed <repo>: <reason>` is listed on stderr, and the command exits 1 with `refresh completed with N repo failures; successes were saved`. Treat that exit as partial success, not a hard failure. If every repo failed, the completed baseline is left unchanged and the command exits 1 with `refresh failed for all N repos; index left unchanged`. In explicit `graphql` mode, transient GraphQL ref-probe failures print a hint that re-running is safe and cheap. In `auto`, transient GraphQL per-repo failures and residual chunk failures first fall back to Git `ls-remote`; unrecovered repos remain failures. `--refresh` on the graph commands warns instead and proceed with possibly stale data for failed repos.
-- When auto fallback activates, the CLI prints a stderr warning with the repo count and reason. Large primary-rate-limit fallbacks can be much slower because Git probing runs one network subprocess per repo.
-- Large `source refresh` runs are resumable. If the GraphQL budget drops below `ansible.source_refresh_rate_limit_floor` (default `500`) while repos remain, successful repo batches are committed, untouched repos/refs are preserved, the source-wide completed timestamp is not updated, and the command exits 1 with a resume hint. Re-run the same `source refresh` command to skip successful repos and retry failed or unprocessed repos; per-repo failures still make it exit non-zero.
-- Tune large refreshes with `ansible.source_refresh_repo_batch_size` (default `100`) and `ansible.source_refresh_rate_limit_floor` (default `500`).
-- Refresh progress and status print to stderr only; stdout stays machine-readable.
-- The SQLite index is a cache. An index from an older untaped is rebuilt empty automatically with a warning; run `untaped ansible source refresh NAME` for each saved source afterwards. An index written by a newer untaped is rejected with an error naming the file, so a downgrade never destroys it.
+- Save a source with `untaped ansible source set platform --org acme` and index it with `untaped ansible source refresh platform`; see [references/sources.md](references/sources.md) for everything else about sources.
+- Exit codes: 0 success, 1 failure (including a refresh with failed repos, whose successes are saved), 2 usage error, 130 interrupted.
