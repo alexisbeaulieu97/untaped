@@ -640,7 +640,7 @@ def _require_repo(env: _GraphEnv, target: str, *, target_repo: str | None = None
         )
         if env.command != "find":
             message = f"{message}. Pass --target-repo OWNER/NAME"
-    raise UntapedError(message)
+    raise UntapedError(message, category="not_found")
 
 
 def _refresh_sources(
@@ -673,7 +673,10 @@ def _refresh_sources(
             ui=ui,
         )
         if not result.completed:
-            raise UntapedError(_refresh_pause_message(result, selection))
+            # Paused at the GitHub rate-limit floor: resuming later succeeds.
+            raise UntapedError(
+                _refresh_pause_message(result, selection), category="unavailable", system="github"
+            )
         if result.failures:
             warnings.append(
                 f"refresh of {selection.label} had "
@@ -890,8 +893,13 @@ def _graph_source(options: GraphSourceOptions, *, default_source: str | None) ->
                 known = sorted(entry.name for entry in source_repository.entries())
                 message = not_found("source", source_name, known=known)
                 if from_default:
+                    # The user's own setting names a missing source: fix the config.
                     message = f"{message} (set by ansible.default_source)"
-                raise UntapedError(message)
+                raise UntapedError(
+                    message,
+                    category="config" if from_default else "not_found",
+                    system="local",
+                )
             selections.append(
                 _GraphSourceSelection(
                     definition=source,

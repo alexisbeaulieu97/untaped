@@ -255,11 +255,14 @@ def test_same_type_replacement_restores_the_old_credential_when_associate_fails(
         ],
     )
 
-    assert result.exit_code != 0, result.output
+    # AWX refused the associate (403): the token lacks a permission, so exit 4.
+    assert result.exit_code == 4, result.output
     assert fake_aap.memberships[("job_templates", 30, "credentials")] == {40}
     rows = json.loads(result.stdout)
     assert rows[0]["action"] == "partial"
     assert "restored" in rows[0]["detail"]
+    assert (rows[0]["error"]["category"], rows[0]["error"]["system"]) == ("permission", "awx")
+    assert rows[0]["error"]["message"] == rows[0]["detail"]
 
 
 def test_group_host_replacement_associates_first(fake_aap: Any, tmp_path: Path) -> None:
@@ -516,6 +519,28 @@ def test_apply_dash_with_nothing_piped_is_an_error(fake_aap: Any) -> None:
     assert result.exit_code == 1, result.output
     assert "no YAML documents on stdin" in result.stderr
     assert _patches(fake_aap) == []
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        (None, "file not found"),
+        ("kind: [unclosed\n", "invalid YAML in"),
+        ("- a list\n", "each YAML doc must be a mapping"),
+        ("kind: JobTemplate\n", "metadata"),
+    ],
+)
+def test_an_invalid_input_file_exits_1(
+    fake_aap: Any, tmp_path: Path, content: str | None, message: str
+) -> None:
+    """A bad input file is the input's fault, not the environment's (4)."""
+    _seed_basic(fake_aap)
+    path = tmp_path / "bad.yml"
+    if content is not None:
+        path.write_text(content)
+    result = CliInvoker().invoke(app, ["apply", str(path), "--yes"])
+    assert result.exit_code == 1, result.output
+    assert message in result.stderr
 
 
 def test_apply_dash_names_stdin_in_document_errors(fake_aap: Any) -> None:

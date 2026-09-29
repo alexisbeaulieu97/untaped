@@ -1,4 +1,8 @@
-"""Bounded scheduling for independent actions on already validated fixed targets."""
+"""Bounded scheduling for independent actions on already validated fixed targets.
+
+A failed action's outcome keeps its exception (``error``) and the row's
+structured error (``error_info``, counted toward the run's exit code).
+"""
 
 from __future__ import annotations
 
@@ -8,6 +12,7 @@ from typing import Any, Literal
 
 from untaped.capabilities.awx.application.scheduling import Schedule, ScheduleInterruptedError
 from untaped.capabilities.awx.application.selection import SelectedResource
+from untaped.capability_api import ErrorInfo
 
 
 @dataclass(frozen=True)
@@ -18,6 +23,14 @@ class SelectedActionOutcome[T]:
     detail: str | None = None
     error: Exception | None = field(default=None, repr=False)
     """Typed evidence for the caller; never render the unsanitized exception."""
+    error_info: ErrorInfo | None = None
+    """The failure's category, system and sanitized ``detail``: a row's ``error``."""
+
+    def row_error(self) -> dict[str, Any]:
+        """``{"error": ...}`` for the row of a failed action, else ``{}``."""
+        if self.error_info is None:
+            return {}
+        return {"error": self.error_info.model_dump(mode="json")}
 
 
 class ActionsInterruptedError(KeyboardInterrupt):
@@ -50,8 +63,13 @@ def run_selected_actions[T](
         except Exception as exc:
             if not continue_on_error:
                 schedule.stop()
+            detail = error_detail(exc, target)
             return SelectedActionOutcome(
-                target, "failed", detail=error_detail(exc, target), error=exc
+                target,
+                "failed",
+                detail=detail,
+                error=exc,
+                error_info=ErrorInfo.from_exception(exc, message=detail),
             )
 
     try:

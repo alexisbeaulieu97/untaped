@@ -21,6 +21,7 @@ from untaped.capabilities.recipe.infrastructure.pack_files import (
 )
 from untaped.capabilities.recipe.infrastructure.project_toml import read_toml_document, toml_table
 from untaped.capabilities.recipe.infrastructure.uv_project import lock_project
+from untaped.capability_api import ErrorCategory, attribution
 
 
 def hook_api_requirements(
@@ -42,7 +43,12 @@ _HOOK_API_PROJECT_REQUIREMENT, _HOOK_API_DEV_REQUIREMENT = hook_api_requirements
 
 
 class ScaffoldLockError(RecipeError, ValueError):
-    """Raised when scaffold files were written but ``uv.lock`` could not refresh."""
+    """Raised when scaffold files were written but ``uv.lock`` could not refresh.
+
+    It keeps the attribution of the lock failure (a missing ``uv`` is ``config``).
+    """
+
+    category = ErrorCategory.FAILED
 
 
 _CASE_YML_TEMPLATE = """\
@@ -346,7 +352,8 @@ def _lock_error(
     return ScaffoldLockError(
         f"created {created_label} at {created_path}, but uv lock failed: {detail}; "
         "fix the index or add a [tool.uv.sources] override, then run "
-        f"`uv lock` in {project_root}"
+        f"`uv lock` in {project_root}",
+        **attribution(cause),
     )
 
 

@@ -6,7 +6,10 @@ runs. Each finished job is checked against its case's :class:`Expectation`
 ``evidence``, a case that does not pass carries its failed tasks (from job
 events) and the tail of its log. With a :class:`Canceller`, every execution
 the run stops watching before it ends (timeout, polling error, Ctrl-C) is
-cancelled rather than left running.
+cancelled rather than left running. A launch or watch that fails counts
+toward the run's exit code (``4`` for a rejected token, ``5`` for an
+unavailable AWX), and a failed preflight carries its most severe problem's
+category.
 
 Resolution finishes in the main thread before any worker is spawned so
 the launch+wait pool only sees fully-baked, immutable launch dicts —
@@ -46,7 +49,13 @@ from untaped.capabilities.awx.domain.suite import (
     SuiteRunOutcome,
 )
 from untaped.capabilities.awx.errors import ActionResponseError, AwxApiError
-from untaped.capability_api import ConfigError, bounded_map
+from untaped.capability_api import (
+    ConfigError,
+    ExitCode,
+    UntapedError,
+    bounded_map,
+    note_failure,
+)
 
 _LAUNCH_ACTION = "launch"
 LOG_TAIL_LINES = 40
@@ -169,7 +178,8 @@ class RunTestSuite:
             unmatched = sorted(case_filter - matched)
             if unmatched:
                 raise ConfigError(
-                    "no case matched --case " + ", ".join(repr(name) for name in unmatched)
+                    "no case matched --case " + ", ".join(repr(name) for name in unmatched),
+                    category="not_found",
                 )
         return plan
 
@@ -234,6 +244,7 @@ class RunTestSuite:
         if self._preflight is None:
             return
         problems: list[str] = []
+        errors: list[UntapedError] = []
         for item in resolved:
             try:
                 self._preflight(
@@ -241,8 +252,14 @@ class RunTestSuite:
                 )
             except (AwxApiError, ConfigError) as exc:
                 problems.append(f"  {item.suite_name}/{item.case_name}: {exc}")
+                errors.append(exc)
         if problems:
-            raise ConfigError("\n".join(["preflight failed, nothing launched:", *problems]))
+            worst = _most_severe(errors)
+            raise ConfigError(
+                "\n".join(["preflight failed, nothing launched:", *problems]),
+                category=worst.category,
+                system=worst.system,
+            )
 
     def _launch_and_wait(self, item: _ResolvedCase) -> CaseResult:
         started_clock = self._clock()
@@ -256,6 +273,7 @@ class RunTestSuite:
             )
             self.launched.append(job)
         except Exception as exc:
+            note_failure(exc)
             # ``ignored_fields`` responses launched a job; keep its ID as evidence.
             if isinstance(exc, ActionResponseError) and exc.execution_id is not None:
                 self.launched.append(
@@ -278,6 +296,7 @@ class RunTestSuite:
             final = self._watch(job, timeout=item.timeout)
             self._finals[(final.kind, final.id)] = final
         except Exception as exc:
+            note_failure(exc)
             final = job
             fields: dict[str, Any] = {
                 "result": "error",
@@ -360,6 +379,17 @@ class RunTestSuite:
             except Exception:
                 return None
         return tuple(log[-LOG_TAIL_LINES:])
+
+
+def _most_severe(errors: Sequence[UntapedError]) -> UntapedError:
+    """The error the run's exit code follows: environment (4), then unavailable (5)."""
+    return min(
+        errors,
+        key=lambda error: (
+            error.exit_code != ExitCode.ENVIRONMENT,
+            error.exit_code != ExitCode.UNAVAILABLE,
+        ),
+    )
 
 
 def _collect_ref_sentinels(

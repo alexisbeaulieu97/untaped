@@ -10,11 +10,14 @@ from pathlib import Path
 
 from untaped.capabilities.recipe.domain.paths import confined_path
 from untaped.capabilities.recipe.domain.plan import CONTENT_ERRORS, FileChange
-from untaped.capability_api import UntapedError
+from untaped.capability_api import ErrorCategory, UntapedError
 
 
 class ApplyWriteError(UntapedError):
-    """A planned target could not be written safely."""
+    """A planned target could not be written safely (a failed local write)."""
+
+    category = ErrorCategory.FAILED
+    system = "local"
 
     def __init__(self, message: str, *, rollback_incomplete: bool = False) -> None:
         super().__init__(message)

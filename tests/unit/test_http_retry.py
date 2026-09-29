@@ -233,3 +233,38 @@ def test_paginate_offset_forwards_retry_on_later_pages(no_sleep: list[float]) ->
     assert [r["i"] for r in rows] == [1, 2, 3]
     assert route.call_count == 3
     assert len(no_sleep) == 1
+
+
+def test_exhausted_retries_record_the_attempts_and_the_client_section(
+    no_sleep: list[float],
+) -> None:
+    with respx.mock(base_url="https://api.example.com") as mock:
+        mock.get("/x").mock(return_value=httpx.Response(503))
+        client = connected_client(_DemoSettings(), section="demo", required=("base_url",))
+        with client, pytest.raises(HttpStatusError) as exc_info:
+            client.get("/x")
+    error = exc_info.value
+    assert (error.category, error.system, error.retryable) == ("unavailable", "demo", True)
+    assert error.details == {"status": 503, "url": "https://api.example.com/x", "attempts": 3}
+
+
+def test_a_transport_failure_is_unavailable_in_the_client_section(no_sleep: list[float]) -> None:
+    with respx.mock(base_url="https://api.example.com") as mock:
+        mock.get("/x").mock(side_effect=httpx.ConnectError("refused"))
+        client = connected_client(_DemoSettings(), section="demo", required=("base_url",))
+        with client, pytest.raises(HttpTransportError) as exc_info:
+            client.get("/x")
+    error = exc_info.value
+    assert (error.category, error.system) == ("unavailable", "demo")
+    assert error.details == {"url": "https://api.example.com/x", "attempts": 3}
+
+
+def test_a_client_without_a_section_attributes_failures_to_http() -> None:
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+        pytest.raises(HttpStatusError) as exc_info,
+    ):
+        mock.get("/x").mock(return_value=httpx.Response(401))
+        client.get("/x")
+    assert (exc_info.value.category, exc_info.value.system) == ("auth", "http")

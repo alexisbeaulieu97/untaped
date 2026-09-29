@@ -21,7 +21,7 @@ from untaped.capabilities.recipe.domain.pack import InstalledPack
 from untaped.capabilities.recipe.domain.plan import FileChange, HookDebugResult, Verdict
 from untaped.capabilities.recipe.domain.testcase import CaseSpec, VerdictExpectation
 from untaped.capabilities.recipe.errors import RecipeError
-from untaped.capability_api import ConfigError
+from untaped.capability_api import UntapedError
 
 CaseStatus = Literal["pass", "fail", "error", "updated"]
 
@@ -46,7 +46,10 @@ class DiscoveredCase:
 
 @dataclass(frozen=True)
 class CaseResult:
-    """Outcome of running (or updating) one golden case."""
+    """Outcome of running (or updating) one golden case.
+
+    ``failure`` is the exception behind an ``error`` status, when planning raised one.
+    """
 
     pack: str
     recipe: str
@@ -54,6 +57,7 @@ class CaseResult:
     status: CaseStatus
     detail: str = ""
     diffs: tuple[FileChange, ...] = ()
+    failure: Exception | None = None
 
 
 class RecordingHookExecutor:
@@ -192,10 +196,10 @@ def run_case(case: DiscoveredCase, *, executor: HookExecutorPort) -> CaseResult:
     trees, error = _plan_case(case, spec, given, recorder)
 
     if spec.expect == "error":
-        return _error_case_result(case, spec, error)
+        return _error_case_result(case, spec, None if error is None else str(error))
 
     if error is not None:
-        return _result(case, "error", error)
+        return _result(case, "error", str(error), failure=error)
     assert trees is not None
     verdict_problem = (
         _verdict_problem(spec.verdict, recorder.verdicts) if spec.verdict is not None else ""
@@ -220,7 +224,7 @@ def update_case(case: DiscoveredCase, *, executor: HookExecutorPort) -> CaseResu
 
     trees, error = _plan_case(case, spec, given, RecordingHookExecutor(executor))
     if error is not None:
-        return _result(case, "error", error)
+        return _result(case, "error", str(error), failure=error)
     assert trees is not None
     expected_dir = case.case_dir / "expected"
     if trees.result == trees.base:
@@ -287,12 +291,12 @@ def _plan_case(
     spec: CaseSpec,
     given: Path,
     recorder: RecordingHookExecutor,
-) -> tuple[_Trees | None, str | None]:
-    """Plan against a temp copy of given/ and return (trees, error)."""
+) -> tuple[_Trees | None, Exception | None]:
+    """Plan against a temp copy of given/ and return (trees, failure)."""
     try:
         recipe = read_recipe_file(case.recipe_path)
-    except (ConfigError, ValueError) as exc:
-        return None, str(exc)
+    except (UntapedError, ValueError) as exc:
+        return None, exc
     with tempfile.TemporaryDirectory() as temp_root:
         target_dir = Path(temp_root) / case.case_name
         shutil.copytree(given, target_dir)
@@ -306,11 +310,11 @@ def _plan_case(
                 targets=[Target(path=target_dir)],
                 inputs=dict(spec.inputs),
             )
-        except (ConfigError, ValueError) as exc:
-            return None, str(exc)
+        except (UntapedError, ValueError) as exc:
+            return None, exc
         plan = plans[0]
         if plan.status == "error":
-            return None, plan.error
+            return None, plan.failure or RecipeError(plan.error)
         return _Trees(base=base, result=_materialize(base, plan.changes)), None
 
 
@@ -386,6 +390,7 @@ def _result(
     detail: str = "",
     *,
     diffs: tuple[FileChange, ...] = (),
+    failure: Exception | None = None,
 ) -> CaseResult:
     return CaseResult(
         pack=case.pack_name,
@@ -394,4 +399,5 @@ def _result(
         status=status,
         detail=detail,
         diffs=diffs,
+        failure=failure,
     )

@@ -170,7 +170,9 @@ def _run_token_command(argv: tuple[str, ...], *, section: str) -> str:
     except FileNotFoundError:
         raise ConfigError(f"{key}: {program!r} not found on PATH") from None
     except subprocess.TimeoutExpired:
-        raise ConfigError(f"{key}: {program!r} timed out after {_TIMEOUT_SECONDS:g}s") from None
+        raise ConfigError(
+            f"{key}: {program!r} timed out after {_TIMEOUT_SECONDS:g}s", category="unavailable"
+        ) from None
     except OSError as exc:
         raise ConfigError(f"{key}: {program!r} could not run: {exc.strerror}") from None
     if completed.returncode != 0:

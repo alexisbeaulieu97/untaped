@@ -19,6 +19,15 @@ from untaped.capability_api import UntapedError
 
 Reply = httpx.Response | Callable[[httpx.Request], httpx.Response] | Exception
 
+# A GraphQL failure's kind decides its category (and so the exit code).
+_KIND_CATEGORIES = {
+    "rate_limited": "unavailable",
+    "secondary_rate_limited": "unavailable",
+    "auth": "auth",
+    "forbidden": "permission",
+    "unknown": "failed",
+}
+
 
 def _probe(
     replies: Reply | Sequence[Reply],
@@ -258,6 +267,7 @@ def test_batch_repo_refs_raises_global_graphql_errors(
     assert isinstance(error, GithubGraphqlError)
     assert error.kind == kind
     assert message in str(error)
+    assert (error.category, error.system) == (_KIND_CATEGORIES[kind], "github")
 
 
 def test_batch_repo_refs_raises_on_unexplained_null_or_repo_lost_mid_pagination() -> None:
@@ -448,6 +458,8 @@ def test_http_access_errors_are_classified_and_never_retried(
 
     assert route.call_count == 1
     assert exc_info.value.kind == kind
+    assert exc_info.value.category == _KIND_CATEGORIES[kind]
+    assert exc_info.value.details["status"] == response.status_code
     assert message in str(exc_info.value)
     assert exc_info.value.status_code == response.status_code
     assert exc_info.value.body

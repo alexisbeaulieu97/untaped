@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from typing import TYPE_CHECKING, TextIO
 
+from untaped.diagnostics import json_diagnostics, write_record
 from untaped.errors import ConfigError, OperationCancelledError, UsageError
 from untaped.messages import plural
 from untaped.progress import ProgressHandle, progress_reporter
@@ -127,6 +128,9 @@ class UiContext:
         )
         if not rows and fmt == "table" and empty:
             note = empty if isinstance(empty, str) else "No results."
+            if json_diagnostics():
+                write_record({"level": "info", "message": note}, self.stderr)
+                return rendered
             print(
                 self.renderer.render_message(
                     "info", note, theme=self.theme, colorize=should_colorize(self.stderr)
@@ -153,7 +157,15 @@ class UiContext:
         )
 
     def message(self, kind: MessageKind, text: str) -> None:
+        """Print a ``success``/``info``/``warning``/``error`` line to stderr.
+
+        ``--quiet`` mutes ``success`` and ``info``. Under JSON diagnostics
+        the line is ``{"level": kind, "message": text}``.
+        """
         if self.quiet and kind in ("success", "info"):
+            return
+        if json_diagnostics():
+            write_record({"level": kind, "message": text}, self.stderr)
             return
         rendered = self.renderer.render_message(
             kind,
@@ -175,10 +187,14 @@ class UiContext:
         output such as live job events; unlike :meth:`message`, ``--quiet``
         does not mute it. ``tail`` follows the styled text verbatim: never
         wrapped, tab-expanded or styled (a streamed log line after a styled
-        ``[label] ``).
+        ``[label] ``). Under JSON diagnostics a stderr line is an ``info``
+        JSON line.
         """
         stream = self.stderr if err else self.stdout
         plain = text if isinstance(text, str) else text.plain
+        if err and json_diagnostics():
+            write_record({"level": "info", "message": plain + tail}, stream)
+            return
         # Rendering may drop trailing spaces: render without them, then restore.
         trailing = plain[len(plain.rstrip()) :] if tail else ""
         if trailing:
@@ -191,13 +207,14 @@ class UiContext:
 
         TTY renders an animated spinner; non-TTY emits throttled lines; under
         ``verbose`` the wrapped tool's own output streams through. stdout stays
-        untouched so piped data is never polluted.
+        untouched so piped data is never polluted. Under JSON diagnostics it
+        is silent, like ``--quiet``, so stderr stays JSON Lines.
         """
         return progress_reporter(
             label,
             stream=self.stderr,
             verbose=self.verbose,
-            quiet=self.quiet,
+            quiet=self.quiet or json_diagnostics(),
             isatty=stream_is_tty(self.stderr),
         )
 
@@ -345,26 +362,30 @@ class UiContext:
         except (ConfigError, EOFError, KeyboardInterrupt) as exc:
             raise handle_prompt_exception(exc) from exc
         if len(values) < min_count:
-            raise ConfigError(f"select at least {plural(min_count, 'value')}")
+            raise ConfigError(f"select at least {plural(min_count, 'value')}", category="invalid")
         return values
 
     def _ensure_promptable(self) -> None:
         if not self.can_prompt:
-            raise ConfigError("interactive prompt requires a TTY on stdin")
+            raise ConfigError("interactive prompt requires a TTY on stdin", category="usage")
 
     @staticmethod
     def _validate_prompt_text(value: str, *, required: bool) -> str:
         if required and not value.strip():
-            raise ConfigError("no value received from prompt")
+            raise ConfigError("no value received from prompt", category="invalid")
         return value
 
     @staticmethod
     def _validate_choices[T](choices: Sequence[PromptChoice[T]]) -> None:
         if not choices:
-            raise ConfigError("prompt requires at least one choice")
+            raise ConfigError(
+                "prompt requires at least one choice", category="failed", system="untaped"
+            )
         labels = [choice.label for choice in choices]
         if len(set(labels)) != len(labels):
-            raise ConfigError("prompt choices must have unique labels")
+            raise ConfigError(
+                "prompt choices must have unique labels", category="failed", system="untaped"
+            )
 
 
 def ui_context(

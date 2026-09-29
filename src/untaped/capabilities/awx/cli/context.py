@@ -163,7 +163,9 @@ def scope_for_spec(
     }
     for name, value in requested.items():
         if value is not None and name not in supported:
-            raise ConfigError(f"--{name.replace('_', '-')} is not supported for {spec.kind}")
+            raise ConfigError(
+                f"--{name.replace('_', '-')} is not supported for {spec.kind}", category="usage"
+            )
     child = "inventory" in supported
     if parent is not None and inventory is not None:
         raise UsageError("use --parent or --inventory, not both")

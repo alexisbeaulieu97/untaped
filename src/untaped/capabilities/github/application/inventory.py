@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict
 
 from untaped.capabilities.github.application.ports import GithubRepositoryInventoryService
 from untaped.capabilities.github.application.scopes import TeamScope
-from untaped.capability_api import HttpError, UntapedError
+from untaped.capability_api import HttpError, UntapedError, attribution
 
 
 class RepositoryInventoryItem(BaseModel):
@@ -56,7 +56,8 @@ class ResolveRepositoryInventory:
                 )
             except (HttpError, UntapedError) as exc:
                 raise UntapedError(
-                    f"failed to expand repository {full_name}: {str(exc) or type(exc).__name__}"
+                    f"failed to expand repository {full_name}: {str(exc) or type(exc).__name__}",
+                    **attribution(exc),
                 ) from exc
             explicit[item.full_name] = item
 
@@ -77,7 +78,7 @@ def split_full_name(value: str) -> tuple[str, str]:
     """Split ``owner/name``; anything else is an :class:`UntapedError`."""
     owner, sep, repo = value.partition("/")
     if not sep or not owner or not repo or "/" in repo:
-        raise UntapedError(f"repository must be owner/name: {value!r}")
+        raise UntapedError(f"repository must be owner/name: {value!r}", category="invalid")
     return owner, repo
 
 

@@ -178,7 +178,7 @@ def sync_command(
         )
         for outcome in outcomes:
             if outcome.failed:
-                ui.message("error", f"{outcome.repo}: {outcome.error}")
+                ui.message("error", f"{outcome.repo}: {outcome.detail}")
         echo(summary("sync", Counter(outcome.action for outcome in outcomes)), err=True)
         finish(any(outcome.failed for outcome in outcomes))
 

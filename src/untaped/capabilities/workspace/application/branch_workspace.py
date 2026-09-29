@@ -27,7 +27,8 @@ class SetWorkspaceBranch:
                 updated, changed_repo = manifest.with_repo_branch(repo, branch)
             except ValueError as exc:
                 raise WorkspaceError(
-                    f"repo {repo!r} not declared in workspace {workspace.name!r}"
+                    f"repo {repo!r} not declared in workspace {workspace.name!r}",
+                    category="not_found",
                 ) from exc
             changed = BranchChange(
                 workspace=workspace.name,
@@ -57,7 +58,8 @@ class UnsetWorkspaceBranch:
                 updated, changed_repo = manifest.with_repo_branch(repo, None)
             except ValueError as exc:
                 raise WorkspaceError(
-                    f"repo {repo!r} not declared in workspace {workspace.name!r}"
+                    f"repo {repo!r} not declared in workspace {workspace.name!r}",
+                    category="not_found",
                 ) from exc
             changed = BranchChange(workspace=workspace.name, repo=changed_repo.name, branch=None)
         self._manifests.write(workspace.path, updated)

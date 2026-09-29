@@ -166,7 +166,7 @@ def replace_config_text(text: str, *, expected: str | None, path: Path | None = 
     target = path or resolve_config_path()
     with _locked(target):
         if read_config_text(target) != expected:
-            raise ConfigError(f"{target} changed while it was being edited")
+            raise ConfigError(f"{target} changed while it was being edited", category="conflict")
         try:
             atomic_write(target, text, mode=0o600)
         except OSError as exc:

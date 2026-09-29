@@ -9,6 +9,8 @@ for the fields the pipe contract fixes (``docs/conventions.md``):
   absolute ``target_path``;
 - :class:`CheckRecord` — a check result with a ``status`` from the check
   vocabulary (``pass``/``warn``/``fail``/``error``);
+- :class:`ErrorInfo` — the optional ``error`` of a failed outcome or target
+  row (``category``, ``system``, ``retryable``, ``message``, ``hint``);
 - :data:`UtcTimestamp` — a ``datetime`` normalized to UTC that serializes as
   RFC 3339 with a ``Z`` suffix (``2026-01-02T03:04:05Z``).
 
@@ -29,10 +31,14 @@ from pydantic import (
     AfterValidator,
     BaseModel,
     ConfigDict,
+    Field,
     PlainSerializer,
     SerializerFunctionWrapHandler,
     model_serializer,
 )
+
+from untaped.diagnostics import error_message, note_failure
+from untaped.errors import ErrorCategory, UntapedError
 
 
 def _to_utc(value: datetime) -> datetime:
@@ -124,10 +130,61 @@ class Record(BaseModel):
         return ordered | data
 
 
+class ErrorInfo(Record):
+    """Why a row failed: the ``error`` field of a failed outcome or target row.
+
+    The machine-readable twin of the row's human ``detail``: the failure's
+    ``category`` (which selects the exit code), the ``system`` responsible,
+    whether a retry can help, the message and an optional hint (without its
+    ``hint:`` prefix). Build it with :meth:`from_exception`.
+    """
+
+    category: ErrorCategory
+    system: str
+    retryable: bool
+    message: str
+    hint: str | None = None
+
+    @classmethod
+    def from_exception(cls, error: BaseException, *, message: str | None = None) -> ErrorInfo:
+        """The error of a row that ``error`` failed, counted toward the run's exit code.
+
+        ``message`` replaces the rendered message (e.g. a redacted one); a
+        ``hint:`` line in it becomes ``hint``. Anything but an
+        :class:`~untaped.errors.UntapedError` is a ``failed`` error in ``untaped``.
+        """
+        note_failure(error)
+        text, hint = error_message(error, message=message)
+        if isinstance(error, UntapedError):
+            category, system = error.category, error.system
+        else:
+            category, system = ErrorCategory.FAILED, "untaped"
+        return cls(
+            category=category,
+            system=system,
+            retryable=category.retryable,
+            message=text,
+            hint=hint,
+        )
+
+
+def _is_none(value: object) -> bool:
+    return value is None
+
+
+#: The optional ``error`` of a row; omitted from output when the row did not fail.
+_RowError = Annotated[ErrorInfo | None, Field(exclude_if=_is_none)]
+
+
 class OutcomeRecord(Record):
-    """A mutation result. Emit under the kind ``<cap>.<verb>_outcome``."""
+    """A mutation result. Emit under the kind ``<cap>.<verb>_outcome``.
+
+    A failed row may carry ``error`` (:class:`ErrorInfo`); it is left out of
+    the output of every other row.
+    """
 
     action: str
+    error: _RowError = None
 
     @property
     def failed(self) -> bool:
@@ -136,9 +193,14 @@ class OutcomeRecord(Record):
 
 
 class TargetRecord(Record):
-    """A record about a filesystem target; ``target_path`` is absolute."""
+    """A record about a filesystem target; ``target_path`` is absolute.
+
+    A failed row may carry ``error`` (:class:`ErrorInfo`), as on
+    :class:`OutcomeRecord`.
+    """
 
     target_path: AbsolutePath
+    error: _RowError = None
 
 
 class CheckRecord(Record):
@@ -153,6 +215,7 @@ __all__ = [
     "AbsolutePath",
     "CheckRecord",
     "CheckStatus",
+    "ErrorInfo",
     "OutcomeRecord",
     "Record",
     "TargetRecord",

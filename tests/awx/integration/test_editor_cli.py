@@ -459,7 +459,8 @@ def test_editor_cleanup_or_retention_after_runner(
         prompt_backend=ScriptedPromptBackend(confirms=[mode == "failure"]),
         terminal=True,
     )
-    assert result.exit_code == (1 if mode in {"cancel", "failure"} else 0), result.output
+    # The failed write is an AWX 500: a temporary failure exits 5.
+    assert result.exit_code == {"cancel": 1, "failure": 5}.get(mode, 0), result.output
     assert paths[0].exists() is (mode == "failure")
     if mode == "cancel":
         assert "cancelled; no changes made" in result.stderr

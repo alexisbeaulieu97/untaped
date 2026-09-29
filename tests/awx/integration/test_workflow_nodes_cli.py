@@ -185,6 +185,18 @@ def test_nodes_partial_failure_warns_and_exits_nonzero(
     assert "does-not-exist" not in result.stdout
 
 
+def test_nodes_exit_with_the_category_of_a_root_that_failed(tree: Any) -> None:
+    """One root's nodes are unreadable (403): the run exits 4, not 1."""
+    tree.router.routes.clear()
+    tree.router.get(url__regex=r".*/workflow_job_templates/200/workflow_nodes/.*").respond(
+        403, json={"detail": "denied"}
+    )
+    tree.install(tree.router)
+    result = _nodes("--by-id", "100", "200", "--format", "raw")
+    assert result.exit_code == 4, result.output
+    assert "denied" in result.stderr
+
+
 @pytest.mark.parametrize(
     ("args", "input", "stderr"),
     [

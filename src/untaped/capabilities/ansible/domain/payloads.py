@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.capability_api import OutcomeRecord, UtcTimestamp
+from untaped.capability_api import ErrorCategory, OutcomeRecord, UtcTimestamp
 
 ProbeFallbackReason = Literal["graphql_rate_limited", "graphql_transient"]
 GRAPHQL_RATE_LIMIT_FALLBACK: ProbeFallbackReason = "graphql_rate_limited"
@@ -62,12 +62,17 @@ class ProbeTarget(BaseModel):
 
 
 class ProbeFailure(BaseModel):
-    """One repository that could not be probed for refs."""
+    """One repository that could not be probed for refs.
+
+    ``category`` is the failure's category (``unavailable`` for a transient
+    one), which the refresh's exit code follows.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     reason: str
     kind: Literal["missing", "transient", "chunk", "git"]
+    category: ErrorCategory = ErrorCategory.FAILED
 
 
 class ProbeReport(BaseModel):
@@ -84,12 +89,13 @@ class ProbeReport(BaseModel):
 
 
 class RepoFailure(BaseModel):
-    """One source repository that failed during a refresh."""
+    """One source repository that failed during a refresh (``category`` selects the exit code)."""
 
     model_config = ConfigDict(frozen=True)
 
     repo: str
     reason: str
+    category: ErrorCategory = ErrorCategory.FAILED
 
 
 class SkippedDependencyFile(BaseModel):

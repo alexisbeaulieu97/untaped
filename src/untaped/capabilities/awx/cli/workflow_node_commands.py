@@ -25,6 +25,7 @@ from untaped.capability_api import (
     UntapedError,
     emit,
     finish,
+    note_failure,
     parse_kv_pairs,
     read_identifiers,
     report_errors,
@@ -149,6 +150,7 @@ def register_nodes_command(parent: App) -> None:
                     )
                 except UntapedError as exc:
                     ctx.progress_ui().message("warning", f"{root}: {exc}")
+                    note_failure(exc)
                     any_failed = True
         if type_ is not None:
             nodes = [n for n in nodes if n.type == type_]

@@ -75,18 +75,27 @@ The entry-point name must equal the `CapabilitySpec.name`. The resolved object
 must be callable, expose an `api_requires` range, and return one
 `CapabilitySpec` when called without arguments. `CAPABILITY_API_VERSION` (in
 `src/untaped/capability_api.py`) is a `(major, minor)` tuple of ints, currently
-`(2, 1)`, and `api_requires` is a `(min_inclusive, max_exclusive)` pair of such
+`(3, 0)`, and `api_requires` is a `(min_inclusive, max_exclusive)` pair of such
 tuples, compared as tuples (so `(1, 10)` is newer than `(1, 9)`). New exports
 are additive and bump the minor version; removing or breaking an export bumps
-the major, so `((2, 0), (3, 0))` stays compatible across 2.x. A provider that
-relies on an export added in `2.N` declares `((2, N), (3, 0))`. A missing,
+the major, so `((3, 0), (4, 0))` stays compatible across 3.x. A provider that
+relies on an export added in `3.N` declares `((3, N), (4, 0))`. A missing,
 malformed (for example the float bounds of 1.x) or non-covering range
 quarantines the provider with an `api-range` reason naming the running
 version. Version `2.0` (untaped 8.0) removed the `untaped.api` module and the
 `from untaped import X` forwarding; 1.x ranges no longer compose. Version
 `2.1` (untaped 8.1) added `git_toplevel`, `file_lock`, `same_origin`,
 `UiContext.can_prompt`, the `flag` option of `read_structured_file`, and the
-`allow_empty` flag of `read_stdin_input`.
+`allow_empty` flag of `read_stdin_input`. Version `3.0` (untaped 9.0) changed
+the shape of `UntapedError` and the exit codes: every error has a `category`
+(`ErrorCategory`) and a `system`, `exit_code` is derived from the category
+(so a class no longer sets `exit_code` itself), `ConfigError` exits 4, and
+`unavailable` failures exit 5. `BatchOutcome` keeps `failures` (each item with
+its error) and derives `failed` from it; `OutcomeRecord` and `TargetRecord`
+reserve an `error` field. It added `ErrorCategory`, `ErrorInfo`,
+`attribution`, `note_failure` and `report_error`. A 2.x provider must move to
+`((3, 0), (4, 0))` and check its error classes and any record field named
+`error`.
 
 A built-in capability follows the same `SPEC` and `build_app()` shape but is
 constructed in the `untaped` source tree and listed in the root composition.
@@ -212,9 +221,13 @@ capability and is rejected by `untaped config set`.
 The root supplies position-independent `--profile`, `--verbose`, and `--quiet`
 options. Use `report_errors()` for user-facing configuration, input, and domain
 errors so the root preserves its standard diagnostics and exit codes: it exits
-with the error's `exit_code`, which is `2` for `UsageError` and `1` for other
-`UntapedError`s. Follow [Command and output conventions](./conventions.md) for
-flags, messages, exit codes and record shapes.
+with the error's `exit_code`, which its `category` selects (`2` usage, `4`
+config/auth/permission, `5` unavailable, `1` otherwise), or with a more
+severe failure the run already reported. Give your error classes a `category`
+and `system` (your section name) as class defaults; see
+[Raise with a category](./conventions.md#raise-with-a-category-or-inherit-one).
+Follow [Command and output conventions](./conventions.md) for flags,
+messages, exit codes and record shapes.
 
 ## 4. Stable helper surface
 
@@ -236,10 +249,16 @@ The shared runtime helpers are exported from the same module:
 - Shared options: `FormatOption`, `ColumnsOption`, `YesOption`,
   `DryRunOption`, `StdinOption`, `ParallelOption` (>= 1), `LimitOption`
   (>= 1).
-- Errors and exit codes: `UntapedError`, `ConfigError`, `UsageError` (exit
-  2), `OperationCancelledError` (declined confirmation, exit 1), `HttpError`,
-  `HttpStatusError`, `HttpTransportError`, `first_validation_error`, and
-  `ExitCode`.
+- Errors and exit codes: `UntapedError` (with `category`, `system`, `hint`,
+  `details`, and the derived `exit_code` and `retryable`), `ErrorCategory`,
+  `ConfigError` (exit 4), `UsageError` (exit 2), `OperationCancelledError`
+  (declined confirmation, exit 1), `HttpError`, `HttpStatusError` (category
+  from the status), `HttpTransportError` (unavailable, exit 5),
+  `first_validation_error`, `ExitCode`, `attribution(exc)` (the
+  `category`/`system`/`details` keyword arguments to pass to an error that
+  replaces `exc`), `report_error(exc, item=…)` (print one failure, text or
+  JSON, and count it toward the exit code), and `note_failure(exc)` (count a
+  failure you turned into a row yourself).
 - Message wording: `plural`, `q`, `not_found`, `hint`, `summary`.
 - Tokens: declare `token_sources: ClassVar[TokenSources] =
   TokenSources(env=(...))` and a `token_command: TokenCommand = None` field
@@ -262,13 +281,18 @@ The shared runtime helpers are exported from the same module:
   `DoctorResult(..., fix="config set acme.token --prompt")` appends the
   command to run to a failed or `warn` row.
 - Records: `OutcomeRecord`, `TargetRecord`, `CheckRecord`, and the
-  `UtcTimestamp` and `AbsolutePath` field types.
+  `UtcTimestamp` and `AbsolutePath` field types. A failed outcome or target
+  row carries `error=ErrorInfo.from_exception(exc, message=detail)`, which
+  also counts the failure toward the exit code.
 - Settings and context: `get_config_section`, `get_core_settings`,
   `HttpSettings`, `app_context`, `AppContext`.
 - HTTP: `connected_client`, `HttpClient`, `RetryPolicy`, `resolve_verify`, the
   `paginate_link`, `paginate_offset`, and `paginate_pages` cursor loops, and
   `same_origin(url, base)` (whether a server-supplied link stays on `base`'s
   scheme, host and port; check it before following a link with credentials).
+  A client from `connected_client(section=…)` attributes its failures to that
+  section (`system`), and a failure's `details` include the number of
+  `attempts`.
 - Input and pipes: `read_identifiers`, `read_stdin_input`, `StdinInput`,
   `read_records`, `read_stdin`, `resolve_text_input`, `is_envelope_line`,
   `parse_envelope_line`, `PipeEnvelope`.
@@ -391,7 +415,8 @@ it as `target_path: AbsolutePath` so it leads the output.
 ## Confirmation
 
 Gate destructive batches with `batch_apply(..., destructive=True,
-assume_yes=yes)` and pass its outcome to `finish()`. A single confirmation uses
+assume_yes=yes)` and pass its outcome to `finish()`; `outcome.failures` pairs
+each failed item with its error, for the item's row. A single confirmation uses
 `ui.confirm_or_cancel(message, assume_yes=yes, refusal="<verb> requires --yes
 when not interactive")`, which raises the decline for you. When stdin carries piped data, both prompt on the
 controlling terminal. With no terminal they exit 2. A decline prints

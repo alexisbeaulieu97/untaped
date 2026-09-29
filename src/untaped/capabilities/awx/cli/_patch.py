@@ -64,10 +64,13 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
             controls = controls.validated()
             overlay = build_patch(set_, patch_file)
             if not overlay:
-                raise ConfigError("provide --set and/or --patch-file with at least one field")
+                raise ConfigError(
+                    "provide --set and/or --patch-file with at least one field", category="usage"
+                )
             if forbidden := spec.immutable_fields.intersection(overlay):
                 raise ConfigError(
-                    f"patch cannot change identity fields: {', '.join(sorted(forbidden))}"
+                    f"patch cannot change identity fields: {', '.join(sorted(forbidden))}",
+                    category="usage",
                 )
             if not allow_unknown_fields and (typos := _likely_typos(spec, overlay)):
                 raise_usage(

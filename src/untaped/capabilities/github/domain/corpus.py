@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from untaped.capabilities.github.domain.sweep import RefProfile, RefSelector, profile_join
@@ -10,10 +10,15 @@ from untaped.capabilities.github.domain.sweep import RefProfile, RefSelector, pr
 
 @dataclass(frozen=True)
 class CorpusFailure:
-    """A per-repository corpus failure that does not discard other successes."""
+    """A per-repository corpus failure that does not discard other successes.
+
+    ``cause`` is the exception behind ``reason``, kept for its attribution
+    (category and system) when the failure becomes a row's ``error``.
+    """
 
     repo: str
     reason: str
+    cause: Exception | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)

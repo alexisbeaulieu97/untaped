@@ -783,6 +783,32 @@ def test_preflight_failures_stop_the_run_before_any_launch() -> None:
     )
     assert launcher.calls == []
     assert [name for name, _ in checked] == ["JT", "JT", "JT"]
+    assert info.value.category == "invalid"
+
+
+def test_a_preflight_failure_carries_its_most_severe_category() -> None:
+    def preflight(
+        spec: object, *, name: str, scope: dict[str, str] | None, payload: dict[str, Any]
+    ) -> None:
+        if "limit" in payload:
+            raise LaunchPromptError("does not prompt for limit")
+        raise ConfigError("AWX rejected the token (HTTP 401)", category="auth", system="awx")
+
+    runner = _make_runner(
+        fk=StubFk(), launcher=StubLauncher({}), watcher=StubWatcher(), preflight=preflight
+    )
+    suite = _suite("s", {"bad": {"limit": "web"}, "denied": {}})
+    with pytest.raises(ConfigError) as info:
+        runner([suite])
+    assert (info.value.category, info.value.system) == ("auth", "awx")
+    assert info.value.exit_code == 4
+
+
+def test_an_unknown_case_is_not_found() -> None:
+    runner = _make_runner(fk=StubFk(), launcher=StubLauncher({}), watcher=StubWatcher())
+    with pytest.raises(ConfigError, match="no case matched --case 'nope'") as info:
+        runner([_suite("s", {"c": {}})], case_filter={"nope"})
+    assert info.value.category == "not_found"
 
 
 # ---- case selection and suite scope --------------------------------------

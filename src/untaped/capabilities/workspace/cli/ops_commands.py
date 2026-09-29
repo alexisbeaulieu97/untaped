@@ -52,6 +52,7 @@ from untaped.capability_api import (
     StdinOption,
     UsageError,
     YesOption,
+    attribution,
     batch_apply,
     echo,
     emit,
@@ -401,7 +402,8 @@ def foreach_command(
             quoted = shlex.quote(f"{workspace} {cmd}")
             raise RegistryError(
                 f"{exc}; quote a multi-word command to run it in the current workspace\n"
-                + hint(f"workspace foreach {quoted}")
+                + hint(f"workspace foreach {quoted}"),
+                **attribution(exc),
             ) from exc
         only = _stdin_repos(targets[0]) if stdin else repo
         if stdin and not only:
@@ -464,7 +466,9 @@ def _stdin_repos(ws: Workspace) -> list[str]:
             )
         name = env.record.get("repo")
         if not isinstance(name, str) or not name.strip():
-            raise ConfigError(f"line {env.lineno}: record 'repo' is missing or blank")
+            raise ConfigError(
+                f"line {env.lineno}: record 'repo' is missing or blank", category="invalid"
+            )
         names.append(name.strip())
     return names
 

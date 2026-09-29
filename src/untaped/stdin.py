@@ -64,14 +64,17 @@ def resolve_text_input(*, value: str | None, file: Path | None, what: str = "bod
             with open(file, encoding="utf-8", newline="") as handle:
                 return _require_text(_trim_terminal_newline(handle.read()), what=what)
         except OSError as exc:
-            raise ConfigError(f"could not read {file}: {exc}") from exc
+            raise ConfigError(f"could not read {file}: {exc}", category="invalid") from exc
     text = read_stdin_text()
     return _require_text(text, what=what)
 
 
 def _require_text(text: str, *, what: str) -> str:
     if not text.strip():
-        raise ConfigError(f"no {what} provided (use --{what}, --{what}-file, or pipe it on stdin)")
+        raise ConfigError(
+            f"no {what} provided (use --{what}, --{what}-file, or pipe it on stdin)",
+            category="invalid",
+        )
     return text
 
 
@@ -129,7 +132,7 @@ def read_stdin_input(
     pairs = _read_raw_lines()
     if not pairs:
         if pairs is None or not allow_empty:
-            raise ConfigError(f"no {what} received on stdin")
+            raise ConfigError(f"no {what} received on stdin", category="invalid")
         return StdinInput(values=(), records=None)
     _, first_text = pairs[0]
     if _looks_like_envelope(first_text):
@@ -142,7 +145,9 @@ def read_stdin_input(
     values: list[str] = []
     for lineno, text in pairs:
         if _looks_like_envelope(text):
-            raise ConfigError(f"mixed bare/envelope input on stdin (line {lineno})")
+            raise ConfigError(
+                f"mixed bare/envelope input on stdin (line {lineno})", category="invalid"
+            )
         values.append(text)
     return StdinInput(values=tuple(values), records=None)
 
@@ -169,7 +174,7 @@ def read_records(*, accept_kinds: Collection[str] | None = None) -> list[PipeEnv
     """
     pairs = _read_raw_lines()
     if not pairs:
-        raise ConfigError("no records received on stdin")
+        raise ConfigError("no records received on stdin", category="invalid")
     records = [parse_envelope_line(lineno, text) for lineno, text in pairs]
     if accept_kinds is not None:
         _check_kinds(records, accept_kinds)
@@ -206,7 +211,8 @@ def read_identifiers(
             return list(piped.values)
         if id_field is None:
             raise ConfigError(
-                "stdin is untaped pipe format but this command cannot map records to identifiers"
+                "stdin is untaped pipe format but this command cannot map records to identifiers",
+                category="invalid",
             )
         return [_extract_id(env, id_field) for env in piped.records]
     if not positional:
@@ -217,10 +223,12 @@ def read_identifiers(
 def _extract_id(env: PipeEnvelope, id_field: str) -> str:
     value = env.record.get(id_field)
     if value is None:
-        raise ConfigError(f"line {env.lineno}: record {id_field!r} is missing or null")
+        raise ConfigError(
+            f"line {env.lineno}: record {id_field!r} is missing or null", category="invalid"
+        )
     identifier = str(value).strip()
     if not identifier:
-        raise ConfigError(f"line {env.lineno}: record {id_field!r} is blank")
+        raise ConfigError(f"line {env.lineno}: record {id_field!r} is blank", category="invalid")
     return identifier
 
 

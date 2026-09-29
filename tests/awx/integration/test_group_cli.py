@@ -4,6 +4,7 @@ including the apply path's sub-endpoint membership reconciliation.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -484,6 +485,22 @@ def test_groups_hosts_add_associates_via_stdin(fake_aap: Any) -> None:
     )
     assert result.exit_code == 0, result.output
     assert fake_aap.memberships[("groups", 200, "hosts")] == {101, 102}
+
+
+def test_a_refused_membership_add_is_partial_with_its_error(fake_aap: Any) -> None:
+    _seed_groups(fake_aap)
+    _seed_two_hosts(fake_aap)
+    fake_aap.forbidden_associate_ids.add(102)
+    result = CliInvoker().invoke(
+        app,
+        ["groups", "hosts", "add", "--yes", "web-servers", "web-01", "web-02", "--format", "json"],
+    )
+    # AWX refused the associate (403): a permission problem exits 4.
+    assert result.exit_code == 4, result.output
+    [row] = json.loads(result.stdout)
+    assert row["action"] == "partial"
+    assert (row["error"]["category"], row["error"]["system"]) == ("permission", "awx")
+    assert row["error"]["message"] == row["detail"]
 
 
 def test_groups_hosts_add_accepts_positional_names(fake_aap: Any) -> None:

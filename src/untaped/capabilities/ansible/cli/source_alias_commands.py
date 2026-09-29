@@ -94,7 +94,9 @@ def alias_remove_command(
         entries = aliases.entries()
         repo = entries.get(alias)
         if repo is None:
-            raise UntapedError(not_found("source alias", alias, known=sorted(entries)))
+            raise UntapedError(
+                not_found("source alias", alias, known=sorted(entries)), category="not_found"
+            )
         ui = app_context().ui(strict=False)
         if not dry_run:
             ui.confirm_or_cancel(

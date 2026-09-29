@@ -58,6 +58,14 @@ list|get|restore|prune`.
 - Failures are per-target: a target that fails to plan or write is reported and
   writes nothing, while other targets proceed. Within a target, writes are
   transactional and roll back on failure.
+- Exit codes say what to do next: 1 = the thing failed (a bad recipe, pack or
+  input file, a missing recipe/pack/template, a failing hook); 4 = fix the
+  environment (for example `uv` not installed, a broken `$EDITOR`, missing
+  settings); 5 = temporary, retry later (such as a git fetch timeout); 2 = bad
+  flags. A run exits with the most severe one over all targets. With
+  `--format json` (or `UNTAPED_DIAGNOSTICS=json`) stderr is JSON Lines whose
+  errors carry `category`, `system` (`local` for recipe files and inputs,
+  `git` for pack fetches), `retryable` and `hint`.
 
 ## Inputs
 
@@ -125,9 +133,11 @@ list|get|restore|prune`.
   remove` → `recipe.remove_outcome`; `backups` → `recipe.backup`.
 - `recipe.apply_outcome` rows carry absolute `target_path`, `action`,
   `files_changed`, `warnings` (a list: accumulated `helpers.warn(...)`
-  messages, skipped optional transforms, a skip reason), `error` (`null`
-  unless failed), resolved `inputs`, and `recipe` (canonical `pack/recipe`
-  ref). Actions: `planned` (`--dry-run`/`--check` would change), `applied`,
+  messages, skipped optional transforms, a skip reason), `detail` (the failure
+  message; `null` unless failed), resolved `inputs`, and `recipe` (canonical
+  `pack/recipe` ref). A failed row also carries `error: {category, system,
+  retryable, message, hint}` (left out of other rows and of tables); so does
+  a `recipe.test` row with `status: error`. Actions: `planned` (`--dry-run`/`--check` would change), `applied`,
   `unchanged` (plan produced no writes), `skipped` (validate hook returned
   `helpers.skip(...)`; not applicable, never a failure), `cancelled`
   (confirmation declined), and `failed`. Skips are success (all-skip runs
@@ -154,7 +164,7 @@ list|get|restore|prune`.
   not recipe files or tests), and need confirmation or `--yes` (`--dry-run` previews); rows
   carry `action` `updated`, `unchanged` or `planned`. A pack with local edits in the library fails unless
   `--discard-edits` is passed; a failed pack prints `error: PACK: ...`, the
-  others still sync, and the command exits 1.
+  others still sync, and the command exits 1 (5 when a fetch timed out).
 - Each noun reads and edits only its own kind: `list`/`get <recipe>`/`edit
   <recipe>` for recipes, `packs list`/`packs get <pack>`/`packs edit <pack>`
   (opens `pyproject.toml`) for packs, and `hooks list`/`hooks get

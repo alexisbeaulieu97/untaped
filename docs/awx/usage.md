@@ -660,8 +660,12 @@ untaped awx test run other/tests/deploy-smoke.yml
   replacing any `scm_branch` in the suite. Each template must prompt for it
   (`ask_scm_branch_on_launch`). `--scm-branch HEAD` is the current git branch
   as named on its upstream remote; it is refused until HEAD is pushed there.
-- `run` exits 1 unless at least one case ran and every case passed, and ends
-  with a summary on stderr (`4 cases: 3 pass, 1 fail`).
+- `run` exits 0 only when at least one case ran and every case passed, and
+  ends with a summary on stderr (`4 cases: 3 pass, 1 fail`). A failed case
+  exits 1, but a launch AWX refused for the token or a permission exits 4
+  (fix the profile, not the code) and one AWX could not serve exits 5 (retry
+  later). A missing required `--var` exits 2; an invalid suite or vars file
+  exits 1.
 - Each `awx.test_result` row has `result` (`pass`, `fail`, `error` or
   `timeout`), `job_status`, `job_id`, `job_url` (the job's page in the web
   UI), `scm_branch` and `scm_revision` (the ref the job ran and the commit it
@@ -710,6 +714,19 @@ success with a membership failure is reported as `partial` and retains the
 resource ID. So is a template write whose survey write then fails. Membership changes are additive for the membership commands;
 replacement membership fields verify the exact set or declared order while
 retaining unrelated members for additive operations.
+
+A failed command exits with the most severe failure it met (see
+[Exit codes](../reference/exit-codes.md)): 4 when the environment needs
+fixing (AWX rejected the token, a permission is missing, or local setup such
+as settings, `git`, or an unpushed `--scm-branch HEAD`), 5 when AWX was
+unavailable (network error, timeout, 5xx or 429; retry later), and 1 when the
+thing itself failed (an invalid input file, a name not found, a failed write
+or job). With `--format json`, `yaml` or `pipe`, or `UNTAPED_DIAGNOSTICS=json`,
+stderr carries one JSON object per line with the failure's `category`,
+`system`, `retryable` and `hint`. A `failed`, `partial` or `conflict` row that
+an error caused carries the same in its `error` field (`category`, `system`,
+`retryable`, `message`, `hint`) next to its human `detail`; tables leave it
+out.
 
 Writes are serial by default. `--parallel N` is bounded at ten. A runtime
 failure stops scheduling new work by default, while

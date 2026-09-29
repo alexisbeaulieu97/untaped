@@ -90,16 +90,17 @@ class SelectionResolver:
         if sources > 1:
             raise ConfigError(
                 "selection sources are exclusive: use names, --by-id, --stdin, filters/search, "
-                "or --all"
+                "or --all",
+                category="usage",
             )
         if request.require_explicit and sources == 0:
-            raise ConfigError("mutation requires an explicit selection or --all")
+            raise ConfigError("mutation requires an explicit selection or --all", category="usage")
         if request.by_id and not request.ids:
-            raise ConfigError("--by-id requires explicit IDs")
+            raise ConfigError("--by-id requires explicit IDs", category="usage")
         if request.names and request.by_id:
-            raise ConfigError("--by-id applies to IDs, not names")
+            raise ConfigError("--by-id applies to IDs, not names", category="usage")
         if request.ids and not request.by_id:
-            raise ConfigError("IDs require --by-id")
+            raise ConfigError("IDs require --by-id", category="usage")
 
         effective_scope = {_scope_path(spec, key): value for key, value in request.scope.items()}
         # Scope ancestors are shared by most selected records: fetch each once.
@@ -147,17 +148,20 @@ class SelectionResolver:
                 if envelope.record.get("kind") != spec.kind:
                     raise ConfigError(
                         f"pipe record line {envelope.lineno} is a {envelope.kind!r} for "
-                        f"{envelope.record.get('kind')!r}; expected {spec.kind!r}"
+                        f"{envelope.record.get('kind')!r}; expected {spec.kind!r}",
+                        category="invalid",
                     )
             elif envelope.kind != expected_kind:
                 raise ConfigError(
                     f"pipe record line {envelope.lineno} has kind {envelope.kind!r}; "
-                    f"expected {expected_kind!r}"
+                    f"expected {expected_kind!r}",
+                    category="invalid",
                 )
             id_ = envelope.record.get("id")
             if not isinstance(id_, int) or isinstance(id_, bool) or id_ <= 0:
                 raise ConfigError(
-                    f"line {envelope.lineno}: pipe record requires a positive integer id"
+                    f"line {envelope.lineno}: pipe record requires a positive integer id",
+                    category="invalid",
                 )
             record = as_dict(self._client.get(spec, id_))
             self._validate(spec, record, scope)
@@ -216,7 +220,9 @@ class SelectionResolver:
         for key, value in scope.items():
             scoped_key = f"{key}__name"
             if scoped_key in params and params[scoped_key] != value:
-                raise ConfigError(f"selection scope conflicts with filter {key!r}")
+                raise ConfigError(
+                    f"selection scope conflicts with filter {key!r}", category="usage"
+                )
             params[scoped_key] = value
         selected: list[SelectedResource] = []
         for record in self._client.list(spec, params=params or None, limit=limit):
@@ -236,13 +242,13 @@ def _default_scope_note(request: SelectionRequest) -> str | None:
 
 def _positive_id(raw_id: str) -> int:
     if not isinstance(raw_id, str):
-        raise ConfigError(f"not a numeric id: {raw_id!r}")
+        raise ConfigError(f"not a numeric id: {raw_id!r}", category="invalid")
     try:
         id_ = int(raw_id)
     except (TypeError, ValueError) as exc:
-        raise ConfigError(f"not a numeric id: {raw_id!r}") from exc
+        raise ConfigError(f"not a numeric id: {raw_id!r}", category="invalid") from exc
     if id_ <= 0:
-        raise ConfigError(f"resource id must be positive: {raw_id!r}")
+        raise ConfigError(f"resource id must be positive: {raw_id!r}", category="invalid")
     return id_
 
 

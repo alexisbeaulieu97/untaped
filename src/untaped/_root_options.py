@@ -15,7 +15,7 @@ from typing import Annotated, Any
 from cyclopts import App, Parameter
 from cyclopts.exceptions import CycloptsError, UnknownOptionError
 
-from untaped.cli import deprecated_aliases, echo, raise_usage
+from untaped.cli import deprecated_aliases, raise_usage
 from untaped.errors import UntapedError
 from untaped.profile_resolver import profile_scope
 from untaped.quiet import enable as _enable_quiet
@@ -186,8 +186,7 @@ def _dispatch_with_root_options(
                 else _last_root_option_index(remaining, root_options[name])
             )
             if name is None or index is None:
-                echo(f"error: {exc}", err=True)
-                raise SystemExit(2) from exc
+                raise_usage(str(exc))
             applied.add(name)
             spec = root_options[name]
             value, remaining = _consume_option_at(
@@ -195,8 +194,7 @@ def _dispatch_with_root_options(
             )
             _apply_root_option(spec, value, applied_tokens)
         except CycloptsError as exc:
-            echo(f"error: {exc}", err=True)
-            raise SystemExit(2) from exc
+            raise_usage(str(exc))
 
 
 def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:

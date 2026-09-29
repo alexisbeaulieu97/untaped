@@ -2,7 +2,21 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from untaped.capability_api import first_validation_error
-from untaped.errors import ConfigError, HttpError, UntapedError
+from untaped.errors import (
+    ConfigError,
+    ErrorCategory,
+    ExitCode,
+    HttpError,
+    HttpStatusError,
+    HttpTransportError,
+    OperationCancelledError,
+    PromptInterruptedError,
+    UntapedError,
+    UsageError,
+    attribution,
+    combine_exit_codes,
+)
+from untaped.git import GitCommandError
 
 
 def test_untaped_error_is_exception() -> None:
@@ -79,3 +93,142 @@ def test_first_validation_error_omits_loc_prefix_when_loc_empty(
         lambda: [{"loc": (), "msg": "value is invalid"}],
     )
     assert first_validation_error(int_validation_error) == "value is invalid"
+
+
+# --- failure attribution: category, system, hint, details -----------------
+
+
+@pytest.mark.parametrize(
+    ("category", "code", "retryable"),
+    [
+        (ErrorCategory.USAGE, 2, False),
+        (ErrorCategory.CONFIG, 4, False),
+        (ErrorCategory.AUTH, 4, False),
+        (ErrorCategory.PERMISSION, 4, False),
+        (ErrorCategory.NOT_FOUND, 1, False),
+        (ErrorCategory.INVALID, 1, False),
+        (ErrorCategory.CONFLICT, 1, False),
+        (ErrorCategory.UNAVAILABLE, 5, True),
+        (ErrorCategory.FAILED, 1, False),
+        (ErrorCategory.INTERRUPTED, 130, False),
+    ],
+)
+def test_each_category_selects_its_exit_code_and_retryability(
+    category: ErrorCategory, code: int, retryable: bool
+) -> None:
+    assert (category.exit_code, category.retryable) == (code, retryable)
+    error = UntapedError("boom", category=category)
+    assert (error.exit_code, error.retryable) == (code, retryable)
+
+
+def test_untaped_error_defaults_to_a_failed_untaped_error() -> None:
+    error = UntapedError("boom")
+
+    assert error.category is ErrorCategory.FAILED
+    assert error.system == "untaped"
+    assert error.hint is None
+    assert dict(error.details) == {}
+    assert error.exit_code == 1
+
+
+def test_instance_fields_override_the_class_defaults() -> None:
+    error = ConfigError(
+        "rejected", category="auth", system="awx", hint="run it", details={"status": 401}
+    )
+
+    assert error.category is ErrorCategory.AUTH
+    assert (error.system, error.hint, dict(error.details)) == ("awx", "run it", {"status": 401})
+    assert error.exit_code == ExitCode.ENVIRONMENT
+    assert ConfigError("other").category is ErrorCategory.CONFIG
+
+
+@pytest.mark.parametrize(
+    ("error", "category", "system", "code"),
+    [
+        (ConfigError("x"), ErrorCategory.CONFIG, "local", 4),
+        (UsageError("x"), ErrorCategory.USAGE, "untaped", 2),
+        (PromptInterruptedError("x"), ErrorCategory.INTERRUPTED, "untaped", 130),
+        (OperationCancelledError(), ErrorCategory.FAILED, "untaped", 1),
+        (GitCommandError("x"), ErrorCategory.FAILED, "git", 1),
+        (GitCommandError("x", timed_out=True), ErrorCategory.UNAVAILABLE, "git", 5),
+        (HttpTransportError("x"), ErrorCategory.UNAVAILABLE, "http", 5),
+        (HttpError("bad json", status_code=200), ErrorCategory.FAILED, "http", 1),
+    ],
+)
+def test_core_errors_declare_a_coherent_default(
+    error: UntapedError, category: ErrorCategory, system: str, code: int
+) -> None:
+    assert (error.category, error.system, error.exit_code) == (category, system, code)
+
+
+@pytest.mark.parametrize(
+    ("status", "category"),
+    [
+        (400, ErrorCategory.INVALID),
+        (401, ErrorCategory.AUTH),
+        (403, ErrorCategory.PERMISSION),
+        (404, ErrorCategory.NOT_FOUND),
+        (405, ErrorCategory.INVALID),
+        (408, ErrorCategory.UNAVAILABLE),
+        (409, ErrorCategory.CONFLICT),
+        (422, ErrorCategory.INVALID),
+        (429, ErrorCategory.UNAVAILABLE),
+        (500, ErrorCategory.UNAVAILABLE),
+        (503, ErrorCategory.UNAVAILABLE),
+    ],
+)
+def test_http_status_errors_take_their_category_from_the_status(
+    status: int, category: ErrorCategory
+) -> None:
+    error = HttpStatusError("HTTP x", status_code=status, url="https://h/api", system="awx")
+
+    assert error.category is category
+    assert error.system == "awx"
+    assert dict(error.details) == {"status": status, "url": "https://h/api"}
+
+
+def test_an_explicit_category_wins_over_the_status() -> None:
+    error = HttpStatusError("x", status_code=404, category="invalid")
+
+    assert error.category is ErrorCategory.INVALID
+
+
+@pytest.mark.parametrize(
+    ("codes", "winner"),
+    [
+        ((), 0),
+        ((0, 3), 3),
+        ((3, 1), 1),
+        ((1, 5), 5),
+        ((5, 4), 4),
+        ((4, 2), 2),
+        ((2, 130), 130),
+        ((1, 4, 5, 3), 4),
+    ],
+)
+def test_exit_codes_combine_by_precedence(codes: tuple[int, ...], winner: int) -> None:
+    assert combine_exit_codes(*codes) == winner
+
+
+def test_attribution_copies_category_system_and_details() -> None:
+    cause = HttpStatusError("HTTP 503", status_code=503, url="https://h", system="awx")
+
+    assert attribution(cause) == {
+        "category": ErrorCategory.UNAVAILABLE,
+        "system": "awx",
+        "details": {"status": 503, "url": "https://h"},
+    }
+    assert attribution(KeyError("x")) == {}
+
+
+def test_attribution_survives_pickling() -> None:
+    import pickle
+
+    error = ConfigError("rejected", category="auth", system="awx", details={"status": 401})
+    copy = pickle.loads(pickle.dumps(error))
+
+    assert (copy.category, copy.system, dict(copy.details)) == (
+        ErrorCategory.AUTH,
+        "awx",
+        {"status": 401},
+    )

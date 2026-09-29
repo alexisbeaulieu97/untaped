@@ -11,6 +11,7 @@ but emits nothing once the level is restored.
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from contextvars import ContextVar, Token
@@ -62,5 +63,23 @@ def configure_logging(level: int | str) -> None:
         for handler in logger.handlers
     ):
         handler = logging.StreamHandler(sys.stderr)
-        handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        handler.setFormatter(_DiagnosticFormatter("%(levelname)s %(name)s: %(message)s"))
         logger.addHandler(handler)
+
+
+class _DiagnosticFormatter(logging.Formatter):
+    """Text log lines, or ``{"level": "debug", "logger": …}`` under JSON diagnostics."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        from untaped.diagnostics import json_diagnostics  # noqa: PLC0415 - diagnostics imports us
+
+        if not json_diagnostics():
+            return super().format(record)
+        return json.dumps(
+            {
+                "level": record.levelname.lower(),
+                "logger": record.name,
+                "message": record.getMessage(),
+            },
+            default=str,
+        )

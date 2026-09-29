@@ -1,12 +1,22 @@
-"""Workspace-specific exception hierarchy."""
+"""Workspace-specific exception hierarchy.
+
+Failures are attributed to ``local`` (the workspace's files and registry)
+unless a class says otherwise: :class:`GitError` is ``git`` (``unavailable``
+when git timed out or lost the network), an unreadable ``untaped.yml`` is
+``invalid``, an unknown workspace or ``--repo`` identifier is ``not_found``.
+"""
 
 from __future__ import annotations
 
-from untaped.capability_api import UntapedError, plural
+from collections.abc import Mapping
+
+from untaped.capability_api import ErrorCategory, UntapedError, plural
 
 
 class WorkspaceError(UntapedError):
     """Base for workspace-domain errors."""
+
+    system = "local"
 
 
 class GitError(WorkspaceError):
@@ -15,30 +25,52 @@ class GitError(WorkspaceError):
     Covers three failure modes: non-zero exit (``returncode`` set), timeout
     (``returncode=None``, message includes ``"timed out after Ns"``), and
     "git binary not on PATH" (``returncode=None``, message names the
-    missing binary). Callers that want to differentiate today must
-    inspect the message — there is no ``timed_out`` flag yet.
+    missing binary). Callers that want to differentiate read ``category``:
+    a timeout or a transient transport failure is ``unavailable``, a
+    missing binary is ``config`` in ``local`` (the git adapter passes on
+    the attribution of the core ``GitCommandError``).
     """
 
-    def __init__(self, message: str, *, returncode: int | None = None) -> None:
-        super().__init__(message)
+    system = "git"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        returncode: int | None = None,
+        category: ErrorCategory | str | None = None,
+        system: str | None = None,
+        details: Mapping[str, object] | None = None,
+    ) -> None:
+        super().__init__(message, category=category, system=system, details=details)
         self.returncode = returncode
 
 
 class ManifestError(WorkspaceError):
-    """Raised when ``untaped.yml`` is missing or invalid."""
+    """Raised when ``untaped.yml`` is missing (``not_found``) or invalid (``invalid``).
+
+    The manifest is the workspace's own data file, not untaped's settings,
+    so an invalid one is an invalid input (exit ``1``), not a setup error.
+    """
+
+    category = ErrorCategory.INVALID
 
 
 class RegistryError(WorkspaceError):
-    """Raised for registry mismatches (unknown name, duplicate path, …)."""
+    """Raised for registry mismatches (unknown name ``not_found``, duplicate ``conflict``, …)."""
+
+    category = ErrorCategory.NOT_FOUND
 
 
 class UnmatchedRepoFilterError(WorkspaceError):
-    """Raised when a repo selector contains identifiers no repo matches.
+    """Raised when a repo selector contains identifiers no repo matches (``not_found``).
 
     Carries the unmatched identifiers so callers can react precisely
     (e.g. format a ``BadParameter`` message, or aggregate across
     multiple invocations under ``--all``).
     """
+
+    category = ErrorCategory.NOT_FOUND
 
     def __init__(self, unmatched: tuple[str, ...]) -> None:
         noun = plural(len(unmatched), "unknown repo identifier")

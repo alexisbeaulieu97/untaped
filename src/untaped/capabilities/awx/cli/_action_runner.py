@@ -32,6 +32,7 @@ from untaped.capabilities.awx.domain.job import still_running_detail
 from untaped.capabilities.awx.errors import ActionResponseError, LaunchPromptError
 from untaped.capability_api import (
     ColumnsOption,
+    ErrorInfo,
     FormatOption,
     UntapedError,
     echo,
@@ -108,7 +109,7 @@ def run_action_selection(
     launched: list[tuple[str, Job]] = []
     for index, outcome in enumerate(outcomes):
         row = rows[index]
-        row.update(action=outcome.action, detail=outcome.detail)
+        row.update(action=outcome.action, detail=outcome.detail, **outcome.row_error())
         if isinstance(outcome.error, ActionResponseError):
             row.update(id=outcome.error.execution_id, kind=outcome.error.execution_kind)
         if outcome.result is not None:
@@ -186,7 +187,11 @@ def _watch(
         jobs = dict(launched)
         for label, exc in errors:
             index = row_of[label]
-            _fail_abandoned(rows[index], error_detail(exc, index), jobs[label], abandon)
+            detail = error_detail(exc, index)
+            rows[index]["error"] = ErrorInfo.from_exception(exc, message=detail).model_dump(
+                mode="json"
+            )
+            _fail_abandoned(rows[index], detail, jobs[label], abandon)
         for label, job in unmonitored:
             row = rows[row_of[label]]
             _fail_abandoned(row, row["detail"], job, abandon)

@@ -24,7 +24,10 @@ export `GH_TOKEN` or `GITHUB_TOKEN`. `github.token` wins over
 `github.token_command`, which wins over the variables; see
 [Tokens](../configuration.md#tokens).
 
-A rejected token (HTTP 401) fails with a hint to run `config set github.token`.
+A rejected token (HTTP 401) fails with a hint to run `config set github.token`
+and exits 4; a rate limit exits 5 (retry later). With `--format json` (or
+`UNTAPED_DIAGNOSTICS=json`) stderr is JSON Lines whose errors carry
+`category`, `system` (`github`, `git`), `retryable` and `hint`.
 `sweep` and `cache` run `git`, so Git must be on your `PATH`.
 
 | Setting | Default | Purpose |
@@ -214,8 +217,10 @@ untaped github cache prune --org acme
   so later sweeps start warm. It takes the same scope, `--refs`, `--ref`,
   `--depth`, `-j` and `--refresh` flags as `sweep`, and emits one
   `github.sync_outcome` per repo: `synced`, `unchanged` (no push since the
-  last fetch), `skipped` (younger than `max_age_seconds`) or `failed`. Any
-  failure exits 1.
+  last fetch), `skipped` (younger than `max_age_seconds`) or `failed`. A
+  failed row says why in `detail` and carries a structured `error`
+  (`category`, `system`, `retryable`, `message`, `hint`). Any failure exits
+  non-zero: 1 for a failed fetch, 5 when one timed out or lost the network.
 - `cache status` lists cached repos with their size and fetch age (`1.2 MiB`,
   `3 hours ago` in the table; `disk_bytes` and `fetched_at` in json).
 - `cache worktree` checks out a cached ref and prints its path. It only uses

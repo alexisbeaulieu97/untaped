@@ -235,7 +235,8 @@ def test_launch_runtime_failure_retains_success_and_skips_without_retry(
     if continue_:
         args.append("--continue-on-error")
     result = CliInvoker().invoke(app, args)
-    assert result.exit_code == 1, result.output
+    # A timed-out request is a temporary failure: exit 5.
+    assert result.exit_code == 5, result.output
     rows = json.loads(result.stdout)
     assert [r["action"] for r in rows] == [
         "completed",
@@ -243,7 +244,9 @@ def test_launch_runtime_failure_retains_success_and_skips_without_retry(
         "completed" if continue_ else "skipped",
     ]
     assert rows[0]["id"] is not None
+    assert "error" not in rows[0]
     assert rows[1]["id"] is None
+    assert (rows[1]["error"]["category"], rows[1]["error"]["retryable"]) == ("unavailable", True)
     assert rows[1]["target_id"] == 51
     assert route.call_count == 1
 
@@ -594,7 +597,8 @@ def test_cancel_cancels_the_execution_whose_polling_failed(fake_aap: Any) -> Non
         app, ["job-templates", "launch", "deploy", "--wait", "--cancel", "--format", "json"]
     )
 
-    assert result.exit_code == 1, result.output
+    # The polling read was refused (403): a permission problem exits 4.
+    assert result.exit_code == 4, result.output
     row = json.loads(result.stdout)[0]
     assert row["action"] == "failed"
     assert row["detail"].endswith("; cancel requested")
@@ -828,7 +832,8 @@ def test_refused_cancel_after_a_polling_error_says_so(fake_aap: Any) -> None:
         app, ["job-templates", "launch", "deploy", "--wait", "--cancel", "--format", "json"]
     )
 
-    assert result.exit_code == 1, result.output
+    # The polling read was refused (403): a permission problem exits 4.
+    assert result.exit_code == 4, result.output
     row = json.loads(result.stdout)[0]
     assert row["action"] == "failed"
     assert "; cancel failed: " in row["detail"]

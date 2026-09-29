@@ -25,7 +25,7 @@ from untaped.capabilities.workspace.domain.prune_safety import (
 )
 from untaped.capabilities.workspace.errors import GitError
 from untaped.capabilities.workspace.infrastructure.bare_cache import cache_path_for
-from untaped.capability_api import GitCommandError, file_lock, run_git
+from untaped.capability_api import GitCommandError, attribution, file_lock, run_git
 
 DEFAULT_TIMEOUT = 60.0
 """Per-call timeout (seconds) for fast/local git ops (status, config, …)."""
@@ -269,7 +269,7 @@ class GitRunner:
                 ceiling=True,
             )
         except GitCommandError as exc:
-            raise GitError(str(exc), returncode=exc.returncode) from exc
+            raise GitError(str(exc), returncode=exc.returncode, **attribution(exc)) from exc
         return result.text if capture else ""
 
 

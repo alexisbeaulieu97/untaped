@@ -3,7 +3,9 @@
 Precedence (high → low): CLI ``--var`` > ``--vars-file`` > metadata
 ``default`` > interactive prompt. Variables not in any source and lacking
 a default are *required*; in non-interactive mode they fail-fast with a
-list of missing names so the user can re-run with ``--var``.
+list of missing names so the user can re-run with ``--var`` (a usage
+error, like an undeclared ``--var``). A value that does not fit its
+declared type is ``invalid``.
 """
 
 from __future__ import annotations
@@ -70,7 +72,8 @@ def resolve_variables(
         joined = ", ".join(missing_in_non_interactive)
         raise ConfigError(
             f"required {plural(len(missing_in_non_interactive), 'variable')} "
-            f"not provided: {joined}; set them with --var NAME=VALUE or run interactively"
+            f"not provided: {joined}; set them with --var NAME=VALUE or run interactively",
+            category="usage",
         )
     return resolved
 
@@ -82,7 +85,8 @@ def _reject_unknown(names: Iterable[str], known: Iterable[str], origin: str) -> 
         joined = ", ".join(unknown)
         raise ConfigError(
             f"unknown {plural(len(unknown), 'variable')} in {origin}: {joined}; "
-            f"declared variables: {', '.join(sorted(known_set)) or '(none)'}"
+            f"declared variables: {', '.join(sorted(known_set)) or '(none)'}",
+            category="usage" if origin == "cli" else "invalid",
         )
 
 
@@ -94,7 +98,7 @@ def _coerce(spec: VariableSpec, value: Any, *, source: str) -> Any:
         try:
             coerced = int(value)
         except (TypeError, ValueError) as exc:
-            raise ConfigError(f"{source}: expected int, got {value!r}") from exc
+            raise ConfigError(f"{source}: expected int, got {value!r}", category="invalid") from exc
     elif spec.type == "bool":
         coerced = _coerce_bool(value, source=source)
     elif spec.type == "list":
@@ -103,9 +107,9 @@ def _coerce(spec: VariableSpec, value: Any, *, source: str) -> Any:
         coerced = str(value)
         if coerced not in spec.choices:
             choices = ", ".join(repr(c) for c in spec.choices)
-            raise ConfigError(f"{source}: {value!r} is not one of [{choices}]")
+            raise ConfigError(f"{source}: {value!r} is not one of [{choices}]", category="invalid")
     else:  # pragma: no cover — exhausted by Literal
-        raise ConfigError(f"unsupported variable type {spec.type!r}")
+        raise ConfigError(f"unsupported variable type {spec.type!r}", category="invalid")
     return coerced
 
 
@@ -117,7 +121,7 @@ def _coerce_bool(value: Any, *, source: str) -> bool:
         return True
     if text in _FALSE:
         return False
-    raise ConfigError(f"{source}: expected bool, got {value!r}")
+    raise ConfigError(f"{source}: expected bool, got {value!r}", category="invalid")
 
 
 def _coerce_list(value: Any) -> list[Any]:

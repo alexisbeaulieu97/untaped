@@ -56,9 +56,9 @@ class AdoptWorkspace:
         canonical = self._bootstrap.verify_adopt_target(path)
 
         if not self._fs.exists(canonical):
-            raise WorkspaceError(f"path does not exist: {canonical}")
+            raise WorkspaceError(f"path does not exist: {canonical}", category="not_found")
         if not self._fs.is_dir(canonical):
-            raise WorkspaceError(f"not a directory: {canonical}")
+            raise WorkspaceError(f"not a directory: {canonical}", category="invalid")
 
         if self._bootstrap.has_manifest(canonical):
             workspace, manifest = self._bootstrap.register_existing_manifest(

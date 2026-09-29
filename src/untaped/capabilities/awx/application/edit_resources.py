@@ -34,7 +34,10 @@ class EditResources:
             - set(spec.read_only_fields)
         )
         if fields is not None and not set(fields) <= writable:
-            raise ConfigError("--field must name editable fields; identity fields cannot be edited")
+            raise ConfigError(
+                "--field must name editable fields; identity fields cannot be edited",
+                category="usage",
+            )
         allowed = set(fields) if fields is not None else writable
         self._allowed: dict[int, set[str]] = {}
         self._spec = spec
@@ -48,7 +51,10 @@ class EditResources:
             self._selected[item.id] = replace(self._selected[item.id], record=snapshot.record)
             self._allowed[item.id] = allowed - set(snapshot.read_only_fields)
             if fields is not None and not set(fields) <= self._allowed[item.id]:
-                raise ConfigError("--field must name editable fields for every selected resource")
+                raise ConfigError(
+                    "--field must name editable fields for every selected resource",
+                    category="invalid",
+                )
             resource = snapshot.resource
             self._snapshots[item.id] = snapshot
             self._memberships.update(
@@ -95,7 +101,9 @@ class EditResources:
         try:
             documents = list(yaml.safe_load_all(text))
         except yaml.YAMLError as exc:
-            raise ConfigError("invalid editor YAML; fix its syntax and reopen") from exc
+            raise ConfigError(
+                "invalid editor YAML; fix its syntax and reopen", category="invalid"
+            ) from exc
         resources: list[Resource] = []
         selected: list[SelectedResource] = []
         seen: set[int] = set()
@@ -103,20 +111,28 @@ class EditResources:
             if document is None:
                 continue
             if not isinstance(document, dict) or set(document) != {"identity", "spec"}:
-                raise ConfigError("each editor document must contain only identity and spec")
+                raise ConfigError(
+                    "each editor document must contain only identity and spec", category="invalid"
+                )
             identity = document["identity"]
             if not isinstance(identity, dict):
-                raise ConfigError("editor identity must remain unchanged")
+                raise ConfigError("editor identity must remain unchanged", category="invalid")
             id_ = identity.get("id")
             if type(id_) is not int or id_ not in self._selected:
-                raise ConfigError("editor cannot add or retarget resources")
+                raise ConfigError("editor cannot add or retarget resources", category="invalid")
             if id_ in seen:
-                raise ConfigError("duplicate editor document")
+                raise ConfigError("duplicate editor document", category="invalid")
             if identity != self._identities[id_]:
-                raise ConfigError("editor identity, name, kind and scope must remain unchanged")
+                raise ConfigError(
+                    "editor identity, name, kind and scope must remain unchanged",
+                    category="invalid",
+                )
             body = document["spec"]
             if not isinstance(body, dict) or not set(body) <= self._allowed[id_]:
-                raise ConfigError("editor spec contains fields outside the allowed edit boundary")
+                raise ConfigError(
+                    "editor spec contains fields outside the allowed edit boundary",
+                    category="invalid",
+                )
             seen.add(id_)
             resources.append(
                 Resource(

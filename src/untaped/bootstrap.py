@@ -39,6 +39,7 @@ from untaped.capabilities.registry import (
     discover_external_providers,
 )
 from untaped.cli import apply_default_format, create_app, echo, report_errors, run_cyclopts_app
+from untaped.diagnostics import diagnostics_scope
 from untaped.errors import ConfigError
 from untaped.management import (
     build_root_alias_app,
@@ -360,7 +361,7 @@ def _install_root_callback(
         command_tokens: list[str] = []
         failed = True
         try:
-            with report_errors():
+            with diagnostics_scope(), report_errors():
                 command_tokens = _consume_leading_root_options(
                     list(tokens), root_options, applied_tokens
                 )

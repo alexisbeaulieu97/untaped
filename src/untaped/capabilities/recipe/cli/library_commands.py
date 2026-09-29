@@ -33,6 +33,10 @@ from untaped.capabilities.recipe.domain.pack import (
 from untaped.capabilities.recipe.errors import (
     AmbiguousRefError,
     HookNotFoundError,
+    LocalChangesError,
+    PackNotFoundError,
+    PathNotFoundError,
+    RecipeError,
     RecipeNotFoundError,
 )
 from untaped.capabilities.recipe.infrastructure.pack_files import hook_exports, read_pack_manifest
@@ -49,12 +53,13 @@ from untaped.capabilities.recipe.infrastructure.pack_store import (
 )
 from untaped.capability_api import (
     ColumnsOption,
-    ConfigError,
     DryRunOption,
+    ErrorCategory,
     FormatOption,
     OutcomeRecord,
     OutputFormat,
     StdinOption,
+    UntapedError,
     UsageError,
     YesOption,
     batch_apply,
@@ -161,7 +166,7 @@ def add_command(
         library = PackLibrary(library_root=library_root())
         edited = force and library.local_edits(installed_name)
         if edited and not discard_edits:
-            raise ConfigError(local_edits_message(installed_name))
+            raise LocalChangesError(local_edits_message(installed_name))
         _render_pack_add_preview(installed_name, manifest, local_edits=edited)
         replaced = library.find_pack(installed_name) is not None
         library.add(
@@ -222,7 +227,7 @@ def sync_command(
         )
         plans, fetch_failed = resolve_each(
             list(selected),
-            _as_config_error(
+            _as_recipe_error(
                 lambda name: _fetch_for_sync(
                     library, selected[name], Path(temp_root), discard_edits=discard_edits
                 )
@@ -233,7 +238,7 @@ def sync_command(
             _sync_preview(changed)
         outcome = batch_apply(
             changed,
-            _as_config_error(
+            _as_recipe_error(
                 lambda plan: _install_for_sync(library, plan, discard_edits=discard_edits)
             ),
             verb="sync",
@@ -277,18 +282,26 @@ def _sync_selection(
         return {name: installed[name] for name in sorted(installed)}
     for name in names:
         if name not in installed:
-            raise ConfigError(not_found("pack", name, known=sorted(installed)))
+            raise PackNotFoundError(not_found("pack", name, known=sorted(installed)))
     return {name: installed[name] for name in names}
 
 
-def _as_config_error[T, R](action: Callable[[T], R]) -> Callable[[T], R]:
-    """Wrap ``action`` so its expected library errors are per-item ``ConfigError``s."""
+def _as_recipe_error[T, R](action: Callable[[T], R]) -> Callable[[T], R]:
+    """Wrap ``action`` so its expected library errors are per-item ``UntapedError``s.
+
+    Typed errors keep their category; a plain ``ValueError`` is invalid input
+    and an ``OSError`` a failed file operation (both in ``local``).
+    """
 
     def wrapped(item: T) -> R:
         try:
             return action(item)
-        except (ValueError, OSError) as exc:
-            raise ConfigError(str(exc)) from exc
+        except UntapedError:
+            raise
+        except ValueError as exc:
+            raise RecipeError(str(exc)) from exc
+        except OSError as exc:
+            raise RecipeError(str(exc), category=ErrorCategory.FAILED) from exc
 
     return wrapped
 
@@ -358,11 +371,11 @@ def _fetch_for_sync(
                 "reinstall the pack with `untaped recipe packs add --force`"
             )
         if not source_dir.is_dir():
-            raise ValueError(f"pack source not found: {pack.source}")
+            raise PathNotFoundError(f"pack source not found: {pack.source}")
     validate_pack(source_dir, read_pack_manifest(source_dir))
     changed = pack_content_hash(source_dir) != pack_content_hash(pack.root)
     if changed and not discard_edits and library.local_edits(pack.name):
-        raise ValueError(local_edits_message(pack.name))
+        raise LocalChangesError(local_edits_message(pack.name))
     hook_changes = tuple(changed_hook_files(pack.root, source_dir)) if changed else ()
     return _SyncPlan(
         pack=pack,
@@ -561,7 +574,7 @@ def remove_command(
         known = {pack.name for pack in library.packs()} | set(library.load_errors())
         for name in selected:
             if name not in known:
-                raise ConfigError(not_found("pack", name, known=sorted(known)))
+                raise PackNotFoundError(not_found("pack", name, known=sorted(known)))
 
         def _remove(item: str) -> str:
             library.remove(item)
@@ -636,7 +649,7 @@ def edit_hook_command(
     with report_config_errors():
         target = _find_hook(PackLibrary(library_root=library_root()), ref_text)
         if target.pack is None or target.hook is None:
-            raise ConfigError(
+            raise RecipeError(
                 f"built-in hooks are engine-owned and cannot be edited: {target.name}"
             )
         run_editor(hook_module_file(target.pack.root, target.hook.module))
@@ -645,7 +658,7 @@ def edit_hook_command(
 def _find_pack(library: PackLibrary, name: str) -> InstalledPack:
     pack = library.find_pack(name)
     if pack is None:
-        raise ConfigError(
+        raise PackNotFoundError(
             not_found("pack", name, known=sorted(pack.name for pack in library.packs()))
         )
     return pack

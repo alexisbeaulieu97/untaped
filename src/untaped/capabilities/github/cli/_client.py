@@ -6,10 +6,11 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-from untaped.capabilities.github.domain.errors import is_auth_failure
+from untaped.capabilities.github.domain.errors import is_auth_failure, is_rate_limit_failure
 from untaped.capabilities.github.settings import GithubSettings
 from untaped.capability_api import (
     ConfigError,
+    ErrorCategory,
     UntapedError,
     app_context,
     git_auth_header,
@@ -45,7 +46,12 @@ def open_client() -> Iterator[tuple[GithubClient, UiContext]]:
         except UntapedError as exc:
             if is_auth_failure(exc):
                 raise ConfigError(
-                    "GitHub rejected the configured token (HTTP 401)\n"
-                    + hint("config set github.token --prompt")
+                    "GitHub rejected the configured token (HTTP 401)",
+                    category="auth",
+                    system="github",
+                    hint=hint("config set github.token --prompt").removeprefix("hint: "),
                 ) from exc
+            if is_rate_limit_failure(exc):
+                # GitHub answers an exhausted budget with 403 too: retry later.
+                exc.category = ErrorCategory.UNAVAILABLE
             raise

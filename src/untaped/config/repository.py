@@ -54,7 +54,7 @@ class SettingsFileRepository:
         descriptor = find_descriptor(descriptors, key)
         if descriptor is None:
             valid = ", ".join(d.key for d in descriptors)
-            raise ConfigError(f"unknown setting: {key!r}. Valid keys: {valid}")
+            raise ConfigError(f"unknown setting: {key!r}. Valid keys: {valid}", category="invalid")
         return descriptor
 
     def setting_value(self, descriptor: FieldDescriptor) -> Any:
@@ -132,7 +132,8 @@ class SettingsFileRepository:
                 self._validate_section(data, descriptor, profile=resolved)
             except ValidationError as exc:
                 raise ConfigError(
-                    f"invalid value for {key!r}: {first_validation_error(exc)}"
+                    f"invalid value for {key!r}: {first_validation_error(exc)}",
+                    category="invalid",
                 ) from exc
 
         _run(_apply, dry_run=dry_run)
@@ -171,7 +172,8 @@ class SettingsFileRepository:
             except ValidationError as exc:
                 raise ConfigError(
                     f"unsetting {key!r} would leave profile {resolved!r} invalid: "
-                    f"{first_validation_error(exc)}"
+                    f"{first_validation_error(exc)}",
+                    category="invalid",
                 ) from exc
 
         _run(_apply, dry_run=dry_run)
@@ -228,7 +230,9 @@ def _coerce_value(key: str, descriptor: FieldDescriptor, raw_value: str) -> Any:
         else:
             value = adapter.validate_strings(raw_value)
     except ValidationError as exc:
-        raise ConfigError(f"invalid value for {key!r}: {first_validation_error(exc)}") from exc
+        raise ConfigError(
+            f"invalid value for {key!r}: {first_validation_error(exc)}", category="invalid"
+        ) from exc
     if isinstance(value, SecretStr):
         return value.get_secret_value()
     return adapter.dump_python(value, mode="json")
@@ -240,4 +244,4 @@ def _parse_structured(key: str, raw_value: str) -> Any:
         return yaml.safe_load(raw_value)
     except yaml.YAMLError as exc:
         problem = getattr(exc, "problem", None) or "not valid JSON or YAML"
-        raise ConfigError(f"invalid value for {key!r}: {problem}") from exc
+        raise ConfigError(f"invalid value for {key!r}: {problem}", category="invalid") from exc

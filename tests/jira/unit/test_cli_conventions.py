@@ -324,5 +324,63 @@ def test_rejected_token_hints_at_config_set() -> None:
         mock.get("/rest/api/2/myself").mock(return_value=httpx.Response(401))
         result = invoke_cli(app, ["whoami"])
 
+    assert result.exit_code == 4, result.output
+    assert result.stderr.endswith(
+        "error: Jira rejected the token (HTTP 401)\n"
+        "hint: run `untaped config set jira.token --prompt`\n"
+    )
+
+
+def test_rejected_token_is_an_auth_diagnostic_under_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/rest/api/2/myself").mock(return_value=httpx.Response(401))
+        result = invoke_cli(app, ["whoami", "--format", "json"])
+
+    assert result.exit_code == 4, result.output
+    record = json.loads(result.stderr.splitlines()[-1])
+    assert record["message"] == "Jira rejected the token (HTTP 401)"
+    assert (record["category"], record["system"]) == ("auth", "jira")
+    assert record["hint"] == "run `untaped config set jira.token --prompt`"
+
+
+@pytest.mark.parametrize(
+    ("status", "category", "exit_code"),
+    [(403, "permission", 4), (503, "unavailable", 5), (400, "invalid", 1)],
+)
+def test_http_failures_keep_their_category(
+    monkeypatch: pytest.MonkeyPatch, status: int, category: str, exit_code: int
+) -> None:
+    monkeypatch.setattr("untaped.http._sleep", lambda _delay: None)
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(status))
+        result = invoke_cli(app, ["issues", "get", "ABC-1", "--format", "json"])
+
+    assert result.exit_code == exit_code, result.output
+    record = json.loads(result.stderr.splitlines()[-1])
+    assert (record["category"], record["system"]) == (category, "jira")
+
+
+def test_missing_issue_is_a_not_found_diagnostic(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/rest/api/2/issue/ABC-9").mock(return_value=httpx.Response(404))
+        result = invoke_cli(app, ["issues", "get", "ABC-9", "--format", "json"])
+
     assert result.exit_code == 1, result.output
-    assert "hint: run `untaped config set jira.token --prompt`" in result.stderr
+    assert json.loads(result.stderr.splitlines()[-1])["category"] == "not_found"
+
+
+def test_fields_updated_but_forbidden_assignment_keeps_its_category() -> None:
+    with respx.mock(base_url=BASE) as mock:
+        mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
+        mock.put("/rest/api/2/issue/ABC-1/assignee").mock(return_value=httpx.Response(403))
+        result = invoke_cli(
+            app, ["issues", "patch", "ABC-1", "--summary", "x", "--assignee", "bob", "--yes"]
+        )
+
+    assert result.exit_code == 4, result.output
+    assert result.stderr.endswith(
+        "error: fields updated, but assigning failed: permission denied (HTTP 403)\n"
+    )

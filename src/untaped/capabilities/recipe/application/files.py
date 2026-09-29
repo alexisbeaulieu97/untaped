@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from untaped.capabilities.recipe.domain.recipe import Recipe, parse_recipe
+from untaped.capabilities.recipe.errors import PathNotFoundError
 
 
 def read_recipe_file(path: Path) -> Recipe:
@@ -21,7 +22,7 @@ def read_existing_text_file(
 ) -> str:
     """Read an existing text file or raise the supplied user-facing error."""
     if not path.exists():
-        raise ValueError(missing)
+        raise PathNotFoundError(missing)
     if not path.is_file():
         raise ValueError(not_file)
     try:
