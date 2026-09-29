@@ -190,5 +190,15 @@ mechanics in a capability-specific skill. Start a new skill from the
 [skill template](./templates/SKILL.md): its frontmatter, sections and length
 rules keep skills consistent across capabilities.
 
+An installed skill is the agent's complete manual: an agent with only the
+installed CLI must not need anything else. Details that do not fit in
+`SKILL.md` go in `references/*.md` beside it, and sample input files in
+`examples/`; `skills install` copies and `skills status` compares the whole
+directory. A skill never points at `docs/` or the source repository. Tests
+keep built-in skills honest: every `untaped …` command quoted in a skill
+file must parse against the real command tree, every AWX example suite must
+load through the real loader, and every suite field must be described in the
+skill's suite reference.
+
 See [Capability authoring](./plugins.md) for the provider entry-point contract
 and the current `untaped capabilities` output for the composed providers.

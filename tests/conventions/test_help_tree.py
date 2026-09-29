@@ -75,6 +75,7 @@ VERBS = frozenset(
         "test",
         "cancel",
         "relaunch",
+        "schema",
     }
 )
 MUTATION_VERBS = frozenset(

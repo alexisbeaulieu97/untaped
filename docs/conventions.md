@@ -88,7 +88,7 @@ come from a closed set:
 - Update: `sync`, `refresh`
 - Query: `find`, `deps`, `impact`, `graph`
 - Other: `export`, `init`, `run`, `launch`, `wait`, `validate`, `test`,
-  `cancel`, `relaunch`
+  `cancel`, `relaunch`, `schema` (prints the JSON Schema of a document kind)
 
 ## Confirmation and stdin
 
