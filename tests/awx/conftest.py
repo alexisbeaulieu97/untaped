@@ -87,6 +87,8 @@ class FakeAap:
         self.sub_path_errors: dict[tuple[str, str], list[int]] = {}
         # HTTP status every request answers with once set (an expired token, an outage).
         self.every_request_error: int | None = None
+        # HTTP status every DELETE answers with once set (e.g. 403 for a missing role).
+        self.delete_error: int | None = None
         # How the job a workflow node runs ends, by node ``identifier``: a mapping of
         # ``status``, ``events``, ``host_summaries``, ``stdout`` and ``job_fields`` (the
         # ``next_action_*`` values), or a list of them used one per run (the last repeats).
@@ -333,6 +335,14 @@ class FakeAap:
         store_path = _TOP_PATH_STORE.get(api_path, api_path)
         if id_ not in self.store.get(store_path, {}):
             return _err(404, f"{api_path}/{id_}/ not found")
+        if self.delete_error is not None:
+            return _err(self.delete_error, "delete refused")
+        if api_path in _UJT_JOB_STORES and any(
+            job.get("unified_job_template") == id_ and job.get("status") in _ACTIVE
+            for job in self.store[_UJT_JOB_STORES[api_path]].values()
+        ):
+            # Like AWX's RelatedJobsPreventDeleteMixin: not while a job of it runs.
+            return _err(409, "Resource is being used by running jobs.")
         record = self.store[store_path].pop(id_)
         if store_path == "workflow_nodes":
             # Like AWX: edges into the node go with it, and so does its approval.
@@ -484,7 +494,12 @@ class FakeAap:
         # Always materialise a record so subsequent ``GET <store_path>/<id>/``
         # round trips (e.g. ``WatchJob`` / ``PollingJobMonitor``) succeed.
         # ``stdout`` is optional — only seeded when the test asks for it.
-        seed_fields: dict[str, Any] = {"id": new_id, "name": name, "status": status}
+        seed_fields: dict[str, Any] = {
+            "id": new_id,
+            "name": name,
+            "status": status,
+            "unified_job_template": id_,
+        }
         if stdout is not None:
             seed_fields["stdout"] = stdout
         if api_path == "job_templates" and action == "launch":
@@ -959,6 +974,9 @@ def _template_launch_value(record: dict[str, Any], field: str) -> Any:
 
 
 _NODE_EDGES = ("success_nodes", "failure_nodes", "always_nodes")
+_ACTIVE = frozenset({"new", "pending", "waiting", "running"})
+# A template's collection → the collection of the jobs it launches.
+_UJT_JOB_STORES = {"job_templates": "jobs", "workflow_job_templates": "workflow_jobs"}
 _FAILED_STATUSES = frozenset({"failed", "error", "canceled"})
 _DONE = frozenset({"successful", *_FAILED_STATUSES})
 
@@ -1146,6 +1164,11 @@ def _matches_all(  # noqa: C901
         if key.endswith("__isnull"):
             base = key[: -len("__isnull")]
             if (record.get(base) is None) != (value == "true"):
+                return False
+            continue
+        if key.endswith("__contains"):
+            base = key[: -len("__contains")]
+            if value not in str(record.get(base, "")):
                 return False
             continue
         if key.endswith("__icontains"):

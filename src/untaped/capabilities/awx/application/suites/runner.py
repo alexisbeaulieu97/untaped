@@ -116,9 +116,10 @@ from untaped.capabilities.awx.domain.suite import (
     RefSentinel,
     Suite,
     SuiteRunOutcome,
-    case_keys,
+    TemplateBinding,
     idempotence,
     outranks_failure,
+    select_cases,
 )
 from untaped.capabilities.awx.domain.suite_baseline import saved_baselines
 from untaped.capabilities.awx.domain.workflow_run import (
@@ -164,6 +165,8 @@ class _ResolvedCase:
     approvals: Approvals | None = None
     approval_nodes: tuple[str, ...] | None = None
     """A workflow's approval nodes, as the preflight found them (``None``: not looked for)."""
+    pinned: bool = False
+    """The template runs the tested commit itself: it gets no launch-time ``scm_branch``."""
 
     @property
     def workflow(self) -> bool:
@@ -236,6 +239,7 @@ class RunTestSuite:
         scm_branch: str | None = None,
         baseline: str | None = None,
         compare: Mapping[tuple[str, str], Baseline] | None = None,
+        bindings: Mapping[str, TemplateBinding] | None = None,
     ) -> SuiteRunOutcome:
         """Run the selected cases, and compare them with a baseline when given one.
 
@@ -244,8 +248,10 @@ class RunTestSuite:
         ``scm_branch`` replaces every case's own. ``compare`` is a saved
         baseline; ``baseline`` is a ref every case runs on first, as the
         baseline, whose environment failures then count as this run's.
+        ``bindings`` binds a suite, by name, to another template than the one
+        it names (a temporary copy); a pinned one gets no ``scm_branch``.
         """
-        plan = self._build_plan(list(suites), case_filter)
+        plan = self._build_plan(list(suites), case_filter, bindings or {})
         self._fk.prefetch(self._prefetch_plan(plan))
         resolved = self._resolve_all(plan, timeout=timeout, default_timeout=default_timeout)
         run = partial(self._run_pass, resolved, parallel=parallel)
@@ -274,7 +280,9 @@ class RunTestSuite:
         """
         if scm_branch is not None:
             resolved = [
-                replace(item, payload={**item.payload, "scm_branch": scm_branch})
+                item
+                if item.pinned
+                else replace(item, payload={**item.payload, "scm_branch": scm_branch})
                 for item in resolved
             ]
         checked = self._check_launches(resolved)
@@ -305,29 +313,23 @@ class RunTestSuite:
         self,
         suites: Sequence[Suite],
         case_filter: set[str] | None,
-    ) -> list[tuple[Suite, str, Case]]:
-        """Every case, or those ``case_filter`` names as ``case`` or ``suite/case``."""
-        plan: list[tuple[Suite, str, Case]] = []
-        matched: set[str] = set()
-        for suite in suites:
-            for case_name, case in suite.cases.items():
-                if case_filter is not None:
-                    hits = case_keys(suite.name, case_name) & case_filter
-                    if not hits:
-                        continue
-                    matched |= hits
-                plan.append((suite, case_name, case))
-        if case_filter is not None:
-            unmatched = sorted(case_filter - matched)
-            if unmatched:
-                raise ConfigError(
-                    "no case matched --case " + ", ".join(repr(name) for name in unmatched),
-                    category="not_found",
-                )
-        return plan
+        bindings: Mapping[str, TemplateBinding],
+    ) -> list[tuple[Suite, TemplateBinding, str, Case]]:
+        """Every case, or those ``case_filter`` names as ``case`` or ``suite/case``.
+
+        Each suite is bound once: to ``bindings``' template for it, else to its own.
+        """
+        bound = {
+            suite.name: bindings.get(suite.name) or suite.binding(self._jt_scope)
+            for suite in suites
+        }
+        return [
+            (suite, bound[suite.name], case_name, case)
+            for suite, case_name, case in select_cases(suites, case_filter)
+        ]
 
     def _prefetch_plan(
-        self, plan: Sequence[tuple[Suite, str, Case]]
+        self, plan: Sequence[tuple[Suite, TemplateBinding, str, Case]]
     ) -> dict[str, list[dict[str, str] | None]]:
         """Walk every case (defaults included) to learn which name lookups will fire.
 
@@ -342,8 +344,8 @@ class RunTestSuite:
         ``extra_vars`` is *not* otherwise inspected.
         """
         by_kind: dict[str, list[dict[str, str] | None]] = {}
-        for suite, _, case in plan:
-            fk_index = ResolveCasePayload.fk_index_for(self._specs(suite.template_kind))
+        for suite, binding, _, case in plan:
+            fk_index = ResolveCasePayload.fk_index_for(self._specs(binding.kind))
             merged = _merge_top_level(suite.defaults, case)
             org = suite.organization
             for field, value in merged.items():
@@ -359,19 +361,20 @@ class RunTestSuite:
 
     def _resolve_all(
         self,
-        plan: Sequence[tuple[Suite, str, Case]],
+        plan: Sequence[tuple[Suite, TemplateBinding, str, Case]],
         *,
         timeout: float | None,
         default_timeout: float | None,
     ) -> list[_ResolvedCase]:
         out: list[_ResolvedCase] = []
-        for suite, case_name, case in plan:
+        for suite, binding, case_name, case in plan:
             defaults = suite.defaults or Case()
-            binding = suite.binding(self._jt_scope)
             spec = self._specs(binding.kind)
             payload = self._resolve(
                 spec, case, defaults=suite.defaults, organization=suite.organization
             )
+            if binding.pinned:
+                payload.pop("scm_branch", None)
             case_timeout = timeout or case.timeout or defaults.timeout or default_timeout
             out.append(
                 _ResolvedCase(
@@ -384,6 +387,7 @@ class RunTestSuite:
                     suite.expectation(case_name),
                     case_timeout,
                     suite.approvals(case_name),
+                    pinned=binding.pinned,
                 )
             )
         return out

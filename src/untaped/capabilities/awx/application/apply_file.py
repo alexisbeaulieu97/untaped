@@ -10,6 +10,7 @@ from untaped.capabilities.awx.application.apply_prefetch import prefetch_plan
 from untaped.capabilities.awx.application.mutation_engine import BatchMutationEngine
 from untaped.capabilities.awx.application.mutation_types import MutationPlan
 from untaped.capabilities.awx.application.ports import Catalog, FkResolver, ResourceDocumentReader
+from untaped.capabilities.awx.domain import Resource
 
 
 def prepare_apply_file(
@@ -21,8 +22,20 @@ def prepare_apply_file(
     fk: FkResolver,
 ) -> MutationPlan:
     """Read every path, then order and validate the whole batch once, before confirmation."""
-    docs = topological_sort([doc for path in paths for doc in reader(path)], catalog=catalog)
-    prefetch = prefetch_plan(docs, catalog=catalog)
+    docs = [doc for path in paths for doc in reader(path)]
+    return prepare_documents(engine, docs, catalog=catalog, fk=fk)
+
+
+def prepare_documents(
+    engine: BatchMutationEngine,
+    docs: Iterable[Resource],
+    *,
+    catalog: Catalog,
+    fk: FkResolver,
+) -> MutationPlan:
+    """Order ``docs`` by their references, prefetch their names, and prepare them once."""
+    ordered = topological_sort(docs, catalog=catalog)
+    prefetch = prefetch_plan(ordered, catalog=catalog)
     if prefetch:
         fk.prefetch(prefetch)
-    return engine.prepare(docs)
+    return engine.prepare(ordered)

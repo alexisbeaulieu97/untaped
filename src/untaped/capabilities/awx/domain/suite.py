@@ -38,7 +38,7 @@ from untaped.capabilities.awx.domain.case_failure import (
 )
 from untaped.capabilities.awx.domain.job import SUMMARY_FIELDS, HostSummary
 from untaped.capabilities.awx.domain.workflow_run import NEVER_RAN, NodeResult
-from untaped.capability_api import ErrorCategory, ExitCode, q
+from untaped.capability_api import ConfigError, ErrorCategory, ExitCode, q
 
 
 @dataclass(frozen=True)
@@ -95,6 +95,9 @@ class TemplateBinding:
     kind: str
     name: str
     scope: dict[str, str] | None
+    pinned: bool = False
+    """The template itself runs the tested commit (a temporary copy): no case
+    passes it a launch-time ``scm_branch``."""
 
 
 class VariableSpec(BaseModel):
@@ -883,6 +886,32 @@ def outranks_failure(failure: CaseFailure) -> bool:
 def case_keys(suite: str, case: str) -> set[str]:
     """The names ``--case`` selects a case by: ``CASE`` and ``SUITE/CASE``."""
     return {case, f"{suite}/{case}"}
+
+
+def select_cases(
+    suites: Iterable[Suite], case_filter: Collection[str] | None
+) -> list[tuple[Suite, str, Case]]:
+    """Every case in declaration order, or those ``case_filter`` names as ``case`` or
+    ``suite/case``; a name that selects nothing is refused."""
+    wanted = None if case_filter is None else set(case_filter)
+    selected: list[tuple[Suite, str, Case]] = []
+    matched: set[str] = set()
+    for suite in suites:
+        for case_name, case in suite.cases.items():
+            if wanted is not None:
+                hits = case_keys(suite.name, case_name) & wanted
+                if not hits:
+                    continue
+                matched |= hits
+            selected.append((suite, case_name, case))
+    if wanted is not None:
+        unmatched = sorted(wanted - matched)
+        if unmatched:
+            raise ConfigError(
+                "no case matched --case " + ", ".join(repr(name) for name in unmatched),
+                category="not_found",
+            )
+    return selected
 
 
 def _star_result(

@@ -262,6 +262,33 @@
     baseline row gains `node`, and a workflow case still fails the same way
     only in the same node. `awx.test_case` rows gain `workflow_template`, and
     their `job_template` is `null` for a workflow suite.
+  - **New:** `awx test run --source-ref REF` tests a ref with the template
+    configuration it carries. Suites and the job template and workflow specs
+    under `.untaped/awx/` are read at REF's commit (which a remote must
+    have). A suite whose template has a spec (same kind, name and
+    organization) runs a temporary copy of it, named `NAME [untaped-test SHA
+    RUN]`, marked in its description, pinned to the commit (`scm_branch`),
+    prompting for every field its cases set, without webhooks, and with the
+    workflow nodes that run a copied template pointed at the copy. Every
+    link is resolved by name and never created. A template without a spec
+    must prompt for `scm_branch` or the run is refused before anything is
+    created. The copies are created without confirmation and deleted after
+    the run, workflows first, even after a failure or Ctrl-C; `--keep`
+    keeps them and prints their names, and a copy that cannot be deleted is
+    a warning that never changes a case's result. A provisioning failure
+    stops the run before any launch with its own attribution (`awx.suite`,
+    `awx.scm`, `awx.credentials`, `awx.controller`), never a test failure.
+    `--source-ref` cannot go with `--scm-branch` or `--baseline`, and
+    `--no-cancel` needs `--keep`.
+  - **New:** `awx test validate --source-ref REF` (and `awx test run
+    --dry-run`) checks everything but the writes (each copy's links, its
+    free name, the project's branch override, each case against the copy's
+    spec) and prints the copies as `awx.provision_outcome` rows, with the
+    prompts each enables. `validate` gains `--format` and `--columns`.
+  - **New:** `awx test prune [--older-than 2h] [--dry-run] [--yes]` deletes
+    the copies a killed run left behind, found by their name and
+    description marker, after a preview and a confirmation;
+    `awx.prune_outcome` rows.
 - Ansible
   - **Breaking:** `source refresh` exits 5 when it pauses at the GraphQL
     rate-limit floor, hits a global rate limit, or any repo failed
