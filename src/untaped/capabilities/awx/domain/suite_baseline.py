@@ -29,6 +29,9 @@ class _SavedRow(BaseModel):
     category: ErrorCategory | None = Field(
         default=None, validation_alias=AliasPath("failure", "category")
     )
+    node: str | None = Field(
+        default=None, validation_alias=AliasPath("failure", "evidence", "node")
+    )
 
 
 def saved_baselines(rows: Any) -> dict[tuple[str, str], Baseline]:
@@ -53,6 +56,6 @@ def saved_baselines(rows: Any) -> dict[tuple[str, str], Baseline]:
             raise ValueError(f"row {index} repeats case {saved.suite}/{saved.case}")
         if saved.result is not None:
             found[key] = Baseline.model_validate(
-                saved.model_dump(include={"result", "job_id", "system", "category"})
+                saved.model_dump(include={"result", "job_id", "system", "category", "node"})
             )
     return found

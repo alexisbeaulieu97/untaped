@@ -248,6 +248,20 @@
     `unverified` row or a failing new case fails the run; a case that fails
     as it did in the baseline is reported as `still_failing`. Exit 4 and 5
     still win.
+  - **New:** workflow suites. A suite names `workflowTemplate:` instead of
+    `jobTemplate:` (exactly one) and its cases launch that workflow.
+    `approvals: approve|deny` answers the approvals it waits on; without it a
+    pending approval fails the case at once (`awx.suite`). `expect.nodes`
+    checks each node's job with a case's checks, plus `status: never_ran`.
+    Workflow rows list their `nodes`, and a failed workflow is blamed on the
+    node that failed it (`node deploy: …`, with that job's evidence).
+    `awx test init TEMPLATE --workflow` writes a starter suite for a
+    workflow. The awx skill ships a `workflow.yml` example.
+  - **Behavior change:** `awx.test_result` rows gain `nodes` (`null` for a
+    job case) and `failure.evidence.node` (`null` for a job case); a
+    baseline row gains `node`, and a workflow case still fails the same way
+    only in the same node. `awx.test_case` rows gain `workflow_template`, and
+    their `job_template` is `null` for a workflow suite.
 - Ansible
   - **Breaking:** `source refresh` exits 5 when it pauses at the GraphQL
     rate-limit floor, hits a global rate limit, or any repo failed

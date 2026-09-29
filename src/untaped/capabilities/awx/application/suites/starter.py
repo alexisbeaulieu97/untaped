@@ -1,4 +1,4 @@
-"""StarterSuite: a job template's launch prompts and survey → its starter ``AwxTestSuite`` text."""
+"""StarterSuite: a template's launch prompts and survey → its starter ``AwxTestSuite`` text."""
 
 from __future__ import annotations
 
@@ -7,11 +7,15 @@ from typing import Any
 
 from untaped.capabilities.awx.application.suites.preflight import PreflightLaunch
 from untaped.capabilities.awx.domain import ResourceSpec
+from untaped.capabilities.awx.domain.suite import WORKFLOW_TEMPLATE
 from untaped.capabilities.awx.domain.suite_starter import starter_suite
 
 
 class StarterSuite:
-    """Read a template's ``launch/`` and ``survey_spec/`` (the preflight reads) into a suite."""
+    """Read a template's ``launch/`` and ``survey_spec/`` (the preflight reads) into a suite.
+
+    A workflow's nodes are read too (``workflow_nodes/``), for their ids.
+    """
 
     def __init__(self, preflight: PreflightLaunch) -> None:
         self._preflight = preflight
@@ -22,11 +26,17 @@ class StarterSuite:
         # AWX keeps a disabled survey's questions but never asks them.
         survey = read("survey_spec") if launch.get("survey_enabled") else {}
         questions = survey.get("spec") if isinstance(survey, Mapping) else None
+        nodes, approvals = None, []
+        if spec.kind == WORKFLOW_TEMPLATE:
+            nodes = self._preflight.nodes(spec, template.id)
+            approvals = self._preflight.approval_nodes(spec, name=name, scope=scope)
         return starter_suite(
             template.name or name,
             organization=_organization(template.record) or (scope or {}).get("organization"),
             launch=launch,
             survey=[q for q in questions or [] if isinstance(q, Mapping)],
+            nodes=nodes,
+            approvals=approvals,
         )
 
 

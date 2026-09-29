@@ -17,7 +17,7 @@ from untaped.capabilities.awx.application.ports import Catalog
 from untaped.capabilities.awx.application.suites.ports import FkLookup
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.domain.spec import FkRef
-from untaped.capabilities.awx.domain.suite import Case, RefSentinel
+from untaped.capabilities.awx.domain.suite import WORKFLOW_TEMPLATE, Case, RefSentinel
 from untaped.capability_api import ConfigError
 
 # v2.x AWX launch endpoint payload fields. Anything outside this set
@@ -44,6 +44,13 @@ KNOWN_LAUNCH_FIELDS: frozenset[str] = frozenset(
         "job_slice_count",
     }
 )
+
+
+WORKFLOW_LAUNCH_FIELDS: frozenset[str] = frozenset(
+    {"extra_vars", "inventory", "limit", "scm_branch", "labels", "job_tags", "skip_tags"}
+)
+"""The fields a workflow job template's launch endpoint takes (per its ``ask_*`` flags)."""
+_KNOWN_BY_KIND = {WORKFLOW_TEMPLATE: WORKFLOW_LAUNCH_FIELDS}
 
 
 class UnknownLaunchFieldWarning(UserWarning):
@@ -83,7 +90,8 @@ class ResolveCasePayload:
             case.launch,
         )
         fk_index = self.fk_index_for(spec)
-        _emit_unknown_field_warnings(merged, fk_index)
+        known = _KNOWN_BY_KIND.get(spec.kind, KNOWN_LAUNCH_FIELDS)
+        _emit_unknown_field_warnings(merged, fk_index, known)
         resolved_top = self._resolve_top_level_fks(merged, fk_index, organization)
         result: dict[str, Any] = _walk_and_resolve_refs(
             resolved_top, partial(self._resolve_ref, organization=organization)
@@ -259,9 +267,11 @@ def _dedup_key(value: Any) -> Any:
     return value
 
 
-def _emit_unknown_field_warnings(payload: Mapping[str, Any], fk_index: Mapping[str, FkRef]) -> None:
+def _emit_unknown_field_warnings(
+    payload: Mapping[str, Any], fk_index: Mapping[str, FkRef], known: frozenset[str]
+) -> None:
     for field in payload:
-        if field in KNOWN_LAUNCH_FIELDS or field in fk_index:
+        if field in known or field in fk_index:
             continue
         # ``stacklevel`` is intentionally the default — the
         # :class:`UnknownLaunchFieldWarning` category, not the call site,

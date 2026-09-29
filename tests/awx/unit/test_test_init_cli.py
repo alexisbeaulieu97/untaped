@@ -198,6 +198,90 @@ def test_init_refuses_to_overwrite_a_file(
     assert out.read_text() == "keep me\n"
 
 
+def _seed_release(fake: FakeAap, *, approval: bool) -> None:
+    fake.seed("organizations", id=1, name="Default")
+    build = fake.seed("job_templates", name="Build", organization=1)
+    workflow = fake.seed(
+        "workflow_job_templates",
+        name="Release",
+        organization=1,
+        summary_fields={"organization": {"id": 1, "name": "Default"}},
+        survey_enabled=True,
+        survey_spec={"spec": [{"variable": "version", "type": "text", "required": True}]},
+        ask_scm_branch_on_launch=True,
+    )
+    fake.seed(
+        "workflow_nodes",
+        workflow_job_template=workflow["id"],
+        identifier="build",
+        unified_job_template=build["id"],
+    )
+    if approval:
+        gate = fake.seed("workflow_approval_templates", name="Approve production")
+        fake.seed(
+            "workflow_nodes",
+            workflow_job_template=workflow["id"],
+            identifier="approve-prod",
+            unified_job_template=gate["id"],
+        )
+
+
+def test_init_workflow_writes_a_workflow_suite_listing_its_nodes(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_release(fake_aap, approval=True)
+    out = tmp_path / "release.yml"
+
+    result = cli.invoke(app, ["test", "init", "Release", "--workflow", "--out", str(out)])
+
+    assert result.exit_code == 0, result.output
+    text = out.read_text()
+    body = _body(out)
+    assert (body["name"], body["workflowTemplate"], body["organization"]) == (
+        "release",
+        "Release",
+        "Default",
+    )
+    assert "jobTemplate" not in body
+    assert body["defaults"]["launch"]["extra_vars"] == {"version": "TODO"}
+    assert body["cases"] == {"smoke": {"expect": {"status": "successful"}}}
+    assert (
+        "# Workflow nodes (ids for expect.nodes): build (Build), "
+        "approve-prod (approval: Approve production)"
+    ) in text
+    assert '      #   "build": {status: successful}' in text
+    assert "    # approvals: approve  # or deny" in text
+    assert "scm_branch" in text
+    validated = cli.invoke(app, ["test", "validate", str(out)])
+    assert validated.exit_code == 0, validated.output
+    assert "the workflow has approval nodes (approve-prod)" in validated.stderr
+
+
+def test_init_workflow_without_approval_nodes_says_nothing_about_approvals(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_release(fake_aap, approval=False)
+    out = tmp_path / "release.yml"
+
+    result = cli.invoke(app, ["test", "init", "Release", "--workflow", "--out", str(out)])
+
+    assert result.exit_code == 0, result.output
+    assert "approvals" not in out.read_text()
+
+
+def test_init_workflow_without_nodes_writes_a_plain_smoke_case(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    fake_aap.seed("workflow_job_templates", name="Empty")
+    out = tmp_path / "empty.yml"
+
+    result = cli.invoke(app, ["test", "init", "Empty", "--workflow", "--out", str(out)])
+
+    assert result.exit_code == 0, result.output
+    assert "# Workflow nodes: none" in out.read_text()
+    assert _body(out)["cases"] == {"smoke": {"expect": {"status": "successful"}}}
+
+
 def test_init_of_an_unknown_template_fails_without_writing(
     cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
 ) -> None:

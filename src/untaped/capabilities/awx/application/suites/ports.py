@@ -4,8 +4,9 @@ Concrete implementations live in :mod:`untaped.capabilities.awx.infrastructure.s
 except ``Launcher`` / ``Watcher`` (which reuse the existing
 :class:`RunAction` / :class:`WatchJob` use cases), ``LogReader`` / ``EventReader`` /
 ``TailReader`` (the job monitor's ``fetch_stdout`` / ``stream_events`` /
-``tail_stdout``), ``JobReader`` (the job monitor itself), ``HostReader`` (the job
-repository's ``host_summaries``), ``LaunchCheck``
+``tail_stdout``), ``JobReader`` (the job monitor itself), ``HostReader``,
+``NodeReader`` and ``ApprovalDecider`` (the job repository's ``host_summaries``,
+``workflow_nodes`` and ``decide_approval``), ``LaunchCheck``
 (:class:`PreflightLaunch`) and ``FkPrefetcher`` /
 ``FkLookup`` (narrow views of :class:`FkResolver`, implemented by
 :mod:`untaped.capabilities.awx.infrastructure.fk_resolver`).
@@ -13,7 +14,7 @@ repository's ``host_summaries``), ``LaunchCheck``
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -54,9 +55,21 @@ class Launcher(Protocol):
 
 @runtime_checkable
 class Watcher(Protocol):
-    """Poll a :class:`Job` until it reaches a terminal state."""
+    """Poll a :class:`Job` until it reaches a terminal state.
 
-    def __call__(self, job: Job, *, timeout: float | None = None) -> Job: ...
+    ``on_state`` is called with each polled state that is not terminal yet
+    (not with ``job`` itself), before the next poll; a workflow's pending
+    approvals are answered there. An exception it raises ends the watch and
+    propagates to the caller.
+    """
+
+    def __call__(
+        self,
+        job: Job,
+        *,
+        timeout: float | None = None,
+        on_state: Callable[[Job], None] | None = None,
+    ) -> Job: ...
 
 
 @runtime_checkable
@@ -95,6 +108,20 @@ class HostReader(Protocol):
 
 
 @runtime_checkable
+class NodeReader(Protocol):
+    """Read a workflow job's nodes (``workflow_jobs/<id>/workflow_nodes/``), every page."""
+
+    def __call__(self, job: Job, /) -> Iterable[Mapping[str, Any]]: ...
+
+
+@runtime_checkable
+class ApprovalDecider(Protocol):
+    """Approve or deny a pending workflow approval (``workflow_approvals/<id>/approve/``)."""
+
+    def __call__(self, approval_id: int, *, approve: bool) -> None: ...
+
+
+@runtime_checkable
 class JobReader(Protocol):
     """Re-read an execution: as it is now, or once AWX has saved its events."""
 
@@ -105,7 +132,10 @@ class JobReader(Protocol):
 
 @runtime_checkable
 class LaunchCheck(Protocol):
-    """Raise when AWX would reject or ignore a launch, before anything runs."""
+    """Raise when AWX would reject or ignore a launch, before anything runs.
+
+    ``nodes`` are node ids a workflow case checks, which the workflow must have.
+    """
 
     def __call__(
         self,
@@ -114,7 +144,14 @@ class LaunchCheck(Protocol):
         name: str,
         scope: dict[str, str] | None,
         payload: dict[str, Any],
+        nodes: Collection[str] = (),
     ) -> None: ...
+
+    def approval_nodes(
+        self, spec: ResourceSpec, *, name: str, scope: dict[str, str] | None
+    ) -> list[str]:
+        """The paths of a workflow's approval nodes, nested workflows' included."""
+        ...
 
 
 @runtime_checkable
