@@ -174,11 +174,11 @@ can be reopened or cancelled. A no-op editor session does not prompt or write.
 
 ## Apply, export, and inventory lifecycle
 
-`awx apply FILE_OR_DIRECTORY` is the declarative create/update path, for
-every kind at once. It accepts complete portable YAML documents, resolves
-dependencies, previews the full batch once, and writes only after
-confirmation. `apply -` reads the documents from stdin, so an export from one
-profile can be applied to another without a file:
+`awx apply PATH…` is the declarative create/update path, for every kind at
+once. It accepts complete portable YAML documents from one or more files or
+directories, resolves dependencies across all of them, previews the full batch
+once, and writes only after confirmation. `apply -` reads the documents from
+stdin, so an export from one profile can be applied to another without a file:
 
 ```bash
 untaped awx apply ./awx-specs --dry-run
@@ -186,6 +186,7 @@ untaped awx apply ./inventory.yml --yes
 untaped --profile staging awx export --kind job-templates --out-dir exported \
   | untaped --profile prod awx apply - --yes
 untaped awx apply ./awx-specs --check
+untaped awx apply --source-ref v1.4.0 .untaped/awx/templates .untaped/awx/workflows
 ```
 
 `--check` computes the same plan and writes nothing: it exits 3 when any
@@ -208,13 +209,14 @@ the org-less record (for example a global workflow template); `export` writes
 that null for org-less records so an export/apply round trip never lands in the
 default organization.
 
-Relationship lists (template `credentials` and `labels`, group
-`hosts`/`children`, inventory `instance_groups`) are replaced by adding new
-members before removing old ones, so a refused add never leaves a template
+Relationship lists (template `credentials`, `labels` and `instance_groups`,
+group `hosts`/`children`, inventory `instance_groups`) are replaced by adding
+new members before removing old ones, so a refused add never leaves a template
 without its credentials. Only a
 credential that shares a type with an incoming one is removed first (AWX allows
 one per type); if the add then fails, the removed members are re-added and the
-row reports `partial`.
+row reports `partial`. Instance groups are looked up by name in every
+organization, and their order is kept: it is the order AWX falls back through.
 
 `export` writes a fixed selection as portable YAML. Per-resource export accepts
 `--out FILE`; without it (or with `--out=-`), YAML is written to stdout. A
@@ -237,13 +239,13 @@ only incompatible source/configuration combinations. Editing inventory
 settings does not recreate or rewrite source-managed hosts or groups. A
 constructed inventory and its generated source share `source_vars`,
 `update_cache_timeout`, `limit`, and `verbosity`. A batch cannot request
-conflicting values for those fields through the two resources. Workflow
-template exports are partial: their node graph and edges are not round-tripped.
+conflicting values for those fields through the two resources.
 
 ### Template export round trip
 
 A job or workflow template export carries its settings, `extra_vars`,
-`credentials` and `labels` (by name), and its survey. Applying that file under
+`credentials`, `labels` and (job templates) `instance_groups` by name, its
+survey, and (workflows) its whole node graph. Applying that file under
 another `metadata.name` creates a template with the same non-secret
 configuration:
 
@@ -272,9 +274,111 @@ What an export cannot carry:
   attachments, schedules, and past jobs are not part of the document.
 - **Server-managed fields.** IDs, timestamps, `last_job_*` and `status` are
   dropped; references (organization, project, inventory, execution
-  environment, credentials, labels) travel by name, so they must already exist
-  where the file is applied.
-- **Workflow graphs.** A workflow template export has no nodes or edges.
+  environment, credentials, labels, instance groups) travel by name, so they
+  must already exist where the file is applied, or be created by the same
+  `apply`.
+
+### Workflow templates and their nodes
+
+A workflow template document holds its node graph under `spec.nodes`, by name:
+
+```yaml
+kind: WorkflowJobTemplate
+apiVersion: untaped.dev/awx/v1
+metadata: {name: Release, organization: Default}
+spec:
+  description: Build, deploy, verify
+  inventory: Production
+  survey_enabled: true
+  survey_spec: {...}
+  nodes:
+    - id: approve-prod
+      approval: {name: Approve production, timeout: 3600}
+      success: [deploy]
+    - id: deploy
+      run: {job_template: Deploy}
+      prompts: {limit: "web*", extra_vars: {version: 3}, credentials: [ssh]}
+      success: [verify]
+      failure: [rollback]
+    - id: verify
+      run: {job_template: Smoke check}
+      all_parents_must_converge: true
+    - id: rollback
+      run: {job_template: Shared rollback, organization: Ops}
+```
+
+Every node has:
+
+| Key | Meaning |
+|---|---|
+| `id` | Required. The node's key within the workflow: AWX's node `identifier`. Apply matches nodes by it, so keep it stable. |
+| `run` | What the node runs: exactly one of `job_template`, `workflow_job_template`, `project` (a project update) or `inventory_source` (an inventory update), by name. `organization` names the template's organization when it differs from the workflow's. An `inventory_source` also needs `inventory`, the inventory holding it (and `organization` is that inventory's). |
+| `approval` | Instead of `run`: an approval step, `{name, description, timeout}`. `timeout` is in seconds; `0` (the default) waits forever. |
+| `prompts` | Launch values the node passes to what it runs (not allowed on approvals). |
+| `success`, `failure`, `always` | The ids of the nodes that run next when this node succeeds, fails, or either. |
+| `all_parents_must_converge` | Run only once every parent has reached this node (AWX's "all" convergence); default `false`. |
+
+`prompts` takes `inventory`, `credentials`, `labels`, `instance_groups` and
+`execution_environment` by name, `extra_vars` (a mapping; AWX's node
+`extra_data`), `limit`, `scm_branch`, `job_tags`, `skip_tags`, `job_type`
+(`run` or `check`), `verbosity` (0-5), `diff_mode`, `forks`, `job_slice_count`
+and `timeout`. AWX accepts a prompt only when the node's template prompts for
+it on launch. Inventory, credential and label names resolve in the workflow's
+organization; write `{name: vault, organization: Ops}` for one elsewhere (an
+export does this for you). Instance group and execution environment names are
+global.
+
+`export` writes the full graph: every node, its prompts and approval, and the
+edges (each list sorted). Defaults are left out. Apply reconciles the graph by
+`id`: it creates missing nodes (an approval through AWX's
+`create_approval_template`), patches changed ones (an approval's name,
+description or timeout on its approval template), deletes nodes no longer
+listed, then removes and adds edges. A node that turns into an approval, or
+back, is deleted and created again. `nodes: []` deletes every node; a document
+without `nodes` leaves the graph alone. The preview shows one row per change,
+by name:
+
+```text
+WorkflowJobTemplate/Release id=100 scope=org=Default: planned
+  nodes[notify]: null → {"run":{"job_template":"Notify"}} (create)
+  nodes[deploy].prompts.limit: "web*" → "web1"
+  nodes[approve-prod].approval: {"name":"Approve production","timeout":3600} → {"name":"Approve production","timeout":600}
+  nodes[rollback]: {"run":{"job_template":"Rollback"}} → null (delete)
+  nodes[verify].always: [] → ["notify"]
+```
+
+Templates the nodes run are ordering dependencies: a job template created by
+the same `apply` is created before the workflow that runs it, and a workflow
+whose template fails is skipped. Apply refuses, before any write, a graph with
+a duplicate `id`, an edge to an unknown `id`, the same pair of nodes linked
+twice, or a cycle (`nodes form a cycle: a → b → a`), and a template name that
+does not exist (with a "did you mean" hint). A node write that fails after the
+workflow itself was written leaves a `partial` row, and a graph that does not
+read back as declared fails with `workflow nodes did not converge`.
+
+### Apply from a git ref
+
+`--source-ref REF` reads the given files and directories as they are at `REF`
+(a branch, tag or commit of the repository containing the current directory)
+instead of the working tree, then applies them as usual. Paths are relative to
+the current directory; local edits and untracked files are never read, and the
+row and error messages name files as `REF:PATH`. `HEAD` must be pushed to its
+upstream, as for `awx test run --scm-branch HEAD`. Stdin (`-`) cannot be
+combined with `--source-ref`.
+
+```bash
+untaped awx apply --source-ref v1.4.0 .untaped/awx/templates .untaped/awx/workflows --dry-run
+```
+
+A playbook repository keeps its specs beside its suites; folder names are only
+a convention, since each document's `kind` decides what it is:
+
+```text
+.untaped/awx/
+├── templates/deploy.yml      # kind: JobTemplate
+├── workflows/release.yml     # kind: WorkflowJobTemplate
+└── tests/deploy-smoke.yml    # kind: AwxTestSuite
+```
 
 ## Copy templates
 
@@ -559,7 +663,8 @@ untaped awx unified-templates list --type workflow_job_template
 
 `usage` lists the workflow templates that contain a template (`--recursive`
 walks up to the top-level workflows). `nodes` lists what a workflow contains
-(`--recursive` expands nested workflows). `unified-templates` is AWX's view
+(`--recursive` expands nested workflows); `workflow-templates export` shows its
+whole graph, edges and prompts included. `unified-templates` is AWX's view
 of every launchable kind.
 
 ## Test suites
