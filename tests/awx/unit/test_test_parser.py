@@ -32,10 +32,25 @@ def test_split_frontmatter_no_frontmatter() -> None:
     assert body == text
 
 
-def test_split_frontmatter_missing_close_delimiter_errors() -> None:
-    text = "---\nvariables:\n  env: {}\nkind: AwxTestSuite\n"
-    with pytest.raises(ConfigError, match="frontmatter"):
-        split_frontmatter(text)
+@pytest.mark.parametrize(
+    "text",
+    ["---\nkind: AwxTestSuite\nname: x\n", "# a suite\n---\nkind: AwxTestSuite\nname: x\n"],
+)
+def test_an_unclosed_leading_marker_is_a_yaml_document_start_not_a_header(text: str) -> None:
+    """``---`` alone opens a YAML document; without a closing ``---`` there is no header."""
+    assert split_frontmatter(text) == ("", text)
+
+
+def test_split_frontmatter_skips_leading_comments() -> None:
+    text = "# Starter suite\n\n# more notes\n---\nvariables: {}\n---\nbody: y\n"
+    meta, body = split_frontmatter(text)
+    assert meta == "variables: {}\n"
+    assert body == "body: y\n"
+
+
+def test_comments_before_a_body_only_file_are_kept_in_the_body() -> None:
+    text = "# notes\nkind: AwxTestSuite\n"
+    assert split_frontmatter(text) == ("", text)
 
 
 def test_split_frontmatter_strips_leading_blank_lines() -> None:
