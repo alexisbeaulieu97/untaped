@@ -11,7 +11,7 @@ from untaped.capability_api import ConfigError
 def parse_resource_id(identifier: str) -> int:
     """Parse a CLI resource id for explicit ``--by-id`` modes."""
     if not identifier.isdecimal():
-        raise ConfigError(f"not a numeric id: {identifier!r}")
+        raise ConfigError(f"not a numeric id: {identifier!r}", category="invalid")
     return int(identifier)
 
 

@@ -98,7 +98,7 @@ def test_cache_sync_warms_the_corpus_without_a_query(source_repo: SourceRepo) ->
 
     first, second, forced = sync(), sync(), sync("--refresh")
 
-    assert list(first) == ["repo", "fetched_at", "error", "action"]
+    assert list(first) == ["repo", "fetched_at", "detail", "action"]
     assert (first["repo"], first["action"]) == ("acme/api", "synced")
     assert second["action"] == "skipped"
     assert forced["action"] == "synced"
@@ -166,8 +166,11 @@ def test_cache_sync_failure_exits_1_and_names_the_repo(tmp_path: Path) -> None:
     result = _cache(["cache", "sync", "--org", "acme", "-f", "json"], org={"acme": listed})
 
     assert result.exit_code == 1, result.output
-    assert json.loads(result.stdout)[0]["action"] == "failed"
-    assert "error: acme/gone:" in result.stderr
+    [row] = json.loads(result.stdout)
+    assert row["action"] == "failed"
+    assert row["error"]["message"] == row["detail"]
+    assert (row["error"]["category"], row["error"]["system"]) == ("failed", "git")
+    assert f"error: acme/gone: {row['detail']}" in result.stderr
     assert "sync: 1 failed" in result.stderr
 
 

@@ -13,6 +13,7 @@ from typing import Annotated, Any
 
 from cyclopts import App, Parameter
 
+from untaped.capabilities.awx.application.mutation_values import error_text
 from untaped.capabilities.awx.cli.context import AwxContext, open_context
 from untaped.capabilities.awx.cli.job_targets import (
     JobIdsArgument,
@@ -26,6 +27,7 @@ from untaped.capabilities.awx.domain.job import JOB_ROUTES, TERMINAL_STATUSES
 from untaped.capabilities.awx.domain.outcomes import JobCancelOutcome, JobRelaunchOutcome
 from untaped.capability_api import (
     ColumnsOption,
+    ErrorInfo,
     FormatOption,
     UntapedError,
     echo,
@@ -180,8 +182,18 @@ def _cancel_one(ctx: AwxContext, row: JobCancelOutcome) -> JobCancelOutcome:
         ctx.jobs.cancel(kind=row.kind, job_id=row.id)
     except UntapedError as exc:
         echo(f"failed: {_label(row.kind, row.id, row.name)}: {exc}", err=True)
-        return row.model_copy(update={"action": "failed", "detail": str(exc)})
+        return row.model_copy(update=_failure(exc))
     return row.model_copy(update={"action": "cancel_requested"})
+
+
+def _failure(exc: UntapedError) -> dict[str, Any]:
+    """The ``action``, ``detail`` and ``error`` of a row ``exc`` failed."""
+    detail = error_text(exc)
+    return {
+        "action": "failed",
+        "detail": detail,
+        "error": ErrorInfo.from_exception(exc, message=detail),
+    }
 
 
 def _check_relaunchable(kind: str, *, failed_hosts: bool) -> None:
@@ -200,7 +212,7 @@ def _relaunch_one(ctx: AwxContext, row: JobRelaunchOutcome) -> JobRelaunchOutcom
         )
     except UntapedError as exc:
         echo(f"failed: {_label(row.kind, row.target_id, row.name)}: {exc}", err=True)
-        return row.model_copy(update={"action": "failed", "detail": str(exc)})
+        return row.model_copy(update=_failure(exc))
     new_kind = created.get("type")
     return row.model_copy(
         update={

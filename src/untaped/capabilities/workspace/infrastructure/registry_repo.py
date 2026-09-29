@@ -51,12 +51,14 @@ class WorkspaceRegistryRepository:
             for entry in entries:
                 if entry.get("name") == name:
                     raise RegistryError(
-                        f"workspace name already registered: {name!r} → {entry.get('path')}"
+                        f"workspace name already registered: {name!r} → {entry.get('path')}",
+                        category="conflict",
                     )
                 if _canonical(entry.get("path", "")) == canonical:
                     raise RegistryError(
                         f"workspace path already registered: {entry.get('path')} "
-                        f"(as {entry.get('name')!r})"
+                        f"(as {entry.get('name')!r})",
+                        category="conflict",
                     )
             return [*entries, {"name": name, "path": str(path)}]
 
@@ -72,10 +74,14 @@ def _to_workspace(entry: dict[str, Any]) -> Workspace:
     path = entry.get("path")
     if not isinstance(name, str) or not name:
         raise RegistryError(
-            f"invalid workspace registry entry: missing or empty 'name' (got {entry!r})"
+            f"invalid workspace registry entry: missing or empty 'name' (got {entry!r})",
+            category="config",
         )
     if not isinstance(path, str) or not path:
-        raise RegistryError(f"invalid workspace registry entry {name!r}: missing or empty 'path'")
+        raise RegistryError(
+            f"invalid workspace registry entry {name!r}: missing or empty 'path'",
+            category="config",
+        )
     return Workspace(name=name, path=_canonical(path))
 
 

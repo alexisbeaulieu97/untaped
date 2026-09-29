@@ -58,7 +58,8 @@ def split_frontmatter(text: str) -> tuple[str, str]:
 
     raise ConfigError(
         "frontmatter is missing its closing '---' delimiter "
-        "(expected: '---\\n<yaml>\\n---\\n<body>')"
+        "(expected: '---\\n<yaml>\\n---\\n<body>')",
+        category="invalid",
     )
 
 
@@ -89,7 +90,8 @@ class _RefSafeLoader(yaml.SafeLoader):
             line = node.start_mark.line + 1
             raise ConfigError(
                 f"duplicate YAML mapping {plural(len(duplicates), 'key')} at line {line}: "
-                f"{', '.join(duplicates)}"
+                f"{', '.join(duplicates)}",
+                category="invalid",
             )
         return super().construct_mapping(node, deep=deep)
 
@@ -97,15 +99,16 @@ class _RefSafeLoader(yaml.SafeLoader):
 def _construct_ref(loader: yaml.SafeLoader, node: yaml.Node) -> RefSentinel:
     if not isinstance(node, yaml.MappingNode):
         raise ConfigError(
-            f"!ref must be a mapping with 'kind' and 'name' (line {node.start_mark.line + 1})"
+            f"!ref must be a mapping with 'kind' and 'name' (line {node.start_mark.line + 1})",
+            category="invalid",
         )
     mapping = loader.construct_mapping(node, deep=True)
     kind = mapping.pop("kind", None)
     name = mapping.pop("name", None)
     if not isinstance(kind, str) or not kind:
-        raise ConfigError(f"!ref requires a 'kind' string (got {kind!r})")
+        raise ConfigError(f"!ref requires a 'kind' string (got {kind!r})", category="invalid")
     if not isinstance(name, str) or not name:
-        raise ConfigError(f"!ref requires a 'name' string (got {name!r})")
+        raise ConfigError(f"!ref requires a 'name' string (got {name!r})", category="invalid")
     scope = {str(k): str(v) for k, v in mapping.items()} or None
     return RefSentinel(kind=kind, name=name, scope=scope)
 
@@ -122,7 +125,7 @@ def load_yaml_with_refs(text: str) -> Any:
     try:
         return yaml.load(text, Loader=_RefSafeLoader)
     except yaml.YAMLError as exc:
-        raise ConfigError(f"invalid YAML: {exc}") from exc
+        raise ConfigError(f"invalid YAML: {exc}", category="invalid") from exc
 
 
 # ---- Jinja2 env ---------------------------------------------------------
@@ -194,8 +197,8 @@ class DefaultParser:
             template = self._env.from_string(body)
             return template.render(dict(values))
         except UndefinedError as exc:
-            raise ConfigError(f"undefined Jinja2 variable: {exc}") from exc
+            raise ConfigError(f"undefined Jinja2 variable: {exc}", category="invalid") from exc
         except TemplateError as exc:
             # Covers ``TemplateSyntaxError`` (compile-time) and other Jinja2
             # errors raised during rendering (e.g. filter failures).
-            raise ConfigError(f"template error: {exc}") from exc
+            raise ConfigError(f"template error: {exc}", category="invalid") from exc

@@ -15,7 +15,8 @@ import pytest
 from untaped import bootstrap
 from untaped.capabilities.workspace import SPEC
 from untaped.capabilities.workspace.cli import app
-from untaped.capabilities.workspace.infrastructure import InterruptibleShellRunner
+from untaped.capabilities.workspace.infrastructure import InterruptibleShellRunner, git_runner
+from untaped.capability_api import GitCommandError
 from untaped.testing import CliInvoker, ScriptedPromptBackend
 
 pytestmark = pytest.mark.usefixtures("isolate_config")
@@ -77,7 +78,38 @@ def test_sync_failed_clone_is_failed_row_and_exit_one(
     assert rows["gone"]["action"] == "failed"
     assert rows["gone"]["detail"].startswith("cache fetch failed: git clone failed: ")
     assert str(isolated_cache) not in rows["gone"]["detail"]
+    assert rows["gone"]["error"]["message"] == rows["gone"]["detail"]
+    assert (rows["gone"]["error"]["category"], rows["gone"]["error"]["system"]) == ("failed", "git")
+    assert "error" not in rows["upstream"]
     assert "1 failed" in result.stderr
+
+
+def test_sync_timed_out_fetch_is_a_retryable_row_and_exits_five(
+    tmp_path: Path, upstream: Path, isolated_cache: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = CliInvoker()
+    runner.invoke(app, ["init", "smoke", "--path", str(tmp_path / "ws")])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+    assert runner.invoke(app, ["sync", "smoke"]).exit_code == 0
+    real_run_git = git_runner.run_git
+
+    def timing_out(args: list[str], **kwargs: Any) -> Any:
+        if args[0] == "fetch":
+            raise GitCommandError("git fetch timed out after 600s", timed_out=True)
+        return real_run_git(args, **kwargs)
+
+    monkeypatch.setattr(git_runner, "run_git", timing_out)
+    result = runner.invoke(app, ["sync", "smoke", "--format", "json"])
+
+    assert result.exit_code == 5, result.output
+    [row] = json.loads(result.stdout)
+    assert (row["action"], row["detail"]) == (
+        "failed",
+        "fetch failed: git fetch timed out after 600s",
+    )
+    assert row["error"]["category"] == "unavailable"
+    assert row["error"]["system"] == "git"
+    assert row["error"]["retryable"] is True
 
 
 def _workspace_with_safe_orphan(tmp_path: Path, upstream: Path) -> Path:

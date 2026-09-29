@@ -152,7 +152,7 @@ class PromptToolkitPromptBackend:
             return value
         repeated = self._prompt("Confirm value: ", default="", is_password=True)
         if value != repeated:
-            raise ConfigError("prompt values did not match")
+            raise ConfigError("prompt values did not match", category="invalid")
         return value
 
     def select(
@@ -204,7 +204,7 @@ class PromptToolkitPromptBackend:
                 style=self.style,
             ).run()
         if selected_indexes is None:
-            raise ConfigError("prompt cancelled")
+            raise ConfigError("prompt cancelled", category="failed", system="untaped")
         return [choices[index].value for index in selected_indexes]
 
     def _search_select(
@@ -227,7 +227,7 @@ class PromptToolkitPromptBackend:
         )
         choice_item = by_label.get(selected_label)
         if choice_item is None:
-            raise ConfigError(f"invalid selection: {selected_label}")
+            raise ConfigError(f"invalid selection: {selected_label}", category="invalid")
         return choice_item.value
 
     def _prompt(
@@ -291,7 +291,7 @@ def handle_prompt_exception(exc: BaseException) -> ConfigError:
     if isinstance(exc, KeyboardInterrupt):
         return PromptInterruptedError("prompt cancelled")
     if isinstance(exc, EOFError):
-        return ConfigError("prompt cancelled")
+        return ConfigError("prompt cancelled", category="failed", system="untaped")
     if isinstance(exc, ConfigError):
         return exc
     raise exc

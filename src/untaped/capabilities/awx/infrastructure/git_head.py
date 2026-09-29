@@ -2,14 +2,16 @@
 
 ``--scm-branch HEAD`` resolves to the current branch as named on its remote.
 AWX checks out what the remote has, so HEAD is only usable once pushed: the
-branch needs an upstream whose remote ref points at HEAD's commit.
+branch needs an upstream whose remote ref points at HEAD's commit. An
+unusable HEAD is a ``config`` error in ``git`` (fix the checkout: exit ``4``);
+a failed git command keeps its own attribution.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from untaped.capability_api import ConfigError, GitCommandError, q, run_git
+from untaped.capability_api import ConfigError, GitCommandError, attribution, q, run_git
 
 _TIMEOUT = 30.0
 
@@ -19,7 +21,7 @@ def pushed_branch(cwd: Path | None = None) -> str:
     try:
         return _pushed_branch(cwd)
     except GitCommandError as exc:
-        raise ConfigError(f"--scm-branch HEAD: {exc}") from exc
+        raise ConfigError(f"--scm-branch HEAD: {exc}", **attribution(exc)) from exc
 
 
 def _pushed_branch(cwd: Path | None) -> str:
@@ -27,7 +29,9 @@ def _pushed_branch(cwd: Path | None) -> str:
     # The full ref: ``--short`` answers ``heads/x`` when a tag ``x`` exists.
     local_ref = _git(cwd, "symbolic-ref", "--quiet", "HEAD", check=False)
     if not local_ref:
-        raise ConfigError("HEAD is detached; pass --scm-branch a branch, tag or commit")
+        raise ConfigError(
+            "HEAD is detached; pass --scm-branch a branch, tag or commit", system="git"
+        )
     branch = local_ref.removeprefix("refs/heads/")
     upstream = _git(
         cwd,
@@ -37,21 +41,25 @@ def _pushed_branch(cwd: Path | None) -> str:
     )
     remote, _, ref = upstream.partition("\0")
     if not remote or not ref:
-        raise ConfigError(f"branch {q(branch)} has no upstream; push it with git push -u")
+        raise ConfigError(
+            f"branch {q(branch)} has no upstream; push it with git push -u", system="git"
+        )
     name = ref.removeprefix("refs/heads/")
     if remote == ".":
         raise ConfigError(
-            f"branch {q(branch)} tracks local branch {name}; push it with git push -u"
+            f"branch {q(branch)} tracks local branch {name}; push it with git push -u",
+            system="git",
         )
     listed = run_git(
         ["ls-remote", remote, ref], cwd=cwd, timeout=_TIMEOUT, capture=True, retry_transient=True
     ).text.split()
     if not listed:
-        raise ConfigError(f"{remote} has no {name}; push {branch} first")
+        raise ConfigError(f"{remote} has no {name}; push {branch} first", system="git")
     if listed[0] != head:
         raise ConfigError(
             f"HEAD {head[:12]} is not pushed: {remote} {name} is at {listed[0][:12]}; "
-            f"push {branch} first"
+            f"push {branch} first",
+            system="git",
         )
     return name
 

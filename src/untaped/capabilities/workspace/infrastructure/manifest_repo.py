@@ -26,7 +26,10 @@ class YamlManifestRepository:
     def read(self, workspace_dir: Path) -> WorkspaceManifest:
         path = self.manifest_path(workspace_dir)
         if not path.is_file():
-            raise ManifestError(f"no manifest at {path} — run `untaped workspace init` first")
+            raise ManifestError(
+                f"no manifest at {path} — run `untaped workspace init` first",
+                category="not_found",
+            )
         try:
             raw = yaml.safe_load(_read_manifest_text(path)) or {}
         except yaml.YAMLError as exc:
@@ -51,7 +54,9 @@ class YamlManifestRepository:
         try:
             atomic_write(path, _dump(manifest), encoding="utf-8")
         except OSError as exc:
-            raise ManifestError(f"could not write manifest at {path}: {exc}") from exc
+            raise ManifestError(
+                f"could not write manifest at {path}: {exc}", category="failed"
+            ) from exc
 
     def delete(self, workspace_dir: Path) -> None:
         """Remove ``<workspace_dir>/untaped.yml`` if present."""
@@ -59,12 +64,14 @@ class YamlManifestRepository:
         try:
             path.unlink(missing_ok=True)
         except OSError as exc:
-            raise ManifestError(f"could not remove manifest at {path}: {exc}") from exc
+            raise ManifestError(
+                f"could not remove manifest at {path}: {exc}", category="failed"
+            ) from exc
 
     def read_external(self, source: Path) -> ManifestSource:
         """Read a manifest at an arbitrary path (used by ``import``)."""
         if not source.is_file():
-            raise ManifestError(f"manifest not found: {source}")
+            raise ManifestError(f"manifest not found: {source}", category="not_found")
         try:
             raw = yaml.safe_load(_read_manifest_text(source)) or {}
         except yaml.YAMLError as exc:
@@ -89,4 +96,4 @@ def _read_manifest_text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        raise ManifestError(f"could not read manifest at {path}: {exc}") from exc
+        raise ManifestError(f"could not read manifest at {path}: {exc}", category="failed") from exc

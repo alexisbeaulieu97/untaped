@@ -1,6 +1,7 @@
 import json
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -9,7 +10,7 @@ import respx
 from untaped import bootstrap
 from untaped.capabilities.awx.cli import app
 from untaped.settings import get_settings
-from untaped.testing import CliInvoker
+from untaped.testing import CliInvoker, CliResult
 
 
 def _mock_me(mock: respx.Router, path: str = "/api/v2/me/") -> None:
@@ -196,6 +197,68 @@ def test_ping_fails_when_the_token_is_rejected(
 
     assert result.exit_code != 0
     assert "401" in result.output + (result.stderr or "")
+
+
+def _list_answering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, response: httpx.Response, *args: str
+) -> CliResult:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path, api_prefix="/api/v2/")))
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        mock.get("/api/v2/job_templates/").mock(return_value=response)
+        return CliInvoker().invoke(app, ["job-templates", "list", *args])
+
+
+def test_a_rejected_token_exits_4_with_the_token_hint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rejected = httpx.Response(401, json={"detail": "Invalid token."})
+    result = _list_answering(tmp_path, monkeypatch, rejected)
+
+    assert result.exit_code == 4
+    assert result.stderr.endswith(
+        "error: AWX rejected the token (HTTP 401)\n"
+        "hint: run `untaped config set awx.token --prompt`\n"
+    )
+
+
+def _last_diagnostic(result: CliResult) -> dict[str, Any]:
+    record: dict[str, Any] = json.loads(result.stderr.splitlines()[-1])
+    return record
+
+
+def test_json_diagnostics_report_the_failure_attribution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    rejected = httpx.Response(401, json={"detail": "Invalid token."})
+    result = _list_answering(tmp_path, monkeypatch, rejected)
+
+    assert result.exit_code == 4
+    record = _last_diagnostic(result)
+    assert record["message"] == "AWX rejected the token (HTTP 401)"
+    assert (record["category"], record["system"]) == ("auth", "awx")
+    assert record["hint"] == "run `untaped config set awx.token --prompt`"
+    assert record["details"]["status"] == 401
+
+
+@pytest.mark.parametrize(
+    ("status", "category", "exit_code"),
+    [(502, "unavailable", 5), (403, "permission", 4), (400, "invalid", 1)],
+)
+def test_an_awx_failure_exits_with_its_category(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+    category: str,
+    exit_code: int,
+) -> None:
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    failure = httpx.Response(status, json={"detail": "nope"})
+    result = _list_answering(tmp_path, monkeypatch, failure)
+
+    assert result.exit_code == exit_code
+    record = _last_diagnostic(result)
+    assert (record["category"], record["system"]) == (category, "awx")
 
 
 def test_ping_rejects_command_local_profile_flag(

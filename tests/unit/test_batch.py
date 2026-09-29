@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import io
+import json
 from collections.abc import Callable
 from typing import Any
 
 import pytest
 
 from untaped.batch import BatchOutcome, batch_apply, finish
-from untaped.errors import HttpError, UsageError
+from untaped.errors import HttpError, UntapedError, UsageError
 from untaped.prompts import reset_terminal_override, set_terminal_override
 from untaped.testing import ScriptedPromptBackend, TtyStringIO
 from untaped.ui import UiContext
@@ -114,15 +115,41 @@ def test_finish_exits_one_with_standard_line_on_decline(
 @pytest.mark.parametrize(
     ("result", "predicate_hit", "code"),
     [
-        (BatchOutcome(results=[("a", "a")], failed=1, planned_rows=[{}, {}]), False, 1),
-        (BatchOutcome(results=[("a", "a")], failed=0, planned_rows=[{}]), False, None),
+        (
+            BatchOutcome(
+                results=[("a", "a")], planned_rows=[{}, {}], failures=[("b", UntapedError("x"))]
+            ),
+            False,
+            1,
+        ),
+        (BatchOutcome(results=[("a", "a")], planned_rows=[{}]), False, None),
+        (
+            BatchOutcome(
+                results=[],
+                planned_rows=[{}, {}],
+                failures=[
+                    ("a", UntapedError("gone", category="not_found")),
+                    ("b", UntapedError("down", category="unavailable")),
+                ],
+            ),
+            False,
+            5,
+        ),
         (True, False, 1),
         (False, False, None),
         # A predicate hit exits 3 only when nothing failed.
         (False, True, 3),
         (True, True, 1),
     ],
-    ids=["partial-failure", "success", "failed", "ok", "predicate-hit", "failed-and-hit"],
+    ids=[
+        "partial-failure",
+        "success",
+        "most-severe-failure",
+        "failed",
+        "ok",
+        "predicate-hit",
+        "failed-and-hit",
+    ],
 )
 def test_finish_exit_codes(result: Any, predicate_hit: bool, code: int | None) -> None:
     if code is None:
@@ -247,8 +274,37 @@ def test_partial_failure_counts_and_continues(
 
     assert "error: id=a: boom" in ui.stderr.getvalue()  # type: ignore[attr-defined]
     assert outcome.failed == 1
+    assert [(item, str(error)) for item, error in outcome.failures] == [("a", "boom")]
     assert outcome.results == [("b", "done-b")]
     assert outcome.any_failed
+
+
+def test_per_item_errors_are_json_lines_under_json_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+
+    def action(item: str) -> str:
+        raise HttpError("HTTP 503", status_code=503, url="https://h/x", system="awx")
+
+    ui = _ui(interactive=True, confirms=[True])
+    outcome = _run(interactive=True, items=["a"], action=action, label=str, ui=ui)
+
+    lines = ui.stderr.getvalue().splitlines()  # type: ignore[attr-defined]
+    assert [json.loads(line) for line in lines] == [
+        {
+            "level": "error",
+            "item": "a",
+            "message": "HTTP 503 for https://h/x",
+            "category": "unavailable",
+            "system": "awx",
+            "retryable": True,
+            "hint": None,
+            "exit_code": 5,
+            "details": {"status": 503, "url": "https://h/x"},
+        }
+    ]
+    assert outcome.exit_code == 5
 
 
 def test_empty_items_is_a_noop() -> None:

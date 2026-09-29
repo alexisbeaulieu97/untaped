@@ -10,6 +10,7 @@ from untaped.capabilities.workspace.application.ports import (
 from untaped.capabilities.workspace.application.prune_safety import format_all_prune_blockers
 from untaped.capabilities.workspace.domain import Repo, Workspace
 from untaped.capabilities.workspace.errors import GitError, WorkspaceError
+from untaped.capability_api import attribution
 
 
 class RemoveRepo:
@@ -36,7 +37,8 @@ class RemoveRepo:
             new_manifest, repo = manifest.remove_repo(ident)
         except ValueError as exc:
             raise WorkspaceError(
-                f"repo {ident!r} not declared in workspace {workspace.name!r}"
+                f"repo {ident!r} not declared in workspace {workspace.name!r}",
+                category="not_found",
             ) from exc
 
         local = workspace.path / repo.name
@@ -46,7 +48,8 @@ class RemoveRepo:
                 blockers = self._prune_safety.prune_blockers(local)
             except GitError as exc:
                 raise WorkspaceError(
-                    f"refusing to prune {local}: cannot inspect working tree ({exc})"
+                    f"refusing to prune {local}: cannot inspect working tree ({exc})",
+                    **attribution(exc),
                 ) from exc
             if blockers:
                 detail = format_all_prune_blockers(blockers)

@@ -20,6 +20,7 @@ from untaped.capabilities.workspace.domain import (
     WorkspaceManifest,
 )
 from untaped.capabilities.workspace.errors import GitError, UnmatchedRepoFilterError
+from untaped.capability_api import ErrorInfo
 
 
 class ApplyWorkspaceBranch:
@@ -79,12 +80,12 @@ class ApplyWorkspaceBranch:
             return _outcome(workspace, repo, target_branch, "skipped", "not cloned")
         if not self._fs.exists(local / ".git"):
             return _outcome(workspace, repo, target_branch, "skipped", NOT_A_GIT_REPOSITORY)
-        if (detail := self._try_fetch(local)) is not None:
-            return _outcome(workspace, repo, target_branch, "failed", detail)
+        if (fetch_error := self._try_fetch(local)) is not None:
+            return _failed(workspace, repo, target_branch, "fetch failed", fetch_error)
         try:
             status = self._git.status(local)
         except GitError as exc:
-            return _outcome(workspace, repo, target_branch, "failed", f"status failed: {exc}")
+            return _failed(workspace, repo, target_branch, "status failed", exc)
         if status.dirty:
             return _outcome(workspace, repo, target_branch, "skipped", "dirty working tree")
         if status.diverged:
@@ -108,7 +109,7 @@ class ApplyWorkspaceBranch:
         try:
             self._git.checkout_branch(local, branch=target_branch)
         except GitError as exc:
-            return _outcome(workspace, repo, target_branch, "failed", f"checkout failed: {exc}")
+            return _failed(workspace, repo, target_branch, "checkout failed", exc)
         return _outcome(
             workspace,
             repo,
@@ -117,11 +118,11 @@ class ApplyWorkspaceBranch:
             f"from {status.branch or 'detached'}",
         )
 
-    def _try_fetch(self, repo_path: Path) -> str | None:
+    def _try_fetch(self, repo_path: Path) -> GitError | None:
         try:
             self._git.fetch(repo_path)
         except GitError as exc:
-            return f"fetch failed: {exc}"
+            return exc
         return None
 
 
@@ -131,6 +132,8 @@ def _outcome(
     target_branch: str | None,
     action: BranchApplyAction,
     detail: str,
+    *,
+    error: ErrorInfo | None = None,
 ) -> BranchApplyOutcome:
     return BranchApplyOutcome(
         repo=repo.name,
@@ -139,4 +142,14 @@ def _outcome(
         target_branch=target_branch,
         action=action,
         detail=detail,
+        error=error,
     )
+
+
+def _failed(
+    workspace: Workspace, repo: Repo, target_branch: str | None, step: str, exc: GitError
+) -> BranchApplyOutcome:
+    """A ``failed`` row: ``<step>: <git error>``, with the error's attribution."""
+    detail = f"{step}: {exc}"
+    error = ErrorInfo.from_exception(exc, message=detail)
+    return _outcome(workspace, repo, target_branch, "failed", detail, error=error)

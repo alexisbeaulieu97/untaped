@@ -1,5 +1,112 @@
 # Changelog
 
+## Unreleased
+
+- Core
+  - **Breaking:** failures say what kind they are and who is responsible.
+    Every error carries a `category` (`usage`, `config`, `auth`,
+    `permission`, `not_found`, `invalid`, `conflict`, `unavailable`,
+    `failed`, `interrupted`) and a `system` (`untaped`, `local`, `git`, or
+    the service: `awx`, `jira`, `github`), which select the exit code.
+    Two exit codes are new: **4** means the environment needs fixing (config,
+    a rejected token, missing permission), and **5** means a temporary
+    failure (network, timeout, 5xx, 429, a busy lock; retry later). Scripts
+    that test for `1` must also handle 4 and 5. A run exits with the most
+    severe failure it saw: `130 > 2 > 4 > 5 > 1 > 3 > 0`, so a batch with one
+    rejected token exits 4 however many other items failed. See
+    [exit codes](docs/reference/exit-codes.md).
+  - **Breaking:** `ConfigError` exits 4. Errors that are really about the
+    input rather than the setup were recategorized and still exit 1: an
+    invalid or missing `--vars-file`/`--fields-file`/`--patch-file`, an
+    invalid pipe record or empty stdin, a rejected `config set` value, an
+    invalid `config edit` result, an unknown or existing profile, alias or
+    skill. `config` commands that read a broken `config.yml`, a missing
+    `$EDITOR`, an undefined active profile, and a failing `token_command`
+    exit 4. A config or state lock another process holds exits 5, and a
+    `config edit` whose file changed meanwhile is a `conflict` (exit 1).
+  - **Breaking:** `skills install/update/remove` flag conflicts
+    (`--target-dir` without `--target`, `--project-dir` without
+    `--scope local`, names plus `--all`, a duplicate name) exit 2, and a
+    prompt with no terminal on stdin exits 2 (`usage`).
+  - **New:** with `--format json`, `yaml` or `pipe` (the flag,
+    `UNTAPED_FORMAT` or `ui.format`), or `UNTAPED_DIAGNOSTICS=json`, stderr
+    is JSON Lines: one object per error
+    (`level`, `message`, `category`, `system`, `retryable`, `hint`,
+    `exit_code`, `details`), per-item error (plus `item`), warning, hint and
+    note, and progress is silent. `UNTAPED_DIAGNOSTICS=text` keeps text.
+    stdout and the pipe envelope are unchanged. See
+    [stderr diagnostics](docs/reference/pipes.md#stderr-diagnostics).
+  - **New:** failed rows of outcome records (`*_outcome` kinds) carry an
+    `error` object (`category`, `system`, `retryable`, `message`, `hint`)
+    next to their `detail`; rows that did not fail have no `error` key, and
+    tables leave it out.
+  - **New:** HTTP failures take their category from the status (401 auth,
+    403 permission, 404 not_found, 409 conflict, 400/422 invalid, 429/5xx
+    unavailable; no response at all is unavailable), name the service as
+    their `system`, and record `status`, `url` and the number of `attempts`.
+    Git failures are `git`; a timeout or a transient transport error is
+    `unavailable`, and a missing `git` binary is `config`.
+  - **Breaking (SDK):** the capability API is `3.0`
+    (`CAPABILITY_API_VERSION = (3, 0)`); providers must declare
+    `((3, 0), (4, 0))`. `UntapedError` gains `category`, `system`, `hint` and
+    `details` (class defaults, overridable per instance by keyword) and
+    derives `exit_code` and `retryable` from the category; a class no longer
+    sets `exit_code`. `BatchOutcome` keeps `failures` (each failed item with
+    its error) and derives `failed`; `ExitCode` gains `ENVIRONMENT` (4) and
+    `UNAVAILABLE` (5); `OutcomeRecord` and `TargetRecord` reserve `error`.
+    New exports: `ErrorCategory`, `ErrorInfo`, `attribution`,
+    `note_failure`, `report_error`. See
+    [Raise with a category](docs/conventions.md#raise-with-a-category-or-inherit-one).
+- Workspace
+  - **Breaking:** a `sync` (or `add --sync`, `import --sync`) whose git call
+    timed out or lost the network exits 5; git not installed exits 4; a
+    broken `$EDITOR` for `edit` exits 4; an invalid `workspace.parallel`
+    setting exits 4; a `path` NAME that is neither a workspace nor a
+    directory exits 2. Failed `sync`, `branch apply` and uninspectable
+    `status` rows carry `error`.
+- GitHub
+  - **Breaking:** a rejected token (401) or a missing permission (403) exits
+    4, and a rate limit (429, rate-limited 403) or an unavailable API exits
+    5, for every command including `sweep` and `cache sync`.
+  - **Breaking:** `github.sync_outcome` (`cache sync`) renames its string
+    field `error` to `detail`; a failed row's `error` is now the structured
+    object. A fetch that timed out exits 5.
+- Jira
+  - **Breaking:** a rejected token (401, same hint text) and a missing
+    permission (403) exit 4; 5xx, 429 and network failures exit 5; a missing
+    issue stays 1 (`not_found`).
+- AWX
+  - **Breaking:** a rejected token (401) or a missing permission (403) exits
+    4, and an unreachable controller, a timeout, a 5xx or a 429 exits 5, for
+    every command; `test run` exits 4 or 5 when a launch fails for those
+    reasons, instead of 1. `--scm-branch HEAD` that cannot resolve a pushed
+    branch, and `test run`/`list`/`validate` without paths and without
+    `git`, exit 4. A missing required `--var`, `patch --stdin` without
+    `--set`/`--patch-file`, and selection flag misuse exit 2. An invalid
+    resource file, suite or vars file stays 1.
+  - **New:** AWX API errors are HTTP errors: a bodiless one names its URL,
+    and `--verbose` shows the raw response body. A transport failure stays
+    `unavailable` instead of becoming a status-less API error.
+  - **New:** failed, partial and conflict rows of `apply`, `patch`, `edit`,
+    `delete`, `copy`, `rename`, membership changes, launches, syncs and job
+    actions carry `error`.
+- Ansible
+  - **Breaking:** `source refresh` (and `--refresh` on the graph commands)
+    exits 5 when it pauses at the GraphQL rate-limit floor, hits a global
+    rate limit, or any repo failed transiently; `ansible.default_source`
+    naming a missing source, or a broken saved source, exits 4.
+- Recipe
+  - **Breaking:** recipe errors keep their own category instead of being
+    reported as configuration errors: a missing recipe, pack, hook, backup or
+    file is `not_found`, an invalid recipe or input `invalid`, local edits a
+    `conflict`, a failing hook `failed` (all exit 1). A missing `uv` exits 4,
+    as do `backups prune` without `--keep`/`--older-than` or settings and a
+    broken `$EDITOR`; a transient git failure fetching a pack exits 5; an
+    invalid YAML value in `hooks run --arg` exits 2.
+  - **Breaking:** `recipe.apply_outcome` renames its string field `error` to
+    `detail`; a failed row's `error` is now the structured object. Errored
+    `recipe.test` rows gain `error` too.
+
 ## 8.1.0
 
 A backwards-compatible release: shared core helpers (capability SDK 2.1),

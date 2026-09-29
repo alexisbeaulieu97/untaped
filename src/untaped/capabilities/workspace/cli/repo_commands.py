@@ -211,7 +211,9 @@ def _read_add_urls(urls: list[str], *, stdin: bool) -> list[str]:
     for env in piped.records:
         value = env.record.get("clone_url") or env.record.get("url")
         if not isinstance(value, str) or not value.strip():
-            raise ConfigError(f"line {env.lineno}: record has no 'clone_url' or 'url'")
+            raise ConfigError(
+                f"line {env.lineno}: record has no 'clone_url' or 'url'", category="invalid"
+            )
         found.append(value.strip())
     return found
 

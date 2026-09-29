@@ -9,9 +9,11 @@ implements each one. Use the helper instead of writing your own version.
 | Code | Meaning | How to produce it |
 |---|---|---|
 | 0 | Success | Return normally. |
-| 1 | Runtime failure, a failed item, or a declined confirmation | Raise an `UntapedError` subclass inside `report_errors()`, or call `finish(any_failed)`. |
+| 1 | The thing ran and failed, a failed item, a missing name, rejected input, or a declined confirmation | Raise an `UntapedError` whose category is `failed`, `not_found`, `invalid` or `conflict` inside `report_errors()`, or call `finish(any_failed)`. |
 | 2 | Usage error, found before any side effect | Raise `UsageError` inside `report_errors()`, or call `raise_usage()` outside it. |
 | 3 | Predicate hit (`--check` drift, `--fail-on-match`, `--strict`) | Call `finish(any_failed, predicate_hit=True)`. |
+| 4 | The environment needs fixing: config, a rejected token, missing permission | Raise with category `config` (`ConfigError`), `auth` or `permission`. |
+| 5 | Temporary: network, timeout, 5xx, 429, a busy lock | Raise with category `unavailable` (`HttpTransportError` and 429/5xx statuses already are). |
 | 130 | Interrupted with Ctrl-C, including at a prompt | Handled by the root shell. |
 
 `ExitCode` names these values. Output into a closed pipe (`untaped … | head`)
@@ -19,16 +21,52 @@ exits 0 quietly, for `--help` and data commands alike.
 
 Usage errors include conflicting flags, a value out of range, no selection,
 and "requires `--yes` when not interactive". Problems that depend on
-configuration or remote state stay `ConfigError` or another `UntapedError`.
+configuration or remote state are another `UntapedError`.
+
+### Raise with a category, or inherit one
+
+Every `UntapedError` has a `category` (`ErrorCategory`: `usage`, `config`,
+`auth`, `permission`, `not_found`, `invalid`, `conflict`, `unavailable`,
+`failed`, `interrupted`) that selects the exit code, and a `system` that says
+who is responsible (`untaped`, `local`, `git`, or the service section, such as
+`awx`). A capability's error classes declare them as class defaults
+(`category = ErrorCategory.NOT_FOUND`, `system = "awx"`); pass
+`category=`, `system=`, `hint=` or `details=` to override one instance.
+
+- `ConfigError` means **local setup** (settings, credentials, a missing tool)
+  and exits 4. An invalid input *file* the command reads, or a value the user
+  gave that fails validation, is `invalid` (exit 1), not config.
+- HTTP errors take their category from the status and their `system` from
+  `connected_client(section=…)`. A mapper that turns them into capability
+  errors keeps both: `JiraApiError(msg, **attribution(err))`, and a 401 stays
+  `auth` even when it becomes a `ConfigError` for its hint.
+- Put a follow-up command in `hint=` (``"run `untaped config set awx.token --prompt`"``)
+  rather than in the message; text output prints it as a `hint:` line.
+- When a new error replaces a caught one, pass `**attribution(exc)` so the
+  category and system survive.
+- A run exits with the most severe failure it saw: `130 > 2 > 4 > 5 > 1 > 3 > 0`.
+  `report_errors()`, `resolve_each`, `batch_apply`, `report_error` and
+  `ErrorInfo.from_exception` note each failure, and `finish(any_failed)` exits
+  with the most severe one. Code that swallows a failure into a row without
+  those helpers calls `note_failure(exc)`.
+- A failed row carries the structured failure next to its `detail`:
+  `error=ErrorInfo.from_exception(exc, message=detail)` on `OutcomeRecord` and
+  `TargetRecord` rows (`.model_dump(mode="json")` for a dict row). Keep the
+  exception until the row is built; never flatten it into a string first.
+
+See [exit codes](./reference/exit-codes.md) for the category table.
 
 ## Messages (stderr)
 
-stdout carries data only. Everything else goes to stderr.
+stdout carries data only. Everything else goes to stderr. With `--format
+json|yaml|pipe` (or `UNTAPED_DIAGNOSTICS=json`) every stderr line below is a
+JSON object instead (see [stderr diagnostics](./reference/pipes.md#stderr-diagnostics));
+the helpers do this for you, so never print a JSON line yourself.
 
 | Message | Shape | Helper |
 |---|---|---|
 | Error | `error: <msg>`: lowercase, no trailing period | Raise an `UntapedError`; `report_errors()` prints it. |
-| Per-item error | `error: <item>: <msg>` | `resolve_each`, `batch_apply` |
+| Per-item error | `error: <item>: <msg>` | `resolve_each`, `batch_apply`, `report_error(exc, item=…)` |
 | Not found | `<noun> not found: 'x'; known: a, b` | `not_found("profile", name, known=names)` |
 | Quoted name | `'name'` | `q(name)` |
 | Count | `3 repos`, never `repo(s)` | `plural(3, "repo")` |
@@ -130,6 +168,10 @@ come from a closed set:
   domain-specific past-tense verbs.
 - Base records about files or directories on `TargetRecord`, which requires an
   absolute `target_path`.
+- `error` is reserved: both bases give a failed row an optional `error`
+  (`ErrorInfo`: `category`, `system`, `retryable`, `message`, `hint`), left out
+  of rows that did not fail and of tables. Put the human text in `detail`;
+  never declare your own `error` field.
 - Base check results on `CheckRecord`, with `status` set to `pass`, `warn`,
   `fail` or `error`.
 - Type timestamps as `UtcTimestamp` and name them `<event>_at`. They render

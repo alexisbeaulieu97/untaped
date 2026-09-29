@@ -12,6 +12,8 @@ import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 
+from untaped.capabilities.recipe.errors import UvMissingError
+
 # Environment variables a uv process on a pack project inherits
 # (case-insensitive): what uv and Python need, never the caller's tokens.
 _UV_ENV_NAMES = frozenset(
@@ -80,7 +82,7 @@ def check_lock(project_root: Path) -> None:
             text=True,
         )
     except FileNotFoundError as exc:
-        raise ValueError("uv executable not found for project lock") from exc
+        raise UvMissingError("uv executable not found for project lock") from exc
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip()
         if "needs to be updated" in detail.lower():
@@ -104,7 +106,7 @@ def lock_project(project_root: Path) -> None:
             text=True,
         )
     except FileNotFoundError as exc:
-        raise ValueError("uv executable not found for project lock") from exc
+        raise UvMissingError("uv executable not found for project lock") from exc
     except subprocess.CalledProcessError as exc:
         detail = exc.stderr.strip() or exc.stdout.strip()
         message = "failed to create project uv.lock"

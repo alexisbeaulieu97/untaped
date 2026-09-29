@@ -103,6 +103,13 @@ def test_test_recipe_scope_and_no_cases_failure(tmp_path: Path) -> None:
         "case": "",
         "status": "error",
         "detail": "no test cases found",
+        "error": {
+            "category": "invalid",
+            "system": "local",
+            "retryable": False,
+            "message": "no test cases found",
+            "hint": None,
+        },
     }
 
 

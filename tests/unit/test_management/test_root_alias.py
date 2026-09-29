@@ -228,7 +228,7 @@ def test_a_malformed_stored_alias_is_reported(_isolated_config: Path) -> None:
         "profiles:\n  default:\n    shell:\n      aliases:\n        a: config list\n",
     )
     result = _invoke("alias", "remove", "a", "--yes")
-    assert result.exit_code == 1
+    assert result.exit_code == 4  # the stored config is malformed
     assert "shell.aliases" in result.stderr
     assert "Traceback" not in result.output
 

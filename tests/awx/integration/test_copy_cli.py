@@ -90,7 +90,8 @@ def test_copy_refuses_when_awx_reports_can_copy_false(fake_aap: Any) -> None:
 
     result = _copy("Deploy", "--name", "Deploy next", "--yes")
 
-    assert result.exit_code == 1
+    # AWX's can_copy is a permission check: exit 4.
+    assert result.exit_code == 4
     assert "can_copy: false" in result.stderr
     assert _copies(fake_aap) == []
 

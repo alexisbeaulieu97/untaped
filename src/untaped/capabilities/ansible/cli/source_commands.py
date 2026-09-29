@@ -40,6 +40,7 @@ from untaped.capability_api import (
     emit,
     get_config_section,
     not_found,
+    note_failure,
     plural,
     q,
     report_errors,
@@ -206,7 +207,7 @@ def source_patch_command(
         source_repo = SourceRepository()
         previous = source_repo.get(name)
         if previous is None:
-            raise UntapedError(_unknown_source(name, source_repo))
+            raise UntapedError(_unknown_source(name, source_repo), category="not_found")
         edited, changes = _edit_source_definition(
             previous,
             add_orgs=add_orgs,
@@ -268,7 +269,7 @@ def source_get_command(
         source_repo = SourceRepository()
         source = source_repo.get(name)
         if source is None:
-            raise UntapedError(_unknown_source(name, source_repo))
+            raise UntapedError(_unknown_source(name, source_repo), category="not_found")
         emit(_source_row(source), fmt=fmt, columns=columns, kind="ansible.source")
 
 
@@ -286,7 +287,7 @@ def source_remove_command(
     with report_errors():
         source_repo = SourceRepository()
         if source_repo.get(name) is None:
-            raise UntapedError(_unknown_source(name, source_repo))
+            raise UntapedError(_unknown_source(name, source_repo), category="not_found")
         if not dry_run:
             app_context().ui(strict=False).confirm_or_cancel(
                 f"Remove source {q(name)} and its cached source data?",
@@ -318,7 +319,9 @@ def source_status_command(
         source_repo = SourceRepository()
         configured = {source.name: source for source in source_repo.entries()}
         if name is not None and name not in configured:
-            raise UntapedError(not_found("source", name, known=sorted(configured)))
+            raise UntapedError(
+                not_found("source", name, known=sorted(configured)), category="not_found"
+            )
         names = [name] if name is not None else sorted(configured)
         rows = [
             _source_status_row(
@@ -355,7 +358,7 @@ def source_refresh_command(
         source_repo = SourceRepository()
         source = source_repo.get(name)
         if source is None:
-            raise UntapedError(_unknown_source(name, source_repo))
+            raise UntapedError(_unknown_source(name, source_repo), category="not_found")
         settings = get_config_section("ansible", AnsibleSettings)
         aliases = AliasRepository().entries()
         git_parallel = clamp_parallel(
@@ -380,10 +383,14 @@ def source_refresh_command(
         if result.failures:
             for failure in result.failures:
                 echo(f"failed {failure.repo}: {failure.reason}", err=True)
+                note_failure(failure.category)  # the exit code follows the worst one
             if _has_transient_ref_probe_failure(result):
                 echo(_transient_ref_probe_rerun_hint(name), err=True)
         if not result.completed:
-            raise UntapedError(_refresh_pause_message(result, name))
+            # Paused at the GitHub rate-limit floor: resuming later succeeds.
+            raise UntapedError(
+                _refresh_pause_message(result, name), category="unavailable", system="github"
+            )
         if result.failures:
             raise UntapedError(_refresh_failure_message(result))
 
@@ -569,7 +576,7 @@ def _edit_source_definition(
             ref_scan_default=edited_ref_scan_default,
         )
     except ValueError as exc:
-        raise UntapedError(str(exc)) from exc
+        raise UntapedError(str(exc), category="invalid") from exc
     return edited, changes
 
 
@@ -600,7 +607,9 @@ def _apply_source_list_edit(
         changes.append(f"cleared {label}")
     for value in remove or []:
         if value not in edited:
-            raise UntapedError(f"source {source_name!r} has no {label} {value}")
+            raise UntapedError(
+                f"source {source_name!r} has no {label} {value}", category="not_found"
+            )
         edited.remove(value)
         changes.append(f"removed {label} {value}")
     for value in add or []:
@@ -617,7 +626,7 @@ def _normalized_team_edit_values(values: list[str] | None, orgs: list[str]) -> l
     try:
         return normalize_team_refs(values, orgs)
     except ValueError as exc:
-        raise UntapedError(str(exc)) from exc
+        raise UntapedError(str(exc), category="invalid") from exc
 
 
 def _source_row(source: SourceDefinition) -> dict[str, object]:

@@ -314,15 +314,15 @@ def test_duplicate_skill_across_externals_keeps_the_first() -> None:
 @pytest.mark.parametrize(
     ("rng", "expected"),
     [
-        (((2, 0), (3, 0)), ((2, 0), (3, 0))),
+        (((3, 0), (4, 0)), ((3, 0), (4, 0))),
         (((0, 0), (99, 0)), ((0, 0), (99, 0))),
-        (((2, 0), (2, 5)), ((2, 0), (2, 5))),
-        ([[2, 0], [3, 0]], ((2, 0), (3, 0))),
+        (((3, 0), (3, 5)), ((3, 0), (3, 5))),
+        ([[3, 0], [4, 0]], ((3, 0), (4, 0))),
     ],
 )
 def test_api_range_accepts_covering_ranges(rng: Any, expected: Any) -> None:
-    # Checked against 2.0: the lower bound is inclusive.
-    assert check_api_range(rng, (2, 0)) == expected
+    # Checked against 3.0: the lower bound is inclusive.
+    assert check_api_range(rng, (3, 0)) == expected
     spec = make_spec(name="ranged")
     result = compose(make_shell(), [], [make_external(spec, api_requires=rng)])
     assert [c.spec.name for c in result.capabilities] == ["ranged"]
@@ -336,14 +336,14 @@ def test_api_versions_compare_as_tuples_not_floats() -> None:
         check_api_range(((1, 0), (1, 10)), (1, 10))
 
 
-def test_api_2_0_rejects_1_x_providers() -> None:
-    """8.0 broke the SDK: ranges capped below 2.0 no longer compose."""
+def test_api_3_0_rejects_2_x_providers() -> None:
+    """9.0 broke the SDK: ranges capped below 3.0 no longer compose."""
     capped = compose(
-        make_shell(), [], [make_external(make_spec(name="old"), api_requires=((1, 0), (2, 0)))]
+        make_shell(), [], [make_external(make_spec(name="old"), api_requires=((2, 0), (3, 0)))]
     )
     (record,) = capped.quarantine
     assert record.reason == "api-range"
-    assert "does not admit SDK version 2.1" in record.detail
+    assert "does not admit SDK version 3.0" in record.detail
 
 
 @pytest.mark.parametrize(
@@ -433,7 +433,7 @@ def _needs_arg(value: str) -> CapabilitySpec:
     return make_spec(name="argful")
 
 
-_needs_arg.api_requires = ((2, 0), (3, 0))  # type: ignore[attr-defined]
+_needs_arg.api_requires = ((3, 0), (4, 0))  # type: ignore[attr-defined]
 
 
 @pytest.mark.parametrize(

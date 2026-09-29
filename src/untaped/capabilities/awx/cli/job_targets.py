@@ -75,4 +75,4 @@ def as_job_id(value: str) -> int:
     try:
         return int(value)
     except ValueError as exc:
-        raise ConfigError(f"not a numeric job id: {value!r}") from exc
+        raise ConfigError(f"not a numeric job id: {value!r}", category="invalid") from exc

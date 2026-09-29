@@ -305,7 +305,7 @@ def test_smoke_unified_checks_exact_capability_metadata(tmp_path: Path) -> None:
             "status": "ready",
             "distribution": "untaped",
             "version": PROJECT_VERSION,
-            "api": ">=2.0,<3.0",
+            "api": ">=3.0,<4.0",
         }
         for command in release.BUILTIN_CAPABILITIES
     ]

@@ -13,6 +13,7 @@ from untaped.capabilities.recipe.domain.pack import InstalledPack, PackManifest,
 from untaped.capabilities.recipe.errors import (
     AmbiguousRefError,
     HookNotFoundError,
+    RecipeError,
     RecipeNotFoundError,
 )
 from untaped.capabilities.recipe.infrastructure import pack_store
@@ -126,8 +127,9 @@ def test_pack_library_duplicate_requires_force_or_name(tmp_path: Path) -> None:
     library = PackLibrary(library_root=tmp_path / "library")
     library.add(source, source=str(source), rev=None, name=None, force=False)
 
-    with pytest.raises(ValueError, match=r"ansible.*--force.*--name"):
+    with pytest.raises(RecipeError, match=r"ansible.*--force.*--name") as raised:
         library.add(replacement, source=str(replacement), rev=None, name=None, force=False)
+    assert raised.value.category == "conflict"
 
     library.add(replacement, source=str(replacement), rev=None, name=None, force=True)
 

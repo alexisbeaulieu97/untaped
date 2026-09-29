@@ -67,6 +67,9 @@ class FakeAap:
         self.enrich_survey_spec_response = False
         # HTTP method → error status for ``<template>/<id>/survey_spec/``.
         self.survey_errors: dict[str, int] = {}
+        # HTTP status every action POST (``launch/``, ``update/``…) is refused
+        # with, e.g. 401 for a rejected token or 503 for an unavailable AWX.
+        self.action_error: int | None = None
 
     def seed(self, api_path: str, **fields: Any) -> dict[str, Any]:
         record_id = fields.pop("id", None) or self._next_id
@@ -312,6 +315,8 @@ class FakeAap:
         record = self.store.get(api_path, {}).get(id_)
         if record is None:
             return _err(404, f"{api_path}/{id_}/{action}/")
+        if self.action_error is not None:
+            return _err(self.action_error, f"{action} refused")
         self.actions_called.append((api_path, id_, action, body))
         # Consume the one-shot overrides so a subsequent launch sees defaults.
         status = self.next_action_status

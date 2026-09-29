@@ -18,7 +18,7 @@ from untaped.capabilities.workspace.errors import (
     UnmatchedRepoFilterError,
     WorkspaceError,
 )
-from untaped.capability_api import bounded_map
+from untaped.capability_api import ErrorInfo, UntapedError, bounded_map
 
 
 @dataclass(frozen=True)
@@ -183,8 +183,10 @@ class SyncWorkspaces:
         """Run repo jobs on at most ``workers`` threads.
 
         Per-job exceptions are collected (the pool drains so every repo
-        gets a row); anything escaping on the calling thread — including
-        ``KeyboardInterrupt`` — cancels queued jobs via ``bounded_map``.
+        gets a row): an :class:`UntapedError` becomes the repo's ``failed``
+        row (with its ``error``), anything else is unexpected. Anything
+        escaping on the calling thread — including ``KeyboardInterrupt`` —
+        cancels queued jobs via ``bounded_map``.
         """
         rows: list[_PlannedOutcome] = []
         unexpected: list[tuple[RepoSyncJob, Exception]] = []
@@ -193,6 +195,8 @@ class SyncWorkspaces:
         def _sync(job: RepoSyncJob) -> SyncOutcome | Exception:
             try:
                 return self._engine.sync_repo(job.workspace, job.manifest, job.repo, tracker)
+            except UntapedError as exc:
+                return _failed_outcome(job, exc)
             except Exception as exc:
                 return exc
 
@@ -227,6 +231,17 @@ def _unexpected_sync_error(errors: Sequence[tuple[RepoSyncJob, Exception]]) -> W
         details.append(f"{len(errors) - 3} more")
     noun = "unexpected error" if len(errors) == 1 else "unexpected errors"
     return WorkspaceError(f"sync failed with {noun}: " + "; ".join(details))
+
+
+def _failed_outcome(job: RepoSyncJob, exc: UntapedError) -> SyncOutcome:
+    return SyncOutcome(
+        workspace=job.workspace.name,
+        repo=job.repo.name,
+        target_path=job.workspace.path / job.repo.name,
+        action="failed",
+        detail=str(exc),
+        error=ErrorInfo.from_exception(exc),
+    )
 
 
 def _unavailable_outcome(workspace: Workspace, exc: ManifestError) -> SyncOutcome:

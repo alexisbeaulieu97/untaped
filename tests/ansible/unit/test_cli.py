@@ -588,7 +588,7 @@ def test_config_loaded_source_uses_same_validation(tmp_path: Path, monkeypatch) 
 
     result = _run("source", "refresh", "bad")
 
-    assert result.exit_code == 1
+    assert result.exit_code == 4  # a broken saved source is local setup
     assert "repo must be owner/name" in result.output
 
 
@@ -1130,7 +1130,7 @@ def test_graph_refresh_budget_pause_exits_without_rendering_stale_graph(
 
     result = _run("graph", "acme/base", "--source", "platform", "--upstream", "--refresh")
 
-    assert result.exit_code == 1
+    assert result.exit_code == 5  # paused at the rate-limit floor: retry later
     assert result.stdout == ""
     assert "GitHub GraphQL rate limit is low: 200 points remaining" in result.stderr
 
@@ -1149,7 +1149,7 @@ def test_graph_refresh_global_graphql_error_exits_without_rendering_stale_graph(
             "--backend", "graphql",
         )  # fmt: skip
 
-    assert result.exit_code == 1
+    assert result.exit_code == 5  # rate limited: retry later
     assert result.stdout == ""
     assert result.stderr.count("github graphql rate limit exceeded") == 1
     assert "API rate limit exceeded" in result.stderr
@@ -1528,7 +1528,7 @@ def test_source_refresh_transient_probe_failure_prints_safe_rerun_hint(
         mock.post("/graphql").mock(side_effect=_flaky_graphql)
         result = _run("source", "refresh", "prod", "--backend", "graphql")
 
-    assert result.exit_code == 1
+    assert result.exit_code == 5  # a transient probe failure: retry later
     assert "failed acme/flaky: transient ref probe failed: HTTP 502" in result.stderr
     assert (
         "hint: rerun `untaped ansible source refresh prod`; unchanged repos skip Git fetch "
@@ -1612,7 +1612,7 @@ def test_source_refresh_budget_pause_exits_nonzero_without_repo_failures(
 
     result = _run("source", "refresh", "prod")
 
-    assert result.exit_code == 1
+    assert result.exit_code == 5  # paused at the rate-limit floor: retry later
     assert result.stdout == ""
     assert "failed acme/" not in result.stderr
     assert "GitHub GraphQL rate limit is low: 200 points remaining" in result.stderr
@@ -1629,7 +1629,7 @@ def test_source_refresh_global_graphql_error_exits_once_without_per_repo_failure
         mock.post("/graphql").mock(return_value=_RATE_LIMIT_EXCEEDED)
         result = _run("source", "refresh", "prod", "--backend", "graphql")
 
-    assert result.exit_code == 1
+    assert result.exit_code == 5  # rate limited: retry later
     assert result.stdout == ""
     assert result.stderr.count("github graphql rate limit exceeded") == 1
     assert "API rate limit exceeded" in result.stderr
@@ -2243,6 +2243,6 @@ def test_unknown_default_source_names_the_setting(tmp_path: Path, monkeypatch) -
 
     result = _run("impact", "acme/base")
 
-    assert result.exit_code == 1
+    assert result.exit_code == 4  # ansible.default_source needs fixing
     assert "source not found: 'nope'; known: platform" in result.stderr
     assert "ansible.default_source" in result.stderr

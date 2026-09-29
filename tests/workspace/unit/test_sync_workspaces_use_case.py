@@ -354,6 +354,23 @@ def test_unexpected_job_exceptions_drain_then_raise(tmp_path: Path, parallel: in
     assert "prod/bad: RuntimeError: boom" in message
 
 
+@pytest.mark.parametrize("parallel", [1, 2])
+def test_untaped_job_errors_become_failed_rows_with_their_attribution(
+    tmp_path: Path, parallel: int
+) -> None:
+    lock_error = WorkspaceError("bare cache is locked", category="unavailable")
+    engine = _Engine(raises={("prod", "bad"): lock_error})
+    use_case, workspaces = _scheduler(tmp_path, {"prod": _manifest("bad", "good")}, engine)
+
+    rows = use_case(workspaces, parallel=parallel)
+
+    failed = next(row for row in rows if row.repo == "bad")
+    assert (failed.action, failed.detail) == ("failed", "bare cache is locked")
+    assert failed.error is not None
+    assert (failed.error.category, failed.error.system) == ("unavailable", "local")
+    assert next(row for row in rows if row.repo == "good").error is None
+
+
 def test_parallel_same_cache_path_urls_share_bare_fetch_lock(tmp_path: Path) -> None:
     class SameCachePathGit(StubGit):
         def __init__(self) -> None:

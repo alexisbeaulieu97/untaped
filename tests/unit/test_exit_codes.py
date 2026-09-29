@@ -26,14 +26,20 @@ from untaped.ui import UiContext
 
 
 def test_exit_code_values_are_the_documented_contract() -> None:
-    assert [int(code) for code in ExitCode] == [0, 1, 2, 3, 130]
+    assert [int(code) for code in ExitCode] == [0, 1, 2, 3, 4, 5, 130]
 
 
 @pytest.mark.parametrize(
     ("error", "code", "line"),
     [
         (UntapedError("boom"), 1, "error: boom"),
-        (ConfigError("bad config"), 1, "error: bad config"),
+        (ConfigError("bad config"), 4, "error: bad config"),
+        (UntapedError("down", category="unavailable"), 5, "error: down"),
+        (
+            UntapedError("expired", category="auth", hint="run `x`"),
+            4,
+            "error: expired\nhint: run `x`",
+        ),
         (UsageError("--a and --b cannot be combined"), 2, "error: --a and --b cannot be combined"),
         (OperationCancelledError(), 1, "cancelled; no changes made"),
         (PromptInterruptedError("prompt cancelled"), 130, "error: prompt cancelled"),

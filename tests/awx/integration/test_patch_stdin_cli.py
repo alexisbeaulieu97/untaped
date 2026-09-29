@@ -95,7 +95,7 @@ def test_patch_stdin_requires_set_or_patch_file(seeded_default_org: Any) -> None
     result = CliInvoker().invoke(
         app, ["job-templates", "patch", "--stdin", "--yes"], input="deploy\n"
     )
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "--set" in (result.stderr or result.output)
 
 

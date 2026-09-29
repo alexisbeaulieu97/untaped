@@ -292,7 +292,7 @@ class GithubDependencyIndex:
 def _split_repo(repo: str) -> tuple[str, str]:
     owner, separator, name = repo.partition("/")
     if not owner or not separator or not name:
-        raise AnsibleError(f"repo must be owner/name (got {repo!r})")
+        raise AnsibleError(f"repo must be owner/name (got {repo!r})", category="invalid")
     return owner, name
 
 

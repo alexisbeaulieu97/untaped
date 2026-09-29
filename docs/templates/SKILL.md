@@ -66,7 +66,10 @@ Run `untaped CAPABILITY --help` to confirm options before acting.
   the user the preview, and pass `--yes` only after the user approves.
 - Without a terminal, a write with neither `--yes` nor `--dry-run` exits 2.
 - Exit codes: 0 success, 1 failure or declined, 2 usage error, 3 predicate
-  hit (if the capability has `--check`-style flags), 130 interrupted.
+  hit (if the capability has `--check`-style flags), 4 fix the environment
+  (config, token, permission), 5 temporary (retry later), 130 interrupted.
+  With `--format json` stderr is JSON Lines naming each failure's `category`,
+  `system` and `hint`.
 
 ## Pitfalls
 

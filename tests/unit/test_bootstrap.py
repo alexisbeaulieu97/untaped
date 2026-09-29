@@ -48,7 +48,7 @@ class _Provider:
     """Nullary external provider double recording its invocations."""
 
     def __init__(self, spec: CapabilitySpec, calls: list[str]) -> None:
-        self.api_requires = ((2, 0), (3, 0))
+        self.api_requires = ((3, 0), (4, 0))
         self._spec = spec
         self._calls = calls
 
@@ -202,7 +202,7 @@ def test_missing_version_metadata_is_config_error(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(metadata, "version", missing)
     root = bootstrap.build_root_app(builtins=(), externals=())
     result = CliInvoker().invoke(root.meta, ["--version"])
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == 4, result.output  # config: the environment needs fixing
     assert "untaped" in result.stderr
     assert isinstance(result.exception, SystemExit)
 
@@ -303,7 +303,7 @@ def test_root_option_after_a_lazy_builtin_name_is_not_a_command(
 
     result = CliInvoker().invoke(root.meta, ["workspace", "--profile", "nope", "list"])
 
-    assert result.exit_code == 1
+    assert result.exit_code == 4  # the active profile is not defined: config
     assert "Unknown command" not in result.stderr
     assert "'nope'" in result.stderr
 

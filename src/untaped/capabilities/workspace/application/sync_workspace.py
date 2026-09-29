@@ -7,6 +7,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from untaped.capabilities.workspace.application.ports import (
     Filesystem,
@@ -27,16 +28,18 @@ from untaped.capabilities.workspace.errors import (
     UnmatchedRepoFilterError,
     WorkspaceError,
 )
+from untaped.capability_api import ErrorInfo, attribution
 
 NOT_A_GIT_REPOSITORY = "not a git repository"
 
 
 class _StepFailedError(WorkspaceError):
     """Module-private control-flow signal carrying a pre-formatted
-    ``"<step>: <git err>"`` detail string for a ``failed`` row."""
+    ``"<step>: <git err>"`` detail string (and the git error's attribution)
+    for a ``failed`` row."""
 
-    def __init__(self, detail: str) -> None:
-        super().__init__(detail)
+    def __init__(self, detail: str, **attributed: Any) -> None:
+        super().__init__(detail, **attributed)
         self.detail = detail
 
 
@@ -48,7 +51,7 @@ def _step(prefix: str) -> Iterator[None]:
     try:
         yield
     except GitError as exc:
-        raise _StepFailedError(f"{prefix}: {exc}") from exc
+        raise _StepFailedError(f"{prefix}: {exc}", **attribution(exc)) from exc
 
 
 @dataclass
@@ -175,7 +178,9 @@ class RepoSyncEngine:
                 self._git.ff_only_pull(local, branch=target)
             return _outcome(workspace, repo, "pulled", f"{status.behind} commits")
         except _StepFailedError as exc:
-            return _outcome(workspace, repo, "failed", exc.detail)
+            return _outcome(
+                workspace, repo, "failed", exc.detail, error=ErrorInfo.from_exception(exc)
+            )
 
     def plan_prune(
         self, workspace: Workspace, manifest: WorkspaceManifest
@@ -299,11 +304,19 @@ class SyncWorkspace:
         return outcomes
 
 
-def _outcome(workspace: Workspace, repo: Repo, action: SyncAction, detail: str = "") -> SyncOutcome:
+def _outcome(
+    workspace: Workspace,
+    repo: Repo,
+    action: SyncAction,
+    detail: str = "",
+    *,
+    error: ErrorInfo | None = None,
+) -> SyncOutcome:
     return SyncOutcome(
         workspace=workspace.name,
         repo=repo.name,
         target_path=workspace.path / repo.name,
         action=action,
         detail=detail,
+        error=error,
     )

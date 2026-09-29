@@ -65,7 +65,7 @@ def test_whoami_without_a_token_fails_naming_it(
 ) -> None:
     result = _whoami(tmp_path, monkeypatch, [], github=github)
 
-    assert result.exit_code == 1
+    assert result.exit_code == 4  # local setup needs fixing
     assert "token" in result.stderr
 
 
@@ -76,6 +76,57 @@ def test_whoami_rejected_token_hints_at_setting_a_new_one(
         tmp_path, monkeypatch, [], response=httpx.Response(401, json={"message": "Bad"})
     )
 
-    assert result.exit_code == 1
-    assert "error: GitHub rejected the configured token (HTTP 401)" in result.stderr
-    assert "hint: run `untaped config set github.token --prompt`" in result.stderr
+    assert result.exit_code == 4
+    assert result.stderr.endswith(
+        "error: GitHub rejected the configured token (HTTP 401)\n"
+        "hint: run `untaped config set github.token --prompt`\n"
+    )
+
+
+def test_rejected_token_is_an_auth_diagnostic_under_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    result = _whoami(
+        tmp_path, monkeypatch, [], response=httpx.Response(401, json={"message": "Bad"})
+    )
+
+    assert result.exit_code == 4
+    record = json.loads(result.stderr.splitlines()[-1])
+    assert (record["category"], record["system"]) == ("auth", "github")
+    assert record["message"] == "GitHub rejected the configured token (HTTP 401)"
+    assert record["hint"] == "run `untaped config set github.token --prompt`"
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(429, json={"message": "Too many requests"}),
+        httpx.Response(403, json={"message": "API rate limit exceeded for user ID 1."}),
+    ],
+)
+def test_rate_limit_is_retryable_and_exits_five(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, response: httpx.Response
+) -> None:
+    monkeypatch.setattr("untaped.http._sleep", lambda _delay: None)
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    result = _whoami(tmp_path, monkeypatch, [], response=response)
+
+    assert result.exit_code == 5, result.output
+    record = json.loads(result.stderr.splitlines()[-1])
+    assert (record["category"], record["system"], record["retryable"]) == (
+        "unavailable",
+        "github",
+        True,
+    )
+
+
+def test_forbidden_is_a_permission_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    result = _whoami(
+        tmp_path,
+        monkeypatch,
+        [],
+        response=httpx.Response(403, json={"message": "Resource not accessible"}),
+    )
+
+    assert result.exit_code == 4, result.output

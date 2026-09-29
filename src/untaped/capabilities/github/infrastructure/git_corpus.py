@@ -32,6 +32,7 @@ from untaped.capability_api import (
     GitCommandError,
     GitResult,
     atomic_write,
+    attribution,
     file_lock,
     run_git,
     safe_cache_path,
@@ -393,9 +394,12 @@ class GitCorpusCache:
         selected_ref = ref or branch
         bare = _bare_path(repo, root=root)
         if not (bare / "HEAD").is_file():
-            raise GitCorpusError("repository is not in the local corpus")
+            raise GitCorpusError("repository is not in the local corpus", category="not_found")
         if not self._ref_exists(bare, selected_ref):
-            raise GitCorpusError(f"ref is not cached: {selected_ref}; run a sweep that fetches it")
+            raise GitCorpusError(
+                f"ref is not cached: {selected_ref}; run a sweep that fetches it",
+                category="not_found",
+            )
         worktree = _worktree_path(repo.full_name, selected_ref, root=root)
         if worktree.exists() and not (worktree / ".git").exists():
             raise GitCorpusError(f"worktree path exists and is not a git worktree: {worktree}")
@@ -611,7 +615,7 @@ class GitCorpusCache:
                 sleep=self._sleep,
             )
         except GitCommandError as exc:
-            raise GitCorpusError(str(exc)) from exc
+            raise GitCorpusError(str(exc), **attribution(exc)) from exc
 
 
 def _ui_warning(message: str) -> None:
@@ -661,7 +665,7 @@ def _order_refs(refs: tuple[str, ...], *, default_branch: str) -> tuple[str, ...
 def _cached_bare(repo: CorpusRepoTarget, *, root: Path) -> Path:
     bare = _bare_path(repo, root=root)
     if not (bare / "HEAD").is_file():
-        raise GitCorpusError("repository is not in the local corpus")
+        raise GitCorpusError("repository is not in the local corpus", category="not_found")
     return bare
 
 

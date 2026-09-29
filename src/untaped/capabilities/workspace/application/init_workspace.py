@@ -31,7 +31,7 @@ class InitWorkspace:
             try:
                 check_workspace_name(name)
             except ValueError as exc:
-                raise WorkspaceError(str(exc)) from exc
+                raise WorkspaceError(str(exc), category="usage", system="untaped") from exc
 
         def _build(ws_name: str) -> WorkspaceManifest:
             defaults = ManifestDefaults(branch=branch) if branch else ManifestDefaults()

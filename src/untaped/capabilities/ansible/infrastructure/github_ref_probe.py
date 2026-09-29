@@ -22,7 +22,7 @@ from untaped.capabilities.ansible.domain.payloads import (
     ProbeTarget,
 )
 from untaped.capabilities.github.ansible import GithubGraphqlError
-from untaped.capability_api import HttpError, UntapedError, bounded_map
+from untaped.capability_api import ErrorCategory, HttpError, UntapedError, bounded_map
 
 if TYPE_CHECKING:
     from untaped.capabilities.ansible.application.ports import BatchRepoRefsClient
@@ -87,12 +87,10 @@ class GithubRefProbe:
         rate_limit_reset_at = None
         done = 0
 
-        def merge(chunk: tuple[str, ...], outcome: BatchRepoRefsResult | str) -> None:
+        def merge(chunk: tuple[str, ...], outcome: BatchRepoRefsResult | ProbeFailure) -> None:
             nonlocal rate_limit_cost, rate_limit_remaining, rate_limit_reset_at
-            if isinstance(outcome, str):
-                failures.update(
-                    {repo: ProbeFailure(kind="chunk", reason=outcome) for repo in chunk}
-                )
+            if isinstance(outcome, ProbeFailure):
+                failures.update(dict.fromkeys(chunk, outcome))
                 return
             for repo_refs in outcome.repos:
                 probed[repo_refs.full_name] = ProbedRepo(
@@ -103,7 +101,9 @@ class GithubRefProbe:
                 )
             failures.update(
                 {
-                    repo: ProbeFailure(kind="missing", reason=_MISSING_REASON)
+                    repo: ProbeFailure(
+                        kind="missing", reason=_MISSING_REASON, category=ErrorCategory.NOT_FOUND
+                    )
                     for repo in outcome.missing
                 }
             )
@@ -111,6 +111,7 @@ class GithubRefProbe:
                 failures[failure.full_name] = ProbeFailure(
                     kind="transient",
                     reason=_format_transient_failure(failure.reason),
+                    category=ErrorCategory.UNAVAILABLE,
                 )
             if outcome.rate_limit_remaining is not None:
                 rate_limit_remaining = (
@@ -125,10 +126,10 @@ class GithubRefProbe:
             if reset_at is not None:
                 rate_limit_reset_at = reset_at
 
-        def probe_chunk(chunk: tuple[str, ...]) -> BatchRepoRefsResult | str:
+        def probe_chunk(chunk: tuple[str, ...]) -> BatchRepoRefsResult | ProbeFailure:
             return self._probe_chunk(chunk, kinds, mode=mode)
 
-        def record(chunk: tuple[str, ...], outcome: BatchRepoRefsResult | str) -> None:
+        def record(chunk: tuple[str, ...], outcome: BatchRepoRefsResult | ProbeFailure) -> None:
             nonlocal done
             merge(chunk, outcome)
             done += len(chunk)
@@ -150,7 +151,7 @@ class GithubRefProbe:
         kinds: Sequence[str],
         *,
         mode: Literal["all", "default_branch"],
-    ) -> BatchRepoRefsResult | str:
+    ) -> BatchRepoRefsResult | ProbeFailure:
         try:
             if mode == "default_branch":
                 return self._github.batch_default_branch_refs(chunk, chunk_size=len(chunk))
@@ -162,7 +163,11 @@ class GithubRefProbe:
         except (HttpError, UntapedError) as exc:
             # Provenance prefix: distinguishes probe transport failures from
             # git-fetch failures in `failed <repo>: <reason>` stderr listings.
-            return f"ref probe failed: {str(exc) or type(exc).__name__}"
+            return ProbeFailure(
+                kind="chunk",
+                reason=f"ref probe failed: {str(exc) or type(exc).__name__}",
+                category=exc.category,
+            )
 
 
 def _format_transient_failure(reason: str) -> str:

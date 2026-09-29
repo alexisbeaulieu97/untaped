@@ -37,9 +37,11 @@ from untaped.capabilities.github.domain import (
 from untaped.capabilities.github.domain.errors import GitCorpusError, is_global_github_failure
 from untaped.capability_api import (
     ConfigError,
+    ErrorInfo,
     ProgressHandle,
     UntapedError,
     UsageError,
+    attribution,
     bounded_map,
     plural,
 )
@@ -117,7 +119,7 @@ class _ReadyRepo:
     repo: CorpusRepoTarget
     fetched_at: datetime | None
     refreshed: bool
-    refresh_error: str | None = None
+    refresh_error: CorpusFailure | None = None
     # True when GitHub reported no push since the cached fetch, so none ran.
     unchanged: bool = False
 
@@ -344,9 +346,7 @@ class Sweep(_CorpusUseCase):
             stale=tuple(
                 sorted(
                     (
-                        CorpusFailure(
-                            repo=ready_repo.repo.full_name, reason=ready_repo.refresh_error
-                        )
+                        ready_repo.refresh_error
                         for ready_repo in ready
                         if ready_repo.refresh_error is not None
                     ),
@@ -401,7 +401,10 @@ class Sweep(_CorpusUseCase):
                 )
             )
         if not targets:
-            raise ConfigError("corpus has no repos in scope; run without --cached to populate")
+            raise ConfigError(
+                "corpus has no repos in scope; run without --cached to populate",
+                category="not_found",
+            )
         return tuple(sorted(targets, key=lambda repo: repo.full_name))
 
     def _scan_repo(self, ready: _ReadyRepo, options: SweepOptions) -> _RepoScan:
@@ -505,7 +508,7 @@ def _resolve_online_scope(
         except UntapedError as exc:
             if is_global_github_failure(exc):
                 raise
-            return CorpusFailure(repo=name, reason=str(exc) or type(exc).__name__)
+            return CorpusFailure(repo=name, reason=str(exc) or type(exc).__name__, cause=exc)
 
     def record(_name: str, resolved: tuple[RepositoryInventoryItem, ...] | CorpusFailure) -> None:
         if isinstance(resolved, CorpusFailure):
@@ -517,7 +520,11 @@ def _resolve_online_scope(
     failures.sort(key=lambda failure: failure.repo)
     if names and len(failures) == len(names) and not items:
         detail = "; ".join(failure.reason for failure in failures)
-        raise UntapedError(f"no requested repository could be resolved: {detail}")
+        cause = failures[0].cause
+        raise UntapedError(
+            f"no requested repository could be resolved: {detail}",
+            **(attribution(cause) if cause is not None else {}),
+        )
     rows = (item for _, item in sorted(items.items()) if archived_allows(archived, item.archived))
     return tuple(_target(item) for item in rows), tuple(failures)
 
@@ -534,7 +541,14 @@ def _target(item: RepositoryInventoryItem) -> CorpusRepoTarget:
 
 
 def _failure(repo: CorpusRepoTarget, exc: Exception) -> CorpusFailure:
-    return CorpusFailure(repo=repo.full_name, reason=str(exc) or type(exc).__name__)
+    return CorpusFailure(repo=repo.full_name, reason=str(exc) or type(exc).__name__, cause=exc)
+
+
+def _failure_error(failure: CorpusFailure) -> ErrorInfo:
+    """The ``error`` of a failed sync row (counted toward the run's exit code)."""
+    return ErrorInfo.from_exception(
+        failure.cause or UntapedError(failure.reason), message=failure.reason
+    )
 
 
 class SyncCorpus(_CorpusUseCase):
@@ -554,7 +568,12 @@ class SyncCorpus(_CorpusUseCase):
             parallel=options.parallel,
         )
         outcomes = [
-            CorpusSyncOutcome(repo=failure.repo, action="failed", error=failure.reason)
+            CorpusSyncOutcome(
+                repo=failure.repo,
+                action="failed",
+                detail=failure.reason,
+                error=_failure_error(failure),
+            )
             for failure in failures
         ]
 
@@ -588,13 +607,19 @@ class SyncCorpus(_CorpusUseCase):
 
 def _sync_outcome(repo: CorpusRepoTarget, result: _ReadyRepo | CorpusFailure) -> CorpusSyncOutcome:
     if isinstance(result, CorpusFailure):
-        return CorpusSyncOutcome(repo=repo.full_name, action="failed", error=result.reason)
+        return CorpusSyncOutcome(
+            repo=repo.full_name,
+            action="failed",
+            detail=result.reason,
+            error=_failure_error(result),
+        )
     if result.refresh_error is not None:
         return CorpusSyncOutcome(
             repo=repo.full_name,
             action="failed",
             fetched_at=result.fetched_at,
-            error=result.refresh_error,
+            detail=result.refresh_error.reason,
+            error=_failure_error(result.refresh_error),
         )
     action = "synced" if result.refreshed else "unchanged" if result.unchanged else "skipped"
     return CorpusSyncOutcome(repo=repo.full_name, action=action, fetched_at=result.fetched_at)
@@ -644,7 +669,7 @@ def _prepare_repo(
                 repo=repo,
                 fetched_at=freshness.fetched_at,
                 refreshed=False,
-                refresh_error=_failure(repo, exc).reason,
+                refresh_error=_failure(repo, exc),
             )
         return _failure(repo, exc)
     return _ReadyRepo(repo=repo, fetched_at=_parse_datetime(result.fetched_at), refreshed=True)

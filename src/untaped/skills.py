@@ -275,7 +275,7 @@ def update_installed_skill(
     """Replace ``installed`` in place with the packaged copy of the same skill."""
     spec = skills.get(installed.name)
     if spec is None:
-        raise ConfigError(f"skill no longer shipped: {installed.name}")
+        raise ConfigError(f"skill no longer shipped: {installed.name}", category="not_found")
     if not spec.source.is_dir():
         raise ConfigError(f"skill source missing: {installed.name} ({spec.source})")
     destination = SkillInstallDestination(
@@ -296,7 +296,7 @@ def remove_installed_skill(installed: InstalledSkill) -> None:
     a half-deleted skill where the agent would still load it.
     """
     if not (installed.path / _MARKER).is_file():
-        raise ConfigError(f"not an untaped-installed skill: {installed.path}")
+        raise ConfigError(f"not an untaped-installed skill: {installed.path}", category="invalid")
     backup = _backup_path(installed.path)
     try:
         os.replace(installed.path, backup)
@@ -342,16 +342,18 @@ def _selected_skill_names(
 ) -> list[str]:
     selector_count = int(bool(skill_names)) + int(stdin) + int(all_skills)
     if selector_count != 1:
-        raise ConfigError("provide skill names, --stdin, or --all; not more than one")
+        raise ConfigError(
+            "provide skill names, --stdin, or --all; not more than one", category="usage"
+        )
     selected = sorted(skills) if all_skills else read_identifiers(skill_names, stdin=stdin)
     duplicate = _first_duplicate(selected)
     if duplicate is not None:
-        raise ConfigError(f"duplicate skill selected: {duplicate}")
+        raise ConfigError(f"duplicate skill selected: {duplicate}", category="usage")
     missing = [name for name in selected if name not in skills]
     if len(missing) == 1:
-        raise ConfigError(f"unknown skill: {missing[0]}")
+        raise ConfigError(f"unknown skill: {missing[0]}", category="not_found")
     if missing:
-        raise ConfigError(f"unknown skills: {', '.join(missing)}")
+        raise ConfigError(f"unknown skills: {', '.join(missing)}", category="not_found")
     return selected
 
 
@@ -372,11 +374,13 @@ def _install_targets(
     target_dir: Path | None,
 ) -> list[SkillInstallDestination]:
     if target_dir is not None and target == SkillInstallTarget.all:
-        raise ConfigError("--target-dir requires --target codex or --target claude")
+        raise ConfigError(
+            "--target-dir requires --target codex or --target claude", category="usage"
+        )
     if project_dir is not None and scope != SkillInstallScope.local:
-        raise ConfigError("--project-dir requires --scope local")
+        raise ConfigError("--project-dir requires --scope local", category="usage")
     if project_dir is not None and target_dir is not None:
-        raise ConfigError("--project-dir cannot be combined with --target-dir")
+        raise ConfigError("--project-dir cannot be combined with --target-dir", category="usage")
     if target_dir is not None:
         return [
             SkillInstallDestination(
@@ -400,7 +404,7 @@ def _install_targets(
 def _target_skill_root(target_dir: Path) -> Path:
     root = target_dir.expanduser().resolve()
     if root.exists() and not root.is_dir():
-        raise ConfigError(f"target skill directory is not a directory: {root}")
+        raise ConfigError(f"target skill directory is not a directory: {root}", category="invalid")
     return root
 
 
@@ -422,7 +426,7 @@ def _plan_install(
         for target_destination in targets:
             destination = target_destination.root / name
             if destination.exists() and not force:
-                raise ConfigError(f"skill already exists: {name}")
+                raise ConfigError(f"skill already exists: {name}", category="conflict")
             plan.append((spec, target_destination, destination))
     return plan
 

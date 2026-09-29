@@ -69,21 +69,22 @@ def parse_envelope_line(lineno: int, text: str) -> PipeEnvelope:
     try:
         obj = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise ConfigError(f"line {lineno}: invalid JSON: {exc.msg}") from exc
+        raise ConfigError(f"line {lineno}: invalid JSON: {exc.msg}", category="invalid") from exc
     if not is_envelope_line(obj):
-        raise ConfigError(f"line {lineno}: not an untaped pipe record")
+        raise ConfigError(f"line {lineno}: not an untaped pipe record", category="invalid")
     version = obj.get(PIPE_MARKER_KEY)
     if version not in SUPPORTED_PIPE_VERSIONS:
         supported = ", ".join(sorted(SUPPORTED_PIPE_VERSIONS))
         raise ConfigError(
-            f"line {lineno}: unsupported pipe version {version!r} (supported: {supported})"
+            f"line {lineno}: unsupported pipe version {version!r} (supported: {supported})",
+            category="invalid",
         )
     record = obj.get("record")
     if not isinstance(record, dict):
-        raise ConfigError(f"line {lineno}: record is not an object")
+        raise ConfigError(f"line {lineno}: record is not an object", category="invalid")
     kind = obj.get("kind")
     if kind is not None and not isinstance(kind, str):
-        raise ConfigError(f"line {lineno}: kind must be a string or null")
+        raise ConfigError(f"line {lineno}: kind must be a string or null", category="invalid")
     return PipeEnvelope(kind=kind, record=record, lineno=lineno)
 
 

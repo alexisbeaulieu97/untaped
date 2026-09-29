@@ -33,7 +33,7 @@ MANAGEMENT_COMMANDS = (
 )
 #: The ``api`` column ``untaped capabilities`` shows for built-ins (the
 #: registry's built-in range; pinned against the real CLI by the app tests).
-BUILTIN_API_RANGE = ">=2.0,<3.0"
+BUILTIN_API_RANGE = ">=3.0,<4.0"
 
 
 class ReleaseCheckError(RuntimeError):

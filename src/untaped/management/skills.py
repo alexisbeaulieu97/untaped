@@ -332,7 +332,10 @@ def _select_installed(
     for selector in read_identifiers(skill_names, stdin=stdin):
         name = _resolve_short(selector, installed)
         if name not in installed:
-            raise ConfigError(not_found("installed skill", selector, known=sorted(installed)))
+            raise ConfigError(
+                not_found("installed skill", selector, known=sorted(installed)),
+                category="not_found",
+            )
         selected.append(name)
     return [item for item in found if item.name in selected]
 

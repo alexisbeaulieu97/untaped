@@ -96,7 +96,9 @@ class GitRemoteRefProbe:
             )
         except GitCacheError as exc:
             reason = str(exc) or type(exc).__name__
-            return ProbeFailure(kind="git", reason=f"{GIT_REF_PROBE_FAILURE_PREFIX}{reason}")
+            return ProbeFailure(
+                kind="git", reason=f"{GIT_REF_PROBE_FAILURE_PREFIX}{reason}", category=exc.category
+            )
         return _parse_ls_remote(output, target=target, kinds=kinds, mode=mode)
 
 

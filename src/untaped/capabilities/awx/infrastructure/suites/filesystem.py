@@ -1,8 +1,9 @@
 """Default :class:`Filesystem` adapter — straight :func:`Path.read_text` — and suite discovery.
 
-Wraps :class:`OSError` (missing file, permission denied, …) in
-:class:`ConfigError` so the CLI's ``report_errors`` boundary catches it
-instead of leaking a raw stack trace.
+Wraps :class:`OSError` (missing file, permission denied, …) in an
+``invalid`` :class:`ConfigError` (exit ``1``: the input file is the problem)
+so the CLI's ``report_errors`` boundary catches it instead of leaking a raw
+stack trace.
 """
 
 from __future__ import annotations
@@ -40,4 +41,4 @@ class LocalFilesystem:
         try:
             return path.read_text(encoding="utf-8")
         except OSError as exc:
-            raise ConfigError(f"failed to read {path}: {exc}") from exc
+            raise ConfigError(f"failed to read {path}: {exc}", category="invalid") from exc

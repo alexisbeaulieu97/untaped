@@ -54,4 +54,6 @@ untaped --profile agent awx test run --scm-branch HEAD --format json
 `--scm-branch HEAD` is refused until HEAD is pushed, so the jobs test the
 agent's commit. Nothing prompts without a terminal, the exit code is 0 only
 when every case passed, and each JSON row carries the evidence to read; see
-[Test suites](./usage.md#test-suites).
+[Test suites](./usage.md#test-suites). Exit 4 means AWX refused the agent's
+token or a permission its user lacks: fix the profile or its roles, not the
+code. Exit 5 means AAP was unavailable: retry later.

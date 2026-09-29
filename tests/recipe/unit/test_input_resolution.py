@@ -17,7 +17,7 @@ from untaped.capabilities.recipe.application.inputs import (
 )
 from untaped.capabilities.recipe.application.targets import Target
 from untaped.capabilities.recipe.domain.recipe import Recipe
-from untaped.capability_api import ConfigError
+from untaped.capabilities.recipe.errors import RecipeError
 
 
 class PromptRecorder:
@@ -237,7 +237,7 @@ def test_recipe_from_still_falls_back_to_default() -> None:
 
 
 def test_input_resolution_rejects_cli_value_and_source_conflicts() -> None:
-    with pytest.raises(ConfigError, match="cannot combine --var/--vars-file and --input-from"):
+    with pytest.raises(RecipeError, match="cannot combine --var/--vars-file and --input-from"):
         _config(
             _recipe(),
             fixed_values={"service": "api", "token": "secret"},
@@ -246,7 +246,7 @@ def test_input_resolution_rejects_cli_value_and_source_conflicts() -> None:
 
 
 def test_input_resolution_rejects_input_from_for_explicit_global_scope() -> None:
-    with pytest.raises(ConfigError, match="scope global"):
+    with pytest.raises(RecipeError, match="scope global"):
         _config(
             _recipe(),
             fixed_values={"token": "secret"},
@@ -387,7 +387,7 @@ def test_input_sources_allow_only_field_access_and_fail_during_preparation(
         }
     )
 
-    with pytest.raises(ConfigError, match="invalid input source expression for service"):
+    with pytest.raises(RecipeError, match="invalid input source expression for service"):
         _config(recipe)
 
 

@@ -18,10 +18,20 @@ from cyclopts.validators import Number
 from pydantic import BaseModel
 from rich.console import Console
 
-from untaped.errors import ExitCode, HttpError, OperationCancelledError, UntapedError
+from untaped.diagnostics import (
+    diagnostics_scope,
+    error_record,
+    failure_exit_code,
+    format_error,
+    json_diagnostics,
+    line_record,
+    note_failure,
+    note_output_format,
+    write_record,
+)
+from untaped.errors import ExitCode, OperationCancelledError, UntapedError, UsageError
 from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context
-from untaped.verbose import is_verbose
 
 
 def _format_default(value: object) -> str:
@@ -55,8 +65,19 @@ def apply_default_format(
     ``ui`` section that fails to load is ignored here so ``config set`` can
     still repair it; ``doctor`` reports it. An invalid ``UNTAPED_FORMAT`` is
     a usage error, except under ``doctor`` and ``setup``, which ignore it.
+    A ``--format`` the user chose (the flag, ``UNTAPED_FORMAT`` or
+    ``ui.format``; not a command's own default) is recorded for the stderr
+    diagnostics (:func:`untaped.diagnostics.note_output_format`).
     """
     del app
+    _default_format(commands, arguments)
+    for argument in arguments:
+        if "--format" in argument.names and argument.tokens:
+            note_output_format(str(argument.tokens[-1].value))
+
+
+def _default_format(commands: tuple[str, ...], arguments: ArgumentCollection) -> None:
+    """Append the user's default format to an omitted table-default ``FormatOption``."""
     argument = next(
         (
             argument
@@ -183,9 +204,54 @@ def create_app(*, name: str, help: str = "") -> App:
 
 
 def echo(message: object = "", *, err: bool = False, nl: bool = True) -> None:
-    """Print a CLI message to stdout or stderr."""
+    """Print a CLI message to stdout or stderr.
+
+    Under JSON diagnostics a stderr message becomes one JSON line, its level
+    taken from an ``error:``, ``warning:`` or ``hint:`` prefix (else
+    ``info``); a blank one is dropped.
+    """
+    if err and json_diagnostics():
+        record = line_record(str(message))
+        if record is not None:
+            write_record(record)
+        return
     end = "\n" if nl else ""
     print(message, file=sys.stderr if err else sys.stdout, end=end)
+
+
+def report_error(
+    exc: UntapedError,
+    *,
+    item: str | None = None,
+    write: Callable[[str], None] | None = None,
+) -> None:
+    """Print one failure on stderr and count it toward the run's exit code.
+
+    Text is ``error: <msg>`` (``error: <item>: <msg>`` for a per-item
+    failure, as :func:`format_error` renders it); under JSON diagnostics it
+    is one JSON line with the error's category, system and hint. ``write``
+    replaces the stderr print (e.g. a progress handle's ``log``).
+    """
+    note_failure(exc)
+    if json_diagnostics():
+        line = json.dumps(error_record(exc, item=item), default=str)
+    else:
+        prefix = "" if item is None else f"{item}: "
+        line = f"error: {prefix}{format_error(exc)}"
+    if write is not None:
+        write(line)
+    else:
+        print(line, file=sys.stderr)
+
+
+def report_declined(exc: OperationCancelledError) -> None:
+    """Print a declined confirmation: its bare message (a JSON error line under JSON)."""
+    if json_diagnostics():
+        report_error(exc)
+        return
+    # A declined confirmation is the user's choice, not an error: no prefix.
+    note_failure(exc)
+    echo(str(exc), err=True)
 
 
 def raise_usage(message: str) -> NoReturn:
@@ -195,7 +261,7 @@ def raise_usage(message: str) -> NoReturn:
     parsing). Inside a ``report_errors`` block prefer
     ``raise UsageError(message)``, which exits the same way.
     """
-    echo(f"error: {message}", err=True)
+    report_error(UsageError(message))
     raise SystemExit(ExitCode.USAGE)
 
 
@@ -239,13 +305,16 @@ def render_rows(
     the active theme, so they render through a bare :class:`UiContext`. ``empty``
     is a human hint printed to stderr only when ``table`` output has no rows.
     ``kind`` tags ``--format pipe`` records with a producer hint (ignored by
-    every other format).
+    every other format). A ``table`` without ``--columns`` leaves out a failed
+    row's structured ``error`` (its ``detail`` says the same for humans).
     """
     _validate_kind(kind)
     if columns == ["?"]:
         _print_available_columns(list(rows[0]) if rows else [])
         return ""
     columns = _checked_columns(columns, rows, fmt=fmt)
+    if fmt == "table" and columns is None:
+        rows = [_without_row_error(row) for row in rows]
     ui = ui_context() if fmt == "table" else UiContext()
     return ui.collection(rows, fmt=fmt, columns=columns, empty=empty, kind=kind)
 
@@ -288,6 +357,13 @@ def _checked_columns(
     return names or None
 
 
+def _without_row_error(row: dict[str, object]) -> dict[str, object]:
+    """``row`` without a structured ``error`` mapping (the ``ErrorInfo`` of a failed row)."""
+    if not isinstance(row.get("error"), Mapping):
+        return row
+    return {key: value for key, value in row.items() if key != "error"}
+
+
 def _print_available_columns(keys: Iterable[str]) -> None:
     """Print the addressable top-level column names to stderr (for ``--columns ?``)."""
     names = list(dict.fromkeys(keys))
@@ -328,6 +404,8 @@ def emit(
         row = _as_row(records)
         if schema is None:
             columns = _checked_columns(columns, [row], fmt=fmt)
+        if fmt == "table" and columns is None:
+            row = _without_row_error(row)
         ui = ui_context() if fmt == "table" else UiContext()
         rendered = ui.detail(row, fmt=fmt, columns=columns, kind=kind)
     else:
@@ -398,19 +476,20 @@ def run_cyclopts_app(
     the consumer chose to stop reading, which is not a failure). Without this the producer's
     buffered stdout flush fails at interpreter shutdown and Python prints a
     noisy ``Exception ignored while flushing sys.stdout: BrokenPipeError``.
+    The invocation runs in its own :func:`~untaped.diagnostics.diagnostics_scope`.
     """
     try:
-        result = app(
-            tokens,
-            console=console,
-            error_console=error_console,
-            exit_on_error=False,
-            print_error=False,
-            result_action=result_action,
-        )
+        with diagnostics_scope():
+            result = app(
+                tokens,
+                console=console,
+                error_console=error_console,
+                exit_on_error=False,
+                print_error=False,
+                result_action=result_action,
+            )
     except CycloptsError as exc:
-        echo(f"error: {exc}", err=True)
-        raise SystemExit(ExitCode.USAGE) from exc
+        raise_usage(str(exc))
     except KeyboardInterrupt:
         _flush_stdout()
         raise SystemExit(ExitCode.INTERRUPTED) from None
@@ -515,7 +594,8 @@ def parse_json_pairs(values: Iterable[str] | None, *, flag: str) -> dict[str, An
 def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bool]:
     """Resolve each identifier via ``fn``; aggregate per-id failures.
 
-    Echoes ``error: <id>: <exc>`` to stderr for any :class:`UntapedError` and
+    Reports ``error: <id>: <exc>`` (:func:`report_error`) for any
+    :class:`UntapedError` and
     returns ``(results, any_failed)`` so the caller decides exit code and
     aggregate rendering. Companion to :func:`read_identifiers` for stdin-fed
     list commands across domains.
@@ -531,7 +611,7 @@ def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bo
         try:
             results.append(fn(id_))
         except UntapedError as exc:
-            echo(f"error: {id_}: {format_error(exc)}", err=True)
+            report_error(exc, item=id_)
             any_failed = True
     return results, any_failed
 
@@ -554,69 +634,21 @@ def report_errors() -> Iterator[None]:
     """Convert :class:`UntapedError` into a clean stderr message + its exit code.
 
     Wrap every Cyclopts command body in this so users see ``error: ...``
-    instead of a Python traceback. The exit code is the error class's
-    ``exit_code``: ``2`` for :class:`~untaped.errors.UsageError`, ``130`` for
-    an interrupted prompt, ``1`` otherwise. A declined confirmation
-    (:class:`~untaped.errors.OperationCancelledError`) prints its message
-    without the ``error:`` prefix. Non-:class:`UntapedError`
+    instead of a Python traceback. The exit code follows the error's
+    ``category`` (``2`` usage, ``4`` environment, ``5`` unavailable, ``130``
+    interrupted, ``1`` otherwise), raised to the most severe failure already
+    reported in the run (:func:`~untaped.diagnostics.failure_exit_code`). A
+    declined confirmation (:class:`~untaped.errors.OperationCancelledError`)
+    prints its message without the ``error:`` prefix. Under JSON diagnostics
+    the error is one JSON line (:func:`report_error`). Non-:class:`UntapedError`
     exceptions are left to Cyclopts' default handling — those represent bugs
     we want to see.
     """
     try:
         yield
     except OperationCancelledError as exc:
-        # A declined confirmation is the user's choice, not an error.
-        echo(str(exc), err=True)
-        raise SystemExit(exc.exit_code) from exc
+        report_declined(exc)
+        raise SystemExit(failure_exit_code(exc.exit_code)) from exc
     except UntapedError as exc:
-        echo(f"error: {format_error(exc)}", err=True)
-        raise SystemExit(exc.exit_code) from exc
-
-
-def format_error(exc: UntapedError) -> str:
-    """Render an :class:`UntapedError` the way ``report_errors`` prints it.
-
-    Adds the URL to bodiless HTTP errors and surfaces the API's own message
-    from a JSON error body (the raw body under ``--verbose``).
-    """
-    message = str(exc)
-    if isinstance(exc, HttpError) and not exc.body and exc.url and exc.url not in message:
-        message = f"{message} for {exc.url}"
-    if not isinstance(exc, HttpError) or not exc.body:
-        return message
-    friendly = _api_error_message(exc.body)
-    if friendly is None:
-        # Unparseable / unrecognised body — show it raw so detail isn't lost.
-        return f"{message}\nresponse: {exc.body}"
-    if is_verbose():
-        return f"{message} — {friendly}\nresponse: {exc.body}"
-    return f"{message} — {friendly}"
-
-
-def _api_error_message(body: str) -> str | None:
-    """Pull a human message out of a JSON error body, if present.
-
-    Recognises the shapes most JSON APIs use — a top-level
-    ``message``/``error``/``detail`` string or ``errors: [{"message": ...}]``
-    (GitHub, AWX, DRF, ...) — and returns the first match. Returns ``None`` for
-    a non-JSON body or an unrecognised shape so the caller falls back to the raw
-    snippet.
-    """
-    try:
-        data = json.loads(body)
-    except ValueError:
-        return None
-    if not isinstance(data, dict):
-        return None
-    for key in ("message", "error", "detail"):
-        value = data.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    errors = data.get("errors")
-    if isinstance(errors, list):
-        for item in errors:
-            if isinstance(item, dict):
-                nested = item.get("message")
-                if isinstance(nested, str) and nested.strip():
-                    return nested.strip()
-    return None
+        report_error(exc)
+        raise SystemExit(failure_exit_code(exc.exit_code)) from exc

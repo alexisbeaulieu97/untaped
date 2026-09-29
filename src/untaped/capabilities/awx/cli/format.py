@@ -11,10 +11,11 @@ from untaped.capabilities.awx.domain import ApplyOutcome, FieldChange
 
 
 def outcome_rows(outcomes: list[ApplyOutcome]) -> list[dict[str, Any]]:
-    """Tabular summary rows for ``--format table`` / ``--format raw``."""
+    """Summary rows for every output format; a failed row keeps its ``error``."""
     rows: list[dict[str, Any]] = []
     for o in outcomes:
         data = o.model_dump(mode="json")
+        error = {"error": data["error"]} if "error" in data else {}
         rows.append(
             {
                 "id": o.id,
@@ -28,6 +29,7 @@ def outcome_rows(outcomes: list[ApplyOutcome]) -> list[dict[str, Any]]:
                 "fields_changed": _changed_fields(o.changes),
                 "preserved_secrets": list(o.preserved_secrets),
                 "detail": o.detail or "",
+                **error,
             }
         )
     return rows

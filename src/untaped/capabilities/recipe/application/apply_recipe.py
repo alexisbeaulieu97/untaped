@@ -19,7 +19,7 @@ from untaped.capabilities.recipe.domain.recipe import (
     ValidateStep,
 )
 from untaped.capabilities.recipe.domain.templates import render_field, render_template
-from untaped.capabilities.recipe.errors import RecipeError
+from untaped.capabilities.recipe.errors import HookFailedError, PathNotFoundError, RecipeError
 
 
 class _TargetSkippedError(RecipeError):
@@ -124,7 +124,7 @@ class ApplyRecipe:
                 warnings.append(verdict.message)
             raise _TargetSkippedError
         if verdict.failed:
-            raise ValueError(verdict.message or f"validate hook {hook!r} failed")
+            raise HookFailedError(verdict.message or f"validate hook {hook!r} failed")
 
     def _plan_template(
         self,
@@ -139,7 +139,7 @@ class ApplyRecipe:
         dest = _render_path(step.dest, specs=recipe.inputs, values=inputs, field="dest")
         source = confined_path(recipe_dir, template, field="template")
         if not source.is_file():
-            raise ValueError(f"template not found: {template}")
+            raise PathNotFoundError(f"template not found: {template}")
         if step.if_absent and _destination_exists(dest, target, buffer):
             return
         buffer[dest] = render_template(
@@ -163,7 +163,7 @@ class ApplyRecipe:
         dest = _render_path(step.dest, specs=recipe.inputs, values=inputs, field="dest")
         source = confined_path(recipe_dir, source_relative, field="source")
         if not source.is_file():
-            raise ValueError(f"copy source not found: {source_relative}")
+            raise PathNotFoundError(f"copy source not found: {source_relative}")
         if step.if_absent and _destination_exists(dest, target, buffer):
             return
         buffer[dest] = source.read_text(encoding="utf-8", errors=CONTENT_ERRORS, newline="")

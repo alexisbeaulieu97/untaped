@@ -82,7 +82,7 @@ class SaveResources:
         if all_kinds:
             return [self._catalog.get(kind_name) for kind_name in self._catalog.kinds()]
         if kind is None:
-            raise ConfigError("pass --all-kinds or --kind")
+            raise ConfigError("pass --all-kinds or --kind", category="usage")
         try:
             return [self._catalog.by_cli_name(kind)]
         except ConfigError:

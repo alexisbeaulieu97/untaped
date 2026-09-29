@@ -37,7 +37,8 @@ the version you have installed.
   default and environment variable (generated).
 - [Pipes and record kinds](./reference/pipes.md): the `--format pipe`
   envelope, and which command writes and reads each record kind.
-- [Exit codes](./reference/exit-codes.md): what 0, 1, 2, 3 and 130 mean, and
+- [Exit codes](./reference/exit-codes.md): what 0 to 5 and 130 mean, the
+  failure categories behind them, and
   which commands exit 3.
 - [Environment variables](./reference/environment.md): every variable
   `untaped` reads or sets.

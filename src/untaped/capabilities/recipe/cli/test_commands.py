@@ -30,13 +30,15 @@ from untaped.capabilities.recipe.cli.common import (
 )
 from untaped.capabilities.recipe.domain.pack import InstalledPack
 from untaped.capabilities.recipe.domain.paths import is_path_ref
+from untaped.capabilities.recipe.errors import RecipeError
 from untaped.capabilities.recipe.infrastructure import HookExecutor, HookResolver
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
 from untaped.capability_api import (
     ColumnsOption,
-    ConfigError,
+    ErrorInfo,
     FormatOption,
+    UntapedError,
     UsageError,
     echo,
     finish,
@@ -107,7 +109,7 @@ def _select(root: Path, ref_text: str | None) -> _Selection:
     if ref_text.endswith((".yml", ".yaml")):
         if is_path_ref(ref_text):
             resolve_explicit_recipe(library, Path(ref_text).expanduser(), recipe_id=None)
-        raise ConfigError("test requires a pack directory or ref, not a recipe file")
+        raise RecipeError("test requires a pack directory or ref, not a recipe file")
     if is_path_ref(ref_text):
         path = Path(ref_text).expanduser()
         pack = library.local_pack(path)
@@ -177,13 +179,23 @@ def _execute(root: Path, selection: _Selection, *, update: bool) -> list[CaseRes
 
 
 def _row(result: CaseResult) -> dict[str, object]:
-    return {
+    """One case row; an ``error`` case also carries a structured ``error``."""
+    row: dict[str, object] = {
         "pack": result.pack,
         "recipe": result.recipe,
         "case": result.case,
         "status": result.status,
         "detail": result.detail,
     }
+    if result.status == "error":
+        # A plain exception (or none) is an invalid case or pack file.
+        failure = result.failure
+        if not isinstance(failure, UntapedError):
+            failure = RecipeError(result.detail)
+        row["error"] = ErrorInfo.from_exception(failure, message=result.detail).model_dump(
+            mode="json"
+        )
+    return row
 
 
 def _render_diffs(results: list[CaseResult]) -> None:

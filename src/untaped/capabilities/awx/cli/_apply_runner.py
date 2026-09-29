@@ -67,7 +67,7 @@ def _read_documents(path: Path) -> list[tuple[str, Resource]]:
     """Every document of ``path`` (a file, a directory, or ``-`` for stdin) and its source."""
     if path != STDIN:
         return [(str(source), doc) for source, doc in read_resource_files(path)]
-    empty = ConfigError("no YAML documents on stdin; pipe them into `apply -`")
+    empty = ConfigError("no YAML documents on stdin; pipe them into `apply -`", category="invalid")
     try:
         text = resolve_text_input(value=None, file=None, what="documents")
     except ConfigError:
@@ -93,7 +93,8 @@ def run_apply(ctx: AwxContext, file: Path, controls: WriteControls, *, check: bo
             # Name the file: a directory apply reads every *.yml and *.yaml.
             if doc.kind not in known:
                 raise ConfigError(
-                    f"{source}: unknown kind {doc.kind!r} (available: {', '.join(sorted(known))})"
+                    f"{source}: unknown kind {doc.kind!r} (available: {', '.join(sorted(known))})",
+                    category="invalid",
                 )
         return [_with_default_organization(ctx, doc) for _source, doc in docs]
 

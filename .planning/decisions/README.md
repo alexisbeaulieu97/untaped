@@ -6,6 +6,7 @@ implementation behavior. This index is navigation only; work is tracked in GitHu
 - [AWX template specs and test suites stored with source](dec_01a0d5b790bd7341b4e493c1bbc4ea54-v4-awx-template-specs-and-suites-stored-with-source.md) (proposed)
 - [capability state lives in state.yml](dec_01a0d05a563c7751139b4452ccadb3b7-v4-capability-state-lives-in-state-yml.md)
 - [capability-owned packaged skills](dec_01a0820d443870069dfe37af04c1fcc2-v4-capability-owned-packaged-skills.md)
+- [failures carry category and system; exit codes 4/5; JSON diagnostics](dec_01a0eb46316e730099c937b014f81525-v4-failures-carry-category-and-system.md)
 - [output and HTTP retry safety](dec_01a0820d60a074ec98d9f6ad27a28508-v4-output-and-http-retry-safety.md)
 - [pipe envelope remains a stable v1 wire contract](dec_01a0820adfe072c48ea74907b7a9120e-v4-pipe-envelope-remains-a-stable-v1-wire-contract.md)
 - [profiles and capability settings are the config contract](dec_01a0820ae00572d382078acce69af419-v4-profiles-and-capability-settings-are-the-config-contract.md) (superseded)
