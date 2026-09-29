@@ -99,6 +99,7 @@ ran it: `scm_revision` must be the commit you pushed.
 | `expectations` | Every check, as `{check, expected, actual, passed}` (below). |
 | `hosts` | Each host's PLAY RECAP counters by host name (below), in `json`, `yaml` and `pipe` output; `null` when they were not read or could not be. |
 | `hosts_truncated` | `true` when the job ran on more than 500 hosts: `hosts` keeps 500, failed and unreachable hosts first. |
+| `nodes` | A workflow case's nodes as they ran (below); `null` for a job case, or when they could not be read. |
 | `baseline` | The same case in the baseline run, when comparing (below); `null` otherwise, or for a `new` case. |
 | `change` | How the case changed since the baseline (below); `null` without a baseline. |
 
@@ -131,6 +132,7 @@ field is `null` when it does not apply or could not be read.
 | `unreachable_hosts` | The hosts among `failed_tasks` that could not be reached. |
 | `changed_tasks` | The tasks an `idempotent` case's rerun changed, as `{host, task}` (the first 100); `null` otherwise. |
 | `note` | A second problem that did not decide the failure, such as `log fetch failed: …` when the job's own failure is already known. |
+| `node` | A workflow case's node the failure is from (`outer/inner` inside a nested workflow); the other fields are then that node's job's. `null` otherwise. |
 
 `related` has these fields:
 
@@ -169,11 +171,24 @@ One entry per host name, read once from the job's host summaries:
 | `rescued` | Failures a `rescue` block handled. |
 | `ignored` | Failures `ignore_errors` let pass. |
 
+### `nodes`
+
+One entry per node of the workflow, in AWX's order:
+
+| Field | Meaning |
+|---|---|
+| `id` | The node's id (AWX's node `identifier`), as `expect.nodes` names it. |
+| `template` | What the node ran: the template's name, or the approval's. |
+| `job_id` | The job (approval, nested workflow job, update) the node started; `null` when it never ran. |
+| `status` | That job's status, or `never_ran`. |
+
 ### `expectations`
 
 One entry per check, in this order: `status`, then each `log.contains`,
 `log.not_contains` and `log.matches` entry, `changed`, each `hosts` bound,
-each `failed_tasks` entry, and last `idempotent`.
+then for a workflow case each node's checks (in this same order, each with a
+`node` key naming its node; a job case's checks have no `node` key), each
+`failed_tasks` entry, and last `idempotent`.
 
 - `check`: `status`, `log.contains`, `log.not_contains`, `log.matches`,
   `changed`, `hosts`, `failed_tasks` or `idempotent`.
@@ -216,6 +231,50 @@ check:
   (unless `--no-cancel`). The check's `actual` is `unknown` when the rerun
   could not be followed, `not launched` when it could not be launched.
 
+## Workflow cases
+
+A workflow case's row has the same fields: `job_id`, `job_status` and
+`rerun_job_id` are the workflow jobs', and `nodes` lists what each node ran.
+`hosts` is its node jobs' summaries summed per host, filled only when the
+case bounds `changed` or `hosts` (checked against every host, whatever the
+cut); otherwise it is `null`.
+
+A failed workflow is blamed on the node that failed it: the first whose job
+failed with no failure or always path out of it. That node's job is
+attributed by the rules above; `failure.message` is prefixed with the node
+(`node deploy: task 'Copy release' failed on web2: disk full`), `system` and
+`category` are the node job's, and `evidence` comes from the node's job with
+`evidence.node` naming it. A nested workflow is followed the same way, 5
+levels deep (`node release/verify: …`, `evidence.node` `release/verify`). A
+node check that fails names its node too, and the node's failure decides
+when the workflow itself ran as the case asked. A workflow that failed with
+no failed node to blame (every failure had a path out of it, and AWX failed
+it for another reason, such as a node whose template was deleted) is
+`awx.controller`, with the workflow's explanation; so are nodes that could
+not be read (`error`, nothing is checked against them).
+
+A workflow still running at its timeout is blamed on the node still running
+(`node deploy: still running after 600s; cancel requested`): `awx.playbook`
+when it runs, `awx.controller` when it never started, `awx.suite` for an
+approval still waiting. `nodes` shows where each stood.
+
+- An approval the case denied (`approvals: deny`) with no failure path out
+  of it fails the workflow: `awx.expectation` unless the case expects that
+  (`status: failed`).
+- An approval denied or timed out outside the run: `awx.controller`.
+- A pending approval the case gives no answer for: `error`, `awx.suite`
+  (`invalid`, exit 1), `node approve: approval 'Approve production' is
+  waiting, and the case sets no approvals; cancel requested`. Set
+  `approvals`. With `--no-cancel` the message names the waiting approval and
+  the `untaped awx jobs cancel … --kind workflow_job` command instead.
+- AWX refusing to approve (a missing Approve role): `awx.credentials`
+  (exit 4).
+- A node that ran a project or inventory update itself and failed is
+  `awx.scm` or `awx.inventory`, whatever the case expects, as for a job.
+
+`--compare` and `--baseline` compare workflow cases as job cases; a workflow
+still fails the same way only when the same node fails (see below).
+
 ## Comparing with a baseline
 
 `--compare FILE` compares the run with the saved output of an earlier run:
@@ -248,13 +307,14 @@ Rows are matched by `suite` and `case`. Each row gains `baseline` and
 | `job_id` | The baseline's job. |
 | `system` | The baseline's `failure.system`; `null` when it passed (or in a file from before 9.0). |
 | `category` | The baseline's `failure.category`; `null` likewise. |
+| `node` | The baseline's `failure.evidence.node`: the workflow node that failed; `null` for a job case. |
 
 | `change` | Meaning | Fails the run |
 |---|---|---|
-| `regression` | It passed in the baseline and does not now, or it fails now because of another `system` than in the baseline. | yes |
+| `regression` | It passed in the baseline and does not now, or it fails now because of another `system` (or, for a workflow, in another node) than in the baseline. | yes |
 | `unverified` | It fails now, and the baseline failed because of the environment (`auth`, `permission`, `config` or `unavailable`), so it proves nothing. | yes |
 | `new` | The baseline did not run it (`baseline` is `null`); it counts as in a run without a baseline. | when it failed |
-| `still_failing` | It fails now as it did in the baseline: same `system` (a baseline without one matches on the result). | no, unless 4 or 5 |
+| `still_failing` | It fails now as it did in the baseline: same `system` and same failing `node` (a baseline without a system matches on the result). | no, unless 4 or 5 |
 | `fixed` | It did not pass in the baseline and passes now. | no |
 | `pass` | It passed in both. | no |
 | `removed` | The baseline ran it and this run did not. These rows follow the others and have no job: only `suite`, `case`, `baseline` and `change` are set; `result`, `job_id`, `failure` and the other job fields are `null`, `expectations` is `[]` and `hosts_truncated` is `false`. A baseline case `--case` does not select is left out. | no |

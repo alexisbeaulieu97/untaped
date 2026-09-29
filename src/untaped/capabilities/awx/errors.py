@@ -112,6 +112,22 @@ class LaunchPromptError(AwxApiError):
     category = ErrorCategory.INVALID
 
 
+class PendingApprovalError(AwxError):
+    """A workflow under test waits on an approval its test case gives no answer for.
+
+    ``node`` is the approval node's path (``outer/inner`` in a nested
+    workflow), ``approval_id`` the waiting approval.
+    """
+
+    category = ErrorCategory.INVALID
+    system = "awx.suite"
+
+    def __init__(self, message: str, *, node: str, approval_id: int, hint: str) -> None:
+        super().__init__(message, hint=hint)
+        self.node = node
+        self.approval_id = approval_id
+
+
 class WaitCancelledError(AwxApiError):
     """A monitor's poll wait was interrupted (Ctrl-C); the execution keeps running."""
 

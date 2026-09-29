@@ -28,7 +28,10 @@ from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayl
 from untaped.capabilities.awx.domain.suite import CaseResult, Suite
 from untaped.capabilities.awx.domain.workflow_graph import WorkflowNodeSpec
 from untaped.capabilities.awx.infrastructure.catalog import AwxResourceCatalog
-from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
+from untaped.capabilities.awx.infrastructure.specs import (
+    JOB_TEMPLATE_SPEC,
+    WORKFLOW_JOB_TEMPLATE_SPEC,
+)
 from untaped.capabilities.awx.infrastructure.suites import (
     DefaultParser,
     LocalFilesystem,
@@ -64,6 +67,7 @@ def test_the_skill_ships_the_examples_its_manual_names() -> None:
         "negative.yml",
         "smoke.yml",
         "variants.yml",
+        "workflow.yml",
     ]
 
 
@@ -71,13 +75,11 @@ def test_the_skill_ships_the_examples_its_manual_names() -> None:
 def test_example_loads_and_resolves_to_known_launch_fields(path: Path) -> None:
     suite = _load(path)
     resolver = ResolveCasePayload(_AnyId(), catalog=AwxResourceCatalog())
+    spec = WORKFLOW_JOB_TEMPLATE_SPEC if suite.workflow_template else JOB_TEMPLATE_SPEC
 
     with warnings.catch_warnings():
         warnings.simplefilter("error")  # an unknown launch field warns
-        payloads = [
-            resolver(JOB_TEMPLATE_SPEC, case, defaults=suite.defaults)
-            for case in suite.cases.values()
-        ]
+        payloads = [resolver(spec, case, defaults=suite.defaults) for case in suite.cases.values()]
 
     assert payloads
 
