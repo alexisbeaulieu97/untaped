@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from untaped.capabilities.awx.application.apply_membership import MembershipPlan
+from untaped.capabilities.awx.application.apply_workflow_graph import WorkflowGraphPlan
 from untaped.capabilities.awx.application.mutation_refs import DeferredReference
 from untaped.capabilities.awx.application.ports import ApplyStrategy
 from untaped.capabilities.awx.domain import ApplyOutcome, Resource, ResourceSpec
@@ -38,6 +39,7 @@ class PreparedMutation:
     _preview: ApplyOutcome
     _membership_plans: list[MembershipPlan] = field(repr=False, default_factory=list)
     create_parent: tuple[str, int | DeferredReference] | None = field(repr=False, default=None)
+    _graph_plan: WorkflowGraphPlan | None = field(repr=False, default=None)
 
     @property
     def resource(self) -> Resource:
@@ -66,6 +68,11 @@ class PreparedMutation:
     @property
     def membership_plans(self) -> list[MembershipPlan]:
         return copy.deepcopy(self._membership_plans)
+
+    @property
+    def graph_plan(self) -> WorkflowGraphPlan | None:
+        """The node graph reconcile, for kinds with a ``node_field`` that declare it."""
+        return copy.deepcopy(self._graph_plan)
 
 
 @dataclass(frozen=True)

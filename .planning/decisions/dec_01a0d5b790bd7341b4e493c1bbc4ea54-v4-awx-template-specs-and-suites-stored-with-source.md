@@ -2,7 +2,11 @@
 
 Decision ID: `dec_01a0d5b790bd7341b4e493c1bbc4ea54`
 
-Status: **proposed** (design only; nothing here is implemented).
+Status: **superseded** (never implemented).
+
+> Superseded by [AWX specs are plain export documents in the repo](dec_01a0eb415a9e7195873ec9f8a91da3dd-v4-awx-specs-are-plain-export-documents-in-the-repo.md):
+> specs carry no Jinja and no `source` context; the harness applies run-specific
+> names, SHAs and links, and suites bind to repo specs by name.
 
 A job template's portable spec (the `export` document, which round-trips
 since the template export/apply work) and the `awx test` suites that exercise

@@ -14,6 +14,7 @@ from untaped.capabilities.awx.infrastructure.specs._support import (
     INSTANCE_GROUP_SPEC,
     LABEL_SPEC,
     ORGANIZATION_SPEC,
+    SYSTEM_JOB_TEMPLATE_SPEC,
     UNIVERSAL_READ_ONLY,
 )
 from untaped.capabilities.awx.infrastructure.specs.credential import CREDENTIAL_SPEC
@@ -38,6 +39,7 @@ ALL_SPECS: tuple[AwxResourceSpec, ...] = (
     EXECUTION_ENVIRONMENT_SPEC,
     LABEL_SPEC,
     INSTANCE_GROUP_SPEC,
+    SYSTEM_JOB_TEMPLATE_SPEC,
     JOB_TEMPLATE_SPEC,
     WORKFLOW_JOB_TEMPLATE_SPEC,
     SCHEDULE_SPEC,

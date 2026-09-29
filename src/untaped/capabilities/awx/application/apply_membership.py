@@ -15,11 +15,17 @@ For each ``FkRef(multi=True, sub_endpoint=…)`` on a spec (today: only
 Membership writes are *kept out of the PATCH body* — AWX never sees
 ``hosts: [...]`` on a Group write. Body and membership are independent
 write paths.
+
+:func:`member_delta`, :func:`credential_clashes` and :func:`write_members`
+are the shared rules for replacing any relationship (template memberships
+here, workflow node prompts in ``apply_workflow_graph``): adds first,
+same-type credentials removed first, ordered lists rebuilt from their first
+difference, and removed members restored when an add is refused.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -140,25 +146,16 @@ class MembershipReconciler:
                     f"{ref.field!r} contains duplicate members"
                 )
 
-            desired_set = set(resolved_desired_ids)
-            existing_set = set(existing_ids)
-            to_associate = tuple(
-                member_id for member_id in resolved_desired_ids if member_id not in existing_set
-            )
-            to_disassociate = tuple(
-                member_id for member_id in existing_ids if member_id not in desired_set
+            to_associate, to_disassociate, to_reorder = member_delta(
+                tuple(existing_ids), resolved_desired_ids, ordered=ref.ordered
             )
             disassociate_first: tuple[int, ...] = ()
             if ref.kind == "Credential" and to_associate and to_disassociate:
-                disassociate_first = self._type_clashes(
-                    to_associate, to_disassociate, existing_type_by_id, client=client
-                )
-            to_reorder: tuple[PlannedId, ...] = ()
-            if ref.ordered:
-                to_reorder = _ordered_replacements(
-                    existing_ids=tuple(existing_ids),
-                    desired_ids=resolved_desired_ids,
-                    removed=set(to_disassociate),
+                disassociate_first = credential_clashes(
+                    to_associate,
+                    to_disassociate,
+                    existing_type_by_id,
+                    lambda member: self.credential_type(member, client),
                 )
 
             field_change: FieldChange | None = None
@@ -192,32 +189,8 @@ class MembershipReconciler:
             )
         return plans
 
-    def _type_clashes(
-        self,
-        to_associate: tuple[PlannedId, ...],
-        to_disassociate: tuple[int, ...],
-        existing_types: Mapping[int, Any],
-        *,
-        client: ResourceClient,
-    ) -> tuple[int, ...]:
-        """Removed credentials sharing a type with an incoming one.
-
-        An unknown type on either side is treated as a clash, so a same-type
-        swap still frees the slot; the restore on failure covers that case.
-        """
-        incoming: set[Any] = set()
-        for member in to_associate:
-            member_type = self._credential_type(member, client)
-            if member_type is None:
-                return to_disassociate
-            incoming.add(member_type)
-        return tuple(
-            member
-            for member in to_disassociate
-            if existing_types.get(member) is None or existing_types[member] in incoming
-        )
-
-    def _credential_type(self, member: PlannedId, client: ResourceClient) -> Any:
+    def credential_type(self, member: PlannedId, client: ResourceClient) -> Any:
+        """A credential's type, or ``None`` when it cannot be read (yet)."""
         if self._catalog is None or not isinstance(member, int):
             return None
         try:
@@ -306,72 +279,27 @@ class MembershipReconciler:
     ) -> None:
         """POST associate / disassociate per ``plans`` against the resource's id."""
         for plan in plans:
-            if plan.ref.ordered and plan.mode == "replacement":
-                # Reordered members must leave to be re-appended in order;
-                # members no longer wanted leave only after the adds succeed.
-                associate = set(plan.to_reorder) | set(plan.to_associate)
-                reorder = plan.to_reorder
-                operations: tuple[tuple[tuple[PlannedId, ...], bool], ...] = (
-                    (reorder, True),
-                    (tuple(member for member in plan.desired_ids if member in associate), False),
-                    (tuple(m for m in plan.to_disassociate if m not in reorder), True),
-                )
-            else:
-                # Associate first so a refused associate leaves the resource
-                # intact; only same-type credentials must leave beforehand.
-                # Additive plans only ever carry one direction.
-                first = plan.disassociate_first
-                operations = (
-                    (first, True),
-                    (plan.to_associate, False),
-                    (tuple(m for m in plan.to_disassociate if m not in first), True),
-                )
-            removed: list[PlannedId] = []
-            for member_ids, disassociate in operations:
-                try:
-                    for member_id in member_ids:
-                        self.post_members(
-                            spec,
-                            parent_id=record_id,
-                            ref=plan.ref,
-                            member_ids=(member_id,),
-                            disassociate=disassociate,
-                            client=client,
-                        )
-                        if disassociate:
-                            removed.append(member_id)
-                except Exception as exc:
-                    if disassociate or not removed:
-                        raise
-                    raise self._restore(spec, record_id, plan, removed, exc, client) from exc
 
-    def _restore(
-        self,
-        spec: ResourceSpec,
-        record_id: int,
-        plan: MembershipPlan,
-        removed: list[PlannedId],
-        error: Exception,
-        client: ResourceClient,
-    ) -> BadRequestError:
-        """Re-add members removed earlier in this reconcile after an associate failed."""
-        lost: list[PlannedId] = []
-        for member_id in removed:
-            try:
+            def post(member_id: PlannedId, disassociate: bool, plan: MembershipPlan = plan) -> None:
                 self.post_members(
-                    spec, parent_id=record_id, ref=plan.ref, member_ids=(member_id,), client=client
+                    spec,
+                    parent_id=record_id,
+                    ref=plan.ref,
+                    member_ids=(member_id,),
+                    disassociate=disassociate,
+                    client=client,
                 )
-            except Exception:
-                lost.append(member_id)
-        members = ", ".join(str(member) for member in lost or removed)
-        outcome = (
-            f"could not restore removed members {members}"
-            if lost
-            else f"restored removed members {members}"
-        )
-        return BadRequestError(
-            f"{plan.ref.field}: associate failed ({error}); {outcome}", **attribution(error)
-        )
+
+            write_members(
+                post,
+                field=plan.ref.field,
+                associate=plan.to_associate,
+                disassociate=plan.to_disassociate,
+                desired=plan.desired_ids,
+                reorder=plan.to_reorder,
+                ordered=plan.ref.ordered and plan.mode == "replacement",
+                disassociate_first=plan.disassociate_first,
+            )
 
     def post_members(
         self,
@@ -411,6 +339,112 @@ class MembershipReconciler:
             if disassociate:
                 body["disassociate"] = True
             client.sub_endpoint_request(spec, parent_id, ref.sub_endpoint, "POST", json=body)
+
+
+def member_delta(
+    existing: tuple[int, ...], desired: tuple[PlannedId, ...], *, ordered: bool
+) -> tuple[tuple[PlannedId, ...], tuple[int, ...], tuple[PlannedId, ...]]:
+    """``(associate, disassociate, reorder)`` turning ``existing`` into ``desired``."""
+    existing_set, desired_set = set(existing), set(desired)
+    associate = tuple(member for member in desired if member not in existing_set)
+    disassociate = tuple(member for member in existing if member not in desired_set)
+    reorder: tuple[PlannedId, ...] = ()
+    if ordered:
+        reorder = _ordered_replacements(
+            existing_ids=existing, desired_ids=desired, removed=set(disassociate)
+        )
+    return associate, disassociate, reorder
+
+
+def credential_clashes(
+    associate: Sequence[PlannedId],
+    disassociate: tuple[int, ...],
+    existing_types: Mapping[int, Any],
+    type_of: Callable[[PlannedId], Any],
+) -> tuple[int, ...]:
+    """Removed credentials sharing a type with an incoming one (AWX allows one per type).
+
+    An unknown type on either side is treated as a clash, so a same-type
+    swap still frees the slot; the restore on failure covers that case.
+    """
+    incoming: set[Any] = set()
+    for member in associate:
+        member_type = type_of(member)
+        if member_type is None:
+            return disassociate
+        incoming.add(member_type)
+    return tuple(
+        member
+        for member in disassociate
+        if existing_types.get(member) is None or existing_types[member] in incoming
+    )
+
+
+def write_members(
+    post: Callable[[PlannedId, bool], None],
+    *,
+    field: str,
+    associate: Sequence[PlannedId],
+    disassociate: Sequence[int],
+    desired: Sequence[PlannedId] = (),
+    reorder: Sequence[PlannedId] = (),
+    ordered: bool = False,
+    disassociate_first: Sequence[int] = (),
+) -> None:
+    """Write one relationship change through ``post(member, disassociate)``.
+
+    Adds come first so a refused add never strips the resource; only
+    ``disassociate_first`` members (same-type credentials) leave beforehand.
+    An ordered list removes its ``reorder`` tail and re-adds it in ``desired``
+    order. If an add fails after removals, the removed members are re-added.
+    """
+    operations: tuple[tuple[tuple[PlannedId, ...], bool], ...]
+    if ordered:
+        adding = set(reorder) | set(associate)
+        operations = (
+            (tuple(reorder), True),
+            (tuple(member for member in desired if member in adding), False),
+            (tuple(m for m in disassociate if m not in reorder), True),
+        )
+    else:
+        operations = (
+            (tuple(disassociate_first), True),
+            (tuple(associate), False),
+            (tuple(m for m in disassociate if m not in disassociate_first), True),
+        )
+    removed: list[PlannedId] = []
+    for member_ids, removing in operations:
+        try:
+            for member_id in member_ids:
+                post(member_id, removing)
+                if removing:
+                    removed.append(member_id)
+        except Exception as exc:
+            if removing or not removed:
+                raise
+            raise _restore(post, field, removed, exc) from exc
+
+
+def _restore(
+    post: Callable[[PlannedId, bool], None],
+    field: str,
+    removed: list[PlannedId],
+    error: Exception,
+) -> BadRequestError:
+    """Re-add members removed earlier in this reconcile after an add failed."""
+    lost: list[PlannedId] = []
+    for member_id in removed:
+        try:
+            post(member_id, False)
+        except Exception:
+            lost.append(member_id)
+    members = ", ".join(str(member) for member in lost or removed)
+    outcome = (
+        f"could not restore removed members {members}"
+        if lost
+        else f"restored removed members {members}"
+    )
+    return BadRequestError(f"{field}: associate failed ({error}); {outcome}", **attribution(error))
 
 
 def _ordered_replacements(

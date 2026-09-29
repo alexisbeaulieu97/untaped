@@ -1,10 +1,11 @@
-"""Local git facts for ``awx test``: the pushed HEAD branch.
+"""Local git facts for ``awx test`` and ``awx apply``: the pushed HEAD branch.
 
-``--scm-branch HEAD`` resolves to the current branch as named on its remote.
-AWX checks out what the remote has, so HEAD is only usable once pushed: the
-branch needs an upstream whose remote ref points at HEAD's commit. An
-unusable HEAD is a ``config`` error in ``git`` (fix the checkout: exit ``4``);
-a failed git command keeps its own attribution.
+``--scm-branch HEAD`` resolves to the current branch as named on its remote,
+and ``--source-ref HEAD`` needs the same guarantee. AWX checks out what the
+remote has, so HEAD is only usable once pushed: the branch needs an upstream
+whose remote ref points at HEAD's commit. An unusable HEAD is a ``config``
+error in ``git`` (fix the checkout: exit ``4``); a failed git command keeps
+its own attribution.
 """
 
 from __future__ import annotations
@@ -16,22 +17,23 @@ from untaped.capability_api import ConfigError, GitCommandError, attribution, q,
 _TIMEOUT = 30.0
 
 
-def pushed_branch(cwd: Path | None = None) -> str:
-    """The upstream branch name of the repository at ``cwd`` whose tip is HEAD."""
+def pushed_branch(cwd: Path | None = None, *, flag: str = "--scm-branch") -> str:
+    """The upstream branch name of the repository at ``cwd`` whose tip is HEAD.
+
+    ``flag`` is the option that asked for ``HEAD``; errors name it.
+    """
     try:
-        return _pushed_branch(cwd)
+        return _pushed_branch(cwd, flag)
     except GitCommandError as exc:
-        raise ConfigError(f"--scm-branch HEAD: {exc}", **attribution(exc)) from exc
+        raise ConfigError(f"{flag} HEAD: {exc}", **attribution(exc)) from exc
 
 
-def _pushed_branch(cwd: Path | None) -> str:
+def _pushed_branch(cwd: Path | None, flag: str) -> str:
     head = _git(cwd, "rev-parse", "HEAD")
     # The full ref: ``--short`` answers ``heads/x`` when a tag ``x`` exists.
     local_ref = _git(cwd, "symbolic-ref", "--quiet", "HEAD", check=False)
     if not local_ref:
-        raise ConfigError(
-            "HEAD is detached; pass --scm-branch a branch, tag or commit", system="git"
-        )
+        raise ConfigError(f"HEAD is detached; pass {flag} a branch, tag or commit", system="git")
     branch = local_ref.removeprefix("refs/heads/")
     upstream = _git(
         cwd,
