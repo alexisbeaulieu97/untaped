@@ -163,7 +163,9 @@ def test_follow_pending_to_terminal_uses_only_supported_routes(
         assert paths and set(paths) == {detail}
         assert "pending" in result.stderr and status in result.stderr
     else:
-        assert set(paths) == {detail, f"{detail}stdout/"}
+        # The log follows the kind's events route; it never downloads stdout.
+        events = "job_events" if kind == "job" else "events"
+        assert set(paths) == {detail, f"{detail}{events}/"}
 
 
 @pytest.mark.parametrize("subpath", ["job_events", "events", "stdout"])

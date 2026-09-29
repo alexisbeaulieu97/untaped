@@ -62,6 +62,10 @@ records. A record of another kind (for example `awx.host` piped into
 a kind also accepts that kind's `awx.copy_outcome` and `awx.rename_outcome`
 records. Confirmations read the terminal even when stdin is piped.
 
+Writes emit outcome rows (`awx.apply_outcome` for `apply`, `patch` and
+`edit`; `awx.delete_outcome`, `awx.copy_outcome`, `awx.rename_outcome`, …)
+whose `action` is `planned` in a preview.
+
 ## Patch fields
 
 `patch` sets the same fields on existing resources:

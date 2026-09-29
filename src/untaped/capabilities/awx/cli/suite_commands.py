@@ -15,7 +15,8 @@ from cyclopts.validators import Number
 from untaped.capabilities.awx.cli._get import default_get_columns
 from untaped.capabilities.awx.cli.context import AwxContext, open_context
 from untaped.capabilities.awx.cli.options import OrganizationOption
-from untaped.capabilities.awx.domain.suite import CaseStatus, Suite, SuiteRunOutcome
+from untaped.capabilities.awx.domain.case_failure import CaseFailure
+from untaped.capabilities.awx.domain.suite import CaseResult, CaseStatus, Suite, SuiteRunOutcome
 from untaped.capabilities.awx.domain.suite_starter import suite_slug
 from untaped.capabilities.awx.errors import AwxApiError
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
@@ -65,7 +66,8 @@ _RESULT_TABLE_COLUMNS = [
     "job_status",
     "job_id",
     "duration_s",
-    "failure_reason",
+    "failure.system",
+    "failure.message",
 ]
 
 _CASE_TABLE_COLUMNS = ["suite", "case", "job_template"]
@@ -248,7 +250,8 @@ def run_command(
             # global ``--verbose``/``-v``, so the short alias would shadow it.
             name="--show-logs",
             negative="",
-            help="Print the failed tasks and log tail of each case that did not pass to stderr.",
+            help="Print the failure, failed tasks and log tail of each case that did not pass "
+            "to stderr.",
         ),
     ] = False,
     fmt: FormatOption = "table",
@@ -270,6 +273,7 @@ def run_command(
     cli_vars = parse_kv_pairs(var, flag="--var")
     files = _expand_paths(paths)
     case_filter = set(cases) if cases else None
+    structured = fmt not in {"table", "raw"}
 
     with report_errors(), open_context() as ctx:
         if scm_branch == "HEAD":
@@ -294,13 +298,16 @@ def run_command(
             jt_scope=_jt_scope(ctx, spec),
             stop=ctx.stop,
             canceller=ctx.jobs.cancel if cancel else None,
-            refresher=ctx.monitor.fetch,
+            job_reader=ctx.monitor,
             preflight=PreflightLaunch(ctx.repo, ctx.catalog),
             log_reader=ctx.monitor.fetch_stdout,
             event_reader=ctx.monitor.stream_events,
+            tail_reader=lambda job, lines: ctx.monitor.tail_stdout(job, lines)[0],
             job_url=partial(job_ui_url, ctx.settings),
-            # Evidence is hidden in the table and raw views unless printed.
-            evidence=show_logs or fmt not in {"table", "raw"},
+            host_reader=ctx.jobs.host_summaries,
+            # Evidence and host summaries are hidden in the table and raw views.
+            evidence=show_logs or structured,
+            hosts=structured,
         )
         try:
             outcome = runner(
@@ -319,16 +326,8 @@ def run_command(
 
     if show_logs:
         for result in outcome.results:
-            if result.result == "pass" or result.job_id is None:
-                continue
-            tail = result.log_tail
-            shown = "log unavailable" if tail is None else f"last {plural(len(tail), 'log line')}"
-            echo(f"--- {result.suite}/{result.case} job {result.job_id} ({shown})", err=True)
-            for task in result.failed_tasks or ():
-                detail = task.msg or task.stderr or ""
-                echo(f"{task.status}: [{task.host or '?'}] {task.task or '?'}: {detail}", err=True)
-            for line in tail or ():
-                echo(line, err=True)
+            if result.failure is not None:
+                _show_failure(result, result.failure)
 
     emit(
         [result.model_dump() for result in outcome.results],
@@ -338,6 +337,25 @@ def run_command(
     )
     echo(_summary(outcome), err=True)
     finish(outcome.exit_code() != 0)
+
+
+def _show_failure(result: CaseResult, failure: CaseFailure) -> None:
+    """A case's failure, then its failed tasks and log tail, on stderr."""
+    evidence = failure.evidence
+    job = "" if result.job_id is None else f" job {result.job_id}"
+    echo(f"--- {result.suite}/{result.case}{job}: {failure.system}: {failure.message}", err=True)
+    if result.job_id is None:
+        return
+    tail = evidence.log_tail
+    shown = "log unavailable" if tail is None else f"last {plural(len(tail), 'log line')}"
+    if evidence.related is not None:
+        shown += f" of {evidence.related.kind} {evidence.related.id}"
+    echo(f"--- {shown}", err=True)
+    for task in evidence.failed_tasks or ():
+        detail = task.msg or task.stderr or ""
+        echo(f"{task.status}: [{task.host or '?'}] {task.task or '?'}: {detail}", err=True)
+    for line in tail or ():
+        echo(line, err=True)
 
 
 def _summary(outcome: SuiteRunOutcome) -> str:

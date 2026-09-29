@@ -2,7 +2,8 @@
 
 Wraps a :class:`RawHttpResourceClient` and translates ``Job.kind`` into
 the matching AWX collection path via :data:`KIND_TO_API_PATH`. Lists are
-newest-first unless the caller passes its own ``order_by``. The
+newest-first unless the caller passes its own ``order_by``; a job's host
+summaries (its PLAY RECAP per host) are read failed hosts first. The
 lookup keeps a ``<kind>`` fallback so callers passing an unknown kind
 hit the same path the prior CLI helper used (defensive, rarely fires).
 """
@@ -16,6 +17,7 @@ from untaped.capabilities.awx.domain.job import KIND_TO_API_PATH
 
 if TYPE_CHECKING:
     from untaped.capabilities.awx.application.ports import RawHttpResourceClient
+    from untaped.capabilities.awx.domain import Job
 
 
 class JobRecordRepository:
@@ -37,6 +39,17 @@ class JobRecordRepository:
 
     def get(self, *, kind: str, job_id: int) -> dict[str, Any]:
         return self._client.request("GET", f"{KIND_TO_API_PATH.get(kind, kind)}/{job_id}/")
+
+    def host_summaries(self, job: Job) -> Iterator[dict[str, Any]]:
+        """``jobs/<id>/job_host_summaries/``: one paginated listing, read lazily.
+
+        Failed and unreachable hosts (AWX's ``failed``) come first, so a
+        reader that stops early keeps them.
+        """
+        return self._client.paginate_path(
+            f"{KIND_TO_API_PATH[job.kind]}/{job.id}/job_host_summaries/",
+            params={"order_by": "-failed,host_name"},
+        )
 
     def cancel(self, *, kind: str, job_id: int) -> None:
         """``POST <collection>/<id>/cancel/``: AWX answers 202 and stops the job later."""

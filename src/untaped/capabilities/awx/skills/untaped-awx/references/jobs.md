@@ -85,8 +85,10 @@ untaped awx jobs wait 101 --timeout 600
 
 - `jobs list` shows the newest 20 (`--limit 0` for all); `--template NAME|ID`
   keeps one template's runs (digits mean an id).
-- `jobs logs` prints a job's stdout, downloaded in full; `jobs events` prints
-  the structured per-task events. Both accept several ids or `--stdin` and
+- `jobs logs` prints a job's stdout, downloaded in full; with `--follow` it
+  reads only new events on each poll (colours removed), and `--tail N
+  --follow` starts from the newest events only. `jobs events` prints the
+  structured per-task events. Both accept several ids or `--stdin` and
   `--follow` (no short form: `-f` is always `--format`). With several ids,
   json/yaml print one array whose rows name their `job`; `--follow --format
   json` streams one object per line.

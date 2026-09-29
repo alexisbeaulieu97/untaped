@@ -12,6 +12,7 @@ from collections.abc import Iterator
 from typing import Any, cast
 
 from untaped.capabilities.awx.application.ports import RawHttpResourceClient
+from untaped.capabilities.awx.domain import Job
 from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
 from untaped.capabilities.awx.infrastructure.job_record_repo import JobRecordRepository
 
@@ -170,3 +171,14 @@ def test_get_workflow_job_hits_workflow_jobs_id_endpoint() -> None:
     repo = JobRecordRepository(cast(RawHttpResourceClient, client))
     repo.get(kind="workflow_job", job_id=9)
     assert client.request_calls[0][1] == "workflow_jobs/9/"
+
+
+def test_host_summaries_are_one_listing_failed_hosts_first() -> None:
+    client = _FakeClient(list_pages=[{"host_name": "web1", "ok": 1}])
+    repo = JobRecordRepository(cast(RawHttpResourceClient, client))
+    assert list(repo.host_summaries(Job(id=7, kind="job", status="failed"))) == [
+        {"host_name": "web1", "ok": 1}
+    ]
+    assert client.paginate_calls == [
+        ("jobs/7/job_host_summaries/", {"order_by": "-failed,host_name"}, None)
+    ]

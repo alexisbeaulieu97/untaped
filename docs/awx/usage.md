@@ -443,9 +443,9 @@ finished and prints `interrupted: <target>: job 101 cancel requested` without
 a hint; a second Ctrl-C stops the cancel requests and names what may still
 run. A failed or unreachable host shows
 up in the followed log as Ansible prints it (`fatal: [host]: FAILED! => …`).
-AWX writes a finished job's log from its saved events, so `--follow` (and
-`jobs logs --follow`) keeps reading briefly after the job ends until they are
-all in, and warns on stderr when AWX is still saving them after that (the log
+`--follow` (and `jobs logs --follow`) reads the log from the job's saved
+events, which can trail its status, so it keeps reading briefly after the job
+ends until they are all in, and warns on stderr when AWX is still saving them after that (the log
 may be cut short; `jobs logs` later has it all). Log lines are written as
 AWX stores them: never wrapped or tab-expanded, whatever the terminal width. Workflow jobs, including sliced launches that return a workflow job,
 have no own events or stdout route, so following one prints its status
@@ -463,9 +463,16 @@ untaped awx jobs logs 101 --kind project_update
 ```
 
 `jobs events` and `jobs logs` accept several ids (or `--stdin`) and drain them
-in order with a `[<id>]` breadcrumb on stderr. Logs are downloaded in full, so
-large jobs return their whole output rather than AWX's "too large to display"
-notice; `--follow` re-downloads the log on each poll. Without `--follow`,
+in order with a `[<id>]` breadcrumb on stderr. Without `--follow`, logs are
+downloaded in full once, so large jobs return their whole output rather than
+AWX's "too large to display" notice. With `--follow` (for `jobs logs` as for
+`launch`/`sync --follow`), the log is read through the job's events: each poll
+asks only for the new events and prints their output in order, without ANSI
+colours, so following a long job never downloads its log again. An event AWX
+saves late is printed once the ones before it arrive; one that never arrives
+is reported on stderr. `--tail N --follow` reads only the newest events for
+the last N lines, then follows from there; following a job that already
+finished downloads its log once. Without `--follow`,
 `--format json` or `yaml` prints one array holding every job's rows, and each
 row names its `job`. With `--follow`, json streams one object per line
 (NDJSON) as rows arrive.
@@ -634,12 +641,16 @@ untaped awx test run --case deploy-smoke/web --var env=prod --show-logs
 - The loop: `init` (or copy an example), edit the cases, commit and push,
   `validate` (every case is checked against its template without launching),
   then `run --scm-branch HEAD`, which is refused until HEAD is pushed.
-  `run` exits 0 only when at least one case ran and every case passed, and
-  each result row carries the evidence (failed tasks, log tail, the commit
-  the job ran). A failed case exits 1; a launch AWX refused for the token or
-  a permission, or an environment problem such as an unpushed HEAD, exits 4
-  (read the error's `system`: `awx` or `git`), and one AWX could not serve
-  exits 5 (retry later).
+  `run` exits 0 only when at least one case ran and every case passed. Each
+  case that did not pass carries a `failure` saying which system is
+  responsible (the suite, the credentials, the controller, the project or
+  inventory update, the hosts, the playbook or the expectation), with its
+  category, a message, a hint and the evidence from whichever execution
+  failed. With `--format json`, `yaml` or `pipe` every row also carries each
+  host's PLAY RECAP counters. The run exits with the most severe case: 4 when
+  the environment needs fixing, 5 when retrying later may help, 1 when the
+  change or the suite must. The awx skill's `references/test-results.md`
+  lists the systems and what to do for each.
 - To let an AI agent run suites against its own changes, give it a dedicated
   profile and token: see [AWX agent profile](./agent-profile.md).
 

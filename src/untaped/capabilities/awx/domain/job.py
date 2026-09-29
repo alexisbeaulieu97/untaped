@@ -2,16 +2,20 @@
 
 All four kinds normalise to the same surface for the CLI: a numeric id, a
 status string, a kind discriminator, and a few timing fields. Streaming
-events are exposed as :class:`JobEvent` lines. :func:`poll_until_terminal`
-is the one polling loop every waiter and streamer drives (the fetch and
-sleep are injected, so this module still performs no I/O itself).
+events are exposed as :class:`JobEvent` lines (:attr:`JobEvent.lines` is
+their stdout without ANSI colours), and :class:`HostSummary` is one host's
+PLAY RECAP counters. :func:`poll_until_terminal` is the one polling
+loop every waiter and streamer drives (the fetch and sleep are injected, so
+this module still performs no I/O itself).
 """
 
 from __future__ import annotations
 
+import re
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
+from itertools import islice
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -76,6 +80,10 @@ class Job(BaseModel):
     """The commit a job's project checkout resolved to."""
     event_processing_finished: bool | None = Field(default=None, exclude=True)
     """``False`` while AWX is still saving a finished job's events."""
+    job_explanation: str | None = Field(default=None, exclude=True)
+    """AWX's note on why the job ended, e.g. ``Previous Task Failed: {…}``."""
+    result_traceback: str | None = Field(default=None, exclude=True)
+    """The controller-side traceback of a job that ended in ``error``."""
 
     @property
     def is_terminal(self) -> bool:
@@ -147,6 +155,11 @@ class JobEvent(BaseModel):
     res: dict[str, Any] | None = Field(default=None, exclude=True)
     """The module result (``event_data.res``); left out of rendered rows."""
 
+    @property
+    def lines(self) -> list[str]:
+        """The event's stdout lines as the text log shows them (ANSI colours removed)."""
+        return strip_ansi(self.stdout).splitlines()
+
     @model_validator(mode="before")
     @classmethod
     def _lift_result(cls, data: Any) -> Any:
@@ -155,3 +168,56 @@ class JobEvent(BaseModel):
             if isinstance(res, dict):
                 return {**data, "res": res}
         return data
+
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def strip_ansi(text: str) -> str:
+    """``text`` without ANSI escape sequences (AWX stores event stdout coloured)."""
+    return _ANSI.sub("", text)
+
+
+class HostSummary(BaseModel):
+    """One host's PLAY RECAP counters, from ``jobs/<id>/job_host_summaries/``."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    ok: int = 0
+    changed: int = 0
+    failed: int = 0
+    unreachable: int = 0
+    skipped: int = 0
+    rescued: int = 0
+    ignored: int = 0
+
+    @classmethod
+    def from_record(cls, record: Mapping[str, Any]) -> HostSummary:
+        """AWX's ``failures`` is ``failed`` and its ``dark`` is ``unreachable``, as in the recap."""
+        return cls(
+            ok=record.get("ok") or 0,
+            changed=record.get("changed") or 0,
+            failed=record.get("failures") or 0,
+            unreachable=record.get("dark") or 0,
+            skipped=record.get("skipped") or 0,
+            rescued=record.get("rescued") or 0,
+            ignored=record.get("ignored") or 0,
+        )
+
+
+HOST_SUMMARY_LIMIT = 500
+"""Hosts a result keeps; a larger job's summary is cut and marked truncated."""
+
+
+def host_summaries(records: Iterable[Mapping[str, Any]]) -> tuple[dict[str, HostSummary], bool]:
+    """The first :data:`HOST_SUMMARY_LIMIT` hosts' summaries, by name, and whether more exist.
+
+    ``records`` may be a lazy paginated read (read failed hosts first, so the
+    cut never drops them): at most one record past the limit is consumed.
+    """
+    kept = list(islice(records, HOST_SUMMARY_LIMIT + 1))
+    hosts = {
+        str(record.get("host_name") or record.get("host")): HostSummary.from_record(record)
+        for record in kept[:HOST_SUMMARY_LIMIT]
+    }
+    return dict(sorted(hosts.items())), len(kept) > HOST_SUMMARY_LIMIT

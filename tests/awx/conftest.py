@@ -52,6 +52,16 @@ class FakeAap:
         self.next_action_stdout: str | None = None
         # One-shot job events seeded for the next launched job.
         self.next_action_events: list[dict[str, Any]] = []
+        # One-shot fields of the next launched job's record (``job_explanation``…).
+        self.next_action_job_fields: dict[str, Any] = {}
+        # One-shot ``job_host_summaries`` records of the next launched job.
+        self.next_action_host_summaries: list[dict[str, Any]] = []
+        # One-shot count of the next launched job's detail reads that answer
+        # ``event_processing_finished: false`` (its events and host summaries
+        # stay hidden until then), like a finished job AWX is still saving.
+        self.next_action_unsaved_reads = 0
+        # ``(collection, id)`` to the detail reads left before its events are saved.
+        self.unsaved_reads: dict[tuple[str, int], int] = {}
         # One-shot ``ignored_fields`` added to the next launch response (on top
         # of the fields the template's ``ask_*_on_launch`` flags ignore).
         self.next_action_ignored_fields: dict[str, Any] = {}
@@ -196,28 +206,19 @@ class FakeAap:
     def _list(self, api_path: str, params: dict[str, str]) -> httpx.Response:
         store_collection = _TOP_PATH_STORE.get(api_path, api_path)
         records = self._apply_filters(list(self.store[store_collection].values()), params)
-        page = int(params.get("page", "1"))
-        page_size = int(params.get("page_size", "200"))
-        start = (page - 1) * page_size
-        page_records = [self._public(api_path, r) for r in records[start : start + page_size]]
-        next_url: str | None = None
-        if start + page_size < len(records):
-            next_url = f"{self.api_prefix}{api_path}/?page={page + 1}&page_size={page_size}"
-        return httpx.Response(
-            200,
-            json={
-                "count": len(records),
-                "next": next_url,
-                "previous": None,
-                "results": page_records,
-            },
-        )
+        records = [self._public(api_path, r) for r in records]
+        return _page_response(records, params, f"{self.api_prefix}{api_path}/")
 
     def _get(self, api_path: str, id_: int) -> httpx.Response:
         record = self.store.get(_TOP_PATH_STORE.get(api_path, api_path), {}).get(id_)
         if record is None:
             return _err(404, f"{api_path}/{id_}/ not found")
-        return httpx.Response(200, json=self._public(api_path, record))
+        public = self._public(api_path, record)
+        unsaved = self.unsaved_reads.get((api_path, id_))
+        if unsaved is not None:
+            self.unsaved_reads[(api_path, id_)] = max(0, unsaved - 1)
+            public = {**public, "event_processing_finished": unsaved == 0}
+        return httpx.Response(200, json=public)
 
     def _stdout(self, api_path: str, id_: int, params: dict[str, str]) -> httpx.Response:
         """Plain-text stdout endpoint (e.g. ``jobs/<id>/stdout/``): the whole log.
@@ -421,9 +422,15 @@ class FakeAap:
         status = self.next_action_status
         stdout = self.next_action_stdout
         events = self.next_action_events
+        job_fields = self.next_action_job_fields
+        host_summaries = self.next_action_host_summaries
+        unsaved_reads = self.next_action_unsaved_reads
+        self.next_action_unsaved_reads = 0
         self.next_action_status = "successful"
         self.next_action_stdout = None
         self.next_action_events = []
+        self.next_action_job_fields = {}
+        self.next_action_host_summaries = []
         new_id = self._next_id
         self._next_id += 1
         result_kind = {
@@ -474,9 +481,15 @@ class FakeAap:
             }
             seed_fields.update(scm)
             result.update(scm)
-        self.seed(store_path, **seed_fields)
+        self.seed(store_path, **seed_fields, **job_fields)
+        result.update(job_fields)  # AWX answers a launch with the job's record
         for counter, event in enumerate(events, start=1):
             self.seed(f"{result_kind}_events", job=new_id, counter=counter, **event)
+        for summary in host_summaries:
+            self.seed("job_host_summaries", job=new_id, **summary)
+        if unsaved_reads:
+            self.unsaved_reads[(store_path, new_id)] = unsaved_reads
+            result["event_processing_finished"] = False
         return httpx.Response(200, json=result)
 
     def _execution_action(
@@ -565,18 +578,31 @@ class FakeAap:
                 if (not skip_ujt and r.get("unified_job_template") == parent_id)
                 or r.get(singular) == parent_id
             ]
+        if self.unsaved_reads.get((parent_path, parent_id)):
+            records = []  # AWX has not saved them yet
+        if not records and (parent_path, sub_path) in _EVENT_SUB_PATHS:
+            records = self._events_from_stdout(parent_path, parent_id)
         records = self._apply_filters(records, params)
         if store_collection == "workflow_nodes":
             records = [self._render_node(record) for record in records]
-        return httpx.Response(
-            200,
-            json={
-                "count": len(records),
-                "next": None,
-                "previous": None,
-                "results": records,
-            },
+        if (parent_path, sub_path) in _EVENT_SUB_PATHS and not params.get("no_truncate"):
+            records = [_truncated_stdout(record) for record in records]
+        return _page_response(
+            records, params, f"{self.api_prefix}{parent_path}/{parent_id}/{sub_path}/"
         )
+
+    def _events_from_stdout(self, parent_path: str, parent_id: int) -> list[dict[str, Any]]:
+        """A seeded ``stdout`` as AWX serves it through events: one ``verbose`` event per line.
+
+        AWX builds a job's text log from its events, so a test that seeds only
+        the log still sees the same lines when a monitor follows the events.
+        """
+        record = self.store.get(parent_path, {}).get(parent_id, {})
+        parent_field = parent_path[:-1]  # ``jobs`` → ``job``, ``project_updates`` → …
+        return [
+            {"counter": counter, "event": "verbose", "stdout": line, parent_field: parent_id}
+            for counter, line in enumerate(str(record.get("stdout", "")).splitlines(), start=1)
+        ]
 
     def _sub_post(
         self,
@@ -742,11 +768,18 @@ def _reaches(nodes: dict[int, dict[str, Any]], start: int, target: int) -> bool:
 # Strict execution routes mirror Controller URLs; arbitrary subcollections must
 # not mask unsupported event/stdout requests made by production monitors.
 _EXECUTION_SUBPATHS: dict[str, set[str]] = {
-    "jobs": {"job_events", "stdout"},
+    "jobs": {"job_events", "job_host_summaries", "stdout"},
     "workflow_jobs": {"workflow_nodes"},
     "project_updates": {"events", "stdout"},
     "inventory_updates": {"events", "stdout"},
     "ad_hoc_commands": {"events", "stdout"},
+}
+
+_EVENT_SUB_PATHS = {
+    ("jobs", "job_events"),
+    ("project_updates", "events"),
+    ("inventory_updates", "events"),
+    ("ad_hoc_commands", "events"),
 }
 
 
@@ -804,7 +837,7 @@ def _matches_all(  # noqa: C901
     store: dict[str, dict[int, dict[str, Any]]] | None = None,
 ) -> bool:
     for key, value in params.items():
-        if key in {"page", "page_size", "order_by"}:
+        if key in {"page", "page_size", "order_by", "no_truncate"}:
             continue
         if key == "search":
             term = value.lower()
@@ -858,6 +891,11 @@ def _matches_all(  # noqa: C901
         if key.endswith("__gte"):
             base = key[: -len("__gte")]
             if not _numeric_compare(record.get(base), value, lambda a, b: a >= b):
+                return False
+            continue
+        if key.endswith("__lt"):
+            base = key[: -len("__lt")]
+            if not _numeric_compare(record.get(base), value, lambda a, b: a < b):
                 return False
             continue
         if str(record.get(key, "")) != value:
@@ -953,6 +991,43 @@ def _mask_survey_defaults(value: Any) -> None:
             and question.get("default") not in (None, "")
         ):
             question["default"] = "$encrypted$"
+
+
+def _page_response(
+    records: list[dict[str, Any]], params: dict[str, str], url: str
+) -> httpx.Response:
+    """One page of ``records`` as AWX lists them: ``order_by`` (comma-separated keys,
+    ``-`` for descending), ``page`` and ``page_size`` (default 200), and a ``next`` link."""
+    for key in reversed([k for k in params.get("order_by", "").split(",") if k]):
+        field = key.lstrip("-")
+        records = sorted(
+            records, key=lambda record: record.get(field) or 0, reverse=key.startswith("-")
+        )
+    page, page_size = int(params.get("page", "1")), int(params.get("page_size", "200"))
+    start = (page - 1) * page_size
+    next_url = None
+    if start + page_size < len(records):
+        next_url = f"{url}?page={page + 1}&page_size={page_size}"
+    return httpx.Response(
+        200,
+        json={
+            "count": len(records),
+            "next": next_url,
+            "previous": None,
+            "results": records[start : start + page_size],
+        },
+    )
+
+
+_EVENT_STDOUT_LIMIT = 1024
+"""Characters of event ``stdout`` AWX serves without ``no_truncate``."""
+
+
+def _truncated_stdout(record: dict[str, Any]) -> dict[str, Any]:
+    stdout = str(record.get("stdout", ""))
+    if len(stdout) <= _EVENT_STDOUT_LIMIT:
+        return record
+    return {**record, "stdout": stdout[:_EVENT_STDOUT_LIMIT] + "\u2026"}
 
 
 def _err(status: int, detail: str) -> httpx.Response:
