@@ -19,11 +19,13 @@ from untaped.capabilities.awx.domain.case_failure import (
     in_node,
     request_failure,
     responsible_update,
+    stalled_node_failure,
     timeout_failure,
     unrescued,
     workflow_failure,
 )
 from untaped.capabilities.awx.domain.job import HostSummary
+from untaped.capabilities.awx.domain.workflow_run import RunNode
 from untaped.capabilities.awx.errors import (
     LaunchPromptError,
     PendingApprovalError,
@@ -407,7 +409,7 @@ def test_a_node_failure_names_its_node_in_the_message_and_the_evidence() -> None
         "node deploy: task 'Deploy' failed on web2",
     )
     assert inner.evidence.node == "deploy"
-    assert outer.message == "node release: node deploy: task 'Deploy' failed on web2"
+    assert outer.message == "node release/deploy: task 'Deploy' failed on web2"
     assert outer.evidence.node == "release/deploy"
 
 
@@ -505,8 +507,39 @@ def test_a_workflow_that_failed_without_a_failed_node_is_the_controllers(
     assert found is not None and found.message == message
 
 
+@pytest.mark.parametrize(
+    ("kind", "status", "system", "message"),
+    [
+        ("job", "running", "awx.playbook", "still running after 5s"),
+        ("job", "pending", "awx.controller", "still pending after 5s"),
+        (
+            "workflow_approval",
+            "pending",
+            "awx.suite",
+            "approval 'Go?' is still waiting: still pending after 5s",
+        ),
+    ],
+)
+def test_a_workflow_timeout_blames_the_node_still_unfinished(
+    kind: str, status: str, system: str, message: str
+) -> None:
+    node = RunNode(
+        record_id=1,
+        identifier="n",
+        template="Go?",
+        job_id=9,
+        kind=kind,
+        status=status,
+        error_path=False,
+    )
+
+    found = stalled_node_failure(node, f"still {status} after 5s")
+
+    assert (found.system, found.message) == (system, message)
+
+
 def test_an_error_already_attributed_to_an_awx_system_keeps_it() -> None:
-    error = PendingApprovalError("node approve: approval 'x' is waiting")
+    error = PendingApprovalError("waiting", node="approve", approval_id=81, hint="answer it")
 
     assert failure_system(error, launching=False) == "awx.suite"
     assert request_failure(error).category == "invalid"

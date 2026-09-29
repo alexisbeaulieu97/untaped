@@ -46,6 +46,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.capabilities.awx.domain.job import HostSummary, Job, JobEvent
+from untaped.capabilities.awx.domain.workflow_run import APPROVAL, RunNode
 from untaped.capability_api import ErrorCategory, ErrorInfo, UntapedError, q
 
 SUITE = "awx.suite"
@@ -94,6 +95,8 @@ _TRANSPORT = (
 _SUITE_CATEGORIES = frozenset(
     {ErrorCategory.USAGE, ErrorCategory.INVALID, ErrorCategory.NOT_FOUND, ErrorCategory.CONFLICT}
 )
+APPROVALS_HINT = "set `approvals: approve` or `approvals: deny` on the case (or in its defaults)"
+"""What to do about an approval a workflow case gave no answer for."""
 _HINTS = {
     SUITE: "fix the suite, then run `untaped awx test validate`",
     CREDENTIALS: "fix the token (`untaped awx ping` checks it) or the job's credentials in AWX",
@@ -233,7 +236,7 @@ def failure_system(error: BaseException, *, launching: bool) -> str:
     else is the controller's.
     """
     info = ErrorInfo.from_exception(error)
-    if not info.system.startswith("awx") or info.system.startswith("awx."):
+    if info.system != "awx":
         return info.system
     if info.category in (ErrorCategory.AUTH, ErrorCategory.PERMISSION):
         return CREDENTIALS
@@ -262,6 +265,19 @@ def timeout_failure(job: Job, message: str) -> CaseFailure:
     if job.status in _NOT_STARTED:
         return failure(CONTROLLER, ErrorCategory.UNAVAILABLE, message)
     return failure(PLAYBOOK, ErrorCategory.FAILED, message)
+
+
+def stalled_node_failure(node: RunNode, message: str) -> CaseFailure:
+    """A workflow still unfinished at its timeout, blamed on ``node``, still unfinished too.
+
+    An approval still waiting is the suite's (nothing answered it); a job is
+    blamed as a job case's at its timeout.
+    """
+    execution = node.execution
+    if node.kind == APPROVAL or execution is None:
+        what = f"approval {q(node.template or node.job_id)} is still waiting: {message}"
+        return failure(SUITE, ErrorCategory.INVALID, what, hint=APPROVALS_HINT)
+    return timeout_failure(execution, message)
 
 
 def responsible_update(job: Job) -> Job | None:
@@ -411,14 +427,16 @@ def workflow_failure(
 
 
 def in_node(found: CaseFailure, node: str) -> CaseFailure:
-    """``found``, the failure of a workflow node's job, as the workflow's: named after ``node``."""
+    """``found``, the failure of a workflow node's job, as the workflow's: named after ``node``.
+
+    A failure already inside a nested workflow's node keeps one full path:
+    ``node outer/inner: …``.
+    """
     inner = found.evidence.node
-    evidence = found.evidence.model_copy(
-        update={"node": node if inner is None else f"{node}/{inner}"}
-    )
-    return found.model_copy(
-        update={"message": f"node {node}: {found.message}", "evidence": evidence}
-    )
+    path = node if inner is None else f"{node}/{inner}"
+    message = found.message if inner is None else found.message.removeprefix(f"node {inner}: ")
+    evidence = found.evidence.model_copy(update={"node": path})
+    return found.model_copy(update={"message": f"node {path}: {message}", "evidence": evidence})
 
 
 def approval_failure(name: str | None, approval_id: int, *, denied: bool) -> CaseFailure:

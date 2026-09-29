@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
 import yaml
 
-from untaped.capabilities.awx.application.suites import runner
 from untaped.capabilities.awx.cli import app
 from untaped.capabilities.awx.cli.context import AwxContext
+from untaped.capabilities.awx.domain.workflow_run import MAX_NESTING
 from untaped.testing import CliInvoker
 
 if TYPE_CHECKING:  # pragma: no cover — pytest --import-mode=importlib hides 'tests'
@@ -33,8 +34,14 @@ def aap(fake_aap: FakeAap, monkeypatch: pytest.MonkeyPatch) -> FakeAap:
     return fake_aap
 
 
-def _seed_release(fake: FakeAap, *, approval: bool = False) -> dict[str, int]:
-    """``Release``: build → [approve →] deploy → verify, and rollback when deploy fails."""
+def _seed_release(
+    fake: FakeAap, *, approval: bool = False, rollback: bool = True, notify: bool = False
+) -> dict[str, int]:
+    """``Release``: build → [approve →] deploy → verify, and rollback when deploy fails.
+
+    Without ``rollback``, the rollback node's template was deleted. With
+    ``notify``, a node runs once both build and deploy succeeded.
+    """
     templates = {
         name: fake.seed("job_templates", name=name, organization=1, project=5)["id"]
         for name in ("Build", "Deploy", "Smoke check", "Rollback")
@@ -47,29 +54,35 @@ def _seed_release(fake: FakeAap, *, approval: bool = False) -> dict[str, int]:
         ask_variables_on_launch=True,
         ask_scm_branch_on_launch=True,
     )["id"]
-    node_ids = {name: 900 + index for index, name in enumerate(["build", "approve", "deploy"])}
-    node_ids |= {"verify": 903, "rollback": 904}
+    names = ["build", "approve", "deploy", "verify", "rollback", "notify"]
+    node_ids = {name: 900 + index for index, name in enumerate(names)}
 
-    def node(identifier: str, template: int, **edges: list[str]) -> None:
+    def node(identifier: str, template: int | None, **edges: Any) -> None:
+        converge = edges.pop("converge", False)
         fake.seed(
             "workflow_nodes",
             id=node_ids[identifier],
             workflow_job_template=workflow,
             identifier=identifier,
             unified_job_template=template,
+            all_parents_must_converge=converge,
             **{
                 f"{edge}_nodes": [node_ids[child] for child in children]
                 for edge, children in edges.items()
             },
         )
 
-    node("build", templates["Build"], success=["approve" if approval else "deploy"])
+    after_build = ["approve" if approval else "deploy", *(["notify"] if notify else [])]
+    node("build", templates["Build"], success=after_build)
     if approval:
         gate = fake.seed("workflow_approval_templates", name="Approve production", timeout=0)
         node("approve", gate["id"], success=["deploy"])
-    node("deploy", templates["Deploy"], success=["verify"], failure=["rollback"])
+    after_deploy = ["verify", *(["notify"] if notify else [])]
+    node("deploy", templates["Deploy"], success=after_deploy, failure=["rollback"])
     node("verify", templates["Smoke check"])
-    node("rollback", templates["Rollback"])
+    node("rollback", templates["Rollback"] if rollback else None)
+    if notify:
+        node("notify", templates["Smoke check"], converge=True)
     return {"workflow": workflow, **templates}
 
 
@@ -366,7 +379,7 @@ def test_a_failure_inside_a_nested_workflow_names_the_path_to_it(
     code, [row], _ = _run(cli, suite)
 
     assert code == 1
-    assert row["failure"]["message"] == "node release: node verify: task 'Check' failed on web2: x"
+    assert row["failure"]["message"] == "node release/verify: task 'Check' failed on web2: x"
     assert row["failure"]["evidence"]["node"] == "release/verify"
 
 
@@ -459,18 +472,251 @@ def test_a_negative_workflow_case_matches_the_failed_tasks_of_its_nodes(
     assert wrong_row["failure"]["message"] == "no failed task matches task 'Migrate'"
 
 
-def test_unreadable_nodes_make_the_case_an_error(
+def test_unreadable_nodes_make_the_case_an_error_never_a_node_that_never_ran(
     cli: CliInvoker, aap: FakeAap, tmp_path: Path
 ) -> None:
     _seed_release(aap)
-    aap.missing_sub_paths.add(("workflow_jobs", "workflow_nodes"))
+    aap.sub_path_errors[("workflow_jobs", "workflow_nodes")] = [502] * 10
+    suite = _suite(tmp_path, {"c": {"expect": {"nodes": {"deploy": {}, "verify": {}}}}})
+
+    code, [row], _ = _run(cli, suite)
+
+    assert code == 5
+    assert (row["result"], row["nodes"]) == ("error", None)
+    failure = row["failure"]
+    assert (failure["system"], failure["category"]) == ("awx.controller", "unavailable")
+    assert failure["message"].startswith("workflow nodes unreadable: ")
+    # No node is checked against nodes that could not be read.
+    assert [check["check"] for check in row["expectations"]] == ["status"]
+
+
+def test_a_failure_a_path_handled_does_not_explain_the_workflow(
+    cli: CliInvoker, aap: FakeAap, tmp_path: Path
+) -> None:
+    """Deploy fails and its rollback's template is gone: AWX fails the workflow for that."""
+    _seed_release(aap, rollback=False)
+    aap.node_outcomes["deploy"] = {"status": "failed"}
 
     code, [row], _ = _run(cli, _suite(tmp_path, {"c": {}}))
 
-    assert code == 1
-    assert (row["result"], row["nodes"]) == ("error", None)
+    assert code == 5
     assert row["failure"]["system"] == "awx.controller"
-    assert row["failure"]["message"].startswith("workflow nodes unreadable: ")
+    assert row["failure"]["message"].startswith(
+        "workflow job failed, but no failed node explains it: Workflow job node(s) missing "
+        "unified job template and error handling path ["
+    )
+
+
+@pytest.mark.parametrize(
+    ("held", "system"), [("running", "awx.playbook"), ("pending", "awx.controller")]
+)
+def test_a_workflow_timeout_is_blamed_on_the_node_still_running(
+    cli: CliInvoker, aap: FakeAap, tmp_path: Path, held: str, system: str
+) -> None:
+    _seed_release(aap)
+    aap.node_outcomes["deploy"] = {"hold": 10_000, "hold_status": held}
+
+    code, [row], _ = _run(cli, _suite(tmp_path, {"c": {}}), "--timeout", "0.01")
+
+    assert row["result"] == "timeout"
+    failure = row["failure"]
+    assert failure["system"] == system
+    assert failure["message"] == f"node deploy: still {held} after 0.01s; cancel requested"
+    assert failure["evidence"]["node"] == "deploy"
+    assert {node["id"]: node["status"] for node in row["nodes"]} == {
+        "build": "successful",
+        "deploy": held,
+        "verify": "never_ran",
+        "rollback": "never_ran",
+    }
+    assert ("workflow_jobs", row["job_id"], "cancel", {}) in aap.actions_called
+    assert code == (1 if held == "running" else 5)
+
+
+def test_a_node_waiting_for_all_its_parents_runs_only_when_all_succeed(
+    cli: CliInvoker, aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_release(aap, notify=True)
+    aap.node_outcomes["deploy"] = [{}, {"status": "failed"}]
+    suite = _suite(
+        tmp_path,
+        {
+            "both": {"expect": {"nodes": {"notify": {"status": "successful"}}}},
+            "one": {"expect": {"nodes": {"notify": {"status": "never_ran"}}}},
+        },
+    )
+
+    code, rows, stderr = _run(cli, suite)
+
+    assert code == 0, stderr
+    assert [row["result"] for row in rows] == ["pass", "pass"]
+
+
+@pytest.mark.parametrize(
+    ("kind", "store", "system", "code"),
+    [
+        ("project", "projects", "awx.scm", 1),
+        ("inventory_source", "inventory_sources", "awx.inventory", 4),
+    ],
+)
+def test_a_node_that_runs_an_update_is_blamed_on_the_update(
+    cli: CliInvoker,
+    aap: FakeAap,
+    tmp_path: Path,
+    kind: str,
+    store: str,
+    system: str,
+    code: int,
+) -> None:
+    source = aap.seed(store, name="Playbooks sync")["id"]
+    workflow = aap.seed("workflow_job_templates", name="Sync", organization=1)["id"]
+    aap.seed(
+        "workflow_nodes",
+        workflow_job_template=workflow,
+        identifier="sync",
+        unified_job_template=source,
+    )
+    aap.node_outcomes["sync"] = {
+        "status": "failed",
+        "events": [_failed_task("localhost", "Update source", "couldn't find remote ref")],
+    }
+
+    exit_code, [row], _ = _run(cli, _suite(tmp_path, {"c": {}}, workflowTemplate="Sync"))
+
+    assert exit_code == code
+    failure = row["failure"]
+    assert failure["system"] == system
+    assert failure["message"].startswith("node sync: ")
+    assert failure["message"].endswith(" for 'Playbooks sync' failed: couldn't find remote ref")
+    assert failure["evidence"]["node"] == "sync"
+    assert failure["evidence"]["related"]["kind"] == f"{kind.split('_')[0]}_update"
+
+
+def test_an_approval_that_timed_out_is_the_controllers(
+    cli: CliInvoker, aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_release(aap, approval=True)
+    aap.node_outcomes["approve"] = {"timed_out": True}
+    suite = _suite(tmp_path, {"c": {"approvals": "approve"}})
+
+    code, [row], _ = _run(cli, suite)
+
+    assert code == 5
+    assert row["failure"]["system"] == "awx.controller"
+    assert row["failure"]["message"].startswith(
+        "node approve: approval 'Approve production' (workflow approval "
+    )
+    assert row["failure"]["message"].endswith(") was denied outside this run, or timed out")
+
+
+def test_a_nested_pending_approval_names_its_full_path(
+    cli: CliInvoker, aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_train(aap, approval=True)
+
+    code, [row], _ = _run(cli, _suite(tmp_path, {"c": {}}, workflowTemplate="Train"))
+
+    assert code == 1
+    assert row["failure"]["message"].startswith(
+        "node release/approve: approval 'Approve production' is waiting"
+    )
+    assert row["failure"]["evidence"]["node"] == "release/approve"
+
+
+def test_without_cancel_a_pending_approval_says_how_to_finish_the_workflow(
+    cli: CliInvoker, aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_release(aap, approval=True)
+
+    code, [row], _ = _run(cli, _suite(tmp_path, {"c": {}}), "--no-cancel")
+
+    assert code == 1
+    [approval] = aap.list_records("workflow_approvals")
+    assert row["failure"]["message"] == (
+        "node approve: approval 'Approve production' is waiting, and the case sets no "
+        f"approvals; it keeps running: approve or deny workflow approval {approval['id']} in "
+        f"AWX, or cancel it with `untaped awx jobs cancel {row['job_id']} --kind workflow_job`"
+    )
+    assert not [call for call in aap.actions_called if call[2] == "cancel"]
+
+
+def test_a_failed_workflow_rerun_names_the_workflow_job(
+    cli: CliInvoker, aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_release(aap)
+    aap.node_outcomes["verify"] = [{}, {"status": "failed"}]
+    suite = _suite(tmp_path, {"c": {"expect": {"idempotent": True}}})
+
+    code, [row], _ = _run(cli, suite)
+
+    assert code == 1
+    assert row["failure"]["message"].startswith(
+        f"rerun workflow job {row['rerun_job_id']}: node verify: "
+    )
+
+
+def test_the_nodes_are_not_read_while_polling_a_workflow_without_approvals(
+    cli: CliInvoker, aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_release(aap)
+    aap.node_outcomes["deploy"] = {"hold": 3}
+
+    code, [row], stderr = _run(cli, _suite(tmp_path, {"c": {}}))
+
+    assert code == 0, stderr
+    node_reads = [path for path in _paths(aap) if path.endswith("/workflow_nodes/")]
+    assert node_reads.count(f"workflow_jobs/{row['job_id']}/workflow_nodes/") == 1
+
+
+def test_a_transient_node_read_error_while_polling_is_retried(
+    cli: CliInvoker, aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_release(aap, approval=True)
+    aap.sub_path_errors[("workflow_jobs", "workflow_nodes")] = [502]
+
+    code, [row], stderr = _run(cli, _suite(tmp_path, {"c": {"approvals": "approve"}}))
+
+    assert code == 0, stderr
+    assert row["result"] == "pass"
+
+
+def test_a_workflow_past_the_host_cut_is_checked_against_every_host(
+    cli: CliInvoker, aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_release(aap)
+    hosts = [{"host_name": f"web{index:03}"} for index in range(600)]
+    aap.node_outcomes["deploy"] = {"host_summaries": [*hosts, {"host_name": "zz", "changed": 1}]}
+    aap.node_outcomes["verify"] = {"host_summaries": [{"host_name": "zz", "changed": 1}]}
+    suite = _suite(tmp_path, {"c": {"expect": {"hosts": {"*": {"changed": 1}}}}})
+
+    code, [row], _ = _run(cli, suite)
+
+    assert code == 1
+    assert (len(row["hosts"]), row["hosts_truncated"]) == (500, True)
+    [bound] = [check for check in row["expectations"] if check["check"] == "hosts"]
+    assert (bound["passed"], bound["actual"]) == (False, "zz=2")
+
+
+def test_a_culprit_node_that_is_also_checked_is_read_once(
+    cli: CliInvoker, aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_release(aap)
+    aap.node_outcomes["verify"] = {
+        "status": "failed",
+        "events": [_failed_task("web2", "Check health", "HTTP 503")],
+    }
+    suite = _suite(tmp_path, {"c": {"expect": {"nodes": {"verify": {}}}}})
+
+    code, [row], _ = _run(cli, suite)
+
+    assert code == 1
+    verify = next(node for node in row["nodes"] if node["id"] == "verify")
+    reads = Counter(
+        (call.request.url.path, str(call.request.url.params))
+        for call in aap.router.calls
+        if f"/jobs/{verify['job_id']}/" in call.request.url.path
+    )
+    assert reads and max(reads.values()) == 1, reads
 
 
 def test_a_node_job_that_cannot_be_read_is_the_controllers(
@@ -499,19 +745,38 @@ def test_a_node_job_that_cannot_be_read_is_the_controllers(
 
 
 def test_nested_workflows_are_followed_only_so_deep(
-    cli: CliInvoker, aap: FakeAap, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    cli: CliInvoker, aap: FakeAap, tmp_path: Path
 ) -> None:
+    """Level 0 runs level 1, … level MAX_NESTING + 1 runs a job that fails."""
+    ids = _seed_release(aap)
+    below = aap.seed("workflow_job_templates", name="Level 6", organization=1)["id"]
+    aap.seed(
+        "workflow_nodes",
+        workflow_job_template=below,
+        identifier="deploy",
+        unified_job_template=ids["Deploy"],
+    )
+    for level in range(MAX_NESTING, -1, -1):
+        above = aap.seed("workflow_job_templates", name=f"Level {level}", organization=1)["id"]
+        aap.seed(
+            "workflow_nodes",
+            workflow_job_template=above,
+            identifier=f"l{level + 1}",
+            unified_job_template=below,
+        )
+        below = above
+    aap.node_outcomes["deploy"] = {"status": "failed"}
 
-    monkeypatch.setattr(runner, "MAX_NESTING", 1)
-    _seed_train(aap)
-    aap.node_outcomes["verify"] = {"status": "failed"}
-
-    code, [row], _ = _run(cli, _suite(tmp_path, {"c": {}}, workflowTemplate="Train"))
+    code, [row], _ = _run(cli, _suite(tmp_path, {"c": {}}, workflowTemplate="Level 0"))
 
     assert code == 1
+    path = "/".join(f"l{level}" for level in range(1, MAX_NESTING + 2))
     assert row["failure"]["system"] == "awx.playbook"
-    assert row["failure"]["message"].startswith("node release: workflow job ")
-    assert row["failure"]["message"].endswith("workflows nested 1 deep are not followed")
+    assert row["failure"]["evidence"]["node"] == path
+    assert row["failure"]["message"].startswith(f"node {path}: workflow job ")
+    assert row["failure"]["message"].endswith(
+        f"ended failed; workflows nested more than {MAX_NESTING} deep are not followed"
+    )
 
 
 def test_validate_refuses_an_unknown_node_and_warns_about_unanswered_approvals(
@@ -537,6 +802,24 @@ def test_validate_refuses_an_unknown_node_and_warns_about_unanswered_approvals(
         "warning: release/silent: the workflow has approval nodes (approve) and the case "
         "sets no approvals, so a pending approval fails it"
     ) in result.stderr
+
+
+def test_validate_warns_about_approvals_in_a_nested_workflow(
+    cli: CliInvoker, aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_train(aap, approval=True)
+    suite = _suite(
+        tmp_path, {"silent": {}, "answered": {"approvals": "deny"}}, workflowTemplate="Train"
+    )
+
+    result = cli.invoke(app, ["test", "validate", str(suite)])
+
+    assert result.exit_code == 0, result.output
+    warnings = [line for line in result.stderr.splitlines() if line.startswith("warning:")]
+    assert warnings == [
+        "warning: release/silent: the workflow has approval nodes (release/approve) and the "
+        "case sets no approvals, so a pending approval fails it"
+    ]
 
 
 def test_run_preflight_refuses_an_unknown_node_before_launching(

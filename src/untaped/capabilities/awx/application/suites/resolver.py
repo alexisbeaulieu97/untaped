@@ -17,7 +17,7 @@ from untaped.capabilities.awx.application.ports import Catalog
 from untaped.capabilities.awx.application.suites.ports import FkLookup
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.domain.spec import FkRef
-from untaped.capabilities.awx.domain.suite import Case, RefSentinel
+from untaped.capabilities.awx.domain.suite import WORKFLOW_TEMPLATE, Case, RefSentinel
 from untaped.capability_api import ConfigError
 
 # v2.x AWX launch endpoint payload fields. Anything outside this set
@@ -50,7 +50,7 @@ WORKFLOW_LAUNCH_FIELDS: frozenset[str] = frozenset(
     {"extra_vars", "inventory", "limit", "scm_branch", "labels", "job_tags", "skip_tags"}
 )
 """The fields a workflow job template's launch endpoint takes (per its ``ask_*`` flags)."""
-_KNOWN_BY_KIND = {"WorkflowJobTemplate": WORKFLOW_LAUNCH_FIELDS}
+_KNOWN_BY_KIND = {WORKFLOW_TEMPLATE: WORKFLOW_LAUNCH_FIELDS}
 
 
 class UnknownLaunchFieldWarning(UserWarning):

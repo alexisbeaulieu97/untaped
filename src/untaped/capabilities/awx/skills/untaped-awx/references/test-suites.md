@@ -299,10 +299,12 @@ template, with these differences:
 - `approvals: approve` (or `deny`) answers every approval the workflow waits
   on, in nested workflows too, as soon as it is pending. Without `approvals`
   a pending approval fails the case at once: the workflow job is cancelled
-  and the case is an `error` of `awx.suite` (exit 1). `untaped awx test
-  validate` warns about each case without `approvals` whose workflow has
-  approval nodes. Answering needs AWX's Approve role on the workflow (see
-  [agent-profile.md](agent-profile.md)).
+  (with `--no-cancel` it keeps running, and the message says how to finish
+  it) and the case is an `error` of `awx.suite` (exit 1). `untaped awx test
+  validate` warns about each case without `approvals` whose workflow, or a
+  workflow nested in it, has approval nodes. Answering needs AWX's Approve
+  role on the workflow (see [agent-profile.md](agent-profile.md)). A
+  workflow without approval nodes is polled for its status only.
 - `expect.status` is the workflow job's status; `changed` and `hosts` bound
   its node jobs' host summaries, summed per host; `failed_tasks` matches the
   failed tasks of every node job that failed. `expect.log` is refused (a
@@ -319,7 +321,8 @@ template, with these differences:
   runs that workflow.
 
 A `nodes` entry takes these checks, which merge over the same node's entry
-in `defaults.expect.nodes` as a case's `expect` does:
+in `defaults.expect.nodes` as a case's `expect` does, except that a case's
+`status: never_ran` replaces the default's entry for that node whole:
 
 | Field | Meaning |
 |---|---|
@@ -332,17 +335,12 @@ in `defaults.expect.nodes` as a case's `expect` does:
 A node that ran an approval (or a management job) has only a status: an
 approved approval is `successful`, a denied or timed-out one `failed`. A
 node that ran a nested workflow is checked as a workflow (no `log`).
+Nested workflows are followed 5 levels deep, for approvals and for blame.
+[`workflow.yml`](../examples/workflow.yml) shows each of these.
 
-```yaml
-workflowTemplate: Release
-cases:
-  happy:
-    approvals: approve
-    expect:
-      nodes:
-        deploy: {hosts: {"*": {failed: 0}}}
-        rollback: {status: never_ran}
-```
+A negative case (`status: failed`) that names its cause in a node (a node
+that must fail, or its `failed_tasks`) needs no `failed_tasks` of its own:
+`validate` does not warn about it.
 
 ## Preflight: what `validate` and `run` check
 

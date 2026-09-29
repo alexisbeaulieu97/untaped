@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import shlex
 from collections import Counter
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Iterable
 from functools import partial
 from pathlib import Path
 from typing import Annotated, Any, get_args
@@ -18,6 +18,8 @@ from untaped.capabilities.awx.cli.context import AwxContext, open_context
 from untaped.capabilities.awx.cli.options import OrganizationOption
 from untaped.capabilities.awx.domain.case_failure import CaseFailure
 from untaped.capabilities.awx.domain.suite import (
+    JOB_TEMPLATE,
+    WORKFLOW_TEMPLATE,
     Baseline,
     CaseResult,
     CaseStatus,
@@ -27,11 +29,8 @@ from untaped.capabilities.awx.domain.suite import (
 )
 from untaped.capabilities.awx.domain.suite_baseline import saved_baselines
 from untaped.capabilities.awx.domain.suite_starter import suite_slug
-from untaped.capabilities.awx.domain.workflow_run import APPROVAL, RunNode
 from untaped.capabilities.awx.errors import AwxApiError
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
-from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
-from untaped.capabilities.awx.infrastructure.specs.workflow import WORKFLOW_JOB_TEMPLATE_SPEC
 from untaped.capabilities.awx.infrastructure.suites.filesystem import (
     DEFAULT_SUITE_DIR,
     refuse_existing,
@@ -214,7 +213,7 @@ def _load_suites(
 
 
 def _jt_spec(ctx: AwxContext) -> AwxResourceSpec:
-    return ctx.catalog.get(JOB_TEMPLATE_SPEC.kind)
+    return ctx.catalog.get(JOB_TEMPLATE)
 
 
 def _jt_scope(ctx: AwxContext, spec: AwxResourceSpec) -> dict[str, str] | None:
@@ -324,7 +323,6 @@ def run_command(
             vars_files=tuple(vars_file or []),
             non_interactive=non_interactive,
         ).values()
-        spec = _jt_spec(ctx)
         runner = RunTestSuite(
             resolver=ResolveCasePayload(
                 ctx.fk,
@@ -333,12 +331,11 @@ def run_command(
             ),
             launcher=RunAction(ctx.repo),
             watcher=WatchJob(ctx.repo, sleep=ctx.pause),
-            spec=spec,
-            workflow_spec=ctx.catalog.get(WORKFLOW_JOB_TEMPLATE_SPEC.kind),
+            specs=ctx.catalog.get,
             node_reader=ctx.jobs.workflow_nodes,
             approver=ctx.jobs.decide_approval,
             fk_prefetcher=ctx.fk,
-            jt_scope=_jt_scope(ctx, spec),
+            jt_scope=_jt_scope(ctx, _jt_spec(ctx)),
             stop=ctx.stop,
             canceller=ctx.jobs.cancel if cancel else None,
             job_reader=ctx.monitor,
@@ -554,12 +551,7 @@ def validate_command(
             binding = suite.binding(default_scope)
             spec = ctx.catalog.get(binding.kind)
             for case_name, case in suite.cases.items():
-                expect = suite.expectation(case_name)
-                if expect.passes_on_any_failure:
-                    warn(
-                        f"{suite.name}/{case_name}: expects status failed without failed_tasks, "
-                        "so a failure for another reason passes it",
-                    )
+                gates: list[str] = []
                 try:
                     payload = resolver(
                         spec, case, defaults=suite.defaults, organization=suite.organization
@@ -569,34 +561,21 @@ def validate_command(
                         name=binding.name,
                         scope=binding.scope,
                         payload=payload,
-                        nodes=tuple(expect.nodes),
+                        nodes=tuple(suite.expectation(case_name).nodes),
                     )
-                    if suite.workflow_template is not None and suite.approvals(case_name) is None:
-                        template, _ = preflight.template(
+                    if suite.workflow_template is not None:
+                        gates = preflight.approval_nodes(
                             spec, name=binding.name, scope=binding.scope
-                        )
-                        _warn_unanswered(
-                            warn, f"{suite.name}/{case_name}", preflight.nodes(spec, template)
                         )
                 except (AwxApiError, ConfigError) as exc:
                     report_error(exc, item=f"{suite.name}/{case_name}")
                     any_errors = True
+                for warning in suite.case_warnings(case_name, approval_nodes=gates):
+                    warn(warning)
 
     finish(any_errors)
     count = sum(len(s.cases) for s in suites)
     ui_context(strict=False).success(f"{plural(count, 'case')} validated")
-
-
-def _warn_unanswered(
-    warn: Callable[[str], None], item: str, nodes: Iterable[Mapping[str, Any]]
-) -> None:
-    """Warn that a case with no ``approvals`` fails on the workflow's approval nodes."""
-    gates = [node.label for node in map(RunNode.from_record, nodes) if node.kind == APPROVAL]
-    if gates:
-        warn(
-            f"{item}: the workflow has approval nodes ({', '.join(gates)}) and the case sets "
-            "no approvals, so a pending approval fails it"
-        )
 
 
 # ---- init ----------------------------------------------------------------
@@ -641,7 +620,7 @@ def init_command(
     )
     with report_errors(), open_context() as ctx:
         refuse_existing(path)
-        spec = ctx.catalog.get(WORKFLOW_JOB_TEMPLATE_SPEC.kind) if workflow else _jt_spec(ctx)
+        spec = ctx.catalog.get(WORKFLOW_TEMPLATE if workflow else JOB_TEMPLATE)
         scope = _jt_scope(ctx, spec)
         if organization is not None:
             scope = {**(scope or {}), "organization": organization}

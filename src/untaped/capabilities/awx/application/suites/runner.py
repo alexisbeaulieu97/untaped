@@ -22,15 +22,14 @@ execution the run stops watching before it ends (timeout, polling error,
 Ctrl-C) is cancelled rather than left running. A failed preflight carries its
 most severe problem's category and the system responsible.
 
-A suite is bound to the template it launches in one step (``bind``: the
-template it names, unless a caller substitutes another). A workflow case's
-pending approvals are answered as the case says while it runs (or fail it
-fast, cancelled, when it says nothing). Once it ended, its nodes are read
-once for the row; a node job is read only when a check or the attribution
-needs it: each node expectation is checked against its node's job by the same
-code as a job case, the workflow's host summaries are its node jobs' summed,
-and a failed workflow is attributed to the node that failed it, recursing
-into nested workflows.
+A workflow case reads its workflow through a :class:`WorkflowRun` of its own.
+While it runs, the approvals it waits on (when the preflight found any) are
+answered as the case says, or fail the case at once. Once it ended, each node
+expectation is checked against its node's job by the same code as a job case,
+the workflow's host checks bound its node jobs' summed summaries, and a failed
+workflow is blamed on the node that failed it, recursing into nested
+workflows; a workflow still running at its timeout is blamed on the node still
+running.
 
 Resolution finishes in the main thread before any worker is spawned so
 the launch+wait pool only sees fully-baked, immutable launch dicts —
@@ -65,6 +64,12 @@ from untaped.capabilities.awx.application.suites.ports import (
     Watcher,
 )
 from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
+from untaped.capabilities.awx.application.suites.workflow import (
+    JobRead,
+    NodeRun,
+    WorkflowRun,
+    status_only_failure,
+)
 from untaped.capabilities.awx.domain import Job, ResourceSpec
 from untaped.capabilities.awx.domain.case_failure import (
     CONTROLLER,
@@ -83,6 +88,7 @@ from untaped.capabilities.awx.domain.case_failure import (
     in_node,
     request_failure,
     responsible_update,
+    stalled_node_failure,
     tasks_unread,
     timeout_failure,
     unrescued,
@@ -110,7 +116,6 @@ from untaped.capabilities.awx.domain.suite import (
     RefSentinel,
     Suite,
     SuiteRunOutcome,
-    TemplateBinding,
     case_keys,
     idempotence,
     outranks_failure,
@@ -118,12 +123,11 @@ from untaped.capabilities.awx.domain.suite import (
 from untaped.capabilities.awx.domain.suite_baseline import saved_baselines
 from untaped.capabilities.awx.domain.workflow_run import (
     APPROVAL,
+    MAX_NESTING,
     NEVER_RAN,
     WORKFLOW_JOB,
     RunNode,
     blamed_node,
-    node_host_params,
-    summed_host_records,
 )
 from untaped.capabilities.awx.errors import ActionResponseError, AwxApiError, PendingApprovalError
 from untaped.capability_api import (
@@ -134,7 +138,6 @@ from untaped.capability_api import (
     bounded_map,
     most_severe,
     note_failure,
-    q,
 )
 
 _LAUNCH_ACTION = "launch"
@@ -146,9 +149,6 @@ _CHANGED_TASKS = {"event": "runner_on_ok", "changed": "true"}
 """The events of tasks that changed a host (a loop's items fold into their task's)."""
 _RERUN = Expectation(changed=0)
 """What an ``idempotent`` case's rerun must do: succeed without changing anything."""
-MAX_NESTING = 5
-"""Nested workflows the attribution and the approvals follow, at most."""
-_APPROVALS_HINT = "set `approvals: approve` or `approvals: deny` on the case (or in its defaults)"
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +162,8 @@ class _ResolvedCase:
     expect: Expectation
     timeout: float | None
     approvals: Approvals | None = None
+    approval_nodes: tuple[str, ...] | None = None
+    """A workflow's approval nodes, as the preflight found them (``None``: not looked for)."""
 
     @property
     def workflow(self) -> bool:
@@ -175,7 +177,7 @@ class RunTestSuite:
         resolver: ResolveCasePayload,
         launcher: Launcher,
         watcher: Watcher,
-        spec: ResourceSpec,
+        specs: Callable[[str], ResourceSpec],
         fk_prefetcher: FkPrefetcher,
         log_reader: LogReader,
         event_reader: EventReader,
@@ -186,26 +188,20 @@ class RunTestSuite:
         stop: threading.Event | None = None,
         job_reader: JobReader,
         host_reader: HostReader,
+        node_reader: NodeReader,
+        approver: ApprovalDecider,
         canceller: Canceller | None = None,
         preflight: LaunchCheck | None = None,
         evidence: bool = True,
         hosts: bool = False,
-        workflow_spec: ResourceSpec | None = None,
-        bind: Callable[[Suite], TemplateBinding] | None = None,
-        node_reader: NodeReader | None = None,
-        approver: ApprovalDecider | None = None,
     ) -> None:
         self._resolve = resolver
         self._launch = launcher
         self._watch = watcher
-        self._specs = {spec.kind: spec}
-        if workflow_spec is not None:
-            self._specs[workflow_spec.kind] = workflow_spec
-        self._bind = bind or (lambda suite: suite.binding(jt_scope))
-        """The template a suite's cases launch (a caller may bind another, e.g. a copy)."""
-        self._read_nodes = node_reader
-        self._decide = approver
+        self._specs = specs
+        """The spec of a template kind (``JobTemplate``, ``WorkflowJobTemplate``)."""
         self._fk = fk_prefetcher
+        self._jt_scope = jt_scope
         self._clock = clock
         self._stop = stop
         self._reader = job_reader
@@ -219,6 +215,8 @@ class RunTestSuite:
         self._evidence = evidence
         """Attach the evidence (failed tasks, log tail) to cases that did not pass."""
         self._read_hosts = host_reader
+        self._read_nodes = node_reader
+        self._decide = approver
         self._hosts = hosts
         """Report every case's host summaries (a failed job's are read anyway)."""
         self.launched: list[Job] = []
@@ -226,13 +224,6 @@ class RunTestSuite:
         self.cancelled = self._abandon.cancelled
         """``(kind, id)`` of executions whose cancel AWX accepted."""
         self._finals: dict[tuple[str, int], Job] = {}
-        self._nodes: dict[int, list[RunNode]] = {}
-        """A finished workflow job's nodes, by its id: read once."""
-        self._node_runs: dict[int, _NodeRun] = {}
-        """A finished node job, by its id: read once, with what checking it read."""
-        self._decided: set[int] = set()
-        """Approvals this run approved or denied."""
-        self._denied: set[int] = set()
 
     def __call__(
         self,
@@ -286,12 +277,12 @@ class RunTestSuite:
                 replace(item, payload={**item.payload, "scm_branch": scm_branch})
                 for item in resolved
             ]
-        self._check_launches(resolved)
+        checked = self._check_launches(resolved)
         results: dict[int, CaseResult] = {}
         try:
             bounded_map(
-                lambda index: self._launch_and_wait(resolved[index]),
-                range(len(resolved)),
+                lambda index: self._launch_and_wait(checked[index]),
+                range(len(checked)),
                 concurrency=max(1, parallel),
                 on_each=results.__setitem__,
                 # Ctrl-C stops polling workers; queued cases are never launched.
@@ -304,7 +295,7 @@ class RunTestSuite:
             _note(row.failure for row in results.values() if row.failure is not None)
             raise
         # Indexed by declaration order, so the report ignores completion order.
-        return SuiteRunOutcome(results=[results[index] for index in range(len(resolved))])
+        return SuiteRunOutcome(results=[results[index] for index in range(len(checked))])
 
     def known_executions(self) -> list[Job]:
         """Every submitted execution with its latest locally known status."""
@@ -352,7 +343,7 @@ class RunTestSuite:
         """
         by_kind: dict[str, list[dict[str, str] | None]] = {}
         for suite, _, case in plan:
-            fk_index = ResolveCasePayload.fk_index_for(self._specs[suite.template_kind])
+            fk_index = ResolveCasePayload.fk_index_for(self._specs(suite.template_kind))
             merged = _merge_top_level(suite.defaults, case)
             org = suite.organization
             for field, value in merged.items():
@@ -376,8 +367,8 @@ class RunTestSuite:
         out: list[_ResolvedCase] = []
         for suite, case_name, case in plan:
             defaults = suite.defaults or Case()
-            binding = self._bind(suite)
-            spec = self._specs[binding.kind]
+            binding = suite.binding(self._jt_scope)
+            spec = self._specs(binding.kind)
             payload = self._resolve(
                 spec, case, defaults=suite.defaults, organization=suite.organization
             )
@@ -397,34 +388,41 @@ class RunTestSuite:
             )
         return out
 
-    def _check_launches(self, resolved: Sequence[_ResolvedCase]) -> None:
-        """Raise, listing every case AWX would reject or half-ignore, before any launch."""
+    def _check_launches(self, resolved: Sequence[_ResolvedCase]) -> list[_ResolvedCase]:
+        """Raise, listing every case AWX would reject or half-ignore, before any launch.
+
+        Each workflow case learns its workflow's approval nodes.
+        """
         if self._preflight is None:
-            return
+            return list(resolved)
+        checked: list[_ResolvedCase] = []
         problems: list[str] = []
         errors: list[UntapedError] = []
         for item in resolved:
-            check = partial(
-                self._preflight,
-                item.spec,
-                name=item.template,
-                scope=item.scope,
-                payload=item.payload,
-            )
             try:
+                self._preflight(
+                    item.spec,
+                    name=item.template,
+                    scope=item.scope,
+                    payload=item.payload,
+                    nodes=tuple(item.expect.nodes),
+                )
                 if item.workflow:
-                    check(nodes=tuple(item.expect.nodes))  # the nodes the case checks
-                else:
-                    check()
+                    gates = self._preflight.approval_nodes(
+                        item.spec, name=item.template, scope=item.scope
+                    )
+                    item = replace(item, approval_nodes=tuple(gates))
             except (AwxApiError, ConfigError) as exc:
                 problems.append(f"  {item.suite_name}/{item.case_name}: {exc}")
                 errors.append(exc)
+            checked.append(item)
         if problems:
             worst = most_severe(errors)
             raise ConfigError(
                 "\n".join(["preflight failed, nothing launched:", *problems]),
                 **(attribution(worst) | {"system": failure_system(worst, launching=True)}),
             )
+        return checked
 
     def _launch_and_wait(self, item: _ResolvedCase) -> CaseResult:
         """Launch, watch and check one case (then its ``idempotent`` rerun).
@@ -433,13 +431,15 @@ class RunTestSuite:
         stopping (Ctrl-C) launches no rerun.
         """
         started_clock = self._clock()
-        row, job = self._run_case(item, item.expect)
+        row, job, read = self._run_case(item, item.expect)
         stopping = self._stop is not None and self._stop.is_set()
         if item.expect.idempotent and row.failure is None and job is not None and not stopping:
-            row = self._rerun(item, row, job)
+            row = self._rerun(item, row, job, read)
         return row.model_copy(update={"duration_s": self._clock() - started_clock})
 
-    def _rerun(self, item: _ResolvedCase, first: CaseResult, job: Job) -> CaseResult:
+    def _rerun(
+        self, item: _ResolvedCase, first: CaseResult, job: Job, read: JobRead | None
+    ) -> CaseResult:
         """Launch a case that passed once more: the rerun must succeed and change nothing.
 
         The rerun runs the commit ``job`` ran (the one every job of a workflow
@@ -448,22 +448,26 @@ class RunTestSuite:
         is attributed as any job is, and one that changed something is the
         expectation's, with the tasks it changed as evidence.
         """
-        if "scm_branch" in item.payload and (revision := self._revision(job)):
+        revision = job.scm_revision
+        if read is not None and read.workflow is not None:
+            revision = read.workflow.revision(job)
+        if "scm_branch" in item.payload and revision:
             item = replace(item, payload={**item.payload, "scm_branch": revision})
-        rerun, rerun_job = self._run_case(item, _RERUN)
+        rerun, rerun_job, rerun_read = self._run_case(item, _RERUN)
         check = idempotence(rerun)
         failure = rerun.failure
         if failure is not None and failure.system == EXPECTATION:
             # A rerun that succeeded fails only its ``changed`` check.
             changed = None
             if self._evidence and rerun_job is not None:
-                changed = self._changed_tasks(rerun_job)
+                changed = self._changed_tasks(rerun_job, rerun_read)
             evidence = failure.evidence.model_copy(update={"changed_tasks": changed})
             failure = failure.model_copy(
                 update={"message": check.describe_failure(), "evidence": evidence}
             )
         elif failure is not None:
-            what = "the rerun" if rerun.job_id is None else f"rerun job {rerun.job_id}"
+            job_kind = "workflow job" if item.workflow else "job"
+            what = "the rerun" if rerun.job_id is None else f"rerun {job_kind} {rerun.job_id}"
             failure = failure.model_copy(update={"message": f"{what}: {failure.message}"})
         return first.model_copy(
             update={
@@ -474,10 +478,13 @@ class RunTestSuite:
             }
         )
 
-    def _run_case(self, item: _ResolvedCase, expect: Expectation) -> tuple[CaseResult, Job | None]:
+    def _run_case(
+        self, item: _ResolvedCase, expect: Expectation
+    ) -> tuple[CaseResult, Job | None, JobRead | None]:
         """Launch the case's payload once, watch the job and check it against ``expect``.
 
-        Returns the row and the job as last read (``None`` when the launch failed).
+        Returns the row, the job as last read and what checking it read
+        (``None`` when the launch failed).
         """
         row = partial(CaseResult, suite=item.suite_name, case=item.case_name)
         try:
@@ -501,16 +508,16 @@ class RunTestSuite:
                 )
             job_id = exc.execution_id if isinstance(exc, ActionResponseError) else None
             launch_failure = request_failure(exc, launching=True)
-            return row(result="error", job_id=job_id, failure=launch_failure), None
-        read = _Read(source=job)
+            return row(result="error", job_id=job_id, failure=launch_failure), None, None
+        read = JobRead(source=job, workflow=self._workflow_run(item))
         failure: CaseFailure | None = None
         try:
-            final = self._watch_case(item, job)
+            final = self._watch_case(item, job, read.workflow)
             self._finals[(final.kind, final.id)] = final
         except Exception as exc:
             final = job
             fields: dict[str, Any] = {"result": "error"}
-            failure = request_failure(exc, message=f"{exc}; {self._abandon(job)}")
+            failure = self._abandoned(job, exc)
         else:
             fields = {}
             if final.is_terminal:
@@ -533,7 +540,42 @@ class RunTestSuite:
         if failure is not None and self._evidence:
             failure = self._gather(final, failure, read)
         result = row(job_id=final.id, job_url=self._job_url(final), failure=failure, **fields)
-        return result, final
+        return result, final, read
+
+    def _workflow_run(self, item: _ResolvedCase) -> WorkflowRun | None:
+        """The reads and approvals of a workflow case's run (``None`` for a job case)."""
+        if not item.workflow:
+            return None
+        return WorkflowRun(
+            node_reader=self._read_nodes,
+            approver=self._decide,
+            job_reader=self._reader,
+            host_reader=self._read_hosts,
+            approvals=item.approvals,
+        )
+
+    def _watch_case(self, item: _ResolvedCase, job: Job, workflow: WorkflowRun | None) -> Job:
+        """Watch a case's job; a workflow's approvals are answered meanwhile, if it has any."""
+        if workflow is None or item.approval_nodes == ():
+            return self._watch(job, timeout=item.timeout)
+        return self._watch(job, timeout=item.timeout, on_state=workflow.answer)
+
+    def _abandoned(self, job: Job, error: Exception) -> CaseFailure:
+        """The failure of a case whose watch stopped on ``error``; its job is abandoned.
+
+        A pending approval nobody answers names its node, and, when the
+        workflow keeps running, how to finish it.
+        """
+        fate = self._abandon(job)
+        if not isinstance(error, PendingApprovalError):
+            return request_failure(error, message=f"{error}; {fate}")
+        if not self._abandon.cancels:
+            fate += (
+                f": approve or deny workflow approval {error.approval_id} in AWX, or cancel it "
+                f"with `untaped awx jobs cancel {job.id} --kind {job.kind}`"
+            )
+        found = request_failure(error, message=f"{error}; {fate}")
+        return found.model_copy(update={"evidence": FailureEvidence(node=error.node)})
 
     def _finish(
         self,
@@ -541,32 +583,54 @@ class RunTestSuite:
         expect: Expectation,
         job: Job,
         fields: dict[str, Any],
-        read: _Read,
+        read: JobRead,
     ) -> CaseFailure | None:
         """Check a finished job, or give up on one still running at the case's timeout.
 
         A workflow's host summaries (its node jobs', summed) are read only for a check.
         """
-        hosts_error = None
         if expect.needs_hosts or (self._hosts and job.kind != WORKFLOW_JOB):
-            fields["hosts"], fields["hosts_truncated"], hosts_error = self._host_summaries(job)
+            self._ensure_hosts(job, fields, read)
+        if job.is_terminal and job.kind == WORKFLOW_JOB:
+            return self._check_workflow(job, expect, expect.nodes, fields, read, depth=0)
         if job.is_terminal:
-            return self._check(job, expect, fields, read, hosts_error)
-        waited = f"still {job.status} after {item.timeout or 0:g}s"
-        failure = timeout_failure(job, f"{waited}; {self._abandon(job)}")
+            return self._check(job, expect, fields, read)
+        waited = f"after {item.timeout or 0:g}s"
+        stalled = self._stalled(job, read, fields)
+        fate = self._abandon(job)
+        if stalled is None:
+            failure = timeout_failure(job, f"still {job.status} {waited}; {fate}")
+        else:
+            path, node = stalled
+            failure = stalled_node_failure(node, f"still {node.status} {waited}; {fate}")
+            execution = node.execution
+            if self._evidence and execution is not None and node.kind in JOB_ROUTES:
+                failure = self._gather(execution, failure, JobRead(source=execution))
+            failure = in_node(failure, path)
         fields["result"] = "timeout"
         # A refused cancel re-reads the job: it may have ended meanwhile.
         latest = self._finals[(job.kind, job.id)] = self._abandon.latest(job)
         fields.update(job_status=latest.status, finished_at=latest.finished)
         return failure
 
+    def _stalled(
+        self, workflow: Job, read: JobRead, fields: dict[str, Any]
+    ) -> tuple[str, RunNode] | None:
+        """A workflow's node still unfinished at its timeout, and its nodes for the row."""
+        if read.workflow is None:
+            return None
+        try:
+            fields["nodes"] = tuple(node.result() for node in read.workflow.nodes(workflow))
+            return read.workflow.stalled(workflow)
+        except Exception:
+            return None
+
     def _check(
         self,
         job: Job,
         expect: ExecutionChecks,
         fields: dict[str, Any],
-        read: _Read,
-        hosts_error: Exception | None,
+        read: JobRead,
     ) -> CaseFailure | None:
         """Check a finished job against ``expect``; set ``result`` and ``expectations``.
 
@@ -575,8 +639,6 @@ class RunTestSuite:
         read never hide it: each becomes a note, or the case's error when
         nothing else failed.
         """
-        if job.kind == WORKFLOW_JOB:
-            return self._check_workflow(job, expect, fields, hosts_error, depth=0)
         status = expect.check_status(job.status)
         checks = [status]
         unread: list[CaseFailure] = []
@@ -588,12 +650,12 @@ class RunTestSuite:
             else:
                 checks.extend(expect.log.evaluate(read.log))
         if expect.needs_hosts:
-            host_checks = self._host_checks(job, expect, fields, hosts_error)
+            host_checks = self._host_checks(job, expect, fields, read)
             if isinstance(host_checks, CaseFailure):
                 unread.append(host_checks)
             else:
                 checks.extend(host_checks)
-        update = self._update(job) if job.status != "successful" else None
+        update = self._update(job, read)
         read.source = update or job
         if expect.failed_tasks and update is None:
             tasks = self._job_tasks(job, fields, read)
@@ -622,41 +684,44 @@ class RunTestSuite:
         self,
         workflow: Job,
         expect: ExecutionChecks,
+        node_expects: Mapping[str, NodeExpectation],
         fields: dict[str, Any],
-        hosts_error: Exception | None,
+        read: JobRead,
         *,
         depth: int,
     ) -> CaseFailure | None:
-        """Check a finished workflow and each node the case names; set ``nodes`` too.
+        """Check a finished workflow (nested ``depth`` levels) and its nodes ``node_expects``.
 
         The workflow's own checks read its node jobs (summed host summaries,
         the failed tasks of the nodes that failed); each node expectation is
         checked against its node's job, and a failed workflow is attributed
-        to the node that failed it.
+        to the node that failed it. Nodes that cannot be read make the case an
+        error: nothing is checked against them.
         """
+        assert read.workflow is not None  # a workflow's read has its run
+        run = read.workflow
         status = expect.check_status(workflow.status)
+        try:
+            nodes = run.nodes(workflow)
+        except Exception as exc:
+            fields["expectations"] = (status,)
+            unreadable = request_failure(exc, message=f"workflow nodes unreadable: {exc}")
+            return _verdict(None, [unreadable], fields)
+        fields["nodes"] = tuple(node.result() for node in nodes)
         checks = [status]
         unread: list[CaseFailure] = []
-        nodes: list[RunNode] | None = None
-        try:
-            nodes = self._workflow_nodes(workflow)
-        except Exception as exc:
-            unread.append(request_failure(exc, message=f"workflow nodes unreadable: {exc}"))
-        else:
-            fields["nodes"] = tuple(node.result() for node in nodes)
         if expect.needs_log:
             message = "a workflow job has no log; check the log of a node under expect.nodes"
             unread.append(make_failure(SUITE, ErrorCategory.INVALID, message))
         if expect.needs_hosts:
-            host_checks = self._host_checks(workflow, expect, fields, hosts_error)
+            host_checks = self._host_checks(workflow, expect, fields, read)
             if isinstance(host_checks, CaseFailure):
                 unread.append(host_checks)
             else:
                 checks.extend(host_checks)
         node_failures: list[CaseFailure] = []
-        node_expects = expect.nodes if isinstance(expect, Expectation) else {}
         for node_id, node_expect in node_expects.items():
-            node_checks, node_failure = self._check_node(node_id, node_expect, nodes or [], depth)
+            node_checks, node_failure = self._check_node(node_id, node_expect, nodes, run, depth)
             checks.extend(node_checks)
             if node_failure is None:
                 continue
@@ -665,7 +730,7 @@ class RunTestSuite:
             else:
                 node_failures.append(node_failure)
         if expect.failed_tasks:
-            tasks = self._workflow_tasks(nodes, depth) if nodes is not None else None
+            tasks = self._workflow_tasks(workflow, run)
             if tasks is None:
                 unread.append(tasks_unread(workflow))
             else:
@@ -673,8 +738,8 @@ class RunTestSuite:
         fields["expectations"] = tuple(checks)
         reasons = [check.describe_failure() for check in checks if not check.passed]
         culprit = None
-        if workflow.status != "successful" and nodes is not None:
-            culprit = self._culprit(nodes, depth)
+        if workflow.status != "successful":
+            culprit = self._culprit(nodes, run, depth)
         found = workflow_failure(
             workflow,
             culprit=culprit,
@@ -685,7 +750,12 @@ class RunTestSuite:
         return _verdict(found, unread, fields)
 
     def _check_node(
-        self, node_id: str, expect: NodeExpectation, nodes: Sequence[RunNode], depth: int
+        self,
+        node_id: str,
+        expect: NodeExpectation,
+        nodes: Sequence[RunNode],
+        run: WorkflowRun,
+        depth: int,
     ) -> tuple[list[ExpectationResult], CaseFailure | None]:
         """A node expectation's checks (each naming the node), and the node's failure if any.
 
@@ -696,77 +766,74 @@ class RunTestSuite:
         found: CaseFailure | None
         if node is None or node.job_id is None or node.kind not in JOB_ROUTES:
             checks = [expect.check_status(node.status if node is not None else NEVER_RAN)]
-            found = _status_only(node, expect, checks[0])
+            found = status_only_failure(node, expect, checks[0])
         else:
             try:
-                run = self._node_run(node)
+                node_run = run.run(node)
             except Exception as exc:
                 checks = [expect.check_status(node.status)]
                 found = request_failure(exc, message=f"job {node.job_id} unreadable: {exc}")
             else:
-                if expect.needs_hosts and "hosts" not in run.fields:
-                    hosts = self._host_summaries(run.job)
-                    run.fields["hosts"], run.fields["hosts_truncated"], run.hosts_error = hosts
-                found = self._check_node_job(run, expect, depth)
-                checks = list(run.fields["expectations"])
+                if expect.needs_hosts:
+                    self._ensure_hosts(node_run.job, node_run.fields, node_run.read)
+                found = self._check_node_job(node_run, expect, depth)
+                checks = list(node_run.fields["expectations"])
         tagged = [check.model_copy(update={"node": node_id}) for check in checks]
         return tagged, None if found is None else in_node(found, node_id)
 
     def _check_node_job(
-        self, run: _NodeRun, expect: ExecutionChecks, depth: int
+        self, node_run: NodeRun, expect: ExecutionChecks, depth: int
     ) -> CaseFailure | None:
-        """``run``'s job (a nested workflow's too) checked against ``expect``, with evidence."""
-        if run.job.kind == WORKFLOW_JOB:
-            if depth + 1 >= MAX_NESTING:
+        """A node's job (a nested workflow's too) checked against ``expect``, with evidence."""
+        job = node_run.job
+        if job.kind == WORKFLOW_JOB:
+            if depth >= MAX_NESTING:
                 message = (
-                    f"workflow job {run.job.id} ended {run.job.status}; workflows nested "
+                    f"workflow job {job.id} ended {job.status}; workflows nested more than "
                     f"{MAX_NESTING} deep are not followed"
                 )
-                run.fields["expectations"] = (expect.check_status(run.job.status),)
+                node_run.fields["expectations"] = (expect.check_status(job.status),)
                 return make_failure(PLAYBOOK, ErrorCategory.FAILED, message)
             return self._check_workflow(
-                run.job, expect, run.fields, run.hosts_error, depth=depth + 1
+                job, expect, {}, node_run.fields, node_run.read, depth=depth + 1
             )
-        found = self._check(run.job, expect, run.fields, run.read, run.hosts_error)
+        found = self._check(job, expect, node_run.fields, node_run.read)
         if found is not None and self._evidence:
-            found = self._gather(run.job, found, run.read)
+            found = self._gather(job, found, node_run.read)
         return found
 
-    def _culprit(self, nodes: Sequence[RunNode], depth: int) -> CaseFailure | None:
+    def _culprit(
+        self, nodes: Sequence[RunNode], run: WorkflowRun, depth: int
+    ) -> CaseFailure | None:
         """The failure of the node that failed the workflow, by the rules for its job."""
         node = blamed_node(nodes)
         if node is None or node.job_id is None:
             return None
         if node.kind == APPROVAL:
-            denied = node.job_id in self._denied
-            return in_node(approval_failure(node.template, node.job_id, denied=denied), node.label)
+            denial = approval_failure(node.template, node.job_id, denied=run.denied(node.job_id))
+            return in_node(denial, node.label)
         if node.kind not in JOB_ROUTES:
             message = f"{node.kind} {node.job_id} ended {node.status}"
             return in_node(make_failure(CONTROLLER, ErrorCategory.UNAVAILABLE, message), node.label)
         try:
-            run = self._node_run(node)
+            node_run = run.run(node)
         except Exception as exc:
             message = f"job {node.job_id} unreadable: {exc}"
             return in_node(request_failure(exc, message=message), node.label)
-        found = self._check_node_job(run, Expectation(), depth)
+        found = self._check_node_job(node_run, Expectation(), depth)
         return None if found is None else in_node(found, node.label)
 
-    def _workflow_tasks(
-        self, nodes: Sequence[RunNode], depth: int
-    ) -> tuple[FailedTask, ...] | None:
+    def _workflow_tasks(self, workflow: Job, run: WorkflowRun) -> tuple[FailedTask, ...] | None:
         """The failed tasks of every node job that failed (nested ones too); ``None``: unread."""
         tasks: list[FailedTask] = []
         try:
-            for node in nodes:
-                if not node.failed or node.kind not in JOB_ROUTES:
+            for _, node, execution in run.node_jobs(workflow):
+                if not node.failed or execution.kind not in JOB_ROUTES:
                     continue
-                run = self._node_run(node)
-                if run.job.kind != WORKFLOW_JOB:
-                    found = self._job_tasks(run.job, run.fields, run.read)
-                elif depth + 1 < MAX_NESTING:
-                    found = self._workflow_tasks(self._workflow_nodes(run.job), depth + 1)
-                else:
-                    found = None
+                if execution.kind == WORKFLOW_JOB:
+                    continue  # its own nodes follow
+                node_run = run.run(node)
+                found = self._job_tasks(node_run.job, node_run.fields, node_run.read)
                 if found is None:
                     return None
                 tasks.extend(found)
@@ -774,88 +841,34 @@ class RunTestSuite:
             return None
         return tuple(tasks)
 
-    def _workflow_nodes(self, workflow: Job) -> list[RunNode]:
-        """A workflow job's nodes as they ran (a finished one's are read once)."""
-        cached = self._nodes.get(workflow.id)
-        if cached is not None:
-            return cached
-        if self._read_nodes is None:
-            raise ConfigError("this run cannot read workflow nodes", category="usage")
-        nodes = [RunNode.from_record(record) for record in self._read_nodes(workflow)]
-        if workflow.is_terminal:
-            self._nodes[workflow.id] = nodes
-        return nodes
+    def _ensure_hosts(self, job: Job, fields: dict[str, Any], read: JobRead) -> None:
+        """Put the job's host summaries in the row once (``hosts``, ``hosts_truncated``).
 
-    def _node_run(self, node: RunNode) -> _NodeRun:
-        """The finished job a node ran, read once (and what checking it reads)."""
-        execution = node.execution
-        assert execution is not None  # callers check the node ran
-        run = self._node_runs.get(execution.id)
-        if run is None:
-            job = self._reader.settled(self._reader.fetch(execution))
-            run = self._node_runs[execution.id] = _NodeRun(job, _Read(source=job), {})
-        return run
-
-    def _watch_case(self, item: _ResolvedCase, job: Job) -> Job:
-        """Watch a case's job; a workflow's pending approvals are answered meanwhile."""
-        if not item.workflow:
-            return self._watch(job, timeout=item.timeout)
-        answer = partial(self._answer_approvals, approvals=item.approvals, depth=0)
-        return self._watch(job, timeout=item.timeout, on_state=answer)
-
-    def _answer_approvals(self, workflow: Job, *, approvals: Approvals | None, depth: int) -> None:
-        """Approve or deny each approval ``workflow`` (or a workflow nested in it) waits on.
-
-        Raise :class:`PendingApprovalError` when the case gives no answer.
+        A workflow's job (or node job) has every record read, so its checks
+        see every host; a job case's are read lazily, cut at 500 hosts.
         """
-        for node in self._workflow_nodes(workflow):
-            execution = node.execution
-            if execution is None or execution.is_terminal:
-                continue
-            if node.kind == WORKFLOW_JOB and depth + 1 < MAX_NESTING:
-                self._answer_approvals(execution, approvals=approvals, depth=depth + 1)
-            if node.kind != APPROVAL or node.status != "pending" or execution.id in self._decided:
-                continue
-            if approvals is None:
-                raise PendingApprovalError(
-                    f"node {node.label}: approval {q(node.template or execution.id)} is waiting, "
-                    "and the case sets no approvals",
-                    hint=_APPROVALS_HINT,
-                )
-            if self._decide is None:
-                raise ConfigError("this run cannot answer approvals", category="usage")
-            self._decide(execution.id, approve=approvals == "approve")
-            self._decided.add(execution.id)
-            if approvals == "deny":
-                self._denied.add(execution.id)
-
-    def _revision(self, job: Job) -> str | None:
-        """The commit ``job`` ran; for a workflow, the one all its jobs ran (else ``None``)."""
+        if "hosts" in fields:
+            return
         try:
-            revisions = self._revisions(job)
-        except Exception:
-            return None
-        return next(iter(revisions)) if len(revisions) == 1 else None
-
-    def _revisions(self, job: Job) -> set[str | None]:
-        if job.kind != WORKFLOW_JOB:
-            return {job.scm_revision or None}
-        found: set[str | None] = set()
-        for node in self._workflow_nodes(job):
-            if node.kind in ("job", WORKFLOW_JOB) and node.job_id is not None:
-                found |= self._revisions(self._node_run(node).job)
-        return found
+            if read.workflow is not None:
+                records = read.workflow.host_records(job)
+                read.all_hosts = by_host(records)
+                hosts, truncated = host_summaries(records)
+            else:
+                hosts, truncated = host_summaries(self._read_hosts(job))
+        except Exception as exc:
+            hosts, truncated, read.hosts_error = None, False, exc
+        fields["hosts"], fields["hosts_truncated"] = hosts, truncated
 
     def _job_tasks(
-        self, job: Job, fields: dict[str, Any], read: _Read
+        self, job: Job, fields: dict[str, Any], read: JobRead
     ) -> tuple[FailedTask, ...] | None:
         """The job's own failed tasks, read once; a successful job has none to read."""
         if job.status == "successful":
             read.tasks = ()
         else:
-            if "hosts" not in fields:
-                # The job's summaries tell rescued failures from real ones.
-                fields["hosts"], fields["hosts_truncated"], _ = self._host_summaries(job)
+            # The job's summaries tell rescued failures from real ones.
+            self._ensure_hosts(job, fields, read)
             read.tasks = self._failed_tasks(job, fields["hosts"])
         read.tasks_read = True
         return read.tasks
@@ -865,10 +878,13 @@ class RunTestSuite:
         job: Job,
         expect: ExecutionChecks,
         fields: dict[str, Any],
-        hosts_error: Exception | None,
+        read: JobRead,
     ) -> list[ExpectationResult] | CaseFailure:
         """The host checks, or why the host summaries they need could not be read."""
-        hosts = fields["hosts"]
+        self._ensure_hosts(job, fields, read)
+        if read.all_hosts is not None:
+            return expect.check_hosts(read.all_hosts)
+        hosts, hosts_error = fields["hosts"], read.hosts_error
         if hosts is not None and fields["hosts_truncated"]:
             hosts, hosts_error = self._beyond_the_cut(job, hosts, expect)
         if hosts is None and hosts_error is not None:
@@ -886,16 +902,24 @@ class RunTestSuite:
         found = dict(kept)
         try:
             for params in expect.host_filters(known=kept):
-                found |= by_host(self._host_records(job, params))
+                found |= by_host(self._read_hosts(job, params))
         except Exception as exc:
             return None, exc
         return found, None
 
-    def _update(self, job: Job) -> Job | None:
+    def _update(self, job: Job, read: JobRead) -> Job | None:
         """The failed update the job names, as AWX has it now (``unknown`` if unreadable).
 
-        A workflow node that ran an update itself is that update.
+        Read once; ``None`` for a job that succeeded. A workflow node that ran
+        an update itself is that update.
         """
+        if not read.update_read:
+            read.update, read.update_read = self._read_update(job), True
+        return read.update
+
+    def _read_update(self, job: Job) -> Job | None:
+        if job.status == "successful":
+            return None
         if job.kind in UPDATE_KINDS:
             return job
         update = responsible_update(job)
@@ -906,7 +930,7 @@ class RunTestSuite:
         except Exception:
             return update
 
-    def _gather(self, job: Job, failure: CaseFailure, read: _Read) -> CaseFailure:
+    def _gather(self, job: Job, failure: CaseFailure, read: JobRead) -> CaseFailure:
         """``failure`` with its evidence, from the responsible execution: ``related`` or the job.
 
         A workflow has no log nor events of its own: a node's failure already
@@ -924,7 +948,7 @@ class RunTestSuite:
         else:
             tasks = () if source.status == "successful" else self._failed_tasks(source, None)
         log = read.log if source is job else None
-        tail = self._tail(source) if log is None else tuple(log[-LOG_TAIL_LINES:])
+        tail = self._tail(source, read) if log is None else tuple(log[-LOG_TAIL_LINES:])
         evidence = FailureEvidence.of(
             job,
             related=failure.evidence.related,
@@ -956,88 +980,34 @@ class RunTestSuite:
             return None  # the failures may not be saved yet
         return unrescued(tasks, hosts)
 
-    def _tail(self, job: Job) -> tuple[str, ...] | None:
-        """The last log lines, from the newest events only; ``None`` if unreadable."""
-        try:
-            return tuple(self._read_tail(job, LOG_TAIL_LINES))
-        except Exception:
-            return None
+    def _tail(self, job: Job, read: JobRead) -> tuple[str, ...] | None:
+        """The last log lines, from the newest events only, read once; ``None`` if unreadable."""
+        key = (job.kind, job.id)
+        if key not in read.tails:
+            try:
+                read.tails[key] = tuple(self._read_tail(job, LOG_TAIL_LINES))
+            except Exception:
+                read.tails[key] = None
+        return read.tails[key]
 
-    def _host_summaries(
-        self, job: Job
-    ) -> tuple[dict[str, HostSummary] | None, bool, Exception | None]:
-        """Every host's summary (up to 500), whether more were cut, and why none were read."""
-        try:
-            hosts, truncated = host_summaries(self._host_records(job))
-        except Exception as exc:
-            return None, False, exc
-        return hosts, truncated, None
-
-    def _host_records(
-        self, job: Job, params: Mapping[str, str] | None = None
-    ) -> Iterable[Mapping[str, Any]]:
-        """A job's host summary records; a workflow's are its node jobs', summed per host."""
-        if job.kind != WORKFLOW_JOB:
-            return self._read_hosts(job) if params is None else self._read_hosts(job, params)
-        per_node = [
-            self._host_records(execution, node_host_params(params))
-            for node in self._workflow_nodes(job)
-            if (execution := node.execution) is not None and execution.kind in ("job", WORKFLOW_JOB)
-        ]
-        return summed_host_records(per_node, params)
-
-    def _changed_tasks(self, job: Job) -> tuple[ChangedTask, ...] | None:
+    def _changed_tasks(self, job: Job, read: JobRead | None) -> tuple[ChangedTask, ...] | None:
         """The first tasks that changed a host, from one filtered events read (``None``: unread).
 
-        A workflow's are those of its node jobs.
+        A workflow's are those of its playbook jobs.
         """
         try:
-            if job.kind == WORKFLOW_JOB:
-                return self._node_changed_tasks(job)
-            events = self._read_events(job, params=dict(_CHANGED_TASKS), follow=False)
+            jobs = [job]
+            if read is not None and read.workflow is not None:
+                jobs = list(read.workflow.playbook_jobs(job))
             changed = (
                 ChangedTask(host=event.host_name, task=event.task)
-                for event in events
+                for each in jobs
+                for event in self._read_events(each, params=dict(_CHANGED_TASKS), follow=False)
                 if event.changed
             )
             return tuple(islice(changed, CHANGED_TASKS_LIMIT))
         except Exception:
             return None
-
-    def _node_changed_tasks(self, workflow: Job) -> tuple[ChangedTask, ...] | None:
-        tasks: list[ChangedTask] = []
-        for node in self._workflow_nodes(workflow):
-            execution = node.execution
-            if execution is None or execution.kind not in ("job", WORKFLOW_JOB):
-                continue
-            found = self._changed_tasks(execution)
-            if found is None:
-                return None
-            tasks.extend(found)
-        return tuple(tasks[:CHANGED_TASKS_LIMIT])
-
-
-@dataclass(slots=True)
-class _Read:
-    """What checking a case read, reused as its evidence."""
-
-    source: Job
-    """The responsible execution: the failed update the job names, else the job."""
-    log: list[str] | None = None
-    """The job's whole log, when a log expectation downloaded it."""
-    tasks: tuple[FailedTask, ...] | None = None
-    tasks_read: bool = False
-
-
-@dataclass(slots=True)
-class _NodeRun:
-    """A workflow node's finished job, and what checking it read (kept for the next check)."""
-
-    job: Job
-    read: _Read
-    fields: dict[str, Any]
-    """The row fields checking it set (``hosts`` is reused)."""
-    hosts_error: Exception | None = None
 
 
 def _verdict(
@@ -1059,19 +1029,6 @@ def _verdict(
             update={"evidence": found.evidence.model_copy(update={"note": note})}
         )
     return found
-
-
-def _status_only(
-    node: RunNode | None, expect: NodeExpectation, check: ExpectationResult
-) -> CaseFailure | None:
-    """The failure of a node with only a status: one that never ran, an approval, …"""
-    checks_more = expect.needs_log or expect.needs_hosts or bool(expect.failed_tasks)
-    if node is not None and node.job_id is not None and checks_more:
-        message = f"a {node.kind} node has only a status to check"
-        return make_failure(SUITE, ErrorCategory.INVALID, message)
-    if check.passed:
-        return None
-    return make_failure(EXPECTATION, ErrorCategory.FAILED, check.describe_failure())
 
 
 def _note(failures: Iterable[CaseFailure]) -> None:
