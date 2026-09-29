@@ -52,8 +52,8 @@
     workflows that run each other and unknown template names are refused
     before any write. Nodes may run management jobs
     (`run: {system_job_template: NAME}`); a node whose template was deleted is
-    left out of exports with a warning and left alone by apply. See the
-    "Workflow templates and their nodes" section of the AWX guide.
+    left out of exports with a warning and left alone by apply. The awx skill's
+    `references/specs.md` documents the node format and `--source-ref`.
   - **New:** job template exports carry `instance_groups` by name, in their
     fallback order, and `apply` reconciles them.
   - **New:** `apply` accepts several files and directories as one batch, and
