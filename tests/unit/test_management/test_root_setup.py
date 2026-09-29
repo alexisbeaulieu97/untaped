@@ -82,7 +82,7 @@ def _wiz(path: Path, profile: str = "default") -> dict[str, Any]:
 def test_setup_without_a_terminal_is_a_usage_error(_isolated_config: Path) -> None:
     result = _setup(None)
     assert result.exit_code == 2
-    assert "error: setup requires an interactive terminal" in result.stderr
+    assert "setup requires an interactive terminal" in result.stderr
     assert not _isolated_config.exists()
 
 
@@ -145,7 +145,7 @@ def test_an_inherited_token_would_override_the_token_command(_isolated_config: P
         selections=["command"],
     )
     result = _setup(backend)
-    assert result.exit_code == 1
+    assert result.exit_code == 4  # the stored config must change
     assert "wiz.token is set in profile default" in result.stderr
     assert "untaped --profile default config unset wiz.token" in result.stderr
     assert "wiz" not in (read_config_dict(_isolated_config)["profiles"].get("prod") or {})
@@ -160,7 +160,7 @@ def test_a_malformed_token_command_writes_nothing(_isolated_config: Path) -> Non
     )
     result = _setup(backend)
     assert result.exit_code == 1
-    assert "error: invalid wiz token command" in result.stderr
+    assert "invalid wiz token command" in result.stderr
     assert "Traceback" not in result.output
     assert not _isolated_config.exists()
 

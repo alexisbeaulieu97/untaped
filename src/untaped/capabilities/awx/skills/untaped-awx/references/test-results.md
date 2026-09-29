@@ -10,11 +10,20 @@ or `pipe`); the table shows only `suite`, `case`, `result`, `job_status`,
 
 - 0: at least one case ran and every case passed.
 - 1: any case did not pass, no case ran, or the run stopped before launching
-  (preflight failure, bad suite file, unpushed `--scm-branch HEAD`). A
-  preflight failure lists every failing case on stderr under
-  `preflight failed, nothing launched:`.
+  because a suite, a vars file or a case is wrong (bad suite file, unknown
+  template, a prompt not enabled). A preflight failure lists every failing
+  case on stderr under `preflight failed, nothing launched:`.
 - 2: a usage error (an unknown flag, a path that does not exist, no suite
-  files found).
+  files found, a missing required `--var`).
+- 4: the environment needs fixing, not your change. Read the error's
+  `system`: `awx` means AWX rejected the token (`untaped config set
+  awx.token --prompt`) or the user lacks a permission; `git` means HEAD is
+  not pushed or the checkout is not usable (push, or fix the checkout);
+  `local` means settings such as `awx.base_url` are missing.
+- 5: AWX was unavailable (network, timeout, 5xx, 429). Retry later.
+- A run exits with its most severe failure (4 over 5 over 1). With
+  `--format json` stderr is JSON Lines: each error has `category`, `system`,
+  `retryable`, `hint` and `exit_code`.
 - 130: interrupted. Jobs still running are cancelled and listed on stderr
   (`interrupted: … cancel requested`); with `--no-cancel` they keep running
   and the list ends with an `untaped awx jobs wait …` command.

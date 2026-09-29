@@ -19,7 +19,8 @@ from untaped.capabilities.recipe.domain.input_jinja import (
     ensure_derived_value_within_bound,
 )
 from untaped.capabilities.recipe.domain.recipe import InputSpec, Recipe
-from untaped.capability_api import ConfigError
+from untaped.capabilities.recipe.errors import RecipeError
+from untaped.capability_api import UsageError
 
 REDACTED = "***"
 _UNSET = object()
@@ -174,16 +175,16 @@ def _validate_config(
 ) -> None:
     unknown_values = sorted(set(fixed_values) - set(recipe.inputs))
     if unknown_values:
-        raise ConfigError(f"unknown input: {unknown_values[0]}")
+        raise RecipeError(f"unknown input: {unknown_values[0]}")
     unknown_sources = sorted(set(input_from) - set(recipe.inputs))
     if unknown_sources:
-        raise ConfigError(f"unknown input: {unknown_sources[0]}")
+        raise RecipeError(f"unknown input: {unknown_sources[0]}")
     for name in input_from:
         if recipe.inputs[name].scope == "global":
-            raise ConfigError(f"cannot use --input-from for input {name!r} with scope global")
+            raise RecipeError(f"cannot use --input-from for input {name!r} with scope global")
     conflicts = sorted(set(fixed_values) & set(input_from))
     if conflicts:
-        raise ConfigError(f"cannot combine --var/--vars-file and --input-from for {conflicts[0]}")
+        raise UsageError(f"cannot combine --var/--vars-file and --input-from for {conflicts[0]}")
 
 
 def _coerce_fixed_values(
@@ -195,10 +196,10 @@ def _coerce_fixed_values(
         spec = recipe.inputs[name]
         try:
             typed[name] = spec.coerce(_prepare_fixed_value(name, spec, value))
-        except ConfigError:
+        except RecipeError:
             raise
         except ValueError as exc:
-            raise ConfigError(f"input {name!r}: {exc}") from exc
+            raise RecipeError(f"input {name!r}: {exc}") from exc
     return typed
 
 
@@ -209,11 +210,11 @@ def _prepare_fixed_value(name: str, spec: InputSpec, value: object) -> object:
     try:
         parsed = yaml.safe_load(value)
     except yaml.YAMLError as exc:
-        raise ConfigError(f"input {name!r} expects YAML {expected}: {exc}") from exc
+        raise RecipeError(f"input {name!r} expects YAML {expected}: {exc}") from exc
     if spec.type == "list" and not isinstance(parsed, list):
-        raise ConfigError(f"input {name!r} expects YAML list: parsed value is not a list")
+        raise RecipeError(f"input {name!r} expects YAML list: parsed value is not a list")
     if spec.type == "dict" and not isinstance(parsed, dict):
-        raise ConfigError(f"input {name!r} expects YAML mapping: parsed value is not a mapping")
+        raise RecipeError(f"input {name!r} expects YAML mapping: parsed value is not a mapping")
     return parsed
 
 
@@ -221,7 +222,7 @@ def _compile_named_source(name: str, candidates: tuple[str, ...]) -> CompiledInp
     try:
         return compile_input_source(candidates)
     except InputSourceError as exc:
-        raise ConfigError(f"invalid input source expression for {name}: {exc}") from exc
+        raise RecipeError(f"invalid input source expression for {name}: {exc}") from exc
 
 
 def _derive_source_value(source: CompiledInputSource, target: Target) -> object:

@@ -21,10 +21,12 @@ __all__ = [
     "GithubGraphqlErrorKind",
     "is_auth_failure",
     "is_global_github_failure",
+    "is_rate_limit_failure",
     "is_rate_limited",
 ]
 
-_GLOBAL_GRAPHQL_KINDS = frozenset({"rate_limited", "secondary_rate_limited", "auth"})
+_RATE_LIMIT_KINDS = frozenset({"rate_limited", "secondary_rate_limited"})
+_GLOBAL_GRAPHQL_KINDS = _RATE_LIMIT_KINDS | {"auth"}
 _RATE_LIMIT_MARKERS = ("rate limit", "abuse detection", "x-ratelimit-remaining: 0")
 
 
@@ -50,6 +52,15 @@ def _chain(exc: BaseException) -> list[BaseException]:
         chain.append(current)
         current = current.__cause__
     return chain
+
+
+def is_rate_limit_failure(exc: BaseException) -> bool:
+    """Return whether ``exc`` (or a wrapped cause) is a GitHub primary or secondary rate limit."""
+    return any(
+        (isinstance(current, GithubGraphqlError) and current.kind in _RATE_LIMIT_KINDS)
+        or (isinstance(current, HttpError) and is_rate_limited(current.status_code, current.body))
+        for current in _chain(exc)
+    )
 
 
 def is_auth_failure(exc: BaseException) -> bool:

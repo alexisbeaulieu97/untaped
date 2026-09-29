@@ -15,7 +15,7 @@ from untaped.capabilities.awx.application.ports import (
 )
 from untaped.capabilities.awx.application.save_resource import SaveResource
 from untaped.capabilities.awx.domain import IdentityRef, Metadata, ResourceSpec, SaveOutcome
-from untaped.capability_api import ConfigError
+from untaped.capability_api import ConfigError, UsageError
 
 _UNSAFE_FILENAME_CHARS = re.compile(r"[/\\\x00-\x1f]")
 
@@ -95,7 +95,7 @@ class SaveResources:
         if all_kinds:
             return [self._catalog.get(kind_name) for kind_name in self._catalog.kinds()]
         if kind is None:
-            raise ConfigError("pass --all-kinds or --kind")
+            raise UsageError("pass --all-kinds or --kind")
         try:
             return [self._catalog.by_cli_name(kind)]
         except ConfigError:

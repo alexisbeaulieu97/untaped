@@ -11,6 +11,7 @@ import yaml
 
 from untaped.capabilities.awx.application.secret_paths import replace_at, values_at
 from untaped.capabilities.awx.domain import ApplyOutcome, FieldChange, ResourceSpec
+from untaped.capability_api import UntapedError
 
 REDACTED = "<redacted>"
 
@@ -107,9 +108,20 @@ def _parse_structured_string(value: Any) -> Any:
     return value
 
 
-def redact_error(error: Exception, spec: ResourceSpec, *records: Any) -> str:
-    """Remove known current and submitted secrets from controller error text."""
+def error_text(error: BaseException) -> str:
+    """``str(error)`` and its ``hint`` on its own ``hint:`` line, as ``report_errors`` prints it.
+
+    A row's ``detail`` keeps the follow-up of, e.g., a rejected token.
+    """
     message = str(error)
+    if isinstance(error, UntapedError) and error.hint and error.hint not in message:
+        message = f"{message}\nhint: {error.hint}"
+    return message
+
+
+def redact_error(error: Exception, spec: ResourceSpec, *records: Any) -> str:
+    """Remove known current and submitted secrets from an error's :func:`error_text`."""
+    message = error_text(error)
     values: set[str] = set()
     for record in records:
         for path in spec.secret_paths:

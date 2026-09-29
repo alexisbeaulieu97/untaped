@@ -136,7 +136,7 @@ def build_root_alias_app(*, builtin_for: Callable[[str], str | None]) -> App:
         with report_errors():
             profile, own = _own_aliases()
             if name not in own:
-                raise ConfigError(_missing_alias(name, profile, own))
+                raise ConfigError(_missing_alias(name, profile, own), category="not_found")
             action = "planned"
             if not dry_run:
                 ui_context(strict=False).confirm_or_cancel(

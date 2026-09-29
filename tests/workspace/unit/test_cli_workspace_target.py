@@ -216,7 +216,7 @@ def test_missing_workspace_path_does_not_fall_back_to_the_enclosing_workspace(
 def test_init_rejects_names_that_look_like_a_home_path(tmp_path: Path) -> None:
     result = CliInvoker().invoke(app, ["init", "~x", "--path", str(tmp_path / "ws")])
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2  # a bad NAME argument is a usage error
     assert "'~x'" in result.stderr
     assert not (tmp_path / "ws").exists()
 

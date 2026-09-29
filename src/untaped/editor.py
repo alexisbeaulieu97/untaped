@@ -41,8 +41,8 @@ def run_editor(
     except FileNotFoundError as exc:
         raise ConfigError(f"editor not found: {command[0]}") from exc
     except subprocess.CalledProcessError as exc:
-        raise ConfigError(f"editor exited with status {exc.returncode}") from exc
+        raise ConfigError(f"editor exited with status {exc.returncode}", category="failed") from exc
     except OSError as exc:
         raise ConfigError("could not launch editor") from exc
     except KeyboardInterrupt as exc:
-        raise ConfigError("editor cancelled") from exc
+        raise ConfigError("editor cancelled", category="failed") from exc

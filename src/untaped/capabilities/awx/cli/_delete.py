@@ -99,6 +99,7 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
                         else:
                             row["action"] = outcome.action
                         row["detail"] = outcome.detail
+                        row.update(outcome.row_error())
                         if outcome.detail:
                             echo(
                                 f"{outcome.action}: {outcome.target.kind}#{outcome.target.id}: "

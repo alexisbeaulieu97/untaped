@@ -3,27 +3,43 @@
 Concrete mapping from HTTP status to exception type lives in
 ``infrastructure.errors`` (it consumes the response body for actionable
 messages). These types are surfaced to the CLI via
-:func:`untaped.report_errors`.
+:func:`untaped.report_errors`. Every class is attributed to the ``awx``
+system and declares the category (and so the exit code) of its failure;
+an explicit HTTP ``status`` still selects the category of one instance.
 """
 
 from __future__ import annotations
 
 import difflib
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any
 
-from untaped.capability_api import UntapedError, not_found, q
+from untaped.capability_api import (
+    ErrorCategory,
+    HttpError,
+    UntapedError,
+    not_found,
+    q,
+)
 
 
 class AwxError(UntapedError):
-    """Base class for every AWX capability error."""
+    """Base class for every AWX capability error (a ``failed`` error in ``awx``)."""
+
+    system = "awx"
 
 
-class AwxApiError(AwxError):
+class AwxApiError(AwxError, HttpError):
     """Raised when the AWX API returns an error or behaves unexpectedly.
 
-    ``status_code`` names the HTTP status like :class:`HttpError` does.
+    An :class:`HttpError`: ``status_code``, ``url`` and ``body`` name the
+    failed response when there was one, and the status selects the category
+    unless one is given. Its message already carries the body's gist (the
+    mapper puts the first field error in it), so the raw body is shown only
+    under ``--verbose``.
     """
+
+    describes_body = True
 
     def __init__(
         self,
@@ -32,16 +48,27 @@ class AwxApiError(AwxError):
         status: int | None = None,
         body: str | None = None,
         url: str | None = None,
+        category: ErrorCategory | str | None = None,
+        system: str | None = None,
+        hint: str | None = None,
+        details: Mapping[str, object] | None = None,
     ) -> None:
-        super().__init__(message)
-        self.status_code = status
-        """The HTTP status of the failed response, when there was one."""
-        self.body = body
-        self.url = url
+        super().__init__(
+            message,
+            status_code=status,
+            url=url,
+            body=body,
+            category=category,
+            system=system,
+            hint=hint,
+            details=details,
+        )
 
 
 class ActionResponseError(AwxApiError):
     """A submitted action returned invalid data; retain only safe execution evidence."""
+
+    category = ErrorCategory.FAILED
 
     def __init__(
         self,
@@ -56,31 +83,56 @@ class ActionResponseError(AwxApiError):
 
 
 class PartialWriteError(AwxApiError):
-    """A record write landed but a follow-up sub-document write for it failed."""
+    """A record write landed but a follow-up sub-document write for it failed.
 
-    def __init__(self, message: str, *, record_id: int) -> None:
-        super().__init__(message)
+    It is ``failed`` unless it carries the failed write's attribution
+    (``**attribution(cause)``), e.g. ``auth`` for a rejected token.
+    """
+
+    category = ErrorCategory.FAILED
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        record_id: int,
+        category: ErrorCategory | str | None = None,
+        system: str | None = None,
+        hint: str | None = None,
+        details: Mapping[str, object] | None = None,
+    ) -> None:
+        super().__init__(message, category=category, system=system, hint=hint, details=details)
         self.record_id = record_id
 
 
 class LaunchPromptError(AwxApiError):
     """A launch supplies a field the template ignores, or omits a required survey var."""
 
+    category = ErrorCategory.INVALID
+
 
 class WaitCancelledError(AwxApiError):
     """A monitor's poll wait was interrupted (Ctrl-C); the execution keeps running."""
+
+    category = ErrorCategory.INTERRUPTED
 
 
 class BadRequestError(AwxApiError):
     """4xx response indicating malformed input (typically 400)."""
 
+    category = ErrorCategory.INVALID
+
 
 class PermissionDeniedError(AwxApiError):
     """403 — token authenticated but lacks the necessary permission."""
 
+    category = ErrorCategory.PERMISSION
+
 
 class ResourceNotFoundError(AwxApiError):
     """404 — looked-up resource does not exist."""
+
+    category = ErrorCategory.NOT_FOUND
 
     def __init__(
         self,
@@ -153,9 +205,13 @@ def _not_found_message(
 class ConflictError(AwxApiError):
     """409 — resource state conflicts with the request (e.g. concurrent edit)."""
 
+    category = ErrorCategory.CONFLICT
+
 
 class MutationConflictError(AwxApiError):
     """Raised for an invalid no-create target or an unusable prepared plan."""
+
+    category = ErrorCategory.INVALID
 
 
 class AmbiguousIdentityError(AwxApiError):
@@ -167,6 +223,8 @@ class AmbiguousIdentityError(AwxApiError):
     happened to order ahead. Surface ambiguity instead so the caller can
     add the missing scope.
     """
+
+    category = ErrorCategory.INVALID
 
     def __init__(
         self,

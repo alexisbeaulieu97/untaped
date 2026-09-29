@@ -32,6 +32,7 @@ from untaped.capability_api import (
     FormatOption,
     GitCommandError,
     ParallelOption,
+    attribution,
     create_app,
     echo,
     emit,
@@ -42,6 +43,7 @@ from untaped.capability_api import (
     plural,
     q,
     raise_usage,
+    report_error,
     report_errors,
     summary,
     ui_context,
@@ -122,7 +124,7 @@ def _checkout_root(advice: str = "pass test paths explicitly") -> Path:
         try:
             return git_toplevel(cwd) or cwd
         except GitCommandError as exc:
-            raise ConfigError(f"{exc}; {advice}") from exc
+            raise ConfigError(f"{exc}; {advice}", **attribution(exc)) from exc
 
 
 def _expand_paths(paths: Iterable[Path] | None) -> list[Path]:
@@ -184,7 +186,8 @@ def _load_suites(
         )
         if suite.name in seen:
             raise ConfigError(
-                f"suite {q(suite.name)} is defined in both {seen[suite.name]} and {path}"
+                f"suite {q(suite.name)} is defined in both {seen[suite.name]} and {path}",
+                category="invalid",
             )
         seen[suite.name] = path
         loaded[path] = suite
@@ -427,7 +430,7 @@ def validate_command(
                     )
                     preflight(spec, name=suite.job_template, scope=scope, payload=payload)
                 except (AwxApiError, ConfigError) as exc:
-                    echo(f"{suite.name}/{case_name}: {exc}", err=True)
+                    report_error(exc, item=f"{suite.name}/{case_name}")
                     any_errors = True
 
     finish(any_errors)

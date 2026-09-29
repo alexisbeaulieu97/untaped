@@ -25,7 +25,7 @@ from untaped.capabilities.recipe.domain.recipe import (
     ValidateStep,
 )
 from untaped.capabilities.recipe.errors import RecipeNotFoundError
-from untaped.capability_api import ConfigError
+from untaped.capability_api import UntapedError
 
 
 def check_ref(
@@ -118,7 +118,7 @@ def _check_pack(pack: InstalledPack, inspector: PackInspectorPort) -> dict[str, 
         orphans = orphaned_test_dirs(pack)
         if orphans:
             raise ValueError("tests directory names no known recipe: " + ", ".join(orphans))
-    except (ConfigError, ValueError, OSError) as exc:
+    except (UntapedError, ValueError, OSError) as exc:
         return _pack_check_row(
             pack.name,
             pack.root,
@@ -148,7 +148,7 @@ def _check_recipe(
         _check_assets(recipe, recipe_path.parent)
         _check_local_hook_project(local_hook_project, inspector)
         _check_hooks(recipe, local_hook_project, inspector)
-    except (ConfigError, ValueError, OSError) as exc:
+    except (UntapedError, ValueError, OSError) as exc:
         return {
             "recipe": recipe_ref,
             "status": "error",

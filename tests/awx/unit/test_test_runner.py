@@ -22,7 +22,8 @@ from untaped.capabilities.awx.errors import ActionResponseError, LaunchPromptErr
 from untaped.capabilities.awx.infrastructure import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
-from untaped.capability_api import ConfigError
+from untaped.capability_api import ConfigError, HttpTransportError
+from untaped.diagnostics import diagnostics_scope, failure_exit_code
 
 
 class StubFk:
@@ -625,6 +626,14 @@ def test_an_unreadable_log_errors_only_when_log_checks_need_it() -> None:
     assert [check.check for check in row.expectations] == ["status"]
 
 
+def test_a_log_fetch_failure_counts_toward_the_exit_code() -> None:
+    reader = StubLogReader([], error=HttpTransportError("down", system="awx"))
+    runner, _ = _expect_runner("failed", reader)
+    with diagnostics_scope():
+        runner([_case_suite({"expect": {"log": {"contains": ["x"]}}})])
+        assert failure_exit_code() == 5
+
+
 def test_evidence_is_skipped_when_not_wanted() -> None:
     reader = StubLogReader(["boom"])
     events = StubEventReader([])
@@ -783,6 +792,38 @@ def test_preflight_failures_stop_the_run_before_any_launch() -> None:
     )
     assert launcher.calls == []
     assert [name for name, _ in checked] == ["JT", "JT", "JT"]
+    assert info.value.category == "invalid"
+
+
+def test_a_preflight_failure_carries_its_most_severe_category() -> None:
+    def preflight(
+        spec: object, *, name: str, scope: dict[str, str] | None, payload: dict[str, Any]
+    ) -> None:
+        if "limit" in payload:
+            raise LaunchPromptError("does not prompt for limit")
+        raise ConfigError(
+            "AWX rejected the token (HTTP 401)",
+            category="auth",
+            system="awx",
+            hint="run `untaped config set awx.token --prompt`",
+        )
+
+    runner = _make_runner(
+        fk=StubFk(), launcher=StubLauncher({}), watcher=StubWatcher(), preflight=preflight
+    )
+    suite = _suite("s", {"bad": {"limit": "web"}, "denied": {}})
+    with pytest.raises(ConfigError) as info:
+        runner([suite])
+    assert (info.value.category, info.value.system) == ("auth", "awx")
+    assert info.value.exit_code == 4
+    assert info.value.hint == "run `untaped config set awx.token --prompt`"
+
+
+def test_an_unknown_case_is_not_found() -> None:
+    runner = _make_runner(fk=StubFk(), launcher=StubLauncher({}), watcher=StubWatcher())
+    with pytest.raises(ConfigError, match="no case matched --case 'nope'") as info:
+        runner([_suite("s", {"c": {}})], case_filter={"nope"})
+    assert info.value.category == "not_found"
 
 
 # ---- case selection and suite scope --------------------------------------

@@ -21,7 +21,7 @@ Details that do not fit here ship next to this file:
 - `untaped config set github.default_org ORG` gives `repos list`, `search repos|code|issues`, `sweep`, `cache sync` and `cache prune` an org scope when none of `--org`, `--team`, `--repo`, `--user` or `--stdin` is passed. Any explicit scope replaces it (never adds to it).
 - `base_url` defaults to `https://api.github.com`; GitHub Enterprise Server usually uses `https://HOST/api/v3`.
 - Git fetches (`sweep`, `cache sync`) send the token only to the Git host of `base_url` (`github.com`, or `HOST` for `https://HOST/api/v3`); a piped `clone_url` on another host is fetched without credentials.
-- Set the token with `untaped config set github.token --prompt` or `--stdin`, or point `github.token_command` at a command that prints it (`'["gh", "auth", "token"]'`). `GH_TOKEN`/`GITHUB_TOKEN` are the last fallback. A rejected token (HTTP 401) fails with a hint to run that command.
+- Set the token with `untaped config set github.token --prompt` or `--stdin`, or point `github.token_command` at a command that prints it (`'["gh", "auth", "token"]'`). `GH_TOKEN`/`GITHUB_TOKEN` are the last fallback. A rejected token (HTTP 401) fails with a hint to run that command and exits 4.
 - Set the base URL with `untaped config set github.base_url https://HOST/api/v3`.
 
 ## Command Patterns
@@ -30,7 +30,7 @@ Details that do not fit here ship next to this file:
 - `untaped github repos list [PATTERN] [--org ORG]... [--team ORG/SLUG|SLUG]... [--limit N]` lists complete org/team repository inventory from GitHub list APIs with at least one repeatable scope, emitting `github.repo` records (`full_name` plus `repo`, `html_url` plus `url`, `clone_url`, `ssh_url`, `pushed_at`, ...); the table shows only `full_name`, `default_branch`, `private`, `archived`, `fork` and `url`, so pass `-c` for other fields.
 - `untaped github sweep --org ORG --grep PATTERN` (or a `--team ORG/SLUG` or `--repo OWNER/NAME` scope) asks a question over the local Git corpus and emits matching `github.sweep_repo` rows by default.
 - `untaped github sweep --org ORG --show matches --grep PATTERN` emits deduped `github.sweep_match` rows with `full_name`, `refs`, `path`, `line`, and `text`. `--show files` emits one `github.sweep_file` row per matching file (`full_name`, `path`, `refs`, `hits` = matching lines).
-- `untaped github cache sync --org ORG [--refs branches] [--refresh]` (or a `--team ORG/SLUG`, `--repo OWNER/NAME` or `--stdin` scope) warms the corpus without a query (nightly prewarm) and emits one `github.sync_outcome` per repo with `action` `synced`, `unchanged`, `skipped`, or `failed` (exit `1` on any failure).
+- `untaped github cache sync --org ORG [--refs branches] [--refresh]` (or a `--team ORG/SLUG`, `--repo OWNER/NAME` or `--stdin` scope) warms the corpus without a query (nightly prewarm) and emits one `github.sync_outcome` per repo with `action` `synced`, `unchanged`, `skipped`, or `failed` (with `error`; exit 1, or 5 when a fetch timed out).
 - `untaped github cache status`, `cache delete OWNER/NAME...|--all`, `cache prune --org ORG`, and `cache worktree OWNER/NAME` inspect/delete/prune/materialize the managed corpus. `cache delete` and `cache prune` take `--yes|-y` and `--dry-run`.
 - `untaped github search repos` searches repositories and emits `github.repo_hit` records (a different shape from the `github.repo` inventory rows).
 - `untaped github search code` searches GitHub's indexed code search and does not support sort, regex, or exhaustive multi-ref sweeps.
@@ -66,4 +66,4 @@ Details that do not fit here ship next to this file:
   also reads `github.repo`, `github.repo_hit` and `github.sweep_repo` pipe records
   (`untaped github search repos --org acme --format pipe | untaped workspace repos add acme --stdin`).
 - `--profile <name>` works in any token position (e.g. `untaped github --profile work whoami`).
-- Exit codes: 0 success, 1 failure, 2 usage error, 3 when `sweep --fail-on-match` matched or `--strict` left a repo unscanned, 130 interrupted.
+- Exit codes: 0 success, 1 failure, 2 usage error, 3 when `sweep --fail-on-match` matched or `--strict` left a repo unscanned, 4 fix the environment (settings, token, permission), 5 retry later (network, rate limit), 130 interrupted; `--format json` makes stderr JSON Lines.

@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from itertools import batched
 from typing import Any, NamedTuple, cast
@@ -38,7 +38,13 @@ from untaped.capabilities.github.domain.models import (
     RepoRefs,
 )
 from untaped.capabilities.github.errors import GithubGraphqlError, GithubGraphqlErrorKind
-from untaped.capability_api import HttpClient, HttpError, HttpTransportError, UntapedError
+from untaped.capability_api import (
+    ErrorCategory,
+    HttpClient,
+    HttpError,
+    HttpTransportError,
+    UntapedError,
+)
 
 _REF_PREFIXES: dict[RefKind, str] = {"heads": "refs/heads/", "tags": "refs/tags/"}
 _PAGE_SIZE = 100
@@ -157,7 +163,8 @@ def _probe(
                     if alias not in missing_aliases:
                         raise UntapedError(
                             f"github graphql returned null for {target.full_name} "
-                            "without an explanatory error"
+                            "without an explanatory error",
+                            system="github",
                         )
                     missing.append(target.full_name)
                     continue
@@ -195,7 +202,9 @@ def _parse_repo_target(value: str) -> _RepoTarget:
     # UntapedError as a message instead of a traceback.
     owner, sep, name = value.partition("/")
     if not sep or not owner or not name or "/" in name:
-        raise UntapedError(f"invalid repository {value!r}: expected 'owner/name'")
+        raise UntapedError(
+            f"invalid repository {value!r}: expected 'owner/name'", category="invalid"
+        )
     return _RepoTarget(value, owner, name)
 
 
@@ -406,6 +415,8 @@ def _graphql_http_error(exc: HttpError) -> GithubGraphqlError:
         status_code=exc.status_code,
         url=exc.url,
         body=exc.body,
+        category=exc.category if kind == "unknown" else None,
+        details=exc.details,
     )
 
 
@@ -486,6 +497,8 @@ def _github_graphql_error(
     status_code: int | None = None,
     url: str | None = None,
     body: str | None = None,
+    category: ErrorCategory | None = None,
+    details: Mapping[str, object] | None = None,
 ) -> GithubGraphqlError:
     prefixes = {
         "rate_limited": "github graphql rate limit exceeded",
@@ -504,6 +517,8 @@ def _github_graphql_error(
         status_code=status_code,
         url=url,
         body=body,
+        category=category,
+        details=details,
     )
 
 
@@ -542,7 +557,8 @@ def _resolve_repo(
             # here (deleted mid-probe) is unexpected enough to raise.
             if _classify_errors(payload):
                 raise UntapedError(
-                    f"github graphql lost access to {target.full_name} during ref pagination"
+                    f"github graphql lost access to {target.full_name} during ref pagination",
+                    system="github",
                 )
             rate_limit = _merge_rate_limit(rate_limit, _rate_limit(payload))
             connection = payload["data"]["r0"][kind]

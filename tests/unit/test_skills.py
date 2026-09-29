@@ -8,7 +8,7 @@ import pytest
 
 import untaped.skills as skills_module
 from untaped.capability_api import SkillAsset
-from untaped.errors import ConfigError
+from untaped.errors import ConfigError, UsageError
 from untaped.git import run_git
 from untaped.skills import SkillInstallScope, SkillInstallTarget
 
@@ -221,7 +221,7 @@ def test_install_skills_selector_errors_preserve_messages(
 ) -> None:
     source = _skill_dir(tmp_path)
 
-    with pytest.raises(ConfigError, match=message):
+    with pytest.raises((ConfigError, UsageError), match=message):
         skills_module.install_skills(
             {source.name: _asset(source)},
             skill_names,

@@ -40,12 +40,12 @@ def resolve_set_value(
 
 def _read_stdin_value() -> str:
     if sys.stdin.isatty():
-        raise ConfigError("no value received on stdin")
+        raise ConfigError("no value received on stdin", category="invalid")
     value = sys.stdin.read().rstrip("\r\n")
     if "\n" in value or "\r" in value:
-        raise ConfigError("--stdin expects exactly one value")
+        raise ConfigError("--stdin expects exactly one value", category="invalid")
     if not value.strip():
-        raise ConfigError("no value received on stdin")
+        raise ConfigError("no value received on stdin", category="invalid")
     return value
 
 

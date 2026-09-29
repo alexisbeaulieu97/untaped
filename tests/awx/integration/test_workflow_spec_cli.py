@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from pathlib import Path
 from typing import Any
 
@@ -408,9 +409,11 @@ def test_a_refused_node_write_leaves_a_partial_row(fake_aap: Any, tmp_path: Path
 
     result = _apply(_write(tmp_path, document), "--yes", "--format", "json")
 
-    assert result.exit_code == 1
+    assert result.exit_code == 4  # AWX refused a permission: fix the environment
     assert '"partial"' in result.stdout
     assert "workflow nodes failed: nodes[deploy] update:" in result.stdout
+    [row] = [row for row in json.loads(result.stdout) if row["action"] == "partial"]
+    assert (row["error"]["category"], row["error"]["system"]) == ("permission", "awx")
     assert _workflow(fake_aap, "Release")["description"] == "changed"
 
 
@@ -430,7 +433,7 @@ def test_a_refused_node_credential_swap_keeps_the_old_credential(
 
     result = _apply(_write(tmp_path, document), "--yes", "--format", "json")
 
-    assert result.exit_code == 1
+    assert result.exit_code == 4  # AWX refused a permission
     assert outcome in result.stdout
     assert set(fake_aap.memberships[("workflow_job_template_nodes", 201, "credentials")]) == {40}
 

@@ -75,15 +75,20 @@ class FileChange(BaseModel):
 
 
 class TargetPlan(BaseModel):
-    """Planned changes for one target directory."""
+    """Planned changes for one target directory.
 
-    model_config = ConfigDict(frozen=True)
+    A failed plan (``status="error"``) carries the human ``error`` text and
+    the ``failure`` behind it, so callers can report its category.
+    """
+
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     target: Path
     status: ApplyStatus
     changes: tuple[FileChange, ...] = ()
     warnings: tuple[str, ...] = ()
     error: str = ""
+    failure: Exception | None = Field(default=None, exclude=True, repr=False)
     display_inputs: dict[str, object] = Field(default_factory=dict)
 
     @property

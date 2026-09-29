@@ -41,6 +41,58 @@ valid.
 - When stdin carries data, confirmation prompts read the terminal
   (`/dev/tty`). With no terminal, pass `--yes` (or `--dry-run`).
 
+## Failed rows: the `error` field
+
+A failed row of an outcome record (`*_outcome` kinds, and records about a
+directory such as `workspace.sync_outcome`) carries an `error` object next to
+its human `detail`. Rows that did not fail have no `error` key.
+
+```json
+{"name": "Deploy", "action": "failed", "detail": "HTTP 503 for https://aap/api/v2/job_templates/7/", "error": {"category": "unavailable", "system": "awx", "retryable": true, "message": "HTTP 503 for https://aap/api/v2/job_templates/7/", "hint": null}}
+```
+
+| Field | Meaning |
+|---|---|
+| `category` | What kind of failure it is; it selects the exit code. See [exit codes](./exit-codes.md#categories). |
+| `system` | Who is responsible: `untaped`, `local`, `git`, or a service such as `awx`. |
+| `retryable` | `true` only for `unavailable` failures. |
+| `message` | The failure, as `detail` shows it. |
+| `hint` | A follow-up such as ``run `untaped config set awx.token --prompt` ``, or `null`. |
+
+Tables leave `error` out (the `detail` column says the same); ask for it with
+`--columns error` or use `json`, `yaml` or `pipe`.
+
+## stderr diagnostics
+
+stdout carries data only. With `--format json`, `yaml` or `pipe` (the flag,
+or the same value from `UNTAPED_FORMAT` or `ui.format`; a command's own
+default, such as `export`'s YAML, does not count), stderr carries **JSON
+Lines**: one object per error, per-item error, warning, hint or note, never
+mixed into the data stream. `UNTAPED_DIAGNOSTICS=json` turns this on for any
+format, and `UNTAPED_DIAGNOSTICS=text` keeps the text lines. Progress
+spinners are silent in this mode. A parse error (an unknown flag or command)
+follows a `--format` given on the command line or in `UNTAPED_FORMAT`; the
+`ui.format` setting applies only once the command is parsed.
+
+```json
+{"level": "error", "message": "AWX rejected the token (HTTP 401)", "category": "auth", "system": "awx", "retryable": false, "hint": "run `untaped config set awx.token --prompt`", "exit_code": 4, "details": {"status": 401, "url": "https://aap/api/v2/me/", "attempts": 1}}
+{"level": "error", "item": "Deploy", "message": "HTTP 503 for https://aap/api/v2/job_templates/7/", "category": "unavailable", "system": "awx", "retryable": true, "hint": null, "exit_code": 5, "details": {"status": 503, "url": "https://aap/api/v2/job_templates/7/", "attempts": 3}}
+{"level": "warning", "message": "--parallel 64 clamped to 16 (2 * os.cpu_count())"}
+{"level": "hint", "message": "run `untaped skills install`"}
+{"level": "info", "message": "sync: 2 cloned, 1 failed"}
+```
+
+| Field | On | Meaning |
+|---|---|---|
+| `level` | every line | `error`, `warning`, `hint`, `info`, `success`, or `debug` (with `--verbose`) |
+| `message` | every line | The text the line would show, without its `error:`/`warning:`/`hint:` prefix |
+| `item` | per-item errors | The item that failed (a name, an ID) |
+| `category`, `system`, `retryable`, `hint`, `exit_code`, `details` | errors | As in the `error` field above; `exit_code` is the code this failure alone selects, and `details` holds machine context such as `status`, `url` and `attempts` |
+
+An `error` line that does not come from a raised failure (a plain
+`error: …` message) carries only `level`, `message` and `hint`; the exit code
+still follows the rules in [exit codes](./exit-codes.md#precedence).
+
 ## Producers and consumers
 
 The tables list what each command writes and which kinds each `--stdin`

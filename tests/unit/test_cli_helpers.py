@@ -461,7 +461,7 @@ def _http_error_app(body: str) -> App:
 def test_format_error_surfaces_known_json_message(body: str, expected: str) -> None:
     result = CliInvoker().invoke(_http_error_app(body), [])
     output = result.output or result.stderr
-    assert result.exit_code == 1
+    assert result.exit_code == 4  # a rejected token: the environment needs fixing
     assert "error: HTTP 401 for https://api.example.test/x" in output
     assert f"— {expected}" in output
     assert "response:" not in output
@@ -478,7 +478,7 @@ def test_format_error_falls_back_to_raw_body(body: str) -> None:
 
 
 def test_format_error_keeps_raw_body_under_verbose(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("untaped.cli.is_verbose", lambda: True)
+    monkeypatch.setattr("untaped.diagnostics.is_verbose", lambda: True)
     result = CliInvoker().invoke(_http_error_app('{"message":"Bad credentials"}'), [])
     output = result.output or result.stderr
     assert "— Bad credentials" in output
@@ -498,7 +498,7 @@ def test_format_error_names_the_transport_url_once(message: str) -> None:
 
     result = CliInvoker().invoke(app, [])
     output = result.output or result.stderr
-    assert result.exit_code == 1
+    assert result.exit_code == 5  # unavailable: retry later
     assert "error: connection failed for https://api.example.test/x" in output
     assert output.count("https://api.example.test/x") == 1
 

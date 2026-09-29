@@ -16,10 +16,11 @@ not a YAML applier, and its ``--yes`` means "skip the confirm" (not "write").
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
-from untaped.cli import echo, format_error
+from untaped.cli import echo, report_declined, report_error
+from untaped.diagnostics import failure_exit_code
 from untaped.errors import ExitCode, OperationCancelledError, UntapedError
 from untaped.messages import plural
 from untaped.ui import UiContext
@@ -31,16 +32,23 @@ class BatchOutcome[T, R]:
 
     ``results`` pairs each successfully actioned item with its action result so
     callers keep the originating input (e.g. for a ``(name, job)`` monitor
-    phase). ``planned_rows`` is ``describe(item)`` for every input — reused for
-    the ``--dry-run`` output and any summary so callers don't recompute it.
-    ``cancelled`` marks a declined confirmation (:func:`finish` exits ``1``).
+    phase). ``failures`` pairs each failed item with its error, so callers
+    can put the error on the item's row. ``planned_rows`` is
+    ``describe(item)`` for every input — reused for the ``--dry-run`` output
+    and any summary so callers don't recompute it. ``cancelled`` marks a
+    declined confirmation (:func:`finish` exits ``1``).
     """
 
     results: list[tuple[T, R]]
-    failed: int
     planned_rows: list[dict[str, object]]
+    failures: list[tuple[T, UntapedError]] = field(default_factory=list)
     cancelled: bool = False
     """The user declined the confirmation; nothing ran."""
+
+    @property
+    def failed(self) -> int:
+        """How many items failed."""
+        return len(self.failures)
 
     @property
     def any_failed(self) -> bool:
@@ -54,20 +62,24 @@ class BatchOutcome[T, R]:
 def finish(outcome: BatchOutcome[Any, Any] | bool, *, predicate_hit: bool = False) -> None:
     """Turn a batch/aggregate outcome into the suite's exit-code contract.
 
-    Raises ``SystemExit(1)`` when any item failed ("3 of 5 deleted" is a
-    failure) or the confirmation was declined (after printing the standard
-    ``cancelled; no changes made`` line), ``SystemExit(3)`` when
-    ``predicate_hit`` (``--check`` drift, ``--fail-on-match``, ``--strict``)
-    and nothing failed, and returns otherwise. Accepts a :class:`BatchOutcome`
-    or a bare ``any_failed``-style bool so non-batch aggregate paths
-    (``resolve_each`` callers, hand-rolled loops) share the same guarantee.
+    Exits non-zero when any item failed ("3 of 5 deleted" is a failure) or
+    the confirmation was declined (after printing the standard ``cancelled;
+    no changes made`` line), ``SystemExit(3)`` when ``predicate_hit``
+    (``--check`` drift, ``--fail-on-match``, ``--strict``) and nothing
+    failed, and returns otherwise. A failed run exits with the most severe
+    category of every failure seen in the run
+    (:func:`~untaped.diagnostics.failure_exit_code`: ``4`` when a token was
+    rejected anywhere, ``5`` when a service was unavailable, else ``1``).
+    Accepts a :class:`BatchOutcome` or a bare ``any_failed``-style bool so
+    non-batch aggregate paths (``resolve_each`` callers, hand-rolled loops)
+    share the same guarantee.
     """
     if isinstance(outcome, BatchOutcome) and outcome.cancelled:
-        echo(str(OperationCancelledError()), err=True)
-        raise SystemExit(ExitCode.FAILURE)
+        report_declined(OperationCancelledError())
+        raise SystemExit(failure_exit_code())
     failed = outcome.any_failed if isinstance(outcome, BatchOutcome) else bool(outcome)
     if failed:
-        raise SystemExit(ExitCode.FAILURE)
+        raise SystemExit(failure_exit_code())
     if predicate_hit:
         raise SystemExit(ExitCode.PREDICATE)
 
@@ -106,15 +118,16 @@ def batch_apply[T, R](
     and ``--yes`` skip straight to execution. ``preview_only`` (``--dry-run``)
     returns ``planned_rows`` without running ``action``.
 
-    Per-item :class:`UntapedError` is caught, counted, and printed as
-    ``error: <label>: …`` on ``ui.stderr`` (formatted like ``report_errors``,
+    Per-item :class:`UntapedError` is caught, kept in ``failures``, and
+    reported as ``error: <label>: …`` on ``ui.stderr`` (:func:`report_error`:
+    formatted like ``report_errors``, a JSON line under JSON diagnostics,
     without garbling the progress spinner); anything else propagates. The
     helper never renders the summary or raises ``SystemExit`` — the caller
     owns stdout and the exit code.
     """
     planned_rows = [describe(item) for item in items]
     if not items or preview_only:
-        return BatchOutcome(results=[], failed=0, planned_rows=planned_rows)
+        return BatchOutcome(results=[], planned_rows=planned_rows)
     total = len(planned_rows)
     if destructive and not assume_yes:
         with ui.terminal(refusal=f"{verb} requires --yes when not interactive"):
@@ -125,15 +138,15 @@ def batch_apply[T, R](
                 for row in planned_rows:
                     echo("  - " + "\t".join(str(value) for value in row.values()), err=True)
             if not ui.confirm("Continue?"):
-                return BatchOutcome(results=[], failed=0, planned_rows=planned_rows, cancelled=True)
+                return BatchOutcome(results=[], planned_rows=planned_rows, cancelled=True)
     results: list[tuple[T, R]] = []
-    failed = 0
+    failures: list[tuple[T, UntapedError]] = []
     with ui.progress(f"{verb.capitalize()} {plural(total, noun)}") as handle:
         for index, item in enumerate(items, 1):
             handle.update(label(item), fraction=index / total)
             try:
                 results.append((item, action(item)))
             except UntapedError as exc:
-                handle.log(f"error: {label(item)}: {format_error(exc)}")
-                failed += 1
-    return BatchOutcome(results=results, failed=failed, planned_rows=planned_rows)
+                report_error(exc, item=label(item), write=handle.log)
+                failures.append((item, exc))
+    return BatchOutcome(results=results, planned_rows=planned_rows, failures=failures)

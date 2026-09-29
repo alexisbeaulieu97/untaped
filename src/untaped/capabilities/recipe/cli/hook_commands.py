@@ -28,13 +28,13 @@ from untaped.capabilities.recipe.cli.common import (
 from untaped.capabilities.recipe.domain.hook_project import HookKind
 from untaped.capabilities.recipe.domain.paths import is_path_ref
 from untaped.capabilities.recipe.domain.plan import Verdict
+from untaped.capabilities.recipe.errors import PathNotFoundError, RecipeError
 from untaped.capabilities.recipe.infrastructure.hook_executor import HookExecutor
 from untaped.capabilities.recipe.infrastructure.hook_resolver import HookResolver
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
 from untaped.capabilities.recipe.infrastructure.pack_files import read_hook_project
 from untaped.capability_api import (
     ColumnsOption,
-    ConfigError,
     UsageError,
     echo,
     emit,
@@ -276,12 +276,12 @@ def _local_hook_project(project: Path | None) -> Path | None:
     if project is not None:
         resolved = project.expanduser().resolve()
         if not resolved.is_dir():
-            raise ConfigError(f"hook project not found: {project}")
+            raise PathNotFoundError(f"hook project not found: {project}")
         if not (resolved / "pyproject.toml").is_file():
-            raise ConfigError(f"hook project has no pyproject.toml: {project}")
+            raise RecipeError(f"hook project has no pyproject.toml: {project}")
         metadata = read_hook_project(resolved)
         if not metadata.hooks:
-            raise ConfigError(f"hook project has no hook metadata: {project}")
+            raise RecipeError(f"hook project has no hook metadata: {project}")
         return resolved
     # Never adopt the cwd's hook project implicitly: running code from
     # whatever repository happens to be checked out requires --project/./path.
@@ -301,7 +301,7 @@ def _yaml_kv_pairs(raw_pairs: list[str], *, flag: str) -> dict[str, object]:
         try:
             values[key] = yaml.safe_load(str(value))
         except yaml.YAMLError as exc:
-            raise ConfigError(f"{flag} value for {key!r} is invalid YAML: {exc}") from exc
+            raise UsageError(f"{flag} value for {key!r} is invalid YAML: {exc}") from exc
     return values
 
 

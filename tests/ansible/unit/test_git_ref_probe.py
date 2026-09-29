@@ -120,6 +120,19 @@ def test_git_probe_reports_git_failures_per_repo() -> None:
     assert report.repos == {}
     assert report.failures["acme/site"].kind == "git"
     assert report.failures["acme/site"].reason == "git ref probe failed: git ls-remote failed"
+    assert report.failures["acme/site"].category == "failed"
+
+
+def test_git_probe_timeout_is_a_retryable_failure() -> None:
+    git = FakeGit()
+    git.failures[_URL] = GitCacheError("git ls-remote timed out after 60s", category="unavailable")
+
+    report = GitRemoteRefProbe(git, clone_protocol="https", auth_header=None).probe(
+        [_TARGET],
+        kinds=("heads",),
+    )
+
+    assert report.failures["acme/site"].category == "unavailable"
 
 
 def test_git_probe_empty_output_is_success_with_no_refs() -> None:

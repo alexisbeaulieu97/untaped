@@ -1,11 +1,14 @@
 """Map HTTP status failures from the Jira REST API to typed Jira exceptions.
 
-- 401 becomes a :class:`ConfigError` with a ``jira.token`` hint;
+- 401 becomes an ``auth`` :class:`ConfigError` in ``jira`` with a
+  ``jira.token`` hint (exit ``4``);
 - 404 on a named resource becomes ``<noun> not found: 'KEY'``;
 - every other status becomes a :class:`JiraApiError` carrying Jira's own
-  ``errorMessages`` / ``errors`` text when the body has them.
+  ``errorMessages`` / ``errors`` text when the body has them, and the HTTP
+  failure's category (403 ``permission``, 404 ``not_found``, 5xx
+  ``unavailable``, …).
 
-Transport failures (no response at all) pass through unchanged.
+Transport failures (no response at all) pass through unchanged (``unavailable``).
 """
 
 from __future__ import annotations
@@ -15,7 +18,13 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from untaped.capabilities.jira.errors import JiraApiError
-from untaped.capability_api import ConfigError, HttpStatusError, UntapedError, hint, not_found
+from untaped.capability_api import (
+    HttpStatusError,
+    UntapedError,
+    attribution,
+    not_found,
+    rejected_token_error,
+)
 
 
 def to_jira_error(
@@ -24,9 +33,7 @@ def to_jira_error(
     """The typed error for one failed Jira call (``noun``/``name`` name its target)."""
     status = err.status_code
     if status == 401:
-        return ConfigError(
-            f"Jira rejected the token (HTTP 401)\n{hint('config set jira.token --prompt')}"
-        )
+        return rejected_token_error("jira", "Jira rejected the token (HTTP 401)", cause=err)
     detail = _jira_detail(err.body)
     if status == 404 and noun is not None and name is not None:
         message = not_found(noun, name)
@@ -34,7 +41,7 @@ def to_jira_error(
         message = f"permission denied (HTTP 403){f': {detail}' if detail else ''}"
     else:
         message = f"{err}{f': {detail}' if detail else ''}"
-    return JiraApiError(message, status_code=status, url=err.url)
+    return JiraApiError(message, status_code=status, url=err.url, **attribution(err))
 
 
 @contextmanager

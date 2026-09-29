@@ -32,6 +32,7 @@ from untaped.capability_api import (
     finish,
     parse_kv_pairs,
     read_identifiers,
+    report_error,
     report_errors,
 )
 
@@ -139,7 +140,7 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
                         )
                     )
                 except UntapedError as exc:
-                    ctx.progress_ui().message("warning", f"{target}: {exc}")
+                    report_error(exc, item=target)
                     any_failed = True
         rows = [u.model_dump() for u in usages]
         cols = list(columns) if columns else list(_DEFAULT_COLUMNS)

@@ -86,8 +86,9 @@ Details that do not fit here ship next to this file:
   and `--columns` affect stdout rows only, never the stderr preview.
 - `recipe.apply_outcome` rows carry absolute `target_path`, `action`,
   `files_changed`, `warnings` (a list: accumulated `helpers.warn(...)`
-  messages, skipped optional transforms, a skip reason), `error` (`null`
-  unless failed), resolved `inputs`, and `recipe` (canonical `pack/recipe`
+  messages, skipped optional transforms, a skip reason), `detail` (the failure
+  message; `null` unless failed; a failed row adds `error`: `category`,
+  `system`, `retryable`, `message`, `hint`), resolved `inputs`, and `recipe` (canonical `pack/recipe`
   ref). Actions: `planned` (`--dry-run`/`--check` would change), `applied`,
   `unchanged` (plan produced no writes), `skipped` (validate hook returned
   `helpers.skip(...)`; not applicable, never a failure), `cancelled`
@@ -100,5 +101,9 @@ Details that do not fit here ship next to this file:
 - Installing a pack is installing code: its hooks run as the user, with full
   file access, even during `--dry-run` and `--check`. Inspect an unfamiliar
   pack before installing it; see [references/library.md](references/library.md).
-- Exit codes: 0 success, 1 failure or declined confirmation, 2 usage error,
-  3 `--check` drift, 130 interrupted.
+- Exit codes: 0 success, 1 failure (a bad recipe, pack or input, a missing
+  name, a failing hook) or declined confirmation, 2 usage error, 3 `--check`
+  drift, 4 fix the environment (`uv` missing, `$EDITOR`, settings), 5
+  temporary (a git fetch timeout; retry later), 130 interrupted; a run exits
+  with its most severe failure. With `--format json` stderr is JSON Lines
+  whose errors carry `category`, `system`, `retryable` and `hint`.

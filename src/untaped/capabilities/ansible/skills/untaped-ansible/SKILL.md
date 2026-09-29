@@ -42,4 +42,4 @@ Details that do not fit here ship next to this file:
 - Treat graph cycle reports as depth-bounded evidence, not proof that no longer cycle exists outside the emitted traversal horizon.
 - `impact` requires refreshed source data; if unavailable, prompt the user to refresh or configure sources.
 - Save a source with `untaped ansible source set platform --org acme` and index it with `untaped ansible source refresh platform`; see [references/sources.md](references/sources.md) for everything else about sources.
-- Exit codes: 0 success, 1 failure (including a refresh with failed repos, whose successes are saved), 2 usage error, 130 interrupted.
+- Exit codes: 0 success, 1 failure (including a refresh with failed repos, whose successes are saved), 2 usage error, 4 fix the environment (`ansible.*` or `github.*` settings, a rejected GitHub token, git missing), 5 temporary (a timeout, network error or rate limit, including a paused refresh; retry later), 130 interrupted. With `--format json` stderr is JSON Lines with each error's `category`, `system` and `hint`.

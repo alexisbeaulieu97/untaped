@@ -19,7 +19,7 @@ from untaped.capabilities.github.ansible import (
     RepoRef,
     RepoRefs,
 )
-from untaped.capability_api import HttpError, UntapedError
+from untaped.capability_api import ErrorCategory, HttpError, UntapedError
 
 
 class FakeBatchClient:
@@ -118,6 +118,7 @@ def test_probe_converts_batch_results_to_domain_refs() -> None:
         "acme/gone": ProbeFailure(
             kind="missing",
             reason="repository not found or inaccessible on GitHub",
+            category=ErrorCategory.NOT_FOUND,
         )
     }
     assert client.calls == [(("acme/site", "acme/gone"), ("heads", "tags"), 2)]
@@ -197,13 +198,23 @@ def test_probe_can_use_default_branch_ref_query() -> None:
 
 
 @pytest.mark.parametrize(
-    ("error", "reason"),
+    ("error", "reason", "category"),
     [
-        (HttpError("github graphql 502", url="https://api.github.com"), "github graphql 502"),
-        (UntapedError("invalid repository 'acme/boom'"), "invalid repository 'acme/boom'"),
+        (
+            HttpError("github graphql 502", url="https://api.github.com", status_code=502),
+            "github graphql 502",
+            ErrorCategory.UNAVAILABLE,
+        ),
+        (
+            UntapedError("invalid repository 'acme/boom'"),
+            "invalid repository 'acme/boom'",
+            ErrorCategory.FAILED,
+        ),
     ],
 )
-def test_probe_marks_failed_chunks_without_aborting_others(error: Exception, reason: str) -> None:
+def test_probe_marks_failed_chunks_without_aborting_others(
+    error: Exception, reason: str, category: ErrorCategory
+) -> None:
     client = FakeBatchClient()
     client.refs["acme/ok"] = [RepoRef(kind="heads", name="main", sha="sha-ok")]
     client.errors["acme/boom"] = error
@@ -215,7 +226,9 @@ def test_probe_marks_failed_chunks_without_aborting_others(error: Exception, rea
 
     assert set(report.repos) == {"acme/ok", "acme/also-ok"}
     assert report.failures == {
-        "acme/boom": ProbeFailure(kind="chunk", reason=f"ref probe failed: {reason}")
+        "acme/boom": ProbeFailure(
+            kind="chunk", reason=f"ref probe failed: {reason}", category=category
+        )
     }
 
 
@@ -234,6 +247,7 @@ def test_probe_marks_github_transient_failures_without_losing_successes(mode: st
         "acme/flaky": ProbeFailure(
             kind="transient",
             reason="transient ref probe failed: HTTP 502 for https://api.github.com/graphql",
+            category=ErrorCategory.UNAVAILABLE,
         )
     }
     assert is_transient_ref_probe_failure(report.failures["acme/flaky"].reason)

@@ -13,9 +13,9 @@ from pydantic_core import to_jsonable_python
 from untaped.config_schema import (
     FieldDescriptor,
     redact_nested_url_passwords,
-    redact_url_password,
 )
 from untaped.records import OutcomeRecord
+from untaped.redaction import redact_url_password
 
 
 @dataclass(frozen=True)

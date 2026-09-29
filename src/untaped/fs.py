@@ -15,7 +15,7 @@ from typing import Any
 import yaml
 from filelock import FileLock
 
-from untaped.errors import ConfigError, UntapedError
+from untaped.errors import ConfigError, ErrorCategory, UntapedError
 
 
 class FileWriteError(UntapedError):
@@ -23,8 +23,10 @@ class FileWriteError(UntapedError):
 
     ``rollback_incomplete`` is ``True`` when the transaction failed AND
     restoring the already-applied changes also failed — the caller must tell
-    the user the tree is dirty.
+    the user the tree is dirty. A ``failed`` error in ``local`` (the files).
     """
+
+    system = "local"
 
     def __init__(self, message: str, *, rollback_incomplete: bool = False) -> None:
         super().__init__(message)
@@ -227,15 +229,18 @@ def file_lock(
     """Hold the advisory lock file ``path`` (its directory must exist) for the block.
 
     Waits up to ``timeout`` seconds for other processes holding it. If another
-    process still holds it, raises ``error(busy)``; if the lock file cannot be
-    opened, ``error(f"{failed}: <reason>")``. Errors raised by the block itself
-    pass through untouched.
+    process still holds it, raises ``error(busy)`` with category ``unavailable``
+    (retrying later can succeed); if the lock file cannot be opened,
+    ``error(f"{failed}: <reason>")``. Errors raised by the block itself pass
+    through untouched.
     """
     lock = FileLock(str(path), timeout=timeout)
     try:
         lock.acquire()
     except TimeoutError as exc:  # filelock's ``Timeout``
-        raise error(busy) from exc
+        busy_error = error(busy)
+        busy_error.category = ErrorCategory.UNAVAILABLE
+        raise busy_error from exc
     except OSError as exc:
         raise error(f"{failed}: {exc.strerror or exc}") from exc
     try:
@@ -257,22 +262,26 @@ def read_structured_file(path: Path, *, flag: str | None = None) -> dict[str, An
     try:
         text = path.expanduser().read_text(encoding="utf-8")
     except FileNotFoundError as exc:
-        raise ConfigError(f"{what} not found: {path}") from exc
+        raise ConfigError(f"{what} not found: {path}", category="not_found") from exc
     except (OSError, UnicodeDecodeError) as exc:
         reason = getattr(exc, "strerror", None) or exc
-        raise ConfigError(f"could not read {what} {path}: {reason}") from exc
+        raise ConfigError(f"could not read {what} {path}: {reason}", category="invalid") from exc
     is_json = path.suffix.lower() == ".json"
     try:
         raw = (json.loads(text) if is_json else yaml.safe_load(text)) if text.strip() else None
     except (json.JSONDecodeError, yaml.YAMLError) as exc:
         raise ConfigError(
-            f"{what} {path} is invalid {'JSON' if is_json else 'YAML'}: {exc}"
+            f"{what} {path} is invalid {'JSON' if is_json else 'YAML'}: {exc}",
+            category="invalid",
         ) from exc
     if raw is None:
         return {}
     if not isinstance(raw, dict):
-        raise ConfigError(f"{what} {path} must contain a mapping")
+        raise ConfigError(f"{what} {path} must contain a mapping", category="invalid")
     non_string = [repr(key) for key in raw if not isinstance(key, str)]
     if non_string:
-        raise ConfigError(f"{what} {path}: keys must be strings (got {', '.join(non_string)})")
+        raise ConfigError(
+            f"{what} {path}: keys must be strings (got {', '.join(non_string)})",
+            category="invalid",
+        )
     return raw

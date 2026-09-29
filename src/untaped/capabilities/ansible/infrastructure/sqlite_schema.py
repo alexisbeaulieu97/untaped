@@ -117,7 +117,8 @@ def ensure_schema(db: sqlite3.Connection, path: Path) -> None:
         raise DependencyIndexError(
             f"index schema version {version} was written by a newer untaped release "
             f"(this release reads version {SCHEMA_VERSION}); upgrade untaped, or delete "
-            f"{path} and re-run 'untaped ansible source refresh <name>'"
+            f"{path} and re-run 'untaped ansible source refresh <name>'",
+            category="config",
         )
     if version != 0 or _has_tables(db):
         _drop_tables(db)

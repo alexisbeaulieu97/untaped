@@ -31,7 +31,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, SecretStr
 
 from untaped.auth import token_alternatives
-from untaped.config_schema import redact_url_password, walk_settings
+from untaped.config_schema import walk_settings
 from untaped.errors import (
     ConfigError,
     HttpError,
@@ -39,6 +39,8 @@ from untaped.errors import (
     HttpTransportError,
     UntapedError,
 )
+from untaped.messages import command_line
+from untaped.redaction import redact_url_password
 from untaped.settings import HttpSettings, load_settings_section
 
 if TYPE_CHECKING:
@@ -200,7 +202,12 @@ def _ssl_context(ca_bundle: Path | None) -> ssl.SSLContext:
 
 
 class HttpClient:
-    """A minimal HTTP client suitable for talking to JSON APIs."""
+    """A minimal HTTP client suitable for talking to JSON APIs.
+
+    ``system`` names the service its failures are attributed to (the
+    :class:`HttpError` ``system``); :func:`connected_client` passes the
+    settings section, and a client without one reports ``http``.
+    """
 
     def __init__(
         self,
@@ -212,6 +219,7 @@ class HttpClient:
         verify: VerifyTypes = True,
         proxy: str | None = None,
         retry: RetryPolicy | None = None,
+        system: str | None = None,
     ) -> None:
         import httpx  # noqa: PLC0415
 
@@ -226,6 +234,7 @@ class HttpClient:
         )
         self._auth = auth
         self._retry = retry
+        self.system = system or HttpError.system
 
     def request(
         self,
@@ -241,6 +250,8 @@ class HttpClient:
         :class:`RetryPolicy` replaces it, ``None`` disables retries, and the
         default (``_INHERIT``) keeps the client's policy. The request is rebuilt
         each attempt so re-signing auth and re-reading the body stay correct.
+        A final failure carries the client's ``system`` and the number of
+        ``attempts`` in its ``details``.
         """
         import httpx  # noqa: PLC0415
 
@@ -281,7 +292,12 @@ class HttpClient:
                 ):
                     _sleep_before_retry(policy.backoff(attempt), attempt, policy)
                     continue
-                raise HttpTransportError(str(exc), url=str(request.url)) from exc
+                raise HttpTransportError(
+                    str(exc),
+                    url=str(request.url),
+                    system=self.system,
+                    details={"attempts": attempt},
+                ) from exc
             _log_exchange(request, str(response.status_code), started)
             if response.status_code >= 400:
                 if (
@@ -297,6 +313,8 @@ class HttpClient:
                     status_code=response.status_code,
                     url=str(request.url),
                     body=_body_snippet(response, _BODY_LIMIT),
+                    system=self.system,
+                    details={"attempts": attempt},
                 )
             return response
 
@@ -312,7 +330,7 @@ class HttpClient:
         Returns ``None`` for empty bodies (e.g. 204 DELETE).
         """
         response = self.request(method, path, **kwargs)
-        return _decode_json(response)
+        return _decode_json(response, system=self.system)
 
     def get_json(self, path: str, **kwargs: Any) -> Any:
         return self.request_json("GET", path, **kwargs)
@@ -328,7 +346,7 @@ class HttpClient:
         ``no-any-return`` at the seam.
         """
         response = self.request("GET", path, **kwargs)
-        return _decode_json_dict(response)
+        return _decode_json_dict(response, system=self.system)
 
     def get_json_list(self, path: str, **kwargs: Any) -> list[Any]:
         """GET ``path`` and assert the JSON body decodes to an array.
@@ -338,13 +356,14 @@ class HttpClient:
         anything other than a JSON array (object, scalar, ``null``).
         """
         response = self.request("GET", path, **kwargs)
-        body = _decode_json(response)
+        body = _decode_json(response, system=self.system)
         if not isinstance(body, list):
             raise HttpError(
                 f"expected JSON array from {response.request.url}, got {type(body).__name__}",
                 status_code=response.status_code,
                 url=str(response.request.url),
                 body=_body_snippet(response, _BODY_SNIPPET_LIMIT),
+                system=self.system,
             )
         return body
 
@@ -398,7 +417,7 @@ def _body_snippet(response: httpx.Response, limit: int) -> str:
     return response.content[:limit].decode("utf-8", errors="replace")
 
 
-def _decode_json(response: httpx.Response) -> Any:
+def _decode_json(response: httpx.Response, *, system: str | None = None) -> Any:
     if not response.content:
         return None
     try:
@@ -409,17 +428,19 @@ def _decode_json(response: httpx.Response) -> Any:
             status_code=response.status_code,
             url=str(response.request.url),
             body=_body_snippet(response, _BODY_SNIPPET_LIMIT),
+            system=system,
         ) from exc
 
 
-def _decode_json_dict(response: httpx.Response) -> dict[str, Any]:
-    body = _decode_json(response)
+def _decode_json_dict(response: httpx.Response, *, system: str | None = None) -> dict[str, Any]:
+    body = _decode_json(response, system=system)
     if not isinstance(body, dict):
         raise HttpError(
             f"expected JSON object from {response.request.url}, got {type(body).__name__}",
             status_code=response.status_code,
             url=str(response.request.url),
             body=_body_snippet(response, _BODY_SNIPPET_LIMIT),
+            system=system,
         )
     return body
 
@@ -438,8 +459,8 @@ def missing_setting_error(
 ) -> ConfigError:
     """Return the standard error for missing capability settings.
 
-    Names every missing field with the root command (and env var) that sets
-    it. Fields listed in ``secret`` suggest ``config set … --prompt`` so the
+    Names every missing field; the ``hint`` names the root command (and env
+    var) that sets each one. Fields listed in ``secret`` suggest ``config set … --prompt`` so the
     value never lands in shell history. ``token_sources`` (from
     :func:`untaped.auth.token_alternatives`) names the sources that keep a
     missing token out of the config file.
@@ -457,11 +478,30 @@ def missing_setting_error(
     env_vars = [f"UNTAPED_{section.upper()}__{name.upper()}" for name in fields]
     if len(fields) == 1:
         return ConfigError(
-            f"{keys[0]} is not configured (set it via {commands[0]} or {env_vars[0]}{tail})"
+            f"{keys[0]} is not configured",
+            hint=f"set it via {commands[0]} or {env_vars[0]}{tail}",
         )
     return ConfigError(
-        f"{', '.join(keys[:-1])} and {keys[-1]} are not configured (set them via "
-        f"{' and '.join(commands)}, or {' / '.join(env_vars)}{tail})"
+        f"{', '.join(keys[:-1])} and {keys[-1]} are not configured",
+        hint=f"set them via {' and '.join(commands)}, or {' / '.join(env_vars)}{tail}",
+    )
+
+
+def rejected_token_error(
+    section: str, message: str, *, cause: BaseException | None = None
+) -> ConfigError:
+    """The standard error for a service rejecting ``<section>.token`` (HTTP 401).
+
+    ``auth`` in ``section`` (exit ``4``), with the ``config set … --prompt``
+    hint; the ``cause``'s details (``status``, ``url``) are kept.
+    """
+    details = cause.details if isinstance(cause, UntapedError) else None
+    return ConfigError(
+        message,
+        category="auth",
+        system=section,
+        hint=f"run `{command_line(f'config set {section}.token --prompt')}`",
+        details=details,
     )
 
 
@@ -488,6 +528,7 @@ def connected_client(
     tool threading it explicitly. ``retry`` defaults to a safe
     :class:`RetryPolicy` (transport + idempotent-method 429/503 backoff);
     pass ``None`` to disable, or a custom policy to opt a POST endpoint in.
+    The client's failures are attributed to ``section`` (their ``system``).
     """
     values: dict[str, str] = {}
     missing: list[str] = []
@@ -522,6 +563,7 @@ def connected_client(
         timeout=http_settings.timeout,
         proxy=http_settings.proxy,
         retry=retry,
+        system=section,
     )
 
 
@@ -628,7 +670,7 @@ def _origin(url: str) -> tuple[str, str | None, int | None] | None:
     return scheme, parts.hostname, port
 
 
-def _same_origin_next(response: httpx.Response) -> str | None:
+def _same_origin_next(response: httpx.Response, *, system: str | None = None) -> str | None:
     """Resolve the ``rel="next"`` link, refusing to leave the current origin.
 
     The client attaches its credentials (e.g. a bearer token) to every
@@ -644,6 +686,7 @@ def _same_origin_next(response: httpx.Response) -> str | None:
         raise HttpError(
             f"refusing to follow cross-origin pagination link {target} from {current}",
             url=str(current),
+            system=system,
         )
     return str(target)
 
@@ -676,13 +719,13 @@ def paginate_link(
 
     def fetch(cursor: str | None) -> tuple[list[dict[str, Any]], str | None]:
         response = http.get(cursor or path, params=first_params if cursor is None else None)
-        payload = _decode_json(response)
+        payload = _decode_json(response, system=http.system)
         items = (
             payload.get(item_key) if item_key is not None and isinstance(payload, dict) else payload
         )
         if not isinstance(items, list):
             return [], None
-        return items, _same_origin_next(response)
+        return items, _same_origin_next(response, system=http.system)
 
     yield from paginate_pages(fetch, limit=limit, max_pages=max_pages)
 
@@ -762,7 +805,7 @@ def _fetch_offset_page(
     if method == "GET":
         return http.get_json_dict(path, params={**(params or {}), **window}, retry=retry)
     response = http.request("POST", path, json={**(body or {}), **window}, retry=retry)
-    return _decode_json_dict(response)
+    return _decode_json_dict(response, system=http.system)
 
 
 def _offset_pages_exhausted(

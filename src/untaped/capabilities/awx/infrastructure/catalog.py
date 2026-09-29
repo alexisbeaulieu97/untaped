@@ -25,7 +25,8 @@ class AwxResourceCatalog:
             return self._by_kind[kind]
         except KeyError as exc:
             raise ConfigError(
-                f"unknown kind {kind!r} (available: {', '.join(sorted(self._by_kind))})"
+                f"unknown kind {kind!r} (available: {', '.join(sorted(self._by_kind))})",
+                category="invalid",
             ) from exc
 
     def kinds(self) -> tuple[str, ...]:
@@ -35,4 +36,4 @@ class AwxResourceCatalog:
         try:
             return self._by_cli_name[cli_name]
         except KeyError as exc:
-            raise ConfigError(f"unknown CLI name {cli_name!r}") from exc
+            raise ConfigError(f"unknown CLI name {cli_name!r}", category="invalid") from exc

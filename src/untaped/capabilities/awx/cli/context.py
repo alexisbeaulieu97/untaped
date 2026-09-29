@@ -30,7 +30,7 @@ from untaped.capabilities.awx.infrastructure.unified_template_repo import (
 )
 from untaped.capabilities.awx.infrastructure.workflow_node_repo import HttpWorkflowNodeRepository
 from untaped.capabilities.awx.settings import AwxSettings
-from untaped.capability_api import AppContext, ConfigError, UsageError, app_context
+from untaped.capability_api import AppContext, UsageError, app_context
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -163,7 +163,7 @@ def scope_for_spec(
     }
     for name, value in requested.items():
         if value is not None and name not in supported:
-            raise ConfigError(f"--{name.replace('_', '-')} is not supported for {spec.kind}")
+            raise UsageError(f"--{name.replace('_', '-')} is not supported for {spec.kind}")
     child = "inventory" in supported
     if parent is not None and inventory is not None:
         raise UsageError("use --parent or --inventory, not both")

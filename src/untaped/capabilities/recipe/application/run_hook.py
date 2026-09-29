@@ -11,7 +11,7 @@ from untaped.capabilities.recipe.application.ports import HookExecutorPort
 from untaped.capabilities.recipe.domain.hook_project import HookKind
 from untaped.capabilities.recipe.domain.paths import confined_path
 from untaped.capabilities.recipe.domain.plan import Verdict
-from untaped.capabilities.recipe.errors import RecipeError
+from untaped.capabilities.recipe.errors import PathNotFoundError, RecipeError
 from untaped.capability_api import UsageError
 
 
@@ -217,7 +217,7 @@ def _transform_content(
                 file,
             )
         except OSError as exc:
-            raise ValueError(f"--content-file file not found: {content_file}") from exc
+            raise PathNotFoundError(f"--content-file file not found: {content_file}") from exc
     if content is not None:
         return content, resolved_file, file
     return (

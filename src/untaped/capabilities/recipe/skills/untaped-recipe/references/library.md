@@ -20,7 +20,7 @@
   not recipe files or tests), and need confirmation or `--yes` (`--dry-run` previews); rows
   carry `action` `updated`, `unchanged` or `planned`. A pack with local edits in the library fails unless
   `--discard-edits` is passed; a failed pack prints `error: PACK: ...`, the
-  others still sync, and the command exits 1.
+  others still sync, and the command exits 1 (5 when a fetch timed out).
 - Each noun reads and edits only its own kind: `list`/`get <recipe>`/`edit
   <recipe>` for recipes, `packs list`/`packs get <pack>`/`packs edit <pack>`
   (opens `pyproject.toml`) for packs, and `hooks list`/`hooks get

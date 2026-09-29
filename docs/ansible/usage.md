@@ -170,8 +170,10 @@ untaped ansible source remove platform --yes
 - `source status` shows `fresh`, `stale` (older than `ansible.stale_after`)
   or `not_refreshed`.
 - `source refresh` saves each repo that succeeds. When some repos fail it
-  lists them and exits 1; run it again to retry only those. It also stops and
-  exits 1 with a resume hint when the GitHub GraphQL budget drops below
+  lists them and exits with the most severe failure (5 when any failure was
+  transient, such as a timeout or rate limit, else 1); run it again to retry
+  only those. It also stops and exits 5 (retry later) with a resume hint when
+  the GitHub GraphQL budget drops below
   `ansible.source_refresh_rate_limit_floor`.
 - `--backend auto|graphql|git` picks how refs are probed. `auto` (the
   default, `ansible.source_refresh_backend`) falls back to `git ls-remote`

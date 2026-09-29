@@ -85,7 +85,8 @@ class RootConfigContext:
     def _state_error(self, section: str, key: str) -> ConfigError:
         scope = self.sections[section]
         return ConfigError(
-            f"{key!r} is managed by untaped {scope.capability} and is not a configurable setting"
+            f"{key!r} is managed by untaped {scope.capability} and is not a configurable setting",
+            category="invalid",
         )
 
 

@@ -20,7 +20,7 @@ from untaped.capabilities.awx.application.suites.ports import (
     VarsResolver,
 )
 from untaped.capabilities.awx.domain.suite import Suite, VariableSpec
-from untaped.capability_api import ConfigError
+from untaped.capability_api import ConfigError, UsageError, attribution
 
 
 class LoadTestSuite:
@@ -60,12 +60,17 @@ class LoadTestSuite:
             data = self._parser.parse_yaml(rendered)
             if not isinstance(data, dict):
                 raise ConfigError(
-                    f"rendered body must be a YAML mapping; got {type(data).__name__}"
+                    f"rendered body must be a YAML mapping; got {type(data).__name__}",
+                    category="invalid",
                 )
             if "kind" not in data:
-                raise ConfigError("missing required 'kind: AwxTestSuite' marker")
+                raise ConfigError(
+                    "missing required 'kind: AwxTestSuite' marker", category="invalid"
+                )
             if "variables" in data:
-                raise ConfigError("declare variables in the '---' header, not the body")
+                raise ConfigError(
+                    "declare variables in the '---' header, not the body", category="invalid"
+                )
             data.setdefault("name", path.stem)
             # Carry the parsed frontmatter specs through so callers (e.g.
             # ``awx test list --format json``) can introspect required vars.
@@ -73,7 +78,7 @@ class LoadTestSuite:
             try:
                 return Suite.model_validate(data)
             except ValidationError as exc:
-                raise ConfigError(str(exc)) from exc
+                raise ConfigError(str(exc), category="invalid") from exc
 
     def parse_specs(self, path: Path) -> dict[str, VariableSpec]:
         """Read *path* and return its frontmatter variable specs only.
@@ -95,16 +100,18 @@ class LoadTestSuite:
         if meta is None:
             return {}
         if not isinstance(meta, dict):
-            raise ConfigError("frontmatter must be a YAML mapping")
+            raise ConfigError("frontmatter must be a YAML mapping", category="invalid")
         raw_vars = meta.get("variables")
         if raw_vars is None:
             return {}
         if not isinstance(raw_vars, dict):
-            raise ConfigError("frontmatter 'variables' must be a mapping")
+            raise ConfigError("frontmatter 'variables' must be a mapping", category="invalid")
         specs: dict[str, VariableSpec] = {}
         for name, body in raw_vars.items():
             if not isinstance(body, dict):
-                raise ConfigError(f"variable {name!r} metadata must be a mapping")
+                raise ConfigError(
+                    f"variable {name!r} metadata must be a mapping", category="invalid"
+                )
             # Defensively drop ``name`` from the body so it can't conflict
             # with the explicit ``name=str(name)`` kwarg below — otherwise
             # ``VariableSpec(name=…, **body)`` raises a raw ``TypeError``
@@ -113,14 +120,15 @@ class LoadTestSuite:
             try:
                 specs[str(name)] = VariableSpec(name=str(name), **body_without_name)
             except ValidationError as exc:
-                raise ConfigError(f"variable {name!r}: {exc}") from exc
+                raise ConfigError(f"variable {name!r}: {exc}", category="invalid") from exc
         return specs
 
 
 @contextmanager
 def _naming(path: Path) -> Iterator[None]:
-    """Prefix every :class:`ConfigError` raised inside with ``path``, keeping its type."""
+    """Prefix every config or usage error raised inside with ``path``, keeping its type
+    and attribution."""
     try:
         yield
-    except ConfigError as exc:
-        raise type(exc)(f"{path}: {exc}") from exc
+    except (ConfigError, UsageError) as exc:
+        raise type(exc)(f"{path}: {exc}", **attribution(exc)) from exc

@@ -18,13 +18,13 @@ from pathlib import Path
 
 import pytest
 
-from untaped.capabilities.workspace.errors import WorkspaceError
 from untaped.capabilities.workspace.infrastructure.system_adapters import (
     DEFAULT_FOREACH_TIMEOUT,
     InterruptibleShellRunner,
     resolve_editor_argv,
     shell_runner,
 )
+from untaped.capability_api import UsageError
 
 # -- shell runner ------------------------------------------------------------
 
@@ -199,17 +199,17 @@ def test_preserves_windows_paths_when_posix_false() -> None:
 # ── error translation ─────────────────────────────────────────────────────
 
 
-def test_empty_editor_raises_workspace_error() -> None:
-    with pytest.raises(WorkspaceError, match="editor command is empty"):
+def test_empty_editor_is_a_usage_error() -> None:
+    with pytest.raises(UsageError, match="editor command is empty"):
         resolve_editor_argv("   ")
 
 
-def test_unterminated_quotes_raise_workspace_error_with_message() -> None:
+def test_unterminated_quotes_are_a_usage_error_with_message() -> None:
     """``shlex.split`` raises ``ValueError`` on unterminated quoting; the
     helper translates that into a ``WorkspaceError`` so callers see the
     same shape they already handle today (an `UntapedError` subclass).
     Pins the chained-exception contract too so debugging ever-rarer
     shlex edge cases still has the original cause attached."""
-    with pytest.raises(WorkspaceError, match="could not parse editor command") as exc_info:
+    with pytest.raises(UsageError, match="could not parse editor command") as exc_info:
         resolve_editor_argv('sh -c "missing-close', posix=True)
     assert isinstance(exc_info.value.__cause__, ValueError)

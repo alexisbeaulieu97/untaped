@@ -33,6 +33,7 @@ from untaped.capabilities.recipe.cli.preview import (
 )
 from untaped.capabilities.recipe.domain.plan import TargetPlan
 from untaped.capabilities.recipe.domain.recipe import Recipe
+from untaped.capabilities.recipe.errors import RecipeError
 from untaped.capabilities.recipe.infrastructure import BackupStore, HookExecutor, HookResolver
 from untaped.capabilities.recipe.infrastructure.backup import BackupDraft
 from untaped.capabilities.recipe.infrastructure.file_writer import ApplyWriteError, flush_changes
@@ -42,7 +43,6 @@ from untaped.capability_api import (
     AbsolutePath,
     BatchOutcome,
     ColumnsOption,
-    ConfigError,
     DryRunOption,
     FormatOption,
     OutcomeRecord,
@@ -56,6 +56,7 @@ from untaped.capability_api import (
     clamp_parallel,
     echo,
     finish,
+    note_failure,
     parse_kv_pairs,
     read_stdin,
     render_rows,
@@ -69,13 +70,14 @@ class ApplyOutcomeRecord(OutcomeRecord, TargetRecord):
 
     ``action`` is ``planned`` (preview), ``applied``, ``unchanged``,
     ``skipped`` (a validate hook marked the target not applicable),
-    ``cancelled`` (confirmation declined) or ``failed``.
+    ``cancelled`` (confirmation declined) or ``failed``. A failed row says
+    why in ``detail`` (for humans) and ``error`` (category, system, message).
     """
 
     target_path: AbsolutePath
     files_changed: int
     warnings: list[str]
-    error: str | None
+    detail: str | None
     inputs: dict[str, object]
     recipe: str
 
@@ -96,7 +98,7 @@ class ApplyExecution:
 
     outcome: BatchOutcome[TargetPlan, TargetPlan]
     applied: frozenset[int]
-    failed: dict[int, str]
+    failed: dict[int, UntapedError]
     backup_id: str | None = None
     cancelled: bool = False
 
@@ -290,12 +292,9 @@ def _apply_context(
         raise UsageError("at least one target directory is required (or use --stdin)")
     inputs = merge_vars(vars_files, parse_kv_pairs(raw_vars, flag="--var"), file_flag="--vars-file")
     # Prompts run here, serially and before the progress display starts.
-    try:
-        resolved = resolve_targets(
-            loaded, targets, inputs=inputs, input_from=_input_sources(raw_input_from), prompt=prompt
-        )
-    except ValueError as exc:
-        raise ConfigError(str(exc)) from exc
+    resolved = resolve_targets(
+        loaded, targets, inputs=inputs, input_from=_input_sources(raw_input_from), prompt=prompt
+    )
     workers = clamp_parallel(parallel, cap=32, policy="recipe planning cap")
     ui = recipe_ui()
     with UvHookWorkerPool(
@@ -343,7 +342,7 @@ def _execute_plans(
     store = BackupStore(context.root / "backups")
     draft: BackupDraft | None = None
     applied: set[int] = set()
-    failed: dict[int, str] = {}
+    failed: dict[int, UntapedError] = {}
 
     def _apply(plan: TargetPlan) -> TargetPlan:
         nonlocal draft
@@ -369,7 +368,7 @@ def _execute_plans(
                 and exc.rollback_incomplete
             ):
                 draft.commit(reservation)
-            failed[id(plan)] = str(exc)
+            failed[id(plan)] = exc
             raise
 
     def _confirm_preview(rows: Sequence[dict[str, object]]) -> None:
@@ -431,10 +430,9 @@ def _outcome_rows(
             action = "applied"
         else:
             action = "unchanged"
-        row = _row(plan, action=action, recipe_ref=recipe_ref)
-        if plan_id in execution.failed:
-            row["error"] = execution.failed[plan_id]
-        rendered.append(row)
+        rendered.append(
+            _row(plan, action=action, recipe_ref=recipe_ref, failure=execution.failed.get(plan_id))
+        )
     return rendered
 
 
@@ -445,14 +443,11 @@ def _targets(positional: list[Path], *, stdin: bool) -> TargetInput:
         return TargetInput([Target(path=path) for path in positional])
     lines = read_stdin()
     if not lines:
-        raise ConfigError("no targets received on stdin")
-    try:
-        return TargetInput(
-            resolve_target_lines(list(enumerate(lines, start=1))),
-            stdin_records=True,
-        )
-    except ValueError as exc:
-        raise ConfigError(str(exc)) from exc
+        raise RecipeError("no targets received on stdin")
+    return TargetInput(
+        resolve_target_lines(list(enumerate(lines, start=1))),
+        stdin_records=True,
+    )
 
 
 def _input_sources(raw_sources: list[str]) -> dict[str, str]:
@@ -526,13 +521,22 @@ def _strings(value: object) -> list[str]:
     return [str(item) for item in value] if isinstance(value, list) else []
 
 
-def _row(plan: TargetPlan, *, action: str, recipe_ref: str) -> dict[str, object]:
+def _row(
+    plan: TargetPlan, *, action: str, recipe_ref: str, failure: Exception | None = None
+) -> dict[str, object]:
+    """One outcome row; a planning failure or a write ``failure`` fills ``detail`` and ``error``."""
+    detail = plan.error or None
+    if failure is not None:
+        detail = str(failure)
+    elif plan.status == "error":
+        failure = plan.failure or RecipeError(plan.error)
     return ApplyOutcomeRecord(
         target_path=_absolute(plan.target),
         action=action,
         files_changed=plan.files_changed,
         warnings=list(plan.warnings),
-        error=plan.error or None,
+        detail=detail,
+        error=None if failure is None else note_failure(failure, message=detail),
         inputs=dict(plan.display_inputs),
         recipe=recipe_ref,
     ).model_dump(mode="json")

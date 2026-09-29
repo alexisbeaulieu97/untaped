@@ -67,7 +67,9 @@ values that YAML would read as another type (`no`, `0123`, `~`) are quoted.
 private copy, validates your result, and only then writes it back like any
 other write (under the lock, owner-only, through a symlink). Saving without
 changes writes nothing. If the result is invalid, the file changed while you
-edited, or the save fails, `config.yml` is left as it was, the command exits 1,
+edited, or the save fails, `config.yml` is left as it was, the command exits
+non-zero (1 for an invalid result or a concurrent edit, 4 when the save
+fails, 5 when another process holds the lock),
 and the error names the copy that holds your edits.
 
 `config.yml` keeps profile-scoped settings under `profiles.<name>`. `active`

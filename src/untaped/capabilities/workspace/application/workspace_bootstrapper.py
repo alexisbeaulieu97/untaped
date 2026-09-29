@@ -44,16 +44,18 @@ class WorkspaceBootstrapper:
         if self._manifests.exists(canonical):
             raise WorkspaceError(
                 f"workspace already initialised at {canonical}; "
-                f"run `untaped workspace adopt {canonical}` to register it"
+                f"run `untaped workspace adopt {canonical}` to register it",
+                category="conflict",
             )
         if self._registry.find_by_path(canonical) is not None:
-            raise WorkspaceError(f"path already registered: {canonical}")
+            raise WorkspaceError(f"path already registered: {canonical}", category="conflict")
         # Checked before anything is written so a taken name cannot leave
         # an orphan manifest behind.
         for existing in self._registry.entries():
             if existing.name == ws_name:
                 raise WorkspaceError(
-                    f"workspace name already registered: {ws_name!r} → {existing.path}"
+                    f"workspace name already registered: {ws_name!r} → {existing.path}",
+                    category="conflict",
                 )
         return canonical, ws_name
 
@@ -66,7 +68,7 @@ class WorkspaceBootstrapper:
         """
         canonical = path.expanduser().resolve()
         if self._registry.find_by_path(canonical) is not None:
-            raise WorkspaceError(f"path already registered: {canonical}")
+            raise WorkspaceError(f"path already registered: {canonical}", category="conflict")
         return canonical
 
     def has_manifest(self, canonical: Path) -> bool:
@@ -84,7 +86,7 @@ class WorkspaceBootstrapper:
         for validation and repo count/details, but is not rewritten.
         """
         if self._registry.find_by_path(canonical) is not None:
-            raise WorkspaceError(f"path already registered: {canonical}")
+            raise WorkspaceError(f"path already registered: {canonical}", category="conflict")
         manifest = self._manifests.read(canonical)
         ws_name = name or manifest.name or canonical.name
         if not ws_name:

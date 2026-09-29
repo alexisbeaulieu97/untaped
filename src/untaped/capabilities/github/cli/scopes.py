@@ -99,7 +99,9 @@ def read_stdin_repos() -> tuple[tuple[str, ...], tuple[RepositoryInventoryItem, 
         record = env.record
         full_name = record.get("full_name")
         if not isinstance(full_name, str) or not full_name.strip():
-            raise ConfigError(f"line {env.lineno}: record 'full_name' is missing or blank")
+            raise ConfigError(
+                f"line {env.lineno}: record 'full_name' is missing or blank", category="invalid"
+            )
         if record.get("default_branch") and (record.get("clone_url") or record.get("html_url")):
             items.append(RepositoryInventoryItem.model_validate(record))
         else:

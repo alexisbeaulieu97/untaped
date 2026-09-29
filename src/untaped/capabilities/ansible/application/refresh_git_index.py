@@ -179,7 +179,7 @@ class RefreshGitSourceIndex:
             blob_filter=self._blob_filter,
         )
         progress = self._index.refresh_progress(source_key, source_fingerprint)
-        failures: dict[str, str] = {}
+        failures: dict[str, RepoFailure] = {}
         successful_repos: set[str] = {
             repo for repo, status in progress.items() if status == "success"
         }
@@ -211,8 +211,9 @@ class RefreshGitSourceIndex:
                 rate_limit_reset_at,
                 probe_report,
             )
-            batch_failures: dict[str, str] = {
-                repo: failure.reason for repo, failure in probe_report.failures.items()
+            batch_failures: dict[str, RepoFailure] = {
+                repo: RepoFailure(repo=repo, reason=failure.reason, category=failure.category)
+                for repo, failure in probe_report.failures.items()
             }
             tasks = [
                 self._repo_refresh_task(source, repo, probe_report.repos[repo.full_name])
@@ -231,7 +232,7 @@ class RefreshGitSourceIndex:
                 paths=paths,
                 checked_at=checked_at,
             ):
-                if isinstance(outcome, str):
+                if isinstance(outcome, RepoFailure):
                     batch_failures[full_name] = outcome
                     continue
                 successful_repos.add(full_name)
@@ -243,8 +244,7 @@ class RefreshGitSourceIndex:
                 batch_touches.extend(outcome.touches)
                 batch_repo_metadata.append(outcome.repo_metadata)
 
-            for repo, reason in batch_failures.items():
-                failures[repo] = reason
+            failures.update(batch_failures)
 
             if batch_statuses:
                 selected.update(batch_selected)
@@ -322,7 +322,7 @@ class RefreshGitSourceIndex:
         skipped_files: list[SkippedDependencyFile],
         changed_refs: int,
         unchanged_refs: int,
-        failures: dict[str, str],
+        failures: dict[str, RepoFailure],
         probe_fallbacks: dict[str, str],
         rate_limit_cost: int | None,
         rate_limit_remaining: int | None,
@@ -343,9 +343,7 @@ class RefreshGitSourceIndex:
             ignored_collections=tuple(sorted(ignored_collections)),
             changed_refs=changed_refs,
             unchanged_refs=unchanged_refs,
-            failures=tuple(
-                RepoFailure(repo=repo, reason=failures[repo]) for repo in sorted(failures)
-            ),
+            failures=tuple(failures[repo] for repo in sorted(failures)),
             skipped_files=_dedupe_skipped_files(skipped_files),
             probe_fallbacks=probe_fallbacks,
             rate_limit_cost=rate_limit_cost,
@@ -360,16 +358,16 @@ class RefreshGitSourceIndex:
         source_key: str,
         paths: list[str],
         checked_at: datetime,
-    ) -> Iterable[tuple[str, _RepoRefreshResult | str]]:
-        """Run per-repo fetch/parse workers; collect results or failure reasons."""
+    ) -> Iterable[tuple[str, _RepoRefreshResult | RepoFailure]]:
+        """Run per-repo fetch/parse workers; collect results or failures."""
         paths_fingerprint = _dependency_paths_fingerprint(paths)
         aliases_fingerprint = _aliases_fingerprint(self._aliases, self._github_host)
         total = len(tasks)
         done = 0
         changed = 0
-        outcomes: list[tuple[str, _RepoRefreshResult | str]] = []
+        outcomes: list[tuple[str, _RepoRefreshResult | RepoFailure]] = []
 
-        def outcome_of(task: _RepoRefreshTask) -> _RepoRefreshResult | str:
+        def outcome_of(task: _RepoRefreshTask) -> _RepoRefreshResult | RepoFailure:
             try:
                 return self._refresh_repo(
                     task,
@@ -380,9 +378,13 @@ class RefreshGitSourceIndex:
                     checked_at=checked_at,
                 )
             except _REPO_FAILURE_ERRORS as exc:
-                return str(exc) or type(exc).__name__
+                return RepoFailure(
+                    repo=task.repo.full_name,
+                    reason=str(exc) or type(exc).__name__,
+                    category=exc.category,
+                )
 
-        def record(task: _RepoRefreshTask, outcome: _RepoRefreshResult | str) -> None:
+        def record(task: _RepoRefreshTask, outcome: _RepoRefreshResult | RepoFailure) -> None:
             nonlocal done, changed
             done += 1
             changed += len(outcome.scans) if isinstance(outcome, _RepoRefreshResult) else 0

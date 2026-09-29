@@ -11,6 +11,7 @@ from untaped.capabilities.recipe.cli._context import recipe_ui
 from untaped.capabilities.recipe.cli.common import library_root, report_config_errors
 from untaped.capabilities.recipe.domain.pack import parse_ref
 from untaped.capabilities.recipe.domain.paths import is_path_ref, safe_library_name
+from untaped.capabilities.recipe.errors import PackNotFoundError
 from untaped.capabilities.recipe.infrastructure import pack_scaffold
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
 from untaped.capability_api import echo, hint
@@ -110,7 +111,7 @@ def _new_pack_child(ref_text: str) -> tuple[Path, str]:
     installed = library.find_pack(safe_library_name(ref.pack, field="pack"))
     if installed is not None:
         return installed.root, ref.name
-    raise ValueError(f"pack not found: {ref.pack}{_new_pack_child_hint(ref.pack, ref.name)}")
+    raise PackNotFoundError(f"pack not found: {ref.pack}{_new_pack_child_hint(ref.pack, ref.name)}")
 
 
 def _new_pack_child_hint(pack: str, name: str) -> str:

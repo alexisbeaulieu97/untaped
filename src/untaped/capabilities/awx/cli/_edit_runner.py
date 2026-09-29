@@ -21,12 +21,23 @@ from untaped.capabilities.awx.cli.context import AwxContext
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capability_api import (
     ConfigError,
+    ErrorCategory,
     OperationCancelledError,
     UntapedError,
     UsageError,
     atomic_write,
     echo,
     run_editor,
+)
+
+#: Failures while preparing an edited batch that the edit cannot fix.
+_NOT_THE_EDIT = frozenset(
+    {
+        ErrorCategory.AUTH,
+        ErrorCategory.PERMISSION,
+        ErrorCategory.CONFIG,
+        ErrorCategory.UNAVAILABLE,
+    }
 )
 
 
@@ -78,7 +89,9 @@ def run_edit(
                         existing=retained,
                         membership_snapshots=batch.membership_snapshots,
                     )
-                except UntapedError, ValueError:
+                except (UntapedError, ValueError) as exc:
+                    if isinstance(exc, UntapedError) and exc.category in _NOT_THE_EDIT:
+                        raise  # the controller or setup failed, not the edited YAML
                     # Engine errors can include user-supplied field values; do not
                     # echo them before the secret policy has prepared the batch.
                     echo(

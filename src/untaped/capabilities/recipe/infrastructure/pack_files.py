@@ -20,6 +20,7 @@ from untaped.capabilities.recipe.domain.hook_project import (
     validate_hook_project_contract,
 )
 from untaped.capabilities.recipe.domain.pack import PackManifest
+from untaped.capabilities.recipe.errors import PathNotFoundError, UvMissingError
 from untaped.capabilities.recipe.infrastructure.uv_project import check_lock
 
 
@@ -63,7 +64,7 @@ def check_hook_project(project_root: Path, manifest: PackManifest) -> None:
     for definition in manifest.hooks.values():
         module_file = hook_module_file(project_root, definition.module)
         if not module_file.is_file():
-            raise ValueError(f"hook module file not found: {module_file}")
+            raise PathNotFoundError(f"hook module file not found: {module_file}")
 
 
 class LockFreshness:
@@ -78,6 +79,9 @@ class LockFreshness:
         if key not in self._results:
             try:
                 check_lock(project_root)
+            except UvMissingError:
+                # An environment problem, not a stale lock: keep its category.
+                raise
             except ValueError as exc:
                 self._results[key] = str(exc)
             else:

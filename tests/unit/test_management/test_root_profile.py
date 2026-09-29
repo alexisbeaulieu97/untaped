@@ -154,7 +154,7 @@ def test_current_rejects_root_profile_flag_naming_missing_profile(_isolated_conf
         result = CliInvoker().invoke(app, ["current"])
     finally:
         reset_profile_override(token)
-    assert result.exit_code == 1
+    assert result.exit_code == 4  # the active profile is not defined: config
     assert "'typo' (from flag) is not defined" in result.stderr
 
 

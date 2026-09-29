@@ -17,6 +17,7 @@ from untaped.capabilities.workspace.domain import (
     Workspace,
 )
 from untaped.capabilities.workspace.errors import GitError, ManifestError, UnmatchedRepoFilterError
+from untaped.capability_api import note_failure
 
 
 class WorkspaceStatus:
@@ -68,12 +69,14 @@ class WorkspaceStatus:
         except GitError as exc:
             # The clone exists; surface why it could not be inspected
             # rather than pretending it is missing.
+            detail = f"status failed: {exc}"
             return StatusEntry(
                 workspace=workspace.name,
                 repo=repo.name,
                 target_path=local,
                 cloned=True,
-                detail=f"status failed: {exc}",
+                detail=detail,
+                error=note_failure(exc, message=detail),
             )
         return StatusEntry(
             workspace=workspace.name,

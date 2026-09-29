@@ -6,10 +6,11 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
+from untaped.capabilities.recipe.errors import RecipeError
 from untaped.capabilities.recipe.settings import RecipeSettings
 from untaped.capability_api import (
-    ConfigError,
     UiContext,
+    UntapedError,
     UsageError,
     get_config_section,
     read_structured_file,
@@ -61,9 +62,18 @@ def hook_startup_notice(ui: UiContext) -> Callable[[Path], None]:
 
 @contextmanager
 def report_config_errors() -> Iterator[None]:
-    """Report expected config/library errors without Python tracebacks."""
+    """Report expected library and input errors without Python tracebacks.
+
+    An :class:`UntapedError` (typed recipe errors included) keeps its own
+    category. Any other ``ValueError`` (the remaining plain validation raises
+    of recipe, pack and hook files, and library errors such as a pydantic
+    ``ValidationError`` or a YAML error) is invalid local input: it becomes a
+    :class:`RecipeError` with the same message (exit ``1``).
+    """
     with report_errors():
         try:
             yield
+        except UntapedError:
+            raise
         except ValueError as exc:
-            raise ConfigError(str(exc)) from exc
+            raise RecipeError(str(exc)) from exc

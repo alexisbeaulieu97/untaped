@@ -185,7 +185,8 @@ def test_edit_uses_shared_editor_and_reports_bad_quoting(
 
     result = CliInvoker().invoke(app, ["packs", "edit", "demo"])
 
-    assert result.exit_code == 1, result.output
+    # A broken $EDITOR is the environment's to fix.
+    assert result.exit_code == 4, result.output
     assert "error: invalid quoting in $VISUAL or $EDITOR" in result.stderr
 
 
@@ -1235,7 +1236,7 @@ def test_apply_never_prompts_without_a_terminal_or_with_non_interactive(
     assert missing_target.exit_code == 1, missing_target.output
     row = json.loads(missing_target.stdout)[0]
     assert row["action"] == "failed"
-    assert row["error"].startswith("missing required input: service;")
+    assert row["detail"].startswith("missing required input: service;")
 
 
 class _InterruptingPromptBackend(ScriptedPromptBackend):
@@ -1348,7 +1349,7 @@ def test_apply_sensitive_target_input_coercion_error_does_not_leak_secret(
     assert secret not in result.stderr
     rows = json.loads(result.stdout)
     assert rows[0]["action"] == "failed"
-    assert rows[0]["error"] == "input 'token': cannot coerce value to int"
+    assert rows[0]["detail"] == "input 'token': cannot coerce value to int"
     assert rows[0]["inputs"] == {}
 
 
@@ -1622,9 +1623,12 @@ def test_apply_sensitive_inputs_redact_hook_failures(
     assert secret not in result.stderr
     rows = json.loads(result.stdout)
     assert rows[0]["action"] == "failed"
-    assert rows[0]["error"] == (
+    assert rows[0]["detail"] == (
         "target planning failed; diagnostic suppressed for target with sensitive inputs"
     )
+    # The structured error says the same, and a raising hook is a failed run.
+    assert rows[0]["error"]["message"] == rows[0]["detail"]
+    assert (rows[0]["error"]["category"], rows[0]["error"]["system"]) == ("failed", "local")
     assert rows[0]["inputs"] == {"token": "***"}
 
 
@@ -1786,7 +1790,7 @@ def test_apply_record_valued_source_fails_without_copying_record_contents(
     assert secret not in result.stderr
     rows = json.loads(result.stdout)
     assert rows[0]["action"] == "failed"
-    assert rows[0]["error"] == "derived input value must be a scalar"
+    assert rows[0]["detail"] == "derived input value must be a scalar"
 
 
 def test_apply_outcome_inputs_render_in_yaml_and_table(tmp_path: Path) -> None:
@@ -1944,7 +1948,7 @@ def test_apply_rejects_input_from_conflicts_and_global_scope(
             "--dry-run",
         ],
     )
-    assert conflict.exit_code != 0
+    assert conflict.exit_code == 2  # a usage error
     assert "cannot combine --var/--vars-file and --input-from for service" in conflict.output
 
     global_source = CliInvoker().invoke(
@@ -1979,7 +1983,7 @@ def test_apply_stdin_targets_never_prompt_for_missing_inputs(
     )
 
     assert result.exit_code == 1, result.output
-    assert json.loads(result.stdout)[0]["error"].startswith("missing required input: service;")
+    assert json.loads(result.stdout)[0]["detail"].startswith("missing required input: service;")
 
 
 def test_apply_backup_metadata_records_redacted_per_target_inputs(tmp_path: Path) -> None:

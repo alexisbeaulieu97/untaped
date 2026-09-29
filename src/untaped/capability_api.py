@@ -43,15 +43,18 @@ from untaped.cli import (
     parse_kv_pairs,
     raise_usage,
     render_rows,
+    report_error,
     report_errors,
     resolve_each,
 )
 from untaped.concurrency import bounded_map
+from untaped.diagnostics import ErrorInfo, note_failure
 from untaped.diff import unified_diff_text
 from untaped.doctor_checks import connection_check, executable_check, online_check
 from untaped.editor import run_editor
 from untaped.errors import (
     ConfigError,
+    ErrorCategory,
     ExitCode,
     HttpError,
     HttpStatusError,
@@ -59,7 +62,9 @@ from untaped.errors import (
     OperationCancelledError,
     UntapedError,
     UsageError,
+    attribution,
     first_validation_error,
+    most_severe,
 )
 from untaped.fs import atomic_write, file_lock, read_structured_file
 from untaped.git import (
@@ -78,6 +83,7 @@ from untaped.http import (
     paginate_link,
     paginate_offset,
     paginate_pages,
+    rejected_token_error,
     resolve_verify,
     same_origin,
 )
@@ -85,7 +91,13 @@ from untaped.messages import hint, not_found, plural, q, summary
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.progress import ProgressHandle
 from untaped.prompts import PromptChoice
-from untaped.records import AbsolutePath, CheckRecord, OutcomeRecord, TargetRecord, UtcTimestamp
+from untaped.records import (
+    AbsolutePath,
+    CheckRecord,
+    OutcomeRecord,
+    TargetRecord,
+    UtcTimestamp,
+)
 from untaped.settings import HttpSettings, get_config_section, get_core_settings
 from untaped.state import StateCollection, StateMap
 from untaped.stdin import (
@@ -200,4 +212,12 @@ __all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by
     "file_lock",
     "git_toplevel",
     "same_origin",
+    # 3.0 failure attribution (category, system, exit codes 4/5).
+    "ErrorCategory",
+    "ErrorInfo",
+    "attribution",
+    "note_failure",
+    "report_error",
+    "most_severe",
+    "rejected_token_error",
 ]
