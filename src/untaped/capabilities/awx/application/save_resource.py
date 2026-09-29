@@ -64,10 +64,12 @@ class SaveResource:
         fk: FkResolver,
         *,
         nodes: WorkflowNodeRepository | None = None,
+        warn: Callable[[str], None] | None = None,
     ) -> None:
         self._client = client
         self._fk = fk
         self._nodes = nodes
+        self._warn = warn or (lambda _message: None)
 
     def find_all(
         self,
@@ -140,10 +142,12 @@ class SaveResource:
                     ]
         metadata = self.metadata_from_record(spec, record)
         if spec.node_field and self._nodes is not None and isinstance(record_id, int):
+            label = f"{spec.kind} {metadata.name!r}"
             graph = export_graph(
                 read_graph(self._nodes, record_id),
                 organization=metadata.organization,
                 fk=self._fk,
+                warn=lambda message: self._warn(f"{label}: {message}"),
             )
             spec_data[spec.node_field] = dump_workflow_nodes(graph)
         # Polymorphic FK lives in metadata; strip from spec body if present

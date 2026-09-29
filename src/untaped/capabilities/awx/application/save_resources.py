@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 from untaped.capabilities.awx.application.ports import (
     Catalog,
@@ -28,8 +28,9 @@ class SaveResources:
         catalog: Catalog,
         *,
         nodes: WorkflowNodeRepository | None = None,
+        warn: Callable[[str], None] | None = None,
     ) -> None:
-        self._save_one = SaveResource(client, fk, nodes=nodes)
+        self._save_one = SaveResource(client, fk, nodes=nodes, warn=warn)
         self._catalog = catalog
 
     def __call__(

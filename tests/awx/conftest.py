@@ -711,6 +711,7 @@ _UJT_STORES: dict[str, str] = {
     "projects": "project_update",
     "inventory_sources": "inventory_update",
     "workflow_approval_templates": "workflow_approval",
+    "system_job_templates": "system_job",
 }
 
 

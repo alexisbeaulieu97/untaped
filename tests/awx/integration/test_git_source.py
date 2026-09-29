@@ -113,3 +113,34 @@ def test_unknown_refs_and_non_repositories_are_refused(clone: Path, tmp_path: Pa
     outside.mkdir()
     with pytest.raises(ConfigError, match="not inside a git repository"):
         GitSource.resolve("v1", cwd=outside)
+
+
+def test_require_pushed_accepts_remote_tips_and_their_history(clone: Path) -> None:
+    GitSource.resolve("v1", cwd=clone).require_pushed()
+    _git(clone, "commit", "--allow-empty", "-m", "two")
+    _git(clone, "push", "origin", "work")
+
+    # ``v1`` is no longer a tip, but a pushed branch contains it.
+    GitSource.resolve("v1", cwd=clone).require_pushed()
+
+
+def test_require_pushed_refuses_a_local_only_commit(clone: Path) -> None:
+    _git(clone, "commit", "--allow-empty", "-m", "local")
+    sha = _git(clone, "rev-parse", "HEAD")
+    source = GitSource.resolve(sha, cwd=clone)
+
+    with pytest.raises(ConfigError, match=f"commit {sha[:12]} is not on any remote"):
+        source.require_pushed()
+
+
+def test_symbolic_links_at_the_ref_are_refused(clone: Path) -> None:
+    templates = clone / ".untaped" / "awx" / "templates"
+    (templates / "link.yml").symlink_to("deploy.yml")
+    _git(clone, "add", str(templates / "link.yml"))
+    _git(clone, "commit", "-m", "link")
+    _git(clone, "tag", "v2")
+    source = GitSource.resolve("v2", cwd=clone)
+
+    for path in (templates, templates / "link.yml"):
+        with pytest.raises(ConfigError, match=r"link\.yml is a symbolic link"):
+            source.files(path)

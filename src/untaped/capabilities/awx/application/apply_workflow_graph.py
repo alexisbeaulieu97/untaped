@@ -1,29 +1,40 @@
 """Reconcile a workflow's node graph with a document's ``spec.nodes``.
 
 Nodes match by ``id`` (AWX's node ``identifier``). Planning reads the current
-graph once and diffs it against the resolved desired graph; the diff is the
-preview (one row per changed node facet or edge list) and, after binding the
-IDs of resources created earlier in the batch, the write plan:
+graph once and diffs it against the resolved desired graph. The one diff is
+both the preview (one row per changed node facet or edge list) and, once the
+IDs of resources created earlier in the batch are bound, the write plan:
 
 1. replaced nodes (run ↔ approval) are deleted, then missing nodes are created
    (an approval node through ``create_approval_template``);
 2. changed nodes are patched, with their approval template and prompt
-   memberships;
-3. nodes no longer declared are deleted;
+   memberships (written by the shared :func:`write_members` rules);
+3. nodes no longer declared are deleted (opaque ones are left alone);
 4. edges are reconciled: removals first, so re-pointing an edge never trips
    AWX's cycle check on the way.
 
-A re-read afterwards must show no remaining difference.
+Every failure names the node and step it stopped at (``nodes[deploy]
+update: …``); re-running the apply resumes from what AWX then holds. A
+re-read afterwards must show no remaining difference; members and approvals
+the write did not touch are not read again.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from typing import Any
 
+from untaped.capabilities.awx.application.apply_membership import (
+    credential_clashes,
+    member_delta,
+    write_members,
+)
+from untaped.capabilities.awx.application.mutation_refs import PlannedId
 from untaped.capabilities.awx.application.ports import FkResolver, WorkflowNodeRepository
 from untaped.capabilities.awx.application.workflow_graph import (
+    ENCRYPTED,
     NODE_FIELDS,
     ORDERED_MEMBERS,
     NodeState,
@@ -40,7 +51,7 @@ from untaped.capabilities.awx.domain.workflow_graph import (
     dump_workflow_nodes,
     parse_workflow_nodes,
 )
-from untaped.capabilities.awx.errors import BadRequestError
+from untaped.capabilities.awx.errors import AwxApiError, BadRequestError
 
 _EDGE_KEYS = {relation: key for key, relation in EDGE_RELATIONS.items()}
 # Node record field → its key in the document (``nodes[x].prompts.limit``).
@@ -49,22 +60,52 @@ _FIELD_KEYS = {
     "extra_data": "prompts.extra_vars",
     "all_parents_must_converge": "all_parents_must_converge",
 }
+# Keys whose writes go beside the node record (re-read when verifying).
+_SIDE_KEYS = frozenset({"approval", *(f"prompts.{relation}" for relation in PROMPT_MEMBERS)})
+
+
+@dataclass(frozen=True)
+class EdgeChange:
+    """One parent's edge list: shown ``before``/``after``, written ``remove``/``add``.
+
+    ``before`` leaves out children being deleted. ``remove``/``add`` also
+    account for edges a replaced node lost when it was deleted.
+    """
+
+    identifier: str
+    relation: str
+    before: frozenset[str]
+    after: frozenset[str]
+    remove: frozenset[str]
+    add: frozenset[str]
 
 
 @dataclass(frozen=True)
 class GraphDiff:
-    """Node-level differences; edges are compared separately (by identifier)."""
+    """Everything that turns the current graph into the desired one."""
 
     create: tuple[NodeState, ...]
     replace: tuple[NodeState, ...]
-    update: tuple[tuple[NodeState, NodeState], ...]
+    update: tuple[tuple[NodeState, NodeState, tuple[str, ...]], ...]
+    """``(current, desired, changed document keys)`` per changed node."""
     delete: tuple[NodeState, ...]
-    edges: tuple[tuple[str, str, frozenset[str], frozenset[str]], ...]
-    """``(identifier, relation, before, after)`` for every changed edge list."""
+    edges: tuple[EdgeChange, ...]
 
     @property
     def changed(self) -> bool:
         return bool(self.create or self.replace or self.update or self.delete or self.edges)
+
+    def fields(self) -> list[str]:
+        """The changed document fields: ``nodes[deploy]``, ``nodes[deploy].prompts.limit``."""
+        return [
+            *(f"nodes[{state.identifier}]" for state in (*self.create, *self.delete)),
+            *(
+                f"nodes[{current.identifier}].{key}"
+                for current, _, keys in self.update
+                for key in keys
+            ),
+            *(f"nodes[{edge.identifier}].{_EDGE_KEYS[edge.relation]}" for edge in self.edges),
+        ]
 
 
 @dataclass(frozen=True)
@@ -74,6 +115,7 @@ class WorkflowGraphPlan:
     desired: tuple[NodeState, ...]
     current: tuple[NodeState, ...]
     changes: tuple[FieldChange, ...]
+    label: str = ""
 
     @property
     def changed(self) -> bool:
@@ -83,75 +125,109 @@ class WorkflowGraphPlan:
         """Every ID the desired graph refers to (deferred for same-batch resources)."""
         return members_of(self.desired)
 
+    def runs(self) -> list[PlannedId]:
+        """The templates the desired nodes run (deferred for same-batch resources)."""
+        return [state.run[1] for state in self.desired if state.run is not None]
+
 
 class WorkflowGraphReconciler:
     """Plan, execute and verify node graph writes for one workflow at a time."""
 
-    def __init__(self, nodes: WorkflowNodeRepository) -> None:
+    def __init__(
+        self,
+        nodes: WorkflowNodeRepository,
+        *,
+        warn: Callable[[str], None] | None = None,
+        credential_type: Callable[[PlannedId], Any] | None = None,
+    ) -> None:
         self._nodes = nodes
+        self._warn = warn or (lambda _message: None)
+        self._credential_type = credential_type or (lambda _member: None)
 
     def plan(
-        self,
-        resource: Resource,
-        field: str,
-        workflow_id: int | None,
-        *,
-        fk: FkResolver,
+        self, resource: Resource, value: Any, workflow_id: int | None, *, fk: FkResolver
     ) -> WorkflowGraphPlan:
-        """Validate and resolve ``resource.spec[field]`` and diff it with AWX."""
+        """Validate and resolve the document's ``nodes`` ``value`` and diff it with AWX."""
         label = f"{resource.kind} {resource.metadata.name!r}"
         try:
-            nodes = parse_workflow_nodes(resource.spec[field])
+            nodes = parse_workflow_nodes(value)
         except ValueError as exc:
-            raise BadRequestError(f"{label}: invalid {field}: {exc}") from None
+            raise BadRequestError(f"{label}: invalid nodes: {exc}") from None
         organization = resource.metadata.organization
         desired = resolve_graph(nodes, organization=organization, fk=fk)
         current = read_graph(self._nodes, workflow_id) if workflow_id is not None else []
-        diff = diff_graph(desired, current)
-        before = {
-            node.id: node
-            for node in export_graph(
-                [state for state in current if _exportable(state)],
-                organization=organization,
-                fk=fk,
-            )
-        }
+        before = export_graph(current, organization=organization, fk=fk)
         return WorkflowGraphPlan(
             desired=tuple(desired),
             current=tuple(current),
-            changes=_rows(diff, field, {node.id: node for node in nodes}, before),
+            changes=_rows(diff_graph(desired, current), _documents(before), _documents(nodes)),
+            label=label,
         )
 
     def conflict(self, plan: WorkflowGraphPlan, workflow_id: int) -> bool:
-        """Whether the workflow's nodes changed since ``plan`` read them."""
-        current = read_graph(self._nodes, workflow_id)
+        """Whether the workflow's node list changed since ``plan`` read it."""
+        reuse = {state.node_id: state for state in plan.current if state.node_id is not None}
+        current = read_graph(self._nodes, workflow_id, reuse=reuse)
         return _snapshot(current) != _snapshot(plan.current)
 
     def execute(
         self, plan: WorkflowGraphPlan, workflow_id: int, *, bind: Callable[[Any], Any]
     ) -> None:
         """Write the plan with deferred IDs bound, then verify the result."""
-        desired = [_bound(state, bind) for state in plan.desired]
-        diff = diff_graph(desired, list(plan.current))
-        ids = {state.identifier: state.node_id for state in plan.current}
+        bound = [
+            replace(
+                state, run=bind(state.run), fields=bind(state.fields), members=bind(state.members)
+            )
+            for state in plan.desired
+        ]
+        diff = diff_graph(bound, plan.current)
+        created = {state.identifier for state in diff.create}
+        desired = [
+            self._without_placeholders(plan, state) if state.identifier in created else state
+            for state in bound
+        ]
+        wanted = {state.identifier: state for state in desired}
+        ids: dict[str, int | None] = {state.identifier: state.node_id for state in plan.current}
+        touched: set[int | None] = set()
         for state in diff.replace:
-            self._delete(state, ids)
+            with _step(state.identifier, "delete"):
+                self._nodes.delete_node(node_id=_node(state.node_id))
         for state in diff.create:
-            ids[state.identifier] = self._create(workflow_id, state)
-        for current, wanted in diff.update:
-            self._update(current, wanted)
+            with _step(state.identifier, "create"):
+                ids[state.identifier] = self._create(workflow_id, wanted[state.identifier])
+        for current, _, keys in diff.update:
+            with _step(current.identifier, "update"):
+                self._update(current, wanted[current.identifier], keys)
+            if _SIDE_KEYS.intersection(keys):
+                touched.add(current.node_id)
         for state in diff.delete:
-            self._delete(state, ids)
-        self._write_edges(diff, desired, plan.current, ids)
-        remaining = diff_graph(desired, read_graph(self._nodes, workflow_id))
+            with _step(state.identifier, "delete"):
+                self._nodes.delete_node(node_id=_node(state.node_id))
+        self._write_edges(diff.edges, ids)
+        reuse = {
+            state.node_id: state
+            for state in plan.current
+            if state.node_id is not None and state.node_id not in touched
+        }
+        remaining = diff_graph(desired, read_graph(self._nodes, workflow_id, reuse=reuse))
         if remaining.changed:
-            fields = [row.field for row in _rows(remaining, "nodes", {}, {})]
-            raise BadRequestError("workflow nodes did not converge: " + ", ".join(fields))
+            raise BadRequestError(
+                "workflow nodes did not converge: " + ", ".join(remaining.fields())
+            )
 
-    def _delete(self, state: NodeState, ids: dict[str, int | None]) -> None:
-        assert state.node_id is not None
-        self._nodes.delete_node(node_id=state.node_id)
-        ids.pop(state.identifier, None)
+    def _without_placeholders(self, plan: WorkflowGraphPlan, state: NodeState) -> NodeState:
+        """A new node cannot take ``$encrypted$`` extra vars: drop them, with a warning."""
+        extra = state.fields.get("extra_data") or {}
+        masked = [key for key, value in extra.items() if value == ENCRYPTED]
+        for key in masked:
+            self._warn(
+                f"{plan.label}: nodes[{state.identifier}] extra_vars.{key} is {ENCRYPTED}, "
+                "which a new node cannot take; it is created without it"
+            )
+        if not masked:
+            return state
+        kept = {key: value for key, value in extra.items() if key not in masked}
+        return replace(state, fields={**state.fields, "extra_data": kept})
 
     def _create(self, workflow_id: int, state: NodeState) -> int:
         body: dict[str, Any] = {
@@ -172,21 +248,16 @@ class WorkflowGraphReconciler:
                 self._link(node_id, relation, member)
         return node_id
 
-    def _update(self, current: NodeState, wanted: NodeState) -> None:
-        assert current.node_id is not None
-        body = {
-            name: wanted.fields.get(name)
-            for name in NODE_FIELDS
-            if current.field_differs(wanted, name)
-        }
-        if wanted.run is not None and wanted.run != current.run:
+    def _update(self, current: NodeState, wanted: NodeState, keys: tuple[str, ...]) -> None:
+        node_id = _node(current.node_id)
+        body = {name: wanted.fields.get(name) for name in NODE_FIELDS if _FIELD_KEYS[name] in keys}
+        if "run" in keys and wanted.run is not None:
             body["unified_job_template"] = wanted.run[1]
         if body:
-            self._nodes.update_node(node_id=current.node_id, body=body)
-        if wanted.approval is not None and wanted.approval != current.approval:
-            assert current.approval_id is not None and current.approval is not None
+            self._nodes.update_node(node_id=node_id, body=body)
+        if "approval" in keys and wanted.approval is not None and current.approval is not None:
             self._nodes.update_approval_template(
-                template_id=current.approval_id,
+                template_id=_node(current.approval_id),
                 body={
                     key: value
                     for key, value in wanted.approval.items()
@@ -194,47 +265,50 @@ class WorkflowGraphReconciler:
                 },
             )
         for relation in PROMPT_MEMBERS:
-            if not current.members_differ(wanted, relation):
-                continue
-            before, after = current.members.get(relation, ()), wanted.members.get(relation, ())
-            ordered = relation in ORDERED_MEMBERS
-            # Removals first: AWX allows one credential per type, and an
-            # ordered relation is rebuilt in the declared order.
-            for member in before if ordered else [m for m in before if m not in after]:
-                self._link(current.node_id, relation, member, disassociate=True)
-            for member in after if ordered else [m for m in after if m not in before]:
-                self._link(current.node_id, relation, member)
+            if f"prompts.{relation}" in keys:
+                self._write_members(node_id, current, wanted, relation)
 
-    def _write_edges(
-        self,
-        diff: GraphDiff,
-        desired: list[NodeState],
-        current: Iterable[NodeState],
-        ids: dict[str, int | None],
+    def _write_members(
+        self, node_id: int, current: NodeState, wanted: NodeState, relation: str
     ) -> None:
-        """Removals, then additions; edges of deleted or replaced nodes are already gone."""
-        gone = {state.identifier for state in (*diff.replace, *diff.delete)}
-        existing = {state.identifier: state for state in current if state.identifier not in gone}
-        removals: list[tuple[str, str, str]] = []
-        additions: list[tuple[str, str, str]] = []
-        for state in desired:
-            found = existing.get(state.identifier)
-            for relation in EDGE_RELATIONS.values():
-                before = found.edges.get(relation, frozenset()) - gone if found else frozenset()
-                after = state.edges.get(relation, frozenset())
-                removals.extend((state.identifier, relation, c) for c in sorted(before - after))
-                additions.extend((state.identifier, relation, c) for c in sorted(after - before))
-        for parent, relation, child in removals:
-            self._link(ids[parent], relation, ids[child], disassociate=True)
-        for parent, relation, child in additions:
-            self._link(ids[parent], relation, ids[child])
+        before = tuple(_node(member) for member in current.members.get(relation, ()))
+        after = wanted.members.get(relation, ())
+        ordered = relation in ORDERED_MEMBERS
+        associate, disassociate, reorder = member_delta(before, after, ordered=ordered)
+        first: tuple[int, ...] = ()
+        if relation == "credentials" and associate and disassociate:
+            first = credential_clashes(
+                associate, disassociate, current.member_types, self._credential_type
+            )
+        write_members(
+            lambda member, removing: self._link(node_id, relation, member, disassociate=removing),
+            field=f"prompts.{relation}",
+            associate=associate,
+            disassociate=disassociate,
+            desired=after,
+            reorder=reorder,
+            ordered=ordered,
+            disassociate_first=first,
+        )
+
+    def _write_edges(self, edges: Iterable[EdgeChange], ids: Mapping[str, int | None]) -> None:
+        edges = list(edges)
+        for removing in (True, False):
+            for edge in edges:
+                with _step(edge.identifier, "edges"):
+                    for child in sorted(edge.remove if removing else edge.add):
+                        self._link(
+                            ids[edge.identifier], edge.relation, ids[child], disassociate=removing
+                        )
 
     def _link(
         self, node_id: int | None, relation: str, member: Any, *, disassociate: bool = False
     ) -> None:
-        assert isinstance(node_id, int) and isinstance(member, int)
         self._nodes.link_node(
-            node_id=node_id, relation=relation, member_id=member, disassociate=disassociate
+            node_id=_node(node_id),
+            relation=relation,
+            member_id=_node(member),
+            disassociate=disassociate,
         )
 
 
@@ -243,116 +317,108 @@ def diff_graph(desired: Iterable[NodeState], current: Iterable[NodeState]) -> Gr
     wanted = {state.identifier: state for state in desired}
     existing = {state.identifier: state for state in current}
     create: list[NodeState] = []
-    replace: list[NodeState] = []
-    update: list[tuple[NodeState, NodeState]] = []
+    replaced: list[NodeState] = []
+    update: list[tuple[NodeState, NodeState, tuple[str, ...]]] = []
     for identifier, state in wanted.items():
         found = existing.get(identifier)
         if found is None:
             create.append(state)
         elif _needs_replacing(found, state):
-            replace.append(found)
+            replaced.append(found)
             create.append(state)
-        elif _node_differs(found, state):
-            update.append((found, state))
-    delete = [state for identifier, state in existing.items() if identifier not in wanted]
-    replaced = {state.identifier for state in replace}
-    edges = []
+        elif keys := changed_keys(found, state):
+            update.append((found, state, keys))
+    left_alone = {i for i, state in existing.items() if i not in wanted and state.opaque}
+    delete = [s for i, s in existing.items() if i not in wanted and i not in left_alone]
+    deleted = {state.identifier for state in delete}
+    recreated = {state.identifier for state in replaced}
+    edges: list[EdgeChange] = []
     for identifier, state in wanted.items():
         found = existing.get(identifier)
         for relation in EDGE_RELATIONS.values():
-            before = (
-                found.edges.get(relation, frozenset())
-                if found is not None and identifier not in replaced
-                else frozenset()
-            )
             after = state.edges.get(relation, frozenset())
-            if before != after:
-                edges.append((identifier, relation, before, after))
+            before: frozenset[str] = frozenset()
+            if found is not None:
+                before = found.edges.get(relation, frozenset()) - deleted - left_alone
+            # What AWX still holds once deleted and replaced nodes are gone.
+            live = frozenset() if found is None or identifier in recreated else before - recreated
+            if before != after or live != after:
+                edges.append(
+                    EdgeChange(identifier, relation, before, after, live - after, after - live)
+                )
     return GraphDiff(
         create=tuple(create),
-        replace=tuple(replace),
+        replace=tuple(replaced),
         update=tuple(update),
         delete=tuple(delete),
         edges=tuple(edges),
     )
 
 
+def changed_keys(current: NodeState, wanted: NodeState) -> tuple[str, ...]:
+    """The document keys that differ between two versions of one node."""
+    keys = [
+        *(["run"] if current.run != wanted.run else []),
+        *(["approval"] if current.approval != wanted.approval else []),
+        *(_FIELD_KEYS[name] for name in NODE_FIELDS if current.field_differs(wanted, name)),
+    ]
+    keys += [
+        f"prompts.{relation}"
+        for relation in PROMPT_MEMBERS
+        if current.members_differ(wanted, relation)
+    ]
+    return tuple(keys)
+
+
 def _needs_replacing(current: NodeState, wanted: NodeState) -> bool:
-    """A node turning into (or out of) an approval, or one that runs nothing, is recreated."""
-    if (current.approval is None) != (wanted.approval is None):
-        return True
-    return current.run is None and wanted.run is not None
+    """A node turning into (or out of) an approval, or an opaque one, is recreated."""
+    return current.opaque or (current.approval is None) != (wanted.approval is None)
 
 
-def _node_differs(current: NodeState, wanted: NodeState) -> bool:
-    return (
-        current.run != wanted.run
-        or current.approval != wanted.approval
-        or any(current.field_differs(wanted, name) for name in NODE_FIELDS)
-        or any(current.members_differ(wanted, relation) for relation in PROMPT_MEMBERS)
-    )
+def _documents(nodes: Iterable[WorkflowNodeSpec]) -> dict[str, dict[str, Any]]:
+    """Each node's document form without its id and edges, dumped once."""
+    documents = {}
+    for document in dump_workflow_nodes(nodes):
+        identifier = document.pop("id")
+        for key in EDGE_RELATIONS:
+            document.pop(key, None)
+        documents[identifier] = document
+    return documents
 
 
 def _rows(
-    diff: GraphDiff,
-    field: str,
-    after: dict[str, WorkflowNodeSpec],
-    before: dict[str, WorkflowNodeSpec],
+    diff: GraphDiff, before: Mapping[str, Any], after: Mapping[str, Any]
 ) -> tuple[FieldChange, ...]:
     """Preview rows by name: ``nodes[deploy].prompts.limit: "web1" → "web*"``."""
-    rows: list[FieldChange] = []
 
-    def node(identifier: str, source: dict[str, WorkflowNodeSpec]) -> Any:
-        if identifier not in source:
-            return None
-        document = dump_workflow_nodes([source[identifier]])[0]
-        document.pop("id")
-        for key in EDGE_RELATIONS:
-            document.pop(key, None)
-        return document
-
-    def prompt(identifier: str, key: str, source: dict[str, WorkflowNodeSpec]) -> Any:
-        document = node(identifier, source) or {}
+    def value(document: Any, key: str) -> Any:
         for part in key.split("."):
             document = document.get(part) if isinstance(document, dict) else None
         return document
 
     replaced = {state.identifier for state in diff.replace}
-    for state in diff.create:
-        note = "replace" if state.identifier in replaced else "create"
-        rows.append(
-            FieldChange(
-                field=f"{field}[{state.identifier}]",
-                before=node(state.identifier, before),
-                after=node(state.identifier, after),
-                note=note,
-            )
+    rows = [
+        FieldChange(
+            field=f"nodes[{state.identifier}]",
+            before=before.get(state.identifier),
+            after=after.get(state.identifier),
+            note="replace" if state.identifier in replaced else "create",
         )
-    for current, wanted in diff.update:
-        name = f"{field}[{current.identifier}]"
-        keys: list[str] = []
-        if current.run != wanted.run:
-            keys.append("run")
-        if current.approval != wanted.approval:
-            keys.append("approval")
-        keys += [_FIELD_KEYS[f] for f in NODE_FIELDS if current.field_differs(wanted, f)]
-        keys += [
-            f"prompts.{relation}"
-            for relation in PROMPT_MEMBERS
-            if current.members_differ(wanted, relation)
-        ]
+        for state in diff.create
+    ]
+    for current, _, keys in diff.update:
         rows.extend(
             FieldChange(
-                field=f"{name}.{key}",
-                before=prompt(current.identifier, key, before),
-                after=prompt(current.identifier, key, after),
+                field=f"nodes[{current.identifier}].{key}",
+                before=value(before.get(current.identifier), key),
+                after=value(after.get(current.identifier), key),
             )
             for key in keys
         )
     rows.extend(
         FieldChange(
-            field=f"{field}[{state.identifier}]",
-            before=node(state.identifier, before),
+            field=f"nodes[{state.identifier}]",
+            before=before.get(state.identifier),
             after=None,
             note="delete",
         )
@@ -360,28 +426,30 @@ def _rows(
     )
     rows.extend(
         FieldChange(
-            field=f"{field}[{identifier}].{_EDGE_KEYS[relation]}",
-            before=sorted(old),
-            after=sorted(new),
+            field=f"nodes[{edge.identifier}].{_EDGE_KEYS[edge.relation]}",
+            before=sorted(edge.before),
+            after=sorted(edge.after),
         )
-        for identifier, relation, old, new in diff.edges
+        for edge in diff.edges
+        if edge.before != edge.after
     )
     return tuple(rows)
 
 
-def _bound(state: NodeState, bind: Callable[[Any], Any]) -> NodeState:
-    return NodeState(
-        identifier=state.identifier,
-        run=bind(state.run),
-        approval=state.approval,
-        fields=bind(state.fields),
-        members=bind(state.members),
-        edges=state.edges,
-    )
+@contextmanager
+def _step(identifier: str, step: str) -> Iterator[None]:
+    """Name the node and step a failed write stopped at."""
+    try:
+        yield
+    except Exception as exc:
+        raise AwxApiError(f"nodes[{identifier}] {step}: {exc}") from exc
 
 
-def _exportable(state: NodeState) -> bool:
-    return state.run is not None or state.approval is not None
+def _node(value: Any) -> int:
+    """An ID that must be bound by now (a node, template or member)."""
+    if not isinstance(value, int):
+        raise BadRequestError(f"workflow node reference {value!r} was not bound")
+    return value
 
 
 def _snapshot(states: Iterable[NodeState]) -> list[tuple[Any, ...]]:
@@ -391,4 +459,11 @@ def _snapshot(states: Iterable[NodeState]) -> list[tuple[Any, ...]]:
     ]
 
 
-__all__ = ["GraphDiff", "WorkflowGraphPlan", "WorkflowGraphReconciler", "diff_graph"]
+__all__ = [
+    "EdgeChange",
+    "GraphDiff",
+    "WorkflowGraphPlan",
+    "WorkflowGraphReconciler",
+    "changed_keys",
+    "diff_graph",
+]

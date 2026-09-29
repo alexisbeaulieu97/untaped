@@ -422,6 +422,7 @@ class MutationPlanner:
                 )
             )
         _validate_parent_field_aliases(operations)
+        _validate_workflow_recursion(operations, token_indexes)
         _validate_dependencies(operations)
         return MutationPlan(operations=tuple(operations), mode=mode)
 
@@ -437,7 +438,7 @@ class MutationPlanner:
             return None
         if self._graph is None:
             raise BadRequestError(f"{spec.kind} {spec.node_field} cannot be applied here")
-        return self._graph.plan(resource, spec.node_field, target_id, fk=resolver)
+        return self._graph.plan(resource, resource.spec[spec.node_field], target_id, fk=resolver)
 
     def _build_targets(
         self,
@@ -589,6 +590,37 @@ def _validate_selected_identity(
             actual = (summary.get(field) or {}).get("id")
         if isinstance(parent[1], DeferredReference) or parent[1] != actual:
             raise BadRequestError("reparenting a selected resource is not supported")
+
+
+def _validate_workflow_recursion(
+    operations: list[PreparedMutation], token_indexes: dict[str, int]
+) -> None:
+    """Refuse workflows created together that run each other (``A → B → A``)."""
+    runs: dict[int, list[int]] = {}
+    for operation in operations:
+        graph_plan = operation.graph_plan
+        if graph_plan is not None:
+            tokens = _tokens_in(graph_plan.runs())
+            runs[operation.index] = sorted(token_indexes[t] for t in tokens if t in token_indexes)
+    state: dict[int, bool] = {}  # True while on the current path
+    path: list[int] = []
+
+    def visit(index: int) -> list[int]:
+        state[index] = True
+        path.append(index)
+        for target in runs.get(index, ()):
+            if state.get(target):
+                return [*path[path.index(target) :], target]
+            if target not in state and (found := visit(target)):
+                return found
+        path.pop()
+        state[index] = False
+        return []
+
+    for index in runs:
+        if index not in state and (cycle := visit(index)):
+            names = [operations[i].resource.metadata.name for i in cycle]
+            raise BadRequestError("workflow nodes form a recursion: " + " → ".join(names))
 
 
 def _validate_dependencies(operations: list[PreparedMutation]) -> None:
