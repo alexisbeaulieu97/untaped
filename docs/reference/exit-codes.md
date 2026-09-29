@@ -88,9 +88,12 @@ Some rows carry a code of their own. It never becomes the process exit code:
 - `untaped workspace foreach` rows have a `returncode` for each repo's
   command; `124` means the command timed out (`--timeout`). The process then
   exits 1 if any repo failed, or 0 with `--ignore-errors`.
-- `untaped awx test run` reports each case's result in its rows; the command
-  exits 1 if any case failed or errored, or 4 or 5 when a launch failed
-  because of the token, permissions or an unavailable controller.
+- `untaped awx test run` reports each case's result in its rows. A case that
+  did not pass carries a `failure` with its own `category` and `system`
+  (such as `awx.scm` or `awx.hosts`), and the command exits with the most
+  severe one: 4 for a rejected token, a credential lookup or a failed
+  inventory update, 5 for an unavailable controller, a job stuck pending or
+  unreachable hosts, otherwise 1.
 
 ## See also
 
