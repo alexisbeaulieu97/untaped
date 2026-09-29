@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shlex
 from collections import Counter
 from collections.abc import Iterable
@@ -16,7 +17,15 @@ from untaped.capabilities.awx.cli._get import default_get_columns
 from untaped.capabilities.awx.cli.context import AwxContext, open_context
 from untaped.capabilities.awx.cli.options import OrganizationOption
 from untaped.capabilities.awx.domain.case_failure import CaseFailure
-from untaped.capabilities.awx.domain.suite import CaseResult, CaseStatus, Suite, SuiteRunOutcome
+from untaped.capabilities.awx.domain.suite import (
+    Baseline,
+    CaseResult,
+    CaseStatus,
+    Change,
+    Suite,
+    SuiteRunOutcome,
+)
+from untaped.capabilities.awx.domain.suite_baseline import saved_baselines
 from untaped.capabilities.awx.domain.suite_starter import suite_slug
 from untaped.capabilities.awx.errors import AwxApiError
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
@@ -33,13 +42,17 @@ from untaped.capability_api import (
     FormatOption,
     GitCommandError,
     ParallelOption,
+    UntapedError,
     attribution,
     create_app,
     echo,
     emit,
+    existing_file,
     finish,
     git_toplevel,
     hint,
+    note_failure,
+    parse_envelope_line,
     parse_kv_pairs,
     plural,
     q,
@@ -58,6 +71,8 @@ app = create_app(
 
 # Heavy imports (jinja2, yaml, the loader/runner) are deferred to subcommand
 # bodies — ``awx ping`` and ``awx --help`` shouldn't pay for them.
+
+_RESULT_KIND = "awx.test_result"
 
 _RESULT_TABLE_COLUMNS = [
     "suite",
@@ -254,6 +269,24 @@ def run_command(
             "to stderr.",
         ),
     ] = False,
+    compare: Annotated[
+        Path | None,
+        Parameter(
+            name="--compare",
+            help="Compare with an earlier `awx test run --format json` (or pipe) output: each "
+            "row gains baseline and change, and a failure the baseline already had does not "
+            "fail the run.",
+            validator=existing_file,
+        ),
+    ] = None,
+    baseline: Annotated[
+        str | None,
+        Parameter(
+            name="--baseline",
+            help="Run every case on this branch, tag or commit first (as --scm-branch; HEAD "
+            "once pushed), then as asked, and compare as --compare does.",
+        ),
+    ] = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -270,14 +303,19 @@ def run_command(
     from untaped.capabilities.awx.infrastructure import git_head  # noqa: PLC0415
     from untaped.capabilities.awx.infrastructure.web_ui import job_ui_url  # noqa: PLC0415
 
+    if compare is not None and baseline is not None:
+        raise_usage("--compare and --baseline cannot be combined")
     cli_vars = parse_kv_pairs(var, flag="--var")
     files = _expand_paths(paths)
     case_filter = set(cases) if cases else None
     structured = fmt not in {"table", "raw"}
 
     with report_errors(), open_context() as ctx:
+        saved = _read_baseline(compare) if compare is not None else None
         if scm_branch == "HEAD":
             scm_branch = git_head.pushed_branch()
+        if baseline == "HEAD":
+            baseline = git_head.pushed_branch()
         suites = _load_suites(
             files,
             cli_vars=cli_vars,
@@ -317,6 +355,8 @@ def run_command(
                 timeout=timeout,
                 default_timeout=ctx.settings.test_timeout,
                 scm_branch=scm_branch,
+                baseline=baseline,
+                compare=saved,
             )
         except KeyboardInterrupt:
             report_interrupted(
@@ -332,11 +372,23 @@ def run_command(
     emit(
         [result.model_dump() for result in outcome.results],
         fmt=fmt,
-        columns=columns or default_get_columns(fmt, _RESULT_TABLE_COLUMNS),
-        kind="awx.test_result",
+        columns=columns or default_get_columns(fmt, _result_columns(outcome)),
+        kind=_RESULT_KIND,
     )
-    echo(_summary(outcome), err=True)
-    finish(outcome.exit_code() != 0)
+    for line in _summary(outcome):
+        echo(line, err=True)
+    counted = outcome.counted()
+    for failure in counted:
+        note_failure(failure)
+    finish(bool(counted))
+
+
+def _result_columns(outcome: SuiteRunOutcome) -> list[str]:
+    """The table's columns, with ``change`` after ``result`` when compared with a baseline."""
+    if all(result.change is None for result in outcome.results):
+        return _RESULT_TABLE_COLUMNS
+    after = _RESULT_TABLE_COLUMNS.index("result") + 1
+    return [*_RESULT_TABLE_COLUMNS[:after], "change", *_RESULT_TABLE_COLUMNS[after:]]
 
 
 def _show_failure(result: CaseResult, failure: CaseFailure) -> None:
@@ -358,13 +410,64 @@ def _show_failure(result: CaseResult, failure: CaseFailure) -> None:
         echo(line, err=True)
 
 
-def _summary(outcome: SuiteRunOutcome) -> str:
-    """``4 cases: 2 pass, 1 fail, 1 timeout`` (verdicts that occurred, in order)."""
-    counts = Counter(result.result for result in outcome.results)
-    return summary(
-        plural(len(outcome.results), "case"),
-        {status: counts[status] for status in get_args(CaseStatus)},
-    )
+def _summary(outcome: SuiteRunOutcome) -> list[str]:
+    """``4 cases: 2 pass, 1 fail, 1 timeout`` (verdicts that occurred, in order).
+
+    Compared with a baseline, a second line counts each change:
+    ``compared with the baseline: 1 regression, 3 pass``.
+    """
+    ran = [result for result in outcome.results if result.result is not None]
+    counts = Counter(result.result for result in ran)
+    lines = [
+        summary(
+            plural(len(ran), "case"),
+            {status: counts[status] for status in get_args(CaseStatus)},
+        )
+    ]
+    changes = Counter(result.change for result in outcome.results if result.change is not None)
+    if changes:
+        lines.append(
+            summary(
+                "compared with the baseline",
+                {change: changes[change] for change in get_args(Change)},
+            )
+        )
+    return lines
+
+
+def _read_baseline(path: Path) -> dict[tuple[str, str], Baseline]:
+    """The baseline saved in ``path``: `awx test run` JSON output, or its pipe records."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ConfigError(
+            f"--compare file {path} cannot be read: {exc}", category="invalid"
+        ) from exc
+    try:
+        return saved_baselines(_saved_rows(text))
+    except (ValueError, UntapedError) as exc:
+        raise ConfigError(
+            f"--compare file {path} is not the output of "
+            f"`untaped awx test run --format json`: {exc}",
+            category="invalid",
+        ) from exc
+
+
+def _saved_rows(text: str) -> Any:
+    """JSON output as parsed, or the records of ``--format pipe`` output."""
+    if not text.lstrip().startswith("{"):
+        return json.loads(text)
+    rows = []
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        if line.strip():
+            envelope = parse_envelope_line(lineno, line)
+            if envelope.kind is not None and envelope.kind != _RESULT_KIND:
+                raise ValueError(
+                    f"line {lineno}: record kind {q(envelope.kind)} is not accepted here; "
+                    f"expected {q(_RESULT_KIND)}"
+                )
+            rows.append(envelope.record)
+    return rows
 
 
 # ---- list ----------------------------------------------------------------
@@ -442,6 +545,12 @@ def validate_command(
         for suite in suites:
             scope = suite.scope(default_scope)
             for case_name, case in suite.cases.items():
+                if suite.expectation(case_name).passes_on_any_failure:
+                    ctx.progress_ui().message(
+                        "warning",
+                        f"{suite.name}/{case_name}: expects status failed without failed_tasks, "
+                        "so a failure for another reason passes it",
+                    )
                 try:
                     payload = resolver(
                         spec, case, defaults=suite.defaults, organization=suite.organization

@@ -182,3 +182,16 @@ def test_host_summaries_are_one_listing_failed_hosts_first() -> None:
     assert client.paginate_calls == [
         ("jobs/7/job_host_summaries/", {"order_by": "-failed,host_name"}, None)
     ]
+
+
+def test_host_summaries_can_be_filtered() -> None:
+    client = _FakeClient(list_pages=[])
+    repo = JobRecordRepository(cast(RawHttpResourceClient, client))
+    list(repo.host_summaries(Job(id=7, kind="job", status="failed"), {"changed__gt": "0"}))
+    assert client.paginate_calls == [
+        (
+            "jobs/7/job_host_summaries/",
+            {"order_by": "-failed,host_name", "changed__gt": "0"},
+            None,
+        )
+    ]

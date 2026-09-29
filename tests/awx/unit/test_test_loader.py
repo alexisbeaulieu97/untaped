@@ -187,6 +187,10 @@ def test_expect_block_is_parsed_and_rendered() -> None:
     assert case.expect.over(suite.defaults.expect if suite.defaults else None).model_dump() == {
         "status": "failed",
         "log": {"contains": ("boom",), "not_contains": (), "matches": ()},
+        "changed": None,
+        "hosts": {},
+        "idempotent": False,
+        "failed_tasks": (),
     }
 
 

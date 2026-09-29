@@ -18,12 +18,12 @@ from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayl
 from untaped.capabilities.awx.application.suites.runner import LOG_TAIL_LINES, RunTestSuite
 from untaped.capabilities.awx.domain import Job, JobEvent
 from untaped.capabilities.awx.domain.case_failure import FailureEvidence
-from untaped.capabilities.awx.domain.suite import Case, Suite
+from untaped.capabilities.awx.domain.suite import Baseline, Case, Suite, SuiteRunOutcome
 from untaped.capabilities.awx.errors import ActionResponseError, LaunchPromptError
 from untaped.capabilities.awx.infrastructure import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
-from untaped.capability_api import ConfigError, HttpTransportError
+from untaped.capability_api import ConfigError, HttpTransportError, note_failure
 from untaped.diagnostics import diagnostics_scope, failure_exit_code
 
 
@@ -168,6 +168,14 @@ class StubWatcher:
         return self._by_id.get(job.id, self._default)
 
 
+def _exit_code(outcome: SuiteRunOutcome) -> int:
+    """The exit code ``awx test run`` gives ``outcome``: the most severe counted failure."""
+    with diagnostics_scope():
+        for failure in outcome.counted():
+            note_failure(failure)
+        return failure_exit_code()
+
+
 def _job(*, id_: int = 1000, status: str = "successful") -> Job:
     return Job.model_validate({"id": id_, "kind": "job", "name": "x", "status": status})
 
@@ -287,7 +295,7 @@ def test_case_classification(
 
     [row] = outcome.results
     assert (row.result, row.job_status) == (result, job_status)
-    assert outcome.exit_code() == (0 if result == "pass" else 1)
+    assert bool(outcome.counted()) == (result != "pass")
     if result == "error":
         assert row.job_id is None
         assert row.failure is not None
@@ -705,9 +713,7 @@ def test_an_unreadable_log_errors_only_when_nothing_else_failed() -> None:
 def test_a_log_fetch_failure_counts_toward_the_exit_code() -> None:
     reader = StubLogReader([], error=HttpTransportError("down", system="awx"))
     runner, _ = _expect_runner("successful", reader)
-    with diagnostics_scope():
-        runner([_case_suite({"expect": {"log": {"contains": ["x"]}}})])
-        assert failure_exit_code() == 5
+    assert _exit_code(runner([_case_suite({"expect": {"log": {"contains": ["x"]}}})])) == 5
 
 
 def test_evidence_is_skipped_when_not_wanted_but_the_failure_is_attributed() -> None:
@@ -902,9 +908,9 @@ def test_a_failed_project_update_is_the_scms_with_its_own_evidence() -> None:
         event_reader=events,
         job_reader=jobs,
     )
-    with diagnostics_scope():
-        [row] = runner([_case_suite({})]).results
-        assert failure_exit_code() == 1
+    outcome = runner([_case_suite({})])
+    assert _exit_code(outcome) == 1
+    [row] = outcome.results
     assert row.failure is not None
     assert (row.failure.system, row.failure.category, row.failure.message) == (
         "awx.scm",
@@ -956,9 +962,7 @@ def test_each_case_failure_counts_toward_the_exit_code_by_its_category(
         watcher=StubWatcher(default=final),
         event_reader=StubEventReader(events),
     )
-    with diagnostics_scope():
-        runner([_case_suite({})])
-        assert failure_exit_code() == exit_code
+    assert _exit_code(runner([_case_suite({})])) == exit_code
 
 
 def test_the_most_severe_case_failure_wins() -> None:
@@ -974,9 +978,8 @@ def test_the_most_severe_case_failure_wins() -> None:
     )
     runner = _make_runner(fk=StubFk(), launcher=launcher, watcher=StubWatcher(by_id=finals))
     suite = _suite("s", {name: {"extra_vars": {"case_name": name}} for name in ("a", "b")})
-    with diagnostics_scope():
-        outcome = runner([suite])
-        assert failure_exit_code() == 5
+    outcome = runner([suite])
+    assert _exit_code(outcome) == 5
     assert [row.failure.system for row in outcome.results if row.failure] == [
         "awx.playbook",
         "awx.controller",
@@ -1202,3 +1205,557 @@ def test_a_suite_organization_scopes_its_template() -> None:
     expected = [{"organization": "Ops"}, {"organization": "Default"}]
     assert [call["scope"] for call in launcher.calls] == expected
     assert checked == expected
+
+
+# ---- regression expectations -------------------------------------------
+
+
+class SequenceLauncher(StubLauncher):
+    """Launches a new job per call: ids 5, 6, 7, … in order."""
+
+    def __init__(self) -> None:
+        super().__init__({})
+        self.next_id = 5
+
+    def __call__(self, spec: AwxResourceSpec, **kwargs: Any) -> Job:
+        super().__call__(spec, **kwargs)
+        job = _job(id_=self.next_id, status="pending")
+        self.next_id += 1
+        return job
+
+
+class HostsById:
+    """Serves each job its own host summary records, filtered as AWX filters them.
+
+    Records which jobs were read (``read``) and each filtered read (``filtered``).
+    """
+
+    def __init__(self, by_id: dict[int, list[dict[str, Any]]]) -> None:
+        self.by_id = by_id
+        self.read: list[int] = []
+        self.filtered: list[tuple[int, dict[str, str]]] = []
+
+    def __call__(self, job: Job, params: dict[str, str] | None = None) -> list[dict[str, Any]]:
+        records = self.by_id.get(job.id, [])
+        if params is None:
+            self.read.append(job.id)
+            return records
+        self.filtered.append((job.id, params))
+        [(key, value)] = params.items()
+        if key == "host_name__in":
+            return [r for r in records if r["host_name"] in value.split(",")]
+        field = key.removesuffix("__gt")
+        return [r for r in records if (r.get(field) or 0) > int(value)]
+
+
+class EventsById(StubEventReader):
+    """Serves each job its own events."""
+
+    def __init__(self, by_id: dict[int, list[JobEvent]]) -> None:
+        super().__init__([])
+        self.by_id = by_id
+
+    def __call__(
+        self, job: Job, *, params: dict[str, str] | None = None, follow: bool = True
+    ) -> list[JobEvent]:
+        super().__call__(job, params=params, follow=follow)
+        return self.by_id.get(job.id, [])
+
+
+def _regression_runner(
+    finals: dict[int, str | Job],
+    *,
+    hosts: dict[int, list[dict[str, Any]]] | None = None,
+    events: dict[int, list[JobEvent]] | None = None,
+    canceller: StubCanceller | None = None,
+    evidence: bool = True,
+    watcher: Any = None,
+    job_reader: Any = None,
+    job_url: Any = None,
+    stop: threading.Event | None = None,
+    fk: StubFk | None = None,
+    host_reader: HostsById | None = None,
+) -> tuple[RunTestSuite, SequenceLauncher, HostsById, EventsById]:
+    launcher = SequenceLauncher()
+    host_reader = host_reader or HostsById(hosts or {})
+    event_reader = EventsById(events or {})
+    by_id = {
+        id_: final if isinstance(final, Job) else _job(id_=id_, status=final)
+        for id_, final in finals.items()
+    }
+    runner = RunTestSuite(
+        resolver=ResolveCasePayload(fk or StubFk(), catalog=AwxResourceCatalog()),
+        launcher=cast(Launcher, launcher),
+        watcher=cast(Watcher, watcher or StubWatcher(by_id=by_id)),
+        spec=JOB_TEMPLATE_SPEC,
+        fk_prefetcher=cast(FkPrefetcher, fk or StubFk()),
+        log_reader=StubLogReader(["ok"]),
+        event_reader=event_reader,
+        tail_reader=StubLogReader(["tail"]).tail,
+        job_reader=job_reader or StubJobReader(),
+        host_reader=host_reader,
+        job_url=job_url or (lambda job: None),
+        canceller=canceller,
+        evidence=evidence,
+        stop=stop,
+    )
+    return runner, launcher, host_reader, event_reader
+
+
+def test_host_expectations_read_the_summaries_even_for_a_table() -> None:
+    runner, _, hosts, _ = _regression_runner(
+        {5: "successful"},
+        hosts={5: [{"host_name": "web1", "changed": 2}, {"host_name": "web2", "failures": 1}]},
+    )
+    suite = _case_suite({"expect": {"changed": 0, "hosts": {"*": {"failed": 0}}}})
+
+    [row] = runner([suite]).results
+
+    assert hosts.read == [5]
+    assert row.hosts is not None and set(row.hosts) == {"web1", "web2"}
+    assert row.failure is not None
+    assert (row.result, row.failure.system, row.failure.category) == (
+        "fail",
+        "awx.expectation",
+        "failed",
+    )
+    assert row.failure.message == (
+        "expected <= 0 changed tasks, got 2; expected *: failed <= 0, got web2=1"
+    )
+    assert [check.check for check in row.expectations] == ["status", "changed", "hosts"]
+
+
+def test_host_bounds_that_hold_pass() -> None:
+    runner, _, _, _ = _regression_runner(
+        {5: "successful"}, hosts={5: [{"host_name": "web1", "ok": 3}]}
+    )
+    suite = _case_suite({"expect": {"changed": 0, "hosts": {"web1": {"failed": 0}}}})
+    [row] = runner([suite]).results
+    assert (row.result, row.failure) == ("pass", None)
+
+
+def test_unreadable_summaries_a_check_needs_are_the_cases_error() -> None:
+    def broken(job: Job) -> list[dict[str, Any]]:
+        raise HttpTransportError("503 Service Unavailable", system="awx")
+
+    runner = _make_runner(
+        fk=StubFk(),
+        launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
+        watcher=StubWatcher(default=_job(id_=5, status="successful")),
+        host_reader=broken,
+    )
+    outcome = runner([_case_suite({"expect": {"changed": 0}})])
+    [row] = outcome.results
+    assert row.failure is not None
+    assert (row.result, row.failure.system, row.failure.message) == (
+        "error",
+        "awx.controller",
+        "host summaries unreadable: 503 Service Unavailable",
+    )
+    assert _exit_code(outcome) == 5
+
+
+_VALIDATE_FAILED = _event("runner_on_failed", failed=True, host="web1", msg="env must be one of")
+
+
+def test_a_negative_case_passes_only_when_its_failed_tasks_match() -> None:
+    body = {"expect": {"status": "failed", "failed_tasks": [{"task": "Dep", "msg": "one of"}]}}
+    runner, _, hosts, events = _regression_runner(
+        {5: "failed"},
+        hosts={5: [{"host_name": "web1", "failures": 1}]},
+        events={5: [_VALIDATE_FAILED]},
+    )
+    [row] = runner([_case_suite(body)]).results
+    assert (row.result, row.failure) == ("pass", None)
+    assert row.expectations[1].model_dump() == {
+        "check": "failed_tasks",
+        "expected": "task 'Dep', msg 'one of'",
+        "actual": "[web1] Deploy: env must be one of",
+        "passed": True,
+    }
+    assert (hosts.read, len(events.calls)) == ([5], 1)
+
+    body = {"expect": {"status": "failed", "failed_tasks": [{"matches": "^version"}]}}
+    runner, _, _, _ = _regression_runner(
+        {5: "failed"},
+        hosts={5: [{"host_name": "web1", "failures": 1}]},
+        events={5: [_VALIDATE_FAILED]},
+    )
+    [row] = runner([_case_suite(body)]).results
+    assert row.failure is not None
+    assert (row.result, row.failure.system, row.failure.message) == (
+        "fail",
+        "awx.expectation",
+        "no failed task matches msg matches '^version'",
+    )
+    assert row.failure.evidence.failed_tasks is not None
+    assert [task.msg for task in row.failure.evidence.failed_tasks] == ["env must be one of"]
+
+
+def test_a_rescued_failure_does_not_match_a_failed_task() -> None:
+    body = {"expect": {"status": "failed", "failed_tasks": [{"msg": "one of"}]}}
+    runner, _, _, _ = _regression_runner(
+        {5: "failed"},
+        hosts={5: [{"host_name": "web1", "failures": 0, "rescued": 1}]},
+        events={5: [_VALIDATE_FAILED]},
+    )
+    [row] = runner([_case_suite(body)]).results
+    assert row.failure is not None
+    assert (row.result, row.failure.message) == ("fail", "no failed task matches msg 'one of'")
+
+
+def test_unreadable_events_leave_failed_tasks_unchecked() -> None:
+    runner = _make_runner(
+        fk=StubFk(),
+        launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
+        watcher=StubWatcher(default=_job(id_=5, status="failed")),
+        event_reader=StubEventReader([], error=RuntimeError("down")),
+    )
+    body = {"expect": {"status": "failed", "failed_tasks": [{"msg": "x"}]}}
+    [row] = runner([_case_suite(body)]).results
+    assert row.failure is not None
+    assert (row.result, row.failure.system, row.failure.message) == (
+        "error",
+        "awx.controller",
+        "failed_tasks not checked: its events could not be read",
+    )
+
+
+def test_an_idempotent_case_relaunches_the_same_payload_and_passes_unchanged() -> None:
+    runner, launcher, hosts, _ = _regression_runner(
+        {5: "successful", 6: "successful"},
+        hosts={5: [{"host_name": "web1", "changed": 3}], 6: [{"host_name": "web1", "ok": 3}]},
+    )
+    body = {"launch": {"limit": "web1"}, "expect": {"idempotent": True}}
+
+    [row] = runner([_case_suite(body)]).results
+
+    assert [call["payload"] for call in launcher.calls] == [{"limit": "web1"}] * 2
+    assert (row.result, row.job_id, row.rerun_job_id, row.failure) == ("pass", 5, 6, None)
+    assert row.expectations[-1].model_dump() == {
+        "check": "idempotent",
+        "expected": "successful, 0 changed",
+        "actual": "successful, 0 changed",
+        "passed": True,
+    }
+    assert hosts.read == [6]  # only the rerun's changes matter
+
+
+def _changed(host: str, task: str) -> JobEvent:
+    return JobEvent.model_validate(
+        {"counter": 1, "event": "runner_on_ok", "changed": True, "host_name": host, "task": task}
+    )
+
+
+def test_a_rerun_that_changes_something_lists_what_changed() -> None:
+    runner, _, _, events = _regression_runner(
+        {5: "successful", 6: "successful"},
+        hosts={6: [{"host_name": "web1", "changed": 1}, {"host_name": "web2", "changed": 1}]},
+        events={6: [_changed("web1", "Template config"), _changed("web2", "Restart")]},
+    )
+
+    outcome = runner([_case_suite({"expect": {"idempotent": True}})])
+
+    [row] = outcome.results
+    assert row.failure is not None
+    assert (row.result, row.rerun_job_id, row.failure.system, row.failure.message) == (
+        "fail",
+        6,
+        "awx.expectation",
+        "not idempotent: the rerun ended successful, 2 changed",
+    )
+    assert row.failure.evidence.changed_tasks is not None
+    assert [task.model_dump() for task in row.failure.evidence.changed_tasks] == [
+        {"host": "web1", "task": "Template config"},
+        {"host": "web2", "task": "Restart"},
+    ]
+    assert (6, {"event": "runner_on_ok", "changed": "true"}, False) in events.calls
+    assert row.expectations[-1].actual == "successful, 2 changed"
+    assert _exit_code(outcome) == 1
+
+
+def test_without_evidence_a_rerun_reads_no_changed_tasks() -> None:
+    runner, _, _, events = _regression_runner(
+        {5: "successful", 6: "successful"},
+        hosts={6: [{"host_name": "web1", "changed": 1}]},
+        evidence=False,
+    )
+    [row] = runner([_case_suite({"expect": {"idempotent": True}})]).results
+    assert row.failure is not None
+    assert (row.failure.message, row.failure.evidence.changed_tasks) == (
+        "not idempotent: the rerun ended successful, 1 changed",
+        None,
+    )
+    assert events.calls == []
+
+
+def test_a_rerun_that_fails_is_attributed_like_any_job() -> None:
+    runner, _, _, _ = _regression_runner(
+        {5: "successful", 6: "failed"},
+        events={6: [_event("runner_on_failed", failed=True, host="web1", msg="already exists")]},
+    )
+    [row] = runner([_case_suite({"expect": {"idempotent": True}})]).results
+    assert row.failure is not None
+    assert (row.result, row.job_status, row.failure.system, row.failure.message) == (
+        "fail",
+        "successful",
+        "awx.playbook",
+        "rerun job 6: task 'Deploy' failed on web1: already exists",
+    )
+    assert row.expectations[-1].actual == "failed, 0 changed"
+
+
+def test_a_rerun_that_times_out_is_cancelled() -> None:
+    canceller = StubCanceller()
+    runner, _, _, _ = _regression_runner({5: "successful", 6: "running"}, canceller=canceller)
+    [row] = runner([_case_suite({"expect": {"idempotent": True}})], timeout=30).results
+    assert row.failure is not None
+    assert (row.result, row.rerun_job_id, row.failure.message) == (
+        "timeout",
+        6,
+        "rerun job 6: still running after 30s; cancel requested",
+    )
+    assert canceller.calls == [6]
+
+
+def test_a_case_that_failed_is_not_rerun() -> None:
+    runner, launcher, _, _ = _regression_runner({5: "failed"})
+    [row] = runner([_case_suite({"expect": {"idempotent": True}})]).results
+    assert (row.result, row.rerun_job_id, len(launcher.calls)) == ("fail", None, 1)
+
+
+def test_a_rerun_the_controller_refuses_keeps_its_error() -> None:
+    launcher = SequenceLauncher()
+
+    def launch(spec: AwxResourceSpec, **kwargs: Any) -> Job:
+        if launcher.next_id == 6:
+            raise HttpTransportError("503 Service Unavailable", system="awx")
+        return launcher(spec, **kwargs)
+
+    runner = _make_runner(
+        fk=StubFk(),
+        launcher=cast(Any, launch),
+        watcher=StubWatcher(default=_job(id_=5, status="successful")),
+    )
+    [row] = runner([_case_suite({"expect": {"idempotent": True}})]).results
+    assert row.failure is not None
+    assert (row.result, row.rerun_job_id, row.failure.system, row.failure.message) == (
+        "error",
+        None,
+        "awx.controller",
+        "the rerun: 503 Service Unavailable",
+    )
+    assert row.expectations[-1].actual == "not launched"
+
+
+class WatchFails(StubWatcher):
+    """Raises ``error`` while watching job ``id_``; every other job ends ``successful``."""
+
+    def __init__(self, id_: int, error: BaseException) -> None:
+        super().__init__()
+        self.id_, self.error = id_, error
+
+    def __call__(self, job: Job, *, timeout: float | None = None) -> Job:
+        if job.id == self.id_:
+            raise self.error
+        return _job(id_=job.id, status="successful")
+
+
+def test_a_rerun_whose_polling_failed_reports_an_unknown_status() -> None:
+    canceller = StubCanceller()
+    error = HttpTransportError("503 Service Unavailable", system="awx")
+    runner, _, _, _ = _regression_runner({}, watcher=WatchFails(6, error), canceller=canceller)
+    [row] = runner([_case_suite({"expect": {"idempotent": True}})]).results
+    assert row.failure is not None
+    assert (row.result, row.rerun_job_id, row.failure.message) == (
+        "error",
+        6,
+        "rerun job 6: 503 Service Unavailable; cancel requested",
+    )
+    assert row.expectations[-1].actual == "unknown"
+    assert canceller.calls == [6]
+
+
+def test_ctrl_c_during_a_rerun_cancels_it() -> None:
+    canceller = StubCanceller()
+    runner, _, _, _ = _regression_runner(
+        {}, watcher=WatchFails(6, KeyboardInterrupt()), canceller=canceller
+    )
+    with pytest.raises(KeyboardInterrupt):
+        runner([_case_suite({"expect": {"idempotent": True}})])
+    assert canceller.calls == [6]
+
+
+def test_a_stopping_run_launches_no_rerun() -> None:
+    stop = threading.Event()
+
+    class StopsWhileWatching(StubWatcher):
+        def __call__(self, job: Job, *, timeout: float | None = None) -> Job:
+            stop.set()
+            return _job(id_=job.id, status="successful")
+
+    runner, launcher, _, _ = _regression_runner({}, watcher=StopsWhileWatching(), stop=stop)
+    [row] = runner([_case_suite({"expect": {"idempotent": True}})]).results
+    assert (row.rerun_job_id, len(launcher.calls)) == (None, 1)
+
+
+def test_a_rerun_runs_the_commit_the_first_job_ran() -> None:
+    first = Job(
+        id=5, kind="job", status="successful", scm_branch="feature/x", scm_revision="c0ffee"
+    )
+    runner, launcher, _, _ = _regression_runner({5: first, 6: "successful"})
+    body = {"launch": {"scm_branch": "feature/x"}, "expect": {"idempotent": True}}
+
+    [row] = runner([_case_suite(body)]).results
+
+    assert row.result == "pass"
+    assert [call["payload"]["scm_branch"] for call in launcher.calls] == ["feature/x", "c0ffee"]
+
+
+class SettleFails(StubJobReader):
+    def settled(self, job: Job) -> Job:
+        if job.id == 5:
+            raise HttpTransportError("502 Bad Gateway", system="awx")
+        return super().settled(job)
+
+
+def test_a_job_that_cannot_be_settled_is_the_cases_error() -> None:
+    runner, _, _, _ = _regression_runner({5: "failed", 6: "failed"}, job_reader=SettleFails())
+    suite = _suite("s", {"a": {}, "b": {}})
+
+    outcome = runner([suite])
+
+    first, second = outcome.results
+    assert first.failure is not None
+    assert (first.result, first.job_id, first.failure.system, first.failure.message) == (
+        "error",
+        5,
+        "awx.controller",
+        "502 Bad Gateway",
+    )
+    assert second.result == "fail"
+    assert _exit_code(outcome) == 5
+
+
+def test_an_aborted_run_still_counts_the_cases_that_finished() -> None:
+    def job_url(job: Job) -> str:
+        if job.id == 6:
+            raise RuntimeError("bug")
+        return "url"
+
+    runner, _, _, _ = _regression_runner(
+        {5: Job(id=5, kind="job", status="error", job_explanation="pod lost"), 6: "successful"},
+        job_url=job_url,
+    )
+    with diagnostics_scope():
+        with pytest.raises(RuntimeError, match="bug"):
+            runner([_suite("s", {"a": {}, "b": {}})])
+        assert failure_exit_code() == 5
+
+
+def test_an_aborted_run_still_counts_its_baseline_runs_failures() -> None:
+    credential = "Credential lookup failed: vault denied"
+    finals: dict[int, str | Job] = {
+        5: Job(id=5, kind="job", status="error", job_explanation=credential),
+        6: "successful",
+    }
+
+    def job_url(job: Job) -> str:
+        if job.id == 6:
+            raise RuntimeError("bug")
+        return "url"
+
+    runner, _, _, _ = _regression_runner(finals, job_url=job_url)
+    with diagnostics_scope():
+        with pytest.raises(RuntimeError, match="bug"):
+            runner([_case_suite({})], baseline="main")
+        assert failure_exit_code() == 4
+
+
+def test_baseline_runs_every_case_at_the_ref_first_then_compares() -> None:
+    fk = StubFk()
+    runner, launcher, _, _ = _regression_runner({5: "failed", 6: "successful"}, fk=fk)
+
+    outcome = runner([_case_suite({})], baseline="main", scm_branch="fix")
+
+    assert [call["payload"].get("scm_branch") for call in launcher.calls] == ["main", "fix"]
+    assert [call[0] for call in fk.calls].count("prefetch") == 1
+    [row] = outcome.results
+    assert (row.job_id, row.change, row.baseline) == (
+        6,
+        "fixed",
+        Baseline(result="fail", job_id=5, system="awx.playbook", category="failed"),
+    )
+    assert outcome.counted() == []
+
+
+def test_the_baseline_runs_environment_failures_count() -> None:
+    finals: dict[int, str | Job] = {
+        5: Job(id=5, kind="job", status="error", job_explanation="pod lost"),
+        6: "successful",
+    }
+    runner, _, _, _ = _regression_runner(finals)
+    outcome = runner([_case_suite({})], baseline="main")
+    [row] = outcome.results
+    assert (row.change, [f.system for f in outcome.counted()]) == ("fixed", ["awx.controller"])
+
+
+def test_a_saved_baseline_is_compared_with() -> None:
+    runner, _, _, _ = _regression_runner({5: "failed"})
+    saved = {("s", "c"): Baseline(result="pass", job_id=1)}
+    [row] = runner([_case_suite({})], compare=saved).results
+    assert (row.change, row.baseline) == ("regression", saved[("s", "c")])
+
+
+def test_failed_tasks_on_a_successful_job_fail_without_reading_events() -> None:
+    runner, _, hosts, events = _regression_runner({5: "successful"})
+    body = {"expect": {"failed_tasks": [{"msg": "x"}], "log": {"contains": ["absent"]}}}
+
+    [row] = runner([_case_suite(body)]).results
+
+    assert row.failure is not None
+    assert row.failure.message == "no log line contains 'absent'; no failed task matches msg 'x'"
+    assert row.failure.evidence.failed_tasks == ()
+    assert (events.calls, hosts.read) == ([], [])
+
+
+def _many_hosts(**last: int) -> list[dict[str, Any]]:
+    """501 hosts: the first 500 changed nothing, the last (cut from the list) ``last``."""
+    hosts: list[dict[str, Any]] = [{"host_name": f"h{index:03}", "ok": 1} for index in range(500)]
+    return [*hosts, {"host_name": "h500", **last}]
+
+
+def test_a_cut_host_list_never_hides_a_changed_host() -> None:
+    runner, _, hosts, _ = _regression_runner({5: "successful"}, hosts={5: _many_hosts(changed=3)})
+
+    [row] = runner([_case_suite({"expect": {"changed": 0, "hosts": {"*": {"failed": 0}}}})]).results
+
+    assert row.hosts is not None and (len(row.hosts), row.hosts_truncated) == (500, True)
+    assert row.failure is not None
+    assert row.failure.message == "expected <= 0 changed tasks, got 3"
+    assert hosts.filtered == [(5, {"changed__gt": "0"}), (5, {"failures__gt": "0"})]
+
+
+def test_a_cut_host_list_never_hides_a_change_on_the_rerun() -> None:
+    runner, _, _, _ = _regression_runner(
+        {5: "successful", 6: "successful"}, hosts={6: _many_hosts(changed=1)}, evidence=False
+    )
+    [row] = runner([_case_suite({"expect": {"idempotent": True}})]).results
+    assert row.failure is not None
+    assert row.failure.message == "not idempotent: the rerun ended successful, 1 changed"
+
+
+def test_a_cut_host_list_that_cannot_be_completed_is_the_cases_error() -> None:
+    class Broken(HostsById):
+        def __call__(self, job: Job, params: dict[str, str] | None = None) -> list[dict[str, Any]]:
+            if params is not None:
+                raise HttpTransportError("503 Service Unavailable", system="awx")
+            return super().__call__(job)
+
+    runner, _, _, _ = _regression_runner({5: "successful"}, host_reader=Broken({5: _many_hosts()}))
+    [row] = runner([_case_suite({"expect": {"changed": 0}})]).results
+    assert row.failure is not None
+    assert (row.result, row.failure.message) == (
+        "error",
+        "host summaries unreadable: 503 Service Unavailable",
+    )

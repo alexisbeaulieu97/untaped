@@ -623,6 +623,9 @@ untaped awx schema AwxTestSuite > awx-test-suite.schema.json
 untaped awx test validate
 untaped awx test run --scm-branch HEAD --format json
 untaped awx test run --case deploy-smoke/web --var env=prod --show-logs
+untaped awx test run --scm-branch main --format json > /tmp/baseline.json
+untaped awx test run --scm-branch HEAD --compare /tmp/baseline.json
+untaped awx test run --scm-branch HEAD --baseline main
 ```
 
 - `test init TEMPLATE` reads the template's launch prompts and survey and
@@ -651,6 +654,16 @@ untaped awx test run --case deploy-smoke/web --var env=prod --show-logs
   the environment needs fixing, 5 when retrying later may help, 1 when the
   change or the suite must. The awx skill's `references/test-results.md`
   lists the systems and what to do for each.
+- Regression checks: besides `status` and `log`, a case's `expect:` can
+  bound the changed tasks (`changed`) and each host's failed, unreachable or
+  changed counters (`hosts`, `"*"` for every host), require the failed tasks
+  that prove a negative case failed for the right reason (`failed_tasks`;
+  `validate` warns about a `status: failed` case without it), and rerun the
+  case to prove nothing changes the second time (`idempotent: true`).
+- `--compare FILE` compares a run with the saved JSON (or pipe) output of an
+  earlier one, and `--baseline REF` runs every case on `REF` first, then
+  compares. Each row gains `baseline` and a `change`, and only a regression
+  or a failing new case fails the run.
 - To let an AI agent run suites against its own changes, give it a dedicated
   profile and token: see [AWX agent profile](./agent-profile.md).
 
