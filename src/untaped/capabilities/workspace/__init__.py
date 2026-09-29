@@ -35,7 +35,13 @@ SPEC = CapabilitySpec(
             source=Path(
                 str(files("untaped.capabilities.workspace").joinpath("skills", "untaped-workspace"))
             ),
-            description="Use the built-in `untaped workspace` capability for local git workspaces.",
+            description=(
+                "Use the `untaped workspace` command to manage local multi-repository git "
+                "workspaces (register them, add or remove repos, clone and pull them together, "
+                "check their status, switch branches, and run a command in every repo). Use "
+                "when the user mentions a workspace, several repos at once, cloning or syncing "
+                "many repos, dirty or behind repos, or running a command across repos."
+            ),
         ),
     ),
     doctor_checks=(executable_check("workspace.git", "git", purpose="workspace commands"),),

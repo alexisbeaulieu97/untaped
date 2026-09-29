@@ -11,7 +11,7 @@ import json
 import re
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from cyclopts import Parameter
 
@@ -37,6 +37,7 @@ from untaped.capabilities.awx.cli.usage_commands import register_usage_command
 from untaped.capabilities.awx.cli.workflow_node_commands import register_nodes_command
 from untaped.capabilities.awx.domain import Job, JobEvent
 from untaped.capabilities.awx.domain.job import JOB_ROUTES
+from untaped.capabilities.awx.domain.suite import Suite
 from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS
 from untaped.capability_api import (
     ColumnsOption,
@@ -74,6 +75,25 @@ def ping_command(
         with open_context() as ctx:
             status = Ping(ctx.client)()
         emit(status, fmt=fmt, columns=columns, kind="awx.status")
+
+
+# ---- schema ----
+
+
+@app.command(name="schema")
+def schema_command(
+    kind: Annotated[Literal["AwxTestSuite"], Parameter(help="The document kind.")],
+    /,
+    *,
+    fmt: Annotated[
+        Literal["json", "yaml"],
+        Parameter(name=["--format", "-f"], help="Print the schema as json or yaml."),
+    ] = "json",
+) -> None:
+    """Print the JSON Schema of a document kind you write, for editors and agents."""
+    models = {"AwxTestSuite": Suite}
+    schema = models[kind].model_json_schema(by_alias=True)
+    emit({"$schema": "https://json-schema.org/draft/2020-12/schema", **schema}, fmt=fmt)
 
 
 # ---- top-level apply (multi-kind, file or directory) ----

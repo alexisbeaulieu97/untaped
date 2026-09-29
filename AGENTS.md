@@ -76,7 +76,10 @@ flattening it into a string.
   above, expose `SPEC` + `build_app`, and append its name to
   `BUILTIN_CAPABILITIES` in `bootstrap.py` in declaration order. Start its
   skill from [`docs/templates/SKILL.md`](docs/templates/SKILL.md) and its user
-  guide at `docs/<name>/usage.md`, linked from `docs/README.md`. Set
+  guide at `docs/<name>/usage.md`, linked from `docs/README.md`. A skill is a
+  self-contained manual for the installed CLI (`references/`, `examples/`,
+  never links into the repository); `tests/unit/test_skill_files.py` parses
+  every command it quotes. Set
   `SPEC.help` to the app's one-line help: built-ins with `help` are mounted
   lazily (factory runs once, on dispatch), so `untaped --help` and other
   capabilities never import their CLI. Externals are always built once during

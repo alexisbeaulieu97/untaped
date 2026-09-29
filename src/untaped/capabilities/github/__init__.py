@@ -52,7 +52,13 @@ SPEC = CapabilitySpec(
             source=Path(
                 str(files("untaped.capabilities.github").joinpath("skills", "untaped-github"))
             ),
-            description="Use the built-in `untaped github` capability for GitHub workflows.",
+            description=(
+                "Use the `untaped github` command to query GitHub or GitHub Enterprise (list "
+                "org and team repositories, search repositories, code, issues and users, and "
+                "sweep local clones of many repositories with grep-style questions). Use when "
+                "the user mentions GitHub, GHE, repos, orgs, teams, code search, issue search, "
+                "which repos use something, or a codebase-wide sweep."
+            ),
         ),
     ),
     doctor_checks=(

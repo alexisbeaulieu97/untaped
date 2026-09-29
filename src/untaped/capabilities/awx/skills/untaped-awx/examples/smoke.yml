@@ -1,0 +1,12 @@
+# The smallest useful suite: launch the job template once and expect the job
+# to succeed. Copy it to .untaped/awx/tests/ in the playbook repository and
+# change jobTemplate.
+kind: AwxTestSuite
+name: deploy-smoke
+jobTemplate: Deploy app
+cases:
+  smoke:
+    expect:
+      status: successful
+      log:
+        contains: ["PLAY RECAP"]
