@@ -14,10 +14,9 @@ Rules:
 - The installed skill is the agent's whole manual: an agent that has only
   the installed CLI must be able to do the job with it. Never link to docs/
   or the source repository, which do not exist next to an installed CLI.
-- Aim for 400-900 words. When the guide is longer, keep SKILL.md the map
-  (when to use what, the main loop, pitfalls) and move details to
-  references/TOPIC.md files beside it, linked by relative path; put sample
-  input files in examples/.
+- SKILL.md is about 900 words: the map (when to use what, the main loop,
+  pitfalls). Details go in references/TOPIC.md files beside it, linked by
+  relative path; sample input files go in examples/.
 - Write for an agent operating the CLI: commands, flags, outputs, safety.
   No implementation notes, class names, test details or release history.
 - Every command and flag must exist in `untaped CAPABILITY ... --help`.
