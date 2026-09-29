@@ -259,6 +259,10 @@ a convention, since each document's `kind` decides what it is:
 └── tests/deploy-smoke.yml    # kind: AwxTestSuite
 ```
 
+`untaped awx test run --source-ref REF` runs the suites against temporary
+copies of these specs, pinned to REF's commit (see
+[test-suites.md](test-suites.md#temporary-test-sets---source-ref)).
+
 ## Copy a template's configuration
 
 Export, change `metadata.name`, apply: the new template gets the same

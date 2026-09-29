@@ -342,6 +342,81 @@ A negative case (`status: failed`) that names its cause in a node (a node
 that must fail, or its `failed_tasks`) needs no `failed_tasks` of its own:
 `validate` does not warn about it.
 
+## Temporary test sets: `--source-ref`
+
+`--scm-branch` runs a branch's playbooks with the templates AWX holds. When
+the branch also changes a template or workflow, keep its spec in the
+repository ([specs.md](specs.md), the document `export` writes) and run
+`untaped awx test run --source-ref REF`: each suite then runs against a
+temporary copy of its template as the ref describes it.
+
+1. REF (a branch, tag or commit; `HEAD` once pushed) is pinned to its
+   commit, which a remote must have: AWX checks it out. Suites and specs are
+   read at that commit, never from the working tree (paths default to
+   `.untaped/awx/tests/` at the repository root; messages name files
+   `REF:PATH`).
+2. A suite is bound by name: when a `kind: JobTemplate` (for `jobTemplate`)
+   or `kind: WorkflowJobTemplate` (for `workflowTemplate`) document anywhere
+   under `.untaped/awx/` has the template's name and organization (the
+   suite's `organization`, else `awx.default_organization`), the suite runs a
+   copy of it. A copied workflow's nodes that run a template with a spec run
+   that template's copy; its other nodes run the templates AWX holds. Two
+   specs matching one suite are refused.
+3. Each copy is created as `apply` would create the spec, with these
+   changes:
+   - its name is `NAME [untaped-test SHA RUN]` (the commit's first 7 digits
+     and a random run id), so concurrent runs never collide; a name already
+     taken is refused;
+   - its description is the marker `untaped-test run=RUN ref=REF sha=SHA
+     created=TIME` that `prune` finds leftovers by;
+   - its `scm_branch` is the commit, so a job template's project must allow
+     branch override (`allow_override`); a workflow passes it to its nodes
+     that prompt for it;
+   - it prompts on launch (`ask_*_on_launch`) for every field a case sets in
+     `launch`, so a case can target a test inventory without changing the
+     spec;
+   - it has no webhook settings (nor notifications or schedules, which a
+     spec never holds).
+
+   Everything a spec names (project, inventory, credentials, execution
+   environment, labels, instance groups, the templates its nodes run) is
+   looked up by name and must exist: nothing but the copies is created.
+4. A suite whose template has no spec runs the template AWX holds with
+   `scm_branch` set to the commit. A template that does not prompt for it
+   would silently run its own branch, so the run is refused before anything
+   is created: add its spec to `.untaped/awx/templates/` or enable
+   `ask_scm_branch_on_launch`.
+5. The copies are created without a confirmation, job templates first, then
+   the cases run, then the copies are deleted, workflows first, however the
+   run ends (a failed case, a preflight failure, Ctrl-C: running jobs are
+   cancelled first). `--keep` keeps them and prints their names on stderr.
+   A copy that cannot be deleted is a warning naming it, with a hint to run
+   `untaped awx test prune`; it never changes a case's result or the exit
+   code.
+
+A case's `launch.scm_branch` is replaced by the commit, as `--scm-branch`
+does. `--source-ref` cannot be combined with `--scm-branch` or `--baseline`
+(compare with `--compare`), and `--no-cancel` needs `--keep` (AWX cannot
+delete a template while its job runs). A copy that cannot be provisioned
+stops the run before any case launches; see
+[test-results.md](test-results.md#temporary-copies) for how it is reported.
+The AWX user needs to create and delete job templates and workflows
+([agent-profile.md](agent-profile.md)).
+
+`untaped awx test validate --source-ref REF` (or `untaped awx test run
+--source-ref REF --dry-run`) does everything but the writes: it resolves every
+link of every copy, checks that its name is free and its project allows
+branch override, checks each case against the copy's spec (its survey's
+required variables, the node ids it checks) or the template it runs, and
+prints one `awx.provision_outcome` row per copy, with the prompts it enables.
+
+`untaped awx test prune` deletes the copies a killed run left behind: job
+templates and workflows named like a copy whose description carries the
+matching marker, created more than `--older-than` ago (`2h` by default;
+`30m`, `1d`, `90s`; `0` takes every copy, a running test's included). It lists
+them and asks once (`--yes` skips the question, `--dry-run` only lists them),
+and prints one `awx.prune_outcome` row per copy.
+
 ## Preflight: what `validate` and `run` check
 
 `untaped awx test validate` renders, parses and resolves every case and
@@ -381,6 +456,11 @@ untaped awx test run --case deploy-smoke/web --case db --non-interactive
 untaped awx test run suites/deploy.yml --var env=prod --parallel 2 --show-logs
 untaped awx test run --scm-branch HEAD --compare baseline.json --format json
 untaped awx test run --scm-branch HEAD --baseline main --format json
+untaped awx test validate --source-ref HEAD       # the copies a run would create
+untaped awx test run --source-ref HEAD --format json
+untaped awx test run --source-ref v1.4.0 --keep --case deploy-smoke/web
+untaped awx test prune --dry-run                  # leftover copies older than 2h
+untaped awx test prune --older-than 30m --yes
 untaped awx schema AwxTestSuite                   # the body's JSON Schema
 ```
 
@@ -401,6 +481,8 @@ untaped awx schema AwxTestSuite                   # the body's JSON Schema
   approval nodes (uncomment it, or a pending approval fails the case).
 - `--case` selects `CASE` (in every suite) or `SUITE/CASE`, and is
   repeatable; a `--case` that matches nothing is an error before any launch.
+- `run --dry-run` checks the selected cases as `validate` does (with
+  `--scm-branch` or `--source-ref` applied) and launches nothing.
 - `--scm-branch REF` runs every job on that branch, tag or commit. Each
   template must prompt for it (`ask_scm_branch_on_launch`, which AWX allows
   only when the project allows branch override). `--scm-branch HEAD` is the

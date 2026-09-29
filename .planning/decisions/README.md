@@ -6,6 +6,7 @@ implementation behavior. This index is navigation only; work is tracked in GitHu
 - [AWX specs are plain export documents in the repo](dec_01a0eb415a9e7195873ec9f8a91da3dd-v4-awx-specs-are-plain-export-documents-in-the-repo.md)
 - [awx test failures name the responsible system; logs are read through events](dec_01a0ee3c7ace70f6afb9ccbbac9d6d93-v4-awx-test-failures-name-the-responsible-system.md)
 - [awx test regression tools: declarative checks; a baseline excuses only the same failure](dec_01a0ee7aa1b0734c84536654eaf40cb0-v4-awx-test-regressions-fail-only-on-a-regression.md)
+- [awx test temporary test sets: repo specs are copied per run, pinned, and always torn down](dec_01a0ef86eb4476678fca251bb6e6d6b4-v4-awx-temporary-test-sets-are-provisioned-per-run.md)
 - [awx test workflow suites reuse the job case; a workflow is blamed on its failing node](dec_01a0eebbe4e37457a4975c6fd4c3bfb8-v4-awx-workflow-suites-reuse-the-job-case.md)
 - [AWX template specs and test suites stored with source](dec_01a0d5b790bd7341b4e493c1bbc4ea54-v4-awx-template-specs-and-suites-stored-with-source.md) (superseded)
 - [capability state lives in state.yml](dec_01a0d05a563c7751139b4452ccadb3b7-v4-capability-state-lives-in-state-yml.md)

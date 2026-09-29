@@ -38,7 +38,7 @@ def build_mutation_engine(
     )
 
 
-def _with_default_organization(ctx: AwxContext, doc: Resource) -> Resource:
+def with_default_organization(ctx: AwxContext, doc: Resource) -> Resource:
     """Scope org-less documents of org-scoped kinds by ``awx.default_organization``.
 
     Selection scopes the same way. An explicit ``metadata.organization`` (even
@@ -116,7 +116,7 @@ def run_apply(
                     f"{source}: unknown kind {doc.kind!r} (available: {', '.join(sorted(known))})",
                     category="invalid",
                 )
-        return [_with_default_organization(ctx, doc) for _source, doc in docs]
+        return [with_default_organization(ctx, doc) for _source, doc in docs]
 
     engine = build_mutation_engine(ctx, allow_unverified=controls.allow_unverified)
     plan = prepare_apply_file(engine, reader, files, catalog=ctx.catalog, fk=ctx.fk)

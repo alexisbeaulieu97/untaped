@@ -8,7 +8,7 @@ from collections import Counter
 from collections.abc import Iterable
 from functools import partial
 from pathlib import Path
-from typing import Annotated, Any, get_args
+from typing import TYPE_CHECKING, Annotated, Any, get_args
 
 from cyclopts import Parameter
 from cyclopts.validators import Number
@@ -26,6 +26,7 @@ from untaped.capabilities.awx.domain.suite import (
     Change,
     Suite,
     SuiteRunOutcome,
+    select_cases,
 )
 from untaped.capabilities.awx.domain.suite_baseline import saved_baselines
 from untaped.capabilities.awx.domain.suite_starter import suite_slug
@@ -40,11 +41,16 @@ from untaped.capabilities.awx.infrastructure.suites.filesystem import (
 from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
+    DryRunOption,
+    ErrorInfo,
     FormatOption,
     GitCommandError,
+    OutputFormat,
     ParallelOption,
     UntapedError,
+    YesOption,
     attribution,
+    batch_apply,
     create_app,
     echo,
     emit,
@@ -63,6 +69,10 @@ from untaped.capability_api import (
     summary,
     ui_context,
 )
+
+if TYPE_CHECKING:
+    from untaped.capabilities.awx.application.suites.ports import Filesystem
+    from untaped.capabilities.awx.domain.temporary_set import TemporarySet
 
 app = create_app(
     name="test",
@@ -130,6 +140,19 @@ _NON_INTERACTIVE_OPT = Annotated[
         help="Fail on missing required vars instead of prompting.",
     ),
 ]
+_SOURCE_REF_OPT = Annotated[
+    str | None,
+    Parameter(
+        name="--source-ref",
+        help="Read suites and specs at this branch, tag or commit (HEAD once pushed): a suite "
+        "whose template has a spec under .untaped/awx/ runs a temporary copy of it pinned to "
+        "the commit; any other template must prompt for scm_branch.",
+    ),
+]
+
+_PROVISION_KIND = "awx.provision_outcome"
+_PROVISION_COLUMNS = ["kind", "name", "template", "prompts", "path"]
+_PRUNE_COLUMNS = ["kind", "id", "name", "ref", "created_at", "action"]
 
 
 # ---- shared helpers ------------------------------------------------------
@@ -173,8 +196,12 @@ def _load_suites(
     cli_vars: dict[str, str],
     vars_files: tuple[Path, ...],
     non_interactive: bool,
+    filesystem: Filesystem | None = None,
 ) -> dict[Path, Suite]:
-    """Each file's suite; suite names must be unique (``--case SUITE/CASE`` needs it)."""
+    """Each file's suite; suite names must be unique (``--case SUITE/CASE`` needs it).
+
+    ``filesystem`` reads the files (default: the working tree).
+    """
     from untaped.capabilities.awx.application.suites.loader import LoadTestSuite  # noqa: PLC0415
     from untaped.capabilities.awx.infrastructure.suites import (  # noqa: PLC0415
         DefaultParser,
@@ -184,7 +211,7 @@ def _load_suites(
     )
 
     loader = LoadTestSuite(
-        LocalFilesystem(),
+        filesystem or LocalFilesystem(),
         parser=DefaultParser(),
         vars_resolver=resolve_variables,
         prompt=UiPrompt(force_non_interactive=non_interactive),
@@ -288,10 +315,25 @@ def run_command(
             "once pushed), then as asked, and compare as --compare does.",
         ),
     ] = None,
+    source_ref: _SOURCE_REF_OPT = None,
+    keep: Annotated[
+        bool,
+        Parameter(
+            name="--keep",
+            negative="",
+            help="With --source-ref, keep the temporary copies after the run and print their "
+            "names.",
+        ),
+    ] = False,
+    dry_run: DryRunOption = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Render, resolve, launch and report on one or more test files."""
+    """Render, resolve, launch and report on one or more test files.
+
+    With --source-ref, temporary copies of the templates with specs are created
+    first (no confirmation) and deleted after the run, even when interrupted.
+    """
     from untaped.capabilities.awx.application import RunAction, WatchJob  # noqa: PLC0415
     from untaped.capabilities.awx.application.suites.preflight import (  # noqa: PLC0415
         PreflightLaunch,
@@ -300,15 +342,32 @@ def run_command(
         ResolveCasePayload,
     )
     from untaped.capabilities.awx.application.suites.runner import RunTestSuite  # noqa: PLC0415
+    from untaped.capabilities.awx.cli import _temporary_sets as copies  # noqa: PLC0415
     from untaped.capabilities.awx.cli._action_runner import report_interrupted  # noqa: PLC0415
     from untaped.capabilities.awx.infrastructure import git_head  # noqa: PLC0415
     from untaped.capabilities.awx.infrastructure.web_ui import job_ui_url  # noqa: PLC0415
 
     if compare is not None and baseline is not None:
         raise_usage("--compare and --baseline cannot be combined")
-    cli_vars = parse_kv_pairs(var, flag="--var")
-    files = _expand_paths(paths)
+    _check_source_ref_flags(
+        source_ref, scm_branch=scm_branch, baseline=baseline, keep=keep, cancel=cancel
+    )
     case_filter = set(cases) if cases else None
+    if dry_run:
+        _validate(
+            paths,
+            var=var,
+            vars_file=vars_file,
+            non_interactive=non_interactive,
+            case_filter=case_filter,
+            source_ref=source_ref,
+            scm_branch=scm_branch,
+            fmt=fmt,
+            columns=columns,
+        )
+        return
+    cli_vars = parse_kv_pairs(var, flag="--var")
+    files = _expand_paths(paths) if source_ref is None else []
     structured = fmt not in {"table", "raw"}
 
     with report_errors(), open_context() as ctx:
@@ -317,12 +376,24 @@ def run_command(
             scm_branch = git_head.pushed_branch()
         if baseline == "HEAD":
             baseline = git_head.pushed_branch()
-        suites = _load_suites(
-            files,
+        default_scope = _jt_scope(ctx, _jt_spec(ctx))
+        preflight = PreflightLaunch(ctx.repo, ctx.catalog)
+        load = partial(
+            _load_suites,
             cli_vars=cli_vars,
             vars_files=tuple(vars_file or []),
             non_interactive=non_interactive,
-        ).values()
+        )
+        pinned: copies.SourceRun | None = None
+        if source_ref is None:
+            suites = list(load(files).values())
+        else:
+            source = copies.open_source(source_ref)
+            suites = copies.suites_at(source, paths, load)
+            pinned = copies.SourceRun.checked(
+                ctx, preflight, source, suites, case_filter=case_filter, default_scope=default_scope
+            )
+            scm_branch = source.sha
         runner = RunTestSuite(
             resolver=ResolveCasePayload(
                 ctx.fk,
@@ -335,11 +406,11 @@ def run_command(
             node_reader=ctx.jobs.workflow_nodes,
             approver=ctx.jobs.decide_approval,
             fk_prefetcher=ctx.fk,
-            jt_scope=_jt_scope(ctx, _jt_spec(ctx)),
+            jt_scope=default_scope,
             stop=ctx.stop,
             canceller=ctx.jobs.cancel if cancel else None,
             job_reader=ctx.monitor,
-            preflight=PreflightLaunch(ctx.repo, ctx.catalog),
+            preflight=preflight,
             log_reader=ctx.monitor.fetch_stdout,
             event_reader=ctx.monitor.stream_events,
             tail_reader=lambda job, lines: ctx.monitor.tail_stdout(job, lines)[0],
@@ -350,16 +421,18 @@ def run_command(
             hosts=structured,
         )
         try:
-            outcome = runner(
-                suites,
-                case_filter=case_filter,
-                parallel=parallel if parallel is not None else ctx.settings.test_parallel,
-                timeout=timeout,
-                default_timeout=ctx.settings.test_timeout,
-                scm_branch=scm_branch,
-                baseline=baseline,
-                compare=saved,
-            )
+            with copies.provisioned(ctx, pinned, keep=keep) as bindings:
+                outcome = runner(
+                    suites,
+                    case_filter=case_filter,
+                    parallel=parallel if parallel is not None else ctx.settings.test_parallel,
+                    timeout=timeout,
+                    default_timeout=ctx.settings.test_timeout,
+                    scm_branch=scm_branch,
+                    baseline=baseline,
+                    compare=saved,
+                    bindings=bindings,
+                )
         except KeyboardInterrupt:
             report_interrupted(
                 [(None, job) for job in runner.known_executions()],
@@ -383,6 +456,30 @@ def run_command(
     for failure in counted:
         note_failure(failure)
     finish(bool(counted))
+
+
+def _check_source_ref_flags(
+    source_ref: str | None,
+    *,
+    scm_branch: str | None,
+    baseline: str | None,
+    keep: bool,
+    cancel: bool,
+) -> None:
+    """Refuse the flags ``--source-ref`` cannot go with, and ``--keep`` without it."""
+    if source_ref is None:
+        if keep:
+            raise_usage("--keep applies to --source-ref only")
+        return
+    if scm_branch is not None:
+        raise_usage("--source-ref and --scm-branch cannot be combined: the copies run the commit")
+    if baseline is not None:
+        raise_usage("--source-ref and --baseline cannot be combined; compare with --compare")
+    if not cancel and not keep:
+        raise_usage(
+            "--no-cancel leaves jobs running, and AWX cannot delete a template while its job "
+            "runs; add --keep"
+        )
 
 
 def _result_columns(outcome: SuiteRunOutcome) -> list[str]:
@@ -521,61 +618,205 @@ def validate_command(
     var: _VAR_OPT = None,
     vars_file: _VARS_FILE_OPT = None,
     non_interactive: _NON_INTERACTIVE_OPT = False,
+    source_ref: _SOURCE_REF_OPT = None,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
-    """Render, parse, resolve and preflight each case; report errors without launching."""
+    """Render, parse, resolve and preflight each case; report errors without launching.
+
+    With --source-ref, also check the temporary copies a run would create (every
+    link, name and project branch override) and print them.
+    """
+    _validate(
+        paths,
+        var=var,
+        vars_file=vars_file,
+        non_interactive=non_interactive,
+        case_filter=None,
+        source_ref=source_ref,
+        fmt=fmt,
+        columns=columns,
+    )
+
+
+def _validate(
+    paths: list[Path] | None,
+    *,
+    var: list[str] | None,
+    vars_file: list[Path] | None,
+    non_interactive: bool,
+    case_filter: set[str] | None,
+    source_ref: str | None,
+    fmt: OutputFormat,
+    columns: list[str] | None,
+    scm_branch: str | None = None,
+) -> None:
+    """Check every selected case as ``run`` would, without writing or launching anything.
+
+    With ``source_ref``, the planned copies are checked and emitted
+    (``awx.provision_outcome`` rows); a case of a copied template is checked
+    against the copy's spec, any other case with ``scm_branch`` at the commit
+    (else at ``scm_branch``, when given).
+    """
     from untaped.capabilities.awx.application.suites.preflight import (  # noqa: PLC0415
         PreflightLaunch,
     )
     from untaped.capabilities.awx.application.suites.resolver import (  # noqa: PLC0415
         ResolveCasePayload,
     )
+    from untaped.capabilities.awx.application.suites.temporary_set import (  # noqa: PLC0415
+        approval_nodes,
+        planned_outcome,
+        preflight_copy,
+    )
+    from untaped.capabilities.awx.cli import _temporary_sets as copies  # noqa: PLC0415
+    from untaped.capabilities.awx.infrastructure import git_head  # noqa: PLC0415
 
     cli_vars = parse_kv_pairs(var, flag="--var")
-    files = _expand_paths(paths)
+    files = _expand_paths(paths) if source_ref is None else []
 
     with report_errors(), open_context() as ctx:
-        suites = _load_suites(
-            files,
+        if scm_branch == "HEAD":
+            scm_branch = git_head.pushed_branch()
+        load = partial(
+            _load_suites,
             cli_vars=cli_vars,
             vars_files=tuple(vars_file or []),
             non_interactive=non_interactive,
-        ).values()
+        )
+        default_scope = _jt_scope(ctx, _jt_spec(ctx))
+        preflight = PreflightLaunch(ctx.repo, ctx.catalog)
+        temp: TemporarySet | None = None
+        refused: set[str] = set()
+        any_errors = False
+        if source_ref is None:
+            suites = list(load(files).values())
+        else:
+            source = copies.open_source(source_ref)
+            suites = copies.suites_at(source, paths, load)
+            temp, refused, any_errors = copies.validated(
+                ctx, preflight, source, suites, case_filter=case_filter, default_scope=default_scope
+            )
+            scm_branch = source.sha
+        selected = select_cases(suites, case_filter)
         resolver = ResolveCasePayload(
             ctx.fk, catalog=ctx.catalog, default_organization=ctx.default_organization
         )
-        preflight = PreflightLaunch(ctx.repo, ctx.catalog)
-        default_scope = _jt_scope(ctx, _jt_spec(ctx))
+        planned = {template.name: template for template in temp.templates} if temp else {}
+        bindings = temp.bindings if temp is not None else {}
         warn = partial(ctx.progress_ui().message, "warning")
-        any_errors = False
-        for suite in suites:
-            binding = suite.binding(default_scope)
+        for suite, case_name, case in selected:
+            if suite.name in refused:
+                continue
+            binding = bindings.get(suite.name) or suite.binding(default_scope)
             spec = ctx.catalog.get(binding.kind)
-            for case_name, case in suite.cases.items():
-                gates: list[str] = []
-                try:
-                    payload = resolver(
-                        spec, case, defaults=suite.defaults, organization=suite.organization
-                    )
+            nodes = tuple(suite.expectation(case_name).nodes)
+            gates: list[str] = []
+            try:
+                payload = resolver(
+                    spec, case, defaults=suite.defaults, organization=suite.organization
+                )
+                if binding.pinned:
+                    copy = planned[binding.name]
+                    preflight_copy(copy, payload, nodes)
+                    gates = approval_nodes(copy)
+                else:
+                    if scm_branch is not None:
+                        payload["scm_branch"] = scm_branch
                     preflight(
-                        spec,
-                        name=binding.name,
-                        scope=binding.scope,
-                        payload=payload,
-                        nodes=tuple(suite.expectation(case_name).nodes),
+                        spec, name=binding.name, scope=binding.scope, payload=payload, nodes=nodes
                     )
                     if suite.workflow_template is not None:
                         gates = preflight.approval_nodes(
                             spec, name=binding.name, scope=binding.scope
                         )
-                except (AwxApiError, ConfigError) as exc:
-                    report_error(exc, item=f"{suite.name}/{case_name}")
-                    any_errors = True
-                for warning in suite.case_warnings(case_name, approval_nodes=gates):
-                    warn(warning)
+            except (AwxApiError, ConfigError) as exc:
+                report_error(exc, item=f"{suite.name}/{case_name}")
+                any_errors = True
+            for warning in suite.case_warnings(case_name, approval_nodes=gates):
+                warn(warning)
 
-    finish(any_errors)
-    count = sum(len(s.cases) for s in suites)
-    ui_context(strict=False).success(f"{plural(count, 'case')} validated")
+    if temp is not None:
+        emit(
+            [planned_outcome(template, temp.marker).model_dump() for template in temp.templates],
+            fmt=fmt,
+            columns=columns or default_get_columns(fmt, _PROVISION_COLUMNS),
+            kind=_PROVISION_KIND,
+            empty="No temporary copies planned.",
+        )
+    finish(any_errors or bool(refused))
+    ui_context(strict=False).success(f"{plural(len(selected), 'case')} validated")
+
+
+# ---- prune ---------------------------------------------------------------
+
+
+@app.command(name="prune")
+def prune_command(
+    *,
+    older_than: Annotated[
+        str,
+        Parameter(
+            name="--older-than",
+            help="Only copies created longer ago than this: a number and s, m, h or d "
+            "(0: every copy, a running test's included).",
+        ),
+    ] = "2h",
+    yes: YesOption = False,
+    dry_run: DryRunOption = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Delete the temporary copies `test run --source-ref` left behind (e.g. after a kill -9).
+
+    A copy is a job template or workflow named `NAME [untaped-test SHA RUN]` whose
+    description carries the matching `untaped-test run=…` marker.
+    """
+    from datetime import UTC, datetime  # noqa: PLC0415
+
+    from untaped.capabilities.awx.cli import _temporary_sets as copies  # noqa: PLC0415
+    from untaped.capabilities.awx.domain.temporary_set import parse_age  # noqa: PLC0415
+
+    try:
+        age = parse_age(older_than)
+    except ValueError as exc:
+        raise_usage(f"--older-than: {exc}")
+    with report_errors(), open_context() as ctx:
+        sets = copies.temporary_sets(ctx)
+        now = datetime.now(UTC)
+        found = [copy for copy in sets.leftovers() if now - copy.marker.created >= age]
+        outcome = batch_apply(
+            found,
+            sets.delete,
+            verb="delete",
+            noun="temporary copy",
+            label=lambda copy: f"{copy.kind} {q(copy.name)}",
+            describe=lambda copy: {"kind": copy.kind, "id": copy.id, "name": copy.name},
+            ui=ctx.progress_ui(),
+            destructive=True,
+            assume_yes=yes,
+            preview_only=dry_run,
+        )
+    failed = dict(outcome.failures)
+    deleted = {copy for copy, _ in outcome.results}
+    rows = []
+    for copy in found:
+        if copy in failed:
+            info = ErrorInfo.from_exception(failed[copy])
+            row = copy.outcome("failed", detail=info.message, error=info)
+        elif copy in deleted:
+            row = copy.outcome("deleted")
+        else:
+            row = copy.outcome("planned")
+        rows.append(row.model_dump())
+    emit(
+        rows,
+        fmt=fmt,
+        columns=columns or default_get_columns(fmt, _PRUNE_COLUMNS),
+        kind="awx.prune_outcome",
+        empty="No temporary copies found.",
+    )
+    finish(outcome)
 
 
 # ---- init ----------------------------------------------------------------
