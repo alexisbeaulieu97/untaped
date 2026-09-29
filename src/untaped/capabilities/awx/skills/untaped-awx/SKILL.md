@@ -76,10 +76,11 @@ changing a playbook, role or template variables:
 4. `untaped awx test run --scm-branch HEAD --format json` runs every case on
    the pushed commit (refused until HEAD is pushed). Narrow it with
    `--case SUITE/CASE` (repeatable) or suite paths.
-5. Exit 0 means every case passed; 4 or 5 is the environment, not your
-   change (read the error's `system`). Otherwise read each non-`pass` row as
-   [references/test-results.md](references/test-results.md) explains, fix,
-   push, and rerun the failing cases.
+5. Exit 0: every case passed; 4 or 5: the environment, not your change.
+   Otherwise each non-`pass` row's `failure.system` says who must act and
+   `failure.evidence` why
+   ([references/test-results.md](references/test-results.md)); fix, push,
+   rerun the failing cases.
 
 Run as the dedicated agent profile when one exists
 (`untaped --profile agent awx test run`); see
@@ -93,9 +94,6 @@ Run as the dedicated agent profile when one exists
   `awx.launch_outcome`, …) and a `--stdin` consumer of the same kind uses
   their ids directly:
   `untaped awx job-templates launch Deploy --format pipe | untaped awx jobs wait --stdin`.
-- Writes emit outcome rows (`awx.apply_outcome` for `apply`, `patch` and
-  `edit`; `awx.delete_outcome`, `awx.copy_outcome`, `awx.rename_outcome`, …)
-  whose `action` is `planned` in a preview.
 
 ## Safety
 
@@ -109,7 +107,8 @@ Run as the dedicated agent profile when one exists
 - Exit codes: 0 success, 1 failure or declined, 2 usage error, 3 drift
   (`apply --check`), 4 fix the environment, 5 retry later, 130
   interrupted. `--format json` makes stderr JSON Lines with each error's
-  `category`, `system` and `hint`; a failed row carries them in `error`.
+  `category`, `system` and `hint`; a failed row carries them in `error`
+  (`failure` in `awx test run` rows).
 - Keep `$encrypted$` placeholders as they are; they preserve stored secrets.
 
 ## Pitfalls

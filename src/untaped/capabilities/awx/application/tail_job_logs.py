@@ -1,17 +1,17 @@
 """Use case: tail a job's stdout with optional regex / tail-N filters.
 
-Two phases:
+Without ``follow`` the existing log is **drained** once via
+:meth:`JobMonitor.fetch_stdout`, bounded to the last ``--tail N`` lines if
+requested (retained memory is then ``O(tail)``, not ``O(N)``), then filtered
+by ``--grep PATTERN`` (Python regex, optional ``--ignore-case``).
 
-- **Drain** the existing log via :meth:`JobMonitor.fetch_stdout`. The
-  resulting list is bounded to the last ``--tail N`` lines if requested
-  (retained memory is then ``O(tail)``, not ``O(N)``), then filtered by
-  ``--grep PATTERN`` (Python regex, optional ``--ignore-case``).
-- **Follow** (only if ``follow=True``) keeps polling
-  :meth:`JobMonitor.stream_stdout` from where the drain left off, again
-  filtered by the same pattern, until the job hits a terminal state.
-
-Splitting the two phases makes ``--tail N`` semantically clean: we only
-trim the historical block, not the live tail.
+With ``follow`` the log is read through the job's events instead, so no poll
+downloads the whole log again: ``--tail N`` reads only the newest events
+(:meth:`JobMonitor.tail_stdout`), then :meth:`JobMonitor.stream_stdout`
+polls for the events after them until the job hits a terminal state (without
+``--tail``, from the first event). ``--tail`` trims only the historical
+block, never the live tail; ``--grep`` filters both. Following a job that
+already finished and whose events are saved just drains its log once.
 """
 
 from __future__ import annotations
@@ -49,8 +49,12 @@ class TailJobLogs:
         pattern: Pattern[str] | None,
         tail: int | None,
     ) -> Iterator[str]:
+        # A finished job whose events are saved has nothing left to follow:
+        # one download beats paging through every event.
+        if follow and not (job.is_terminal and job.event_processing_finished is True):
+            yield from self._follow(job, pattern=pattern, tail=tail)
+            return
         existing = self._monitor.fetch_stdout(job)
-        cursor = len(existing)
         historical: Iterable[str]
         if tail is None:
             historical = existing
@@ -71,11 +75,14 @@ class TailJobLogs:
         for line in historical:
             if _matches(line, pattern):
                 yield line
-        if not follow:
-            return
-        # Live follow: pick up where the drain left off and let the
-        # monitor's own polling drive terminal detection.
-        for line in self._monitor.stream_stdout(job, start_line=cursor):
+
+    def _follow(self, job: Job, *, pattern: Pattern[str] | None, tail: int | None) -> Iterator[str]:
+        after = 0
+        if tail is not None:
+            historical, after = self._monitor.tail_stdout(job, tail)
+            yield from (line for line in historical if _matches(line, pattern))
+        # The monitor's own polling drives terminal detection.
+        for line in self._monitor.stream_stdout(job, from_counter=after):
             if _matches(line, pattern):
                 yield line
 

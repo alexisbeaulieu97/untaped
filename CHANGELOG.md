@@ -178,6 +178,51 @@
   - **New:** AWX API errors are HTTP errors: a bodiless one names its URL,
     and `--verbose` shows the raw response body. A transport failure stays
     `unavailable` instead of becoming a status-less API error.
+  - **Breaking:** an `awx.test_result` row that did not pass carries a
+    `failure` object instead of the flat `failure_reason`, `failed_tasks`
+    and `log_tail`: the same `category`, `system`, `retryable`, `message`
+    (replaces `failure_reason`) and `hint` as the `error` of any failed row,
+    plus `evidence` (`job_explanation`, the end of `result_traceback`, the
+    `related` update that failed first with its real status, and
+    `log_tail`, `failed_tasks` and `unreachable_hosts` of the responsible
+    execution, so a failed project update shows its own log instead of the
+    empty job log, and a `note` such as a log that failed to download).
+    `system` says who is responsible: `awx.suite`, `awx.credentials`,
+    `awx.controller`, `awx.scm`, `awx.inventory`, `awx.hosts`,
+    `awx.playbook` or `awx.expectation` (an error that is not AWX's keeps
+    its own, such as `untaped` or `local`). The table shows
+    `failure.system` and `failure.message`. See the awx skill's
+    `references/test-results.md`.
+  - **Breaking:** `awx test run` exits with the most severe case's category:
+    a failed inventory update or a credential lookup exits 4; a job that
+    ended in `error`, never left `pending` before its timeout, failed only
+    on unreachable hosts, or failed before AWX saved its events exits 5,
+    instead of 1. A preflight failure names `awx.suite` (or
+    `awx.credentials`, `awx.scm`) as its `system`.
+  - **Fix:** a case that expects its job to fail no longer passes when the
+    job failed because a project or inventory update failed first: the
+    playbook never ran, and the case fails as `awx.scm` or `awx.inventory`.
+    Failed tasks are read only once AWX has saved the job's events, and a
+    task a `rescue` block handled is not a failed task.
+  - **New:** with `--format json`, `yaml` or `pipe`, every `awx.test_result`
+    row carries `hosts`, each host's PLAY RECAP counters (`ok`, `changed`,
+    `failed`, `unreachable`, `skipped`, `rescued`, `ignored`) read once from
+    the job's host summaries, cut at 500 hosts with failed and unreachable
+    hosts kept first (`hosts_truncated: true`).
+  - **Fix:** `jobs logs --follow`, `launch --follow` and `sync --follow` read
+    only the new job events on each poll (ANSI colours removed, event output
+    in full) instead of downloading the whole log again, which made
+    following a long job quadratic; an event AWX saves late is printed in
+    order once the ones before it arrive, and one that never arrives is
+    warned about. `jobs events --follow` without `--filter` keeps the same
+    order. `jobs logs --tail N --follow` reads only the newest events, and
+    following a job that already finished downloads its log once. `jobs logs`
+    without `--follow` still downloads the log once. A test case's log tail
+    also comes from the newest events only.
+  - **Behavior change:** a launch AWX answers with `ignored_fields` fails its
+    row as `invalid` (still exit 1) instead of `failed`, and a launch field
+    the template does not prompt for names the field in its error's
+    `details`.
   - **New:** failed, partial and conflict rows of `apply`, `patch`, `edit`,
     `delete`, membership changes (workflow node credentials too), launches,
     syncs and job actions carry `error`. `test validate`, `usage` and

@@ -18,8 +18,6 @@ a TUI:
 
 from __future__ import annotations
 
-import re
-
 from rich.text import Text
 
 from untaped.capabilities.awx.domain import JobEvent
@@ -55,7 +53,6 @@ _RUNNER_STYLES: dict[str, str] = {
 _FAILURE_VERDICTS = frozenset({"failed", "unreachable"})
 _REASON_LINES = 10
 _REASON_STYLE = "red"
-_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 _PLAY_STYLE = "bold cyan"
 _TASK_STYLE = "bold blue"
@@ -108,7 +105,7 @@ def _failure_reason(ev: JobEvent) -> list[str]:
     """The failed event's own output (ANSI stripped), capped at ten lines."""
     if _RUNNER_RESULTS.get(ev.event) not in _FAILURE_VERDICTS:
         return []
-    lines = [line.rstrip() for line in _ANSI.sub("", ev.stdout).splitlines() if line.strip()]
+    lines = [line.rstrip() for line in ev.lines if line.strip()]
     if len(lines) > _REASON_LINES:
         extra = len(lines) - _REASON_LINES
         lines = [*lines[:_REASON_LINES], f"… {extra} more lines (see jobs events)"]
