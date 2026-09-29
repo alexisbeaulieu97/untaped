@@ -118,6 +118,7 @@ Run as the dedicated agent profile when one exists
 - `--scm-branch` needs `ask_scm_branch_on_launch`, which AWX allows only when
   the project allows branch override.
 - `patch` and `edit` never create or rename; use `apply` and `rename`.
-- Workflow template exports carry no node graph; do not rely on them to copy
-  a workflow.
+- A workflow template export carries its node graph (`spec.nodes`), and
+  `apply --source-ref REF PATH...` applies documents at a git ref; see
+  [references/specs.md](references/specs.md).
 - `-f` always means `--format`; `--follow` has no short form.

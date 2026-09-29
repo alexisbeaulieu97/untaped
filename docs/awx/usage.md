@@ -280,124 +280,28 @@ What an export cannot carry:
 
 ### Workflow templates and their nodes
 
-A workflow template document holds its node graph under `spec.nodes`, by name:
-
-```yaml
-kind: WorkflowJobTemplate
-apiVersion: untaped.dev/awx/v1
-metadata: {name: Release, organization: Default}
-spec:
-  description: Build, deploy, verify
-  inventory: Production
-  survey_enabled: true
-  survey_spec: {...}
-  nodes:
-    - id: approve-prod
-      approval: {name: Approve production, timeout: 3600}
-      success: [deploy]
-    - id: deploy
-      run: {job_template: Deploy}
-      prompts: {limit: "web*", extra_vars: {version: 3}, credentials: [ssh]}
-      success: [verify]
-      failure: [rollback]
-    - id: rollback
-      run: {job_template: Shared rollback, organization: Ops}
-    - id: verify
-      run: {job_template: Smoke check}
-      all_parents_must_converge: true
-```
-
-Every node has:
-
-| Key | Meaning |
-|---|---|
-| `id` | Required. The node's key within the workflow: AWX's node `identifier`. Apply matches nodes by it, so keep it stable. |
-| `run` | What the node runs: exactly one of `job_template`, `workflow_job_template`, `project` (a project update), `inventory_source` (an inventory update) or `system_job_template` (a management job), by name. `organization` names the template's organization when it differs from the workflow's, and `organization: null` a template without one; management jobs take none. An `inventory_source` also needs `inventory`, the inventory holding it (and `organization` is that inventory's). |
-| `approval` | Instead of `run`: an approval step, `{name, description, timeout}`. `timeout` is in seconds; `0` (the default) waits forever. |
-| `prompts` | Launch values the node passes to what it runs (not allowed on approvals). |
-| `success`, `failure`, `always` | The ids of the nodes that run next when this node succeeds, fails, or either. |
-| `all_parents_must_converge` | Run only once every parent has reached this node (AWX's "all" convergence); default `false`. |
-
-`prompts` takes `inventory`, `credentials`, `labels`, `instance_groups` and
-`execution_environment` by name, `extra_vars` (a mapping; AWX's node
-`extra_data`), `limit`, `scm_branch`, `job_tags`, `skip_tags`, `job_type`
-(`run` or `check`), `verbosity` (0-5), `diff_mode`, `forks`, `job_slice_count`
-and `timeout`. AWX accepts a prompt only when the node's template prompts for
-it on launch. Inventory, credential and label names resolve in the workflow's
-organization; write `{name: vault, organization: Ops}` for one elsewhere (an
-export does this for you). Instance group and execution environment names are
-global.
-
-`extra_vars` values that are survey passwords read back from AWX as
-`$encrypted$`. Such a placeholder, in the document or in AWX, matches any
-value, so re-applying an export changes nothing and a document holding the
-plain password converges too. A new node cannot take the placeholder: apply
-creates the node without that variable and warns. Node credentials follow the
-template rules: new ones are added before old ones are removed, except a
-same-type credential, which leaves first and is re-added if the add is refused.
-
-`export` writes the graph from the roots down (nodes that are ready together
-in `id` order, so a replaced node keeps its place in git diffs): every node,
-its prompts and approval, and the edges (each list sorted). Defaults are left
-out. A node untaped cannot name, because its template was deleted, is left out
-of the export with a warning, together with the edges into it; apply leaves
-such a node and its edges alone. Apply reconciles the rest of the graph by
-`id`: it creates missing nodes (an approval through AWX's
-`create_approval_template`), patches changed ones (an approval's name,
-description or timeout on its approval template), deletes nodes no longer
-listed, then removes and adds edges. A node that turns into an approval, or
-back, is deleted and created again, and its edges are re-added. `nodes: []`
-deletes every node untaped can name; a document without `nodes` leaves the
-graph alone. The preview shows one row per change, by name; edges that go away
-with a deleted node, or come back with a replaced one, are not listed:
-
-```text
-WorkflowJobTemplate/Release id=100 scope=org=Default: planned
-  nodes[notify]: null → {"run":{"job_template":"Notify"}} (create)
-  nodes[deploy].prompts.limit: "web*" → "web1"
-  nodes[approve-prod].approval: {"name":"Approve production","timeout":3600} → {"name":"Approve production","timeout":600}
-  nodes[rollback]: {"run":{"job_template":"Rollback"}} → null (delete)
-  nodes[verify].always: [] → ["notify"]
-```
-
-Templates the nodes run are ordering dependencies: a job template created by
-the same `apply` is created before the workflow that runs it, and a workflow
-whose template fails is skipped. Apply refuses, before any write, a graph with
-a duplicate `id`, an edge to an unknown `id`, the same pair of nodes linked
-twice, or a cycle (`nodes form a cycle: a → b → a`), and a template name that
-does not exist (with a "did you mean" hint). Two workflows created by the same
-`apply` that run each other are refused as well (`workflow nodes form a
-recursion: A → B → A`). A node write that fails after the workflow itself was
-written leaves a `partial` row naming the node and step it stopped at
-(`nodes[deploy] update: …`); re-running the same apply picks up from what AWX
-then holds and finishes the graph. A graph that does not read back as declared
-fails with `workflow nodes did not converge: nodes[deploy].prompts.limit`.
+A workflow template document holds its node graph under `spec.nodes`: each
+node has an `id` (AWX's node identifier), what it `run`s (a job template,
+workflow, project, inventory source or management job, by name) or an
+`approval`, its `prompts` by name, and its `success`/`failure`/`always`
+edges. `export` writes the whole graph and `apply` reconciles it node by node,
+with the usual preview.
 
 ### Apply from a git ref
 
-`--source-ref REF` reads the given files and directories as they are at `REF`
-(a branch, tag or commit of the repository containing the current directory)
-instead of the working tree, then applies them as usual. Paths are relative to
-the current directory; local edits and untracked files are never read, and the
-row and error messages name files as `REF:PATH`. `HEAD` must be pushed to its
-upstream, as for `awx test run --scm-branch HEAD`; other refs need not be,
-since apply reads the files locally and never asks AWX to check the commit
-out. A symbolic link at the ref is refused rather than followed. Stdin (`-`)
-cannot be combined with `--source-ref`.
+`apply --source-ref REF PATH...` reads the paths as they are at a git ref of
+the current repository, never from the working tree:
 
 ```bash
 untaped awx apply --source-ref v1.4.0 .untaped/awx/templates .untaped/awx/workflows --dry-run
 ```
 
-A playbook repository keeps its specs beside its suites; folder names are only
-a convention, since each document's `kind` decides what it is:
-
-```text
-.untaped/awx/
-├── templates/deploy.yml      # kind: JobTemplate
-├── workflows/release.yml     # kind: WorkflowJobTemplate
-└── tests/deploy-smoke.yml    # kind: AwxTestSuite
-```
+The complete document format (the node fields and prompts, how apply
+reconciles a graph, what the preview shows, what is refused) and the
+`--source-ref` rules ship with the CLI in the awx skill's
+`references/specs.md`
+([specs](../../src/untaped/capabilities/awx/skills/untaped-awx/references/specs.md)),
+installed with `untaped skills install awx`.
 
 ## Copy templates
 
