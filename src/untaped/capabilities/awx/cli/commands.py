@@ -36,8 +36,8 @@ from untaped.capabilities.awx.cli.unified_templates_commands import app as unifi
 from untaped.capabilities.awx.cli.usage_commands import register_usage_command
 from untaped.capabilities.awx.cli.workflow_node_commands import register_nodes_command
 from untaped.capabilities.awx.domain import Job, JobEvent
-from untaped.capabilities.awx.domain.authored import AUTHORED_KINDS, authored_schema
 from untaped.capabilities.awx.domain.job import JOB_ROUTES
+from untaped.capabilities.awx.domain.suite import Suite
 from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS
 from untaped.capability_api import (
     ColumnsOption,
@@ -48,7 +48,6 @@ from untaped.capability_api import (
     echo,
     emit,
     finish,
-    not_found,
     parse_kv_pairs,
     raise_usage,
     render_rows,
@@ -83,7 +82,7 @@ def ping_command(
 
 @app.command(name="schema")
 def schema_command(
-    kind: Annotated[str, Parameter(help=f"The document kind: {', '.join(AUTHORED_KINDS)}.")],
+    kind: Annotated[Literal["AwxTestSuite"], Parameter(help="The document kind.")],
     /,
     *,
     fmt: Annotated[
@@ -92,9 +91,9 @@ def schema_command(
     ] = "json",
 ) -> None:
     """Print the JSON Schema of a document kind you write, for editors and agents."""
-    if kind not in AUTHORED_KINDS:
-        raise_usage(not_found("kind", kind, known=AUTHORED_KINDS))
-    emit(authored_schema(kind), fmt=fmt)
+    models = {"AwxTestSuite": Suite}
+    schema = models[kind].model_json_schema(by_alias=True)
+    emit({"$schema": "https://json-schema.org/draft/2020-12/schema", **schema}, fmt=fmt)
 
 
 # ---- top-level apply (multi-kind, file or directory) ----

@@ -44,6 +44,7 @@ _SURVEY: dict[str, Any] = {
         },
         {"variable": "replicas", "type": "integer", "required": True, "default": ""},
         {"variable": "db_password", "type": "password", "required": True, "default": "s3cret"},
+        {"variable": "api_token", "type": "password", "required": True, "default": ""},
         {"variable": "region", "type": "text", "required": False, "default": "us-east"},
     ],
 }
@@ -99,14 +100,16 @@ def test_init_writes_a_starter_suite_from_the_survey_and_prompts(
         "environment": "staging",
         "zones": ["eu"],
         "replicas": "TODO",
-        "db_password": "TODO",
+        "db_password": "$encrypted$",
+        "api_token": "TODO",
     }
     assert body["cases"] == {"smoke": {"expect": {"status": "successful"}}}
-    # Every filled variable says where its value came from; the stored
-    # password (masked by AWX anyway) is never written.
+    # Every filled variable says where its value came from. A stored password
+    # default stays AWX's placeholder, which AWX replaces at launch.
     assert "# survey: required, text" in text
     assert "# survey: required, multiplechoice [staging, production]" in text
     assert "s3cret" not in text
+    assert "# survey: required, password (AWX's stored default)" in text
     assert "# region: optional survey variable (text)" in text
     assert "limit, scm_branch" in text
 

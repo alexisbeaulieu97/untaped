@@ -2,8 +2,9 @@
 
 Pure text building from the template's ``launch/`` answer and survey questions:
 required survey variables get a value (their default, their first choice, or
-``TODO``) and a comment saying where it came from, optional ones and the
-enabled launch prompts are listed as comments. Values are written as JSON
+``TODO``; a stored password default stays ``$encrypted$``) and a comment
+saying where it came from, optional ones and the enabled launch prompts are
+listed as comments. Values are written as JSON
 (valid YAML) and shielded from the Jinja2 rendering every suite body goes
 through.
 """
@@ -17,6 +18,9 @@ from typing import Any
 
 TODO = "TODO"
 """The placeholder for a required value the template cannot supply."""
+
+ENCRYPTED = "$encrypted$"
+"""AWX's stand-in for a stored secret; sent back, AWX uses the stored value."""
 
 _ASK_KEY = re.compile(r"ask_(\w+)_on_launch")
 _PROMPT_FIELDS = {"variables": "extra_vars", "credential": "credentials", "tags": "job_tags"}
@@ -72,17 +76,26 @@ def _survey_lines(survey: Sequence[Mapping[str, Any]]) -> list[str]:
         comment = f"survey: required, {kind}"
         if choices:
             comment += f" [{', '.join(choices)}]"
+        default = question.get("default")
         if kind == "password":
-            comment += "; pass it from a secret suite variable, never write it here"
-        value = _survey_value(kind, question.get("default"), choices)
+            comment += (
+                " (AWX's stored default)"
+                if default not in (None, "")
+                else "; pass it from a secret suite variable, never write it here"
+            )
+        value = _survey_value(kind, default, choices)
         lines.append(f"      {variable}: {_value(value)}  # {_shield(comment)}")
     return lines
 
 
 def _survey_value(kind: str, default: Any, choices: Sequence[str]) -> Any:
-    """The question's default, else its first choice, else ``TODO`` (always for passwords)."""
+    """The question's default, else its first choice, else ``TODO``.
+
+    A password's stored default is never written: AWX's ``$encrypted$``
+    placeholder stands for it, and AWX puts the stored value back at launch.
+    """
     if kind == "password":
-        return TODO
+        return ENCRYPTED if default not in (None, "") else TODO
     if default not in (None, ""):
         return _choices(default) if kind == "multiselect" else default
     if choices:

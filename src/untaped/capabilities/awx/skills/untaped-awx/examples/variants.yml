@@ -1,9 +1,10 @@
----
 # Variants: header variables, a case matrix built with Jinja2, defaults every
-# case inherits, !ref, and per-case limits. The header must open the file.
+# case inherits, !ref, and per-case limits. Only comments and blank lines may
+# come before the header.
 #
 #   untaped awx test run variants.yml --var env=prod
 #   untaped awx test run variants.yml --var regions=us-east
+---
 variables:
   env:
     type: choice
@@ -17,6 +18,8 @@ variables:
 kind: AwxTestSuite
 name: deploy-variants
 jobTemplate: Deploy app
+# The template's organization; launch names (credentials, inventories, and
+# !ref without an organization) are looked up in it too.
 organization: Ops
 defaults:
   timeout: 1800
@@ -35,10 +38,12 @@ cases:
   {{ region }}:
     launch:
       limit: "{{ region }}-{{ env }}"
-      inventory: !ref {kind: Inventory, name: "{{ env }} inventory", organization: Ops}
+      inventory: !ref {kind: Inventory, name: "{{ env }} inventory"}
       extra_vars:
         app: {version: "1.5"}
         region: {{ region | to_json }}
+        # A !ref with its own scope looks elsewhere.
+        shared_project_id: !ref {kind: Project, name: Shared playbooks, organization: Default}
     expect:
       log:
         contains: ["PLAY RECAP"]
