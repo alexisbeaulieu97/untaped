@@ -228,6 +228,32 @@
     syncs and job actions carry `error`. `test validate`, `usage` and
     workflow `nodes` report each failed case or target as an attributed
     `error: <item>: …` line (a JSON error line with `item`).
+  - **New:** `awx test` regression expectations under `expect:`, inherited
+    from `defaults` like `status` and `log`: `changed` bounds the changed
+    tasks summed over every host, `hosts` sets upper bounds on each host's
+    `failed`, `unreachable` and `changed` counters (`"*"` for every host),
+    `failed_tasks` requires failed tasks matched by `task`, `msg` or
+    `matches` (rescued and ignored failures do not count), and
+    `idempotent: true` launches a passing case again with the same payload
+    and fails it, listing each host and task the rerun changed
+    (`failure.evidence.changed_tasks`), unless the rerun succeeds without a
+    change. A failed check is `awx.expectation` and names the bound that
+    failed. A case with a host or task check reads its host summaries in
+    table output too. Result rows gain `rerun_job_id`. `test validate` warns
+    about a case that expects `status: failed` without `failed_tasks`, and
+    the awx skill's `negative.yml` example uses it; a new `idempotent.yml`
+    example shows the rest.
+  - **New:** `awx test run --compare FILE` compares the run with the saved
+    `--format json` (or `pipe`) output of an earlier run, and
+    `--baseline REF` runs every selected case on `REF` first, then compares.
+    Each row gains `baseline` (`result`, `job_id`, `system`) and `change`
+    (`regression`, `fixed`, `still_failing`, `pass`, `new`, or `removed` for
+    a baseline case this run did not run, a row without a job), the table
+    adds a `change` column, and stderr counts each change.
+  - **Behavior change:** compared with a baseline, `awx test run` exits 1
+    only for a regression; 4 and 5 still win for any case (and for the
+    `--baseline` run itself), and a failure the baseline already had does
+    not fail the run.
 - Ansible
   - **Breaking:** `source refresh` exits 5 when it pauses at the GraphQL
     rate-limit floor, hits a global rate limit, or any repo failed

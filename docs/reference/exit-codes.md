@@ -93,7 +93,9 @@ Some rows carry a code of their own. It never becomes the process exit code:
   (such as `awx.scm` or `awx.hosts`), and the command exits with the most
   severe one: 4 for a rejected token, a credential lookup or a failed
   inventory update, 5 for an unavailable controller, a job stuck pending or
-  unreachable hosts, otherwise 1.
+  unreachable hosts, otherwise 1. Compared with a baseline (`--compare` or
+  `--baseline`), a case that failed before too does not count: only a
+  `regression` exits 1, while 4 and 5 still count for any case.
 
 ## See also
 
