@@ -5,9 +5,8 @@ the matching AWX collection path via :data:`KIND_TO_API_PATH`. Lists are
 newest-first unless the caller passes its own ``order_by``; a job's host
 summaries (its PLAY RECAP per host) are read failed hosts first. A workflow
 job's nodes are read as they ran, and its pending approvals approved or
-denied. The
-lookup keeps a ``<kind>`` fallback so callers passing an unknown kind
-hit the same path the prior CLI helper used (defensive, rarely fires).
+denied. The lookup keeps a ``<kind>`` fallback so callers passing an unknown
+kind hit the same path the prior CLI helper used (defensive, rarely fires).
 """
 
 from __future__ import annotations

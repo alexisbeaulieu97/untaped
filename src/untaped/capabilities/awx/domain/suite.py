@@ -16,13 +16,14 @@ from __future__ import annotations
 import re
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Annotated, Any, ClassVar, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import (
     AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
+    ValidationError,
     field_validator,
     model_validator,
 )
@@ -333,9 +334,6 @@ class ExecutionChecks(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    whole_fields: ClassVar[tuple[str, ...]] = ("status", "changed", "failed_tasks")
-    """Fields a case replaces as a whole when it sets them."""
-
     status: str | None = None
     """The final status required (each model narrows the statuses it accepts)."""
     log: LogExpectation = Field(
@@ -372,6 +370,11 @@ class ExecutionChecks(BaseModel):
         return self.changed is not None or bool(self.hosts)
 
     @property
+    def checks_beyond_status(self) -> bool:
+        """Whether anything but the status is checked (the log, hosts or failed tasks)."""
+        return self.needs_log or self.needs_hosts or bool(self.failed_tasks)
+
+    @property
     def passes_on_any_failure(self) -> bool:
         """A negative case without ``failed_tasks``: an unrelated failure passes it too."""
         return self.status == "failed" and not self.failed_tasks
@@ -383,16 +386,12 @@ class ExecutionChecks(BaseModel):
         )
         whole = {
             field: getattr(self if field in self.model_fields_set else defaults, field)
-            for field in self.whole_fields
+            for field in ("status", "changed", "failed_tasks")
         }
         hosts = defaults.hosts | {
             host: bounds.over(defaults.hosts.get(host)) for host, bounds in self.hosts.items()
         }
-        return type(self)(log=log, hosts=hosts, **whole, **self._merged(defaults))
-
-    def _merged(self, defaults: Self) -> dict[str, Any]:
-        """The fields a model merges its own way, over ``defaults``."""
-        return {}
+        return type(self)(log=log, hosts=hosts, **whole)
 
     def check_status(self, status: str) -> ExpectationResult:
         expected = self.status or "successful"
@@ -473,15 +472,18 @@ class NodeExpectation(ExecutionChecks):
 
     @model_validator(mode="after")
     def _never_ran_alone(self) -> NodeExpectation:
-        if self.status == NEVER_RAN and (self.needs_log or self.needs_hosts or self.failed_tasks):
+        if self.status == NEVER_RAN and self.checks_beyond_status:
             raise ValueError("a node expected never to run takes no other check")
         return self
+
+    @property
+    def pins_a_failure(self) -> bool:
+        """Whether the node must fail, or fail on given tasks: a cause a negative case names."""
+        return self.status in ("failed", "error", "canceled") or bool(self.failed_tasks)
 
 
 class Expectation(ExecutionChecks):
     """What a case's job (or workflow) must produce, and for a workflow each node's job."""
-
-    whole_fields: ClassVar[tuple[str, ...]] = (*ExecutionChecks.whole_fields, "idempotent")
 
     status: TerminalStatus | None = Field(
         default=None,
@@ -500,12 +502,30 @@ class Expectation(ExecutionChecks):
         "over the default's as a case's `expect` does.",
     )
 
-    def _merged(self, defaults: Expectation) -> dict[str, Any]:
-        nodes = defaults.nodes | {
-            node: expect.over(defaults.nodes[node]) if node in defaults.nodes else expect
-            for node, expect in self.nodes.items()
-        }
-        return {"nodes": nodes}
+    @property
+    def passes_on_any_failure(self) -> bool:
+        """A negative case that names no cause: no ``failed_tasks``, no node that must fail."""
+        pinned = any(node.pins_a_failure for node in self.nodes.values())
+        return super().passes_on_any_failure and not pinned
+
+    def over(self, defaults: Expectation) -> Expectation:
+        """This expectation over ``defaults``; each node's entry merges over the default's.
+
+        A node the case expects never to run takes the case's entry as it is.
+        """
+        nodes = dict(defaults.nodes)
+        for node, expect in self.nodes.items():
+            if expect.status == NEVER_RAN or node not in defaults.nodes:
+                nodes[node] = expect
+                continue
+            try:
+                nodes[node] = expect.over(defaults.nodes[node])
+            except ValidationError as exc:
+                problem = exc.errors()[0]["msg"].removeprefix("Value error, ")
+                raise ValueError(f"node {q(node)}: {problem}") from None
+        whole = self if "idempotent" in self.model_fields_set else defaults
+        merged = super().over(defaults)
+        return merged.model_copy(update={"idempotent": whole.idempotent, "nodes": nodes})
 
 
 class Case(BaseModel):
@@ -606,7 +626,10 @@ class Suite(BaseModel):
     @model_validator(mode="after")
     def _cases_fit_the_template(self) -> Suite:
         for name in self.cases:
-            expect = self.expectation(name)
+            try:
+                expect = self.expectation(name)
+            except ValueError as exc:
+                raise ValueError(f"case {q(name)}: {exc}") from None
             if expect.idempotent and expect.status not in (None, "successful"):
                 raise ValueError(
                     f"case {q(name)}: idempotent needs status successful (the rerun must "
@@ -654,6 +677,27 @@ class Suite(BaseModel):
         defaults = self.defaults or Case()
         return self.cases[case_name].approvals or defaults.approvals
 
+    def case_warnings(self, case_name: str, *, approval_nodes: Sequence[str] = ()) -> list[str]:
+        """What may make the case pass or fail for another reason than the one it tests.
+
+        A negative case that names no cause passes on any failure; a workflow
+        case with no ``approvals`` fails on the first of ``approval_nodes``
+        (its workflow's, nested ones included) it reaches.
+        """
+        item = f"{self.name}/{case_name}"
+        warnings = []
+        if self.expectation(case_name).passes_on_any_failure:
+            warnings.append(
+                f"{item}: expects status failed without failed_tasks, so a failure for "
+                "another reason passes it"
+            )
+        if approval_nodes and self.approvals(case_name) is None:
+            warnings.append(
+                f"{item}: the workflow has approval nodes ({', '.join(approval_nodes)}) and the "
+                "case sets no approvals, so a pending approval fails it"
+            )
+        return warnings
+
     def scope(self, default: dict[str, str] | None) -> dict[str, str] | None:
         """The template's lookup scope: ``organization`` over ``default``."""
         if self.organization is None:
@@ -672,6 +716,8 @@ class Baseline(BaseModel):
     """``failure.system`` of the baseline row (``None``: it passed, or an older file)."""
     category: ErrorCategory | None = None
     """``failure.category`` of the baseline row (``None``: it passed, or an older file)."""
+    node: str | None = None
+    """``failure.evidence.node`` of the baseline row (``None``: not a workflow node's failure)."""
 
 
 class CaseResult(BaseModel):
@@ -792,8 +838,10 @@ def _change(baseline: Baseline | None, row: CaseResult) -> Change:
     """How a case changed since ``baseline``.
 
     A failure counts as ``still_failing`` only when the baseline failed the
-    same way (same ``system``; a baseline without one, from an older file,
-    matches on the result only). A baseline that failed for the environment
+    same way (same ``system``, and for a workflow the same node; a baseline
+    without a system, from an older file, matches on the result only, and one
+    without a node, which only a job case has, matches a failure without
+    one). A baseline that failed for the environment
     proves nothing: a failure now is ``unverified``.
     """
     if baseline is None:
@@ -805,7 +853,9 @@ def _change(baseline: Baseline | None, row: CaseResult) -> Change:
     if baseline.category in _INCONCLUSIVE:
         return "unverified"
     if baseline.system is not None and (
-        row.failure is None or row.failure.system != baseline.system
+        row.failure is None
+        or row.failure.system != baseline.system
+        or row.failure.evidence.node != baseline.node
     ):
         return "regression"
     return "still_failing"

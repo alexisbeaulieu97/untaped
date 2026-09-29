@@ -7,8 +7,10 @@ that never ran) with that execution's type and status in
 ``summary_fields.job``, and lists the nodes it leads to. A workflow fails when
 a node fails with no ``failure`` or ``always`` path out of it (AWX's "No error
 handling path"): :func:`blamed_node` finds that node. The host summaries of
-its node jobs sum into the workflow's own (:func:`summed_host_records`).
-Pure: no I/O.
+its node jobs sum into the workflow's own (:func:`summed_host_records`). A
+workflow template's own nodes (:class:`TemplateNode`) say what it will run,
+and which nodes wait for an approval (:func:`approval_labels`). Nested
+workflows are followed :data:`MAX_NESTING` levels deep. Pure: no I/O.
 """
 
 from __future__ import annotations
@@ -27,6 +29,8 @@ WORKFLOW_JOB = "workflow_job"
 """The execution type of a workflow (a nested workflow node's too)."""
 NEVER_RAN = "never_ran"
 """The status of a node that started nothing."""
+MAX_NESTING = 5
+"""Levels of workflows nested in a workflow that are followed (for approvals, attribution)."""
 
 _FAILED = frozenset({"failed", "error", "canceled"})
 _HOST_COUNTERS = ("ok", "changed", "failures", "dark", "skipped", "rescued", "ignored")
@@ -104,31 +108,52 @@ class RunNode:
 def blamed_node(nodes: Sequence[RunNode]) -> RunNode | None:
     """The node that failed the workflow: the first to fail with no path out of its failure.
 
-    Without one (the workflow failed for another reason), the first node that
-    failed at all; ``None`` when none did.
+    ``None`` when every failure had a path out of it (the workflow failed for
+    another reason, such as a node whose template was deleted), or none failed.
     """
     failed = sorted((node for node in nodes if node.failed), key=lambda node: node.job_id or 0)
-    return next((node for node in failed if not node.error_path), failed[0] if failed else None)
+    return next((node for node in failed if not node.error_path), None)
 
 
-def node_host_params(params: Mapping[str, str] | None) -> dict[str, str] | None:
-    """The filter to read each node job's host summaries with, for ``params`` on their sum.
+@dataclass(frozen=True, slots=True)
+class TemplateNode:
+    """One node of a workflow template, from its ``workflow_nodes`` record."""
 
-    A bound on a sum (``changed__gt=2``) cannot be applied job by job: every
-    host that counts any is read, and :func:`summed_host_records` applies it.
-    """
-    if params is None:
-        return None
-    return {key: "0" if key.endswith("__gt") else value for key, value in params.items()}
+    record_id: int
+    identifier: str | None
+    template: str | None
+    """What the node runs: the template's name (the approval's, for an approval node)."""
+    template_id: int | None
+    kind: str | None
+    """The type of execution it starts: ``job``, ``workflow_job``, ``workflow_approval``, …"""
+
+    @classmethod
+    def from_record(cls, record: Mapping[str, Any]) -> TemplateNode:
+        summary = (record.get("summary_fields") or {}).get("unified_job_template") or {}
+        template_id = record.get("unified_job_template")
+        return cls(
+            record_id=int(record["id"]),
+            identifier=record.get("identifier"),
+            template=summary.get("name"),
+            template_id=template_id if isinstance(template_id, int) else None,
+            kind=summary.get("unified_job_type"),
+        )
+
+    @property
+    def label(self) -> str:
+        """How messages name the node: its id, else AWX's record id."""
+        return self.identifier or f"#{self.record_id}"
 
 
-def summed_host_records(
-    per_job: Iterable[Iterable[Mapping[str, Any]]], params: Mapping[str, str] | None = None
-) -> list[dict[str, Any]]:
+def approval_labels(nodes: Iterable[TemplateNode]) -> list[str]:
+    """The ids of the nodes that wait for an approval."""
+    return [node.label for node in nodes if node.kind == APPROVAL]
+
+
+def summed_host_records(per_job: Iterable[Iterable[Mapping[str, Any]]]) -> list[dict[str, Any]]:
     """One host summary record per host, its counters summed over every job's.
 
-    Failed hosts come first, then by name, as a job's own summaries are read;
-    the ``__gt`` bounds of ``params`` apply to the sums.
+    Failed hosts come first, then by name, as a job's own summaries are read.
     """
     totals: dict[str, dict[str, int]] = {}
     for records in per_job:
@@ -137,26 +162,22 @@ def summed_host_records(
             total = totals.setdefault(host, dict.fromkeys(_HOST_COUNTERS, 0))
             for counter in _HOST_COUNTERS:
                 total[counter] += record.get(counter) or 0
-    bounds = {
-        key.removesuffix("__gt"): int(value)
-        for key, value in (params or {}).items()
-        if key.endswith("__gt")
-    }
     rows = [
         {"host_name": host, **counts, "failed": bool(counts["failures"] or counts["dark"])}
         for host, counts in totals.items()
-        if all(counts.get(field, 0) > bound for field, bound in bounds.items())
     ]
     return sorted(rows, key=lambda row: (not row["failed"], row["host_name"]))
 
 
 __all__ = [
     "APPROVAL",
+    "MAX_NESTING",
     "NEVER_RAN",
     "WORKFLOW_JOB",
     "NodeResult",
     "RunNode",
+    "TemplateNode",
+    "approval_labels",
     "blamed_node",
-    "node_host_params",
     "summed_host_records",
 ]

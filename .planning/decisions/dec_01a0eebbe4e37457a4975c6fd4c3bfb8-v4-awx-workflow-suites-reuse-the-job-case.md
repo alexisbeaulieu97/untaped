@@ -7,9 +7,10 @@ it, and a workflow can stop on an approval nobody answers. An agent must test
 a workflow unattended, and read which node failed and why.
 
 - No new document kind: a suite names `workflowTemplate` instead of
-  `jobTemplate` (exactly one), and a case keeps its shape. The binding of a
-  suite to the template it launches is one replaceable step, so a run can
-  bind it to a temporary copy.
+  `jobTemplate` (exactly one), and a case keeps its shape. A suite binds to
+  the template it launches in one place (`Suite.binding`: kind, name,
+  scope), so a run that provisions a temporary copy binds each suite once
+  and uses that binding everywhere the template is named.
 - Per-node checks are the job case's checks (one shared model, one checking
   code path) keyed by AWX's node `identifier`, plus `status: never_ran`.
   Unknown ids fail the preflight, with the closest ids.
@@ -20,9 +21,7 @@ a workflow unattended, and read which node failed and why.
   no failure or always path), by the job rules applied to that node's job,
   recursing into nested workflows up to a depth cap. A denial the case asked
   for is the expectation's; one from outside the run is the controller's.
-- Node jobs are read only when a check or the attribution needs them: the
-  row's `nodes` come from one read of the workflow's nodes, and a workflow's
-  host summaries (its node jobs', summed) are read only for a check.
+  Only the same failing node keeps a baseline failure `still_failing`.
 
 ## Related decisions
 

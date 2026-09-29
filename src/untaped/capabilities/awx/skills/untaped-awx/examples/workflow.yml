@@ -9,24 +9,47 @@ defaults:
   approvals: approve
   launch:
     extra_vars: {app_version: "1.4"}
+  expect:
+    nodes:
+      # Every case's deploy node must leave no host failed or unreachable.
+      deploy:
+        hosts:
+          "*": {failed: 0, unreachable: 0}
 cases:
   happy:
     expect:
       status: successful
       nodes:
         deploy:
-          hosts:
-            "*": {failed: 0, unreachable: 0}
+          log: {contains: ["app_version=1.4"]}
         rollback: {status: never_ran}
   converges:
     # The whole workflow runs twice; the second run must change nothing.
     expect:
       idempotent: true
+  bad-version:
+    # Deploy refuses the version and its failure path rolls back, so the
+    # workflow itself succeeds; the deploy node must fail for that reason.
+    launch:
+      extra_vars: {app_version: "not-a-version"}
+    expect:
+      status: successful
+      nodes:
+        deploy:
+          status: failed
+          hosts:
+            "*": {failed: 1}
+          failed_tasks:
+            - task: Validate input
+              msg: app_version
+        rollback: {status: successful}
   denied:
     # Denying the approval stops the release before deploy; with no failure
-    # path out of the approval node, the workflow fails.
+    # path out of the approval node, the workflow fails. `never_ran` replaces
+    # the defaults' deploy checks whole.
     approvals: deny
     expect:
       status: failed
       nodes:
+        approve: {status: failed}
         deploy: {status: never_ran}

@@ -83,6 +83,8 @@ class FakeAap:
         self.action_error: int | None = None
         # ``(parent_path, sub_path)`` routes an older controller lacks (404).
         self.missing_sub_paths: set[tuple[str, str]] = set()
+        # ``(parent_path, sub_path)`` → HTTP statuses its next reads fail with, one per read.
+        self.sub_path_errors: dict[tuple[str, str], list[int]] = {}
         # HTTP status every request answers with once set (an expired token, an outage).
         self.every_request_error: int | None = None
         # How the job a workflow node runs ends, by node ``identifier``: a mapping of
@@ -92,6 +94,8 @@ class FakeAap:
         # stay pending until ``workflow_approvals/<id>/approve/`` or ``deny/``.
         self.node_outcomes: dict[str, dict[str, Any] | list[dict[str, Any]]] = {}
         self._advancing: set[int] = set()
+        # ``(store, id)`` of a held node job → [reads left, final status, its node's id].
+        self._held: dict[tuple[str, int], list[Any]] = {}
 
     def seed(self, api_path: str, **fields: Any) -> dict[str, Any]:
         record_id = fields.pop("id", None) or self._next_id
@@ -219,6 +223,8 @@ class FakeAap:
         return _page_response(records, params, f"{self.api_prefix}{api_path}/")
 
     def _get(self, api_path: str, id_: int) -> httpx.Response:
+        if api_path == "workflow_jobs":
+            self._tick_held()
         record = self.store.get(_TOP_PATH_STORE.get(api_path, api_path), {}).get(id_)
         if record is None:
             return _err(404, f"{api_path}/{id_}/ not found")
@@ -494,7 +500,7 @@ class FakeAap:
         result.update(job_fields)  # AWX answers a launch with the job's record
         if api_path == "workflow_job_templates" and action == "launch" and self._nodes_of(id_):
             self._start_workflow(new_id, id_, scm_branch=body.get("scm_branch"))
-            result["status"] = self.store[store_path][new_id]["status"]
+            result["status"] = "pending"  # as AWX answers a launch: the run polls for more
         for counter, event in enumerate(events, start=1):
             self.seed(f"{result_kind}_events", job=new_id, counter=counter, **event)
         for summary in host_summaries:
@@ -557,6 +563,7 @@ class FakeAap:
                 workflow_job=job_id,
                 identifier=node.get("identifier"),
                 unified_job_template=node.get("unified_job_template"),
+                all_parents_must_converge=bool(node.get("all_parents_must_converge")),
                 job=None,
                 do_not_run=False,
                 summary_fields={"unified_job_template": summary.get("unified_job_template", {})},
@@ -585,7 +592,8 @@ class FakeAap:
         while progress:
             progress = False
             for node in nodes:
-                if node["job"] is None and not node["do_not_run"] and _node_ready(node, nodes):
+                waiting = node["job"] is None and not node.get("missing_template")
+                if waiting and not node["do_not_run"] and _node_ready(node, nodes):
                     self._run_node(node, job_id)
                     progress = True
         self._advancing.discard(job_id)
@@ -594,12 +602,21 @@ class FakeAap:
     def _run_node(self, node: dict[str, Any], job_id: int) -> None:
         template = node["summary_fields"]["unified_job_template"]
         kind = template.get("unified_job_type")
+        if node.get("unified_job_template") is None:
+            node["missing_template"] = True  # its template was deleted: AWX fails it, runs nothing
+            return
         if kind == "workflow_approval":
-            execution = self.seed("workflow_approvals", name=template.get("name"), status="pending")
+            timed_out = bool(self._node_outcome(node).get("timed_out"))
+            execution = self.seed(
+                "workflow_approvals",
+                name=template.get("name"),
+                status="failed" if timed_out else "pending",
+                timed_out=timed_out,
+            )
         elif kind == "workflow_job":
             execution = self.seed("workflow_jobs", name=template.get("name"), status="running")
         else:
-            execution = self._run_node_job(node, job_id)
+            execution = self._run_node_job(node, job_id, kind or "job")
         node["job"] = execution["id"]
         node["summary_fields"]["job"] = {
             "id": execution["id"],
@@ -617,29 +634,54 @@ class FakeAap:
                 parent_node=node["id"],
             )
 
-    def _run_node_job(self, node: dict[str, Any], job_id: int) -> dict[str, Any]:
-        """The job a node runs, ended as ``node_outcomes`` says (successful by default)."""
+    def _node_outcome(self, node: dict[str, Any]) -> dict[str, Any]:
         outcome = self.node_outcomes.get(node.get("identifier") or "", {})
         if isinstance(outcome, list):
             outcome = outcome.pop(0) if len(outcome) > 1 else outcome[0]
-        template = self.store["job_templates"].get(node["unified_job_template"], {})
+        return outcome
+
+    def _run_node_job(self, node: dict[str, Any], job_id: int, kind: str) -> dict[str, Any]:
+        """The job (or update) a node runs, ended as ``node_outcomes`` says (successful by default).
+
+        With ``hold: N`` it stays ``hold_status`` (default ``running``) for the next N
+        reads of any workflow job, then ends and the workflow runs on.
+        """
+        outcome = self._node_outcome(node)
+        store, parent_field = _NODE_JOB_STORES[kind]
+        template = self.store[_UJT_STORE_OF[kind]].get(node["unified_job_template"], {})
         project = self.store.get("projects", {}).get(template.get("project"), {})
         branch = self.store["workflow_jobs"][job_id].get("launch_scm_branch")
+        status = outcome.get("status", "successful")
         fields: dict[str, Any] = {
             "name": template.get("name"),
-            "status": outcome.get("status", "successful"),
-            "scm_branch": branch or template.get("scm_branch", ""),
-            "scm_revision": project.get("scm_revision", ""),
+            "status": outcome.get("hold_status", "running") if outcome.get("hold") else status,
             **outcome.get("job_fields", {}),
         }
+        if kind == "job":
+            fields["scm_branch"] = branch or template.get("scm_branch", "")
+            fields["scm_revision"] = project.get("scm_revision", "")
         if "stdout" in outcome:
             fields["stdout"] = outcome["stdout"]
-        job = self.seed("jobs", **fields)
+        job = self.seed(store, **fields)
         for counter, event in enumerate(outcome.get("events", []), start=1):
-            self.seed("job_events", job=job["id"], counter=counter, **event)
+            self.seed(f"{kind}_events", **{parent_field: job["id"]}, counter=counter, **event)
         for summary in outcome.get("host_summaries", []):
             self.seed("job_host_summaries", job=job["id"], **summary)
+        if outcome.get("hold"):
+            self._held[(store, job["id"])] = [outcome["hold"], status, node["id"]]
         return job
+
+    def _tick_held(self) -> None:
+        """A workflow job was read: every held node job waits one read less, and may end."""
+        for (store, job_id), held in list(self._held.items()):
+            held[0] -= 1
+            if held[0] > 0:
+                continue
+            del self._held[(store, job_id)]
+            self.store[store][job_id]["status"] = held[1]
+            node = self.store["workflow_job_nodes"][held[2]]
+            node["summary_fields"]["job"]["status"] = held[1]
+            self._advance_workflow(node["workflow_job"])
 
     def _settle_workflow(self, job_id: int, nodes: list[dict[str, Any]]) -> None:
         """A workflow still waiting on a node runs on; else it fails on a failure with no path."""
@@ -650,9 +692,9 @@ class FakeAap:
             workflow["status"] = "running"
             return
         for node in nodes:
-            node["do_not_run"] = node["job"] is None
+            node["do_not_run"] = node["job"] is None and not node.get("missing_template")
         unhandled = [
-            node["id"]
+            node
             for node in nodes
             if _job_status(node) in _FAILED_STATUSES
             and not node["failure_nodes"]
@@ -660,10 +702,16 @@ class FakeAap:
         ]
         workflow["status"] = "failed" if unhandled else "successful"
         workflow["failed"] = bool(unhandled)
-        if unhandled:
-            listed = ", ".join(map(str, unhandled))
+        missing = [str(node["id"]) for node in unhandled if node.get("missing_template")]
+        failed = [str(node["id"]) for node in unhandled if not node.get("missing_template")]
+        if missing:
             workflow["job_explanation"] = (
-                f"No error handling path for workflow job node(s) [{listed}]"
+                "Workflow job node(s) missing unified job template and error handling path "
+                f"[{', '.join(missing)}]"
+            )
+        elif failed:
+            workflow["job_explanation"] = (
+                f"No error handling path for workflow job node(s) [{', '.join(failed)}]"
             )
         parent = workflow.get("parent_node")
         if parent is not None:
@@ -723,6 +771,8 @@ class FakeAap:
         # the storage collection accordingly.
         if (parent_path, sub_path) in self.missing_sub_paths:
             return _err(404, f"{parent_path}/{parent_id}/{sub_path}/ not found")
+        if self.sub_path_errors.get((parent_path, sub_path)):
+            return _err(self.sub_path_errors[(parent_path, sub_path)].pop(0), "unavailable")
         store_collection = _SUB_PATH_STORE.get((parent_path, sub_path), sub_path)
         membership_key = (parent_path, parent_id, sub_path)
         if membership_key in self.memberships:
@@ -913,8 +963,26 @@ _FAILED_STATUSES = frozenset({"failed", "error", "canceled"})
 _DONE = frozenset({"successful", *_FAILED_STATUSES})
 
 
+# Execution kind a node runs → (its store, its events' field naming it).
+_NODE_JOB_STORES: dict[str, tuple[str, str]] = {
+    "job": ("jobs", "job"),
+    "project_update": ("project_updates", "project_update"),
+    "inventory_update": ("inventory_updates", "inventory_update"),
+}
+_UJT_STORE_OF = {
+    "job": "job_templates",
+    "project_update": "projects",
+    "inventory_update": "inventory_sources",
+}
+
+
 def _job_status(node: dict[str, Any]) -> str | None:
-    """The status of the execution a workflow job node started (``None``: none yet)."""
+    """The status of the execution a workflow job node started (``None``: none yet).
+
+    A node whose template was deleted fails without starting anything.
+    """
+    if node.get("missing_template"):
+        return "failed"
     return node["summary_fields"].get("job", {}).get("status")
 
 
@@ -923,20 +991,26 @@ def _job_type(node: dict[str, Any]) -> str | None:
 
 
 def _node_ready(node: dict[str, Any], nodes: list[dict[str, Any]]) -> bool:
-    """A root runs at once; another once a parent ended the way its edge to the node needs."""
+    """A root runs at once; another once a parent ended the way its edge to the node needs.
+
+    With ``all_parents_must_converge``, every parent must have ended that way.
+    """
     parents = [
         (parent, relation)
         for parent in nodes
         for relation in _NODE_EDGES
         if node["id"] in parent.get(relation, [])
     ]
-    for parent, relation in parents:
-        status = _job_status(parent)
-        if status not in _DONE:
-            continue
-        if relation == "always_nodes" or (relation == "success_nodes") == (status == "successful"):
-            return True
-    return not parents
+    if not parents:
+        return True
+    followed = [_edge_followed(_job_status(parent), relation) for parent, relation in parents]
+    return all(followed) if node.get("all_parents_must_converge") else any(followed)
+
+
+def _edge_followed(status: str | None, relation: str) -> bool:
+    if status not in _DONE:
+        return False
+    return relation == "always_nodes" or (relation == "success_nodes") == (status == "successful")
 
 
 # Store → the ``unified_job_type`` a workflow node reports for it.

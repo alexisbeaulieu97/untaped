@@ -282,6 +282,55 @@ def test_node_expectations_merge_node_by_node_over_the_defaults() -> None:
     assert nodes["rollback"].status == "never_ran"
 
 
+def test_never_ran_in_a_case_replaces_the_defaults_node_entry() -> None:
+    suite = _workflow_suite(
+        defaults={"expect": {"nodes": {"deploy": {"hosts": {"*": {"failed": 0}}}}}},
+        cases={"c": {"expect": {"nodes": {"deploy": {"status": "never_ran"}}}}},
+    )
+
+    assert suite.expectation("c").nodes["deploy"] == NodeExpectation(status="never_ran")
+
+
+def test_an_invalid_merged_node_entry_names_its_case_and_node() -> None:
+    with pytest.raises(ValidationError, match="case 'c': node 'deploy': a node expected never"):
+        _workflow_suite(
+            defaults={"expect": {"nodes": {"deploy": {"status": "never_ran"}}}},
+            cases={"c": {"expect": {"nodes": {"deploy": {"changed": 0}}}}},
+        )
+
+
+def test_node_checks_that_pin_the_cause_silence_the_negative_case_warning() -> None:
+    suite = _workflow_suite(
+        cases={
+            "bare": {"expect": {"status": "failed"}},
+            "pinned": {"expect": {"status": "failed", "nodes": {"approve": {"status": "failed"}}}},
+            "tasks": {
+                "expect": {
+                    "status": "failed",
+                    "nodes": {"deploy": {"failed_tasks": [{"task": "x"}]}},
+                }
+            },
+        },
+    )
+
+    assert [suite.expectation(name).passes_on_any_failure for name in suite.cases] == [
+        True,
+        False,
+        False,
+    ]
+
+
+def test_a_case_warns_about_approvals_it_does_not_answer() -> None:
+    suite = _workflow_suite(cases={"silent": {}, "answered": {"approvals": "approve"}})
+
+    assert suite.case_warnings("silent", approval_nodes=["release/approve"]) == [
+        "release/silent: the workflow has approval nodes (release/approve) and the case sets "
+        "no approvals, so a pending approval fails it"
+    ]
+    assert suite.case_warnings("answered", approval_nodes=["approve"]) == []
+    assert suite.case_warnings("silent", approval_nodes=[]) == []
+
+
 @pytest.mark.parametrize(
     "node",
     [

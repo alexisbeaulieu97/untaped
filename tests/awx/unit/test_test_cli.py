@@ -1182,7 +1182,13 @@ def test_compare_marks_each_change_and_fails_only_on_a_regression(
     before = json.loads(saved.read_text())
     assert (smoke["change"], smoke["baseline"]) == (
         "regression",
-        {"result": "pass", "job_id": before[0]["job_id"], "system": None, "category": None},
+        {
+            "result": "pass",
+            "job_id": before[0]["job_id"],
+            "system": None,
+            "category": None,
+            "node": None,
+        },
     )
     assert (full["change"], full["baseline"]["system"]) == ("still_failing", "awx.playbook")
     assert "2 cases: 2 fail" in result.stderr

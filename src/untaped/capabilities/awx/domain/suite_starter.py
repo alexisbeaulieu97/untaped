@@ -18,7 +18,7 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from untaped.capabilities.awx.domain.workflow_run import APPROVAL, RunNode
+from untaped.capabilities.awx.domain.workflow_run import APPROVAL, TemplateNode
 
 TODO = "TODO"
 """The placeholder for a required value the template cannot supply."""
@@ -44,11 +44,13 @@ def starter_suite(
     organization: str | None,
     launch: Mapping[str, Any],
     survey: Sequence[Mapping[str, Any]],
-    nodes: Sequence[RunNode] | None = None,
+    nodes: Sequence[TemplateNode] | None = None,
+    approvals: Sequence[str] = (),
 ) -> str:
     """The commented starter suite for ``template``, one ``smoke`` case.
 
-    With ``nodes`` (its node records, possibly none), ``template`` is a workflow.
+    With ``nodes`` (possibly none), ``template`` is a workflow; ``approvals``
+    are its approval nodes' paths, nested workflows' included.
     """
     workflow = nodes is not None
     lines = [
@@ -68,42 +70,30 @@ def starter_suite(
     else:
         lines += [line.strip() for line in variables]
     lines += _prompt_lines(launch)
-    if nodes is None:
-        lines += ["cases:", "  smoke:", "    expect:", "      status: successful"]
-    else:
-        lines += _node_lines(nodes)
-    return "\n".join(lines) + "\n"
-
-
-def _node_lines(nodes: Sequence[RunNode]) -> list[str]:
-    """A workflow's node ids, then its ``smoke`` case with commented node checks and approvals."""
-    if not nodes:
-        return [
-            "# Workflow nodes: none",
-            "cases:",
-            "  smoke:",
-            "    expect:",
-            "      status: successful",
-        ]
-    described = ", ".join(
-        f"{node.label} ({'approval: ' if node.kind == APPROVAL else ''}{node.template or '?'})"
-        for node in nodes
-    )
-    lines = [_shield(f"# Workflow nodes (ids for expect.nodes): {described}"), "cases:", "  smoke:"]
-    gates = [node.label for node in nodes if node.kind == APPROVAL]
-    if gates:
-        waits = f"approval nodes ({', '.join(gates)})"
+    if nodes is not None:
+        lines.append(_node_comment(nodes))
+    lines += ["cases:", "  smoke:"]
+    if approvals:
+        waits = f"approval nodes ({', '.join(approvals)})"
         lines += [
             _shield(f"    # The workflow waits on {waits}: answer them, or a pending one fails."),
             "    # approvals: approve  # or deny",
         ]
-    return [
-        *lines,
-        "    expect:",
-        "      status: successful",
-        "      # nodes:",
-        f"      #   {_value(nodes[0].label)}: {{status: successful}}",
-    ]
+    lines += ["    expect:", "      status: successful"]
+    if nodes:
+        lines += ["      # nodes:", f"      #   {_value(nodes[0].label)}: {{status: successful}}"]
+    return "\n".join(lines) + "\n"
+
+
+def _node_comment(nodes: Sequence[TemplateNode]) -> str:
+    """The workflow's node ids, each with what it runs."""
+    if not nodes:
+        return "# Workflow nodes: none"
+    described = ", ".join(
+        f"{node.label} ({'approval: ' if node.kind == APPROVAL else ''}{node.template or '?'})"
+        for node in nodes
+    )
+    return _shield(f"# Workflow nodes (ids for expect.nodes): {described}")
 
 
 def _survey_lines(survey: Sequence[Mapping[str, Any]]) -> list[str]:

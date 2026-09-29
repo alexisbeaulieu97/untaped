@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from untaped.capabilities.awx.domain.case_failure import CaseFailure, failure
+from untaped.capabilities.awx.domain.case_failure import CaseFailure, failure, in_node
 from untaped.capabilities.awx.domain.suite import Baseline, CaseResult, SuiteRunOutcome
 from untaped.capabilities.awx.domain.suite_baseline import saved_baselines
 from untaped.capability_api import ErrorCategory
@@ -31,16 +31,22 @@ def _row(case: str, result: str, **fields: Any) -> CaseResult:
     return CaseResult.model_validate({"suite": "s", "case": case, "result": result, **fields})
 
 
+def _in(node: str) -> CaseFailure:
+    """A playbook failure in a workflow's ``node``."""
+    return in_node(_failure(), node)
+
+
 def _base(
     result: str,
     job_id: int = 1,
     system: str | None = None,
     category: ErrorCategory | None = None,
+    node: str | None = None,
 ) -> Baseline:
     if result != "pass" and system is not None and category is None:
         category = ErrorCategory.FAILED
     return Baseline.model_validate(
-        {"result": result, "job_id": job_id, "system": system, "category": category}
+        {"result": result, "job_id": job_id, "system": system, "category": category, "node": node}
     )
 
 
@@ -82,7 +88,13 @@ def test_each_row_says_how_its_case_changed() -> None:
     ) == {
         "result": None,
         "job_id": None,
-        "baseline": {"result": "pass", "job_id": 14, "system": None, "category": None},
+        "baseline": {
+            "result": "pass",
+            "job_id": 14,
+            "system": None,
+            "category": None,
+            "node": None,
+        },
         "failure": None,
         "expectations": (),
         "hosts_truncated": False,
@@ -96,6 +108,10 @@ def test_each_row_says_how_its_case_changed() -> None:
         (_base("fail", system="awx.playbook"), _failure(), "still_failing"),
         # another system failing now is a regression
         (_base("fail", system="awx.scm"), _failure(), "regression"),
+        # a workflow still failing in the same node, or now in another one
+        (_base("fail", system="awx.playbook", node="deploy"), _in("deploy"), "still_failing"),
+        (_base("fail", system="awx.playbook", node="deploy"), _in("verify"), "regression"),
+        (_base("fail", system="awx.playbook"), _in("verify"), "regression"),
         (
             _base("error", system="awx.suite", category=ErrorCategory.INVALID),
             _failure(),
@@ -182,11 +198,13 @@ def test_saved_rows_become_baselines() -> None:
         CaseResult(suite="s", case="c", result=None, change="removed").model_dump(mode="json"),
         # an older row: its failure is not known
         {"suite": "s", "case": "d", "result": "fail", "job_id": 7, "failure_reason": "boom"},
+        _row("e", "fail", job_id=8, failure=_in("deploy")).model_dump(mode="json"),
     ]
     assert saved_baselines(rows) == {
         ("s", "a"): _base("pass", 5),
         ("s", "b"): _base("fail", 6, "awx.playbook", ErrorCategory.FAILED),
         ("s", "d"): _base("fail", 7),
+        ("s", "e"): _base("fail", 8, "awx.playbook", ErrorCategory.FAILED, "deploy"),
     }
 
 

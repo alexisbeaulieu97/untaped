@@ -14,11 +14,11 @@ This page is the map; the details ship next to it:
 
 | File | Read it when |
 |---|---|
-| [references/test-suites.md](references/test-suites.md) | writing a test suite: every field, header variables, Jinja, merge rules, `!ref` |
+| [references/test-suites.md](references/test-suites.md) | writing a test suite: every field, header variables, Jinja, merge rules, `!ref`, workflow suites (`approvals`, `expect.nodes`) |
 | [references/test-results.md](references/test-results.md) | reading `awx test run` results and deciding what to fix |
 | [references/agent-profile.md](references/agent-profile.md) | setting up the AWX user and untaped profile an agent runs as |
 | [references/resources.md](references/resources.md) | selecting, patching, editing, copying, renaming, deleting resources |
-| [references/specs.md](references/specs.md) | the YAML document format of `export` and `apply` |
+| [references/specs.md](references/specs.md) | the YAML document format of `export` and `apply`: workflow node graphs, `apply --source-ref` |
 | [references/jobs.md](references/jobs.md) | launching, syncing, waiting, following, cancelling, inspecting jobs |
 | [examples/](examples/) | starting points: `smoke.yml`, `variants.yml`, `negative.yml`, `idempotent.yml`, `workflow.yml` |
 
@@ -64,10 +64,10 @@ confirm options before acting.
 Suites live in the playbook repository under `.untaped/awx/tests/`. After
 changing a playbook, role or template variables:
 
-1. Without a suite yet, `untaped awx test init "Deploy app"` reads the
-   template's survey and launch prompts and writes a commented starter suite
-   to `.untaped/awx/tests/deploy-app.yml` at the git root (it prints the path
-   and never overwrites a file). Edit its cases, starting from the examples.
+1. Without a suite yet, `untaped awx test init "Deploy app"` (a workflow:
+   `init Release --workflow`) writes a commented starter suite from the
+   template's survey and prompts and prints its path; edit its cases, starting
+   from the examples.
 2. Once per task, save the base branch's results outside the checkout:
    `untaped awx test run --scm-branch main --format json > /tmp/baseline-PROJ-123.json`
    (exit 1 when `main` already fails some cases is expected).
@@ -86,7 +86,6 @@ changing a playbook, role or template variables:
 
 Run as the dedicated agent profile when one exists
 (`untaped --profile agent awx test run`).
-A workflow suite names `workflowTemplate:` (`untaped awx test init Release --workflow`), answers approvals with `approvals: approve|deny` and checks nodes under `expect.nodes`.
 
 ## Output and pipes
 
@@ -120,6 +119,4 @@ A workflow suite names `workflowTemplate:` (`untaped awx test init Release --wor
 - `--scm-branch` needs `ask_scm_branch_on_launch`, which AWX allows only when
   the project allows branch override.
 - `patch` and `edit` never create or rename; use `apply` and `rename`.
-- Workflow exports carry their node graph, and `apply --source-ref REF`
-  applies files at a git ref ([references/specs.md](references/specs.md)).
 - `-f` always means `--format`; `--follow` has no short form.

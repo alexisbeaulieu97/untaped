@@ -57,8 +57,10 @@ class Launcher(Protocol):
 class Watcher(Protocol):
     """Poll a :class:`Job` until it reaches a terminal state.
 
-    ``on_state`` sees every state polled before that (a workflow's pending
-    approvals are answered there); what it raises stops the watch.
+    ``on_state`` is called with each polled state that is not terminal yet
+    (not with ``job`` itself), before the next poll; a workflow's pending
+    approvals are answered there. An exception it raises ends the watch and
+    propagates to the caller.
     """
 
     def __call__(
@@ -144,6 +146,12 @@ class LaunchCheck(Protocol):
         payload: dict[str, Any],
         nodes: Collection[str] = (),
     ) -> None: ...
+
+    def approval_nodes(
+        self, spec: ResourceSpec, *, name: str, scope: dict[str, str] | None
+    ) -> list[str]:
+        """The paths of a workflow's approval nodes, nested workflows' included."""
+        ...
 
 
 @runtime_checkable

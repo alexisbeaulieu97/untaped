@@ -9,7 +9,6 @@ from untaped.capabilities.awx.application.suites.preflight import PreflightLaunc
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.domain.suite import WORKFLOW_TEMPLATE
 from untaped.capabilities.awx.domain.suite_starter import starter_suite
-from untaped.capabilities.awx.domain.workflow_run import RunNode
 
 
 class StarterSuite:
@@ -27,15 +26,17 @@ class StarterSuite:
         # AWX keeps a disabled survey's questions but never asks them.
         survey = read("survey_spec") if launch.get("survey_enabled") else {}
         questions = survey.get("spec") if isinstance(survey, Mapping) else None
-        nodes = None
+        nodes, approvals = None, []
         if spec.kind == WORKFLOW_TEMPLATE:
-            nodes = [RunNode.from_record(node) for node in self._preflight.nodes(spec, template)]
+            nodes = self._preflight.nodes(spec, template.id)
+            approvals = self._preflight.approval_nodes(spec, name=name, scope=scope)
         return starter_suite(
             template.name or name,
             organization=_organization(template.record) or (scope or {}).get("organization"),
             launch=launch,
             survey=[q for q in questions or [] if isinstance(q, Mapping)],
             nodes=nodes,
+            approvals=approvals,
         )
 
 

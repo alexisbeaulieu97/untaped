@@ -22,7 +22,6 @@ from untaped.capabilities.awx.domain.suite import Baseline, Case, Suite, SuiteRu
 from untaped.capabilities.awx.errors import ActionResponseError, LaunchPromptError
 from untaped.capabilities.awx.infrastructure import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
-from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
 from untaped.capability_api import ConfigError, HttpTransportError, note_failure
 from untaped.diagnostics import diagnostics_scope, failure_exit_code
 
@@ -138,6 +137,18 @@ def _no_hosts(job: Job) -> list[dict[str, Any]]:
     return []
 
 
+def _specs(kind: str) -> AwxResourceSpec:
+    return AwxResourceCatalog().get(kind)
+
+
+def _no_nodes(job: Job) -> list[dict[str, Any]]:
+    raise AssertionError("a job case reads no workflow nodes")
+
+
+def _no_approvals(approval_id: int, *, approve: bool) -> None:
+    raise AssertionError("a job case answers no approval")
+
+
 class StubEventReader:
     """Returns ``events`` for every job, or raises ``error``."""
 
@@ -211,7 +222,9 @@ def _make_runner(
         resolver=resolver,
         launcher=cast(Launcher, launcher),
         watcher=cast(Watcher, watcher),
-        spec=JOB_TEMPLATE_SPEC,
+        specs=_specs,
+        node_reader=_no_nodes,
+        approver=_no_approvals,
         fk_prefetcher=cast(FkPrefetcher, fk),
         jt_scope=jt_scope,
         canceller=canceller,
@@ -247,7 +260,9 @@ def test_parallel_interrupt_stops_watchers_and_cancels_queued_cases() -> None:
         resolver=ResolveCasePayload(fk, catalog=AwxResourceCatalog()),
         launcher=cast(Launcher, launcher),
         watcher=cast(Watcher, BlockingWatcher()),
-        spec=JOB_TEMPLATE_SPEC,
+        specs=_specs,
+        node_reader=_no_nodes,
+        approver=_no_approvals,
         fk_prefetcher=cast(FkPrefetcher, fk),
         log_reader=StubLogReader([]),
         event_reader=StubEventReader([]),
@@ -723,7 +738,9 @@ def test_evidence_is_skipped_when_not_wanted_but_the_failure_is_attributed() -> 
         resolver=ResolveCasePayload(StubFk(), catalog=AwxResourceCatalog()),
         launcher=cast(Launcher, StubLauncher({})),
         watcher=cast(Watcher, StubWatcher(default=_job(status="failed"))),
-        spec=JOB_TEMPLATE_SPEC,
+        specs=_specs,
+        node_reader=_no_nodes,
+        approver=_no_approvals,
         fk_prefetcher=cast(FkPrefetcher, StubFk()),
         log_reader=reader,
         event_reader=events,
@@ -1111,7 +1128,12 @@ def test_preflight_failures_stop_the_run_before_any_launch() -> None:
     checked: list[tuple[str, dict[str, Any]]] = []
 
     def preflight(
-        spec: object, *, name: str, scope: dict[str, str] | None, payload: dict[str, Any]
+        spec: object,
+        *,
+        name: str,
+        scope: dict[str, str] | None,
+        payload: dict[str, Any],
+        nodes: Any = (),
     ) -> None:
         checked.append((name, payload))
         if "limit" in payload:
@@ -1136,7 +1158,12 @@ def test_preflight_failures_stop_the_run_before_any_launch() -> None:
 
 def test_a_preflight_failure_carries_its_most_severe_category() -> None:
     def preflight(
-        spec: object, *, name: str, scope: dict[str, str] | None, payload: dict[str, Any]
+        spec: object,
+        *,
+        name: str,
+        scope: dict[str, str] | None,
+        payload: dict[str, Any],
+        nodes: Any = (),
     ) -> None:
         if "limit" in payload:
             raise LaunchPromptError("does not prompt for limit")
@@ -1188,7 +1215,12 @@ def test_a_suite_organization_scopes_its_template() -> None:
     checked: list[dict[str, str] | None] = []
 
     def preflight(
-        spec: object, *, name: str, scope: dict[str, str] | None, payload: dict[str, Any]
+        spec: object,
+        *,
+        name: str,
+        scope: dict[str, str] | None,
+        payload: dict[str, Any],
+        nodes: Any = (),
     ) -> None:
         checked.append(scope)
 
@@ -1287,7 +1319,9 @@ def _regression_runner(
         resolver=ResolveCasePayload(fk or StubFk(), catalog=AwxResourceCatalog()),
         launcher=cast(Launcher, launcher),
         watcher=cast(Watcher, watcher or StubWatcher(by_id=by_id)),
-        spec=JOB_TEMPLATE_SPEC,
+        specs=_specs,
+        node_reader=_no_nodes,
+        approver=_no_approvals,
         fk_prefetcher=cast(FkPrefetcher, fk or StubFk()),
         log_reader=StubLogReader(["ok"]),
         event_reader=event_reader,
