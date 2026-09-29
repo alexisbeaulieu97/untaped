@@ -106,3 +106,18 @@ INSTANCE_GROUP_SPEC = AwxResourceSpec(
     fidelity="read_only",
     fidelity_note="instance group CRUD is out of v0 scope",
 )
+
+
+SYSTEM_JOB_TEMPLATE_SPEC = AwxResourceSpec(
+    kind="SystemJobTemplate",
+    cli_name="system-job-templates",
+    api_path="system_job_templates",
+    identity_keys=("name",),  # management jobs are global
+    canonical_fields=("name",),
+    read_only_fields=UNIVERSAL_READ_ONLY,
+    list_columns=("id", "name"),
+    commands=(),
+    fidelity="read_only",
+    fidelity_note="management jobs are built into AWX",
+)
+"""Named by workflow nodes that run a management job (``run.system_job_template``)."""

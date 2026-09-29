@@ -3,6 +3,8 @@
 - Every ``examples/*.yml`` loads through the real suite loader (header,
   Jinja2, ``!ref``, validation) and resolves to launch payloads made only of
   fields AWX's launch endpoint knows.
+- Every field of a workflow node (``spec.nodes``) is named in
+  ``references/specs.md``, and its field tables name only node fields.
 - Every property of the suite's generated JSON Schema (what
   ``untaped awx schema AwxTestSuite`` prints) is named in
   ``references/test-suites.md``, and the reference's field tables name only
@@ -21,6 +23,7 @@ from untaped.capabilities.awx import SPEC
 from untaped.capabilities.awx.application.suites.loader import LoadTestSuite
 from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
 from untaped.capabilities.awx.domain.suite import Suite
+from untaped.capabilities.awx.domain.workflow_graph import WorkflowNodeSpec
 from untaped.capabilities.awx.infrastructure.catalog import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
 from untaped.capabilities.awx.infrastructure.suites import (
@@ -106,3 +109,26 @@ def test_the_reference_field_tables_name_only_suite_fields() -> None:
 
     assert documented
     assert documented - _schema_keys() == set()
+
+
+def _node_schema_keys() -> set[str]:
+    """Every property of a workflow node, its ``run``, ``approval`` and ``prompts``."""
+    schema = WorkflowNodeSpec.model_json_schema()
+    models = [schema, *schema.get("$defs", {}).values()]
+    return {key for model in models for key in model.get("properties", {})}
+
+
+def _specs_reference() -> str:
+    return (SKILL_DIR / "references" / "specs.md").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("key", sorted(_node_schema_keys()))
+def test_every_workflow_node_field_is_in_the_specs_reference(key: str) -> None:
+    assert f"`{key}`" in _specs_reference(), f"references/specs.md does not name {key!r}"
+
+
+def test_the_specs_reference_field_tables_name_only_node_fields() -> None:
+    documented = _table_field_names(_specs_reference())
+
+    assert documented
+    assert documented - _node_schema_keys() == set()

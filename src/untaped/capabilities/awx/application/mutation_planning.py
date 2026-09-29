@@ -20,6 +20,10 @@ from untaped.capabilities.awx.application.apply_membership import (
     MembershipSnapshots,
 )
 from untaped.capabilities.awx.application.apply_planner import ApplyPlanner, unrecognized_warning
+from untaped.capabilities.awx.application.apply_workflow_graph import (
+    WorkflowGraphPlan,
+    WorkflowGraphReconciler,
+)
 from untaped.capabilities.awx.application.mutation_types import (
     DeferredReference,
     MutationPlan,
@@ -153,7 +157,9 @@ class MutationPlanner:
         membership: MembershipReconciler,
         body: BodyOperations,
         warn: Callable[[str], None],
+        graph: WorkflowGraphReconciler | None = None,
     ) -> None:
+        self._graph = graph
         self._client = client
         self._catalog = catalog
         self._fk = fk
@@ -337,10 +343,12 @@ class MutationPlanner:
                 fk=resolver,
                 membership_snapshots=membership_snapshots,
             )
+            graph_plan = self._plan_graph(spec, resource, target.id, resolver)
             body = self._body.prepare(spec, resource, payload, existing_record)
             changes = [
                 *body.changes,
                 *(item.field_change for item in membership_plans if item.field_change is not None),
+                *(graph_plan.changes if graph_plan is not None else ()),
             ]
             preview = redact_outcome(
                 ApplyOutcome(
@@ -354,6 +362,7 @@ class MutationPlanner:
                             item.to_associate or item.to_disassociate or item.to_reorder
                             for item in membership_plans
                         )
+                        or (graph_plan is not None and graph_plan.changed)
                         else "unchanged"
                     ),
                     id=target.id,
@@ -365,7 +374,13 @@ class MutationPlanner:
                 ),
                 spec,
             )
-            referenced = _tokens_in({"body": body.payload, "parent": parents[index]})
+            referenced = _tokens_in(
+                {
+                    "body": body.payload,
+                    "parent": parents[index],
+                    "graph": graph_plan.references() if graph_plan is not None else [],
+                }
+            )
             dependencies = tuple(
                 sorted(
                     {token_indexes[token] for token in referenced if token in token_indexes}
@@ -390,6 +405,7 @@ class MutationPlanner:
                     _membership_plans=membership_plans,
                     _preview=preview,
                     create_parent=parents[index],
+                    _graph_plan=graph_plan,
                     watched_fields=tuple(
                         dict.fromkeys(
                             (
@@ -406,8 +422,23 @@ class MutationPlanner:
                 )
             )
         _validate_parent_field_aliases(operations)
+        _validate_workflow_recursion(operations, token_indexes)
         _validate_dependencies(operations)
         return MutationPlan(operations=tuple(operations), mode=mode)
+
+    def _plan_graph(
+        self,
+        spec: ResourceSpec,
+        resource: Resource,
+        target_id: int | None,
+        resolver: PlanningFkResolver,
+    ) -> WorkflowGraphPlan | None:
+        """Plan the node graph when the document declares one (absent: unmanaged)."""
+        if spec.node_field is None or spec.node_field not in resource.spec:
+            return None
+        if self._graph is None:
+            raise BadRequestError(f"{spec.kind} {spec.node_field} cannot be applied here")
+        return self._graph.plan(resource, resource.spec[spec.node_field], target_id, fk=resolver)
 
     def _build_targets(
         self,
@@ -559,6 +590,37 @@ def _validate_selected_identity(
             actual = (summary.get(field) or {}).get("id")
         if isinstance(parent[1], DeferredReference) or parent[1] != actual:
             raise BadRequestError("reparenting a selected resource is not supported")
+
+
+def _validate_workflow_recursion(
+    operations: list[PreparedMutation], token_indexes: dict[str, int]
+) -> None:
+    """Refuse workflows created together that run each other (``A → B → A``)."""
+    runs: dict[int, list[int]] = {}
+    for operation in operations:
+        graph_plan = operation.graph_plan
+        if graph_plan is not None:
+            tokens = _tokens_in(graph_plan.runs())
+            runs[operation.index] = sorted(token_indexes[t] for t in tokens if t in token_indexes)
+    state: dict[int, bool] = {}  # True while on the current path
+    path: list[int] = []
+
+    def visit(index: int) -> list[int]:
+        state[index] = True
+        path.append(index)
+        for target in runs.get(index, ()):
+            if state.get(target):
+                return [*path[path.index(target) :], target]
+            if target not in state and (found := visit(target)):
+                return found
+        path.pop()
+        state[index] = False
+        return []
+
+    for index in runs:
+        if index not in state and (cycle := visit(index)):
+            names = [operations[i].resource.metadata.name for i in cycle]
+            raise BadRequestError("workflow nodes form a recursion: " + " → ".join(names))
 
 
 def _validate_dependencies(operations: list[PreparedMutation]) -> None:

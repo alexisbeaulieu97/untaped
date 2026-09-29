@@ -18,6 +18,18 @@ class _FakeClient:
     def __init__(self, *, list_pages: list[dict[str, Any]] | None = None) -> None:
         self._list_pages = list(list_pages or [])
         self.paginate_calls: list[tuple[str, dict[str, str] | None]] = []
+        self.requests: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        self.requests.append((method, path, json))
+        return {"id": 5}
 
     def paginate_path(
         self,
@@ -63,3 +75,34 @@ def test_list_references_merges_params_without_widening_the_query() -> None:
     )
     _, params = client.paginate_calls[0]
     assert params == {"unified_job_template": "10", "page_size": "200"}
+
+
+def test_node_writes_use_the_node_and_approval_endpoints() -> None:
+    client = _FakeClient(list_pages=[{"id": 3}])
+    repo = HttpWorkflowNodeRepository(cast(RawHttpResourceClient, client))
+
+    assert repo.create_node(workflow_id=7, body={"identifier": "a"}) == {"id": 5}
+    repo.update_node(node_id=5, body={"limit": "web"})
+    repo.link_node(node_id=5, relation="success_nodes", member_id=6)
+    repo.link_node(node_id=5, relation="credentials", member_id=9, disassociate=True)
+    repo.create_approval_template(node_id=5, body={"name": "ok"})
+    repo.update_approval_template(template_id=8, body={"timeout": 60})
+    repo.get_approval_template(template_id=8)
+    repo.delete_node(node_id=5)
+    assert [r["id"] for r in repo.list_node_members(node_id=5, relation="labels")] == [3]
+
+    assert client.requests == [
+        ("POST", "workflow_job_templates/7/workflow_nodes/", {"identifier": "a"}),
+        ("PATCH", "workflow_job_template_nodes/5/", {"limit": "web"}),
+        ("POST", "workflow_job_template_nodes/5/success_nodes/", {"id": 6}),
+        (
+            "POST",
+            "workflow_job_template_nodes/5/credentials/",
+            {"id": 9, "disassociate": True},
+        ),
+        ("POST", "workflow_job_template_nodes/5/create_approval_template/", {"name": "ok"}),
+        ("PATCH", "workflow_approval_templates/8/", {"timeout": 60}),
+        ("GET", "workflow_approval_templates/8/", None),
+        ("DELETE", "workflow_job_template_nodes/5/", None),
+    ]
+    assert client.paginate_calls == [("workflow_job_template_nodes/5/labels/", None)]

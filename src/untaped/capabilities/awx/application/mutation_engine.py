@@ -23,6 +23,7 @@ from untaped.capabilities.awx.application.apply_membership import (
 from untaped.capabilities.awx.application.apply_planner import ApplyPlanner
 from untaped.capabilities.awx.application.apply_secret_policy import SecretPreservationPolicy
 from untaped.capabilities.awx.application.apply_verifier import ApplyVerifier
+from untaped.capabilities.awx.application.apply_workflow_graph import WorkflowGraphReconciler
 from untaped.capabilities.awx.application.mutation_planning import (
     MutationMode,
     MutationPlanner,
@@ -40,6 +41,7 @@ from untaped.capabilities.awx.application.ports import (
     RawHttpResourceClient,
     ResourceClient,
     StrategyResolver,
+    WorkflowNodeRepository,
 )
 from untaped.capabilities.awx.application.prepared_body import BodyOperations
 from untaped.capabilities.awx.application.scheduling import Schedule
@@ -81,11 +83,21 @@ class BatchMutationEngine:
         allow_unverified: bool = False,
         field_diff: FieldDiff | None = None,
         verifier: ApplyVerifier | None = None,
+        nodes: WorkflowNodeRepository | None = None,
     ) -> None:
         self._client = client
         self._fk = fk
         self._membership = membership or MembershipReconciler(catalog)
         warn = warn if warn is not None else _noop_warn
+        self._graph = (
+            WorkflowGraphReconciler(
+                nodes,
+                warn=warn,
+                credential_type=lambda member: self._membership.credential_type(member, client),
+            )
+            if nodes is not None
+            else None
+        )
         self._body = BodyOperations(
             client,
             warn=warn,
@@ -103,6 +115,7 @@ class BatchMutationEngine:
             membership=self._membership,
             body=self._body,
             warn=warn,
+            graph=self._graph,
         )
 
     def prepare(
@@ -174,6 +187,9 @@ class BatchMutationEngine:
         self._execute_memberships(
             plan, outcomes, bindings, continue_on_error=continue_on_error and not aborted
         )
+        self._execute_graphs(
+            plan, outcomes, bindings, continue_on_error=continue_on_error and not aborted
+        )
         partial = any(
             outcome.action in {"failed", "partial"} or outcome.partial for outcome in outcomes
         )
@@ -216,6 +232,17 @@ class BatchMutationEngine:
                         )
                         break
                 if operation.index in conflicts:
+                    continue
+                graph_plan = operation.graph_plan
+                if (
+                    graph_plan is not None
+                    and self._graph is not None
+                    and self._graph.conflict(graph_plan, int(operation.existing["id"]))
+                ):
+                    conflicts[operation.index] = (
+                        f"{operation.spec.kind} {operation.resource.metadata.name!r} "
+                        "changed its workflow nodes after planning"
+                    )
                     continue
                 for membership in operation.membership_plans:
                     current_ids = tuple(
@@ -442,6 +469,63 @@ class BatchMutationEngine:
                 any(item.field_change is not None for item in plans)
                 and outcome.action == "unchanged"
             ):
+                outcomes[operation.index] = outcome.model_copy(update={"action": "updated"})
+
+    def _execute_graphs(
+        self,
+        plan: MutationPlan,
+        outcomes: list[ApplyOutcome],
+        bindings: Mapping[str, int],
+        *,
+        continue_on_error: bool,
+    ) -> None:
+        """Reconcile node graphs once every body and membership has been written."""
+        stopped = not continue_on_error and any(
+            outcome.action in {"failed", "partial"} for outcome in outcomes
+        )
+        for operation, outcome in zip(plan.operations, outcomes, strict=True):
+            graph_plan = operation.graph_plan
+            if graph_plan is None or not graph_plan.changed or self._graph is None:
+                continue
+            if outcome.action in {"failed", "skipped", "conflict", "partial"}:
+                continue
+            if stopped or outcome.id is None:
+                outcomes[operation.index] = outcome.model_copy(
+                    update={
+                        "action": "partial",
+                        "partial": True,
+                        "unverified": True,
+                        "detail": "workflow nodes skipped after runtime failure"
+                        if stopped
+                        else "body succeeded but no target ID was returned for its nodes",
+                    }
+                )
+                continue
+            try:
+                self._graph.execute(
+                    graph_plan,
+                    outcome.id,
+                    bind=lambda value: _bind_deferred_values(value, bindings),
+                )
+            except Exception as exc:
+                outcomes[operation.index] = outcome.model_copy(
+                    update={
+                        "action": "partial",
+                        "partial": True,
+                        "unverified": True,
+                        "detail": (
+                            f"body succeeded but its workflow nodes failed: "
+                            f"{_safe_error(exc, operation)}"
+                        ),
+                    }
+                )
+                stopped = (
+                    not continue_on_error
+                    or isinstance(exc, ConfigError)
+                    or isinstance(exc.__cause__, ConfigError)
+                )
+                continue
+            if outcome.action == "unchanged":
                 outcomes[operation.index] = outcome.model_copy(update={"action": "updated"})
 
     @staticmethod
