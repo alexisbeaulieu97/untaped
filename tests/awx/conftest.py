@@ -52,6 +52,10 @@ class FakeAap:
         self.next_action_stdout: str | None = None
         # One-shot job events seeded for the next launched job.
         self.next_action_events: list[dict[str, Any]] = []
+        # One-shot fields of the next launched job's record (``job_explanation``…).
+        self.next_action_job_fields: dict[str, Any] = {}
+        # One-shot ``job_host_summaries`` records of the next launched job.
+        self.next_action_host_summaries: list[dict[str, Any]] = []
         # One-shot ``ignored_fields`` added to the next launch response (on top
         # of the fields the template's ``ask_*_on_launch`` flags ignore).
         self.next_action_ignored_fields: dict[str, Any] = {}
@@ -421,9 +425,13 @@ class FakeAap:
         status = self.next_action_status
         stdout = self.next_action_stdout
         events = self.next_action_events
+        job_fields = self.next_action_job_fields
+        host_summaries = self.next_action_host_summaries
         self.next_action_status = "successful"
         self.next_action_stdout = None
         self.next_action_events = []
+        self.next_action_job_fields = {}
+        self.next_action_host_summaries = []
         new_id = self._next_id
         self._next_id += 1
         result_kind = {
@@ -474,9 +482,12 @@ class FakeAap:
             }
             seed_fields.update(scm)
             result.update(scm)
-        self.seed(store_path, **seed_fields)
+        self.seed(store_path, **seed_fields, **job_fields)
+        result.update(job_fields)  # AWX answers a launch with the job's record
         for counter, event in enumerate(events, start=1):
             self.seed(f"{result_kind}_events", job=new_id, counter=counter, **event)
+        for summary in host_summaries:
+            self.seed("job_host_summaries", job=new_id, **summary)
         return httpx.Response(200, json=result)
 
     def _execution_action(
@@ -565,18 +576,50 @@ class FakeAap:
                 if (not skip_ujt and r.get("unified_job_template") == parent_id)
                 or r.get(singular) == parent_id
             ]
+        if not records and (parent_path, sub_path) in _EVENT_SUB_PATHS:
+            records = self._events_from_stdout(parent_path, parent_id)
         records = self._apply_filters(records, params)
         if store_collection == "workflow_nodes":
             records = [self._render_node(record) for record in records]
+        order = params.get("order_by")
+        if order:
+            key = order.lstrip("-")
+            records.sort(key=lambda record: record.get(key) or 0, reverse=order.startswith("-"))
+        if "page_size" not in params:
+            return httpx.Response(
+                200,
+                json={"count": len(records), "next": None, "previous": None, "results": records},
+            )
+        page, page_size = int(params.get("page", "1")), int(params["page_size"])
+        start = (page - 1) * page_size
+        next_url = None
+        if start + page_size < len(records):
+            next_url = (
+                f"{self.api_prefix}{parent_path}/{parent_id}/{sub_path}/"
+                f"?page={page + 1}&page_size={page_size}"
+            )
         return httpx.Response(
             200,
             json={
                 "count": len(records),
-                "next": None,
+                "next": next_url,
                 "previous": None,
-                "results": records,
+                "results": records[start : start + page_size],
             },
         )
+
+    def _events_from_stdout(self, parent_path: str, parent_id: int) -> list[dict[str, Any]]:
+        """A seeded ``stdout`` as AWX serves it through events: one ``verbose`` event per line.
+
+        AWX builds a job's text log from its events, so a test that seeds only
+        the log still sees the same lines when a monitor follows the events.
+        """
+        record = self.store.get(parent_path, {}).get(parent_id, {})
+        parent_field = parent_path[:-1]  # ``jobs`` → ``job``, ``project_updates`` → …
+        return [
+            {"counter": counter, "event": "verbose", "stdout": line, parent_field: parent_id}
+            for counter, line in enumerate(str(record.get("stdout", "")).splitlines(), start=1)
+        ]
 
     def _sub_post(
         self,
@@ -742,11 +785,18 @@ def _reaches(nodes: dict[int, dict[str, Any]], start: int, target: int) -> bool:
 # Strict execution routes mirror Controller URLs; arbitrary subcollections must
 # not mask unsupported event/stdout requests made by production monitors.
 _EXECUTION_SUBPATHS: dict[str, set[str]] = {
-    "jobs": {"job_events", "stdout"},
+    "jobs": {"job_events", "job_host_summaries", "stdout"},
     "workflow_jobs": {"workflow_nodes"},
     "project_updates": {"events", "stdout"},
     "inventory_updates": {"events", "stdout"},
     "ad_hoc_commands": {"events", "stdout"},
+}
+
+_EVENT_SUB_PATHS = {
+    ("jobs", "job_events"),
+    ("project_updates", "events"),
+    ("inventory_updates", "events"),
+    ("ad_hoc_commands", "events"),
 }
 
 
@@ -858,6 +908,11 @@ def _matches_all(  # noqa: C901
         if key.endswith("__gte"):
             base = key[: -len("__gte")]
             if not _numeric_compare(record.get(base), value, lambda a, b: a >= b):
+                return False
+            continue
+        if key.endswith("__lt"):
+            base = key[: -len("__lt")]
+            if not _numeric_compare(record.get(base), value, lambda a, b: a < b):
                 return False
             continue
         if str(record.get(key, "")) != value:

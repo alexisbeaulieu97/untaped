@@ -9,6 +9,9 @@
   ``untaped awx schema AwxTestSuite`` prints) is named in
   ``references/test-suites.md``, and the reference's field tables name only
   such properties.
+- Every field of an ``awx.test_result`` row (its ``failure``, ``evidence``,
+  failed tasks and host summaries included) is named in
+  ``references/test-results.md``, and its field tables name only such fields.
 """
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ import pytest
 from untaped.capabilities.awx import SPEC
 from untaped.capabilities.awx.application.suites.loader import LoadTestSuite
 from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
-from untaped.capabilities.awx.domain.suite import Suite
+from untaped.capabilities.awx.domain.suite import CaseResult, Suite
 from untaped.capabilities.awx.domain.workflow_graph import WorkflowNodeSpec
 from untaped.capabilities.awx.infrastructure.catalog import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
@@ -132,3 +135,28 @@ def test_the_specs_reference_field_tables_name_only_node_fields() -> None:
 
     assert documented
     assert documented - _node_schema_keys() == set()
+
+
+def _result_keys() -> set[str]:
+    """Every field of a test result row, as serialized (``failure.summary``, not ``message``)."""
+    schema = CaseResult.model_json_schema(mode="serialization", by_alias=True)
+    models = [schema, *schema.get("$defs", {}).values()]
+    keys = {key for model in models for key in model.get("properties", {})}
+    # ``expectations`` entries are documented as a list, not a field table.
+    return keys - {"check", "expected", "actual", "passed"}
+
+
+def _results_reference() -> str:
+    return (SKILL_DIR / "references" / "test-results.md").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("key", sorted(_result_keys()))
+def test_every_result_field_is_in_the_results_reference(key: str) -> None:
+    assert f"`{key}`" in _results_reference(), f"references/test-results.md does not name {key!r}"
+
+
+def test_the_results_reference_field_tables_name_only_result_fields() -> None:
+    documented = _table_field_names(_results_reference())
+
+    assert documented
+    assert documented - _result_keys() == set()

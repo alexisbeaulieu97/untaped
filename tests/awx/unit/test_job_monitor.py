@@ -11,8 +11,11 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+import pytest
+
 from untaped.capabilities.awx.application.ports import RawHttpResourceClient
 from untaped.capabilities.awx.domain import Job
+from untaped.capabilities.awx.errors import AwxApiError
 from untaped.capabilities.awx.infrastructure.job_monitor import PollingJobMonitor
 
 
@@ -93,39 +96,99 @@ def test_fetch_stdout_downloads_the_full_log() -> None:
     assert params == {"format": "txt_download"}
 
 
-def test_stream_stdout_polls_until_terminal_then_drains() -> None:
-    """Two text-poll cycles: first while running, second after terminal."""
+def _events(*counters: int, stdout: str = "line {}") -> dict[str, Any]:
+    """One page of events, each printing ``stdout`` with its counter."""
+    return {
+        "results": [{"counter": c, "stdout": stdout.format(c)} for c in counters],
+        "next": None,
+    }
+
+
+def _event_params(client: _FakeClient) -> list[dict[str, str]]:
+    return [params for _, path, params in client.json_calls if path.endswith("job_events/")]
+
+
+def test_stream_stdout_reads_only_the_new_events_each_poll() -> None:
+    """Following a log never re-downloads it: each poll asks for events after the last."""
     client = _FakeClient(
-        text_responses=["a\nb\n", "a\nb\nc\nd\n"],
-        json_responses=[_terminal_record(status="successful")],
+        json_responses=[
+            _events(1, 2, stdout="\x1b[0;32mok {}\x1b[0m\r\nmore"),
+            _terminal_record(status="successful"),
+            _events(3),
+        ]
     )
     sleeps: list[float] = []
     monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=sleeps.append)
     lines = list(monitor.stream_stdout(_running()))
-    # The second download repeats the first two lines; only new ones are yielded.
-    assert lines == ["a", "b", "c", "d"]
-    assert len(client.text_calls) == 2
-    # We slept exactly once between the two polls.
+    assert lines == ["ok 1", "more", "ok 2", "more", "line 3"]
+    assert [params["counter__gt"] for params in _event_params(client)] == ["0", "2"]
+    assert {params["order_by"] for params in _event_params(client)} == {"counter"}
+    assert client.text_calls == []
     assert sleeps == [2.0]
 
 
-def test_stream_stdout_waits_for_a_finished_jobs_events_to_be_saved() -> None:
-    """AWX writes the log from events: a finished job keeps streaming its tail
-    (the PLAY RECAP) until ``event_processing_finished``."""
+def test_stream_stdout_rereads_past_an_event_awx_saved_late() -> None:
+    """AWX can save event 4 before event 3: the cursor stays below the gap until it fills."""
     client = _FakeClient(
-        text_responses=["a\n", "a\nPLAY RECAP\n"],
-        json_responses=[{"id": 7, "status": "successful", "event_processing_finished": True}],
+        json_responses=[
+            _events(1, 2, 4),
+            _terminal_record(status="successful"),
+            _events(3, 4, 5),
+        ]
+    )
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=lambda _: None)
+    lines = list(monitor.stream_stdout(_running()))
+    assert lines == ["line 1", "line 2", "line 4", "line 3", "line 5"]
+    assert [params["counter__gt"] for params in _event_params(client)] == ["0", "2"]
+
+
+def test_stream_stdout_gives_up_on_an_event_that_never_arrives() -> None:
+    """A gap still open after five more reads is skipped, so reads stop restarting below it."""
+    running = {"id": 7, "status": "running"}
+    client = _FakeClient(
+        json_responses=[
+            _events(1, 2, 4),
+            *[response for _ in range(5) for response in (running, _events(4))],
+            _terminal_record(status="successful"),
+            _events(5),
+        ]
+    )
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=lambda _: None)
+    assert list(monitor.stream_stdout(_running())) == ["line 1", "line 2", "line 4", "line 5"]
+    assert [params["counter__gt"] for params in _event_params(client)] == [
+        "0",
+        *["2"] * 5,
+        "4",
+    ]
+
+
+def test_stream_stdout_starts_after_a_counter() -> None:
+    client = _FakeClient(json_responses=[_events(8)])
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=lambda _: None)
+    job = Job(id=7, kind="job", status="successful")
+    assert list(monitor.stream_stdout(job, from_counter=7)) == ["line 8"]
+    assert _event_params(client)[0]["counter__gt"] == "7"
+
+
+def test_stream_stdout_waits_for_a_finished_jobs_events_to_be_saved() -> None:
+    """A finished job keeps streaming its tail (the PLAY RECAP) until
+    ``event_processing_finished``."""
+    client = _FakeClient(
+        json_responses=[
+            _events(1, stdout="a"),
+            {"id": 7, "status": "successful", "event_processing_finished": True},
+            _events(2, stdout="PLAY RECAP"),
+        ],
     )
     monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=lambda _: None)
     finished = Job(id=7, kind="job", status="successful", event_processing_finished=False)
     assert list(monitor.stream_stdout(finished)) == ["a", "PLAY RECAP"]
-    assert len(client.text_calls) == 2
+    assert len(_event_params(client)) == 2
 
 
 def test_stream_stdout_settling_is_bounded() -> None:
-    client = _FakeClient(
-        json_responses=[{"id": 7, "status": "successful", "event_processing_finished": False}] * 20,
-    )
+    unsaved = {"id": 7, "status": "successful", "event_processing_finished": False}
+    client = _FakeClient(json_responses=[_events(), unsaved] * 20)
     monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=lambda _: None)
     finished = Job(id=7, kind="job", status="successful", event_processing_finished=False)
     assert list(monitor.stream_stdout(finished)) == []
@@ -133,9 +196,8 @@ def test_stream_stdout_settling_is_bounded() -> None:
 
 
 def test_stream_stdout_warns_when_events_are_still_being_saved() -> None:
-    client = _FakeClient(
-        json_responses=[{"id": 7, "status": "failed", "event_processing_finished": False}] * 20,
-    )
+    unsaved = {"id": 7, "status": "failed", "event_processing_finished": False}
+    client = _FakeClient(json_responses=[_events(), unsaved] * 20)
     warnings: list[str] = []
     monitor = PollingJobMonitor(
         cast(RawHttpResourceClient, client), sleep=lambda _: None, warn=warnings.append
@@ -146,6 +208,52 @@ def test_stream_stdout_warns_when_events_are_still_being_saved() -> None:
         "job 7: AWX is still saving its events; the log (and its PLAY RECAP) may be cut "
         "short; see `jobs logs 7 --kind job` later"
     ]
+
+
+def test_tail_stdout_reads_only_the_newest_events() -> None:
+    """One request, newest first, sized to the lines wanted; returned oldest first."""
+    client = _FakeClient(json_responses=[_events(9, 8, 7)])
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=lambda _: None)
+    lines, newest = monitor.tail_stdout(_running(), 3)
+    assert (lines, newest) == (["line 7", "line 8", "line 9"], 9)
+    assert _event_params(client) == [{"order_by": "-counter", "page_size": "3"}]
+
+
+def test_tail_stdout_reads_older_events_until_it_has_enough_lines() -> None:
+    client = _FakeClient(
+        json_responses=[
+            {"results": [{"counter": 9, "stdout": ""}, {"counter": 8, "stdout": "h"}]},
+            {"results": [{"counter": 7, "stdout": "f\ng"}, {"counter": 6, "stdout": "e"}]},
+        ]
+    )
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=lambda _: None)
+    lines, newest = monitor.tail_stdout(_running(), 2)
+    assert (lines, newest) == (["g", "h"], 9)
+    assert _event_params(client) == [
+        {"order_by": "-counter", "page_size": "2"},
+        {"order_by": "-counter", "page_size": "2", "counter__lt": "8"},
+    ]
+
+
+@pytest.mark.parametrize(("wanted", "expected"), [(0, []), (5, ["line 1", "line 2"])])
+def test_tail_stdout_of_a_short_log(wanted: int, expected: list[str]) -> None:
+    client = _FakeClient(json_responses=[_events(2, 1)])
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=lambda _: None)
+    assert monitor.tail_stdout(_running(), wanted) == (expected, 2)
+
+
+def test_an_empty_log_has_no_tail() -> None:
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, _FakeClient()), sleep=lambda _: None)
+    assert monitor.tail_stdout(_running(), 40) == ([], 0)
+
+
+def test_a_workflow_job_has_no_log_to_follow() -> None:
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, _FakeClient()), sleep=lambda _: None)
+    workflow = Job(id=7, kind="workflow_job", status="running")
+    with pytest.raises(AwxApiError, match="does not expose events"):
+        monitor.tail_stdout(workflow, 40)
+    with pytest.raises(AwxApiError, match="does not expose events"):
+        list(monitor.stream_stdout(workflow))
 
 
 def test_stream_events_yields_until_terminal_and_advances_counter() -> None:
