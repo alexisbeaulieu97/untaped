@@ -178,6 +178,10 @@ def strip_ansi(text: str) -> str:
     return _ANSI.sub("", text)
 
 
+SUMMARY_FIELDS = {"failed": "failures", "unreachable": "dark", "changed": "changed"}
+"""The ``job_host_summaries`` field behind each bounded :class:`HostSummary` counter."""
+
+
 class HostSummary(BaseModel):
     """One host's PLAY RECAP counters, from ``jobs/<id>/job_host_summaries/``."""
 
@@ -216,8 +220,13 @@ def host_summaries(records: Iterable[Mapping[str, Any]]) -> tuple[dict[str, Host
     cut never drops them): at most one record past the limit is consumed.
     """
     kept = list(islice(records, HOST_SUMMARY_LIMIT + 1))
+    return by_host(kept[:HOST_SUMMARY_LIMIT]), len(kept) > HOST_SUMMARY_LIMIT
+
+
+def by_host(records: Iterable[Mapping[str, Any]]) -> dict[str, HostSummary]:
+    """Every record's summary by host name, sorted by name."""
     hosts = {
         str(record.get("host_name") or record.get("host")): HostSummary.from_record(record)
-        for record in kept[:HOST_SUMMARY_LIMIT]
+        for record in records
     }
-    return dict(sorted(hosts.items())), len(kept) > HOST_SUMMARY_LIMIT
+    return dict(sorted(hosts.items()))

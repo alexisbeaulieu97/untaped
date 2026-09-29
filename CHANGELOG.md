@@ -228,6 +228,26 @@
     syncs and job actions carry `error`. `test validate`, `usage` and
     workflow `nodes` report each failed case or target as an attributed
     `error: <item>: …` line (a JSON error line with `item`).
+  - **New:** `awx test` cases can expect more under `expect:`, inherited from
+    `defaults` like `status` and `log`: `changed` (the most changed tasks
+    over every host), `hosts` (per-host bounds on `failed`, `unreachable` and
+    `changed`; `"*"` for every host, a named host's bound wins), `failed_tasks`
+    (the failed tasks that prove a negative case failed for the right reason)
+    and `idempotent: true` (run a passing case again; the rerun must succeed
+    and change nothing, and a failure lists the tasks it changed). A failed
+    check is `awx.expectation`. Result rows gain `rerun_job_id`. `test
+    validate` warns about `status: failed` without `failed_tasks`, and
+    refuses `idempotent` with another status than `successful`. The awx
+    skill ships an `idempotent.yml` example.
+  - **New:** `awx test run --compare FILE` compares the run with the saved
+    `--format json` (or `pipe`) output of an earlier run, and
+    `--baseline REF` runs every selected case on `REF` first, then compares.
+    Each row gains `baseline` and a `change` (`regression`, `unverified`,
+    `fixed`, `still_failing`, `pass`, `new`, `removed`); the table adds a
+    `change` column and stderr counts each change. Only a regression, an
+    `unverified` row or a failing new case fails the run; a case that fails
+    as it did in the baseline is reported as `still_failing`. Exit 4 and 5
+    still win.
 - Ansible
   - **Breaking:** `source refresh` exits 5 when it pauses at the GraphQL
     rate-limit floor, hits a global rate limit, or any repo failed

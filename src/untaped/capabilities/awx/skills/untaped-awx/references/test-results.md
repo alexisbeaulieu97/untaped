@@ -3,9 +3,10 @@
 `untaped awx test run` prints one `awx.test_result` row per case, in the
 order the cases are declared, then a summary on stderr
 (`4 cases: 3 pass, 1 fail`). Read the rows with `--format json` (or `yaml`
-or `pipe`); the table shows only `suite`, `case`, `result`, `job_status`,
-`job_id`, `duration_s`, `failure.system` and `failure.message`, and leaves out
-the evidence and the host summaries.
+or `pipe`); the table shows only `suite`, `case`, `result` (then `change`
+when comparing with a baseline), `job_status`, `job_id`, `duration_s`,
+`failure.system` and `failure.message`, and leaves out the evidence and the
+host summaries.
 
 A failing row, abridged:
 
@@ -56,6 +57,10 @@ code first:
 With `--format json` stderr is JSON Lines: an error that stops the run has
 `category`, `system`, `retryable`, `hint` and `exit_code`.
 
+Compared with a baseline (`--compare` or `--baseline`), a failure the
+baseline already had does not fail the run; see
+[Comparing with a baseline](#comparing-with-a-baseline).
+
 ## Which system is responsible, and what to do
 
 Every case that did not pass has a `failure`. Its `system` says who must act;
@@ -68,7 +73,7 @@ the first rule that matches decides:
 | `awx.scm` | AWX names a failed `project_update` in the job's explanation (a branch not pushed, a bad ref, an SCM credential), even when the case expected the job to fail; or before launching, `--scm-branch` on a template that does not prompt for it | `failed` (1), `invalid` before launching | Push the branch (`git push -u origin HEAD`) or fix the ref; read `evidence.related` and its log tail. |
 | `awx.inventory` | AWX names a failed `inventory_update` in the job's explanation | `config` (4) | The inventory source is broken, not your change: read its log (`untaped awx jobs logs ID --kind inventory_update`). |
 | `awx.controller` | AWX was unreachable or failed while the run polled or read; the job (or its update) ended in `error` (execution environment pull, capacity, a runner crash); it was canceled outside the run, failed with a controller explanation (the job was lost), or failed before AWX saved its events; or it never left `pending`/`waiting` before the timeout | usually `unavailable` (5); a job AWX no longer finds while polling is `not_found` (1) | Retry later; `evidence.job_explanation` and `evidence.result_traceback` say what AWX saw. |
-| `awx.expectation` | The job ran as intended but an expectation did not hold (it succeeded where the case expects a failure, or a log check failed) | `failed` (1) | Compare `expectations` with what the job did; fix the change or the case. |
+| `awx.expectation` | The job ran as intended but an expectation did not hold (it succeeded where the case expects a failure, a log check, a `changed` or `hosts` bound or a `failed_tasks` entry failed, or an `idempotent` rerun changed something) | `failed` (1) | Compare `expectations` with what the job did; fix the change or the case. |
 | `awx.hosts` | The job failed and every failed task is an unreachable host | `unavailable` (5) | Retry later, once the hosts in `evidence.unreachable_hosts` are reachable. |
 | `awx.playbook` | The job failed any other way (a failed task, or no failed task at all: a syntax error or a missing role, shown in the log tail), or it was still running at the timeout (a hang) | `failed` (1) | Fix the playbook, role or variables: `evidence.failed_tasks` names the host, task and message. |
 
@@ -81,9 +86,10 @@ ran it: `scm_revision` must be the commit you pushed.
 | Field | Meaning |
 |---|---|
 | `suite`, `case` | Which case this is (`--case suite/case` reruns it). |
-| `result` | The verdict: `pass`, `fail`, `error` or `timeout` (below). |
+| `result` | The verdict: `pass`, `fail`, `error` or `timeout` (below); `null` only on a `removed` row. |
 | `job_status` | AWX's final status of the job (`successful`, `failed`, `error`, `canceled`), or its last seen status. `null` when no job was read. |
 | `job_id` | The job's id (`null` when the launch failed before AWX created one). |
+| `rerun_job_id` | The job of an `idempotent` case's rerun; `null` when none was launched. |
 | `job_url` | The job's output page in the controller web UI. |
 | `duration_s` | Seconds from launch to verdict. |
 | `started_at`, `finished_at` | The job's start and finish times as AWX reports them. |
@@ -93,6 +99,8 @@ ran it: `scm_revision` must be the commit you pushed.
 | `expectations` | Every check, as `{check, expected, actual, passed}` (below). |
 | `hosts` | Each host's PLAY RECAP counters by host name (below), in `json`, `yaml` and `pipe` output; `null` when they were not read or could not be. |
 | `hosts_truncated` | `true` when the job ran on more than 500 hosts: `hosts` keeps 500, failed and unreachable hosts first. |
+| `baseline` | The same case in the baseline run, when comparing (below); `null` otherwise, or for a `new` case. |
+| `change` | How the case changed since the baseline (below); `null` without a baseline. |
 
 ### `failure`
 
@@ -121,6 +129,7 @@ field is `null` when it does not apply or could not be read.
 | `log_tail` | The last 40 log lines of the responsible execution: `related` when set (the project update's log, not the empty job log), else the job. |
 | `failed_tasks` | The responsible execution's failed tasks (below). |
 | `unreachable_hosts` | The hosts among `failed_tasks` that could not be reached. |
+| `changed_tasks` | The tasks an `idempotent` case's rerun changed, as `{host, task}` (the first 100); `null` otherwise. |
 | `note` | A second problem that did not decide the failure, such as `log fetch failed: …` when the job's own failure is already known. |
 
 `related` has these fields:
@@ -163,17 +172,101 @@ One entry per host name, read once from the job's host summaries:
 ### `expectations`
 
 One entry per check, in this order: `status`, then each `log.contains`,
-`log.not_contains` and `log.matches` entry.
+`log.not_contains` and `log.matches` entry, `changed`, each `hosts` bound,
+each `failed_tasks` entry, and last `idempotent`.
 
-- `check`: `status`, `log.contains`, `log.not_contains` or `log.matches`.
-- `expected`: the status, text or pattern the case asked for.
+- `check`: `status`, `log.contains`, `log.not_contains`, `log.matches`,
+  `changed`, `hosts`, `failed_tasks` or `idempotent`.
+- `expected`: the status, text or pattern the case asked for; `<= 0` for
+  `changed`; `HOST: COUNTER <= N` for a `hosts` bound (`*: failed <= 0`);
+  the entry's parts for `failed_tasks` (`task 'Validate', msg 'must be
+  set'`); `successful, 0 changed` for `idempotent`.
 - `actual`: for `status`, the job's status; for a log check, the log line
   that decided it (the first line containing or matching the text, cut at
-  300 characters), or `null` when no line did.
+  300 characters), or `null` when no line did; for `changed`, the total; for
+  a named host, its count (`null` when the host is not in the summaries); for
+  `*`, every host over the bound as `name=count` (`null` when none is); for
+  `failed_tasks`, the first failed task it matched as `[host] task: msg`
+  (`null` when none did); for `idempotent`, the rerun's status and changed
+  total (below).
 - `passed`: whether the check held.
 
 For `awx.expectation`, `failure.message` joins the failed checks, for example
-`expected status failed, got successful; no log line contains 'PLAY RECAP'`.
+`expected status failed, got successful; no log line contains 'PLAY RECAP'`,
+`expected <= 0 changed tasks, got 3`, `expected web1: changed <= 0, got 2`
+or `no failed task matches task 'Validate', msg 'must be set'`. A check whose
+data could not be read (the log, the host summaries, the job's events) makes
+the case an `error` when nothing else failed, and a `note` otherwise.
+
+## Idempotent cases
+
+An `idempotent: true` case that passed is launched again with the same
+payload (`rerun_job_id`), on the commit the first job ran when the case sets
+its ref. Its row keeps the first job's fields and adds the `idempotent`
+check:
+
+- The rerun succeeded and no host counts a changed task: `pass`.
+- It succeeded but changed something: `fail`, `awx.expectation`,
+  `not idempotent: the rerun ended successful, 2 changed`, with
+  `evidence.changed_tasks` listing each host and task and the rerun's
+  `log_tail`. Make those tasks report no change when nothing needs doing.
+- It failed, errored or timed out: the rerun is attributed like any job, its
+  `failure.message` starts with `rerun job 4412:` and its evidence comes from
+  the rerun. A rerun still running at the case's timeout is cancelled
+  (unless `--no-cancel`). The check's `actual` is `unknown` when the rerun
+  could not be followed, `not launched` when it could not be launched.
+
+## Comparing with a baseline
+
+`--compare FILE` compares the run with the saved output of an earlier run:
+`untaped awx test run --format json` (a list of rows) or `--format pipe`
+(`awx.test_result` records). Save the base branch's results once per task,
+outside the checkout so no commit picks the file up, then compare every
+iteration without running the base again:
+
+```bash
+untaped awx test run --scm-branch main --format json > /tmp/baseline-PROJ-123.json
+untaped awx test run --scm-branch HEAD --compare /tmp/baseline-PROJ-123.json --format json
+```
+
+The baseline run exits 1 when the base branch already has failing cases;
+that is expected, and those cases become `still_failing` rows.
+
+`--baseline REF` does both in one command: it runs every selected case on
+`REF` first (as `--scm-branch REF`, so templates must prompt for it; `HEAD`
+must be pushed), then as asked, and compares. An `idempotent` case then
+launches 4 jobs. `--compare` and `--baseline` cannot be combined (exit 2).
+A file that does not exist exits 2; one that is not such output fails before
+any launch (exit 1, naming the file).
+
+Rows are matched by `suite` and `case`. Each row gains `baseline` and
+`change`. `baseline` has these fields:
+
+| Field | Meaning |
+|---|---|
+| `result` | The case's verdict in the baseline. |
+| `job_id` | The baseline's job. |
+| `system` | The baseline's `failure.system`; `null` when it passed (or in a file from before 9.0). |
+| `category` | The baseline's `failure.category`; `null` likewise. |
+
+| `change` | Meaning | Fails the run |
+|---|---|---|
+| `regression` | It passed in the baseline and does not now, or it fails now because of another `system` than in the baseline. | yes |
+| `unverified` | It fails now, and the baseline failed because of the environment (`auth`, `permission`, `config` or `unavailable`), so it proves nothing. | yes |
+| `new` | The baseline did not run it (`baseline` is `null`); it counts as in a run without a baseline. | when it failed |
+| `still_failing` | It fails now as it did in the baseline: same `system` (a baseline without one matches on the result). | no, unless 4 or 5 |
+| `fixed` | It did not pass in the baseline and passes now. | no |
+| `pass` | It passed in both. | no |
+| `removed` | The baseline ran it and this run did not. These rows follow the others and have no job: only `suite`, `case`, `baseline` and `change` are set; `result`, `job_id`, `failure` and the other job fields are `null`, `expectations` is `[]` and `hosts_truncated` is `false`. A baseline case `--case` does not select is left out. | no |
+
+The exit code then says whether the change broke anything: 0 when no case
+regressed and no new case failed; 1 for a `regression`, an `unverified` row or
+a failing `new` case. `still_failing` rows are only reported. A higher code
+still wins: 4 or 5 for any case of this run whose failure is the
+environment's or temporary (whatever its `change`; with `--baseline`, of the
+baseline run too, since the comparison needs it), and 2 and 130 as always.
+The stderr summary adds a line counting each change
+(`compared with the baseline: 1 regression, 1 fixed, 3 pass`).
 
 ## Verdicts
 

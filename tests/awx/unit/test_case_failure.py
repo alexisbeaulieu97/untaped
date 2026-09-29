@@ -80,6 +80,7 @@ def test_a_case_failure_is_an_error_info_with_evidence() -> None:
             "log_tail": None,
             "failed_tasks": None,
             "unreachable_hosts": None,
+            "changed_tasks": None,
             "note": None,
         },
     }

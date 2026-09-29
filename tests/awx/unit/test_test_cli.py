@@ -1136,3 +1136,289 @@ def test_run_summarizes_results_on_stderr(
 
     assert result.exit_code == 1
     assert "2 cases: 1 pass, 1 fail" in result.stderr
+
+
+# ---- regressions ---------------------------------------------------------
+
+
+def _outcomes(fake: FakeAap, outcomes: list[dict[str, Any]]) -> None:
+    """Each launch in turn gets the next outcome's ``next_action_*`` values."""
+    real_action = fake._action
+
+    def action(*args: Any) -> Any:
+        if args[2] == "launch" and outcomes:
+            for name, value in outcomes.pop(0).items():
+                setattr(fake, f"next_action_{name}", value)
+        return real_action(*args)
+
+    fake._action = action  # type: ignore[method-assign]
+
+
+def _run(cli: CliInvoker, *args: str) -> Any:
+    return cli.invoke(app, ["test", "run", *args, "--parallel", "1"])
+
+
+def _baseline(cli: CliInvoker, fake: FakeAap, suite: Path, out: Path, *statuses: str) -> Path:
+    """Run ``suite`` once, its cases' jobs ending in ``statuses``, and save the JSON output."""
+    _outcomes(fake, [{"status": status} for status in statuses])
+    saved = _run(cli, str(suite), "-f", "json")
+    out.write_text(saved.stdout)
+    return out
+
+
+def test_compare_marks_each_change_and_fails_only_on_a_regression(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+    suite = _write(tmp_path / "s.yml", _suite_text("s"))
+    saved = _baseline(cli, fake_aap, suite, tmp_path / "base.json", "successful", "failed")
+
+    _outcomes(fake_aap, [{"status": "failed"}, {"status": "failed"}])
+    result = _run(cli, str(suite), "--compare", str(saved), "-f", "json")
+
+    assert result.exit_code == 1, result.output
+    smoke, full = json.loads(result.stdout)
+    before = json.loads(saved.read_text())
+    assert (smoke["change"], smoke["baseline"]) == (
+        "regression",
+        {"result": "pass", "job_id": before[0]["job_id"], "system": None, "category": None},
+    )
+    assert (full["change"], full["baseline"]["system"]) == ("still_failing", "awx.playbook")
+    assert "2 cases: 2 fail" in result.stderr
+    assert "compared with the baseline: 1 regression, 1 still_failing" in result.stderr
+
+    # A failure the baseline already had does not fail the run.
+    _outcomes(fake_aap, [{"status": "successful"}, {"status": "failed"}])
+    result = _run(cli, str(suite), "--compare", str(saved), "-f", "json")
+
+    assert result.exit_code == 0, result.output
+    assert [row["change"] for row in json.loads(result.stdout)] == ["pass", "still_failing"]
+
+
+def test_compare_reads_pipe_output_and_reports_removed_cases_in_the_table(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+    suite = _write(tmp_path / "s.yml", _suite_text("s"))
+    saved = _run(cli, str(suite), "-f", "pipe")
+    (tmp_path / "base.ndjson").write_text(saved.stdout)
+    _write(suite, "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\ncases:\n  smoke: {}\n")
+
+    result = _run(cli, str(suite), "--compare", str(tmp_path / "base.ndjson"), "-f", "json")
+
+    assert result.exit_code == 0, result.output
+    smoke, full = json.loads(result.stdout)
+    assert (smoke["case"], smoke["change"]) == ("smoke", "pass")
+    assert {key: full[key] for key in ("case", "result", "job_id", "change")} == {
+        "case": "full",
+        "result": None,
+        "job_id": None,
+        "change": "removed",
+    }
+    assert "1 case: 1 pass" in result.stderr
+    assert "compared with the baseline: 1 pass, 1 removed" in result.stderr
+
+    table = _run(cli, str(suite), "--compare", str(tmp_path / "base.ndjson"))
+    header = table.stdout.splitlines()[1]
+    assert header.index("result") < header.index("change") < header.index("job_status")
+    assert "removed" in table.stdout
+
+
+def test_compare_still_exits_for_the_environment(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+    suite = _smoke(tmp_path)
+    saved = _baseline(cli, fake_aap, suite, tmp_path / "base.json", "failed")
+
+    _outcomes(fake_aap, [{"status": "error", "job_fields": {"job_explanation": "pod lost"}}])
+    result = _run(cli, str(suite), "--compare", str(saved), "-f", "json")
+
+    assert result.exit_code == 5, result.output
+    [row] = json.loads(result.stdout)
+    assert (row["change"], row["failure"]["system"]) == ("regression", "awx.controller")
+
+
+def test_compare_fails_the_run_for_a_failing_new_case(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+    saved = _baseline(cli, fake_aap, _smoke(tmp_path), tmp_path / "base.json", "successful")
+    suite = _write(tmp_path / "s.yml", _suite_text("s"))
+
+    _outcomes(fake_aap, [{"status": "failed"}, {"status": "successful"}])
+    result = _run(cli, str(suite), "--compare", str(saved), "-f", "json")
+
+    assert result.exit_code == 1, result.output
+    assert [(row["case"], row["change"]) for row in json.loads(result.stdout)] == [
+        ("smoke", "new"),
+        ("full", "new"),
+        ("c", "removed"),
+    ]
+
+
+def test_validate_refuses_an_idempotent_negative_case(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    suite = _write(
+        tmp_path / "i.yml",
+        "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\n"
+        "cases:\n  c: {expect: {status: failed, idempotent: true}}\n",
+    )
+    result = cli.invoke(app, ["test", "validate", str(suite)])
+    assert result.exit_code == 1
+    assert "case 'c': idempotent needs status successful" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("content", "problem"),
+    [
+        ('[{"id": 1, "name": "Deploy"}]', "row 1 is not an awx.test_result row: suite"),
+        ("suite: s\n", "Expecting value"),
+        (
+            '{"untaped": "1", "kind": "awx.job", "record": {"id": 1}}\n',
+            "line 1: record kind 'awx.job' is not accepted here; expected 'awx.test_result'",
+        ),
+        ('{"untaped": "1", "kind": "awx.test_result"\n', "line 1: invalid JSON"),
+    ],
+)
+def test_compare_refuses_a_file_that_is_not_run_output(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, content: str, problem: str
+) -> None:
+    _seed_jt(fake_aap)
+    saved = _write(tmp_path / "base.json", content)
+
+    result = _run(cli, str(_smoke(tmp_path)), "--compare", str(saved))
+
+    assert result.exit_code == 1, result.output
+    assert f"--compare file {saved} is not the output of" in result.stderr
+    assert problem in result.stderr
+    assert fake_aap.actions_called == []
+
+
+def test_compare_needs_an_existing_file_and_excludes_baseline(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    missing = tmp_path / "none.json"
+    result = _run(cli, str(_smoke(tmp_path)), "--compare", str(missing))
+    assert result.exit_code == 2
+    assert f"path does not exist: {missing}" in result.stderr
+
+    saved = _write(tmp_path / "base.json", "[]")
+    result = _run(cli, str(_smoke(tmp_path)), "--compare", str(saved), "--baseline", "main")
+    assert result.exit_code == 2
+    assert "--compare and --baseline cannot be combined" in result.stderr
+
+
+def test_baseline_runs_every_case_at_the_ref_first_then_compares(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _branchable(fake_aap)
+    _outcomes(fake_aap, [{"status": "failed"}, {"status": "successful"}])
+
+    result = _run(
+        cli, str(_smoke(tmp_path)), "--baseline", "main", "--scm-branch", "fix", "-f", "json"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert [body.get("scm_branch") for _, _, _, body in fake_aap.actions_called] == [
+        "main",
+        "fix",
+    ]
+    [row] = json.loads(result.stdout)
+    first_job = fake_aap.list_records("jobs")[0]["id"]
+    assert (row["change"], row["baseline"]["job_id"], row["scm_branch"]) == (
+        "fixed",
+        first_job,
+        "fix",
+    )
+
+
+def test_baseline_head_is_the_pushed_branch(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.capabilities.awx.infrastructure import git_head
+
+    _branchable(fake_aap)
+    monkeypatch.setattr(git_head, "pushed_branch", lambda cwd=None: "feature/x")
+    _outcomes(fake_aap, [{"status": "successful"}, {"status": "failed"}])
+
+    result = _run(cli, str(_smoke(tmp_path)), "--baseline", "HEAD")
+
+    assert result.exit_code == 1, result.output
+    assert [body.get("scm_branch") for _, _, _, body in fake_aap.actions_called] == [
+        "feature/x",
+        None,
+    ]
+    assert "regression" in result.stdout
+
+
+def test_an_environment_failure_of_the_baseline_run_still_counts(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _branchable(fake_aap)
+    _outcomes(fake_aap, [{"status": "error"}, {"status": "successful"}])
+
+    result = _run(cli, str(_smoke(tmp_path)), "--baseline", "main", "-f", "json")
+
+    assert result.exit_code == 5, result.output
+    [row] = json.loads(result.stdout)
+    assert (row["result"], row["change"], row["baseline"]["system"]) == (
+        "pass",
+        "fixed",
+        "awx.controller",
+    )
+
+
+def test_an_idempotent_case_lists_what_its_rerun_changed(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+    events = [
+        {"event": "runner_on_ok", "changed": False, "host_name": "web1", "task": "Check"},
+        {"event": "runner_on_ok", "changed": True, "host_name": "web1", "task": "Write config"},
+    ]
+    _outcomes(
+        fake_aap,
+        [
+            {"host_summaries": [{"host_name": "web1", "changed": 1}]},
+            {"host_summaries": [{"host_name": "web1", "changed": 1}], "events": events},
+        ],
+    )
+    suite = _write(
+        tmp_path / "i.yml",
+        "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\n"
+        "cases:\n  c: {expect: {idempotent: true}}\n",
+    )
+
+    result = _run(cli, str(suite), "-f", "json")
+
+    assert result.exit_code == 1, result.output
+    [row] = json.loads(result.stdout)
+    assert row["rerun_job_id"] not in (None, row["job_id"])
+    assert row["failure"]["message"] == ("not idempotent: the rerun ended successful, 1 changed")
+    assert row["failure"]["evidence"]["changed_tasks"] == [{"host": "web1", "task": "Write config"}]
+
+
+def test_validate_warns_about_a_negative_case_without_failed_tasks(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+    suite = _write(
+        tmp_path / "neg.yml",
+        "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\n"
+        "defaults: {expect: {status: failed}}\n"
+        "cases:\n"
+        "  bare: {}\n"
+        "  proven: {expect: {failed_tasks: [{msg: must be set}]}}\n"
+        "  positive: {expect: {status: successful}}\n",
+    )
+
+    result = cli.invoke(app, ["test", "validate", str(suite)])
+
+    assert result.exit_code == 0, result.output
+    warnings = [line for line in result.stderr.splitlines() if line.startswith("warning:")]
+    assert warnings == [
+        "warning: s/bare: expects status failed without failed_tasks, so a failure for "
+        "another reason passes it"
+    ]

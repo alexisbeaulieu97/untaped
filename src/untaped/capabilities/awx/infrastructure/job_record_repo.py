@@ -10,7 +10,7 @@ hit the same path the prior CLI helper used (defensive, rarely fires).
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from typing import TYPE_CHECKING, Any
 
 from untaped.capabilities.awx.domain.job import KIND_TO_API_PATH
@@ -40,15 +40,17 @@ class JobRecordRepository:
     def get(self, *, kind: str, job_id: int) -> dict[str, Any]:
         return self._client.request("GET", f"{KIND_TO_API_PATH.get(kind, kind)}/{job_id}/")
 
-    def host_summaries(self, job: Job) -> Iterator[dict[str, Any]]:
+    def host_summaries(
+        self, job: Job, params: Mapping[str, str] | None = None
+    ) -> Iterator[dict[str, Any]]:
         """``jobs/<id>/job_host_summaries/``: one paginated listing, read lazily.
 
         Failed and unreachable hosts (AWX's ``failed``) come first, so a
-        reader that stops early keeps them.
+        reader that stops early keeps them. ``params`` filter the listing.
         """
         return self._client.paginate_path(
             f"{KIND_TO_API_PATH[job.kind]}/{job.id}/job_host_summaries/",
-            params={"order_by": "-failed,host_name"},
+            params={"order_by": "-failed,host_name", **(params or {})},
         )
 
     def cancel(self, *, kind: str, job_id: int) -> None:
