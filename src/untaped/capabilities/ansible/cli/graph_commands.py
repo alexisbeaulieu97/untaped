@@ -3,9 +3,9 @@
 ``deps``, ``impact`` and ``find`` answer one question each and print rows
 (``ansible.dependency``, ``ansible.dependent``, ``ansible.dependency_match``);
 ``graph`` renders the whole graph as a tree, Mermaid or JSON document, both
-directions at once by default. All four share the source-data flags of
-:class:`GraphSourceOptions` and fall back to ``ansible.default_source`` when
-no source is selected.
+directions at once by default. All four report warnings on stderr, share the
+source-data flags of :class:`GraphSourceOptions` and fall back to
+``ansible.default_source`` when no source is selected.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ import untaped.capabilities.ansible.cli.source_commands as source_commands
 from untaped.capabilities.ansible.application.graph import BuildGraph, GraphRequest
 from untaped.capabilities.ansible.application.ports import DependencyIndex
 from untaped.capabilities.ansible.application.refresh_git_index import RefreshResult
+from untaped.capabilities.ansible.cli.graph_tree import print_tree, tree_glyphs
 from untaped.capabilities.ansible.cli.refresh import (
     GIT_PARALLEL_CAP,
     format_skipped_dependency_file,
@@ -43,7 +44,12 @@ from untaped.capabilities.ansible.domain.models import DependencyDeclaration, Pa
 from untaped.capabilities.ansible.domain.parser import parse_dependency_file
 from untaped.capabilities.ansible.domain.payloads import IndexedDependency, SkippedDependencyFile
 from untaped.capabilities.ansible.domain.reach import reach
-from untaped.capabilities.ansible.domain.renderers import GraphFormat, render_graph
+from untaped.capabilities.ansible.domain.renderers import (
+    GraphFormat,
+    plain_text,
+    render_graph,
+    tree_lines,
+)
 from untaped.capabilities.ansible.errors import AnsibleError
 from untaped.capabilities.ansible.infrastructure import (
     AliasRepository,
@@ -492,6 +498,7 @@ def graph_command(
         untaped ansible graph ./roles/web --target-repo acme/web --downstream
     """
     depth_limit = _parse_depth(depth or "3")
+    direction = _graph_direction(upstream=upstream, downstream=downstream, both=both)
     with report_errors(), ExitStack() as stack:
         env = _graph_env(stack, options, command="graph", depth=depth_limit, live=live)
         graph = _target_graph(
@@ -499,10 +506,12 @@ def graph_command(
             target=target,
             ref=ref,
             target_repo=target_repo,
-            direction=_graph_direction(upstream=upstream, downstream=downstream, both=both),
+            direction=direction,
             extra_warnings=_refresh_selected(env, options),
         )
-        _emit_graph(graph, fmt=fmt, output=output)
+        ui = _report_warnings(graph)
+        header_note = _graph_header_note(env, target=target, direction=direction)
+        _emit_graph(graph, fmt=fmt, output=output, ui=ui, header_note=header_note)
 
 
 def _emit_reach(
@@ -530,9 +539,7 @@ def _emit_reach(
             direction=command,
             extra_warnings=_refresh_selected(env, options),
         )
-        ui = app_context().ui(strict=False)
-        for warning in graph.warnings:
-            ui.message("warning", warning)
+        _report_warnings(graph)
         emit(
             [hit.node for hit in reach(graph, relation)],
             fmt=fmt,
@@ -540,6 +547,14 @@ def _emit_reach(
             kind=kind,
             empty=f"No {noun} found{_within(depth_limit)}.",
         )
+
+
+def _report_warnings(graph: DependencyGraph) -> UiContext:
+    """Print the graph's warnings on stderr; return the UI context used."""
+    ui = app_context().ui(strict=False)
+    for warning in graph.warnings:
+        ui.message("warning", warning)
+    return ui
 
 
 _REACH_OUTPUT: dict[str, tuple[EdgeRelation, str, str]] = {
@@ -1254,13 +1269,43 @@ def _should_use_live_dependencies(
     return live
 
 
-def _emit_graph(graph: DependencyGraph, *, fmt: GraphFormat, output: Path | None) -> None:
-    rendered = render_graph(graph, fmt)
-    if output is None:
-        echo(rendered)
-        return
+def _emit_graph(
+    graph: DependencyGraph,
+    *,
+    fmt: GraphFormat,
+    output: Path | None,
+    ui: UiContext,
+    header_note: str,
+) -> None:
+    """Print the rendered graph (a styled tree on a terminal), or write it plain to ``output``."""
+    if fmt == "tree":
+        lines = tree_lines(graph, glyphs=tree_glyphs(ui), header_note=header_note)
+        if output is None:
+            print_tree(lines, ui)
+            return
+        rendered = plain_text(lines)
+    else:
+        rendered = render_graph(graph, fmt)
+        if output is None:
+            echo(rendered)
+            return
     output.expanduser().parent.mkdir(parents=True, exist_ok=True)
     output.expanduser().write_text(rendered)
+
+
+def _graph_header_note(env: _GraphEnv, *, target: str, direction: GraphDirection) -> str:
+    """Where the graph's data came from and how deep it goes: ``source prod · depth 3``."""
+    source = env.graph_source
+    local = "local checkout, " if Path(target).expanduser().exists() else ""
+    if not source.selections:
+        data = f"{local}live reads"
+    else:
+        single_saved = source.saved and len(source.selections) == 1
+        data = local + (f"source {source.label}" if single_saved else str(source.label))
+        if _should_use_live_dependencies(direction=direction, source_key=source.key, live=env.live):
+            data = f"{data}, downstream live"
+    depth = "unlimited depth" if env.depth is None else f"depth {env.depth}"
+    return f"{data} · {depth}"
 
 
 def _parse_depth(value: str) -> int | None:

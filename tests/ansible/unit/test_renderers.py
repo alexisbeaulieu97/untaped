@@ -14,7 +14,13 @@ from untaped.capabilities.ansible.domain.graph import (
     GraphEdge,
     GraphNode,
 )
-from untaped.capabilities.ansible.domain.renderers import render_graph
+from untaped.capabilities.ansible.domain.renderers import (
+    ASCII_GLYPHS,
+    TreeSegment,
+    plain_text,
+    render_graph,
+    tree_lines,
+)
 
 
 def _edge_id(relation: str, source_id: str, target_id: str) -> str:
@@ -30,11 +36,13 @@ def _node(node_id: str, repo: str, ref: str | None = None, **extra: Any) -> Grap
 def _graph(
     nodes: list[GraphNode], edges: list[tuple[str, str, str]], **extra: Any
 ) -> DependencyGraph:
+    refs = {node.id: node.ref for node in nodes}
     return DependencyGraph(
         target_id="target",
         nodes=tuple(nodes),
+        # Each edge declares the ref its dependency resolved to, so no pin notes show.
         edges=tuple(
-            GraphEdge(source_id=source, target_id=target, relation=relation)
+            GraphEdge(source_id=source, target_id=target, relation=relation, version=refs[target])
             for source, target, relation in edges
         ),
         **extra,
@@ -75,20 +83,83 @@ def _cycle(kind: str) -> DependencyGraph:
     )
 
 
-def test_tree_renderer_groups_dependencies_and_impact() -> None:
-    rendered = render_graph(_sample(), "tree")
+def _tree(graph: DependencyGraph) -> list[str]:
+    return render_graph(graph, "tree").splitlines()
 
-    for line in (
-        "+-- downstream",
-        "|   +-- acme/base@v1.0.0",
-        "|       +-- acme/users@main",
-        "|       +-- unresolved: common",
-        "+-- upstream",
-        "    +-- acme/base@v1.0.0",
-        "        +-- acme/site@release/1",
-        "warning: source data is stale",
-    ):
-        assert line in rendered.splitlines()
+
+def _rows(graph: DependencyGraph) -> list[str]:
+    """Node rows only: the section titles, header and blank lines dropped."""
+    return [line for line in _tree(graph)[1:] if line[:1] in {"├", "└", "│", " "}]
+
+
+def test_tree_renderer_prints_used_by_above_depends_on_with_edge_notes() -> None:
+    graph = DependencyGraph(
+        target_id="target",
+        nodes=(
+            _node("target", "acme/base", "v1.0.0"),
+            _node("users", "acme/users", "v1.2.0"),
+            _node("common", "acme/common", "main"),
+            _node("site", "acme/site", "release/1"),
+            GraphNode(id="missing", label="unresolved: common", unresolved="./roles/common"),
+        ),
+        edges=(
+            GraphEdge(
+                source_id="target",
+                target_id="users",
+                relation="requires",
+                source_path="requirements.yml",
+                version="v1.2.0",
+            ),
+            GraphEdge(
+                source_id="users",
+                target_id="common",
+                relation="requires",
+                source_path="meta/main.yml",
+            ),
+            GraphEdge(
+                source_id="target",
+                target_id="missing",
+                relation="requires",
+                source_path="meta/main.yml",
+            ),
+            GraphEdge(
+                source_id="site",
+                target_id="target",
+                relation="impacts",
+                source_path="roles/requirements.yml",
+                version="v1",
+            ),
+        ),
+        warnings=("source data is stale",),
+    )
+
+    lines = tree_lines(graph, header_note="source prod · depth 3")
+
+    assert plain_text(lines).splitlines() == [
+        "acme/base@v1.0.0  source prod · depth 3",
+        "",
+        "used by",
+        "└── acme/site@release/1   roles/requirements.yml · pins v1",
+        "",
+        "depends on",
+        "├── ./roles/common        meta/main.yml · unresolved",
+        "└── acme/users@v1.2.0     requirements.yml",
+        "    └── acme/common@main  meta/main.yml · unpinned",
+        "",
+        "3 repos · 4 edges · 1 unresolved",
+    ]
+    # Warnings are reported by the CLI on stderr, never inside the tree.
+    assert "stale" not in render_graph(graph, "tree")
+
+
+def test_tree_line_segments_carry_roles_for_styling() -> None:
+    header, _, section, row, *_ = tree_lines(_sample())
+
+    assert header == (TreeSegment("acme/base@v1.0.0", "target"),)
+    assert section == (TreeSegment("used by", "section"),)
+    assert row == (TreeSegment("└── ", "guide"), TreeSegment("acme/site@release/1", "node"))
+    unresolved = next(line for line in tree_lines(_sample()) if "common" in plain_text([line]))
+    assert TreeSegment("common", "unresolved") in unresolved
 
 
 def test_tree_renderer_nests_transitive_paths_and_shows_nodes_in_both_sections() -> None:
@@ -105,20 +176,56 @@ def test_tree_renderer_nests_transitive_paths_and_shows_nodes_in_both_sections()
         ],
     )
 
-    rendered = render_graph(graph, "tree")
-
-    assert "|   +-- acme/base@v1" in rendered
-    assert "|       +-- acme/users@main" in rendered
-    assert "|           +-- acme/common@main" in rendered
-    assert "    +-- acme/base@v1" in rendered
-    assert "        +-- acme/users@main" in rendered
+    assert _rows(graph) == [
+        "└── acme/users@main",
+        "└── acme/users@main",
+        "    └── acme/common@main",
+    ]
 
 
-def test_tree_renderer_keeps_path_guard_for_cycles() -> None:
-    rendered = render_graph(_cycle("cycle"), "tree")
+def test_tree_renderer_marks_cycles_on_the_path() -> None:
+    assert _rows(_cycle("cycle")) == [
+        "└── acme/users@main",
+        "    └── acme/base@v1  ↻ cycle",
+    ]
 
-    assert "|       +-- acme/users@main" in rendered
-    assert "|           +-- acme/base@v1 (cycle)" in rendered
+
+def test_tree_renderer_uses_ascii_glyphs_when_asked() -> None:
+    lines = tree_lines(_cycle("cycle"), glyphs=ASCII_GLYPHS)
+
+    assert plain_text(lines).splitlines()[-4:] == [
+        "`-- acme/users@main",
+        "    `-- acme/base@v1  (cycle)",
+        "",
+        "1 repo · 2 edges · 1 cycle",
+    ]
+
+
+def test_tree_renderer_numbers_a_shared_subtree_and_refers_back_to_it() -> None:
+    graph = _graph(
+        [
+            _node("target", "acme/app", "main"),
+            _node("a", "acme/a", "main"),
+            _node("b", "acme/b", "main"),
+            _node("shared", "acme/shared", "main"),
+            _node("leaf", "acme/leaf", "main"),
+        ],
+        [
+            ("target", "a", "requires"),
+            ("target", "b", "requires"),
+            ("a", "shared", "requires"),
+            ("b", "shared", "requires"),
+            ("shared", "leaf", "requires"),
+        ],
+    )
+
+    assert _rows(graph) == [
+        "├── acme/a@main",
+        "│   └── acme/shared@main [1]",
+        "│       └── acme/leaf@main",
+        "└── acme/b@main",
+        "    └── acme/shared@main      see [1]",
+    ]
 
 
 def test_tree_renderer_renders_multiple_target_refs_under_each_direction() -> None:
@@ -140,19 +247,16 @@ def test_tree_renderer_renders_multiple_target_refs_under_each_direction() -> No
         ],
     )
 
-    rendered = render_graph(graph, "tree")
-
-    for line in (
-        "|   +-- acme/base@main",
-        "|       +-- acme/users@v1",
-        "|   +-- acme/base@v1",
-        "|       +-- acme/legacy@v1",
-        "    +-- acme/base@main",
-        "        +-- acme/site@main",
-        "    +-- acme/base@v1",
-        "        +-- acme/site@release",
-    ):
-        assert line in rendered.splitlines()
+    assert _rows(graph) == [
+        "├── acme/base@main",
+        "│   └── acme/site@main",
+        "└── acme/base@v1",
+        "    └── acme/site@release",
+        "├── acme/base@main",
+        "│   └── acme/users@v1",
+        "└── acme/base@v1",
+        "    └── acme/legacy@v1",
+    ]
 
 
 def test_tree_renderer_sorts_branch_and_tag_refs_for_human_report() -> None:
@@ -172,10 +276,10 @@ def test_tree_renderer_sorts_branch_and_tag_refs_for_human_report() -> None:
         nodes.append(_node(f"d-{ref}", f"acme/{ref.replace('/', '-')}-user"))
         edges.append((f"t-{ref}", f"d-{ref}", "requires"))
 
-    rendered = render_graph(_graph(nodes, edges), "tree")
+    roots = [line[4:] for line in _rows(_graph(nodes, edges)) if line[4:].startswith("acme/base@")]
 
-    assert [line for line in rendered.splitlines() if line.startswith("|   +-- acme/base@")] == [
-        f"|   +-- acme/base@{ref}"
+    assert roots == [
+        f"acme/base@{ref}"
         for ref in ("trunk", "feature/2", "v3.0.0", "v2.0.0", "v1.10.0", "main", "docs")
     ]
     # Upstream: several refs of one dependent repo keep the same display order.
@@ -189,11 +293,7 @@ def test_tree_renderer_sorts_branch_and_tag_refs_for_human_report() -> None:
         ],
         [("pb-v3", "target", "impacts"), ("pb-master", "target", "impacts")],
     )
-    assert [
-        line
-        for line in render_graph(upstream, "tree").splitlines()
-        if line.startswith("        +-- acme/playbook@")
-    ] == ["        +-- acme/playbook@master", "        +-- acme/playbook@v3"]
+    assert _rows(upstream) == ["├── acme/playbook@master", "└── acme/playbook@v3"]
 
 
 def test_mermaid_renderer_emits_directional_edges() -> None:
@@ -204,7 +304,7 @@ def test_mermaid_renderer_emits_directional_edges() -> None:
     assert "n0 --> n1" in rendered
     assert "n2 --> n0" in rendered
     assert "n0 --> n3" in rendered
-    assert "%% warning: source data is stale" in rendered
+    assert "warning" not in rendered
 
 
 @pytest.mark.parametrize(
