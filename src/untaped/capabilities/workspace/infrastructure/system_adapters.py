@@ -24,6 +24,7 @@ from pathlib import Path
 
 from untaped.capabilities.workspace.domain import DEFAULT_FOREACH_TIMEOUT
 from untaped.capabilities.workspace.errors import WorkspaceError
+from untaped.capability_api import UsageError
 
 _FOREACH_TIMEOUT_RETURN_CODE = 124
 _INTERRUPTED_RETURN_CODE = 130
@@ -194,18 +195,18 @@ def resolve_editor_argv(editor: str, *, posix: bool | None = None) -> tuple[str,
     ``C:\\Tools\\vim.exe``). ``posix`` is injectable so unit tests cover
     both branches without depending on the runner's OS.
 
-    Raises :class:`WorkspaceError` on an empty selection (e.g. whitespace
-    only) and on :class:`shlex.split` ``ValueError`` (unterminated
-    quoting), so callers see one error shape regardless of the failure
-    mode.
+    Raises :class:`UsageError` (the ``--editor`` value is wrong) on an empty
+    selection (e.g. whitespace only) and on :class:`shlex.split`
+    ``ValueError`` (unterminated quoting), so callers see one error shape
+    regardless of the failure mode.
     """
     use_posix = posix if posix is not None else os.name != "nt"
     try:
         argv = shlex.split(editor, posix=use_posix)
     except ValueError as exc:
-        raise WorkspaceError(f"could not parse editor command {editor!r}: {exc}") from exc
+        raise UsageError(f"could not parse editor command {editor!r}: {exc}") from exc
     if not argv:
-        raise WorkspaceError("editor command is empty")
+        raise UsageError("editor command is empty")
     return tuple(argv)
 
 

@@ -64,6 +64,7 @@ from untaped.errors import (
     UsageError,
     attribution,
     first_validation_error,
+    most_severe,
 )
 from untaped.fs import atomic_write, file_lock, read_structured_file
 from untaped.git import (
@@ -216,4 +217,5 @@ __all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by
     "attribution",
     "note_failure",
     "report_error",
+    "most_severe",
 ]

@@ -112,6 +112,30 @@ def test_sync_timed_out_fetch_is_a_retryable_row_and_exits_five(
     assert row["error"]["retryable"] is True
 
 
+def test_sync_with_a_rejected_token_exits_four(
+    tmp_path: Path, upstream: Path, isolated_cache: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = CliInvoker()
+    runner.invoke(app, ["init", "smoke", "--path", str(tmp_path / "ws")])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+    assert runner.invoke(app, ["sync", "smoke"]).exit_code == 0
+    real_run = subprocess.run
+
+    def refusing(args: list[str], **kwargs: Any) -> Any:
+        if "fetch" in args:
+            stderr = b"fatal: Authentication failed for 'https://example.test/acme/api/'\n"
+            return subprocess.CompletedProcess(args, 128, stdout=b"", stderr=stderr)
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", refusing)
+    result = runner.invoke(app, ["sync", "smoke", "--format", "json"])
+
+    assert result.exit_code == 4, result.output
+    [row] = json.loads(result.stdout)
+    assert (row["error"]["category"], row["error"]["system"]) == ("auth", "git")
+    assert row["error"]["hint"]
+
+
 def _workspace_with_safe_orphan(tmp_path: Path, upstream: Path) -> Path:
     runner = CliInvoker()
     target = tmp_path / "ws"

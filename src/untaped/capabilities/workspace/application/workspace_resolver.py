@@ -25,7 +25,7 @@ from untaped.capabilities.workspace.application.ports import (
     RegistryReader,
 )
 from untaped.capabilities.workspace.domain import Workspace
-from untaped.capability_api import ConfigError
+from untaped.capabilities.workspace.errors import WorkspaceError
 
 
 def _looks_like_path(target: str) -> bool:
@@ -60,12 +60,14 @@ class WorkspaceResolver:
             try:
                 start = (base / Path(target).expanduser()).resolve()
             except RuntimeError as exc:  # ``~user`` for an unknown user
-                raise ConfigError(
+                raise WorkspaceError(
                     f"cannot expand workspace path {target!r}: {exc}", category="invalid"
                 ) from exc
             if not self._fs.exists(start):
                 # A typo must not silently walk up to an enclosing workspace.
-                raise ConfigError(f"workspace path does not exist: {start}", category="not_found")
+                raise WorkspaceError(
+                    f"workspace path does not exist: {start}", category="not_found"
+                )
             return self._resolve_from(
                 start, error=f"no workspace manifest at or above {start} (untaped.yml)"
             )
@@ -78,7 +80,7 @@ class WorkspaceResolver:
         for parent in [start, *start.parents]:
             if self._manifests.exists(parent):
                 return self._workspace_for(parent)
-        raise ConfigError(error, category="not_found")
+        raise WorkspaceError(error, category="not_found")
 
     def _workspace_for(self, canonical: Path) -> Workspace:
         existing = self._registry.find_by_path(canonical)

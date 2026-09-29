@@ -41,6 +41,7 @@ from untaped.capabilities.recipe.infrastructure.pack_files import (
 from untaped.capability_api import (
     ErrorCategory,
     GitCommandError,
+    UsageError,
     atomic_write,
     attribution,
     not_found,
@@ -511,7 +512,7 @@ def fetch_pack_source(url: str, *, rev: str | None, dest: Path) -> Path:
     surface immediately.
     """
     if rev is not None and (not rev.strip() or rev.startswith("-")):
-        raise ValueError(f"invalid --rev: {rev!r}")
+        raise UsageError(f"invalid --rev: {rev!r}")
     dest.parent.mkdir(parents=True, exist_ok=True)
     clone_args = ["clone", "--depth", "1"]
     if rev is not None:

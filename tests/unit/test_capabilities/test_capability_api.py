@@ -109,6 +109,7 @@ EXPECTED_ALL = [
     "attribution",
     "note_failure",
     "report_error",
+    "most_severe",
 ]
 
 

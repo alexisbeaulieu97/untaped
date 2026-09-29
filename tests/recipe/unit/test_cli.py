@@ -1948,7 +1948,7 @@ def test_apply_rejects_input_from_conflicts_and_global_scope(
             "--dry-run",
         ],
     )
-    assert conflict.exit_code != 0
+    assert conflict.exit_code == 2  # a usage error
     assert "cannot combine --var/--vars-file and --input-from for service" in conflict.output
 
     global_source = CliInvoker().invoke(

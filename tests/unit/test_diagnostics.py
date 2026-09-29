@@ -208,6 +208,8 @@ def test_url_passwords_never_leave_the_process() -> None:
     text = invoke_cli(_app(body), ["--format", "table"])
 
     assert "s3cret" not in structured.stderr + text.stderr
-    assert _lines(structured.stderr)[0]["details"]["url"] == "https://bot:***@aap.example/api/v2/me/"
+    assert (
+        _lines(structured.stderr)[0]["details"]["url"] == "https://bot:***@aap.example/api/v2/me/"
+    )
     info = ErrorInfo.from_exception(HttpTransportError("down", url="http://u:pw@h/x"))
     assert "pw" not in info.message

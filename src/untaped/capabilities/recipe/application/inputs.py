@@ -20,6 +20,7 @@ from untaped.capabilities.recipe.domain.input_jinja import (
 )
 from untaped.capabilities.recipe.domain.recipe import InputSpec, Recipe
 from untaped.capabilities.recipe.errors import RecipeError
+from untaped.capability_api import UsageError
 
 REDACTED = "***"
 _UNSET = object()
@@ -183,7 +184,7 @@ def _validate_config(
             raise RecipeError(f"cannot use --input-from for input {name!r} with scope global")
     conflicts = sorted(set(fixed_values) & set(input_from))
     if conflicts:
-        raise RecipeError(f"cannot combine --var/--vars-file and --input-from for {conflicts[0]}")
+        raise UsageError(f"cannot combine --var/--vars-file and --input-from for {conflicts[0]}")
 
 
 def _coerce_fixed_values(

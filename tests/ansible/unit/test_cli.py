@@ -859,7 +859,8 @@ def test_graph_unusable_source_selection_fails(
 
     result = _run("graph", "acme/base", *args)
 
-    assert result.exit_code == 1
+    # No source at all is a usage error; a named but unusable one is not.
+    assert result.exit_code == (2 if args == ["--upstream"] else 1)
     assert message in result.stderr
 
 
@@ -1452,7 +1453,7 @@ def test_source_refresh_partial_failure_exits_nonzero_and_saves_successes(
     assert result.exit_code == 1
     assert result.stdout == ""
     assert "refreshed source 'prod':" in result.stderr
-    assert "failed acme/gone: " in result.stderr
+    assert "error: acme/gone: " in result.stderr
     assert "refresh completed with 1 repo failure; successes were saved" in result.output
     assert _index(tmp_path).ref_scans("source:prod", "acme/ok", [("heads", "main")])
 
@@ -1470,8 +1471,8 @@ def test_source_refresh_all_failures_exits_nonzero_and_leaves_index_unchanged(
         result = _run("source", "refresh", "prod")
 
     assert result.exit_code == 1
-    assert "failed acme/gone: " in result.stderr
-    assert "failed acme/ok: " in result.stderr
+    assert "error: acme/gone: " in result.stderr
+    assert "error: acme/ok: " in result.stderr
     assert "refresh failed for all 2 repos; index left unchanged" in result.output
     assert "unchanged repos skip Git fetch" not in result.stderr
     after = _index(tmp_path).status("source:prod")
@@ -1529,12 +1530,38 @@ def test_source_refresh_transient_probe_failure_prints_safe_rerun_hint(
         result = _run("source", "refresh", "prod", "--backend", "graphql")
 
     assert result.exit_code == 5  # a transient probe failure: retry later
-    assert "failed acme/flaky: transient ref probe failed: HTTP 502" in result.stderr
+    assert "error: acme/flaky: transient ref probe failed: HTTP 502" in result.stderr
     assert (
         "hint: rerun `untaped ansible source refresh prod`; unchanged repos skip Git fetch "
         "and dependency scan work"
     ) in result.stderr
     assert _index(tmp_path).ref_scans("source:prod", "acme/ok", [("heads", "main")])
+
+
+def test_source_refresh_failures_report_their_own_and_the_run_s_category(
+    tmp_path: Path, monkeypatch
+) -> None:
+    graphql = {"source_refresh_backend": "graphql"}
+    _use_config(tmp_path, monkeypatch, _prod("acme/ok"), token=True, ansible=graphql)
+    _seed_unchanged_scan(monkeypatch, {"acme/ok": "sha-ok"})
+    _use_config(tmp_path, monkeypatch, _prod("acme/ok", "acme/flaky"), token=True, ansible=graphql)
+    get_settings.cache_clear()
+    monkeypatch.setattr(refresh, "GitRepositoryCache", _NoFetchGitCache)
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        _mock_expansion(mock, ["acme/ok", "acme/flaky"])
+        mock.post("/graphql").mock(side_effect=_flaky_graphql)
+        result = _run("source", "refresh", "prod", "--backend", "graphql")
+
+    errors = [
+        line for line in map(json.loads, result.stderr.splitlines()) if line["level"] == "error"
+    ]
+    assert [(line.get("item"), line["category"]) for line in errors] == [
+        ("acme/flaky", "unavailable"),
+        (None, "unavailable"),
+    ]
+    assert (errors[-1]["exit_code"], errors[-1]["retryable"], result.exit_code) == (5, True, 5)
 
 
 @pytest.mark.parametrize(
@@ -1589,7 +1616,7 @@ def test_source_refresh_hard_failure_does_not_print_transient_rerun_hint(
     result = _run("source", "refresh", "prod")
 
     assert result.exit_code == 1
-    assert "failed acme/bad: git fetch failed: timeout" in result.stderr
+    assert "error: acme/bad: git fetch failed: timeout" in result.stderr
     assert "unchanged repos skip Git fetch" not in result.stderr
 
 
@@ -2176,7 +2203,7 @@ def test_impact_without_any_source_names_the_default_source_setting(
 
     result = _run("impact", "acme/base")
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2  # a usage error: name a source
     assert "upstream requires --source NAME" in result.stderr
     assert "ansible.default_source" in result.stderr
 
