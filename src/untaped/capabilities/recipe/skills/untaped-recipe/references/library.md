@@ -76,3 +76,5 @@
   run as the user with full file access (`~/.netrc`, `config.yml`, git
   credential stores). Hook stdout (even raw fd 1 or a
   subprocess) becomes diagnostics and never corrupts the worker protocol.
+- Run `untaped skills install --all` (or `untaped skills install untaped-recipe`)
+  to install this packaged skill.

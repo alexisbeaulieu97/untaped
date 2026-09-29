@@ -3,30 +3,24 @@
 - Every ``examples/*.yml`` loads through the real suite loader (header,
   Jinja2, ``!ref``, validation) and resolves to launch payloads made only of
   fields AWX's launch endpoint knows.
-- Every field of the suite models has a ``Field(description=…)`` (which also
-  feeds ``untaped awx schema AwxTestSuite``) and is named in
-  ``references/test-suites.md``.
+- Every property of the suite's generated JSON Schema (what
+  ``untaped awx schema AwxTestSuite`` prints) is named in
+  ``references/test-suites.md``, and the reference's field tables name only
+  such properties.
 """
 
 from __future__ import annotations
 
+import re
 import warnings
 from pathlib import Path
-from typing import Any
 
 import pytest
-from pydantic import BaseModel
 
 from untaped.capabilities.awx import SPEC
 from untaped.capabilities.awx.application.suites.loader import LoadTestSuite
 from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
-from untaped.capabilities.awx.domain.suite import (
-    Case,
-    Expectation,
-    LogExpectation,
-    Suite,
-    VariableSpec,
-)
+from untaped.capabilities.awx.domain.suite import Suite
 from untaped.capabilities.awx.infrastructure.catalog import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
 from untaped.capabilities.awx.infrastructure.suites import (
@@ -39,7 +33,6 @@ from untaped.capabilities.awx.infrastructure.suites import (
 (_SKILL,) = SPEC.skills
 SKILL_DIR = _SKILL.source
 EXAMPLES = sorted((SKILL_DIR / "examples").glob("*.yml"))
-SUITE_MODELS: tuple[type[BaseModel], ...] = (Suite, Case, Expectation, LogExpectation, VariableSpec)
 
 
 class _AnyId:
@@ -78,19 +71,38 @@ def test_example_loads_and_resolves_to_known_launch_fields(path: Path) -> None:
     assert payloads
 
 
-def _fields() -> list[tuple[str, str, Any]]:
-    return [
-        (model.__name__, field.alias or name, field)
-        for model in SUITE_MODELS
-        for name, field in model.model_fields.items()
-    ]
+def _schema_keys() -> set[str]:
+    """Every property of the suite document: top level and every ``$defs`` model."""
+    schema = Suite.model_json_schema(by_alias=True)
+    models = [schema, *schema.get("$defs", {}).values()]
+    return {key for model in models for key in model.get("properties", {})}
 
 
-@pytest.mark.parametrize(
-    ("model", "key", "field"), _fields(), ids=lambda value: value if isinstance(value, str) else ""
-)
-def test_every_suite_field_is_described_and_documented(model: str, key: str, field: Any) -> None:
-    reference = (SKILL_DIR / "references" / "test-suites.md").read_text(encoding="utf-8")
+def _reference() -> str:
+    return (SKILL_DIR / "references" / "test-suites.md").read_text(encoding="utf-8")
 
-    assert field.description, f"{model}.{key} needs Field(description=...)"
-    assert f"`{key}`" in reference, f"references/test-suites.md does not name {model}.{key}"
+
+def _table_field_names(text: str) -> set[str]:
+    """Backticked names in the first column of every ``| Field | … |`` table."""
+    names: set[str] = set()
+    in_table = False
+    for line in text.splitlines():
+        if line.startswith("| Field |"):
+            in_table = True
+        elif not line.startswith("|"):
+            in_table = False
+        elif in_table and not line.startswith("|---"):
+            names.update(re.findall(r"`([^`]+)`", line.split("|")[1]))
+    return names
+
+
+@pytest.mark.parametrize("key", sorted(_schema_keys()))
+def test_every_suite_field_is_in_the_reference(key: str) -> None:
+    assert f"`{key}`" in _reference(), f"references/test-suites.md does not name {key!r}"
+
+
+def test_the_reference_field_tables_name_only_suite_fields() -> None:
+    documented = _table_field_names(_reference())
+
+    assert documented
+    assert documented - _schema_keys() == set()
