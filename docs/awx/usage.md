@@ -467,11 +467,12 @@ in order with a `[<id>]` breadcrumb on stderr. Without `--follow`, logs are
 downloaded in full once, so large jobs return their whole output rather than
 AWX's "too large to display" notice. With `--follow` (for `jobs logs` as for
 `launch`/`sync --follow`), the log is read through the job's events: each poll
-asks only for the events after the last one read (`counter__gt`) and prints
-their output without ANSI colours, so following a long job never downloads
-its log again. `--tail N --follow` reads only the newest events
-(`order_by=-counter`, one page of about N events) for the last N lines, then
-follows from there. Without `--follow`,
+asks only for the new events and prints their output in order, without ANSI
+colours, so following a long job never downloads its log again. An event AWX
+saves late is printed once the ones before it arrive; one that never arrives
+is reported on stderr. `--tail N --follow` reads only the newest events for
+the last N lines, then follows from there; following a job that already
+finished downloads its log once. Without `--follow`,
 `--format json` or `yaml` prints one array holding every job's rows, and each
 row names its `job`. With `--follow`, json streams one object per line
 (NDJSON) as rows arrive.
@@ -641,19 +642,15 @@ untaped awx test run --case deploy-smoke/web --var env=prod --show-logs
   `validate` (every case is checked against its template without launching),
   then `run --scm-branch HEAD`, which is refused until HEAD is pushed.
   `run` exits 0 only when at least one case ran and every case passed. Each
-  case that did not pass carries a `failure` naming the system responsible
-  (`awx.suite`, `awx.credentials`, `awx.controller`, `awx.scm`,
-  `awx.inventory`, `awx.hosts`, `awx.playbook` or `awx.expectation`), its
-  `category`, a one-line `summary`, a `hint` and the `evidence`: AWX's
-  `job_explanation`, the failed update it depended on, and the failed tasks
-  and log tail of whichever execution failed (a project update's, not the
-  empty job log). With `--format json`, `yaml` or `pipe` every row also
-  carries each host's PLAY RECAP counters (`hosts`, the first 500 by name).
-  The run exits with the most severe case: 4 when the environment needs
-  fixing (a rejected token or permission, a credential lookup, a failed
-  inventory update, an unpushed `--scm-branch HEAD`), 5 when retrying later
-  may help (an unavailable controller, a job stuck pending, unreachable
-  hosts), 1 for a failed playbook, project update or expectation.
+  case that did not pass carries a `failure` saying which system is
+  responsible (the suite, the credentials, the controller, the project or
+  inventory update, the hosts, the playbook or the expectation), with its
+  category, a message, a hint and the evidence from whichever execution
+  failed. With `--format json`, `yaml` or `pipe` every row also carries each
+  host's PLAY RECAP counters. The run exits with the most severe case: 4 when
+  the environment needs fixing, 5 when retrying later may help, 1 when the
+  change or the suite must. The awx skill's `references/test-results.md`
+  lists the systems and what to do for each.
 - To let an AI agent run suites against its own changes, give it a dedicated
   profile and token: see [AWX agent profile](./agent-profile.md).
 
