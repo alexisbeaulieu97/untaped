@@ -141,6 +141,8 @@ def test_run_exits_with_the_category_of_a_launch_failure(
     assert result.exit_code == exit_code, result.stderr
     [row] = json.loads(result.stdout)
     assert row["result"] == "error"
+    if status == 401:
+        assert "untaped config set awx.token" in row["failure_reason"]
 
 
 def test_run_preflights_every_case_before_launching(
@@ -357,9 +359,26 @@ def test_validate_reports_launches_awx_would_reject(
     result = cli.invoke(app, ["test", "validate", str(test_file), "--non-interactive"])
 
     assert result.exit_code == 1
-    assert "v/c: " in result.stderr
+    assert "error: v/c: " in result.stderr
     assert "ask_limit_on_launch is false" in result.stderr
     assert "v/ok" not in result.stderr
+
+
+def test_validate_reports_each_case_as_an_attributed_error(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_aap.seed("job_templates", name="Deploy app")
+    test_file = _write(
+        tmp_path / "v.yml",
+        "kind: AwxTestSuite\nname: v\njobTemplate: Deploy app\n"
+        "cases:\n  c:\n    launch:\n      limit: x\n",
+    )
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+
+    result = cli.invoke(app, ["test", "validate", str(test_file), "--non-interactive"])
+
+    [line] = [json.loads(line) for line in result.stderr.splitlines()]
+    assert (line["item"], line["category"], line["system"]) == ("v/c", "invalid", "awx")
 
 
 def test_show_logs_prints_stdout_tail_for_failed_case(

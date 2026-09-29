@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from rich.console import Console
 
 from untaped.diagnostics import (
+    ErrorInfo,
     diagnostics_scope,
     error_record,
     failure_exit_code,
@@ -221,7 +222,7 @@ def echo(message: object = "", *, err: bool = False, nl: bool = True) -> None:
 
 
 def report_error(
-    exc: UntapedError,
+    exc: UntapedError | ErrorInfo,
     *,
     item: str | None = None,
     write: Callable[[str], None] | None = None,
@@ -230,19 +231,26 @@ def report_error(
 
     Text is ``error: <msg>`` (``error: <item>: <msg>`` for a per-item
     failure, as :func:`format_error` renders it); under JSON diagnostics it
-    is one JSON line with the error's category, system and hint. ``write``
-    replaces the stderr print (e.g. a progress handle's ``log``).
+    is one JSON line with the error's category, system and hint. A failed
+    row's :class:`~untaped.diagnostics.ErrorInfo` reports the same way.
+    ``write`` replaces the stderr print (e.g. a progress handle's ``log``).
     """
     note_failure(exc)
     if json_diagnostics():
         line = render_record(error_record(exc, item=item))
     else:
         prefix = "" if item is None else f"{item}: "
-        line = f"error: {prefix}{format_error(exc)}"
+        line = f"error: {prefix}{_error_text(exc)}"
     if write is not None:
         write(line)
     else:
         print(line, file=sys.stderr)
+
+
+def _error_text(failure: UntapedError | ErrorInfo) -> str:
+    if isinstance(failure, UntapedError):
+        return format_error(failure)
+    return failure.message if failure.hint is None else f"{failure.message}\nhint: {failure.hint}"
 
 
 def note_requested_format(tokens: Sequence[str]) -> None:

@@ -19,6 +19,7 @@ from untaped.http import (
     paginate_link,
     paginate_offset,
     paginate_pages,
+    rejected_token_error,
     same_origin,
 )
 from untaped.settings import HttpSettings, reset_config_registry_for_tests
@@ -644,3 +645,18 @@ def test_paginate_offset_max_pages_bounds_non_converging_server() -> None:
         )
 
     assert calls["n"] == 2
+
+
+def test_a_rejected_token_is_an_auth_config_error_with_the_token_hint() -> None:
+    cause = HttpError("HTTP 401", status_code=401, url="https://aap/api/v2/me/", system="awx")
+
+    error = rejected_token_error("awx", "AWX rejected the token (HTTP 401)", cause=cause)
+
+    assert isinstance(error, ConfigError)
+    assert (str(error), error.category, error.system) == (
+        "AWX rejected the token (HTTP 401)",
+        "auth",
+        "awx",
+    )
+    assert error.hint == "run `untaped config set awx.token --prompt`"
+    assert dict(error.details) == {"status": 401, "url": "https://aap/api/v2/me/"}

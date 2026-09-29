@@ -40,7 +40,9 @@
     is JSON Lines: one object per error
     (`level`, `message`, `category`, `system`, `retryable`, `hint`,
     `exit_code`, `details`), per-item error (plus `item`), warning, hint and
-    note, and progress is silent. `UNTAPED_DIAGNOSTICS=text` keeps text.
+    note (including the installed-skills warning after a command), and
+    progress is silent. A parse error follows a `--format` on the command
+    line or in `UNTAPED_FORMAT`. `UNTAPED_DIAGNOSTICS=text` keeps text.
     stdout and the pipe envelope are unchanged. See
     [stderr diagnostics](docs/reference/pipes.md#stderr-diagnostics).
   - **New:** failed rows of outcome records (`*_outcome` kinds) carry an
@@ -62,15 +64,33 @@
     its error) and derives `failed`; `ExitCode` gains `ENVIRONMENT` (4) and
     `UNAVAILABLE` (5); `OutcomeRecord` and `TargetRecord` reserve `error`.
     New exports: `ErrorCategory`, `ErrorInfo`, `attribution`,
-    `note_failure`, `report_error`. See
+    `note_failure`, `report_error`, `most_severe`, `rejected_token_error`.
+    `note_failure(exc)` counts a failure and returns its `ErrorInfo` (a
+    failed row reads `error=note_failure(exc)`); `ErrorInfo.from_exception`
+    only builds one. See
     [Raise with a category](docs/conventions.md#raise-with-a-category-or-inherit-one).
+  - **Breaking:** a git command the remote refuses for its credentials
+    (authentication failed, no username, `Permission denied (publickey)`,
+    HTTP 401) is `auth` (403: `permission`) with a hint, so an expired token
+    during `workspace sync`, `github cache sync` or a pack fetch exits 4.
+  - **Behavior change:** a missing setting reads `<section>.<field> is not
+    configured` with the `config set …`/environment variable follow-up on a
+    `hint:` line (the JSON `hint`), instead of in the message.
+  - **Fix:** a URL password (`https://user:secret@host`) never appears in an
+    error message, a JSON diagnostic's `details`, or a row's `error`.
 - Workspace
   - **Breaking:** a `sync` (or `add --sync`, `import --sync`) whose git call
     timed out or lost the network exits 5; git not installed exits 4; a
     broken `$EDITOR` for `edit` exits 4; an invalid `workspace.parallel`
-    setting exits 4; a `path` NAME that is neither a workspace nor a
-    directory exits 2. Failed `sync`, `branch apply` and uninspectable
-    `status` rows carry `error`.
+    setting or an invalid registry entry in `state.yml` exits 4; `init` with
+    an invalid NAME, and `edit --editor` with an empty or badly quoted
+    command, exit 2. Failed `sync`, `branch apply` and uninspectable
+    `status` rows carry `error`, and `status --check` exits with the
+    failure's own code (5 when `git status` timed out).
+  - **Behavior change:** during `sync`, a repo job failing for a reason
+    other than git (such as a busy cache lock) becomes that repo's `failed`
+    row with its own exit code (5 for a busy lock) instead of aborting the
+    whole sync with 1.
 - GitHub
   - **Breaking:** a rejected token (401) or a missing permission (403) exits
     4, and a rate limit (429, rate-limited 403) or an unavailable API exits
@@ -144,20 +164,36 @@
     every command; `test run` exits 4 or 5 when a launch fails for those
     reasons, instead of 1. `--scm-branch HEAD` that cannot resolve a pushed
     branch, and `test run`/`list`/`validate` without paths and without
-    `git`, exit 4. A missing required `--var`, `patch --stdin` without
-    `--set`/`--patch-file`, and selection flag misuse exit 2. An invalid
-    resource file, suite or vars file stays 1.
+    `git`, exit 4, as do `apply --source-ref` with an unpushed commit or
+    outside a git repository, `edit` with a broken `$EDITOR`, the private
+    edit file failing, and `copy` that AWX refuses (`can_copy: false`). A
+    missing required `--var`, `patch --stdin` without `--set`/`--patch-file`,
+    selection flag misuse, `edit --field` naming a field that cannot be
+    edited, and `--<scope>` on a kind without that scope exit 2. An invalid
+    resource file, suite or vars file stays 1. A partial write whose survey
+    write AWX refused keeps its cause's code (4 for a rejected token, 5 for an
+    outage), `edit` no longer reports a rejected token or an outage while
+    preparing the batch as an invalid edit, and `apply --continue-on-error`
+    stops at a rejected token of any kind.
   - **New:** AWX API errors are HTTP errors: a bodiless one names its URL,
     and `--verbose` shows the raw response body. A transport failure stays
     `unavailable` instead of becoming a status-less API error.
   - **New:** failed, partial and conflict rows of `apply`, `patch`, `edit`,
-    `delete`, `copy`, `rename`, membership changes, launches, syncs and job
-    actions carry `error`.
+    `delete`, membership changes (workflow node credentials too), launches,
+    syncs and job actions carry `error`. `test validate`, `usage` and
+    workflow `nodes` report each failed case or target as an attributed
+    `error: <item>: …` line (a JSON error line with `item`).
 - Ansible
-  - **Breaking:** `source refresh` (and `--refresh` on the graph commands)
-    exits 5 when it pauses at the GraphQL rate-limit floor, hits a global
-    rate limit, or any repo failed transiently; `ansible.default_source`
-    naming a missing source, or a broken saved source, exits 4.
+  - **Breaking:** `source refresh` exits 5 when it pauses at the GraphQL
+    rate-limit floor, hits a global rate limit, or any repo failed
+    transiently; `--refresh` on the graph commands exits 5 only for the
+    pause (per-repo failures stay warnings with exit 0).
+    `ansible.default_source` naming a missing source, a broken saved source,
+    or an index written by a newer untaped exits 4; `impact` (and
+    `graph --upstream`) without any source exits 2.
+  - **Behavior change:** each repo a `source refresh` could not index is an
+    `error: <repo>: <reason>` line (was `failed <repo>: <reason>`), and the
+    final error carries the most severe repo's category.
 - Recipe
   - **Breaking:** recipe errors keep their own category instead of being
     reported as configuration errors: a missing recipe, pack, hook, backup or
@@ -165,7 +201,9 @@
     `conflict`, a failing hook `failed` (all exit 1). A missing `uv` exits 4,
     as do `backups prune` without `--keep`/`--older-than` or settings and a
     broken `$EDITOR`; a transient git failure fetching a pack exits 5; an
-    invalid YAML value in `hooks run --arg` exits 2.
+    invalid YAML value in `hooks run --arg`, an invalid `packs add --rev`, and
+    `--var`/`--vars-file` combined with `--input-from` for the same input
+    exit 2.
   - **Breaking:** `recipe.apply_outcome` renames its string field `error` to
     `detail`; a failed row's `error` is now the structured object. Errored
     `recipe.test` rows gain `error` too.

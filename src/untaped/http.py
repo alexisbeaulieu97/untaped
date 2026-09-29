@@ -39,6 +39,7 @@ from untaped.errors import (
     HttpTransportError,
     UntapedError,
 )
+from untaped.messages import command_line
 from untaped.redaction import redact_url_password
 from untaped.settings import HttpSettings, load_settings_section
 
@@ -483,6 +484,24 @@ def missing_setting_error(
     return ConfigError(
         f"{', '.join(keys[:-1])} and {keys[-1]} are not configured",
         hint=f"set them via {' and '.join(commands)}, or {' / '.join(env_vars)}{tail}",
+    )
+
+
+def rejected_token_error(
+    section: str, message: str, *, cause: BaseException | None = None
+) -> ConfigError:
+    """The standard error for a service rejecting ``<section>.token`` (HTTP 401).
+
+    ``auth`` in ``section`` (exit ``4``), with the ``config set … --prompt``
+    hint; the ``cause``'s details (``status``, ``url``) are kept.
+    """
+    details = cause.details if isinstance(cause, UntapedError) else None
+    return ConfigError(
+        message,
+        category="auth",
+        system=section,
+        hint=f"run `{command_line(f'config set {section}.token --prompt')}`",
+        details=details,
     )
 
 

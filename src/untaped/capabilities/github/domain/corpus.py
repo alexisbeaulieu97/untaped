@@ -18,7 +18,7 @@ class CorpusFailure:
 
     repo: str
     reason: str
-    cause: Exception | None = field(default=None, compare=False)
+    cause: Exception = field(compare=False)
 
 
 @dataclass(frozen=True)

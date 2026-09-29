@@ -73,6 +73,8 @@ class FakeAap:
         self.action_error: int | None = None
         # ``(parent_path, sub_path)`` routes an older controller lacks (404).
         self.missing_sub_paths: set[tuple[str, str]] = set()
+        # HTTP status every request answers with once set (an expired token, an outage).
+        self.every_request_error: int | None = None
 
     def seed(self, api_path: str, **fields: Any) -> dict[str, Any]:
         record_id = fields.pop("id", None) or self._next_id
@@ -103,6 +105,8 @@ class FakeAap:
         method = request.method
         body = self._json_body(request)
 
+        if self.every_request_error is not None:
+            return _err(self.every_request_error, "refused")
         if len(parts) == 3 and parts[2] == "survey_spec" and method in self.survey_errors:
             return _err(self.survey_errors[method], f"survey {method} rejected")
         if method == "GET":

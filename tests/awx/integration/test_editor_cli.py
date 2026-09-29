@@ -95,6 +95,26 @@ def test_edit_all_writable_kinds(fake_aap: Any, editor: Any, cli: str, path: str
     assert not paths[0].parent.exists()
 
 
+@pytest.mark.parametrize(("status", "exit_code"), [(401, 4), (503, 5)])
+def test_a_controller_failure_while_preparing_is_not_an_invalid_batch(
+    fake_aap: Any, editor: Any, status: int, exit_code: int
+) -> None:
+    seed(fake_aap, "projects")
+
+    def refused(documents: list[Any]) -> list[Any]:
+        fake_aap.every_request_error = status
+        documents[0]["spec"]["credential"] = "scm"  # preparing resolves the name
+        return documents
+
+    editor(refused)
+    result = CliInvoker().invoke(
+        app, ["projects", "edit", "target", "--format", "json"], terminal=True
+    )
+
+    assert result.exit_code == exit_code, result.output
+    assert "Invalid edited batch" not in result.output
+
+
 @pytest.mark.parametrize("cli", ["organizations", "credentials", "credential-types"])
 def test_readonly_excludes_edit(cli: str) -> None:
     result = CliInvoker().invoke(app, [cli, "edit", "target"])

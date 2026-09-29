@@ -19,7 +19,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from untaped.capabilities.awx.infrastructure.git_head import pushed_branch
-from untaped.capability_api import ConfigError, GitCommandError, GitResult, git_toplevel, run_git
+from untaped.capability_api import (
+    ConfigError,
+    GitCommandError,
+    GitResult,
+    attribution,
+    git_toplevel,
+    run_git,
+)
 
 _TIMEOUT = 30.0
 DOCUMENT_SUFFIXES = (".yml", ".yaml")
@@ -42,12 +49,14 @@ class GitSource:
         try:
             root = git_toplevel(cwd)
         except GitCommandError as exc:
-            raise ConfigError(f"--source-ref: {exc}") from exc
+            raise ConfigError(f"--source-ref: {exc}", **attribution(exc)) from exc
         if root is None:
-            raise ConfigError(f"--source-ref: {cwd} is not inside a git repository")
+            raise ConfigError(f"--source-ref: {cwd} is not inside a git repository", system="git")
         if ref == "HEAD":
             pushed_branch(cwd, flag="--source-ref")
-        unknown = ConfigError(f"--source-ref {ref}: not a commit in {root}")
+        unknown = ConfigError(
+            f"--source-ref {ref}: not a commit in {root}", category="not_found", system="git"
+        )
         if ref.startswith("-"):
             raise unknown
         result = _git(
@@ -65,7 +74,9 @@ class GitSource:
         """
         remotes = self._git("remote").text.split()
         if not remotes:
-            raise ConfigError(f"--source-ref {self.ref}: the repository has no remote")
+            raise ConfigError(
+                f"--source-ref {self.ref}: the repository has no remote", system="git"
+            )
         for remote in remotes:
             listed = run_git(
                 ["ls-remote", remote],
@@ -80,7 +91,8 @@ class GitSource:
         if self._git("branch", "-r", "--contains", self.sha, check=False).text.strip():
             return
         raise ConfigError(
-            f"--source-ref {self.ref}: commit {self.sha[:12]} is not on any remote; push it first"
+            f"--source-ref {self.ref}: commit {self.sha[:12]} is not on any remote; push it first",
+            system="git",
         )
 
     def files(self, path: Path, *, suffixes: tuple[str, ...] = DOCUMENT_SUFFIXES) -> list[str]:
@@ -95,17 +107,25 @@ class GitSource:
             if kind == "blob" and (not rel or name == rel or name.startswith(f"{rel}/")):
                 entries.append((mode, name))
         if not entries:
-            raise ConfigError(f"{shown} does not exist at {self.ref}")
+            raise ConfigError(
+                f"{shown} does not exist at {self.ref}", category="not_found", system="git"
+            )
         if entries[0][1] == rel:
             found = [entries[0]]
         else:
             found = sorted(entry for entry in entries if entry[1].endswith(suffixes))
             if not found:
-                raise ConfigError(f"no {'/'.join(suffixes)} files under {shown} at {self.ref}")
+                raise ConfigError(
+                    f"no {'/'.join(suffixes)} files under {shown} at {self.ref}",
+                    category="not_found",
+                    system="git",
+                )
         for mode, name in found:
             if mode == _SYMLINK_MODE:
                 raise ConfigError(
-                    f"{self.label(name)} is a symbolic link; --source-ref reads regular files only"
+                    f"{self.label(name)} is a symbolic link; --source-ref reads regular files only",
+                    category="invalid",
+                    system="git",
                 )
         return [name for _mode, name in found]
 
@@ -115,7 +135,9 @@ class GitSource:
         try:
             return data.decode("utf-8")
         except UnicodeDecodeError as exc:
-            raise ConfigError(f"cannot read {self.label(rel)}: not UTF-8 text") from exc
+            raise ConfigError(
+                f"cannot read {self.label(rel)}: not UTF-8 text", category="invalid", system="git"
+            ) from exc
 
     def label(self, rel: str) -> str:
         """How messages name a file: ``REF:PATH``, git's own spelling."""
@@ -128,7 +150,9 @@ class GitSource:
             if candidate.is_relative_to(self.root):
                 rel = candidate.relative_to(self.root).as_posix()
                 return "" if rel == "." else rel
-        raise ConfigError(f"{path} is outside the repository {self.root}")
+        raise ConfigError(
+            f"{path} is outside the repository {self.root}", category="invalid", system="git"
+        )
 
     def _git(self, *args: str, check: bool = True) -> GitResult:
         return _git(self.root, self.ref, *args, check=check)
@@ -138,4 +162,4 @@ def _git(root: Path, ref: str, *args: str, check: bool = True) -> GitResult:
     try:
         return run_git(list(args), cwd=root, timeout=_TIMEOUT, capture=True, check=check)
     except GitCommandError as exc:
-        raise ConfigError(f"--source-ref {ref}: {exc}") from exc
+        raise ConfigError(f"--source-ref {ref}: {exc}", **attribution(exc)) from exc
