@@ -79,7 +79,10 @@ if TYPE_CHECKING:
 
 app = create_app(
     name="test",
-    help="Run declarative AWX-job test suites (parameterized launch matrices).",
+    help=(
+        "Run declarative AWX-job test suites (parameterized launch matrices). "
+        "Experimental: may change in a minor release."
+    ),
 )
 
 
