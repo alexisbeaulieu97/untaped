@@ -41,6 +41,32 @@
     and job commands in `references/`, with `smoke`, `variants` and
     `negative` example suites. `docs/awx/agent-profile.md` and the test-suite
     section of `docs/awx/usage.md` now point at the skill's pages.
+  - **New:** workflow template documents carry their node graph under
+    `spec.nodes` (`id`, `run` or `approval`, `prompts` by name, `success`/
+    `failure`/`always` edges, `all_parents_must_converge`). `export` writes the
+    whole graph and no longer adds the partial-fidelity header comment;
+    `apply` reconciles nodes by `id` (create, patch, delete, then edges and
+    approval templates) with the usual preview, `--dry-run`, `--check` and
+    confirmation, and creates job templates of the same batch before the
+    workflow that runs them. Duplicate ids, edges to unknown ids, cycles,
+    workflows that run each other and unknown template names are refused
+    before any write. Nodes may run management jobs
+    (`run: {system_job_template: NAME}`); a node whose template was deleted is
+    left out of exports with a warning and left alone by apply. The awx skill's
+    `references/specs.md` documents the node format and `--source-ref`.
+  - **New:** job template exports carry `instance_groups` by name, in their
+    fallback order, and `apply` reconciles them.
+  - **New:** `apply` accepts several files and directories as one batch, and
+    `apply --source-ref REF PATH...` reads them as they are at a git ref of the
+    current repository instead of the working tree (`HEAD` must be pushed;
+    symbolic links at the ref are refused).
+  - **Behavior change:** membership replacement keeps its rules (adds first,
+    same-type credentials removed first and restored if the add fails) and now
+    applies them to workflow node credentials and instance groups too.
+  - **Behavior change:** workflow template exports now include `nodes`, so
+    applying one sets the workflow's graph to the exported one (`nodes: []`
+    deletes every node). A document without `nodes`, such as an export from an
+    earlier version, still leaves the graph alone.
 
 ## 8.1.0
 

@@ -143,15 +143,11 @@ def test_save_all_filter_rejects_malformed_entry(fake_aap: Any, tmp_path: Path) 
     assert "KEY=VALUE" in output
 
 
-def test_save_all_default_keeps_partial_fidelity_header_comment(
+def test_save_all_writes_workflows_with_their_nodes_and_no_header(
     seeded_default_org: Any, tmp_path: Path
 ) -> None:
-    """Partial-fidelity kinds (WorkflowJobTemplate) carry an inline
-    ``# fidelity-note`` header in the saved YAML. That comment must
-    survive into the multi-doc stdout stream so the stream is
-    byte-identical to the files it shadows — and ``yaml.safe_load_all``
-    must still parse it (``#`` is a YAML comment, but tests cement the
-    contract)."""
+    """Workflows export at full fidelity: the file has no fidelity header,
+    carries ``spec.nodes``, and the stdout stream repeats the file."""
     seeded_default_org.seed(
         "workflow_job_templates",
         id=10,
@@ -165,20 +161,14 @@ def test_save_all_default_keeps_partial_fidelity_header_comment(
         app, ["export", "--all-kinds", "--out-dir", str(out_dir), "--kind", "WorkflowJobTemplate"]
     )
     assert result.exit_code == 0, result.output
-    # The disk file's first non-separator line is the comment; that
-    # exact line must reappear verbatim in the stdout stream so the
-    # bulk dump matches the on-disk shape per doc (modulo trailing
-    # newline added by the CLI output helper).
     saved = out_dir / "WorkflowJobTemplate__Default__pipeline.yml"
     file_text = saved.read_text()
-    first_comment_line = next(line for line in file_text.splitlines() if line.startswith("#"))
-    assert first_comment_line in result.stdout, (
-        "header_comment in file does not appear in stdout stream"
-    )
-    # Stream still parses despite the embedded comment.
+    assert not any(line.startswith("#") for line in file_text.splitlines())
+    assert file_text in result.stdout
     docs = [d for d in yaml.safe_load_all(result.stdout) if d is not None]
     assert len(docs) == 1
     assert docs[0]["kind"] == "WorkflowJobTemplate"
+    assert docs[0]["spec"]["nodes"] == []
 
 
 def test_save_all_with_only_read_only_kinds_emits_empty_stream(

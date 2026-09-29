@@ -97,7 +97,9 @@ class ApplyPlanner:
         - polymorphic FK fields (e.g. Schedule ``parent``) — carried on metadata;
         - ``sub_endpoint`` multi-FKs (e.g. Group ``hosts``, JobTemplate
           ``credentials``) — reconciled out-of-band via
-          associate/disassociate POSTs, not the body.
+          associate/disassociate POSTs, not the body;
+        - the ``node_field`` graph (WorkflowJobTemplate ``nodes``) — reconciled
+          through the node endpoints.
         """
         raw = resource.spec
         # FK fields handled out-of-band (polymorphic ⇒ metadata; sub_endpoint
@@ -108,6 +110,8 @@ class ApplyPlanner:
             if ref.polymorphic or (ref.multi and ref.sub_endpoint is not None)
         }
         drop = set(spec.read_only_fields) | set(spec.identity_keys) | out_of_band_fks
+        if spec.node_field:
+            drop.add(spec.node_field)
         body: dict[str, Any] = {field: value for field, value in raw.items() if field not in drop}
         # Inject identity keys from metadata so create payloads include
         # ``name`` (and ``organization`` for org-scoped kinds), and identity is

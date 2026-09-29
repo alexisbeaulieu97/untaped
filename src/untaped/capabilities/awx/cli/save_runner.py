@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import stat
+from collections.abc import Callable
 from pathlib import Path
 
 from untaped.capabilities.awx.application import SaveResource, SaveResources
@@ -24,7 +25,7 @@ def run_save_selection(
     columns: list[str] | None,
 ) -> None:
     """Export selected records without resolving their names again."""
-    saver = SaveResource(ctx.repo, ctx.fk)
+    saver = SaveResource(ctx.repo, ctx.fk, nodes=ctx.workflow_nodes, warn=_warner(ctx))
     resources = [saver.from_record(spec, item.record) for item in selected]
     comment = spec.fidelity_note if spec.fidelity != "full" else None
     if comment:
@@ -56,7 +57,9 @@ def run_save_batch(
     print_paths: bool,
 ) -> None:
     """Bulk-save resources to disk and write the requested stdout shape."""
-    outcomes = SaveResources(ctx.repo, ctx.fk, ctx.catalog)(
+    outcomes = SaveResources(
+        ctx.repo, ctx.fk, ctx.catalog, nodes=ctx.workflow_nodes, warn=_warner(ctx)
+    )(
         all_kinds=all_kinds,
         kind=kind,
         filters=filters,
@@ -82,6 +85,10 @@ def run_save_batch(
         else:
             echo("---")
             echo(text)
+
+
+def _warner(ctx: AwxContext) -> Callable[[str], None]:
+    return lambda message: ctx.progress_ui().message("warning", message)
 
 
 def write_output(path: Path, text: str) -> None:

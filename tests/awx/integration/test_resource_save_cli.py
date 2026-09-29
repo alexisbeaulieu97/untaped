@@ -192,7 +192,7 @@ def test_save_kind_rejects_unknown_kind(fake_aap: Any, tmp_path: Path) -> None:
     assert "Bogus" in output
 
 
-def test_workflow_save_emits_partial_warning(seeded_default_org: Any, tmp_path: Path) -> None:
+def test_workflow_save_is_full_fidelity(seeded_default_org: Any, tmp_path: Path) -> None:
     seeded_default_org.seed(
         "workflow_job_templates",
         id=10,
@@ -216,9 +216,10 @@ def test_workflow_save_emits_partial_warning(seeded_default_org: Any, tmp_path: 
     )
     assert result.exit_code == 0, result.output
     text = out.read_text()
-    # The fidelity comment is the first line of the file.
-    assert text.startswith("# nodes not saved (v0 limitation)") or text.startswith("# node graph")
-    assert "partial save" in result.stderr
+    # No fidelity comment: the node graph is part of the document.
+    assert text.startswith("kind: WorkflowJobTemplate")
+    assert yaml.safe_load(text)["spec"]["nodes"] == []
+    assert "partial save" not in result.stderr
 
 
 def test_job_templates_export_out_writes_yaml_with_fk_names(fake_aap: Any, tmp_path: Path) -> None:
