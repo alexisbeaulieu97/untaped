@@ -377,6 +377,10 @@ class JobMonitor(Protocol):
         """
         ...
 
+    def settled(self, job: Job) -> Job:
+        """``job`` re-read (briefly) until AWX has saved a finished job's events."""
+        ...
+
     def tail_stdout(self, job: Job, lines: int) -> tuple[list[str], int]:
         """The log's last ``lines`` lines, read from its newest events only.
 

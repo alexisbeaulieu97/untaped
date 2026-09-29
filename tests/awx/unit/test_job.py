@@ -67,42 +67,11 @@ def test_job_carries_why_it_ended_but_leaves_it_out_of_rows() -> None:
             "status": "error",
             "job_explanation": "Job terminated due to error",
             "result_traceback": "Traceback …\nRuntimeError: pod failed",
-            "launch_type": "manual",
         }
     )
-    assert (job.job_explanation, job.launch_type) == ("Job terminated due to error", "manual")
+    assert job.job_explanation == "Job terminated due to error"
     assert job.result_traceback == "Traceback …\nRuntimeError: pod failed"
-    assert {"job_explanation", "result_traceback", "launch_type"}.isdisjoint(job.model_dump())
-
-
-@pytest.mark.parametrize(
-    ("explanation", "expected"),
-    [
-        (
-            'Previous Task Failed: {"job_type": "project_update", "job_name": "acme", '
-            '"job_id": "812"}',
-            ("project_update", "acme", 812),
-        ),
-        (
-            'Previous Task Failed: {"job_type": "inventory_update", "job_name": "Cloud - aws", '
-            '"job_id": 813}',
-            ("inventory_update", "Cloud - aws", 813),
-        ),
-        ("Previous Task Failed: {not json", None),
-        ('Previous Task Failed: {"job_type": "project_update", "job_id": "x"}', None),
-        ('Previous Task Failed: ["project_update"]', None),
-        ("Job terminated due to timeout", None),
-        ("", None),
-        (None, None),
-    ],
-)
-def test_a_failed_dependency_is_read_from_the_job_explanation(
-    explanation: str | None, expected: tuple[str, str, int] | None
-) -> None:
-    job = Job(id=1, kind="job", status="failed", job_explanation=explanation)
-    dependency = job.failed_dependency
-    actual = None if dependency is None else (dependency.kind, dependency.name, dependency.id)
-    assert actual == expected
+    assert {"job_explanation", "result_traceback"}.isdisjoint(job.model_dump())
 
 
 def test_job_event_lines_are_its_stdout_without_ansi_colours() -> None:
@@ -151,4 +120,5 @@ def test_host_summaries_keep_the_first_500_hosts_and_say_so() -> None:
     assert hosts["h000"] == HostSummary(ok=1)
 
     hosts, truncated = host_summaries([{"host_name": "web1", "dark": 1}, {"host": 9}])
-    assert (hosts, truncated) == ({"web1": HostSummary(unreachable=1), "9": HostSummary()}, False)
+    assert (hosts, truncated) == ({"9": HostSummary(), "web1": HostSummary(unreachable=1)}, False)
+    assert list(hosts) == ["9", "web1"]  # by name, whatever order they were read in

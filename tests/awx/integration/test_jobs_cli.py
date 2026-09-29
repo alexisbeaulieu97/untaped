@@ -283,8 +283,21 @@ def test_jobs_logs_follow_reads_events_never_the_whole_log(
     assert not any(call.request.url.path.endswith("/stdout/") for call in fake_aap.router.calls)
     if args:
         # The tail is one small newest-first read; following starts after it.
-        assert event_reads[0] == {"order_by": "-counter", "page_size": "1"}
+        assert event_reads[0] == {"order_by": "-counter", "page_size": "2", "no_truncate": "1"}
         assert event_reads[1]["counter__gt"] == "3"
+
+
+def test_jobs_logs_follow_prints_long_event_output_whole(fake_aap: Any) -> None:
+    """AWX cuts event stdout at 1024 characters unless asked not to."""
+    long_line = "x" * 3000
+    fake_aap.seed("jobs", id=42, status="running")
+    fake_aap.seed("job_events", job=42, counter=1, event="verbose", stdout=long_line)
+    fake_aap.get_record("jobs", 42)["status"] = "successful"
+
+    result = CliInvoker().invoke(app, ["jobs", "logs", "42", "--follow", "--tail", "5"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == [long_line]
 
 
 def test_jobs_logs_invalid_grep_pattern_rejected_at_boundary(fake_aap: Any) -> None:

@@ -3,16 +3,14 @@
 All four kinds normalise to the same surface for the CLI: a numeric id, a
 status string, a kind discriminator, and a few timing fields. Streaming
 events are exposed as :class:`JobEvent` lines (:attr:`JobEvent.lines` is
-their stdout without ANSI colours). A finished job names the update that
-failed before it (:attr:`Job.failed_dependency`), and :class:`HostSummary` is
-one host's PLAY RECAP counters. :func:`poll_until_terminal` is the one polling
+their stdout without ANSI colours), and :class:`HostSummary` is one host's
+PLAY RECAP counters. :func:`poll_until_terminal` is the one polling
 loop every waiter and streamer drives (the fetch and sleep are injected, so
 this module still performs no I/O itself).
 """
 
 from __future__ import annotations
 
-import json
 import re
 import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
@@ -86,39 +84,10 @@ class Job(BaseModel):
     """AWX's note on why the job ended, e.g. ``Previous Task Failed: {…}``."""
     result_traceback: str | None = Field(default=None, exclude=True)
     """The controller-side traceback of a job that ended in ``error``."""
-    launch_type: str | None = Field(default=None, exclude=True)
-    """How the job started: ``manual``, ``relaunch``, ``workflow``, ``scheduled``…"""
 
     @property
     def is_terminal(self) -> bool:
         return self.status in TERMINAL_STATUSES
-
-    @property
-    def failed_dependency(self) -> FailedDependency | None:
-        """The update AWX names in ``Previous Task Failed: {json}``, if any."""
-        match = _PREVIOUS_TASK_FAILED.search(self.job_explanation or "")
-        if match is None:
-            return None
-        try:
-            named = json.loads(match.group(1))
-            return FailedDependency(
-                kind=named["job_type"], name=named.get("job_name"), id=int(named["job_id"])
-            )
-        except ValueError, TypeError, KeyError:
-            return None
-
-
-_PREVIOUS_TASK_FAILED = re.compile(r"Previous Task Failed: (.*)$", re.DOTALL)
-
-
-@dataclass(frozen=True)
-class FailedDependency:
-    """An execution that had to run first and failed (a project or inventory update)."""
-
-    kind: str
-    """AWX's ``job_type``: ``project_update``, ``inventory_update``, …"""
-    name: str | None
-    id: int
 
 
 def still_running_detail(job: Job, timeout: float | None) -> str:
@@ -241,14 +210,14 @@ HOST_SUMMARY_LIMIT = 500
 
 
 def host_summaries(records: Iterable[Mapping[str, Any]]) -> tuple[dict[str, HostSummary], bool]:
-    """The first :data:`HOST_SUMMARY_LIMIT` hosts' summaries by name, and whether more exist.
+    """The first :data:`HOST_SUMMARY_LIMIT` hosts' summaries, by name, and whether more exist.
 
-    ``records`` may be a lazy paginated read: at most one record past the
-    limit is consumed.
+    ``records`` may be a lazy paginated read (read failed hosts first, so the
+    cut never drops them): at most one record past the limit is consumed.
     """
     kept = list(islice(records, HOST_SUMMARY_LIMIT + 1))
     hosts = {
         str(record.get("host_name") or record.get("host")): HostSummary.from_record(record)
         for record in kept[:HOST_SUMMARY_LIMIT]
     }
-    return hosts, len(kept) > HOST_SUMMARY_LIMIT
+    return dict(sorted(hosts.items())), len(kept) > HOST_SUMMARY_LIMIT

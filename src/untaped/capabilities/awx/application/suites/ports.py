@@ -4,7 +4,8 @@ Concrete implementations live in :mod:`untaped.capabilities.awx.infrastructure.s
 except ``Launcher`` / ``Watcher`` (which reuse the existing
 :class:`RunAction` / :class:`WatchJob` use cases), ``LogReader`` / ``EventReader`` /
 ``TailReader`` (the job monitor's ``fetch_stdout`` / ``stream_events`` /
-``tail_stdout``), ``HostReader`` (the job repository's ``host_summaries``), ``LaunchCheck``
+``tail_stdout``), ``JobReader`` (the job monitor itself), ``HostReader`` (the job
+repository's ``host_summaries``), ``LaunchCheck``
 (:class:`PreflightLaunch`) and ``FkPrefetcher`` /
 ``FkLookup`` (narrow views of :class:`FkResolver`, implemented by
 :mod:`untaped.capabilities.awx.infrastructure.fk_resolver`).
@@ -76,19 +77,25 @@ class EventReader(Protocol):
 
 @runtime_checkable
 class TailReader(Protocol):
-    """Return the last ``lines`` log lines of a job, from its newest events only.
+    """Return the last ``lines`` log lines of a job, from its newest events only."""
 
-    Also returns the newest event's counter, which the runner ignores.
-    """
-
-    def __call__(self, job: Job, lines: int, /) -> tuple[list[str], int]: ...
+    def __call__(self, job: Job, lines: int, /) -> list[str]: ...
 
 
 @runtime_checkable
 class HostReader(Protocol):
-    """Read a job's host summary records (``job_host_summaries``), lazily across pages."""
+    """Read a job's host summary records (``job_host_summaries``), lazily, failed hosts first."""
 
     def __call__(self, job: Job, /) -> Iterable[Mapping[str, Any]]: ...
+
+
+@runtime_checkable
+class JobReader(Protocol):
+    """Re-read an execution: as it is now, or once AWX has saved its events."""
+
+    def fetch(self, job: Job) -> Job: ...
+
+    def settled(self, job: Job) -> Job: ...
 
 
 @runtime_checkable

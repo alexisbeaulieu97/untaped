@@ -99,11 +99,43 @@ class StubLogReader:
             raise self.error
         return self.lines
 
-    def tail(self, job: Job, lines: int) -> tuple[list[str], int]:
+    def tail(self, job: Job, lines: int) -> list[str]:
         self.tail_calls.append((job.kind, job.id))
         if self.error is not None:
             raise self.error
-        return self.lines[-lines:], len(self.lines)
+        return self.lines[-lines:]
+
+
+class StubJobReader:
+    """Re-reads executions: ``records`` by ``(kind, id)``, else the job as given.
+
+    ``settled`` serves ``unsaved`` reads with ``event_processing_finished`` false first.
+    """
+
+    def __init__(
+        self, records: dict[tuple[str, int], Job] | None = None, *, unsaved: int = 0
+    ) -> None:
+        self.records = records or {}
+        self.unsaved = unsaved
+        self.fetched: list[tuple[str, int]] = []
+        self.settled_ids: list[int] = []
+
+    def fetch(self, job: Job) -> Job:
+        self.fetched.append((job.kind, job.id))
+        return self.records.get((job.kind, job.id), job)
+
+    def settled(self, job: Job) -> Job:
+        self.settled_ids.append(job.id)
+        saved = self.unsaved == 0
+        self.unsaved = max(0, self.unsaved - 1)
+        latest = self.records.get((job.kind, job.id), job)
+        if job.is_terminal:
+            return latest.model_copy(update={"event_processing_finished": saved})
+        return latest
+
+
+def _no_hosts(job: Job) -> list[dict[str, Any]]:
+    return []
 
 
 class StubEventReader:
@@ -155,11 +187,12 @@ def _make_runner(
     watcher: StubWatcher,
     default_org: str | None = None,
     canceller: StubCanceller | None = None,
-    refresher: Any = None,
+    job_reader: StubJobReader | None = None,
     log_reader: StubLogReader | None = None,
     event_reader: StubEventReader | None = None,
     preflight: LaunchCheck | None = None,
-    host_reader: Any = None,
+    host_reader: Any = _no_hosts,
+    hosts: bool = False,
 ) -> RunTestSuite:
     resolver = ResolveCasePayload(
         fk, catalog=AwxResourceCatalog(), default_organization=default_org
@@ -174,13 +207,14 @@ def _make_runner(
         fk_prefetcher=cast(FkPrefetcher, fk),
         jt_scope=jt_scope,
         canceller=canceller,
-        refresher=refresher,
+        job_reader=job_reader or StubJobReader(),
         log_reader=log_reader,
         event_reader=event_reader or StubEventReader([]),
         tail_reader=log_reader.tail,
         job_url=lambda job: f"https://aap.example.com/{job.kind}s/{job.id}",
         preflight=preflight,
         host_reader=host_reader,
+        hosts=hosts,
     )
 
 
@@ -210,6 +244,8 @@ def test_parallel_interrupt_stops_watchers_and_cancels_queued_cases() -> None:
         log_reader=StubLogReader([]),
         event_reader=StubEventReader([]),
         tail_reader=StubLogReader([]).tail,
+        job_reader=StubJobReader(),
+        host_reader=_no_hosts,
         job_url=lambda job: None,
         stop=stop,
     )
@@ -530,7 +566,7 @@ def test_timeout_reports_a_job_that_ended_before_its_cancel() -> None:
         launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
         watcher=StubWatcher(default=_job(id_=5, status="running")),
         canceller=StubCanceller(fail_ids=frozenset({5})),
-        refresher=lambda job: _job(id_=job.id, status="successful"),
+        job_reader=StubJobReader({("job", 5): _job(id_=5, status="successful")}),
     )
     [result] = runner([_suite("s", {"a": {}})], timeout=60).results
     assert result.result == "timeout"
@@ -544,7 +580,7 @@ def test_timeout_reports_a_job_that_ended_before_its_cancel() -> None:
 def test_polling_error_cancels_the_job() -> None:
     class FailingWatcher:
         def __call__(self, job: Job, *, timeout: float | None = None) -> Job:
-            raise RuntimeError("503 Service Unavailable")
+            raise HttpTransportError("503 Service Unavailable", system="awx")
 
     canceller = StubCanceller()
     runner = _make_runner(
@@ -637,14 +673,25 @@ def test_a_failed_job_is_the_playbooks_with_a_tail_from_the_newest_events() -> N
     assert (reader.calls, reader.tail_calls) == ([], [("job", 5)])
 
 
-def test_an_unreadable_log_errors_only_when_log_checks_need_it() -> None:
-    reader = StubLogReader([], error=RuntimeError("502 Bad Gateway"))
+def test_an_unreadable_log_errors_only_when_nothing_else_failed() -> None:
+    reader = StubLogReader([], error=HttpTransportError("502 Bad Gateway", system="awx"))
     runner, _ = _expect_runner("failed", reader)
     [row] = runner([_case_suite({})]).results
     assert row.failure is not None
     assert (row.result, row.failure.evidence.log_tail) == ("fail", None)
 
+    # The job failed: its attribution stands, the download is a note.
     runner, _ = _expect_runner("failed", reader)
+    [row] = runner([_case_suite({"expect": {"log": {"contains": ["x"]}}})]).results
+    assert row.failure is not None
+    assert (row.result, row.failure.system, row.failure.evidence.note) == (
+        "fail",
+        "awx.playbook",
+        "log fetch failed: 502 Bad Gateway",
+    )
+
+    # It succeeded: without the log the case cannot be checked.
+    runner, _ = _expect_runner("successful", reader)
     [row] = runner([_case_suite({"expect": {"log": {"contains": ["x"]}}})]).results
     assert row.failure is not None
     assert (row.result, row.failure.system, row.failure.message) == (
@@ -657,7 +704,7 @@ def test_an_unreadable_log_errors_only_when_log_checks_need_it() -> None:
 
 def test_a_log_fetch_failure_counts_toward_the_exit_code() -> None:
     reader = StubLogReader([], error=HttpTransportError("down", system="awx"))
-    runner, _ = _expect_runner("failed", reader)
+    runner, _ = _expect_runner("successful", reader)
     with diagnostics_scope():
         runner([_case_suite({"expect": {"log": {"contains": ["x"]}}})])
         assert failure_exit_code() == 5
@@ -675,6 +722,8 @@ def test_evidence_is_skipped_when_not_wanted_but_the_failure_is_attributed() -> 
         log_reader=reader,
         event_reader=events,
         tail_reader=reader.tail,
+        job_reader=StubJobReader(),
+        host_reader=_no_hosts,
         job_url=lambda job: None,
         evidence=False,
     )
@@ -783,28 +832,35 @@ def test_passing_cases_skip_events_and_unreadable_events_leave_no_list() -> None
     runner, _ = _expect_runner("failed", event_reader=StubEventReader([], error=RuntimeError()))
     [row] = runner([_case_suite({})]).results
     assert row.failure is not None
+    # Unreadable events never blame the playbook.
     assert (row.result, row.failure.system, row.failure.evidence.failed_tasks) == (
         "fail",
-        "awx.playbook",
+        "awx.controller",
         None,
     )
 
 
-@pytest.mark.parametrize(("processed", "expected"), [(True, ()), (False, None)])
-def test_no_failed_tasks_is_only_trusted_once_events_are_saved(
-    processed: bool, expected: tuple[()] | None
+@pytest.mark.parametrize(
+    ("unsaved", "tasks", "system"),
+    [(0, (), "awx.playbook"), (5, None, "awx.controller")],
+)
+def test_attribution_waits_for_the_events_and_never_trusts_an_unsaved_empty_list(
+    unsaved: int, tasks: tuple[()] | None, system: str
 ) -> None:
-    final = Job.model_validate(
-        {"id": 5, "kind": "job", "status": "failed", "event_processing_finished": processed}
-    )
+    final = Job.model_validate({"id": 5, "kind": "job", "status": "failed"})
+    reader = StubJobReader(unsaved=unsaved)
     runner = _make_runner(
         fk=StubFk(),
         launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
         watcher=StubWatcher(default=final),
+        job_reader=reader,
     )
     [row] = runner([_case_suite({})]).results
     assert row.failure is not None
-    assert row.failure.evidence.failed_tasks == expected
+    assert (row.failure.system, row.failure.evidence.failed_tasks) == (system, tasks)
+    assert reader.settled_ids == [5]
+    if unsaved:
+        assert "AWX has not processed its events yet" in row.failure.message
 
 
 _PROJECT_FAILED = (
@@ -836,12 +892,15 @@ def test_a_failed_project_update_is_the_scms_with_its_own_evidence() -> None:
         }
     )
     reader = StubLogReader(["fatal: couldn't find remote ref feature/x"])
+    update = Job(id=812, kind="project_update", name="acme", status="failed")
+    jobs = StubJobReader({("project_update", 812): update})
     runner = _make_runner(
         fk=StubFk(),
         launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
         watcher=StubWatcher(default=final),
         log_reader=reader,
         event_reader=events,
+        job_reader=jobs,
     )
     with diagnostics_scope():
         [row] = runner([_case_suite({})]).results
@@ -936,6 +995,7 @@ def test_every_case_with_a_job_carries_its_host_summaries() -> None:
         launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
         watcher=StubWatcher(default=_job(id_=5, status="successful")),
         host_reader=hosts,
+        hosts=True,
     )
     [row] = runner([_case_suite({})]).results
     assert row.hosts is not None
@@ -955,15 +1015,81 @@ def test_unreadable_or_unwanted_host_summaries_are_null() -> None:
     def broken(job: Job) -> list[dict[str, Any]]:
         raise RuntimeError("503")
 
-    for reader in (broken, None):
+    for reader, wanted in ((broken, True), (_no_hosts, False)):
         runner = _make_runner(
             fk=StubFk(),
             launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
             watcher=StubWatcher(default=_job(id_=5, status="successful")),
             host_reader=reader,
+            hosts=wanted,
         )
         [row] = runner([_case_suite({})]).results
         assert (row.result, row.hosts, row.hosts_truncated) == ("pass", None, False)
+
+
+def test_a_negative_case_whose_update_failed_does_not_pass() -> None:
+    """``expect: status: failed`` must not pass when the playbook never ran."""
+    final = Job(id=5, kind="job", status="failed", job_explanation=_PROJECT_FAILED)
+    update = Job(id=812, kind="project_update", name="acme", status="failed")
+    runner = _make_runner(
+        fk=StubFk(),
+        launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
+        watcher=StubWatcher(default=final),
+        job_reader=StubJobReader({("project_update", 812): update}),
+    )
+    [row] = runner([_case_suite({"expect": {"status": "failed"}})]).results
+    assert row.failure is not None
+    assert (row.result, row.failure.system) == ("fail", "awx.scm")
+    assert [check.passed for check in row.expectations] == [True]
+
+
+def test_rescued_failures_do_not_blame_the_playbook() -> None:
+    """A table run still reads a failed job's host summaries to drop rescued failures."""
+    events = StubEventReader(
+        [
+            _event("runner_on_failed", failed=True, host="web1", msg="rescued"),
+            _event("runner_on_unreachable", failed=True, host="db1", msg="ssh timeout"),
+        ]
+    )
+    read: list[int] = []
+
+    def hosts(job: Job) -> list[dict[str, Any]]:
+        read.append(job.id)
+        return [{"host_name": "web1", "failures": 0, "rescued": 1}, {"host_name": "db1", "dark": 1}]
+
+    runner = _make_runner(
+        fk=StubFk(),
+        launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
+        watcher=StubWatcher(default=_job(id_=5, status="failed")),
+        event_reader=events,
+        host_reader=hosts,
+    )
+    [row] = runner([_case_suite({})]).results
+    assert row.failure is not None
+    assert (row.failure.system, row.failure.message) == (
+        "awx.hosts",
+        "unreachable: db1: ssh timeout",
+    )
+    assert read == [5]
+
+
+def test_a_passing_case_reads_no_events_nor_hosts_unless_asked() -> None:
+    events = StubEventReader([])
+    read: list[int] = []
+
+    def hosts(job: Job) -> list[dict[str, Any]]:
+        read.append(job.id)
+        return []
+
+    runner = _make_runner(
+        fk=StubFk(),
+        launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
+        watcher=StubWatcher(default=_job(id_=5, status="failed")),
+        event_reader=events,
+        host_reader=hosts,
+    )
+    [row] = runner([_case_suite({"expect": {"status": "failed"}})]).results
+    assert (row.result, events.calls, read) == ("pass", [], [])
 
 
 def test_scm_branch_overrides_every_case_and_rows_report_what_ran() -> None:
