@@ -43,6 +43,7 @@ from untaped.capability_api import (
     UsageError,
     attribution,
     bounded_map,
+    note_failure,
     plural,
 )
 
@@ -546,9 +547,7 @@ def _failure(repo: CorpusRepoTarget, exc: Exception) -> CorpusFailure:
 
 def _failure_error(failure: CorpusFailure) -> ErrorInfo:
     """The ``error`` of a failed sync row (counted toward the run's exit code)."""
-    return ErrorInfo.from_exception(
-        failure.cause or UntapedError(failure.reason), message=failure.reason
-    )
+    return note_failure(failure.cause or UntapedError(failure.reason), message=failure.reason)
 
 
 class SyncCorpus(_CorpusUseCase):

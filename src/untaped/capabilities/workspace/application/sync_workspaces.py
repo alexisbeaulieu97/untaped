@@ -18,7 +18,7 @@ from untaped.capabilities.workspace.errors import (
     UnmatchedRepoFilterError,
     WorkspaceError,
 )
-from untaped.capability_api import ErrorInfo, UntapedError, bounded_map
+from untaped.capability_api import UntapedError, bounded_map, note_failure
 
 
 @dataclass(frozen=True)
@@ -240,7 +240,7 @@ def _failed_outcome(job: RepoSyncJob, exc: UntapedError) -> SyncOutcome:
         target_path=job.workspace.path / job.repo.name,
         action="failed",
         detail=str(exc),
-        error=ErrorInfo.from_exception(exc),
+        error=note_failure(exc),
     )
 
 

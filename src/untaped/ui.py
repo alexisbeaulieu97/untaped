@@ -367,7 +367,7 @@ class UiContext:
 
     def _ensure_promptable(self) -> None:
         if not self.can_prompt:
-            raise ConfigError("interactive prompt requires a TTY on stdin", category="usage")
+            raise UsageError("interactive prompt requires a TTY on stdin")
 
     @staticmethod
     def _validate_prompt_text(value: str, *, required: bool) -> str:

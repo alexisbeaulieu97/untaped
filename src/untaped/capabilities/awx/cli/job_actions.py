@@ -27,12 +27,12 @@ from untaped.capabilities.awx.domain.job import JOB_ROUTES, TERMINAL_STATUSES
 from untaped.capabilities.awx.domain.outcomes import JobCancelOutcome, JobRelaunchOutcome
 from untaped.capability_api import (
     ColumnsOption,
-    ErrorInfo,
     FormatOption,
     UntapedError,
     echo,
     emit,
     finish,
+    note_failure,
     plural,
     q,
     raise_usage,
@@ -192,7 +192,7 @@ def _failure(exc: UntapedError) -> dict[str, Any]:
     return {
         "action": "failed",
         "detail": detail,
-        "error": ErrorInfo.from_exception(exc, message=detail),
+        "error": note_failure(exc, message=detail),
     }
 
 

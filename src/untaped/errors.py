@@ -17,6 +17,8 @@ from enum import IntEnum, StrEnum
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
+from untaped.redaction import redact_url_password
+
 if TYPE_CHECKING:
     from pydantic import ValidationError
 
@@ -168,15 +170,18 @@ class UntapedError(Exception):
 
 
 def attribution(error: BaseException) -> dict[str, Any]:
-    """The ``category``/``system``/``details`` keyword arguments of ``error``.
+    """The ``category``/``system``/``hint``/``details`` keyword arguments of ``error``.
 
     Pass them on when a new error replaces a caught one, so the replacement
     keeps its attribution: ``raise AwxApiError(msg, **attribution(exc))``.
-    Anything but an :class:`UntapedError` has none (``{}``).
+    ``hint`` and ``details`` are included only when set. Anything but an
+    :class:`UntapedError` has none (``{}``).
     """
     if not isinstance(error, UntapedError):
         return {}
     fields: dict[str, Any] = {"category": error.category, "system": error.system}
+    if error.hint:
+        fields["hint"] = error.hint
     if error.details:
         fields["details"] = dict(error.details)
     return fields
@@ -258,6 +263,7 @@ class HttpError(UntapedError):
 
     An error status (``>= 400``) selects the category unless one is given
     (:func:`category_for_status`); ``status`` and ``url`` join ``details``.
+    URL passwords are masked in the message, ``url`` and ``details``.
     ``system`` is the client's section (``connected_client(section=…)``),
     else ``http``. ``describes_body`` marks a subclass whose message
     already carries the body's gist, so :func:`untaped.cli.format_error`
@@ -281,10 +287,11 @@ class HttpError(UntapedError):
     ) -> None:
         if category is None and status_code is not None and status_code >= 400:
             category = category_for_status(status_code)
+        url = redact_url_password(url) if url is not None else None
         known = {"status": status_code, "url": url}
         merged = {key: value for key, value in known.items() if value is not None}
         super().__init__(
-            message,
+            redact_url_password(message),
             category=category,
             system=system,
             hint=hint,

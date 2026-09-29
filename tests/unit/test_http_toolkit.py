@@ -11,6 +11,7 @@ import respx
 from pydantic import BaseModel, SecretStr, ValidationError
 
 from untaped.auth import TokenCommand, TokenSources
+from untaped.diagnostics import format_error
 from untaped.errors import ConfigError, HttpError, UntapedError
 from untaped.http import (
     connected_client,
@@ -110,13 +111,14 @@ def test_missing_setting_error_names_config_set_and_env_paths(field: str, placeh
     error = missing_setting_error("demo", field)
 
     assert isinstance(error, ConfigError)
-    assert f"demo.{field} is not configured" in str(error)
-    assert f"`untaped config set demo.{field} {placeholder}`" in str(error)
-    assert f"UNTAPED_DEMO__{field.upper()}" in str(error)
+    assert str(error) == f"demo.{field} is not configured"
+    assert error.hint is not None
+    assert f"`untaped config set demo.{field} {placeholder}`" in error.hint
+    assert f"UNTAPED_DEMO__{field.upper()}" in error.hint
 
 
 def test_missing_setting_error_names_every_field_and_prompts_for_secrets() -> None:
-    error = str(missing_setting_error("demo", "base_url", "token", secret=("token",)))
+    error = format_error(missing_setting_error("demo", "base_url", "token", secret=("token",)))
 
     assert "demo.base_url and demo.token are not configured" in error
     assert "`untaped config set demo.base_url <url>`" in error
@@ -137,7 +139,7 @@ class SourcedSettings(BaseModel):
 def test_a_missing_token_names_the_sources_that_keep_it_out_of_the_config_file() -> None:
     with pytest.raises(ConfigError) as caught:
         connected_client(SourcedSettings(), section="demo")
-    message = str(caught.value)
+    message = format_error(caught.value)
     assert "`untaped config set demo.token --prompt`" in message
     assert "demo.token_command or $DEMO_TOKEN" in message
 
@@ -155,7 +157,7 @@ class NoUrlSettings(BaseModel):
         (NoUrlSettings(), r"demo\.base_url is not configured"),
         (
             DemoSettings(base_url="", token=None),
-            r"demo\.base_url and demo\.token are not configured.*config set demo\.token --prompt",
+            r"demo\.base_url and demo\.token are not configured",
         ),
     ],
     ids=["missing-token", "blank-token", "missing-base-url", "both-missing"],

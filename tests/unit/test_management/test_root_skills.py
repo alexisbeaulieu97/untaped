@@ -104,11 +104,16 @@ def test_install_unknown_short_names_typed_selector(tmp_path: Path) -> None:
     assert not target.exists()
 
 
-def test_install_without_selector_is_usage_error(tmp_path: Path) -> None:
+def test_install_without_selector_is_usage_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     app = _skills_app(tmp_path, "untaped-demo")
     result = CliInvoker().invoke(app, ["install"])  # type: ignore[arg-type]
     assert result.exit_code == 2
     assert "provide skill names, --stdin, or --all" in result.output
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    structured = CliInvoker().invoke(app, ["install"])  # type: ignore[arg-type]
+    assert json.loads(structured.stderr)["system"] == "untaped"
 
 
 def test_install_multiple_selectors_are_rejected(tmp_path: Path) -> None:

@@ -9,7 +9,6 @@ whole-value leaves (the ``config`` commands do, e.g. ``ui.symbols``).
 from __future__ import annotations
 
 import copy
-import re
 import types
 import typing
 from collections.abc import Iterable, Mapping
@@ -18,6 +17,8 @@ from typing import Any, get_args, get_origin
 
 from pydantic import BaseModel, SecretStr
 from pydantic_core import PydanticUndefined
+
+from untaped.redaction import redact_url_password
 
 
 @dataclass(frozen=True)
@@ -107,19 +108,6 @@ def find_descriptor(descriptors: list[FieldDescriptor], key: str) -> FieldDescri
 def secret_field_paths(model_cls: type[BaseModel]) -> list[tuple[str, ...]]:
     """Return the dotted paths of every ``SecretStr``-typed leaf in ``model_cls``."""
     return [d.path for d in walk_settings(model_cls) if d.is_secret]
-
-
-_URL_PASSWORD = re.compile(r"^(?P<prefix>[A-Za-z][A-Za-z0-9+.\-]*://[^/@:\s]*):[^/@\s]*@")
-
-
-def redact_url_password(value: str, *, placeholder: str = "***") -> str:
-    """Mask the password in a ``scheme://user:password@host`` URL.
-
-    Settings such as ``http.proxy`` are plain strings that may still carry
-    credentials; the user name stays visible so the value remains
-    recognizable. Anything that is not such a URL is returned unchanged.
-    """
-    return _URL_PASSWORD.sub(rf"\g<prefix>:{placeholder}@", value, count=1)
 
 
 def redact_nested_url_passwords(value: Any, *, placeholder: str = "***") -> Any:

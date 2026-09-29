@@ -9,8 +9,9 @@ for the fields the pipe contract fixes (``docs/conventions.md``):
   absolute ``target_path``;
 - :class:`CheckRecord` — a check result with a ``status`` from the check
   vocabulary (``pass``/``warn``/``fail``/``error``);
-- :class:`ErrorInfo` — the optional ``error`` of a failed outcome or target
-  row (``category``, ``system``, ``retryable``, ``message``, ``hint``);
+- ``error`` — the optional :class:`~untaped.diagnostics.ErrorInfo` of a failed
+  outcome or target row (``category``, ``system``, ``retryable``, ``message``,
+  ``hint``);
 - :data:`UtcTimestamp` — a ``datetime`` normalized to UTC that serializes as
   RFC 3339 with a ``Z`` suffix (``2026-01-02T03:04:05Z``).
 
@@ -37,8 +38,7 @@ from pydantic import (
     model_serializer,
 )
 
-from untaped.diagnostics import error_message, note_failure
-from untaped.errors import ErrorCategory, UntapedError
+from untaped.diagnostics import ErrorInfo
 
 
 def _to_utc(value: datetime) -> datetime:
@@ -130,44 +130,6 @@ class Record(BaseModel):
         return ordered | data
 
 
-class ErrorInfo(Record):
-    """Why a row failed: the ``error`` field of a failed outcome or target row.
-
-    The machine-readable twin of the row's human ``detail``: the failure's
-    ``category`` (which selects the exit code), the ``system`` responsible,
-    whether a retry can help, the message and an optional hint (without its
-    ``hint:`` prefix). Build it with :meth:`from_exception`.
-    """
-
-    category: ErrorCategory
-    system: str
-    retryable: bool
-    message: str
-    hint: str | None = None
-
-    @classmethod
-    def from_exception(cls, error: BaseException, *, message: str | None = None) -> ErrorInfo:
-        """The error of a row that ``error`` failed, counted toward the run's exit code.
-
-        ``message`` replaces the rendered message (e.g. a redacted one); a
-        ``hint:`` line in it becomes ``hint``. Anything but an
-        :class:`~untaped.errors.UntapedError` is a ``failed`` error in ``untaped``.
-        """
-        note_failure(error)
-        text, hint = error_message(error, message=message)
-        if isinstance(error, UntapedError):
-            category, system = error.category, error.system
-        else:
-            category, system = ErrorCategory.FAILED, "untaped"
-        return cls(
-            category=category,
-            system=system,
-            retryable=category.retryable,
-            message=text,
-            hint=hint,
-        )
-
-
 def _is_none(value: object) -> bool:
     return value is None
 
@@ -215,7 +177,6 @@ __all__ = [
     "AbsolutePath",
     "CheckRecord",
     "CheckStatus",
-    "ErrorInfo",
     "OutcomeRecord",
     "Record",
     "TargetRecord",

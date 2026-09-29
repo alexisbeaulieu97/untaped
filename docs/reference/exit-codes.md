@@ -65,7 +65,7 @@ pipe keeps its own exit code.
 | `untaped awx apply --check` | Any document would change the controller. |
 | `untaped recipe apply --check` | Any target would change. |
 | `untaped skills status --check` | An installed skill is outdated or no longer shipped. |
-| `untaped workspace status --check` | Any repo is dirty or behind its upstream (only the `--dirty` / `--behind` condition when one is given); exits 1 instead when a repo cannot be inspected. |
+| `untaped workspace status --check` | Any repo is dirty or behind its upstream (only the `--dirty` / `--behind` condition when one is given); exits with the failure's own code instead when a repo cannot be inspected (1, 5 when `git status` timed out, 4 when git is missing). |
 
 Use these in CI to tell "the check found something" (3) apart from "the tool
 failed" (1), "fix the setup" (4) and "try again later" (5):

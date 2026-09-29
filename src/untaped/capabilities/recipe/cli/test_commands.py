@@ -36,12 +36,12 @@ from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHook
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
 from untaped.capability_api import (
     ColumnsOption,
-    ErrorInfo,
     FormatOption,
     UntapedError,
     UsageError,
     echo,
     finish,
+    note_failure,
     render_rows,
     unified_diff_text,
 )
@@ -192,9 +192,7 @@ def _row(result: CaseResult) -> dict[str, object]:
         failure = result.failure
         if not isinstance(failure, UntapedError):
             failure = RecipeError(result.detail)
-        row["error"] = ErrorInfo.from_exception(failure, message=result.detail).model_dump(
-            mode="json"
-        )
+        row["error"] = note_failure(failure, message=result.detail).model_dump(mode="json")
     return row
 
 

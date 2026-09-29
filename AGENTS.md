@@ -55,7 +55,7 @@ and the `OutcomeRecord`/`TargetRecord` bases. `tests/conventions/` enforces them
 against per-capability baselines that may only shrink. Every error raises with
 a `category` and `system` (class defaults in the capability's `errors.py`),
 which select the exit code; code that replaces or swallows an error keeps its
-attribution (`attribution()`, `ErrorInfo.from_exception`) instead of
+attribution (`attribution()`, `note_failure(exc)` for a failed row) instead of
 flattening it into a string.
 
 ## Capability registry + capability_api

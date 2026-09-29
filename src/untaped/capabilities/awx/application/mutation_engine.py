@@ -55,7 +55,7 @@ from untaped.capabilities.awx.errors import (
     MutationConflictError,
     PartialWriteError,
 )
-from untaped.capability_api import ConfigError, ErrorInfo
+from untaped.capability_api import ConfigError, ErrorInfo, note_failure
 
 
 class _AbortBatchError(AwxError):
@@ -273,9 +273,7 @@ class BatchMutationEngine:
                     f"{operation.spec.kind} {operation.resource.metadata.name!r} "
                     f"was deleted or could not be re-read: {_safe_error(exc, operation)}"
                 )
-                errors[operation.index] = ErrorInfo.from_exception(
-                    exc, message=conflicts[operation.index]
-                )
+                errors[operation.index] = note_failure(exc, message=conflicts[operation.index])
         return conflicts, errors
 
     def _execute_bodies(
@@ -610,4 +608,4 @@ def _safe_error(exc: Exception, operation: PreparedMutation) -> str:
 def _failure(exc: Exception, operation: PreparedMutation, prefix: str = "") -> dict[str, Any]:
     """The ``detail`` and ``error`` of a row ``exc`` failed (secrets redacted from both)."""
     detail = prefix + _safe_error(exc, operation)
-    return {"detail": detail, "error": ErrorInfo.from_exception(exc, message=detail)}
+    return {"detail": detail, "error": note_failure(exc, message=detail)}

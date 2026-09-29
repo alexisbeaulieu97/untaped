@@ -27,6 +27,7 @@ from untaped.diagnostics import (
     line_record,
     note_failure,
     note_output_format,
+    render_record,
     write_record,
 )
 from untaped.errors import ExitCode, OperationCancelledError, UntapedError, UsageError
@@ -234,7 +235,7 @@ def report_error(
     """
     note_failure(exc)
     if json_diagnostics():
-        line = json.dumps(error_record(exc, item=item), default=str)
+        line = render_record(error_record(exc, item=item))
     else:
         prefix = "" if item is None else f"{item}: "
         line = f"error: {prefix}{format_error(exc)}"
@@ -242,6 +243,25 @@ def report_error(
         write(line)
     else:
         print(line, file=sys.stderr)
+
+
+def note_requested_format(tokens: Sequence[str]) -> None:
+    """Record the ``--format`` raw ``tokens`` ask for, for an error found before parsing.
+
+    The last ``--format``/``-f`` before ``--`` wins over ``UNTAPED_FORMAT``;
+    only a structured value switches the error to a JSON line.
+    """
+    value = os.environ.get(FORMAT_ENV) or None
+    for index, token in enumerate(tokens):
+        if token == "--":
+            break
+        name, separator, inline = token.partition("=")
+        if name in ("--format", "-f"):
+            if separator:
+                value = inline
+            elif index + 1 < len(tokens):
+                value = tokens[index + 1]
+    note_output_format(value)
 
 
 def report_declined(exc: OperationCancelledError) -> None:
@@ -476,20 +496,24 @@ def run_cyclopts_app(
     the consumer chose to stop reading, which is not a failure). Without this the producer's
     buffered stdout flush fails at interpreter shutdown and Python prints a
     noisy ``Exception ignored while flushing sys.stdout: BrokenPipeError``.
-    The invocation runs in its own :func:`~untaped.diagnostics.diagnostics_scope`.
+    The invocation runs in its own :func:`~untaped.diagnostics.diagnostics_scope`;
+    a parse error follows the ``--format`` its tokens ask for.
     """
+    argv = list(tokens) if tokens is not None else sys.argv[1:]
     try:
         with diagnostics_scope():
-            result = app(
-                tokens,
-                console=console,
-                error_console=error_console,
-                exit_on_error=False,
-                print_error=False,
-                result_action=result_action,
-            )
-    except CycloptsError as exc:
-        raise_usage(str(exc))
+            try:
+                result = app(
+                    argv,
+                    console=console,
+                    error_console=error_console,
+                    exit_on_error=False,
+                    print_error=False,
+                    result_action=result_action,
+                )
+            except CycloptsError as exc:
+                note_requested_format(argv)
+                raise_usage(str(exc))
     except KeyboardInterrupt:
         _flush_stdout()
         raise SystemExit(ExitCode.INTERRUPTED) from None

@@ -48,7 +48,7 @@ from untaped.cli import (
     resolve_each,
 )
 from untaped.concurrency import bounded_map
-from untaped.diagnostics import note_failure
+from untaped.diagnostics import ErrorInfo, note_failure
 from untaped.diff import unified_diff_text
 from untaped.doctor_checks import connection_check, executable_check, online_check
 from untaped.editor import run_editor
@@ -92,7 +92,6 @@ from untaped.prompts import PromptChoice
 from untaped.records import (
     AbsolutePath,
     CheckRecord,
-    ErrorInfo,
     OutcomeRecord,
     TargetRecord,
     UtcTimestamp,

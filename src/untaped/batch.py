@@ -21,7 +21,7 @@ from typing import Any
 
 from untaped.cli import echo, report_declined, report_error
 from untaped.diagnostics import failure_exit_code
-from untaped.errors import ExitCode, OperationCancelledError, UntapedError, combine_exit_codes
+from untaped.errors import ExitCode, OperationCancelledError, UntapedError
 from untaped.messages import plural
 from untaped.ui import UiContext
 
@@ -58,13 +58,6 @@ class BatchOutcome[T, R]:
     def total(self) -> int:
         return len(self.planned_rows)
 
-    @property
-    def exit_code(self) -> int:
-        """The most severe failure's exit code: ``1`` when declined, ``0`` when none failed."""
-        if self.cancelled:
-            return ExitCode.FAILURE
-        return combine_exit_codes(*(error.exit_code for _, error in self.failures))
-
 
 def finish(outcome: BatchOutcome[Any, Any] | bool, *, predicate_hit: bool = False) -> None:
     """Turn a batch/aggregate outcome into the suite's exit-code contract.
@@ -83,11 +76,10 @@ def finish(outcome: BatchOutcome[Any, Any] | bool, *, predicate_hit: bool = Fals
     """
     if isinstance(outcome, BatchOutcome) and outcome.cancelled:
         report_declined(OperationCancelledError())
-        raise SystemExit(failure_exit_code(ExitCode.FAILURE))
+        raise SystemExit(failure_exit_code())
     failed = outcome.any_failed if isinstance(outcome, BatchOutcome) else bool(outcome)
     if failed:
-        codes = [outcome.exit_code] if isinstance(outcome, BatchOutcome) else []
-        raise SystemExit(failure_exit_code(*codes))
+        raise SystemExit(failure_exit_code())
     if predicate_hit:
         raise SystemExit(ExitCode.PREDICATE)
 

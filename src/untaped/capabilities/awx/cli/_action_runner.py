@@ -32,13 +32,13 @@ from untaped.capabilities.awx.domain.job import still_running_detail
 from untaped.capabilities.awx.errors import ActionResponseError, LaunchPromptError
 from untaped.capability_api import (
     ColumnsOption,
-    ErrorInfo,
     FormatOption,
     UntapedError,
     echo,
     emit,
     finish,
     hint,
+    note_failure,
     raise_usage,
 )
 
@@ -188,9 +188,7 @@ def _watch(
         for label, exc in errors:
             index = row_of[label]
             detail = error_detail(exc, index)
-            rows[index]["error"] = ErrorInfo.from_exception(exc, message=detail).model_dump(
-                mode="json"
-            )
+            rows[index]["error"] = note_failure(exc, message=detail).model_dump(mode="json")
             _fail_abandoned(rows[index], detail, jobs[label], abandon)
         for label, job in unmonitored:
             row = rows[row_of[label]]

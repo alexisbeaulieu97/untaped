@@ -22,7 +22,7 @@ from untaped.capabilities.awx.cli.options import NamesArgument
 from untaped.capabilities.awx.cli.patch_values import build_patch, parse_set_pairs
 from untaped.capabilities.awx.domain import Resource
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
-from untaped.capability_api import ConfigError, plural, raise_usage, report_errors
+from untaped.capability_api import UsageError, plural, raise_usage, report_errors
 
 
 def _add_patch(app: App, spec: AwxResourceSpec) -> None:
@@ -64,13 +64,10 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
             controls = controls.validated()
             overlay = build_patch(set_, patch_file)
             if not overlay:
-                raise ConfigError(
-                    "provide --set and/or --patch-file with at least one field", category="usage"
-                )
+                raise UsageError("provide --set and/or --patch-file with at least one field")
             if forbidden := spec.immutable_fields.intersection(overlay):
-                raise ConfigError(
+                raise UsageError(
                     f"patch cannot change identity fields: {', '.join(sorted(forbidden))}",
-                    category="usage",
                 )
             if not allow_unknown_fields and (typos := _likely_typos(spec, overlay)):
                 raise_usage(

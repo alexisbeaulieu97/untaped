@@ -14,7 +14,7 @@ from untaped.capabilities.awx.application.selection import (
 )
 from untaped.capabilities.awx.domain import ResourceSpec, ServerRecord
 from untaped.capabilities.awx.infrastructure.specs import PROJECT_SPEC
-from untaped.capability_api import ConfigError, parse_envelope_line
+from untaped.capability_api import ConfigError, UsageError, parse_envelope_line
 
 
 class _Client:
@@ -97,7 +97,7 @@ def test_pipe_selection_validates_kind_and_freezes_ids_without_name_lookup() -> 
 def test_selection_modes_are_exclusive_and_scope_is_applied_to_filters() -> None:
     client = _Client()
     resolver = _resolver(client)
-    with pytest.raises(ConfigError, match="exclusive"):
+    with pytest.raises((ConfigError, UsageError), match="exclusive"):
         resolver.resolve(
             PROJECT_SPEC,
             SelectionRequest(names=("one",), filters={"name": "one"}),
@@ -123,7 +123,7 @@ def test_duplicate_ids_are_removed_in_first_seen_order() -> None:
 
 
 def test_mutation_selection_requires_explicit_source() -> None:
-    with pytest.raises(ConfigError, match="explicit") as caught:
+    with pytest.raises((ConfigError, UsageError), match="explicit") as caught:
         _resolver(_Client()).resolve(PROJECT_SPEC, SelectionRequest(require_explicit=True))
     assert caught.value.exit_code == 2
 
@@ -140,7 +140,7 @@ def test_mutation_selection_requires_explicit_source() -> None:
 def test_selection_flag_misuse_is_usage_and_bad_ids_are_invalid(
     request_: SelectionRequest, exit_code: int
 ) -> None:
-    with pytest.raises(ConfigError) as caught:
+    with pytest.raises((ConfigError, UsageError)) as caught:
         _resolver(_Client()).resolve(PROJECT_SPEC, request_)
     assert caught.value.exit_code == exit_code
 
@@ -222,7 +222,7 @@ def test_nested_scope_follows_numeric_parent_ids_and_builds_name_filters() -> No
 def test_typed_pipe_requires_correct_kind_and_integer_id(kind: Any, id_value: Any) -> None:
     from untaped.capability_api import PipeEnvelope
 
-    with pytest.raises(ConfigError) as caught:
+    with pytest.raises((ConfigError, UsageError)) as caught:
         _resolver(_Client()).resolve(
             PROJECT_SPEC, SelectionRequest(pipe=(PipeEnvelope(kind, {"id": id_value}, 1),))
         )

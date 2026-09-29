@@ -425,6 +425,38 @@ def test_transient_classifier(stderr: str, expected: bool) -> None:
     assert is_transient_failure(stderr) is expected
 
 
+@pytest.mark.parametrize(
+    ("stderr", "category"),
+    [
+        ("fatal: Authentication failed for 'https://x/'", "auth"),
+        (
+            "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+            "auth",
+        ),
+        (
+            "git@github.com: Permission denied (publickey).\nfatal: Could not read from remote",
+            "auth",
+        ),
+        ("fatal: unable to access 'x': The requested URL returned error: 401", "auth"),
+        ("fatal: unable to access 'x': The requested URL returned error: 403", "permission"),
+        ("fatal: couldn't find remote ref refs/heads/missing", "failed"),
+    ],
+)
+def test_a_rejected_credential_is_an_environment_failure(
+    monkeypatch: pytest.MonkeyPatch, stderr: str, category: str
+) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "run", _scripted_run([(128, stderr)], calls))
+
+    with pytest.raises(GitCommandError) as excinfo:
+        run_git(["fetch"], timeout=5, retry_transient=True, sleep=lambda _: None)
+
+    assert (excinfo.value.category, excinfo.value.system) == (category, "git")
+    assert len(calls) == 1
+    if category != "failed":
+        assert excinfo.value.hint
+
+
 # ── cache paths ────────────────────────────────────────────────────────────
 
 

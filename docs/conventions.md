@@ -43,16 +43,18 @@ who is responsible (`untaped`, `local`, `git`, or the service section, such as
 - Put a follow-up command in `hint=` (``"run `untaped config set awx.token --prompt`"``)
   rather than in the message; text output prints it as a `hint:` line.
 - When a new error replaces a caught one, pass `**attribution(exc)` so the
-  category and system survive.
+  category, system, hint and details survive.
 - A run exits with the most severe failure it saw: `130 > 2 > 4 > 5 > 1 > 3 > 0`.
-  `report_errors()`, `resolve_each`, `batch_apply`, `report_error` and
-  `ErrorInfo.from_exception` note each failure, and `finish(any_failed)` exits
-  with the most severe one. Code that swallows a failure into a row without
-  those helpers calls `note_failure(exc)`.
+  `report_errors()`, `resolve_each`, `batch_apply` and `report_error` note
+  each failure they print, and `finish(any_failed)` exits with the most
+  severe one. A failure that becomes a row instead is noted with
+  `note_failure(exc)`.
 - A failed row carries the structured failure next to its `detail`:
-  `error=ErrorInfo.from_exception(exc, message=detail)` on `OutcomeRecord` and
-  `TargetRecord` rows (`.model_dump(mode="json")` for a dict row). Keep the
-  exception until the row is built; never flatten it into a string first.
+  `error=note_failure(exc, message=detail)` on `OutcomeRecord` and
+  `TargetRecord` rows (`.model_dump(mode="json")` for a dict row). It returns
+  the `ErrorInfo` and counts the failure; `ErrorInfo.from_exception` alone
+  builds one without counting it. Keep the exception until the row is built;
+  never flatten it into a string first.
 
 See [exit codes](./reference/exit-codes.md) for the category table.
 

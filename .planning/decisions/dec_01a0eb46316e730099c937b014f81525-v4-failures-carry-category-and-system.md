@@ -17,11 +17,14 @@ could not tell it, so it would start "fixing" code while its token was expired.
   meaning. One run exits with the most severe failure it saw:
   `130 > 2 > 4 > 5 > 1 > 3 > 0`. Failures are counted in a per-invocation
   ledger by the shared reporting helpers, so capability code never threads
-  categories to `finish()` by hand.
+  categories to `finish()` by hand. Counting is always an explicit call
+  (`report_error`, `note_failure`); building an `ErrorInfo` is pure.
 - Attribution is set at the source: the HTTP client knows the status and its
   section; capability mappers keep and refine it; code that replaces or
-  swallows an error keeps the exception (`attribution()`, `ErrorInfo`), never
-  a flattened string.
+  swallows an error keeps the exception (`attribution()`, `note_failure()`),
+  never a flattened string. One classifier decides the category and system
+  of any exception.
+- URL passwords are masked in every message, detail and record.
 - `ConfigError` means local setup. An invalid input file or value is
   `invalid` (exit 1), even when it historically raised `ConfigError`.
 - Diagnostics stay off stdout. With `--format json|yaml|pipe` or

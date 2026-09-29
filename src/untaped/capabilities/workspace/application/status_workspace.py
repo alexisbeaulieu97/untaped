@@ -17,7 +17,7 @@ from untaped.capabilities.workspace.domain import (
     Workspace,
 )
 from untaped.capabilities.workspace.errors import GitError, ManifestError, UnmatchedRepoFilterError
-from untaped.capability_api import ErrorInfo
+from untaped.capability_api import note_failure
 
 
 class WorkspaceStatus:
@@ -76,7 +76,7 @@ class WorkspaceStatus:
                 target_path=local,
                 cloned=True,
                 detail=detail,
-                error=ErrorInfo.from_exception(exc, message=detail),
+                error=note_failure(exc, message=detail),
             )
         return StatusEntry(
             workspace=workspace.name,

@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from untaped.batch import BatchOutcome, batch_apply, finish
+from untaped.diagnostics import diagnostics_scope
 from untaped.errors import HttpError, UntapedError, UsageError
 from untaped.prompts import reset_terminal_override, set_terminal_override
 from untaped.testing import ScriptedPromptBackend, TtyStringIO
@@ -123,18 +124,6 @@ def test_finish_exits_one_with_standard_line_on_decline(
             1,
         ),
         (BatchOutcome(results=[("a", "a")], planned_rows=[{}]), False, None),
-        (
-            BatchOutcome(
-                results=[],
-                planned_rows=[{}, {}],
-                failures=[
-                    ("a", UntapedError("gone", category="not_found")),
-                    ("b", UntapedError("down", category="unavailable")),
-                ],
-            ),
-            False,
-            5,
-        ),
         (True, False, 1),
         (False, False, None),
         # A predicate hit exits 3 only when nothing failed.
@@ -144,7 +133,6 @@ def test_finish_exits_one_with_standard_line_on_decline(
     ids=[
         "partial-failure",
         "success",
-        "most-severe-failure",
         "failed",
         "ok",
         "predicate-hit",
@@ -288,8 +276,12 @@ def test_per_item_errors_are_json_lines_under_json_diagnostics(
         raise HttpError("HTTP 503", status_code=503, url="https://h/x", system="awx")
 
     ui = _ui(interactive=True, confirms=[True])
-    outcome = _run(interactive=True, items=["a"], action=action, label=str, ui=ui)
+    with diagnostics_scope():
+        outcome = _run(interactive=True, items=["a"], action=action, label=str, ui=ui)
+        with pytest.raises(SystemExit) as excinfo:
+            finish(outcome)
 
+    assert excinfo.value.code == 5
     lines = ui.stderr.getvalue().splitlines()  # type: ignore[attr-defined]
     assert [json.loads(line) for line in lines] == [
         {
@@ -304,7 +296,6 @@ def test_per_item_errors_are_json_lines_under_json_diagnostics(
             "details": {"status": 503, "url": "https://h/x"},
         }
     ]
-    assert outcome.exit_code == 5
 
 
 def test_empty_items_is_a_noop() -> None:
