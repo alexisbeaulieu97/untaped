@@ -20,7 +20,7 @@ This page is the map; the details ship next to it:
 | [references/resources.md](references/resources.md) | selecting, patching, editing, copying, renaming, deleting resources |
 | [references/specs.md](references/specs.md) | the YAML document format of `export` and `apply` |
 | [references/jobs.md](references/jobs.md) | launching, syncing, waiting, following, cancelling, inspecting jobs |
-| [examples/](examples/) | starting points: `smoke.yml`, `variants.yml`, `negative.yml` |
+| [examples/](examples/) | starting points: `smoke.yml`, `variants.yml`, `negative.yml`, `idempotent.yml` |
 
 ## Setup
 
@@ -56,31 +56,32 @@ This page is the map; the details ship next to it:
 Writable groups: `job-templates`, `workflow-templates`, `projects`,
 `schedules`, `hosts`, `groups`, `inventories`, `inventory-sources`.
 Credentials, credential types, organizations and unified templates are
-read-only views. Run `untaped awx job-templates --help` (or any group) to
-confirm options before acting.
+read-only views. Confirm options with `--help` before acting.
 
 ## Test a change
 
 Suites live in the playbook repository under `.untaped/awx/tests/`. After
 changing a playbook, role or template variables:
 
-1. Without a suite yet, `untaped awx test init "Deploy app"` reads the
-   template's survey and launch prompts and writes a commented starter suite
-   to `.untaped/awx/tests/deploy-app.yml` at the git root (it prints the path
-   and never overwrites a file). Edit its cases; the examples show variants,
-   `!ref` and negative cases.
-2. Commit and push the branch (`git push -u origin HEAD`): AWX runs what the
+1. Without a suite yet, `untaped awx test init "Deploy app"` writes a
+   commented starter suite from the template's survey and launch prompts to
+   `.untaped/awx/tests/deploy-app.yml`. Edit its cases;
+   the examples show variants, `!ref`, negative and idempotent cases.
+2. Once per task, save the base branch's results:
+   `untaped awx test run --scm-branch main --format json > baseline.json`.
+3. Commit and push the branch (`git push -u origin HEAD`): AWX runs what the
    remote has.
-3. `untaped awx test validate` checks every case without launching: the file,
-   the template, its prompts and required survey variables.
-4. `untaped awx test run --scm-branch HEAD --format json` runs every case on
-   the pushed commit (refused until HEAD is pushed). Narrow it with
-   `--case SUITE/CASE` (repeatable) or suite paths.
-5. Exit 0: every case passed; 4 or 5: the environment, not your change.
-   Otherwise each non-`pass` row's `failure.system` says who must act and
-   `failure.evidence` why
+4. `untaped awx test validate` checks every case against its template
+   without launching.
+5. `untaped awx test run --scm-branch HEAD --compare baseline.json --format json`
+   runs every case on the pushed commit (refused until HEAD is pushed) and
+   gives each row a `change` (`regression`, `fixed`, `still_failing`, …).
+   Narrow it with `--case SUITE/CASE` or suite paths.
+6. Exit 0: nothing regressed; 1: a `regression`; 4 or 5: the environment,
+   not your change. Each non-`pass` row's `failure.system` says who must act
+   and `failure.evidence` why
    ([references/test-results.md](references/test-results.md)); fix, push,
-   rerun the failing cases.
+   rerun.
 
 Run as the dedicated agent profile when one exists
 (`untaped --profile agent awx test run`); see

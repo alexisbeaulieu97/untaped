@@ -1,0 +1,29 @@
+# Idempotence and host bounds: a converged host must stay converged.
+# `idempotent: true` launches the case again once it passed; the rerun must
+# succeed with no changed task on any host, or the case fails and lists the
+# tasks the rerun changed (failure.evidence.changed_tasks). Host bounds read
+# the job's host summaries (PLAY RECAP counters).
+kind: AwxTestSuite
+name: deploy-converge
+jobTemplate: Deploy app
+defaults:
+  launch:
+    extra_vars: {app_version: "1.4", environment: staging}
+  expect:
+    status: successful
+    hosts:
+      "*": {failed: 0, unreachable: 0}
+cases:
+  converge:
+    launch:
+      limit: web
+    expect:
+      idempotent: true
+  already-deployed:
+    # A host that already runs 1.4 needs no change at all.
+    launch:
+      limit: web1
+    expect:
+      changed: 0
+      hosts:
+        web1: {changed: 0}

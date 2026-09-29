@@ -898,7 +898,10 @@ def _matches_all(  # noqa: C901
             if not _numeric_compare(record.get(base), value, lambda a, b: a < b):
                 return False
             continue
-        if str(record.get(key, "")) != value:
+        actual = record.get(key, "")
+        # AWX reads a boolean filter as ``true``/``false``.
+        shown = str(actual).lower() if isinstance(actual, bool) else str(actual)
+        if shown != value:
             return False
     return True
 

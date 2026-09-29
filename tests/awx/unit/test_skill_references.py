@@ -59,7 +59,12 @@ def _load(path: Path) -> Suite:
 
 
 def test_the_skill_ships_the_examples_its_manual_names() -> None:
-    assert [path.name for path in EXAMPLES] == ["negative.yml", "smoke.yml", "variants.yml"]
+    assert [path.name for path in EXAMPLES] == [
+        "idempotent.yml",
+        "negative.yml",
+        "smoke.yml",
+        "variants.yml",
+    ]
 
 
 @pytest.mark.parametrize("path", EXAMPLES, ids=lambda path: path.name)
