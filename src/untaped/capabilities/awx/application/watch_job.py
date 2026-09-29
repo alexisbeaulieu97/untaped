@@ -30,13 +30,26 @@ class WatchJob:
         self._sleep = sleep
         self._interval = poll_interval
 
-    def __call__(self, job: Job, *, timeout: float | None = None) -> Job:
-        """Return the terminal state, or the latest one once ``timeout`` passed."""
+    def __call__(
+        self,
+        job: Job,
+        *,
+        timeout: float | None = None,
+        on_state: Callable[[Job], None] | None = None,
+    ) -> Job:
+        """Return the terminal state, or the latest one once ``timeout`` passed.
+
+        ``on_state`` sees each polled state that is not terminal yet; what it
+        raises stops the watch.
+        """
         api_path = KIND_TO_API_PATH.get(job.kind, job.kind)
 
         def fetch(current: Job) -> Job:
             record = self._client.request("GET", f"{api_path}/{current.id}/")
-            return Job.model_validate({**record, "kind": current.kind})
+            latest = Job.model_validate({**record, "kind": current.kind})
+            if on_state is not None and not latest.is_terminal:
+                on_state(latest)
+            return latest
 
         states = poll_until_terminal(
             job, fetch, sleep=self._sleep, interval=self._interval, timeout=timeout

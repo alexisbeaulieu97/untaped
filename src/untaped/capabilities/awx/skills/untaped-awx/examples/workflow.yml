@@ -1,0 +1,32 @@
+# A workflow suite: launch a workflow job template, answer its approval, and
+# check what each node's job did. Node ids are the workflow's node ids
+# (`untaped awx test init Release --workflow` lists them). A failed workflow is
+# blamed on the node that failed it: failure.message starts `node <id>:`.
+kind: AwxTestSuite
+name: release
+workflowTemplate: Release
+defaults:
+  approvals: approve
+  launch:
+    extra_vars: {app_version: "1.4"}
+cases:
+  happy:
+    expect:
+      status: successful
+      nodes:
+        deploy:
+          hosts:
+            "*": {failed: 0, unreachable: 0}
+        rollback: {status: never_ran}
+  converges:
+    # The whole workflow runs twice; the second run must change nothing.
+    expect:
+      idempotent: true
+  denied:
+    # Denying the approval stops the release before deploy; with no failure
+    # path out of the approval node, the workflow fails.
+    approvals: deny
+    expect:
+      status: failed
+      nodes:
+        deploy: {status: never_ran}

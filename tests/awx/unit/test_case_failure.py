@@ -12,16 +12,24 @@ from untaped.capabilities.awx.domain.case_failure import (
     FailedTask,
     FailureEvidence,
     RelatedExecution,
+    approval_failure,
+    failure,
     failure_system,
     finished_failure,
+    in_node,
     request_failure,
     responsible_update,
     timeout_failure,
     unrescued,
+    workflow_failure,
 )
 from untaped.capabilities.awx.domain.job import HostSummary
-from untaped.capabilities.awx.errors import LaunchPromptError, ResourceNotFoundError
-from untaped.capability_api import ConfigError, ErrorInfo, HttpTransportError
+from untaped.capabilities.awx.errors import (
+    LaunchPromptError,
+    PendingApprovalError,
+    ResourceNotFoundError,
+)
+from untaped.capability_api import ConfigError, ErrorCategory, ErrorInfo, HttpTransportError
 
 _PROJECT_FAILED = (
     'Previous Task Failed: {"job_type": "project_update", "job_name": "acme", "job_id": "812"}'
@@ -82,6 +90,7 @@ def test_a_case_failure_is_an_error_info_with_evidence() -> None:
             "unreachable_hosts": None,
             "changed_tasks": None,
             "note": None,
+            "node": None,
         },
     }
     assert CaseFailure.model_validate(failure.model_dump()) == failure
@@ -377,3 +386,127 @@ def test_evidence_names_unreachable_hosts_and_keeps_the_end_of_a_traceback() -> 
     assert (evidence.job_explanation, evidence.log_tail) == ("why", ("a",))
     assert (evidence.related, evidence.note) == (related, "log fetch failed: 502")
     assert FailureEvidence.of(_job("failed")) == FailureEvidence()
+
+
+# ---- workflows -----------------------------------------------------------
+
+
+def _workflow(status: str, **fields: Any) -> Job:
+    return Job(id=70, kind="workflow_job", status=status, **fields)
+
+
+_PLAYBOOK = failure("awx.playbook", ErrorCategory.FAILED, "task 'Deploy' failed on web2")
+
+
+def test_a_node_failure_names_its_node_in_the_message_and_the_evidence() -> None:
+    inner = in_node(_PLAYBOOK, "deploy")
+    outer = in_node(inner, "release")
+
+    assert (inner.system, inner.message) == (
+        "awx.playbook",
+        "node deploy: task 'Deploy' failed on web2",
+    )
+    assert inner.evidence.node == "deploy"
+    assert outer.message == "node release: node deploy: task 'Deploy' failed on web2"
+    assert outer.evidence.node == "release/deploy"
+
+
+def _workflow_failure(
+    workflow: Job,
+    *,
+    culprit: CaseFailure | None = None,
+    held: bool = False,
+    reasons: list[str] | None = None,
+    nodes: list[CaseFailure] | None = None,
+) -> CaseFailure | None:
+    return workflow_failure(
+        workflow,
+        culprit=culprit,
+        status_held=held,
+        reasons=_STATUS_REASON if reasons is None else reasons,
+        node_failures=nodes or [],
+    )
+
+
+def test_a_workflow_whose_expectations_hold_has_no_failure() -> None:
+    assert _workflow_failure(_workflow("successful"), held=True, reasons=[]) is None
+    # A failure the case asked for (status: failed) passes too.
+    assert _workflow_failure(_workflow("failed"), culprit=_PLAYBOOK, held=True, reasons=[]) is None
+
+
+def test_a_failed_workflow_is_blamed_on_the_node_that_failed_it() -> None:
+    culprit = in_node(_PLAYBOOK, "deploy")
+
+    assert _workflow_failure(_workflow("failed"), culprit=culprit) == culprit
+
+
+def test_a_failed_update_in_a_node_is_blamed_whatever_the_case_expects() -> None:
+    related = RelatedExecution(kind="project_update", id=8, name="p", status="failed", url=None)
+    scm = failure("awx.scm", ErrorCategory.FAILED, "project update 8 failed")
+    culprit = in_node(scm.model_copy(update={"evidence": FailureEvidence(related=related)}), "sync")
+
+    assert _workflow_failure(_workflow("failed"), culprit=culprit, held=True, reasons=[]) == culprit
+
+
+def test_a_workflow_that_ran_as_asked_fails_on_its_own_node_first() -> None:
+    node = in_node(_PLAYBOOK, "verify")
+    expectation = in_node(failure("awx.expectation", ErrorCategory.FAILED, "x"), "deploy")
+    reasons = ["node deploy: expected <= 0 changed tasks, got 2"]
+
+    decided = _workflow_failure(
+        _workflow("successful"), held=True, reasons=reasons, nodes=[expectation, node]
+    )
+    only_checks = _workflow_failure(
+        _workflow("successful"), held=True, reasons=reasons, nodes=[expectation]
+    )
+
+    assert decided == node
+    assert _attribution(only_checks) == ("awx.expectation", "failed", False)
+    assert only_checks is not None and only_checks.message == reasons[0]
+
+
+def test_a_denial_the_case_asked_for_is_the_expectations() -> None:
+    culprit = in_node(approval_failure("Approve prod", 81, denied=True), "approve")
+
+    found = _workflow_failure(_workflow("failed"), culprit=culprit)
+
+    assert _attribution(found) == ("awx.expectation", "failed", False)
+    assert found is not None and found.message == (
+        "node approve: approval 'Approve prod' was denied as the case asked (approvals: deny), "
+        "and no failure path leads out of it; expected status successful, got failed"
+    )
+
+
+def test_an_approval_denied_or_timed_out_outside_the_run_is_the_controllers() -> None:
+    found = approval_failure("Approve prod", 81, denied=False)
+
+    assert _attribution(found) == ("awx.controller", "unavailable", True)
+    assert found.message == (
+        "approval 'Approve prod' (workflow approval 81) was denied outside this run, or timed out"
+    )
+
+
+@pytest.mark.parametrize(
+    ("workflow", "message"),
+    [
+        (_workflow("canceled"), "workflow job was canceled outside this run"),
+        (
+            _workflow("failed", job_explanation="No error handling path"),
+            "workflow job failed, but no failed node explains it: No error handling path",
+        ),
+    ],
+)
+def test_a_workflow_that_failed_without_a_failed_node_is_the_controllers(
+    workflow: Job, message: str
+) -> None:
+    found = _workflow_failure(workflow)
+
+    assert _attribution(found) == ("awx.controller", "unavailable", True)
+    assert found is not None and found.message == message
+
+
+def test_an_error_already_attributed_to_an_awx_system_keeps_it() -> None:
+    error = PendingApprovalError("node approve: approval 'x' is waiting")
+
+    assert failure_system(error, launching=False) == "awx.suite"
+    assert request_failure(error).category == "invalid"

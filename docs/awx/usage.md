@@ -664,6 +664,14 @@ untaped awx test run --scm-branch HEAD --baseline main
   earlier one, and `--baseline REF` runs every case on `REF` first, then
   compares. Each row gains `baseline` and a `change`, and only a regression
   or a failing new case fails the run.
+- Workflow suites: `workflowTemplate: NAME` instead of `jobTemplate` launches
+  a workflow job template (`test init NAME --workflow` writes a starter that
+  lists its node ids). A case answers the workflow's approvals with
+  `approvals: approve` or `deny` (without it, a pending approval fails the
+  case at once and cancels the workflow), and checks each node's job under
+  `expect.nodes` with the same checks as a case, plus `status: never_ran`.
+  Each row lists the workflow's `nodes`, and a failed workflow is blamed on
+  the node that failed it (`node deploy: …`, with that job's evidence).
 - To let an AI agent run suites against its own changes, give it a dedicated
   profile and token: see [AWX agent profile](./agent-profile.md).
 

@@ -458,6 +458,7 @@ def test_list_emits_one_row_per_case_in_every_format(
             "suite": "list-suite",
             "case": case,
             "job_template": "Deploy app",
+            "workflow_template": None,
             "organization": "Ops",
             "path": str(test_file),
             "variables": {},

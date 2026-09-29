@@ -14,6 +14,10 @@ changing something it should not.
 2. Grant it **Execute** on each job template its suites launch. That lets it
    read the template's launch prompts and survey, launch it, and follow and
    cancel the jobs it launched.
+   For a workflow suite, grant **Execute** on the workflow job template, and
+   **Approve** on it when its cases set `approvals:` (without that role AWX
+   refuses to approve or deny its approval nodes, and the case fails as
+   `awx.credentials`).
 3. Grant it **Use** on any inventory or credential its suites pass at launch
    (`inventory: !ref …`, `credentials: …`). AWX refuses a prompted resource
    the launching user cannot use.

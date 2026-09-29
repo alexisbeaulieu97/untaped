@@ -13,9 +13,12 @@ from untaped.capabilities.awx.domain.suite import (
     Case,
     CaseResult,
     Expectation,
+    HostBounds,
+    NodeExpectation,
     RefSentinel,
     Suite,
     SuiteRunOutcome,
+    TemplateBinding,
     VariableSpec,
 )
 from untaped.capability_api import ErrorCategory
@@ -183,3 +186,121 @@ def test_a_suite_organization_overrides_the_default_scope() -> None:
     ops = suite.model_copy(update={"organization": "Ops"})
     assert ops.scope(None) == {"organization": "Ops"}
     assert ops.scope({"organization": "Default"}) == {"organization": "Ops"}
+
+
+# ---- workflow suites -----------------------------------------------------
+
+
+def _workflow_suite(**body: object) -> Suite:
+    return Suite.model_validate(
+        {"name": "release", "workflowTemplate": "Release", "cases": {"c": {}}, **body}
+    )
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        ({"cases": {"c": {}}}, "a suite needs jobTemplate or workflowTemplate"),
+        (
+            {"jobTemplate": "Deploy", "workflowTemplate": "Release", "cases": {"c": {}}},
+            "a suite names jobTemplate or workflowTemplate, and this one names both",
+        ),
+        (
+            {"jobTemplate": "Deploy", "cases": {"c": {"approvals": "approve"}}},
+            "case 'c': approvals applies to a workflowTemplate suite only",
+        ),
+        (
+            {"jobTemplate": "Deploy", "cases": {"c": {"expect": {"nodes": {"a": {}}}}}},
+            "case 'c': expect.nodes applies to a workflowTemplate suite only",
+        ),
+        (
+            {
+                "workflowTemplate": "Release",
+                "cases": {"c": {"expect": {"log": {"contains": ["x"]}}}},
+            },
+            "case 'c': a workflow job has no log; check the log of a node under expect.nodes",
+        ),
+    ],
+    ids=["no-template", "both-templates", "job-approvals", "job-nodes", "workflow-log"],
+)
+def test_a_suite_launches_one_job_or_workflow_template(
+    body: dict[str, object], message: str
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        Suite.model_validate({"name": "s", **body})
+
+
+def test_a_suite_binds_to_its_template_kind_name_and_scope() -> None:
+    job = Suite.model_validate({"name": "s", "jobTemplate": "Deploy", "cases": {"c": {}}})
+    workflow = _workflow_suite(organization="Ops")
+
+    assert job.binding(None) == TemplateBinding("JobTemplate", "Deploy", None)
+    assert workflow.binding({"organization": "Default"}) == TemplateBinding(
+        "WorkflowJobTemplate", "Release", {"organization": "Ops"}
+    )
+
+
+def test_a_case_inherits_approvals_from_the_defaults() -> None:
+    suite = _workflow_suite(
+        defaults={"approvals": "approve"},
+        cases={"inherits": {}, "denies": {"approvals": "deny"}},
+    )
+
+    assert suite.approvals("inherits") == "approve"
+    assert suite.approvals("denies") == "deny"
+    assert _workflow_suite().approvals("c") is None
+
+
+def test_node_expectations_merge_node_by_node_over_the_defaults() -> None:
+    suite = _workflow_suite(
+        defaults={
+            "expect": {
+                "nodes": {
+                    "deploy": {"hosts": {"*": {"failed": 0}}, "log": {"contains": ["PLAY"]}},
+                    "verify": {"status": "successful"},
+                }
+            }
+        },
+        cases={
+            "c": {
+                "expect": {
+                    "nodes": {
+                        "deploy": {"hosts": {"*": {"changed": 0}}},
+                        "rollback": {"status": "never_ran"},
+                    }
+                }
+            }
+        },
+    )
+
+    nodes = suite.expectation("c").nodes
+
+    assert set(nodes) == {"deploy", "verify", "rollback"}
+    assert nodes["deploy"].hosts["*"] == HostBounds(failed=0, changed=0)
+    assert nodes["deploy"].log.contains == ("PLAY",)
+    assert nodes["verify"].status == "successful"
+    assert nodes["rollback"].status == "never_ran"
+
+
+@pytest.mark.parametrize(
+    "node",
+    [
+        {"status": "never_ran", "changed": 0},
+        {"idempotent": True},
+        {"nodes": {"inner": {}}},
+        {"status": "running"},
+    ],
+    ids=["never-ran-with-checks", "idempotent", "nested-nodes", "non-terminal"],
+)
+def test_invalid_node_expectations_are_rejected(node: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        NodeExpectation.model_validate(node)
+
+
+def test_a_node_check_names_its_node() -> None:
+    check = NodeExpectation().check_status("never_ran").model_copy(update={"node": "deploy"})
+
+    assert check.describe_failure() == "node deploy: expected status successful, got never_ran"
+    assert check.model_dump()["node"] == "deploy"
+    # A job case's checks carry no node key at all.
+    assert "node" not in Expectation().check_status("successful").model_dump()

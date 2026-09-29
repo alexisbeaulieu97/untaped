@@ -1,9 +1,11 @@
 """Domain models for ``awx test`` — declarative AWX-job test suites.
 
 A :class:`Suite` is a parameterised matrix of launch payloads against
-one job template. Each :class:`Case` is one launch plus the
-:class:`Expectation` its job must meet (status, log, host summaries, failed
-tasks, idempotence); :class:`VariableSpec` declares an input the user
+one job template or one workflow (its :class:`TemplateBinding`). Each
+:class:`Case` is one launch plus the :class:`Expectation` its job must meet
+(status, log, host summaries, failed tasks, idempotence, and for a workflow
+each node's :class:`NodeExpectation`), and for a workflow what to answer its
+approvals; :class:`VariableSpec` declares an input the user
 supplies (CLI / vars file / interactive prompt). A run's results compared
 with a :class:`Baseline` say how each case changed. Pure domain — no I/O,
 no Jinja2, no httpx.
@@ -14,7 +16,7 @@ from __future__ import annotations
 import re
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, ClassVar, Literal, Self
 
 from pydantic import (
     AfterValidator,
@@ -34,6 +36,7 @@ from untaped.capabilities.awx.domain.case_failure import (
     failure,
 )
 from untaped.capabilities.awx.domain.job import SUMMARY_FIELDS, HostSummary
+from untaped.capabilities.awx.domain.workflow_run import NEVER_RAN, NodeResult
 from untaped.capability_api import ErrorCategory, ExitCode, q
 
 
@@ -69,6 +72,28 @@ Change = Literal["regression", "unverified", "fixed", "still_failing", "pass", "
 
 TerminalStatus = Literal["successful", "failed", "error", "canceled"]
 """An AWX job status an expectation can require."""
+
+NodeStatus = Literal["successful", "failed", "error", "canceled", "never_ran"]
+"""A workflow node status an expectation can require: a job's, or ``never_ran``."""
+
+Approvals = Literal["approve", "deny"]
+"""What a workflow case answers each approval its workflow waits on."""
+
+JOB_TEMPLATE = "JobTemplate"
+WORKFLOW_TEMPLATE = "WorkflowJobTemplate"
+
+
+@dataclass(frozen=True)
+class TemplateBinding:
+    """The template a suite's cases launch: its kind, name and lookup scope.
+
+    A suite binds to the template it names; a run may bind it to another
+    (a temporary copy) by replacing this one step.
+    """
+
+    kind: str
+    name: str
+    scope: dict[str, str] | None
 
 
 class VariableSpec(BaseModel):
@@ -115,10 +140,14 @@ class VariableSpec(BaseModel):
 
 
 def _document_schema(schema: JsonDict) -> None:
-    """Required keys as written in a file: ``kind`` is, ``name`` (the file name) is not."""
+    """Required keys as written in a file: ``kind`` is, ``name`` (the file name) is not.
+
+    Exactly one of ``jobTemplate`` and ``workflowTemplate`` is.
+    """
     required = schema.get("required")
     kept = [key for key in required if key != "name"] if isinstance(required, list) else []
     schema["required"] = ["kind", *kept]
+    schema["oneOf"] = [{"required": ["jobTemplate"]}, {"required": ["workflowTemplate"]}]
 
 
 CheckName = Literal[
@@ -150,8 +179,14 @@ class ExpectationResult(BaseModel):
     bound, or a named host has no summary.
     """
     passed: bool
+    node: str | None = Field(default=None, exclude_if=lambda node: node is None)
+    """The workflow node whose job the check read (left out: the case's own job)."""
 
     def describe_failure(self) -> str:
+        described = self._describe()
+        return described if self.node is None else f"node {self.node}: {described}"
+
+    def _describe(self) -> str:
         match self.check:
             case "status":
                 return f"expected status {self.expected}, got {self.actual}"
@@ -286,13 +321,11 @@ class FailedTaskMatch(BaseModel):
         )
 
 
-_WHOLE = ("status", "changed", "idempotent", "failed_tasks")
-"""Expectation fields a case replaces as a whole when it sets them."""
+class ExecutionChecks(BaseModel):
+    """What one execution must produce: a status (default ``successful``), log, hosts, tasks.
 
-
-class Expectation(BaseModel):
-    """What a case's job must produce: a status (default ``successful``), log, hosts, tasks.
-
+    A case's :class:`Expectation` and a workflow node's :class:`NodeExpectation`
+    share these checks, so the same code checks a job, a workflow and a node.
     Set in ``defaults.expect`` and per case: a case's ``status``, ``changed``,
     ``idempotent`` and ``failed_tasks``, each of its ``log`` lists and each
     counter of each of its ``hosts`` entries replace the default's.
@@ -300,11 +333,11 @@ class Expectation(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    status: TerminalStatus | None = Field(
-        default=None,
-        description="The job's final status: `successful` (the default), `failed`, `error` "
-        "or `canceled`.",
-    )
+    whole_fields: ClassVar[tuple[str, ...]] = ("status", "changed", "failed_tasks")
+    """Fields a case replaces as a whole when it sets them."""
+
+    status: str | None = None
+    """The final status required (each model narrows the statuses it accepts)."""
     log: LogExpectation = Field(
         default_factory=LogExpectation,
         description="Checks on the job's stdout; a case's list replaces the default's list.",
@@ -321,11 +354,6 @@ class Expectation(BaseModel):
         'counters, by host name; `"*"` bounds every host, and a named host\'s own bound for '
         "a counter wins over it. A named host must be in the job's host summaries. A case's "
         "bound replaces the default's for that host and counter.",
-    )
-    idempotent: bool = Field(
-        default=False,
-        description="Once the case passed, launch it again with the same payload: the rerun "
-        "must succeed and change nothing.",
     )
     failed_tasks: tuple[FailedTaskMatch, ...] = Field(
         default=(),
@@ -348,19 +376,23 @@ class Expectation(BaseModel):
         """A negative case without ``failed_tasks``: an unrelated failure passes it too."""
         return self.status == "failed" and not self.failed_tasks
 
-    def over(self, defaults: Expectation) -> Expectation:
+    def over(self, defaults: Self) -> Self:
         """This expectation with anything it leaves unset taken from ``defaults``."""
         log = defaults.log.model_copy(
             update={field: getattr(self.log, field) for field in self.log.model_fields_set}
         )
         whole = {
             field: getattr(self if field in self.model_fields_set else defaults, field)
-            for field in _WHOLE
+            for field in self.whole_fields
         }
         hosts = defaults.hosts | {
             host: bounds.over(defaults.hosts.get(host)) for host, bounds in self.hosts.items()
         }
-        return Expectation(log=log, hosts=hosts, **whole)
+        return type(self)(log=log, hosts=hosts, **whole, **self._merged(defaults))
+
+    def _merged(self, defaults: Self) -> dict[str, Any]:
+        """The fields a model merges its own way, over ``defaults``."""
+        return {}
 
     def check_status(self, status: str) -> ExpectationResult:
         expected = self.status or "successful"
@@ -429,6 +461,53 @@ class Expectation(BaseModel):
         return results
 
 
+class NodeExpectation(ExecutionChecks):
+    """What one workflow node must produce: a case's checks, on the job the node ran."""
+
+    status: NodeStatus | None = Field(
+        default=None,
+        description="The node's final status: `successful` (the default), `failed`, `error`, "
+        "`canceled`, or `never_ran` for a node the workflow did not run (which takes no "
+        "other check).",
+    )
+
+    @model_validator(mode="after")
+    def _never_ran_alone(self) -> NodeExpectation:
+        if self.status == NEVER_RAN and (self.needs_log or self.needs_hosts or self.failed_tasks):
+            raise ValueError("a node expected never to run takes no other check")
+        return self
+
+
+class Expectation(ExecutionChecks):
+    """What a case's job (or workflow) must produce, and for a workflow each node's job."""
+
+    whole_fields: ClassVar[tuple[str, ...]] = (*ExecutionChecks.whole_fields, "idempotent")
+
+    status: TerminalStatus | None = Field(
+        default=None,
+        description="The job's final status: `successful` (the default), `failed`, `error` "
+        "or `canceled`.",
+    )
+    idempotent: bool = Field(
+        default=False,
+        description="Once the case passed, launch it again with the same payload: the rerun "
+        "must succeed and change nothing.",
+    )
+    nodes: dict[str, NodeExpectation] = Field(
+        default_factory=dict,
+        description="A workflow's per-node checks, by node id (AWX's node `identifier`): the "
+        "same checks as a case, on the job each node ran. A case's entry for a node merges "
+        "over the default's as a case's `expect` does.",
+    )
+
+    def _merged(self, defaults: Expectation) -> dict[str, Any]:
+        nodes = defaults.nodes | {
+            node: expect.over(defaults.nodes[node]) if node in defaults.nodes else expect
+            for node, expect in self.nodes.items()
+        }
+        return {"nodes": nodes}
+
+
 class Case(BaseModel):
     """One case body: the ``launch:`` payload, its ``expect:`` and optional ``timeout:``.
 
@@ -452,6 +531,12 @@ class Case(BaseModel):
         description="Seconds to wait for the job before it is cancelled and the case "
         "counts as `timeout`.",
     )
+    approvals: Approvals | None = Field(
+        default=None,
+        description="A workflow case's answer to every approval its workflow waits on: "
+        "`approve` or `deny` (default: `defaults.approvals`); without one, a pending "
+        "approval fails the case.",
+    )
 
 
 class Suite(BaseModel):
@@ -472,19 +557,28 @@ class Suite(BaseModel):
         description="The suite name used by `--case SUITE/CASE`; unique across the files read "
         "(default: the file name without its extension)."
     )
-    job_template: str = Field(
-        alias="jobTemplate", description="The name of the job template every case launches."
+    job_template: str | None = Field(
+        default=None,
+        alias="jobTemplate",
+        description="The name of the job template every case launches (or `workflowTemplate`).",
+    )
+    workflow_template: str | None = Field(
+        default=None,
+        alias="workflowTemplate",
+        description="The name of the workflow job template every case launches, instead of "
+        "`jobTemplate`.",
     )
     organization: str | None = Field(
         default=None,
-        description="The job template's organization (default: `awx.default_organization`).",
+        description="The template's organization (default: `awx.default_organization`).",
     )
     defaults: Case | None = Field(
         default=None,
-        description="A case body every case inherits: `launch`, `expect` and `timeout`.",
+        description="A case body every case inherits: `launch`, `expect`, `timeout` and "
+        "`approvals`.",
     )
     cases: dict[str, Case] = Field(
-        description="The cases by name; each launches the job template once."
+        description="The cases by name; each launches the template once."
     )
     variables: dict[str, VariableSpec] = Field(
         default_factory=dict,
@@ -500,7 +594,17 @@ class Suite(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def _idempotent_cases_expect_success(self) -> Suite:
+    def _one_template(self) -> Suite:
+        if self.job_template is None and self.workflow_template is None:
+            raise ValueError("a suite needs jobTemplate or workflowTemplate")
+        if self.job_template is not None and self.workflow_template is not None:
+            raise ValueError(
+                "a suite names jobTemplate or workflowTemplate, and this one names both"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _cases_fit_the_template(self) -> Suite:
         for name in self.cases:
             expect = self.expectation(name)
             if expect.idempotent and expect.status not in (None, "successful"):
@@ -508,15 +612,50 @@ class Suite(BaseModel):
                     f"case {q(name)}: idempotent needs status successful (the rerun must "
                     f"succeed), not {expect.status}"
                 )
+            if self.workflow_template is not None:
+                if expect.needs_log:
+                    raise ValueError(
+                        f"case {q(name)}: a workflow job has no log; check the log of a node "
+                        "under expect.nodes"
+                    )
+                continue
+            if self.approvals(name) is not None:
+                raise ValueError(
+                    f"case {q(name)}: approvals applies to a workflowTemplate suite only"
+                )
+            if expect.nodes:
+                raise ValueError(
+                    f"case {q(name)}: expect.nodes applies to a workflowTemplate suite only"
+                )
         return self
+
+    @property
+    def template(self) -> str:
+        """The name of the template every case launches."""
+        name = self.workflow_template or self.job_template
+        assert name is not None  # _one_template
+        return name
+
+    @property
+    def template_kind(self) -> str:
+        return WORKFLOW_TEMPLATE if self.workflow_template is not None else JOB_TEMPLATE
+
+    def binding(self, default_scope: dict[str, str] | None) -> TemplateBinding:
+        """The template the suite names, looked up in its :meth:`scope`."""
+        return TemplateBinding(self.template_kind, self.template, self.scope(default_scope))
 
     def expectation(self, case_name: str) -> Expectation:
         """What the case's job must produce: its own ``expect`` over ``defaults.expect``."""
         defaults = self.defaults or Case()
         return self.cases[case_name].expect.over(defaults.expect)
 
+    def approvals(self, case_name: str) -> Approvals | None:
+        """The case's answer to its workflow's approvals: its own, else the defaults'."""
+        defaults = self.defaults or Case()
+        return self.cases[case_name].approvals or defaults.approvals
+
     def scope(self, default: dict[str, str] | None) -> dict[str, str] | None:
-        """The job template's lookup scope: ``organization`` over ``default``."""
+        """The template's lookup scope: ``organization`` over ``default``."""
         if self.organization is None:
             return default
         return {**(default or {}), "organization": self.organization}
@@ -558,6 +697,8 @@ class CaseResult(BaseModel):
     """Each host's PLAY RECAP counters (``None``: not read)."""
     hosts_truncated: bool = False
     """``hosts`` keeps only the first 500 hosts by name."""
+    nodes: tuple[NodeResult, ...] | None = None
+    """A workflow case's nodes as they ran (``None``: a job case, or the nodes were not read)."""
     job_url: str | None = None
     scm_branch: str | None = None
     scm_revision: str | None = None

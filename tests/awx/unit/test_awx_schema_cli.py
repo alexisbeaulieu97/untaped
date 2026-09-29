@@ -31,13 +31,36 @@ def test_schema_prints_the_suite_document_as_json_by_default(cli: CliInvoker) ->
     schema = json.loads(result.stdout)
     assert schema["title"] == "AwxTestSuite"
     assert schema["additionalProperties"] is False
-    assert {"kind", "name", "jobTemplate", "organization", "defaults", "cases"} <= set(
-        schema["properties"]
-    )
+    assert {
+        "kind",
+        "name",
+        "jobTemplate",
+        "workflowTemplate",
+        "organization",
+        "defaults",
+        "cases",
+    } <= set(schema["properties"])
     # ``name`` defaults to the file name; the loader requires ``kind``.
-    assert set(schema["required"]) == {"kind", "jobTemplate", "cases"}
+    assert set(schema["required"]) == {"kind", "cases"}
+    # A suite launches a job template or a workflow, never both.
+    assert schema["oneOf"] == [{"required": ["jobTemplate"]}, {"required": ["workflowTemplate"]}]
     # Header variables are filled by the loader, never read from the body.
     assert schema["properties"]["variables"]["readOnly"] is True
+
+
+def test_the_schema_describes_workflow_cases(cli: CliInvoker) -> None:
+    schema = json.loads(cli.invoke(app, ["schema", "AwxTestSuite"]).stdout)
+    definitions = schema["$defs"]
+
+    assert definitions["Case"]["properties"]["approvals"]["anyOf"][0]["enum"] == [
+        "approve",
+        "deny",
+    ]
+    nodes = definitions["Expectation"]["properties"]["nodes"]
+    assert nodes["additionalProperties"] == {"$ref": "#/$defs/NodeExpectation"}
+    node = definitions["NodeExpectation"]
+    assert "never_ran" in node["properties"]["status"]["anyOf"][0]["enum"]
+    assert {"idempotent", "nodes"}.isdisjoint(node["properties"])
 
 
 def test_every_schema_property_is_described(cli: CliInvoker) -> None:

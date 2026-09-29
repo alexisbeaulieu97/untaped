@@ -1,8 +1,8 @@
-"""PreflightLaunch: check a test case's launch against its job template before any job runs."""
+"""PreflightLaunch: check a test case's launch against its template before any job runs."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from functools import cache
 from typing import Any
 
@@ -14,15 +14,17 @@ from untaped.capabilities.awx.application.selection import (
     SelectionResolver,
 )
 from untaped.capabilities.awx.domain import ResourceSpec
+from untaped.capabilities.awx.errors import ResourceNotFoundError
 
 
 class PreflightLaunch:
     """Raise when AWX would ignore part of a launch or refuse it.
 
     The template must exist, prompt on launch for every field the payload
-    sets (AWX ignores the others) and get its required survey variables.
-    Each template and its ``launch/`` and ``survey_spec/`` answers are read
-    once per instance.
+    sets (AWX ignores the others) and get its required survey variables; a
+    workflow must have every node a case checks. Each template and its
+    ``launch/``, ``survey_spec/`` and ``workflow_nodes/`` answers are read once
+    per instance.
     """
 
     def __init__(self, client: ResourceClient, catalog: Catalog) -> None:
@@ -32,6 +34,7 @@ class PreflightLaunch:
             tuple[str, tuple[tuple[str, str], ...]],
             tuple[SelectedResource, Callable[[str], Mapping[str, Any]]],
         ] = {}
+        self._nodes: dict[tuple[str, int], list[dict[str, Any]]] = {}
 
     def __call__(
         self,
@@ -40,9 +43,20 @@ class PreflightLaunch:
         name: str,
         scope: dict[str, str] | None,
         payload: dict[str, Any],
+        nodes: Collection[str] = (),
     ) -> None:
         template, reader = self.template(spec, name=name, scope=scope)
         preflight_launch(self._client, spec, template, payload, read=reader, name_fields=True)
+        if nodes:
+            known = [str(node.get("identifier")) for node in self.nodes(spec, template)]
+            unknown = sorted(set(nodes) - set(known))
+            if unknown:
+                raise ResourceNotFoundError(
+                    "workflow node",
+                    {"name": unknown[0], "workflow": template.name or name},
+                    candidates=known,
+                    status=None,
+                )
 
     def template(
         self,
@@ -63,3 +77,11 @@ class PreflightLaunch:
 
             self._templates[key] = (template, read)
         return self._templates[key]
+
+    def nodes(self, spec: ResourceSpec, template: SelectedResource) -> list[dict[str, Any]]:
+        """A workflow template's nodes (its ``workflow_nodes/`` records, every page)."""
+        key = (spec.kind, template.id)
+        if key not in self._nodes:
+            records = self._client.paginate_sub_endpoint(spec, template.id, "workflow_nodes")
+            self._nodes[key] = list(records)
+        return self._nodes[key]
