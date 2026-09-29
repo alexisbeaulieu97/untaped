@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import replace
 from pathlib import Path
 
@@ -15,6 +15,7 @@ from untaped.capabilities.awx.cli._mutation_runner import (
 )
 from untaped.capabilities.awx.cli.context import AwxContext
 from untaped.capabilities.awx.domain import Resource
+from untaped.capabilities.awx.infrastructure.git_source import GitSource
 from untaped.capabilities.awx.infrastructure.yaml_io import (
     read_resource_files,
     read_resource_text,
@@ -33,6 +34,7 @@ def build_mutation_engine(
         strategies=ctx.strategies,
         warn=lambda msg: ctx.progress_ui().message("warning", msg),
         allow_unverified=allow_unverified,
+        nodes=ctx.workflow_nodes,
     )
 
 
@@ -63,8 +65,17 @@ STDIN = Path("-")
 """``apply -``: read the YAML documents from stdin."""
 
 
-def _read_documents(path: Path) -> list[tuple[str, Resource]]:
-    """Every document of ``path`` (a file, a directory, or ``-`` for stdin) and its source."""
+def _read_documents(path: Path, source: GitSource | None) -> list[tuple[str, Resource]]:
+    """Every document of ``path`` (a file, a directory, or ``-`` for stdin) and its source.
+
+    With ``source``, ``path`` is read at its pinned commit, never the working tree.
+    """
+    if source is not None:
+        return [
+            (source.label(rel), doc)
+            for rel in source.files(path)
+            for doc in read_resource_text(source.read_text(rel), source=source.label(rel))
+        ]
     if path != STDIN:
         return [(str(source), doc) for source, doc in read_resource_files(path)]
     empty = ConfigError("no YAML documents on stdin; pipe them into `apply -`")
@@ -78,17 +89,26 @@ def _read_documents(path: Path) -> list[tuple[str, Resource]]:
     return docs
 
 
-def run_apply(ctx: AwxContext, file: Path, controls: WriteControls, *, check: bool = False) -> None:
+def run_apply(
+    ctx: AwxContext,
+    files: Sequence[Path],
+    controls: WriteControls,
+    *,
+    check: bool = False,
+    source_ref: str | None = None,
+) -> None:
     """Prepare once, confirm once, execute the same complete batch.
 
     ``check`` only computes the plan: nothing is written, and the command
-    exits 3 when any document would change the controller.
+    exits 3 when any document would change the controller. ``source_ref``
+    reads every path at that ref of the current repository.
     """
 
     known = set(ctx.catalog.kinds())
+    pinned = GitSource.resolve(source_ref) if source_ref is not None else None
 
     def reader(path: Path) -> Iterable[Resource]:
-        docs = _read_documents(path)
+        docs = _read_documents(path, pinned)
         for source, doc in docs:
             # Name the file: a directory apply reads every *.yml and *.yaml.
             if doc.kind not in known:
@@ -98,7 +118,7 @@ def run_apply(ctx: AwxContext, file: Path, controls: WriteControls, *, check: bo
         return [_with_default_organization(ctx, doc) for _source, doc in docs]
 
     engine = build_mutation_engine(ctx, allow_unverified=controls.allow_unverified)
-    plan = prepare_apply_file(engine, reader, file, catalog=ctx.catalog, fk=ctx.fk)
+    plan = prepare_apply_file(engine, reader, files, catalog=ctx.catalog, fk=ctx.fk)
     if not check:
         run_mutation_plan(ctx, engine, plan, controls)
         return

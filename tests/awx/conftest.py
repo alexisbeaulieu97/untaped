@@ -13,7 +13,7 @@ import copy
 import json
 import re
 from collections import defaultdict
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -40,7 +40,8 @@ class FakeAap:
         # Many-to-many memberships keyed by (parent_path, parent_id, sub_path)
         # → set of member ids. Populated by associate/disassociate POSTs to
         # ``/<parent_path>/<id>/<sub_path>/`` (e.g. ``/groups/<id>/hosts/``).
-        self.memberships: dict[tuple[str, int, str], set[int]] = defaultdict(set)
+        # Members iterate in association order, like AWX's ordered relations.
+        self.memberships: dict[tuple[str, int, str], set[int]] = defaultdict(_OrderedMembers)
         self._next_id = 1
         self.actions_called: list[tuple[str, int, str, dict[str, Any]]] = []
         # One-shot test override consumed by the very next ``_action`` call.
@@ -67,6 +68,8 @@ class FakeAap:
         self.enrich_survey_spec_response = False
         # HTTP method → error status for ``<template>/<id>/survey_spec/``.
         self.survey_errors: dict[str, int] = {}
+        # ``(parent_path, sub_path)`` routes an older controller lacks (404).
+        self.missing_sub_paths: set[tuple[str, str]] = set()
 
     def seed(self, api_path: str, **fields: Any) -> dict[str, Any]:
         record_id = fields.pop("id", None) or self._next_id
@@ -146,6 +149,13 @@ class FakeAap:
                 and parts[2] in {"cancel", "relaunch"}
             ):
                 return self._execution_action(parts[0], int(parts[1]), parts[2], body)
+            if parts[:1] == ["workflow_job_templates"] and parts[2:] == ["workflow_nodes"]:
+                return self._create_node(int(parts[1]), body)
+            if len(parts) == 3 and parts[1].isdigit() and parts[0] == "workflow_job_template_nodes":
+                if parts[2] == "create_approval_template":
+                    return self._create_approval(int(parts[1]), body)
+                if parts[2] in _NODE_EDGES:
+                    return self._edge_post(int(parts[1]), parts[2], body)
             if len(parts) == 3 and parts[1].isdigit():
                 # AWX overloads ``POST /<parent>/<id>/<sub>/`` for two
                 # things: launching a job/action (body has no ``id``) and
@@ -182,7 +192,7 @@ class FakeAap:
         page = int(params.get("page", "1"))
         page_size = int(params.get("page_size", "200"))
         start = (page - 1) * page_size
-        page_records = [_public(api_path, r) for r in records[start : start + page_size]]
+        page_records = [self._public(api_path, r) for r in records[start : start + page_size]]
         next_url: str | None = None
         if start + page_size < len(records):
             next_url = f"{self.api_prefix}{api_path}/?page={page + 1}&page_size={page_size}"
@@ -197,10 +207,10 @@ class FakeAap:
         )
 
     def _get(self, api_path: str, id_: int) -> httpx.Response:
-        record = self.store.get(api_path, {}).get(id_)
+        record = self.store.get(_TOP_PATH_STORE.get(api_path, api_path), {}).get(id_)
         if record is None:
             return _err(404, f"{api_path}/{id_}/ not found")
-        return httpx.Response(200, json=_public(api_path, record))
+        return httpx.Response(200, json=self._public(api_path, record))
 
     def _stdout(self, api_path: str, id_: int, params: dict[str, str]) -> httpx.Response:
         """Plain-text stdout endpoint (e.g. ``jobs/<id>/stdout/``): the whole log.
@@ -221,11 +231,11 @@ class FakeAap:
         return httpx.Response(201, json=_public(api_path, record))
 
     def _update(self, api_path: str, id_: int, body: dict[str, Any]) -> httpx.Response:
-        record = self.store.get(api_path, {}).get(id_)
+        record = self.store.get(_TOP_PATH_STORE.get(api_path, api_path), {}).get(id_)
         if record is None:
             return _err(404, f"{api_path}/{id_}/ not found")
         record.update(self._write_body(api_path, body))
-        return httpx.Response(200, json=_public(api_path, record))
+        return httpx.Response(200, json=self._public(api_path, record))
 
     def _copy(self, api_path: str, id_: int, body: dict[str, Any]) -> httpx.Response:
         """``POST <kind>/<id>/copy/``: a new record with the source's fields and members."""
@@ -297,9 +307,94 @@ class FakeAap:
     def _delete(self, api_path: str, id_: int) -> httpx.Response:
         # Match real AWX: DELETE on a missing id returns 404 (the
         # silent-pop shortcut hid id-typos behind a 204).
-        if id_ not in self.store.get(api_path, {}):
+        store_path = _TOP_PATH_STORE.get(api_path, api_path)
+        if id_ not in self.store.get(store_path, {}):
             return _err(404, f"{api_path}/{id_}/ not found")
-        del self.store[api_path][id_]
+        record = self.store[store_path].pop(id_)
+        if store_path == "workflow_nodes":
+            # Like AWX: edges into the node go with it, and so does its approval.
+            for node in self.store["workflow_nodes"].values():
+                for relation in _NODE_EDGES:
+                    if id_ in node.get(relation, []):
+                        node[relation].remove(id_)
+            self.store["workflow_approval_templates"].pop(record.get("unified_job_template"), None)
+        return httpx.Response(204)
+
+    def _public(self, api_path: str, record: dict[str, Any]) -> dict[str, Any]:
+        if _TOP_PATH_STORE.get(api_path, api_path) == "workflow_nodes":
+            return self._render_node(record)
+        return _public(api_path, record)
+
+    def _render_node(self, record: dict[str, Any]) -> dict[str, Any]:
+        """A node as AWX serializes it: edge lists and its template's summary."""
+        rendered: dict[str, Any] = {relation: [] for relation in _NODE_EDGES}
+        rendered.update(copy.deepcopy(record))
+        ujt = record.get("unified_job_template")
+        if "summary_fields" not in record and isinstance(ujt, int):
+            for path, job_type in _UJT_STORES.items():
+                target = self.store.get(path, {}).get(ujt)
+                if target is not None:
+                    rendered["summary_fields"] = {
+                        "unified_job_template": {
+                            "id": ujt,
+                            "name": target.get("name"),
+                            "unified_job_type": job_type,
+                        }
+                    }
+                    break
+        return rendered
+
+    def _create_node(self, workflow_id: int, body: dict[str, Any]) -> httpx.Response:
+        """``POST workflow_job_templates/<id>/workflow_nodes/``: identifiers are unique."""
+        identifier = body.get("identifier") or f"uuid-{self._next_id}"
+        if any(
+            node.get("workflow_job_template") == workflow_id
+            and node.get("identifier") == identifier
+            for node in self.store["workflow_nodes"].values()
+        ):
+            return _err(400, "identifier: already exists in this workflow")
+        new = self.seed(
+            "workflow_nodes",
+            **{
+                "all_parents_must_converge": False,
+                "extra_data": {},
+                **body,
+                "identifier": identifier,
+                "workflow_job_template": workflow_id,
+            },
+        )
+        self.actions_called.append(("workflow_job_templates", workflow_id, "node", body))
+        return httpx.Response(201, json=self._render_node(new))
+
+    def _create_approval(self, node_id: int, body: dict[str, Any]) -> httpx.Response:
+        node = self.store["workflow_nodes"].get(node_id)
+        if node is None:
+            return _err(404, f"workflow_job_template_nodes/{node_id}/ not found")
+        approval = self.seed(
+            "workflow_approval_templates",
+            **{"description": "", "timeout": 0, **body},
+        )
+        node["unified_job_template"] = approval["id"]
+        return httpx.Response(201, json=approval)
+
+    def _edge_post(self, node_id: int, relation: str, body: dict[str, Any]) -> httpx.Response:
+        """Associate/disassociate a child node, refusing what AWX refuses."""
+        nodes = self.store["workflow_nodes"]
+        node, child = nodes.get(node_id), int(body["id"])
+        if node is None or child not in nodes:
+            return _err(404, "node not found")
+        edges = node.setdefault(relation, [])
+        if body.get("disassociate"):
+            if child in edges:
+                edges.remove(child)
+            return httpx.Response(204)
+        if any(child in node.get(other, []) for other in _NODE_EDGES if other != relation):
+            return _err(400, "Relationship not allowed.")
+        if child not in edges:
+            edges.append(child)
+        if _reaches(nodes, child, node_id):
+            edges.remove(child)
+            return _err(400, "Cycle detected.")
         return httpx.Response(204)
 
     def _action(
@@ -433,6 +528,8 @@ class FakeAap:
         # the actual collection name (``GET /groups/<id>/children/`` returns
         # Group records, which live in ``self.store["groups"]``). Resolve
         # the storage collection accordingly.
+        if (parent_path, sub_path) in self.missing_sub_paths:
+            return _err(404, f"{parent_path}/{parent_id}/{sub_path}/ not found")
         store_collection = _SUB_PATH_STORE.get((parent_path, sub_path), sub_path)
         membership_key = (parent_path, parent_id, sub_path)
         if membership_key in self.memberships:
@@ -460,6 +557,8 @@ class FakeAap:
                 or r.get(singular) == parent_id
             ]
         records = self._apply_filters(records, params)
+        if store_collection == "workflow_nodes":
+            records = [self._render_node(record) for record in records]
         return httpx.Response(
             200,
             json={
@@ -484,6 +583,8 @@ class FakeAap:
         """
         member_id = int(body["id"])
         key = (parent_path, parent_id, sub_path)
+        if not isinstance(self.memberships[key], _OrderedMembers):
+            self.memberships[key] = _OrderedMembers(sorted(self.memberships[key]))
         if body.get("disassociate"):
             self.memberships[key].discard(member_id)
         else:
@@ -557,6 +658,27 @@ class FakeAap:
             return {}
 
 
+class _OrderedMembers(set[int]):
+    """A member set that iterates in association order (seeded sets: ascending)."""
+
+    def __init__(self, members: Iterable[int] = ()) -> None:
+        self._order = list(dict.fromkeys(members))
+        super().__init__(self._order)
+
+    def add(self, member: int) -> None:
+        if member not in self:
+            self._order.append(member)
+        super().add(member)
+
+    def discard(self, member: int) -> None:
+        if member in self:
+            self._order.remove(member)
+        super().discard(member)
+
+    def __iter__(self) -> Iterator[int]:
+        return iter(list(self._order))
+
+
 # Launch payload field → the template flag that makes AWX honour it.
 _LAUNCH_PROMPTS: dict[str, str] = {
     "extra_vars": "ask_variables_on_launch",
@@ -578,6 +700,33 @@ def _template_launch_value(record: dict[str, Any], field: str) -> Any:
         summary = record.get("summary_fields") or {}
         return [c["id"] for c in summary.get("credentials") or []]
     return record.get(field)
+
+
+_NODE_EDGES = ("success_nodes", "failure_nodes", "always_nodes")
+
+# Store → the ``unified_job_type`` a workflow node reports for it.
+_UJT_STORES: dict[str, str] = {
+    "job_templates": "job",
+    "workflow_job_templates": "workflow_job",
+    "projects": "project_update",
+    "inventory_sources": "inventory_update",
+    "workflow_approval_templates": "workflow_approval",
+}
+
+
+def _reaches(nodes: dict[int, dict[str, Any]], start: int, target: int) -> bool:
+    """Whether ``target`` is reachable from ``start`` along node edges."""
+    pending, seen = [start], set()
+    while pending:
+        current = pending.pop()
+        if current == target:
+            return True
+        if current in seen:
+            continue
+        seen.add(current)
+        for relation in _NODE_EDGES:
+            pending.extend(nodes.get(current, {}).get(relation, []))
+    return False
 
 
 # Strict execution routes mirror Controller URLs; arbitrary subcollections must

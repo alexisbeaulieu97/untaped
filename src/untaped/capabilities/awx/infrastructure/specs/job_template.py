@@ -62,6 +62,7 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
         "inventory",
         "credentials",
         "labels",
+        "instance_groups",
     ),
     read_only_fields=(
         *UNIVERSAL_READ_ONLY,
@@ -94,6 +95,14 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
             scope_field="organization",
             multi=True,
             sub_endpoint="labels",
+        ),
+        # Instance groups are global and their order is the fallback order.
+        FkRef(
+            field="instance_groups",
+            kind="InstanceGroup",
+            multi=True,
+            sub_endpoint="instance_groups",
+            ordered=True,
         ),
     ),
     launch_fk_refs=(

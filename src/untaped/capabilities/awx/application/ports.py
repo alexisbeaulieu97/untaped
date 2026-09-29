@@ -423,7 +423,7 @@ class UnifiedTemplateRepository(Protocol):
 
 
 class WorkflowNodeRepository(Protocol):
-    """Read access to workflow-job-template nodes.
+    """Access to workflow-job-template nodes.
 
     Wraps the node collection from both directions: per-workflow via
     ``/api/v2/workflow_job_templates/<id>/workflow_nodes/`` and
@@ -458,6 +458,40 @@ class WorkflowNodeRepository(Protocol):
         ``params`` are forwarded verbatim to the AWX API as query-string
         parameters (Django-style filters).
         """
+        ...
+
+    def list_node_members(self, *, node_id: int, relation: str) -> Iterator[dict[str, Any]]:
+        """Walk a node relation: ``success_nodes``, ``credentials``, ``labels``, …"""
+        ...
+
+    def create_node(self, *, workflow_id: int, body: dict[str, Any]) -> dict[str, Any]:
+        """Create a node in ``workflow_id``; returns the new node record."""
+        ...
+
+    def update_node(self, *, node_id: int, body: dict[str, Any]) -> dict[str, Any]:
+        """PATCH a node's fields; returns the node record."""
+        ...
+
+    def delete_node(self, *, node_id: int) -> None:
+        """Delete a node (its edges go with it)."""
+        ...
+
+    def link_node(
+        self, *, node_id: int, relation: str, member_id: int, disassociate: bool = False
+    ) -> None:
+        """Associate (or disassociate) ``member_id`` on a node relation."""
+        ...
+
+    def get_approval_template(self, *, template_id: int) -> dict[str, Any]:
+        """Read an approval node's template (``name``, ``description``, ``timeout``)."""
+        ...
+
+    def create_approval_template(self, *, node_id: int, body: dict[str, Any]) -> dict[str, Any]:
+        """Turn a node into an approval step with a new approval template."""
+        ...
+
+    def update_approval_template(self, *, template_id: int, body: dict[str, Any]) -> dict[str, Any]:
+        """PATCH an approval template."""
         ...
 
 
