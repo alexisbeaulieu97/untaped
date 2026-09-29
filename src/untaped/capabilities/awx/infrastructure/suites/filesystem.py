@@ -36,6 +36,28 @@ def suites_under(directory: Path) -> list[Path]:
     ]
 
 
+def refuse_existing(path: Path) -> None:
+    """Raise when ``path`` exists, so a new file never replaces one."""
+    if path.exists() or path.is_symlink():
+        raise ConfigError(_already_exists(path), category="conflict")
+
+
+def write_new_text(path: Path, text: str) -> None:
+    """Create ``path`` (and its directories) holding ``text``; never overwrite a file."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("x", encoding="utf-8") as handle:
+            handle.write(text)
+    except FileExistsError as exc:
+        raise ConfigError(_already_exists(path), category="conflict") from exc
+    except OSError as exc:
+        raise ConfigError(f"failed to write {path}: {exc}") from exc
+
+
+def _already_exists(path: Path) -> str:
+    return f"{path} already exists; remove it or pass --out another path"
+
+
 class LocalFilesystem:
     def read_text(self, path: Path) -> str:
         try:

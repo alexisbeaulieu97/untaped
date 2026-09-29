@@ -1,0 +1,30 @@
+# Negative cases: the playbook must refuse bad input, and fail for that reason.
+# `status: failed` alone would also pass on an unrelated failure, so each case
+# also checks the log for the message that proves why it failed.
+kind: AwxTestSuite
+name: deploy-validation
+jobTemplate: Deploy app
+defaults:
+  expect:
+    status: failed
+    log:
+      not_contains: ["UNREACHABLE!"]
+cases:
+  missing-version:
+    launch:
+      extra_vars: {app_version: ""}
+    expect:
+      log:
+        contains: ["app_version must be set"]
+  unknown-environment:
+    launch:
+      extra_vars: {app_version: "1.4", environment: nowhere}
+    expect:
+      log:
+        matches: ['environment must be one of \[?staging']
+  valid-input:
+    # The control case: the same template with good input still succeeds.
+    launch:
+      extra_vars: {app_version: "1.4", environment: staging}
+    expect:
+      status: successful

@@ -3,6 +3,13 @@
 ## Unreleased
 
 - Core
+  - **New:** every built-in skill is a complete manual for the installed CLI.
+    Each has a description naming the words that should make an agent load
+    it, no skill points at `docs/` or the source repository any more, and the
+    AWX, recipe, GitHub and Ansible skills keep `SKILL.md` to about 900 words
+    and ship the details in `references/` (plus example suites for AWX). Run `untaped skills update`
+    to refresh installed copies. Tests now parse every `untaped …` command a
+    skill quotes against the real CLI.
   - **Breaking:** failures say what kind they are and who is responsible.
     Every error carries a `category` (`usage`, `config`, `auth`,
     `permission`, `not_found`, `invalid`, `conflict`, `unavailable`,
@@ -76,6 +83,36 @@
     permission (403) exit 4; 5xx, 429 and network failures exit 5; a missing
     issue stays 1 (`not_found`).
 - AWX
+  - **New:** `untaped awx test init TEMPLATE` writes a commented starter
+    suite for a job template from its survey and launch prompts: required
+    survey variables get their default, first choice or `TODO` (a password
+    with a stored default gets `$encrypted$`, which AWX replaces with the
+    stored value at launch), and optional variables and the enabled launch
+    prompts are listed as comments. It writes `.untaped/awx/tests/<name>.yml`
+    at the git root (or `--out PATH`), prints the path, and never replaces a
+    file.
+  - **New:** `untaped awx schema AwxTestSuite` prints the JSON Schema of a
+    test suite (json by default, `--format yaml`), generated from the
+    installed models; every suite field now has a description.
+  - **Behavior change:** in `awx test`, launch names (`inventory`,
+    `credentials`, `labels`, and `!ref` without its own scope) resolve in the
+    suite's `organization` when it sets one, instead of always in
+    `awx.default_organization`. A `!ref` scope still wins.
+  - **Behavior change:** a suite's `---` header may follow blank lines and
+    `#` comments, and a lone leading `---` with no closing `---` is read as a
+    YAML document-start marker instead of failing as an unclosed header.
+  - **Behavior change:** every error while reading a suite (header, variable
+    values, Jinja2, YAML, validation) starts with the file's path.
+  - **Fix:** a `variables:` key in a suite body is rejected (`declare
+    variables in the '---' header, not the body`) instead of being silently
+    discarded.
+  - **Fix:** `job_slice_count` in a case's `launch:` no longer warns as an
+    unknown launch field.
+  - The `untaped-awx` skill documents the complete suite format, the
+    `awx.test_result` record, the agent profile, and the resource, document
+    and job commands in `references/`, with `smoke`, `variants` and
+    `negative` example suites. `docs/awx/agent-profile.md` and the test-suite
+    section of `docs/awx/usage.md` now point at the skill's pages.
   - **Breaking:** a rejected token (401) or a missing permission (403) exits
     4, and an unreachable controller, a timeout, a 5xx or a 429 exits 5, for
     every command; `test run` exits 4 or 5 when a launch fails for those

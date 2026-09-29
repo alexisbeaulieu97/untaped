@@ -2,12 +2,13 @@
 
 The use case wires injected adapters end-to-end: read file → split
 frontmatter → resolve variable values → render Jinja2 body → parse YAML
-→ validate.
+→ validate. Every error names the file.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -19,7 +20,7 @@ from untaped.capabilities.awx.application.suites.ports import (
     VarsResolver,
 )
 from untaped.capabilities.awx.domain.suite import Suite, VariableSpec
-from untaped.capability_api import ConfigError
+from untaped.capability_api import ConfigError, attribution
 
 
 class LoadTestSuite:
@@ -45,34 +46,39 @@ class LoadTestSuite:
         extra_known_names: Iterable[str] = (),
     ) -> Suite:
         text = self._fs.read_text(path)
-        meta_yaml, body = self._parser.split_frontmatter(text)
-        var_specs = self._parse_variable_specs(meta_yaml)
-        values = self._resolve_vars(
-            var_specs,
-            cli=cli_vars or {},
-            files=vars_files,
-            prompt=self._prompt,
-            extra_known_names=extra_known_names,
-        )
-        rendered = self._parser.render_body(body, values)
-        data = self._parser.parse_yaml(rendered)
-        if not isinstance(data, dict):
-            raise ConfigError(
-                f"{path}: rendered body must be a YAML mapping; got {type(data).__name__}",
-                category="invalid",
+        with _naming(path):
+            meta_yaml, body = self._parser.split_frontmatter(text)
+            var_specs = self._parse_variable_specs(meta_yaml)
+            values = self._resolve_vars(
+                var_specs,
+                cli=cli_vars or {},
+                files=vars_files,
+                prompt=self._prompt,
+                extra_known_names=extra_known_names,
             )
-        if "kind" not in data:
-            raise ConfigError(
-                f"{path}: missing required 'kind: AwxTestSuite' marker", category="invalid"
-            )
-        data.setdefault("name", path.stem)
-        # Carry the parsed frontmatter specs through so callers (e.g.
-        # ``awx test list --format json``) can introspect required vars.
-        data["variables"] = {name: spec for name, spec in var_specs.items()}
-        try:
-            return Suite.model_validate(data)
-        except ValidationError as exc:
-            raise ConfigError(f"{path}: {exc}", category="invalid") from exc
+            rendered = self._parser.render_body(body, values)
+            data = self._parser.parse_yaml(rendered)
+            if not isinstance(data, dict):
+                raise ConfigError(
+                    f"rendered body must be a YAML mapping; got {type(data).__name__}",
+                    category="invalid",
+                )
+            if "kind" not in data:
+                raise ConfigError(
+                    "missing required 'kind: AwxTestSuite' marker", category="invalid"
+                )
+            if "variables" in data:
+                raise ConfigError(
+                    "declare variables in the '---' header, not the body", category="invalid"
+                )
+            data.setdefault("name", path.stem)
+            # Carry the parsed frontmatter specs through so callers (e.g.
+            # ``awx test list --format json``) can introspect required vars.
+            data["variables"] = {name: spec for name, spec in var_specs.items()}
+            try:
+                return Suite.model_validate(data)
+            except ValidationError as exc:
+                raise ConfigError(str(exc), category="invalid") from exc
 
     def parse_specs(self, path: Path) -> dict[str, VariableSpec]:
         """Read *path* and return its frontmatter variable specs only.
@@ -83,8 +89,9 @@ class LoadTestSuite:
         file doesn't.
         """
         text = self._fs.read_text(path)
-        meta_yaml, _ = self._parser.split_frontmatter(text)
-        return self._parse_variable_specs(meta_yaml)
+        with _naming(path):
+            meta_yaml, _ = self._parser.split_frontmatter(text)
+            return self._parse_variable_specs(meta_yaml)
 
     def _parse_variable_specs(self, meta_yaml: str) -> dict[str, VariableSpec]:
         if not meta_yaml.strip():
@@ -115,3 +122,13 @@ class LoadTestSuite:
             except ValidationError as exc:
                 raise ConfigError(f"variable {name!r}: {exc}", category="invalid") from exc
         return specs
+
+
+@contextmanager
+def _naming(path: Path) -> Iterator[None]:
+    """Prefix every :class:`ConfigError` raised inside with ``path``, keeping its type
+    and attribution."""
+    try:
+        yield
+    except ConfigError as exc:
+        raise type(exc)(f"{path}: {exc}", **attribution(exc)) from exc

@@ -1,7 +1,8 @@
-"""Composition root for ``untaped awx test`` (run / list / validate)."""
+"""Composition root for ``untaped awx test`` (run / list / validate / init)."""
 
 from __future__ import annotations
 
+import shlex
 from collections import Counter
 from collections.abc import Iterable
 from functools import partial
@@ -13,13 +14,17 @@ from cyclopts.validators import Number
 
 from untaped.capabilities.awx.cli._get import default_get_columns
 from untaped.capabilities.awx.cli.context import AwxContext, open_context
+from untaped.capabilities.awx.cli.options import OrganizationOption
 from untaped.capabilities.awx.domain.suite import CaseStatus, Suite, SuiteRunOutcome
+from untaped.capabilities.awx.domain.suite_starter import suite_slug
 from untaped.capabilities.awx.errors import AwxApiError
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
 from untaped.capabilities.awx.infrastructure.suites.filesystem import (
     DEFAULT_SUITE_DIR,
+    refuse_existing,
     suites_under,
+    write_new_text,
 )
 from untaped.capability_api import (
     ColumnsOption,
@@ -33,6 +38,7 @@ from untaped.capability_api import (
     emit,
     finish,
     git_toplevel,
+    hint,
     note_failure,
     parse_kv_pairs,
     plural,
@@ -111,14 +117,14 @@ _NON_INTERACTIVE_OPT = Annotated[
 # ---- shared helpers ------------------------------------------------------
 
 
-def _checkout_root() -> Path:
+def _checkout_root(advice: str = "pass test paths explicitly") -> Path:
     """The git checkout containing the working directory, else the directory itself."""
     cwd = Path.cwd()
     with report_errors():
         try:
             return git_toplevel(cwd) or cwd
         except GitCommandError as exc:
-            raise ConfigError(f"{exc}; pass test paths explicitly", **attribution(exc)) from exc
+            raise ConfigError(f"{exc}; {advice}", **attribution(exc)) from exc
 
 
 def _expand_paths(paths: Iterable[Path] | None) -> list[Path]:
@@ -419,7 +425,9 @@ def validate_command(
             scope = suite.scope(default_scope)
             for case_name, case in suite.cases.items():
                 try:
-                    payload = resolver(spec, case, defaults=suite.defaults)
+                    payload = resolver(
+                        spec, case, defaults=suite.defaults, organization=suite.organization
+                    )
                     preflight(spec, name=suite.job_template, scope=scope, payload=payload)
                 except (AwxApiError, ConfigError) as exc:
                     echo(f"{suite.name}/{case_name}: {exc}", err=True)
@@ -429,6 +437,48 @@ def validate_command(
     finish(any_errors)
     count = sum(len(s.cases) for s in suites)
     ui_context(strict=False).success(f"{plural(count, 'case')} validated")
+
+
+# ---- init ----------------------------------------------------------------
+
+
+@app.command(name="init")
+def init_command(
+    template: Annotated[str, Parameter(help="The name of the job template to test.")],
+    /,
+    *,
+    organization: OrganizationOption = None,
+    out: Annotated[
+        Path | None,
+        Parameter(
+            name=["--out", "-o"],
+            help=f"Write the suite to this file (default: {DEFAULT_SUITE_DIR}/TEMPLATE.yml at "
+            "the git checkout root, the name lowercased with - between words); "
+            "an existing file is never replaced.",
+        ),
+    ] = None,
+) -> None:
+    """Write a starter suite for a job template from its survey and launch prompts."""
+    from untaped.capabilities.awx.application.suites.preflight import (  # noqa: PLC0415
+        PreflightLaunch,
+    )
+    from untaped.capabilities.awx.application.suites.starter import StarterSuite  # noqa: PLC0415
+
+    path = out or _checkout_root("pass --out PATH") / DEFAULT_SUITE_DIR / (
+        f"{suite_slug(template)}.yml"
+    )
+    with report_errors(), open_context() as ctx:
+        refuse_existing(path)
+        spec = _jt_spec(ctx)
+        scope = _jt_scope(ctx, spec)
+        if organization is not None:
+            scope = {**(scope or {}), "organization": organization}
+        text = StarterSuite(PreflightLaunch(ctx.repo, ctx.catalog))(
+            spec, name=template, scope=scope
+        )
+        write_new_text(path, text)
+    echo(str(path))
+    echo(hint(f"awx test validate {shlex.quote(str(path))}"), err=True)
 
 
 def case_row(path: Path, suite: Suite, case_name: str) -> dict[str, Any]:

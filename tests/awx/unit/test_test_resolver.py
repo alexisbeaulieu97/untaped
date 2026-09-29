@@ -42,7 +42,9 @@ def _resolve(case_body: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
         catalog=AwxResourceCatalog(),
         default_organization=kwargs.pop("default_org", None),
     )
-    return resolver(JOB_TEMPLATE_SPEC, case, defaults=defaults)
+    return resolver(
+        JOB_TEMPLATE_SPEC, case, defaults=defaults, organization=kwargs.pop("organization", None)
+    )
 
 
 # ---- merge ---------------------------------------------------------------
@@ -212,6 +214,36 @@ def test_ref_with_explicit_scope_overrides_default_org() -> None:
     assert fk.calls[0] == ("Inventory", "Web", {"organization": "explicit"})
 
 
+def test_launch_names_resolve_in_the_suite_organization_over_the_default() -> None:
+    """A suite's ``organization`` scopes its launch names; the profile default is the fallback."""
+    fk = StubFkResolver({("Inventory", "Web"): 7, ("Label", "smoke"): 5})
+    _resolve(
+        {"launch": {"inventory": "Web", "labels": ["smoke"]}},
+        fk=fk,
+        default_org="org-a",
+        organization="ops",
+    )
+    assert [call[2] for call in fk.calls] == [{"organization": "ops"}, {"organization": "ops"}]
+
+
+def test_scopeless_ref_resolves_in_the_suite_organization() -> None:
+    fk = StubFkResolver({("Inventory", "Web"): 7})
+    _resolve(
+        {"launch": {"extra_vars": {"inv_id": RefSentinel(kind="Inventory", name="Web")}}},
+        fk=fk,
+        default_org="org-a",
+        organization="ops",
+    )
+    assert fk.calls[0] == ("Inventory", "Web", {"organization": "ops"})
+
+
+def test_ref_with_explicit_scope_overrides_the_suite_organization() -> None:
+    fk = StubFkResolver({("Inventory", "Web"): 7})
+    ref = RefSentinel(kind="Inventory", name="Web", scope={"organization": "explicit"})
+    _resolve({"launch": {"inventory": ref}}, fk=fk, organization="ops")
+    assert fk.calls[0] == ("Inventory", "Web", {"organization": "explicit"})
+
+
 def test_user_dict_with_name_kind_keys_left_alone() -> None:
     """A bare dict shaped like a !ref but without the tag is opaque."""
     payload = _resolve(
@@ -290,6 +322,7 @@ def test_known_launch_fields_includes_core_set() -> None:
         "labels",
         "instance_groups",
         "inventory",
+        "job_slice_count",
     ):
         assert field in KNOWN_LAUNCH_FIELDS, field
 

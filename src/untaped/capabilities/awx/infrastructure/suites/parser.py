@@ -39,28 +39,25 @@ def split_frontmatter(text: str) -> tuple[str, str]:
     """Split a frontmatter document into (metadata_yaml, body).
 
     The metadata block, if present, is the YAML between two ``---``
-    lines at the top of the file. Bodies without a frontmatter return
-    an empty string for the metadata.
+    lines; only blank and ``#`` comment lines may come before it. Bodies
+    without a frontmatter return an empty string for the metadata, and so
+    does a lone leading ``---`` (a YAML document-start marker) with no
+    closing ``---``.
     """
-    stripped = text.lstrip("\n")
-    if not stripped.startswith("---"):
+    lines = text.splitlines(keepends=True)
+    start = next(
+        (i for i, line in enumerate(lines) if line.strip() and not line.lstrip().startswith("#")),
+        len(lines),
+    )
+    if start == len(lines) or lines[start].rstrip("\r\n") != "---":
         return "", text
 
-    lines = stripped.splitlines(keepends=True)
-    if not lines or lines[0].rstrip("\r\n") != "---":
-        return "", text
-
-    for index in range(1, len(lines)):
+    for index in range(start + 1, len(lines)):
         if lines[index].rstrip("\r\n") == "---":
-            metadata = "".join(lines[1:index])
+            metadata = "".join(lines[start + 1 : index])
             body = "".join(lines[index + 1 :])
             return metadata, body
-
-    raise ConfigError(
-        "frontmatter is missing its closing '---' delimiter "
-        "(expected: '---\\n<yaml>\\n---\\n<body>')",
-        category="invalid",
-    )
+    return "", text
 
 
 # ---- !ref tag ------------------------------------------------------------

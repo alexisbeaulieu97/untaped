@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Callable, Mapping
+from functools import partial
 from typing import Any
 
 from untaped.capabilities.awx.application.ports import Catalog
@@ -40,6 +41,7 @@ KNOWN_LAUNCH_FIELDS: frozenset[str] = frozenset(
         "scm_branch",
         "labels",
         "instance_groups",
+        "job_slice_count",
     }
 )
 
@@ -69,15 +71,23 @@ class ResolveCasePayload:
         case: Case,
         *,
         defaults: Case | None = None,
+        organization: str | None = None,
     ) -> dict[str, Any]:
+        """The case's launch payload with names resolved to ids.
+
+        Names of organization-scoped kinds resolve in ``organization`` (the
+        suite's), else the default organization; a ``!ref`` scope wins.
+        """
         merged = _merge_launch(
             defaults.launch if defaults is not None else {},
             case.launch,
         )
         fk_index = self.fk_index_for(spec)
         _emit_unknown_field_warnings(merged, fk_index)
-        resolved_top = self._resolve_top_level_fks(merged, fk_index)
-        result: dict[str, Any] = _walk_and_resolve_refs(resolved_top, self._resolve_ref)
+        resolved_top = self._resolve_top_level_fks(merged, fk_index, organization)
+        result: dict[str, Any] = _walk_and_resolve_refs(
+            resolved_top, partial(self._resolve_ref, organization=organization)
+        )
         return result
 
     @staticmethod
@@ -116,6 +126,7 @@ class ResolveCasePayload:
         self,
         payload: dict[str, Any],
         fk_index: Mapping[str, FkRef],
+        organization: str | None,
     ) -> dict[str, Any]:
         out: dict[str, Any] = {}
         for field, value in payload.items():
@@ -127,26 +138,27 @@ class ResolveCasePayload:
                 # AWX treats absent as "no override"; sending ``null`` for a
                 # list field is rejected by some endpoints. Drop the key.
                 continue
-            out[field] = self._resolve_fk_value(ref, value)
+            out[field] = self._resolve_fk_value(ref, value, organization)
         return out
 
-    def _resolve_fk_value(self, ref: FkRef, value: Any) -> Any:
-        scope = self._scope_for(ref)
+    def _resolve_fk_value(self, ref: FkRef, value: Any, organization: str | None) -> Any:
+        scope = self.scope_for_fk_field(ref, organization=organization)
         if ref.multi:
             if not isinstance(value, list):
                 # Single value where a list is expected — wrap so resolution still works.
-                return [self._resolve_one(ref, value, scope)]
-            return [self._resolve_one(ref, item, scope) for item in value]
-        return self._resolve_one(ref, value, scope)
+                return [self._resolve_one(ref, value, scope, organization)]
+            return [self._resolve_one(ref, item, scope, organization) for item in value]
+        return self._resolve_one(ref, value, scope, organization)
 
     def _resolve_one(
         self,
         ref: FkRef,
         value: Any,
         scope: dict[str, str] | None,
+        organization: str | None,
     ) -> Any:
         if isinstance(value, RefSentinel):
-            return self._resolve_ref(value)
+            return self._resolve_ref(value, organization=organization)
         if isinstance(value, int):
             return value
         if isinstance(value, str):
@@ -154,10 +166,13 @@ class ResolveCasePayload:
             return self._fk.name_to_id(ref.kind, value, scope=scope)
         return value  # pass through anything we don't know how to resolve
 
-    def _resolve_ref(self, ref: RefSentinel) -> int:
-        return self._fk.name_to_id(ref.kind, ref.name, scope=self.scope_for_ref(ref))
+    def _resolve_ref(self, ref: RefSentinel, *, organization: str | None = None) -> int:
+        scope = self.scope_for_ref(ref, organization=organization)
+        return self._fk.name_to_id(ref.kind, ref.name, scope=scope)
 
-    def scope_for_ref(self, ref: RefSentinel) -> dict[str, str] | None:
+    def scope_for_ref(
+        self, ref: RefSentinel, *, organization: str | None = None
+    ) -> dict[str, str] | None:
         """Return the lookup scope a ``!ref`` should be resolved with.
 
         Public so the runner's prefetch plan can match the resolver's
@@ -165,13 +180,22 @@ class ResolveCasePayload:
         """
         if ref.scope:
             return dict(ref.scope)
-        if self._default_org is not None and self._is_org_scoped(ref.kind):
-            return {"organization": self._default_org}
+        org = organization or self._default_org
+        if org is not None and self._is_org_scoped(ref.kind):
+            return {"organization": org}
         return None
 
-    def scope_for_fk_field(self, ref: FkRef) -> dict[str, str] | None:
-        """Public accessor for the FK-field scope (used by prefetch planning)."""
-        return self._scope_for(ref)
+    def scope_for_fk_field(
+        self, ref: FkRef, *, organization: str | None = None
+    ) -> dict[str, str] | None:
+        """The lookup scope of a launch FK field (public for prefetch planning)."""
+        org = organization or self._default_org
+        if ref.scope_field == "organization" and org is not None:
+            return {"organization": org}
+        # No inventory scope here: the test runner only resolves launch
+        # payload FKs (org-scoped), not inventory-scoped FKs that only
+        # appear on Host/Group resource fields.
+        return None
 
     def _is_org_scoped(self, kind: str) -> bool:
         """True iff the kind's identity includes ``organization``.
@@ -185,14 +209,6 @@ class ResolveCasePayload:
         except ConfigError:
             return False
         return "organization" in spec.identity_keys
-
-    def _scope_for(self, ref: FkRef) -> dict[str, str] | None:
-        if ref.scope_field == "organization" and self._default_org is not None:
-            return {"organization": self._default_org}
-        # No inventory scope here: the test runner only resolves launch
-        # payload FKs (org-scoped), not inventory-scoped FKs that only
-        # appear on Host/Group resource fields.
-        return None
 
 
 def _merge_launch(defaults: Mapping[str, Any], case: Mapping[str, Any]) -> dict[str, Any]:

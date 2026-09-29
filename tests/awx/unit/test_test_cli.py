@@ -771,6 +771,32 @@ def test_a_suite_organization_picks_its_template(
     assert {id_ for _, id_, _, _ in fake_aap.actions_called} == {ops_template["id"]}
 
 
+def test_a_suite_organization_scopes_its_launch_names(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    """``inventory: Web`` exists in both organizations; the suite's one is used."""
+    inventories = {}
+    for org_id, org in ((1, "Default"), (2, "Ops")):
+        fake_aap.seed("organizations", id=org_id, name=org)
+        fake_aap.seed(
+            "job_templates", name="Deploy app", organization=org_id, ask_inventory_on_launch=True
+        )
+        inventories[org] = fake_aap.seed("inventories", name="Web", organization=org_id)["id"]
+    test_file = _write(
+        tmp_path / "ops.yml",
+        "kind: AwxTestSuite\nname: ops\njobTemplate: Deploy app\norganization: Ops\n"
+        "cases:\n  web:\n    launch:\n      inventory: Web\n",
+    )
+
+    validated = cli.invoke(app, ["test", "validate", str(test_file)])
+    result = cli.invoke(app, ["test", "run", str(test_file)])
+
+    assert validated.exit_code == 0, validated.output
+    assert result.exit_code == 0, result.output
+    [(_, _, _, body)] = fake_aap.actions_called
+    assert body["inventory"] == inventories["Ops"]
+
+
 def test_run_summarizes_results_on_stderr(
     cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
 ) -> None:
