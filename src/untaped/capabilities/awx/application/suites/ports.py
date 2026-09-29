@@ -84,9 +84,14 @@ class TailReader(Protocol):
 
 @runtime_checkable
 class HostReader(Protocol):
-    """Read a job's host summary records (``job_host_summaries``), lazily, failed hosts first."""
+    """Read a job's host summary records (``job_host_summaries``), lazily, failed hosts first.
 
-    def __call__(self, job: Job, /) -> Iterable[Mapping[str, Any]]: ...
+    ``params`` filter server-side (``changed__gt=0``, ``host_name__in=a,b``).
+    """
+
+    def __call__(
+        self, job: Job, params: Mapping[str, str] | None = None, /
+    ) -> Iterable[Mapping[str, Any]]: ...
 
 
 @runtime_checkable

@@ -43,7 +43,9 @@ untaped --profile agent awx ping   # reports the authenticated user
 ```
 
 Select the profile with `--profile agent` or `UNTAPED_PROFILE=agent` in the
-agent's environment.
+agent's environment. A profile without `token` or `token_command` uses
+`CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN` or `AAP_TOKEN` from the
+environment.
 
 ## Running suites
 

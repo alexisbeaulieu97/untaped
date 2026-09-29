@@ -1181,7 +1181,7 @@ def test_compare_marks_each_change_and_fails_only_on_a_regression(
     before = json.loads(saved.read_text())
     assert (smoke["change"], smoke["baseline"]) == (
         "regression",
-        {"result": "pass", "job_id": before[0]["job_id"], "system": None},
+        {"result": "pass", "job_id": before[0]["job_id"], "system": None, "category": None},
     )
     assert (full["change"], full["baseline"]["system"]) == ("still_failing", "awx.playbook")
     assert "2 cases: 2 fail" in result.stderr
@@ -1236,7 +1236,38 @@ def test_compare_still_exits_for_the_environment(
 
     assert result.exit_code == 5, result.output
     [row] = json.loads(result.stdout)
-    assert (row["change"], row["failure"]["system"]) == ("still_failing", "awx.controller")
+    assert (row["change"], row["failure"]["system"]) == ("regression", "awx.controller")
+
+
+def test_compare_fails_the_run_for_a_failing_new_case(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+    saved = _baseline(cli, fake_aap, _smoke(tmp_path), tmp_path / "base.json", "successful")
+    suite = _write(tmp_path / "s.yml", _suite_text("s"))
+
+    _outcomes(fake_aap, [{"status": "failed"}, {"status": "successful"}])
+    result = _run(cli, str(suite), "--compare", str(saved), "-f", "json")
+
+    assert result.exit_code == 1, result.output
+    assert [(row["case"], row["change"]) for row in json.loads(result.stdout)] == [
+        ("smoke", "new"),
+        ("full", "new"),
+        ("c", "removed"),
+    ]
+
+
+def test_validate_refuses_an_idempotent_negative_case(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    suite = _write(
+        tmp_path / "i.yml",
+        "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\n"
+        "cases:\n  c: {expect: {status: failed, idempotent: true}}\n",
+    )
+    result = cli.invoke(app, ["test", "validate", str(suite)])
+    assert result.exit_code == 1
+    assert "case 'c': idempotent needs status successful" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -1244,7 +1275,10 @@ def test_compare_still_exits_for_the_environment(
     [
         ('[{"id": 1, "name": "Deploy"}]', "row 1 is not an awx.test_result row: suite"),
         ("suite: s\n", "Expecting value"),
-        ('{"untaped": "1", "kind": "awx.job", "record": {"id": 1}}\n', "line 1: a awx.job"),
+        (
+            '{"untaped": "1", "kind": "awx.job", "record": {"id": 1}}\n',
+            "line 1: record kind 'awx.job' is not accepted here; expected 'awx.test_result'",
+        ),
         ('{"untaped": "1", "kind": "awx.test_result"\n', "line 1: invalid JSON"),
     ],
 )
@@ -1268,9 +1302,10 @@ def test_compare_needs_an_existing_file_and_excludes_baseline(
     missing = tmp_path / "none.json"
     result = _run(cli, str(_smoke(tmp_path)), "--compare", str(missing))
     assert result.exit_code == 2
-    assert f"--compare file {missing} does not exist" in result.stderr
+    assert f"path does not exist: {missing}" in result.stderr
 
-    result = _run(cli, str(_smoke(tmp_path)), "--compare", str(missing), "--baseline", "main")
+    saved = _write(tmp_path / "base.json", "[]")
+    result = _run(cli, str(_smoke(tmp_path)), "--compare", str(saved), "--baseline", "main")
     assert result.exit_code == 2
     assert "--compare and --baseline cannot be combined" in result.stderr
 
@@ -1361,9 +1396,7 @@ def test_an_idempotent_case_lists_what_its_rerun_changed(
     assert result.exit_code == 1, result.output
     [row] = json.loads(result.stdout)
     assert row["rerun_job_id"] not in (None, row["job_id"])
-    assert row["failure"]["message"] == (
-        f"not idempotent: rerun job {row['rerun_job_id']} changed 1 task"
-    )
+    assert row["failure"]["message"] == ("not idempotent: the rerun ended successful, 1 changed")
     assert row["failure"]["evidence"]["changed_tasks"] == [{"host": "web1", "task": "Write config"}]
 
 

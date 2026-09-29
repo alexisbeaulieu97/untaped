@@ -10,11 +10,18 @@ from pydantic import ValidationError
 
 from untaped.capabilities.awx.domain.case_failure import FailedTask
 from untaped.capabilities.awx.domain.job import HostSummary
-from untaped.capabilities.awx.domain.suite import Expectation
+from untaped.capabilities.awx.domain.suite import CaseResult, Expectation, Suite, idempotence
 
 
 def _expect(body: dict[str, Any]) -> Expectation:
     return Expectation.model_validate(body)
+
+
+def _suite(case: dict[str, Any], defaults: dict[str, Any] | None = None) -> Suite:
+    body: dict[str, Any] = {"name": "s", "jobTemplate": "JT", "cases": {"c": case}}
+    if defaults is not None:
+        body["defaults"] = defaults
+    return Suite.model_validate(body)
 
 
 @pytest.mark.parametrize(
@@ -43,44 +50,88 @@ def test_invalid_regression_expectations_are_rejected(build: Callable[[], object
         build()
 
 
+@pytest.mark.parametrize(
+    ("case", "defaults"),
+    [
+        ({"expect": {"status": "failed", "idempotent": True}}, None),
+        ({"expect": {"idempotent": True}}, {"expect": {"status": "failed"}}),
+        ({"expect": {"status": "error"}}, {"expect": {"idempotent": True}}),
+    ],
+)
+def test_an_idempotent_case_must_expect_success(
+    case: dict[str, Any], defaults: dict[str, Any] | None
+) -> None:
+    with pytest.raises(ValidationError, match="case 'c': idempotent needs status successful"):
+        _suite(case, defaults)
+
+
 def test_a_case_inherits_every_regression_expectation_it_leaves_unset() -> None:
-    defaults = _expect(
-        {
-            "changed": 0,
-            "hosts": {"*": {"failed": 0}, "web1": {"changed": 0}},
-            "idempotent": True,
-            "failed_tasks": [{"task": "Validate"}],
-        }
+    suite = _suite(
+        {},
+        defaults={
+            "expect": {
+                "changed": 0,
+                "hosts": {"*": {"failed": 0}, "web1": {"changed": 0}},
+                "idempotent": True,
+                "failed_tasks": [{"task": "Validate"}],
+            }
+        },
     )
 
-    inherited = _expect({}).over(defaults)
+    inherited = suite.expectation("c")
     assert (inherited.changed, inherited.idempotent) == (0, True)
     assert set(inherited.hosts) == {"*", "web1"}
     assert [match.task for match in inherited.failed_tasks] == ["Validate"]
 
-    # Set values replace the default's; ``hosts`` replaces host by host.
-    own = _expect(
-        {
-            "changed": 2,
-            "hosts": {"web1": {"changed": 3}},
-            "idempotent": False,
-            "failed_tasks": [{"msg": "boom"}],
-        }
-    ).over(defaults)
+    own = _expect({"changed": 2, "idempotent": False, "failed_tasks": [{"msg": "boom"}]}).over(
+        suite.expectation("c")
+    )
     assert (own.changed, own.idempotent) == (2, False)
-    assert own.hosts["web1"].changed == 3
-    assert own.hosts["*"].failed == 0
     assert [match.msg for match in own.failed_tasks] == ["boom"]
 
 
-def test_only_host_and_task_expectations_need_the_host_summaries() -> None:
-    assert not _expect({"idempotent": True, "log": {"contains": ["x"]}}).needs_hosts
+def test_host_bounds_merge_per_host_and_counter() -> None:
+    defaults = _expect({"hosts": {"*": {"failed": 0, "changed": 0}, "web1": {"unreachable": 0}}})
+
+    merged = _expect({"hosts": {"*": {"changed": 5}, "web2": {"failed": 1}}}).over(defaults)
+
+    assert {host: bounds.limits() for host, bounds in merged.hosts.items()} == {
+        "*": [("failed", 0), ("changed", 5)],
+        "web1": [("unreachable", 0)],
+        "web2": [("failed", 1)],
+    }
+
+
+def test_a_named_host_bound_overrides_star_for_that_counter_only() -> None:
+    expect = _expect({"hosts": {"*": {"failed": 0, "changed": 0}, "web1": {"changed": 3}}})
+    hosts = {
+        "web1": HostSummary(changed=2, failed=1),
+        "web2": HostSummary(changed=1),
+    }
+
+    results = expect.check_hosts(hosts)
+
+    assert [(r.expected, r.actual, r.passed) for r in results] == [
+        ("*: failed <= 0", "web1=1", False),
+        ("*: changed <= 0", "web2=1", False),
+        ("web1: changed <= 3", "2", True),
+    ]
+
+
+def test_only_host_expectations_need_the_host_summaries() -> None:
     for body in (
-        {"changed": 0},
-        {"hosts": {"*": {"failed": 0}}},
-        {"failed_tasks": [{"task": "x"}]},
+        {"idempotent": True, "log": {"contains": ["x"]}},
+        {"status": "failed", "failed_tasks": [{"task": "x"}]},
     ):
+        assert not _expect(body).needs_hosts
+    for body in ({"changed": 0}, {"hosts": {"*": {"failed": 0}}}):
         assert _expect(body).needs_hosts
+
+
+def test_a_negative_case_without_failed_tasks_passes_on_any_failure() -> None:
+    assert _expect({"status": "failed"}).passes_on_any_failure
+    assert not _expect({"status": "failed", "failed_tasks": [{"msg": "x"}]}).passes_on_any_failure
+    assert not _expect({}).passes_on_any_failure
 
 
 _HOSTS = {
@@ -126,8 +177,23 @@ def test_host_bounds_name_the_bound_that_failed() -> None:
     assert [r.describe_failure() for r in results if not r.passed] == [
         "expected *: failed <= 0, got web2=1",
         "expected web1: changed <= 0, got 2",
-        "expected web9: failed <= 0, but web9 is not in the job's host summaries",
+        "expected web9: failed <= 0, but the host is not in the job's host summaries",
     ]
+
+
+def test_a_cut_host_list_names_the_filters_that_find_every_host_a_check_needs() -> None:
+    expect = _expect(
+        {
+            "changed": 0,
+            "hosts": {"*": {"failed": 0, "changed": 0}, "web1": {"changed": 0}, "web9": {}},
+        }
+    )
+    assert expect.host_filters(known={"web1"}) == [
+        {"changed__gt": "0"},
+        {"failures__gt": "0"},
+        {"host_name__in": "web9"},
+    ]
+    assert _expect({"log": {"contains": ["x"]}}).host_filters(known=set()) == []
 
 
 def _task(task: str, msg: str | None, host: str = "web1") -> FailedTask:
@@ -169,10 +235,22 @@ def test_a_task_without_a_message_matches_only_a_name_check() -> None:
     assert (by_name.passed, by_msg.passed) == (True, False)
 
 
-def test_idempotence_check_reports_the_rerun() -> None:
-    held = Expectation.check_rerun("successful", 0)
-    changed = Expectation.check_rerun("successful", 3)
-    failed = Expectation.check_rerun("failed", None)
+def _rerun(result: str, **fields: Any) -> CaseResult:
+    return CaseResult.model_validate({"suite": "s", "case": "c", "result": result, **fields})
+
+
+def test_the_idempotence_check_comes_from_the_rerun() -> None:
+    changed = [{"check": "changed", "expected": "<= 0", "actual": "3", "passed": False}]
+
+    held = idempotence(
+        _rerun(
+            "pass",
+            job_id=6,
+            job_status="successful",
+            expectations=[{**changed[0], "actual": "0", "passed": True}],
+        )
+    )
+    broken = idempotence(_rerun("fail", job_id=6, job_status="successful", expectations=changed))
 
     assert held.model_dump() == {
         "check": "idempotent",
@@ -180,9 +258,7 @@ def test_idempotence_check_reports_the_rerun() -> None:
         "actual": "successful, 0 changed",
         "passed": True,
     }
-    assert (changed.actual, changed.passed) == ("successful, 3 changed", False)
-    assert (
-        changed.describe_failure()
-        == "rerun expected successful, 0 changed, got successful, 3 changed"
-    )
-    assert (failed.actual, failed.passed) == ("failed", False)
+    assert (broken.actual, broken.passed) == ("successful, 3 changed", False)
+    assert broken.describe_failure() == "not idempotent: the rerun ended successful, 3 changed"
+    assert idempotence(_rerun("error", job_id=6)).actual == "unknown"
+    assert idempotence(_rerun("error")).actual == "not launched"
