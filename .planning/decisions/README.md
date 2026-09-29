@@ -3,7 +3,8 @@
 These short records preserve constraints and rationale. Code and tests define
 implementation behavior. This index is navigation only; work is tracked in GitHub.
 
-- [AWX template specs and test suites stored with source](dec_01a0d5b790bd7341b4e493c1bbc4ea54-v4-awx-template-specs-and-suites-stored-with-source.md) (proposed)
+- [AWX specs are plain export documents in the repo](dec_01a0eb415a9e7195873ec9f8a91da3dd-v4-awx-specs-are-plain-export-documents-in-the-repo.md)
+- [AWX template specs and test suites stored with source](dec_01a0d5b790bd7341b4e493c1bbc4ea54-v4-awx-template-specs-and-suites-stored-with-source.md) (superseded)
 - [capability state lives in state.yml](dec_01a0d05a563c7751139b4452ccadb3b7-v4-capability-state-lives-in-state-yml.md)
 - [capability-owned packaged skills](dec_01a0820d443870069dfe37af04c1fcc2-v4-capability-owned-packaged-skills.md)
 - [failures carry category and system; exit codes 4/5; JSON diagnostics](dec_01a0eb46316e730099c937b014f81525-v4-failures-carry-category-and-system.md)

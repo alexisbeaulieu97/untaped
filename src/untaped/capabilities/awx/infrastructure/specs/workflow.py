@@ -1,8 +1,7 @@
-"""Workflow Job Template: header only in v0.
+"""Workflow Job Template: its fields plus the node graph under ``spec.nodes``.
 
-The node graph + edges are intentionally not roundtripped. Saved files
-include a YAML comment noting the omission. Adding sub-resource +
-``apply_hooks.apply_workflow_nodes`` is the v0.5 milestone.
+The graph (nodes, prompts, approvals and edges) is read and reconciled
+through AWX's node endpoints; see ``domain.workflow_graph`` for its format.
 """
 
 from __future__ import annotations
@@ -62,8 +61,11 @@ WORKFLOW_JOB_TEMPLATE_SPEC = AwxResourceSpec(
     ),
     launch_fk_refs=(FkRef(field="labels", kind="Label", scope_field="organization", multi=True),),
     sub_document_fields=("survey_spec",),
+    node_field="nodes",
     secret_paths=("webhook_key", "survey_spec.spec.*[type=password].default"),
     optional_secret_paths=("survey_spec.spec.*[type=password].default",),
+    # AWX enriches a submitted survey as it does a job template's.
+    server_enriched_fields=("survey_spec",),
     actions=(
         ActionSpec(
             name="launch",
@@ -83,6 +85,5 @@ WORKFLOW_JOB_TEMPLATE_SPEC = AwxResourceSpec(
     ),
     list_columns=("id", "name"),
     commands=("list", "get", "save", "apply", "delete", "copy", "rename"),
-    fidelity="partial",
-    fidelity_note="node graph + edges not roundtripped (v0 limitation)",
+    fidelity="full",
 )

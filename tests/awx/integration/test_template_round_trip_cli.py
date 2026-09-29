@@ -204,3 +204,28 @@ def test_apply_clears_a_survey_through_its_endpoint(fake_aap: Any, tmp_path: Pat
         and call.request.url.path.endswith("/job_templates/30/survey_spec/")
         for call in fake_aap.router.calls
     )
+
+
+def test_instance_groups_export_by_name_and_apply_in_order(fake_aap: Any, tmp_path: Path) -> None:
+    _seed(fake_aap)
+    fake_aap.seed("instance_groups", id=60, name="default")
+    fake_aap.seed("instance_groups", id=61, name="edge")
+    fake_aap.memberships[("job_templates", 30, "instance_groups")] = {60}
+
+    assert _export("Deploy")["spec"]["instance_groups"] == ["default"]
+
+    document = tmp_path / "deploy.yml"
+    document.write_text(
+        "kind: JobTemplate\n"
+        "metadata: {name: Deploy, organization: Default}\n"
+        "spec: {instance_groups: [edge, default]}\n"
+    )
+    _apply(document)
+
+    group_posts = [
+        call.request.content
+        for call in fake_aap.router.calls
+        if call.request.method == "POST" and call.request.url.path.endswith("/instance_groups/")
+    ]
+    # Ordered: ``default`` leaves and is re-added after ``edge``.
+    assert group_posts == [b'{"id":60,"disassociate":true}', b'{"id":61}', b'{"id":60}']

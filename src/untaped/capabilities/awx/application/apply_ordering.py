@@ -4,9 +4,15 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable
+from typing import Any
 
 from untaped.capabilities.awx.application.ports import Catalog
 from untaped.capabilities.awx.domain import Resource
+from untaped.capabilities.awx.domain.workflow_graph import (
+    PROMPT_MEMBERS,
+    PROMPT_REFERENCES,
+    parse_workflow_nodes,
+)
 from untaped.capabilities.awx.errors import AwxApiError
 
 
@@ -16,7 +22,8 @@ def topological_sort(docs: Iterable[Resource], *, catalog: Catalog) -> list[Reso
     Edges come from each kind's ``ResourceSpec.fk_refs``: a non-polymorphic
     ``FkRef`` with a fixed ``kind`` declares "this kind references that
     kind". Polymorphic refs (e.g. Schedule's ``parent``) read the
-    referenced kind from the resource's own data when available.
+    referenced kind from the resource's own data when available, and so do
+    workflow nodes: a workflow applies after the templates its nodes run.
 
     Cycles raise :class:`AwxApiError` (a real cycle in AWX would mean a
     resource depends on itself). Unknown kinds also raise.
@@ -59,6 +66,10 @@ def topological_sort(docs: Iterable[Resource], *, catalog: Catalog) -> list[Reso
             referenced_kind = value.get(ref.kind_in_value) if isinstance(value, dict) else None
             if isinstance(referenced_kind, str) and referenced_kind in kinds_in_docs:
                 edges[doc.kind].add(referenced_kind)
+        node_field = specs[doc.kind].node_field
+        if node_field is not None:
+            referenced = _node_reference_kinds(doc.spec.get(node_field)) & kinds_in_docs
+            edges[doc.kind].update(referenced - {doc.kind})
 
     # Tie-break ready kinds by the catalog's canonical order (Organization
     # before CredentialType, etc.). Falling back to the kind name keeps unknown-but-valid
@@ -69,6 +80,23 @@ def topological_sort(docs: Iterable[Resource], *, catalog: Catalog) -> list[Reso
     # Stable secondary ordering by metadata.name within a kind.
     rank = {kind: i for i, kind in enumerate(kind_order)}
     return sorted(docs_list, key=lambda d: (rank[d.kind], d.metadata.name))
+
+
+def _node_reference_kinds(nodes: Any) -> set[str]:
+    """Kinds a node graph runs or prompts with; none for an invalid graph (apply refuses it)."""
+    try:
+        parsed = parse_workflow_nodes(nodes)
+    except ValueError:
+        return set()
+    kinds: set[str] = set()
+    for node in parsed:
+        if node.run is not None:
+            kinds.add(node.run.kind)
+            if node.run.inventory is not None:
+                kinds.add("Inventory")
+        references = {**PROMPT_REFERENCES, **PROMPT_MEMBERS}
+        kinds.update(kind for name, kind in references.items() if getattr(node.prompts, name))
+    return kinds
 
 
 def _kahn_topological_order(

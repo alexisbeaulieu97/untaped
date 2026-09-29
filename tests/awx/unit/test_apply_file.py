@@ -36,7 +36,7 @@ def _file(client: _Client, docs: list[Resource], *, parallel: int = 1) -> Any:
     )
 
     def run(path: Path, *, write: bool = False, continue_on_error: bool = False) -> Any:
-        plan = prepare_apply_file(engine, lambda _path: docs, path, catalog=catalog, fk=fk)
+        plan = prepare_apply_file(engine, lambda _path: docs, [path], catalog=catalog, fk=fk)
         if not write:
             return [operation.preview for operation in plan.operations]
         return engine.execute(plan, parallel=parallel, continue_on_error=continue_on_error).outcomes
@@ -166,3 +166,43 @@ def test_apply_file_topo_sort_detects_cycles(tmp_path: Path) -> None:
     ]
     with pytest.raises(AwxApiError, match="cycle"):
         topological_sort(docs, catalog=cast(Catalog, _Stub()))
+
+
+def test_workflow_node_references_order_the_kinds_they_run() -> None:
+    """A workflow applies after the templates its nodes run, whatever the catalog order."""
+    from untaped.capabilities.awx.application.apply_ordering import topological_sort
+    from untaped.capabilities.awx.domain.envelope import Metadata
+    from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
+
+    specs = {
+        kind: AwxResourceSpec(
+            kind=kind,
+            cli_name=kind.lower(),
+            api_path=kind.lower(),
+            identity_keys=("name",),
+            canonical_fields=(),
+            node_field="nodes" if kind == "WorkflowJobTemplate" else None,
+        )
+        for kind in ("WorkflowJobTemplate", "JobTemplate", "Inventory")
+    }
+
+    class _Stub:
+        def get(self, kind: str) -> ResourceSpec:
+            return specs[kind]
+
+        def kinds(self) -> tuple[str, ...]:
+            return tuple(specs)
+
+        def by_cli_name(self, cli_name: str) -> ResourceSpec:
+            raise NotImplementedError
+
+    nodes = [{"id": "a", "run": {"job_template": "Build"}, "prompts": {"inventory": "Lab"}}]
+    docs = [
+        Resource(kind="WorkflowJobTemplate", metadata=Metadata(name="w"), spec={"nodes": nodes}),
+        Resource(kind="JobTemplate", metadata=Metadata(name="Build"), spec={}),
+        Resource(kind="Inventory", metadata=Metadata(name="Lab"), spec={}),
+    ]
+
+    ordered = topological_sort(docs, catalog=cast(Catalog, _Stub()))
+
+    assert [doc.kind for doc in ordered] == ["JobTemplate", "Inventory", "WorkflowJobTemplate"]

@@ -174,11 +174,11 @@ can be reopened or cancelled. A no-op editor session does not prompt or write.
 
 ## Apply, export, and inventory lifecycle
 
-`awx apply FILE_OR_DIRECTORY` is the declarative create/update path, for
-every kind at once. It accepts complete portable YAML documents, resolves
-dependencies, previews the full batch once, and writes only after
-confirmation. `apply -` reads the documents from stdin, so an export from one
-profile can be applied to another without a file:
+`awx apply PATH…` is the declarative create/update path, for every kind at
+once. It accepts complete portable YAML documents from one or more files or
+directories, resolves dependencies across all of them, previews the full batch
+once, and writes only after confirmation. `apply -` reads the documents from
+stdin, so an export from one profile can be applied to another without a file:
 
 ```bash
 untaped awx apply ./awx-specs --dry-run
@@ -186,6 +186,7 @@ untaped awx apply ./inventory.yml --yes
 untaped --profile staging awx export --kind job-templates --out-dir exported \
   | untaped --profile prod awx apply - --yes
 untaped awx apply ./awx-specs --check
+untaped awx apply --source-ref v1.4.0 .untaped/awx/templates .untaped/awx/workflows
 ```
 
 `--check` computes the same plan and writes nothing: it exits 3 when any
@@ -208,13 +209,14 @@ the org-less record (for example a global workflow template); `export` writes
 that null for org-less records so an export/apply round trip never lands in the
 default organization.
 
-Relationship lists (template `credentials` and `labels`, group
-`hosts`/`children`, inventory `instance_groups`) are replaced by adding new
-members before removing old ones, so a refused add never leaves a template
+Relationship lists (template `credentials`, `labels` and `instance_groups`,
+group `hosts`/`children`, inventory `instance_groups`) are replaced by adding
+new members before removing old ones, so a refused add never leaves a template
 without its credentials. Only a
 credential that shares a type with an incoming one is removed first (AWX allows
 one per type); if the add then fails, the removed members are re-added and the
-row reports `partial`.
+row reports `partial`. Instance groups are looked up by name in every
+organization, and their order is kept: it is the order AWX falls back through.
 
 `export` writes a fixed selection as portable YAML. Per-resource export accepts
 `--out FILE`; without it (or with `--out=-`), YAML is written to stdout. A
@@ -237,13 +239,13 @@ only incompatible source/configuration combinations. Editing inventory
 settings does not recreate or rewrite source-managed hosts or groups. A
 constructed inventory and its generated source share `source_vars`,
 `update_cache_timeout`, `limit`, and `verbosity`. A batch cannot request
-conflicting values for those fields through the two resources. Workflow
-template exports are partial: their node graph and edges are not round-tripped.
+conflicting values for those fields through the two resources.
 
 ### Template export round trip
 
 A job or workflow template export carries its settings, `extra_vars`,
-`credentials` and `labels` (by name), and its survey. Applying that file under
+`credentials`, `labels` and (job templates) `instance_groups` by name, its
+survey, and (workflows) its whole node graph. Applying that file under
 another `metadata.name` creates a template with the same non-secret
 configuration:
 
@@ -272,9 +274,34 @@ What an export cannot carry:
   attachments, schedules, and past jobs are not part of the document.
 - **Server-managed fields.** IDs, timestamps, `last_job_*` and `status` are
   dropped; references (organization, project, inventory, execution
-  environment, credentials, labels) travel by name, so they must already exist
-  where the file is applied.
-- **Workflow graphs.** A workflow template export has no nodes or edges.
+  environment, credentials, labels, instance groups) travel by name, so they
+  must already exist where the file is applied, or be created by the same
+  `apply`.
+
+### Workflow templates and their nodes
+
+A workflow template document holds its node graph under `spec.nodes`: each
+node has an `id` (AWX's node identifier), what it `run`s (a job template,
+workflow, project, inventory source or management job, by name) or an
+`approval`, its `prompts` by name, and its `success`/`failure`/`always`
+edges. `export` writes the whole graph and `apply` reconciles it node by node,
+with the usual preview.
+
+### Apply from a git ref
+
+`apply --source-ref REF PATH...` reads the paths as they are at a git ref of
+the current repository, never from the working tree:
+
+```bash
+untaped awx apply --source-ref v1.4.0 .untaped/awx/templates .untaped/awx/workflows --dry-run
+```
+
+The complete document format (the node fields and prompts, how apply
+reconciles a graph, what the preview shows, what is refused) and the
+`--source-ref` rules ship with the CLI in the awx skill's
+`references/specs.md`
+([specs](../../src/untaped/capabilities/awx/skills/untaped-awx/references/specs.md)),
+installed with `untaped skills install awx`.
 
 ## Copy templates
 
@@ -559,7 +586,8 @@ untaped awx unified-templates list --type workflow_job_template
 
 `usage` lists the workflow templates that contain a template (`--recursive`
 walks up to the top-level workflows). `nodes` lists what a workflow contains
-(`--recursive` expands nested workflows). `unified-templates` is AWX's view
+(`--recursive` expands nested workflows); `workflow-templates export` shows its
+whole graph, edges and prompts included. `unified-templates` is AWX's view
 of every launchable kind.
 
 ## Test suites
