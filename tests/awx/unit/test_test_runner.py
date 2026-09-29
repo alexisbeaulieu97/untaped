@@ -17,6 +17,7 @@ from untaped.capabilities.awx.application.suites.ports import (
 from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
 from untaped.capabilities.awx.application.suites.runner import LOG_TAIL_LINES, RunTestSuite
 from untaped.capabilities.awx.domain import Job, JobEvent
+from untaped.capabilities.awx.domain.case_failure import FailureEvidence
 from untaped.capabilities.awx.domain.suite import Case, Suite
 from untaped.capabilities.awx.errors import ActionResponseError, LaunchPromptError
 from untaped.capabilities.awx.infrastructure import AwxResourceCatalog
@@ -84,18 +85,25 @@ class StubCanceller:
 
 
 class StubLogReader:
-    """Returns ``lines`` as every job's stdout, or raises ``error``."""
+    """Returns ``lines`` as every job's stdout (whole or its tail), or raises ``error``."""
 
     def __init__(self, lines: list[str], *, error: Exception | None = None) -> None:
         self.lines = lines
         self.error = error
         self.calls: list[int] = []
+        self.tail_calls: list[tuple[str, int]] = []
 
     def __call__(self, job: Job) -> list[str]:
         self.calls.append(job.id)
         if self.error is not None:
             raise self.error
         return self.lines
+
+    def tail(self, job: Job, lines: int) -> tuple[list[str], int]:
+        self.tail_calls.append((job.kind, job.id))
+        if self.error is not None:
+            raise self.error
+        return self.lines[-lines:], len(self.lines)
 
 
 class StubEventReader:
@@ -151,11 +159,13 @@ def _make_runner(
     log_reader: StubLogReader | None = None,
     event_reader: StubEventReader | None = None,
     preflight: LaunchCheck | None = None,
+    host_reader: Any = None,
 ) -> RunTestSuite:
     resolver = ResolveCasePayload(
         fk, catalog=AwxResourceCatalog(), default_organization=default_org
     )
     jt_scope = {"organization": default_org} if default_org is not None else None
+    log_reader = log_reader or StubLogReader([])
     return RunTestSuite(
         resolver=resolver,
         launcher=cast(Launcher, launcher),
@@ -165,10 +175,12 @@ def _make_runner(
         jt_scope=jt_scope,
         canceller=canceller,
         refresher=refresher,
-        log_reader=log_reader or StubLogReader([]),
+        log_reader=log_reader,
         event_reader=event_reader or StubEventReader([]),
-        job_url=lambda job: f"https://aap.example.com/jobs/{job.id}",
+        tail_reader=log_reader.tail,
+        job_url=lambda job: f"https://aap.example.com/{job.kind}s/{job.id}",
         preflight=preflight,
+        host_reader=host_reader,
     )
 
 
@@ -197,6 +209,7 @@ def test_parallel_interrupt_stops_watchers_and_cancels_queued_cases() -> None:
         fk_prefetcher=cast(FkPrefetcher, fk),
         log_reader=StubLogReader([]),
         event_reader=StubEventReader([]),
+        tail_reader=StubLogReader([]).tail,
         job_url=lambda job: None,
         stop=stop,
     )
@@ -241,7 +254,8 @@ def test_case_classification(
     assert outcome.exit_code() == (0 if result == "pass" else 1)
     if result == "error":
         assert row.job_id is None
-        assert "boom" in (row.failure_reason or "")
+        assert row.failure is not None
+        assert "boom" in row.failure.message
 
 
 def test_all_name_lookups_complete_before_first_launch() -> None:
@@ -504,7 +518,8 @@ def test_timeout_cancels_the_job_and_says_so(canceller: StubCanceller | None, re
     )
     [result] = runner([_suite("s", {"a": {}})], timeout=60).results
     assert result.result == "timeout"
-    assert result.failure_reason == f"still running after 60s; {reason}"
+    assert result.failure is not None
+    assert result.failure.message == f"still running after 60s; {reason}"
     if canceller is not None:
         assert canceller.calls == [5]
 
@@ -520,7 +535,8 @@ def test_timeout_reports_a_job_that_ended_before_its_cancel() -> None:
     [result] = runner([_suite("s", {"a": {}})], timeout=60).results
     assert result.result == "timeout"
     assert result.job_status == "successful"
-    assert result.failure_reason == (
+    assert result.failure is not None
+    assert result.failure.message == (
         "still running after 60s; it ended (successful) before the cancel"
     )
 
@@ -538,8 +554,10 @@ def test_polling_error_cancels_the_job() -> None:
         canceller=canceller,
     )
     [result] = runner([_suite("s", {"a": {}})]).results
-    assert (result.result, result.failure_reason) == (
+    assert result.failure is not None
+    assert (result.result, result.failure.system, result.failure.message) == (
         "error",
+        "awx.controller",
         "503 Service Unavailable; cancel requested",
     )
     assert canceller.calls == [5]
@@ -581,47 +599,58 @@ def test_a_failed_job_passes_when_failure_is_expected() -> None:
     assert [check.model_dump() for check in row.expectations] == [
         {"check": "status", "expected": "failed", "actual": "failed", "passed": True}
     ]
-    assert (row.log_tail, row.failure_reason) == (None, None)
-    assert reader.calls == []  # no log checks and nothing failed: no download
+    assert row.failure is None
+    # no log checks and nothing failed: nothing read
+    assert (reader.calls, reader.tail_calls) == ([], [])
     assert row.job_url == "https://aap.example.com/jobs/5"
 
 
-def test_failed_log_checks_fail_the_case_with_their_reasons_and_a_tail() -> None:
+def test_failed_log_checks_are_the_expectation_with_a_tail_of_the_read_log() -> None:
     lines = [f"line {i}" for i in range(60)] + ["fatal: boom"]
-    runner, _ = _expect_runner("successful", StubLogReader(lines))
+    reader = StubLogReader(lines)
+    runner, _ = _expect_runner("successful", reader)
     suite = _case_suite(
         {"expect": {"log": {"contains": ["PLAY RECAP"]}}},
         defaults={"expect": {"log": {"not_contains": ["fatal:"]}}},
     )
     [row] = runner([suite]).results
     assert row.result == "fail"
-    assert row.failure_reason == (
+    assert row.failure is not None
+    assert (row.failure.system, row.failure.category) == ("awx.expectation", "failed")
+    assert row.failure.message == (
         "no log line contains 'PLAY RECAP'; log line contains 'fatal:': fatal: boom"
     )
-    assert row.log_tail == tuple(lines[-LOG_TAIL_LINES:])
+    assert row.failure.evidence.log_tail == tuple(lines[-LOG_TAIL_LINES:])
+    assert reader.tail_calls == []  # the downloaded log already has the tail
 
 
-def test_a_status_mismatch_downloads_the_log_for_its_tail() -> None:
-    runner, _ = _expect_runner("failed", StubLogReader(["a", "b"]))
+def test_a_failed_job_is_the_playbooks_with_a_tail_from_the_newest_events() -> None:
+    reader = StubLogReader(["a", "b"])
+    runner, _ = _expect_runner("failed", reader)
     [row] = runner([_case_suite({})]).results
-    assert (row.result, row.failure_reason, row.log_tail) == (
+    assert row.failure is not None
+    assert (row.result, row.failure.system, row.failure.evidence.log_tail) == (
         "fail",
-        "expected status successful, got failed",
+        "awx.playbook",
         ("a", "b"),
     )
+    assert (reader.calls, reader.tail_calls) == ([], [("job", 5)])
 
 
 def test_an_unreadable_log_errors_only_when_log_checks_need_it() -> None:
     reader = StubLogReader([], error=RuntimeError("502 Bad Gateway"))
     runner, _ = _expect_runner("failed", reader)
     [row] = runner([_case_suite({})]).results
-    assert (row.result, row.log_tail) == ("fail", None)
+    assert row.failure is not None
+    assert (row.result, row.failure.evidence.log_tail) == ("fail", None)
 
     runner, _ = _expect_runner("failed", reader)
     [row] = runner([_case_suite({"expect": {"log": {"contains": ["x"]}}})]).results
-    assert (row.result, row.failure_reason) == (
+    assert row.failure is not None
+    assert (row.result, row.failure.system, row.failure.message) == (
         "error",
-        "expected status successful, got failed; log fetch failed: 502 Bad Gateway",
+        "awx.controller",
+        "log fetch failed: 502 Bad Gateway",
     )
     assert [check.check for check in row.expectations] == ["status"]
 
@@ -634,9 +663,9 @@ def test_a_log_fetch_failure_counts_toward_the_exit_code() -> None:
         assert failure_exit_code() == 5
 
 
-def test_evidence_is_skipped_when_not_wanted() -> None:
+def test_evidence_is_skipped_when_not_wanted_but_the_failure_is_attributed() -> None:
     reader = StubLogReader(["boom"])
-    events = StubEventReader([])
+    events = StubEventReader([_event("runner_on_unreachable", failed=True, host="db1", msg="x")])
     runner = RunTestSuite(
         resolver=ResolveCasePayload(StubFk(), catalog=AwxResourceCatalog()),
         launcher=cast(Launcher, StubLauncher({})),
@@ -645,18 +674,29 @@ def test_evidence_is_skipped_when_not_wanted() -> None:
         fk_prefetcher=cast(FkPrefetcher, StubFk()),
         log_reader=reader,
         event_reader=events,
+        tail_reader=reader.tail,
         job_url=lambda job: None,
         evidence=False,
     )
     [row] = runner([_case_suite({})]).results
-    assert (row.result, row.log_tail, row.failed_tasks) == ("fail", None, None)
-    assert (reader.calls, events.calls) == ([], [])
+    assert row.failure is not None
+    assert (row.result, row.failure.system) == ("fail", "awx.hosts")
+    assert row.failure.evidence == FailureEvidence()
+    assert (reader.calls, reader.tail_calls, len(events.calls)) == ([], [], 1)
 
 
-def test_a_timed_out_case_keeps_its_log_tail() -> None:
-    runner, _ = _expect_runner("running", StubLogReader(["TASK [slow]"]))
+@pytest.mark.parametrize(
+    ("status", "system"), [("running", "awx.playbook"), ("pending", "awx.controller")]
+)
+def test_a_timed_out_case_keeps_its_log_tail(status: str, system: str) -> None:
+    runner, _ = _expect_runner(status, StubLogReader(["TASK [slow]"]))
     [row] = runner([_case_suite({})], timeout=5).results
-    assert (row.result, row.log_tail) == ("timeout", ("TASK [slow]",))
+    assert row.failure is not None
+    assert (row.result, row.failure.system, row.failure.evidence.log_tail) == (
+        "timeout",
+        system,
+        ("TASK [slow]",),
+    )
 
 
 @pytest.mark.parametrize(
@@ -715,11 +755,16 @@ def test_a_case_that_did_not_pass_lists_its_failed_tasks() -> None:
     )
     runner, _ = _expect_runner("failed", event_reader=events)
     [row] = runner([_case_suite({})]).results
-    assert row.failed_tasks is not None
-    assert [(task.host, task.status, task.msg) for task in row.failed_tasks] == [
+    assert row.failure is not None
+    evidence = row.failure.evidence
+    assert evidence.failed_tasks is not None
+    assert [(task.host, task.status, task.msg) for task in evidence.failed_tasks] == [
         ("web1", "failed", "boom"),
         ("db1", "unreachable", "ssh timeout"),
     ]
+    assert evidence.unreachable_hosts == ("db1",)
+    assert row.failure.message == "task 'Deploy' failed on web1: boom"
+    # read once, for the attribution and the evidence
     assert events.calls == [
         (
             5,
@@ -733,11 +778,16 @@ def test_passing_cases_skip_events_and_unreadable_events_leave_no_list() -> None
     events = StubEventReader([])
     runner, _ = _expect_runner("successful", event_reader=events)
     [row] = runner([_case_suite({})]).results
-    assert (row.failed_tasks, events.calls) == (None, [])
+    assert (row.failure, events.calls) == (None, [])
 
     runner, _ = _expect_runner("failed", event_reader=StubEventReader([], error=RuntimeError()))
     [row] = runner([_case_suite({})]).results
-    assert (row.result, row.failed_tasks) == ("fail", None)
+    assert row.failure is not None
+    assert (row.result, row.failure.system, row.failure.evidence.failed_tasks) == (
+        "fail",
+        "awx.playbook",
+        None,
+    )
 
 
 @pytest.mark.parametrize(("processed", "expected"), [(True, ()), (False, None)])
@@ -753,7 +803,167 @@ def test_no_failed_tasks_is_only_trusted_once_events_are_saved(
         watcher=StubWatcher(default=final),
     )
     [row] = runner([_case_suite({})]).results
-    assert row.failed_tasks == expected
+    assert row.failure is not None
+    assert row.failure.evidence.failed_tasks == expected
+
+
+_PROJECT_FAILED = (
+    'Previous Task Failed: {"job_type": "project_update", "job_name": "acme", "job_id": "812"}'
+)
+
+
+class EventsByExecution(StubEventReader):
+    """Serves each execution kind its own events."""
+
+    def __init__(self, by_kind: dict[str, list[JobEvent]]) -> None:
+        super().__init__([])
+        self.by_kind = by_kind
+
+    def __call__(
+        self, job: Job, *, params: dict[str, str] | None = None, follow: bool = True
+    ) -> list[JobEvent]:
+        super().__call__(job, params=params, follow=follow)
+        return self.by_kind.get(job.kind, [])
+
+
+def test_a_failed_project_update_is_the_scms_with_its_own_evidence() -> None:
+    final = Job(id=5, kind="job", status="error", job_explanation=_PROJECT_FAILED)
+    events = EventsByExecution(
+        {
+            "project_update": [
+                _event("runner_on_failed", failed=True, host="localhost", msg="no ref feature/x")
+            ]
+        }
+    )
+    reader = StubLogReader(["fatal: couldn't find remote ref feature/x"])
+    runner = _make_runner(
+        fk=StubFk(),
+        launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
+        watcher=StubWatcher(default=final),
+        log_reader=reader,
+        event_reader=events,
+    )
+    with diagnostics_scope():
+        [row] = runner([_case_suite({})]).results
+        assert failure_exit_code() == 1
+    assert row.failure is not None
+    assert (row.failure.system, row.failure.category, row.failure.message) == (
+        "awx.scm",
+        "failed",
+        "project update 812 for 'acme' failed: no ref feature/x",
+    )
+    evidence = row.failure.evidence
+    assert evidence.related is not None
+    assert evidence.related.model_dump() == {
+        "kind": "project_update",
+        "id": 812,
+        "name": "acme",
+        "status": "failed",
+        "url": "https://aap.example.com/project_updates/812",
+    }
+    assert evidence.job_explanation == _PROJECT_FAILED
+    assert evidence.log_tail == ("fatal: couldn't find remote ref feature/x",)
+    assert evidence.failed_tasks is not None
+    assert [task.msg for task in evidence.failed_tasks] == ["no ref feature/x"]
+    # the update's events and tail, never the job's own
+    assert [call[0] for call in events.calls] == [812]
+    assert reader.tail_calls == [("project_update", 812)]
+
+
+_INVENTORY_FAILED = (
+    'Previous Task Failed: {"job_type": "inventory_update", "job_name": "Cloud", "job_id": "9"}'
+)
+
+
+@pytest.mark.parametrize(
+    ("final", "events", "exit_code"),
+    [
+        (Job(id=5, kind="job", status="failed", job_explanation=_INVENTORY_FAILED), [], 4),
+        (
+            Job(id=5, kind="job", status="failed"),
+            [_event("runner_on_unreachable", failed=True, host="db1", msg="ssh timeout")],
+            5,
+        ),
+        (Job(id=5, kind="job", status="error", job_explanation="pod failed"), [], 5),
+        (Job(id=5, kind="job", status="failed"), [], 1),
+    ],
+)
+def test_each_case_failure_counts_toward_the_exit_code_by_its_category(
+    final: Job, events: list[JobEvent], exit_code: int
+) -> None:
+    runner = _make_runner(
+        fk=StubFk(),
+        launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
+        watcher=StubWatcher(default=final),
+        event_reader=StubEventReader(events),
+    )
+    with diagnostics_scope():
+        runner([_case_suite({})])
+        assert failure_exit_code() == exit_code
+
+
+def test_the_most_severe_case_failure_wins() -> None:
+    finals = {
+        1: Job(id=1, kind="job", status="failed"),
+        2: Job(id=2, kind="job", status="error"),
+    }
+    launcher = StubLauncher(
+        {
+            "a": {"job": _job(id_=1, status="pending")},
+            "b": {"job": _job(id_=2, status="pending")},
+        }
+    )
+    runner = _make_runner(fk=StubFk(), launcher=launcher, watcher=StubWatcher(by_id=finals))
+    suite = _suite("s", {name: {"extra_vars": {"case_name": name}} for name in ("a", "b")})
+    with diagnostics_scope():
+        outcome = runner([suite])
+        assert failure_exit_code() == 5
+    assert [row.failure.system for row in outcome.results if row.failure] == [
+        "awx.playbook",
+        "awx.controller",
+    ]
+
+
+def test_every_case_with_a_job_carries_its_host_summaries() -> None:
+    read: list[int] = []
+
+    def hosts(job: Job) -> list[dict[str, Any]]:
+        read.append(job.id)
+        return [{"host_name": "web1", "ok": 3, "changed": 1, "dark": 0}]
+
+    runner = _make_runner(
+        fk=StubFk(),
+        launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
+        watcher=StubWatcher(default=_job(id_=5, status="successful")),
+        host_reader=hosts,
+    )
+    [row] = runner([_case_suite({})]).results
+    assert row.hosts is not None
+    assert row.hosts["web1"].model_dump() == {
+        "ok": 3,
+        "changed": 1,
+        "failed": 0,
+        "unreachable": 0,
+        "skipped": 0,
+        "rescued": 0,
+        "ignored": 0,
+    }
+    assert (row.hosts_truncated, read) == (False, [5])
+
+
+def test_unreadable_or_unwanted_host_summaries_are_null() -> None:
+    def broken(job: Job) -> list[dict[str, Any]]:
+        raise RuntimeError("503")
+
+    for reader in (broken, None):
+        runner = _make_runner(
+            fk=StubFk(),
+            launcher=StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}}),
+            watcher=StubWatcher(default=_job(id_=5, status="successful")),
+            host_reader=reader,
+        )
+        [row] = runner([_case_suite({})]).results
+        assert (row.result, row.hosts, row.hosts_truncated) == ("pass", None, False)
 
 
 def test_scm_branch_overrides_every_case_and_rows_report_what_ran() -> None:
@@ -792,7 +1002,7 @@ def test_preflight_failures_stop_the_run_before_any_launch() -> None:
     )
     assert launcher.calls == []
     assert [name for name, _ in checked] == ["JT", "JT", "JT"]
-    assert info.value.category == "invalid"
+    assert (info.value.category, info.value.system) == ("invalid", "awx.suite")
 
 
 def test_a_preflight_failure_carries_its_most_severe_category() -> None:
@@ -814,7 +1024,7 @@ def test_a_preflight_failure_carries_its_most_severe_category() -> None:
     suite = _suite("s", {"bad": {"limit": "web"}, "denied": {}})
     with pytest.raises(ConfigError) as info:
         runner([suite])
-    assert (info.value.category, info.value.system) == ("auth", "awx")
+    assert (info.value.category, info.value.system) == ("auth", "awx.credentials")
     assert info.value.exit_code == 4
     assert info.value.hint == "run `untaped config set awx.token --prompt`"
 

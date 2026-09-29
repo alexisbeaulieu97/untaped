@@ -3,6 +3,13 @@
 Ordinary jobs expose job_events; project/inventory updates and ad-hoc commands
 expose events. Workflow jobs expose status only: they have neither events nor
 stdout, so following one uses stream_status without inventing child routes.
+
+Events are the one incremental reader of a log: following a log
+(:meth:`PollingJobMonitor.stream_stdout`) asks each poll only for the events
+after the last one read (``counter__gt``) and prints their stdout without ANSI
+colours, and a log's tail (:meth:`PollingJobMonitor.tail_stdout`) reads only
+the newest events (``order_by=-counter`` with a small ``page_size``). Only
+:meth:`PollingJobMonitor.fetch_stdout` downloads a whole log, once.
 """
 
 from __future__ import annotations
@@ -25,6 +32,8 @@ _EVENT_PAGE_SIZE = 200
 _EVENT_MAX_PAGES = 10_000
 _SETTLE_POLLS = 5
 """Extra polls a finished job's log gets while AWX still saves its events."""
+_GAP_READS = 5
+"""Reads a log follow waits for an event missing below later ones before it skips it."""
 
 
 class PollingJobMonitor:
@@ -77,32 +86,53 @@ class PollingJobMonitor:
         )
         return text.splitlines()
 
-    def stream_stdout(self, job: Job, *, start_line: int = 0) -> Iterator[str]:
-        cursor = start_line
+    def stream_stdout(self, job: Job, *, from_counter: int = 0) -> Iterator[str]:
+        """Yield the log lines of events after ``from_counter`` until the job is terminal."""
+        cursor = _Cursor(from_counter)
         current = job
-        # Emit existing lines first, then poll until terminal; the terminal
-        # state drains a final time so we never miss the tail emitted
+        # Each poll reads only the events after the cursor; the terminal
+        # state reads a final time so we never miss the tail emitted
         # between the last poll and the status transition.
         for current in self._poll(job):
-            lines = self.fetch_stdout(current)[cursor:]
-            yield from lines
-            cursor += len(lines)
-        # AWX builds the log from saved events, which can trail the terminal
-        # status: keep reading (briefly) until they are all in, PLAY RECAP included.
+            yield from self._new_lines(current, cursor)
+        # Saved events can trail the terminal status: keep reading (briefly)
+        # until they are all in, PLAY RECAP included.
         for _ in range(_SETTLE_POLLS):
             if not (current.is_terminal and current.event_processing_finished is False):
                 return
             self._sleep(self._interval)
             current = self.fetch(current)
-            lines = self.fetch_stdout(current)[cursor:]
-            yield from lines
-            cursor += len(lines)
+            yield from self._new_lines(current, cursor)
         if current.is_terminal and current.event_processing_finished is False and self._warn:
             self._warn(
                 f"{current.kind} {current.id}: AWX is still saving its events; the log "
                 f"(and its PLAY RECAP) may be cut short; see `jobs logs {current.id} --kind "
                 f"{current.kind}` later"
             )
+
+    def tail_stdout(self, job: Job, lines: int) -> tuple[list[str], int]:
+        """The log's last ``lines`` lines and the newest event's counter (``0``: none yet).
+
+        Reads the newest events first (``order_by=-counter``), ``lines`` per
+        page, and older pages (``counter__lt``) only until it has enough lines:
+        usually one request, however long the log.
+        """
+        path = _events_path(job)
+        page_size = min(max(lines, 1), _EVENT_PAGE_SIZE)
+        newest_first: list[JobEvent] = []
+        found = 0
+        query = {"order_by": "-counter", "page_size": str(page_size)}
+        while True:
+            response = self._client.request("GET", path, params=query)
+            page = [JobEvent.model_validate(record) for record in response.get("results") or []]
+            newest_first.extend(page)
+            found += sum(len(event.lines) for event in page)
+            if found >= lines or len(page) < page_size:
+                break
+            query = {**query, "counter__lt": str(page[-1].counter)}
+        log = [line for event in reversed(newest_first) for line in event.lines]
+        newest = newest_first[0].counter if newest_first else 0
+        return (log[-lines:] if lines > 0 else []), newest
 
     def stream_events(
         self,
@@ -112,23 +142,76 @@ class PollingJobMonitor:
         params: dict[str, str] | None = None,
         follow: bool = True,
     ) -> Iterator[JobEvent]:
-        api_path = _api_path_for(job)
-        events_path = JOB_ROUTES[job.kind].events
-        if events_path is None:
-            raise AwxApiError(f"{job.kind} does not expose events; use jobs get/wait for status")
         last = from_counter
         for current in self._poll(job):
-            for record in _follow_pages(
-                self._client,
-                f"{api_path}/{current.id}/{events_path}/",
-                {**(params or {}), "counter__gt": str(last), "order_by": "counter"},
-            ):
-                ev = JobEvent.model_validate(record)
+            for ev in self._events_after(current, last, params):
                 if ev.counter > last:
                     last = ev.counter
                 yield ev
             if not follow:
                 return
+
+    def _events_after(
+        self, job: Job, counter: int, params: dict[str, str] | None = None
+    ) -> Iterator[JobEvent]:
+        """One read of every event after ``counter``, in counter order, across pages."""
+        query = {**(params or {}), "counter__gt": str(counter), "order_by": "counter"}
+        for record in _follow_pages(self._client, _events_path(job), query):
+            yield JobEvent.model_validate(record)
+
+    def _new_lines(self, job: Job, cursor: _Cursor) -> Iterator[str]:
+        for event in self._events_after(job, cursor.done):
+            if cursor.take(event.counter):
+                yield from event.lines
+        cursor.read_done()
+
+
+class _Cursor:
+    """The events a log follow has printed: every counter up to ``done``, plus a few past a gap.
+
+    AWX can save a later event before an earlier one, so the next read
+    starts after the last *contiguous* counter and skips what it printed.
+    A gap still open after :data:`_GAP_READS` reads is given up on, so an
+    event that never arrives cannot make every later read start before it.
+    """
+
+    def __init__(self, start: int) -> None:
+        self.done = start
+        self._ahead: set[int] = set()
+        self._stuck = 0
+        self._last_done = start
+
+    def take(self, counter: int) -> bool:
+        """Record ``counter``; ``False`` when it was already printed."""
+        if counter <= self.done or counter in self._ahead:
+            return False
+        self._ahead.add(counter)
+        self._advance()
+        return True
+
+    def read_done(self) -> None:
+        """Count a read that left the same gap open; skip the gap after too many."""
+        stuck = self._ahead and self.done == self._last_done
+        self._stuck = self._stuck + 1 if stuck else 0
+        self._last_done = self.done
+        if self._stuck >= _GAP_READS:
+            self.done = min(self._ahead)
+            self._ahead.remove(self.done)
+            self._advance()
+            self._stuck = 0
+
+    def _advance(self) -> None:
+        while self.done + 1 in self._ahead:
+            self.done += 1
+            self._ahead.remove(self.done)
+
+
+def _events_path(job: Job) -> str:
+    api_path = _api_path_for(job)
+    events_path = JOB_ROUTES[job.kind].events
+    if events_path is None:
+        raise AwxApiError(f"{job.kind} does not expose events; use jobs get/wait for status")
+    return f"{api_path}/{job.id}/{events_path}/"
 
 
 def _api_path_for(job: Job) -> str:

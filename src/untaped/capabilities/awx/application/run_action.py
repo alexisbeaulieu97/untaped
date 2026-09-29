@@ -14,6 +14,7 @@ from untaped.capabilities.awx.application.get_resource import parse_resource_id
 from untaped.capabilities.awx.application.ports import ResourceClient
 from untaped.capabilities.awx.domain import ActionPayload, Job, ResourceSpec
 from untaped.capabilities.awx.errors import ActionResponseError, AwxApiError, ResourceNotFoundError
+from untaped.capability_api import ErrorCategory
 
 
 class RunAction:
@@ -74,6 +75,8 @@ class RunAction:
                 f"{spec.kind}.{action}: AWX ignored launch fields: {names}",
                 execution_id=execution_id,
                 execution_kind=kind,
+                # The request asked for what the template does not prompt for.
+                category=ErrorCategory.INVALID,
             )
         try:
             if execution_id is None:

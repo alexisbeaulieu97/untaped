@@ -76,8 +76,9 @@ class ActionResponseError(AwxApiError):
         *,
         execution_id: int | None,
         execution_kind: str | None,
+        category: ErrorCategory | str | None = None,
     ) -> None:
-        super().__init__(message)
+        super().__init__(message, category=category)
         self.execution_id = execution_id
         self.execution_kind = execution_kind
 

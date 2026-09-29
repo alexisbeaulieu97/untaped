@@ -8,11 +8,11 @@ import pytest
 from pydantic import ValidationError
 
 from untaped.capabilities.awx.domain import JobEvent
+from untaped.capabilities.awx.domain.case_failure import FailedTask
 from untaped.capabilities.awx.domain.suite import (
     Case,
     CaseResult,
     Expectation,
-    FailedTask,
     RefSentinel,
     Suite,
     SuiteRunOutcome,

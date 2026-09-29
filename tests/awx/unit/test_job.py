@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from untaped.capabilities.awx.domain import Job, JobEvent
+from untaped.capabilities.awx.domain.job import HostSummary, host_summaries
 
 
 @pytest.mark.parametrize(
@@ -56,3 +57,98 @@ def test_job_carries_the_ref_and_commit_it_ran() -> None:
         {"id": 1, "kind": "job", "status": "running", "scm_branch": "fix", "scm_revision": "abc"}
     )
     assert (job.scm_branch, job.scm_revision) == ("fix", "abc")
+
+
+def test_job_carries_why_it_ended_but_leaves_it_out_of_rows() -> None:
+    job = Job.model_validate(
+        {
+            "id": 1,
+            "kind": "job",
+            "status": "error",
+            "job_explanation": "Job terminated due to error",
+            "result_traceback": "Traceback …\nRuntimeError: pod failed",
+            "launch_type": "manual",
+        }
+    )
+    assert (job.job_explanation, job.launch_type) == ("Job terminated due to error", "manual")
+    assert job.result_traceback == "Traceback …\nRuntimeError: pod failed"
+    assert {"job_explanation", "result_traceback", "launch_type"}.isdisjoint(job.model_dump())
+
+
+@pytest.mark.parametrize(
+    ("explanation", "expected"),
+    [
+        (
+            'Previous Task Failed: {"job_type": "project_update", "job_name": "acme", '
+            '"job_id": "812"}',
+            ("project_update", "acme", 812),
+        ),
+        (
+            'Previous Task Failed: {"job_type": "inventory_update", "job_name": "Cloud - aws", '
+            '"job_id": 813}',
+            ("inventory_update", "Cloud - aws", 813),
+        ),
+        ("Previous Task Failed: {not json", None),
+        ('Previous Task Failed: {"job_type": "project_update", "job_id": "x"}', None),
+        ('Previous Task Failed: ["project_update"]', None),
+        ("Job terminated due to timeout", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_a_failed_dependency_is_read_from_the_job_explanation(
+    explanation: str | None, expected: tuple[str, str, int] | None
+) -> None:
+    job = Job(id=1, kind="job", status="failed", job_explanation=explanation)
+    dependency = job.failed_dependency
+    actual = None if dependency is None else (dependency.kind, dependency.name, dependency.id)
+    assert actual == expected
+
+
+def test_job_event_lines_are_its_stdout_without_ansi_colours() -> None:
+    ev = JobEvent.model_validate(
+        {
+            "counter": 3,
+            "event": "runner_on_failed",
+            "stdout": "\x1b[0;31mfatal: [web1]: FAILED! => {}\x1b[0m\r\n\x1b[1;35mhint\x1b[0m",
+        }
+    )
+    assert ev.lines == ["fatal: [web1]: FAILED! => {}", "hint"]
+    assert JobEvent(counter=4).lines == []
+
+
+def test_a_host_summary_names_awx_counters_as_the_recap_does() -> None:
+    record = {
+        "host_name": "web1",
+        "ok": 12,
+        "changed": 3,
+        "failures": 1,
+        "dark": 2,
+        "skipped": 4,
+        "rescued": 5,
+        "ignored": 6,
+        "processed": 1,
+        "failed": True,
+    }
+    assert HostSummary.from_record(record).model_dump() == {
+        "ok": 12,
+        "changed": 3,
+        "failed": 1,
+        "unreachable": 2,
+        "skipped": 4,
+        "rescued": 5,
+        "ignored": 6,
+    }
+    assert HostSummary.from_record({"host_name": "db1"}).model_dump() == dict.fromkeys(
+        ("ok", "changed", "failed", "unreachable", "skipped", "rescued", "ignored"), 0
+    )
+
+
+def test_host_summaries_keep_the_first_500_hosts_and_say_so() -> None:
+    records = ({"host_name": f"h{index:03}", "ok": 1} for index in range(600))
+    hosts, truncated = host_summaries(records)
+    assert (len(hosts), truncated) == (500, True)
+    assert hosts["h000"] == HostSummary(ok=1)
+
+    hosts, truncated = host_summaries([{"host_name": "web1", "dark": 1}, {"host": 9}])
+    assert (hosts, truncated) == ({"web1": HostSummary(unreachable=1), "9": HostSummary()}, False)

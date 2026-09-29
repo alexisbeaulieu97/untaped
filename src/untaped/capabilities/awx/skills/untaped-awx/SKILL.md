@@ -76,10 +76,12 @@ changing a playbook, role or template variables:
 4. `untaped awx test run --scm-branch HEAD --format json` runs every case on
    the pushed commit (refused until HEAD is pushed). Narrow it with
    `--case SUITE/CASE` (repeatable) or suite paths.
-5. Exit 0 means every case passed; 4 or 5 is the environment, not your
-   change (read the error's `system`). Otherwise read each non-`pass` row as
-   [references/test-results.md](references/test-results.md) explains, fix,
-   push, and rerun the failing cases.
+5. Exit 0 means every case passed; 4 (fix the environment) or 5 (retry
+   later) is not your change. Each non-`pass` row's `failure.system` says who
+   must act (`awx.playbook`, `awx.scm`, `awx.hosts`, …) and its `evidence`
+   shows why; act as
+   [references/test-results.md](references/test-results.md) explains, push,
+   and rerun the failing cases.
 
 Run as the dedicated agent profile when one exists
 (`untaped --profile agent awx test run`); see

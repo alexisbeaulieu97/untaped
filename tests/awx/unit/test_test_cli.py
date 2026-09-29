@@ -141,8 +141,13 @@ def test_run_exits_with_the_category_of_a_launch_failure(
     assert result.exit_code == exit_code, result.stderr
     [row] = json.loads(result.stdout)
     assert row["result"] == "error"
+    failure = row["failure"]
+    assert failure["system"] == {401: "awx.credentials", 403: "awx.credentials"}.get(
+        status, "awx.suite" if status == 400 else "awx.controller"
+    )
+    assert failure["retryable"] is (status == 503)
     if status == 401:
-        assert "untaped config set awx.token" in row["failure_reason"]
+        assert "untaped config set awx.token" in failure["hint"]
 
 
 def test_run_preflights_every_case_before_launching(
@@ -185,8 +190,9 @@ def test_run_errors_when_awx_ignores_launch_fields(
     assert result.exit_code != 0
     row = json.loads(result.stdout)[0]
     assert row["result"] == "error"
-    assert "ignored" in row["failure_reason"]
-    assert "limit" in row["failure_reason"]
+    assert (row["failure"]["system"], row["failure"]["category"]) == ("awx.suite", "invalid")
+    assert "ignored" in row["failure"]["summary"]
+    assert "limit" in row["failure"]["summary"]
     assert row["job_id"] is not None
 
 
@@ -502,7 +508,8 @@ def test_run_timeout_cancels_the_job_unless_no_cancel(
     assert result.exit_code == 1, result.output
     [row] = json.loads(result.stdout)
     assert row["result"] == "timeout"
-    assert row["failure_reason"] == f"still running after 0.01s; {reason}"
+    assert row["failure"]["system"] == "awx.playbook"
+    assert row["failure"]["summary"] == f"still running after 0.01s; {reason}"
     assert _cancelled_ids(running_job) == ([row["job_id"]] if cancels else [])
 
 
@@ -589,9 +596,16 @@ def test_run_table_hides_evidence_columns(
     result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path))])
 
     assert result.exit_code == 1, result.output
-    assert "expected status successful, got failed" in result.stdout
-    assert "log_tail" not in result.stdout
+    assert "awx.playbook" in result.stdout
+    assert "failed without a failed task" in result.stdout
+    assert "evidence" not in result.stdout
     assert "expectations" not in result.stdout
+    # attribution needs only the failed events; the table never reads a log
+    assert not any(
+        call.request.url.path.endswith(("/stdout/", "/job_host_summaries/"))
+        or call.request.url.params.get("order_by") == "-counter"
+        for call in fake_aap.router.calls
+    )
 
 
 def test_run_reports_results_despite_an_unknown_column(
@@ -610,10 +624,9 @@ def test_run_reports_results_despite_an_unknown_column(
 def _failing_job(fake: FakeAap, event: dict[str, Any]) -> None:
     _seed_jt(fake)
     fake.next_action_status = "failed"
-    fake.next_action_stdout = "boom\n"
     fake.next_action_events = [
         {"event": "runner_on_ok", "failed": False, "host_name": "web1", "task": "Setup"},
-        {"failed": True, "host_name": "web1", "task": "Migrate", **event},
+        {"failed": True, "host_name": "web1", "task": "Migrate", "stdout": "boom", **event},
     ]
 
 
@@ -626,7 +639,13 @@ def test_run_reports_failed_tasks_from_job_events(
 
     assert result.exit_code == 1, result.output
     [row] = json.loads(result.stdout)
-    assert [task["msg"] for task in row["failed_tasks"]] == ["no"]
+    failure = row["failure"]
+    assert (failure["system"], failure["summary"]) == (
+        "awx.playbook",
+        "task 'Migrate' failed on web1: no",
+    )
+    assert [task["msg"] for task in failure["evidence"]["failed_tasks"]] == ["no"]
+    assert failure["evidence"]["log_tail"] == ["boom"]
 
 
 def test_show_logs_prints_failed_tasks_under_their_case(
@@ -639,11 +658,136 @@ def test_show_logs_prints_failed_tasks_under_their_case(
 
     result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "--show-logs"])
 
+    assert result.exit_code == 5, result.output  # unreachable hosts: retry later
+    lines = result.stderr.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("--- s/c job "))
+    assert lines[start].endswith(": awx.hosts: unreachable: web1: ssh timeout")
+    assert lines[start + 1 : start + 4] == [
+        "--- last 1 log line",
+        "unreachable: [web1] Migrate: ssh timeout",
+        "boom",
+    ]
+
+
+def _dependency_failed(fake: FakeAap, kind: str, update_id: int) -> None:
+    """The next job ends in error because the named update failed first."""
+    _seed_jt(fake)
+    fake.next_action_status = "error"
+    fake.next_action_job_fields = {
+        "job_explanation": "Previous Task Failed: "
+        + json.dumps({"job_type": kind, "job_name": "acme", "job_id": str(update_id)}),
+    }
+    fake.seed(f"{kind}s", id=update_id, name="acme", status="failed")
+    for counter, event in enumerate(
+        [
+            {"event": "runner_on_ok", "stdout": "ok: [localhost]"},
+            {
+                "event": "runner_on_failed",
+                "failed": True,
+                "host_name": "localhost",
+                "task": "Update git repository",
+                "stdout": "\x1b[0;31mfatal: [localhost]: FAILED!\x1b[0m",
+                "event_data": {"res": {"msg": "couldn't find remote ref feature/x"}},
+            },
+        ],
+        start=1,
+    ):
+        fake.seed(f"{kind}_events", **{kind: update_id}, counter=counter, **event)
+
+
+@pytest.mark.parametrize(
+    ("kind", "system", "exit_code"),
+    [("project_update", "awx.scm", 1), ("inventory_update", "awx.inventory", 4)],
+)
+def test_run_blames_the_update_that_failed_before_the_job(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, kind: str, system: str, exit_code: int
+) -> None:
+    _dependency_failed(fake_aap, kind, 812)
+
+    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "-f", "json"])
+
+    assert result.exit_code == exit_code, result.output
+    [row] = json.loads(result.stdout)
+    failure = row["failure"]
+    assert failure["system"] == system
+    assert failure["summary"] == (
+        f"{kind.replace('_', ' ')} 812 for 'acme' failed: couldn't find remote ref feature/x"
+    )
+    evidence = failure["evidence"]
+    assert evidence["related"]["kind"] == kind
+    assert evidence["related"]["id"] == 812
+    assert evidence["log_tail"] == ["ok: [localhost]", "fatal: [localhost]: FAILED!"]
+    assert [task["task"] for task in evidence["failed_tasks"]] == ["Update git repository"]
+    assert evidence["job_explanation"].startswith("Previous Task Failed: ")
+
+
+def test_show_logs_prints_the_failed_updates_evidence(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _dependency_failed(fake_aap, "project_update", 812)
+
+    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "--show-logs"])
+
     assert result.exit_code == 1, result.output
     lines = result.stderr.splitlines()
     start = next(i for i, line in enumerate(lines) if line.startswith("--- s/c job "))
-    assert lines[start].endswith("(last 1 log line)")
-    assert lines[start + 1 : start + 3] == ["unreachable: [web1] Migrate: ssh timeout", "boom"]
+    assert lines[start].endswith(": awx.scm: project update 812 for 'acme' failed: "
+                                 "couldn't find remote ref feature/x")  # fmt: skip
+    assert lines[start + 1] == "--- last 2 log lines of project_update 812"
+
+
+def test_show_logs_names_a_launch_failure_without_a_job(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+    fake_aap.action_error = 503
+
+    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "--show-logs"])
+
+    assert result.exit_code == 5, result.output
+    [line] = [line for line in result.stderr.splitlines() if line.startswith("--- ")]
+    assert line.startswith("--- s/c: awx.controller: ")
+
+
+def test_run_reports_every_hosts_summary_in_structured_output(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+    fake_aap.next_action_host_summaries = [
+        {"host_name": "web2", "ok": 4, "changed": 0, "failures": 0, "dark": 1},
+        {"host_name": "web1", "ok": 5, "changed": 2, "failures": 0, "dark": 0, "skipped": 1},
+    ]
+
+    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "-f", "json"])
+
+    assert result.exit_code == 0, result.output
+    [row] = json.loads(result.stdout)
+    assert list(row["hosts"]) == ["web1", "web2"]
+    assert row["hosts"]["web1"] == {
+        "ok": 5,
+        "changed": 2,
+        "failed": 0,
+        "unreachable": 0,
+        "skipped": 1,
+        "rescued": 0,
+        "ignored": 0,
+    }
+    assert row["hosts"]["web2"]["unreachable"] == 1
+    assert (row["hosts_truncated"], row["failure"]) == (False, None)
+
+
+def test_run_cuts_host_summaries_above_500_hosts(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+    fake_aap.next_action_host_summaries = [
+        {"host_name": f"h{index:03}", "ok": 1} for index in range(501)
+    ]
+
+    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "-f", "json"])
+
+    [row] = json.loads(result.stdout)
+    assert (len(row["hosts"]), row["hosts_truncated"]) == (500, True)
 
 
 def _branchable(fake: FakeAap, *, ask_scm_branch: bool = True) -> None:

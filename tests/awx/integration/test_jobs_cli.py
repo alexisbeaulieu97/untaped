@@ -258,6 +258,35 @@ def test_jobs_logs_follow_json_multi_id_keeps_stdout_pipe_clean(fake_aap: Any) -
     assert len(parsed) == 6
 
 
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [([], ["TASK [install]", "ok: [web-01]", "PLAY RECAP"]), (["--tail", "1"], ["PLAY RECAP"])],
+)
+def test_jobs_logs_follow_reads_events_never_the_whole_log(
+    fake_aap: Any, args: list[str], expected: list[str]
+) -> None:
+    fake_aap.seed("jobs", id=42, status="successful", stdout="never downloaded\n")
+    for counter, text in enumerate(
+        ["TASK [install]", "\x1b[0;32mok: [web-01]\x1b[0m", "PLAY RECAP"], start=1
+    ):
+        fake_aap.seed("job_events", job=42, counter=counter, event="verbose", stdout=text)
+
+    result = CliInvoker().invoke(app, ["jobs", "logs", "42", "--follow", *args])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == expected
+    event_reads = [
+        dict(call.request.url.params)
+        for call in fake_aap.router.calls
+        if call.request.url.path.endswith("/job_events/")
+    ]
+    assert not any(call.request.url.path.endswith("/stdout/") for call in fake_aap.router.calls)
+    if args:
+        # The tail is one small newest-first read; following starts after it.
+        assert event_reads[0] == {"order_by": "-counter", "page_size": "1"}
+        assert event_reads[1]["counter__gt"] == "3"
+
+
 def test_jobs_logs_invalid_grep_pattern_rejected_at_boundary(fake_aap: Any) -> None:
     """An unterminated character class is user input, not a bug — it must
     surface as a clean usage error, not a Python

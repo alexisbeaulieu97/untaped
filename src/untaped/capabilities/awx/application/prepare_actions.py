@@ -85,7 +85,8 @@ def preflight_launch(
             continue
         raise LaunchPromptError(
             f"{label} does not prompt for {field} on launch ({ask_key} is false); "
-            f"AWX would ignore {flag}; enable {ask_key} on the template or drop {flag}"
+            f"AWX would ignore {flag}; enable {ask_key} on the template or drop {flag}",
+            details={"field": field},
         )
 
 

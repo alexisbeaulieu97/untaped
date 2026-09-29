@@ -372,18 +372,25 @@ class JobMonitor(Protocol):
     def fetch_stdout(self, job: Job) -> list[str]:
         """One-shot: return every stdout line (the full log, never truncated).
 
-        No polling — used both by ``jobs logs`` (drain the existing log
-        for a finished job) and as the historical phase of
-        ``--follow --tail N`` before the live polling loop kicks in.
+        No polling: ``jobs logs`` without ``--follow`` drains the existing
+        log with it, and ``awx test`` reads it for log expectations.
         """
         ...
 
-    def stream_stdout(self, job: Job, *, start_line: int = 0) -> Iterable[str]:
-        """Yield stdout lines from ``start_line`` onward until terminal.
+    def tail_stdout(self, job: Job, lines: int) -> tuple[list[str], int]:
+        """The log's last ``lines`` lines, read from its newest events only.
 
-        Re-downloads the full log each poll and emits only the new lines,
-        one string per line (no trailing newline). Final block of lines after
-        the job reaches a terminal state is yielded before the iterator returns.
+        Returns them with the newest event's counter (``0`` when there is
+        none), where a :meth:`stream_stdout` that follows them starts.
+        """
+        ...
+
+    def stream_stdout(self, job: Job, *, from_counter: int = 0) -> Iterable[str]:
+        """Yield the log lines of the events after ``from_counter`` until terminal.
+
+        Each poll reads only the events it has not read yet (ANSI colours
+        removed), one string per line (no trailing newline). The events of the
+        terminal state are yielded before the iterator returns.
         """
         ...
 
