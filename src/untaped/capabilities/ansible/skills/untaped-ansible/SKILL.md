@@ -1,6 +1,6 @@
 ---
 name: untaped-ansible
-description: Use the built-in `untaped ansible` capability for Ansible analysis.
+description: Use the `untaped ansible` command to map Ansible role and project dependencies across GitHub repositories (what a role depends on, what depends on it, which projects reach a repo, and dependency graphs). Use when the user mentions Ansible roles, requirements.yml, meta/main.yml dependencies, impact or blast-radius analysis, who uses a role, or a dependency graph.
 ---
 
 # Untaped Ansible

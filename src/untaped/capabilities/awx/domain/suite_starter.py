@@ -1,0 +1,126 @@
+"""The starter ``AwxTestSuite`` text ``awx test init`` writes for a job template.
+
+Pure text building from the template's ``launch/`` answer and survey questions:
+required survey variables get a value (their default, their first choice, or
+``TODO``) and a comment saying where it came from, optional ones and the
+enabled launch prompts are listed as comments. Values are written as JSON
+(valid YAML) and shielded from the Jinja2 rendering every suite body goes
+through.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+TODO = "TODO"
+"""The placeholder for a required value the template cannot supply."""
+
+_ASK_KEY = re.compile(r"ask_(\w+)_on_launch")
+_PROMPT_FIELDS = {"variables": "extra_vars", "credential": "credentials", "tags": "job_tags"}
+"""``ask_<word>_on_launch`` words that differ from the launch field they unlock."""
+
+_JINJA_MARKERS = ("{{", "{%", "{#")
+
+
+def suite_slug(name: str) -> str:
+    """``Deploy app`` → ``deploy-app``: a suite and file name for a template name."""
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "suite"
+
+
+def starter_suite(
+    job_template: str,
+    *,
+    organization: str | None,
+    launch: Mapping[str, Any],
+    survey: Sequence[Mapping[str, Any]],
+) -> str:
+    """The commented starter suite for ``job_template``, one ``smoke`` case."""
+    lines = [
+        "# Starter suite written by `untaped awx test init` from the job template's survey.",
+        "# Edit the cases, then run `untaped awx test validate` and `untaped awx test run`;",
+        "# `untaped awx schema AwxTestSuite` prints the format as a JSON Schema.",
+        "kind: AwxTestSuite",
+        f"name: {_value(suite_slug(job_template))}",
+        f"jobTemplate: {_value(job_template)}",
+    ]
+    if organization is not None:
+        lines.append(f"organization: {_value(organization)}")
+    variables = _survey_lines(survey)
+    if any(not line.lstrip().startswith("#") for line in variables):
+        lines += ["defaults:", "  launch:", "    extra_vars:", *variables]
+    else:
+        lines += [line.strip() for line in variables]
+    lines += _prompt_lines(launch)
+    lines += ["cases:", "  smoke:", "    expect:", "      status: successful"]
+    return "\n".join(lines) + "\n"
+
+
+def _survey_lines(survey: Sequence[Mapping[str, Any]]) -> list[str]:
+    lines: list[str] = []
+    for question in survey:
+        variable = question.get("variable")
+        if not variable:
+            continue
+        kind = str(question.get("type") or "text")
+        choices = _choices(question.get("choices"))
+        if not question.get("required"):
+            lines.append(f"      # {variable}: optional survey variable ({kind})")
+            continue
+        comment = f"survey: required, {kind}"
+        if choices:
+            comment += f" [{', '.join(choices)}]"
+        if kind == "password":
+            comment += "; pass it from a secret suite variable, never write it here"
+        value = _survey_value(kind, question.get("default"), choices)
+        lines.append(f"      {variable}: {_value(value)}  # {_shield(comment)}")
+    return lines
+
+
+def _survey_value(kind: str, default: Any, choices: Sequence[str]) -> Any:
+    """The question's default, else its first choice, else ``TODO`` (always for passwords)."""
+    if kind == "password":
+        return TODO
+    if default not in (None, ""):
+        return _choices(default) if kind == "multiselect" else default
+    if choices:
+        return [choices[0]] if kind == "multiselect" else choices[0]
+    return TODO
+
+
+def _choices(raw: Any) -> list[str]:
+    """Survey choices as a list: AWX stores them as a list or as newline-separated text."""
+    items = raw.splitlines() if isinstance(raw, str) else raw if isinstance(raw, list) else []
+    return [str(item).strip() for item in items if str(item).strip()]
+
+
+def _prompt_lines(launch: Mapping[str, Any]) -> list[str]:
+    fields = [
+        _PROMPT_FIELDS.get(match[1], match[1])
+        for key, value in launch.items()
+        if value is True and (match := _ASK_KEY.fullmatch(key))
+    ]
+    lines = [
+        "# Launch prompts (fields a case may set under launch:): " + ", ".join(fields)
+        if fields
+        else "# Launch prompts: none (AWX ignores launch fields other than survey variables)"
+    ]
+    if launch.get("inventory_needed_to_start"):
+        lines.append("# The template has no inventory: set launch.inventory to one by name.")
+    if launch.get("credential_needed_to_start"):
+        lines.append("# The template needs a credential: set launch.credentials to names.")
+    return lines
+
+
+def _value(value: Any) -> str:
+    """``value`` as a YAML flow scalar or list, kept verbatim by Jinja2."""
+    return _shield(json.dumps(value, ensure_ascii=False))
+
+
+def _shield(text: str) -> str:
+    """``text``, wrapped so that Jinja2 renders it verbatim when it looks like a template."""
+    if any(marker in text for marker in _JINJA_MARKERS):
+        return f"{{% raw %}}{text}{{% endraw %}}"
+    return text

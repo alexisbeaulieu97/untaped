@@ -1,6 +1,6 @@
 ---
 name: untaped-recipe
-description: Use the untaped recipe capability to apply local recipe packs across directories.
+description: Use the `untaped recipe` command to apply reusable file recipes (templated files, YAML edits, copies, removals) across many directories or repos with a preview, backups and a CI drift check, and to author and test recipe packs. Use when the user mentions recipes, recipe packs, codemods, bulk or fleet-wide file changes, applying the same change to many repos, or drift checks.
 ---
 
 # Untaped Recipe
@@ -16,6 +16,13 @@ Command tree: recipe verbs sit at `untaped recipe <verb>` (`apply`, `list`,
 their own nouns: `recipe packs add|sync|list|get|edit|remove|init`,
 `recipe hooks list|get|edit|init|run`, and `recipe backups
 list|get|restore|prune`.
+
+Details that do not fit here ship next to this file:
+
+| File | Read it when |
+|---|---|
+| [references/library.md](references/library.md) | installing, syncing, inspecting or removing packs, `validate`, golden `test` cases, the trust model, backups and restores |
+| [references/authoring.md](references/authoring.md) | scaffolding packs, writing recipe YAML and hooks, `hooks run`, the built-in `yaml_edit` hook |
 
 ## Applying recipes
 
@@ -134,157 +141,10 @@ list|get|restore|prune`.
   exit 0, no backup); a skip is not `--check` drift. Summary lines gain a
   `N skipped` count.
 
-## Library and packs
+## Safety
 
-- `packs add <path|git-url>` installs a pack and prints its recipes and hooks on
-  stderr; it never prompts. `--rev` picks a git revision (git URL sources
-  only), `--name` overrides the installed key (the pack identity everywhere).
-  The row's `action` is `created`, or `updated` for a `--force` reinstall.
-  The pack must load, contain a `uv.lock`, and contain no symlinks (outside
-  ignored dirs such as `.venv`). Reinstalling needs `--force`, which still refuses to
-  overwrite a library copy with local edits unless `--discard-edits` is added.
-  A local path source is recorded as an absolute path; a git source records
-  the requested `rev` and the resolved `commit` (shown in `packs list` and
-  the `add`/`sync` rows; `sync` updates it even when no file changed).
-- `packs sync <pack>...` or `packs sync --all` re-fetches each installed pack from its
-  recorded source and `--rev` (a branch or tag moves forward). Packs whose
-  content would change are listed on stderr with the commit move
-  (`old -> new`) and the hook-code files that change (`src/`, root `*.py`,
-  `pyproject.toml`, `uv.lock`, `uv.toml`, `.python-version`, `setup.cfg`;
-  not recipe files or tests), and need confirmation or `--yes` (`--dry-run` previews); rows
-  carry `action` `updated`, `unchanged` or `planned`. A pack with local edits in the library fails unless
-  `--discard-edits` is passed; a failed pack prints `error: PACK: ...`, the
-  others still sync, and the command exits 1.
-- Each noun reads and edits only its own kind: `list`/`get <recipe>`/`edit
-  <recipe>` for recipes, `packs list`/`packs get <pack>`/`packs edit <pack>`
-  (opens `pyproject.toml`) for packs, and `hooks list`/`hooks get
-  <hook>`/`hooks edit <hook>` for hooks. `hooks list` and `hooks get` cover
-  built-ins such as `yaml_edit` (marked `(builtin)`; not editable). `packs
-  remove <pack>...` is destructive, requires confirmation or `--yes`
-  (`--dry-run` previews), exits 1 on a declined prompt, and warns when the
-  copy has local edits. `packs sync` and `packs remove` take `--stdin`
-  (pack names or `recipe.pack` records, e.g. `packs list --format pipe`).
-  `get`/`edit` on a pack or hook name, and `init NAME` without `/`, fail
-  with a hint naming the `packs`/`hooks` command.
-- `validate [ref|path]` is static preflight: no ref validates the whole library
-  and `packs.toml`; a ref validates one pack, recipe, path, or built-in. It
-  AST-scans hook modules without importing them, and for hook-declaring
-  projects requires `uv.lock` and verifies freshness with `uv lock --check`
-  (hookless packs and recipe projects are exempt). Every persisted `packs.toml`
-  row must include its `content_hash`; malformed or incomplete rows fail closed
-  before a library mutation. An installed pack whose `pyproject.toml` cannot be
-  parsed gets an error row in `validate`, is skipped with a warning by `list`, and
-  is ignored by resolution unless named explicitly (then its error is shown).
-  Template/copy sources containing `{{ input }}` tokens are only checked up to
-  their literal directory prefix.
-- `test [pack|path|pack/recipe]` runs golden-fixture cases under
-  `tests/<recipe>/<case>/`: `given/` is copied to a temp target, `expected/` is
-  the full expected tree (omitted = asserts no changes), optional data-only
-  `case.yml` supplies `inputs`, `expect: success|error`, `error_contains`, and
-  `verdict` assertions. `--update` regenerates `expected/` for an explicit pack
-  or recipe. Exits non-zero on fail/error, including "no test cases found" for
-  an explicit ref.
-
-## Authoring packs
-
-- `packs init <name>`, `init <pack>/<recipe>`, `hooks init <pack>/<hook>`
-  scaffold pack projects; explicit local paths like `hooks init ./my-pack/probe`
-  target `./my-pack`. `init` also scaffolds a starter golden case;
-  `hooks init` writes a typed stub plus a direct-call pytest (naming the kind and
-  `--kind` on success), and packs ship `pytest` with `pythonpath = ["src"]` so
-  `uv run --project <pack> pytest` works immediately. `hooks init --kind X --force`
-  replaces both the stub and the paired pytest (e.g. to fix a wrong `--kind`);
-  without `--force` an existing hook is refused.
-- Scaffolding refreshes the pack `uv.lock` and needs package-index access (or a
-  `[tool.uv.sources]` override). If `uv lock` fails after files are written,
-  the scaffold stays in place with a repairable error; `--no-lock` skips
-  locking, but hooks cannot run until `uv lock` succeeds because workers use
-  `uv run --locked --no-dev`.
-- Recipe YAML is behavior-only: `version: 1`, optional `description`, optional
-  `inputs`, and `steps`; `name:` is rejected. Step types are `validate`,
-  `transform`, `template`, `copy`, and `remove`. `transform`/`remove` take
-  exactly one of `file`, `files` (load-time fan-out to per-file steps), or
-  `globs` (planning-time discovery; `exclude` skips matches; no implicit
-  excludes, so repo sweeps usually add `exclude: [".git/**"]`; `transform`
-  rejects binary files, so exclude them; `copy` and `remove` handle binary
-  files byte-exact, and `--preview diff` prints `Binary file PATH differs`
-  for them; matches under symlinked directories are skipped with a
-  warning). `optional: true` (transform with `file`/`files` only)
-  skips missing files with a warning. `template`/`copy` accept
-  `if_absent: true` to create only when the destination does not exist.
-- Template bodies render `{{ name }}` tokens from inputs, strict by default;
-  `unknown_tokens: keep` preserves foreign tokens (GitHub Actions, Helm) while
-  still rendering known inputs. Path-bearing fields (template/dest, source,
-  file/files/globs/exclude) also render bare tokens — always strict, re-checked
-  as confined relative paths after rendering. Sensitive and structured inputs
-  are forbidden in path fields; derive a scalar input with `from` instead.
-- Hook `args` pass verbatim — the engine never templates them; hooks read
-  resolved `inputs` natively (structured inputs as real lists/dicts) and call
-  `helpers.render_template()` themselves for templated string args. Use YAML
-  anchors for structural reuse in recipes.
-- A hook module exports `transform()`, `validate()`, or both — the exported
-  name is the contract; manifest rows declare only `module`. Keep `untaped`
-  as a dev-only dependency (scaffolding pins `>=<installed>,<next major>`);
-  runtime hook dependencies go in `[project].dependencies`.
-- Hook refs in a pack's recipes: a bare name resolves to the pack's own hook,
-  else a built-in — never to another installed pack. Reference another pack's
-  hook as `pack/hook`. (Only recipes without a project, and `hooks run` without
-  `--project`, look bare names up across installed packs.)
-  Hooks must stay pure at planning time: read only the target tree and their
-  own pack, never write or reach the network.
-- Validate verdicts are `helpers.pass_()`, `helpers.fail(msg)`, and
-  `helpers.skip(msg)` (not applicable → target `skipped`, never a failure).
-  `helpers.warn(msg)` is a warning accumulator callable any number of times from
-  validate and transform hooks; warnings attach to the target plan and do not
-  replace the verdict. Call it for its side effect, then return a pass, fail, or
-  skip verdict. `None` remains an implicit pass and a plain string is a fail
-  message; unknown verdict objects and status values are rejected.
-- `hooks run <ref> --target DIR` debugs one hook without a recipe: transforms
-  need `--file` (stdout is exact transformed content, or `--diff`); validates
-  emit a `recipe.hook_run` verdict (`pass`/`fail`/`skip`) and exit 1 only
-  on `fail`; a hook that raises prints its traceback as an `error:` and exits 1. The ref accepts the `./pack/hook` path form (resolves as
-  `--project ./pack` + hook name; combining with explicit `--project` is a usage
-  error). A local hook project is used only when named with `--project PATH`
-  or a `./path` ref — never adopted implicitly from the current directory, so
-  running inside a cloned repo does not execute its hooks.
-  `--content`/`--content-file` supply fixture content; hook inputs come from
-  repeated `--vars-file`/`--var KEY=YAML` and hook args from repeated
-  `--args-file`/`--arg KEY=YAML` (later files win, flags win over files;
-  values are YAML-parsed, so quote strings such as `'v="3.10"'`). Context echo (including fixture values) and
-  accumulated warnings go to stderr — use `--quiet` in shared terminals when
-  values are sensitive.
-- For common YAML edits use the built-in `yaml_edit` transform hook: `edits`
-  with `op: set|merge|delete|ensure`, paths of mapping keys, `{index: N}`, or
-  first-match `{where: {...}}` selectors; string values render `{{ input }}`
-  tokens and honor args-level `unknown_tokens: keep`. `ensure` idempotently adds
-  a value if absent (list membership by `match` keys / equality, or mapping
-  set-if-absent). Every op leaves the file byte-identical when nothing
-  changes (`set`/`merge` to the value already present are no-ops).
-
-## Backups and safety
-
-- Every apply creates one backup bundle by default. `backups list|get|restore
-  <id>|prune` manage bundles; `get`/`restore` accept full ids, unambiguous
-  prefixes, or `latest`. `restore` and `prune` take `--dry-run`. Restore
-  previews and confirms like apply, applies the
-  whole bundle as one transaction, and refuses to overwrite files changed after
-  the backup unless `--force` is passed. Backups store text content only; mode
-  and mtime are not preserved. Bundles are owner-only (dirs `0700`, files
-  `0600`) and their metadata is replaced atomically. `prune [--keep N] [--older-than DAYS]` falls
-  back to the `recipe.backup_keep`/`recipe.backup_max_age_days` settings.
-- All recipe-local and target-relative paths must be safe relative paths:
-  absolute paths, `..` segments, and symlink traversal are rejected before any
-  engine-mediated read or write, again after path-field rendering.
-- Installing a pack is installing code (same trust model as `pip install`, no
-  sandbox). Evaluate before trusting: the `packs add` summary, `packs get`, `validate`'s
-  no-import scan, and the golden test harness. Hook workers get an
-  allowlisted environment (`PATH`, `HOME`, locale, temp dirs, `UV_*`/`XDG_*`,
-  TLS and proxy settings, `SSH_AUTH_SOCK`/`GIT_SSH_COMMAND`, and `PYTHONPATH`
-  set to the pack's `src/` only), as do `uv lock` runs on packs. Tokens such as
-  `GITHUB_TOKEN` or untaped's `UNTAPED_*` Jira/AWX/GitHub credentials are not
-  in the environment, but `UV_*` (possibly index credentials) is, and hooks
-  run as the user with full file access (`~/.netrc`, `config.yml`, git
-  credential stores). Hook stdout (even raw fd 1 or a
-  subprocess) becomes diagnostics and never corrupts the worker protocol.
-- Run `untaped skills install --all` (or `untaped skills install untaped-recipe`)
-  to install this packaged skill.
+- Installing a pack is installing code: its hooks run as the user, with full
+  file access, even during `--dry-run` and `--check`. Inspect an unfamiliar
+  pack before installing it; see [references/library.md](references/library.md).
+- Exit codes: 0 success, 1 failure or declined confirmation, 2 usage error,
+  3 `--check` drift, 130 interrupted.

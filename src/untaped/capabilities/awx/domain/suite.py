@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic.config import JsonDict
 
 from untaped.capabilities.awx.domain.job import JobEvent
 
@@ -55,12 +56,27 @@ class VariableSpec(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    name: str
-    type: VariableType = "string"
-    description: str | None = None
-    default: Any = None
-    choices: tuple[Any, ...] = ()
-    secret: bool = False
+    name: str = Field(description="The variable's key under the header's `variables:`.")
+    type: VariableType = Field(
+        default="string",
+        description="How a supplied value is converted: `string`, `int`, `bool` "
+        "(`true/false`, `yes/no`, `on/off`, `1/0`), `choice` (one of `choices`) or `list` "
+        "(a YAML list, or a comma-separated string).",
+    )
+    description: str | None = Field(
+        default=None, description="The prompt text when asked interactively (default: the name)."
+    )
+    default: Any = Field(
+        default=None,
+        description="The value when neither `--var` nor `--vars-file` sets it; "
+        "without a default the variable is required.",
+    )
+    choices: tuple[Any, ...] = Field(
+        default=(),
+        description="The allowed values of a `choice` variable; required for that type, "
+        "and a default must be one of them.",
+    )
+    secret: bool = Field(default=False, description="Prompt without echoing the answer.")
 
     @property
     def required(self) -> bool:
@@ -76,6 +92,13 @@ class VariableSpec(BaseModel):
                 f"default {self.default!r} is not one of choices {list(self.choices)!r}"
             )
         return self
+
+
+def _document_schema(schema: JsonDict) -> None:
+    """Required keys as written in a file: ``kind`` is, ``name`` (the file name) is not."""
+    required = schema.get("required")
+    kept = [key for key in required if key != "name"] if isinstance(required, list) else []
+    schema["required"] = ["kind", *kept]
 
 
 CheckName = Literal["status", "log.contains", "log.not_contains", "log.matches"]
@@ -112,10 +135,17 @@ class LogExpectation(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    contains: tuple[str, ...] = ()
-    not_contains: tuple[str, ...] = ()
-    matches: tuple[str, ...] = ()
-    """Regular expressions searched in each line."""
+    contains: tuple[str, ...] = Field(
+        default=(), description="Texts that some line of the job's stdout must contain."
+    )
+    not_contains: tuple[str, ...] = Field(
+        default=(), description="Texts that no line of the job's stdout may contain."
+    )
+    matches: tuple[str, ...] = Field(
+        default=(),
+        description="Python regular expressions that some line of the job's stdout must match "
+        "(searched anywhere in the line).",
+    )
 
     @field_validator("matches")
     @classmethod
@@ -147,13 +177,20 @@ class Expectation(BaseModel):
     """What a case's job must produce: a terminal status (default ``successful``) and log checks.
 
     Set in ``defaults.expect`` and per case; a case's ``status`` and each of its
-    ``log`` lists replace the default's (see :meth:`over`).
+    ``log`` lists replace the default's.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    status: TerminalStatus | None = None
-    log: LogExpectation = Field(default_factory=LogExpectation)
+    status: TerminalStatus | None = Field(
+        default=None,
+        description="The job's final status: `successful` (the default), `failed`, `error` "
+        "or `canceled`.",
+    )
+    log: LogExpectation = Field(
+        default_factory=LogExpectation,
+        description="Checks on the job's stdout; a case's list replaces the default's list.",
+    )
 
     @property
     def needs_log(self) -> bool:
@@ -181,25 +218,60 @@ class Case(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    launch: dict[str, Any] = Field(default_factory=dict)
-    expect: Expectation = Field(default_factory=Expectation)
-    timeout: float | None = Field(default=None, gt=0)
-    """Seconds to wait for the job before it counts as timed out."""
+    launch: dict[str, Any] = Field(
+        default_factory=dict,
+        description="The AWX launch payload (`extra_vars`, `limit`, `inventory`, "
+        "`credentials`, `scm_branch`, …), merged over `defaults.launch`.",
+    )
+    expect: Expectation = Field(
+        default_factory=Expectation,
+        description="What the job must produce; unset parts come from `defaults.expect`.",
+    )
+    timeout: float | None = Field(
+        default=None,
+        gt=0,
+        description="Seconds to wait for the job before it is cancelled and the case "
+        "counts as `timeout`.",
+    )
 
 
 class Suite(BaseModel):
     """One ``AwxTestSuite`` document."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid", populate_by_name=True)
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        populate_by_name=True,
+        title="AwxTestSuite",
+        json_schema_extra=_document_schema,
+    )
 
-    kind: Literal["AwxTestSuite"] = "AwxTestSuite"
-    name: str
-    job_template: str = Field(alias="jobTemplate")
-    organization: str | None = None
-    """The job template's organization (default: ``awx.default_organization``)."""
-    defaults: Case | None = None
-    cases: dict[str, Case]
-    variables: dict[str, VariableSpec] = Field(default_factory=dict)
+    kind: Literal["AwxTestSuite"] = Field(
+        default="AwxTestSuite", description="Marks the file as a test suite; required."
+    )
+    name: str = Field(
+        description="The suite name used by `--case SUITE/CASE`; unique across the files read "
+        "(default: the file name without its extension)."
+    )
+    job_template: str = Field(
+        alias="jobTemplate", description="The name of the job template every case launches."
+    )
+    organization: str | None = Field(
+        default=None,
+        description="The job template's organization (default: `awx.default_organization`).",
+    )
+    defaults: Case | None = Field(
+        default=None,
+        description="A case body every case inherits: `launch`, `expect` and `timeout`.",
+    )
+    cases: dict[str, Case] = Field(
+        description="The cases by name; each launches the job template once."
+    )
+    variables: dict[str, VariableSpec] = Field(
+        default_factory=dict,
+        description="Filled from the `variables:` block of the `---` header, never from the body.",
+        json_schema_extra={"readOnly": True},
+    )
 
     @field_validator("cases")
     @classmethod

@@ -41,6 +41,17 @@ class PreflightLaunch:
         scope: dict[str, str] | None,
         payload: dict[str, Any],
     ) -> None:
+        template, reader = self.template(spec, name=name, scope=scope)
+        preflight_launch(self._client, spec, template, payload, read=reader, name_fields=True)
+
+    def template(
+        self,
+        spec: ResourceSpec,
+        *,
+        name: str,
+        scope: dict[str, str] | None,
+    ) -> tuple[SelectedResource, Callable[[str], Mapping[str, Any]]]:
+        """The named template and a cached reader of its ``launch``/``survey_spec`` answers."""
         key = (name, tuple(sorted((scope or {}).items())))
         if key not in self._templates:
             request = SelectionRequest(names=(name,), scope=scope or {})
@@ -51,5 +62,4 @@ class PreflightLaunch:
                 return self._client.sub_endpoint_request(spec, template.id, endpoint, "GET")
 
             self._templates[key] = (template, read)
-        template, reader = self._templates[key]
-        preflight_launch(self._client, spec, template, payload, read=reader, name_fields=True)
+        return self._templates[key]
