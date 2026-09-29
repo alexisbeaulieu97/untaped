@@ -623,8 +623,8 @@ untaped awx schema AwxTestSuite > awx-test-suite.schema.json
 untaped awx test validate
 untaped awx test run --scm-branch HEAD --format json
 untaped awx test run --case deploy-smoke/web --var env=prod --show-logs
-untaped awx test run --scm-branch main --format json > baseline.json
-untaped awx test run --scm-branch HEAD --compare baseline.json
+untaped awx test run --scm-branch main --format json > /tmp/baseline.json
+untaped awx test run --scm-branch HEAD --compare /tmp/baseline.json
 untaped awx test run --scm-branch HEAD --baseline main
 ```
 
@@ -662,9 +662,8 @@ untaped awx test run --scm-branch HEAD --baseline main
   case to prove nothing changes the second time (`idempotent: true`).
 - `--compare FILE` compares a run with the saved JSON (or pipe) output of an
   earlier one, and `--baseline REF` runs every case on `REF` first, then
-  compares. Each row gains `baseline` and a `change` (`regression`, `fixed`,
-  `still_failing`, `pass`, `new`, `removed`), and only a regression fails the
-  run (4 and 5 still count).
+  compares. Each row gains `baseline` and a `change`, and only a regression
+  or a failing new case fails the run.
 - To let an AI agent run suites against its own changes, give it a dedicated
   profile and token: see [AWX agent profile](./agent-profile.md).
 

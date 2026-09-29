@@ -94,8 +94,10 @@ Some rows carry a code of their own. It never becomes the process exit code:
   severe one: 4 for a rejected token, a credential lookup or a failed
   inventory update, 5 for an unavailable controller, a job stuck pending or
   unreachable hosts, otherwise 1. Compared with a baseline (`--compare` or
-  `--baseline`), a case that failed before too does not count: only a
-  `regression` exits 1, while 4 and 5 still count for any case.
+  `--baseline`), a case that fails as it did in the baseline (`still_failing`:
+  same `system`) does not count; a regression, a failure the baseline cannot
+  vouch for (`unverified`) and a failing new case exit 1, and 4 and 5 still
+  count for any case, the `--baseline` run's included.
 
 ## See also
 
