@@ -25,9 +25,9 @@ prints the body's JSON Schema for editors and validators, and the
 ## File layout: header and body
 
 A suite file is YAML. It may open with a header: a YAML mapping between two
-`---` lines, which must be the first thing in the file (comments go inside
-it). The rest, the body, is a Jinja2 template rendered with the header's
-variables and then parsed as YAML:
+`---` lines, before which only blank lines and `#` comments may come. The
+rest, the body, is a Jinja2 template rendered with the header's variables and
+then parsed as YAML:
 
 ```yaml
 ---
@@ -43,7 +43,10 @@ cases:
       limit: "web-{{ env }}"
 ```
 
-A file without a header is just the body.
+A file without a header is just the body. A lone `---` with no closing
+`---` is an ordinary YAML document-start marker, not a header. `variables:`
+in the body is an error: declare variables in the header. Every error while
+reading a suite names its file.
 
 ### Rendering rules
 
@@ -91,6 +94,27 @@ declares is an error listing the declared names; one that only another suite
 declares is accepted and ignored. Suite variables fill the template only:
 the extra vars AWX receives are each case's `launch.extra_vars`.
 
+A secret goes in a `secret` variable, supplied from a vars file kept out of
+the repository, and reaches the job through `extra_vars`:
+
+```yaml
+---
+variables:
+  db_password: {secret: true, description: Database password}
+---
+kind: AwxTestSuite
+jobTemplate: Deploy app
+cases:
+  migrate:
+    launch:
+      extra_vars:
+        db_password: {{ db_password | to_json }}
+```
+
+```bash
+untaped awx test run --vars-file ~/.secrets/deploy-test.yml --non-interactive
+```
+
 ## Body: the suite
 
 | Field | Meaning |
@@ -121,16 +145,18 @@ Unknown keys are errors everywhere in the body, so a typo such as
 - `extra_vars` (a mapping), `limit`, `inventory`, `credentials` (a list),
   `scm_branch`, `job_tags`, `skip_tags`, `job_type` (`run` or `check`),
   `verbosity` (0-4), `diff_mode`;
-- `execution_environment`, `labels`, `instance_groups`, `forks`, `timeout`
-  (AWX's job timeout, not the case's wait) and `credential_passwords`.
+- `execution_environment`, `labels`, `instance_groups`, `forks`,
+  `job_slice_count`, `timeout` (AWX's job timeout, not the case's wait) and
+  `credential_passwords`.
 
 A field outside this list is sent anyway with a warning
 (`unknown launch field 'extra_var' — typo?`).
 
 `inventory`, `credentials`, `execution_environment`, `labels` and
-`instance_groups` take names: each name is looked up (organization-scoped
-kinds in the suite's organization, else `awx.default_organization`). An
-integer is used as an AWX id as it is. A single name where a list is expected
+`instance_groups` take names. A name of an organization-scoped kind
+(inventory, credential, label) is looked up in the suite's `organization`,
+else `awx.default_organization`; the others are global. An integer is used as
+an AWX id as it is. A single name where a list is expected
 is treated as a one-item list.
 
 **Merging with `defaults.launch`**, key by key:
@@ -159,8 +185,9 @@ launch:
 `kind` is an untaped kind name (`Inventory`, `Credential`, `Project`,
 `JobTemplate`, `WorkflowJobTemplate`, `ExecutionEnvironment`, `Label`,
 `InstanceGroup`, `Organization`, …). Any other keys are the lookup scope
-(`organization: Ops`); without them an organization-scoped kind is looked up
-in `awx.default_organization`. Plain mappings are never treated as references.
+(`organization: Ops`) and win; without them an organization-scoped kind is
+looked up in the suite's `organization`, else `awx.default_organization`.
+Plain mappings are never treated as references.
 
 ### `expect`: what the job must produce
 
@@ -226,8 +253,9 @@ untaped awx schema AwxTestSuite                   # the body's JSON Schema
 - `init TEMPLATE` reads the template's launch prompts and survey (the same
   reads as the preflight) and writes a commented suite with one `smoke`
   case. Required survey variables get their default, else their first
-  choice, else `TODO`; passwords always get `TODO` (supply them from a
-  `secret` suite variable, never write them in the file). Optional survey
+  choice, else `TODO`. A password with a stored default gets `$encrypted$`,
+  which makes AWX use the stored value; one without gets `TODO` (supply it
+  from a `secret` suite variable, never write it in the file). Optional survey
   variables and the launch fields the template prompts for are listed as
   comments. It writes `.untaped/awx/tests/<name>.yml` at the git root (the
   template name lowercased, `-` between words), or `--out PATH`; it refuses

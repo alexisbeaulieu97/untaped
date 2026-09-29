@@ -57,7 +57,8 @@ These flags apply to `launch` and `sync`:
 - `--follow` does the same while streaming each job's log to stderr, ending
   with its PLAY RECAP (`[template]`-prefixed when several run), so failed
   hosts show as Ansible prints them (`fatal: [host]: FAILED! => …`). A
-  workflow job has no log: its status changes are printed instead.
+  workflow job, including the result of a sliced job template launch, has no
+  log: its status changes are printed instead.
 - `--timeout SECONDS` (with `--wait`/`--follow`) stops waiting: a still
   running execution fails its row, keeps running, and is named in an
   `untaped awx jobs wait` hint.
@@ -91,8 +92,8 @@ untaped awx jobs wait 101 --timeout 600
   json` streams one object per line.
 - `--kind` selects the execution type: `job` (default), `workflow_job`,
   `project_update`, `inventory_update`, `ad_hoc_command`. Project and
-  inventory updates have logs and events; workflow jobs have neither (use
-  `jobs wait`). Piped records carry their own kind.
+  inventory updates have logs and events; workflow jobs, including sliced
+  launch results, have neither (use `jobs wait`). Piped records carry their own kind.
 
 ```bash
 untaped awx jobs wait 101 --kind project_update

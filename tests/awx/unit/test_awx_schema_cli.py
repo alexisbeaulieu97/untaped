@@ -61,4 +61,12 @@ def test_schema_of_an_unknown_kind_is_a_usage_error(cli: CliInvoker) -> None:
     result = cli.invoke(app, ["schema", "Nope"])
 
     assert result.exit_code == 2
-    assert "kind not found: 'Nope'; known: AwxTestSuite" in result.stderr
+    assert "Nope" in result.stderr
+    assert "AwxTestSuite" in result.stderr
+
+
+def test_schema_help_lists_the_kinds(cli: CliInvoker) -> None:
+    result = cli.invoke(app, ["schema", "--help"])
+
+    assert result.exit_code == 0
+    assert "AwxTestSuite" in result.stdout

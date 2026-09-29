@@ -30,7 +30,7 @@ or `pipe`); the table shows only `suite`, `case`, `result`, `job_status`,
 | `job_url` | The job's output page in the controller web UI. |
 | `duration_s` | Seconds from launch to verdict. |
 | `started_at`, `finished_at` | The job's start and finish times as AWX reports them. |
-| `scm_branch` | The ref the job ran (`--scm-branch` or the case's `scm_branch`). |
+| `scm_branch` | The ref the job ran, as AWX records it: `--scm-branch` or the case's `scm_branch` when given, otherwise the template's or project's branch. |
 | `scm_revision` | The commit the job checked out; compare it with `git rev-parse HEAD` to be sure the job ran your change. |
 | `failure_reason` | One line saying why the case did not pass; `null` for `pass`. |
 | `expectations` | Every check, as `{check, expected, actual, passed}` (below). |

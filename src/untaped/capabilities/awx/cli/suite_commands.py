@@ -422,7 +422,9 @@ def validate_command(
             scope = suite.scope(default_scope)
             for case_name, case in suite.cases.items():
                 try:
-                    payload = resolver(spec, case, defaults=suite.defaults)
+                    payload = resolver(
+                        spec, case, defaults=suite.defaults, organization=suite.organization
+                    )
                     preflight(spec, name=suite.job_template, scope=scope, payload=payload)
                 except (AwxApiError, ConfigError) as exc:
                     echo(f"{suite.name}/{case_name}: {exc}", err=True)
