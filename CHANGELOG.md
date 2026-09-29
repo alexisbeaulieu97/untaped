@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+- AWX
+  - **New:** workflow template documents carry their node graph under
+    `spec.nodes` (`id`, `run` or `approval`, `prompts` by name, `success`/
+    `failure`/`always` edges, `all_parents_must_converge`). `export` writes the
+    whole graph and no longer adds the partial-fidelity header comment;
+    `apply` reconciles nodes by `id` (create, patch, delete, then edges and
+    approval templates) with the usual preview, `--dry-run`, `--check` and
+    confirmation, and creates job templates of the same batch before the
+    workflow that runs them. Duplicate ids, edges to unknown ids, cycles and
+    unknown template names are refused before any write. See the "Workflow
+    templates and their nodes" section of the AWX guide.
+  - **New:** job template exports carry `instance_groups` by name, in their
+    fallback order, and `apply` reconciles them.
+  - **New:** `apply` accepts several files and directories as one batch, and
+    `apply --source-ref REF PATH...` reads them as they are at a git ref of the
+    current repository instead of the working tree (`HEAD` must be pushed).
+  - **Behavior change:** workflow template exports now include `nodes`, so
+    applying one sets the workflow's graph to the exported one (`nodes: []`
+    deletes every node). A document without `nodes`, such as an export from an
+    earlier version, still leaves the graph alone.
+
 ## 8.1.0
 
 A backwards-compatible release: shared core helpers (capability SDK 2.1),
