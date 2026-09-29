@@ -566,9 +566,35 @@ of every launchable kind.
 
 `awx test` launches a job template with a matrix of parameters, checks each
 job against what the case expects, and reports one result per case. Suites
-live in the repository they test, under `.untaped/awx/tests/`. A test file is
-YAML. An optional `---`-delimited header declares variables; the body is a
-Jinja2 template rendered with them:
+live in the repository they test, under `.untaped/awx/tests/`. The complete
+format, the result record and example suites ship with the CLI in the
+`untaped-awx` skill: [test suites](../../src/untaped/capabilities/awx/skills/untaped-awx/references/test-suites.md),
+[test results](../../src/untaped/capabilities/awx/skills/untaped-awx/references/test-results.md)
+and [examples](../../src/untaped/capabilities/awx/skills/untaped-awx/examples/).
+
+Start a suite from a job template's survey and launch prompts:
+
+```bash
+untaped awx test init "Deploy app"
+untaped awx test init "Deploy app" --organization Ops --out suites/deploy.yml
+untaped awx schema AwxTestSuite > awx-test-suite.schema.json
+```
+
+`init` reads the template's `launch/` and `survey_spec/` endpoints (the reads
+the preflight below makes) and writes a commented suite with one `smoke`
+case: required survey variables get their default, else their first choice,
+else `TODO` (always `TODO` for a password), and optional survey variables and
+the fields the template prompts for on launch are listed as comments. It
+writes `.untaped/awx/tests/<name>.yml` at the root of the git checkout (the
+template name lowercased, with `-` between words) unless `--out` names the
+file, prints the path, and never replaces an existing file. `awx schema KIND`
+prints the JSON Schema of a document you write, generated from the installed
+version's models (json by default, `--format yaml`); `AwxTestSuite` is the
+only kind so far. It describes the suite body; the header's variables are
+filled by the loader (`readOnly` in the schema).
+
+A test file is YAML. An optional `---`-delimited header declares variables;
+it must open the file. The body is a Jinja2 template rendered with them:
 
 ```yaml
 ---

@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+- Core
+  - **New:** every built-in skill is a complete manual for the installed CLI.
+    Each has a description naming the words that should make an agent load
+    it, no skill points at `docs/` or the source repository any more, and the
+    AWX and recipe skills keep `SKILL.md` short and ship the details in
+    `references/` (plus example suites for AWX). Run `untaped skills update`
+    to refresh installed copies. Tests now parse every `untaped …` command a
+    skill quotes against the real CLI.
+- AWX
+  - **New:** `untaped awx test init TEMPLATE` writes a commented starter
+    suite for a job template from its survey and launch prompts: required
+    survey variables get their default, first choice or `TODO` (always `TODO`
+    for passwords), and optional variables and the enabled launch prompts are
+    listed as comments. It writes `.untaped/awx/tests/<name>.yml` at the git
+    root (or `--out PATH`), prints the path, and never replaces a file.
+  - **New:** `untaped awx schema AwxTestSuite` prints the JSON Schema of a
+    test suite (json by default, `--format yaml`), generated from the
+    installed models; every suite field now has a description.
+  - The `untaped-awx` skill documents the complete suite format, the
+    `awx.test_result` record, the agent profile, and the resource, document
+    and job commands in `references/`, with `smoke`, `variants` and
+    `negative` example suites. `docs/awx/agent-profile.md` now points at the
+    skill's copy.
+
 ## 8.1.0
 
 A backwards-compatible release: shared core helpers (capability SDK 2.1),

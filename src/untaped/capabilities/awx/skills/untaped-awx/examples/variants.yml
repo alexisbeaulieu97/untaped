@@ -1,0 +1,46 @@
+---
+# Variants: header variables, a case matrix built with Jinja2, defaults every
+# case inherits, !ref, and per-case limits. The header must open the file.
+#
+#   untaped awx test run variants.yml --var env=prod
+#   untaped awx test run variants.yml --var regions=us-east
+variables:
+  env:
+    type: choice
+    choices: [staging, prod]
+    default: staging
+    description: Environment to test against
+  regions:
+    type: list
+    default: [us-east, eu-west]
+---
+kind: AwxTestSuite
+name: deploy-variants
+jobTemplate: Deploy app
+organization: Ops
+defaults:
+  timeout: 1800
+  launch:
+    # Merged into every case: a case's extra_vars are deep-merged over these,
+    # and its credentials are added to these.
+    extra_vars:
+      dry_run: true
+      app: {name: web, version: "1.4"}
+    credentials: [Vault token]
+  expect:
+    log:
+      not_contains: ["[DEPRECATION WARNING]"]
+cases:
+{% for region in regions %}
+  {{ region }}:
+    launch:
+      limit: "{{ region }}-{{ env }}"
+      inventory: !ref {kind: Inventory, name: "{{ env }} inventory", organization: Ops}
+      extra_vars:
+        app: {version: "1.5"}
+        region: {{ region | to_json }}
+    expect:
+      log:
+        contains: ["PLAY RECAP"]
+        matches: ['{{ region }}-\S+ +: ok=\d+ +changed=\d+ +unreachable=0 +failed=0']
+{% endfor %}

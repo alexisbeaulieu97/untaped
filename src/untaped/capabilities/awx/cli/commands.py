@@ -11,7 +11,7 @@ import json
 import re
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from cyclopts import Parameter
 
@@ -36,6 +36,7 @@ from untaped.capabilities.awx.cli.unified_templates_commands import app as unifi
 from untaped.capabilities.awx.cli.usage_commands import register_usage_command
 from untaped.capabilities.awx.cli.workflow_node_commands import register_nodes_command
 from untaped.capabilities.awx.domain import Job, JobEvent
+from untaped.capabilities.awx.domain.authored import AUTHORED_KINDS, authored_schema
 from untaped.capabilities.awx.domain.job import JOB_ROUTES
 from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS
 from untaped.capability_api import (
@@ -47,6 +48,7 @@ from untaped.capability_api import (
     echo,
     emit,
     finish,
+    not_found,
     parse_kv_pairs,
     raise_usage,
     render_rows,
@@ -74,6 +76,25 @@ def ping_command(
         with open_context() as ctx:
             status = Ping(ctx.client)()
         emit(status, fmt=fmt, columns=columns, kind="awx.status")
+
+
+# ---- schema ----
+
+
+@app.command(name="schema")
+def schema_command(
+    kind: Annotated[str, Parameter(help=f"The document kind: {', '.join(AUTHORED_KINDS)}.")],
+    /,
+    *,
+    fmt: Annotated[
+        Literal["json", "yaml"],
+        Parameter(name=["--format", "-f"], help="Print the schema as json or yaml."),
+    ] = "json",
+) -> None:
+    """Print the JSON Schema of a document kind you write, for editors and agents."""
+    if kind not in AUTHORED_KINDS:
+        raise_usage(not_found("kind", kind, known=AUTHORED_KINDS))
+    emit(authored_schema(kind), fmt=fmt)
 
 
 # ---- top-level apply (multi-kind, file or directory) ----
