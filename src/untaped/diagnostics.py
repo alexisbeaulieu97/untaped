@@ -295,14 +295,16 @@ def _plain(error: BaseException) -> str:
 
 
 def error_record(
-    error: BaseException, *, item: str | None = None, message: str | None = None
+    error: BaseException | ErrorInfo, *, item: str | None = None, message: str | None = None
 ) -> dict[str, Any]:
     """The JSON diagnostic for one failure (``item`` names a per-item failure).
 
     Its :class:`ErrorInfo` fields plus ``level``, ``item``, ``exit_code`` and
-    the error's ``details``.
+    the error's ``details`` (none for an :class:`ErrorInfo`).
     """
-    info = ErrorInfo.from_exception(error, message=message)
+    info = (
+        error if isinstance(error, ErrorInfo) else ErrorInfo.from_exception(error, message=message)
+    )
     record: dict[str, Any] = {"level": "error"}
     if item is not None:
         record["item"] = item

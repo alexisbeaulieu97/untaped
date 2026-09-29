@@ -110,6 +110,7 @@ EXPECTED_ALL = [
     "note_failure",
     "report_error",
     "most_severe",
+    "rejected_token_error",
 ]
 
 

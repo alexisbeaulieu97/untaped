@@ -55,7 +55,7 @@ from untaped.capabilities.awx.errors import (
     MutationConflictError,
     PartialWriteError,
 )
-from untaped.capability_api import ConfigError, ErrorInfo, note_failure
+from untaped.capability_api import ErrorCategory, ErrorInfo, UntapedError, note_failure
 
 
 class _AbortBatchError(AwxError):
@@ -403,7 +403,7 @@ class BatchMutationEngine:
                     **_failure(exc, operation),
                 }
             )
-            if isinstance(exc, ConfigError) or isinstance(exc.__cause__, ConfigError):
+            if _dooms_batch(exc):
                 raise _AbortBatchError(outcome) from exc
             return outcome
 
@@ -468,7 +468,7 @@ class BatchMutationEngine:
                         ),
                     }
                 )
-                stopped = not continue_on_error or isinstance(exc, ConfigError)
+                stopped = not continue_on_error or _dooms_batch(exc)
                 continue
             if (
                 any(item.field_change is not None for item in plans)
@@ -518,17 +518,12 @@ class BatchMutationEngine:
                         "action": "partial",
                         "partial": True,
                         "unverified": True,
-                        "detail": (
-                            f"body succeeded but its workflow nodes failed: "
-                            f"{_safe_error(exc, operation)}"
+                        **_failure(
+                            exc, operation, "body succeeded but its workflow nodes failed: "
                         ),
                     }
                 )
-                stopped = (
-                    not continue_on_error
-                    or isinstance(exc, ConfigError)
-                    or isinstance(exc.__cause__, ConfigError)
-                )
+                stopped = not continue_on_error or _dooms_batch(exc)
                 continue
             if outcome.action == "unchanged":
                 outcomes[operation.index] = outcome.model_copy(update={"action": "updated"})
@@ -551,6 +546,18 @@ class BatchMutationEngine:
                 "error": error,
             }
         )
+
+
+#: Failures that doom every remaining request of a batch alike.
+_BATCH_DOOMING = frozenset({ErrorCategory.AUTH, ErrorCategory.CONFIG})
+
+
+def _dooms_batch(exc: BaseException) -> bool:
+    """Whether ``exc`` (or its cause) is a rejected token or broken setup."""
+    return any(
+        isinstance(error, UntapedError) and error.category in _BATCH_DOOMING
+        for error in (exc, exc.__cause__)
+    )
 
 
 def _noop_warn(_message: str) -> None:

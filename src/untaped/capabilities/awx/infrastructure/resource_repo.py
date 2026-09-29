@@ -44,7 +44,7 @@ from untaped.capabilities.awx.infrastructure.awx_client import AwxClient
 from untaped.capabilities.awx.infrastructure.errors import map_awx_errors
 from untaped.capabilities.awx.infrastructure.pagination import paginate
 from untaped.capabilities.awx.infrastructure.spec import awx_api_path, awx_relationship_path
-from untaped.capability_api import ConfigError
+from untaped.capability_api import ConfigError, attribution
 
 
 def scope_params(scope: dict[str, str] | None) -> dict[str, str]:
@@ -66,12 +66,15 @@ def _partial_write(step: str, record_id: int) -> Iterator[None]:
 
     A 401 (:class:`ConfigError`) is wrapped too, so the row keeps its ID;
     it stays the cause, and the mutation engine still aborts the batch on it.
+    The error keeps its cause's category, system and hint.
     """
     try:
         with map_awx_errors():
             yield
     except (AwxApiError, ConfigError) as exc:
-        raise PartialWriteError(f"{step} failed: {exc}", record_id=record_id) from exc
+        raise PartialWriteError(
+            f"{step} failed: {exc}", record_id=record_id, **attribution(exc)
+        ) from exc
 
 
 class ResourceRepository:

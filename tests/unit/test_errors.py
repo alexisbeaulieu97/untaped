@@ -15,6 +15,7 @@ from untaped.errors import (
     UsageError,
     attribution,
     combine_exit_codes,
+    most_severe,
 )
 from untaped.git import GitCommandError
 
@@ -219,6 +220,18 @@ def test_attribution_copies_category_system_and_details() -> None:
         "details": {"status": 503, "url": "https://h"},
     }
     assert attribution(KeyError("x")) == {}
+
+
+def test_most_severe_picks_the_error_whose_code_wins() -> None:
+    missing = UntapedError("gone", category="not_found")
+    down = UntapedError("down", category="unavailable")
+    rejected = UntapedError("rejected", category="auth")
+
+    assert most_severe([missing, down, KeyError("bug")]) is down
+    assert most_severe([down, rejected, missing]) is rejected
+    assert most_severe(iter([missing])) is missing
+    with pytest.raises(ValueError):
+        most_severe([])
 
 
 def test_attribution_carries_the_hint() -> None:

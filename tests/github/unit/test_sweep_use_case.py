@@ -6,6 +6,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from unittest.mock import ANY
 
 import pytest
 
@@ -283,7 +284,7 @@ def test_failed_refresh_with_covering_cache_scans_cached() -> None:
 
     assert _names(report) == ["acme/api"]
     assert report.unscanned == ()
-    assert report.stale == (CorpusFailure(repo="acme/api", reason="fetch denied"),)
+    assert report.stale == (CorpusFailure(repo="acme/api", reason="fetch denied", cause=ANY),)
     assert (report.scanned, report.refreshed, report.cached) == (1, 0, 1)
 
 
@@ -332,7 +333,7 @@ def test_one_broken_repo_is_unscanned_not_fatal(
     report = _sweep(corpus, **setup(corpus))
 
     assert _names(report) == ["acme/api"]
-    assert report.unscanned == (CorpusFailure(repo="acme/bad", reason=reason),)
+    assert report.unscanned == (CorpusFailure(repo="acme/bad", reason=reason, cause=ANY),)
 
 
 @pytest.mark.parametrize(

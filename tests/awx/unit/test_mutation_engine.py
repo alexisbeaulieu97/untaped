@@ -523,6 +523,22 @@ def test_auth_failure_aborts_remaining_items_but_keeps_completed_rows() -> None:
     assert "401" in (result.outcomes[1].detail or "")
 
 
+@pytest.mark.parametrize("category", ["auth", "config"])
+def test_an_environment_failure_of_any_class_aborts_the_batch(category: str) -> None:
+    from untaped.capabilities.awx.errors import AwxApiError
+
+    class Refused(_Client):
+        def create(self, spec: ResourceSpec, payload: Any) -> ServerRecord:
+            if payload.name == "second":
+                raise AwxApiError("refused", category=category)
+            return super().create(spec, payload)
+
+    result = _item_engine(Refused([])).run(
+        _items("first", "second", "third"), write=True, continue_on_error=True
+    )
+    assert [row.action for row in result.outcomes] == ["created", "failed", "skipped"]
+
+
 def test_failed_rows_carry_the_attributed_error() -> None:
     from untaped.capability_api import ConfigError
 

@@ -83,6 +83,7 @@ from untaped.http import (
     paginate_link,
     paginate_offset,
     paginate_pages,
+    rejected_token_error,
     resolve_verify,
     same_origin,
 )
@@ -218,4 +219,5 @@ __all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by
     "note_failure",
     "report_error",
     "most_severe",
+    "rejected_token_error",
 ]

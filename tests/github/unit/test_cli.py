@@ -96,6 +96,7 @@ def test_rejected_token_is_an_auth_diagnostic_under_json(
     assert (record["category"], record["system"]) == ("auth", "github")
     assert record["message"] == "GitHub rejected the configured token (HTTP 401)"
     assert record["hint"] == "run `untaped config set github.token --prompt`"
+    assert record["details"]["status"] == 401
 
 
 @pytest.mark.parametrize(

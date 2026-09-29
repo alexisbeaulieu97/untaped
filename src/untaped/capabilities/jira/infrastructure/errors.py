@@ -19,12 +19,11 @@ from contextlib import contextmanager
 
 from untaped.capabilities.jira.errors import JiraApiError
 from untaped.capability_api import (
-    ConfigError,
     HttpStatusError,
     UntapedError,
     attribution,
-    hint,
     not_found,
+    rejected_token_error,
 )
 
 
@@ -34,13 +33,7 @@ def to_jira_error(
     """The typed error for one failed Jira call (``noun``/``name`` name its target)."""
     status = err.status_code
     if status == 401:
-        return ConfigError(
-            "Jira rejected the token (HTTP 401)",
-            category="auth",
-            system="jira",
-            hint=hint("config set jira.token --prompt").removeprefix("hint: "),
-            details=err.details,
-        )
+        return rejected_token_error("jira", "Jira rejected the token (HTTP 401)", cause=err)
     detail = _jira_detail(err.body)
     if status == 404 and noun is not None and name is not None:
         message = not_found(noun, name)

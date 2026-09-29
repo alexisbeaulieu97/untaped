@@ -39,11 +39,11 @@ from untaped.capability_api import (
     finish,
     git_toplevel,
     hint,
-    note_failure,
     parse_kv_pairs,
     plural,
     q,
     raise_usage,
+    report_error,
     report_errors,
     summary,
     ui_context,
@@ -430,8 +430,7 @@ def validate_command(
                     )
                     preflight(spec, name=suite.job_template, scope=scope, payload=payload)
                 except (AwxApiError, ConfigError) as exc:
-                    echo(f"{suite.name}/{case_name}: {exc}", err=True)
-                    note_failure(exc)
+                    report_error(exc, item=f"{suite.name}/{case_name}")
                     any_errors = True
 
     finish(any_errors)

@@ -43,6 +43,7 @@ from untaped.capability_api import (
     UsageError,
     attribution,
     bounded_map,
+    most_severe,
     note_failure,
     plural,
 )
@@ -521,10 +522,9 @@ def _resolve_online_scope(
     failures.sort(key=lambda failure: failure.repo)
     if names and len(failures) == len(names) and not items:
         detail = "; ".join(failure.reason for failure in failures)
-        cause = failures[0].cause
         raise UntapedError(
             f"no requested repository could be resolved: {detail}",
-            **(attribution(cause) if cause is not None else {}),
+            **attribution(most_severe(failure.cause for failure in failures)),
         )
     rows = (item for _, item in sorted(items.items()) if archived_allows(archived, item.archived))
     return tuple(_target(item) for item in rows), tuple(failures)
@@ -547,7 +547,7 @@ def _failure(repo: CorpusRepoTarget, exc: Exception) -> CorpusFailure:
 
 def _failure_error(failure: CorpusFailure) -> ErrorInfo:
     """The ``error`` of a failed sync row (counted toward the run's exit code)."""
-    return note_failure(failure.cause or UntapedError(failure.reason), message=failure.reason)
+    return note_failure(failure.cause, message=failure.reason)
 
 
 class SyncCorpus(_CorpusUseCase):

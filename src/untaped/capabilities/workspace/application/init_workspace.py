@@ -11,7 +11,7 @@ from untaped.capabilities.workspace.domain import (
     WorkspaceManifest,
     check_workspace_name,
 )
-from untaped.capabilities.workspace.errors import WorkspaceError
+from untaped.capability_api import UsageError
 
 
 class InitWorkspace:
@@ -31,7 +31,7 @@ class InitWorkspace:
             try:
                 check_workspace_name(name)
             except ValueError as exc:
-                raise WorkspaceError(str(exc), category="usage", system="untaped") from exc
+                raise UsageError(str(exc)) from exc
 
         def _build(ws_name: str) -> WorkspaceManifest:
             defaults = ManifestDefaults(branch=branch) if branch else ManifestDefaults()

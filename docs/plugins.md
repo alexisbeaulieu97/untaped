@@ -92,7 +92,8 @@ the shape of `UntapedError` and the exit codes: every error has a `category`
 (so a class no longer sets `exit_code` itself), `ConfigError` exits 4, and
 `unavailable` failures exit 5. `BatchOutcome` keeps `failures` (each item with
 its error) and derives `failed` from it; `OutcomeRecord` and `TargetRecord`
-reserve an `error` field. It added `ErrorCategory`, `ErrorInfo`,
+reserve an `error` field. It added `ErrorCategory`, `ErrorInfo`, `most_severe`,
+`rejected_token_error`,
 `attribution`, `note_failure` and `report_error`. A 2.x provider must move to
 `((3, 0), (4, 0))` and check its error classes and any record field named
 `error`.
@@ -257,9 +258,11 @@ The shared runtime helpers are exported from the same module:
   `first_validation_error`, `ExitCode`, `attribution(exc)` (the
   `category`/`system`/`hint`/`details` keyword arguments to pass to an error
   that replaces `exc`), `report_error(exc, item=…)` (print one failure, text
-  or JSON, and count it toward the exit code), and
+  or JSON, and count it toward the exit code),
   `note_failure(exc, message=…)` (count a failure you turned into a row
-  yourself; it returns the row's `ErrorInfo`).
+  yourself; it returns the row's `ErrorInfo`), `most_severe(errors)` (the error
+  whose exit code wins), and `rejected_token_error(section, message, cause=…)`
+  (the standard `auth` error with the `config set <section>.token` hint).
 - Message wording: `plural`, `q`, `not_found`, `hint`, `summary`.
 - Tokens: declare `token_sources: ClassVar[TokenSources] =
   TokenSources(env=(...))` and a `token_command: TokenCommand = None` field

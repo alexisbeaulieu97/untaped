@@ -52,9 +52,10 @@ from untaped.capabilities.awx.domain.suite import (
 from untaped.capabilities.awx.errors import ActionResponseError, AwxApiError
 from untaped.capability_api import (
     ConfigError,
-    ExitCode,
     UntapedError,
+    attribution,
     bounded_map,
+    most_severe,
     note_failure,
 )
 
@@ -261,11 +262,9 @@ class RunTestSuite:
                 problems.append(f"  {item.suite_name}/{item.case_name}: {exc}")
                 errors.append(exc)
         if problems:
-            worst = _most_severe(errors)
             raise ConfigError(
                 "\n".join(["preflight failed, nothing launched:", *problems]),
-                category=worst.category,
-                system=worst.system,
+                **attribution(most_severe(errors)),
             )
 
     def _launch_and_wait(self, item: _ResolvedCase) -> CaseResult:
@@ -280,7 +279,7 @@ class RunTestSuite:
             )
             self.launched.append(job)
         except Exception as exc:
-            note_failure(exc)
+            failure = note_failure(exc)
             # ``ignored_fields`` responses launched a job; keep its ID as evidence.
             if isinstance(exc, ActionResponseError) and exc.execution_id is not None:
                 self.launched.append(
@@ -296,7 +295,11 @@ class RunTestSuite:
                 result="error",
                 job_id=exc.execution_id if isinstance(exc, ActionResponseError) else None,
                 duration_s=self._clock() - started_clock,
-                failure_reason=str(exc),
+                failure_reason=(
+                    failure.message
+                    if failure.hint is None
+                    else f"{failure.message}; hint: {failure.hint}"
+                ),
             )
         log: list[str] | None = None
         try:
@@ -347,6 +350,7 @@ class RunTestSuite:
             try:
                 log = self._read_log(job)
             except Exception as exc:
+                note_failure(exc)
                 fetch_error = f"log fetch failed: {exc}"
             else:
                 checks.extend(expect.log.evaluate(log))
@@ -386,17 +390,6 @@ class RunTestSuite:
             except Exception:
                 return None
         return tuple(log[-LOG_TAIL_LINES:])
-
-
-def _most_severe(errors: Sequence[UntapedError]) -> UntapedError:
-    """The error the run's exit code follows: environment (4), then unavailable (5)."""
-    return min(
-        errors,
-        key=lambda error: (
-            error.exit_code != ExitCode.ENVIRONMENT,
-            error.exit_code != ExitCode.UNAVAILABLE,
-        ),
-    )
 
 
 def _collect_ref_sentinels(

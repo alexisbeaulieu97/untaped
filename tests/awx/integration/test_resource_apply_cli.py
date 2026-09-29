@@ -612,6 +612,35 @@ def test_write_whose_survey_write_fails_is_partial_with_the_record_id(
     assert detail in row["detail"]
 
 
+@pytest.mark.parametrize(
+    ("status", "category", "exit_code"), [(401, "auth", 4), (503, "unavailable", 5)]
+)
+def test_a_partial_write_keeps_the_category_of_its_cause(
+    fake_aap: Any, tmp_path: Path, status: int, category: str, exit_code: int
+) -> None:
+    _seed_basic(fake_aap)
+    fake_aap.survey_errors = {"POST": status}
+    doc = tmp_path / "jt.yml"
+    doc.write_text(
+        "kind: JobTemplate\n"
+        "metadata: { name: fresh, organization: Default }\n"
+        "spec: { playbook: deploy.yml, project: playbooks, inventory: prod,\n"
+        f"        survey_spec: {_SURVEY} }}\n"
+    )
+
+    result = CliInvoker().invoke(app, ["apply", str(doc), "--yes", "--format", "json"])
+
+    assert result.exit_code == exit_code, result.output
+    row = json.loads(result.stdout)[0]
+    assert (row["action"], row["error"]["category"], row["error"]["system"]) == (
+        "partial",
+        category,
+        "awx",
+    )
+    if status == 401:
+        assert "config set awx.token" in (row["error"]["hint"] or "")
+
+
 def test_rejected_token_during_survey_write_still_stops_the_batch(
     fake_aap: Any, tmp_path: Path
 ) -> None:
