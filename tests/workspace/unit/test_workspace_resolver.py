@@ -12,12 +12,12 @@ import pytest
 
 from untaped.capabilities.workspace.application import WorkspaceResolver
 from untaped.capabilities.workspace.domain import Workspace, WorkspaceManifest
+from untaped.capabilities.workspace.errors import WorkspaceError
 from untaped.capabilities.workspace.infrastructure import (
     LocalFilesystem,
     WorkspaceRegistryRepository,
     YamlManifestRepository,
 )
-from untaped.capability_api import ConfigError
 from untaped.settings import get_settings
 from workspace.conftest import StubFilesystem, StubManifests, StubRegistry
 
@@ -36,14 +36,14 @@ def _resolver(
     )
 
 
-def test_unknown_user_home_raises_config_error() -> None:
-    with pytest.raises(ConfigError, match="~nosuchuser-untaped"):
+def test_unknown_user_home_raises_a_workspace_error() -> None:
+    with pytest.raises(WorkspaceError, match="~nosuchuser-untaped"):
         _resolver().resolve("~nosuchuser-untaped/ws")
 
 
 def test_missing_explicit_path_raises_instead_of_walking_up() -> None:
     resolver = _resolver(manifests={_WS: WorkspaceManifest(name="lab")})
-    with pytest.raises(ConfigError, match="does not exist"):
+    with pytest.raises(WorkspaceError, match="does not exist"):
         resolver.resolve("./typo/dir", cwd=_WS)
 
 
@@ -93,12 +93,12 @@ def test_unregistered_workspace_name_precedence(
 
 
 def test_resolve_by_path_missing_manifest_raises() -> None:
-    with pytest.raises(ConfigError, match="no workspace manifest at or above"):
+    with pytest.raises(WorkspaceError, match="no workspace manifest at or above"):
         _resolver().resolve("/ws/empty")
 
 
 def test_resolve_from_cwd_outside_workspace_raises() -> None:
-    with pytest.raises(ConfigError, match="not inside a workspace"):
+    with pytest.raises(WorkspaceError, match="not inside a workspace"):
         _resolver().resolve(cwd=Path("/elsewhere"))
 
 

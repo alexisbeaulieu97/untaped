@@ -33,7 +33,7 @@ from untaped.capabilities.workspace.domain import (
     SyncOutcome,
     Workspace,
 )
-from untaped.capabilities.workspace.errors import RegistryError
+from untaped.capabilities.workspace.errors import RegistryError, WorkspaceError
 from untaped.capabilities.workspace.infrastructure import (
     DEFAULT_SLOW_TIMEOUT,
     DEFAULT_TIMEOUT,
@@ -466,7 +466,7 @@ def _stdin_repos(ws: Workspace) -> list[str]:
             )
         name = env.record.get("repo")
         if not isinstance(name, str) or not name.strip():
-            raise ConfigError(
+            raise WorkspaceError(
                 f"line {env.lineno}: record 'repo' is missing or blank", category="invalid"
             )
         names.append(name.strip())

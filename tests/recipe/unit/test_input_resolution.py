@@ -18,6 +18,7 @@ from untaped.capabilities.recipe.application.inputs import (
 from untaped.capabilities.recipe.application.targets import Target
 from untaped.capabilities.recipe.domain.recipe import Recipe
 from untaped.capabilities.recipe.errors import RecipeError
+from untaped.capability_api import UsageError
 
 
 class PromptRecorder:
@@ -237,7 +238,7 @@ def test_recipe_from_still_falls_back_to_default() -> None:
 
 
 def test_input_resolution_rejects_cli_value_and_source_conflicts() -> None:
-    with pytest.raises(RecipeError, match="cannot combine --var/--vars-file and --input-from"):
+    with pytest.raises(UsageError, match="cannot combine --var/--vars-file and --input-from"):
         _config(
             _recipe(),
             fixed_values={"service": "api", "token": "secret"},

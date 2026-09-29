@@ -12,7 +12,7 @@ to the exceptions that select it.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from enum import IntEnum, StrEnum
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
@@ -66,6 +66,22 @@ def combine_exit_codes(*codes: int) -> int:
         return _PRECEDENCE.index(ExitCode.FAILURE if code else ExitCode.OK)
 
     return min(codes, key=rank, default=ExitCode.OK)
+
+
+def most_severe[E: BaseException](errors: Iterable[E]) -> E:
+    """The error whose exit code wins by precedence (the first one on a tie).
+
+    Anything but an :class:`UntapedError` ranks as a plain failure (``1``).
+    Raises :class:`ValueError` for no errors.
+    """
+    candidates = list(errors)
+    if not candidates:
+        raise ValueError("most_severe() needs at least one error")
+    codes = [
+        error.exit_code if isinstance(error, UntapedError) else ExitCode.FAILURE
+        for error in candidates
+    ]
+    return candidates[codes.index(combine_exit_codes(*codes))]
 
 
 class ErrorCategory(StrEnum):

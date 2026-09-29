@@ -27,6 +27,7 @@ from untaped.capabilities.workspace.domain import (
     RepoRemoveOutcome,
     WorkspaceSummaryRow,
 )
+from untaped.capabilities.workspace.errors import WorkspaceError
 from untaped.capabilities.workspace.infrastructure import (
     GitRunner,
     LocalFilesystem,
@@ -34,7 +35,6 @@ from untaped.capabilities.workspace.infrastructure import (
 )
 from untaped.capability_api import (
     ColumnsOption,
-    ConfigError,
     DryRunOption,
     FormatOption,
     StdinOption,
@@ -211,7 +211,7 @@ def _read_add_urls(urls: list[str], *, stdin: bool) -> list[str]:
     for env in piped.records:
         value = env.record.get("clone_url") or env.record.get("url")
         if not isinstance(value, str) or not value.strip():
-            raise ConfigError(
+            raise WorkspaceError(
                 f"line {env.lineno}: record has no 'clone_url' or 'url'", category="invalid"
             )
         found.append(value.strip())

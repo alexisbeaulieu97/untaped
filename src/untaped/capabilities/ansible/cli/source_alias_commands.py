@@ -7,6 +7,7 @@ from typing import Annotated
 from cyclopts import Parameter
 
 from untaped.capabilities.ansible.domain.payloads import AliasOutcome
+from untaped.capabilities.ansible.errors import AnsibleError
 from untaped.capabilities.ansible.infrastructure import AliasRepository, SourceRepository
 from untaped.capabilities.ansible.settings import is_repo_name
 from untaped.capability_api import (
@@ -14,7 +15,6 @@ from untaped.capability_api import (
     DryRunOption,
     FormatOption,
     UiContext,
-    UntapedError,
     UsageError,
     YesOption,
     app_context,
@@ -94,7 +94,7 @@ def alias_remove_command(
         entries = aliases.entries()
         repo = entries.get(alias)
         if repo is None:
-            raise UntapedError(
+            raise AnsibleError(
                 not_found("source alias", alias, known=sorted(entries)), category="not_found"
             )
         ui = app_context().ui(strict=False)
