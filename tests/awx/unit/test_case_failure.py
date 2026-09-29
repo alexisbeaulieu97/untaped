@@ -12,46 +12,66 @@ from untaped.capabilities.awx.domain.case_failure import (
     FailedTask,
     FailureEvidence,
     RelatedExecution,
+    failure_system,
     finished_failure,
-    launch_system,
     request_failure,
     responsible_update,
     timeout_failure,
+    unrescued,
 )
+from untaped.capabilities.awx.domain.job import HostSummary
 from untaped.capabilities.awx.errors import LaunchPromptError, ResourceNotFoundError
 from untaped.capability_api import ConfigError, ErrorInfo, HttpTransportError
 
 _PROJECT_FAILED = (
     'Previous Task Failed: {"job_type": "project_update", "job_name": "acme", "job_id": "812"}'
 )
-_INVENTORY_FAILED = (
-    'Previous Task Failed: {"job_type": "inventory_update", "job_name": "Cloud", "job_id": "813"}'
-)
+_STATUS_REASON = ["expected status successful, got failed"]
 
 
 def _job(status: str, **fields: Any) -> Job:
     return Job(id=5, kind="job", status=status, **fields)
 
 
+def _update(status: str, kind: str = "project_update", **fields: Any) -> Job:
+    return Job(id=812, kind=kind, name="acme", status=status, **fields)
+
+
 def _task(status: str = "failed", *, host: str = "web1", msg: str | None = "boom") -> FailedTask:
     return FailedTask(host=host, task="Deploy", status=status, msg=msg, stderr=None)  # type: ignore[arg-type]
 
 
-def _attribution(failure: CaseFailure) -> tuple[str, str, bool]:
+def _attribution(failure: CaseFailure | None) -> tuple[str, str, bool]:
+    assert failure is not None
     return failure.system, failure.category, failure.retryable
 
 
-def test_a_case_failure_is_an_error_info_written_with_a_summary() -> None:
-    failure = finished_failure(
-        _job("successful"), reasons=["expected status failed, got successful"],
-        status_held=False, failed_tasks=None,
-    )  # fmt: skip
+def _finished(
+    job: Job,
+    *,
+    update: Job | None = None,
+    held: bool = False,
+    reasons: list[str] | None = None,
+    tasks: list[FailedTask] | None = None,
+) -> CaseFailure | None:
+    return finished_failure(
+        job,
+        update=update,
+        update_url="https://aap/#/jobs/project/812/output",
+        status_held=held,
+        reasons=_STATUS_REASON if reasons is None else reasons,
+        failed_tasks=tasks,
+    )
+
+
+def test_a_case_failure_is_an_error_info_with_evidence() -> None:
+    failure = _finished(_job("successful"), reasons=["expected status failed, got successful"])
     assert isinstance(failure, ErrorInfo)
     assert failure.model_dump(mode="json") == {
         "category": "failed",
         "system": "awx.expectation",
         "retryable": False,
-        "summary": "expected status failed, got successful",
+        "message": "expected status failed, got successful",
         "hint": "compare expectations with what the job did; fix the change or the case",
         "evidence": {
             "job_explanation": None,
@@ -60,46 +80,108 @@ def test_a_case_failure_is_an_error_info_written_with_a_summary() -> None:
             "log_tail": None,
             "failed_tasks": None,
             "unreachable_hosts": None,
+            "note": None,
         },
     }
     assert CaseFailure.model_validate(failure.model_dump()) == failure
 
 
+def test_a_failed_update_is_blamed_even_when_the_case_expected_a_failure() -> None:
+    """A negative case whose playbook never ran must not pass, nor blame the expectation."""
+    job = _job("failed", job_explanation=_PROJECT_FAILED)
+    failure = _finished(
+        job,
+        update=_update("failed"),
+        held=True,
+        reasons=[],
+        tasks=[_task(msg="couldn't find remote ref feature/x\nmore")],
+    )
+    assert _attribution(failure) == ("awx.scm", "failed", False)
+    assert failure is not None
+    assert (
+        failure.message
+        == "project update 812 for 'acme' failed: couldn't find remote ref feature/x"
+    )
+    assert failure.evidence.related == RelatedExecution(
+        kind="project_update",
+        id=812,
+        name="acme",
+        status="failed",
+        url="https://aap/#/jobs/project/812/output",
+    )
+
+
 @pytest.mark.parametrize(
-    ("job", "held", "tasks", "expected", "summary"),
+    ("update", "expected", "message"),
     [
-        # the job ended as asked, but a log check did not hold
+        (
+            _update("failed", kind="inventory_update"),
+            ("awx.inventory", "config", False),
+            "inventory update 812 for 'acme' failed",
+        ),
+        (
+            _update("error", job_explanation="Failed to pull image quay.io/ee"),
+            ("awx.controller", "unavailable", True),
+            "project update 812 for 'acme' ended in error: Failed to pull image quay.io/ee",
+        ),
+        (
+            _update("error", result_traceback="Traceback\nCredentialLookupError: vault said no"),
+            ("awx.credentials", "auth", False),
+            "project update 812 for 'acme' could not use a credential: "
+            "CredentialLookupError: vault said no",
+        ),
+    ],
+)
+def test_a_failed_update_is_attributed_by_its_real_status(
+    update: Job, expected: tuple[str, str, bool], message: str
+) -> None:
+    failure = _finished(_job("error", job_explanation=_PROJECT_FAILED), update=update)
+    assert _attribution(failure) == expected
+    assert failure is not None
+    assert failure.message == message
+    assert failure.evidence.related is not None
+    assert failure.evidence.related.status == update.status
+
+
+def test_the_update_hint_names_its_log() -> None:
+    failure = _finished(_job("failed"), update=_update("failed", kind="inventory_update"))
+    assert failure is not None
+    assert failure.hint == "read its log: `untaped awx jobs logs 812 --kind inventory_update`"
+
+
+@pytest.mark.parametrize(
+    ("job", "held", "tasks", "expected", "message"),
+    [
+        # the job ran as asked, but a log check did not hold
         (_job("failed"), True, [_task()], ("awx.expectation", "failed", False), "no log line"),
         (_job("successful"), False, None, ("awx.expectation", "failed", False), "no log line"),
         (
-            _job("error", job_explanation=_PROJECT_FAILED),
-            False,
-            [_task(msg="couldn't find remote ref feature/x\nmore")],
-            ("awx.scm", "failed", False),
-            "project update 812 for 'acme' failed: couldn't find remote ref feature/x",
-        ),
-        (
-            _job("failed", job_explanation=_INVENTORY_FAILED),
-            False,
-            [],
-            ("awx.inventory", "config", False),
-            "inventory update 813 for 'Cloud' failed",
-        ),
-        (
-            _job("error", result_traceback="Traceback\n  credential/__init__.py\nHTTPError: 403"),
+            _job(
+                "error", result_traceback="Traceback\n  credential/x.py\nCredentialLookupError: 403"
+            ),
             False,
             None,
             ("awx.credentials", "auth", False),
-            "job could not use a credential: HTTPError: 403",
+            "job could not use a credential: CredentialLookupError: 403",
         ),
+        # a credential frame in the traceback is not a credential failure
         (
-            _job("error", job_explanation="Failed to pull image quay.io/ee"),
+            _job("error", result_traceback="  awx/main/models/credential/__init__.py\nKeyError: x"),
             False,
             None,
             ("awx.controller", "unavailable", True),
-            "job ended in error: Failed to pull image quay.io/ee",
+            "job ended in error: KeyError: x",
         ),
-        (_job("error"), False, None, ("awx.controller", "unavailable", True), "job ended in error"),
+        # nor is a transport failure a credential plugin raised
+        (
+            _job("error", result_traceback="Traceback\nCredentialError: connection refused"),
+            False,
+            None,
+            ("awx.controller", "unavailable", True),
+            "job ended in error: CredentialError: connection refused",
+        ),
+        # even when the case expected the error: the controller did not run the playbook
+        (_job("error"), True, None, ("awx.controller", "unavailable", True), "job ended in error"),
         (
             _job("canceled"),
             False,
@@ -122,7 +204,7 @@ def test_a_case_failure_is_an_error_info_written_with_a_summary() -> None:
             "task 'Deploy' failed on web2: boom (and 1 more)",
         ),
         (
-            _job("failed"),
+            _job("failed", event_processing_finished=True),
             False,
             [],
             ("awx.playbook", "failed", False),
@@ -131,9 +213,36 @@ def test_a_case_failure_is_an_error_info_written_with_a_summary() -> None:
         (
             _job("failed", job_explanation="Job terminated due to timeout"),
             False,
-            None,
+            [],
             ("awx.playbook", "failed", False),
             "job failed: Job terminated due to timeout",
+        ),
+        # the reaper failed a job AWX lost track of: not the playbook
+        (
+            _job(
+                "failed",
+                job_explanation="Task was marked as running but was not present in the job "
+                "queue, so it has been marked as failed.",
+            ),
+            False,
+            [],
+            ("awx.controller", "unavailable", True),
+            "job failed: Task was marked as running",
+        ),
+        # no failed task read yet: never blame the playbook for an empty list
+        (
+            _job("failed", event_processing_finished=False),
+            False,
+            None,
+            ("awx.controller", "unavailable", True),
+            "job failed, but AWX has not processed its events yet",
+        ),
+        (
+            _job("failed"),
+            False,
+            None,
+            ("awx.controller", "unavailable", True),
+            "job failed, but its events could not be read",
         ),
     ],
 )
@@ -142,31 +251,61 @@ def test_a_finished_job_is_attributed_by_the_first_matching_rule(
     held: bool,
     tasks: list[FailedTask] | None,
     expected: tuple[str, str, bool],
-    summary: str,
+    message: str,
 ) -> None:
-    failure = finished_failure(
-        job, reasons=["no log line contains 'ok'"], status_held=held, failed_tasks=tasks
-    )
+    failure = _finished(job, held=held, reasons=["no log line contains 'ok'"], tasks=tasks)
     assert _attribution(failure) == expected
-    assert failure.message.startswith(summary)
+    assert failure is not None
+    assert failure.message.startswith(message)
 
 
-def test_a_failed_update_hint_names_its_log() -> None:
-    failure = finished_failure(
-        _job("failed", job_explanation=_INVENTORY_FAILED),
-        reasons=[],
-        status_held=False,
-        failed_tasks=None,
-    )
-    assert failure.hint == "read its log: `untaped awx jobs logs 813 --kind inventory_update`"
+def test_a_case_whose_expectations_hold_has_no_failure() -> None:
+    assert _finished(_job("failed"), held=True, reasons=[], tasks=[_task()]) is None
+    assert _finished(_job("successful"), held=True, reasons=[]) is None
+    # a case may expect the controller's error (only a failed update overrides that)
+    assert _finished(_job("error"), held=True, reasons=[]) is None
 
 
-def test_the_responsible_update_is_the_one_awx_names() -> None:
-    update = responsible_update(_job("error", job_explanation=_PROJECT_FAILED))
-    assert update == Job(id=812, kind="project_update", name="acme", status="failed")
-    assert responsible_update(_job("failed")) is None
-    other = 'Previous Task Failed: {"job_type": "workflow_job", "job_name": "x", "job_id": "9"}'
-    assert responsible_update(_job("failed", job_explanation=other)) is None
+@pytest.mark.parametrize(
+    ("explanation", "expected"),
+    [
+        (_PROJECT_FAILED, ("project_update", "acme", 812)),
+        (
+            'Previous Task Failed: {"job_type": "inventory_update", "job_name": "Cloud - aws", '
+            '"job_id": 813}',
+            ("inventory_update", "Cloud - aws", 813),
+        ),
+        # AWX does not escape names: a quote or backslash breaks the JSON
+        (
+            'Previous Task Failed: {"job_type": "project_update", "job_name": "a "b" \\c", '
+            '"job_id": "9"}',
+            ("project_update", 'a "b" \\c', 9),
+        ),
+        (
+            'Previous Task Failed: {"job_type": "workflow_job", "job_name": "x", "job_id": "9"}',
+            None,
+        ),
+        ('Previous Task Failed: {"job_type": "project_update", "job_id": "x"}', None),
+        ("Previous Task Failed: {not json", None),
+        ("Job terminated due to timeout", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_the_responsible_update_is_the_one_awx_names(
+    explanation: str | None, expected: tuple[str, str, int] | None
+) -> None:
+    update = responsible_update(_job("failed", job_explanation=explanation))
+    actual = None if update is None else (update.kind, update.name, update.id)
+    assert actual == expected
+
+
+def test_rescued_failures_are_not_failed_tasks() -> None:
+    """Ansible reports a task a ``rescue`` block handled as failed; the recap does not."""
+    tasks = [_task(host="web1"), _task(host="web2"), _task("unreachable", host="web3")]
+    hosts = {"web1": HostSummary(rescued=1), "web2": HostSummary(failed=1)}
+    assert [task.host for task in unrescued(tasks, hosts)] == ["web2", "web3"]
+    assert unrescued(tasks, None) == tuple(tasks)
 
 
 @pytest.mark.parametrize(
@@ -192,10 +331,13 @@ def test_a_timeout_blames_the_controller_until_the_job_runs(
         (ConfigError("denied", category="permission", system="awx"), False, "awx.credentials"),
         (LaunchPromptError("does not prompt for limit"), True, "awx.suite"),
         (ResourceNotFoundError("job_template", {"name": "x"}), True, "awx.suite"),
+        (ResourceNotFoundError("job", {"id": 5}), False, "awx.controller"),
         (HttpTransportError("down", system="awx"), True, "awx.controller"),
         (HttpTransportError("down", system="awx"), False, "awx.controller"),
-        (RuntimeError("boom"), False, "awx.controller"),
         (LaunchPromptError("no", details={"field": "scm_branch"}), True, "awx.scm"),
+        # not AWX's doing: an untaped bug stays untaped, local setup stays local
+        (RuntimeError("boom"), False, "untaped"),
+        (ConfigError("awx.base_url is not configured"), True, "local"),
     ],
 )
 def test_a_request_failure_keeps_its_category_and_names_the_system(
@@ -208,13 +350,12 @@ def test_a_request_failure_keeps_its_category_and_names_the_system(
         info.category,
         info.message,
     )
-    if launching:
-        assert launch_system(error) == expected
+    assert failure_system(error, launching=launching) == expected
 
 
 def test_a_request_failure_keeps_the_errors_own_hint() -> None:
     error = ConfigError("rejected", category="auth", system="awx", hint="run `untaped x`")
-    failure = request_failure(error, summary="rejected; cancel requested")
+    failure = request_failure(error, message="rejected; cancel requested")
     assert (failure.message, failure.hint) == ("rejected; cancel requested", "run `untaped x`")
 
 
@@ -226,11 +367,12 @@ def test_evidence_names_unreachable_hosts_and_keeps_the_end_of_a_traceback() -> 
         related=related,
         log_tail=["a"],
         failed_tasks=[_task("unreachable", host="db1"), _task(), _task("unreachable", host="db1")],
+        note="log fetch failed: 502",
     )
     assert evidence.unreachable_hosts == ("db1",)
     assert evidence.result_traceback is not None
     assert evidence.result_traceback.endswith("KeyError: y")
     assert len(evidence.result_traceback) == 2001
     assert (evidence.job_explanation, evidence.log_tail) == ("why", ("a",))
-    assert evidence.related == related
+    assert (evidence.related, evidence.note) == (related, "log fetch failed: 502")
     assert FailureEvidence.of(_job("failed")) == FailureEvidence()

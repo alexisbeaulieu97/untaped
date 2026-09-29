@@ -81,3 +81,13 @@ def test_tail_job_logs(
         assert (monitor.stream_stdout_calls, monitor.downloads) == ([start], 0)
     else:
         assert (monitor.stream_stdout_calls, monitor.downloads) == ([], 1)
+
+
+@pytest.mark.parametrize(("saved", "downloads"), [(True, 1), (False, 0), (None, 0)])
+def test_following_a_finished_job_downloads_its_saved_log_once(
+    saved: bool | None, downloads: int
+) -> None:
+    monitor = _FakeMonitor(existing=["a", "b", "c"])
+    job = Job(id=1, kind="job", status="failed", event_processing_finished=saved)
+    assert list(TailJobLogs(monitor)(job, follow=True, tail=2)) == ["b", "c"]
+    assert monitor.downloads == downloads

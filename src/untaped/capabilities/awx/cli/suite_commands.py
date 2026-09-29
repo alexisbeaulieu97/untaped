@@ -67,7 +67,7 @@ _RESULT_TABLE_COLUMNS = [
     "job_id",
     "duration_s",
     "failure.system",
-    "failure.summary",
+    "failure.message",
 ]
 
 _CASE_TABLE_COLUMNS = ["suite", "case", "job_template"]
@@ -298,15 +298,16 @@ def run_command(
             jt_scope=_jt_scope(ctx, spec),
             stop=ctx.stop,
             canceller=ctx.jobs.cancel if cancel else None,
-            refresher=ctx.monitor.fetch,
+            job_reader=ctx.monitor,
             preflight=PreflightLaunch(ctx.repo, ctx.catalog),
             log_reader=ctx.monitor.fetch_stdout,
             event_reader=ctx.monitor.stream_events,
-            tail_reader=ctx.monitor.tail_stdout,
+            tail_reader=lambda job, lines: ctx.monitor.tail_stdout(job, lines)[0],
             job_url=partial(job_ui_url, ctx.settings),
+            host_reader=ctx.jobs.host_summaries,
             # Evidence and host summaries are hidden in the table and raw views.
             evidence=show_logs or structured,
-            host_reader=ctx.jobs.host_summaries if structured else None,
+            hosts=structured,
         )
         try:
             outcome = runner(

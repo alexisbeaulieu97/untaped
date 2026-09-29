@@ -37,6 +37,7 @@ from untaped.capabilities.awx.application.suites.ports import (
     EventReader,
     FkPrefetcher,
     HostReader,
+    JobReader,
     LaunchCheck,
     Launcher,
     LogReader,
@@ -47,17 +48,15 @@ from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayl
 from untaped.capabilities.awx.domain import Job, ResourceSpec
 from untaped.capabilities.awx.domain.case_failure import (
     FAILED_TASK_EVENTS,
-    INVENTORY,
-    SCM,
     CaseFailure,
     FailedTask,
     FailureEvidence,
-    RelatedExecution,
+    failure_system,
     finished_failure,
-    launch_system,
     request_failure,
     responsible_update,
     timeout_failure,
+    unrescued,
 )
 from untaped.capabilities.awx.domain.job import HostSummary, host_summaries
 from untaped.capabilities.awx.domain.suite import (
@@ -110,11 +109,12 @@ class RunTestSuite:
         jt_scope: dict[str, str] | None = None,
         clock: Callable[[], float] = time.monotonic,
         stop: threading.Event | None = None,
+        job_reader: JobReader,
+        host_reader: HostReader,
         canceller: Canceller | None = None,
-        refresher: Callable[[Job], Job] | None = None,
         preflight: LaunchCheck | None = None,
         evidence: bool = True,
-        host_reader: HostReader | None = None,
+        hosts: bool = False,
     ) -> None:
         self._resolve = resolver
         self._launch = launcher
@@ -124,7 +124,8 @@ class RunTestSuite:
         self._jt_scope = jt_scope
         self._clock = clock
         self._stop = stop
-        self._abandon = AbandonJobs(canceller, refresher=refresher)
+        self._reader = job_reader
+        self._abandon = AbandonJobs(canceller, refresher=job_reader.fetch)
         """Cancels (or, without ``canceller``, leaves) what the run stops watching."""
         self._read_log = log_reader
         self._read_events = event_reader
@@ -134,9 +135,8 @@ class RunTestSuite:
         self._evidence = evidence
         """Attach the evidence (failed tasks, log tail) to cases that did not pass."""
         self._read_hosts = host_reader
-        """Reads each job's host summaries; ``None`` leaves ``hosts`` unread."""
-        self._tasks: dict[tuple[str, int], tuple[FailedTask, ...] | None] = {}
-        """Failed tasks per execution, read once for attribution and evidence."""
+        self._hosts = hosts
+        """Report every case's host summaries (a failed job's are read anyway)."""
         self.launched: list[Job] = []
         """Executions submitted so far (for reporting after an interrupt)."""
         self.cancelled = self._abandon.cancelled
@@ -291,7 +291,7 @@ class RunTestSuite:
             worst = most_severe(errors)
             raise ConfigError(
                 "\n".join(["preflight failed, nothing launched:", *problems]),
-                **(attribution(worst) | {"system": launch_system(worst)}),
+                **(attribution(worst) | {"system": failure_system(worst, launching=True)}),
             )
 
     def _launch_and_wait(self, item: _ResolvedCase) -> CaseResult:
@@ -333,7 +333,7 @@ class RunTestSuite:
                 duration_s=self._clock() - started_clock,
                 failure=request_failure(exc, launching=True),
             )
-        log: list[str] | None = None
+        read = _Read(source=job)
         failure: CaseFailure | None = None
         try:
             final = self._watch(job, timeout=item.timeout)
@@ -341,8 +341,11 @@ class RunTestSuite:
         except Exception as exc:
             final = job
             fields: dict[str, Any] = {"result": "error"}
-            failure = request_failure(exc, summary=f"{exc}; {self._abandon(job)}")
+            failure = request_failure(exc, message=f"{exc}; {self._abandon(job)}")
         else:
+            if final.is_terminal:
+                # Failed tasks and host summaries are only complete once saved.
+                final = self._finals[(final.kind, final.id)] = self._reader.settled(final)
             fields = {
                 "job_status": final.status,
                 "started_at": final.started,
@@ -350,9 +353,10 @@ class RunTestSuite:
                 "scm_branch": final.scm_branch,
                 "scm_revision": final.scm_revision,
             }
+            if self._hosts:
+                fields["hosts"], fields["hosts_truncated"] = self._host_summaries(final)
             if final.is_terminal:
-                checked, log, failure = self._check(final, item.expect)
-                fields.update(checked)
+                failure = self._check(final, item.expect, fields, read)
             else:
                 waited = f"still {final.status} after {item.timeout or 0:g}s"
                 failure = timeout_failure(final, f"{waited}; {self._abandon(final)}")
@@ -360,10 +364,8 @@ class RunTestSuite:
                 # A refused cancel re-reads the job: it may have ended meanwhile.
                 final = self._finals[(final.kind, final.id)] = self._abandon.latest(final)
                 fields.update(job_status=final.status, finished_at=final.finished)
-            if self._read_hosts is not None:
-                fields["hosts"], fields["hosts_truncated"] = self._hosts(final)
         if failure is not None and self._evidence:
-            failure = failure.model_copy(update={"evidence": self._gather(final, failure, log)})
+            failure = self._gather(final, failure, read)
         return CaseResult(
             suite=item.suite_name,
             case=item.case_name,
@@ -375,85 +377,130 @@ class RunTestSuite:
         )
 
     def _check(
-        self, job: Job, expect: Expectation
-    ) -> tuple[dict[str, Any], list[str] | None, CaseFailure | None]:
-        """Evaluate ``expect`` against a finished job: result fields, the log if read, a failure."""
-        checks = [expect.check_status(job.status)]
-        log: list[str] | None = None
+        self, job: Job, expect: Expectation, fields: dict[str, Any], read: _Read
+    ) -> CaseFailure | None:
+        """Check a finished job against ``expect``; set ``result`` and ``expectations``.
+
+        The job's own outcome is attributed first (a failed update, an error,
+        a failed task), so a log that cannot be downloaded never hides it: it
+        becomes a note, or the case's error when nothing else failed.
+        """
+        status = expect.check_status(job.status)
+        checks = [status]
+        log_error: Exception | None = None
         if expect.needs_log:
             try:
-                log = self._read_log(job)
+                read.log = self._read_log(job)
             except Exception as exc:
-                failure = request_failure(exc, summary=f"log fetch failed: {exc}")
-                return {"result": "error", "expectations": tuple(checks)}, None, failure
-            checks.extend(expect.log.evaluate(log))
+                log_error = exc
+            else:
+                checks.extend(expect.log.evaluate(read.log))
+        fields["expectations"] = tuple(checks)
         reasons = [check.describe_failure() for check in checks if not check.passed]
-        fields = {"result": "fail" if reasons else "pass", "expectations": tuple(checks)}
-        if not reasons:
-            return fields, log, None
-        status_held = checks[0].passed
-        tasks = None
-        if not status_held and job.status != "successful":
-            tasks = self._failed_tasks(responsible_update(job) or job)
+        update = None
+        if job.status != "successful":
+            update = self._update(job)
+            read.source = update or job
+            if update is not None or reasons:
+                hosts = None
+                if update is None:
+                    # The job's summaries tell rescued failures from real ones.
+                    if "hosts" not in fields:
+                        fields["hosts"], fields["hosts_truncated"] = self._host_summaries(job)
+                    hosts = fields["hosts"]
+                read.tasks = self._failed_tasks(read.source, hosts)
+                read.tasks_read = True
         failure = finished_failure(
-            job, reasons=reasons, status_held=status_held, failed_tasks=tasks
+            job,
+            update=update,
+            update_url=self._job_url(update) if update is not None else None,
+            status_held=status.passed,
+            reasons=reasons,
+            failed_tasks=read.tasks,
         )
-        return fields, log, failure
-
-    def _gather(self, job: Job, failure: CaseFailure, log: list[str] | None) -> FailureEvidence:
-        """The evidence of ``failure``: from the failed update it names, else from the job."""
-        update = responsible_update(job) if failure.system in (SCM, INVENTORY) else None
-        source = update or job
-        related = None
-        if update is not None:
-            related = RelatedExecution(
-                kind=update.kind,
-                id=update.id,
-                name=update.name,
-                status=update.status,
-                url=self._job_url(update),
+        if log_error is not None:
+            if failure is None:
+                fields["result"] = "error"
+                return request_failure(log_error, message=f"log fetch failed: {log_error}")
+            note = f"log fetch failed: {log_error}"
+            failure = failure.model_copy(
+                update={"evidence": failure.evidence.model_copy(update={"note": note})}
             )
-            log = None  # the job's own log is not the evidence
-        tasks = self._failed_tasks(source)
-        tail = self._tail(source) if log is None else tuple(log[-LOG_TAIL_LINES:])
-        return FailureEvidence.of(job, related=related, log_tail=tail, failed_tasks=tasks)
+        fields["result"] = "pass" if failure is None else "fail"
+        return failure
 
-    def _failed_tasks(self, job: Job) -> tuple[FailedTask, ...] | None:
-        """The job's failed tasks (``ignore_errors`` ones excluded); ``None`` if unreadable."""
-        key = (job.kind, job.id)
-        if key in self._tasks:
-            return self._tasks[key]
+    def _update(self, job: Job) -> Job | None:
+        """The failed update the job names, as AWX has it now (``unknown`` if unreadable)."""
+        update = responsible_update(job)
+        if update is None:
+            return None
+        try:
+            return self._reader.settled(self._reader.fetch(update))
+        except Exception:
+            return update
+
+    def _gather(self, job: Job, failure: CaseFailure, read: _Read) -> CaseFailure:
+        """``failure`` with its evidence, from the responsible execution: ``related`` or the job."""
+        source = read.source if failure.evidence.related is not None else job
+        tasks = read.tasks if read.tasks_read else self._failed_tasks(source, None)
+        log = read.log if source is job else None
+        tail = self._tail(source) if log is None else tuple(log[-LOG_TAIL_LINES:])
+        evidence = FailureEvidence.of(
+            job,
+            related=failure.evidence.related,
+            log_tail=tail,
+            failed_tasks=tasks,
+            note=failure.evidence.note,
+        )
+        return failure.model_copy(update={"evidence": evidence})
+
+    def _failed_tasks(
+        self, job: Job, hosts: dict[str, HostSummary] | None
+    ) -> tuple[FailedTask, ...] | None:
+        """The job's failed tasks (``ignore_errors`` and rescued ones excluded); ``None`` if unread.
+
+        ``None`` too when there are none while AWX is still saving the events.
+        """
         params = {"event__in": ",".join(FAILED_TASK_EVENTS)}
         try:
             events = list(self._read_events(job, params=params, follow=False))
         except Exception:
             return None
-        tasks: tuple[FailedTask, ...] | None = tuple(
+        tasks = tuple(
             FailedTask.from_event(event)
             for event in events
             # AWX also flags the play and task events above a failure.
             if event.failed and event.event in FAILED_TASK_EVENTS
         )
         if not tasks and job.event_processing_finished is False:
-            tasks = None  # the failures may not be saved yet
-        self._tasks[key] = tasks
-        return tasks
+            return None  # the failures may not be saved yet
+        return unrescued(tasks, hosts)
 
     def _tail(self, job: Job) -> tuple[str, ...] | None:
         """The last log lines, from the newest events only; ``None`` if unreadable."""
         try:
-            lines, _newest = self._read_tail(job, LOG_TAIL_LINES)
+            return tuple(self._read_tail(job, LOG_TAIL_LINES))
         except Exception:
             return None
-        return tuple(lines)
 
-    def _hosts(self, job: Job) -> tuple[dict[str, HostSummary] | None, bool]:
+    def _host_summaries(self, job: Job) -> tuple[dict[str, HostSummary] | None, bool]:
         """Every host's summary (up to 500) and whether more were cut; ``None`` if unreadable."""
-        assert self._read_hosts is not None
         try:
             return host_summaries(self._read_hosts(job))
         except Exception:
             return None, False
+
+
+@dataclass(slots=True)
+class _Read:
+    """What checking a case read, reused as its evidence."""
+
+    source: Job
+    """The responsible execution: the failed update the job names, else the job."""
+    log: list[str] | None = None
+    """The job's whole log, when a log expectation downloaded it."""
+    tasks: tuple[FailedTask, ...] | None = None
+    tasks_read: bool = False
 
 
 def _collect_ref_sentinels(

@@ -10,7 +10,8 @@ downloads the whole log again: ``--tail N`` reads only the newest events
 (:meth:`JobMonitor.tail_stdout`), then :meth:`JobMonitor.stream_stdout`
 polls for the events after them until the job hits a terminal state (without
 ``--tail``, from the first event). ``--tail`` trims only the historical
-block, never the live tail; ``--grep`` filters both.
+block, never the live tail; ``--grep`` filters both. Following a job that
+already finished and whose events are saved just drains its log once.
 """
 
 from __future__ import annotations
@@ -48,7 +49,9 @@ class TailJobLogs:
         pattern: Pattern[str] | None,
         tail: int | None,
     ) -> Iterator[str]:
-        if follow:
+        # A finished job whose events are saved has nothing left to follow:
+        # one download beats paging through every event.
+        if follow and not (job.is_terminal and job.event_processing_finished is True):
             yield from self._follow(job, pattern=pattern, tail=tail)
             return
         existing = self._monitor.fetch_stdout(job)

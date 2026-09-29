@@ -191,8 +191,8 @@ def test_run_errors_when_awx_ignores_launch_fields(
     row = json.loads(result.stdout)[0]
     assert row["result"] == "error"
     assert (row["failure"]["system"], row["failure"]["category"]) == ("awx.suite", "invalid")
-    assert "ignored" in row["failure"]["summary"]
-    assert "limit" in row["failure"]["summary"]
+    assert "ignored" in row["failure"]["message"]
+    assert "limit" in row["failure"]["message"]
     assert row["job_id"] is not None
 
 
@@ -509,7 +509,7 @@ def test_run_timeout_cancels_the_job_unless_no_cancel(
     [row] = json.loads(result.stdout)
     assert row["result"] == "timeout"
     assert row["failure"]["system"] == "awx.playbook"
-    assert row["failure"]["summary"] == f"still running after 0.01s; {reason}"
+    assert row["failure"]["message"] == f"still running after 0.01s; {reason}"
     assert _cancelled_ids(running_job) == ([row["job_id"]] if cancels else [])
 
 
@@ -600,12 +600,13 @@ def test_run_table_hides_evidence_columns(
     assert "failed without a failed task" in result.stdout
     assert "evidence" not in result.stdout
     assert "expectations" not in result.stdout
-    # attribution needs only the failed events; the table never reads a log
+    # attribution needs the failed events and host summaries; the table never reads a log
+    paths = [call.request.url.path for call in fake_aap.router.calls]
+    assert not any(path.endswith("/stdout/") for path in paths)
     assert not any(
-        call.request.url.path.endswith(("/stdout/", "/job_host_summaries/"))
-        or call.request.url.params.get("order_by") == "-counter"
-        for call in fake_aap.router.calls
+        call.request.url.params.get("order_by") == "-counter" for call in fake_aap.router.calls
     )
+    assert sum(path.endswith("/job_host_summaries/") for path in paths) == 1
 
 
 def test_run_reports_results_despite_an_unknown_column(
@@ -640,7 +641,7 @@ def test_run_reports_failed_tasks_from_job_events(
     assert result.exit_code == 1, result.output
     [row] = json.loads(result.stdout)
     failure = row["failure"]
-    assert (failure["system"], failure["summary"]) == (
+    assert (failure["system"], failure["message"]) == (
         "awx.playbook",
         "task 'Migrate' failed on web1: no",
     )
@@ -710,7 +711,7 @@ def test_run_blames_the_update_that_failed_before_the_job(
     [row] = json.loads(result.stdout)
     failure = row["failure"]
     assert failure["system"] == system
-    assert failure["summary"] == (
+    assert failure["message"] == (
         f"{kind.replace('_', ' ')} 812 for 'acme' failed: couldn't find remote ref feature/x"
     )
     evidence = failure["evidence"]
@@ -774,6 +775,170 @@ def test_run_reports_every_hosts_summary_in_structured_output(
     }
     assert row["hosts"]["web2"]["unreachable"] == 1
     assert (row["hosts_truncated"], row["failure"]) == (False, None)
+
+
+@pytest.fixture
+def no_pause(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(AwxContext, "pause", lambda self, seconds: None)
+
+
+def _failed_task_job(fake: FakeAap, *, unsaved_reads: int) -> None:
+    _seed_jt(fake)
+    fake.next_action_status = "failed"
+    fake.next_action_unsaved_reads = unsaved_reads
+    fake.next_action_events = [
+        {"event": "runner_on_failed", "failed": True, "host_name": "web1", "task": "Migrate",
+         "event_data": {"res": {"msg": "no"}}},
+    ]  # fmt: skip
+    fake.next_action_host_summaries = [{"host_name": "web1", "failures": 1, "failed": True}]
+
+
+def test_run_waits_for_awx_to_save_the_events_before_attributing(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, no_pause: None
+) -> None:
+    _failed_task_job(fake_aap, unsaved_reads=2)
+
+    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "-f", "json"])
+
+    assert result.exit_code == 1, result.output
+    [row] = json.loads(result.stdout)
+    assert (row["failure"]["system"], row["failure"]["message"]) == (
+        "awx.playbook",
+        "task 'Migrate' failed on web1: no",
+    )
+    assert row["hosts"]["web1"]["failed"] == 1
+
+
+def test_run_never_blames_the_playbook_for_events_awx_has_not_saved(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, no_pause: None
+) -> None:
+    _failed_task_job(fake_aap, unsaved_reads=50)
+
+    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "-f", "json"])
+
+    assert result.exit_code == 5, result.output
+    [row] = json.loads(result.stdout)
+    assert row["failure"]["system"] == "awx.controller"
+    assert "AWX has not processed its events yet" in row["failure"]["message"]
+
+
+def _case(name: str, body: str = "{}") -> str:
+    return f"  {name}: {body}\n"
+
+
+@pytest.mark.parametrize(
+    ("job", "expect", "system", "exit_code"),
+    [
+        ({"job_explanation": "Failed to pull image quay.io/ee"}, "", "awx.controller", 5),
+        (
+            {"result_traceback": "Traceback\nCredentialLookupError: vault: permission denied"},
+            "",
+            "awx.credentials",
+            4,
+        ),
+        ({}, "{expect: {status: error, log: {contains: [nope]}}}", "awx.controller", 5),
+    ],
+)
+def test_run_attributes_a_job_that_ended_in_error(
+    cli: CliInvoker,
+    fake_aap: FakeAap,
+    tmp_path: Path,
+    job: dict[str, Any],
+    expect: str,
+    system: str,
+    exit_code: int,
+) -> None:
+    _seed_jt(fake_aap)
+    fake_aap.next_action_status = "error"
+    fake_aap.next_action_job_fields = job
+    suite = _write(
+        tmp_path / "e.yml",
+        "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\ncases:\n"
+        + _case("c", expect or "{}"),
+    )
+
+    result = cli.invoke(app, ["test", "run", str(suite), "-f", "json"])
+
+    assert result.exit_code == exit_code, result.output
+    [row] = json.loads(result.stdout)
+    assert row["failure"]["system"] == system
+
+
+def test_run_blames_the_controller_for_a_job_stuck_pending(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, no_pause: None
+) -> None:
+    _seed_jt(fake_aap)
+    fake_aap.next_action_status = "pending"
+
+    result = cli.invoke(
+        app, ["test", "run", str(_smoke(tmp_path)), "--timeout", "0.01", "-f", "json"]
+    )
+
+    assert result.exit_code == 5, result.output
+    [row] = json.loads(result.stdout)
+    assert (row["result"], row["failure"]["system"]) == ("timeout", "awx.controller")
+
+
+def test_run_blames_the_expectation_when_the_job_ran_as_asked(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+    suite = _write(
+        tmp_path / "neg.yml",
+        "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\ncases:\n"
+        + _case("c", "{expect: {status: failed}}"),
+    )
+
+    result = cli.invoke(app, ["test", "run", str(suite), "-f", "json"])
+
+    assert result.exit_code == 1, result.output
+    [row] = json.loads(result.stdout)
+    assert (row["failure"]["system"], row["failure"]["message"]) == (
+        "awx.expectation",
+        "expected status failed, got successful",
+    )
+
+
+def test_run_exits_with_the_most_severe_case(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, no_pause: None
+) -> None:
+    """A playbook failure (1), unreachable hosts (5) and a failed inventory sync (4): exit 4."""
+    _seed_jt(fake_aap)
+    fake_aap.seed("inventory_updates", id=900, name="Cloud", status="failed")
+    outcomes: list[tuple[str, dict[str, Any], list[dict[str, Any]]]] = [
+        ("failed", {}, [{"event": "runner_on_failed", "failed": True, "host_name": "a"}]),
+        ("failed", {}, [{"event": "runner_on_unreachable", "failed": True, "host_name": "b"}]),
+        (
+            "failed",
+            {"job_explanation": 'Previous Task Failed: {"job_type": "inventory_update", '
+                                '"job_name": "Cloud", "job_id": "900"}'},
+            [],
+        ),
+    ]  # fmt: skip
+    real_action = fake_aap._action
+
+    def action(*args: Any) -> Any:
+        status, fields, events = outcomes.pop(0)
+        fake_aap.next_action_status = status
+        fake_aap.next_action_job_fields = fields
+        fake_aap.next_action_events = events
+        return real_action(*args)
+
+    fake_aap._action = action  # type: ignore[method-assign]
+    suite = _write(
+        tmp_path / "m.yml",
+        "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\ncases:\n"
+        + _case("playbook")
+        + _case("hosts")
+        + _case("inventory"),
+    )
+
+    result = cli.invoke(app, ["test", "run", str(suite), "-f", "json"])
+
+    assert result.exit_code == 4, result.output
+    # Cases may launch in parallel, so which case got which job varies.
+    systems = sorted(row["failure"]["system"] for row in json.loads(result.stdout))
+    assert systems == ["awx.hosts", "awx.inventory", "awx.playbook"]
 
 
 def test_run_cuts_host_summaries_above_500_hosts(
