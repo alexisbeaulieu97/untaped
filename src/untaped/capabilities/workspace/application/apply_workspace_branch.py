@@ -20,7 +20,7 @@ from untaped.capabilities.workspace.domain import (
     WorkspaceManifest,
 )
 from untaped.capabilities.workspace.errors import GitError, UnmatchedRepoFilterError
-from untaped.capability_api import ErrorInfo
+from untaped.capability_api import ErrorInfo, note_failure
 
 
 class ApplyWorkspaceBranch:
@@ -151,5 +151,5 @@ def _failed(
 ) -> BranchApplyOutcome:
     """A ``failed`` row: ``<step>: <git error>``, with the error's attribution."""
     detail = f"{step}: {exc}"
-    error = ErrorInfo.from_exception(exc, message=detail)
+    error = note_failure(exc, message=detail)
     return _outcome(workspace, repo, target_branch, "failed", detail, error=error)

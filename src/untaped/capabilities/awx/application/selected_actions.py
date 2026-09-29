@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from untaped.capabilities.awx.application.scheduling import Schedule, ScheduleInterruptedError
 from untaped.capabilities.awx.application.selection import SelectedResource
-from untaped.capability_api import ErrorInfo
+from untaped.capability_api import ErrorInfo, note_failure
 
 
 @dataclass(frozen=True)
@@ -69,7 +69,7 @@ def run_selected_actions[T](
                 "failed",
                 detail=detail,
                 error=exc,
-                error_info=ErrorInfo.from_exception(exc, message=detail),
+                error_info=note_failure(exc, message=detail),
             )
 
     try:

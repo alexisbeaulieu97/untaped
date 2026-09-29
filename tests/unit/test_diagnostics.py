@@ -16,8 +16,9 @@ from cyclopts import App
 
 from untaped.batch import finish
 from untaped.cli import FormatOption, apply_default_format, echo, emit, report_errors, resolve_each
-from untaped.errors import ConfigError, HttpStatusError, UntapedError
+from untaped.errors import ConfigError, HttpStatusError, HttpTransportError, UntapedError
 from untaped.messages import hint
+from untaped.records import ErrorInfo
 from untaped.testing import invoke_cli
 from untaped.ui import UiContext
 
@@ -174,3 +175,39 @@ def test_usage_errors_are_json_lines_under_the_environment_variable(
 
     (line,) = _lines(result.stderr)
     assert (line["category"], line["exit_code"], result.exit_code) == ("usage", 2, 2)
+
+
+@pytest.mark.parametrize(
+    "args", [["--format", "json", "--bogus"], ["--format=pipe", "--bogus"], ["-f", "yaml", "-x"]]
+)
+def test_a_parse_error_follows_the_requested_format(args: list[str]) -> None:
+    result = invoke_cli(_app(lambda: None), args)
+
+    (line,) = _lines(result.stderr)
+    assert (line["category"], result.exit_code) == ("usage", 2)
+
+
+def test_a_parse_error_follows_the_user_s_default_format(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_FORMAT", "json")
+
+    result = invoke_cli(_app(lambda: None), ["--bogus"])
+
+    assert _lines(result.stderr)[0]["category"] == "usage"
+
+
+def test_url_passwords_never_leave_the_process() -> None:
+    def body() -> None:
+        raise HttpStatusError(
+            "HTTP 401 for https://bot:s3cret@aap.example/api/v2/me/",
+            status_code=401,
+            url="https://bot:s3cret@aap.example/api/v2/me/",
+            system="awx",
+        )
+
+    structured = invoke_cli(_app(body), ["--format", "json"])
+    text = invoke_cli(_app(body), ["--format", "table"])
+
+    assert "s3cret" not in structured.stderr + text.stderr
+    assert _lines(structured.stderr)[0]["details"]["url"] == "https://bot:***@aap.example/api/v2/me/"
+    info = ErrorInfo.from_exception(HttpTransportError("down", url="http://u:pw@h/x"))
+    assert "pw" not in info.message

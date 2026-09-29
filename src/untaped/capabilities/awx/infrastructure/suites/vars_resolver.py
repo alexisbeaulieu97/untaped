@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from untaped.capabilities.awx.domain.suite import VariableSpec
-from untaped.capability_api import ConfigError, plural, read_structured_file
+from untaped.capability_api import ConfigError, UsageError, plural, read_structured_file
 
 if TYPE_CHECKING:
     from untaped.capabilities.awx.application.suites.ports import Prompt
@@ -70,10 +70,9 @@ def resolve_variables(
 
     if missing_in_non_interactive:
         joined = ", ".join(missing_in_non_interactive)
-        raise ConfigError(
+        raise UsageError(
             f"required {plural(len(missing_in_non_interactive), 'variable')} "
             f"not provided: {joined}; set them with --var NAME=VALUE or run interactively",
-            category="usage",
         )
     return resolved
 
@@ -83,11 +82,13 @@ def _reject_unknown(names: Iterable[str], known: Iterable[str], origin: str) -> 
     unknown = sorted(set(names) - known_set)
     if unknown:
         joined = ", ".join(unknown)
-        raise ConfigError(
+        message = (
             f"unknown {plural(len(unknown), 'variable')} in {origin}: {joined}; "
-            f"declared variables: {', '.join(sorted(known_set)) or '(none)'}",
-            category="usage" if origin == "cli" else "invalid",
+            f"declared variables: {', '.join(sorted(known_set)) or '(none)'}"
         )
+        if origin == "cli":
+            raise UsageError(message)
+        raise ConfigError(message, category="invalid")
 
 
 def _coerce(spec: VariableSpec, value: Any, *, source: str) -> Any:

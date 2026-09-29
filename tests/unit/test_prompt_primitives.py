@@ -9,7 +9,7 @@ from typing import Any, TypeVar
 
 import pytest
 
-from untaped.errors import ConfigError
+from untaped.errors import ConfigError, UsageError
 from untaped.prompts import PromptToolkitPromptBackend, prompt_style_from_roles
 from untaped.ui import PromptChoice, UiContext
 
@@ -153,7 +153,7 @@ def test_non_interactive_stdin_fails_before_invoking_backend() -> None:
     backend = FakePromptBackend()
     ui = UiContext(stdin=io.StringIO(), prompt_backend=backend)
 
-    with pytest.raises(ConfigError, match="interactive"):
+    with pytest.raises(UsageError, match="interactive"):
         ui.confirm("continue?")
 
     assert backend.calls == []

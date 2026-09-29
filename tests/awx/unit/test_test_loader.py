@@ -11,7 +11,7 @@ from untaped.capabilities.awx.application.suites.loader import LoadTestSuite
 from untaped.capabilities.awx.application.suites.ports import Filesystem, Prompt
 from untaped.capabilities.awx.domain.suite import RefSentinel, VariableSpec
 from untaped.capabilities.awx.infrastructure.suites import DefaultParser, resolve_variables
-from untaped.capability_api import ConfigError
+from untaped.capability_api import ConfigError, UsageError
 
 
 class FakeFilesystem(Filesystem):
@@ -250,7 +250,7 @@ def test_ref_tag_survives_through_load() -> None:
     ids=["header", "variable", "jinja", "yaml", "model"],
 )
 def test_every_load_error_names_the_file(text: str) -> None:
-    with pytest.raises(ConfigError) as caught:
+    with pytest.raises((ConfigError, UsageError)) as caught:
         _load(text)
     assert str(caught.value).startswith("/virtual/test.yml: ")
     assert not str(caught.value).startswith("/virtual/test.yml: /virtual/test.yml")

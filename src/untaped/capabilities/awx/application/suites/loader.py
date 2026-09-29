@@ -20,7 +20,7 @@ from untaped.capabilities.awx.application.suites.ports import (
     VarsResolver,
 )
 from untaped.capabilities.awx.domain.suite import Suite, VariableSpec
-from untaped.capability_api import ConfigError, attribution
+from untaped.capability_api import ConfigError, UsageError, attribution
 
 
 class LoadTestSuite:
@@ -126,9 +126,9 @@ class LoadTestSuite:
 
 @contextmanager
 def _naming(path: Path) -> Iterator[None]:
-    """Prefix every :class:`ConfigError` raised inside with ``path``, keeping its type
+    """Prefix every config or usage error raised inside with ``path``, keeping its type
     and attribution."""
     try:
         yield
-    except ConfigError as exc:
+    except (ConfigError, UsageError) as exc:
         raise type(exc)(f"{path}: {exc}", **attribution(exc)) from exc

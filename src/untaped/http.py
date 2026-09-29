@@ -31,7 +31,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, SecretStr
 
 from untaped.auth import token_alternatives
-from untaped.config_schema import redact_url_password, walk_settings
+from untaped.config_schema import walk_settings
 from untaped.errors import (
     ConfigError,
     HttpError,
@@ -39,6 +39,7 @@ from untaped.errors import (
     HttpTransportError,
     UntapedError,
 )
+from untaped.redaction import redact_url_password
 from untaped.settings import HttpSettings, load_settings_section
 
 if TYPE_CHECKING:
@@ -457,8 +458,8 @@ def missing_setting_error(
 ) -> ConfigError:
     """Return the standard error for missing capability settings.
 
-    Names every missing field with the root command (and env var) that sets
-    it. Fields listed in ``secret`` suggest ``config set … --prompt`` so the
+    Names every missing field; the ``hint`` names the root command (and env
+    var) that sets each one. Fields listed in ``secret`` suggest ``config set … --prompt`` so the
     value never lands in shell history. ``token_sources`` (from
     :func:`untaped.auth.token_alternatives`) names the sources that keep a
     missing token out of the config file.
@@ -476,11 +477,12 @@ def missing_setting_error(
     env_vars = [f"UNTAPED_{section.upper()}__{name.upper()}" for name in fields]
     if len(fields) == 1:
         return ConfigError(
-            f"{keys[0]} is not configured (set it via {commands[0]} or {env_vars[0]}{tail})"
+            f"{keys[0]} is not configured",
+            hint=f"set it via {commands[0]} or {env_vars[0]}{tail}",
         )
     return ConfigError(
-        f"{', '.join(keys[:-1])} and {keys[-1]} are not configured (set them via "
-        f"{' and '.join(commands)}, or {' / '.join(env_vars)}{tail})"
+        f"{', '.join(keys[:-1])} and {keys[-1]} are not configured",
+        hint=f"set them via {' and '.join(commands)}, or {' / '.join(env_vars)}{tail}",
     )
 
 

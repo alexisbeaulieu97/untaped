@@ -133,7 +133,6 @@ class PatchIssue:
                     raise
                 raise JiraError(
                     f"fields updated, but assigning failed: {err}",
-                    hint=err.hint,
                     **attribution(err),
                 ) from err
         return IssueOutcome(

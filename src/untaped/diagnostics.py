@@ -1,10 +1,14 @@
 """Failure diagnostics: how errors render, JSON Lines on stderr, and the run's exit code.
 
-Three things live here, shared by every stderr writer in the shell:
+Four things live here, shared by every stderr writer in the shell:
 
-- :func:`format_error` renders an :class:`~untaped.errors.UntapedError` the
-  way ``report_errors`` prints it (HTTP URL and API message, the ``hint:``
-  line).
+- :func:`attribute` is the one classifier of any exception: its category
+  and system (an :class:`~untaped.errors.UntapedError` says its own; Ctrl-C
+  is ``interrupted``; anything else is a ``failed`` error in ``untaped``).
+  :class:`ErrorInfo` is that attribution plus the message and hint, the
+  ``error`` of a failed row and the body of every JSON error line.
+- :func:`format_error` renders an error the way ``report_errors`` prints it
+  (HTTP URL and API message, the ``hint:`` line), with URL passwords masked.
 - **JSON diagnostics.** With ``--format json|yaml|pipe`` (recorded by the
   root's format resolution through :func:`note_output_format`) or
   ``UNTAPED_DIAGNOSTICS=json``, stderr carries one JSON object per line
@@ -12,10 +16,10 @@ Three things live here, shared by every stderr writer in the shell:
   ``hint``, ``exit_code`` and ``details``), per-item errors (plus ``item``),
   warnings, hints and other notes. ``UNTAPED_DIAGNOSTICS=text`` forces text.
   stdout never changes.
-- **The failure ledger.** Every failure reported or recorded during one
-  invocation is noted (:func:`note_failure`), so the process exits with the
-  most severe category seen anywhere in the run (:func:`failure_exit_code`,
-  precedence ``130 > 2 > 4 > 5 > 1 > 3 > 0``).
+- **The run's exit code.** Every failure reported or turned into a row is
+  noted (:func:`note_failure`), so the process exits with the most severe
+  category seen anywhere in the run (:func:`failure_exit_code`, precedence
+  ``130 > 2 > 4 > 5 > 1 > 3 > 0``).
 
 Everything is scoped to one invocation by :func:`diagnostics_scope`.
 """
@@ -29,7 +33,9 @@ import threading
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, TextIO
+from typing import Any, TextIO, overload
+
+from pydantic import BaseModel, ConfigDict
 
 from untaped.errors import (
     ErrorCategory,
@@ -38,6 +44,7 @@ from untaped.errors import (
     UntapedError,
     combine_exit_codes,
 )
+from untaped.redaction import redact_url_password
 from untaped.verbose import is_verbose
 
 #: Environment variable choosing the stderr format: ``json`` or ``text``.
@@ -48,43 +55,47 @@ STRUCTURED_FORMATS = frozenset({"json", "yaml", "pipe"})
 _HINT_PREFIX = "hint: "
 _LINE_LEVELS = (("error: ", "error"), ("warning: ", "warning"), (_HINT_PREFIX, "hint"))
 
-_output_format: ContextVar[str | None] = ContextVar("untaped_output_format", default=None)
 
-
-class _Ledger:
-    """The exit codes of the failures one invocation has seen (thread-safe)."""
+class _Run:
+    """One invocation: its chosen output format and its most severe failure."""
 
     def __init__(self) -> None:
+        self.output_format: str | None = None
         self._lock = threading.Lock()
-        self._codes: list[int] = []
+        self._worst: int = ExitCode.OK
 
-    def add(self, code: int) -> None:
+    def note(self, code: int) -> None:
         with self._lock:
-            self._codes.append(code)
+            self._worst = combine_exit_codes(self._worst, code)
 
-    def codes(self) -> tuple[int, ...]:
+    @property
+    def worst(self) -> int:
         with self._lock:
-            return tuple(self._codes)
+            return self._worst
 
 
-_ledger: ContextVar[_Ledger | None] = ContextVar("untaped_failure_ledger", default=None)
+_run: ContextVar[_Run | None] = ContextVar("untaped_diagnostics_run", default=None)
 
 
 @contextmanager
 def diagnostics_scope() -> Iterator[None]:
-    """Scope one invocation: no output format recorded yet, an empty failure ledger."""
-    format_token = _output_format.set(None)
-    ledger_token = _ledger.set(_Ledger())
+    """Scope one invocation: no output format recorded yet, no failure seen."""
+    token = _run.set(_Run())
     try:
         yield
     finally:
-        _ledger.reset(ledger_token)
-        _output_format.reset(format_token)
+        _run.reset(token)
 
 
 def note_output_format(fmt: str | None) -> None:
-    """Record the invocation's resolved ``--format`` (selects JSON diagnostics)."""
-    _output_format.set(fmt)
+    """Record the invocation's chosen ``--format`` (selects JSON diagnostics).
+
+    Outside a :func:`diagnostics_scope` there is no invocation to record it
+    for, and nothing happens.
+    """
+    run = _run.get()
+    if run is not None:
+        run.output_format = fmt
 
 
 def json_diagnostics() -> bool:
@@ -96,14 +107,87 @@ def json_diagnostics() -> bool:
     choice = os.environ.get(DIAGNOSTICS_ENV, "").strip().lower()
     if choice in ("json", "text"):
         return choice == "json"
-    return _output_format.get() in STRUCTURED_FORMATS
+    run = _run.get()
+    return run is not None and run.output_format in STRUCTURED_FORMATS
 
 
-def note_failure(error: BaseException | ErrorCategory) -> None:
-    """Count a failure toward the invocation's exit code (see :func:`failure_exit_code`)."""
-    ledger = _ledger.get()
-    if ledger is not None:
-        ledger.add(_exit_code_of(error))
+def attribute(error: BaseException) -> tuple[ErrorCategory, str]:
+    """``(category, system)`` of any exception: the one place that classifies them."""
+    if isinstance(error, UntapedError):
+        return error.category, error.system
+    if isinstance(error, KeyboardInterrupt):
+        return ErrorCategory.INTERRUPTED, "untaped"
+    return ErrorCategory.FAILED, "untaped"
+
+
+class ErrorInfo(BaseModel):
+    """Why something failed: the ``error`` of a failed row, the body of a JSON error line.
+
+    The machine-readable twin of a human ``detail``: the failure's
+    ``category`` (which selects the exit code), the ``system`` responsible,
+    whether a retry can help, the message and an optional hint (without its
+    ``hint:`` prefix). :meth:`from_exception` builds one without side
+    effects; :func:`note_failure` builds one and counts it toward the run's
+    exit code.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    category: ErrorCategory
+    system: str
+    retryable: bool
+    message: str
+    hint: str | None = None
+
+    @classmethod
+    def from_exception(cls, error: BaseException, *, message: str | None = None) -> ErrorInfo:
+        """The attribution of ``error``, rendered as :func:`format_error` does.
+
+        ``message`` replaces the rendered message (e.g. a redacted one); a
+        ``hint:`` line in it becomes ``hint``.
+        """
+        text, hint = error_message(error, message=message)
+        category, system = attribute(error)
+        return cls(
+            category=category,
+            system=system,
+            retryable=category.retryable,
+            message=text,
+            hint=hint,
+        )
+
+
+@overload
+def note_failure(
+    failure: BaseException | ErrorInfo, *, message: str | None = None
+) -> ErrorInfo: ...
+@overload
+def note_failure(failure: ErrorCategory) -> None: ...
+def note_failure(
+    failure: BaseException | ErrorInfo | ErrorCategory, *, message: str | None = None
+) -> ErrorInfo | None:
+    """Count a failure toward the invocation's exit code (see :func:`failure_exit_code`).
+
+    Given an exception (or an :class:`ErrorInfo`), returns its
+    :class:`ErrorInfo` (``message`` as in :meth:`ErrorInfo.from_exception`),
+    so a failed row reads ``error=note_failure(exc)``.
+    """
+    if isinstance(failure, ErrorCategory):
+        _note(failure.exit_code)
+        return None
+    info = (
+        failure
+        if isinstance(failure, ErrorInfo)
+        else ErrorInfo.from_exception(failure, message=message)
+    )
+    _note(info.category.exit_code)
+    return info
+
+
+def _note(code: int) -> None:
+    run = _run.get()
+    if run is not None:
+        run.note(code)
 
 
 def failure_exit_code(*codes: int) -> int:
@@ -111,20 +195,9 @@ def failure_exit_code(*codes: int) -> int:
 
     Never below ``1``: a failed run whose failures carry no category exits ``1``.
     """
-    ledger = _ledger.get()
-    noted = ledger.codes() if ledger is not None else ()
-    code = combine_exit_codes(*codes, *noted)
+    run = _run.get()
+    code = combine_exit_codes(*codes, run.worst if run is not None else ExitCode.OK)
     return code if code not in (ExitCode.OK, ExitCode.PREDICATE) else ExitCode.FAILURE
-
-
-def _exit_code_of(error: BaseException | ErrorCategory) -> int:
-    if isinstance(error, ErrorCategory):
-        return error.exit_code
-    if isinstance(error, UntapedError):
-        return error.exit_code
-    if isinstance(error, KeyboardInterrupt):
-        return ExitCode.INTERRUPTED
-    return ExitCode.FAILURE
 
 
 # --------------------------------------------------------------------------- #
@@ -139,12 +212,12 @@ def format_error(exc: UntapedError) -> str:
     from a JSON error body (the raw body under ``--verbose``); an error whose
     message already describes its body (``describes_body``) adds the raw body
     under ``--verbose`` only. A ``hint`` not already in the message follows
-    on its own ``hint:`` line.
+    on its own ``hint:`` line. URL passwords are masked.
     """
     message = _with_body(exc)
     if exc.hint and exc.hint not in message:
         message = f"{message}\n{_HINT_PREFIX}{exc.hint}"
-    return message
+    return redact_url_password(message)
 
 
 def _with_body(exc: UntapedError) -> str:
@@ -211,7 +284,7 @@ def error_message(error: BaseException, *, message: str | None = None) -> tuple[
     """``(message, hint)`` for ``error``: its rendering, or ``message``, with hints split off."""
     if message is None:
         message = format_error(error) if isinstance(error, UntapedError) else _plain(error)
-    text, hint = split_hint(message)
+    text, hint = split_hint(redact_url_password(message))
     if hint is None and isinstance(error, UntapedError):
         hint = error.hint
     return text, hint
@@ -226,27 +299,22 @@ def error_record(
 ) -> dict[str, Any]:
     """The JSON diagnostic for one failure (``item`` names a per-item failure).
 
-    Anything but an :class:`UntapedError` is a ``failed`` error in ``untaped``.
+    Its :class:`ErrorInfo` fields plus ``level``, ``item``, ``exit_code`` and
+    the error's ``details``.
     """
-    text, hint = error_message(error, message=message)
+    info = ErrorInfo.from_exception(error, message=message)
     record: dict[str, Any] = {"level": "error"}
     if item is not None:
         record["item"] = item
-    if isinstance(error, UntapedError):
-        category, system = error.category, error.system
-        details: Mapping[str, object] = error.details
-    else:
-        category, system, details = ErrorCategory.FAILED, "untaped", {}
-    record |= {
-        "message": text,
-        "category": str(category),
-        "system": system,
-        "retryable": category.retryable,
-        "hint": hint,
-        "exit_code": int(category.exit_code),
-        "details": dict(details),
-    }
-    return record
+    details = error.details if isinstance(error, UntapedError) else {}
+    return (
+        record
+        | info.model_dump(mode="json")
+        | {
+            "exit_code": int(info.category.exit_code),
+            "details": dict(details),
+        }
+    )
 
 
 def line_record(text: str) -> dict[str, Any] | None:
@@ -254,10 +322,11 @@ def line_record(text: str) -> dict[str, Any] | None:
 
     ``error:``, ``warning:`` and ``hint:`` prefixes select the level (an
     ``error:`` message keeps its ``hint:`` lines as ``hint``); anything
-    else is ``info``.
+    else is ``info``. URL passwords are masked.
     """
     if not text.strip():
         return None
+    text = redact_url_password(text)
     for prefix, level in _LINE_LEVELS:
         if text.startswith(prefix):
             body = text.removeprefix(prefix)
@@ -268,14 +337,21 @@ def line_record(text: str) -> dict[str, Any] | None:
     return {"level": "info", "message": text.strip()}
 
 
+def render_record(record: Mapping[str, Any]) -> str:
+    """One JSON diagnostic as its line of text."""
+    return json.dumps(record, default=str)
+
+
 def write_record(record: Mapping[str, Any], stream: TextIO | None = None) -> None:
     """Write one JSON diagnostic line to ``stream`` (stderr by default)."""
-    print(json.dumps(record, default=str), file=stream or sys.stderr, flush=True)
+    print(render_record(record), file=stream or sys.stderr, flush=True)
 
 
 __all__ = [
     "DIAGNOSTICS_ENV",
     "STRUCTURED_FORMATS",
+    "ErrorInfo",
+    "attribute",
     "diagnostics_scope",
     "error_message",
     "error_record",
@@ -285,6 +361,7 @@ __all__ = [
     "line_record",
     "note_failure",
     "note_output_format",
+    "render_record",
     "split_hint",
     "write_record",
 ]

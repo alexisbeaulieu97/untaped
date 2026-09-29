@@ -25,7 +25,7 @@ from untaped.capabilities.awx.errors import (
     ResourceNotFoundError,
     default_organization_note,
 )
-from untaped.capability_api import ConfigError, PipeEnvelope
+from untaped.capability_api import ConfigError, PipeEnvelope, UsageError
 
 
 @dataclass(frozen=True)
@@ -88,19 +88,18 @@ class SelectionResolver:
             + int(request.all)
         )
         if sources > 1:
-            raise ConfigError(
+            raise UsageError(
                 "selection sources are exclusive: use names, --by-id, --stdin, filters/search, "
                 "or --all",
-                category="usage",
             )
         if request.require_explicit and sources == 0:
-            raise ConfigError("mutation requires an explicit selection or --all", category="usage")
+            raise UsageError("mutation requires an explicit selection or --all")
         if request.by_id and not request.ids:
-            raise ConfigError("--by-id requires explicit IDs", category="usage")
+            raise UsageError("--by-id requires explicit IDs")
         if request.names and request.by_id:
-            raise ConfigError("--by-id applies to IDs, not names", category="usage")
+            raise UsageError("--by-id applies to IDs, not names")
         if request.ids and not request.by_id:
-            raise ConfigError("IDs require --by-id", category="usage")
+            raise UsageError("IDs require --by-id")
 
         effective_scope = {_scope_path(spec, key): value for key, value in request.scope.items()}
         # Scope ancestors are shared by most selected records: fetch each once.
@@ -220,9 +219,7 @@ class SelectionResolver:
         for key, value in scope.items():
             scoped_key = f"{key}__name"
             if scoped_key in params and params[scoped_key] != value:
-                raise ConfigError(
-                    f"selection scope conflicts with filter {key!r}", category="usage"
-                )
+                raise UsageError(f"selection scope conflicts with filter {key!r}")
             params[scoped_key] = value
         selected: list[SelectedResource] = []
         for record in self._client.list(spec, params=params or None, limit=limit):

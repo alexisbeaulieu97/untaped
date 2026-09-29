@@ -28,7 +28,7 @@ from untaped.capabilities.workspace.errors import (
     UnmatchedRepoFilterError,
     WorkspaceError,
 )
-from untaped.capability_api import ErrorInfo, attribution
+from untaped.capability_api import ErrorInfo, attribution, note_failure
 
 NOT_A_GIT_REPOSITORY = "not a git repository"
 
@@ -178,9 +178,7 @@ class RepoSyncEngine:
                 self._git.ff_only_pull(local, branch=target)
             return _outcome(workspace, repo, "pulled", f"{status.behind} commits")
         except _StepFailedError as exc:
-            return _outcome(
-                workspace, repo, "failed", exc.detail, error=ErrorInfo.from_exception(exc)
-            )
+            return _outcome(workspace, repo, "failed", exc.detail, error=note_failure(exc))
 
     def plan_prune(
         self, workspace: Workspace, manifest: WorkspaceManifest

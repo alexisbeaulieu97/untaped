@@ -14,7 +14,7 @@ from untaped.capabilities.awx.application.apply_membership import MembershipSnap
 from untaped.capabilities.awx.application.save_resource import ResourceSnapshot, SaveResource
 from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.domain import Resource, ResourceSpec
-from untaped.capability_api import ConfigError
+from untaped.capability_api import ConfigError, UsageError
 
 
 class EditResources:
@@ -34,9 +34,8 @@ class EditResources:
             - set(spec.read_only_fields)
         )
         if fields is not None and not set(fields) <= writable:
-            raise ConfigError(
+            raise UsageError(
                 "--field must name editable fields; identity fields cannot be edited",
-                category="usage",
             )
         allowed = set(fields) if fields is not None else writable
         self._allowed: dict[int, set[str]] = {}

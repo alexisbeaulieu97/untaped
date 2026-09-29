@@ -221,6 +221,24 @@ def test_attribution_copies_category_system_and_details() -> None:
     assert attribution(KeyError("x")) == {}
 
 
+def test_attribution_carries_the_hint() -> None:
+    cause = ConfigError("rejected", category="auth", hint="run `untaped config set x`")
+
+    assert attribution(cause)["hint"] == "run `untaped config set x`"
+    assert UntapedError("wrapped", **attribution(cause)).hint == "run `untaped config set x`"
+
+
+def test_prompts_without_a_terminal_are_usage_errors_of_untaped() -> None:
+    import io
+
+    from untaped.ui import UiContext
+
+    with pytest.raises(UsageError) as caught:
+        UiContext(stdin=io.StringIO()).text("name")
+
+    assert (caught.value.category, caught.value.system) == ("usage", "untaped")
+
+
 def test_attribution_survives_pickling() -> None:
     import pickle
 

@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from untaped.diagnostics import diagnostics_scope, failure_exit_code
-from untaped.errors import ConfigError, HttpStatusError, HttpTransportError
+from untaped.diagnostics import diagnostics_scope, failure_exit_code, note_failure
+from untaped.errors import ConfigError, ErrorCategory, HttpStatusError, HttpTransportError
 from untaped.records import CheckRecord, ErrorInfo, OutcomeRecord, TargetRecord, UtcTimestamp
 
 
@@ -125,7 +125,29 @@ def test_error_info_of_an_unexpected_exception_is_a_failed_untaped_error() -> No
     assert (info.category, info.system, info.message) == ("failed", "untaped", "'id'")
 
 
-def test_error_info_counts_the_failure_toward_the_exit_code() -> None:
+def test_error_info_is_pure_and_note_failure_counts_it() -> None:
     with diagnostics_scope():
         ErrorInfo.from_exception(HttpTransportError("down", system="awx"))
+        assert failure_exit_code() == 1
+
+        info = note_failure(HttpTransportError("down", system="awx"), message="redacted")
+
+        assert (info.category, info.system, info.message) == ("unavailable", "awx", "redacted")
         assert failure_exit_code() == 5
+
+
+def test_note_failure_counts_an_error_info_or_a_category() -> None:
+    info = ErrorInfo.from_exception(ConfigError("rejected", category="auth"))
+    with diagnostics_scope():
+        assert note_failure(info) is info
+        assert failure_exit_code() == 4
+    with diagnostics_scope():
+        assert note_failure(ErrorCategory.UNAVAILABLE) is None
+        assert failure_exit_code() == 5
+
+
+def test_an_interrupt_is_interrupted_everywhere() -> None:
+    info = ErrorInfo.from_exception(KeyboardInterrupt())
+    with diagnostics_scope():
+        note_failure(KeyboardInterrupt())
+        assert (info.category, failure_exit_code()) == ("interrupted", 130)

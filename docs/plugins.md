@@ -179,7 +179,7 @@ SPEC = CapabilitySpec(
 class AcmeProvider:
     """Entry-point provider discovered by the unified shell."""
 
-    api_requires = ((2, 0), (3, 0))
+    api_requires = ((3, 0), (4, 0))
 
     def __call__(self) -> CapabilitySpec:
         return SPEC
@@ -255,10 +255,11 @@ The shared runtime helpers are exported from the same module:
   (declined confirmation, exit 1), `HttpError`, `HttpStatusError` (category
   from the status), `HttpTransportError` (unavailable, exit 5),
   `first_validation_error`, `ExitCode`, `attribution(exc)` (the
-  `category`/`system`/`details` keyword arguments to pass to an error that
-  replaces `exc`), `report_error(exc, item=…)` (print one failure, text or
-  JSON, and count it toward the exit code), and `note_failure(exc)` (count a
-  failure you turned into a row yourself).
+  `category`/`system`/`hint`/`details` keyword arguments to pass to an error
+  that replaces `exc`), `report_error(exc, item=…)` (print one failure, text
+  or JSON, and count it toward the exit code), and
+  `note_failure(exc, message=…)` (count a failure you turned into a row
+  yourself; it returns the row's `ErrorInfo`).
 - Message wording: `plural`, `q`, `not_found`, `hint`, `summary`.
 - Tokens: declare `token_sources: ClassVar[TokenSources] =
   TokenSources(env=(...))` and a `token_command: TokenCommand = None` field
@@ -282,8 +283,9 @@ The shared runtime helpers are exported from the same module:
   command to run to a failed or `warn` row.
 - Records: `OutcomeRecord`, `TargetRecord`, `CheckRecord`, and the
   `UtcTimestamp` and `AbsolutePath` field types. A failed outcome or target
-  row carries `error=ErrorInfo.from_exception(exc, message=detail)`, which
-  also counts the failure toward the exit code.
+  row carries `error=note_failure(exc, message=detail)`, which also counts
+  the failure toward the exit code (`ErrorInfo.from_exception` builds the
+  same object without counting it).
 - Settings and context: `get_config_section`, `get_core_settings`,
   `HttpSettings`, `app_context`, `AppContext`.
 - HTTP: `connected_client`, `HttpClient`, `RetryPolicy`, `resolve_verify`, the

@@ -8,7 +8,7 @@ when git timed out or lost the network), an unreadable ``untaped.yml`` is
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from typing import Any
 
 from untaped.capability_api import ErrorCategory, UntapedError, plural
 
@@ -33,16 +33,8 @@ class GitError(WorkspaceError):
 
     system = "git"
 
-    def __init__(
-        self,
-        message: str,
-        *,
-        returncode: int | None = None,
-        category: ErrorCategory | str | None = None,
-        system: str | None = None,
-        details: Mapping[str, object] | None = None,
-    ) -> None:
-        super().__init__(message, category=category, system=system, details=details)
+    def __init__(self, message: str, *, returncode: int | None = None, **attributed: Any) -> None:
+        super().__init__(message, **attributed)
         self.returncode = returncode
 
 

@@ -16,7 +16,7 @@ from uuid import uuid4
 from cyclopts import Parameter
 
 from untaped.cli import existing_directory
-from untaped.errors import ConfigError
+from untaped.errors import ConfigError, UsageError
 from untaped.git import GitCommandError, git_toplevel
 from untaped.stdin import read_identifiers
 
@@ -342,13 +342,11 @@ def _selected_skill_names(
 ) -> list[str]:
     selector_count = int(bool(skill_names)) + int(stdin) + int(all_skills)
     if selector_count != 1:
-        raise ConfigError(
-            "provide skill names, --stdin, or --all; not more than one", category="usage"
-        )
+        raise UsageError("provide skill names, --stdin, or --all; not more than one")
     selected = sorted(skills) if all_skills else read_identifiers(skill_names, stdin=stdin)
     duplicate = _first_duplicate(selected)
     if duplicate is not None:
-        raise ConfigError(f"duplicate skill selected: {duplicate}", category="usage")
+        raise UsageError(f"duplicate skill selected: {duplicate}")
     missing = [name for name in selected if name not in skills]
     if len(missing) == 1:
         raise ConfigError(f"unknown skill: {missing[0]}", category="not_found")
@@ -374,13 +372,11 @@ def _install_targets(
     target_dir: Path | None,
 ) -> list[SkillInstallDestination]:
     if target_dir is not None and target == SkillInstallTarget.all:
-        raise ConfigError(
-            "--target-dir requires --target codex or --target claude", category="usage"
-        )
+        raise UsageError("--target-dir requires --target codex or --target claude")
     if project_dir is not None and scope != SkillInstallScope.local:
-        raise ConfigError("--project-dir requires --scope local", category="usage")
+        raise UsageError("--project-dir requires --scope local")
     if project_dir is not None and target_dir is not None:
-        raise ConfigError("--project-dir cannot be combined with --target-dir", category="usage")
+        raise UsageError("--project-dir cannot be combined with --target-dir")
     if target_dir is not None:
         return [
             SkillInstallDestination(

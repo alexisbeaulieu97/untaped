@@ -81,7 +81,8 @@ class GitCommandError(UntapedError):
     (binary missing, launch failure, timeout); ``timed_out`` marks the
     timeout case. ``stderr`` is the full (auth-redacted) stderr text.
     Its category is ``failed`` in ``git``; a timeout or a transient transport
-    failure is ``unavailable``.
+    failure is ``unavailable``, and a remote refusing the credentials is
+    ``auth`` (``permission`` for HTTP 403), with a hint.
     """
 
     system = "git"
@@ -95,10 +96,11 @@ class GitCommandError(UntapedError):
         stderr: str = "",
         category: ErrorCategory | str | None = None,
         system: str | None = None,
+        hint: str | None = None,
     ) -> None:
         if category is None and timed_out:
             category = ErrorCategory.UNAVAILABLE
-        super().__init__(message, category=category, system=system)
+        super().__init__(message, category=category, system=system, hint=hint)
         self.returncode = returncode
         self.timed_out = timed_out
         self.stderr = stderr
@@ -128,6 +130,42 @@ def is_transient_failure(stderr: str) -> bool:
     """Whether ``stderr`` describes a transport failure worth retrying."""
     lowered = stderr.lower()
     return any(marker in lowered for marker in TRANSIENT_FETCH_MARKERS)
+
+
+# Lowercased stderr fragments of a remote refusing the credentials (auth) or
+# the account (permission): retrying cannot help, the credentials must change.
+_AUTH_MARKERS = (
+    "authentication failed",
+    "could not read username",
+    "could not read password",
+    "terminal prompts disabled",
+    "permission denied (publickey",
+    "invalid username or password",
+    "returned error: 401",
+)
+_PERMISSION_MARKERS = ("returned error: 403",)
+_CREDENTIAL_HINT = (
+    "the remote rejected the credentials: check the token (or ssh key) "
+    "for this host and its access to the repository"
+)
+
+
+def credential_failure(stderr: str) -> ErrorCategory | None:
+    """``auth``/``permission`` when ``stderr`` says the remote refused the credentials."""
+    lowered = stderr.lower()
+    if any(marker in lowered for marker in _PERMISSION_MARKERS):
+        return ErrorCategory.PERMISSION
+    if any(marker in lowered for marker in _AUTH_MARKERS):
+        return ErrorCategory.AUTH
+    return None
+
+
+def _failure_category(stderr: str) -> ErrorCategory | None:
+    """The category of a git failure from its stderr (``None``: plain ``failed``)."""
+    credential = credential_failure(stderr)
+    if credential is not None:
+        return credential
+    return ErrorCategory.UNAVAILABLE if is_transient_failure(stderr) else None
 
 
 def safe_path_segment(value: str) -> str:
@@ -317,7 +355,8 @@ def run_git(
                 f"{label} failed{suffix}: {stderr_gist(result.stderr)}",
                 returncode=result.returncode,
                 stderr=result.stderr,
-                category="unavailable" if is_transient_failure(result.stderr) else None,
+                category=_failure_category(result.stderr),
+                hint=_CREDENTIAL_HINT if credential_failure(result.stderr) else None,
             )
     raise AssertionError("unreachable")  # pragma: no cover
 
