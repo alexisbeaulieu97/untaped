@@ -175,6 +175,12 @@ class ResourceSpec(BaseModel):
     ``inventory`` for inventory children, ``unified_job_template`` for
     schedules; ``None`` for kinds without a parent.
     """
+    node_field: str | None = None
+    """Spec field holding a workflow node graph (``WorkflowJobTemplate.nodes``).
+
+    The graph lives behind AWX's node endpoints, never the record body: save
+    reads it and apply reconciles it node by node.
+    """
     async_delete: bool = False
     """AWX deletes this kind in the background, even when it answers 204."""
     apply_strategy: str = "default"
@@ -196,7 +202,7 @@ class ResourceSpec(BaseModel):
         """Every field this spec has metadata for.
 
         The union of ``canonical_fields``, ``identity_keys``, the ``fk_refs``
-        field names, and ``read_only_fields`` — the single source of truth for
+        field names, ``read_only_fields`` and ``node_field`` — the single source of truth for
         "does this tool recognize this field?" Consumed by the apply
         unrecognized-field warning, bulk-save filter validation, and the
         catalog list-column invariant.
@@ -206,6 +212,7 @@ class ResourceSpec(BaseModel):
             | frozenset(self.identity_keys)
             | {ref.field for ref in self.fk_refs}
             | frozenset(self.read_only_fields)
+            | ({self.node_field} if self.node_field else frozenset())
         )
 
     @property

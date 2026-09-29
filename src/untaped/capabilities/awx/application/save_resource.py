@@ -8,6 +8,8 @@ across AWX instances.
 Schedule's polymorphic parent is extracted from AWX's
 ``unified_job_template`` + ``summary_fields`` so it ends up in
 ``metadata.parent`` (an :class:`IdentityRef`) rather than the spec body.
+A workflow's node graph is exported under its ``node_field`` when a node
+repository is wired in.
 """
 
 from __future__ import annotations
@@ -18,7 +20,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from untaped.capabilities.awx.application.mutation_values import redact_value
-from untaped.capabilities.awx.application.ports import FkResolver, ResourceClient
+from untaped.capabilities.awx.application.ports import (
+    FkResolver,
+    ResourceClient,
+    WorkflowNodeRepository,
+)
+from untaped.capabilities.awx.application.workflow_graph import export_graph, read_graph
 from untaped.capabilities.awx.domain import IdentityRef, Metadata, Resource, ResourceSpec
 from untaped.capabilities.awx.domain.inventory import (
     CONSTRUCTED_SOURCE_FIELDS,
@@ -27,6 +34,7 @@ from untaped.capabilities.awx.domain.inventory import (
     is_generated_source,
 )
 from untaped.capabilities.awx.domain.kinds import unified_template_kind
+from untaped.capabilities.awx.domain.workflow_graph import dump_workflow_nodes
 from untaped.capabilities.awx.errors import BadRequestError
 
 _MetadataExtractor = Callable[[ResourceSpec, dict[str, Any], FkResolver], Metadata]
@@ -48,9 +56,18 @@ class ResourceSnapshot:
 
 
 class SaveResource:
-    def __init__(self, client: ResourceClient, fk: FkResolver) -> None:
+    """Export records by name; ``nodes`` adds workflow node graphs (editor/patch skip them)."""
+
+    def __init__(
+        self,
+        client: ResourceClient,
+        fk: FkResolver,
+        *,
+        nodes: WorkflowNodeRepository | None = None,
+    ) -> None:
         self._client = client
         self._fk = fk
+        self._nodes = nodes
 
     def find_all(
         self,
@@ -122,6 +139,13 @@ class SaveResource:
                         str(m["name"]) for m in members if isinstance(m.get("name"), str)
                     ]
         metadata = self.metadata_from_record(spec, record)
+        if spec.node_field and self._nodes is not None and isinstance(record_id, int):
+            graph = export_graph(
+                read_graph(self._nodes, record_id),
+                organization=metadata.organization,
+                fk=self._fk,
+            )
+            spec_data[spec.node_field] = dump_workflow_nodes(graph)
         # Polymorphic FK lives in metadata; strip from spec body if present
         for fk in spec.fk_refs:
             if fk.polymorphic:

@@ -7,7 +7,12 @@ import json
 import re
 from collections.abc import Iterator
 
-from untaped.capabilities.awx.application.ports import Catalog, FkResolver, ResourceClient
+from untaped.capabilities.awx.application.ports import (
+    Catalog,
+    FkResolver,
+    ResourceClient,
+    WorkflowNodeRepository,
+)
 from untaped.capabilities.awx.application.save_resource import SaveResource
 from untaped.capabilities.awx.domain import IdentityRef, Metadata, ResourceSpec, SaveOutcome
 from untaped.capability_api import ConfigError
@@ -16,8 +21,15 @@ _UNSAFE_FILENAME_CHARS = re.compile(r"[/\\\x00-\x1f]")
 
 
 class SaveResources:
-    def __init__(self, client: ResourceClient, fk: FkResolver, catalog: Catalog) -> None:
-        self._save_one = SaveResource(client, fk)
+    def __init__(
+        self,
+        client: ResourceClient,
+        fk: FkResolver,
+        catalog: Catalog,
+        *,
+        nodes: WorkflowNodeRepository | None = None,
+    ) -> None:
+        self._save_one = SaveResource(client, fk, nodes=nodes)
         self._catalog = catalog
 
     def __call__(

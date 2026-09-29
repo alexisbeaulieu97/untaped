@@ -81,9 +81,12 @@ def ping_command(
 
 @app.command(name="apply")
 def apply_command(
-    file: Annotated[
-        Path,
-        Parameter(help="YAML file or directory, or - to read stdin.", allow_leading_hyphen=True),
+    files: Annotated[
+        list[Path],
+        Parameter(
+            help="YAML files or directories (read recursively), or - to read stdin.",
+            allow_leading_hyphen=True,
+        ),
     ],
     /,
     *,
@@ -95,16 +98,29 @@ def apply_command(
             help="Plan without writing; exit 3 when anything would change.",
         ),
     ] = False,
+    source_ref: Annotated[
+        str | None,
+        Parameter(
+            name="--source-ref",
+            help=(
+                "Read the paths as they are at this git ref (branch, tag, commit, or a "
+                "pushed HEAD) of the current repository, not from the working tree."
+            ),
+        ),
+    ] = None,
     controls: WriteControls = CONTROL_DEFAULTS,
 ) -> None:
     """Create/update YAML documents in dependency order, with one confirmation."""
-    if str(file).startswith("-") and str(file) != "-":
-        # ``-`` may lead the file (stdin), so a mistyped option lands here.
-        raise_usage(f"unknown option: {file}")
+    for file in files:
+        if str(file).startswith("-") and str(file) != "-":
+            # ``-`` may lead the file (stdin), so a mistyped option lands here.
+            raise_usage(f"unknown option: {file}")
+    if source_ref is not None and any(str(file) == "-" for file in files):
+        raise_usage("--source-ref reads files at a commit; it cannot read stdin")
     with report_errors():
         controls = controls.validated()
         with open_context() as ctx:
-            run_apply(ctx, file, controls, check=check)
+            run_apply(ctx, files, controls, check=check, source_ref=source_ref)
 
 
 # ---- top-level save ----
