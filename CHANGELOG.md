@@ -339,6 +339,17 @@ self-contained manual for the installed CLI.
   - **Behavior change:** each repo a `source refresh` could not index is an
     `error: <repo>: <reason>` line (was `failed <repo>: <reason>`), and the
     final error carries the most severe repo's category.
+  - **Behavior change:** `graph`'s tree is easier to read. It opens with the
+    target, its data source and depth, lists "used by" above "depends on"
+    with `├──`/`└──` connectors (ASCII with the `plain` theme), names the
+    file that declares each dependency and whether it is `unpinned`, numbers
+    a shared subtree `[n]` and refers back with `see [n]` (was
+    `(see above)`), and ends with a count of repos, edges, cycles and
+    unresolved dependencies. It is colored on a terminal and never wraps.
+  - **Behavior change:** `graph` prints its warnings on stderr for every
+    format, as `deps` and `impact` do; they no longer appear in the tree,
+    the Mermaid comments or the `--out` file. `--format json` still carries
+    them in `warnings`.
 - Recipe
   - **Breaking:** recipe errors keep their own category instead of being
     reported as configuration errors: a missing recipe, pack, hook, backup or

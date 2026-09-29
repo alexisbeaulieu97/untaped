@@ -132,7 +132,32 @@ untaped ansible graph acme/base-role --upstream --format json
 
 `graph` shows both directions by default (`--upstream`, `--downstream` or
 `--both` picks one), with a default `--depth` of 3. Without a source it shows
-only downstream and warns that upstream was omitted.
+only downstream and warns that upstream was omitted. The tree looks like this:
+
+```text
+acme/base-role@main  source platform · depth 3
+
+used by
+└── acme/site@main            roles/requirements.yml · unpinned
+
+depends on
+├── acme/legacy@v1            meta/main.yml
+│   └── acme/shared@main [1]  meta/main.yml · unpinned
+│       └── acme/leaf@main    requirements.yml
+└── acme/users@v1.2.0         requirements.yml
+    └── acme/shared@main      requirements.yml · unpinned  see [1]
+
+5 repos · 6 edges
+```
+
+The first line names the target, where the data came from and the depth.
+"used by" lists the repos that depend on it and "depends on" what it depends
+on. After each repo comes the file that declares that dependency, plus
+`unpinned` when it names no version, or `pins X` when the declared version
+differs from the ref it resolved to. The last line counts the repos, edges,
+cycles and unresolved dependencies. Warnings go to stderr, never into the
+tree or the `--out` file. With the `plain` theme (`ui.border: ascii`) the
+connectors are ASCII.
 
 ## Flags
 
@@ -203,8 +228,8 @@ afterwards.
   repo appears once per root, at its shortest path; a ref-less ROLE is walked
   from each of its refs, and `root_ref` says which ROLE ref a row was reached
   from.
-- `tree` prints a shared subtree once and marks later occurrences
-  `(see above)`.
+- `tree` prints a shared subtree once, numbered `[n]`, and marks later
+  occurrences `see [n]`; a repo already on the path is marked `↻ cycle`.
 - `json` has `nodes`, `edges` (with stable `id`s), `cycles` and `warnings`.
   A cycle is found only within the depth you asked for; raise `--depth` to
   look for longer loops.
