@@ -9,9 +9,9 @@ from typing import Any
 from untaped.capabilities.awx.application.ports import Catalog
 from untaped.capabilities.awx.domain import Resource
 from untaped.capabilities.awx.domain.workflow_graph import (
-    NODE_RUN_KINDS,
     PROMPT_MEMBERS,
     PROMPT_REFERENCES,
+    parse_workflow_nodes,
 )
 from untaped.capabilities.awx.errors import AwxApiError
 
@@ -83,18 +83,19 @@ def topological_sort(docs: Iterable[Resource], *, catalog: Catalog) -> list[Reso
 
 
 def _node_reference_kinds(nodes: Any) -> set[str]:
-    """Kinds a node graph runs or prompts with, read leniently (apply validates it)."""
+    """Kinds a node graph runs or prompts with; none for an invalid graph (apply refuses it)."""
+    try:
+        parsed = parse_workflow_nodes(nodes)
+    except ValueError:
+        return set()
     kinds: set[str] = set()
-    for node in nodes if isinstance(nodes, list) else ():
-        run = node.get("run") if isinstance(node, dict) else None
-        if isinstance(run, dict):
-            kinds.update(kind for key, kind in NODE_RUN_KINDS.items() if key in run)
-            if "inventory" in run:
+    for node in parsed:
+        if node.run is not None:
+            kinds.add(node.run.kind)
+            if node.run.inventory is not None:
                 kinds.add("Inventory")
-        prompts = node.get("prompts") if isinstance(node, dict) else None
-        if isinstance(prompts, dict):
-            references = {**PROMPT_REFERENCES, **PROMPT_MEMBERS}
-            kinds.update(kind for key, kind in references.items() if key in prompts)
+        references = {**PROMPT_REFERENCES, **PROMPT_MEMBERS}
+        kinds.update(kind for name, kind in references.items() if getattr(node.prompts, name))
     return kinds
 
 

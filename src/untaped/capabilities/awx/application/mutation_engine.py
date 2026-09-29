@@ -86,10 +86,18 @@ class BatchMutationEngine:
         nodes: WorkflowNodeRepository | None = None,
     ) -> None:
         self._client = client
-        self._graph = WorkflowGraphReconciler(nodes) if nodes is not None else None
         self._fk = fk
         self._membership = membership or MembershipReconciler(catalog)
         warn = warn if warn is not None else _noop_warn
+        self._graph = (
+            WorkflowGraphReconciler(
+                nodes,
+                warn=warn,
+                credential_type=lambda member: self._membership.credential_type(member, client),
+            )
+            if nodes is not None
+            else None
+        )
         self._body = BodyOperations(
             client,
             warn=warn,
@@ -511,7 +519,11 @@ class BatchMutationEngine:
                         ),
                     }
                 )
-                stopped = not continue_on_error or isinstance(exc, ConfigError)
+                stopped = (
+                    not continue_on_error
+                    or isinstance(exc, ConfigError)
+                    or isinstance(exc.__cause__, ConfigError)
+                )
                 continue
             if outcome.action == "unchanged":
                 outcomes[operation.index] = outcome.model_copy(update={"action": "updated"})

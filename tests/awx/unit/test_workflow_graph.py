@@ -10,6 +10,7 @@ from untaped.capabilities.awx.domain.workflow_graph import (
     WorkflowNodeSpec,
     dump_workflow_nodes,
     parse_workflow_nodes,
+    rename_references,
 )
 
 
@@ -93,6 +94,10 @@ def test_a_full_graph_parses_and_dumps_without_defaults() -> None:
             "run.inventory_source needs run.inventory",
         ),
         (
+            [{"id": "a", "run": {"system_job_template": "Cleanup", "organization": "X"}}],
+            "run.organization does not apply to system_job_template",
+        ),
+        (
             [{"id": "a", "approval": {"name": "ok"}, "prompts": {"limit": "x"}}],
             "approval nodes take no prompts",
         ),
@@ -113,3 +118,62 @@ def test_node_references_name_their_kinds() -> None:
         "Sub",
         None,
     )
+
+
+def test_an_explicit_null_organization_survives_a_dump() -> None:
+    """``organization: null`` names a global template; leaving it out means the workflow's."""
+    nodes = parse_workflow_nodes(
+        [
+            {"id": "a", "run": {"job_template": "Global", "organization": None}},
+            {"id": "b", "run": {"system_job_template": "Cleanup Job Details"}},
+        ]
+    )
+
+    assert dump_workflow_nodes(nodes) == [
+        {"id": "a", "run": {"job_template": "Global", "organization": None}},
+        {"id": "b", "run": {"system_job_template": "Cleanup Job Details"}},
+    ]
+    assert nodes[1].run is not None
+    assert nodes[1].run.kind == "SystemJobTemplate"
+
+
+def test_rename_references_rewrites_runs_and_prompts_by_kind_and_name() -> None:
+    nodes = parse_workflow_nodes(
+        [
+            {
+                "id": "a",
+                "run": {"job_template": "Deploy", "organization": "Ops"},
+                "prompts": {
+                    "inventory": "Lab",
+                    "credentials": ["ssh", {"name": "vault", "organization": "Ops"}],
+                    "limit": "web",
+                },
+                "success": ["b"],
+            },
+            {"id": "b", "run": {"workflow_job_template": "Deploy"}},
+        ]
+    )
+
+    renamed = rename_references(
+        nodes,
+        {
+            ("JobTemplate", "Deploy"): "Deploy [test]",
+            ("Inventory", "Lab"): "Lab [test]",
+            ("Credential", "vault"): "vault [test]",
+        },
+    )
+
+    assert dump_workflow_nodes(renamed) == [
+        {
+            "id": "a",
+            "run": {"job_template": "Deploy [test]", "organization": "Ops"},
+            "prompts": {
+                "inventory": "Lab [test]",
+                "credentials": ["ssh", {"name": "vault [test]", "organization": "Ops"}],
+                "limit": "web",
+            },
+            "success": ["b"],
+        },
+        {"id": "b", "run": {"workflow_job_template": "Deploy"}},
+    ]
+    assert dump_workflow_nodes(nodes)[0]["run"]["job_template"] == "Deploy"

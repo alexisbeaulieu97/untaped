@@ -10,14 +10,21 @@
     `apply` reconciles nodes by `id` (create, patch, delete, then edges and
     approval templates) with the usual preview, `--dry-run`, `--check` and
     confirmation, and creates job templates of the same batch before the
-    workflow that runs them. Duplicate ids, edges to unknown ids, cycles and
-    unknown template names are refused before any write. See the "Workflow
-    templates and their nodes" section of the AWX guide.
+    workflow that runs them. Duplicate ids, edges to unknown ids, cycles,
+    workflows that run each other and unknown template names are refused
+    before any write. Nodes may run management jobs
+    (`run: {system_job_template: NAME}`); a node whose template was deleted is
+    left out of exports with a warning and left alone by apply. See the
+    "Workflow templates and their nodes" section of the AWX guide.
   - **New:** job template exports carry `instance_groups` by name, in their
     fallback order, and `apply` reconciles them.
   - **New:** `apply` accepts several files and directories as one batch, and
     `apply --source-ref REF PATH...` reads them as they are at a git ref of the
-    current repository instead of the working tree (`HEAD` must be pushed).
+    current repository instead of the working tree (`HEAD` must be pushed;
+    symbolic links at the ref are refused).
+  - **Behavior change:** membership replacement keeps its rules (adds first,
+    same-type credentials removed first and restored if the add fails) and now
+    applies them to workflow node credentials and instance groups too.
   - **Behavior change:** workflow template exports now include `nodes`, so
     applying one sets the workflow's graph to the exported one (`nodes: []`
     deletes every node). A document without `nodes`, such as an export from an

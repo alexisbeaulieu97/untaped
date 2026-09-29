@@ -25,13 +25,17 @@ Constraints:
 
 - Specs are read at a commit (`git ls-tree`, `git show SHA:PATH`), never from
   the working tree, through one reusable git-backed reader. `HEAD` must be
-  pushed, as for `--scm-branch HEAD`. `apply --source-ref REF PATH…` is that
-  reader applied to real names.
+  pushed, as for `--scm-branch HEAD`; a run that makes AWX check the commit out
+  also requires that a remote has it. `apply --source-ref REF PATH…` is that
+  reader applied to real names; it reads locally, so it keeps the HEAD rule
+  only.
 - Everything is bound by name, never by ID: references resolve where the file
   is applied, and a workflow graph is keyed by node `id` (AWX's node
   `identifier`) so apply can reconcile it node by node.
-- Workflow graphs round-trip in full (nodes, prompts, approvals, edges), so the
-  workflow kind has full fidelity. Node references are apply-ordering edges.
+- Workflow graphs round-trip (nodes, prompts, approvals, edges), so the workflow
+  kind has full fidelity; a node whose template was deleted cannot be named, so
+  export skips it with a warning and apply leaves it alone. Node references are
+  apply-ordering edges.
 - Temporary test sets bind a suite to a repo spec by name and organization,
   provision copies named `NAME [untaped-test SHA RUN]` with `scm_branch` set to
   the SHA, and always tear them down. A template that is neither provisioned

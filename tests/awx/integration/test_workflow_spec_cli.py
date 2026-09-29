@@ -14,7 +14,13 @@ from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.integration
 
+# Export order: from the roots down, ties by id.
 _GRAPH = [
+    {
+        "id": "approve-prod",
+        "approval": {"name": "Approve production", "timeout": 3600},
+        "success": ["deploy"],
+    },
     {
         "id": "deploy",
         "run": {"job_template": "Deploy"},
@@ -27,17 +33,12 @@ _GRAPH = [
         "success": ["verify"],
         "failure": ["rollback"],
     },
-    {
-        "id": "approve-prod",
-        "approval": {"name": "Approve production", "timeout": 3600},
-        "success": ["deploy"],
-    },
+    {"id": "rollback", "run": {"job_template": "Shared rollback", "organization": "Ops"}},
     {
         "id": "verify",
         "run": {"job_template": "Smoke check"},
         "all_parents_must_converge": True,
     },
-    {"id": "rollback", "run": {"job_template": "Shared rollback", "organization": "Ops"}},
 ]
 
 
@@ -91,6 +92,15 @@ def _write(tmp_path: Path, *documents: dict[str, Any]) -> Path:
 
 def _apply(path: Path, *flags: str) -> Any:
     return _invoke("apply", str(path), *flags)
+
+
+def _nodes(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """A document's nodes by id; editing them edits the document."""
+    return {node["id"]: node for node in document["spec"]["nodes"]}
+
+
+def _stderr_lines(result: Any) -> list[str]:
+    return (result.stderr or "").splitlines()
 
 
 def _workflow(fake: Any, name: str) -> dict[str, Any]:
@@ -166,7 +176,6 @@ def test_changes_are_previewed_by_node_then_reconciled(fake_aap: Any, tmp_path: 
         '{"name":"Approve production","timeout":600}',
         '  nodes[rollback]: {"run":{"job_template":"Shared rollback","organization":"Ops"}}'
         " → null (delete)",
-        '  nodes[deploy].failure: ["rollback"] → []',
         '  nodes[verify].always: [] → ["notify"]',
     ):
         assert expected in lines, preview.stderr
@@ -183,18 +192,27 @@ def test_changes_are_previewed_by_node_then_reconciled(fake_aap: Any, tmp_path: 
 def test_a_node_switching_to_an_approval_is_replaced(fake_aap: Any, tmp_path: Path) -> None:
     _seed(fake_aap)
     document = _export()
-    document["spec"]["nodes"][2] = {
-        "id": "verify",
-        "approval": {"name": "Looks good?"},
-    }
+    deploy = _nodes(document)["deploy"]
+    del deploy["run"], deploy["prompts"]
+    deploy["approval"] = {"name": "Looks good?"}
+    path = _write(tmp_path, document)
 
-    result = _apply(_write(tmp_path, document), "--yes")
+    preview = _apply(path, "--dry-run")
+
+    assert preview.exit_code == 0, preview.output + (preview.stderr or "")
+    rows = [line for line in _stderr_lines(preview) if line.startswith("  nodes[")]
+    # Unchanged edges of the replaced node and into it are not changes.
+    assert rows == [
+        '  nodes[deploy]: {"run":{"job_template":"Deploy"},"prompts":{"inventory":"Production",'
+        '"credentials":["ssh"],"extra_vars":{"version":3},"limit":"web*"}} → '
+        '{"approval":{"name":"Looks good?"}} (replace)'
+    ]
+
+    result = _apply(path, "--yes")
 
     assert result.exit_code == 0, result.output + (result.stderr or "")
-    assert 203 not in fake_aap.store["workflow_nodes"]
-    nodes = {node["id"]: node for node in _export()["spec"]["nodes"]}
-    assert nodes["verify"] == {"id": "verify", "approval": {"name": "Looks good?"}}
-    assert nodes["deploy"]["success"] == ["verify"]
+    assert 201 not in fake_aap.store["workflow_nodes"]
+    assert _export()["spec"]["nodes"] == document["spec"]["nodes"]
 
 
 def test_templates_in_the_same_batch_are_created_before_the_workflow(
@@ -286,6 +304,13 @@ def _seed_more(fake: Any) -> None:
     fake.memberships[("workflow_job_template_nodes", 207, "labels")] = {50}
     fake.memberships[("workflow_job_template_nodes", 207, "instance_groups")] = {61, 60}
     fake.memberships[("workflow_job_template_nodes", 207, "credentials")] = {41}
+    # A management job, and a template without an organization.
+    fake.seed("system_job_templates", id=16, name="Cleanup Job Details")
+    fake.seed("job_templates", id=17, name="Global cleanup", organization=None)
+    fake.seed("workflow_nodes", id=208, workflow_job_template=100, identifier="cleanup",
+              unified_job_template=16, extra_data={"days": 30})  # fmt: skip
+    fake.seed("workflow_nodes", id=210, workflow_job_template=100, identifier="global",
+              unified_job_template=17)  # fmt: skip
 
 
 def test_every_run_kind_and_prompt_round_trips(fake_aap: Any, tmp_path: Path) -> None:
@@ -293,6 +318,8 @@ def test_every_run_kind_and_prompt_round_trips(fake_aap: Any, tmp_path: Path) ->
     document = _export()
     nodes = {node["id"]: node for node in document["spec"]["nodes"]}
     assert nodes["sync-project"]["run"] == {"project": "playbooks"}
+    assert nodes["cleanup"]["run"] == {"system_job_template": "Cleanup Job Details"}
+    assert nodes["global"]["run"] == {"job_template": "Global cleanup", "organization": None}
     assert nodes["sync-cloud"]["run"] == {
         "inventory_source": "aws",
         "organization": "Ops",
@@ -363,7 +390,7 @@ def test_node_relations_an_older_controller_lacks_export_empty(fake_aap: Any) ->
 def test_check_reports_node_drift(fake_aap: Any, tmp_path: Path) -> None:
     _seed(fake_aap)
     document = _export()
-    document["spec"]["nodes"][0]["prompts"]["limit"] = "db*"
+    _nodes(document)["deploy"]["prompts"]["limit"] = "db*"
 
     result = _apply(_write(tmp_path, document), "--check")
 
@@ -377,21 +404,130 @@ def test_a_refused_node_write_leaves_a_partial_row(fake_aap: Any, tmp_path: Path
     fake_aap.forbidden_associate_ids.add(42)
     document = _export()
     document["spec"]["description"] = "changed"
-    document["spec"]["nodes"][0]["prompts"]["credentials"] = ["ssh", "deploy-key"]
+    _nodes(document)["deploy"]["prompts"]["credentials"] = ["ssh", "deploy-key"]
 
     result = _apply(_write(tmp_path, document), "--yes", "--format", "json")
 
     assert result.exit_code == 1
     assert '"partial"' in result.stdout
-    assert "workflow nodes failed" in result.stdout
+    assert "workflow nodes failed: nodes[deploy] update:" in result.stdout
     assert _workflow(fake_aap, "Release")["description"] == "changed"
+
+
+@pytest.mark.parametrize(
+    ("credential_type", "outcome"),
+    [(2, "permission denied"), (1, "restored removed members 40")],
+)
+def test_a_refused_node_credential_swap_keeps_the_old_credential(
+    fake_aap: Any, tmp_path: Path, credential_type: int, outcome: str
+) -> None:
+    """Adds come first; a same-type swap removes first and restores on refusal."""
+    _seed(fake_aap)
+    fake_aap.seed("credentials", id=42, name="new", organization=1, credential_type=credential_type)
+    fake_aap.forbidden_associate_ids.add(42)
+    document = _export()
+    _nodes(document)["deploy"]["prompts"]["credentials"] = ["new"]
+
+    result = _apply(_write(tmp_path, document), "--yes", "--format", "json")
+
+    assert result.exit_code == 1
+    assert outcome in result.stdout
+    assert set(fake_aap.memberships[("workflow_job_template_nodes", 201, "credentials")]) == {40}
+
+
+def test_encrypted_node_extra_vars_are_dropped_on_create_and_match_on_update(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    _seed(fake_aap)
+    fake_aap.get_record("workflow_nodes", 201)["extra_data"] = {
+        "version": 3,
+        "password": "$encrypted$",
+    }
+    document = _export()
+    assert _nodes(document)["deploy"]["prompts"]["extra_vars"]["password"] == "$encrypted$"
+
+    # A plaintext secret in the document matches the stored (masked) one.
+    _nodes(document)["deploy"]["prompts"]["extra_vars"]["password"] = "s3cret"
+    same = _apply(_write(tmp_path, document), "--yes", "--format", "json")
+    assert same.exit_code == 0, same.output + (same.stderr or "")
+    assert '"unchanged"' in same.stdout
+
+    # A placeholder cannot be sent to a new node: it is dropped with a warning.
+    _nodes(document)["deploy"]["prompts"]["extra_vars"]["password"] = "$encrypted$"
+    document["metadata"]["name"] = "Release copy"
+    copied = _apply(_write(tmp_path, document), "--yes")
+    assert copied.exit_code == 0, copied.output + (copied.stderr or "")
+    assert "nodes[deploy] extra_vars.password is $encrypted$" in (copied.stderr or "")
+    assert _nodes(_export("Release copy"))["deploy"]["prompts"]["extra_vars"] == {"version": 3}
+
+
+def test_orphaned_nodes_are_left_out_of_exports_and_left_alone(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    _seed(fake_aap)
+    fake_aap.seed("workflow_nodes", id=209, workflow_job_template=100, identifier="orphan")
+    fake_aap.get_record("workflow_nodes", 203)["success_nodes"] = [209]
+
+    result = _invoke("workflow-templates", "export", "Release", "--organization", "Default")
+
+    assert result.exit_code == 0, result.output + (result.stderr or "")
+    assert "node 'orphan' runs nothing" in (result.stderr or "")
+    assert yaml.safe_load(result.stdout)["spec"]["nodes"] == _GRAPH
+    reapplied = _apply(_write(tmp_path, yaml.safe_load(result.stdout)), "--yes")
+    assert reapplied.exit_code == 0, reapplied.output + (reapplied.stderr or "")
+    assert not _writes(fake_aap)
+    assert fake_aap.get_record("workflow_nodes", 203)["success_nodes"] == [209]
+
+    out_dir = tmp_path / "backup"
+    bulk = _invoke("export", "--kind", "workflow-templates", "--out-dir", str(out_dir))
+    assert bulk.exit_code == 0, bulk.output + (bulk.stderr or "")
+    assert (out_dir / "WorkflowJobTemplate__Default__Release.yml").exists()
+
+
+def test_workflows_that_run_each_other_are_refused(fake_aap: Any, tmp_path: Path) -> None:
+    fake_aap.seed("organizations", id=1, name="Default")
+    documents = [
+        {
+            "kind": "WorkflowJobTemplate",
+            "metadata": {"name": name, "organization": "Default"},
+            "spec": {"nodes": [{"id": "x", "run": {"workflow_job_template": other}}]},
+        }
+        for name, other in (("A", "B"), ("B", "A"))
+    ]
+
+    result = _apply(_write(tmp_path, *documents), "--yes")
+
+    assert result.exit_code == 1
+    assert "workflow nodes form a recursion: A → B → A" in (result.stderr or "")
+    assert not _writes(fake_aap)
+
+
+def test_member_reads_happen_once_per_apply(fake_aap: Any, tmp_path: Path) -> None:
+    """Preflight and verification reuse the plan's member reads for untouched nodes."""
+    _seed(fake_aap)
+    document = _export()
+    _nodes(document)["deploy"]["prompts"]["limit"] = "db*"
+    path = _write(tmp_path, document)
+    fake_aap.router.reset()
+
+    result = _apply(path, "--yes")
+
+    assert result.exit_code == 0, result.output + (result.stderr or "")
+    member_reads = [
+        call
+        for call in fake_aap.router.calls
+        if call.request.method == "GET"
+        and call.request.url.path.endswith(("/credentials/", "/labels/", "/instance_groups/"))
+        and "workflow_job_template_nodes" in call.request.url.path
+    ]
+    assert len(member_reads) == 3 * 4
 
 
 def test_an_ignored_node_write_is_reported_unconverged(fake_aap: Any, tmp_path: Path) -> None:
     _seed(fake_aap)
     fake_aap.ignored_write_fields.add("limit")
     document = _export()
-    document["spec"]["nodes"][0]["prompts"]["limit"] = "db*"
+    _nodes(document)["deploy"]["prompts"]["limit"] = "db*"
 
     result = _apply(_write(tmp_path, document), "--yes", "--format", "json")
 
@@ -407,7 +543,7 @@ def test_nodes_changed_after_planning_are_a_conflict(fake_aap: Any) -> None:
     _seed(fake_aap)
     with open_context() as ctx:
         document = Resource.model_validate(_export())
-        document.spec["nodes"][0]["prompts"]["limit"] = "db*"
+        _nodes({"spec": document.spec})["deploy"]["prompts"]["limit"] = "db*"
         engine = BatchMutationEngine(
             ctx.repo, ctx.catalog, ctx.fk, ctx.strategies, nodes=ctx.workflow_nodes
         )

@@ -1,7 +1,8 @@
 """The ``spec.nodes`` graph of a ``WorkflowJobTemplate`` document.
 
-A node either runs a template (``run``: a job template, workflow, project or
-inventory source, by name) or waits for an approval (``approval``). ``id`` is
+A node either runs a template (``run``: a job template, workflow, project,
+inventory source or management job, by name) or waits for an approval
+(``approval``). ``id`` is
 AWX's node ``identifier``, the stable key apply reconciles by; ``success``,
 ``failure`` and ``always`` list the ids of the nodes that follow. Everything is
 written by name, so a graph exported from one controller applies to another.
@@ -13,7 +14,7 @@ talking to AWX happen in the application layer.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, model_validator
@@ -23,8 +24,12 @@ NODE_RUN_KINDS: dict[str, str] = {
     "workflow_job_template": "WorkflowJobTemplate",
     "project": "Project",
     "inventory_source": "InventorySource",
+    "system_job_template": "SystemJobTemplate",
 }
 """``run`` key → the kind it names (AWX's node ``unified_job_template``)."""
+
+GLOBAL_RUN_KINDS = frozenset({"SystemJobTemplate"})
+"""Run kinds without an organization (management jobs)."""
 
 EDGE_RELATIONS: dict[str, str] = {
     "success": "success_nodes",
@@ -86,11 +91,14 @@ class NodeRun(BaseModel):
     inventory_source: str | None = Field(
         default=None, description="Inventory source name (runs an inventory update)."
     )
+    system_job_template: str | None = Field(
+        default=None, description="Management job name (runs a system job)."
+    )
     organization: str | None = Field(
         default=None,
         description=(
             "Organization of the template (of the inventory, for an inventory source). "
-            "Defaults to the workflow's organization."
+            "Defaults to the workflow's organization; null names a template without one."
         ),
     )
     inventory: str | None = Field(
@@ -106,7 +114,14 @@ class NodeRun(BaseModel):
             raise ValueError("run.inventory only applies to inventory_source")
         if self.inventory is None and keys == ["inventory_source"]:
             raise ValueError("run.inventory_source needs run.inventory, the inventory holding it")
+        if "organization" in self.model_fields_set and NODE_RUN_KINDS[keys[0]] in GLOBAL_RUN_KINDS:
+            raise ValueError(f"run.organization does not apply to {keys[0]}")
         return self
+
+    @property
+    def global_template(self) -> bool:
+        """An explicit ``organization: null``: the template has no organization."""
+        return "organization" in self.model_fields_set and self.organization is None
 
     @property
     def key(self) -> str:
@@ -215,10 +230,47 @@ def dump_workflow_nodes(nodes: Iterable[WorkflowNodeSpec]) -> list[dict[str, Any
     for node in nodes:
         data = node.model_dump(exclude_defaults=True, exclude_none=True)
         data["id"] = node.id
+        if node.run is not None and node.run.global_template:
+            data["run"]["organization"] = None
         if not data.get("prompts"):
             data.pop("prompts", None)
         out.append({key: data[key] for key in WorkflowNodeSpec.model_fields if key in data})
     return out
+
+
+def rename_references(
+    nodes: Iterable[WorkflowNodeSpec], mapping: Mapping[tuple[str, str], str]
+) -> list[WorkflowNodeSpec]:
+    """``nodes`` with every run and prompt reference in ``mapping`` renamed.
+
+    ``mapping`` maps ``(kind, name)`` to the new name; organizations stay as
+    they are. Temporary copies use it to point a workflow at copies of its
+    templates.
+    """
+
+    def rename(kind: str, value: Any) -> Any:
+        if isinstance(value, NameRef):
+            new = mapping.get((kind, value.name))
+            return value.model_copy(update={"name": new}) if new is not None else value
+        return mapping.get((kind, value), value)
+
+    renamed: list[WorkflowNodeSpec] = []
+    for node in nodes:
+        update: dict[str, Any] = {}
+        if node.run is not None and (node.run.kind, node.run.name) in mapping:
+            new_name = mapping[(node.run.kind, node.run.name)]
+            update["run"] = node.run.model_copy(update={node.run.key: new_name})
+        prompts: dict[str, Any] = {}
+        for name, kind in PROMPT_REFERENCES.items():
+            if (value := getattr(node.prompts, name)) is not None:
+                prompts[name] = rename(kind, value)
+        for name, kind in PROMPT_MEMBERS.items():
+            if (values := getattr(node.prompts, name)) is not None:
+                prompts[name] = [rename(kind, value) for value in values]
+        if prompts:
+            update["prompts"] = node.prompts.model_copy(update=prompts)
+        renamed.append(node.model_copy(update=update))
+    return renamed
 
 
 def _describe(exc: ValidationError) -> str:
@@ -285,6 +337,7 @@ def _find_cycle(nodes: list[WorkflowNodeSpec]) -> list[str]:
 
 __all__ = [
     "EDGE_RELATIONS",
+    "GLOBAL_RUN_KINDS",
     "NODE_RUN_KINDS",
     "PROMPT_FIELDS",
     "PROMPT_MEMBERS",
@@ -297,4 +350,5 @@ __all__ = [
     "WorkflowNodeSpec",
     "dump_workflow_nodes",
     "parse_workflow_nodes",
+    "rename_references",
 ]
