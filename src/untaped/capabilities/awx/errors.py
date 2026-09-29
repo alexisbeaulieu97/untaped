@@ -112,6 +112,13 @@ class LaunchPromptError(AwxApiError):
     category = ErrorCategory.INVALID
 
 
+class PendingApprovalError(AwxError):
+    """A workflow under test waits on an approval its test case gives no answer for."""
+
+    category = ErrorCategory.INVALID
+    system = "awx.suite"
+
+
 class WaitCancelledError(AwxApiError):
     """A monitor's poll wait was interrupted (Ctrl-C); the execution keeps running."""
 

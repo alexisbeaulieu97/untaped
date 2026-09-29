@@ -1,6 +1,7 @@
 # Test suites (`AwxTestSuite`)
 
-A test suite launches one job template several times, once per case, with a
+A test suite launches one job template (or one workflow, see
+[Workflow suites](#workflow-suites)) several times, once per case, with a
 different launch payload each time, and checks each job against what the case
 expects. This is the complete file format; `untaped awx schema AwxTestSuite`
 prints the body's JSON Schema for editors and validators, and the
@@ -121,10 +122,11 @@ untaped awx test run --vars-file ~/.secrets/deploy-test.yml --non-interactive
 |---|---|
 | `kind` | Required, exactly `AwxTestSuite`. |
 | `name` | The suite name used by `--case SUITE/CASE`; default: the file name without its extension. |
-| `jobTemplate` | Required. The name of the job template every case launches. |
-| `organization` | The job template's organization when its name is not unique (default: `awx.default_organization`). |
-| `defaults` | A case body every case inherits (`launch`, `expect`, `timeout`). |
-| `cases` | Required, at least one. Case name → case body; each case launches the job template once. |
+| `jobTemplate` | The name of the job template every case launches. A suite names exactly one of `jobTemplate` and `workflowTemplate`. |
+| `workflowTemplate` | The name of the workflow job template every case launches, instead of `jobTemplate` (see [Workflow suites](#workflow-suites)). |
+| `organization` | The template's organization when its name is not unique (default: `awx.default_organization`). |
+| `defaults` | A case body every case inherits (`launch`, `expect`, `timeout`, `approvals`). |
+| `cases` | Required, at least one. Case name → case body; each case launches the template once. |
 | `variables` | Not written in the body: `untaped awx test list` reports the header's declarations under this key. |
 
 Unknown keys are errors everywhere in the body, so a typo such as
@@ -137,6 +139,7 @@ Unknown keys are errors everywhere in the body, so a typo such as
 | `launch` | The AWX launch payload for this case (see below). |
 | `expect` | What the job must produce (see below). |
 | `timeout` | Seconds (a positive number) to wait for the job; then it is cancelled and the case is `timeout`. |
+| `approvals` | A workflow case only: `approve` or `deny` every approval the workflow waits on (see [Workflow suites](#workflow-suites)); a case's replaces `defaults.approvals`. |
 
 ### `launch`: the launch payload
 
@@ -202,6 +205,7 @@ Plain mappings are never treated as references.
 | `hosts` | Upper bounds on each host's counters, by host name (below); `"*"` bounds every host. |
 | `idempotent` | `true`: once the case passed, launch it again with the same payload; the rerun must succeed and change nothing (below). |
 | `failed_tasks` | Failed tasks the job must have (below): proves a negative case failed for the right reason. |
+| `nodes` | A workflow case only: checks on each node's job, by node id (see [Workflow suites](#workflow-suites)). |
 
 Every check must hold. A case's `status`, `changed`, `idempotent` and
 `failed_tasks` replace the default's, each of its `log` lists replaces the
@@ -281,6 +285,65 @@ running. `--parallel N` (default `awx.test_parallel`, 4) runs that many cases
 at once. A polling error or Ctrl-C cancels the job too (unless
 `--no-cancel`).
 
+## Workflow suites
+
+`workflowTemplate: NAME` instead of `jobTemplate` makes every case launch a
+workflow job template (see `workflow.yml`). Cases are written as for a job
+template, with these differences:
+
+- `launch` takes the fields a workflow's launch takes: `extra_vars`,
+  `inventory`, `limit`, `scm_branch`, `labels`, `job_tags` and `skip_tags`,
+  each only when the workflow prompts for it (`extra_vars` also through its
+  survey). Another field warns as unknown. The workflow passes them to its
+  nodes as AWX does.
+- `approvals: approve` (or `deny`) answers every approval the workflow waits
+  on, in nested workflows too, as soon as it is pending. Without `approvals`
+  a pending approval fails the case at once: the workflow job is cancelled
+  and the case is an `error` of `awx.suite` (exit 1). `untaped awx test
+  validate` warns about each case without `approvals` whose workflow has
+  approval nodes. Answering needs AWX's Approve role on the workflow (see
+  [agent-profile.md](agent-profile.md)).
+- `expect.status` is the workflow job's status; `changed` and `hosts` bound
+  its node jobs' host summaries, summed per host; `failed_tasks` matches the
+  failed tasks of every node job that failed. `expect.log` is refused (a
+  workflow job has no log): check a node's log under `nodes`.
+- `idempotent: true` launches the whole workflow again; its rerun must
+  succeed with no changed task in any node job. When the payload sets
+  `scm_branch`, the rerun launches on the commit the first run's jobs ran,
+  if they all ran the same one.
+- `expect.nodes` checks each named node's job with a case's own checks.
+  Each key is a node id of the workflow (AWX's node `identifier`, the `id`
+  of an exported node; `untaped awx test init NAME --workflow` lists them),
+  and a key the workflow does not have fails the preflight with the closest
+  ids. A node of a nested workflow is not addressed: check the node that
+  runs that workflow.
+
+A `nodes` entry takes these checks, which merge over the same node's entry
+in `defaults.expect.nodes` as a case's `expect` does:
+
+| Field | Meaning |
+|---|---|
+| `status` | The node's final status: `successful` (the default), `failed`, `error`, `canceled`, or `never_ran` for a node the workflow did not run (no other check goes with it). |
+| `log` | Checks on the node job's stdout (`contains`, `not_contains`, `matches`). |
+| `changed` | The most tasks the node's job may change, over all its hosts. |
+| `hosts` | Upper bounds on each host's counters in the node's job, as for a case. |
+| `failed_tasks` | Failed tasks the node's job must have. |
+
+A node that ran an approval (or a management job) has only a status: an
+approved approval is `successful`, a denied or timed-out one `failed`. A
+node that ran a nested workflow is checked as a workflow (no `log`).
+
+```yaml
+workflowTemplate: Release
+cases:
+  happy:
+    approvals: approve
+    expect:
+      nodes:
+        deploy: {hosts: {"*": {failed: 0}}}
+        rollback: {status: never_ran}
+```
+
 ## Preflight: what `validate` and `run` check
 
 `untaped awx test validate` renders, parses and resolves every case and
@@ -298,7 +361,10 @@ case fails preflight when:
   `job_type` while the template's matching `ask_*_on_launch` is false (AWX
   would ignore it), unless the value equals the template's own;
 - the template has a survey but does not prompt for variables, and
-  `extra_vars` holds a variable outside the survey.
+  `extra_vars` holds a variable outside the survey;
+- a workflow case checks a node id the workflow does not have
+  (`workflow node not found: 'deplyo' in workflow 'Release'; did you mean
+  'deploy'?`).
 
 Enable the prompt on the template (see the export/apply format in
 [specs.md](specs.md)), or drop the field. A field the preflight does not know
@@ -309,6 +375,7 @@ that AWX still ignores fails its case as `error` at launch.
 ```bash
 untaped awx test init "Deploy app"                # starter suite from the survey and prompts
 untaped awx test init "Deploy app" --out suites/deploy.yml
+untaped awx test init Release --workflow          # starter suite for a workflow
 untaped awx test validate                         # every suite, no launch
 untaped awx test list --var env=prod              # the cases that would run
 untaped awx test run --scm-branch HEAD --format json
@@ -329,7 +396,11 @@ untaped awx schema AwxTestSuite                   # the body's JSON Schema
   comments. It writes `.untaped/awx/tests/<name>.yml` at the git root (the
   template name lowercased, `-` between words), or `--out PATH`; it refuses
   to replace an existing file, prints the path on stdout and suggests
-  `validate`. `--organization` scopes the template lookup.
+  `validate`. `--organization` scopes the template lookup. With `--workflow`,
+  TEMPLATE is a workflow: the suite names `workflowTemplate`, a comment lists
+  its node ids (approvals marked), the `smoke` case carries a commented
+  `nodes:` example, and a commented `approvals: approve` when the workflow has
+  approval nodes (uncomment it, or a pending approval fails the case).
 - `--case` selects `CASE` (in every suite) or `SUITE/CASE`, and is
   repeatable; a `--case` that matches nothing is an error before any launch.
 - `--scm-branch REF` runs every job on that branch, tag or commit. Each
@@ -338,11 +409,13 @@ untaped awx schema AwxTestSuite                   # the body's JSON Schema
   current branch as named on its upstream remote; it is refused while HEAD is
   detached, has no upstream, or is not pushed.
 - `list` emits one `awx.test_case` row per case (`suite`, `case`,
-  `job_template`, `organization`, `path`, `variables`); the table shows
-  `suite`, `case` and `job_template`.
+  `job_template`, `workflow_template`, `organization`, `path`, `variables`);
+  the table shows `suite`, `case` and `job_template` (and
+  `workflow_template` when a suite has one).
 - `validate` prints `SUITE/CASE: problem` on stderr per failing case and
   exits 1, else reports `N cases validated`. It also warns (without failing)
-  about each case that expects `status: failed` without `failed_tasks`.
+  about each case that expects `status: failed` without `failed_tasks`, and
+  each workflow case without `approvals` whose workflow has approval nodes.
 - `--compare FILE` compares the run with the saved output of an earlier
   run, and `--baseline REF` first runs every selected case on `REF` (as
   `--scm-branch`) to compare with; see

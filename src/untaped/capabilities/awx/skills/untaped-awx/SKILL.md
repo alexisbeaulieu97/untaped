@@ -20,7 +20,7 @@ This page is the map; the details ship next to it:
 | [references/resources.md](references/resources.md) | selecting, patching, editing, copying, renaming, deleting resources |
 | [references/specs.md](references/specs.md) | the YAML document format of `export` and `apply` |
 | [references/jobs.md](references/jobs.md) | launching, syncing, waiting, following, cancelling, inspecting jobs |
-| [examples/](examples/) | starting points: `smoke.yml`, `variants.yml`, `negative.yml`, `idempotent.yml` |
+| [examples/](examples/) | starting points: `smoke.yml`, `variants.yml`, `negative.yml`, `idempotent.yml`, `workflow.yml` |
 
 ## Setup
 
@@ -86,6 +86,7 @@ changing a playbook, role or template variables:
 
 Run as the dedicated agent profile when one exists
 (`untaped --profile agent awx test run`).
+A workflow suite names `workflowTemplate:` (`untaped awx test init Release --workflow`), answers approvals with `approvals: approve|deny` and checks nodes under `expect.nodes`.
 
 ## Output and pipes
 

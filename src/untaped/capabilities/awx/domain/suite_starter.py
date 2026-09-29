@@ -1,10 +1,12 @@
-"""The starter ``AwxTestSuite`` text ``awx test init`` writes for a job template.
+"""The starter ``AwxTestSuite`` text ``awx test init`` writes for a job template or workflow.
 
 Pure text building from the template's ``launch/`` answer and survey questions:
 required survey variables get a value (their default, their first choice, or
 ``TODO``; a stored password default stays ``$encrypted$``) and a comment
 saying where it came from, optional ones and the enabled launch prompts are
-listed as comments. Values are written as JSON
+listed as comments. A workflow's suite also lists its node ids, with a
+commented ``nodes:`` expectation, and a commented ``approvals:`` answer when
+it has approval nodes. Values are written as JSON
 (valid YAML) and shielded from the Jinja2 rendering every suite body goes
 through.
 """
@@ -15,6 +17,8 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any
+
+from untaped.capabilities.awx.domain.workflow_run import APPROVAL, RunNode
 
 TODO = "TODO"
 """The placeholder for a required value the template cannot supply."""
@@ -35,20 +39,26 @@ def suite_slug(name: str) -> str:
 
 
 def starter_suite(
-    job_template: str,
+    template: str,
     *,
     organization: str | None,
     launch: Mapping[str, Any],
     survey: Sequence[Mapping[str, Any]],
+    nodes: Sequence[RunNode] | None = None,
 ) -> str:
-    """The commented starter suite for ``job_template``, one ``smoke`` case."""
+    """The commented starter suite for ``template``, one ``smoke`` case.
+
+    With ``nodes`` (its node records, possibly none), ``template`` is a workflow.
+    """
+    workflow = nodes is not None
     lines = [
-        "# Starter suite written by `untaped awx test init` from the job template's survey.",
+        "# Starter suite written by `untaped awx test init` from the "
+        f"{'workflow' if workflow else 'job template'}'s survey.",
         "# Edit the cases, then run `untaped awx test validate` and `untaped awx test run`;",
         "# `untaped awx schema AwxTestSuite` prints the format as a JSON Schema.",
         "kind: AwxTestSuite",
-        f"name: {_value(suite_slug(job_template))}",
-        f"jobTemplate: {_value(job_template)}",
+        f"name: {_value(suite_slug(template))}",
+        f"{'workflowTemplate' if workflow else 'jobTemplate'}: {_value(template)}",
     ]
     if organization is not None:
         lines.append(f"organization: {_value(organization)}")
@@ -58,8 +68,42 @@ def starter_suite(
     else:
         lines += [line.strip() for line in variables]
     lines += _prompt_lines(launch)
-    lines += ["cases:", "  smoke:", "    expect:", "      status: successful"]
+    if nodes is None:
+        lines += ["cases:", "  smoke:", "    expect:", "      status: successful"]
+    else:
+        lines += _node_lines(nodes)
     return "\n".join(lines) + "\n"
+
+
+def _node_lines(nodes: Sequence[RunNode]) -> list[str]:
+    """A workflow's node ids, then its ``smoke`` case with commented node checks and approvals."""
+    if not nodes:
+        return [
+            "# Workflow nodes: none",
+            "cases:",
+            "  smoke:",
+            "    expect:",
+            "      status: successful",
+        ]
+    described = ", ".join(
+        f"{node.label} ({'approval: ' if node.kind == APPROVAL else ''}{node.template or '?'})"
+        for node in nodes
+    )
+    lines = [_shield(f"# Workflow nodes (ids for expect.nodes): {described}"), "cases:", "  smoke:"]
+    gates = [node.label for node in nodes if node.kind == APPROVAL]
+    if gates:
+        waits = f"approval nodes ({', '.join(gates)})"
+        lines += [
+            _shield(f"    # The workflow waits on {waits}: answer them, or a pending one fails."),
+            "    # approvals: approve  # or deny",
+        ]
+    return [
+        *lines,
+        "    expect:",
+        "      status: successful",
+        "      # nodes:",
+        f"      #   {_value(nodes[0].label)}: {{status: successful}}",
+    ]
 
 
 def _survey_lines(survey: Sequence[Mapping[str, Any]]) -> list[str]:

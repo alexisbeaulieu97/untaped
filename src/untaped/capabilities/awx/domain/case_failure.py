@@ -26,8 +26,14 @@ The rules are pure and the first match wins:
 - ``awx.playbook``: the job failed any other way, or a timeout while it ran.
 
 A failure whose error is not AWX's (an untaped bug, local setup) keeps its
-own system. The runner reads the job, the update, the failed tasks and the
-responsible execution's log; this module decides.
+own system, and so does one already attributed to an ``awx.*`` system. The
+runner reads the job, the update, the failed tasks and the responsible
+execution's log; this module decides.
+
+A workflow is attributed to the node that failed it (:func:`workflow_failure`):
+the node's job is attributed by the rules above and the failure is prefixed
+``node <id>:`` (:func:`in_node`). An approval node the case denied is the
+expectation's; one denied or timed out outside the run is the controller's.
 """
 
 from __future__ import annotations
@@ -67,6 +73,8 @@ _UPDATES: dict[str, tuple[str, ErrorCategory]] = {
     # A broken inventory source is the environment, not the change.
     "inventory_update": (INVENTORY, ErrorCategory.CONFIG),
 }
+UPDATE_KINDS = frozenset(_UPDATES)
+"""Execution kinds of the updates a job waits for (a workflow node may run one itself)."""
 _PREVIOUS_TASK_FAILED = "Previous Task Failed: "
 _JOB_TYPE = re.compile(r'"job_type":\s*"([a-z_]+)"')
 _JOB_NAME = re.compile(r'"job_name":\s*"(.*)",\s*"job_id"', re.DOTALL)
@@ -164,6 +172,8 @@ class FailureEvidence(BaseModel):
     """The tasks an ``idempotent`` case's rerun changed (the first 100)."""
     note: str | None = None
     """A secondary problem that did not decide the failure (a log that failed to download)."""
+    node: str | None = None
+    """The workflow node whose job the evidence is from (``outer/inner`` in a nested workflow)."""
 
     @classmethod
     def of(
@@ -216,13 +226,14 @@ def failure(
 def failure_system(error: BaseException, *, launching: bool) -> str:
     """The system responsible for ``error`` while launching, or while polling or reading.
 
-    An error that is not AWX's keeps its own system; a rejected token or
+    An error that is not AWX's, or already names an ``awx.*`` system (a
+    pending approval is the suite's), keeps its own system; a rejected token or
     permission is the credentials'; a refused launch is the suite's (the
     scm's for an ``scm_branch`` the template does not prompt for); anything
     else is the controller's.
     """
     info = ErrorInfo.from_exception(error)
-    if not info.system.startswith("awx"):
+    if not info.system.startswith("awx") or info.system.startswith("awx."):
         return info.system
     if info.category in (ErrorCategory.AUTH, ErrorCategory.PERMISSION):
         return CREDENTIALS
@@ -362,6 +373,65 @@ def _ended_failure(execution: Job, what: str) -> CaseFailure:
         return failure(CREDENTIALS, ErrorCategory.AUTH, f"{what} could not use a credential: {why}")
     ended = f"{what} ended in error" + (f": {why}" if why else "")
     return failure(CONTROLLER, ErrorCategory.UNAVAILABLE, ended)
+
+
+def workflow_failure(
+    workflow: Job,
+    *,
+    culprit: CaseFailure | None,
+    status_held: bool,
+    reasons: Sequence[str],
+    node_failures: Sequence[CaseFailure],
+) -> CaseFailure | None:
+    """The failure of a finished workflow, or ``None`` when the case passed.
+
+    ``culprit`` is the failure of the node that failed the workflow (see
+    :func:`in_node`), ``reasons`` the expectations that did not hold (a
+    node's prefixed with it), and ``node_failures`` those of the nodes whose
+    own expectations did not hold. A failed update in the culprit wins, as it
+    does for a job; a workflow that ran as the case asked fails on a node that
+    did not run as asked, else on the expectation.
+    """
+    if culprit is not None and culprit.evidence.related is not None:
+        return culprit
+    if not reasons:
+        return None
+    if workflow.status == "canceled" or (workflow.status == "error" and culprit is None):
+        return _ended_failure(workflow, "workflow job")
+    if status_held or workflow.status == "successful":
+        decided = next((found for found in node_failures if found.system != EXPECTATION), None)
+        return decided or failure(EXPECTATION, ErrorCategory.FAILED, "; ".join(reasons))
+    if culprit is None:
+        why = f": {workflow.job_explanation}" if workflow.job_explanation else ""
+        message = f"workflow job failed, but no failed node explains it{why}"
+        return failure(CONTROLLER, ErrorCategory.UNAVAILABLE, message)
+    if culprit.system == EXPECTATION:
+        return culprit.model_copy(update={"message": "; ".join([culprit.message, *reasons])})
+    return culprit
+
+
+def in_node(found: CaseFailure, node: str) -> CaseFailure:
+    """``found``, the failure of a workflow node's job, as the workflow's: named after ``node``."""
+    inner = found.evidence.node
+    evidence = found.evidence.model_copy(
+        update={"node": node if inner is None else f"{node}/{inner}"}
+    )
+    return found.model_copy(
+        update={"message": f"node {node}: {found.message}", "evidence": evidence}
+    )
+
+
+def approval_failure(name: str | None, approval_id: int, *, denied: bool) -> CaseFailure:
+    """An approval node that failed its workflow: ``denied`` by the case, or else outside it."""
+    what = f"approval {q(name or approval_id)}"
+    if denied:
+        message = (
+            f"{what} was denied as the case asked (approvals: deny), "
+            "and no failure path leads out of it"
+        )
+        return failure(EXPECTATION, ErrorCategory.FAILED, message)
+    message = f"{what} (workflow approval {approval_id}) was denied outside this run, or timed out"
+    return failure(CONTROLLER, ErrorCategory.UNAVAILABLE, message)
 
 
 def tasks_unread(job: Job) -> CaseFailure:

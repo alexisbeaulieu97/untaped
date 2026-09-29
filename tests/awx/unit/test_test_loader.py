@@ -191,6 +191,7 @@ def test_expect_block_is_parsed_and_rendered() -> None:
         "hosts": {},
         "idempotent": False,
         "failed_tasks": (),
+        "nodes": {},
     }
 
 
