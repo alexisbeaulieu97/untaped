@@ -2,23 +2,27 @@
 
 A :class:`Suite` is a parameterised matrix of launch payloads against
 one job template. Each :class:`Case` is one launch plus the
-:class:`Expectation` its job must meet; :class:`VariableSpec` declares an
-input the user supplies (CLI / vars file / interactive prompt). Pure
-domain — no I/O, no Jinja2, no httpx.
+:class:`Expectation` its job must meet (status, log, host summaries, failed
+tasks, idempotence); :class:`VariableSpec` declares an input the user
+supplies (CLI / vars file / interactive prompt). A run's results compared
+with a :class:`Baseline` say how each case changed. Pure domain — no I/O,
+no Jinja2, no httpx.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.config import JsonDict
 
-from untaped.capabilities.awx.domain.case_failure import CaseFailure, clip
+from untaped.capabilities.awx.domain.case_failure import CaseFailure, FailedTask, clip
 from untaped.capabilities.awx.domain.job import HostSummary
+from untaped.capabilities.awx.domain.suite_baseline import Baseline, CaseStatus, Change
+from untaped.capability_api import ExitCode
 
 
 @dataclass(frozen=True)
@@ -44,9 +48,6 @@ class RefSentinel:
 
 VariableType = Literal["string", "int", "bool", "choice", "list"]
 """Variable types supported by the frontmatter ``variables`` block."""
-
-CaseStatus = Literal["pass", "fail", "error", "timeout"]
-"""Our verdict — distinct from AWX's raw ``job_status``."""
 
 TerminalStatus = Literal["successful", "failed", "error", "canceled"]
 """An AWX job status an expectation can require."""
@@ -102,7 +103,16 @@ def _document_schema(schema: JsonDict) -> None:
     schema["required"] = ["kind", *kept]
 
 
-CheckName = Literal["status", "log.contains", "log.not_contains", "log.matches"]
+CheckName = Literal[
+    "status",
+    "log.contains",
+    "log.not_contains",
+    "log.matches",
+    "changed",
+    "hosts",
+    "failed_tasks",
+    "idempotent",
+]
 
 _MAX_ACTUAL = 300
 """Characters of a deciding log line kept in a result (lines can be huge)."""
@@ -116,7 +126,11 @@ class ExpectationResult(BaseModel):
     check: CheckName
     expected: str
     actual: str | None
-    """The job status, or the log line that decided a log check (``None``: no line)."""
+    """What decided the check: the job status, a log line, a count, a failed task.
+
+    ``None``: no log line or failed task matched, no host went over a ``*``
+    bound, or a named host has no summary.
+    """
     passed: bool
 
     def describe_failure(self) -> str:
@@ -129,6 +143,17 @@ class ExpectationResult(BaseModel):
                 return f"log line contains '{self.expected}': {self.actual}"
             case "log.matches":
                 return f"no log line matches '{self.expected}'"
+            case "changed":
+                return f"expected {self.expected} changed tasks, got {self.actual}"
+            case "hosts" if self.actual is None:
+                host = self.expected.rsplit(": ", 1)[0]
+                return f"expected {self.expected}, but {host} is not in the job's host summaries"
+            case "hosts":
+                return f"expected {self.expected}, got {self.actual}"
+            case "failed_tasks":
+                return f"no failed task matches {self.expected}"
+            case "idempotent":
+                return f"rerun expected {self.expected}, got {self.actual}"
 
 
 class LogExpectation(BaseModel):
@@ -174,11 +199,83 @@ class LogExpectation(BaseModel):
         return results
 
 
-class Expectation(BaseModel):
-    """What a case's job must produce: a terminal status (default ``successful``) and log checks.
+class HostBounds(BaseModel):
+    """Upper bounds on one host's PLAY RECAP counters; an unset counter is not checked."""
 
-    Set in ``defaults.expect`` and per case; a case's ``status`` and each of its
-    ``log`` lists replace the default's.
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    failed: int | None = Field(
+        default=None, ge=0, description="The most tasks that may fail on the host."
+    )
+    unreachable: int | None = Field(
+        default=None, ge=0, description="The most tasks that may find the host unreachable."
+    )
+    changed: int | None = Field(
+        default=None, ge=0, description="The most tasks that may change the host."
+    )
+
+    def limits(self) -> list[tuple[str, int]]:
+        """``(counter, bound)`` of every set bound, in field order."""
+        return [
+            (counter, bound)
+            for counter in type(self).model_fields
+            if (bound := getattr(self, counter)) is not None
+        ]
+
+
+class FailedTaskMatch(BaseModel):
+    """A failed task the job must have: every part given must match the same task."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    task: str | None = Field(default=None, description="Text the failed task's name must contain.")
+    msg: str | None = Field(
+        default=None, description="Text the failed task's message (`msg`) must contain."
+    )
+    matches: str | None = Field(
+        default=None,
+        description="A Python regular expression the failed task's message must match "
+        "(searched anywhere in it).",
+    )
+
+    @model_validator(mode="after")
+    def _something_to_match(self) -> FailedTaskMatch:
+        if self.task is None and self.msg is None and self.matches is None:
+            raise ValueError("a failed_tasks entry needs task, msg or matches")
+        if self.matches is not None:
+            try:
+                re.compile(self.matches)
+            except re.error as exc:
+                raise ValueError(f"invalid regex {self.matches!r}: {exc}") from exc
+        return self
+
+    def describe(self) -> str:
+        parts = [] if self.task is None else [f"task '{self.task}'"]
+        if self.msg is not None:
+            parts.append(f"msg '{self.msg}'")
+        if self.matches is not None:
+            parts.append(f"msg matches '{self.matches}'")
+        return ", ".join(parts)
+
+    def matched_by(self, task: FailedTask) -> bool:
+        msg = task.msg or ""
+        return (
+            (self.task is None or self.task in (task.task or ""))
+            and (self.msg is None or self.msg in msg)
+            and (self.matches is None or re.search(self.matches, msg) is not None)
+        )
+
+
+_WHOLE = ("status", "changed", "idempotent", "failed_tasks")
+"""Expectation fields a case replaces as a whole when it sets them."""
+
+
+class Expectation(BaseModel):
+    """What a case's job must produce: a status (default ``successful``), log, hosts, tasks.
+
+    Set in ``defaults.expect`` and per case: a case's ``status``, ``changed``,
+    ``idempotent`` and ``failed_tasks``, each of its ``log`` lists and each of
+    its ``hosts`` entries replace the default's.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -192,22 +289,102 @@ class Expectation(BaseModel):
         default_factory=LogExpectation,
         description="Checks on the job's stdout; a case's list replaces the default's list.",
     )
+    changed: int | None = Field(
+        default=None,
+        ge=0,
+        description="The most tasks that may change something, summed over every host's "
+        "summary; `0` means the job changes nothing.",
+    )
+    hosts: dict[str, HostBounds] = Field(
+        default_factory=dict,
+        description="Upper bounds on each host's `failed`, `unreachable` and `changed` "
+        'counters, by host name; `"*"` bounds every host. A named host must be in the '
+        "job's host summaries. A case's entry replaces the default's for that host.",
+    )
+    idempotent: bool = Field(
+        default=False,
+        description="Once the case passed, launch it again with the same payload: the rerun "
+        "must succeed and change nothing.",
+    )
+    failed_tasks: tuple[FailedTaskMatch, ...] = Field(
+        default=(),
+        description="Failed tasks the job must have (`ignore_errors` and rescued failures do "
+        "not count), each matched by `task`, `msg` or `matches`: proves a negative case "
+        "failed for the right reason.",
+    )
 
     @property
     def needs_log(self) -> bool:
         return bool(self.log.contains or self.log.not_contains or self.log.matches)
+
+    @property
+    def needs_hosts(self) -> bool:
+        """Whether a check reads the host summaries (failed tasks drop the rescued ones)."""
+        return self.changed is not None or bool(self.hosts) or bool(self.failed_tasks)
 
     def over(self, defaults: Expectation) -> Expectation:
         """This expectation with anything it leaves unset taken from ``defaults``."""
         log = defaults.log.model_copy(
             update={field: getattr(self.log, field) for field in self.log.model_fields_set}
         )
-        return Expectation(status=self.status or defaults.status, log=log)
+        whole = {
+            field: getattr(self if field in self.model_fields_set else defaults, field)
+            for field in _WHOLE
+        }
+        return Expectation(log=log, hosts=defaults.hosts | self.hosts, **whole)
 
     def check_status(self, status: str) -> ExpectationResult:
         expected = self.status or "successful"
         return ExpectationResult(
             check="status", expected=expected, actual=status, passed=status == expected
+        )
+
+    def check_hosts(self, hosts: Mapping[str, HostSummary]) -> list[ExpectationResult]:
+        """``changed``, then each ``hosts`` bound, against the job's host summaries."""
+        results: list[ExpectationResult] = []
+        if self.changed is not None:
+            total = total_changed(hosts)
+            results.append(
+                ExpectationResult(
+                    check="changed",
+                    expected=f"<= {self.changed}",
+                    actual=str(total),
+                    passed=total <= self.changed,
+                )
+            )
+        for host, bounds in self.hosts.items():
+            results.extend(
+                _host_result(host, counter, bound, hosts) for counter, bound in bounds.limits()
+            )
+        return results
+
+    def check_failed_tasks(self, tasks: Sequence[FailedTask]) -> list[ExpectationResult]:
+        """Each ``failed_tasks`` entry; ``actual`` is the first failed task it matches."""
+        results: list[ExpectationResult] = []
+        for match in self.failed_tasks:
+            hit = next((task for task in tasks if match.matched_by(task)), None)
+            actual = None if hit is None else f"[{hit.host or '?'}] {hit.task or '?'}: {hit.msg}"
+            results.append(
+                ExpectationResult(
+                    check="failed_tasks",
+                    expected=match.describe(),
+                    actual=clip(actual, _MAX_ACTUAL),
+                    passed=hit is not None,
+                )
+            )
+        return results
+
+    @staticmethod
+    def check_rerun(status: str | None, changed: int | None) -> ExpectationResult:
+        """The ``idempotent`` check: the rerun's status and, when read, its changed total."""
+        actual = status or "not launched"
+        if changed is not None:
+            actual += f", {changed} changed"
+        return ExpectationResult(
+            check="idempotent",
+            expected="successful, 0 changed",
+            actual=actual,
+            passed=status == "successful" and changed == 0,
         )
 
 
@@ -295,9 +472,12 @@ class CaseResult(BaseModel):
 
     suite: str
     case: str
-    result: CaseStatus
+    result: CaseStatus | None
+    """``None`` only on a ``removed`` row: the baseline ran the case, this run did not."""
     job_status: str | None = None
     job_id: int | None = None
+    rerun_job_id: int | None = None
+    """The ``idempotent`` rerun's job (``None``: no rerun was launched)."""
     duration_s: float | None = None
     started_at: str | None = None
     finished_at: str | None = None
@@ -311,6 +491,23 @@ class CaseResult(BaseModel):
     job_url: str | None = None
     scm_branch: str | None = None
     scm_revision: str | None = None
+    baseline: Baseline | None = None
+    """The case in the baseline run (``None``: no baseline, or a ``new`` case)."""
+    change: Change | None = None
+    """How the case changed since the baseline (``None``: no baseline)."""
+
+    @property
+    def fails_run(self) -> bool:
+        """Whether this row fails the run.
+
+        Any row that did not pass; with a baseline, only a regression, or a
+        failure whose category outranks a failed test (the environment, a retry).
+        """
+        if self.result in (None, "pass"):
+            return False
+        if self.change in (None, "regression"):
+            return True
+        return self.failure is not None and outranks_failure(self.failure)
 
 
 class SuiteRunOutcome(BaseModel):
@@ -320,16 +517,105 @@ class SuiteRunOutcome(BaseModel):
 
     results: Sequence[CaseResult]
 
+    def counted(self) -> list[CaseFailure]:
+        """The failures of the rows that fail the run: they decide its exit code."""
+        return [row.failure for row in self.results if row.fails_run and row.failure is not None]
+
     def exit_code(self) -> int:
-        """0 only if at least one case ran and every case passed.
+        """0 only if at least one case ran and no row fails the run.
 
         Empty results are treated as failure: a test runner that reports
         ``ok`` after launching zero jobs would silently green-light typos
         in ``--case`` filters or empty test files.
         """
-        if not self.results:
+        if all(row.result is None for row in self.results):
             return 1
-        return 0 if all(r.result == "pass" for r in self.results) else 1
+        return 1 if any(row.fails_run for row in self.results) else 0
+
+    def baselines(self) -> dict[tuple[str, str], Baseline]:
+        """Each case's :class:`Baseline` when this run is the one compared with."""
+        return {
+            (row.suite, row.case): Baseline(
+                result=row.result,
+                job_id=row.job_id,
+                system=row.failure.system if row.failure is not None else None,
+            )
+            for row in self.results
+            if row.result is not None
+        }
+
+    def compared(
+        self, baseline: Mapping[tuple[str, str], Baseline], *, case_filter: set[str] | None
+    ) -> SuiteRunOutcome:
+        """Every row with its ``baseline`` and ``change``, then the ``removed`` baseline cases.
+
+        A baseline case this run did not run is ``removed``, unless
+        ``case_filter`` would not have selected it.
+        """
+        rows = [
+            row.model_copy(
+                update={
+                    "baseline": baseline.get((row.suite, row.case)),
+                    "change": change_of(baseline.get((row.suite, row.case)), row.result),
+                }
+            )
+            for row in self.results
+        ]
+        ran = {(row.suite, row.case) for row in self.results}
+        rows.extend(
+            CaseResult(suite=suite, case=case, result=None, baseline=known, change="removed")
+            for (suite, case), known in baseline.items()
+            if (suite, case) not in ran
+            and (case_filter is None or case_keys(suite, case) & case_filter)
+        )
+        return SuiteRunOutcome(results=rows)
+
+
+def change_of(baseline: Baseline | None, result: CaseStatus | None) -> Change:
+    """How a case changed: a ``regression`` passed in the baseline and does not now."""
+    if baseline is None:
+        return "new"
+    if baseline.result == "pass":
+        return "pass" if result == "pass" else "regression"
+    return "fixed" if result == "pass" else "still_failing"
+
+
+def outranks_failure(failure: CaseFailure) -> bool:
+    """Whether ``failure``'s exit code outranks a failed test's (2, 4, 5 or 130 over 1)."""
+    return failure.category.exit_code != ExitCode.FAILURE
+
+
+def case_keys(suite: str, case: str) -> set[str]:
+    """The names ``--case`` selects a case by: ``CASE`` and ``SUITE/CASE``."""
+    return {case, f"{suite}/{case}"}
+
+
+def total_changed(hosts: Mapping[str, HostSummary]) -> int:
+    """Tasks that changed something, summed over every host."""
+    return sum(summary.changed for summary in hosts.values())
+
+
+def _host_result(
+    host: str, counter: str, bound: int, hosts: Mapping[str, HostSummary]
+) -> ExpectationResult:
+    """One ``hosts`` bound; ``*`` reports every host over it as ``name=count``."""
+    expected = f"{host}: {counter} <= {bound}"
+    if host == "*":
+        over = [
+            f"{name}={getattr(summary, counter)}"
+            for name, summary in hosts.items()
+            if getattr(summary, counter) > bound
+        ]
+        actual = clip(", ".join(over), _MAX_ACTUAL) if over else None
+        return ExpectationResult(check="hosts", expected=expected, actual=actual, passed=not over)
+    summary = hosts.get(host)
+    count = None if summary is None else getattr(summary, counter)
+    return ExpectationResult(
+        check="hosts",
+        expected=expected,
+        actual=None if count is None else str(count),
+        passed=count is not None and count <= bound,
+    )
 
 
 def _log_result(

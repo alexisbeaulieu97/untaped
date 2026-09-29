@@ -122,6 +122,15 @@ class FailedTask(BaseModel):
         )
 
 
+class ChangedTask(BaseModel):
+    """A task that changed a host, from its job event."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    host: str | None
+    task: str | None
+
+
 class RelatedExecution(BaseModel):
     """The update the job waited for, which failed first: the one responsible."""
 
@@ -151,6 +160,8 @@ class FailureEvidence(BaseModel):
     """The responsible execution's failed tasks (``ignore_errors`` and rescued ones left out)."""
     unreachable_hosts: tuple[str, ...] | None = None
     """Hosts among ``failed_tasks`` that could not be reached."""
+    changed_tasks: tuple[ChangedTask, ...] | None = None
+    """The tasks an ``idempotent`` case's rerun changed (the first 100)."""
     note: str | None = None
     """A secondary problem that did not decide the failure (a log that failed to download)."""
 
@@ -353,14 +364,22 @@ def _ended_failure(execution: Job, what: str) -> CaseFailure:
     return failure(CONTROLLER, ErrorCategory.UNAVAILABLE, ended)
 
 
+def tasks_unread(job: Job) -> CaseFailure:
+    """A finished job whose ``failed_tasks`` expectation could not be checked."""
+    message = f"failed_tasks not checked: {_events_unread(job)}"
+    return failure(CONTROLLER, ErrorCategory.UNAVAILABLE, message)
+
+
+def _events_unread(job: Job) -> str:
+    """Why a finished job's failed tasks are unknown."""
+    if job.event_processing_finished is False:
+        return "AWX has not processed its events yet"
+    return "its events could not be read"
+
+
 def _failed_job(job: Job, failed_tasks: Sequence[FailedTask] | None) -> CaseFailure:
     if failed_tasks is None:
-        unread = (
-            "AWX has not processed its events yet"
-            if job.event_processing_finished is False
-            else "its events could not be read"
-        )
-        message = f"job failed, but {unread}, so the failed task is unknown"
+        message = f"job failed, but {_events_unread(job)}, so the failed task is unknown"
         return failure(CONTROLLER, ErrorCategory.UNAVAILABLE, message)
     tasks = list(failed_tasks)
     if tasks and all(task.status == "unreachable" for task in tasks):

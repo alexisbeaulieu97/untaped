@@ -198,12 +198,62 @@ Plain mappings are never treated as references.
 | `log`: `contains` | Texts that some line must contain. |
 | `log`: `not_contains` | Texts that no line may contain. |
 | `log`: `matches` | Python regular expressions that some line must match (searched anywhere in the line; an invalid pattern fails validation). |
+| `changed` | The most tasks that may change something, summed over every host's `changed` counter in the job's host summaries; `0` means the job changes nothing. |
+| `hosts` | Upper bounds on each host's counters, by host name (below); `"*"` bounds every host. |
+| `idempotent` | `true`: once the case passed, launch it again with the same payload; the rerun must succeed and change nothing (below). |
+| `failed_tasks` | Failed tasks the job must have (below): proves a negative case failed for the right reason. |
 
-Every check must hold. A case's `status` replaces the default's, and each of
-its `log` lists replaces the same list in `defaults.expect`; whatever the case
-leaves out is inherited. `status: failed` tests an intended failure: add a
-`log.contains` or `log.matches` for the message that proves the job failed
-for the right reason (see `negative.yml`).
+Every check must hold. A case's `status`, `changed`, `idempotent` and
+`failed_tasks` replace the default's, each of its `log` lists replaces the
+same list in `defaults.expect`, and each of its `hosts` entries replaces the
+default's entry for that host name; whatever the case leaves out is
+inherited. `status: failed` tests an intended failure: add `failed_tasks`
+naming the task and message that prove the job failed for the right reason
+(see `negative.yml`); `untaped awx test validate` warns about a case that
+expects `status: failed` without `failed_tasks`.
+
+A `hosts` entry sets upper bounds on one host's PLAY RECAP counters; a
+counter it leaves out is not checked:
+
+| Field | Meaning |
+|---|---|
+| `failed` | The most tasks that may fail on the host. |
+| `unreachable` | The most tasks that may find the host unreachable. |
+| `changed` | The most tasks that may change the host. |
+
+```yaml
+expect:
+  changed: 0
+  hosts:
+    "*": {failed: 0, unreachable: 0}
+    web1: {changed: 0}
+```
+
+Bounds are numbers (`{changed: ">0"}` is invalid). A named host must be in
+the job's host summaries, so a misspelt host fails its check. `changed`,
+`hosts` and `failed_tasks` read the job's host summaries once, in every
+output format; a job on more than 500 hosts keeps 500 (failed and unreachable
+hosts first), and these checks see only those.
+
+A `failed_tasks` entry matches a failed task: a task that failed on a host or
+found it unreachable, as the result's `failure.evidence.failed_tasks` lists
+them (`ignore_errors` failures and failures a `rescue` block handled do not
+count). It needs at least one part, and every part it gives must match the
+same task. Every entry must match some failed task; other failed tasks do not
+fail the check.
+
+| Field | Meaning |
+|---|---|
+| `task` | Text the task's name must contain. |
+| `msg` | Text the task's message (the module's `msg`) must contain. |
+| `matches` | A Python regular expression the task's message must match (searched anywhere in it). |
+
+`idempotent: true` proves a second run changes nothing. Once the case passed
+every other check, the same resolved payload is launched again; the result
+keeps `job_id` and adds `rerun_job_id`. The rerun must end `successful` with
+no changed task on any host. It waits the case's timeout and is cancelled
+like the first job. A case that did not pass is not rerun. See
+[test-results.md](test-results.md#idempotent-cases) for how a rerun fails.
 
 ### Timeouts and parallelism
 
@@ -247,6 +297,8 @@ untaped awx test list --var env=prod              # the cases that would run
 untaped awx test run --scm-branch HEAD --format json
 untaped awx test run --case deploy-smoke/web --case db --non-interactive
 untaped awx test run suites/deploy.yml --var env=prod --parallel 2 --show-logs
+untaped awx test run --scm-branch HEAD --compare baseline.json --format json
+untaped awx test run --scm-branch HEAD --baseline main --format json
 untaped awx schema AwxTestSuite                   # the body's JSON Schema
 ```
 
@@ -272,5 +324,10 @@ untaped awx schema AwxTestSuite                   # the body's JSON Schema
   `job_template`, `organization`, `path`, `variables`); the table shows
   `suite`, `case` and `job_template`.
 - `validate` prints `SUITE/CASE: problem` on stderr per failing case and
-  exits 1, else reports `N cases validated`.
+  exits 1, else reports `N cases validated`. It also warns (without failing)
+  about each case that expects `status: failed` without `failed_tasks`.
+- `--compare FILE` compares the run with the saved output of an earlier
+  run, and `--baseline REF` first runs every selected case on `REF` (as
+  `--scm-branch`) to compare with; see
+  [test-results.md](test-results.md#comparing-with-a-baseline).
 - `run` results are described in [test-results.md](test-results.md).
