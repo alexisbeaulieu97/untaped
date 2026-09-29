@@ -76,7 +76,8 @@ changing a playbook, role or template variables:
 4. `untaped awx test run --scm-branch HEAD --format json` runs every case on
    the pushed commit (refused until HEAD is pushed). Narrow it with
    `--case SUITE/CASE` (repeatable) or suite paths.
-5. Exit 0 means every case passed. Otherwise read each non-`pass` row as
+5. Exit 0 means every case passed; 4 or 5 is the environment, not your
+   change (read the error's `system`). Otherwise read each non-`pass` row as
    [references/test-results.md](references/test-results.md) explains, fix,
    push, and rerun the failing cases.
 
@@ -106,7 +107,9 @@ Run as the dedicated agent profile when one exists
 - A single named `launch`/`sync` submits at once; several targets, `--all`,
   `--filter`, `--search` or `--stdin` list them and ask once.
 - Exit codes: 0 success, 1 failure or declined, 2 usage error, 3 drift
-  (`apply --check`), 130 interrupted.
+  (`apply --check`), 4 fix the environment, 5 retry later, 130
+  interrupted. `--format json` makes stderr JSON Lines with each error's
+  `category`, `system` and `hint`; a failed row carries them in `error`.
 - Keep `$encrypted$` placeholders as they are; they preserve stored secrets.
 
 ## Pitfalls

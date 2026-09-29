@@ -636,7 +636,10 @@ untaped awx test run --case deploy-smoke/web --var env=prod --show-logs
   then `run --scm-branch HEAD`, which is refused until HEAD is pushed.
   `run` exits 0 only when at least one case ran and every case passed, and
   each result row carries the evidence (failed tasks, log tail, the commit
-  the job ran).
+  the job ran). A failed case exits 1; a launch AWX refused for the token or
+  a permission, or an environment problem such as an unpushed HEAD, exits 4
+  (read the error's `system`: `awx` or `git`), and one AWX could not serve
+  exits 5 (retry later).
 - To let an AI agent run suites against its own changes, give it a dedicated
   profile and token: see [AWX agent profile](./agent-profile.md).
 
@@ -664,6 +667,19 @@ success with a membership failure is reported as `partial` and retains the
 resource ID. So is a template write whose survey write then fails. Membership changes are additive for the membership commands;
 replacement membership fields verify the exact set or declared order while
 retaining unrelated members for additive operations.
+
+A failed command exits with the most severe failure it met (see
+[Exit codes](../reference/exit-codes.md)): 4 when the environment needs
+fixing (AWX rejected the token, a permission is missing, or local setup such
+as settings, `git`, or an unpushed `--scm-branch HEAD`), 5 when AWX was
+unavailable (network error, timeout, 5xx or 429; retry later), and 1 when the
+thing itself failed (an invalid input file, a name not found, a failed write
+or job). With `--format json`, `yaml` or `pipe`, or `UNTAPED_DIAGNOSTICS=json`,
+stderr carries one JSON object per line with the failure's `category`,
+`system`, `retryable` and `hint`. A `failed`, `partial` or `conflict` row that
+an error caused carries the same in its `error` field (`category`, `system`,
+`retryable`, `message`, `hint`) next to its human `detail`; tables leave it
+out.
 
 Writes are serial by default. `--parallel N` is bounded at ten. A runtime
 failure stops scheduling new work by default, while

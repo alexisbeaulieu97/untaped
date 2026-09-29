@@ -10,10 +10,10 @@ from pydantic import BaseModel, Field, SecretStr
 from untaped.config_schema import (
     find_descriptor,
     redact_secrets,
-    redact_url_password,
     secret_field_paths,
     walk_settings,
 )
+from untaped.redaction import redact_url_password
 from untaped.settings import (
     get_settings_model,
     register_profile_settings,
@@ -159,6 +159,10 @@ def test_secret_field_paths_matches_known_settings_secrets() -> None:
         ("http://bob@proxy:8080", "http://bob@proxy:8080"),
         ("http://proxy:8080", "http://proxy:8080"),
         ("not a url: a@b", "not a url: a@b"),
+        (
+            "HTTP 401 for https://u:s3cret@host/x and http://v:p@h",
+            "HTTP 401 for https://u:***@host/x and http://v:***@h",
+        ),
     ],
 )
 def test_redact_url_password_masks_only_the_password(value: str, expected: str) -> None:

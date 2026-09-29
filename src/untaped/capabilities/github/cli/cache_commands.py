@@ -44,6 +44,7 @@ from untaped.capability_api import (
     finish,
     not_found,
     plural,
+    report_error,
     report_errors,
     summary,
 )
@@ -177,8 +178,8 @@ def sync_command(
             empty="No repositories in scope.",
         )
         for outcome in outcomes:
-            if outcome.failed:
-                ui.message("error", f"{outcome.repo}: {outcome.error}")
+            if outcome.error is not None:
+                report_error(outcome.error, item=outcome.repo)
         echo(summary("sync", Counter(outcome.action for outcome in outcomes)), err=True)
         finish(any(outcome.failed for outcome in outcomes))
 

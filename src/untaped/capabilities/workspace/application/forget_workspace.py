@@ -15,6 +15,7 @@ from untaped.capabilities.workspace.application.ports import (
 from untaped.capabilities.workspace.application.prune_safety import format_all_prune_blockers
 from untaped.capabilities.workspace.domain import Workspace, WorkspaceManifest
 from untaped.capabilities.workspace.errors import GitError, WorkspaceError
+from untaped.capability_api import attribution
 
 _LEFTOVER_PREVIEW = 5
 
@@ -120,7 +121,8 @@ class ForgetWorkspace:
                 blockers = self._prune_safety.prune_blockers(local)
             except GitError as exc:
                 raise WorkspaceError(
-                    f"refusing to prune {ws.name!r}: cannot inspect {label!r} ({local}): {exc}"
+                    f"refusing to prune {ws.name!r}: cannot inspect {label!r} ({local}): {exc}",
+                    **attribution(exc),
                 ) from exc
             if blockers:
                 unsafe.append(f"{label}: {format_all_prune_blockers(blockers)}")

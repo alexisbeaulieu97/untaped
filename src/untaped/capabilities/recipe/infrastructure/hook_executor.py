@@ -22,6 +22,7 @@ from untaped.capabilities.recipe.infrastructure.hook_worker_client import (
     DEBUG_DIAGNOSTIC_LIMIT,
     DEBUG_DIAGNOSTIC_SETTLE_SECONDS,
 )
+from untaped.capability_api import ErrorCategory, attribution
 
 if TYPE_CHECKING:
     from untaped.capabilities.recipe.application.ports import HookWorkerPort
@@ -29,6 +30,8 @@ if TYPE_CHECKING:
 
 class HookExecutionError(RecipeError):
     """Raised when a debug hook invocation fails inside hook code."""
+
+    category = ErrorCategory.FAILED
 
 
 @dataclass(frozen=True)
@@ -185,7 +188,7 @@ def _request_external(
     except Exception as exc:
         if not capture_diagnostics:
             raise
-        raise HookExecutionError(str(exc)) from exc
+        raise HookExecutionError(str(exc), **attribution(exc)) from exc
     return HookDebugResult(
         result=worker_result.result,
         diagnostics=worker_result.diagnostics if capture_diagnostics else "",

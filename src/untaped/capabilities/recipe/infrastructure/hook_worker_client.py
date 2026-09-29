@@ -19,9 +19,10 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, model_
 
 from untaped.capabilities.recipe._worker import hook_worker
 from untaped.capabilities.recipe._worker import worker_protocol as protocol
-from untaped.capabilities.recipe.errors import RecipeError
+from untaped.capabilities.recipe.errors import HookFailedError, RecipeError, UvMissingError
 from untaped.capabilities.recipe.infrastructure.hook_resolver import UvHookRef
 from untaped.capabilities.recipe.infrastructure.uv_project import uv_environment
+from untaped.capability_api import ErrorCategory
 
 APPLY_DIAGNOSTIC_LIMIT = 4000
 DEBUG_DIAGNOSTIC_LIMIT = 10 * 1024 * 1024
@@ -53,7 +54,9 @@ class HookWorkerResponse(BaseModel):
 
 
 class FatalHookWorkerError(RecipeError, ValueError):
-    """Raised when a worker process cannot safely be reused."""
+    """Raised when a worker process cannot safely be reused (the hook run failed)."""
+
+    category = ErrorCategory.FAILED
 
 
 @dataclass(frozen=True)
@@ -341,7 +344,7 @@ class UvHookWorker:
                     )
                 )
             if not response.ok:
-                raise ValueError(
+                raise HookFailedError(
                     self._failure_message(
                         response.error or "hook worker failed",
                         diagnostic_limit=diagnostic_limit,
@@ -495,7 +498,7 @@ class UvHookWorker:
                 start_new_session=True,
             )
         except FileNotFoundError as exc:
-            raise ValueError("uv executable not found for hook project execution") from exc
+            raise UvMissingError("uv executable not found for hook project execution") from exc
 
     def _failure_message(
         self,

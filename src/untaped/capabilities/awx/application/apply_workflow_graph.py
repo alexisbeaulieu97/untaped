@@ -52,6 +52,7 @@ from untaped.capabilities.awx.domain.workflow_graph import (
     parse_workflow_nodes,
 )
 from untaped.capabilities.awx.errors import AwxApiError, BadRequestError
+from untaped.capability_api import attribution
 
 _EDGE_KEYS = {relation: key for key, relation in EDGE_RELATIONS.items()}
 # Node record field → its key in the document (``nodes[x].prompts.limit``).
@@ -442,7 +443,7 @@ def _step(identifier: str, step: str) -> Iterator[None]:
     try:
         yield
     except Exception as exc:
-        raise AwxApiError(f"nodes[{identifier}] {step}: {exc}") from exc
+        raise AwxApiError(f"nodes[{identifier}] {step}: {exc}", **attribution(exc)) from exc
 
 
 def _node(value: Any) -> int:

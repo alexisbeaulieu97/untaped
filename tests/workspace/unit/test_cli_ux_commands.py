@@ -213,7 +213,7 @@ def test_edit_without_editor_fails_with_hint(
 
     result = CliInvoker().invoke(app, ["edit", str(target)])
 
-    assert result.exit_code == 1
+    assert result.exit_code == 4  # the environment needs fixing
     assert "set $VISUAL or $EDITOR" in result.stderr
 
 
@@ -233,7 +233,7 @@ def test_edit_editor_not_found_errors(tmp_path: Path) -> None:
 
     result = CliInvoker().invoke(app, ["edit", str(target), "--editor", "definitely-missing-bin"])
 
-    assert result.exit_code == 1
+    assert result.exit_code == 4  # the environment needs fixing
     assert "editor not found: definitely-missing-bin" in result.output
 
 

@@ -18,7 +18,8 @@ from untaped.capabilities.recipe.application.ports import PromptFunc
 from untaped.capabilities.recipe.application.targets import Target, dedupe_targets
 from untaped.capabilities.recipe.domain.plan import TargetPlan
 from untaped.capabilities.recipe.domain.recipe import Recipe
-from untaped.capability_api import bounded_map
+from untaped.capabilities.recipe.errors import RecipeError
+from untaped.capability_api import attribution, bounded_map
 
 SENSITIVE_DIAGNOSTIC_SUPPRESSED = "diagnostic suppressed for target with sensitive inputs"
 SENSITIVE_ERROR_SUPPRESSED = (
@@ -33,6 +34,7 @@ class ResolvedTarget:
     target: Target
     inputs: InputResolutionResult | None = None
     error: str = ""
+    failure: RecipeError | None = None
 
 
 def resolve_targets(
@@ -61,7 +63,7 @@ def resolve_targets(
                 recipe, target, config=config, global_values=global_values
             )
         except ValueError as exc:
-            resolved.append(ResolvedTarget(target=target, error=str(exc)))
+            resolved.append(ResolvedTarget(target=target, error=str(exc), failure=_failure(exc)))
         else:
             resolved.append(ResolvedTarget(target=target, inputs=result))
     return resolved
@@ -133,7 +135,9 @@ class RunBulkApply:
     ) -> TargetPlan:
         target = item.target
         if item.inputs is None:
-            return TargetPlan(target=target.path, status="error", error=item.error)
+            return TargetPlan(
+                target=target.path, status="error", error=item.error, failure=item.failure
+            )
         try:
             plan = self._planner(
                 recipe=recipe,
@@ -148,17 +152,26 @@ class RunBulkApply:
             )
         except Exception as exc:
             display_inputs = item.inputs.display_values
-            error = (
-                SENSITIVE_ERROR_SUPPRESSED
-                if has_sensitive_inputs(recipe.inputs, display_inputs)
-                else str(exc)
-            )
+            sensitive = has_sensitive_inputs(recipe.inputs, display_inputs)
+            error = SENSITIVE_ERROR_SUPPRESSED if sensitive else str(exc)
             return TargetPlan(
                 target=target.path,
                 status="error",
                 error=error,
+                failure=_failure(exc, message=error if sensitive else None),
                 display_inputs=display_inputs,
             )
+
+
+def _failure(exc: Exception, *, message: str | None = None) -> RecipeError:
+    """The error behind a failed target, keeping a typed error's category.
+
+    A plain exception is invalid local input (like ``report_config_errors``
+    treats one); ``message`` replaces the text (a suppressed diagnostic).
+    """
+    if isinstance(exc, RecipeError) and message is None:
+        return exc
+    return RecipeError(message or str(exc), **attribution(exc))
 
 
 def _suppress_sensitive_diagnostics(

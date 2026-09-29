@@ -41,6 +41,10 @@ it has exactly one.
 
 A target that fails to plan or write changes nothing and is reported; the
 other targets still run. Within one target, writes roll back on failure.
+The run then exits 1, or 4 when the environment needs fixing (for example
+`uv` is not installed) and 5 when a retry can help; with `--format json`
+(or `UNTAPED_DIAGNOSTICS=json`) stderr errors are JSON Lines with their
+`category`, `system` and `hint`.
 
 ### Apply to every repo of a workspace
 
@@ -282,7 +286,9 @@ Bundles are readable only by you: directories are created `0700`, files
 ## Output
 
 `apply` prints one `recipe.apply_outcome` row per target with `action`:
-`planned`, `applied`, `unchanged`, `skipped`, `cancelled` or `failed`. See
+`planned`, `applied`, `unchanged`, `skipped`, `cancelled` or `failed`. A
+failed row says why in `detail`, and in `error` (`category`, `system`,
+`retryable`, `message`, `hint`) for scripts; tables show `detail` only. See
 [Pipes and record kinds](../reference/pipes.md#recipe) for the other
 commands.
 

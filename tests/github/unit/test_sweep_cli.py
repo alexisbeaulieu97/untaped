@@ -310,7 +310,7 @@ def test_every_explicit_repo_failing_resolution_exits_non_zero() -> None:
         },
     )
 
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == 4, result.output  # the most severe cause: a 403
     assert "no requested repository could be resolved" in result.stderr
     assert "acme/a" in result.stderr
     assert "acme/b" in result.stderr

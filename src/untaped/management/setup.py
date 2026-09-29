@@ -183,9 +183,9 @@ def _token_command(ui: UiContext, spec: CapabilitySpec, profile: str) -> list[st
     try:
         argv = shlex.split(ui.text(f"{spec.name} token command"))
     except ValueError as exc:
-        raise ConfigError(f"invalid {spec.name} token command: {exc}") from exc
+        raise ConfigError(f"invalid {spec.name} token command: {exc}", category="invalid") from exc
     if not argv:
-        raise ConfigError(f"{spec.name} token command is empty")
+        raise ConfigError(f"{spec.name} token command is empty", category="invalid")
     default = ProfileFileRepository().read(DEFAULT_PROFILE) or {}
     inherited = default.get(section) if profile != DEFAULT_PROFILE else None
     if isinstance(inherited, dict) and inherited.get("token"):

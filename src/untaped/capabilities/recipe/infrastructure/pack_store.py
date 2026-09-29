@@ -26,6 +26,11 @@ from untaped.capabilities.recipe.domain.recipe import parse_recipe
 from untaped.capabilities.recipe.errors import (
     AmbiguousRefError,
     HookNotFoundError,
+    LocalChangesError,
+    PackFetchError,
+    PackNotFoundError,
+    PathNotFoundError,
+    RecipeError,
     RecipeNotFoundError,
 )
 from untaped.capabilities.recipe.infrastructure.pack_files import (
@@ -33,7 +38,15 @@ from untaped.capabilities.recipe.infrastructure.pack_files import (
     hook_exports,
     read_pack_manifest,
 )
-from untaped.capability_api import GitCommandError, atomic_write, not_found, run_git
+from untaped.capability_api import (
+    ErrorCategory,
+    GitCommandError,
+    UsageError,
+    atomic_write,
+    attribution,
+    not_found,
+    run_git,
+)
 
 _GIT_URL_PREFIXES = ("https://", "git@", "ssh://")
 _GIT_CLONE_TIMEOUT = 600.0
@@ -169,12 +182,13 @@ class PackLibrary:
         installed_name = safe_library_name(name or manifest.name, field="pack")
         dest = self.packs_dir / installed_name
         if dest.exists() and not force:
-            raise ValueError(
+            raise RecipeError(
                 f"pack already installed: {installed_name}; use --force to replace "
-                "or --name to install under another name"
+                "or --name to install under another name",
+                category=ErrorCategory.CONFLICT,
             )
         if force and not discard_edits and self.local_edits(installed_name):
-            raise ValueError(local_edits_message(installed_name))
+            raise LocalChangesError(local_edits_message(installed_name))
 
         self.packs_dir.mkdir(parents=True, exist_ok=True)
         content_hash = self._install_tree(source_dir, dest)
@@ -239,7 +253,7 @@ class PackLibrary:
         index = self._read_index()
         entry = index.get(installed_name)
         if entry is None:
-            raise ValueError(f"pack not found: {name}")
+            raise PackNotFoundError(f"pack not found: {name}")
         index[installed_name] = replace(entry, commit=commit)
         self._write_index(index)
         self._packs_cache = None
@@ -264,7 +278,7 @@ class PackLibrary:
         installed_name = safe_library_name(name, field="pack")
         dest = self.packs_dir / installed_name
         if not dest.is_dir():
-            raise ValueError(f"pack not found: {name}")
+            raise PackNotFoundError(f"pack not found: {name}")
         index = self._read_index()
         shutil.rmtree(dest)
         index.pop(installed_name, None)
@@ -445,7 +459,7 @@ def validate_pack(source_dir: Path, manifest: PackManifest) -> None:
     for recipe_name, recipe_entry in manifest.recipes.items():
         recipe_file = source_dir / recipe_entry.path
         if not recipe_file.is_file():
-            raise ValueError(f"pack recipe file not found: {recipe_name}")
+            raise PathNotFoundError(f"pack recipe file not found: {recipe_name}")
         try:
             parse_recipe(recipe_file.read_text(encoding="utf-8"), source=recipe_file)
         except ValueError as exc:
@@ -498,7 +512,7 @@ def fetch_pack_source(url: str, *, rev: str | None, dest: Path) -> Path:
     surface immediately.
     """
     if rev is not None and (not rev.strip() or rev.startswith("-")):
-        raise ValueError(f"invalid --rev: {rev!r}")
+        raise UsageError(f"invalid --rev: {rev!r}")
     dest.parent.mkdir(parents=True, exist_ok=True)
     clone_args = ["clone", "--depth", "1"]
     if rev is not None:
@@ -527,7 +541,7 @@ def checkout_commit(checkout: Path) -> str:
             ceiling=True,
         )
     except GitCommandError as exc:
-        raise ValueError(str(exc)) from exc
+        raise PackFetchError(str(exc), **attribution(exc)) from exc
     return result.text.strip()
 
 
@@ -542,4 +556,4 @@ def _run_git(args: list[str], *, cwd: Path | None = None) -> None:
     try:
         run_git(args, cwd=cwd, timeout=_GIT_CLONE_TIMEOUT)
     except GitCommandError as exc:
-        raise ValueError(str(exc)) from exc
+        raise PackFetchError(str(exc), **attribution(exc)) from exc

@@ -2,14 +2,20 @@
 
 Every error the capability raises on purpose derives from :class:`GithubError`
 (itself an :class:`~untaped.capability_api.UntapedError`) so ``report_errors``
-turns it into a clean ``error: ...`` line instead of a traceback.
+turns it into a clean ``error: ...`` line instead of a traceback. Failures are
+attributed to ``github``, except :class:`GitCorpusError` (``git``); a
+:class:`GithubGraphqlError` takes its category from its ``kind`` (a rate
+limit is ``unavailable``, bad credentials ``auth``, a forbidden scope
+``permission``).
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Literal
 
-from untaped.capability_api import UntapedError
+from untaped.capability_api import ErrorCategory, UntapedError
 
 GithubGraphqlErrorKind = Literal[
     "rate_limited",
@@ -19,13 +25,28 @@ GithubGraphqlErrorKind = Literal[
     "unknown",
 ]
 
+_KIND_CATEGORIES: Mapping[GithubGraphqlErrorKind, ErrorCategory] = MappingProxyType(
+    {
+        "rate_limited": ErrorCategory.UNAVAILABLE,
+        "secondary_rate_limited": ErrorCategory.UNAVAILABLE,
+        "auth": ErrorCategory.AUTH,
+        "forbidden": ErrorCategory.PERMISSION,
+    }
+)
+
 
 class GithubError(UntapedError):
     """Base for GitHub capability errors."""
 
+    system = "github"
+
 
 class GithubGraphqlError(GithubError):
-    """Global GitHub GraphQL failure that should abort batched operations."""
+    """Global GitHub GraphQL failure that should abort batched operations.
+
+    Its category follows ``kind`` unless one is given (``unknown`` stays
+    ``failed``).
+    """
 
     def __init__(
         self,
@@ -35,8 +56,10 @@ class GithubGraphqlError(GithubError):
         status_code: int | None = None,
         url: str | None = None,
         body: str | None = None,
+        category: ErrorCategory | str | None = None,
+        details: Mapping[str, object] | None = None,
     ) -> None:
-        super().__init__(message)
+        super().__init__(message, category=category or _KIND_CATEGORIES.get(kind), details=details)
         self.kind = kind
         self.status_code = status_code
         self.url = url
@@ -45,6 +68,8 @@ class GithubGraphqlError(GithubError):
 
 class GitCorpusError(GithubError):
     """Local Git corpus operation failure."""
+
+    system = "git"
 
 
 __all__ = ["GitCorpusError", "GithubError", "GithubGraphqlError", "GithubGraphqlErrorKind"]

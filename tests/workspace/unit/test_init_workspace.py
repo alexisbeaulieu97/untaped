@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 
 from untaped.capabilities.workspace.application import InitWorkspace, WorkspaceBootstrapper
-from untaped.capabilities.workspace.errors import WorkspaceError
 from untaped.capabilities.workspace.infrastructure import YamlManifestRepository
+from untaped.capability_api import UsageError
 from workspace.conftest import StubRegistry
 
 
@@ -42,7 +42,7 @@ def test_init_without_branch_leaves_defaults_branch_unset(tmp_path: Path) -> Non
 @pytest.mark.parametrize("name", ["..", ".", "../escape", "a/b", "a\\b", "C:x", "untaped.yml"])
 def test_init_rejects_unsafe_workspace_names(tmp_path: Path, name: str) -> None:
     reg = StubRegistry()
-    with pytest.raises(WorkspaceError, match="workspace name"):
+    with pytest.raises(UsageError, match="workspace name"):
         _init(YamlManifestRepository(), reg)(tmp_path / "ws", name=name)
     assert not (tmp_path / "ws").exists()
     assert reg.registered == []

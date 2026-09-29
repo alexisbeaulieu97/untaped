@@ -31,11 +31,15 @@ class AddRepo:
         try:
             repo = Repo.model_validate({"url": url, "name": repo_name, "branch": branch})
         except ValidationError as exc:
-            raise WorkspaceError(f"invalid repo {url!r}: {first_validation_error(exc)}") from exc
+            raise WorkspaceError(
+                f"invalid repo {url!r}: {first_validation_error(exc)}", category="invalid"
+            ) from exc
         try:
             new_manifest = manifest.add_repo(repo)
         except DuplicateRepoUrlError as exc:
-            raise WorkspaceError(f"repo already in workspace {workspace.name!r}: {url}") from exc
+            raise WorkspaceError(
+                f"repo already in workspace {workspace.name!r}: {url}", category="conflict"
+            ) from exc
         except DuplicateRepoNameError as exc:
             base = (
                 f"repo name {exc.existing.name!r} already in use in workspace "
@@ -46,7 +50,9 @@ class AddRepo:
             # (both produce a derived name), so the disambiguation hint
             # only fires when the user did not pass `--repo-name`.
             if not repo_name:
-                raise WorkspaceError(f"{base}; pass --repo-name to disambiguate") from exc
-            raise WorkspaceError(base) from exc
+                raise WorkspaceError(
+                    f"{base}; pass --repo-name to disambiguate", category="conflict"
+                ) from exc
+            raise WorkspaceError(base, category="conflict") from exc
         self._manifests.write(workspace.path, new_manifest)
         return repo

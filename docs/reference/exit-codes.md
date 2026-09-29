@@ -5,14 +5,51 @@ Every `untaped` command uses the same exit codes. Scripts can rely on them.
 | Code | Meaning |
 |---|---|
 | 0 | Success. Per-item `skipped` rows are success too. |
-| 1 | Runtime failure, at least one failed item, or a declined confirmation (`cancelled; no changes made`). |
+| 1 | The thing you ran failed: a runtime failure, at least one failed item, a name that does not exist, input the remote or a local file rejected, or a declined confirmation (`cancelled; no changes made`). |
 | 2 | Usage error, found before any side effect: an unknown flag, conflicting flags, a value out of range, no selection, or a prompt with no terminal and no `--yes`. |
 | 3 | Predicate hit: the command worked, and the condition you asked it to check was true. |
+| 4 | The environment needs fixing: missing or invalid settings or config file, a rejected token (HTTP 401), missing permission (HTTP 403), a missing tool such as `git` or `$EDITOR`. Retrying won't help, and neither will changing your code. |
+| 5 | Temporary: the network is down, a request timed out, the service answered 5xx or 429, or another `untaped` process holds a lock. Retry later. |
 | 130 | Interrupted with Ctrl-C, including at a prompt. |
 
-A batch command that fails on some items still prints a row for every item,
-then exits 1. When both a failure and a predicate hit happen, the exit code
-is 1.
+## Categories
+
+Every failure has a **category**, which selects its exit code, and a
+**system**, which says who is responsible: `untaped` (a bug or the command
+line), `local` (config, files, the environment), `git`, or a service such as
+`awx`, `jira` or `github` (a capability may refine it, such as `awx.scm`).
+
+| Category | Meaning | Exit |
+|---|---|---|
+| `usage` | Bad flags or arguments, found before any side effect | 2 |
+| `config` | Local setup: missing or invalid settings, config file, CA bundle, missing tool | 4 |
+| `auth` | Credentials rejected (401) | 4 |
+| `permission` | Authenticated but not allowed (403) | 4 |
+| `not_found` | A named thing does not exist | 1 |
+| `invalid` | The remote rejected the input (400/422), or a local input file is invalid | 1 |
+| `conflict` | A concurrent change, or a name already taken (409) | 1 |
+| `unavailable` | Network down, timeout, 5xx, 429: retryable | 5 |
+| `failed` | The operation ran and failed (a job, a test, a git command) | 1 |
+| `interrupted` | Ctrl-C | 130 |
+
+Only `unavailable` is retryable. With `--format json`, `yaml` or `pipe` (or
+`UNTAPED_DIAGNOSTICS=json`), stderr reports each failure as a JSON line with
+its `category`, `system`, `retryable`, `hint` and `exit_code`; failed rows of
+outcome records carry the same fields in their `error`. See
+[stderr diagnostics](./pipes.md#stderr-diagnostics).
+
+## Precedence
+
+One run can see several failures. It exits with the most severe one:
+
+```text
+130 > 2 > 4 > 5 > 1 > 3 > 0
+```
+
+So a batch where one item hit a rejected token and another a missing name
+exits 4: fix the environment before you look at anything else. A batch
+command that fails on some items still prints a row for every item. When both
+a failure and a predicate hit happen, the failure's code wins.
 
 Output into a closed pipe exits 0 quietly: when the reader stops early, as in
 `untaped awx jobs list --format raw | head -1` or `untaped --help | head`, the
@@ -28,15 +65,20 @@ pipe keeps its own exit code.
 | `untaped awx apply --check` | Any document would change the controller. |
 | `untaped recipe apply --check` | Any target would change. |
 | `untaped skills status --check` | An installed skill is outdated or no longer shipped. |
-| `untaped workspace status --check` | Any repo is dirty or behind its upstream (only the `--dirty` / `--behind` condition when one is given); exits 1 instead when a repo cannot be inspected. |
+| `untaped workspace status --check` | Any repo is dirty or behind its upstream (only the `--dirty` / `--behind` condition when one is given); exits with the failure's own code instead when a repo cannot be inspected (1, 5 when `git status` timed out, 4 when git is missing). |
 
 Use these in CI to tell "the check found something" (3) apart from "the tool
-failed" (1):
+failed" (1), "fix the setup" (4) and "try again later" (5):
 
 ```bash
 untaped github sweep --org acme --grep 'log4j' --fail-on-match --format raw --columns full_name
-status=$?
-if [ "$status" -eq 3 ]; then echo "banned pattern found"; fi
+case $? in
+  0) echo "clean" ;;
+  3) echo "banned pattern found" ;;
+  4) echo "fix the token or config" ;;
+  5) echo "GitHub unavailable; retry later" ;;
+  *) echo "sweep failed" ;;
+esac
 ```
 
 ## Codes inside records
@@ -47,7 +89,8 @@ Some rows carry a code of their own. It never becomes the process exit code:
   command; `124` means the command timed out (`--timeout`). The process then
   exits 1 if any repo failed, or 0 with `--ignore-errors`.
 - `untaped awx test run` reports each case's result in its rows; the command
-  exits 1 if any case failed or errored.
+  exits 1 if any case failed or errored, or 4 or 5 when a launch failed
+  because of the token, permissions or an unavailable controller.
 
 ## See also
 

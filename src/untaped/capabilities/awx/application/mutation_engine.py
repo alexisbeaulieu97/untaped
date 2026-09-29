@@ -55,7 +55,7 @@ from untaped.capabilities.awx.errors import (
     MutationConflictError,
     PartialWriteError,
 )
-from untaped.capability_api import ConfigError
+from untaped.capability_api import ErrorCategory, ErrorInfo, UntapedError, note_failure
 
 
 class _AbortBatchError(AwxError):
@@ -159,7 +159,7 @@ class BatchMutationEngine:
             raise BadRequestError("parallel must be at least 1")
         parallel = min(parallel, 10)
         bindings: dict[str, int] = {}
-        conflicts = self._preflight_conflicts(plan)
+        conflicts, errors = self._preflight_conflicts(plan)
         if conflicts:
             outcomes = [
                 self._status_outcome(
@@ -169,6 +169,7 @@ class BatchMutationEngine:
                         operation.index,
                         "skipped because the batch preflight found a conflict",
                     ),
+                    error=errors.get(operation.index),
                 )
                 for operation in plan.operations
             ]
@@ -210,8 +211,12 @@ class BatchMutationEngine:
             return BatchResult(outcomes=[operation.preview for operation in plan.operations])
         return self.execute(plan, continue_on_error=continue_on_error, parallel=parallel)
 
-    def _preflight_conflicts(self, plan: MutationPlan) -> dict[int, str]:
+    def _preflight_conflicts(
+        self, plan: MutationPlan
+    ) -> tuple[dict[int, str], dict[int, ErrorInfo]]:
+        """Each conflicting operation's detail, and the error of a failed re-read."""
         conflicts: dict[int, str] = {}
+        errors: dict[int, ErrorInfo] = {}
         for operation in plan.operations:
             try:
                 if operation.existing is None:
@@ -268,7 +273,8 @@ class BatchMutationEngine:
                     f"{operation.spec.kind} {operation.resource.metadata.name!r} "
                     f"was deleted or could not be re-read: {_safe_error(exc, operation)}"
                 )
-        return conflicts
+                errors[operation.index] = note_failure(exc, message=conflicts[operation.index])
+        return conflicts, errors
 
     def _execute_bodies(
         self,
@@ -295,7 +301,7 @@ class BatchMutationEngine:
                 return abort.outcome
             except Exception as exc:
                 outcome = self._status_outcome(
-                    operation, action="failed", detail=_safe_error(exc, operation)
+                    operation, action="failed", **_failure(exc, operation)
                 )
             if outcome.id is not None and operation.create and outcome.action == "created":
                 bindings[f"planned:{index}"] = outcome.id
@@ -394,10 +400,10 @@ class BatchMutationEngine:
                     "partial": wrote,
                     "unverified": wrote,
                     "id": target_id,
-                    "detail": _safe_error(exc, operation),
+                    **_failure(exc, operation),
                 }
             )
-            if isinstance(exc, ConfigError) or isinstance(exc.__cause__, ConfigError):
+            if _dooms_batch(exc):
                 raise _AbortBatchError(outcome) from exc
             return outcome
 
@@ -457,13 +463,12 @@ class BatchMutationEngine:
                         "action": "partial",
                         "partial": True,
                         "unverified": True,
-                        "detail": (
-                            "body succeeded but membership verification failed: "
-                            f"{_safe_error(exc, operation)}"
+                        **_failure(
+                            exc, operation, "body succeeded but membership verification failed: "
                         ),
                     }
                 )
-                stopped = not continue_on_error or isinstance(exc, ConfigError)
+                stopped = not continue_on_error or _dooms_batch(exc)
                 continue
             if (
                 any(item.field_change is not None for item in plans)
@@ -513,17 +518,12 @@ class BatchMutationEngine:
                         "action": "partial",
                         "partial": True,
                         "unverified": True,
-                        "detail": (
-                            f"body succeeded but its workflow nodes failed: "
-                            f"{_safe_error(exc, operation)}"
+                        **_failure(
+                            exc, operation, "body succeeded but its workflow nodes failed: "
                         ),
                     }
                 )
-                stopped = (
-                    not continue_on_error
-                    or isinstance(exc, ConfigError)
-                    or isinstance(exc.__cause__, ConfigError)
-                )
+                stopped = not continue_on_error or _dooms_batch(exc)
                 continue
             if outcome.action == "unchanged":
                 outcomes[operation.index] = outcome.model_copy(update={"action": "updated"})
@@ -534,6 +534,7 @@ class BatchMutationEngine:
         *,
         action: Literal["conflict", "failed", "skipped"],
         detail: str,
+        error: ErrorInfo | None = None,
     ) -> ApplyOutcome:
         return operation.preview.model_copy(
             update={
@@ -542,8 +543,21 @@ class BatchMutationEngine:
                 "identity": copy.deepcopy(operation.identity),
                 "scope": copy.deepcopy(operation.scope),
                 "detail": detail,
+                "error": error,
             }
         )
+
+
+#: Failures that doom every remaining request of a batch alike.
+_BATCH_DOOMING = frozenset({ErrorCategory.AUTH, ErrorCategory.CONFIG})
+
+
+def _dooms_batch(exc: BaseException) -> bool:
+    """Whether ``exc`` (or its cause) is a rejected token or broken setup."""
+    return any(
+        isinstance(error, UntapedError) and error.category in _BATCH_DOOMING
+        for error in (exc, exc.__cause__)
+    )
 
 
 def _noop_warn(_message: str) -> None:
@@ -596,3 +610,9 @@ def _safe_error(exc: Exception, operation: PreparedMutation) -> str:
     return redact_error(
         exc, operation.spec, operation.existing, operation.payload, operation.resource.spec
     )
+
+
+def _failure(exc: Exception, operation: PreparedMutation, prefix: str = "") -> dict[str, Any]:
+    """The ``detail`` and ``error`` of a row ``exc`` failed (secrets redacted from both)."""
+    detail = prefix + _safe_error(exc, operation)
+    return {"detail": detail, "error": note_failure(exc, message=detail)}

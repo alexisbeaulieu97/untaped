@@ -97,7 +97,7 @@ def test_run_with_broken_vars_file_emits_clean_error(
             "--non-interactive",
         ],
     )
-    assert result.exit_code != 0
+    assert result.exit_code == 1
     combined = (result.stderr or "") + (result.output or "")
     assert "Traceback" not in combined
     assert f"--vars-file file {bad_vars} is invalid YAML" in result.stderr
@@ -122,6 +122,27 @@ def test_run_passes_when_job_succeeds(cli: CliInvoker, fake_aap: FakeAap, tmp_pa
     assert "pass" in result.stdout
     # FakeAap records the launch action
     assert any(action == "launch" for _, _, action, _ in fake_aap.actions_called)
+
+
+@pytest.mark.parametrize(("status", "exit_code"), [(401, 4), (403, 4), (503, 5), (400, 1)])
+def test_run_exits_with_the_category_of_a_launch_failure(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, status: int, exit_code: int
+) -> None:
+    """A rejected token (4) or an unavailable AWX (5) is not a failed test (1)."""
+    _seed_jt(fake_aap)
+    test_file = _write(
+        tmp_path / "smoke.yml",
+        "kind: AwxTestSuite\nname: smoke\njobTemplate: Deploy app\ncases:\n  one: {}\n",
+    )
+    fake_aap.action_error = status
+
+    result = cli.invoke(app, ["test", "run", str(test_file), "--non-interactive", "-f", "json"])
+
+    assert result.exit_code == exit_code, result.stderr
+    [row] = json.loads(result.stdout)
+    assert row["result"] == "error"
+    if status == 401:
+        assert "untaped config set awx.token" in row["failure_reason"]
 
 
 def test_run_preflights_every_case_before_launching(
@@ -276,7 +297,8 @@ def test_run_fails_when_required_var_missing(
 
     result = cli.invoke(app, ["test", "run", str(test_file), "--non-interactive"])
 
-    assert result.exit_code != 0
+    # A missing --var is a usage error (2), not a broken environment (4).
+    assert result.exit_code == 2
     assert "env" in (result.stderr or result.output)
 
 
@@ -337,9 +359,26 @@ def test_validate_reports_launches_awx_would_reject(
     result = cli.invoke(app, ["test", "validate", str(test_file), "--non-interactive"])
 
     assert result.exit_code == 1
-    assert "v/c: " in result.stderr
+    assert "error: v/c: " in result.stderr
     assert "ask_limit_on_launch is false" in result.stderr
     assert "v/ok" not in result.stderr
+
+
+def test_validate_reports_each_case_as_an_attributed_error(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_aap.seed("job_templates", name="Deploy app")
+    test_file = _write(
+        tmp_path / "v.yml",
+        "kind: AwxTestSuite\nname: v\njobTemplate: Deploy app\n"
+        "cases:\n  c:\n    launch:\n      limit: x\n",
+    )
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+
+    result = cli.invoke(app, ["test", "validate", str(test_file), "--non-interactive"])
+
+    [line] = [json.loads(line) for line in result.stderr.splitlines()]
+    assert (line["item"], line["category"], line["system"]) == ("v/c", "invalid", "awx")
 
 
 def test_show_logs_prints_stdout_tail_for_failed_case(
@@ -711,7 +750,8 @@ def test_no_paths_without_git_names_the_failure_instead_of_guessing(
 
     result = cli.invoke(app, ["test", "list"])
 
-    assert result.exit_code == 1
+    # A missing git binary is a local setup problem: exit 4.
+    assert result.exit_code == 4
     assert "`git` not found on PATH; pass test paths explicitly" in result.stderr
     assert "Traceback" not in result.output
 

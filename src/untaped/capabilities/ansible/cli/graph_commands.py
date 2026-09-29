@@ -44,6 +44,7 @@ from untaped.capabilities.ansible.domain.parser import parse_dependency_file
 from untaped.capabilities.ansible.domain.payloads import IndexedDependency, SkippedDependencyFile
 from untaped.capabilities.ansible.domain.reach import reach
 from untaped.capabilities.ansible.domain.renderers import GraphFormat, render_graph
+from untaped.capabilities.ansible.errors import AnsibleError
 from untaped.capabilities.ansible.infrastructure import (
     AliasRepository,
     GithubDependencyIndex,
@@ -63,7 +64,6 @@ from untaped.capability_api import (
     HttpSettings,
     ParallelOption,
     UiContext,
-    UntapedError,
     UsageError,
     app_context,
     clamp_parallel,
@@ -640,7 +640,7 @@ def _require_repo(env: _GraphEnv, target: str, *, target_repo: str | None = None
         )
         if env.command != "find":
             message = f"{message}. Pass --target-repo OWNER/NAME"
-    raise UntapedError(message)
+    raise AnsibleError(message, category="not_found")
 
 
 def _refresh_sources(
@@ -673,7 +673,10 @@ def _refresh_sources(
             ui=ui,
         )
         if not result.completed:
-            raise UntapedError(_refresh_pause_message(result, selection))
+            # Paused at the GitHub rate-limit floor: resuming later succeeds.
+            raise AnsibleError(
+                _refresh_pause_message(result, selection), category="unavailable", system="github"
+            )
         if result.failures:
             warnings.append(
                 f"refresh of {selection.label} had "
@@ -890,8 +893,13 @@ def _graph_source(options: GraphSourceOptions, *, default_source: str | None) ->
                 known = sorted(entry.name for entry in source_repository.entries())
                 message = not_found("source", source_name, known=known)
                 if from_default:
+                    # The user's own setting names a missing source: fix the config.
                     message = f"{message} (set by ansible.default_source)"
-                raise UntapedError(message)
+                raise AnsibleError(
+                    message,
+                    category="config" if from_default else "not_found",
+                    system="local",
+                )
             selections.append(
                 _GraphSourceSelection(
                     definition=source,
@@ -978,7 +986,7 @@ def _effective_direction(
             "or ansible.default_source"
         )
         if direction == "impact":
-            raise UntapedError(message)
+            raise UsageError(message)
         return "deps", [
             "only showing downstream; upstream omitted because no source is configured. "
             "Pass --source NAME or inline selectors, or set ansible.default_source."
@@ -1000,7 +1008,7 @@ def _effective_direction(
             "no cached source data. Re-run with `--refresh` first."
         ]
     if missing:
-        raise UntapedError(
+        raise AnsibleError(
             _missing_source_index_message(
                 command, target, source_state, missing, direction=direction
             )

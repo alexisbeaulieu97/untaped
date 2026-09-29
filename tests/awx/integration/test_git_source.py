@@ -73,8 +73,9 @@ def test_pushed_head_resolves_to_its_commit(clone: Path) -> None:
 def test_an_unpushed_head_is_refused(clone: Path) -> None:
     _git(clone, "commit", "--allow-empty", "-m", "two")
 
-    with pytest.raises(ConfigError, match="is not pushed"):
+    with pytest.raises(ConfigError, match="is not pushed") as caught:
         GitSource.resolve("HEAD", cwd=clone)
+    assert (caught.value.category, caught.value.system) == ("config", "git")
 
 
 def test_a_detached_head_names_the_flag(clone: Path) -> None:
@@ -95,8 +96,9 @@ def test_a_detached_head_names_the_flag(clone: Path) -> None:
 def test_missing_and_outside_paths_are_refused(clone: Path, path: str, message: str) -> None:
     source = GitSource.resolve("v1", cwd=clone)
 
-    with pytest.raises(ConfigError, match=message):
+    with pytest.raises(ConfigError, match=message) as caught:
         source.files(Path(path))
+    assert caught.value.exit_code == 1  # the path the user gave, not the setup
 
 
 def test_a_directory_without_documents_is_refused(clone: Path) -> None:
@@ -107,12 +109,14 @@ def test_a_directory_without_documents_is_refused(clone: Path) -> None:
 
 
 def test_unknown_refs_and_non_repositories_are_refused(clone: Path, tmp_path: Path) -> None:
-    with pytest.raises(ConfigError, match="--source-ref nope: not a commit"):
+    with pytest.raises(ConfigError, match="--source-ref nope: not a commit") as unknown:
         GitSource.resolve("nope", cwd=clone)
     outside = tmp_path / "plain"
     outside.mkdir()
-    with pytest.raises(ConfigError, match="not inside a git repository"):
+    with pytest.raises(ConfigError, match="not inside a git repository") as plain:
         GitSource.resolve("v1", cwd=outside)
+    assert (unknown.value.category, unknown.value.system) == ("not_found", "git")
+    assert (plain.value.category, plain.value.system) == ("config", "git")
 
 
 def test_require_pushed_accepts_remote_tips_and_their_history(clone: Path) -> None:
@@ -129,8 +133,9 @@ def test_require_pushed_refuses_a_local_only_commit(clone: Path) -> None:
     sha = _git(clone, "rev-parse", "HEAD")
     source = GitSource.resolve(sha, cwd=clone)
 
-    with pytest.raises(ConfigError, match=f"commit {sha[:12]} is not on any remote"):
+    with pytest.raises(ConfigError, match=f"commit {sha[:12]} is not on any remote") as caught:
         source.require_pushed()
+    assert (caught.value.category, caught.value.system) == ("config", "git")
 
 
 def test_symbolic_links_at_the_ref_are_refused(clone: Path) -> None:
@@ -142,5 +147,6 @@ def test_symbolic_links_at_the_ref_are_refused(clone: Path) -> None:
     source = GitSource.resolve("v2", cwd=clone)
 
     for path in (templates, templates / "link.yml"):
-        with pytest.raises(ConfigError, match=r"link\.yml is a symbolic link"):
+        with pytest.raises(ConfigError, match=r"link\.yml is a symbolic link") as caught:
             source.files(path)
+        assert (caught.value.category, caught.value.system) == ("invalid", "git")

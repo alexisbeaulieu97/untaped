@@ -52,7 +52,11 @@ messages, exit codes, record shapes) through the `capability_api` helpers it
 lists: `UsageError`, shared option aliases, `plural`/`q`/`not_found`/`hint`,
 `ui.success`, `batch_apply`/`ui.confirm_action`, `read_identifiers(accept_kinds=…)`,
 and the `OutcomeRecord`/`TargetRecord` bases. `tests/conventions/` enforces them
-against per-capability baselines that may only shrink.
+against per-capability baselines that may only shrink. Every error raises with
+a `category` and `system` (class defaults in the capability's `errors.py`),
+which select the exit code; code that replaces or swallows an error keeps its
+attribution (`attribution()`, `note_failure(exc)` for a failed row) instead of
+flattening it into a string.
 
 ## Capability registry + capability_api
 

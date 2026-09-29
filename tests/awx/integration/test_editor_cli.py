@@ -95,6 +95,26 @@ def test_edit_all_writable_kinds(fake_aap: Any, editor: Any, cli: str, path: str
     assert not paths[0].parent.exists()
 
 
+@pytest.mark.parametrize(("status", "exit_code"), [(401, 4), (503, 5)])
+def test_a_controller_failure_while_preparing_is_not_an_invalid_batch(
+    fake_aap: Any, editor: Any, status: int, exit_code: int
+) -> None:
+    seed(fake_aap, "projects")
+
+    def refused(documents: list[Any]) -> list[Any]:
+        fake_aap.every_request_error = status
+        documents[0]["spec"]["credential"] = "scm"  # preparing resolves the name
+        return documents
+
+    editor(refused)
+    result = CliInvoker().invoke(
+        app, ["projects", "edit", "target", "--format", "json"], terminal=True
+    )
+
+    assert result.exit_code == exit_code, result.output
+    assert "Invalid edited batch" not in result.output
+
+
 @pytest.mark.parametrize("cli", ["organizations", "credentials", "credential-types"])
 def test_readonly_excludes_edit(cli: str) -> None:
     result = CliInvoker().invoke(app, [cli, "edit", "target"])
@@ -459,7 +479,8 @@ def test_editor_cleanup_or_retention_after_runner(
         prompt_backend=ScriptedPromptBackend(confirms=[mode == "failure"]),
         terminal=True,
     )
-    assert result.exit_code == (1 if mode in {"cancel", "failure"} else 0), result.output
+    # The failed write is an AWX 500: a temporary failure exits 5.
+    assert result.exit_code == {"cancel": 1, "failure": 5}.get(mode, 0), result.output
     assert paths[0].exists() is (mode == "failure")
     if mode == "cancel":
         assert "cancelled; no changes made" in result.stderr

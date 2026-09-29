@@ -333,7 +333,8 @@ untaped workspace branch set prod main --apply
 `branch apply` fetches first, refuses dirty or diverged repos, and emits
 one row per repo (with the clone's `target_path`) whose `action` is
 `checked_out`, `unchanged`, `skipped`, or `failed`
-(a fetch, status, or checkout error; the command then exits `1`). Missing
+(a fetch, status, or checkout error, with a structured `error`; the command
+then exits non-zero, as `sync` does). Missing
 clones and repos without a target branch are skipped. If the target
 branch resolves to a commit on `origin` but not locally, `branch apply`
 creates a local tracking branch. If the target branch is missing locally
@@ -375,10 +376,16 @@ A `pulled` row fast-forwards the checked-out branch to its configured upstream
 no upstream is skipped with `no upstream` rather than reported as up to
 date.
 
-`sync` exits `1` when any row is `failed` (after printing every row), so
-scripts and CI notice a clone or fetch that did not happen; `skipped` rows
-alone keep exit `0`. `add --sync` and `import --sync` follow the same
-rule.
+`sync` exits non-zero when any row is `failed` (after printing every row),
+so scripts and CI notice a clone or fetch that did not happen; `skipped`
+rows alone keep exit `0`. A `failed` row also carries `error`: its
+`category`, the `system` responsible (`git`), whether a retry can help
+(`retryable`), the `message` and a `hint` (json, yaml and pipe output;
+tables leave it out). The exit code follows the most severe row: `5` when
+a git call timed out or lost the network (retry later), `4` when git is
+not installed, else `1`. `add --sync` and `import --sync` follow the same
+rule. With `--format json|yaml|pipe` (or `UNTAPED_DIAGNOSTICS=json`) the
+stderr messages are JSON Lines too; see [Exit codes](../reference/exit-codes.md).
 
 `--repo <repo>` / `-r <repo>` limits sync to specific repos (repeatable);
 `--all` runs sync against every workspace in the registry — handy as
@@ -415,7 +422,7 @@ sync uses the `workspace.parallel` profile setting, or
 (`-j 1` or `untaped config set workspace.parallel 1` makes it serial).
 The value is clamped to `2 * os.cpu_count()` with a stderr warning when
 needed. `-j` below `1` is a usage error (exit `2`); a `workspace.parallel`
-below `1` is an invalid config value (exit `1`).
+below `1` is an invalid config value (exit `4`).
 
 Sync output remains deterministic even when repo jobs finish out of
 order: workspace input order first, then unmatched selector rows,
@@ -495,7 +502,7 @@ A declared directory without its own `.git` reports `cloned=false` with
 fall through to a repository enclosing the workspace (`sync` and
 `branch apply` skip such directories with the same detail). A clone
 whose `git status` fails keeps `cloned=true` and carries the error in
-`detail`.
+`detail` (and a structured `error`, as on a failed `sync` row).
 
 Filters and checks:
 
@@ -508,8 +515,8 @@ Filters and checks:
   uncloned repo, a failed `git status`, or an `unavailable` workspace.
 - `--check` exits `3` when any repo is dirty or behind (only the
   `--dirty` / `--behind` condition when one is given), and `0` otherwise.
-  It exits `1` instead when any repo could not be inspected, since the
-  check could not be answered. Without a filter it still prints every
+  It exits non-zero instead (`1`, or `5` when `git status` timed out) when
+  any repo could not be inspected, since the check could not be answered. Without a filter it still prints every
   row.
 
 ```bash
@@ -651,7 +658,7 @@ target, `edit` walks up from the current directory until it finds
 `untaped.yml`, matching `repos`, `sync`, `status`, and `foreach`.
 Honours `$VISUAL` then `$EDITOR`, overrideable with `--editor`. With
 none of them set, `edit` fails with
-`error: set $VISUAL or $EDITOR to use an external editor` (exit `1`), like
+`error: set $VISUAL or $EDITOR to use an external editor` (exit `4`), like
 every other `edit` command. An editor that exits non-zero fails the command
 with `error: editor exited with status N` (exit `1`).
 

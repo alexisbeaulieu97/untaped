@@ -34,6 +34,7 @@ from untaped.capabilities.awx.application.mutation_refs import DeferredReference
 from untaped.capabilities.awx.application.ports import Catalog, FkResolver, ResourceClient
 from untaped.capabilities.awx.domain import FieldChange, FkRef, Resource, ResourceSpec
 from untaped.capabilities.awx.errors import BadRequestError
+from untaped.capability_api import attribution
 
 # Exact resource kind, selected controller ID, and relationship field.
 type MembershipSnapshots = Mapping[tuple[str, int, str], tuple[dict[str, Any], ...]]
@@ -443,7 +444,7 @@ def _restore(
         if lost
         else f"restored removed members {members}"
     )
-    return BadRequestError(f"{field}: associate failed ({error}); {outcome}")
+    return BadRequestError(f"{field}: associate failed ({error}); {outcome}", **attribution(error))
 
 
 def _ordered_replacements(

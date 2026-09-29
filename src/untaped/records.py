@@ -9,6 +9,9 @@ for the fields the pipe contract fixes (``docs/conventions.md``):
   absolute ``target_path``;
 - :class:`CheckRecord` — a check result with a ``status`` from the check
   vocabulary (``pass``/``warn``/``fail``/``error``);
+- ``error`` — the optional :class:`~untaped.diagnostics.ErrorInfo` of a failed
+  outcome or target row (``category``, ``system``, ``retryable``, ``message``,
+  ``hint``);
 - :data:`UtcTimestamp` — a ``datetime`` normalized to UTC that serializes as
   RFC 3339 with a ``Z`` suffix (``2026-01-02T03:04:05Z``).
 
@@ -29,10 +32,13 @@ from pydantic import (
     AfterValidator,
     BaseModel,
     ConfigDict,
+    Field,
     PlainSerializer,
     SerializerFunctionWrapHandler,
     model_serializer,
 )
+
+from untaped.diagnostics import ErrorInfo
 
 
 def _to_utc(value: datetime) -> datetime:
@@ -124,10 +130,23 @@ class Record(BaseModel):
         return ordered | data
 
 
+def _is_none(value: object) -> bool:
+    return value is None
+
+
+#: The optional ``error`` of a row; omitted from output when the row did not fail.
+_RowError = Annotated[ErrorInfo | None, Field(exclude_if=_is_none)]
+
+
 class OutcomeRecord(Record):
-    """A mutation result. Emit under the kind ``<cap>.<verb>_outcome``."""
+    """A mutation result. Emit under the kind ``<cap>.<verb>_outcome``.
+
+    A failed row may carry ``error`` (:class:`ErrorInfo`); it is left out of
+    the output of every other row.
+    """
 
     action: str
+    error: _RowError = None
 
     @property
     def failed(self) -> bool:
@@ -136,9 +155,14 @@ class OutcomeRecord(Record):
 
 
 class TargetRecord(Record):
-    """A record about a filesystem target; ``target_path`` is absolute."""
+    """A record about a filesystem target; ``target_path`` is absolute.
+
+    A failed row may carry ``error`` (:class:`ErrorInfo`), as on
+    :class:`OutcomeRecord`.
+    """
 
     target_path: AbsolutePath
+    error: _RowError = None
 
 
 class CheckRecord(Record):

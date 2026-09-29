@@ -102,7 +102,7 @@ PUT /rest/api/2/issue/OPS-123/assignee
 `--dry-run` shows the same preview on stderr, emits a `planned` outcome on
 stdout and sends nothing, whatever `jira.confirm` says. Because the preview
 reads the issue, `issues patch --dry-run` and `issues transition --dry-run`
-need working credentials, and a patch dry run exits 1 when the issue cannot
+need working credentials, and a patch dry run fails when the issue cannot
 be read. `issues create`, `comment` and `links create` dry runs stay offline.
 `--yes` skips the question and the preview (and its reads). Without a
 terminal, a write that must ask exits 2 unless you pass `--yes` or
@@ -153,7 +153,8 @@ issue once; a transition picked by `--to` reuses the lookup, and an `--id`
 the issue does not offer shows `(not available from this status)`. When an
 issue cannot be read, its preview shows `(unknown)` instead of stopping the
 batch. Several keys are transitioned in
-one batch; each failed key prints `error: KEY: ...` and the command exits 1.
+one batch; each failed key prints `error: KEY: ...` and the command exits
+with the most severe failure (see Limits).
 
 Transition every issue of a search:
 
@@ -205,6 +206,12 @@ untaped jira sprints list --board-id 42 --state active,future
 - Search requests are retried on HTTP 429 and 503. Writes are never retried.
 - Usage mistakes exit 2: a blank `--jql`, both or neither of `--to`/`--id`,
   `sprints list` with no board, `--limit 0`.
+- Failures exit by kind: 1 when the request itself failed (a missing issue,
+  an invalid field, no matching transition), 4 when the environment needs
+  fixing (a rejected token, a missing permission, bad `jira.*` settings), 5
+  when Jira was unavailable (network, timeout, 5xx, 429), so retry later.
+  With `--format json` (or `UNTAPED_DIAGNOSTICS=json`) stderr is JSON Lines
+  whose errors carry `category`, `system` (`jira`), `retryable` and `hint`.
 
 ## See also
 

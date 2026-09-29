@@ -31,15 +31,16 @@ class CreateProfile:
 
     def __call__(self, name: str, *, copy_from: str | None = None, dry_run: bool = False) -> None:
         if not name:
-            raise ConfigError("profile name cannot be empty")
+            raise ConfigError("profile name cannot be empty", category="invalid")
         if self._repo.read(name) is not None:
-            raise ConfigError(f"profile {name!r} already exists")
+            raise ConfigError(f"profile {name!r} already exists", category="conflict")
         if copy_from is not None:
             source = self._repo.read(copy_from)
             if source is None:
                 raise ConfigError(
                     f"cannot copy from {q(copy_from)}: "
-                    + not_found("profile", copy_from, known=sorted(self._repo.names()))
+                    + not_found("profile", copy_from, known=sorted(self._repo.names())),
+                    category="not_found",
                 )
             data = copy.deepcopy(source)
         else:
@@ -63,10 +64,13 @@ class DeleteProfile:
     def preview(self, name: str) -> ProfileDeletePreview:
         data = self._repo.read(name)
         if data is None:
-            raise ConfigError(not_found("profile", name, known=sorted(self._repo.names())))
+            raise ConfigError(
+                not_found("profile", name, known=sorted(self._repo.names())), category="not_found"
+            )
         if self._repo.persisted_active_name() == name:
             raise ConfigError(
-                f"cannot delete the active profile {name!r}; switch to another profile first"
+                f"cannot delete the active profile {name!r}; switch to another profile first",
+                category="invalid",
             )
         return ProfileDeletePreview(name=name, top_level_keys=tuple(sorted(data)))
 
@@ -114,7 +118,9 @@ class ShowProfile:
             active = self._repo.active_name() or DEFAULT_PROFILE
             return Profile(name=name, data=data, is_active=(name == active))
         if raw_data is None:
-            raise ConfigError(not_found("profile", name, known=sorted(self._repo.names())))
+            raise ConfigError(
+                not_found("profile", name, known=sorted(self._repo.names())), category="not_found"
+            )
         data = raw_data if raw else self._repo.resolved(name)
         active = self._repo.active_name() or DEFAULT_PROFILE
         return Profile(name=name, data=data, is_active=(name == active))
@@ -133,15 +139,18 @@ class RenameProfile:
 
     def __call__(self, old_name: str, new_name: str, *, dry_run: bool = False) -> None:
         if not new_name:
-            raise ConfigError("new profile name cannot be empty")
+            raise ConfigError("new profile name cannot be empty", category="invalid")
         if old_name == DEFAULT_PROFILE:
-            raise ConfigError("cannot rename the `default` profile")
+            raise ConfigError("cannot rename the `default` profile", category="invalid")
         if new_name == DEFAULT_PROFILE:
-            raise ConfigError("cannot rename to `default` (reserved name)")
+            raise ConfigError("cannot rename to `default` (reserved name)", category="invalid")
         if self._repo.read(old_name) is None:
-            raise ConfigError(not_found("profile", old_name, known=sorted(self._repo.names())))
+            raise ConfigError(
+                not_found("profile", old_name, known=sorted(self._repo.names())),
+                category="not_found",
+            )
         if self._repo.read(new_name) is not None:
-            raise ConfigError(f"profile {new_name!r} already exists")
+            raise ConfigError(f"profile {new_name!r} already exists", category="conflict")
         if not dry_run:
             self._repo.rename(old_name, new_name)
 
@@ -192,7 +201,9 @@ class UseProfile:
 
     def __call__(self, name: str) -> None:
         if self._repo.read(name) is None:
-            raise ConfigError(not_found("profile", name, known=sorted(self._repo.names())))
+            raise ConfigError(
+                not_found("profile", name, known=sorted(self._repo.names())), category="not_found"
+            )
         self._repo.set_active(name)
 
 

@@ -52,6 +52,7 @@ from untaped.capability_api import (
     echo,
     emit,
     finish,
+    note_failure,
     report_errors,
 )
 
@@ -201,6 +202,9 @@ def _add_membership_verb(
                         row["action"] = "partial"
                         row["partial"] = True
                         row["detail"] = redact_error(exc, spec, selected_parent.record)
+                        row["error"] = note_failure(exc, message=row["detail"]).model_dump(
+                            mode="json"
+                        )
                         failed = True
                 emit([row], fmt=fmt, columns=columns, kind="awx.membership_outcome")
                 finish(failed)

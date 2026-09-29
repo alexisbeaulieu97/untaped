@@ -32,7 +32,7 @@ from untaped.capabilities.jira.domain import (
     transition_changes,
 )
 from untaped.capabilities.jira.errors import JiraError, JiraTransitionError
-from untaped.capability_api import UntapedError, UsageError, not_found, q
+from untaped.capability_api import UntapedError, UsageError, attribution, not_found, q
 
 
 class WhoAmI:
@@ -131,7 +131,10 @@ class PatchIssue:
             except JiraError as err:
                 if payload is None:
                     raise
-                raise JiraError(f"fields updated, but assigning failed: {err}") from err
+                raise JiraError(
+                    f"fields updated, but assigning failed: {err}",
+                    **attribution(err),
+                ) from err
         return IssueOutcome(
             action="updated", key=issue_key, url=browse_url(self._base_url, issue_key)
         )
@@ -268,7 +271,8 @@ class TransitionIssue:
         if not matches:
             known = sorted({str(t.get("name", "")) for t in transitions})
             raise JiraTransitionError(
-                f"{not_found('transition', name, known=known)} (issue {issue_key})"
+                f"{not_found('transition', name, known=known)} (issue {issue_key})",
+                category="not_found",
             )
         if len(matches) > 1:
             raise JiraTransitionError(

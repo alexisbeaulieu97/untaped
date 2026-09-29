@@ -130,7 +130,7 @@ def test_an_invalid_section_does_not_block_other_keys_or_its_repair(
 def test_get_key_of_invalid_section_names_the_problem(_isolated_config: Path) -> None:
     write_config(_isolated_config, _BROKEN_JIRA)
     result = _invoke(["get", "jira.timeout"])
-    assert result.exit_code == 1
+    assert result.exit_code == 4  # the stored config is invalid
     assert "jira.timeout" in result.stderr
 
 
@@ -163,7 +163,7 @@ def test_null_profile_is_treated_as_empty(_isolated_config: Path) -> None:
 def test_non_mapping_config_shapes_are_config_errors(_isolated_config: Path, text: str) -> None:
     write_config(_isolated_config, text)
     result = _invoke(["get", "http.timeout"])
-    assert result.exit_code == 1
+    assert result.exit_code == 4  # the stored config is invalid
     assert result.stderr.startswith("error: ")
     assert "mapping" in result.stderr
 

@@ -16,6 +16,7 @@ from typing import Any, Literal, cast
 
 from untaped.capabilities.recipe.domain.paths import confined_path
 from untaped.capabilities.recipe.domain.plan import CONTENT_ERRORS, FileChange
+from untaped.capabilities.recipe.errors import BackupNotFoundError, LocalChangesError
 from untaped.capabilities.recipe.infrastructure.file_writer import flush_changes
 from untaped.capability_api import atomic_write
 
@@ -184,7 +185,7 @@ class BackupStore:
             path = confined_path(target, relative_path, field="relative_path")
             current_hash = _current_hash(path)
             if not force and current_hash != entry["after_hash"]:
-                raise ValueError(
+                raise LocalChangesError(
                     f"{path} changed since backup {backup_id}; pass --force to restore"
                 )
             backup_file = entry["backup_file"]
@@ -219,7 +220,7 @@ class BackupStore:
         """Delete one backup bundle by exact id."""
         bundle_dir = self._root / backup_id
         if not (bundle_dir / "metadata.json").is_file():
-            raise ValueError(f"backup not found: {backup_id}")
+            raise BackupNotFoundError(f"backup not found: {backup_id}")
         shutil.rmtree(bundle_dir)
 
     def metadata(self, backup_id: str) -> dict[str, object]:
@@ -230,14 +231,14 @@ class BackupStore:
         bundles = self.list()
         if backup_id == "latest":
             if not bundles:
-                raise ValueError("backup not found: latest")
+                raise BackupNotFoundError("backup not found: latest")
             return bundles[-1]
         exact = [bundle for bundle in bundles if bundle.id == backup_id]
         if exact:
             return exact[0]
         matches = [bundle for bundle in bundles if bundle.id.startswith(backup_id)]
         if not matches:
-            raise ValueError(f"backup not found: {backup_id}")
+            raise BackupNotFoundError(f"backup not found: {backup_id}")
         if len(matches) > 1:
             raise ValueError(f"backup id prefix is ambiguous: {backup_id}")
         return matches[0]

@@ -9,7 +9,7 @@ from pathlib import Path
 from untaped.cli import report_errors
 from untaped.config_file import read_config_text, replace_config_text
 from untaped.editor import run_editor
-from untaped.errors import ConfigError
+from untaped.errors import ConfigError, attribution
 from untaped.fs import atomic_write
 from untaped.settings import resolve_config_path, validate_config_file
 from untaped.ui import ui_context
@@ -40,7 +40,11 @@ def run_config_editor() -> None:
                 shutil.rmtree(workdir, ignore_errors=True)
                 ui_context(strict=False).message("info", f"no changes; config unchanged ({path})")
                 return
-            validate_config_file(draft)
+            try:
+                validate_config_file(draft)
+            except ConfigError as exc:
+                # The edit is the invalid input here, not the setup.
+                raise ConfigError(str(exc), category="invalid") from exc
             replace_config_text(edited, expected=original, path=path)
         except (ConfigError, OSError, UnicodeDecodeError) as exc:
             if not edited_by_user:
@@ -49,8 +53,11 @@ def run_config_editor() -> None:
                     raise
                 raise ConfigError(f"could not edit {path}: {exc}") from exc
             detail = str(exc) if isinstance(exc, ConfigError) else f"could not save {path}: {exc}"
+            fields = attribution(exc)
+            if isinstance(exc, UnicodeDecodeError):
+                fields = {"category": "invalid"}
             raise ConfigError(
-                f"{detail}\nconfig left unchanged; your edits are in {draft}"
+                f"{detail}\nconfig left unchanged; your edits are in {draft}", **fields
             ) from exc
         shutil.rmtree(workdir, ignore_errors=True)
         ui_context(strict=False).message("success", f"config saved and validated (config: {path})")

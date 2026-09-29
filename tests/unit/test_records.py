@@ -8,7 +8,9 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from untaped.records import CheckRecord, OutcomeRecord, TargetRecord, UtcTimestamp
+from untaped.diagnostics import diagnostics_scope, failure_exit_code, note_failure
+from untaped.errors import ConfigError, ErrorCategory, HttpStatusError, HttpTransportError
+from untaped.records import CheckRecord, ErrorInfo, OutcomeRecord, TargetRecord, UtcTimestamp
 
 
 class _Stamped(BaseModel):
@@ -80,3 +82,72 @@ def test_redeclared_base_fields_keep_the_subclass_position(tmp_path: Path) -> No
     row = _BranchOutcome(repo="a/b", action="updated", branch="main", target_path=tmp_path)
 
     assert list(row.model_dump(mode="json")) == ["repo", "action", "branch", "target_path"]
+
+
+def test_a_failed_row_carries_the_error_of_the_exception_that_failed_it(tmp_path: Path) -> None:
+    cause = HttpStatusError("HTTP 503", status_code=503, url="https://h/x", system="awx")
+
+    row = _CloneOutcome(
+        action="failed", target_path=tmp_path, repo="a/b", error=ErrorInfo.from_exception(cause)
+    )
+
+    assert row.model_dump(mode="json")["error"] == {
+        "category": "unavailable",
+        "system": "awx",
+        "retryable": True,
+        "message": "HTTP 503 for https://h/x",
+        "hint": None,
+    }
+
+
+def test_rows_without_an_error_omit_the_field(tmp_path: Path) -> None:
+    row = _CloneOutcome(action="cloned", target_path=tmp_path, repo="a/b")
+
+    assert "error" not in row.model_dump(mode="json")
+    assert "error" not in row.model_dump()
+
+
+def test_error_info_splits_the_hint_off_an_overridden_message() -> None:
+    cause = ConfigError("rejected\nhint: run `untaped config set awx.token --prompt`")
+
+    info = ErrorInfo.from_exception(cause, message="token <redacted> rejected")
+
+    assert (info.category, info.system, info.retryable) == ("config", "local", False)
+    assert info.message == "token <redacted> rejected"
+    info = ErrorInfo.from_exception(cause)
+    assert info.message == "rejected"
+    assert info.hint == "run `untaped config set awx.token --prompt`"
+
+
+def test_error_info_of_an_unexpected_exception_is_a_failed_untaped_error() -> None:
+    info = ErrorInfo.from_exception(KeyError("id"))
+
+    assert (info.category, info.system, info.message) == ("failed", "untaped", "'id'")
+
+
+def test_error_info_is_pure_and_note_failure_counts_it() -> None:
+    with diagnostics_scope():
+        ErrorInfo.from_exception(HttpTransportError("down", system="awx"))
+        assert failure_exit_code() == 1
+
+        info = note_failure(HttpTransportError("down", system="awx"), message="redacted")
+
+        assert (info.category, info.system, info.message) == ("unavailable", "awx", "redacted")
+        assert failure_exit_code() == 5
+
+
+def test_note_failure_counts_an_error_info_or_a_category() -> None:
+    info = ErrorInfo.from_exception(ConfigError("rejected", category="auth"))
+    with diagnostics_scope():
+        assert note_failure(info) is info
+        assert failure_exit_code() == 4
+    with diagnostics_scope():
+        assert note_failure(ErrorCategory.UNAVAILABLE) is None
+        assert failure_exit_code() == 5
+
+
+def test_an_interrupt_is_interrupted_everywhere() -> None:
+    info = ErrorInfo.from_exception(KeyboardInterrupt())
+    with diagnostics_scope():
+        note_failure(KeyboardInterrupt())
+        assert (info.category, failure_exit_code()) == ("interrupted", 130)

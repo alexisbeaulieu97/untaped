@@ -43,7 +43,7 @@ from untaped.errors import ConfigError
         lambda: make_spec(profile=dict),
         lambda: make_spec(state=dict),
         lambda: ProviderRef(
-            kind="sidecar", distribution="d", entry_point="m:a", api_requires=((2, 0), (3, 0))
+            kind="sidecar", distribution="d", entry_point="m:a", api_requires=((3, 0), (4, 0))
         ),
         lambda: QuarantineRecord(distribution="d", entry_point="e", reason="nope", detail="x"),
         lambda: QuarantineRecord(distribution="d", entry_point="e", reason="api-range", detail=" "),
@@ -94,10 +94,10 @@ def test_compose_happy_path() -> None:
     assert github.provider_ref.kind == "built-in"
     assert github.provider_ref.distribution == "untaped"
     assert github.provider_ref.entry_point == ""
-    assert github.provider_ref.api_requires == ((2, 0), (3, 0))
+    assert github.provider_ref.api_requires == ((3, 0), (4, 0))
     assert jira.provider_ref.kind == "external"
     assert jira.provider_ref.distribution == "example-jira"
-    assert jira.provider_ref.api_requires == ((2, 0), (3, 0))
+    assert jira.provider_ref.api_requires == ((3, 0), (4, 0))
 
 
 def test_compose_shell_only() -> None:

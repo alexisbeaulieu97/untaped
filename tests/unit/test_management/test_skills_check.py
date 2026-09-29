@@ -7,6 +7,7 @@ them in place (``auto``) or silences it (``off``).
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
@@ -54,6 +55,16 @@ def test_outdated_skill_warns_after_a_command(tmp_path: Path) -> None:
     assert "warning: installed skills are out of date: untaped-demo" in output
     assert "hint: run `untaped skills update`" in output
     assert "skills.updates" in output
+
+
+def test_the_warning_follows_the_command_s_json_format(tmp_path: Path) -> None:
+    root = _install_then_change(tmp_path)
+    result = CliInvoker().invoke(root.meta, ["profile", "list", "--format", "json"])  # type: ignore[attr-defined]
+
+    assert result.exit_code == 0, result.output
+    lines = [json.loads(line) for line in result.stderr.splitlines()]
+    assert [line["level"] for line in lines] == ["warning", "hint"]
+    assert "untaped-demo" in lines[0]["message"]
 
 
 def test_no_warning_when_skills_match(tmp_path: Path) -> None:

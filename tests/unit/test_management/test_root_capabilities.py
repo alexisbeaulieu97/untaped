@@ -39,7 +39,7 @@ class _Provider:
     """Nullary external provider double."""
 
     def __init__(self, spec: object) -> None:
-        self.api_requires = ((2, 0), (3, 0))
+        self.api_requires = ((3, 0), (4, 0))
         self._spec = spec
 
     def __call__(self) -> object:
@@ -85,7 +85,7 @@ def test_lists_ready_builtin_and_external() -> None:
     assert rows["ext"]["origin"] == "external"
     assert rows["ext"]["distribution"] == "example-dist"
     assert rows["ext"]["version"] == "1.2.3"
-    assert rows["ext"]["api"] == ">=2.0,<3.0"
+    assert rows["ext"]["api"] == ">=3.0,<4.0"
 
 
 def test_float_range_external_shows_its_raw_range_and_the_running_sdk() -> None:
@@ -107,8 +107,8 @@ def test_float_range_external_shows_its_raw_range_and_the_running_sdk() -> None:
     assert quarantined["title"] == "api-range"
     assert str(quarantined["detail"]).startswith(
         "malformed api_requires (1.0, 2.0): expected ((major, minor), (major, minor)) "
-        "int tuples as (min_inclusive, max_exclusive); running SDK 2.1, "
-        "declare e.g. ((2, 0), (3, 0))"
+        "int tuples as (min_inclusive, max_exclusive); running SDK 3.0, "
+        "declare e.g. ((3, 0), (4, 0))"
     )
 
 

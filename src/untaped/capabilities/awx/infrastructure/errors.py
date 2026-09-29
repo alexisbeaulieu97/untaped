@@ -1,9 +1,11 @@
 """Map :class:`untaped.HttpError` to typed AWX exceptions.
 
 The mapping uses status codes plus response bodies for actionable
-messages. 401 maps to :class:`untaped.ConfigError` so the user
-sees `awx.token` guidance in their CLI output instead of an opaque
-HTTP error.
+messages, and keeps the source error's attribution (category, system,
+``status``/``url`` details). 401 maps to :class:`untaped.ConfigError`
+(category ``auth``) so the user sees `awx.token` guidance in their CLI
+output instead of an opaque HTTP error. A transport failure stays
+``unavailable``.
 """
 
 from __future__ import annotations
@@ -15,11 +17,17 @@ from typing import Any
 
 from untaped.capabilities.awx.errors import (
     AwxApiError,
+    AwxError,
     BadRequestError,
     ConflictError,
     PermissionDeniedError,
 )
-from untaped.capability_api import ConfigError, HttpError, UntapedError, hint
+from untaped.capability_api import (
+    HttpError,
+    UntapedError,
+    attribution,
+    rejected_token_error,
+)
 
 _BODY_SNIPPET = 500
 
@@ -29,16 +37,16 @@ def to_awx_error(err: HttpError) -> UntapedError:
     snippet = (err.body or "")[:_BODY_SNIPPET]
     body_msg = _first_field_error(err.body) or snippet or "<empty body>"
 
+    source = attribution(err)
     if status == 401:
-        return ConfigError(
-            "AWX rejected the token (HTTP 401)\n" + hint("config set awx.token --prompt")
-        )
+        return rejected_token_error("awx", "AWX rejected the token (HTTP 401)", cause=err)
     if status == 403:
         return PermissionDeniedError(
             f"permission denied: {body_msg}",
             status=status,
             body=err.body,
             url=err.url,
+            **source,
         )
     if status == 404:
         return AwxApiError(
@@ -46,6 +54,7 @@ def to_awx_error(err: HttpError) -> UntapedError:
             status=status,
             body=err.body,
             url=err.url,
+            **source,
         )
     if status == 409:
         return ConflictError(
@@ -53,6 +62,7 @@ def to_awx_error(err: HttpError) -> UntapedError:
             status=status,
             body=err.body,
             url=err.url,
+            **source,
         )
     if status is not None and 400 <= status < 500:
         return BadRequestError(
@@ -60,6 +70,7 @@ def to_awx_error(err: HttpError) -> UntapedError:
             status=status,
             body=err.body,
             url=err.url,
+            **source,
         )
     if status is not None and status >= 500:
         return AwxApiError(
@@ -67,20 +78,28 @@ def to_awx_error(err: HttpError) -> UntapedError:
             status=status,
             body=err.body,
             url=err.url,
+            **source,
         )
     return AwxApiError(
         str(err) or "AWX request failed",
         status=status,
         body=err.body,
         url=err.url,
+        **source,
     )
 
 
 @contextmanager
 def map_awx_errors() -> Iterator[None]:
-    """Wrap calls into AwxClient so HTTP failures surface as typed exceptions."""
+    """Wrap calls into AwxClient so HTTP failures surface as typed exceptions.
+
+    An error that is already an :class:`AwxError` (an inner block mapped it)
+    passes through unchanged.
+    """
     try:
         yield
+    except AwxError:
+        raise
     except HttpError as exc:
         raise to_awx_error(exc) from exc
 

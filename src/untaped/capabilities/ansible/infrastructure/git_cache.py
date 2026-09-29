@@ -9,6 +9,7 @@ from untaped.capabilities.ansible.errors import GitCacheError as GitCacheError
 from untaped.capability_api import (
     GitCommandError,
     GitResult,
+    attribution,
     git_toplevel,
     run_git,
     safe_cache_path,
@@ -225,7 +226,7 @@ class GitRepositoryCache:
                 auth_url=auth_url,
             )
         except GitCommandError as exc:
-            raise GitCacheError(str(exc)) from exc
+            raise GitCacheError(str(exc), **attribution(exc)) from exc
 
 
 def _scoped_auth(auth_header: str | None, url: str) -> tuple[str | None, str | None]:

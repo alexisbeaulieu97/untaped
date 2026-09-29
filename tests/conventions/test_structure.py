@@ -7,6 +7,8 @@ One parametrized check per built-in capability flags:
   ``UntapedError`` (``report_errors`` would show a traceback); ``Warning``
   categories are exempt;
 - ``exception-name`` — an exception class whose name does not end in ``Error``;
+- ``error-system`` — a capability error base (no capability parent) that does
+  not set ``system`` (its failures would blame ``untaped``);
 - ``protocol-location`` — a ``Protocol`` defined outside an
   ``application/**/ports.py`` module;
 - ``port-adapter-clash`` — a port and an infrastructure class share a name;
@@ -64,6 +66,8 @@ def _runtime_violations(name: str) -> Iterator[str]:
                     yield f"{where}::exception-base"
                 if not cls.__name__.endswith("Error"):
                     yield f"{where}::exception-name"
+                if _unattributed_base(cls, package):
+                    yield f"{where}::error-system"
             if getattr(cls, "_is_protocol", False):
                 if is_ports:
                     ports[cls.__name__] = where
@@ -73,6 +77,14 @@ def _runtime_violations(name: str) -> Iterator[str]:
                 adapters.add(cls.__name__)
     for clash in sorted(ports.keys() & adapters):
         yield f"{ports[clash]}::port-adapter-clash"
+
+
+def _unattributed_base(cls: type, package: str) -> bool:
+    """A capability's own ``*Error`` base (no capability parent) that sets no ``system``."""
+    if not issubclass(cls, UntapedError):
+        return False
+    own_parents = [base for base in cls.__mro__[1:] if base.__module__.startswith(package)]
+    return not own_parents and "system" not in vars(cls)
 
 
 def _source_violations(name: str, section: str) -> Iterator[str]:

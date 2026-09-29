@@ -523,6 +523,91 @@ def test_auth_failure_aborts_remaining_items_but_keeps_completed_rows() -> None:
     assert "401" in (result.outcomes[1].detail or "")
 
 
+@pytest.mark.parametrize("category", ["auth", "config"])
+def test_an_environment_failure_of_any_class_aborts_the_batch(category: str) -> None:
+    from untaped.capabilities.awx.errors import AwxApiError
+
+    class Refused(_Client):
+        def create(self, spec: ResourceSpec, payload: Any) -> ServerRecord:
+            if payload.name == "second":
+                raise AwxApiError("refused", category=category)
+            return super().create(spec, payload)
+
+    result = _item_engine(Refused([])).run(
+        _items("first", "second", "third"), write=True, continue_on_error=True
+    )
+    assert [row.action for row in result.outcomes] == ["created", "failed", "skipped"]
+
+
+def test_failed_rows_carry_the_attributed_error() -> None:
+    from untaped.capability_api import ConfigError
+
+    class Failing(_Client):
+        def create(self, spec: ResourceSpec, payload: Any) -> ServerRecord:
+            if payload.name == "second":
+                raise ConfigError(
+                    "AWX rejected the token (HTTP 401)",
+                    category="auth",
+                    system="awx",
+                    hint="run `untaped config set awx.token --prompt`",
+                )
+            if payload.name == "bad":
+                raise KeyError("strategy bug")
+            return super().create(spec, payload)
+
+    result = _item_engine(Failing([])).run(
+        _items("bad", "first", "second", "third"), write=True, continue_on_error=True
+    )
+    bug, created, rejected, _skipped = result.outcomes
+    assert bug.error is not None
+    assert (bug.error.category, bug.error.system) == ("failed", "untaped")
+    assert created.error is None
+    assert rejected.error is not None
+    assert (rejected.error.category, rejected.error.system) == ("auth", "awx")
+    assert rejected.error.message == "AWX rejected the token (HTTP 401)"
+    assert rejected.error.hint == "run `untaped config set awx.token --prompt`"
+    assert rejected.detail == (
+        "AWX rejected the token (HTTP 401)\nhint: run `untaped config set awx.token --prompt`"
+    )
+
+
+def test_a_membership_failure_row_carries_its_error() -> None:
+    from untaped.capabilities.awx.errors import BadRequestError
+
+    class Refusing(_MembershipClient):
+        def sub_endpoint_request(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            raise BadRequestError("refused", status=503)
+
+    result = _group_engine(Refusing([])).run(
+        [_group("first", ["second"]), _group("second", [])], write=True
+    )
+    partial = result.outcomes[0]
+    assert partial.action == "partial"
+    assert partial.error is not None
+    assert partial.error.category == "unavailable"
+    assert partial.error.retryable
+
+
+def test_a_preflight_reread_failure_row_carries_its_error() -> None:
+    from untaped.capabilities.awx.errors import PermissionDeniedError
+
+    client = _Client([{"id": 1, "name": "first", "description": "old"}])
+    engine = _item_engine(client)
+    plan = engine.prepare(
+        [Resource(kind="Item", metadata=Metadata(name="first"), spec={"description": "new"})]
+    )
+
+    def forbidden(spec: ResourceSpec, id_: int) -> ServerRecord:
+        raise PermissionDeniedError("permission denied: no")
+
+    client.get = forbidden  # type: ignore[method-assign]
+    result = engine.execute(plan)
+    conflict = result.outcomes[0]
+    assert conflict.action == "conflict"
+    assert conflict.error is not None
+    assert conflict.error.category == "permission"
+
+
 def test_keyboard_interrupt_is_not_swallowed() -> None:
     class Interrupted(_Client):
         def create(self, spec: ResourceSpec, payload: Any) -> ServerRecord:

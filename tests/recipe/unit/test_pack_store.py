@@ -13,6 +13,7 @@ from untaped.capabilities.recipe.domain.pack import InstalledPack, PackManifest,
 from untaped.capabilities.recipe.errors import (
     AmbiguousRefError,
     HookNotFoundError,
+    RecipeError,
     RecipeNotFoundError,
 )
 from untaped.capabilities.recipe.infrastructure import pack_store
@@ -24,6 +25,7 @@ from untaped.capabilities.recipe.infrastructure.pack_store import (
     is_git_url,
     pack_content_hash,
 )
+from untaped.capability_api import UsageError
 
 
 def _write_pack(
@@ -126,8 +128,9 @@ def test_pack_library_duplicate_requires_force_or_name(tmp_path: Path) -> None:
     library = PackLibrary(library_root=tmp_path / "library")
     library.add(source, source=str(source), rev=None, name=None, force=False)
 
-    with pytest.raises(ValueError, match=r"ansible.*--force.*--name"):
+    with pytest.raises(RecipeError, match=r"ansible.*--force.*--name") as raised:
         library.add(replacement, source=str(replacement), rev=None, name=None, force=False)
+    assert raised.value.category == "conflict"
 
     library.add(replacement, source=str(replacement), rev=None, name=None, force=True)
 
@@ -435,7 +438,7 @@ def test_fetch_pack_source_rejects_option_like_rev(
     calls: list[list[str]] = []
     monkeypatch.setattr(subprocess, "run", lambda args, **kwargs: calls.append(args))
 
-    with pytest.raises(ValueError, match="rev"):
+    with pytest.raises(UsageError, match="rev"):
         fetch_pack_source(
             "https://example.invalid/p.git", rev="--upload-pack=x", dest=tmp_path / "d"
         )

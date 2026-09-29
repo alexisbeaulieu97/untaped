@@ -278,7 +278,8 @@ def _expand_sources(
         if item.record.get("kind", "") not in ("", "constructed"):
             raise ConfigError(
                 f"{spec.kind} {item.name!r} (id={item.id}): "
-                f"sync is unsupported for {item.record.get('kind')}"
+                f"sync is unsupported for {item.record.get('kind')}",
+                category="invalid",
             )
     by_parent = _sources_by_parent(
         client, catalog, source_spec, parent_field, [item.id for item in selected]
@@ -288,7 +289,8 @@ def _expand_sources(
         sources = by_parent.get(item.id)
         if not sources:
             raise ConfigError(
-                f"{spec.kind} {item.name!r} (id={item.id}): no inventory sources to sync"
+                f"{spec.kind} {item.name!r} (id={item.id}): no inventory sources to sync",
+                category="invalid",
             )
         expanded.update((source.id, source) for source in sources)
     return source_spec, tuple(expanded.values())
@@ -326,9 +328,13 @@ def prepare_action_targets(
         )
     for item in targets:
         if spec.kind == "InventorySource" and item.record.get("source") in (None, "", "file"):
-            raise ConfigError(f"inventory source {q(item.name)} (id={item.id}): no syncable source")
+            raise ConfigError(
+                f"inventory source {q(item.name)} (id={item.id}): no syncable source",
+                category="invalid",
+            )
         if spec.kind == "Project" and not item.record.get("scm_type"):
             raise ConfigError(
-                f"project {q(item.name)} (id={item.id}): a manual project cannot sync"
+                f"project {q(item.name)} (id={item.id}): a manual project cannot sync",
+                category="invalid",
             )
     return spec, targets

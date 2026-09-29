@@ -21,7 +21,7 @@ from untaped.capabilities.github.domain import (
 )
 from untaped.capabilities.github.domain.errors import is_rate_limited
 from untaped.capabilities.github.domain.queries import ScopedQueryBase, tokenize_search_query
-from untaped.capability_api import HttpStatusError, UntapedError
+from untaped.capability_api import HttpStatusError, UntapedError, attribution
 
 WarnFn = Callable[[str], None]
 
@@ -153,7 +153,8 @@ def _ensure_search_boolean_operators_fit(filters: ScopedQueryBase, *, kind: str)
             f"GitHub {kind} search has "
             f"{user_operators} boolean operators; GitHub allows at most "
             f"{MAX_SEARCH_BOOLEAN_OPERATORS}. Narrow the query or remove "
-            "AND/OR/NOT operators before adding repository scopes"
+            "AND/OR/NOT operators before adding repository scopes",
+            category="invalid",
         )
     return user_operators
 
@@ -194,7 +195,8 @@ def _ensure_search_query_fits(filters: RepoSearchFilters) -> None:
         raise UntapedError(
             "GitHub repository search query text length "
             f"{length} exceeds {MAX_SEARCH_QUERY_TEXT_LENGTH}; narrow the free-text query "
-            "or search with fewer literal terms"
+            "or search with fewer literal terms",
+            category="invalid",
         )
 
 
@@ -209,6 +211,7 @@ def _github_search_validation_error(
         status_code=exc.status_code,
         url=exc.url,
         body=exc.body,
+        **attribution(exc),
     )
 
 

@@ -177,7 +177,7 @@ def test_edit_without_editor_is_a_clean_error(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.delenv("EDITOR", raising=False)
     app = _config_app()
     result = CliInvoker().invoke(app, ["edit"])  # type: ignore[arg-type]
-    assert result.exit_code == 1
+    assert result.exit_code == 4  # no editor configured: the environment
     assert "VISUAL" in result.output or "EDITOR" in result.output
 
 
@@ -263,7 +263,7 @@ def test_config_edit_keeps_the_draft_when_saving_fails(
         result = CliInvoker().invoke(_config_app(), ["edit"])
     finally:
         real.parent.chmod(0o755)
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == 4, result.output  # the save failed: the environment
     assert real.read_text() == "profiles: {}\n"
     kept = Path(result.stderr.split("your edits are in ")[1].split()[0])
     assert kept.read_text() == content
@@ -324,7 +324,7 @@ def test_config_edit_saves_under_the_config_lock(
         result = CliInvoker().invoke(_config_app(), ["edit"])
     finally:
         held.release()
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == 5, result.output  # the lock is busy: retry later
     assert "could not acquire lock" in result.stderr
     assert _isolated_config.read_text() == "profiles: {}\n"
 

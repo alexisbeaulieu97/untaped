@@ -43,8 +43,12 @@ def test_a_pushed_branch_is_named_as_on_its_remote(clone: Path) -> None:
 
 def test_unpushed_commits_are_refused(clone: Path) -> None:
     _git(clone, "commit", "--allow-empty", "-m", "two")
-    with pytest.raises(ConfigError, match=r"is not pushed: origin feature/x is at [0-9a-f]{12}"):
+    with pytest.raises(
+        ConfigError, match=r"is not pushed: origin feature/x is at [0-9a-f]{12}"
+    ) as caught:
         pushed_branch(clone)
+    # The checkout needs fixing (push it): an environment problem in git.
+    assert (caught.value.category, caught.value.system) == ("config", "git")
 
 
 def test_a_branch_without_upstream_is_refused(clone: Path) -> None:
@@ -66,8 +70,9 @@ def test_a_detached_head_is_refused(clone: Path) -> None:
 
 
 def test_outside_a_repository_is_refused(tmp_path: Path) -> None:
-    with pytest.raises(ConfigError, match="--scm-branch HEAD"):
+    with pytest.raises(ConfigError, match="--scm-branch HEAD") as caught:
         pushed_branch(tmp_path)
+    assert caught.value.system == "git"
 
 
 def test_a_branch_named_like_a_tag_still_resolves(clone: Path) -> None:

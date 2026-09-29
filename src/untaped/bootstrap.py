@@ -39,6 +39,7 @@ from untaped.capabilities.registry import (
     discover_external_providers,
 )
 from untaped.cli import apply_default_format, create_app, echo, report_errors, run_cyclopts_app
+from untaped.diagnostics import diagnostics_scope
 from untaped.errors import ConfigError
 from untaped.management import (
     build_root_alias_app,
@@ -349,7 +350,7 @@ def _install_root_callback(
     # so the command sees it and root options never match past it.
     app.meta.end_of_options_delimiter = ""
 
-    def _root_callback(*tokens: str, **_unused: object) -> object:
+    def _dispatch_root(*tokens: str) -> object:
         # Identity is set at dispatch time to the selected capability (or the
         # shell name when dispatch has not selected one) and reset to its
         # previous value in a ``finally`` block, exactly like the root-option
@@ -394,6 +395,12 @@ def _install_root_callback(
                 _active_capability.reset(identity_token)
             for option, token in reversed(applied_tokens):
                 option.resetter(token)
+
+    def _root_callback(*tokens: str, **_unused: object) -> object:
+        # One diagnostics scope covers the command and the checks after it,
+        # so their warnings follow the command's --format.
+        with diagnostics_scope():
+            return _dispatch_root(*tokens)
 
     signature = _root_callback_signature(root_options)
     _root_callback.__signature__ = signature  # type: ignore[attr-defined]
