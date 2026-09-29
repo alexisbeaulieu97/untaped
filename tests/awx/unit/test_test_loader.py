@@ -236,3 +236,32 @@ def test_ref_tag_survives_through_load() -> None:
     inv = suite.cases["c"].launch["inventory"]  # type: ignore[attr-defined]
     assert isinstance(inv, RefSentinel)
     assert inv.kind == "Inventory"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "---\nvariables: [not, a, mapping]\n---\nkind: AwxTestSuite\n",  # header shape
+        "---\nvariables:\n  env: {type: string}\n---\nkind: AwxTestSuite\n",  # missing var
+        "kind: AwxTestSuite\nname: {{ oops\n",  # Jinja2 syntax
+        "kind: AwxTestSuite\ncases: [unclosed\n",  # YAML
+        "kind: AwxTestSuite\nname: x\njobTemplate: J\ncases: {}\n",  # validation
+    ],
+    ids=["header", "variable", "jinja", "yaml", "model"],
+)
+def test_every_load_error_names_the_file(text: str) -> None:
+    with pytest.raises(ConfigError) as caught:
+        _load(text)
+    assert str(caught.value).startswith("/virtual/test.yml: ")
+    assert not str(caught.value).startswith("/virtual/test.yml: /virtual/test.yml")
+
+
+def test_variables_in_the_body_are_rejected() -> None:
+    text = (
+        "kind: AwxTestSuite\njobTemplate: J\ncases: {one: {}}\nvariables:\n  env: {type: string}\n"
+    )
+    with pytest.raises(ConfigError) as caught:
+        _load(text)
+    assert str(caught.value) == (
+        "/virtual/test.yml: declare variables in the '---' header, not the body"
+    )

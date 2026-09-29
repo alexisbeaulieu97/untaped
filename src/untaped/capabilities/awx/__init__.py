@@ -39,7 +39,14 @@ SPEC = CapabilitySpec(
         SkillAsset(
             name="untaped-awx",
             source=Path(str(files("untaped.capabilities.awx").joinpath("skills", "untaped-awx"))),
-            description="Use the built-in `untaped awx` capability for AWX/AAP workflows.",
+            description=(
+                "Use the `untaped awx` command to operate Ansible Automation Platform (AAP) or "
+                "AWX and to prove playbook changes with `awx test` suites. Use when the user "
+                "mentions AAP, AWX, Tower, automation controller, job templates, workflow "
+                "templates, surveys, launching, syncing or following jobs, job logs, "
+                "inventories, projects, schedules, or testing a playbook, role or template "
+                "change."
+            ),
         ),
     ),
     doctor_checks=(

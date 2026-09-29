@@ -1,6 +1,6 @@
 ---
 name: untaped-jira
-description: Use the built-in `untaped jira` capability for Jira workflows.
+description: Use the `untaped jira` command to work with Jira Data Center or Server issues (search with JQL, read, create, edit, assign, comment on, link and transition issues, and list projects, boards and sprints). Use when the user mentions Jira, a ticket or issue key such as OPS-123, JQL, a sprint or board, or moving an issue to another status.
 ---
 
 # Untaped Jira

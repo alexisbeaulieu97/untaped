@@ -7,6 +7,7 @@ implementation behavior. This index is navigation only; work is tracked in GitHu
 - [capability state lives in state.yml](dec_01a0d05a563c7751139b4452ccadb3b7-v4-capability-state-lives-in-state-yml.md)
 - [capability-owned packaged skills](dec_01a0820d443870069dfe37af04c1fcc2-v4-capability-owned-packaged-skills.md)
 - [output and HTTP retry safety](dec_01a0820d60a074ec98d9f6ad27a28508-v4-output-and-http-retry-safety.md)
+- [packaged skills are self-contained manuals with drift tests](dec_01a0eb3c543973f380439c95cbdf7ec5-v4-packaged-skills-are-self-contained-manuals-with-drift-tests.md)
 - [pipe envelope remains a stable v1 wire contract](dec_01a0820adfe072c48ea74907b7a9120e-v4-pipe-envelope-remains-a-stable-v1-wire-contract.md)
 - [profiles and capability settings are the config contract](dec_01a0820ae00572d382078acce69af419-v4-profiles-and-capability-settings-are-the-config-contract.md) (superseded)
 - [root-owned profiles and themes](dec_01a0820adfd5779ca0b48487b18f32d1-v4-root-owned-profiles-and-themes.md)
