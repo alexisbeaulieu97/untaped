@@ -205,9 +205,9 @@ Plain mappings are never treated as references.
 
 Every check must hold. A case's `status`, `changed`, `idempotent` and
 `failed_tasks` replace the default's, each of its `log` lists replaces the
-same list in `defaults.expect`, and each of its `hosts` entries replaces the
-default's entry for that host name; whatever the case leaves out is
-inherited. `status: failed` tests an intended failure: add `failed_tasks`
+same list in `defaults.expect`, and each counter a `hosts` entry sets
+replaces the default's for that host (below); whatever the case leaves out
+is inherited. `status: failed` tests an intended failure: add `failed_tasks`
 naming the task and message that prove the job failed for the right reason
 (see `negative.yml`); `untaped awx test validate` warns about a case that
 expects `status: failed` without `failed_tasks`.
@@ -229,18 +229,30 @@ expect:
     web1: {changed: 0}
 ```
 
+Two rules decide each host's bounds:
+
+- **Merge per counter.** `defaults` and the case merge host by host and
+  counter by counter, the case winning: a case's `"*": {changed: 5}` keeps
+  the defaults' `"*": {failed: 0}`.
+- **The named host wins.** A host's bound for a counter is its own entry's
+  when that entry sets the counter, else `"*"`'s. So `web1: {changed: 3}`
+  loosens `"*": {changed: 0}` for `web1` only, and `web1` still gets
+  `"*"`'s `failed` bound.
+
 Bounds are numbers (`{changed: ">0"}` is invalid). A named host must be in
-the job's host summaries, so a misspelt host fails its check. `changed`,
-`hosts` and `failed_tasks` read the job's host summaries once, in every
-output format; a job on more than 500 hosts keeps 500 (failed and unreachable
-hosts first), and these checks see only those.
+the job's host summaries, so a misspelt host fails its check. `changed` and
+`hosts` read the job's host summaries in every output format. A job on more
+than 500 hosts keeps 500 in the result (failed and unreachable hosts first);
+the checks then read the hosts over each bound, and the named hosts, with
+filtered reads, so no host past the cut can hide a failure.
 
 A `failed_tasks` entry matches a failed task: a task that failed on a host or
 found it unreachable, as the result's `failure.evidence.failed_tasks` lists
 them (`ignore_errors` failures and failures a `rescue` block handled do not
 count). It needs at least one part, and every part it gives must match the
 same task. Every entry must match some failed task; other failed tasks do not
-fail the check.
+fail the check. A job that succeeded has no failed task, so its
+`failed_tasks` entries fail without reading anything.
 
 | Field | Meaning |
 |---|---|
@@ -250,9 +262,14 @@ fail the check.
 
 `idempotent: true` proves a second run changes nothing. Once the case passed
 every other check, the same resolved payload is launched again; the result
-keeps `job_id` and adds `rerun_job_id`. The rerun must end `successful` with
-no changed task on any host. It waits the case's timeout and is cancelled
-like the first job. A case that did not pass is not rerun. See
+keeps `job_id` and adds `rerun_job_id`. When the payload sets `scm_branch`
+(or `--scm-branch` does), the rerun launches on the commit the first job ran
+(its `scm_revision`), so a push in between cannot change what is compared.
+The rerun must end `successful` with no changed task on any host. It waits
+the case's timeout and is cancelled like the first job. A case that did not
+pass is not rerun, nor is any case once the run is interrupted. An
+idempotent case must expect `status: successful` (the default); another
+status is refused when the suite is read. See
 [test-results.md](test-results.md#idempotent-cases) for how a rerun fails.
 
 ### Timeouts and parallelism

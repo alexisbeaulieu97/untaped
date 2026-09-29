@@ -20,10 +20,13 @@ cases:
     expect:
       idempotent: true
   already-deployed:
-    # A host that already runs 1.4 needs no change at all.
+    # The web hosts already run 1.4, except the canary, which gets its new
+    # config. The case's "*" bound adds `changed` to the defaults' `failed`
+    # and `unreachable` bounds; the canary's own `changed` bound wins over it.
     launch:
-      limit: web1
+      limit: web
     expect:
-      changed: 0
+      changed: 2
       hosts:
-        web1: {changed: 0}
+        "*": {changed: 0}
+        web-canary: {changed: 2}

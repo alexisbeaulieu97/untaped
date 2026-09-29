@@ -64,7 +64,9 @@ records. Confirmations read the terminal even when stdin is piped.
 
 Writes emit outcome rows (`awx.apply_outcome` for `apply`, `patch` and
 `edit`; `awx.delete_outcome`, `awx.copy_outcome`, `awx.rename_outcome`, …)
-whose `action` is `planned` in a preview.
+whose `action` is `planned` in a preview. A failed row carries an `error`
+with the failure's `category`, `system`, `retryable`, `message` and `hint`,
+the same fields `--format json` writes to stderr as JSON Lines.
 
 ## Patch fields
 

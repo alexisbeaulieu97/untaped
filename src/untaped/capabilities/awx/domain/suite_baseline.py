@@ -1,40 +1,19 @@
-"""The baseline an ``awx test run`` compares with: each case's earlier verdict.
+"""Reading a baseline from saved ``awx test run`` rows.
 
-A :class:`Baseline` is what a result row keeps of the same case in the
-baseline run; :data:`Change` names how the case moved since.
-:func:`saved_baselines` reads them from the rows an earlier
-``awx test run --format json`` printed (or the records of its ``--format
-pipe`` output). Pure domain — the caller reads the file.
+:func:`saved_baselines` turns the rows an earlier ``awx test run --format
+json`` printed (or the records of its ``--format pipe`` output), or the rows
+of a run just made, into each case's :class:`Baseline`. Pure domain — the
+caller reads the file.
 """
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import AliasPath, BaseModel, ConfigDict, Field, ValidationError
 
-CaseStatus = Literal["pass", "fail", "error", "timeout"]
-"""Our verdict — distinct from AWX's raw ``job_status``."""
-
-Change = Literal["regression", "fixed", "still_failing", "pass", "new", "removed"]
-"""How a case changed since the baseline."""
-
-
-class Baseline(BaseModel):
-    """The same case in the baseline run."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    result: CaseStatus
-    job_id: int | None = None
-    system: str | None = None
-    """``failure.system`` of the baseline row (``None`` when it passed)."""
-
-
-class _SavedFailure(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    system: str
+from untaped.capabilities.awx.domain.suite import Baseline, CaseStatus
+from untaped.capability_api import ErrorCategory, first_validation_error
 
 
 class _SavedRow(BaseModel):
@@ -46,15 +25,19 @@ class _SavedRow(BaseModel):
     case: str
     result: CaseStatus | None
     job_id: int | None = None
-    failure: _SavedFailure | None = None
+    system: str | None = Field(default=None, validation_alias=AliasPath("failure", "system"))
+    category: ErrorCategory | None = Field(
+        default=None, validation_alias=AliasPath("failure", "category")
+    )
 
 
 def saved_baselines(rows: Any) -> dict[tuple[str, str], Baseline]:
-    """Each ``(suite, case)``'s baseline from saved ``awx.test_result`` rows.
+    """Each ``(suite, case)``'s baseline from ``awx.test_result`` rows.
 
     ``removed`` rows (``result: null``, from an earlier comparison) ran
-    nothing and are skipped. Raises :class:`ValueError` naming the first row
-    that is not a result row, or a case listed twice.
+    nothing and are skipped. An older row without ``failure`` keeps only its
+    result. Raises :class:`ValueError` naming the first row that is not a
+    result row, or a case listed twice.
     """
     if not isinstance(rows, list):
         raise ValueError("expected a list of awx.test_result rows")
@@ -63,18 +46,13 @@ def saved_baselines(rows: Any) -> dict[tuple[str, str], Baseline]:
         try:
             saved = _SavedRow.model_validate(row)
         except ValidationError as exc:
-            problem = exc.errors()[0]
-            where = ".".join(str(part) for part in problem["loc"]) or "row"
-            raise ValueError(
-                f"row {index} is not an awx.test_result row: {where}: {problem['msg']}"
-            ) from None
+            problem = first_validation_error(exc)
+            raise ValueError(f"row {index} is not an awx.test_result row: {problem}") from None
         key = (saved.suite, saved.case)
         if key in found:
             raise ValueError(f"row {index} repeats case {saved.suite}/{saved.case}")
         if saved.result is not None:
-            found[key] = Baseline(
-                result=saved.result,
-                job_id=saved.job_id,
-                system=saved.failure.system if saved.failure else None,
+            found[key] = Baseline.model_validate(
+                saved.model_dump(include={"result", "job_id", "system", "category"})
             )
     return found

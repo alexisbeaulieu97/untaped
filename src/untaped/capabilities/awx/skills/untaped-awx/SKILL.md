@@ -30,9 +30,9 @@ This page is the map; the details ship next to it:
 - AAP uses the default `api_prefix` `/api/controller/v2/`; upstream AWX
   usually needs `untaped config set awx.api_prefix /api/v2/`.
 - Set the token with `untaped config set awx.token --prompt` (or `--stdin`),
-  or point `awx.token_command` at an argv list that prints it. Without either,
-  `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN` or `AAP_TOKEN` is used. Never
-  print or echo a token.
+  or point `awx.token_command` at an argv list that prints it (environment
+  fallbacks: [references/agent-profile.md](references/agent-profile.md)).
+  Never print or echo a token.
 - `untaped awx ping` checks the controller and the token, and reports the
   authenticated `user`. Run it first when the profile may be stale.
 
@@ -56,44 +56,43 @@ This page is the map; the details ship next to it:
 Writable groups: `job-templates`, `workflow-templates`, `projects`,
 `schedules`, `hosts`, `groups`, `inventories`, `inventory-sources`.
 Credentials, credential types, organizations and unified templates are
-read-only views. Confirm options with `--help` before acting.
+read-only views. Run `untaped awx job-templates --help` (or any group) to
+confirm options before acting.
 
 ## Test a change
 
 Suites live in the playbook repository under `.untaped/awx/tests/`. After
 changing a playbook, role or template variables:
 
-1. Without a suite yet, `untaped awx test init "Deploy app"` writes a
-   commented starter suite from the template's survey and launch prompts to
-   `.untaped/awx/tests/deploy-app.yml`. Edit its cases;
-   the examples show variants, `!ref`, negative and idempotent cases.
-2. Once per task, save the base branch's results:
-   `untaped awx test run --scm-branch main --format json > baseline.json`.
+1. Without a suite yet, `untaped awx test init "Deploy app"` reads the
+   template's survey and launch prompts and writes a commented starter suite
+   to `.untaped/awx/tests/deploy-app.yml` at the git root (it prints the path
+   and never overwrites a file). Edit its cases, starting from the examples.
+2. Once per task, save the base branch's results outside the checkout:
+   `untaped awx test run --scm-branch main --format json > /tmp/baseline-PROJ-123.json`
+   (exit 1 when `main` already fails some cases is expected).
 3. Commit and push the branch (`git push -u origin HEAD`): AWX runs what the
    remote has.
-4. `untaped awx test validate` checks every case against its template
-   without launching.
-5. `untaped awx test run --scm-branch HEAD --compare baseline.json --format json`
+4. `untaped awx test validate` checks every case without launching: the file,
+   the template, its prompts and required survey variables.
+5. `untaped awx test run --scm-branch HEAD --compare /tmp/baseline-PROJ-123.json --format json`
    runs every case on the pushed commit (refused until HEAD is pushed) and
-   gives each row a `change` (`regression`, `fixed`, `still_failing`, …).
-   Narrow it with `--case SUITE/CASE` or suite paths.
-6. Exit 0: nothing regressed; 1: a `regression`; 4 or 5: the environment,
-   not your change. Each non-`pass` row's `failure.system` says who must act
-   and `failure.evidence` why
+   gives each row a `change`. Narrow it with `--case SUITE/CASE` or paths.
+6. Exit 0: no regression and no failing new case (`still_failing` rows are
+   only reported); 4 or 5: the environment, not your change. Each failing
+   row's `failure.system` says who must act and `failure.evidence` why
    ([references/test-results.md](references/test-results.md)); fix, push,
    rerun.
 
 Run as the dedicated agent profile when one exists
-(`untaped --profile agent awx test run`); see
-[references/agent-profile.md](references/agent-profile.md).
+(`untaped --profile agent awx test run`).
 
 ## Output and pipes
 
 - Read results with `--format json` (or `yaml`); never parse tables. stdout
   carries data only; previews, prompts, progress and errors go to stderr.
-- `--format pipe` emits typed records (`awx.job_template`, `awx.job`,
-  `awx.launch_outcome`, …) and a `--stdin` consumer of the same kind uses
-  their ids directly:
+- `--format pipe` emits typed records that a `--stdin` consumer of the same
+  kind reads directly:
   `untaped awx job-templates launch Deploy --format pipe | untaped awx jobs wait --stdin`.
 
 ## Safety
@@ -107,9 +106,8 @@ Run as the dedicated agent profile when one exists
   `--filter`, `--search` or `--stdin` list them and ask once.
 - Exit codes: 0 success, 1 failure or declined, 2 usage error, 3 drift
   (`apply --check`), 4 fix the environment, 5 retry later, 130
-  interrupted. `--format json` makes stderr JSON Lines with each error's
-  `category`, `system` and `hint`; a failed row carries them in `error`
-  (`failure` in `awx test run` rows).
+  interrupted. `--format json` makes stderr JSON Lines, and failed rows
+  carry an `error` (see [references/resources.md](references/resources.md)).
 - Keep `$encrypted$` placeholders as they are; they preserve stored secrets.
 
 ## Pitfalls
@@ -121,7 +119,6 @@ Run as the dedicated agent profile when one exists
 - `--scm-branch` needs `ask_scm_branch_on_launch`, which AWX allows only when
   the project allows branch override.
 - `patch` and `edit` never create or rename; use `apply` and `rename`.
-- A workflow template export carries its node graph (`spec.nodes`), and
-  `apply --source-ref REF PATH...` applies documents at a git ref; see
-  [references/specs.md](references/specs.md).
+- Workflow exports carry their node graph, and `apply --source-ref REF`
+  applies files at a git ref ([references/specs.md](references/specs.md)).
 - `-f` always means `--format`; `--follow` has no short form.

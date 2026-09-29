@@ -57,8 +57,8 @@ code first:
 With `--format json` stderr is JSON Lines: an error that stops the run has
 `category`, `system`, `retryable`, `hint` and `exit_code`.
 
-Compared with a baseline (`--compare` or `--baseline`), only a
-`regression` fails the run with 1; see
+Compared with a baseline (`--compare` or `--baseline`), a failure the
+baseline already had does not fail the run; see
 [Comparing with a baseline](#comparing-with-a-baseline).
 
 ## Which system is responsible, and what to do
@@ -188,7 +188,7 @@ each `failed_tasks` entry, and last `idempotent`.
   `*`, every host over the bound as `name=count` (`null` when none is); for
   `failed_tasks`, the first failed task it matched as `[host] task: msg`
   (`null` when none did); for `idempotent`, the rerun's status and changed
-  total (`not launched` when the rerun launch failed).
+  total (below).
 - `passed`: whether the check held.
 
 For `awx.expectation`, `failure.message` joins the failed checks, for example
@@ -201,62 +201,70 @@ the case an `error` when nothing else failed, and a `note` otherwise.
 ## Idempotent cases
 
 An `idempotent: true` case that passed is launched again with the same
-payload (`rerun_job_id`). Its row keeps the first job's fields and adds the
-`idempotent` check:
+payload (`rerun_job_id`), on the commit the first job ran when the case sets
+its ref. Its row keeps the first job's fields and adds the `idempotent`
+check:
 
 - The rerun succeeded and no host counts a changed task: `pass`.
 - It succeeded but changed something: `fail`, `awx.expectation`,
-  `not idempotent: rerun job 4412 changed 2 tasks`, with
-  `evidence.changed_tasks` listing each host and task (read once from the
-  rerun's `runner_on_ok` events with `changed=true`) and the rerun's
+  `not idempotent: the rerun ended successful, 2 changed`, with
+  `evidence.changed_tasks` listing each host and task and the rerun's
   `log_tail`. Make those tasks report no change when nothing needs doing.
 - It failed, errored or timed out: the rerun is attributed like any job, its
   `failure.message` starts with `rerun job 4412:` and its evidence comes from
   the rerun. A rerun still running at the case's timeout is cancelled
-  (unless `--no-cancel`).
+  (unless `--no-cancel`). The check's `actual` is `unknown` when the rerun
+  could not be followed, `not launched` when it could not be launched.
 
 ## Comparing with a baseline
 
 `--compare FILE` compares the run with the saved output of an earlier run:
 `untaped awx test run --format json` (a list of rows) or `--format pipe`
 (`awx.test_result` records). Save the base branch's results once per task,
-then compare every iteration without running the base again:
+outside the checkout so no commit picks the file up, then compare every
+iteration without running the base again:
 
 ```bash
-untaped awx test run --scm-branch main --format json > baseline.json
-untaped awx test run --scm-branch HEAD --compare baseline.json --format json
+untaped awx test run --scm-branch main --format json > /tmp/baseline-PROJ-123.json
+untaped awx test run --scm-branch HEAD --compare /tmp/baseline-PROJ-123.json --format json
 ```
+
+The baseline run exits 1 when the base branch already has failing cases;
+that is expected, and those cases become `still_failing` rows.
 
 `--baseline REF` does both in one command: it runs every selected case on
 `REF` first (as `--scm-branch REF`, so templates must prompt for it; `HEAD`
-must be pushed), then as asked, and compares. `--compare` and `--baseline`
-cannot be combined (exit 2). A file that is not such output fails before any
-launch (exit 1, naming the file).
+must be pushed), then as asked, and compares. An `idempotent` case then
+launches 4 jobs. `--compare` and `--baseline` cannot be combined (exit 2).
+A file that does not exist exits 2; one that is not such output fails before
+any launch (exit 1, naming the file).
 
 Rows are matched by `suite` and `case`. Each row gains `baseline` and
-`change`:
+`change`. `baseline` has these fields:
 
 | Field | Meaning |
 |---|---|
 | `result` | The case's verdict in the baseline. |
 | `job_id` | The baseline's job. |
-| `system` | The baseline's `failure.system`; `null` when it passed. |
+| `system` | The baseline's `failure.system`; `null` when it passed (or in a file from before 9.0). |
+| `category` | The baseline's `failure.category`; `null` likewise. |
 
-| `change` | Meaning |
-|---|---|
-| `regression` | It passed in the baseline and does not now. |
-| `fixed` | It did not pass in the baseline and passes now. |
-| `still_failing` | It did not pass in either. |
-| `pass` | It passed in both. |
-| `new` | The baseline did not run it (`baseline` is `null`). |
-| `removed` | The baseline ran it and this run did not. These rows follow the others and have no job: only `suite`, `case`, `baseline` and `change` are set (`result`, `job_id`, `failure` and the other job fields are `null`). A baseline case `--case` does not select is left out. |
+| `change` | Meaning | Fails the run |
+|---|---|---|
+| `regression` | It passed in the baseline and does not now, or it fails now because of another `system` than in the baseline. | yes |
+| `unverified` | It fails now, and the baseline failed because of the environment (`auth`, `permission`, `config` or `unavailable`), so it proves nothing. | yes |
+| `new` | The baseline did not run it (`baseline` is `null`); it counts as in a run without a baseline. | when it failed |
+| `still_failing` | It fails now as it did in the baseline: same `system` (a baseline without one matches on the result). | no, unless 4 or 5 |
+| `fixed` | It did not pass in the baseline and passes now. | no |
+| `pass` | It passed in both. | no |
+| `removed` | The baseline ran it and this run did not. These rows follow the others and have no job: only `suite`, `case`, `baseline` and `change` are set; `result`, `job_id`, `failure` and the other job fields are `null`, `expectations` is `[]` and `hosts_truncated` is `false`. A baseline case `--case` does not select is left out. | no |
 
-The exit code then says whether the change broke anything: 0 when nothing
-regressed, 1 only for a `regression`. A higher code still wins: 4 or 5 for
-any case of this run whose failure is the environment's or temporary
-(whatever its `change`; with `--baseline`, of the baseline run too, since the
-comparison needs it), and 2 and 130 as always. A `still_failing` or `new`
-case that fails for another reason does not fail the run: read its `result`.
+The exit code then says whether the change broke anything: 0 when no case
+regressed and no new case failed; 1 for a `regression`, an `unverified` row or
+a failing `new` case. `still_failing` rows are only reported. A higher code
+still wins: 4 or 5 for any case of this run whose failure is the
+environment's or temporary (whatever its `change`; with `--baseline`, of the
+baseline run too, since the comparison needs it), and 2 and 130 as always.
 The stderr summary adds a line counting each change
 (`compared with the baseline: 1 regression, 1 fixed, 3 pass`).
 

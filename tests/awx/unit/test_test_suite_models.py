@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from untaped.capabilities.awx.domain import JobEvent
-from untaped.capabilities.awx.domain.case_failure import FailedTask
+from untaped.capabilities.awx.domain.case_failure import FailedTask, failure
 from untaped.capabilities.awx.domain.suite import (
     Case,
     CaseResult,
@@ -18,6 +18,7 @@ from untaped.capabilities.awx.domain.suite import (
     SuiteRunOutcome,
     VariableSpec,
 )
+from untaped.capability_api import ErrorCategory
 
 
 def test_variable_spec_is_required_unless_it_has_a_default() -> None:
@@ -123,10 +124,14 @@ def test_failure_descriptions_quote_patterns_verbatim_and_clip_long_lines() -> N
     ],
 )
 def test_outcome_exit_code(results: tuple[str, ...], code: int) -> None:
+    boom = failure("awx.playbook", ErrorCategory.FAILED, "boom")
     outcome = SuiteRunOutcome(
-        results=tuple(CaseResult(suite="s", case=str(i), result=r) for i, r in enumerate(results))
+        results=tuple(
+            CaseResult(suite="s", case=str(i), result=r, failure=None if r == "pass" else boom)
+            for i, r in enumerate(results)
+        )
     )
-    assert outcome.exit_code() == code
+    assert bool(outcome.counted()) == bool(code)
 
 
 def _failure_event(event: str, res: dict[str, object] | None, **fields: object) -> JobEvent:
