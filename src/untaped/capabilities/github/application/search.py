@@ -217,11 +217,11 @@ def _github_search_validation_error(
 
 def _sort_repo_results(rows: list[RepoResult], sort: str | None) -> list[RepoResult]:
     if sort == "stars":
-        return sorted(rows, key=lambda row: (-row.stargazers_count, row.full_name))
+        return sorted(rows, key=lambda row: (-row.stargazers_count, row.repo))
     if sort == "forks":
-        return sorted(rows, key=lambda row: (-row.forks_count, row.full_name))
+        return sorted(rows, key=lambda row: (-row.forks_count, row.repo))
     if sort == "updated":
-        by_name = sorted(rows, key=lambda row: row.full_name)
+        by_name = sorted(rows, key=lambda row: row.repo)
         return sorted(by_name, key=lambda row: row.updated_at or "", reverse=True)
     return rows
 
@@ -366,9 +366,9 @@ class SearchRepos(_ScopedSearch):
                     batch.to_query_string(), sort=batch.sort, limit=batch.limit
                 ):
                     result = RepoResult.model_validate(row)
-                    if result.full_name in seen:
+                    if result.repo in seen:
                         continue
-                    seen.add(result.full_name)
+                    seen.add(result.repo)
                     rows.append(result)
                     if filled():
                         break
@@ -406,7 +406,7 @@ class SearchCode(_ScopedSearch):
             batches,
             lambda batch: self._search.search_code(batch.to_query_string(), limit=batch.limit),
             CodeResult,
-            identity=lambda row: row.html_url,
+            identity=lambda row: row.url,
             limit=effective.limit,
             kind="code",
             warn=self._warn,

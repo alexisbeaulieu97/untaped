@@ -255,7 +255,7 @@ def test_search_repos_dedupes_across_batches_then_applies_limit() -> None:
         teams={("acme", "t"): _repos(7)},
     )
 
-    assert [row.full_name for row in rows] == ["acme/api", "acme/web", "acme/worker"]
+    assert [row.repo for row in rows] == ["acme/api", "acme/web", "acme/worker"]
     assert [call[2] for call in search.calls] == [3, 3]
 
 
@@ -313,11 +313,11 @@ def test_search_repos_sorted_batches_are_globally_sorted(
         teams={("acme", "t"): _repos(7)},
     )
 
-    assert [row.full_name for row in rows] == expected
+    assert [row.repo for row in rows] == expected
     assert [call[1:] for call in search.calls] == [(sort, 3), (sort, 3)]
 
 
-def test_search_code_merges_batches_deduped_by_html_url_and_limited() -> None:
+def test_search_code_merges_batches_deduped_by_url_and_limited() -> None:
     rows, search = _search(
         SearchCode,
         CodeSearchFilters(raw_query="TODO", repos=tuple(_repos(9)), limit=3),
