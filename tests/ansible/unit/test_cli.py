@@ -2138,6 +2138,41 @@ def test_deps_reads_live_without_a_source(tmp_path: Path, monkeypatch) -> None:
     assert [row[:2] for row in _rows(result)] == [("acme/base", "main")]
 
 
+def test_deps_live_unpinned_hop_follows_the_current_default_branch(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # Scanned while acme/base defaulted to main; it now defaults to trunk.
+    _seed(
+        tmp_path,
+        "source:platform",
+        _edge(),
+        _edge("acme/base", "acme/wrong"),
+        repo_metadata=(
+            SourceRepoMetadata(
+                source_key="source:platform", source_repo="acme/base", default_branch="main"
+            ),
+        ),
+    )
+    _use_config(tmp_path, monkeypatch, _PLATFORM, token=True)
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        _mock_dependency_file(mock, "acme/site")
+        mock.get("/repos/acme/base").mock(
+            return_value=httpx.Response(200, json={"default_branch": "trunk"})
+        )
+        mock.get("/repos/acme/base/git/trees/trunk").mock(
+            return_value=httpx.Response(200, json={"tree": [{"path": _REQS, "type": "blob"}]})
+        )
+        mock.get(f"/repos/acme/base/contents/{_REQS}", params={"ref": "trunk"}).mock(
+            return_value=httpx.Response(200, text="- src: https://github.com/acme/right\n")
+        )
+        result = _run(
+            "deps", "acme/site", "--source", "platform", "--live", "--depth", "2", "-f", "json"
+        )
+
+    assert [row[:2] for row in _rows(result)] == [("acme/base", "trunk"), ("acme/right", None)]
+
+
 def test_impact_lists_every_dependent_with_its_path_to_the_role(
     tmp_path: Path, monkeypatch
 ) -> None:

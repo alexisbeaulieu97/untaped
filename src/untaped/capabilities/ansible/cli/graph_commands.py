@@ -1164,7 +1164,7 @@ def _graph_for_target(
                 local.edges,
                 authoritative_sources={(request.repo, request.ref)},
             )
-        return BuildGraph(read_index)(request)
+        return BuildGraph(read_index)(request.model_copy(update={"live": use_live}))
 
     if not use_live:
         return build(index), []

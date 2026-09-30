@@ -214,8 +214,8 @@ afterwards.
   branch (`repo@main`), so the walk continues through it. Cached reads take
   the default branch the source recorded; live reads (`--live`, or no
   source) take it from GitHub. When no default branch is known (the repo is
-  not in the source, or GitHub reports none), the node stays ref-less
-  (`repo`). When a source scans only tags, the default-branch node is not
+  not in the source, GitHub reports none, or a live read stops at the depth
+  limit before reading it), the node stays ref-less (`repo`). When a source scans only tags, the default-branch node is not
   cached, so the walk stops there with a "ref is not cached" warning.
 - A malformed or templated dependency file is skipped with a warning; it
   never fails the command.

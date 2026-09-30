@@ -184,13 +184,14 @@ class GithubDependencyIndex:
                 continue
             metadata.append(CachedRef(name=cached_ref))
         default = self._default_branches.get(repo_key(repo))
-        if default is None:
+        if default is None and (repo_key(repo), None) not in self._cache:
             return tuple(metadata)
-        if all(cached_ref.name != default for cached_ref in metadata):
+        if default is not None and all(cached_ref.name != default for cached_ref in metadata):
             metadata.append(CachedRef(name=default))
+        # Once read live, the live default (even none) overrides a possibly renamed cached one.
         return tuple(
             cached_ref
-            if cached_ref.default_branch is not None
+            if cached_ref.default_branch == default
             else cached_ref.model_copy(update={"default_branch": default})
             for cached_ref in metadata
         )
