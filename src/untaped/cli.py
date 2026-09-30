@@ -409,12 +409,15 @@ def _selected_columns(
 
     ``-c a,b`` and ``-c a -c b`` select exactly those columns. ``-c +a``
     adds to the default columns and ``-c=-a`` (or ``-c +b,-a``) removes
-    from them; the defaults are ``table_columns`` for a ``table``, else the
-    whole record. Mixing names and edits is a usage error.
+    from them; the defaults are ``table_columns`` for a ``table`` or ``raw``
+    (a line of tab-separated columns), else the whole record. Mixing names
+    and edits is a usage error.
     """
     default = list(table_columns) if fmt == "table" and table_columns else None
     if columns is None:
         return default, frozenset()
+    if fmt == "raw" and table_columns:
+        default = list(table_columns)  # edits start from the defaults in raw too
     names = [part.strip() for entry in columns for part in entry.split(",") if part.strip()]
     edits = [name for name in names if name[0] in "+-"]
     if edits and len(edits) != len(names):
