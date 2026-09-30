@@ -227,6 +227,12 @@ self-contained manual for the installed CLI.
     following a job that already finished downloads its log once. `jobs logs`
     without `--follow` still downloads the log once. A test case's log tail
     also comes from the newest events only.
+  - **Fix:** `launch` and `sync` with `--wait --cancel` (or `--follow
+    --cancel`) cancel each execution as soon as its own watch stops (a
+    polling error, `--timeout`) instead of after every other execution
+    finished, so one that failed early no longer runs unwatched meanwhile.
+    An execution AWX created while ignoring fields is cancelled before the
+    wait starts.
   - **Behavior change:** a launch AWX answers with `ignored_fields` fails its
     row as `invalid` (still exit 1) instead of `failed`, and a launch field
     the template does not prompt for names the field in its error's

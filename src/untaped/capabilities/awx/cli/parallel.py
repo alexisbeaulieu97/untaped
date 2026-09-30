@@ -28,6 +28,7 @@ def drain_parallel_with_worker(
     while_running: Callable[[], None] | None = None,
     stop: threading.Event | None = None,
     finished: dict[str, Job] | None = None,
+    abandon: Callable[[Job], None] | None = None,
 ) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
     """Run ``worker_fn(name, job)`` concurrently and collect outcomes in
     launch order.
@@ -35,6 +36,11 @@ def drain_parallel_with_worker(
     ``finished``, if given, receives each worker's final :class:`Job` as
     soon as it returns, so an interrupted caller knows which executions
     already ended.
+
+    ``abandon``, if given, runs on the worker as soon as it stops watching
+    an execution it did not see end (``worker_fn`` failed, or returned it
+    still running), so one execution's fate never waits on the others.
+    After Ctrl-C (``stop`` set) it is left to the interrupted caller.
 
     ``UntapedError`` raised by ``worker_fn`` is captured into
     ``errors``; any other ``Exception`` is wrapped at the worker
@@ -51,6 +57,10 @@ def drain_parallel_with_worker(
     """
     outcomes: dict[int, Job | UntapedError] = {}
 
+    def _abandon(job: Job) -> None:
+        if abandon is not None and not (stop is not None and stop.is_set()):
+            abandon(job)
+
     def _wrap(index: int) -> Job | UntapedError:
         # Catch ``Exception`` (not ``BaseException``) so ``KeyboardInterrupt``
         # still reaches the main thread's cancellation path. Widening this
@@ -59,11 +69,15 @@ def drain_parallel_with_worker(
         try:
             result = worker_fn(name, job)
         except UntapedError as exc:
+            _abandon(job)
             return exc
         except Exception as exc:
+            _abandon(job)
             return UntapedError(f"{type(exc).__name__}: {exc}")
         if finished is not None:
             finished[name] = result
+        if not result.is_terminal:
+            _abandon(result)
         return result
 
     bounded_map(
@@ -94,6 +108,7 @@ def drain_parallel(
     *,
     stop: threading.Event | None = None,
     finished: dict[str, Job] | None = None,
+    abandon: Callable[[Job], None] | None = None,
 ) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
     """Stream ``--follow`` logs from multiple jobs concurrently.
 
@@ -146,7 +161,7 @@ def drain_parallel(
             write(f"[{name}] " if prefix else "", line)
 
     return drain_parallel_with_worker(
-        jobs, _worker, while_running=_drain_queue, stop=stop, finished=finished
+        jobs, _worker, while_running=_drain_queue, stop=stop, finished=finished, abandon=abandon
     )
 
 
@@ -158,6 +173,7 @@ def wait_parallel(
     stop: threading.Event | None = None,
     finished: dict[str, Job] | None = None,
     timeout: float | None = None,
+    abandon: Callable[[Job], None] | None = None,
 ) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
     """Block-wait on multiple jobs concurrently — no streaming.
 
@@ -170,5 +186,9 @@ def wait_parallel(
     """
     watch = WatchJob(client, sleep=sleep) if sleep is not None else WatchJob(client)
     return drain_parallel_with_worker(
-        jobs, lambda _name, job: watch(job, timeout=timeout), stop=stop, finished=finished
+        jobs,
+        lambda _name, job: watch(job, timeout=timeout),
+        stop=stop,
+        finished=finished,
+        abandon=abandon,
     )
