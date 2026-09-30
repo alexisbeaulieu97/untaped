@@ -186,7 +186,35 @@ def test_tree_renderer_nests_transitive_paths_and_shows_nodes_in_both_sections()
 def test_tree_renderer_marks_cycles_on_the_path() -> None:
     assert _rows(_cycle("cycle")) == [
         "└── acme/users@main",
-        "    └── acme/base@v1  ↻ cycle",
+        "    └── acme/base@v1 ↻ cycle",
+    ]
+
+
+def test_tree_summary_counts_a_cycle_group_apart_from_cycles() -> None:
+    assert _tree(_cycle("scc_group"))[-1] == "1 repo · 2 edges · 1 cyclic group"
+
+
+def test_tree_notes_align_by_terminal_cells() -> None:
+    graph = _graph(
+        [
+            _node("target", "acme/base", "v1"),
+            GraphNode(id="wide", label="unresolved: 役割", unresolved="役割"),
+            _node("users", "acme/users", "main"),
+        ],
+        [("target", "wide", "requires"), ("target", "users", "requires")],
+    )
+    graph = graph.model_copy(
+        update={
+            "edges": tuple(e.model_copy(update={"source_path": "meta.yml"}) for e in graph.edges)
+        }
+    )
+
+    rows = _rows(graph)
+
+    # "役割" is 2 characters but 4 cells wide: both notes start at the same cell.
+    assert rows == [
+        "├── 役割" + " " * 13 + "meta.yml · unresolved",
+        "└── acme/users@main  meta.yml",
     ]
 
 
@@ -195,7 +223,7 @@ def test_tree_renderer_uses_ascii_glyphs_when_asked() -> None:
 
     assert plain_text(lines).splitlines()[-4:] == [
         "`-- acme/users@main",
-        "    `-- acme/base@v1  (cycle)",
+        "    `-- acme/base@v1 (cycle)",
         "",
         "1 repo · 2 edges · 1 cycle",
     ]
@@ -224,7 +252,7 @@ def test_tree_renderer_numbers_a_shared_subtree_and_refers_back_to_it() -> None:
         "│   └── acme/shared@main [1]",
         "│       └── acme/leaf@main",
         "└── acme/b@main",
-        "    └── acme/shared@main      see [1]",
+        "    └── acme/shared@main see [1]",
     ]
 
 

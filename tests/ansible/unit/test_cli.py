@@ -829,19 +829,48 @@ def test_graph_downstream_with_source_live_flag_reads_remote_dependencies(
         )
 
     assert result.exit_code == 0, result.output
-    assert result.stdout.startswith("acme/site  source platform, downstream live · depth 1\n")
+    # Only downstream, read live: the source is not read at all.
+    assert result.stdout.startswith("acme/site  live reads · depth 1\n")
     assert "  acme/live" in _tree(result.stdout)
     assert "acme/cached" not in result.stdout
 
 
-def test_graph_header_names_live_reads_only_when_they_happen(tmp_path: Path, monkeypatch) -> None:
-    _seed(tmp_path, "source:platform", _edge())
+@pytest.mark.parametrize(
+    ("cached", "direction", "header"),
+    [
+        (True, "--upstream", "acme/site  source platform · depth 1"),
+        (True, "--both", "acme/site  source platform, downstream live · depth 1"),
+        # Uncached source: upstream is omitted, so only live reads remain.
+        (False, "--both", "acme/site  live reads · depth 1"),
+    ],
+)
+def test_graph_header_names_what_the_build_read(
+    tmp_path: Path, monkeypatch, cached: bool, direction: str, header: str
+) -> None:
+    if cached:
+        _seed(tmp_path, "source:platform", _edge("acme/app", "acme/site"))
     _use_config(tmp_path, monkeypatch, _PLATFORM, token=True)
 
-    result = _run("graph", "acme/base", "--source", "platform", "--upstream", "--live")
+    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
+        _mock_dependency_file(mock, "acme/site", content="- src: https://github.com/acme/live\n")
+        result = _run(
+            "graph", "acme/site", "--source", "platform", direction, "--live", "--depth", "1"
+        )
 
     assert result.exit_code == 0, result.output
-    assert result.stdout.startswith("acme/base  source platform · depth 3\n")
+    assert result.stdout.splitlines()[0] == header
+
+
+def test_graph_tree_truncates_lines_wider_than_the_terminal(tmp_path: Path, monkeypatch) -> None:
+    _seed(tmp_path, "source:platform", _edge(dependency_repo="acme/cached"))
+    _use_config(tmp_path, monkeypatch, _PLATFORM)
+    monkeypatch.setenv("COLUMNS", "30")
+
+    result = _run("graph", "acme/site", "--source", "platform")
+
+    assert result.exit_code == 0, result.output
+    assert "    └── acme/cached  roles/re…" in result.stdout.splitlines()
+    assert all(len(line) <= 30 for line in result.stdout.splitlines())
 
 
 # --- graph: cached sources --------------------------------------------------
@@ -1217,7 +1246,8 @@ def test_graph_target_repo_overrides_local_identity(tmp_path: Path, monkeypatch)
     result = _run("graph", str(target), "--target-repo", "acme/base", "--downstream")
 
     assert result.exit_code == 0, result.output
-    assert result.stdout.startswith("acme/base  local checkout, live reads · depth 3\n")
+    # No GitHub token: only the checkout's own declarations were read.
+    assert result.stdout.startswith("acme/base  local checkout · depth 3\n")
     assert _tree(result.stdout) == ["acme/users"]
 
 
