@@ -63,7 +63,8 @@ These flags apply to `launch` and `sync`:
   running execution fails its row, keeps running, and is named in an
   `untaped awx jobs wait` hint.
 - `--cancel` (with `--wait`/`--follow`) cancels every execution the command
-  stops watching (timeout, polling error, Ctrl-C) instead; its row's `detail`
+  stops watching (timeout, polling error, Ctrl-C) instead, as soon as it
+  stops watching it, without waiting for the others; its row's `detail`
   ends with `cancel requested` (or `it ended (successful) before the
   cancel`, or `cancel failed: …`).
 - Ctrl-C exits 130 and lists the executions not known to have finished, with
