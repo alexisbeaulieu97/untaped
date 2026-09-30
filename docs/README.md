@@ -42,6 +42,8 @@ the version you have installed.
   which commands exit 3.
 - [Environment variables](./reference/environment.md): every variable
   `untaped` reads or sets.
+- [Versioning and stability](./stability.md): what a release keeps
+  compatible, what is experimental, and how breaking changes arrive.
 - [Glossary](./glossary.md): the terms these docs use.
 
 ## Contributing

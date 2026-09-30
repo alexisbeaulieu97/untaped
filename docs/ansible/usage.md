@@ -103,7 +103,7 @@ A root is `owner/repo@ref` (the ref is optional), a Git URL, a source alias,
 or a local path. Stdin carries either such lines or `--format pipe` records.
 A record names its repository in `scm_url`, `repo_url`, `repo` or
 `full_name` and its ref in `effective_scm_ref` or `ref`; an empty or missing
-ref means the default branch, and every cached ref of that root is walked.
+ref means the default branch (`--all-refs` walks every cached ref instead).
 
 Each row (`ansible.dependency_match`) has `root_repo`, `root_ref`, the
 matched `repo`, `declared_ref` (the ref string exactly as declared on the
@@ -126,13 +126,40 @@ on stderr prefixed with the root.
 
 ```bash
 untaped ansible graph acme/base-role
-untaped ansible graph acme/base-role --downstream --format mermaid --out deps.mmd
-untaped ansible graph acme/base-role --upstream --format json
+untaped ansible graph acme/base-role --direction down --format mermaid --out deps.mmd
+untaped ansible graph acme/base-role --direction up --depth 2 --format json
 ```
 
-`graph` shows both directions by default (`--upstream`, `--downstream` or
-`--both` picks one), with a default `--depth` of 3. Without a source it shows
-only downstream and warns that upstream was omitted.
+`graph` shows both directions by default; `--direction up` shows only what
+depends on the target and `--direction down` only what it depends on.
+Without a source it shows only downstream and warns that upstream was
+omitted. The tree looks like this:
+
+```text
+acme/base-role@main  source platform · unlimited depth
+
+used by
+└── acme/site@main                roles/requirements.yml · unpinned
+
+depends on
+├── acme/legacy@v1                meta/main.yml
+│   └── acme/shared@main [1]      meta/main.yml · unpinned
+│       └── acme/leaf@main        requirements.yml
+└── acme/users@v1.2.0             requirements.yml
+    └── acme/shared@main see [1]  requirements.yml · unpinned
+
+5 repos · 6 edges
+```
+
+The first line names the target, where the data came from and the depth.
+"used by" lists the repos that depend on it and "depends on" what it depends
+on. After each repo comes the file that declares that dependency, plus
+`unpinned` when it names no version, or `pins X` when the declared version
+differs from the ref it resolved to. The last line counts the repos, edges,
+cycles and unresolved dependencies. A line too wide for the terminal ends in
+`…` instead of wrapping. Warnings go to stderr, never into the tree or the
+`--out` file. With the `plain` theme (`ui.border: ascii`) the connectors are
+ASCII.
 
 ## Flags
 
@@ -144,15 +171,22 @@ only downstream and warns that upstream was omitted.
 | `--org`, `--team`, `--repo`, `--path`, `--ref-kind`, `--ref-pattern`, `--ref-scan-default` | Inline source instead of a saved one. |
 | `--refresh`, `--live` | Refresh the source first; or read downstream live from GitHub even with a source (`impact` has no `--live`). |
 | `--parallel N`, `--backend auto\|graphql\|git` | Git fetch limit and ref probe backend for `--refresh`. |
-| `--depth N\|unlimited` | Traversal depth. `deps`, `impact` and `find` default to `unlimited`, `graph` to 3. |
+| `--depth N\|unlimited` | Traversal depth. Defaults to `unlimited`. |
 
 `deps`, `impact` and `graph` also take `--ref REF` (branch, tag or SHA of the
-target) and `--target-repo OWNER/NAME`. `deps`, `impact` and `find` print
+target) and `--target-repo OWNER/NAME`. Without `--ref`, what a target
+depends on is read at its default branch; `--all-refs` (`deps`, `find`,
+`graph`) reads it at every cached ref instead, and when the source has not
+scanned the default branch (a tags-only source) every ref is read with a
+warning. `--all-refs` with `--ref` exits 2. What depends on a
+target is always gathered across all of its refs, since a repo pinning an
+older tag still uses it. `deps`, `impact` and `find` print
 `--format table` (default), `json`, `yaml`, `pipe` or `raw`, with
 `--columns`; `graph` prints `--format tree` (default), `mermaid` or `json`,
 optionally to `--out FILE`, and keeps `--cached` (reading the cache is
-already the default). Conflicting flags (two directions, or two of
-`--refresh`/`--cached`/`--live`) exit 2.
+already the default). Two of `--refresh`/`--cached`/`--live` exit 2. The
+old `--upstream`, `--downstream` and `--both` still work until the next
+major release, with a warning; use `--direction up|down|both`.
 
 ## Manage sources
 
@@ -200,11 +234,13 @@ afterwards.
   names no GitHub repo), `declared_ref` and `declared_in` (from the edge that
   reached the repo, verbatim), `depth`, `path` and `root_ref`. `path` reads
   in dependency order: from ROLE for `deps`, towards ROLE for `impact`. Each
-  repo appears once per root, at its shortest path; a ref-less ROLE is walked
-  from each of its refs, and `root_ref` says which ROLE ref a row was reached
-  from.
-- `tree` prints a shared subtree once and marks later occurrences
-  `(see above)`.
+  repo appears once per root, at its shortest path; `root_ref` says which
+  ROLE ref a row was reached from (one per ref with `deps --all-refs`, and
+  every ref a dependent pins for `impact`).
+- `tree` prints a shared subtree once, numbered `[n]`, and marks later
+  occurrences `see [n]`; a repo already on the path is marked `↻ cycle`.
+  The summary counts a component with too many cycles to list as one
+  cyclic group.
 - `json` has `nodes`, `edges` (with stable `id`s), `cycles` and `warnings`.
   A cycle is found only within the depth you asked for; raise `--depth` to
   look for longer loops.

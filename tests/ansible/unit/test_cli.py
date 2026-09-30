@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from base64 import b64encode
@@ -17,6 +18,7 @@ import pytest
 import respx
 import yaml
 
+from untaped.bootstrap import build_root_app
 from untaped.capabilities.ansible.application.refresh_git_index import RefreshResult
 from untaped.capabilities.ansible.cli import app, refresh
 from untaped.capabilities.ansible.domain.payloads import (
@@ -30,7 +32,7 @@ from untaped.capabilities.ansible.domain.payloads import (
 from untaped.capabilities.ansible.infrastructure import SqliteDependencyIndex
 from untaped.capability_api import ui_context
 from untaped.settings import get_settings
-from untaped.testing import CliInvoker, CliResult
+from untaped.testing import CliInvoker, CliResult, invoke_cli
 
 _REQS = "roles/requirements.yml"
 _TEMPLATED = "---\ngalaxy_info:\n  role_name: {@ role_slug @}\n"
@@ -646,8 +648,6 @@ def test_source_status_classifies_sources_with_utc_timestamps(tmp_path: Path, mo
 @pytest.mark.parametrize(
     ("args", "message"),
     [
-        (["--upstream", "--downstream"], "Mutually exclusive arguments"),
-        (["--upstream", "--both"], "Mutually exclusive arguments"),
         (["--source", "platform", "--refresh", "--cached"], "Mutually exclusive arguments"),
         (["--source", "platform", "--cached", "--live"], "Mutually exclusive arguments"),
         (["--source", "platform", "--refresh", "--live"], "Mutually exclusive arguments"),
@@ -697,7 +697,7 @@ def test_graph_bare_invocation_requires_target() -> None:
 # --- graph: live downstream -------------------------------------------------
 
 
-@pytest.mark.parametrize("direction", ["--downstream", "--both"])
+@pytest.mark.parametrize("direction", ["--direction=down", "--direction=both"])
 def test_graph_reads_downstream_live_without_source(
     tmp_path: Path, monkeypatch, direction: str
 ) -> None:
@@ -708,10 +708,9 @@ def test_graph_reads_downstream_live_without_source(
         result = _run("graph", "acme/site", direction, "--depth", "1")
 
     assert result.exit_code == 0, result.output
-    assert "|   +-- acme/site@main" in result.stdout
-    assert "|       +-- acme/base" in result.stdout
+    assert _tree(result.stdout) == ["acme/site@main", "  acme/base"]
     omitted = "warning: only showing downstream; upstream omitted because no source is configured"
-    assert (omitted in result.stdout) is (direction == "--both")
+    assert (omitted in result.stderr) is (direction == "--direction=both")
 
 
 def test_graph_live_transitive_parse_warnings_keep_repo_ref_context(
@@ -727,13 +726,13 @@ def test_graph_live_transitive_parse_warnings_keep_repo_ref_context(
         )
         _mock_dependency_file(mock, "acme/one", content=_TEMPLATED)
         _mock_dependency_file(mock, "acme/two", content=_TEMPLATED)
-        result = _run("graph", "acme/site", "--downstream", "--depth", "2")
+        result = _run("graph", "acme/site", "--direction=down", "--depth", "2")
 
     assert result.exit_code == 0, result.output
     for repo in ("acme/one", "acme/two"):
         assert (
             f"warning: skipped {repo}@main {_REQS}: could not parse dependency YAML"
-        ) in result.stdout
+        ) in result.stderr
 
 
 def test_graph_output_writes_data_to_file_and_keeps_stdout_clean(
@@ -745,7 +744,7 @@ def test_graph_output_writes_data_to_file_and_keeps_stdout_clean(
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_dependency_file(mock, "acme/site")
         result = _run(
-            "graph", "acme/site", "--downstream", "--format", "mermaid", "--depth", "1",
+            "graph", "acme/site", "--direction=down", "--format", "mermaid", "--depth", "1",
             "--out", str(output),
         )  # fmt: skip
 
@@ -762,16 +761,55 @@ def test_graph_downstream_with_source_reads_cache_and_ignores_collection_view(
 
     with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
         result = _run(
-            "graph", "acme/site", "--source", "platform", "--downstream", "--cached",
+            "graph", "acme/site", "--source", "platform", "--direction=down", "--cached",
             "--format", "tree",
         )  # fmt: skip
         assert len(mock.calls) == 0
 
     assert result.exit_code == 0, result.output
-    assert "+-- downstream" in result.stdout
-    assert "|   +-- acme/site@main" in result.stdout
-    assert "|       +-- acme/cached" in result.stdout
+    assert "\ndepends on\n" in result.stdout
+    assert _tree(result.stdout) == ["acme/site@main", "  acme/cached"]
     assert "source_repo:" not in result.stdout
+
+
+def test_graph_tree_follows_ascii_theme_and_keeps_warnings_on_stderr(
+    tmp_path: Path, monkeypatch
+) -> None:
+    old = datetime(2026, 1, 1, tzinfo=UTC)
+    _seed(tmp_path, "source:platform", _edge(dependency_repo="acme/cached"), scanned_at=old)
+    _use_config(tmp_path, monkeypatch, _PLATFORM, ui={"theme": "plain"})
+
+    result = _run("graph", "acme/site", "--source", "platform")
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines()[:5] == [
+        "acme/site  source platform · unlimited depth",
+        "",
+        "depends on",
+        "`-- acme/site@main",
+        "    `-- acme/cached  roles/requirements.yml · unpinned",
+    ]
+    assert "warning" not in result.stdout
+    assert "warning: source data is stale" in result.stderr
+
+
+def test_graph_tree_out_file_is_plain_text(tmp_path: Path, monkeypatch) -> None:
+    _seed(tmp_path, "source:platform", _edge(dependency_repo="acme/cached"))
+    _use_config(tmp_path, monkeypatch, _PLATFORM)
+    monkeypatch.delenv("NO_COLOR")
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    output = tmp_path / "graph.txt"
+
+    shown = _run("graph", "acme/site", "--source", "platform")
+    written = _run("graph", "acme/site", "--source", "platform", "--out", str(output))
+
+    assert shown.exit_code == written.exit_code == 0, written.output
+    assert "\x1b[" in shown.stdout
+    assert written.stdout == ""
+    text = output.read_text()
+    assert "\x1b[" not in text
+    assert _tree(text) == ["acme/site@main", "  acme/cached"]
+    assert text.endswith("1 repo · 1 edge")
 
 
 @pytest.mark.parametrize("cached", [True, False])
@@ -786,12 +824,59 @@ def test_graph_downstream_with_source_live_flag_reads_remote_dependencies(
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_dependency_file(mock, "acme/site", content="- src: https://github.com/acme/live\n")
         result = _run(
-            "graph", "acme/site", "--source", "platform", "--downstream", "--depth", "1", "--live"
+            "graph",
+            "acme/site",
+            "--source",
+            "platform",
+            "--direction=down",
+            "--depth",
+            "1",
+            "--live",
         )
 
     assert result.exit_code == 0, result.output
-    assert "|       +-- acme/live" in result.stdout
+    # Only downstream, read live: the source is not read at all.
+    assert result.stdout.startswith("acme/site  live reads · depth 1\n")
+    assert "  acme/live" in _tree(result.stdout)
     assert "acme/cached" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("cached", "direction", "header"),
+    [
+        (True, "--direction=up", "acme/site  source platform · depth 1"),
+        (True, "--direction=both", "acme/site  source platform, downstream live · depth 1"),
+        # Uncached source: upstream is omitted, so only live reads remain.
+        (False, "--direction=both", "acme/site  live reads · depth 1"),
+    ],
+)
+def test_graph_header_names_what_the_build_read(
+    tmp_path: Path, monkeypatch, cached: bool, direction: str, header: str
+) -> None:
+    if cached:
+        _seed(tmp_path, "source:platform", _edge("acme/app", "acme/site"))
+    _use_config(tmp_path, monkeypatch, _PLATFORM, token=True)
+
+    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
+        _mock_dependency_file(mock, "acme/site", content="- src: https://github.com/acme/live\n")
+        result = _run(
+            "graph", "acme/site", "--source", "platform", direction, "--live", "--depth", "1"
+        )
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines()[0] == header
+
+
+def test_graph_tree_truncates_lines_wider_than_the_terminal(tmp_path: Path, monkeypatch) -> None:
+    _seed(tmp_path, "source:platform", _edge(dependency_repo="acme/cached"))
+    _use_config(tmp_path, monkeypatch, _PLATFORM)
+    monkeypatch.setenv("COLUMNS", "30")
+
+    result = _run("graph", "acme/site", "--source", "platform")
+
+    assert result.exit_code == 0, result.output
+    assert "    └── acme/cached  roles/re…" in result.stdout.splitlines()
+    assert all(len(line) <= 30 for line in result.stdout.splitlines())
 
 
 # --- graph: cached sources --------------------------------------------------
@@ -801,25 +886,25 @@ def test_graph_downstream_with_source_live_flag_reads_remote_dependencies(
     ("args", "expected", "absent"),
     [
         (
-            ["acme/base", "--source", "platform", "--upstream", "--cached"],
+            ["acme/base", "--source", "platform", "--direction=up", "--cached"],
             [
                 "untaped ansible source refresh platform",
-                "untaped ansible graph acme/base --source platform --upstream --refresh",
+                "untaped ansible graph acme/base --source platform --direction up --refresh",
             ],
             [],
         ),
         (
-            ["acme/base", "--source", "platform", "--downstream"],
-            ["--source platform --downstream --refresh", "--live"],
-            ["--upstream"],
+            ["acme/base", "--source", "platform", "--direction=down"],
+            ["--source platform --direction down --refresh", "--live"],
+            ["--direction=up"],
         ),
         (
-            ["acme/base", "--source", "platform", "--both"],
+            ["acme/base", "--source", "platform", "--direction=both"],
             ["untaped ansible source refresh platform"],
             [],
         ),
-        (["acme/base", "--source", "platform", "--source", "ops", "--upstream"], [], []),
-        (["acme/deploy", "--source", "platform", "--source", "ops", "--downstream"], [], []),
+        (["acme/base", "--source", "platform", "--source", "ops", "--direction=up"], [], []),
+        (["acme/deploy", "--source", "platform", "--source", "ops", "--direction=down"], [], []),
         (["acme/base", "--source", "platform", "--source", "ops", "--cached"], [], []),
     ],
 )
@@ -843,13 +928,13 @@ def test_graph_missing_source_cache_fails_naming_the_source(
 @pytest.mark.parametrize(
     ("args", "message"),
     [
-        (["--upstream"], "upstream requires --source NAME, inline selectors"),
+        (["--direction=up"], "upstream requires --source NAME, inline selectors"),
         (["--source", "nope"], "source not found: 'nope'; known: ops, platform"),
         (
             ["--source", "platform", "--source", "ops"],
             "no cached source data found for sources 'platform', 'ops'. Run: ",
         ),
-        (["--org", "acme", "--upstream"], "no cached source data found for inline source"),
+        (["--org", "acme", "--direction=up"], "no cached source data found for inline source"),
     ],
 )
 def test_graph_unusable_source_selection_fails(
@@ -860,7 +945,7 @@ def test_graph_unusable_source_selection_fails(
     result = _run("graph", "acme/base", *args)
 
     # No source at all is a usage error; a named but unusable one is not.
-    assert result.exit_code == (2 if args == ["--upstream"] else 1)
+    assert result.exit_code == (2 if args == ["--direction=up"] else 1)
     assert message in result.stderr
 
 
@@ -875,28 +960,29 @@ def test_graph_with_sources_uses_cache_without_refreshing(
 
     with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
         result = _run(
-            "graph", "acme/base", "--source", "platform", "--source", "ops", "--upstream",
+            "graph", "acme/base", "--source", "platform", "--source", "ops", "--direction=up",
             "--parallel", "4",
         )  # fmt: skip
         assert len(mock.calls) == 0
 
     assert result.exit_code == 0, result.output
     assert calls == []
-    assert "    +-- acme/site@main" in result.stdout
-    assert "    +-- acme/deploy@main" in result.stdout
-    assert result.stderr == ""
+    assert _tree(result.stdout) == ["acme/deploy@main", "acme/site@main"]
+    # Nothing refreshed: stderr carries only the stale-data warning (ops is old).
+    assert result.stderr.startswith("warning: source data is stale")
+    assert len(result.stderr.splitlines()) == 1
 
 
 def test_graph_stale_warning_includes_exact_refresh_command(tmp_path: Path, monkeypatch) -> None:
     _seed(tmp_path, "source:platform", _edge(), scanned_at=datetime(2026, 1, 1, tzinfo=UTC))
     _use_config(tmp_path, monkeypatch, _PLATFORM, ansible={"stale_after": 60})
 
-    result = _run("graph", "acme/base", "--source", "platform", "--upstream", "--cached")
+    result = _run("graph", "acme/base", "--source", "platform", "--direction=up", "--cached")
 
     assert result.exit_code == 0, result.output
-    assert "    +-- acme/site@main" in result.stdout
-    assert "source data is stale" in result.stdout
-    assert "Run `untaped ansible source refresh platform` to update it." in result.stdout
+    assert _tree(result.stdout) == ["acme/site@main"]
+    assert "source data is stale" in result.stderr
+    assert "Run `untaped ansible source refresh platform` to update it." in result.stderr
 
 
 def test_graph_cached_missing_ref_lists_available_refs_in_display_order(
@@ -921,13 +1007,13 @@ def test_graph_cached_missing_ref_lists_available_refs_in_display_order(
     _use_config(tmp_path, monkeypatch, _PLATFORM)
 
     result = _run(
-        "graph", "acme/site", "--ref", "missing", "--source", "platform", "--downstream",
+        "graph", "acme/site", "--ref", "missing", "--source", "platform", "--direction=down",
         "--cached",
     )  # fmt: skip
 
     assert result.exit_code == 0, result.output
-    assert "available refs: trunk, docs, feature/2, v2.0.0, v1.0.0" in result.stdout
-    assert "Run `untaped ansible source refresh platform` to update it." in result.stdout
+    assert "available refs: trunk, docs, feature/2, v2.0.0, v1.0.0" in result.stderr
+    assert "Run `untaped ansible source refresh platform` to update it." in result.stderr
 
 
 def _unpinned_consumers(tmp_path: Path, *, base_default: str | None) -> None:
@@ -959,11 +1045,11 @@ def test_graph_upstream_ref_treats_unpinned_dependents_as_default_branch(
     _unpinned_consumers(tmp_path, base_default="main")
     _use_config(tmp_path, monkeypatch, _prod())
 
-    result = _run("graph", "acme/base", "--source", "prod", "--upstream", "--ref", ref)
+    result = _run("graph", "acme/base", "--source", "prod", "--direction=up", "--ref", ref)
 
     assert result.exit_code == 0, result.output
     assert ("acme/unpinned@main" in result.stdout) is included
-    assert "unpinned" not in result.stdout.replace("acme/unpinned", "")
+    assert "unpinned" not in result.stderr.replace("acme/unpinned", "")
 
 
 def test_graph_upstream_ref_warns_when_unpinned_dependents_cannot_be_placed(
@@ -972,19 +1058,19 @@ def test_graph_upstream_ref_warns_when_unpinned_dependents_cannot_be_placed(
     _unpinned_consumers(tmp_path, base_default=None)
     _use_config(tmp_path, monkeypatch, _prod())
 
-    result = _run("graph", "acme/base", "--source", "prod", "--upstream", "--ref", "main")
+    result = _run("graph", "acme/base", "--source", "prod", "--direction=up", "--ref", "main")
 
     assert result.exit_code == 0, result.output
     assert "acme/pinned@main" in result.stdout
     assert "acme/unpinned@main" not in result.stdout
-    assert "1 unpinned dependent of acme/base@main omitted" in result.stdout
+    assert "1 unpinned dependent of acme/base@main omitted" in result.stderr
 
 
 def test_graph_upstream_matches_repo_ids_case_insensitively(tmp_path: Path, monkeypatch) -> None:
     _seed(tmp_path, "source:prod", _edge("Acme/Site", version="main"))
     _use_config(tmp_path, monkeypatch, _prod())
 
-    result = _run("graph", "Acme/Base", "--source", "prod", "--upstream", "--ref", "main")
+    result = _run("graph", "Acme/Base", "--source", "prod", "--direction=up", "--ref", "main")
 
     assert result.exit_code == 0, result.output
     assert "Acme/Site@main" in result.stdout
@@ -994,10 +1080,10 @@ def test_graph_alias_resolves_upstream_target(tmp_path: Path, monkeypatch) -> No
     _seed(tmp_path, "source:platform", _edge())
     _use_config(tmp_path, monkeypatch, {**_PLATFORM, "aliases": {"base": "acme/base"}})
 
-    result = _run("graph", "base", "--source", "platform", "--upstream", "--cached")
+    result = _run("graph", "base", "--source", "platform", "--direction=up", "--cached")
 
     assert result.exit_code == 0, result.output
-    assert "    +-- acme/site@main" in result.stdout
+    assert _tree(result.stdout) == ["acme/site@main"]
 
 
 # --- graph: refresh ---------------------------------------------------------
@@ -1013,13 +1099,19 @@ def test_graph_repeated_sources_refresh_each_saved_source(tmp_path: Path, monkey
     )
 
     result = _run(
-        "graph", "acme/base", "--source", "platform", "--source", "ops", "--upstream", "--refresh"
+        "graph",
+        "acme/base",
+        "--source",
+        "platform",
+        "--source",
+        "ops",
+        "--direction=up",
+        "--refresh",
     )
 
     assert result.exit_code == 0, result.output
     assert [source.name for source in calls] == ["platform", "ops"]
-    assert "    +-- acme/site@main" in result.stdout
-    assert "    +-- acme/deploy@release" in result.stdout
+    assert _tree(result.stdout) == ["acme/deploy@release", "acme/site@main"]
 
 
 def test_graph_inline_upstream_with_ref_renders_all_matching_source_refs(
@@ -1036,13 +1128,12 @@ def test_graph_inline_upstream_with_ref_renders_all_matching_source_refs(
 
     result = _run(
         "graph", "acme/base", "--ref", "v3", "--org", "acme", "--team", "platform",
-        "--upstream", "--refresh",
+        "--direction=up", "--refresh",
     )  # fmt: skip
 
     assert result.exit_code == 0, result.output
     assert (calls[0].ref_kinds, calls[0].ref_patterns) == ([], [])
-    assert "    +-- acme/playbook@master" in result.stdout
-    assert "    +-- acme/playbook@v3" in result.stdout
+    assert _tree(result.stdout) == ["acme/playbook@master", "acme/playbook@v3"]
 
 
 def test_graph_inline_source_preserves_repeated_selectors(tmp_path: Path, monkeypatch) -> None:
@@ -1058,7 +1149,7 @@ def test_graph_inline_source_preserves_repeated_selectors(tmp_path: Path, monkey
         "--ref-kind", "heads", "--ref-kind", "tags",
         "--ref-pattern", "main", "--ref-pattern", "v*",
         "--ref-scan-default", "default_branch",
-        "--upstream", "--refresh",
+        "--direction=up", "--refresh",
     )  # fmt: skip
 
     assert result.exit_code == 0, result.output
@@ -1075,7 +1166,7 @@ def test_graph_inline_source_preserves_repeated_selectors(tmp_path: Path, monkey
 def test_inline_source_cache_key_is_order_insensitive(tmp_path: Path, monkeypatch) -> None:
     _use_config(tmp_path, monkeypatch)
     calls = _fake_refresh(monkeypatch, lambda source: tuple(_edge(r) for r in source.repos))
-    selectors = ["--ref-kind", "heads", "--upstream"]
+    selectors = ["--ref-kind", "heads", "--direction=up"]
 
     first = _run(
         "graph", "acme/base", "--repo", "acme/a", "--repo", "acme/b", *selectors, "--refresh"
@@ -1102,14 +1193,14 @@ def test_graph_refresh_with_partial_failures_warns_and_proceeds(
         result=RefreshResult(source_key="", repos=2, refs=1, edges=1, failures=failures),
     )
 
-    result = _run("graph", "acme/base", "--source", "platform", "--upstream", "--refresh")
+    result = _run("graph", "acme/base", "--source", "platform", "--direction=up", "--refresh")
 
     assert result.exit_code == 0, result.output
     assert (
         "warning: refresh of platform had 1 failure; data for those repos may be stale"
-        in result.stdout
+        in result.stderr
     )
-    assert "    +-- acme/site@main" in result.stdout
+    assert _tree(result.stdout) == ["acme/site@main"]
 
 
 def test_graph_refresh_budget_pause_exits_without_rendering_stale_graph(
@@ -1129,7 +1220,7 @@ def test_graph_refresh_budget_pause_exits_without_rendering_stale_graph(
         ),
     )
 
-    result = _run("graph", "acme/base", "--source", "platform", "--upstream", "--refresh")
+    result = _run("graph", "acme/base", "--source", "platform", "--direction=up", "--refresh")
 
     assert result.exit_code == 5  # paused at the rate-limit floor: retry later
     assert result.stdout == ""
@@ -1146,7 +1237,7 @@ def test_graph_refresh_global_graphql_error_exits_without_rendering_stale_graph(
         _mock_expansion(mock, ["acme/site"])
         mock.post("/graphql").mock(return_value=_RATE_LIMIT_EXCEEDED)
         result = _run(
-            "graph", "acme/base", "--source", "platform", "--upstream", "--refresh",
+            "graph", "acme/base", "--source", "platform", "--direction=up", "--refresh",
             "--backend", "graphql",
         )  # fmt: skip
 
@@ -1165,12 +1256,12 @@ def test_graph_target_repo_overrides_local_identity(tmp_path: Path, monkeypatch)
     _init_git_repo(target, origin="https://github.com/acme/wrong.git")
     _use_config(tmp_path, monkeypatch)
 
-    result = _run("graph", str(target), "--target-repo", "acme/base", "--downstream")
+    result = _run("graph", str(target), "--target-repo", "acme/base", "--direction=down")
 
     assert result.exit_code == 0, result.output
-    assert result.stdout.startswith("acme/base\n")
-    assert "|   +-- acme/base" in result.stdout
-    assert "|       +-- acme/users" in result.stdout
+    # No GitHub token: only the checkout's own declarations were read.
+    assert result.stdout.startswith("acme/base  local checkout · unlimited depth\n")
+    assert _tree(result.stdout) == ["acme/users"]
 
 
 @requires_git
@@ -1203,11 +1294,11 @@ def test_graph_local_target_infers_repo_from_origin_remote(
     monkeypatch.setenv("GIT_WORK_TREE", str(other))
     _use_config(tmp_path, monkeypatch)
 
-    result = _run("graph", str(target), "--downstream")
+    result = _run("graph", str(target), "--direction=down")
 
     assert result.exit_code == 0, result.output
-    assert result.stdout.startswith(f"{expected}\n")
-    assert "|       +-- acme/users" in result.stdout
+    assert result.stdout.startswith(f"{expected}  ")
+    assert _tree(result.stdout) == ["acme/users"]
 
 
 @requires_git
@@ -1221,11 +1312,11 @@ def test_graph_local_target_infers_repo_from_git_worktree(tmp_path: Path, monkey
     _role(tmp_path)
     _use_config(tmp_path, monkeypatch)
 
-    result = _run("graph", str(target), "--downstream")
+    result = _run("graph", str(target), "--direction=down")
 
     assert result.exit_code == 0, result.output
-    assert result.stdout.startswith("acme/worktree-role\n")
-    assert "|       +-- acme/users" in result.stdout
+    assert result.stdout.startswith("acme/worktree-role  ")
+    assert _tree(result.stdout) == ["acme/users"]
 
 
 @requires_git
@@ -1245,14 +1336,14 @@ def test_graph_unresolvable_local_target_hints_target_repo(
         _init_git_repo(target)
     _use_config(tmp_path, monkeypatch)
 
-    result = _run("graph", str(target), "--downstream")
-    explicit = _run("graph", str(target), "--target-repo", "acme/web-role", "--downstream")
+    result = _run("graph", str(target), "--direction=down")
+    explicit = _run("graph", str(target), "--target-repo", "acme/web-role", "--direction=down")
 
     assert result.exit_code == 1
     assert "could not resolve target" in result.stderr
     assert "--target-repo" in result.stderr
     assert explicit.exit_code == 0, explicit.output
-    assert explicit.stdout.startswith("acme/web-role\n")
+    assert explicit.stdout.startswith("acme/web-role  ")
 
 
 @requires_git
@@ -1263,11 +1354,11 @@ def test_graph_local_target_resolves_configured_enterprise_host(
     _init_git_repo(target, origin="git@ghe.example.com:acme/ghe-role.git")
     _use_config(tmp_path, monkeypatch, github={"base_url": "https://ghe.example.com/api/v3"})
 
-    result = _run("graph", str(target), "--downstream")
+    result = _run("graph", str(target), "--direction=down")
 
     assert result.exit_code == 0, result.output
-    assert result.stdout.startswith("acme/ghe-role\n")
-    assert "+-- acme/users" in result.stdout
+    assert result.stdout.startswith("acme/ghe-role  ")
+    assert _tree(result.stdout) == ["acme/users"]
     assert "unresolved" not in result.stdout
 
 
@@ -1290,10 +1381,10 @@ def test_graph_local_target_surfaces_dependency_file_warnings(
     (target / path).write_text(content)
     _use_config(tmp_path, monkeypatch)
 
-    result = _run("graph", str(target), "--target-repo", "acme/role", "--downstream")
+    result = _run("graph", str(target), "--target-repo", "acme/role", "--direction=down")
 
     assert result.exit_code == 0, result.output
-    assert warning in result.stdout
+    assert warning in result.stderr
 
 
 def test_graph_empty_local_dependency_result_explains_paths_without_cache_fallback(
@@ -1303,12 +1394,12 @@ def test_graph_empty_local_dependency_result_explains_paths_without_cache_fallba
     target = _role(tmp_path, None)
     _use_config(tmp_path, monkeypatch)
 
-    result = _run("graph", str(target), "--target-repo", "acme/empty", "--downstream")
+    result = _run("graph", str(target), "--target-repo", "acme/empty", "--direction=down")
 
     assert result.exit_code == 0, result.output
     assert "acme/stale" not in result.stdout
-    assert "warning: no declared downstream dependencies found for acme/empty" in result.stdout
-    assert "checked configured dependency paths" in result.stdout
+    assert "warning: no declared downstream dependencies found for acme/empty" in result.stderr
+    assert "checked configured dependency paths" in result.stderr
 
 
 @pytest.mark.parametrize("token", [True, False])
@@ -1329,7 +1420,7 @@ def test_graph_local_target_without_source_never_mixes_in_cached_edges(
             mock, "acme/users", sha="sha-users", content="- src: acme/from-live\n"
         )
         result = _run(
-            "graph", str(target), "--target-repo", "acme/role", "--downstream", "--depth", "2"
+            "graph", str(target), "--target-repo", "acme/role", "--direction=down", "--depth", "2"
         )
         assert mock.calls.called is token
 
@@ -1338,7 +1429,7 @@ def test_graph_local_target_without_source_never_mixes_in_cached_edges(
     assert "acme/from-other-source" not in result.stdout
     # Without a token the graph stays offline instead of reading live.
     assert ("acme/from-live" in result.stdout) is token
-    assert ("transitive dependencies were not expanded" in result.stdout) is not token
+    assert ("transitive dependencies were not expanded" in result.stderr) is not token
 
 
 # --- source refresh ---------------------------------------------------------
@@ -1399,7 +1490,7 @@ def test_source_refresh_wires_token_aliases_and_defaults(tmp_path: Path, monkeyp
                 "acme/base",
                 "--source",
                 "prod",
-                "--upstream",
+                "--direction=up",
                 "--refresh",
                 "--backend",
                 "git",
@@ -1868,7 +1959,7 @@ def test_find_reads_a_shared_dependency_live_once_across_roots(tmp_path: Path, m
     assert len(lib_paths) == len(set(lib_paths))
 
 
-def test_graph_keeps_the_default_depth_of_three(tmp_path: Path, monkeypatch) -> None:
+def test_graph_depth_defaults_to_unlimited(tmp_path: Path, monkeypatch) -> None:
     chain = ["acme/r1", "acme/r2", "acme/r3", "acme/r4"]
     _seed(
         tmp_path,
@@ -1879,7 +1970,7 @@ def test_graph_keeps_the_default_depth_of_three(tmp_path: Path, monkeypatch) -> 
     _use_config(tmp_path, monkeypatch, {"sources": [{"name": "platform", "repos": chain}]})
 
     result = _run(
-        "graph", "acme/r1", "--ref", "main", "--source", "platform", "--downstream",
+        "graph", "acme/r1", "--ref", "main", "--source", "platform", "--direction=down",
         "--format", "json",
     )  # fmt: skip
 
@@ -1888,6 +1979,7 @@ def test_graph_keeps_the_default_depth_of_three(tmp_path: Path, monkeypatch) -> 
         "acme/r2@main",
         "acme/r3@main",
         "acme/r4@main",
+        "acme/target@v1",
     ]
 
 
@@ -2048,6 +2140,16 @@ def test_find_rejects_records_without_a_repository(tmp_path: Path, monkeypatch) 
 
 
 _Row = tuple[str | None, str | None, str | None, int, list[str]]
+
+
+def _tree(output: str) -> list[str]:
+    """``graph`` tree rows as their labels, indented two spaces per level below the first."""
+    rows = []
+    for line in output.splitlines():
+        match = re.match(r"^((?:[│ ]   )*)[├└]── (\S+)", line)
+        if match:
+            rows.append("  " * (len(match[1]) // 4) + match[2])
+    return rows
 
 
 def _rows(result: CliResult) -> list[_Row]:
@@ -2259,8 +2361,8 @@ def test_default_source_stands_in_for_source(tmp_path: Path, monkeypatch) -> Non
     assert [row[:2] for row in _rows(impact)] == [("acme/site", "main")]
     assert [row[:2] for row in _rows(deps)] == [("acme/base", None)]
     assert graph.exit_code == 0, graph.output
-    assert "+-- acme/site@main" in graph.stdout
-    assert "upstream omitted" not in graph.stdout
+    assert _tree(graph.stdout) == ["acme/site@main"]
+    assert "upstream omitted" not in graph.stderr
 
 
 def test_default_source_without_cache_fails_deps_until_live(tmp_path: Path, monkeypatch) -> None:
@@ -2308,3 +2410,97 @@ def test_unknown_default_source_names_the_setting(tmp_path: Path, monkeypatch) -
     assert result.exit_code == 4  # ansible.default_source needs fixing
     assert "source not found: 'nope'; known: platform" in result.stderr
     assert "ansible.default_source" in result.stderr
+
+
+# --- ref-less targets and flag spellings --------------------------------------
+
+
+def _seed_two_refs(tmp_path: Path) -> None:
+    """acme/site: its default branch trunk requires acme/base, its tag v1 acme/legacy."""
+    _seed(
+        tmp_path,
+        "source:platform",
+        _edge("acme/site", "acme/base", ref="trunk"),
+        _edge("acme/site", "acme/legacy", ref="v1"),
+        repo_metadata=(
+            SourceRepoMetadata(
+                source_key="source:platform", source_repo="acme/site", default_branch="trunk"
+            ),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "command", [["graph", "acme/site", "--direction", "down"], ["deps", "acme/site"]]
+)
+@pytest.mark.parametrize("all_refs", [False, True])
+def test_ref_less_target_depends_on_its_default_branch_unless_all_refs(
+    tmp_path: Path, monkeypatch, command: list[str], all_refs: bool
+) -> None:
+    _seed_two_refs(tmp_path)
+    _use_config(tmp_path, monkeypatch, _PLATFORM)
+
+    extra = ["--all-refs"] if all_refs else []
+    result = _run(*command, "--source", "platform", "--format", "json", *extra)
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert "acme/base" in result.stdout
+    assert ("acme/legacy" in result.stdout) is all_refs
+
+
+def test_local_checkout_keeps_its_own_declarations_over_the_cached_default_branch(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _seed_two_refs(tmp_path)
+    target = _role(tmp_path, "- src: acme/users\n  version: main\n")
+    _use_config(tmp_path, monkeypatch, _PLATFORM)
+
+    result = _run(
+        "graph", str(target), "--target-repo", "acme/site", "--source", "platform",
+        "--direction", "down", "--depth", "1",
+    )  # fmt: skip
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert _tree(result.stdout) == ["acme/users@main"]
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [("--upstream", "up"), ("--downstream", "down"), ("--both", "both")],
+)
+def test_old_direction_flags_still_work_with_a_deprecation_warning(
+    tmp_path: Path, monkeypatch, old: str, new: str
+) -> None:
+    _seed(tmp_path, "source:platform", _edge())
+    _use_config(tmp_path, monkeypatch, _PLATFORM)
+    root = build_root_app(externals=[])
+    args = ["ansible", "graph", "acme/site", "--source", "platform", "--format", "json"]
+
+    result = invoke_cli(root, [*args, old])
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert f"`{old}` is deprecated" in result.stderr
+    assert f"use `--direction={new}`" in result.stderr
+    assert result.stdout == invoke_cli(root, [*args, "--direction", new]).stdout
+
+
+@pytest.mark.parametrize("all_refs", [False, True])
+def test_find_reads_a_ref_less_root_at_its_default_branch_unless_all_refs(
+    tmp_path: Path, monkeypatch, all_refs: bool
+) -> None:
+    _seed_two_refs(tmp_path)
+    _use_config(tmp_path, monkeypatch, _PLATFORM)
+
+    extra = ["--all-refs"] if all_refs else []
+    result = _run("find", "acme/legacy", "--root", "acme/site", "--source", "platform", *extra)
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert ("acme/legacy" in result.stdout) is all_refs
+
+
+@pytest.mark.parametrize("command", ["graph", "deps"])
+def test_all_refs_with_ref_is_a_usage_error(command: str) -> None:
+    result = _run(command, "acme/site", "--ref", "main", "--all-refs")
+
+    assert result.exit_code == 2
+    assert "--all-refs reads every ref; drop it or --ref" in result.stderr

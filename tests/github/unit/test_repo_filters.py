@@ -27,6 +27,6 @@ REPOS = ["acme/api-service", "beta/API-service", "acme/worker", "acme/display", 
 def test_repo_pattern_targeting(pattern: str, regex: bool, expected: list[str]) -> None:
     matcher = compile_repo_pattern(pattern, regex=regex)
 
-    repos = [RepoListResult(full_name=name, name=name.rsplit("/", 1)[1]) for name in REPOS]
+    repos = [RepoListResult(repo=name) for name in REPOS]
 
-    assert [repo.full_name for repo in repos if matcher(repo)] == expected
+    assert [repo.repo for repo in repos if matcher(repo)] == expected
