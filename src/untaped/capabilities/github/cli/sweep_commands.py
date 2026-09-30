@@ -252,9 +252,10 @@ def sweep_command(
         else:
             rows = _repo_records(report.rows)
             emit(
-                _display_rows(rows, query=query, owners=owners, fmt=fmt, columns=columns),
+                _display_rows(rows, query=query, fmt=fmt),
                 fmt=fmt,
-                columns=columns or _default_columns(query=query, owners=owners, fmt=fmt),
+                columns=columns,
+                table_columns=_default_columns(query=query, owners=owners, fmt=fmt),
                 kind="github.sweep_repo",
                 empty="No matching repositories found.",
             )
@@ -349,14 +350,10 @@ def _file_records(rows: tuple[SweepMatch, ...]) -> list[dict[str, object]]:
 
 
 def _display_rows(
-    rows: list[dict[str, object]],
-    *,
-    query: SweepQuery,
-    owners: bool,
-    fmt: OutputFormat,
-    columns: list[str] | None,
+    rows: list[dict[str, object]], *, query: SweepQuery, fmt: OutputFormat
 ) -> list[dict[str, object]]:
-    if fmt != "table" or columns:
+    """Table rows: a count column per predicate after ``repo``, lists joined by commas."""
+    if fmt != "table":
         return rows
     labels = query.labels()
     display: list[dict[str, object]] = []
@@ -365,19 +362,21 @@ def _display_rows(
         display_row: dict[str, object] = {"repo": row["repo"]}
         for label in labels:
             display_row[label] = hits.get(label, 0)  # type: ignore[attr-defined]
-        if query.refs.beyond_default():
-            display_row["refs_matched"] = ",".join(row["refs_matched"])  # type: ignore[arg-type]
-        if owners:
-            display_row["owners"] = ",".join(row["owners"])  # type: ignore[arg-type]
+        display_row.update(row)
+        display_row["refs_matched"] = ",".join(row["refs_matched"])  # type: ignore[arg-type]
+        display_row["owners"] = ",".join(row["owners"])  # type: ignore[arg-type]
         display.append(display_row)
     return display
 
 
 def _default_columns(*, query: SweepQuery, owners: bool, fmt: OutputFormat) -> list[str] | None:
-    # Only the table view flattens ``hits`` into per-predicate columns.
-    if fmt != "table" or (not query.refs.beyond_default() and owners):
+    # Only the table view flattens ``hits`` into per-predicate columns. A
+    # matching ref has no hits for a negated predicate, so its count column
+    # would always read 0.
+    if fmt != "table":
         return None
-    columns = ["repo", *query.labels()]
+    negated = ("not-grep:", "lacks-file:")
+    columns = ["repo", *(label for label in query.labels() if not label.startswith(negated))]
     if query.refs.beyond_default():
         columns.append("refs_matched")
     if owners:
