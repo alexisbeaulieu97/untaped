@@ -1551,3 +1551,28 @@ def test_validate_warns_about_a_negative_case_without_failed_tasks(
         "warning: s/bare: expects status failed without failed_tasks, so a failure for "
         "another reason passes it"
     ]
+
+
+def _table_header(out: str) -> list[str]:
+    return [cell.strip() for cell in out.splitlines()[1].strip("│").split("│")]
+
+
+def test_run_table_of_passing_cases_leaves_out_empty_failure_columns(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+
+    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path))])
+
+    assert result.exit_code == 0, result.output
+    header = _table_header(result.stdout)
+    assert header[:3] == ["suite", "case", "result"]
+    assert header[-1] == "job_url"
+    assert not any(column.startswith(("failure", "change")) for column in header)
+
+
+def test_list_table_leaves_out_an_unused_template_column(cli: CliInvoker, tmp_path: Path) -> None:
+    result = cli.invoke(app, ["test", "list", str(_smoke(tmp_path))])
+
+    assert result.exit_code == 0, result.output
+    assert _table_header(result.stdout) == ["suite", "case", "job_template"]

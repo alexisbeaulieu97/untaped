@@ -107,5 +107,11 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
                                 err=True,
                             )
                     failed = any(outcome.action != "completed" for outcome in outcomes)
-                emit(rows, fmt=fmt, columns=columns, kind="awx.delete_outcome")
+                emit(
+                    rows,
+                    fmt=fmt,
+                    columns=columns,
+                    table_columns=("id", "name", "action", "detail"),
+                    kind="awx.delete_outcome",
+                )
                 finish(failed)

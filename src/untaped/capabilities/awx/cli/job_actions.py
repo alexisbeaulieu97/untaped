@@ -40,6 +40,10 @@ from untaped.capability_api import (
     resolve_each,
 )
 
+_CANCEL_COLUMNS = ("id", "name", "action", "detail")
+"""A cancel row's ``status`` is the one read before the request, so the table leaves it out."""
+_RELAUNCH_COLUMNS = ("id", "name", "status", "target_id", "action", "detail")
+
 
 def register_job_actions(jobs_app: App) -> None:
     """Attach ``cancel`` and ``relaunch`` to the ``awx jobs`` group."""
@@ -77,7 +81,13 @@ def register_job_actions(jobs_app: App) -> None:
                 for index in pending:
                     rows[index] = _cancel_one(ctx, rows[index])
         if rows:
-            emit(rows, fmt=fmt, columns=columns, kind="awx.cancel_outcome")
+            emit(
+                rows,
+                fmt=fmt,
+                columns=columns,
+                table_columns=_CANCEL_COLUMNS,
+                kind="awx.cancel_outcome",
+            )
         finish(any(row.failed for row in rows))
 
     @jobs_app.command(name="relaunch")
@@ -130,7 +140,13 @@ def register_job_actions(jobs_app: App) -> None:
                 _confirm(ctx, verb="relaunch", count=len(rows), yes=yes)
                 rows = [_relaunch_one(ctx, row) for row in rows]
         if rows:
-            emit(rows, fmt=fmt, columns=columns, kind="awx.relaunch_outcome")
+            emit(
+                rows,
+                fmt=fmt,
+                columns=columns,
+                table_columns=_RELAUNCH_COLUMNS,
+                kind="awx.relaunch_outcome",
+            )
         finish(any(row.failed for row in rows))
 
 

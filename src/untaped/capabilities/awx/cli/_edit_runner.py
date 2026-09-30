@@ -52,7 +52,7 @@ def run_edit(
     """Edit one bounded batch; retain the private session on any failure."""
     batch = EditResources(spec, selected, SaveResource(ctx.repo, ctx.fk), fields=fields)
     if not selected:
-        emit_outcomes([], fmt=controls.fmt, columns=controls.columns)
+        emit_outcomes([], fmt=controls.fmt, columns=controls.columns, per_kind=True)
         return
     # A controlling terminal is required even under --yes and even if stdin is
     # a TTY-like wrapper. All subprocess I/O goes there, never to machine stdout.
@@ -126,4 +126,5 @@ def run_edit(
         fmt=controls.fmt,
         columns=controls.columns,
         allow_unverified=controls.allow_unverified,
+        per_kind=True,
     )
