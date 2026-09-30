@@ -77,7 +77,8 @@ self-contained manual for the installed CLI.
     value (see the fixes below for the few exceptions).
   - **New:** `--columns +name` adds a column to a table's default columns and
     `--columns=-name` removes one (`--columns +url,-kind` does both); in
-    other formats, `-name` removes a field from the whole record.
+    `raw` the edits also start from the defaults; in json and yaml, `-name`
+    removes a field from the whole record.
     `--columns ?` marks the default columns with `*`. A single record in
     table format leaves out its empty fields too. For providers, `emit` and
     `render_rows` take `table_columns=` for a command's default columns.
