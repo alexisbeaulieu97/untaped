@@ -158,3 +158,14 @@ def test_get_comments_table_keeps_issue_key_only_for_several_issues() -> None:
     assert "issue_key" in several.stdout
     assert "issue_key" not in one.stdout
     assert "author" in one.stdout
+
+
+def test_a_transition_without_a_target_has_no_status() -> None:
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/rest/api/2/issue/ABC-1/transitions").mock(
+            return_value=httpx.Response(200, json={"transitions": [{"id": "11", "name": "Start"}]})
+        )
+        result = invoke_cli(app, ["issues", "transitions", "ABC-1", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == [{"id": "11", "name": "Start", "to_status": None}]
