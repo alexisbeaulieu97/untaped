@@ -35,6 +35,7 @@ class ThemeSpec(BaseModel):
     density: Density = "normal"
     collection_view: CollectionView = "table"
     detail_view: DetailView = "list"
+    hide_empty_columns: bool = True
     symbols: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_SYMBOLS))
     color_roles: dict[str, str] = Field(default_factory=dict)
 
@@ -61,6 +62,7 @@ class UiSettings(BaseModel):
     density: Density | None = None
     collection_view: CollectionView | None = None
     detail_view: DetailView | None = None
+    hide_empty_columns: bool | None = None
     symbols: dict[str, str] = Field(default_factory=dict)
     color_roles: dict[str, str] = Field(default_factory=dict)
 
@@ -79,7 +81,7 @@ class UiSettings(BaseModel):
     def apply_to(self, theme: ThemeSpec) -> ThemeSpec:
         """Apply user overrides to a registered or built-in theme."""
         data = theme.model_dump()
-        for field in ("border", "density", "collection_view", "detail_view"):
+        for field in ("border", "density", "collection_view", "detail_view", "hide_empty_columns"):
             value = getattr(self, field)
             if value is not None:
                 data[field] = value

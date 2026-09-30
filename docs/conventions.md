@@ -157,6 +157,13 @@ come from a closed set:
 
 ## Output records
 
+- The record is for scripts and agents; the table is for a human scanning
+  rows. Keep every field on the record and pick the table's default columns
+  with `emit(rows, …, table_columns=[…])`: the identifying field, what
+  changed or its state, and what the reader acts on next. Leave out fields
+  that repeat the command's own arguments or are empty on most rows. Never
+  pass defaults as `columns=` (`columns or DEFAULTS`): `--columns +name/-name`
+  edits `table_columns`, and a named column is always shown, even when empty.
 - Kinds are `<cap>.<singular_noun>` for entities and `<cap>.<verb>_outcome`
   for mutation results. Root commands use `untaped.*`. Each kind has exactly
   one schema.

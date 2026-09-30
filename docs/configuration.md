@@ -402,6 +402,25 @@ wins over both. Commands whose own default is another format (`config get`
 prints `raw`) keep it. Table output that does not go to a terminal is not
 wrapped: only `COLUMNS` or a real terminal width bounds it.
 
+A table fits the terminal by narrowing its widest columns: a cell that does
+not fit ends in `…`, so each row stays on one line, while `detail`, `message`
+and `hint` wrap so an explanation is read whole. Nested values read as
+`key=value` pairs, durations (`*_s`, `elapsed`) as `1m42s`, and commits are shortened;
+`--format json` or `yaml` prints the full values. Status and outcome words
+(`failed`, `successful`, `skipped`, ...) are colored by meaning when color is
+on.
+
+Each command picks the columns its table shows by default; `--columns ?`
+lists every column and marks those with `*`. `--columns +url` adds a column to
+the defaults and `--columns=-url` removes one (`--columns +url,-kind` does
+both); `--columns name,url` shows exactly those. `ui.hide_empty_columns`
+(on by default) also leaves out a column that is empty on every row, unless
+`--columns` names it:
+
+```bash
+untaped config set ui.hide_empty_columns false
+```
+
 ## Worked profile setup
 
 This example writes capability-qualified keys through the root and then invokes
