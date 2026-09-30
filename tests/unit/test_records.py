@@ -78,6 +78,24 @@ def test_own_fields_come_before_inherited_base_fields(tmp_path: Path) -> None:
     assert row.model_dump_json().startswith('{"repo":')
 
 
+class _SyncOutcome(OutcomeRecord, TargetRecord):
+    repo: str
+    fetched: int
+    detail: str | None = None
+
+
+def test_an_inherited_action_follows_the_identifying_field(tmp_path: Path) -> None:
+    row = _SyncOutcome(action="synced", target_path=tmp_path, repo="a/b", fetched=3)
+
+    assert list(row.model_dump(mode="json")) == [
+        "repo",
+        "action",
+        "fetched",
+        "detail",
+        "target_path",
+    ]
+
+
 def test_redeclared_base_fields_keep_the_subclass_position(tmp_path: Path) -> None:
     row = _BranchOutcome(repo="a/b", action="updated", branch="main", target_path=tmp_path)
 

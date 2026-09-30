@@ -98,7 +98,7 @@ def test_cache_sync_warms_the_corpus_without_a_query(source_repo: SourceRepo) ->
 
     first, second, forced = sync(), sync(), sync("--refresh")
 
-    assert list(first) == ["repo", "fetched_at", "detail", "action"]
+    assert list(first) == ["repo", "action", "fetched_at", "detail"]
     assert (first["repo"], first["action"]) == ("acme/api", "synced")
     assert second["action"] == "skipped"
     assert forced["action"] == "synced"
