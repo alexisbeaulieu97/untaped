@@ -73,7 +73,7 @@ The entry-point name must equal the `CapabilitySpec.name`. The resolved object
 must be callable, expose an `api_requires` range, and return one
 `CapabilitySpec` when called without arguments. `CAPABILITY_API_VERSION` (in
 `src/untaped/capability_api.py`) is a `(major, minor)` tuple of ints, currently
-`(3, 0)`, and `api_requires` is a `(min_inclusive, max_exclusive)` pair of such
+`(3, 1)`, and `api_requires` is a `(min_inclusive, max_exclusive)` pair of such
 tuples, compared as tuples (so `(1, 10)` is newer than `(1, 9)`). New exports
 are additive and bump the minor version; removing or breaking an export bumps
 the major, so `((3, 0), (4, 0))` stays compatible across 3.x. A provider that
@@ -222,6 +222,7 @@ export, and each helper's docstring is its reference. The exports cover:
   `DoctorResult`) and `CAPABILITY_API_VERSION`;
 - output, shared options and message wording (`emit`, `echo`, `FormatOption`,
   `plural`, `q`, `not_found`, `hint`, ...);
+- record bases and field types (`OutcomeRecord`, `UtcTimestamp`, `TableGlyph`, ...);
 - errors and exit codes (`UntapedError`, `ErrorCategory`, `ConfigError`,
   `UsageError`, `attribution`, `note_failure`, `report_error`, ...);
 - settings, context, tokens and doctor-check factories (`get_config_section`,

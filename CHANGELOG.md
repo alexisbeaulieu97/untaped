@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Core
+  - **New (SDK):** a record type picks its default table columns with a
+    `table_columns` ClassVar and table-only glyphs with `TableGlyph` (API `3.1`).
   - **Fix:** with `ui.detail_view: table`, a single record's status and
     outcome values are colored by meaning, as in lists.
 - GitHub
