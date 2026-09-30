@@ -64,8 +64,8 @@ Terms as `untaped` uses them in commands, output and these docs.
   not in the source's cache. The graph beyond it may be incomplete.
 - **sweep (github)**: A content and file-presence query over the corpus:
   `github sweep`.
-- **table glyph**: A symbol a table shows in place of a field's value (`✓`
-  for true, `—` for unset). Other formats print the value itself.
+- **table glyph**: A symbol a table shows in place of a field's value (for
+  example `✓` for true or `—` for unset). Other formats print the value itself.
 - **workspace**: A directory of Git clones managed together through its
   manifest, and registered by name in the state file.
 
