@@ -128,7 +128,7 @@ class RichTerminalRenderer:
                     {"field": key, "value": _table_cell(key, value)}
                     for key, value in selected.items()
                 ]
-                return _format_table(rows, theme, colorize=colorize)
+                return _format_table(rows, theme, colorize=colorize, field_rows=True)
             return _format_record_as_lines(selected, theme=theme, colorize=colorize)
 
         raise ValueError(f"unknown format: {fmt!r}")
@@ -236,7 +236,10 @@ def _format_pipe(rows: Sequence[Row], kind: str | None) -> str:
     )
 
 
-def _format_table(rows: Sequence[Row], theme: ThemeSpec, *, colorize: bool) -> str:
+def _format_table(
+    rows: Sequence[Row], theme: ThemeSpec, *, colorize: bool, field_rows: bool = False
+) -> str:
+    """A themed table; ``field_rows`` marks a record's ``field``/``value`` rows."""
     if not rows:
         return ""
     compact = theme.density == "compact"
@@ -264,7 +267,11 @@ def _format_table(rows: Sequence[Row], theme: ThemeSpec, *, colorize: bool) -> s
         table.add_row(
             *[
                 _styled_text(
-                    text, _status_style(theme, col, row.get(col), colorize=colorize) or value_style
+                    text,
+                    _status_style(
+                        theme, _named(row, col, field_rows), row.get(col), colorize=colorize
+                    )
+                    or value_style,
                 )
                 for col, text in zip(columns, texts, strict=True)
             ]
@@ -285,6 +292,11 @@ def _min_width(column: str, *, first: bool) -> int:
     if first:
         return 40
     return 30 if column in _WRAPPED_COLUMNS else 10
+
+
+def _named(row: Row, column: str, field_rows: bool) -> str:
+    """The field a cell holds: its column, or in ``field_rows`` the row's ``field``."""
+    return str(row["field"]) if field_rows and column == "value" else column
 
 
 def _fit_widths(columns: list[str], cells: list[list[str]], *, budget: int) -> list[int | None]:

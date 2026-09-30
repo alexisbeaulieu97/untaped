@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -325,3 +326,52 @@ def test_cache_worktree_rejects_repos_it_cannot_materialize(repo: str, message: 
 
     assert result.exit_code == 1, result.output
     assert message in result.stderr
+
+
+def _status_bytes() -> int:
+    [row] = json.loads(CliInvoker().invoke(app, ["cache", "status", "--format", "json"]).stdout)
+    return int(row["disk_bytes"])
+
+
+@pytest.mark.parametrize("dry_run", [False, True], ids=["delete", "dry-run"])
+def test_cache_delete_reports_the_size_it_frees(source_repo: SourceRepo, dry_run: bool) -> None:
+    _populate(source_repo, "acme/api")
+    size = _status_bytes()
+    args = ["cache", "delete", "acme/api", "--yes", "--format", "json"]
+
+    result = CliInvoker().invoke(app, [*args, "--dry-run"] if dry_run else args)
+
+    assert result.exit_code == 0, result.output
+    [row] = json.loads(result.stdout)
+    assert size > 0
+    assert row["disk_bytes"] == size
+
+
+def test_cache_size_counts_links_not_what_they_point_at(
+    source_repo: SourceRepo, tmp_path: Path
+) -> None:
+    _populate(source_repo, "acme/api")
+    size = _status_bytes()
+    [bare] = [p for p in (tmp_path / "corpus").rglob("*.git") if p.is_dir()]
+    outside = tmp_path / "large.bin"
+    outside.write_bytes(b"x" * 1_000_000)
+    (bare / "link.bin").symlink_to(outside)
+
+    assert _status_bytes() < size + 1_000_000
+
+
+def test_cache_size_skips_a_file_that_vanishes_while_measured(
+    source_repo: SourceRepo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _populate(source_repo, "acme/api", "acme/web")
+    real_lstat = os.lstat
+
+    def flaky_lstat(path: object, *args: object, **kwargs: object) -> os.stat_result:
+        if str(path).endswith("HEAD"):
+            raise FileNotFoundError(path)
+        return real_lstat(path, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(os, "lstat", flaky_lstat)
+    result = CliInvoker().invoke(app, ["cache", "delete", "--all", "--yes", "--format", "json"])
+
+    assert _rows(result) == ["acme/api", "acme/web"]
