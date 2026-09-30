@@ -1131,6 +1131,26 @@ def test_scm_branch_overrides_every_case_and_rows_report_what_ran() -> None:
     assert (row.scm_branch, row.scm_revision) == ("fix", "c0")
 
 
+def test_rows_report_the_job_start_and_finish_as_utc_timestamps() -> None:
+    launcher = StubLauncher({"__default__": {"job": _job(id_=5, status="pending")}})
+    final = Job.model_validate(
+        {
+            "id": 5,
+            "kind": "job",
+            "status": "successful",
+            "started": "2026-01-02T03:04:05.123456Z",
+            "finished": "2026-01-02T03:05:06.654321Z",
+        }
+    )
+    runner = _make_runner(fk=StubFk(), launcher=launcher, watcher=StubWatcher(default=final))
+    [row] = runner([_case_suite({})]).results
+    dumped = row.model_dump(mode="json")
+    assert (dumped["started_at"], dumped["finished_at"]) == (
+        "2026-01-02T03:04:05Z",
+        "2026-01-02T03:05:06Z",
+    )
+
+
 def test_a_suite_bound_to_a_pinned_copy_launches_it_without_a_launch_time_ref() -> None:
     """A temporary copy runs the tested commit itself: no case passes scm_branch to it."""
     launcher = StubLauncher({"__default__": {"job": _job(id_=5)}})

@@ -477,7 +477,7 @@ def _report_results(
                 _show_failure(result, result.failure)
 
     emit(
-        [result.model_dump() for result in outcome.results],
+        [result.model_dump(mode="json") for result in outcome.results],
         fmt=fmt,
         columns=columns or default_get_columns(fmt, _result_columns(outcome)),
         kind=_RESULT_KIND,
