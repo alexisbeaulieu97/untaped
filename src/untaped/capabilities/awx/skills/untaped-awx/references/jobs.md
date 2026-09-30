@@ -22,7 +22,9 @@ untaped awx workflow-templates launch "Release train" --follow
   `--launch-inventory` and `--credential` names.
 - Before any POST, each template's launch settings are read. A flag whose
   `ask_*_on_launch` is false (AWX would silently ignore it) is a usage error,
-  unless its value equals the template's own. With a survey but no
+  unless the template has that value already: its own, its project's branch
+  for a `--scm-branch` it does not set, or extra vars it saves with those
+  values (AWX treats these as no-ops). With a survey but no
   `ask_variables_on_launch`, `--extra-vars` may carry only survey variables.
   A missing required survey variable is a usage error too. If AWX still
   reports `ignored_fields`, that row fails and keeps the job id.

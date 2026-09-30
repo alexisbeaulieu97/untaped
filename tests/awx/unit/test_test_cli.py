@@ -514,6 +514,31 @@ def test_run_timeout_cancels_the_job_unless_no_cancel(
     assert _cancelled_ids(running_job) == ([row["job_id"]] if cancels else [])
 
 
+@pytest.mark.parametrize(
+    ("flags", "reason", "cancels"),
+    [([], "cancel requested", True), (["--no-cancel"], "it keeps running", False)],
+)
+def test_run_cancels_a_job_launched_with_ignored_fields_unless_no_cancel(
+    cli: CliInvoker,
+    running_job: FakeAap,
+    tmp_path: Path,
+    flags: list[str],
+    reason: str,
+    cancels: bool,
+) -> None:
+    """The case errors on what AWX ignored; the job it launched anyway is abandoned."""
+    running_job.next_action_ignored_fields = {"limit": "web-*"}
+
+    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), *flags, "-f", "json"])
+
+    assert result.exit_code == 1, result.output
+    [row] = json.loads(result.stdout)
+    assert row["result"] == "error"
+    assert (row["failure"]["system"], row["failure"]["category"]) == ("awx.suite", "invalid")
+    assert row["failure"]["message"].endswith(f"AWX ignored launch fields: limit; {reason}")
+    assert _cancelled_ids(running_job) == ([row["job_id"]] if cancels else [])
+
+
 @pytest.mark.parametrize("value", ["0", "-1"])
 def test_run_rejects_a_non_positive_timeout(cli: CliInvoker, tmp_path: Path, value: str) -> None:
     result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "--timeout", value])
@@ -994,6 +1019,72 @@ def test_run_scm_branch_needs_templates_that_prompt_for_it(
     assert "s/c: " in result.stderr
     assert "ask_scm_branch_on_launch is false" in result.stderr
     assert "drop scm_branch" in result.stderr
+    assert fake_aap.actions_called == []
+
+
+def _saved_defaults(fake: FakeAap) -> None:
+    """A template that prompts for nothing: it saves ``env: prod`` and inherits ``main``."""
+    project = fake.seed(
+        "projects", name="app", scm_branch="main", allow_override=False, scm_revision="c0ffee"
+    )
+    fake.seed(
+        "job_templates",
+        name="Deploy app",
+        project=project["id"],
+        scm_branch="",
+        extra_vars="env: prod\nregion: eu\n",
+    )
+
+
+@pytest.mark.parametrize(
+    ("launch", "flags"),
+    [
+        ("{extra_vars: {env: prod}}", []),
+        ("{scm_branch: main}", []),
+        ("{}", ["--scm-branch", "main"]),
+    ],
+)
+def test_run_accepts_launch_values_the_template_already_has(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, launch: str, flags: list[str]
+) -> None:
+    """AWX drops them from the launch; so does the run, and its rerun pins no commit."""
+    _saved_defaults(fake_aap)
+    suite = _write(
+        tmp_path / "s.yml",
+        "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\n"
+        f"cases:\n  c: {{launch: {launch}, expect: {{idempotent: true}}}}\n",
+    )
+
+    result = cli.invoke(app, ["test", "run", str(suite), *flags, "-f", "json"])
+
+    assert result.exit_code == 0, result.stderr
+    [row] = json.loads(result.stdout)
+    assert row["result"] == "pass"
+    assert [body for *_, body in fake_aap.actions_called] == [{}, {}]
+
+
+@pytest.mark.parametrize(
+    ("launch", "field"),
+    [
+        ("{extra_vars: {env: prod, region: us}}", "extra_vars"),
+        ("{extra_vars: {env: prod, tier: web}}", "extra_vars"),
+        ("{scm_branch: fix}", "scm_branch"),
+    ],
+)
+def test_run_still_refuses_a_value_the_template_does_not_have(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, launch: str, field: str
+) -> None:
+    _saved_defaults(fake_aap)
+    suite = _write(
+        tmp_path / "s.yml",
+        "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\n"
+        f"cases:\n  c: {{launch: {launch}}}\n",
+    )
+
+    result = cli.invoke(app, ["test", "run", str(suite)])
+
+    assert result.exit_code == 1
+    assert f"does not prompt for {field} on launch" in result.stderr
     assert fake_aap.actions_called == []
 
 
