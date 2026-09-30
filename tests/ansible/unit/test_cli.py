@@ -2638,3 +2638,59 @@ def test_graph_stop_marker_survives_a_narrow_terminal(tmp_path: Path, monkeypatc
     assert result.exit_code == 0, result.output
     assert any(line.startswith("    └── acme/r3@main …") for line in result.stdout.splitlines())
     assert all(len(line) <= 30 for line in result.stdout.splitlines())
+
+
+# --- default table columns --------------------------------------------------
+
+
+def _table(result: CliResult) -> tuple[list[str], list[list[str]]]:
+    """A table's header cells and body rows."""
+    assert result.exit_code == 0, result.output + result.stderr
+    lines = [line.strip("│ ") for line in result.stdout.splitlines() if "│" in line]
+    header, *body = ([cell.strip() for cell in line.split("│")] for line in lines)
+    return header, body
+
+
+@pytest.mark.parametrize(
+    ("command", "role", "far", "near"),
+    [("deps", "acme/r1", "acme/r4", ["acme/r2", "main", _REQS, "acme/r1@main → acme/r2@main"]),
+     ("impact", "acme/r4", "acme/r1", ["acme/r3", "main", _REQS, "acme/r3@main → acme/r4@main"])],
+)  # fmt: skip
+def test_reach_table_shows_its_default_columns_with_a_short_path(
+    tmp_path: Path, monkeypatch, command: str, role: str, far: str, near: list[str]
+) -> None:
+    _seed_chain(tmp_path, monkeypatch)
+    monkeypatch.setenv("COLUMNS", "200")
+    args = [command, role, "--source", "platform"]
+
+    header, body = _table(_run(*args))
+    records = json.loads(_run(*args, "-f", "json").stdout)
+    raw = _run(*args, "-f", "raw", "-c", "path").stdout
+
+    assert header == ["repo", "ref", "declared_in", "path"]
+    assert [far, "main", _REQS, "acme/r1@main → … → acme/r4@main"] in body
+    assert near in body
+    full = ["acme/r1@main", "acme/r2@main", "acme/r3@main", "acme/r4@main"]
+    assert full in [record["path"] for record in records]
+    assert ", ".join(full) in raw.splitlines()
+
+
+def test_find_table_shows_its_default_columns(tmp_path: Path, monkeypatch) -> None:
+    _seed_contains(tmp_path)
+    _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
+    monkeypatch.setenv("COLUMNS", "200")
+
+    header, body = _table(_find("acme/app@main\n"))
+
+    assert header == ["root_repo", "root_ref", "repo", "declared_ref", "path"]
+    assert body == [["acme/app", "main", "acme/target", "v2", "acme/app@main → … → acme/target@v2"]]
+
+
+def test_source_status_table_shows_its_default_columns(tmp_path: Path, monkeypatch) -> None:
+    _seed(tmp_path, "source:platform", _edge())
+    _use_config(tmp_path, monkeypatch, _PLATFORM)
+    monkeypatch.setenv("COLUMNS", "200")
+
+    header, _ = _table(_run("source", "status"))
+
+    assert header == ["source", "state", "scanned_at", "repos", "refs"]
