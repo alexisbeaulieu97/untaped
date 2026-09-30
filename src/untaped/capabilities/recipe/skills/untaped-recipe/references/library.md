@@ -68,6 +68,8 @@ stdin; anything they print becomes diagnostics.
   with a ref or path it checks one pack, recipe or built-in hook.
 - It scans hook modules without importing them. A pack that declares hooks
   must have a `uv.lock` that `uv lock --check` accepts.
+- Every `packs.toml` row must carry its `content_hash`; a malformed or
+  incomplete row blocks every library change until it is fixed.
 - Each `recipe.check` row has `name`, `type` (`pack`/`recipe`/`hook`),
   `status` (`pass`/`fail`), `path` and `detail` (why it failed). Any `fail`
   exits 1.

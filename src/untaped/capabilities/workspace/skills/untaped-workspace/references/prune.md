@@ -70,17 +70,21 @@ need.
 - Each command lists its targets and asks once, defaulting to No.
 - `--yes` (`-y`) skips the question. `--dry-run` wins over `--yes`.
 - Without a terminal, and without `--yes` or `--dry-run`, the command exits 2
-  and changes nothing.
-- Declining prints `cancelled; no changes made` and exits 1; the manifest,
-  registry and files are unchanged.
+  and deletes nothing.
+- Declining prints `cancelled; no changes made` and exits 1; nothing is
+  deleted and the manifest and registry are unchanged.
+- `sync --prune` syncs first and asks afterwards, so by the time it exits 2 or
+  you decline, missing repos may be cloned and existing ones pulled.
 - `--dry-run` without `--prune` is a usage error (exit 2) for `sync` and
   `forget`.
 
 ## Recovery
 
-- A deleted clone passed the safety check, so its branches were on the
-  remote: add the repo back if needed and run `untaped workspace sync WS`.
-  Ignored files are gone.
+- Add the repo back if needed and run `untaped workspace sync WS`; the new
+  clone has what the remote has. The safety check only proved the deleted
+  clone's commits were reachable from its local remote-tracking refs, so a
+  local-only branch name, or commits that only stale refs still held, may not
+  come back. Ignored files are gone.
 - A refused repo or workspace is unchanged: resolve what the refusal names
   (commit and push, drop the stash) and rerun.
 - A `partial` row left the clone on disk: delete it by hand, or let the next
