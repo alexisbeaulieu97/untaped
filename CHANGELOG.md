@@ -70,14 +70,15 @@ self-contained manual for the installed CLI.
     row, not just the first. It fits the terminal by narrowing only its
     widest columns: a cell that does not fit ends in `…` and each row stays
     on one line, while `detail`, `message` and `hint` wrap. Nested values
-    read as `key=value` pairs instead of Python reprs, `*_s` durations as
+    read as `key=value` pairs instead of Python reprs, durations (`*_s`, `elapsed`) as
     `1m42s`, other decimals to two places, and commits are shortened to 10
     characters. Status and outcome words are colored by meaning, including
     in the default theme. json, yaml, raw and pipe keep every field and
     value (see the fixes below for the few exceptions).
   - **New:** `--columns +name` adds a column to a table's default columns and
     `--columns=-name` removes one (`--columns +url,-kind` does both); in
-    other formats, `-name` removes a field from the whole record.
+    `raw` the edits also start from the defaults; in json and yaml, `-name`
+    removes a field from the whole record.
     `--columns ?` marks the default columns with `*`. A single record in
     table format leaves out its empty fields too. For providers, `emit` and
     `render_rows` take `table_columns=` for a command's default columns.

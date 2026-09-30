@@ -405,7 +405,7 @@ wrapped: only `COLUMNS` or a real terminal width bounds it.
 A table fits the terminal by narrowing its widest columns: a cell that does
 not fit ends in `…`, so each row stays on one line, while `detail`, `message`
 and `hint` wrap so an explanation is read whole. Nested values read as
-`key=value` pairs, `*_s` durations as `1m42s`, and commits are shortened;
+`key=value` pairs, durations (`*_s`, `elapsed`) as `1m42s`, and commits are shortened;
 `--format json` or `yaml` prints the full values. Status and outcome words
 (`failed`, `successful`, `skipped`, ...) are colored by meaning when color is
 on.
