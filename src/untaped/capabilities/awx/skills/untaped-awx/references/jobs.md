@@ -104,8 +104,8 @@ untaped awx jobs wait 101 --timeout 600
   keeps one template's runs (the project for `--kind project_update`, the
   inventory source for `--kind inventory_update`; digits mean an id, so match
   a numeric name with `--filter job_template__name=123`). `jobs list`,
-  `get` and `wait` tables show a summary; json and yaml carry every AWX
-  field.
+  `get` and `wait` tables show a summary; json and yaml carry the whole
+  record.
 - `jobs logs` prints a job's stdout, downloaded in full; with `--follow` it
   reads only new events on each poll (colours removed), and `--tail N
   --follow` starts from the newest events only. `jobs events` prints the
