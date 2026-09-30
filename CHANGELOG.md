@@ -366,6 +366,11 @@ self-contained manual for the installed CLI.
     `detail` and `error`) for a pack that could not be fetched, installed
     or removed; such packs had no row. A `packs remove` that fails to delete
     a pack's files reports it and moves on to the next pack.
+  - **Breaking:** `backups prune` emits `recipe.prune_outcome` rows (`id`,
+    `size_bytes`, `detail`, `action`) instead of `recipe.backup` rows, so a
+    `planned` (`--dry-run`) row is told apart from a `deleted` one.
+  - **Fix:** a bundle `backups prune` fails to delete is a `failed` row with
+    `detail` and `error`; it had no row.
 
 ## 8.1.0
 

@@ -21,7 +21,9 @@ from untaped.capability_api import (
     ConfigError,
     DryRunOption,
     ErrorCategory,
+    ErrorInfo,
     FormatOption,
+    OutcomeRecord,
     UntapedError,
     UsageError,
     YesOption,
@@ -32,6 +34,18 @@ from untaped.capability_api import (
     plural,
     render_rows,
 )
+
+
+class BackupPruneRecord(OutcomeRecord):
+    """One ``backups prune`` row (kind ``recipe.prune_outcome``).
+
+    ``action`` is ``planned`` (``--dry-run``), ``deleted`` or ``failed`` (with
+    ``detail`` and ``error``).
+    """
+
+    id: str
+    size_bytes: int
+    detail: str | None = None
 
 
 def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
@@ -191,22 +205,29 @@ def prune_command(
             assume_yes=yes,
             preview_only=dry_run,
         )
+        if outcome.cancelled:
+            finish(outcome)
+        failed = {bundle.id: ErrorInfo.from_exception(exc) for bundle, exc in outcome.failures}
+        rows = [
+            BackupPruneRecord(
+                id=bundle.id,
+                size_bytes=sizes[bundle.id],
+                action="planned" if dry_run else "failed" if bundle.id in failed else "deleted",
+                detail=failed[bundle.id].message if bundle.id in failed else None,
+                error=failed.get(bundle.id),
+            ).model_dump()
+            for bundle in pruned
+        ]
+        rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.prune_outcome")
+        if rendered:
+            echo(rendered)
         if dry_run:
-            rendered = render_rows(
-                outcome.planned_rows, fmt=fmt, columns=columns, kind="recipe.backup"
-            )
-            if rendered:
-                echo(rendered)
             ui.message(
                 "info",
                 f"would prune {len(pruned)} of {plural(len(bundles), 'backup')}, "
                 f"keep {len(bundles) - len(pruned)}",
             )
             return
-        rows = [{"id": bundle.id, "size_bytes": sizes[bundle.id]} for bundle, _ in outcome.results]
-        rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.backup")
-        if rendered:
-            echo(rendered)
         if not outcome.any_failed and (outcome.results or not pruned):
             reclaimed = sum(sizes[bundle.id] for bundle, _ in outcome.results)
             kept = len(bundles) - len(outcome.results)

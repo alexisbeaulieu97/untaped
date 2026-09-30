@@ -65,7 +65,9 @@
   the backup unless `--force` is passed. Backups store text content only; mode
   and mtime are not preserved. Bundles are owner-only (dirs `0700`, files
   `0600`) and their metadata is replaced atomically. `prune [--keep N] [--older-than DAYS]` falls
-  back to the `recipe.backup_keep`/`recipe.backup_max_age_days` settings.
+  back to the `recipe.backup_keep`/`recipe.backup_max_age_days` settings and
+  prints one row per bundle with `action` `planned`, `deleted` or `failed`
+  (`detail`, `error`).
 - All recipe-local and target-relative paths must be safe relative paths:
   absolute paths, `..` segments, and symlink traversal are rejected before any
   engine-mediated read or write, again after path-field rendering.

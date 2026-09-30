@@ -289,6 +289,9 @@ you pass `--force`. Backups hold file content only, not modes or times.
 Bundles are readable only by you: directories are created `0700`, files
 `0600`, and each bundle's `metadata.json` is replaced atomically.
 `prune` falls back to `recipe.backup_keep` and `recipe.backup_max_age_days`.
+It prints one `recipe.prune_outcome` row per bundle (`id`, `size_bytes`,
+`detail`, `action`): `planned` with `--dry-run`, then `deleted`, or `failed`
+with `detail` and `error`.
 
 ## Output
 
