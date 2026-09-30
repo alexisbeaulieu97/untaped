@@ -85,11 +85,11 @@ untaped github repos list 'api|web' --org acme --regex
 ```
 
 - `PATTERN` is a case-insensitive glob. With `--regex` it is an unanchored,
-  case-insensitive regex. A pattern with `/` matches `full_name`
+  case-insensitive regex. A pattern with `/` matches `repo`
   (`acme/svc-*`); otherwise it matches the repo name.
 - `--team SLUG` without the org works when you pass exactly one `--org`;
   `--org acme --team backend` means all of `acme` plus that team.
-- The table shows `full_name`, `default_branch`, `private`, `archived`,
+- The table shows `repo`, `default_branch`, `private`, `archived`,
   `fork` and `url`. Use `-c` or `--format json` for the rest (`clone_url`,
   `ssh_url`, `pushed_at`, ...).
 
@@ -248,10 +248,14 @@ The corpus is for sweeps. For clones you work in, use
 | `cache sync` | `github.sync_outcome` |
 | `cache worktree` | `github.worktree` |
 
+Records name the repository `owner/name` in `repo` and link its web page in
+`url`.
+
 `--stdin` on `search repos`, `search code`, `search issues`, `sweep` and
 `cache sync` reads `owner/name` lines or `github.repo`, `github.repo_hit` and
-`github.sweep_repo` records. `sweep` and `cache sync` use a `github.repo`
-record as it is; other records and bare names are looked up through the API.
+`github.sweep_repo` records (their `repo`). `sweep` and `cache sync` use a
+`github.repo` record as it is; other records and bare names are looked up
+through the API.
 
 ## See also
 

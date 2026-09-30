@@ -522,8 +522,8 @@ class RunTestSuite:
                     failure = request_failure(exc)
             fields |= {
                 "job_status": final.status,
-                "started_at": final.started,
-                "finished_at": final.finished,
+                "started_at": final.started_at,
+                "finished_at": final.finished_at,
                 "scm_branch": final.scm_branch,
                 "scm_revision": final.scm_revision,
             }
@@ -603,7 +603,7 @@ class RunTestSuite:
         fields["result"] = "timeout"
         # A refused cancel re-reads the job: it may have ended meanwhile.
         latest = self._finals[(job.kind, job.id)] = self._abandon.latest(job)
-        fields.update(job_status=latest.status, finished_at=latest.finished)
+        fields.update(job_status=latest.status, finished_at=latest.finished_at)
         return failure
 
     def _stalled(
