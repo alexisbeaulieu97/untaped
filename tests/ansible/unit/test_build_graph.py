@@ -724,3 +724,26 @@ def test_a_fully_read_graph_has_no_stopped_nodes(source_key: str | None) -> None
     )
 
     assert _stopped(graph) == {}
+
+
+def test_a_ref_less_read_counts_as_reading_each_concrete_ref() -> None:
+    # a@main -> b (unpinned, default branch unknown); b@main -> c -> a.
+    index = StubIndex(
+        [
+            _dep("acme/a", "acme/b", version=None),
+            _dep("acme/b", "acme/c"),
+            _dep("acme/c", "acme/a"),
+        ]
+    )
+
+    graph = _build(index, "acme/a", "main", source_key="source:prod", direction="both", depth=2)
+
+    assert "acme/b@main" not in _stopped(graph)
+
+
+def test_a_ref_less_dependency_missing_from_the_cache_is_not_cached() -> None:
+    index = StubIndex([_dep("acme/a", "acme/b", version=None)], cached_refs={"acme/a": {"main"}})
+
+    graph = _build(index, "acme/a", "main", source_key="source:prod", direction="deps", depth=None)
+
+    assert _stopped(graph) == {"acme/b": "not_cached"}

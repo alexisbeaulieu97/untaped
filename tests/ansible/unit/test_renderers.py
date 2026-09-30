@@ -445,3 +445,11 @@ def test_json_renderer_carries_each_nodes_stop_reason() -> None:
         "old": "not_cached",
         "site": "depth",
     }
+
+
+def test_tree_header_marks_a_stopped_target() -> None:
+    graph = _graph([_node("target", "acme/base", "v9", stopped="not_cached")], [])
+
+    assert plain_text(tree_lines(graph)).splitlines() == [
+        "acme/base@v9 …  not read: ref not cached"
+    ]

@@ -215,8 +215,9 @@ class _GraphBuilder:
             source_id = _node_id(entry.repo, source_ref)
             entry.items.append(_AddNodeItem(entry.repo, source_ref, indexed.source_ref_kind))
             if entry.ref is None:
-                # A ref-less read expands every concrete ref of the repo.
+                # A ref-less read expands (and reads) every concrete ref of the repo.
                 self._claim(source_id, entry.remaining)
+                self._read.add(source_id)
             target_ref = self._dependency_ref(indexed)
             target_id = _dependency_target_id(indexed, target_ref)
             entry.items.append(_AddTargetItem(indexed, target_ref))
@@ -241,6 +242,7 @@ class _GraphBuilder:
             entry.items.append(_AddNodeItem(entry.repo, target_ref, None))
             if entry.ref is None:
                 self._claim(target_id, entry.remaining)
+                self._read.add(target_id)
             source_id = _node_id(indexed.source_repo, indexed.source_ref)
             entry.items.append(
                 _AddNodeItem(indexed.source_repo, indexed.source_ref, indexed.source_ref_kind)
@@ -515,7 +517,12 @@ class _GraphBuilder:
         self._warnings.append(warning)
 
     def _warn_if_missing_cached_ref(self, repo: str, ref: str | None) -> None:
-        if self._request.source_key is None or ref is None:
+        if self._request.source_key is None:
+            return
+        if ref is None:
+            # A ref-less read of a repo the source never scanned (no warning, as before).
+            if not self._request.live and not self._cached_refs_for(repo):
+                self._not_cached.add(_node_id(repo, ref))
             return
         cached_refs = self._cached_refs_for(repo)
         node = _label(repo, ref)

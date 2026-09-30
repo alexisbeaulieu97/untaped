@@ -155,8 +155,9 @@ The first line names the target, where the data came from and the depth.
 "used by" lists the repos that depend on it and "depends on" what it depends
 on. After each repo comes the file that declares that dependency, plus
 `unpinned` when it names no version, or `pins X` when the declared version
-differs from the ref it resolved to. A repo whose own dependencies were not
-read is marked `…` with a note: `not read: depth limit` when `--depth` ran
+differs from the ref it resolved to. A repo whose next level was not read (its
+dependencies under "depends on", its dependents under "used by") is marked
+`…` with a note: `not read: depth limit` when `--depth` ran
 out, `not read: ref not cached` when the source has not cached its ref. The
 graph beyond it may be incomplete; with a depth limit, a `hint:` line on
 stderr says how many repos stopped (the node's `stopped` field in JSON). The
@@ -240,8 +241,9 @@ afterwards.
   have `repo`, `ref`, `unresolved` (the declared name of a dependency that
   names no GitHub repo), `declared_ref` and `declared_in` (from the edge that
   reached the repo, verbatim), `depth`, `path`, `root_ref` and `stopped`
-  (`depth` or `not_cached` when the repo's own dependencies were not read,
-  else `null`; shown in a table only when set). `path` reads
+  (`depth` or `not_cached` when the next level beyond the repo was not
+  read: its dependencies for `deps`, its dependents for `impact`; else
+  `null`; shown in a table only when set). `path` reads
   in dependency order: from ROLE for `deps`, towards ROLE for `impact`. Each
   repo appears once per root, at its shortest path; `root_ref` says which
   ROLE ref a row was reached from (one per ref with `deps --all-refs`, and

@@ -787,7 +787,8 @@ def test_graph_tree_follows_ascii_theme_and_keeps_warnings_on_stderr(
         "",
         "depends on",
         "`-- acme/site@main",
-        "    `-- acme/cached  roles/requirements.yml · unpinned",
+        # The source never scanned acme/cached, so the graph says it stopped there.
+        "    `-- acme/cached ...  roles/requirements.yml · unpinned · not read: ref not cached",
     ]
     assert "warning" not in result.stdout
     assert "warning: source data is stale" in result.stderr
@@ -809,7 +810,7 @@ def test_graph_tree_out_file_is_plain_text(tmp_path: Path, monkeypatch) -> None:
     text = output.read_text()
     assert "\x1b[" not in text
     assert _tree(text) == ["acme/site@main", "  acme/cached"]
-    assert text.endswith("1 repo · 1 edge")
+    assert text.endswith("1 repo · 1 edge · 1 stopped")
 
 
 @pytest.mark.parametrize("cached", [True, False])
@@ -875,7 +876,7 @@ def test_graph_tree_truncates_lines_wider_than_the_terminal(tmp_path: Path, monk
     result = _run("graph", "acme/site", "--source", "platform")
 
     assert result.exit_code == 0, result.output
-    assert "    └── acme/cached  roles/re…" in result.stdout.splitlines()
+    assert "    └── acme/cached …  roles/…" in result.stdout.splitlines()
     assert all(len(line) <= 30 for line in result.stdout.splitlines())
 
 
