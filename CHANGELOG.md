@@ -278,9 +278,10 @@ self-contained manual for the installed CLI.
     and change nothing, and a failure lists the tasks it changed). A failed
     check is `awx.expectation`. These checks read a job's host summaries and
     events (a workflow's, each node job's) only once AWX has saved them; a
-    job AWX is still saving, or a `failed_tasks` entry matched only by a
-    failure the host summaries cannot show was unhandled, makes the case an
-    `awx.controller` error (exit 5), never a pass. Result rows gain
+    job AWX is still saving makes the case an `awx.controller` error (exit
+    5), and a `failed_tasks` entry matched only by a failure the host
+    summaries cannot show was unhandled an `awx.expectation` error (exit 1),
+    never a pass. Result rows gain
     `rerun_job_id`. `test validate` warns about `status: failed` without
     `failed_tasks`, and refuses `idempotent` with another status than
     `successful`. The awx skill ships an `idempotent.yml` example.

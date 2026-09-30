@@ -261,7 +261,8 @@ count: a host that counts N failures failed on its last N failed tasks). It
 needs at least one part, and every part it gives must match the same task.
 Every entry must match some failed task; other failed tasks do not fail the
 check. An entry that only a failure the host summaries cannot show was
-unhandled matches is not proven: the case is an `awx.controller` error. A
+unhandled matches is not proven: the case is an `awx.expectation` error
+(exit 1; a rerun reads the same recap). A
 job that succeeded has no failed task, so its `failed_tasks` entries fail
 without reading anything.
 

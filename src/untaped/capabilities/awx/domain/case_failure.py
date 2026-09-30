@@ -15,14 +15,14 @@ The rules are pure and the first match wins:
   or read; a job or its update ended in ``error``; a job was canceled outside
   the run, failed with a controller explanation (the reaper) or with events
   not yet readable; a check needed its events while AWX was still saving
-  them, or a ``failed_tasks`` entry is matched only by a failure a rescue may
-  have handled; or it never left ``pending``/``waiting`` before the timeout.
+  them; or it never left ``pending``/``waiting`` before the timeout.
 - ``awx.scm`` / ``awx.inventory``: AWX names a failed project or inventory
   update in ``Previous Task Failed: {…}``, even when the case expected the
   job to fail (a ref not overridable, found before launching, is
   ``awx.scm`` too).
 - ``awx.expectation``: the job ran its playbook as asked, but an expectation
-  did not hold.
+  did not hold, or a ``failed_tasks`` entry is matched only by a failure a
+  rescue may have handled (the recap cannot prove it on a rerun either).
 - ``awx.hosts``: the job failed and every failed task is an unreachable host.
 - ``awx.playbook``: the job failed any other way, or a timeout while it ran.
 
@@ -502,12 +502,19 @@ def events_unsaved(job: Job) -> CaseFailure:
 
 
 def unproven(task: FailedTask) -> CaseFailure:
-    """A ``failed_tasks`` entry only an ``unsure`` failed task matches: it may have been handled."""
+    """A ``failed_tasks`` entry only an ``unsure`` failed task matches: it may have been handled.
+
+    The expectation's: the recap will not say more on a rerun.
+    """
     message = (
         f"failed_tasks not proven: task {q(task.task or '?')} on {task.host or '?'} matches, but "
         "AWX's host summaries do not show whether a rescue block handled it"
     )
-    return failure(CONTROLLER, ErrorCategory.UNAVAILABLE, message)
+    hint = (
+        "the hosts' recap cannot show whether a rescue handled this failure; expect a task "
+        "that fails unhandled, or check the log"
+    )
+    return failure(EXPECTATION, ErrorCategory.FAILED, message, hint=hint)
 
 
 def _events_unread(job: Job) -> str:
