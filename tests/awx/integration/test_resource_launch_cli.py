@@ -440,6 +440,7 @@ def _unprompted_alpha(fake: Any) -> None:
     fake.seed("credentials", id=30, name="ssh", organization=1, organization_name="Default")
     fake.seed("credentials", id=31, name="vault", organization=1, organization_name="Default")
     fake.seed("credentials", id=32, name="other", organization=1, organization_name="Default")
+    fake.seed("projects", id=40, name="app", scm_branch="main")
     fake.seed(
         "job_templates",
         id=10,
@@ -448,6 +449,9 @@ def _unprompted_alpha(fake: Any) -> None:
         organization_name="Default",
         limit="web",
         verbosity=1,
+        project=40,
+        scm_branch="",
+        extra_vars="env: prod\nregion: eu\n",
         summary_fields={"credentials": [{"id": 30, "name": "ssh"}, {"id": 31, "name": "vault"}]},
     )
 
@@ -460,12 +464,18 @@ def _unprompted_alpha(fake: Any) -> None:
         ["--credential", "ssh"],
         ["--credential", "ssh", "--credential", "vault"],
         ["--extra-vars", "{}"],
+        ["--extra-vars", "env=prod"],
+        ["--scm-branch", "main"],
     ],
 )
 def test_launch_allows_unprompted_values_equal_to_the_template(
     seeded_default_org: Any, args: list[str]
 ) -> None:
-    """AWX treats a value equal to the template's own as a no-op, not ignored."""
+    """AWX treats a value the template has already as a no-op, not ignored.
+
+    That is its own value, its project's branch when it names none, or
+    extra vars it saves with those values.
+    """
     _unprompted_alpha(seeded_default_org)
     result = CliInvoker().invoke(app, ["job-templates", "launch", "alpha", *args])
     assert result.exit_code == 0, result.output
@@ -477,6 +487,8 @@ def test_launch_allows_unprompted_values_equal_to_the_template(
     [
         (["--host-pattern", "db"], "--host-pattern"),
         (["--credential", "ssh", "--credential", "other"], "--credential"),
+        (["--extra-vars", "env=prod", "--extra-vars", "region=us"], "--extra-vars"),
+        (["--scm-branch", "fix"], "--scm-branch"),
     ],
 )
 def test_launch_rejects_unprompted_values_that_differ(

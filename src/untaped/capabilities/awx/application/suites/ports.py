@@ -135,6 +135,7 @@ class LaunchCheck(Protocol):
     """Raise when AWX would reject or ignore a launch, before anything runs.
 
     ``nodes`` are node ids a workflow case checks, which the workflow must have.
+    Returns the payload to launch: the fields that change nothing dropped.
     """
 
     def __call__(
@@ -145,7 +146,7 @@ class LaunchCheck(Protocol):
         scope: dict[str, str] | None,
         payload: dict[str, Any],
         nodes: Collection[str] = (),
-    ) -> None: ...
+    ) -> dict[str, Any]: ...
 
     def approval_nodes(
         self, spec: ResourceSpec, *, name: str, scope: dict[str, str] | None

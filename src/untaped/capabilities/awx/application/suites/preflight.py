@@ -37,17 +37,18 @@ class PreflightLaunch:
     workflow must have every node a case checks, and it lists its approval
     nodes, nested workflows' included. Each template and its
     ``launch/``, ``survey_spec/`` and ``workflow_nodes/`` answers are read once
-    per instance.
+    per instance (a job template and a workflow of one name apart).
     """
 
     def __init__(self, client: ResourceClient, catalog: Catalog) -> None:
         self._client = client
+        self._catalog = catalog
         self._selection = SelectionResolver(client, catalog)
         self._templates: dict[
-            tuple[str, tuple[tuple[str, str], ...]],
+            tuple[str, str, tuple[tuple[str, str], ...]],
             tuple[SelectedResource, Callable[[str], Mapping[str, Any]]],
         ] = {}
-        self._nodes: dict[int, list[TemplateNode]] = {}
+        self._nodes: dict[tuple[str, int], list[TemplateNode]] = {}
         self._launches: dict[tuple[str, int], Mapping[str, Any]] = {}
 
     def __call__(
@@ -58,9 +59,18 @@ class PreflightLaunch:
         scope: dict[str, str] | None,
         payload: dict[str, Any],
         nodes: Collection[str] = (),
-    ) -> None:
+    ) -> dict[str, Any]:
+        """Check a launch; return ``payload`` without its no-ops (see :func:`preflight_launch`)."""
         template, reader = self.template(spec, name=name, scope=scope)
-        preflight_launch(self._client, spec, template, payload, read=reader, name_fields=True)
+        launch = preflight_launch(
+            self._client,
+            spec,
+            template,
+            payload,
+            catalog=self._catalog,
+            read=reader,
+            name_fields=True,
+        )
         if nodes:
             known = [node.label for node in self.nodes(spec, template.id)]
             unknown = sorted(set(nodes) - set(known))
@@ -71,6 +81,7 @@ class PreflightLaunch:
                     candidates=known,
                     status=None,
                 )
+        return launch
 
     def template(
         self,
@@ -80,7 +91,7 @@ class PreflightLaunch:
         scope: dict[str, str] | None,
     ) -> tuple[SelectedResource, Callable[[str], Mapping[str, Any]]]:
         """The named template and a cached reader of its ``launch``/``survey_spec`` answers."""
-        key = (name, tuple(sorted((scope or {}).items())))
+        key = (spec.kind, name, tuple(sorted((scope or {}).items())))
         if key not in self._templates:
             request = SelectionRequest(names=(name,), scope=scope or {})
             [template] = self._selection.resolve(spec, request)
@@ -103,10 +114,11 @@ class PreflightLaunch:
 
     def nodes(self, spec: ResourceSpec, template_id: int) -> list[TemplateNode]:
         """A workflow template's nodes (its ``workflow_nodes/`` records, every page), read once."""
-        if template_id not in self._nodes:
+        key = (spec.kind, template_id)
+        if key not in self._nodes:
             records = self._client.paginate_sub_endpoint(spec, template_id, "workflow_nodes")
-            self._nodes[template_id] = [TemplateNode.from_record(record) for record in records]
-        return self._nodes[template_id]
+            self._nodes[key] = [TemplateNode.from_record(record) for record in records]
+        return self._nodes[key]
 
     def approval_nodes(
         self, spec: ResourceSpec, *, name: str, scope: dict[str, str] | None

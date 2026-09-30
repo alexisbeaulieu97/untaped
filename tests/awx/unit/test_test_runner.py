@@ -521,7 +521,8 @@ def test_runner_returns_an_outcome_per_case(parallel: int) -> None:
 def test_interrupt_reports_ignored_field_executions_and_final_statuses() -> None:
     """Jobs created despite ignored_fields are launched too; finished ones are known.
 
-    Ctrl-C cancels every unfinished one, except a job its timeout already cancelled.
+    Ctrl-C cancels every unfinished one, except a job its timeout already
+    cancelled; one whose cancel AWX refused at launch is asked again.
     """
 
     class InterruptingWatcher:
@@ -562,7 +563,7 @@ def test_interrupt_reports_ignored_field_executions_and_final_statuses() -> None
         (10, False),
         (8, False),
     }
-    assert canceller.calls == [10, 9, 8]
+    assert canceller.calls == [9, 10, 9, 8]
     assert runner.cancelled == {("job", 10), ("job", 8)}
 
 
@@ -1158,10 +1159,11 @@ def test_preflight_failures_stop_the_run_before_any_launch() -> None:
         scope: dict[str, str] | None,
         payload: dict[str, Any],
         nodes: Any = (),
-    ) -> None:
+    ) -> dict[str, Any]:
         checked.append((name, payload))
         if "limit" in payload:
             raise LaunchPromptError("does not prompt for limit")
+        return payload
 
     launcher = StubLauncher({})
     runner = _make_runner(
@@ -1188,7 +1190,7 @@ def test_a_preflight_failure_carries_its_most_severe_category() -> None:
         scope: dict[str, str] | None,
         payload: dict[str, Any],
         nodes: Any = (),
-    ) -> None:
+    ) -> dict[str, Any]:
         if "limit" in payload:
             raise LaunchPromptError("does not prompt for limit")
         raise ConfigError(
@@ -1245,8 +1247,9 @@ def test_a_suite_organization_scopes_its_template() -> None:
         scope: dict[str, str] | None,
         payload: dict[str, Any],
         nodes: Any = (),
-    ) -> None:
+    ) -> dict[str, Any]:
         checked.append(scope)
+        return payload
 
     runner = _make_runner(
         fk=StubFk(),

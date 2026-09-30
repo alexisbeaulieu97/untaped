@@ -389,15 +389,18 @@ secret when a word is `pass`, `passwd`, `password`, `passphrase`, `pwd`,
 Before any POST, each target's `launch/` endpoint is read. A supplied flag
 whose template setting `ask_*_on_launch` is false (AWX would silently ignore
 it, for example running the whole inventory despite `--host-pattern`) is a usage
-error naming the flag and template, unless the value equals the template's own
-(credentials: every supplied credential is already on the template), which
-AWX treats as a no-op. An empty `--extra-vars` mapping is never rejected. When
+error naming the flag and template, unless the template has that value
+already, which AWX treats as a no-op: its own value (credentials: every
+supplied credential is already on the template), its project's branch for a
+`--scm-branch` when the template sets none, or extra vars it saves with those
+values. An empty `--extra-vars` mapping is never rejected. When
 the template has a survey but does not prompt for variables, `--extra-vars`
 may carry only the survey's variables; others are a usage error naming them.
 Missing required survey variables (`variables_needed_to_start`) are reported
 the same way. If AWX still lists
 `ignored_fields` in a launch response, that row fails with the ignored field
-names and keeps the execution ID; `awx test` reports such a case as an error.
+names and keeps the execution ID; `awx test` reports such a case as an error
+and cancels its job unless `--no-cancel`.
 
 ## Sync, wait for and follow executions
 
