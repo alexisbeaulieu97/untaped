@@ -666,7 +666,10 @@ untaped awx test prune --dry-run
   changed counters (`hosts`, `"*"` for every host), require the failed tasks
   that prove a negative case failed for the right reason (`failed_tasks`;
   `validate` warns about a `status: failed` case without it), and rerun the
-  case to prove nothing changes the second time (`idempotent: true`).
+  case to prove nothing changes the second time (`idempotent: true`). These
+  checks, and `log`, read what AWX writes from the job's events once it has
+  saved them: a job AWX is still saving fails the case as an error (exit 5,
+  retry later), never a pass.
 - `--compare FILE` compares a run with the saved JSON (or pipe) output of an
   earlier one, and `--baseline REF` runs every case on `REF` first, then
   compares. Each row gains `baseline` and a `change`, and only a regression

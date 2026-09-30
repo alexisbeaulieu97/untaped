@@ -93,8 +93,9 @@ class FakeAap:
         # ``(collection, id)`` → HTTP status its ``GET <collection>/<id>/`` reads fail with.
         self.detail_errors: dict[tuple[str, int], int] = {}
         # How the job a workflow node runs ends, by node ``identifier``: a mapping of
-        # ``status``, ``events``, ``host_summaries``, ``stdout`` and ``job_fields`` (the
-        # ``next_action_*`` values), or a list of them used one per run (the last repeats).
+        # ``status``, ``events``, ``host_summaries``, ``stdout``, ``job_fields`` and
+        # ``unsaved_reads`` (the ``next_action_*`` values), or a list of them used one per
+        # run (the last repeats).
         # A launched workflow with nodes runs them at once: jobs end as told, approvals
         # stay pending until ``workflow_approvals/<id>/approve/`` or ``deny/``.
         self.node_outcomes: dict[str, dict[str, Any] | list[dict[str, Any]]] = {}
@@ -707,6 +708,8 @@ class FakeAap:
             self.seed(f"{kind}_events", **{parent_field: job["id"]}, counter=counter, **event)
         for summary in outcome.get("host_summaries", []):
             self.seed("job_host_summaries", job=job["id"], **summary)
+        if outcome.get("unsaved_reads"):
+            self.unsaved_reads[(store, job["id"])] = outcome["unsaved_reads"]
         if outcome.get("hold"):
             self._held[(store, job["id"])] = [outcome["hold"], status, node["id"]]
         return job

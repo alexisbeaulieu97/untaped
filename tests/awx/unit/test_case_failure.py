@@ -21,10 +21,10 @@ from untaped.capabilities.awx.domain.case_failure import (
     responsible_update,
     stalled_node_failure,
     timeout_failure,
-    unrescued,
+    unhandled,
     workflow_failure,
 )
-from untaped.capabilities.awx.domain.job import HostSummary
+from untaped.capabilities.awx.domain.job import HostSummary, JobEvent
 from untaped.capabilities.awx.domain.workflow_run import RunNode
 from untaped.capabilities.awx.errors import (
     LaunchPromptError,
@@ -312,12 +312,78 @@ def test_the_responsible_update_is_the_one_awx_names(
     assert actual == expected
 
 
+def _event(counter: int, host: str, task: str, event: str = "runner_on_failed") -> JobEvent:
+    return JobEvent(counter=counter, event=event, failed=True, host_name=host, task=task)
+
+
+def _unhandled(
+    events: list[JobEvent], hosts: dict[str, HostSummary] | None
+) -> list[tuple[str | None, str | None, bool]]:
+    return [(task.host, task.task, task.unsure) for task in unhandled(events, hosts)]
+
+
 def test_rescued_failures_are_not_failed_tasks() -> None:
     """Ansible reports a task a ``rescue`` block handled as failed; the recap does not."""
-    tasks = [_task(host="web1"), _task(host="web2"), _task("unreachable", host="web3")]
-    hosts = {"web1": HostSummary(rescued=1), "web2": HostSummary(failed=1)}
-    assert [task.host for task in unrescued(tasks, hosts)] == ["web2", "web3"]
-    assert unrescued(tasks, None) == tuple(tasks)
+    events = [
+        _event(1, "web1", "Validate"),
+        _event(2, "web2", "Deploy"),
+        _event(3, "web3", "Ping", "runner_on_unreachable"),
+    ]
+    hosts = {
+        "web1": HostSummary(rescued=1),
+        "web2": HostSummary(failed=1),
+        "web3": HostSummary(unreachable=1),
+    }
+    assert _unhandled(events, hosts) == [("web2", "Deploy", False), ("web3", "Ping", False)]
+
+
+def test_a_hosts_unhandled_failures_are_its_last_ones() -> None:
+    """An unhandled failure ends the host's play: the failures before it were rescued."""
+    events = [
+        _event(4, "web1", "Validate"),  # rescued
+        _event(6, "web2", "Validate"),  # rescued
+        _event(9, "web1", "Write config"),
+        _event(12, "web1", "Clean up"),  # an ``always`` section still ran, and failed
+    ]
+    hosts = {"web1": HostSummary(failed=2, rescued=1), "web2": HostSummary(rescued=1)}
+    assert _unhandled(events, hosts) == [
+        ("web1", "Write config", False),
+        ("web1", "Clean up", False),
+    ]
+
+
+def test_unreachable_hosts_ignore_unreachable_let_through_are_not_failed_tasks() -> None:
+    events = [
+        _event(2, "web1", "Probe", "runner_on_unreachable"),  # ignore_unreachable
+        _event(5, "web1", "Deploy", "runner_on_unreachable"),
+    ]
+    hosts = {"web1": HostSummary(unreachable=1, ignored=1)}
+    assert _unhandled(events, hosts) == [("web1", "Deploy", False)]
+
+
+def test_an_async_failure_is_its_runner_on_failed_event_only() -> None:
+    """``runner_on_async_failed`` precedes the same failure's ``runner_on_failed``."""
+    events = [_event(3, "web1", "Migrate", "runner_on_async_failed"), _event(4, "web1", "Migrate")]
+    assert _unhandled(events, {"web1": HostSummary(failed=1)}) == [("web1", "Migrate", False)]
+
+
+@pytest.mark.parametrize(
+    "hosts",
+    [
+        None,  # no summaries were read
+        {},  # the host has none
+        {"web1": HostSummary(failed=1)},  # two failures counted as one, none rescued
+        {"web1": HostSummary(failed=3)},  # more failures than events
+    ],
+)
+def test_failures_the_recap_cannot_tell_apart_are_kept_unsure(
+    hosts: dict[str, HostSummary] | None,
+) -> None:
+    events = [_event(4, "web1", "Validate"), _event(9, "web1", "Write config")]
+    assert _unhandled(events, hosts) == [
+        ("web1", "Validate", True),
+        ("web1", "Write config", True),
+    ]
 
 
 @pytest.mark.parametrize(
