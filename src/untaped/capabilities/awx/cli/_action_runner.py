@@ -113,7 +113,7 @@ def run_action_selection(
         if isinstance(outcome.error, ActionResponseError):
             row.update(id=outcome.error.execution_id, kind=outcome.error.execution_kind)
         if outcome.result is not None:
-            row.update(outcome.result.model_dump())
+            row.update(outcome.result.model_dump(mode="json"))
             launched.append((labels[index], outcome.result))
     unfinished: dict[str, list[str]] = {}
     if wait or follow:
@@ -252,11 +252,11 @@ def _record_finals(
     unfinished: dict[str, list[str]] = {}
     for job in finals:
         row = rows[row_by_job[(job.kind, job.id)]]
-        row.update(job.model_dump())
+        row.update(job.model_dump(mode="json"))
         if not job.is_terminal:
             detail = f"{still_running_detail(job, timeout)}; {fates[job.kind, job.id]}"
             latest = abandon.latest(job)
-            row.update(latest.model_dump(), action="failed", detail=detail)
+            row.update(latest.model_dump(mode="json"), action="failed", detail=detail)
             if not latest.is_terminal and (job.kind, job.id) not in abandon.cancelled:
                 unfinished.setdefault(job.kind, []).append(str(job.id))
         elif job.status != "successful":
@@ -275,7 +275,7 @@ def _fail_abandoned(
     if abandon.cancels:
         detail = f"{detail}; {fates[job.kind, job.id]}"
         if (latest := abandon.latest(job)) is not job:
-            row.update(latest.model_dump())
+            row.update(latest.model_dump(mode="json"))
     row.update(action="failed", detail=detail)
 
 

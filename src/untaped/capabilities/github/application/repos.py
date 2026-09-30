@@ -47,8 +47,8 @@ class ListRepos:
         )
         matcher = _compile_matcher(filters)
         filtered = (row for row in rows if _matches(row, filters=filters, matcher=matcher))
-        deduped = {row.full_name: row for row in filtered}
-        yield from sorted(deduped.values(), key=lambda row: row.full_name.casefold())
+        deduped = {row.repo: row for row in filtered}
+        yield from sorted(deduped.values(), key=lambda row: row.repo.casefold())
 
 
 def _matches(

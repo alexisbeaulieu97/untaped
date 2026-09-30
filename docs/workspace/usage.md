@@ -282,7 +282,11 @@ prompt exits `1` (`cancelled; no changes made`) without changing the
 manifest or local clone. `--dry-run` prints one `planned` row per
 identifier and changes nothing (it wins over `--yes`). Each removed
 repo produces one `workspace.remove_outcome` row (`workspace`, `repo`,
-`action`, `pruned`). The
+`action`, `pruned`, `detail`); an identifier that could not be removed
+prints `error: <repo>: <reason>` and a `failed` row (after the removed
+ones) with `detail` and `error`. A `--prune` that removed the repo from
+the manifest but could not delete its clone is a `partial` row
+(`pruned: false`) and exits `1`; delete the clone yourself. The
 prune is refused if the clone has unsafe local
 state: dirty/untracked/staged work, stash entries, or commits not
 reachable from local remote-tracking refs, including commits reachable

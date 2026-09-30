@@ -27,9 +27,9 @@ Details that do not fit here ship next to this file:
 ## Command Patterns
 
 - `untaped github whoami` verifies the token and returns the current user (a detail view in `table`, one JSON object in `json`).
-- `untaped github repos list [PATTERN] [--org ORG]... [--team ORG/SLUG|SLUG]... [--limit N]` lists complete org/team repository inventory from GitHub list APIs with at least one repeatable scope, emitting `github.repo` records (`full_name` plus `repo`, `html_url` plus `url`, `clone_url`, `ssh_url`, `pushed_at`, ...); the table shows only `full_name`, `default_branch`, `private`, `archived`, `fork` and `url`, so pass `-c` for other fields.
+- `untaped github repos list [PATTERN] [--org ORG]... [--team ORG/SLUG|SLUG]... [--limit N]` lists complete org/team repository inventory from GitHub list APIs with at least one repeatable scope, emitting `github.repo` records (`repo`, `url`, `clone_url`, `ssh_url`, `pushed_at`, ...); the table shows only `repo`, `default_branch`, `private`, `archived`, `fork` and `url`, so pass `-c` for other fields.
 - `untaped github sweep --org ORG --grep PATTERN` (or a `--team ORG/SLUG` or `--repo OWNER/NAME` scope) asks a question over the local Git corpus and emits matching `github.sweep_repo` rows by default.
-- `untaped github sweep --org ORG --show matches --grep PATTERN` emits deduped `github.sweep_match` rows with `full_name`, `refs`, `path`, `line`, and `text`. `--show files` emits one `github.sweep_file` row per matching file (`full_name`, `path`, `refs`, `hits` = matching lines).
+- `untaped github sweep --org ORG --show matches --grep PATTERN` emits deduped `github.sweep_match` rows with `repo`, `refs`, `path`, `line`, and `text`. `--show files` emits one `github.sweep_file` row per matching file (`repo`, `path`, `refs`, `hits` = matching lines).
 - `untaped github cache sync --org ORG [--refs branches] [--refresh]` (or a `--team ORG/SLUG`, `--repo OWNER/NAME` or `--stdin` scope) warms the corpus without a query (nightly prewarm) and emits one `github.sync_outcome` per repo with `action` `synced`, `unchanged`, `skipped`, or `failed` (with `error`; exit 1, or 5 when a fetch timed out).
 - `untaped github cache status`, `cache delete OWNER/NAME...|--all`, `cache prune --org ORG`, and `cache worktree OWNER/NAME` inspect/delete/prune/materialize the managed corpus. `cache delete` and `cache prune` take `--yes|-y` and `--dry-run`.
 - `untaped github search repos` searches repositories and emits `github.repo_hit` records (a different shape from the `github.repo` inventory rows).
@@ -57,7 +57,7 @@ Details that do not fit here ship next to this file:
 - Use `--format pipe` to chain a search into another untaped tool: each
   record is tagged (`github.repo_hit`/`github.code`/...), and `--stdin` reads a
   `--format pipe` stream of `github.repo`, `github.repo_hit`, or
-  `github.sweep_repo` records back (mapping `full_name`; other kinds exit `2`)
+  `github.sweep_repo` records back (mapping `repo`; other kinds exit `2`)
   as well as bare `owner/name` lines — e.g. `untaped github search repos --org
   acme --format pipe | untaped github search code "BaseModel" --stdin`.
 - For `untaped workspace repos add WS --stdin`, use raw URL lines:

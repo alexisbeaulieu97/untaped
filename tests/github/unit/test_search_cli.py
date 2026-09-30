@@ -168,6 +168,11 @@ def _q(route: respx.Route) -> str:
             "TODO (repo:acme/api OR repo:acme/web)",
         ),
         (
+            ["code", "TODO", "--stdin"],
+            '{"untaped": "1", "kind": "github.sweep_repo", "record": {"repo": "acme/api"}}\n',
+            "TODO repo:acme/api",
+        ),
+        (
             ["issues", "--team", "acme/backend", "--state", "open"],
             None,
             "(repo:acme/api OR repo:acme/web) is:open",
@@ -301,9 +306,7 @@ def test_search_large_limit_follows_link_pages_until_github_stops(limit: str) ->
     result, _ = _search(["repos", "--limit", limit, "--format", "json"], pages=pages)
 
     assert result.exit_code == 0, result.output
-    assert [row["full_name"] for row in json.loads(result.stdout)] == [
-        f"me/r{i}" for i in range(200)
-    ]
+    assert [row["repo"] for row in json.loads(result.stdout)] == [f"me/r{i}" for i in range(200)]
 
 
 def test_search_limit_zero_is_a_usage_error() -> None:
@@ -396,7 +399,7 @@ def test_search_repos_table_honors_list_collection_view(
     result, _ = _search(["repos", "--format", "table"], items=[_repo("alpha")])
 
     assert result.exit_code == 0, result.output
-    assert "full_name: me/ralpha" in result.stdout
+    assert "repo: me/ralpha" in result.stdout
     assert "│" not in result.stdout
 
 
