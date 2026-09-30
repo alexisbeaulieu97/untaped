@@ -700,3 +700,35 @@ def test_single_record_table_hides_empty_fields(
     out = capsys.readouterr().out
     assert "comment_id" not in out
     assert "key: A-1" in out
+
+
+def test_edits_never_bring_back_a_failed_rows_error(_isolated_config: Path) -> None:
+    rows: list[dict[str, object]] = [
+        {"name": "b", "status": "failed", "detail": "boom", "error": {"message": "m"}}
+    ]
+    assert _table_header(render_rows(rows, fmt="table", columns=["-detail"])) == [
+        "name",
+        "status",
+    ]
+
+
+def test_removing_every_column_is_a_usage_error(_isolated_config: Path) -> None:
+    with pytest.raises(SystemExit) as exc:
+        render_rows([{"name": "a"}], fmt="json", columns=["-name"])
+    assert exc.value.code == 2
+
+
+def test_record_list_view_shows_each_rows_own_keys(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _isolated_config.write_text("profiles:\n  default:\n    ui:\n      collection_view: list\n")
+    get_settings.cache_clear()
+    out = render_rows([{"a": 1, "b": 2}, {"a": 3, "c": 4}], fmt="table")
+    assert out.split("\n\n") == ["a: 1\nb: 2", "a: 3\nc: 4"]
+
+
+def test_question_mark_on_no_rows_lists_the_default_columns(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    render_rows([], fmt="table", columns=["?"], table_columns=["name", "url"])
+    assert "  url *" in capsys.readouterr().err
