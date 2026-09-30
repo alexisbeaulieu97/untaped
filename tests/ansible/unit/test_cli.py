@@ -787,7 +787,8 @@ def test_graph_tree_follows_ascii_theme_and_keeps_warnings_on_stderr(
         "",
         "depends on",
         "`-- acme/site@main",
-        "    `-- acme/cached  roles/requirements.yml · unpinned",
+        # The source never scanned acme/cached, so the graph says it stopped there.
+        "    `-- acme/cached ...  roles/requirements.yml · unpinned · not read: ref not cached",
     ]
     assert "warning" not in result.stdout
     assert "warning: source data is stale" in result.stderr
@@ -809,7 +810,7 @@ def test_graph_tree_out_file_is_plain_text(tmp_path: Path, monkeypatch) -> None:
     text = output.read_text()
     assert "\x1b[" not in text
     assert _tree(text) == ["acme/site@main", "  acme/cached"]
-    assert text.endswith("1 repo · 1 edge")
+    assert text.endswith("1 repo · 1 edge · 1 stopped")
 
 
 @pytest.mark.parametrize("cached", [True, False])
@@ -875,7 +876,7 @@ def test_graph_tree_truncates_lines_wider_than_the_terminal(tmp_path: Path, monk
     result = _run("graph", "acme/site", "--source", "platform")
 
     assert result.exit_code == 0, result.output
-    assert "    └── acme/cached  roles/re…" in result.stdout.splitlines()
+    assert "    └── acme/cached …  roles/…" in result.stdout.splitlines()
     assert all(len(line) <= 30 for line in result.stdout.splitlines())
 
 
@@ -2541,3 +2542,99 @@ def test_all_refs_reads_the_default_source(tmp_path: Path, monkeypatch) -> None:
 
     assert result.exit_code == 0, result.output + result.stderr
     assert "acme/legacy" in result.stdout
+
+
+# --- where the graph stopped reading ------------------------------------------
+
+
+def _seed_chain(tmp_path: Path, monkeypatch) -> None:
+    """acme/r1 -> r2 -> r3 -> r4, all cached at main (r4 declares nothing)."""
+    chain = ["acme/r1", "acme/r2", "acme/r3", "acme/r4"]
+    requires = dict(pairwise(chain))
+    now = datetime.now(UTC)
+    _commit_scans(
+        _index(tmp_path),
+        "source:platform",
+        tuple(
+            _scan(
+                "source:platform",
+                repo,
+                "main",
+                ref_kind="heads",
+                now=now,
+                dependencies=(
+                    (_edge(repo, requires[repo], version="main"),) if repo in requires else ()
+                ),
+            )
+            for repo in chain
+        ),
+        scanned_at=now,
+    )
+    _use_config(tmp_path, monkeypatch, {"sources": [{"name": "platform", "repos": chain}]})
+
+
+_DEPTH_HINT = "hint: 1 repo not read beyond --depth 2; pass --depth unlimited to read it"
+
+
+def test_deps_rows_say_where_the_depth_limit_stopped_reading(tmp_path: Path, monkeypatch) -> None:
+    _seed_chain(tmp_path, monkeypatch)
+
+    result = _run("deps", "acme/r1", "--source", "platform", "--depth", "2", "--format", "json")
+
+    assert result.exit_code == 0, result.output + result.stderr
+    rows = {row["repo"]: row["stopped"] for row in json.loads(result.stdout)}
+    assert rows == {"acme/r2": None, "acme/r3": "depth"}
+    assert _DEPTH_HINT in result.stderr
+
+
+def test_deps_table_shows_stopped_only_when_something_stopped(tmp_path: Path, monkeypatch) -> None:
+    _seed_chain(tmp_path, monkeypatch)
+
+    cut = _run("deps", "acme/r1", "--source", "platform", "--depth", "2")
+    full = _run("deps", "acme/r1", "--source", "platform")
+
+    assert "stopped" in cut.stdout
+    assert "stopped" not in full.stdout
+    assert "hint:" not in full.stderr
+
+
+def test_graph_tree_and_json_say_where_the_depth_limit_stopped_reading(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _seed_chain(tmp_path, monkeypatch)
+    args = ["graph", "acme/r1", "--ref", "main", "--source", "platform", "--depth", "2"]
+
+    tree = _run(*args)
+    document = _run(*args, "--format", "json")
+
+    assert tree.exit_code == 0, tree.output + tree.stderr
+    assert "acme/r3@main …" in tree.stdout
+    assert "1 stopped" in tree.stdout
+    assert tree.stderr.count(_DEPTH_HINT) == 1
+    nodes = {node["id"]: node["stopped"] for node in json.loads(document.stdout)["nodes"]}
+    assert nodes["acme/r3@main"] == "depth"
+    assert nodes["acme/r2@main"] is None
+
+
+def test_find_names_the_root_whose_search_stopped(tmp_path: Path, monkeypatch) -> None:
+    _seed_chain(tmp_path, monkeypatch)
+
+    result = _run("find", "acme/r4", "--root", "acme/r1@main", "--source", "platform",
+                  "--depth", "2")  # fmt: skip
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert (
+        "hint: acme/r1@main: 1 repo not read beyond --depth 2; "
+        "pass --depth unlimited to read it" in result.stderr
+    )
+
+
+def test_graph_stop_marker_survives_a_narrow_terminal(tmp_path: Path, monkeypatch) -> None:
+    _seed_chain(tmp_path, monkeypatch)
+    monkeypatch.setenv("COLUMNS", "30")
+
+    result = _run("graph", "acme/r1", "--ref", "main", "--source", "platform", "--depth", "2")
+
+    assert result.exit_code == 0, result.output
+    assert any(line.startswith("    └── acme/r3@main …") for line in result.stdout.splitlines())
+    assert all(len(line) <= 30 for line in result.stdout.splitlines())
