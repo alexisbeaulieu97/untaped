@@ -16,10 +16,12 @@
   - **Fix:** `cache delete` and `cache prune` report the space each removed
     repository frees in `disk_bytes` (it was always 0), including under
     `--dry-run`.
-  - **Changed:** `search repos`, `search code`, `search issues`, `search users`
-    and `cache sync` tables show curated default columns, and `sweep` leaves
-    out the negated-predicate counts, which are always 0; `--columns +name`
-    now edits the `sweep` defaults.
+  - **Changed:** `repos list`, `search repos`, `search code`, `search issues`,
+    `search users` and `cache sync` tables show curated default columns
+    (`repos list` records gain `description`), and `sweep` leaves out the
+    negated-predicate counts, which are always 0; `--columns +name` now edits
+    the `sweep` defaults. An unknown `--columns` name on `repos list`, `search`
+    and `cache sync` exits 2 instead of warning.
 - AWX
   - **Behavior change:** the `jobs wait` table shows when each job finished
     (`finished_at`) and how long it ran (`elapsed`). `awx.job` records and

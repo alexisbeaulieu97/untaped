@@ -66,7 +66,7 @@ untaped github repos list 'api|web' --org acme --regex
 
 `PATTERN` is a case-insensitive glob, or a regex with `--regex`. The table
 shows a few columns; use `-c` or `--format json` for the rest (`clone_url`,
-`ssh_url`, `pushed_at`, ...).
+`ssh_url`, ...).
 
 Clone the result into a workspace:
 
