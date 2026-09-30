@@ -43,7 +43,7 @@ from untaped.capabilities.ansible.domain.identity import IdentityResolver, repo_
 from untaped.capabilities.ansible.domain.models import DependencyDeclaration, ParseWarning
 from untaped.capabilities.ansible.domain.parser import parse_dependency_file
 from untaped.capabilities.ansible.domain.payloads import IndexedDependency, SkippedDependencyFile
-from untaped.capabilities.ansible.domain.reach import reach
+from untaped.capabilities.ansible.domain.reach import ReachedNode, reach
 from untaped.capabilities.ansible.domain.renderers import (
     GraphFormat,
     plain_text,
@@ -431,7 +431,7 @@ def find_command(
                 _report_depth_stops(graph, depth_limit, root=_root_label(root))
             matches.extend(find_matches(graph, wanted, source=source))
         emit(
-            matches,
+            _table_paths(matches, fmt),
             fmt=fmt,
             columns=columns,
             kind="ansible.dependency_match",
@@ -545,12 +545,26 @@ def _emit_reach(
         _report_warnings(graph.warnings)
         _report_depth_stops(graph, depth_limit)
         emit(
-            [hit.node for hit in reach(graph, relation)],
+            _table_paths([hit.node for hit in reach(graph, relation)], fmt),
             fmt=fmt,
             columns=columns,
             kind=kind,
             empty=f"No {noun} found{_within(depth_limit)}.",
         )
+
+
+def _table_paths[R: (ReachedNode, DependencyMatch)](rows: list[R], fmt: FormatOption) -> list[R]:
+    """``rows`` with each path cut to ``first → … → last`` in a table; other formats keep it.
+
+    The short path stays a one-item list, so each row keeps its record type.
+    """
+    if fmt != "table":
+        return rows
+    return [row.model_copy(update={"path": [_short_path(row.path)]}) for row in rows]
+
+
+def _short_path(path: list[str]) -> str:
+    return " → ".join(path if len(path) <= 2 else [path[0], "…", path[-1]])
 
 
 def _check_all_refs(ref: str | None, *, all_refs: bool) -> None:

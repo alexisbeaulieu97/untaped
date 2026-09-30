@@ -338,6 +338,7 @@ def source_status_command(
             fmt=fmt,
             columns=columns,
             kind="ansible.source_status",
+            table_columns=["source", "state", "scanned_at", "repos", "refs"],
             empty="No sources scanned yet. Run `untaped ansible source refresh NAME`.",
         )
 

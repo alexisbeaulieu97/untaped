@@ -33,6 +33,8 @@
   - **New:** graph nodes and `deps`/`impact` rows carry `stopped`
     (`depth` or `not_cached`) where reading stopped; the tree marks them
     `…`, and a depth limit prints a `hint:`.
+  - **New:** `deps`, `impact`, `find` and `source status` tables show a few
+    default columns, and a table shortens `path` to `a → … → z`.
 
 ## 9.0.0
 
