@@ -4,14 +4,8 @@ Thanks for contributing to `untaped`.
 
 ## Local setup
 
-```bash
-uv sync
-uv run pytest -n auto
-uv run mypy
-uv run ruff check --fix
-uv run ruff format
-uv run pre-commit run --all-files
-```
+Install, test, lint and type-check with the commands in
+[AGENTS.md](AGENTS.md#development-workflow).
 
 ## Documentation and capabilities
 
@@ -21,12 +15,9 @@ HTTP/TLS helpers, or agent workflows. Keep capability-specific command and
 settings guidance with the capability that owns it, and link to the core pages
 for shared mechanics.
 
-Built-in capability skills are source artifacts in
-`src/untaped/capabilities/<name>/skills/<full-id>/`. Update the owning
-`SKILL.md` in the same change when its command behavior, settings, workflow,
-or contract changes. Preserve the full skill ID; root installation accepts a
-short selector but writes the stable full ID and marker. An external provider
-owns the packaged skills shipped in its own distribution.
+Update a capability's skill in the same change when its command behavior,
+settings, workflow, or contract changes; the
+[skill template](docs/templates/SKILL.md) holds the skill rules.
 
 ## Sensitive data
 

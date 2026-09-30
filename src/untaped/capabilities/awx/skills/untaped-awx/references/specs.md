@@ -43,8 +43,9 @@ spec:
 - `spec` holds the settings with AWX's field names (`untaped awx
   job-templates get NAME --format yaml` shows them). References travel by
   name (organization, project, inventory, credentials, labels, instance
-  groups, execution environment); ids, timestamps, `status` and `last_job_*`
-  are left out. A workflow template also holds its node graph under `nodes`
+  groups, execution environment), so they must exist where the document is
+  applied or be created by the same `apply`; ids, timestamps, `status` and
+  `last_job_*` are left out. A workflow template also holds its node graph under `nodes`
   (see [Workflow templates and their nodes](#workflow-templates-and-their-nodes)).
 - Unknown fields are sent with a warning.
 
@@ -60,7 +61,8 @@ untaped awx export --all-kinds --out-dir backup
 ```
 
 - A group's `export` writes its selection as one multi-document YAML stream
-  to stdout, or to `--out FILE`.
+  to stdout (also `--out -`), or to `--out FILE` (a symlink is written
+  through).
 - `untaped awx export --out-dir DIR` writes one file per resource named by its
   full identity, and prints the same documents on stdout (`--print-paths`
   prints the file names instead). `--kind` limits it to one kind,
@@ -110,7 +112,8 @@ untaped --profile staging awx export --kind job-templates --out-dir exported \
   one per type), and a failed add re-adds it and reports `partial`. Instance
   groups are global names, and their order (the fallback order) is kept.
 - Labels are resolved by name in the template's organization. An unknown
-  label fails the apply before any write: apply never creates labels.
+  label fails the apply before any write: apply never creates labels. AWX
+  deletes a label once nothing uses it, so removing its last use deletes it.
 - `survey_spec: {}` removes a survey. Surveys are written through the
   template's `survey_spec/` endpoint.
 - A file that cannot be read or parsed, an unknown kind, or stdin with no

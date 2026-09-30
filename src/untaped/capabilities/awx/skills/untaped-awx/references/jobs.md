@@ -13,7 +13,8 @@ untaped awx workflow-templates launch "Release train" --follow
   later entry wins per key): `KEY=VAL` decodes only `true`/`false`/`null`,
   integers and JSON objects/arrays (`version=1.10` stays a string); `@FILE`
   reads a YAML/JSON mapping; a raw JSON or YAML mapping also works. YAML dates
-  become ISO strings.
+  become ISO strings; values JSON cannot carry (`.nan`, `!!binary`) are a
+  usage error.
 - `--host-pattern` limits the hosts, `--launch-inventory NAME|ID` is the
   inventory to run against (digits mean an id), `--credential NAME` (repeatable)
   replaces credentials, and `--scm-branch`, `--job-tag`, `--skip-tag`,
@@ -26,12 +27,18 @@ untaped awx workflow-templates launch "Release train" --follow
   for a `--scm-branch` it does not set, or extra vars it saves with those
   values (AWX treats these as no-ops). With a survey but no
   `ask_variables_on_launch`, `--extra-vars` may carry only survey variables.
-  A missing required survey variable is a usage error too. If AWX still
-  reports `ignored_fields`, that row fails and keeps the job id.
+  A missing required survey variable is a usage error too; an empty
+  `--extra-vars` mapping is never refused. If AWX still reports
+  `ignored_fields`, that row fails and keeps the job id.
 - `--dry-run` submits nothing and shows each target's resolved `payload`
   (names resolved to ids, `extra_vars` merged). Survey password answers and
   variables whose names look secret (`vault_pass`, `dbPassword`, `ssh_key`,
-  `api_token`, at any depth) are shown as `<redacted>`.
+  `api_token`, at any depth) are shown as `<redacted>`. A name is split into
+  words at `_`, `-`, `.` and camelCase; it looks secret when a word is
+  `pass`, `passwd`, `password`, `passphrase`, `pwd`, `secret` or `token`,
+  ends in `password`, `passphrase`, `secret` or `token` (`dbpassword`), or two
+  adjacent words form `api_key`, `access_key`, `private_key`, `secret_key` or
+  `ssh_key`.
 - A single named template launches at once; several targets or a
   `--all`/`--filter`/`--search`/`--stdin` selection are listed and confirmed
   once (`--yes` skips, `--dry-run` previews).
@@ -48,7 +55,8 @@ untaped awx inventories sync Production --follow
 
 `inventories sync` updates every source of the inventory. Smart or
 source-less inventories and manual or invalid sources fail the preflight
-before any POST. Results are `awx.sync_outcome` rows.
+before any POST; `--continue-on-error` covers runtime failures after that
+preflight, not an invalid selection. Results are `awx.sync_outcome` rows.
 
 ## Wait, follow, time out, cancel
 
@@ -62,7 +70,9 @@ These flags apply to `launch` and `sync`:
   with its PLAY RECAP (`[template]`-prefixed when several run), so failed
   hosts show as Ansible prints them (`fatal: [host]: FAILED! => …`). A
   workflow job, including the result of a sliced job template launch, has no
-  log: its status changes are printed instead.
+  log: its status changes are printed instead. When AWX is still saving the
+  job's events after it ends, a warning says the log may be cut short
+  (`untaped awx jobs logs` has it all later).
 - `--timeout SECONDS` (with `--wait`/`--follow`) stops waiting: a still
   running execution fails its row, keeps running, and is named in an
   `untaped awx jobs wait` hint.
@@ -72,8 +82,10 @@ These flags apply to `launch` and `sync`:
   ends with `cancel requested` (or `it ended (successful) before the
   cancel`, or `cancel failed: …`).
 - Ctrl-C exits 130 and lists the executions not known to have finished, with
-  an `untaped awx jobs wait …` command to resume (with `--cancel`:
-  `interrupted: <target>: job N cancel requested`, no hint).
+  an `untaped awx jobs wait …` command to resume; they keep running on the
+  controller. With `--cancel`, it cancels them instead
+  (`interrupted: <target>: job N cancel requested`, no hint), and a second
+  Ctrl-C stops the cancel requests and names what may still run.
 
 ## Inspect jobs
 
@@ -89,9 +101,12 @@ untaped awx jobs wait 101 --timeout 600
 ```
 
 - `jobs list` shows the newest 20 (`--limit 0` for all); `--template NAME|ID`
-  keeps one template's runs (digits mean an id). `jobs list`, `get` and
-  `wait` tables show a summary (`id`, `name`, `status`, timings); json
-  and yaml carry every AWX field.
+  keeps one template's runs (the project for `--kind project_update`, the
+  inventory source for `--kind inventory_update`; digits mean an id, so match
+  a numeric name with `--filter job_template__name=123`). `jobs list` and
+  `get` tables show a summary (`id`, `name`, `status`, timings) and the
+  `wait` table `id`, `name` and `status`; json and yaml carry every AWX
+  field.
 - `jobs logs` prints a job's stdout, downloaded in full; with `--follow` it
   reads only new events on each poll (colours removed), and `--tail N
   --follow` starts from the newest events only. `jobs events` prints the
@@ -119,7 +134,9 @@ untaped awx jobs relaunch 101 --failed-hosts --yes --format pipe \
 
 Both read every id first (an unknown id rejects the batch), preview, and ask
 once (`--yes`, `--dry-run`). `cancel` rows are `awx.cancel_outcome`
-(`cancel_requested`, or `skipped` when already finished); `relaunch` rows are
+(`cancel_requested`: AWX stops it asynchronously, and `jobs wait` shows it
+reach `canceled`; `skipped` when already finished; `failed` when AWX
+refuses); `relaunch` rows are
 `awx.relaunch_outcome`, whose `id`/`kind` name the new execution. A cancel
 row's `status` is the one read before the request, so its table leaves it out.
 `--failed-hosts` reruns only the failed hosts of a job; project and inventory

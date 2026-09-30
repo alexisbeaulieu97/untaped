@@ -53,10 +53,9 @@ lists: `UsageError`, shared option aliases, `plural`/`q`/`not_found`/`hint`,
 `ui.success`, `batch_apply`/`ui.confirm_action`, `read_identifiers(accept_kinds=…)`,
 and the `OutcomeRecord`/`TargetRecord` bases. `tests/conventions/` enforces them
 against per-capability baselines that may only shrink. Every error raises with
-a `category` and `system` (class defaults in the capability's `errors.py`),
-which select the exit code; code that replaces or swallows an error keeps its
-attribution (`attribution()`, `note_failure(exc)` for a failed row) instead of
-flattening it into a string.
+a `category` and `system` (class defaults in the capability's `errors.py`) and
+keeps that attribution when replaced or turned into a row; see
+[Raise with a category](docs/conventions.md#raise-with-a-category-or-inherit-one).
 
 ## Capability registry + capability_api
 
@@ -75,11 +74,9 @@ flattening it into a string.
 - A new built-in capability: add `capabilities/<name>/` per the layout
   above, expose `SPEC` + `build_app`, and append its name to
   `BUILTIN_CAPABILITIES` in `bootstrap.py` in declaration order. Start its
-  skill from [`docs/templates/SKILL.md`](docs/templates/SKILL.md) and its user
-  guide at `docs/<name>/usage.md`, linked from `docs/README.md`. A skill is a
-  self-contained manual for the installed CLI (`references/`, `examples/`,
-  never links into the repository); `tests/unit/test_skill_files.py` parses
-  every command it quotes. Set
+  skill from [`docs/templates/SKILL.md`](docs/templates/SKILL.md) (which holds
+  the skill rules) and its user guide at `docs/<name>/usage.md`, linked from
+  `docs/README.md`. Set
   `SPEC.help` to the app's one-line help: built-ins with `help` are mounted
   lazily (factory runs once, on dispatch), so `untaped --help` and other
   capabilities never import their CLI. Externals are always built once during
@@ -94,12 +91,9 @@ diagnostics live at root `doctor`.
 
 ## Config & state model
 
-User settings live in `config.yml` (`UNTAPED_CONFIG`): `active` plus
-`profiles.<name>.<section>`. Capability-managed state lives in a separate
-`state.yml` beside it (`<name>.state.yml` for any other config name;
-`UNTAPED_STATE` overrides), one section per capability, read and
-written only through `StateCollection`/`StateMap`. Settings writes never touch
-`state.yml` and state writes never touch `config.yml`.
+Settings live in profiles in `config.yml`; capability state lives in
+`state.yml`, read and written only through `StateCollection`/`StateMap`; see
+[`docs/configuration.md`](docs/configuration.md).
 [`docs/reference/config.md`](docs/reference/config.md) is generated from the
 settings models: after changing one, run
 `uv run python scripts/gen_config_reference.py` (a test fails while it is
@@ -123,7 +117,11 @@ rules below.
    exactly one owning capability — never forked into both.
 3. **Keep `AGENTS.md` and `docs/` up to date.** If you change the
    composition contract, a management workflow, or a cross-cutting helper,
-   edit the relevant docs in the same commit.
+   edit the relevant docs in the same commit. Each fact has one home, and
+   other pages link to it: capability detail in its skill (`usage.md` is a
+   short guide), exit codes/settings/record kinds/env vars in `docs/reference/`,
+   history in `CHANGELOG.md`, rationale in `.planning/decisions/`. Never copy
+   `--help` output, default columns, or API signatures into docs.
 4. **Involved-lines-only diffs.** Touch only the lines your change
    requires; no drive-by refactors, no unrelated file churn.
 
@@ -134,6 +132,7 @@ uv sync                                         # install / sync the app
 uv run pytest -n auto                           # tests, in parallel (add `--cov` for the 89% coverage gate, as CI does)
 uv run ruff check --fix && uv run ruff format   # lint + format
 uv run mypy                                     # strict types
+uv run pre-commit run --all-files               # pre-commit hooks
 ```
 
 TDD: failing test first, then the smallest implementation. Test through

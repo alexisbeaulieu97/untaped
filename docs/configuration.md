@@ -1,25 +1,9 @@
 # Configuration
 
-`untaped` is one unified CLI. It composes the built-in capabilities under
-`untaped <capability> ...` and can discover external capabilities through the
-`untaped.capabilities` entry-point group. Install the product once:
-
-```bash
-uv tool install untaped
-```
-
-The root owns the cross-cutting command groups:
-
-- `untaped config` reads and writes settings.
-- `untaped profile` manages named profile overlays.
-- `untaped skills` lists, installs, updates, and removes the composed skill assets.
-- `untaped doctor` runs isolated health checks and reports configuration
-  problems.
-- `untaped capabilities` lists ready and quarantined providers.
-
-Capability settings remain in their own sections. Existing section names and
-stored keys, such as `github.token` and `awx.base_url`, are part of the config
-contract.
+This page covers the config and state files, profiles, settings, command
+aliases and tokens. Every setting, its default and its environment variable is
+in the [configuration reference](./reference/config.md). Capability settings
+live in their own sections (`github.token`, `awx.base_url`).
 
 Each section is validated only when a command reads it, so an invalid value in
 one capability's section (say `awx.page_size: abc`) does not break unrelated
@@ -51,28 +35,13 @@ config file itself.
 The document root, `profiles`, and each profile must be mappings; anything
 else (or an unreadable file) is reported as a configuration error naming the
 file. An empty profile entry (`prod:` with nothing under it) is an empty
-profile. Writes take an advisory lock on `<config>.lock` (state writes on
-`<state>.lock`); set
-`UNTAPED_CONFIG_LOCK_TIMEOUT` (seconds, a non-negative number) to change the
-default 5-second wait. Both files are rewritten atomically and durably
-(fsynced) through a unique temporary file that is created owner-only (`0600`),
-so secrets are never briefly world-readable. A symlinked `config.yml` or
-`state.yml` stays a symlink: the file it points at is rewritten.
-
-Writes (`config set/unset`, `profile` commands, and capability state updates
-to `state.yml`) rewrite only the keys they change: your comments, key order, quoting, and
-indentation are kept. New keys are appended to their mapping, and new string
-values that YAML would read as another type (`no`, `0123`, `~`) are quoted.
-`config edit` saves exactly what you wrote, line endings included: it opens a
-private copy, validates your result, and only then writes it back like any
-other write (under the lock, owner-only, through a symlink). Saving without
-changes writes nothing. If the result is invalid, the file changed while you
-edited, the save fails, or the editor exits with an error after you saved,
-`config.yml` is left as it was, the command exits non-zero (1 for an invalid
-result, a concurrent edit or an editor error, 4 when the save fails, 5 when
-another process holds the lock), and the error names the copy that holds your
-edits. After an editor error the edits are not checked: copy the file over
-`config.yml` yourself and run `untaped doctor` to keep them.
+profile. Both files are written atomically and owner-only (`0600`) under a
+lock (see `UNTAPED_CONFIG_LOCK_TIMEOUT` in
+[Environment variables](./reference/environment.md)); a symlinked file stays a
+symlink. Writes rewrite only the keys they change, keeping your comments, key
+order, quoting and indentation. `config edit` validates your result before
+saving it; if the result is invalid or the save fails, `config.yml` is left
+as it was and the error names the copy that holds your edits.
 
 `config.yml` keeps profile-scoped settings under `profiles.<name>`. `active`
 is optional; when it is absent, `default` is the fallback profile.
@@ -123,25 +92,16 @@ by profile resolution; `untaped doctor` flags them in its `unknown-keys` row.
 This applies to `http`, `ui`, `skills`, and registered capability sections;
 move them under `profiles.default.<section>`.
 
-The profile model and state model for a capability must have disjoint field
-sets. State is written by the owning capability and is not writable through
+State is written by the owning capability and is not writable through
 `untaped config set`. State is only ever read from `state.yml`: a state
-section left at the top level of `config.yml` by a release before 8.0 is
-ignored like any other unknown top-level key (`untaped doctor` flags it);
-move it into `state.yml` by hand.
+section left at the top level of `config.yml` is ignored like any other
+unknown top-level key (`untaped doctor` flags it); move it into `state.yml`
+by hand.
 
-The environment override shape is unchanged:
-
-```text
-UNTAPED_<SECTION>__<FIELD>
-```
-
-For example, `UNTAPED_GITHUB__TOKEN`, `UNTAPED_AWX__BASE_URL`,
-`UNTAPED_HTTP__VERIFY_SSL`, and `UNTAPED_UI__THEME` override one process's
-resolved values. Capability fields still require their fully qualified
-section key. For a setting value, precedence is the
-environment override, the selected active profile, `profiles.default`, and
-then the schema default.
+A setting's value comes from the first of these that has it: its
+`UNTAPED_<SECTION>__<FIELD>` override (for example `UNTAPED_GITHUB__TOKEN`),
+the active profile, `profiles.default`, the built-in default. See
+[Environment variables](./reference/environment.md).
 
 ## Profiles
 
@@ -188,10 +148,8 @@ reported on stderr, so it is safe in a prompt or pipeline:
 echo "[$(untaped profile current 2>/dev/null)] $ "
 ```
 
-`profile create`, `delete` and `rename` print an `untaped.profile_outcome`
-record (`name`, `previous_name`, `copied_from`, `action`) in any `--format`;
-`action` is `created`, `deleted`, `renamed`, or `planned` under `--dry-run`,
-which checks the change and writes nothing. `profile delete` confirms first
+`profile create`, `delete` and `rename` accept `--dry-run`, which checks the
+change and writes nothing. `profile delete` confirms first
 (pass `--yes` without a terminal); `--dry-run` shows the preview without
 prompting.
 
@@ -224,121 +182,33 @@ untaped config edit
 ```
 
 `config set` validates the value against the setting's type rather than
-parsing it as YAML. String and secret settings store the input verbatim, so
-`p4ss #word`, `0123456`, `no`, or `[abc` are kept exactly as typed (via
-`VALUE`, `--stdin`, or `--prompt`). Booleans accept `true`/`false`/`yes`/`no`/
-`1`/`0`, numbers and enumerated choices are checked, and paths are stored as
-strings; an invalid value is rejected before anything is written. For an
-optional non-string setting, the literal `null` stores an explicit null; a
-string setting stores `null` as text. To clear a value, use `config unset`.
+parsing it as YAML: string and secret settings store the input verbatim
+(`p4ss #word`, `0123456` and `no` stay as typed), and an invalid value is
+rejected before anything is written. Mapping and list settings take the whole
+value as JSON or YAML. To clear a value, use `config unset`. Both write to the
+active profile, or to the one the root `--profile NAME` names, and print an
+`untaped.setting_outcome` record that never echoes the value.
 
-`config set` and `config unset` print an `untaped.setting_outcome` record
-(`key`, `profile`, `action`) in any `--format`; the value itself is never
-echoed. `action` is `updated` for a set, `deleted` or `unchanged` for an unset,
-and `planned` under `--dry-run`, which validates the value and target profile
-without writing. Both write to the active profile; the root `--profile NAME`
-option (anywhere in the command) writes to another existing profile instead.
-
-Mapping and list settings (`ui.symbols`, `ui.color_roles`,
-`ansible.dependency_paths`) take the whole value as JSON or YAML
-(`'{"ok": "✓"}'` or `'{ok: ✓}'`), validated against the setting's type;
-`config set` replaces the stored value and `config unset` removes the whole
-key. `config get` and `config list` print such a value as compact JSON in
-table and raw output and as a native mapping or list in `json`, `yaml` and
-`pipe`.
-
-Reads and writes validate only the section a key belongs to, so one invalid
-value (for example a typo in `jira.page_size`) never blocks `config get`,
-`config set`, or `config unset` for other keys; you can repair the broken key
-through the CLI (`config set KEY --prompt` offers the raw stored value as the
-default). `config list` still lists every key: an invalid section shows
-its raw values and prints a warning naming the problem.
-
-The configuration editor uses `VISUAL`, falling back to `EDITOR`, and waits for
-it to exit before validating the saved configuration. Arguments are parsed
-without a shell; quote executable paths containing spaces and include your GUI
-editor's wait option (for example, `EDITOR="code --wait"`).
-
-`--format raw --columns key,value` (or `--columns key --columns value`) is
-useful when a script needs a stable two-column view. `config get` defaults to
-raw output and returns only the selected value. Structured output (`json`,
-`yaml`, `pipe`) includes the key, value, source, profile, and default metadata
-as native values: an unset value or default is `null`, booleans and numbers
-keep their types, and secrets stay masked as `"***"` unless `--show-secrets`
-is passed. The `—` placeholder for unset values appears only in table and raw
-output. Likewise `profile list` reports `active` as a boolean in structured
-output and as `✓` in table/raw output.
+Because only the section a key belongs to is validated, you can repair a
+broken key through the CLI (`config set KEY --prompt` offers the raw stored
+value as the default). `config edit` opens `VISUAL`, falling back to
+`EDITOR`; include your GUI editor's wait option (`EDITOR="code --wait"`).
+`config get` prints only the value (raw) by default; structured output adds
+its source, profile and default, with secrets masked as `"***"` unless
+`--show-secrets` is passed.
 
 Capability state fields produce a “managed by untaped …” error when passed to
 `config set` or `config unset`. Use the owning capability's commands for state
-mutations. Root config diagnostics are deliberately separate:
+mutations.
 
-```bash
-untaped doctor
-```
-
-`doctor` runs offline and reports one row per check, without allowing one
-broken section to hide the rest:
-
-- `config` — the config file and the state file load (readable, valid YAML,
-  mapping root);
-- `profile` — the selected profile (`--profile`, `UNTAPED_PROFILE`, or
-  `active:`) exists;
-- `settings` for the shell — one row each for `http` (including a readable
-  `http.ca_bundle`), `ui` (including a known `ui.theme`) and `skills`;
-- `settings` per capability — the capability's profile section;
-- `state` per capability with a state model — its section in `state.yml`,
-  naming the file on failure;
-- `config` (permissions) — `warn` when other users can read or write the
-  config file (it can hold tokens); fix it with `chmod 600`; `warn` rows do
-  not fail `doctor`;
-- `unknown-keys` — `warn` naming every key, in any profile, that no settings
-  model declares (usually a typo, which is otherwise silently ignored), and
-  every top-level key other than `active` and `profiles` (for example a
-  pre-8.0 state section or `log_level`);
-- `skills` — `warn` when a skill installed by `untaped skills install` (in the
-  global Codex/Claude skill directories or the current git root's
-  `.agents/skills`/`.claude/skills`) differs from the packaged copy or is no
-  longer shipped, pointing at `untaped skills update` or `skills remove`
-  (see [Agent skills](./skills.md#keep-installed-skills-up-to-date));
-- each capability-contributed health check (a check can report a
-  non-failing `warn`), and any quarantined provider. The built-in
-  capabilities contribute:
-  - `github.connection`, `jira.connection`, `awx.connection` — the resolved
-    profile's `base_url` and where the token comes from (see
-    [Tokens](#tokens)); `warn` when only one of the pair is set, or when the
-    token is stored in plain text in `config.yml` (`<section>.token`). A
-    section with neither passes as `not configured`; a token environment
-    variable alone does not count. `token_command` is named, never run;
-  - `workspace.git`, `github.git`, `ansible.git`, `recipe.git`, `recipe.uv` —
-    `warn` when the program is not on `PATH`.
-
-`doctor --online` also runs the online checks capabilities contribute:
-`awx.api`, `github.api` and `jira.api` authenticate against the configured
-service (the same call as `awx ping`, `github whoami` and `jira whoami`) for
-the selected profile. A section with no token and no URL of its own (a
-built-in default such as GitHub's does not count) passes as `not configured`,
-as does one whose only token source is an environment variable such as
-`JIRA_API_TOKEN`.
-Each probe makes one attempt, with no retries, and its timeout is capped at 10
-seconds, so an unreachable service fails quickly. A failed row keeps one line
-of the error and ends with the command that fixes it, for example
-``run `untaped config set awx.token --prompt` `` for a rejected token,
-`config set http.ca_bundle PATH` for an untrusted certificate, or
-`config set awx.base_url URL` when the service cannot be reached, names the
-wrong host, or answers with something unexpected. Plain `doctor` never
-touches the network.
-
-`untaped setup` writes a profile's service settings interactively and then
-runs the same checks for the services it configured; see
-[Getting started](./getting-started.md#set-up-your-services). It checks each
-service's answers before writing any of them. For example, a token command
-that does not parse, or one that a token inherited from `profiles.default`
-would override, stops `setup` before it writes anything for that service.
-
-Settings rows apply `UNTAPED_*` environment overrides on top of the file and
-name the variable when an override is the invalid value (for example
-`UNTAPED_HTTP__TIMEOUT=abc`). Any failed row makes `doctor` exit nonzero.
+`untaped doctor` checks the config and state files, the selected profile,
+every section, unknown keys, installed skills and each capability's own checks
+offline, one row per check; `untaped doctor --online` also authenticates
+against each configured service. A failed row makes it exit nonzero; a `warn`
+row does not. `untaped setup` writes a profile's service settings
+interactively, checks each service's answers before writing any of them, and
+then runs the same online checks; see
+[Getting started](./getting-started.md#set-up-your-services).
 
 ## Command aliases
 
@@ -366,10 +236,8 @@ digits and dashes. An alias
 can never shadow a built-in command or capability (`alias set` rejects the
 name with exit 2, and a stored one is ignored), and an alias is expanded once:
 it cannot run another alias. The stored argv is passed to `untaped` as is; no
-shell runs it. `alias set` and `alias remove` print an
-`untaped.alias_outcome` record (`name`, `profile`, `action`); `alias list`
-prints `untaped.alias` records (`name`, `command` shell-quoted, `argv`,
-`profile`).
+shell runs it. The records `alias` prints are in
+[Pipes and record kinds](./reference/pipes.md).
 
 ## TLS and shared UI settings
 
@@ -382,67 +250,17 @@ untaped config set http.ca_bundle /path/to/corp-ca.pem
 untaped --profile work config set http.verify_hostname false
 ```
 
-`http.ca_bundle` must point to a readable PEM file; a missing, unreadable, or
-unparsable file is reported as a configuration error naming the path (and
-fails `doctor`'s `http` row).
-`http.verify_hostname: false` keeps chain validation enabled while skipping the
-hostname check. `http.verify_ssl: false` disables certificate validation and
-should be reserved for a controlled network.
+`http.verify_ssl: false` disables certificate validation and should be
+reserved for a controlled network. `ui.theme` picks a built-in theme and
+`ui.format` the default `--format`; the
+[configuration reference](./reference/config.md#root) lists every `http.*` and
+`ui.*` setting.
 
-Themes are selected through `ui.theme` and must name a built-in theme
-(`default`, `plain`, `compact`, `high-contrast`, `quiet`, or `classic`):
-`config set ui.theme` rejects anything else and `doctor` reports an unknown
-theme already in the file. Human table/detail rendering follows the theme,
-while JSON, YAML, raw, and pipe output remain machine-readable and stable.
-
-`ui.format` replaces the `table` default of every command that takes the
-shared `--format` option (`json`, `yaml`, `table`, `raw` or `pipe`). The
-`UNTAPED_FORMAT` environment variable wins over it, and an explicit `--format`
-wins over both. Commands whose own default is another format (`config get`
-prints `raw`) keep it. Table output that does not go to a terminal is not
-wrapped: only `COLUMNS` or a real terminal width bounds it.
-
-A table fits the terminal by narrowing its widest columns: a cell that does
-not fit ends in `…`, so each row stays on one line, while `detail`, `message`
-and `hint` wrap so an explanation is read whole. Nested values read as
-`key=value` pairs, durations (`*_s`, `elapsed`) as `1m42s`, and commits are shortened;
-`--format json` or `yaml` prints the full values. Status and outcome words
-(`failed`, `successful`, `skipped`, ...) are colored by meaning when color is
-on.
-
-Each command picks the columns its table shows by default; `--columns ?`
-lists every column and marks those with `*`. `--columns +url` adds a column to
-the defaults and `--columns=-url` removes one (`--columns +url,-kind` does
-both); `--columns name,url` shows exactly those. `ui.hide_empty_columns`
-(on by default) also leaves out a column that is empty on every row, unless
-`--columns` names it:
-
-```bash
-untaped config set ui.hide_empty_columns false
-```
-
-## Worked profile setup
-
-This example writes capability-qualified keys through the root and then invokes
-a capability with a one-off profile:
-
-```bash
-untaped config set awx.base_url https://aap.example.com
-printf '%s\n' "$AWX_DEV_TOKEN" | untaped config set awx.token --stdin
-untaped config set github.token --prompt
-untaped config set jira.base_url https://jira.example.com
-untaped config set jira.token --prompt
-
-untaped profile create prod --copy-from default
-untaped --profile prod config set awx.base_url https://aap.prod.example.com
-printf '%s\n' "$AWX_PROD_TOKEN" | untaped --profile prod config set awx.token --stdin
-
-untaped --profile prod awx ping
-```
-
-Keep credentials in `SecretStr` fields in capability models. Root listing and
-profile output redact those fields by default, and `--show-secrets` is an
-explicit opt-in.
+A table fits the terminal by narrowing its widest columns (a cell that does
+not fit ends in `…`), and table output that does not go to a terminal is not
+wrapped. `--columns ?` lists every column and marks the defaults with `*`;
+`--columns +url` adds a column, `--columns=-url` removes one, and
+`--columns name,url` shows exactly those.
 
 ## Tokens
 
@@ -484,15 +302,8 @@ login, set `github.token_command` as above.
 
 A token in `<section>.token` is stored in plain text in `config.yml`, which is
 what `config set <section>.token` and `untaped setup`'s "Enter a token"
-choice do. `untaped doctor` reports it as a `warn` row (which does not fail
-`doctor`) naming `token_command` and an environment variable to use instead,
-for example `awx.token is stored in plain text in config.yml; use
-awx.token_command or $CONTROLLER_OAUTH_TOKEN instead`. The check reads the
-config file itself: a token stored there is reported even while
-`UNTAPED_<SECTION>__TOKEN` overrides it, and a token set only by that
-variable is not. A missing token, and a token the service rejects under
-`doctor --online`, name the same alternatives next to `config set
-<section>.token --prompt`.
+choice do. `untaped doctor` warns about it and names `token_command` and an
+environment variable to use instead.
 
 ## Debug logs
 
