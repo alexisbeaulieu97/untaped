@@ -20,7 +20,7 @@ def archived_allows(mode: ArchivedMode, archived: bool) -> bool:
 
 
 def compile_repo_pattern(pattern: str, *, regex: bool = False) -> RepoMatcher:
-    """Compile a case-insensitive repo name/full_name matcher."""
+    """Compile a case-insensitive matcher on the repo name, or ``owner/name`` with ``/``."""
     target = _target_getter(pattern)
     if regex:
         compiled = re.compile(pattern, re.IGNORECASE)
@@ -31,5 +31,5 @@ def compile_repo_pattern(pattern: str, *, regex: bool = False) -> RepoMatcher:
 
 def _target_getter(pattern: str) -> Callable[[RepoListResult], str]:
     if "/" in pattern:
-        return lambda row: row.full_name
-    return lambda row: row.name
+        return lambda row: row.repo
+    return lambda row: row.repo.rpartition("/")[2]

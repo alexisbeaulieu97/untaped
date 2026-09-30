@@ -55,7 +55,9 @@ before any POST. Results are `awx.sync_outcome` rows.
 These flags apply to `launch` and `sync`:
 
 - `--wait` waits for each execution and fails the row (exit 1) on `failed`,
-  `error` or `canceled`.
+  `error` or `canceled`. The row then has the execution's `status`,
+  `started_at` and `finished_at` (UTC, `2026-01-02T03:04:05Z`), as in the
+  `awx.job` record `untaped awx jobs wait` prints.
 - `--follow` does the same while streaming each job's log to stderr, ending
   with its PLAY RECAP (`[template]`-prefixed when several run), so failed
   hosts show as Ansible prints them (`fatal: [host]: FAILED! => …`). A
