@@ -427,3 +427,12 @@ def test_detail_table_view_colors_a_status_field_by_meaning(
     out = UiContext(theme=theme).detail({"name": "a", "status": "failed"}, fmt="table")
     assert "\x1b[31mfailed" in out
     assert "\x1b[31ma" not in out
+
+
+def test_a_plain_field_value_table_is_not_colored_as_a_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    out = _table([{"field": "status", "value": "failed"}])
+    assert "\x1b[31mfailed" not in out
