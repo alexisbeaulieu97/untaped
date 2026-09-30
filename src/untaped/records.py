@@ -17,7 +17,8 @@ for the fields the pipe contract fixes (``docs/conventions.md``):
 
 Records are frozen pydantic models; subclasses add their own fields, which
 serialize before the base fields they inherit (the identifying field stays
-first for ``--format raw`` and the first table column).
+first for ``--format raw`` and the first table column), except that an
+inherited ``action`` follows the identifying field.
 """
 
 from __future__ import annotations
@@ -104,13 +105,23 @@ def _field_order(model: type[BaseModel]) -> tuple[str, ...]:
     """Field names by declaring class, most derived first.
 
     Pydantic lists inherited fields first; records want their own fields
-    (including re-declared base fields) ahead of the base-class ones.
+    (including re-declared base fields) ahead of the base-class ones. An
+    inherited ``action`` comes second, right after the identifying field.
     """
     order: dict[str, None] = {}
+    declared_by: dict[str, type] = {}
     for klass in model.__mro__:
         own = annotationlib.get_annotations(klass, format=annotationlib.Format.FORWARDREF)
-        order.update(dict.fromkeys(name for name in own if name in model.model_fields))
-    return tuple(order)
+        for name in own:
+            if name in model.model_fields:
+                order.setdefault(name)
+                declared_by.setdefault(name, klass)
+    names = list(order)
+    if declared_by.get("action") is OutcomeRecord and len(names) > 1:
+        # An outcome's ``action`` follows the field identifying the row.
+        names.remove("action")
+        names.insert(1, "action")
+    return tuple(names)
 
 
 class Record(BaseModel):
