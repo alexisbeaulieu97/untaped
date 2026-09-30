@@ -246,6 +246,9 @@ def test_description_is_a_short_third_person_router(name: str) -> None:
     description = SKILLS[name].description
 
     assert len(description.split()) < 60, "keep the description under 60 words"
-    assert not re.match(r"(Use|Run|Call)\b", description), (
-        "write the description in the third person ('Operates …'), not as an instruction"
+    assert re.match(r"[A-Z][a-z]+s\b", description), (
+        "open with a third-person verb ('Operates …'), not an instruction"
+    )
+    assert not re.search(r"\b(you|your)\b", description, re.IGNORECASE), (
+        "a description describes the skill; it does not address the reader"
     )
