@@ -174,19 +174,6 @@ def replace_config_text(text: str, *, expected: str | None, path: Path | None = 
         get_settings.cache_clear()
 
 
-def ensure_config(path: Path | None = None) -> Path:
-    """Create an empty config file (and its parent dir) if absent. Idempotent.
-
-    Returns the resolved config path. An existing file is never touched.
-    """
-    target = path or resolve_config_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if not target.exists():
-        target.write_text("", encoding="utf-8")
-        os.chmod(target, 0o600)
-    return target
-
-
 def read_tool_state(section: str, path: Path | None = None) -> dict[str, Any]:
     """Return a copy of a tool's state ``section`` dict, or ``{}``.
 

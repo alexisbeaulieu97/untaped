@@ -3,15 +3,6 @@
 from __future__ import annotations
 
 import difflib
-from dataclasses import dataclass
-
-
-@dataclass(frozen=True)
-class DiffStats:
-    """Line counts for a before→after change."""
-
-    added: int
-    removed: int
 
 
 def _split(text: str | None) -> list[str]:
@@ -38,17 +29,3 @@ def unified_diff_text(before: str | None, after: str | None, *, path: str) -> st
             out.append(f"{line}\n")
             out.append("\\ No newline at end of file\n")
     return "".join(out)
-
-
-def diff_stats(before: str | None, after: str | None) -> DiffStats:
-    """Count added/removed lines between ``before`` and ``after``."""
-    added = 0
-    removed = 0
-    for index, line in enumerate(difflib.unified_diff(_split(before), _split(after), lineterm="")):
-        if index < 2:
-            continue
-        if line.startswith("+"):
-            added += 1
-        elif line.startswith("-"):
-            removed += 1
-    return DiffStats(added=added, removed=removed)

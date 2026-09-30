@@ -22,7 +22,6 @@ from untaped.capabilities.workspace.infrastructure.system_adapters import (
     DEFAULT_FOREACH_TIMEOUT,
     InterruptibleShellRunner,
     resolve_editor_argv,
-    shell_runner,
 )
 from untaped.capability_api import UsageError
 
@@ -36,7 +35,7 @@ def test_default_foreach_timeout_matches_documented_default() -> None:
 def test_shell_runner_closes_stdin(tmp_path: Path) -> None:
     script = "import sys; print('eof' if sys.stdin.read() == '' else 'open')"
 
-    result = shell_runner(
+    result = InterruptibleShellRunner()(
         f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}",
         tmp_path,
         timeout=2.0,
@@ -49,7 +48,7 @@ def test_shell_runner_closes_stdin(tmp_path: Path) -> None:
 def test_shell_runner_timeout_returns_failed_completed_process(tmp_path: Path) -> None:
     script = "import time; print('started', flush=True); time.sleep(60)"
 
-    result = shell_runner(
+    result = InterruptibleShellRunner()(
         f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}",
         tmp_path,
         timeout=0.1,
@@ -70,7 +69,7 @@ def test_shell_runner_timeout_kills_background_child_process(tmp_path: Path) -> 
     )
     command = f"{shlex.quote(sys.executable)} -c {shlex.quote(script)} & wait"
 
-    result = shell_runner(command, tmp_path, timeout=0.2)
+    result = InterruptibleShellRunner()(command, tmp_path, timeout=0.2)
 
     assert result.returncode == 124
     deadline = time.monotonic() + 2.0
@@ -119,7 +118,7 @@ def test_shell_runner_interrupt_kills_process_group_and_reraises(
     monkeypatch.setattr(subprocess.Popen, "communicate", interrupted)
 
     with pytest.raises(KeyboardInterrupt):
-        shell_runner(command, tmp_path, timeout=30)
+        InterruptibleShellRunner()(command, tmp_path, timeout=30)
 
     assert spawned[0].returncode is not None  # shell reaped
     child_pid = int(pidfile.read_text())

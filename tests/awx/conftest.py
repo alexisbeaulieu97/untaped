@@ -1404,7 +1404,21 @@ def aap_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
-def fake_aap(aap_config: Path) -> Iterator[FakeAap]:
+def fake_aap(aap_config: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeAap]:
+    """Fake Controller responses with immediate polls and HTTP retries.
+
+    Keep the real cancellation check; timing/backoff is tested separately
+    with injected sleeps in the polling and HTTP retry unit tests.
+    """
+    from untaped.capabilities.awx.cli.context import AwxContext
+
+    real_pause = AwxContext.pause
+
+    def pause(ctx: AwxContext, seconds: float) -> None:
+        real_pause(ctx, 0)
+
+    monkeypatch.setattr(AwxContext, "pause", pause)
+    monkeypatch.setattr("untaped.http._sleep", lambda _: None)
     fake = FakeAap()
     with respx.mock(base_url=fake.base_url, assert_all_called=False) as mock:
         fake.install(mock)

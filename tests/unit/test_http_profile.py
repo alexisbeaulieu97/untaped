@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
+import respx
 from pydantic import BaseModel, SecretStr
 
 from untaped.http import connected_client
@@ -50,6 +52,7 @@ class _ConnSettings(BaseModel):
     token: SecretStr | None = None
 
 
+@respx.mock
 def test_connected_client_http_default_ignores_invalid_sibling_section(
     _isolated_config: Path,
 ) -> None:
@@ -64,5 +67,8 @@ def test_connected_client_http_default_ignores_invalid_sibling_section(
     get_settings.cache_clear()
 
     config = _ConnSettings(base_url="https://example.test", token=SecretStr("t"))
+    respx.get("https://example.test/user").mock(return_value=httpx.Response(200, json={}))
     with connected_client(config, section="conn") as client:
-        assert client is not None
+        client.get("/user")
+
+    assert respx.calls.last.request.extensions["timeout"]["read"] == 7

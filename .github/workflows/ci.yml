@@ -92,4 +92,4 @@ jobs:
 
       - name: Pytest
         if: matrix.supported == true
-        run: uv run pytest --cov --cov-report=term-missing
+        run: uv run pytest -n auto --cov --cov-report=term-missing --durations=25
