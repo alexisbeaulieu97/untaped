@@ -327,20 +327,23 @@ class IssueOutcome(OutcomeRecord):
 
 
 class TransitionResult(BaseModel):
-    """One available Jira workflow transition; ``to_status`` is the status it leads to."""
+    """One available Jira workflow transition.
+
+    ``to_status`` is the status it leads to (``None`` when Jira does not say).
+    """
 
     model_config = _ROW_CONFIG
 
     id: str
     name: str
-    to_status: str = ""
+    to_status: str | None = None
 
     @model_validator(mode="before")
     @classmethod
     def _flatten_target(cls, data: Any) -> Any:
         if not isinstance(data, dict) or "to" not in data:
             return data
-        return {**data, "to_status": _name(data.get("to"))}
+        return {**data, "to_status": _name(data.get("to")) or None}
 
 
 class ProjectResult(BaseModel):
