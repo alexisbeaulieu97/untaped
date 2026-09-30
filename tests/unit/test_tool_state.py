@@ -1,4 +1,4 @@
-"""Tests for the SDK safe shared-config surface (ensure_config + tool state)."""
+"""Low-level section mutations behind StateCollection and StateMap in state.yml."""
 
 from __future__ import annotations
 
@@ -6,30 +6,14 @@ from pathlib import Path
 from typing import Any
 
 from untaped.config_file import (
-    ensure_config,
     mutate_tool_state,
     read_config_dict,
     read_tool_state,
 )
 
 
-def test_ensure_config_creates_file_when_absent(tmp_path: Path) -> None:
-    cfg = tmp_path / "nested" / "config.yml"
-    result = ensure_config(cfg)
-    assert result == cfg
-    assert cfg.is_file()
-    assert read_config_dict(cfg) == {}
-
-
-def test_ensure_config_is_noop_when_present(tmp_path: Path) -> None:
-    cfg = tmp_path / "config.yml"
-    cfg.write_text("github:\n  token: keep\n", encoding="utf-8")
-    ensure_config(cfg)
-    assert cfg.read_text(encoding="utf-8") == "github:\n  token: keep\n"
-
-
 def test_mutate_tool_state_creates_section(tmp_path: Path) -> None:
-    cfg = tmp_path / "config.yml"
+    cfg = tmp_path / "state.yml"
 
     def _set(state: dict[str, Any]) -> None:
         state["aliases"] = {"a": "b"}
@@ -39,7 +23,7 @@ def test_mutate_tool_state_creates_section(tmp_path: Path) -> None:
 
 
 def test_mutate_tool_state_preserves_foreign_section(tmp_path: Path) -> None:
-    cfg = tmp_path / "config.yml"
+    cfg = tmp_path / "state.yml"
     cfg.write_text("github:\n  token: secret\n", encoding="utf-8")
 
     def _set(state: dict[str, Any]) -> None:
@@ -52,7 +36,7 @@ def test_mutate_tool_state_preserves_foreign_section(tmp_path: Path) -> None:
 
 
 def test_mutate_tool_state_preserves_unknown_same_section_key(tmp_path: Path) -> None:
-    cfg = tmp_path / "config.yml"
+    cfg = tmp_path / "state.yml"
     cfg.write_text("ansible:\n  future_key: keep\n", encoding="utf-8")
 
     def _set(state: dict[str, Any]) -> None:
@@ -63,7 +47,7 @@ def test_mutate_tool_state_preserves_unknown_same_section_key(tmp_path: Path) ->
 
 
 def test_mutate_tool_state_removes_emptied_section(tmp_path: Path) -> None:
-    cfg = tmp_path / "config.yml"
+    cfg = tmp_path / "state.yml"
     cfg.write_text("ansible:\n  aliases:\n    a: b\n", encoding="utf-8")
 
     def _clear(state: dict[str, Any]) -> None:
@@ -74,5 +58,5 @@ def test_mutate_tool_state_removes_emptied_section(tmp_path: Path) -> None:
 
 
 def test_read_tool_state_absent_returns_empty(tmp_path: Path) -> None:
-    cfg = tmp_path / "config.yml"
+    cfg = tmp_path / "state.yml"
     assert read_tool_state("ansible", path=cfg) == {}

@@ -1,3 +1,5 @@
+"""Settings defaults, profile loading, environment precedence, and validation."""
+
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -90,11 +92,20 @@ def test_secret_str_repr_does_not_leak(tmp_path: Path, monkeypatch: pytest.Monke
     assert "ultra-secret-value" not in str(s.demo)
 
 
-def test_env_var_overrides_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("profile", ["default", "work"])
+def test_env_var_overrides_yaml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, profile: str
+) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("demo:\n  token: from-yaml\n")
+    cfg.write_text(
+        f"active: {profile}\nprofiles:\n  {profile}:\n    demo:\n      token: from-yaml\n"
+    )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    baseline = get_settings()
+    assert baseline.demo.token is not None
+    assert baseline.demo.token.get_secret_value() == "from-yaml"
     monkeypatch.setenv("UNTAPED_DEMO__TOKEN", "from-env")
+    get_settings.cache_clear()
     s = get_settings()
     assert s.demo.token is not None
     assert s.demo.token.get_secret_value() == "from-env"

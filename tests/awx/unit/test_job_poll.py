@@ -30,7 +30,7 @@ def test_terminal_input_is_yielded_without_polling() -> None:
     assert [state.status for state in states] == ["failed"]
 
 
-def test_timeout_stops_at_latest_state() -> None:
+def test_zero_timeout_yields_only_the_initial_state() -> None:
     states = list(
         poll_until_terminal(
             _job("running"),

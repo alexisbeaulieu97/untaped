@@ -6,9 +6,8 @@ import json
 import os
 import stat
 import uuid
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager, suppress
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -16,32 +15,6 @@ import yaml
 from filelock import FileLock
 
 from untaped.errors import ConfigError, ErrorCategory, UntapedError
-
-
-class FileWriteError(UntapedError):
-    """A planned write could not be applied safely.
-
-    ``rollback_incomplete`` is ``True`` when the transaction failed AND
-    restoring the already-applied changes also failed — the caller must tell
-    the user the tree is dirty. A ``failed`` error in ``local`` (the files).
-    """
-
-    system = "local"
-
-    def __init__(self, message: str, *, rollback_incomplete: bool = False) -> None:
-        super().__init__(message)
-        self.rollback_incomplete = rollback_incomplete
-
-
-@dataclass(frozen=True)
-class FileChange:
-    """One planned change: ``before`` is the expected current content
-    (``None`` = file must not exist); ``after`` is the new content
-    (``None`` = delete)."""
-
-    path: Path
-    before: str | None
-    after: str | None
 
 
 def atomic_write(
@@ -126,89 +99,6 @@ def _commit(tmp: Path, target: Path) -> None:
             os.fsync(fd)
         finally:
             os.close(fd)
-
-
-def apply_file_changes(changes: Sequence[FileChange]) -> None:
-    """Apply ``changes`` as one transaction: all land, or all roll back.
-
-    Verifies each target still matches its ``before`` content, stages every
-    replacement next to its target, then swaps them in. On failure the
-    already-applied changes are restored in reverse order; if that restore
-    itself fails, the raised :class:`FileWriteError` has
-    ``rollback_incomplete=True``.
-    """
-    _verify_current_content(changes)
-    staged = _stage_replacements(changes)
-    applied: list[FileChange] = []
-    try:
-        for index, change in enumerate(changes):
-            if change.after is None:
-                if change.path.exists():
-                    change.path.unlink()
-                applied.append(change)
-                continue
-            _commit(staged[index], _write_target(change.path))
-            applied.append(change)
-    except BaseException as exc:
-        _remove_staged(staged.values())
-        rollback_errors = _rollback(applied)
-        if rollback_errors:
-            details = "; ".join(rollback_errors)
-            raise FileWriteError(
-                f"{exc}; rollback incomplete: {details}", rollback_incomplete=True
-            ) from exc
-        if isinstance(exc, OSError):
-            raise FileWriteError(str(exc)) from exc
-        raise
-    finally:
-        _remove_staged(staged.values())
-
-
-def _read_verbatim(path: Path) -> str:
-    with open(path, encoding="utf-8", newline="") as handle:
-        return handle.read()
-
-
-def _verify_current_content(changes: Sequence[FileChange]) -> None:
-    for change in changes:
-        try:
-            current = _read_verbatim(change.path) if change.path.is_file() else None
-        except OSError as exc:
-            raise FileWriteError(str(exc)) from exc
-        if current != change.before:
-            raise FileWriteError(f"{change.path} changed since planning")
-
-
-def _stage_replacements(changes: Sequence[FileChange]) -> dict[int, Path]:
-    staged: dict[int, Path] = {}
-    try:
-        for index, change in enumerate(changes):
-            if change.after is None:
-                continue
-            change.path.parent.mkdir(parents=True, exist_ok=True)
-            staged[index] = _write_temp(_write_target(change.path), change.after)
-    except BaseException as exc:
-        _remove_staged(staged.values())
-        if isinstance(exc, OSError):
-            raise FileWriteError(str(exc)) from exc
-        raise
-    return staged
-
-
-def _rollback(applied: list[FileChange]) -> list[str]:
-    errors: list[str] = []
-    for change in reversed(applied):
-        try:
-            if change.before is None:
-                # Remove what was created, not a (formerly dangling) link to it.
-                created = _write_target(change.path)
-                if created.exists():
-                    created.unlink()
-                continue
-            atomic_write(change.path, change.before)
-        except OSError as exc:
-            errors.append(f"{change.path}: {exc}")
-    return errors
 
 
 def _remove_staged(paths: Iterable[Path]) -> None:

@@ -66,18 +66,6 @@ def test_loads_profile_default_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert s.demo.token.get_secret_value() == "secret-value"
 
 
-def test_untaped_field_env_still_beats_yaml(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    cfg = tmp_path / "config.yml"
-    cfg.write_text("demo:\n  token: from-yaml\n")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    monkeypatch.setenv("UNTAPED_DEMO__TOKEN", "from-env")
-    s = get_settings()
-    assert s.demo.token is not None
-    assert s.demo.token.get_secret_value() == "from-env"
-
-
 def test_registered_state_lives_in_the_state_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -32,20 +32,6 @@ _FOREACH_TERMINATE_GRACE_SECONDS = 0.2
 _KILL_SIGNAL = getattr(signal, "SIGKILL", signal.SIGTERM)
 
 
-def shell_runner(cmd: str, cwd: Path, *, timeout: float) -> subprocess.CompletedProcess[str]:
-    """Default :data:`ShellRunner`: run ``cmd`` via the shell, capture output.
-
-    ``shell=True`` is intentional: ``workspace foreach`` accepts user-authored
-    command strings that rely on shell features (pipes, redirects, glob
-    expansion). **``cmd`` must come from a trusted source** — the user's own
-    CLI input or a workspace manifest the user controls. Never thread
-    third-party or externally-fetched content through this runner without
-    sanitising / argv-quoting first; ``shell=True`` makes shell injection
-    (CWE-78) trivial otherwise.
-    """
-    return _communicate(_spawn(cmd, cwd), cmd, timeout)
-
-
 class InterruptibleShellRunner:
     """A :data:`ShellRunner` that can stop every command it is running.
 
@@ -55,6 +41,14 @@ class InterruptibleShellRunner:
     :meth:`terminate_all` on interrupt: every live process group gets
     SIGTERM, then SIGKILL after a short grace, and commands not yet started
     are refused. Thread-safe; use one instance per run.
+
+    ``shell=True`` is intentional: ``workspace foreach`` accepts user-authored
+    command strings that rely on shell features (pipes, redirects, glob
+    expansion). **``cmd`` must come from a trusted source** — the user's own
+    CLI input or a workspace manifest the user controls. Never thread
+    third-party or externally-fetched content through this runner without
+    sanitising / argv-quoting first; ``shell=True`` makes shell injection
+    (CWE-78) trivial otherwise.
     """
 
     def __init__(self) -> None:
@@ -277,5 +271,4 @@ __all__ = [
     "InterruptibleShellRunner",
     "LocalFilesystem",
     "resolve_editor_argv",
-    "shell_runner",
 ]

@@ -27,12 +27,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, TypeGuard
+from typing import TypeGuard
 
 from untaped.errors import ConfigError
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
 
 PIPE_MARKER_KEY = "untaped"
 PIPE_ENVELOPE_VERSION = "1"
@@ -86,11 +83,3 @@ def parse_envelope_line(lineno: int, text: str) -> PipeEnvelope:
     if kind is not None and not isinstance(kind, str):
         raise ConfigError(f"line {lineno}: kind must be a string or null", category="invalid")
     return PipeEnvelope(kind=kind, record=record, lineno=lineno)
-
-
-def common_kind(envelopes: Sequence[PipeEnvelope]) -> str | None:
-    """The shared ``kind`` across envelopes, or ``None`` if they differ or are empty."""
-    kinds = {env.kind for env in envelopes}
-    if len(kinds) == 1:
-        return next(iter(kinds))
-    return None
