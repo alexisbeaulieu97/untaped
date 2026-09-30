@@ -226,16 +226,16 @@ def failure(
     )
 
 
-def failure_system(error: BaseException | ErrorInfo, *, launching: bool) -> str:
+def failure_system(error: BaseException, *, launching: bool) -> str:
     """The system responsible for ``error`` while launching, or while polling or reading.
 
     An error that is not AWX's, or already names an ``awx.*`` system (a
     pending approval is the suite's), keeps its own system; a rejected token or
     permission is the credentials'; a refused launch is the suite's (the
     scm's for an ``scm_branch`` the template does not prompt for); anything
-    else is the controller's. ``error`` may be a failed row's :class:`ErrorInfo`.
+    else is the controller's.
     """
-    info = error if isinstance(error, ErrorInfo) else ErrorInfo.from_exception(error)
+    info = ErrorInfo.from_exception(error)
     if info.system != "awx":
         return info.system
     if info.category in (ErrorCategory.AUTH, ErrorCategory.PERMISSION):

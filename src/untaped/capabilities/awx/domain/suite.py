@@ -666,8 +666,17 @@ class Suite(BaseModel):
     def template_kind(self) -> str:
         return WORKFLOW_TEMPLATE if self.workflow_template is not None else JOB_TEMPLATE
 
-    def binding(self, default_scope: dict[str, str] | None) -> TemplateBinding:
-        """The template the suite names, looked up in its :meth:`scope`."""
+    def binding(
+        self,
+        default_scope: dict[str, str] | None,
+        rebound: Mapping[str, TemplateBinding] | None = None,
+    ) -> TemplateBinding:
+        """The template the suite names, looked up in its :meth:`scope`.
+
+        ``rebound`` binds suites, by name, to another template (a temporary copy).
+        """
+        if rebound is not None and self.name in rebound:
+            return rebound[self.name]
         return TemplateBinding(self.template_kind, self.template, self.scope(default_scope))
 
     def expectation(self, case_name: str) -> Expectation:

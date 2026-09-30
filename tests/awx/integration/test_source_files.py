@@ -16,9 +16,13 @@ from untaped.capability_api import ConfigError
 
 pytestmark = pytest.mark.integration
 
-_SUITE = "kind: AwxTestSuite\njobTemplate: Deploy\ncases: {smoke: {}}\n"
+_SUITE = (
+    "kind: AwxTestSuite\njobTemplate: Deploy\n"
+    "cases: {smoke: {launch: {extra_vars: {jt: !ref {kind: JobTemplate, name: X}}}}}\n"
+)
 _TEMPLATE = "kind: JobTemplate\nmetadata: {name: Deploy, organization: Default}\nspec: {}\n"
-_WORKFLOW = "kind: WorkflowJobTemplate\nmetadata: {name: Release}\nspec: {nodes: []}\n"
+_WORKFLOW = "kind: WorkflowJobTemplate  # the release\nmetadata: {name: Release}\nspec: {}\n"
+_FLOW = "{kind: JobTemplate, metadata: {name: Smoke}, spec: {}}\n"
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -40,6 +44,7 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (root / "tests" / ".hidden" / "skip.yml").write_text(_SUITE)
     (root / "templates" / "deploy.yml").write_text(_TEMPLATE)
     (root / "workflows" / "release.yaml").write_text(_WORKFLOW)
+    (root / "templates" / "smoke.yml").write_text(_FLOW)
     (root / "fixtures" / "project.yml").write_text(
         "kind: Project\nmetadata: {name: Playbooks}\nspec: {}\n"
     )
@@ -82,6 +87,7 @@ def test_template_specs_are_the_job_templates_and_workflows_anywhere_under_the_r
 
     assert [(path, doc.kind, doc.metadata.name) for path, doc in specs] == [
         ("main:.untaped/awx/templates/deploy.yml", "JobTemplate", "Deploy"),
+        ("main:.untaped/awx/templates/smoke.yml", "JobTemplate", "Smoke"),
         ("main:.untaped/awx/workflows/release.yaml", "WorkflowJobTemplate", "Release"),
     ]
 

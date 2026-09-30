@@ -28,6 +28,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Self
 
 from untaped.capabilities.awx.domain.envelope import Resource
+from untaped.capabilities.awx.domain.launch_prompts import PROMPT_FLAGS
 from untaped.capabilities.awx.domain.spec import ResourceSpec
 from untaped.capabilities.awx.domain.suite import (
     JOB_TEMPLATE,
@@ -37,12 +38,12 @@ from untaped.capabilities.awx.domain.suite import (
     TemplateBinding,
 )
 from untaped.capabilities.awx.domain.workflow_graph import (
-    GLOBAL_RUN_KINDS,
     WorkflowNodeSpec,
     dump_workflow_nodes,
     parse_workflow_nodes,
     rename_references,
 )
+from untaped.capabilities.awx.domain.workflow_run import MAX_NESTING
 from untaped.capability_api import ConfigError, q
 
 TAG = "untaped-test"
@@ -50,26 +51,6 @@ TAG = "untaped-test"
 
 TEMPLATE_KINDS = (JOB_TEMPLATE, WORKFLOW_TEMPLATE)
 """The kinds a temporary set copies, in creation order."""
-
-PROMPT_FLAGS: dict[str, str] = {
-    "extra_vars": "ask_variables_on_launch",
-    "limit": "ask_limit_on_launch",
-    "inventory": "ask_inventory_on_launch",
-    "credentials": "ask_credential_on_launch",
-    "scm_branch": "ask_scm_branch_on_launch",
-    "job_tags": "ask_tags_on_launch",
-    "skip_tags": "ask_skip_tags_on_launch",
-    "verbosity": "ask_verbosity_on_launch",
-    "diff_mode": "ask_diff_mode_on_launch",
-    "job_type": "ask_job_type_on_launch",
-    "execution_environment": "ask_execution_environment_on_launch",
-    "labels": "ask_labels_on_launch",
-    "forks": "ask_forks_on_launch",
-    "job_slice_count": "ask_job_slice_count_on_launch",
-    "timeout": "ask_timeout_on_launch",
-    "instance_groups": "ask_instance_groups_on_launch",
-}
-"""Launch field → the template flag that makes AWX accept it at launch."""
 
 WEBHOOK_FIELDS = ("webhook_service", "webhook_credential", "webhook_key")
 """Left out of every copy: a copy must not receive the repository's webhooks."""
@@ -143,24 +124,60 @@ def parse_age(text: str) -> timedelta:
     return timedelta(**{_UNITS[found["unit"]]: int(found["count"])})
 
 
+type _Key = tuple[str, str, str | None]
+"""A template's kind, name and organization."""
+
+
+@dataclass(frozen=True)
+class NodeTarget:
+    """The template a workflow node runs, by the name and organization its spec gives."""
+
+    node: str
+    kind: str
+    name: str
+    organization: str | None
+
+    @property
+    def key(self) -> _Key:
+        return (self.kind, self.name, self.organization)
+
+
 @dataclass(frozen=True)
 class TemporaryTemplate:
     """One copy a run creates: the spec it copies and the document it creates."""
 
-    kind: str
     source: str
     """The spec's name: the template the suite names."""
-    organization: str | None
     path: str
     """Where the spec was read, ``REF:PATH``."""
     document: Resource
     """The copy as ``apply`` creates it."""
     prompts: tuple[str, ...] = ()
     """The ``ask_*_on_launch`` flags the copy enables for its cases' launch fields."""
+    nodes: tuple[WorkflowNodeSpec, ...] = ()
+    """A workflow's nodes as its spec writes them (before they point at copies)."""
+
+    @property
+    def kind(self) -> str:
+        return self.document.kind
 
     @property
     def name(self) -> str:
         return self.document.metadata.name
+
+    @property
+    def organization(self) -> str | None:
+        return self.document.metadata.organization
+
+    @property
+    def key(self) -> _Key:
+        """What the copy stands for: its kind, the spec's name and its organization."""
+        return (self.kind, self.source, self.organization)
+
+    @property
+    def targets(self) -> list[NodeTarget]:
+        """The job templates and workflows its nodes run."""
+        return [target for node in self.nodes if (target := _target(node, self.organization))]
 
 
 @dataclass(frozen=True)
@@ -171,10 +188,38 @@ class TemporarySet:
     templates: tuple[TemporaryTemplate, ...] = ()
     bindings: dict[str, TemplateBinding] = field(default_factory=dict)
     """Suite name → the pinned copy its cases launch."""
+    notes: tuple[str, ...] = ()
+    """Why a spec that looks like a suite's template did not bind to it."""
 
+    def copy_of(self, key: _Key) -> TemporaryTemplate | None:
+        """The copy of the template ``key`` names (kind, name, organization), if any."""
+        return next((template for template in self.templates if template.key == key), None)
 
-type _Key = tuple[str, str, str | None]
-"""A template's kind, name and organization."""
+    def bound(self, binding: TemplateBinding) -> TemporaryTemplate | None:
+        """The copy ``binding`` launches, if it is one."""
+        wanted = (binding.kind, binding.name, (binding.scope or {}).get("organization"))
+        return next(
+            (
+                template
+                for template in self.templates
+                if (template.kind, template.name, template.organization) == wanted
+            ),
+            None,
+        )
+
+    def approval_nodes(self, template: TemporaryTemplate, *, depth: int = 0) -> list[str]:
+        """The paths of a workflow copy's approval nodes, those of the copies it runs too."""
+        found: list[str] = []
+        for node in template.nodes:
+            if node.approval is not None:
+                found.append(node.id)
+            target = _target(node, template.organization)
+            nested = self.copy_of(target.key) if target is not None else None
+            if nested is not None and nested.kind == WORKFLOW_TEMPLATE and depth < MAX_NESTING:
+                found += [
+                    f"{node.id}/{path}" for path in self.approval_nodes(nested, depth=depth + 1)
+                ]
+        return found
 
 
 def plan_temporary_set(
@@ -183,7 +228,7 @@ def plan_temporary_set(
     *,
     marker: Marker,
     sha: str,
-    default_scope: Mapping[str, str] | None,
+    default_scope: dict[str, str] | None,
     kinds: Callable[[str], ResourceSpec],
 ) -> TemporarySet:
     """The copies the ``selected`` cases need, from ``specs`` (``(path, document)``).
@@ -191,36 +236,53 @@ def plan_temporary_set(
     A suite binds to the one spec of its template's kind and name in its
     organization (its own, else ``default_scope``'s; any organization without
     either); a workflow copy also needs a copy of every template its nodes run
-    that a spec describes. Two specs matching one suite are refused.
+    that a spec describes. Two specs matching one suite are refused; a spec of
+    the suite's template in another organization is noted.
     """
     by_key: dict[_Key, list[tuple[str, Resource]]] = {}
     for path, doc in specs:
         if doc.kind in TEMPLATE_KINDS:
-            by_key.setdefault((doc.kind, doc.metadata.name, doc.metadata.organization), [])
-            by_key[(doc.kind, doc.metadata.name, doc.metadata.organization)].append((path, doc))
+            doc_key = (doc.kind, doc.metadata.name, doc.metadata.organization)
+            by_key.setdefault(doc_key, []).append((path, doc))
+    nodes = {
+        key: _nodes(*entries[0]) for key, entries in by_key.items() if key[0] == WORKFLOW_TEMPLATE
+    }
     fields: dict[_Key, set[str]] = {}
     suite_keys: dict[str, _Key] = {}
+    notes: dict[str, str] = {}
     for suite, _, case in selected:
-        organization = (suite.scope(dict(default_scope or {})) or {}).get("organization")
-        key = _match(by_key, suite.template_kind, suite.template, organization)
+        binding = suite.binding(default_scope)
+        organization = (binding.scope or {}).get("organization")
+        key = _match(by_key, binding.kind, binding.name, organization)
         if key is None:
+            elsewhere = [
+                path
+                for spec_key, entries in by_key.items()
+                if spec_key[:2] == (binding.kind, binding.name)
+                for path, _ in entries
+            ]
+            if elsewhere:
+                notes[suite.name] = (
+                    f"{suite.name}: the spec of {binding.kind} {q(binding.name)} "
+                    f"({', '.join(elsewhere)}) is not in organization {organization}, so the "
+                    "suite runs the template AWX holds"
+                )
             continue
         suite_keys[suite.name] = key
         launch = {**(suite.defaults or Case()).launch, **case.launch}
         fields.setdefault(key, set()).update(launch)
-    wanted = _with_node_templates(by_key, list(fields))
+    wanted = _with_node_templates(by_key, nodes, list(fields))
     names = {key: temporary_name(key[1], sha, marker.run_id) for key in wanted}
-    mapping = {(kind, name): names[(kind, name, org)] for kind, name, org in wanted}
     templates = [
         _copy(
-            key,
             *by_key[key][0],
             name=names[key],
             description=marker.render(),
             sha=sha,
             launch_fields=fields.get(key, set()),
             flags=kinds(key[0]).known_fields,
-            mapping=mapping,
+            nodes=nodes.get(key, []),
+            names=names,
         )
         for kind in TEMPLATE_KINDS
         for key in wanted
@@ -230,7 +292,9 @@ def plan_temporary_set(
         suite: TemplateBinding(key[0], names[key], _scope(key[2]), pinned=True)
         for suite, key in suite_keys.items()
     }
-    return TemporarySet(marker=marker, templates=tuple(templates), bindings=bindings)
+    return TemporarySet(
+        marker=marker, templates=tuple(templates), bindings=bindings, notes=tuple(notes.values())
+    )
 
 
 def _match(
@@ -258,28 +322,33 @@ def _match(
 
 
 def _with_node_templates(
-    by_key: Mapping[_Key, list[tuple[str, Resource]]], keys: list[_Key]
+    by_key: Mapping[_Key, list[tuple[str, Resource]]],
+    nodes: Mapping[_Key, list[WorkflowNodeSpec]],
+    keys: list[_Key],
 ) -> list[_Key]:
     """``keys`` plus every template with a spec that a workflow among them runs, nested too."""
     wanted = list(keys)
     for key in wanted:  # grows while it is walked
-        if key[0] != WORKFLOW_TEMPLATE:
-            continue
-        path, doc = by_key[key][0]
-        for node in _nodes(path, doc):
-            if node.run is None or node.run.kind not in TEMPLATE_KINDS:
+        for node in nodes.get(key, []):
+            target = _target(node, key[2])
+            if target is None:
                 continue
-            organization = None if node.run.kind in GLOBAL_RUN_KINDS else key[2]
-            if "organization" in node.run.model_fields_set:
-                organization = node.run.organization
-            found = _match(by_key, node.run.kind, node.run.name, organization)
+            found = _match(by_key, target.kind, target.name, target.organization)
             if found is not None and found not in wanted:
                 wanted.append(found)
     return wanted
 
 
+def _target(node: WorkflowNodeSpec, organization: str | None) -> NodeTarget | None:
+    """The job template or workflow ``node`` runs; its organization defaults to the workflow's."""
+    if node.run is None or node.run.kind not in TEMPLATE_KINDS:
+        return None
+    if "organization" in node.run.model_fields_set:
+        organization = node.run.organization
+    return NodeTarget(node.id, node.run.kind, node.run.name, organization)
+
+
 def _copy(
-    key: _Key,
     path: str,
     doc: Resource,
     *,
@@ -288,7 +357,8 @@ def _copy(
     sha: str,
     launch_fields: set[str],
     flags: frozenset[str],
-    mapping: Mapping[tuple[str, str], str],
+    nodes: list[WorkflowNodeSpec],
+    names: Mapping[_Key, str],
 ) -> TemporaryTemplate:
     spec = {k: v for k, v in doc.spec.items() if k not in WEBHOOK_FIELDS}
     spec["description"] = description
@@ -304,16 +374,27 @@ def _copy(
     )
     spec |= dict.fromkeys(prompts, True)
     if "nodes" in spec:
-        spec["nodes"] = dump_workflow_nodes(rename_references(_nodes(path, doc), mapping))
+        organization = doc.metadata.organization
+        spec["nodes"] = dump_workflow_nodes(_pointed(node, organization, names) for node in nodes)
     metadata = doc.metadata.model_copy(update={"name": name})
     return TemporaryTemplate(
-        kind=key[0],
-        source=key[1],
-        organization=key[2],
+        source=doc.metadata.name,
         path=path,
         document=doc.model_copy(update={"metadata": metadata, "spec": spec}),
         prompts=tuple(prompts),
+        nodes=tuple(nodes),
     )
+
+
+def _pointed(
+    node: WorkflowNodeSpec, organization: str | None, names: Mapping[_Key, str]
+) -> WorkflowNodeSpec:
+    """``node``, running the copy of its template when the run copies that template."""
+    target = _target(node, organization)
+    if target is None or target.key not in names:
+        return node
+    [renamed] = rename_references([node], {(target.kind, target.name): names[target.key]})
+    return renamed
 
 
 def _nodes(path: str, doc: Resource) -> list[WorkflowNodeSpec]:
@@ -328,11 +409,11 @@ def _scope(organization: str | None) -> dict[str, str] | None:
 
 
 __all__ = [
-    "PROMPT_FLAGS",
     "TAG",
     "TEMPLATE_KINDS",
     "WEBHOOK_FIELDS",
     "Marker",
+    "NodeTarget",
     "TemporarySet",
     "TemporaryTemplate",
     "leftover",

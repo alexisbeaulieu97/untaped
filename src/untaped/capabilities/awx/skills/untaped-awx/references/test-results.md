@@ -336,26 +336,38 @@ With `--source-ref` (see
 [test-suites.md](test-suites.md#temporary-test-sets---source-ref)), the run
 creates its copies before any case launches. Rows are unchanged: a case of a
 copied template reports the copy's job, whose `scm_branch` is the commit.
+stderr says which suite runs a template AWX holds (`deploy: runs AWX's
+JobTemplate 'Deploy' at 1a2b3c4 (no spec)`) and names each copy created,
+with the prompts it enables.
 
-**A copy that could not be provisioned is not a test result.** The run stops
-before any launch with one error that starts `cannot provision the temporary
-test set (nothing was created); nothing launched:` (or `(the copies created
-are torn down)` when AWX refused a write halfway) and lists each problem, and
-no row is printed. Its `system` says who must act:
+**A copy that could not be provisioned is not a test result.** The run
+stops before any launch with one error, and no row is printed. It starts
+`cannot provision the temporary test set of REF (nothing was created);
+nothing launched:` (`(the copies created are torn down)` when AWX refused a
+write halfway), or `cannot run REF; nothing launched:` when the run copies
+nothing. It lists each problem as `LABEL: message`, a problem's own hint in
+parentheses; the error has the worst problem's `category`, `system` and
+`hint`. Before that, a spec that is not valid YAML or not a valid workflow
+graph, or two specs matching one suite, fail alone as `awx.suite`
+(`invalid`), naming the files. The `system` says who must act:
 
 | `system` | When | `category` (exit) | What to do |
 |---|---|---|---|
 | `awx.suite` | A spec names something AWX does not have (the message suggests the closest names), a copy's name is already taken, or two specs match one suite | `not_found`, `conflict`, `invalid` (1) | Fix the spec or the suite (or create the missing credential, inventory… in AWX), then `untaped awx test validate --source-ref REF`. |
-| `awx.scm` | A copy's project does not allow branch override, or a suite's template has no spec and does not prompt for `scm_branch` | `invalid` (1) | Enable `allow_override` on the project; add the template's spec or enable `ask_scm_branch_on_launch`. |
+| `awx.scm` | A copy's project does not allow branch override, or a template the run does not copy (a suite's, or one a workflow node runs, labelled `SUITE (node PATH)`) does not prompt for `scm_branch` | `invalid` (1) | Enable `allow_override` on the project; add the template's spec under `.untaped/awx/` or enable `ask_scm_branch_on_launch`. |
 | `awx.credentials` | AWX refused to create a copy (401, 403) | `auth`, `permission` (4) | Give the AWX user the roles in [agent-profile.md](agent-profile.md); do not change the spec. |
-| `awx.controller` | AWX was unavailable while creating a copy | `unavailable` (5) | Retry later. |
+| `awx.controller` | AWX was unavailable while creating a copy or reading a project | `unavailable` (5) | Retry later. |
+| `awx` | AWX created a copy but did not store it as the spec asks (`unverified …` fields) | `invalid` (1) | Rerun with `--keep` to inspect the copy, then fix the spec. |
 
-After the run, each copy is deleted and named on stderr (`deleted
-JobTemplate 'Deploy [untaped-test 1a2b3c4 k3x9]'`), or with `--keep` listed
-as `kept … (id N)`. A copy teardown could not delete is a `warning:
-teardown: …` line naming it (a JSON warning with `--format json`); the cases'
-results and the exit code stand. Delete it later with `untaped awx test
-prune`.
+After the results are printed, each copy is deleted, workflows first, and
+named on stderr (`deleted JobTemplate 'Deploy [untaped-test 1a2b3c4
+k3x9]'`), or with `--keep` listed as `kept … (id N)` (even with `-q`). A copy
+teardown could not delete in 30 seconds (AWX refuses while a job of it
+still runs), or that a second Ctrl-C left, is a `warning: teardown: … is
+left: …` line naming it (a JSON warning with `--format json`), followed by
+the command that deletes that run's copies:
+`untaped awx test prune --run k3x9 --older-than 0`. The cases' results and
+the exit code stand.
 
 `untaped awx test validate --source-ref REF` (and `untaped awx test run
 --source-ref REF --dry-run`) prints one `awx.provision_outcome` row per copy

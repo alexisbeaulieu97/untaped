@@ -16,7 +16,7 @@ from untaped.capabilities.awx.application.selection import (
     SelectionResolver,
 )
 from untaped.capabilities.awx.domain import ResourceSpec
-from untaped.capabilities.awx.domain.temporary_set import PROMPT_FLAGS
+from untaped.capabilities.awx.domain.launch_prompts import PROMPT_FLAGS
 from untaped.capabilities.awx.errors import LaunchPromptError
 from untaped.capability_api import ConfigError, UsageError, q
 

@@ -675,21 +675,24 @@ untaped awx test prune --dry-run
   `expect.nodes` with the same checks as a case, plus `status: never_ran`.
   Each row lists the workflow's `nodes`, and a failed workflow is blamed on
   the node that failed it (`node deploy: …`, with that job's evidence).
-- Temporary test sets: `run --source-ref REF` reads the suites and the
-  template and workflow specs under `.untaped/awx/` at REF's commit (pushed),
-  and runs each suite whose template has a spec against a temporary copy of
-  it: named `NAME [untaped-test SHA RUN]`, marked in its description, pinned
-  to the commit (`scm_branch`, so its project must allow branch override),
-  prompting for every field its cases set, and with its workflow nodes
-  pointed at the other copies. Every link is looked up by name and never
-  created. A template without a spec must prompt for `scm_branch`, or the
-  run is refused. The copies are created without a confirmation and deleted
-  after the run, even after Ctrl-C (`--keep` keeps them); a copy that could
-  not be provisioned stops the run before any launch with its own
-  attribution, never as a test failure. `validate --source-ref REF` (or
-  `run --dry-run`) checks all of it without writing and prints the copies
-  (`awx.provision_outcome`), and `test prune` deletes the copies a killed
-  run left (`--older-than`, default `2h`).
+- Temporary test sets: `run --source-ref REF` tests REF with the template
+  configuration it carries.
+  - Suites and the job template and workflow specs under `.untaped/awx/`
+    are read at REF's commit, which must be pushed.
+  - Each suite whose template has a spec runs a temporary copy of it, named
+    `NAME [untaped-test SHA RUN]` and pinned to the commit (its project must
+    allow branch override). The copy prompts for every field its cases set.
+    A copied workflow's nodes run the copies of templates with specs.
+  - Links are looked up by name and never created. Every other template the
+    run launches must prompt for `scm_branch`, or the run is refused.
+  - The copies are created without a confirmation and deleted after the
+    run, even after Ctrl-C; `--keep` keeps them. A copy that could not be
+    provisioned stops the run before any launch, never as a test failure.
+  - `validate --source-ref REF` (or `run --dry-run`) checks it all without
+    writing and prints the copies (`awx.provision_outcome`); `validate`
+    takes `--format` and `--columns`.
+  - `test prune` deletes the copies a killed run left (`--older-than`,
+    default `2h`; `--run RUN` for one run's copies).
 - To let an AI agent run suites against its own changes, give it a dedicated
   profile and token: see [AWX agent profile](./agent-profile.md). Temporary
   test sets need it to create and delete job templates and workflows in the

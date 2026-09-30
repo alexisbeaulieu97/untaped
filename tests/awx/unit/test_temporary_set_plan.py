@@ -144,6 +144,56 @@ def test_a_spec_in_another_organization_does_not_bind() -> None:
     plan = _plan([_suite("deploy", {"c": {}})], [spec])
 
     assert (plan.templates, plan.bindings) == ((), {})
+    assert plan.notes == (
+        "deploy: the spec of JobTemplate 'Deploy' (feature/x:.untaped/awx/Deploy.yml) is not "
+        "in organization Default, so the suite runs the template AWX holds",
+    )
+
+
+def test_a_node_naming_a_template_of_another_organization_keeps_its_name() -> None:
+    """Only the node running the copied template (same name *and* organization) is renamed."""
+    workflow = _doc(
+        "WorkflowJobTemplate",
+        "Release",
+        nodes=[
+            {"id": "here", "run": {"job_template": "Deploy"}},
+            {"id": "there", "run": {"job_template": "Deploy", "organization": "Ops"}},
+        ],
+    )
+    suite = _suite("release", {"c": {}}, jobTemplate=None, workflowTemplate="Release")
+
+    plan = _plan([suite], [workflow, _doc("JobTemplate", "Deploy")])
+
+    nodes = plan.templates[1].document.spec["nodes"]
+    assert [node["run"] for node in nodes] == [
+        {"job_template": "Deploy [untaped-test 1a2b3c4 k3x9]"},
+        {"job_template": "Deploy", "organization": "Ops"},
+    ]
+    assert [target.key for target in plan.templates[1].targets] == [
+        ("JobTemplate", "Deploy", "Default"),
+        ("JobTemplate", "Deploy", "Ops"),
+    ]
+
+
+def test_approval_nodes_include_those_of_nested_copies() -> None:
+    outer = _doc(
+        "WorkflowJobTemplate",
+        "Release",
+        nodes=[
+            {"id": "gate", "approval": {"name": "Go"}},
+            {"id": "inner", "run": {"workflow_job_template": "Inner"}},
+        ],
+    )
+    inner = _doc(
+        "WorkflowJobTemplate", "Inner", nodes=[{"id": "second", "approval": {"name": "Again"}}]
+    )
+    suite = _suite("release", {"c": {}}, jobTemplate=None, workflowTemplate="Release")
+
+    plan = _plan([suite], [outer, inner])
+
+    copy = plan.bound(plan.bindings["release"])
+    assert copy is not None and copy.source == "Release"
+    assert plan.approval_nodes(copy) == ["gate", "inner/second"]
 
 
 def test_a_suite_without_selected_cases_provisions_nothing() -> None:

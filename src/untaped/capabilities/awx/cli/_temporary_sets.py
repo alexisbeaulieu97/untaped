@@ -11,23 +11,22 @@ import secrets
 import string
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from untaped.capabilities.awx.application import BatchMutationEngine
 from untaped.capabilities.awx.application.mutation_types import MutationPlan
+from untaped.capabilities.awx.application.prepared_body import UNVERIFIED_KEPT
 from untaped.capabilities.awx.application.suites.preflight import PreflightLaunch
 from untaped.capabilities.awx.application.suites.temporary_set import (
+    Refusal,
     TemporarySets,
     unpinned_problems,
 )
-from untaped.capabilities.awx.cli._apply_runner import (
-    build_mutation_engine,
-    with_default_organization,
-)
+from untaped.capabilities.awx.cli._apply_runner import with_default_organization
 from untaped.capabilities.awx.cli.context import AwxContext
 from untaped.capabilities.awx.domain.outcomes import TemporaryCopyOutcome
-from untaped.capabilities.awx.domain.suite import Suite, TemplateBinding, select_cases
+from untaped.capabilities.awx.domain.suite import Case, Suite, TemplateBinding
 from untaped.capabilities.awx.domain.temporary_set import Marker, TemporarySet, plan_temporary_set
 from untaped.capabilities.awx.infrastructure.git_source import GitSource
 from untaped.capabilities.awx.infrastructure.suites.filesystem import DEFAULT_SUITE_DIR
@@ -35,7 +34,7 @@ from untaped.capabilities.awx.infrastructure.suites.source_files import (
     GitSuiteFiles,
     template_specs,
 )
-from untaped.capability_api import UntapedError, echo, hint, q, report_error
+from untaped.capability_api import echo, hint, q
 
 _RUN_ID_ALPHABET = string.ascii_lowercase + string.digits
 _RUN_ID_LENGTH = 4
@@ -62,138 +61,81 @@ def suites_at(
     return list(load(found, filesystem=files).values())
 
 
-def plan_copies(
+def prepare(
     ctx: AwxContext,
+    preflight: PreflightLaunch,
     source: GitSource,
-    suites: Iterable[Suite],
-    *,
-    case_filter: set[str] | None,
+    selected: Sequence[tuple[Suite, str, Case]],
     default_scope: dict[str, str] | None,
-) -> TemporarySet:
-    """The copies the selected cases need, named for a new run of ``source``'s commit."""
+) -> tuple[TemporarySet, TemporarySets, list[Refusal]]:
+    """The copies the selected cases need, the use case managing them, and the suites refused.
+
+    Says on stderr which suites run a template AWX holds, and why a spec
+    that looks like a suite's template did not bind to it.
+    """
     run_id = "".join(secrets.choice(_RUN_ID_ALPHABET) for _ in range(_RUN_ID_LENGTH))
     marker = Marker(run_id=run_id, ref=source.ref, sha=source.sha[:7], created=datetime.now(UTC))
     specs = [(path, with_default_organization(ctx, doc)) for path, doc in template_specs(source)]
-    return plan_temporary_set(
-        select_cases(suites, case_filter),
+    temp = plan_temporary_set(
+        selected,
         specs,
         marker=marker,
         sha=source.sha,
         default_scope=default_scope,
         kinds=ctx.catalog.get,
     )
+    ui = ctx.progress_ui()
+    for note in temp.notes:
+        ui.message("warning", note)
+    bindings = {suite.name: suite.binding(default_scope, temp.bindings) for suite, _, _ in selected}
+    for suite, binding in bindings.items():
+        if not binding.pinned:
+            ui.message(
+                "info",
+                f"{suite}: runs AWX's {binding.kind} {q(binding.name)} at {marker.sha} (no spec)",
+            )
+    refusals = unpinned_problems(
+        preflight, ctx.catalog.get, bindings.items(), temp, ref=source.ref, sha=source.sha
+    )
+    return temp, temporary_sets(ctx), refusals
 
 
 def temporary_sets(ctx: AwxContext) -> TemporarySets:
-    return TemporarySets(
-        engine=build_mutation_engine(ctx), client=ctx.repo, catalog=ctx.catalog, fk=ctx.fk
+    """The use case, its engine keeping an unverified copy for :meth:`TemporarySets.provision`
+    to refuse (without the apply-only ``--allow-unverified`` warning)."""
+    ui = ctx.progress_ui()
+
+    def warn(message: str) -> None:
+        if not message.endswith(UNVERIFIED_KEPT):
+            ui.message("warning", message)
+
+    engine = BatchMutationEngine(
+        client=ctx.repo,
+        catalog=ctx.catalog,
+        fk=ctx.fk,
+        strategies=ctx.strategies,
+        warn=warn,
+        allow_unverified=True,
+        nodes=ctx.workflow_nodes,
     )
-
-
-def unpinned(
-    ctx: AwxContext,
-    preflight: PreflightLaunch,
-    suites: Iterable[Suite],
-    temp: TemporarySet,
-    source: GitSource,
-    *,
-    case_filter: set[str] | None,
-    default_scope: dict[str, str] | None,
-) -> list[tuple[str, UntapedError]]:
-    """The selected suites not bound to a copy whose template would not run the commit."""
-    bindings = {
-        suite.name: suite.binding(default_scope)
-        for suite, _, _ in select_cases(suites, case_filter)
-        if suite.name not in temp.bindings
-    }
-    return unpinned_problems(
-        preflight, ctx.catalog.get, bindings.items(), ref=source.ref, sha=source.sha
-    )
-
-
-@dataclass(frozen=True)
-class SourceRun:
-    """A run's temporary set, checked, with the plan that creates it."""
-
-    temp: TemporarySet
-    sets: TemporarySets
-    plan: MutationPlan
-
-    @classmethod
-    def checked(
-        cls,
-        ctx: AwxContext,
-        preflight: PreflightLaunch,
-        source: GitSource,
-        suites: Sequence[Suite],
-        *,
-        case_filter: set[str] | None,
-        default_scope: dict[str, str] | None,
-    ) -> SourceRun:
-        """Plan the copies and check them, and every template not copied, before any write."""
-        temp = plan_copies(
-            ctx, source, suites, case_filter=case_filter, default_scope=default_scope
-        )
-        sets = temporary_sets(ctx)
-        problems = unpinned(
-            ctx,
-            preflight,
-            suites,
-            temp,
-            source,
-            case_filter=case_filter,
-            default_scope=default_scope,
-        )
-        return cls(temp=temp, sets=sets, plan=sets.check(temp, problems))
-
-
-def validated(
-    ctx: AwxContext,
-    preflight: PreflightLaunch,
-    source: GitSource,
-    suites: Sequence[Suite],
-    *,
-    case_filter: set[str] | None,
-    default_scope: dict[str, str] | None,
-) -> tuple[TemporarySet, set[str], bool]:
-    """Plan and check the copies without writing, reporting each problem on stderr.
-
-    Returns the set, the suites refused (their template would not run the
-    commit) and whether the copies failed their check.
-    """
-    temp = plan_copies(ctx, source, suites, case_filter=case_filter, default_scope=default_scope)
-    refused: set[str] = set()
-    for suite, problem in unpinned(
-        ctx, preflight, suites, temp, source, case_filter=case_filter, default_scope=default_scope
-    ):
-        report_error(problem, item=suite)
-        refused.add(suite)
-    try:
-        temporary_sets(ctx).check(temp)
-    except UntapedError as exc:
-        report_error(exc)
-        return temp, refused, True
-    return temp, refused, False
+    return TemporarySets(engine=engine, client=ctx.repo, catalog=ctx.catalog, fk=ctx.fk)
 
 
 @contextmanager
 def provisioned(
-    ctx: AwxContext, run: SourceRun | None, *, keep: bool
+    ctx: AwxContext, sets: TemporarySets, temp: TemporarySet, plan: MutationPlan, *, keep: bool
 ) -> Iterator[dict[str, TemplateBinding]]:
     """Create the run's copies, yield the suites' bindings to them, then always tear them down.
 
     Teardown runs however the block ends (a failure, Ctrl-C); ``keep`` only
     names the copies.
     """
-    if run is None or not run.temp.templates:
-        yield run.temp.bindings if run is not None else {}
-        return
     try:
-        run.sets.provision(run.plan)
-        report_copies(ctx, run.temp)
-        yield run.temp.bindings
+        sets.provision(temp, plan)
+        report_copies(ctx, temp)
+        yield temp.bindings
     finally:
-        report_teardown(ctx, run.sets.teardown(run.temp.marker, keep=keep))
+        report_teardown(ctx, sets.teardown(temp.marker, keep=keep))
 
 
 def report_copies(ctx: AwxContext, temp: TemporarySet) -> None:
@@ -211,14 +153,15 @@ def report_copies(ctx: AwxContext, temp: TemporarySet) -> None:
 def report_teardown(ctx: AwxContext, rows: Sequence[TemporaryCopyOutcome]) -> None:
     """Name each copy kept, deleted or left behind; a copy left behind is a warning."""
     ui = ctx.progress_ui()
-    left = False
+    left = None
     for row in rows:
         if row.action == "kept":
+            # Not an info line: --keep asks for these names, so -q must not mute them.
             echo(f"kept {row.kind} {q(row.name)} (id {row.id})", err=True)
         elif row.action == "deleted":
             ui.message("info", f"deleted {row.kind} {q(row.name)}")
         else:
-            left = True
+            left = row.run_id
             ui.message("warning", f"teardown: {row.kind} {q(row.name)} is left: {row.detail}")
-    if left:
-        echo(hint("awx test prune"), err=True)
+    if left is not None:
+        echo(hint(f"awx test prune --run {left} --older-than 0"), err=True)

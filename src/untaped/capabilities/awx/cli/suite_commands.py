@@ -6,6 +6,8 @@ import json
 import shlex
 from collections import Counter
 from collections.abc import Iterable
+from contextlib import AbstractContextManager, nullcontext
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, get_args
@@ -26,6 +28,7 @@ from untaped.capabilities.awx.domain.suite import (
     Change,
     Suite,
     SuiteRunOutcome,
+    TemplateBinding,
     select_cases,
 )
 from untaped.capabilities.awx.domain.suite_baseline import saved_baselines
@@ -151,6 +154,7 @@ _SOURCE_REF_OPT = Annotated[
 ]
 
 _PROVISION_KIND = "awx.provision_outcome"
+_PRUNE_KIND = "awx.prune_outcome"
 _PROVISION_COLUMNS = ["kind", "name", "template", "prompts", "path"]
 _PRUNE_COLUMNS = ["kind", "id", "name", "ref", "created_at", "action"]
 
@@ -325,7 +329,15 @@ def run_command(
             "names.",
         ),
     ] = False,
-    dry_run: DryRunOption = False,
+    dry_run: Annotated[
+        bool,
+        Parameter(
+            name="--dry-run",
+            negative="",
+            help="Check the selected cases as validate does; with --source-ref also print the "
+            "copies it would create. Launches nothing; exits 1 on problems.",
+        ),
+    ] = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -349,8 +361,14 @@ def run_command(
 
     if compare is not None and baseline is not None:
         raise_usage("--compare and --baseline cannot be combined")
-    _check_source_ref_flags(
-        source_ref, scm_branch=scm_branch, baseline=baseline, keep=keep, cancel=cancel
+    _check_run_flags(
+        source_ref,
+        scm_branch=scm_branch,
+        baseline=baseline,
+        compare=compare,
+        keep=keep,
+        cancel=cancel,
+        dry_run=dry_run,
     )
     case_filter = set(cases) if cases else None
     if dry_run:
@@ -384,15 +402,17 @@ def run_command(
             vars_files=tuple(vars_file or []),
             non_interactive=non_interactive,
         )
-        pinned: copies.SourceRun | None = None
+        provisioning: AbstractContextManager[dict[str, TemplateBinding]] = nullcontext({})
         if source_ref is None:
             suites = list(load(files).values())
         else:
             source = copies.open_source(source_ref)
             suites = copies.suites_at(source, paths, load)
-            pinned = copies.SourceRun.checked(
-                ctx, preflight, source, suites, case_filter=case_filter, default_scope=default_scope
-            )
+            selected = select_cases(suites, case_filter)
+            temp, sets, refusals = copies.prepare(ctx, preflight, source, selected, default_scope)
+            plan = sets.check(temp, refusals)
+            if temp.templates:
+                provisioning = copies.provisioned(ctx, sets, temp, plan, keep=keep)
             scm_branch = source.sha
         runner = RunTestSuite(
             resolver=ResolveCasePayload(
@@ -421,7 +441,8 @@ def run_command(
             hosts=structured,
         )
         try:
-            with copies.provisioned(ctx, pinned, keep=keep) as bindings:
+            # Results are emitted before the teardown, which a second Ctrl-C may cut short.
+            with provisioning as bindings:
                 outcome = runner(
                     suites,
                     case_filter=case_filter,
@@ -433,12 +454,23 @@ def run_command(
                     compare=saved,
                     bindings=bindings,
                 )
+                failed = _report_results(outcome, show_logs=show_logs, fmt=fmt, columns=columns)
         except KeyboardInterrupt:
             report_interrupted(
                 [(None, job) for job in runner.known_executions()],
                 cancelled=runner.cancelled,
             )
+    finish(failed)
 
+
+def _report_results(
+    outcome: SuiteRunOutcome,
+    *,
+    show_logs: bool,
+    fmt: OutputFormat,
+    columns: list[str] | None,
+) -> bool:
+    """Emit the rows and the summary; count the failures that decide the exit code."""
     if show_logs:
         for result in outcome.results:
             if result.failure is not None:
@@ -455,18 +487,31 @@ def run_command(
     counted = outcome.counted()
     for failure in counted:
         note_failure(failure)
-    finish(bool(counted))
+    return bool(counted)
 
 
-def _check_source_ref_flags(
+def _check_run_flags(
     source_ref: str | None,
     *,
     scm_branch: str | None,
     baseline: str | None,
+    compare: Path | None,
     keep: bool,
     cancel: bool,
+    dry_run: bool,
 ) -> None:
-    """Refuse the flags ``--source-ref`` cannot go with, and ``--keep`` without it."""
+    """Refuse the flags ``--dry-run`` and ``--source-ref`` cannot go with, and ``--keep``
+    without ``--source-ref``."""
+    if dry_run:
+        ignored = {
+            "--keep": keep,
+            "--no-cancel": not cancel,
+            "--compare": compare is not None,
+            "--baseline": baseline is not None,
+        }
+        for flag, given in ignored.items():
+            if given:
+                raise_usage(f"--dry-run launches nothing, so {flag} does not apply")
     if source_ref is None:
         if keep:
             raise_usage("--keep applies to --source-ref only")
@@ -665,7 +710,6 @@ def _validate(
         ResolveCasePayload,
     )
     from untaped.capabilities.awx.application.suites.temporary_set import (  # noqa: PLC0415
-        approval_nodes,
         planned_outcome,
         preflight_copy,
     )
@@ -691,24 +735,28 @@ def _validate(
         any_errors = False
         if source_ref is None:
             suites = list(load(files).values())
+            selected = select_cases(suites, case_filter)
         else:
             source = copies.open_source(source_ref)
             suites = copies.suites_at(source, paths, load)
-            temp, refused, any_errors = copies.validated(
-                ctx, preflight, source, suites, case_filter=case_filter, default_scope=default_scope
-            )
+            selected = select_cases(suites, case_filter)
+            temp, sets, refusals = copies.prepare(ctx, preflight, source, selected, default_scope)
+            refused = {refusal.suite for refusal in refusals}
+            try:
+                sets.check(temp, refusals)
+            except ConfigError as exc:
+                report_error(exc)
+                any_errors = True
             scm_branch = source.sha
-        selected = select_cases(suites, case_filter)
         resolver = ResolveCasePayload(
             ctx.fk, catalog=ctx.catalog, default_organization=ctx.default_organization
         )
-        planned = {template.name: template for template in temp.templates} if temp else {}
-        bindings = temp.bindings if temp is not None else {}
         warn = partial(ctx.progress_ui().message, "warning")
         for suite, case_name, case in selected:
             if suite.name in refused:
                 continue
-            binding = bindings.get(suite.name) or suite.binding(default_scope)
+            binding = suite.binding(default_scope, temp.bindings if temp is not None else None)
+            copy = temp.bound(binding) if temp is not None else None
             spec = ctx.catalog.get(binding.kind)
             nodes = tuple(suite.expectation(case_name).nodes)
             gates: list[str] = []
@@ -716,10 +764,9 @@ def _validate(
                 payload = resolver(
                     spec, case, defaults=suite.defaults, organization=suite.organization
                 )
-                if binding.pinned:
-                    copy = planned[binding.name]
+                if temp is not None and copy is not None:
                     preflight_copy(copy, payload, nodes)
-                    gates = approval_nodes(copy)
+                    gates = temp.approval_nodes(copy)
                 else:
                     if scm_branch is not None:
                         payload["scm_branch"] = scm_branch
@@ -744,7 +791,7 @@ def _validate(
             kind=_PROVISION_KIND,
             empty="No temporary copies planned.",
         )
-    finish(any_errors or bool(refused))
+    finish(any_errors)
     ui_context(strict=False).success(f"{plural(len(selected), 'case')} validated")
 
 
@@ -762,6 +809,13 @@ def prune_command(
             "(0: every copy, a running test's included).",
         ),
     ] = "2h",
+    run: Annotated[
+        str | None,
+        Parameter(
+            name="--run",
+            help="Only the copies of this run (RUN in `NAME [untaped-test SHA RUN]`).",
+        ),
+    ] = None,
     yes: YesOption = False,
     dry_run: DryRunOption = False,
     fmt: FormatOption = "table",
@@ -772,8 +826,6 @@ def prune_command(
     A copy is a job template or workflow named `NAME [untaped-test SHA RUN]` whose
     description carries the matching `untaped-test run=…` marker.
     """
-    from datetime import UTC, datetime  # noqa: PLC0415
-
     from untaped.capabilities.awx.cli import _temporary_sets as copies  # noqa: PLC0415
     from untaped.capabilities.awx.domain.temporary_set import parse_age  # noqa: PLC0415
 
@@ -784,12 +836,12 @@ def prune_command(
     with report_errors(), open_context() as ctx:
         sets = copies.temporary_sets(ctx)
         now = datetime.now(UTC)
-        found = [copy for copy in sets.leftovers() if now - copy.marker.created >= age]
+        found = [copy for copy in sets.leftovers(run_id=run) if now - copy.marker.created >= age]
         outcome = batch_apply(
             found,
             sets.delete,
             verb="delete",
-            noun="temporary copy",
+            noun="temporary template",
             label=lambda copy: f"{copy.kind} {q(copy.name)}",
             describe=lambda copy: {"kind": copy.kind, "id": copy.id, "name": copy.name},
             ui=ctx.progress_ui(),
@@ -797,23 +849,20 @@ def prune_command(
             assume_yes=yes,
             preview_only=dry_run,
         )
-    failed = dict(outcome.failures)
-    deleted = {copy for copy, _ in outcome.results}
-    rows = []
-    for copy in found:
-        if copy in failed:
-            info = ErrorInfo.from_exception(failed[copy])
-            row = copy.outcome("failed", detail=info.message, error=info)
-        elif copy in deleted:
-            row = copy.outcome("deleted")
-        else:
-            row = copy.outcome("planned")
-        rows.append(row.model_dump())
+    if outcome.cancelled:
+        finish(outcome)
+    if dry_run:
+        rows = [copy.outcome("planned") for copy in found]
+    else:
+        rows = [copy.outcome("deleted") for copy, _ in outcome.results]
+        for copy, error in outcome.failures:
+            info = ErrorInfo.from_exception(error)
+            rows.append(copy.outcome("failed", detail=info.message, error=info))
     emit(
-        rows,
+        [row.model_dump() for row in rows],
         fmt=fmt,
         columns=columns or default_get_columns(fmt, _PRUNE_COLUMNS),
-        kind="awx.prune_outcome",
+        kind=_PRUNE_KIND,
         empty="No temporary copies found.",
     )
     finish(outcome)
