@@ -366,3 +366,50 @@ def test_datetimes_in_plain_rows_render_as_utc_timestamps(fmt: OutputFormat) -> 
     stamp = datetime(2026, 1, 2, 4, 4, 5, 123456, tzinfo=timezone(timedelta(hours=1)))
     out = _render([{"created_at": stamp}], fmt=fmt)
     assert "2026-01-02T03:04:05Z" in out
+
+
+def test_fitting_narrows_the_widest_column_before_names_and_short_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("COLUMNS", "80")
+    rows = [
+        {
+            "name": "deploy-production-webservers",
+            "action": "updated",
+            "url": "https://example.com/" + "x" * 100,
+        }
+    ]
+    out = _table(rows)
+    assert "deploy-production-webservers" in out
+    assert "updated" in out
+    assert "https://example.com/x" in out
+    assert max(len(line) for line in out.splitlines()) <= 80
+
+
+def test_fitting_keeps_every_column_visible_when_the_terminal_is_narrow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("COLUMNS", "50")
+    row = {"name": "n" * 30, "kind": "k" * 20, "scope": "s" * 20, "action": "a" * 20}
+    header = _table([row]).splitlines()[1]
+    assert all(col in header for col in row)
+
+
+@pytest.mark.parametrize(("value", "expected"), [(5, "5.0s"), (59.96, "1m00s")])
+def test_duration_edges(value: float, expected: str) -> None:
+    assert expected in _table([{"wait_s": value}])
+
+
+def test_detail_table_view_formats_each_field_by_name() -> None:
+    theme = BUILTIN_THEMES["default"].model_copy(update={"detail_view": "table"})
+    out = UiContext(theme=theme).detail({"duration_s": 102.5, "scope": {}}, fmt="table")
+    assert "1m42s" in out
+    assert "{}" not in out
+
+
+def test_a_status_role_set_to_empty_turns_its_color_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    theme = BUILTIN_THEMES["default"].model_copy(update={"color_roles": {"error": ""}})
+    out = UiContext(theme=theme).collection([{"status": "failed"}], fmt="table")
+    assert "\x1b[31m" not in out
