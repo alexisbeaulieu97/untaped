@@ -144,3 +144,11 @@ def test_immutable_fields_cover_identity_and_ancestry() -> None:
     assert {"id", "kind", "type", "name", "organization", "parent", "inventory"} <= host
     assert "inventory" not in cat.get("JobTemplate").immutable_fields
     assert "description" not in host
+
+
+def test_a_parent_field_is_known_without_being_read_only() -> None:
+    """A schedule's ``unified_job_template`` is a filterable, recognized field;
+    it is not read-only, so apply still sends a hand-written one."""
+    [schedule] = [spec for spec in ALL_SPECS if spec.kind == "Schedule"]
+    assert "unified_job_template" in schedule.known_fields
+    assert "unified_job_template" not in schedule.read_only_fields

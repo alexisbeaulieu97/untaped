@@ -27,8 +27,18 @@ def name_fks(
     """
     if not (with_names or table):
         return rows
-    named = [part.strip().lstrip("+-") for entry in columns or () for part in entry.split(",")]
-    return flatten_fks(rows, spec, columns=[*defaults, *filter(None, named)])
+    return flatten_fks(rows, spec, columns=[*defaults, *column_names(columns)])
+
+
+def column_names(columns: Sequence[str] | None) -> list[str]:
+    """Every column name ``--columns`` mentions, ``+``/``-`` edit marks stripped.
+
+    Follows the core's ``--columns`` syntax (``-c a,b``, ``-c +a``,
+    ``-c=-a``; see ``_selected_columns`` in ``untaped.cli``), which
+    ``capability_api`` does not expose as a parser.
+    """
+    parts = (part.strip() for entry in columns or () for part in entry.split(","))
+    return [part.lstrip("+-") for part in parts if part]
 
 
 def flatten_fks(
