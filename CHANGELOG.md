@@ -114,6 +114,13 @@ self-contained manual for the installed CLI.
   - **Breaking:** `github.sync_outcome` (`cache sync`) renames its string
     field `error` to `detail`; a failed row's `error` is now the structured
     object. A fetch that timed out exits 5.
+  - **Breaking:** github records name a repository only in `repo` and a web
+    page only in `url`: `full_name`, `html_url` and the duplicate `name`
+    (`github.repo`, `github.repo_hit`), `repository_url` (`github.issue`) and
+    the nested `repository` (`github.code`) are gone. The sweep records
+    (`github.sweep_repo`, `github.sweep_file`, `github.sweep_match`) rename
+    `full_name` to `repo` and `synced_at` to `fetched_at`, as in `github
+    cache`. `--stdin` reads `repo` from a piped record.
 - Jira
   - **Breaking:** a rejected token (401, same hint text) and a missing
     permission (403) exit 4; 5xx, 429 and network failures exit 5; a missing

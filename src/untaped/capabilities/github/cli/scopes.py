@@ -19,7 +19,7 @@ from untaped.capability_api import (
 )
 
 REPO_KINDS = frozenset({"github.repo", "github.repo_hit", "github.sweep_repo"})
-"""Pipe record kinds whose ``full_name`` names a repository for ``--stdin``."""
+"""Pipe record kinds whose ``repo`` names a repository for ``--stdin``."""
 
 OrgOption = Annotated[
     list[str] | None,
@@ -97,13 +97,17 @@ def read_stdin_repos() -> tuple[tuple[str, ...], tuple[RepositoryInventoryItem, 
     items: list[RepositoryInventoryItem] = []
     for env in piped.records:
         record = env.record
-        full_name = record.get("full_name")
-        if not isinstance(full_name, str) or not full_name.strip():
+        repo = record.get("repo")
+        if not isinstance(repo, str) or not repo.strip():
             raise ConfigError(
-                f"line {env.lineno}: record 'full_name' is missing or blank", category="invalid"
+                f"line {env.lineno}: record 'repo' is missing or blank", category="invalid"
             )
-        if record.get("default_branch") and (record.get("clone_url") or record.get("html_url")):
-            items.append(RepositoryInventoryItem.model_validate(record))
+        if record.get("default_branch") and (record.get("clone_url") or record.get("url")):
+            items.append(
+                RepositoryInventoryItem.model_validate(
+                    {**record, "full_name": repo.strip(), "html_url": record.get("url")}
+                )
+            )
         else:
-            names.append(full_name.strip())
+            names.append(repo.strip())
     return tuple(names), tuple(items)
