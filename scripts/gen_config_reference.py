@@ -45,6 +45,8 @@ DESCRIPTIONS: dict[str, str] = {
     "ui.density": "Table density; overrides the theme.",
     "ui.collection_view": "How lists render in `table` format; overrides the theme.",
     "ui.detail_view": "How a single record renders in `table` format; overrides the theme.",
+    "ui.hide_empty_columns": "Leave out `table` columns that are empty on every row "
+    "(on unless the theme turns it off); a column named in `--columns` always shows.",
     "ui.symbols": "Symbol overrides merged over the theme's symbols.",
     "ui.color_roles": "Color-role overrides merged over the theme's colors.",
     "skills.updates": "What each run does when installed agent skills differ from this "

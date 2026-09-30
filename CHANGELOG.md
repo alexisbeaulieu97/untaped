@@ -64,6 +64,28 @@ self-contained manual for the installed CLI.
     their `system`, and record `status`, `url` and the number of `attempts`.
     Git failures are `git`; a timeout or a transient transport error is
     `unavailable`, and a missing `git` binary is `config`.
+  - **New:** tables are easier to scan. A table leaves out a column that is
+    empty on every row (`ui.hide_empty_columns`, on by default; a column
+    named in `--columns` always shows) and gathers its columns from every
+    row, not just the first. It fits the terminal by narrowing only its
+    widest columns: a cell that does not fit ends in `…` and each row stays
+    on one line, while `detail`, `message` and `hint` wrap. Nested values
+    read as `key=value` pairs instead of Python reprs, `*_s` durations as
+    `1m42s`, other decimals to two places, and commits are shortened to 10
+    characters. Status and outcome words are colored by meaning, including
+    in the default theme. json, yaml, raw and pipe output are unchanged.
+  - **New:** `--columns +name` adds a column to a table's default columns and
+    `--columns=-name` removes one (`--columns +url,-kind` does both); in
+    other formats, `-name` removes a field from the whole record.
+    `--columns ?` marks the default columns with `*`. A single record in
+    table format leaves out its empty fields too. For providers, `emit` and
+    `render_rows` take `table_columns=` for a command's default columns.
+  - **Fix:** asking for a column that exists on the record but is absent from
+    every row (such as `error` when nothing failed) no longer warns that it
+    is unknown; `--quiet` mutes the `No … found.` line; a column name
+    containing a dot (`has-file:release.txt`) selects that key; a table
+    header is never read as Rich markup; a `datetime` in a plain row renders as `2026-01-02T03:04:05Z` in every format; `doctor` and `capabilities` accept
+    `--columns a,b` and `--columns ?` even when the settings are broken.
   - **Breaking (SDK):** the capability API is `3.0`
     (`CAPABILITY_API_VERSION = (3, 0)`); providers must declare
     `((3, 0), (4, 0))`. `UntapedError` gains `category`, `system`, `hint` and

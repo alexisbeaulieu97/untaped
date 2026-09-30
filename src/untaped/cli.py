@@ -32,6 +32,7 @@ from untaped.diagnostics import (
     write_record,
 )
 from untaped.errors import ExitCode, OperationCancelledError, UntapedError, UsageError
+from untaped.render import column_value
 from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context
 
@@ -119,7 +120,10 @@ ColumnsOption = Annotated[
     Parameter(
         name=["--columns", "-c"],
         negative="",
-        help="Columns to include (repeatable or comma-separated).",
+        help=(
+            "Columns to include (repeatable or comma-separated); +name adds to and "
+            "-name removes from the table's default columns (? lists them)."
+        ),
         consume_multiple=False,
     ),
 ]
@@ -325,6 +329,7 @@ def render_rows(
     columns: list[str] | None = None,
     empty: str | bool | None = None,
     kind: str | None = None,
+    table_columns: Sequence[str] | None = None,
 ) -> str:
     """Render a row collection: themed table for humans, plain output for pipes.
 
@@ -333,74 +338,166 @@ def render_rows(
     the active theme, so they render through a bare :class:`UiContext`. ``empty``
     is a human hint printed to stderr only when ``table`` output has no rows.
     ``kind`` tags ``--format pipe`` records with a producer hint (ignored by
-    every other format). A ``table`` without ``--columns`` leaves out a failed
-    row's structured ``error`` (its ``detail`` says the same for humans).
+    every other format).
+
+    ``table_columns`` are the columns a ``table`` shows by default (every
+    other format keeps the whole record); ``--columns +name`` / ``-name``
+    edit them. A ``table`` never shows a failed row's structured ``error``
+    unless asked (its ``detail`` says the same for humans), and, with
+    ``ui.hide_empty_columns`` (the default), leaves out a column empty on
+    every row unless ``--columns`` names it.
     """
     _validate_kind(kind)
+    return _render_collection(
+        rows, fmt=fmt, columns=columns, empty=empty, kind=kind, table_columns=table_columns
+    )
+
+
+def _render_collection(
+    rows: Sequence[dict[str, object]],
+    *,
+    fmt: OutputFormat,
+    columns: list[str] | None,
+    empty: str | bool | None,
+    kind: str | None,
+    table_columns: Sequence[str] | None,
+    schema: Sequence[str] | None = None,
+    ui: UiContext | None = None,
+) -> str:
     if columns == ["?"]:
-        _print_available_columns(list(rows[0]) if rows else [])
+        _print_available_columns(schema or _row_keys(rows), defaults=table_columns)
         return ""
-    columns = _checked_columns(columns, rows, fmt=fmt)
-    if fmt == "table" and columns is None:
-        rows = [_without_row_error(row) for row in rows]
-    ui = ui_context() if fmt == "table" else UiContext()
-    return ui.collection(rows, fmt=fmt, columns=columns, empty=empty, kind=kind)
+    selection, named = _selected_columns(
+        columns, rows, fmt=fmt, schema=schema, table_columns=table_columns
+    )
+    if fmt != "table":
+        return UiContext().collection(rows, fmt=fmt, columns=selection, empty=empty, kind=kind)
+    ui = ui or ui_context()
+    shown = _table_columns(rows, selection, named, hide_empty=ui.theme.hide_empty_columns)
+    return ui.collection(rows, fmt=fmt, columns=shown, empty=empty, kind=kind)
 
 
-def _checked_columns(
+def _selected_columns(
     columns: list[str] | None,
     rows: Sequence[Mapping[str, object]],
     *,
     fmt: OutputFormat,
-    schema: Sequence[str] | None = None,
-) -> list[str] | None:
-    """Split comma-separated ``--columns`` values and check the names.
+    schema: Sequence[str] | None,
+    table_columns: Sequence[str] | None,
+) -> tuple[list[str] | None, frozenset[str]]:
+    """The columns to render (``None``: the whole record) and those the user named.
 
-    ``-c a,b`` and ``-c a -c b`` are equivalent. With a known ``schema``
-    (pydantic records) a name whose first dotted segment is not a field is a
-    usage error (exit 2) listing the valid columns. Plain mapping rows can be
-    sparse (an API may omit a field on some records), so a name absent from
-    every row only warns. ``pipe`` ignores columns and is never checked.
+    ``-c a,b`` and ``-c a -c b`` select exactly those columns. ``-c +a``
+    adds to the default columns and ``-c=-a`` (or ``-c +b,-a``) removes
+    from them; the defaults are ``table_columns`` for a ``table``, else the
+    whole record. Mixing names and edits is a usage error.
     """
+    default = list(table_columns) if fmt == "table" and table_columns else None
     if columns is None:
-        return None
+        return default, frozenset()
     names = [part.strip() for entry in columns for part in entry.split(",") if part.strip()]
-    if fmt == "pipe" or (schema is None and not rows):
-        return names or None
-    known = (
-        list(schema)
-        if schema is not None
-        else list(dict.fromkeys(key for row in rows for key in row))
-    )
-    unknown = [name for name in names if name not in known and name.split(".", 1)[0] not in known]
-    if unknown:
-        plural = "s" if len(unknown) > 1 else ""
-        message = (
-            f"unknown column{plural} {', '.join(repr(name) for name in unknown)}; "
-            f"valid columns: {', '.join(known)}"
+    edits = [name for name in names if name[0] in "+-"]
+    if edits and len(edits) != len(names):
+        raise_usage(
+            "--columns takes either column names or +name/-name edits of the defaults, "
+            f"not both: {', '.join(names)}"
         )
-        if schema is not None:
-            raise_usage(message)
-        echo(f"warning: {message}", err=True)
-    return names or None
+    _check_columns([name.lstrip("+-") for name in names], rows, fmt=fmt, schema=schema)
+    if not edits:
+        return names or None, frozenset(names)
+    added = [name[1:] for name in edits if name[0] == "+"]
+    removed = {name[1:] for name in edits if name[0] == "-"}
+    base = default or list(schema or _row_keys(rows))
+    kept = [name for name in base if name not in removed]
+    return kept + [name for name in added if name not in kept], frozenset(added)
 
 
-def _without_row_error(row: dict[str, object]) -> dict[str, object]:
-    """``row`` without a structured ``error`` mapping (the ``ErrorInfo`` of a failed row)."""
-    if not isinstance(row.get("error"), Mapping):
-        return row
-    return {key: value for key, value in row.items() if key != "error"}
+def _check_columns(
+    names: Sequence[str],
+    rows: Sequence[Mapping[str, object]],
+    *,
+    fmt: OutputFormat,
+    schema: Sequence[str] | None,
+) -> None:
+    """Check ``--columns`` names against the record fields.
+
+    With a known ``schema`` (pydantic records) a name whose first dotted
+    segment is not a field is a usage error (exit 2) listing the valid
+    columns. Plain mapping rows can be sparse (an API may omit a field on
+    some records), so a name absent from every row only warns. ``pipe``
+    ignores columns and is never checked.
+    """
+    if fmt == "pipe" or (schema is None and not rows):
+        return
+    known = list(schema) if schema is not None else _row_keys(rows)
+    unknown = [name for name in names if name not in known and name.split(".", 1)[0] not in known]
+    if not unknown:
+        return
+    plural = "s" if len(unknown) > 1 else ""
+    message = (
+        f"unknown column{plural} {', '.join(repr(name) for name in unknown)}; "
+        f"valid columns: {', '.join(known)}"
+    )
+    if schema is not None:
+        raise_usage(message)
+    echo(f"warning: {message}", err=True)
 
 
-def _print_available_columns(keys: Iterable[str]) -> None:
-    """Print the addressable top-level column names to stderr (for ``--columns ?``)."""
+def _table_columns(
+    rows: Sequence[Mapping[str, object]],
+    selection: list[str] | None,
+    named: frozenset[str],
+    *,
+    hide_empty: bool,
+) -> list[str] | None:
+    """The columns a ``table`` shows (``None``: every key of every row).
+
+    Without a selection that is the union of the rows' keys, less a failed
+    row's structured ``error``. ``hide_empty`` then drops a column that is
+    empty on every row, unless the user ``named`` it.
+    """
+    if not rows:
+        return selection
+    if selection is None:
+        selection = [key for key in _row_keys(rows) if not _is_error_column(rows, key)]
+    if hide_empty:
+        shown = [
+            name
+            for name in selection
+            if name in named or any(not _is_empty(column_value(row, name)) for row in rows)
+        ]
+        selection = shown or selection
+    return selection
+
+
+def _row_keys(rows: Iterable[Mapping[str, object]]) -> list[str]:
+    return list(dict.fromkeys(key for row in rows for key in row))
+
+
+def _is_error_column(rows: Sequence[Mapping[str, object]], key: str) -> bool:
+    """Whether ``key`` is the ``error`` of failed rows (an ``ErrorInfo`` mapping)."""
+    return key == "error" and all(
+        row.get(key) is None or isinstance(row.get(key), Mapping) for row in rows
+    )
+
+
+def _is_empty(value: object) -> bool:
+    return value is None or value == "" or (isinstance(value, list | tuple | dict) and not value)
+
+
+def _print_available_columns(keys: Iterable[str], *, defaults: Sequence[str] | None) -> None:
+    """Print the addressable top-level column names to stderr (for ``--columns ?``).
+
+    With a command's default ``table`` columns, those are marked ``*``.
+    """
     names = list(dict.fromkeys(keys))
     if not names:
         echo("no columns available (no records to inspect)", err=True)
         return
-    echo("available columns:", err=True)
+    marked = set(defaults or ())
+    echo("available columns (* = shown by default):" if marked else "available columns:", err=True)
     for name in names:
-        echo(f"  {name}", err=True)
+        echo(f"  {name} *" if name in marked else f"  {name}", err=True)
 
 
 def emit(
@@ -410,6 +507,7 @@ def emit(
     columns: list[str] | None = None,
     empty: str | bool | None = None,
     kind: str | None = None,
+    table_columns: Sequence[str] | None = None,
 ) -> None:
     """Render records to stdout, dispatching by shape.
 
@@ -417,35 +515,63 @@ def emit(
     (a bare object under structured formats); a sequence renders as a collection
     (themed table for humans, array/NDJSON for pipes). Accepts pydantic models
     directly — no manual ``model_dump()`` — and writes the result itself, so
-    there is no "forgot to ``echo``" silent-no-output trap. ``empty`` and
-    ``kind`` behave as in :func:`render_rows`; ``empty`` applies to a sequence
-    only.
+    there is no "forgot to ``echo``" silent-no-output trap. ``empty``,
+    ``kind`` and ``table_columns`` behave as in :func:`render_rows`; ``empty``
+    applies to a sequence only.
+    """
+    emit_with(
+        None,
+        records,
+        fmt=fmt,
+        columns=columns,
+        empty=empty,
+        kind=kind,
+        table_columns=table_columns,
+    )
+
+
+def emit_with(
+    ui: UiContext | None,
+    records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
+    *,
+    fmt: OutputFormat,
+    columns: list[str] | None = None,
+    empty: str | bool | None = None,
+    kind: str | None = None,
+    table_columns: Sequence[str] | None = None,
+) -> None:
+    """:func:`emit` rendering a ``table`` through ``ui`` (``None``: the active theme).
+
+    For root commands that must render even when the settings are broken.
     """
     _validate_kind(kind)
-    if columns == ["?"]:
-        _print_available_columns(_candidate_columns(records))
-        return
     schema = _model_schema(records)
-    if schema is not None:
-        columns = _checked_columns(columns, [], fmt=fmt, schema=schema)
-    if isinstance(records, BaseModel | Mapping):
-        row = _as_row(records)
-        if schema is None:
-            columns = _checked_columns(columns, [row], fmt=fmt)
-        if fmt == "table" and columns is None:
-            row = _without_row_error(row)
-        ui = ui_context() if fmt == "table" else UiContext()
-        rendered = ui.detail(row, fmt=fmt, columns=columns, kind=kind)
-    else:
-        # The collection path is exactly render_rows; reuse it (it returns the
-        # string and emits any empty-state hint to stderr itself).
-        rendered = render_rows(
+    if not isinstance(records, BaseModel | Mapping):
+        rendered = _render_collection(
             [_as_row(record) for record in records],
             fmt=fmt,
             columns=columns,
             empty=empty,
             kind=kind,
+            table_columns=table_columns,
+            schema=schema,
+            ui=ui,
         )
+    else:
+        row = _as_row(records)
+        if columns == ["?"]:
+            _print_available_columns(schema or row, defaults=table_columns)
+            return
+        selection, named = _selected_columns(
+            columns, [row], fmt=fmt, schema=schema, table_columns=table_columns
+        )
+        if fmt == "table":
+            ui = ui or ui_context()
+            hide_empty = ui.theme.hide_empty_columns
+            selection = _table_columns([row], selection, named, hide_empty=hide_empty)
+        else:
+            ui = UiContext()
+        rendered = ui.detail(row, fmt=fmt, columns=selection, kind=kind)
     if rendered:
         echo(rendered)
 
@@ -474,17 +600,6 @@ def _as_row(record: BaseModel | Mapping[str, object]) -> dict[str, object]:
     if isinstance(record, BaseModel):
         return record.model_dump(mode="json")
     return dict(record)
-
-
-def _candidate_columns(
-    records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
-) -> list[str]:
-    """Top-level column names a record exposes (for ``emit(..., columns=['?'])``)."""
-    if isinstance(records, BaseModel | Mapping):
-        return list(_as_row(records))
-    for record in records:
-        return list(_as_row(record))
-    return []
 
 
 def run_cyclopts_app(

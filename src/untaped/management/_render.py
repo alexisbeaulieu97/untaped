@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from untaped.cli import echo, emit
+from untaped.cli import emit, emit_with
 from untaped.errors import ConfigError
 from untaped.theme import OutputFormat
 from untaped.ui import ui_context
@@ -32,10 +32,7 @@ def emit_isolated(
         # Settings are broken (this is often what the caller reports): the
         # themed render above raised before writing anything, so retry with
         # the default theme instead of failing the listing.
-        ui = ui_context(strict=False)
-        rendered = ui.collection(rows, fmt=fmt, columns=columns, kind=kind)
-        if rendered:
-            echo(rendered)
+        emit_with(ui_context(strict=False), rows, fmt=fmt, columns=columns, kind=kind)
 
 
 __all__ = ["emit_isolated"]

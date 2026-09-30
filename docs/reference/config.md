@@ -31,6 +31,7 @@ variable shown.
 | `ui.density` | `normal` \| `compact` (optional) | unset | `UNTAPED_UI__DENSITY` | Table density; overrides the theme. |
 | `ui.collection_view` | `table` \| `list` (optional) | unset | `UNTAPED_UI__COLLECTION_VIEW` | How lists render in `table` format; overrides the theme. |
 | `ui.detail_view` | `list` \| `table` (optional) | unset | `UNTAPED_UI__DETAIL_VIEW` | How a single record renders in `table` format; overrides the theme. |
+| `ui.hide_empty_columns` | boolean (optional) | unset | `UNTAPED_UI__HIDE_EMPTY_COLUMNS` | Leave out `table` columns that are empty on every row (on unless the theme turns it off); a column named in `--columns` always shows. |
 | `ui.symbols` | mapping | empty | `UNTAPED_UI__SYMBOLS` | Symbol overrides merged over the theme's symbols. |
 | `ui.color_roles` | mapping | empty | `UNTAPED_UI__COLOR_ROLES` | Color-role overrides merged over the theme's colors. |
 | `skills.updates` | `warn` \| `auto` \| `off` | `warn` | `UNTAPED_SKILLS__UPDATES` | What each run does when installed agent skills differ from this version: `warn` (print a warning), `auto` (update them in place), or `off`. |
