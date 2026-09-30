@@ -150,6 +150,7 @@ def test_remove_prune_decline_exits_one_without_mutation(
 
     assert rm.exit_code == 1, rm.output
     assert "cancelled; no changes made" in rm.stderr
+    assert rm.stdout == ""
     assert backend.calls == [("confirm", "Continue?")]
     assert "aborted" not in rm.output
     assert (target / "upstream").is_dir()

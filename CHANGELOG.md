@@ -103,6 +103,11 @@ self-contained manual for the installed CLI.
     command, exit 2. Failed `sync`, `branch apply` and uninspectable
     `status` rows carry `error`, and `status --check` exits with the
     failure's own code (5 when `git status` timed out).
+  - **Breaking:** `workspace.remove_outcome` (`repos remove`) rows gain
+    `detail`.
+  - **Fix:** a repo `repos remove` could not remove (not declared, or a
+    refused `--prune`) is a `failed` row with `detail` and `error`, after
+    the removed ones; it had no row.
   - **Behavior change:** during `sync`, a repo job failing for a reason
     other than git (such as a busy cache lock) becomes that repo's `failed`
     row with its own exit code (5 for a busy lock) instead of aborting the

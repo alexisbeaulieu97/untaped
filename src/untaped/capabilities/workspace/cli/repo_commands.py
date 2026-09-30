@@ -36,6 +36,7 @@ from untaped.capabilities.workspace.infrastructure import (
 from untaped.capability_api import (
     ColumnsOption,
     DryRunOption,
+    ErrorInfo,
     FormatOption,
     StdinOption,
     UsageError,
@@ -198,6 +199,18 @@ def add_command(
     finish(any_failed)
 
 
+def _failed_remove(workspace: str, ident: str, exc: Exception) -> RepoRemoveOutcome:
+    info = ErrorInfo.from_exception(exc)
+    return RepoRemoveOutcome(
+        workspace=workspace,
+        repo=ident,
+        action="failed",
+        pruned=False,
+        detail=info.message,
+        error=info,
+    )
+
+
 def _read_add_urls(urls: list[str], *, stdin: bool) -> list[str]:
     """Positional URLs, or stdin lines / :data:`ADD_STDIN_KINDS` records."""
     if not stdin:
@@ -285,13 +298,17 @@ def remove_command(
             assume_yes=yes,
             preview_only=dry_run,
         )
+        if outcome.cancelled:
+            finish(outcome)
         if dry_run:
             rows = [
                 RepoRemoveOutcome(workspace=ws.name, repo=ident, action="planned", pruned=prune)
                 for ident in idents
             ]
         else:
+            # A failure was already reported on stderr; its row follows the removals.
             rows = [row for _, row in outcome.results]
+            rows.extend(_failed_remove(ws.name, ident, exc) for ident, exc in outcome.failures)
         if rows:
             emit(
                 rows,
