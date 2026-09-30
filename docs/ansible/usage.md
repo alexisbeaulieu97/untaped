@@ -155,12 +155,12 @@ The first line names the target, where the data came from and the depth.
 "used by" lists the repos that depend on it and "depends on" what it depends
 on. After each repo comes the file that declares that dependency, plus
 `unpinned` when it names no version, or `pins X` when the declared version
-differs from the ref it resolved to. A repo marked `…` is
-[stopped](../glossary.md): the graph beyond it was not read. The last line
-counts the repos, edges, cycles, unresolved dependencies and stopped repos.
-A line too wide for the terminal ends in `…` instead of wrapping. Warnings go to stderr, never into the tree or the
-`--out` file. With the `plain` theme (`ui.border: ascii`) the connectors are
-ASCII.
+differs from the ref it resolved to. A repo marked `…` with a `not read:`
+note is [stopped](../glossary.md): the graph beyond it was not read. The
+last line counts the repos, edges, cycles, unresolved dependencies and
+stopped repos. A line too wide for the terminal ends in `…` instead of
+wrapping. Warnings go to stderr, never into the tree or the `--out` file.
+With the `plain` theme (`ui.border: ascii`) the connectors are ASCII.
 
 ## Flags
 
