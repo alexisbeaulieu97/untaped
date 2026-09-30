@@ -442,7 +442,7 @@ def _selected_columns(
     removed = {name[1:] for name in edits if name[0] == "-"}
     base = default or [
         name
-        for name in (schema or _row_keys(rows))
+        for name in (_row_keys(rows) or schema or ())
         if fmt != "table" or not _is_error_column(rows, name)
     ]
     kept = [name for name in base if name not in removed]
