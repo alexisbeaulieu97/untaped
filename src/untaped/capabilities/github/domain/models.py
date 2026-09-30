@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from untaped.capability_api import OutcomeRecord, UtcTimestamp
 
@@ -20,11 +20,14 @@ def _with_aliases(data: Any, *, repo: bool = False) -> Any:
     """Derive ``url`` from ``html_url`` (and ``repo`` from ``full_name``).
 
     ``url`` always mirrors ``html_url``: the raw GitHub payload's own ``url``
-    is the API link, which must not leak into the web-URL field.
+    is the API link, which must not leak into the web-URL field. A record
+    without ``html_url`` (one this model already emitted) keeps its ``url``.
     """
     if not isinstance(data, dict):
         return data
-    patch: dict[str, Any] = {"url": data.get("html_url")}
+    patch: dict[str, Any] = {}
+    if "html_url" in data:
+        patch["url"] = data["html_url"]
     if repo and not data.get("repo"):
         patch["repo"] = data.get("full_name", "")
     return {**data, **patch}
@@ -46,10 +49,9 @@ class RepoResult(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    full_name: str
+    repo: str
     id: int
-    name: str
-    html_url: str
+    url: str
     description: str | None = None
     language: str | None = None
     stargazers_count: int = 0
@@ -58,8 +60,6 @@ class RepoResult(BaseModel):
     fork: bool = False
     private: bool = False
     updated_at: str | None = None
-    repo: str = ""
-    url: str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -72,9 +72,8 @@ class RepoListResult(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    full_name: str
-    name: str
-    html_url: str | None = None
+    repo: str
+    url: str | None = None
     clone_url: str | None = None
     ssh_url: str | None = None
     default_branch: str | None = None
@@ -84,8 +83,6 @@ class RepoListResult(BaseModel):
     # GitHub's last push; renders in GitHub's own ``…Z`` form, so piped into
     # sweep/cache sync it matches the stored value and skips an unchanged repo.
     pushed_at: UtcTimestamp | None = None
-    repo: str = ""
-    url: str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -97,8 +94,7 @@ class CodeResult(BaseModel):
     """One row of ``GET /search/code``.
 
     Flattens ``repository.full_name`` into ``repo`` so column selection
-    stays one level deep for the common case; the full nested dict
-    remains accessible via ``repository``.
+    stays one level deep.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -106,10 +102,8 @@ class CodeResult(BaseModel):
     name: str
     path: str
     sha: str
-    html_url: str
     repo: str = ""
-    repository: dict[str, Any] = Field(default_factory=dict)
-    url: str | None = None
+    url: str
 
     @model_validator(mode="before")
     @classmethod
@@ -195,11 +189,9 @@ class IssueResult(BaseModel):
     id: int
     title: str
     state: str
-    html_url: str
-    repository_url: str
+    url: str
     user_login: str | None = None
     is_pull_request: bool = False
-    url: str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -243,8 +235,7 @@ class UserResult(BaseModel):
     id: int
     login: str
     type: str
-    html_url: str
-    url: str | None = None
+    url: str
 
     @model_validator(mode="before")
     @classmethod

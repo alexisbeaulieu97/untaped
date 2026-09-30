@@ -9,6 +9,7 @@ from pathlib import Path
 from untaped.capabilities.recipe.errors import RecipeError
 from untaped.capabilities.recipe.settings import RecipeSettings
 from untaped.capability_api import (
+    ErrorCategory,
     UiContext,
     UntapedError,
     UsageError,
@@ -77,3 +78,23 @@ def report_config_errors() -> Iterator[None]:
             raise
         except ValueError as exc:
             raise RecipeError(str(exc)) from exc
+
+
+def as_recipe_error[T, R](action: Callable[[T], R]) -> Callable[[T], R]:
+    """Wrap ``action`` so its expected library errors are per-item ``UntapedError``s.
+
+    Typed errors keep their category; a plain ``ValueError`` is invalid input
+    and an ``OSError`` a failed file operation (both in ``local``).
+    """
+
+    def wrapped(item: T) -> R:
+        try:
+            return action(item)
+        except UntapedError:
+            raise
+        except ValueError as exc:
+            raise RecipeError(str(exc)) from exc
+        except OSError as exc:
+            raise RecipeError(str(exc), category=ErrorCategory.FAILED) from exc
+
+    return wrapped

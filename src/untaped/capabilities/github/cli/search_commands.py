@@ -80,9 +80,7 @@ def _repo_scopes(values: list[str] | None, *, stdin: bool) -> tuple[str, ...]:
     """Merge explicit ``--repo`` values with optional stdin repo scopes."""
     repos = list(values or ())
     if stdin:
-        repos.extend(
-            read_identifiers([], stdin=True, id_field="full_name", accept_kinds=REPO_KINDS)
-        )
+        repos.extend(read_identifiers([], stdin=True, id_field="repo", accept_kinds=REPO_KINDS))
     return tuple(repos)
 
 
