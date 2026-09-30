@@ -12,8 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from untaped.cli import emit, emit_with
-from untaped.errors import ConfigError
+from untaped.cli import emit_with
 from untaped.theme import OutputFormat
 from untaped.ui import ui_context
 
@@ -25,14 +24,12 @@ def emit_isolated(
     columns: list[str] | None,
     kind: str | None = None,
 ) -> None:
-    """Render row data without letting invalid settings block the output."""
-    try:
-        emit(rows, fmt=fmt, columns=columns, kind=kind)
-    except ConfigError:
-        # Settings are broken (this is often what the caller reports): the
-        # themed render above raised before writing anything, so retry with
-        # the default theme instead of failing the listing.
-        emit_with(ui_context(strict=False), rows, fmt=fmt, columns=columns, kind=kind)
+    """Render row data without letting invalid settings block the output.
+
+    Settings are broken is often what the caller reports, so a ``table``
+    falls back to the default theme instead of failing the listing.
+    """
+    emit_with(rows, ui=ui_context(strict=False), fmt=fmt, columns=columns, kind=kind)
 
 
 __all__ = ["emit_isolated"]
