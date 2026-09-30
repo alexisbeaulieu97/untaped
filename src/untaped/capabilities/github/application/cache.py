@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import stat
 from pathlib import Path
 
 from untaped.capabilities.github.application.inventory import split_full_name
@@ -55,10 +57,18 @@ def with_disk_bytes(row: CorpusRepoResult) -> CorpusRepoResult:
 
 
 def _disk_bytes(path: Path) -> int:
-    if not path.exists():
-        return 0
+    """Bytes of the regular files under ``path``, the space deleting it frees.
+
+    Links count as themselves, not what they point at, and a file that
+    vanishes or cannot be read while measuring is skipped.
+    """
     total = 0
-    for child in path.rglob("*"):
-        if child.is_file():
-            total += child.stat().st_size
+    for directory, _, files in os.walk(path):
+        for name in files:
+            try:
+                info = os.lstat(os.path.join(directory, name))
+            except OSError:
+                continue
+            if stat.S_ISREG(info.st_mode):
+                total += info.st_size
     return total

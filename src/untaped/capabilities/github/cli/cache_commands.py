@@ -297,14 +297,13 @@ def _delete(
     )
     from untaped.capabilities.github.infrastructure import GitCorpusCache  # noqa: PLC0415
 
-    # Measured before anything is deleted: each row reports the space it frees.
-    selected = tuple(with_disk_bytes(row) for row in selected)
     ctx = app_context()
     settings = ctx.section("github", GithubSettings)
     cleaner = CleanCorpus(GitCorpusCache(auth_host=None))
     outcome = batch_apply(
         selected,
-        lambda row: cleaner(root=settings.corpus_path, repo=row),
+        # Measured just before deleting: each row reports the space it frees.
+        lambda row: cleaner(root=settings.corpus_path, repo=with_disk_bytes(row)),
         verb="delete",
         noun="cached GitHub repo",
         label=lambda row: row.repo,
@@ -314,7 +313,11 @@ def _delete(
         assume_yes=yes,
         preview_only=dry_run,
     )
-    removed = selected if dry_run else tuple(row for _, row in outcome.results)
+    removed = (
+        tuple(with_disk_bytes(row) for row in selected)
+        if dry_run
+        else tuple(row for _, row in outcome.results)
+    )
     emit(
         [row.model_dump() for row in removed],
         fmt=fmt,
