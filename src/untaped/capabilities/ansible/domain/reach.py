@@ -13,6 +13,7 @@ the edge that reached it, verbatim.
 from __future__ import annotations
 
 from collections import deque
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
@@ -35,6 +36,7 @@ class ReachedNode(BaseModel):
     """
 
     model_config = ConfigDict(frozen=True)
+    table_columns: ClassVar[tuple[str, ...]] = ("repo", "ref", "stopped", "declared_in", "path")
 
     repo: str | None
     ref: str | None

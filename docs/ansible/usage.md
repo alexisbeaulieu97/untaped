@@ -161,8 +161,10 @@ With the `plain` theme (`ui.border: ascii`) the connectors are ASCII.
   its refs, since a repo pinning an older tag still uses it.
 
 `deps`, `impact` and `find` print rows (`--format table`, `json`, `yaml`,
-`pipe` or `raw`, with `--columns`); `graph` prints `--format tree`, `mermaid`
-or `json`, optionally to `--out FILE`. `graph`'s old `--upstream`,
+`pipe` or `raw`, with `--columns`); a table shortens each `path` to its
+first and last hop (`a → … → z`), while other formats keep it whole.
+`graph` prints `--format tree`, `mermaid` or `json`, optionally to
+`--out FILE`. `graph`'s old `--upstream`,
 `--downstream` and `--both` flags still work, with a warning, until 10.0;
 use `--direction up|down|both`.
 
