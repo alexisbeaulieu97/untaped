@@ -65,7 +65,7 @@ self-contained manual for the installed CLI.
     Git failures are `git`; a timeout or a transient transport error is
     `unavailable`, and a missing `git` binary is `config`.
   - **Behavior change:** an outcome record's `action` comes right after the
-    field identifying the row (`repo`, `name`, …) instead of last, in tables
+    field identifying the row (`repo`, or `id` and `name`) instead of last, in tables
     and in json/yaml key order. Fields are unchanged.
   - **Breaking (SDK):** the capability API is `3.0`
     (`CAPABILITY_API_VERSION = (3, 0)`); providers must declare
