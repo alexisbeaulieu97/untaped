@@ -7,6 +7,7 @@ width, Rich-markup safety, and the pipe envelope shape.
 
 import json
 import os
+from datetime import datetime, timedelta, timezone
 
 import pytest
 import yaml
@@ -261,3 +262,107 @@ def test_pipe_empty_rows_is_empty_string() -> None:
 def test_pipe_tags_kind_when_supplied(rows: list[dict[str, object]]) -> None:
     out = _render(rows, fmt="pipe", kind="awx.job_template")
     assert json.loads(out.splitlines()[0])["kind"] == "awx.job_template"
+
+
+# ---- table cells --------------------------------------------------------------
+
+
+def _table(rows: list[dict[str, object]], **kwargs: object) -> str:
+    return UiContext().collection(rows, fmt="table", **kwargs)  # type: ignore[arg-type]
+
+
+def test_table_columns_are_the_union_of_every_row() -> None:
+    out = _table([{"name": "alpha"}, {"name": "beta", "detail": "boom"}])
+    assert "detail" in out
+    assert "boom" in out
+
+
+def test_table_flattens_mappings_instead_of_printing_a_repr() -> None:
+    out = _table([{"name": "h", "scope": {"parent": {"kind": "Inventory", "name": "prod"}}}])
+    assert "parent.kind=Inventory, parent.name=prod" in out
+    assert "{" not in out
+
+
+def test_table_leaves_empty_containers_blank() -> None:
+    out = _table([{"name": "a", "scope": {}, "tags": []}])
+    assert "{}" not in out
+    assert "[]" not in out
+
+
+def test_table_renders_lists_of_mappings_readably() -> None:
+    out = _table([{"name": "a", "items": [{"id": 1}, {"id": 2}]}])
+    assert "id=1; id=2" in out
+
+
+def test_table_collapses_multiline_text_to_one_line() -> None:
+    out = _table([{"key": "A-1", "body": "first line\n\nsecond line"}])
+    assert "first line second line" in out
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "expected"),
+    [
+        ("duration_s", 42.13497729599476, "42.1s"),
+        ("duration_s", 102.5, "1m42s"),
+        ("duration_s", 3725.0, "1h02m"),
+        ("load", 0.25, "0.25"),
+        ("ratio", 0.123456, "0.12"),
+        ("commit", "0123456789abcdef0123456789abcdef01234567", "0123456789"),
+        ("scm_revision", "0123456789abcdef0123456789abcdef01234567", "0123456789"),
+        ("name", "0123456789abcdef0123456789abcdef01234567", "0123456789abcdef"),
+    ],
+)
+def test_table_formats_durations_floats_and_shas(key: str, value: object, expected: str) -> None:
+    out = _table([{key: value}], columns=[key])
+    assert expected in out
+    full_sha = "0123456789abcdef0123456789abcdef01234567"
+    assert (full_sha in out) == (key == "name")
+
+
+def test_structured_formats_keep_values_verbatim() -> None:
+    rows = [{"duration_s": 42.13497729599476, "scope": {}, "body": "a\nb"}]
+    assert json.loads(_render(rows, fmt="json")) == rows
+
+
+def test_wide_table_cells_end_in_an_ellipsis_instead_of_wrapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("COLUMNS", "60")
+    out = _table([{"name": "alpha", "description": "word " * 40}])
+    lines = out.splitlines()
+    assert len(lines) == 5  # top border, header, rule, one row, bottom border
+    assert "…" in out
+
+
+def test_table_header_is_not_rich_markup() -> None:
+    out = _table([{"[bold]x": 1}])
+    assert "[bold]x" in out
+
+
+def test_status_values_are_colored_by_meaning(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    rows = [{"name": "a", "status": "failed"}, {"name": "b", "status": "successful"}]
+    out = _table(rows)
+    assert "\x1b[31mfailed" in out
+    assert "\x1b[32msuccessful" in out
+    assert "\x1b[31ma" not in out
+
+
+def test_detail_view_flattens_nested_values() -> None:
+    out = UiContext().detail({"name": "r", "inputs": [{"name": "a"}, {"name": "b"}]}, fmt="table")
+    assert "inputs: name=a; name=b" in out
+
+
+def test_detail_column_wraps_instead_of_being_cut(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("COLUMNS", "60")
+    out = _table([{"name": "alpha", "detail": "word " * 20 + "tail"}])
+    assert "tail" in out
+    assert "…" not in out
+
+
+@pytest.mark.parametrize("fmt", ["json", "yaml", "raw", "table", "pipe"])
+def test_datetimes_in_plain_rows_render_as_utc_timestamps(fmt: OutputFormat) -> None:
+    stamp = datetime(2026, 1, 2, 4, 4, 5, 123456, tzinfo=timezone(timedelta(hours=1)))
+    out = _render([{"created_at": stamp}], fmt=fmt)
+    assert "2026-01-02T03:04:05Z" in out

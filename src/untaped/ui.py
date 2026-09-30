@@ -127,16 +127,7 @@ class UiContext:
             kind=kind,
         )
         if not rows and fmt == "table" and empty:
-            note = empty if isinstance(empty, str) else "No results."
-            if json_diagnostics():
-                write_record({"level": "info", "message": note}, self.stderr)
-                return rendered
-            print(
-                self.renderer.render_message(
-                    "info", note, theme=self.theme, colorize=should_colorize(self.stderr)
-                ),
-                file=self.stderr,
-            )
+            self.message("info", empty if isinstance(empty, str) else "No results.")
         return rendered
 
     def detail(
