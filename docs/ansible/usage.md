@@ -155,15 +155,10 @@ The first line names the target, where the data came from and the depth.
 "used by" lists the repos that depend on it and "depends on" what it depends
 on. After each repo comes the file that declares that dependency, plus
 `unpinned` when it names no version, or `pins X` when the declared version
-differs from the ref it resolved to. A repo whose next level was not read (its
-dependencies under "depends on", its dependents under "used by") is marked
-`…` with a note: `not read: depth limit` when `--depth` ran
-out, `not read: ref not cached` when the source has not cached its ref. The
-graph beyond it may be incomplete; with a depth limit, a `hint:` line on
-stderr says how many repos stopped (the node's `stopped` field in JSON). The
-last line counts the repos, edges, cycles, unresolved dependencies and
-stopped repos. A line too wide for the terminal ends in
-`…` instead of wrapping. Warnings go to stderr, never into the tree or the
+differs from the ref it resolved to. A repo marked `…` is
+[stopped](../glossary.md): the graph beyond it was not read. The last line
+counts the repos, edges, cycles, unresolved dependencies and stopped repos.
+A line too wide for the terminal ends in `…` instead of wrapping. Warnings go to stderr, never into the tree or the
 `--out` file. With the `plain` theme (`ui.border: ascii`) the connectors are
 ASCII.
 
