@@ -2504,3 +2504,29 @@ def test_all_refs_with_ref_is_a_usage_error(command: str) -> None:
 
     assert result.exit_code == 2
     assert "--all-refs reads every ref; drop it or --ref" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("command", "source_args"),
+    [
+        (["deps", "acme/site"], ["--source", "platform", "--live"]),
+        (["find", "acme/base", "--root", "acme/site"], ["--source", "platform", "--live"]),
+        (["graph", "acme/site", "--direction", "down"], ["--source", "platform", "--live"]),
+        (["deps", "acme/site"], []),
+        (["graph", "acme/site"], []),
+    ],
+)
+def test_all_refs_with_live_reads_is_a_usage_error(
+    tmp_path: Path, monkeypatch, command: list[str], source_args: list[str]
+) -> None:
+    # Live reads resolve only the default branch, so --all-refs cannot apply.
+    _seed_two_refs(tmp_path)
+    _use_config(tmp_path, monkeypatch, _PLATFORM, token=True)
+
+    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
+        result = _run(*command, *source_args, "--all-refs")
+        assert not mock.calls.called
+
+    assert result.exit_code == 2, result.output + result.stderr
+    fix = "drop --live" if source_args else "select one with --source NAME"
+    assert f"--all-refs reads cached source data; {fix}" in result.stderr
