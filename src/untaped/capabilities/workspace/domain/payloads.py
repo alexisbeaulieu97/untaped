@@ -78,11 +78,11 @@ class WorkspaceSummaryRow(BaseModel):
 class WorkspaceDetailRow(TargetRecord):
     """One repo row of ``workspace repos list`` output; ``target_path`` is the clone directory."""
 
+    repo: str
     workspace: str
     path: str
     default_branch: str | None
     repo_count: int
-    repo: str
     url: str
     repo_branch: str | None
     target_branch: str | None

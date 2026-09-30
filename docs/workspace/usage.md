@@ -118,9 +118,11 @@ untaped workspace repos list [WS] [--format json|yaml|table|raw|pipe] [--columns
 ```
 
 List the repos declared in one workspace's manifest. Each repo produces
-one `workspace.repo` row with the workspace name, manifest path, default
-branch, repo name, repo URL, per-repo branch override, effective target
-branch, and the clone's absolute `target_path`. Empty manifests still
+one `workspace.repo` row with the repo name (first, so `--format raw`
+prints repo names), workspace name, manifest path, default branch, repo
+count, repo URL, per-repo branch override, effective target branch, and
+the clone's absolute `target_path`. The table shows `repo`, `url` and
+`target_branch`; `--columns ?` lists every field. Empty manifests still
 emit a single `workspace.repo.summary` row with `repo_count: 0` and no
 `target_path`.
 
@@ -254,7 +256,8 @@ may be passed positionally or via `--stdin`; `--branch` and
 per invocation for per-repo overrides). `--repo-name` with more than
 one URL is a usage error (exit `2`). Each added repo produces one
 `workspace.add_outcome` row (`workspace`, `repo`, `url`, `branch`,
-`action: added`, `target_path`). With `--sync`, also clone the URLs
+`action: added`, `target_path`; the table shows `repo`, `url`, `branch`
+and `action`). With `--sync`, also clone the URLs
 that landed (a duplicate that fails to register won't try to clone);
 the command then prints the `workspace.sync_outcome` rows instead of
 the add rows.
@@ -348,6 +351,9 @@ create a stray branch in every repo. Pass `--create` (to `branch apply`
 or `branch set --apply`) to create it from the current clean HEAD
 instead.
 
+The `branch apply` table shows `repo`, `target_branch`, `action` and
+`detail`.
+
 ### `sync`
 
 ```bash
@@ -373,7 +379,9 @@ Reconcile each repo on disk with the manifest:
 Every row carries an absolute `target_path`: the repo's clone
 directory, or the workspace directory for `unmatched` and `unavailable`
 rows. Earlier releases spelled these actions `clone`, `pull`,
-`up-to-date`, `skip` and `remove`.
+`up-to-date`, `skip` and `remove`. The table shows `repo`, `action` and
+`detail` (led by `workspace` under `--all`); `--columns ?` lists every
+field.
 
 A `pulled` row fast-forwards the checked-out branch to its configured upstream
 (`@{upstream}`), which need not be `origin/<same name>`. A branch with
@@ -494,10 +502,13 @@ untaped workspace status [WS | --all] [--repo <repo>]...
                          [--format json|yaml|table|raw|pipe] [--columns ...]
 ```
 
-Per-repo git snapshot: `branch`, `ahead`, `behind`, `modified`,
+Per-repo git snapshot: `branch`, its configured `upstream` (such as
+`origin/main`; `null` when unset), `ahead`, `behind`, `modified`,
 `untracked`, a `cloned` flag, the clone's absolute `target_path` (the
 workspace directory on `unavailable` rows), and `action="status"` for
-normal rows.
+normal rows. The table shows `repo`, `cloned`, `branch`, `upstream`,
+`ahead`, `behind`, `modified`, `untracked` and `detail` (led by
+`workspace` under `--all`); json, yaml, raw and pipe keep every field.
 Under `--all`, a registered workspace whose manifest cannot be read
 emits one `action="unavailable"` row with `repo=""`, `cloned=false`,
 and a `detail` message; single-workspace status remains strict.

@@ -55,6 +55,11 @@ def _install(source: Path) -> None:
     )
 
 
+def _default_columns(stderr: str) -> set[str]:
+    """The columns ``--columns ?`` marks as shown in a table by default."""
+    return {line.split()[0] for line in stderr.splitlines() if line.endswith(" *")}
+
+
 def test_test_pack_runs_cases_and_exits_zero_on_pass(tmp_path: Path) -> None:
     source = tmp_path / "source"
     _write_pack(source, manifest_name="demo")
@@ -229,3 +234,18 @@ def test_update_rejects_expect_error_cases(tmp_path: Path) -> None:
     row = json.loads(result.stdout)[0]
     assert row["status"] == "error"
     assert row["detail"] == "cannot --update an expect: error case"
+
+
+def test_test_table_names_the_pack_only_when_several_run(tmp_path: Path) -> None:
+    for name in ("demo", "other"):
+        source = tmp_path / name
+        _write_pack(source, manifest_name=name)
+        _write_passing_case(source)
+        _install(source)
+
+    one = CliInvoker().invoke(app, ["test", "demo", "--columns", "?"])
+    every = CliInvoker().invoke(app, ["test", "--columns", "?"])
+
+    assert one.exit_code == 0, one.output
+    assert _default_columns(one.stderr) == {"recipe", "case", "status", "detail"}
+    assert _default_columns(every.stderr) == {"pack", "recipe", "case", "status", "detail"}

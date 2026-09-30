@@ -751,6 +751,7 @@ def test_status_all_unavailable_manifest_outputs_machine_visible_row(
         "action": "unavailable",
         "cloned": False,
         "branch": None,
+        "upstream": None,
         "ahead": 0,
         "behind": 0,
         "modified": 0,

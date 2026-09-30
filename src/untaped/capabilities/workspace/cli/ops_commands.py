@@ -165,7 +165,9 @@ def sync_command(
                 )
                 for c in candidates
             ]
-            print_sync_outcomes([*skipped, *planned], fmt=fmt, columns=columns)
+            print_sync_outcomes(
+                [*skipped, *planned], fmt=fmt, columns=columns, all_workspaces=all_workspaces
+            )
             return
         workers = parallel_workers(parallel)
         with ui.progress("Syncing repos…") as p:
@@ -203,13 +205,15 @@ def sync_command(
             except ConfigError, UsageError:
                 # A refused or interrupted prompt still reports the sync phase.
                 ui.message("info", _sync_summary(outcomes))
-                print_sync_outcomes(outcomes, fmt=fmt, columns=columns)
+                print_sync_outcomes(
+                    outcomes, fmt=fmt, columns=columns, all_workspaces=all_workspaces
+                )
                 raise
             outcomes.extend(row for _, row in pruned.results)
             prune_failed = pruned.any_failed
             prune_cancelled = pruned.cancelled
         ui.message("info", _sync_summary(outcomes))
-        print_sync_outcomes(outcomes, fmt=fmt, columns=columns)
+        print_sync_outcomes(outcomes, fmt=fmt, columns=columns, all_workspaces=all_workspaces)
         if prune_cancelled:
             raise OperationCancelledError
     finish(any_sync_failed(outcomes) or prune_failed)
@@ -220,14 +224,22 @@ def print_sync_outcomes(
     *,
     fmt: OutputFormat,
     columns: list[str] | None,
+    all_workspaces: bool = False,
 ) -> None:
+    """Emit sync rows; the table names the workspace only across workspaces (``--all``)."""
     emit(
         outcomes,
         fmt=fmt,
         columns=columns,
+        table_columns=[*_workspace_column(all_workspaces), "repo", "action", "detail"],
         kind="workspace.sync_outcome",
         empty="Nothing to sync; clones already match the manifest.",
     )
+
+
+def _workspace_column(all_workspaces: bool) -> list[str]:
+    """The leading table column naming each row's workspace, shown only with ``--all``."""
+    return ["workspace"] if all_workspaces else []
 
 
 def any_sync_failed(outcomes: list[SyncOutcome]) -> bool:
@@ -248,6 +260,20 @@ def _sync_summary(outcomes: list[SyncOutcome]) -> str:
         "unavailable",
     )
     return summary("sync", {action: counts[action] for action in actions})
+
+
+_STATUS_TABLE_COLUMNS = (
+    "repo",
+    "cloned",
+    "branch",
+    "upstream",
+    "ahead",
+    "behind",
+    "modified",
+    "untracked",
+    "detail",
+)
+"""``workspace status`` table columns after the workspace (``--all`` only)."""
 
 
 def status_command(
@@ -306,6 +332,7 @@ def status_command(
             [row for row in rows if row in hits or row in uninspected] if filtered else rows,
             fmt=fmt,
             columns=columns,
+            table_columns=[*_workspace_column(all_workspaces), *_STATUS_TABLE_COLUMNS],
             kind="workspace.status",
             empty=(
                 "No repos match the filters."
