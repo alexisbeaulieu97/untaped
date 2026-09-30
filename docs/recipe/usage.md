@@ -138,8 +138,12 @@ untaped recipe packs list --format pipe | untaped recipe packs sync --stdin
   to the installed copy also need `--discard-edits`.
 - For a git source, `add` records both the `--rev` you asked for and the
   resolved `commit` it installed; both appear in `packs list` and in the
-  `add`/`sync` rows. `sync` also records a new commit when the pack's files
-  did not change.
+  `add`/`sync`/`remove` rows. `sync` also records a new commit when the
+  pack's files did not change.
+- `packs sync` and `packs remove` print a row for every pack they were
+  given: a pack that could not be fetched, installed or removed is a
+  `failed` row with `detail` and `error`, next to its `error:` line on
+  stderr.
 - `packs sync PACK...` or `packs sync --all` re-fetches packs from the
   source and `--rev` recorded at install (a branch or tag moves forward; a
   local path source is re-read). Packs whose files would change are listed

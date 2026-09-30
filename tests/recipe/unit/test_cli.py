@@ -119,6 +119,7 @@ def test_add_pack_installs_without_prompting_and_prints_summary(tmp_path: Path) 
         "source": str(pack),
         "rev": None,
         "commit": None,
+        "detail": None,
     }
     assert (library_root() / "packs" / "demo").exists()
 
@@ -253,6 +254,7 @@ def test_remove_warns_on_local_edits_before_confirm(tmp_path: Path) -> None:
         "command); removing discards them"
     ) in result.stderr
     assert "cancelled; no changes made" in result.stderr
+    assert result.stdout == ""
     assert backend.calls == [("confirm", "Continue?")]
     assert (library_root() / "packs" / "demo").exists()
 
@@ -265,9 +267,15 @@ def test_remove_dry_run_previews_without_removing(tmp_path: Path) -> None:
     result = CliInvoker().invoke(app, ["packs", "remove", "demo", "--dry-run", "--format", "json"])
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout) == [
-        {"action": "planned", "name": "demo", "source": None, "rev": None, "commit": None}
-    ]
+    planned = {
+        "action": "planned",
+        "name": "demo",
+        "source": str(pack),
+        "rev": None,
+        "commit": None,
+        "detail": None,
+    }
+    assert json.loads(result.stdout) == [planned]
     assert (library_root() / "packs" / "demo").exists()
 
     refused = CliInvoker().invoke(app, ["packs", "remove", "demo"])
@@ -279,8 +287,28 @@ def test_remove_dry_run_previews_without_removing(tmp_path: Path) -> None:
     assert removed.exit_code == 0, removed.output
     envelope = json.loads(removed.stdout)
     assert envelope["kind"] == "recipe.remove_outcome"
-    assert envelope["record"]["action"] == "removed"
+    assert envelope["record"] == {**planned, "action": "removed"}
     assert not (library_root() / "packs" / "demo").exists()
+
+
+def test_remove_failure_is_a_failed_row(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pack = tmp_path / "pack"
+    _write_pack_project(pack)
+    assert CliInvoker().invoke(app, ["packs", "add", str(pack)]).exit_code == 0
+
+    def _refuse(self: PackLibrary, name: str) -> None:
+        raise OSError(f"permission denied: {name}")
+
+    monkeypatch.setattr(PackLibrary, "remove", _refuse)
+    result = CliInvoker().invoke(app, ["packs", "remove", "demo", "--yes", "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    assert result.stderr.count("error: demo: permission denied: demo") == 1
+    [row] = json.loads(result.stdout)
+    assert (row["name"], row["action"], row["source"]) == ("demo", "failed", str(pack))
+    assert row["detail"] == "permission denied: demo"
+    assert row["error"]["category"] == "failed"
+    assert row["error"]["message"] == row["detail"]
 
 
 def test_remove_rejects_index_rows_without_content_hash(
