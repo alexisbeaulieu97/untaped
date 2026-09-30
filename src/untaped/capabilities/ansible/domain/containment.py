@@ -12,6 +12,7 @@ join results back to its inputs.
 from __future__ import annotations
 
 from collections.abc import Collection
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
@@ -25,6 +26,13 @@ class DependencyMatch(BaseModel):
     """One wanted repository reached from one root (``ansible.dependency_match``)."""
 
     model_config = ConfigDict(frozen=True)
+    table_columns: ClassVar[tuple[str, ...]] = (
+        "root_repo",
+        "root_ref",
+        "repo",
+        "declared_ref",
+        "path",
+    )
 
     root_repo: str
     root_ref: str | None
