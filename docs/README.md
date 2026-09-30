@@ -1,12 +1,8 @@
 # untaped documentation
 
-`untaped` is one command-line tool for DevOps work: local Git workspaces,
-GitHub, Jira, AWX/AAP, Ansible dependency graphs and file recipes. Every
-command shares one config file, the same profiles, and the same output and
-piping rules.
-
-`untaped --help` and `untaped COMMAND --help` always show the exact options of
-the version you have installed.
+These pages explain concepts, workflows and contracts. For the exact options
+of the version you have installed, run `untaped --help` or
+`untaped COMMAND --help`; `--columns ?` lists a command's output fields.
 
 ## Get started
 
@@ -39,8 +35,7 @@ the version you have installed.
 - [Pipes and record kinds](./reference/pipes.md): the `--format pipe`
   envelope, and which command writes and reads each record kind.
 - [Exit codes](./reference/exit-codes.md): what 0 to 5 and 130 mean, the
-  failure categories behind them, and
-  which commands exit 3.
+  failure categories behind them, and which commands exit 3.
 - [Environment variables](./reference/environment.md): every variable
   `untaped` reads or sets.
 - [Versioning and stability](./stability.md): what a release keeps

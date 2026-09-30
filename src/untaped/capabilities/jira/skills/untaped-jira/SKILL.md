@@ -1,55 +1,96 @@
 ---
 name: untaped-jira
-description: Use the `untaped jira` command to work with Jira Data Center or Server issues (search with JQL, read, create, edit, assign, comment on, link and transition issues, and list projects, boards and sprints). Use when the user mentions Jira, a ticket or issue key such as OPS-123, JQL, a sprint or board, or moving an issue to another status.
+description: Works with Jira Data Center or Server issues through the `untaped jira` command (JQL search, reading, creating, editing, assigning, commenting on, linking and transitioning issues, and listing projects, boards and sprints). Use when the user mentions Jira, an issue key such as OPS-123, JQL, a sprint or board, or moving an issue to another status.
 ---
 
-# Untaped Jira
+# untaped jira
 
-Use this skill when the user wants an agent to operate the `untaped jira` CLI for Jira Data Center issue workflows.
+`untaped jira` reads and changes issues on Jira Data Center or self-hosted
+Jira; it does not speak to Jira Cloud. Every write is visible to other people
+the moment it lands, so read the issue first, preview the write, and send it
+only once the user has approved that preview.
+
+This page is the map; the details ship next to it:
+
+| File | Read it when |
+|---|---|
+| [references/reading.md](references/reading.md) | searching or reading issues: how `assigned` and `search` build JQL, issue and link fields, comments, transitions, piping keys |
+| [references/writes.md](references/writes.md) | creating, patching, assigning, commenting, transitioning or linking: which writes ask, what the preview shows, setting arbitrary fields, the outcome record |
 
 ## Setup
 
-- The command is `untaped jira`. It ships with the unified `untaped` CLI (no separate install).
-- `untaped jira` targets Jira Data Center and self-hosted Jira, not Jira Cloud REST v3.
-- Settings live under `profiles.<name>.jira`: `base_url`, `token`, `assigned_jql`, and optional defaults such as `default_board_id`.
-- Use `untaped config set jira.token --prompt` or `--stdin` for personal access tokens, or set `jira.token_command` to an argv list that prints the token; without either, `JIRA_API_TOKEN` is used. A rejected token (HTTP 401) prints that command as a hint and exits 4.
-- Set the base URL with `untaped config set jira.base_url https://HOST`.
+- Settings live under `profiles.<name>.jira`. Set the server with
+  `untaped config set jira.base_url https://HOST`.
+- Set a personal access token with `untaped config set jira.token --prompt`
+  (or `--stdin`), or point `jira.token_command` at an argv list that prints
+  it; `JIRA_API_TOKEN` is the fallback. Never print or echo a token.
+- `untaped jira whoami` checks the URL and token. A rejected token exits 4.
+- Check effective defaults (`jira.assigned_jql`, `jira.default_project`,
+  `jira.default_board_id`, `jira.confirm`) with `untaped config list` before
+  relying on them.
 
-## Command Patterns
+## Commands
 
-- Use `untaped jira --help` and subcommand `--help` output to confirm the available commands and flags before acting.
-- Commands: `whoami`, `issues get|search|assigned|create|patch|comment|transitions|transition`, `issues comments list`, `issues links create`, `projects list|get`, `boards list`, `sprints list`.
-- Jira platform calls use `/rest/api/2`; Jira Software board and sprint calls use `/rest/agile/1.0`.
-- Use `untaped jira issues assigned` to list issues assigned to the authenticated Jira user. It always applies `jira.assigned_jql`; `--jql` and the shortcut flags narrow it (ANDed), and an `ORDER BY` in `--jql` replaces the default `updated DESC` order. For an unrestricted query (not limited to your assigned issues) use `untaped jira issues search --jql ...` instead.
-- `untaped jira issues search` with no `--jql` or shortcut flags falls back to `jira.assigned_jql`.
-- In the search shortcut flags, `--assignee @me` means the authenticated user. `--sprint` accepts a sprint id, a sprint name, or `openSprints()`/`futureSprints()`/`closedSprints()` (rendered as `sprint in openSprints()`).
-- Use `untaped jira issues get KEY` to fetch one issue with its detail fields: `summary`, `status`, `assignee`, `updated_at`, `url`, `api_url`, plus `issue_type`, `priority`, `reporter`, `labels`, `created_at`, `resolution`, `description`, `links`, and `comments` (`null` unless `--comments` fetched them).
-- Search rows keep only `key`, `summary`, `status`, `assignee`, `updated_at`, `url`, `api_url`, `issue_type`, and `priority`. `url` is the browser link and `api_url` the REST link. Timestamps render in UTC as `2026-01-02T03:04:05Z`.
-- `links` is always a list (empty when none) of `{key, summary, status, type, direction, relation, url}`: `direction` is `outward` or `inward` from this issue's side and `relation` is Jira's phrase for it (`blocks`, `is blocked by`). Linked issues are not fetched, so `issues get` their keys for details.
-- `issues get` and `issues transition` accept several keys, or `--stdin` with bare keys or `--format pipe` records of kind `jira.issue` / `jira.issue_outcome` (any other kind exits 2). Each failing key prints `error: KEY: …` and the command exits with the most severe failure (1 for a missing issue, 4 for a rejected token or a permission error, 5 when Jira is unavailable).
-- `issues comments list KEY` emits `jira.comment` records (`id`, `issue_key`, `author`, `created_at`, `updated_at`, `body`, `api_url`).
-- `issues transitions KEY` emits `jira.transition` records (`id`, `name`, `to_status`, the status the transition leads to, or null).
-- Assign with `issues patch KEY --assignee USER` (`@me` is the authenticated user) or clear it with `--unassign`. Assignment uses the dedicated `PUT issue/KEY/assignee` endpoint, so it works even when the assignee field is not on the edit screen; combined with other field changes it sends the field edit first, then the assignment (if only the assignment fails, the error says the fields were already updated). The flags override a `fields.assignee` in `--fields-file`.
-- `issues transition --resolution NAME --comment TEXT` sets a resolution and adds a comment with the transition.
-- `issues links create KEY TYPE OTHER` links two issues; it reads "KEY <outward phrase> OTHER" (`OPS-1 Blocks OPS-2`: OPS-1 blocks OPS-2). It sends KEY as `inwardIssue` and OTHER as `outwardIssue`; the preview and `--dry-run` print a `reads as:` line, so check the direction on one pair before linking in bulk.
-- `jira.confirm` decides which writes ask first: `destructive` (default), `always`, or `never`. Destructive writes are `issues transition` and an `issues patch` that sets a field, changes the assignee, or has an `update` operation other than `add`; `issues create`, `issues comment`, `issues links create` and add-only patches are sent without asking unless the policy is `always`.
-- A write that asks shows a readable preview first (`METHOD path`, then `field: old → new` lines, long text cut to 60 characters for display only; patches and transitions read the issue's current values for it). Pass `--yes` to skip the prompt and the preview's reads; without a terminal and without `--yes`, a write that must ask exits 2.
-- `--dry-run` prints the same preview on stderr, emits a `planned` outcome, sends nothing, and wins over `--yes` and the policy.
-- Patch and transition dry runs read the issue, so they need working credentials (a patch dry run fails if the issue cannot be read; a transition preview shows `(unknown)`, or `(not available from this status)` for an `--id` the issue does not offer); create, comment and link dry runs stay offline.
-- `issues create` / `issues patch` set arbitrary fields with `--set KEY=VALUE` and `--set-json KEY=JSON` (both repeatable), on top of an optional Jira-shaped YAML/JSON document from `--fields-file FILE` (`fields` and `update`). `issues comment` reads the comment text from `--body`, `--body-file FILE`, or stdin.
-- Writes emit a `jira.issue_outcome` record: `action` (`created`, `updated`, `commented`, `transitioned`, `linked`, or `planned`), `key`, `id`, `url`, `api_url`, `transition_id`, `comment_id`, `link_type`, `linked_key`.
-- Prefer JSON output for issue, board, sprint, transition, project, and search workflows.
-- Single-entity commands (`whoami`, `issues get KEY`, the writes on one key, `projects get`) render a vertical key:value detail view under `--format table` and a bare JSON object under `--format json`; list/search commands and multi-key calls render tables and JSON arrays. Tables show a subset of each record's fields (`--columns ?` marks them with `*`; `--columns +name` adds one); JSON keeps every field.
-- Usage mistakes exit 2: an issue key that is neither `PROJECT-123` nor a numeric id, or a project key that is neither `PROJECT` nor a numeric id (keys are case-insensitive and sent uppercase), a blank `--jql`, both or neither of `--to`/`--id`, `sprints list` without `--board-id` or `jira.default_board_id`, `--limit 0`.
-- The JQL `issues search`/`issues assigned` POST is treated as idempotent and retries transient `429`/`503` automatically; mutating commands are never auto-retried.
-- Use `--format pipe` to chain into another untaped command: it emits one self-describing record per line, each tagged with a `kind` (`jira.issue`, `jira.issue_outcome`, `jira.comment`, `jira.project`, `jira.board`, `jira.sprint`, `jira.user`, `jira.transition`).
-- `--profile <name>` works in any token position (e.g. `untaped --profile work jira whoami`).
-- Use configured defaults only after checking effective config with `untaped config list --format raw --columns key --columns value`.
+| When | Command |
+|---|---|
+| The user's own open issues | `untaped jira issues assigned` |
+| Any other query | `untaped jira issues search --jql 'project = OPS AND status = Open'` |
+| Read issues in full | `untaped jira issues get OPS-123 --comments` |
+| Which transitions an issue offers now | `untaped jira issues transitions OPS-123` |
+| Move an issue to another status | `untaped jira issues transition OPS-123 --to Done --dry-run` |
+| Change fields or the assignee | `untaped jira issues patch OPS-123 --assignee @me --dry-run` |
+| Create an issue | `untaped jira issues create --project OPS --issue-type Task --summary TEXT --dry-run` |
+| Add a comment | `untaped jira issues comment OPS-123 --body TEXT --dry-run` |
+| Link two issues | `untaped jira issues links create OPS-123 Blocks OPS-124 --dry-run` |
+| Find a board or sprint | `untaped jira boards list --project OPS`, then `untaped jira sprints list --board-id 42` |
 
-## Agent Guidance
+`--help` on any command lists its options; `--columns ?` lists a table's
+fields.
 
-- Keep stdout data-only; parse `--format json` rather than table output.
-- Read the exit code before retrying: `1` the request itself failed (missing issue, invalid field, no such transition), `2` fix the command line, `4` fix the environment (`jira.*` settings, a rejected token, missing permission), `5` Jira was unavailable (network, timeout, 5xx, 429): retry later. With `--format json|yaml|pipe` (or `UNTAPED_DIAGNOSTICS=json`) stderr is JSON Lines; each error has `category`, `system` (`jira`, `local`, …), `retryable` and `hint`.
-- Do not assume Jira Cloud authentication or endpoints.
-- Treat issue mutations such as transitions or comments as explicit user intent: preview with `--dry-run` (even when `jira.confirm` would not ask), then pass `--yes` only once the user has approved.
-- Never echo tokens or raw authorization headers.
+## Work a ticket
+
+1. `untaped jira issues get OPS-123 --format json`: read the status,
+   assignee, description and links.
+2. `untaped jira issues transitions OPS-123 --format json`: pick the
+   transition whose `to_status` is the status the user wants.
+3. Preview each write with `--dry-run` and show the user the preview lines.
+4. After the user approves, rerun the same command with `--yes`.
+5. `untaped jira issues get OPS-123`: the status, fields or comment are as
+   intended.
+
+To move every issue of a search, pipe it and preview the whole batch first:
+
+```bash
+untaped jira issues search --project OPS --status 'In Review' --format pipe \
+  | untaped jira issues transition --stdin --to Done --dry-run
+```
+
+## Safety
+
+- Preview every write with `--dry-run`, even when `jira.confirm` would not
+  ask: the default policy sends creates, comments, links and add-only patches
+  without a prompt. `--dry-run` sends nothing and wins over `--yes`.
+- `--yes` skips the prompt. Without a terminal, a write that must ask exits 2
+  unless you pass `--yes` or `--dry-run`.
+- Batches over several keys (or `--stdin`) continue past a failing key, print
+  `error: KEY: …` for it, and exit with the most severe failure.
+- Exit codes: 0 success, 1 the request failed or was declined (missing issue,
+  invalid field, no such transition), 2 fix the command line, 4 fix the
+  environment (`jira.*` settings, rejected token, missing permission),
+  5 Jira unavailable (retry later).
+- With `--format json` stderr is JSON Lines; each error names its `category`,
+  `system`, `retryable` flag and `hint`.
+
+## Pitfalls
+
+- `issues search` with no `--jql` and no shortcut flags searches
+  `jira.assigned_jql`, not every issue.
+- Transition names differ between workflows and statuses; take them from
+  `issues transitions`, not from memory.
+- A link reads "KEY outward-phrase OTHER": `links create OPS-123 Blocks
+  OPS-124` makes OPS-123 block OPS-124. Check one pair's preview before
+  linking in bulk.
+- Patch and transition previews read the issue, so a dry run needs working
+  credentials; create, comment and link previews do not.
+- Writes are never retried automatically. After exit 5 on a write, run
+  `issues get` to see whether it landed before sending it again.

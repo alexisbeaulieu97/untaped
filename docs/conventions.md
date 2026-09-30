@@ -1,8 +1,8 @@
 # Command and output conventions
 
-Every `untaped` command, built-in or external, should look and behave the same
-way. This page lists the rules and the `untaped.capability_api` helper that
-implements each one. Use the helper instead of writing your own version.
+Every `untaped` command, built-in or external, looks and behaves the same
+way. Each rule below names the `untaped.capability_api` helper that implements
+it; use the helper rather than your own version.
 
 ## Exit codes
 
@@ -83,7 +83,7 @@ the helpers do this for you, so never print a JSON line yourself.
 | Summary | `<op>: 2 cloned, 1 failed` | `summary("sync", counts)` |
 | Decline | `cancelled; no changes made` (exit 1) | `raise OperationCancelledError`, or `finish(outcome)` after `batch_apply` |
 | Empty list | `No <plural> found.`, in table format only | `emit(rows, …, empty="No repos found.")` |
-| Styled line | A Rich `Text` line (live job events), ANSI only on a terminal; `tail=` text follows it verbatim (unwrapped); `truncate=True` cuts too-wide lines with an ellipsis instead of wrapping | `ui.styled(text)` for stdout, `ui.styled(text, err=True)` for stderr |
+| Styled line | A Rich `Text` line for streamed human output (live job events); not muted by `-q` | `ui.styled(text)`, or `ui.styled(text, err=True)` for stderr; see its docstring for `tail=` and `truncate=` |
 
 Do not call `echo()` for `error:` or `warning:` lines, `print()`, or build a
 `rich.console.Console` yourself.
@@ -169,12 +169,13 @@ come from a closed set:
   on the record type, `table_columns: ClassVar[tuple[str, ...]] = (…)`: the
   identifying field, what changed or its state, and what the reader acts on
   next. Leave out fields that repeat the command's own arguments or are empty
-  on most rows. A record with more than four fields (`error` aside) that a
-  command lists must declare them (a convention test checks this).
-  `emit(rows, …, table_columns=[…])` overrides them for one command; a single
-  record shows every field. Never pass defaults as `columns=` (`columns or
-  DEFAULTS`): `--columns +name/-name` edits the defaults, and a named column
-  is always shown, even when empty.
+  on most rows.
+- A listed record with more than four fields (`error` aside) must declare
+  default columns. `emit(rows, …, table_columns=[…])` overrides them for one
+  command; a single record shows every field.
+- Never pass defaults as `columns=` (`columns or DEFAULTS`):
+  `--columns +name/-name` edits the defaults, and a named column is always
+  shown, even when empty.
 - Kinds are `<cap>.<singular_noun>` for entities and `<cap>.<verb>_outcome`
   for mutation results. Root commands use `untaped.*`. Each kind has exactly
   one schema.
@@ -216,13 +217,9 @@ come from a closed set:
 | `test_message_lint.py` | stderr wording |
 | `test_structure.py` | `errors.py`, exception names, ports, config sections, private test imports |
 | `test_layering.py` | Import direction inside a capability; only `cli` resolves settings |
+| `test_table_defaults.py` | Wide record collections declare default table columns |
 
 Existing violations are listed in
 `tests/conventions/baselines/<check>/<owner>.txt`. A new violation fails the
 tests. A fixed violation also fails until you delete its baseline line, so the
 baselines can only shrink.
-
-## See also
-
-- [Building a capability provider](./plugins.md)
-- [Configuration](./configuration.md)

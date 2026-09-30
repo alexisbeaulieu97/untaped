@@ -1,16 +1,102 @@
 # Sweeps and the local corpus
 
-`untaped github sweep` answers grep-style questions over local clones of many repositories, kept in a managed corpus by `untaped github cache`. This page covers freshness, predicates, failures, row shapes and the cache commands.
+`untaped github sweep` answers grep-style questions over local clones kept in
+a managed corpus under `github.corpus_path` (default
+`~/.untaped/github-corpus`). Use `untaped workspace` for clones you edit.
 
-- Use `--fail-on-match` as the CI gate for banned patterns: the sweep still reports rows, then exits `3` if any repo matched. Use `--strict` only when any unscanned repo should also fail the run (also exit `3`). Usage errors (bad scope, pattern, or pathspec) exit `2`.
-- Per-repo problems never abort a sweep: an explicit `--repo`/`--stdin` name that GitHub cannot resolve (404, no access), corrupt corpus metadata, or a local filesystem/Git error becomes an unscanned repo with its reason in the footer, and the rest of the sweep completes (`--strict` still exits `3`). Bad credentials (401, exit `4`) and rate limits (429, rate-limited 403, exit `5`) abort the sweep instead, and a sweep whose explicitly requested repos all fail to resolve exits non-zero.
-- Sweep freshness footer semantics: default online sweeps refresh uncached, stale, or under-profiled repos according to `github.sweep.max_age_seconds`, except that a stale copy whose GitHub `pushed_at` (and default branch) is unchanged since the last fetch is marked current without any Git network call (counted as cached); `--refresh` forces refresh; `--cached` scans only cached metadata. The footer reports matched/scanned counts, refreshed/cached counts, oldest fetch, and warnings for unscanned repos. A failed refresh scans a covering cached copy and counts it as cached, but the footer warns `refresh failed for N repos; scanned cached copies` and lists each stale repo with its failure reason; without a usable covering copy it becomes unscanned.
-- Sweep refreshes retry transient Git transport failures (dropped TLS/TCP streams, `early EOF`, HTTP 429/5xx) with short backoff. Wide ref selections (`--refs branches|tags|all`, `--ref GLOB`) list remote refs first, fetch only new or moved refs in bounded batches, and prune refs deleted upstream, so an interrupted refresh resumes from the refs already fetched on the next run.
-- Sweep content predicates use local `git grep -I --extended-regexp`: patterns are POSIX extended regexes regardless of the user's `grep.patternType` (`a|b` alternates, `\(` matches a literal parenthesis, Perl classes such as `\d` are unsupported — use `[0-9]`). Binary files are skipped. `-i`, `-F`, and `--word-regexp` apply to every `--grep` and `--not-grep` in the query. `--has-file GLOB` / `--lacks-file GLOB` require a file to exist or not; `--path SPEC` limits content predicates to a Git pathspec. `--any` ORs positive predicates only; negative predicates remain ANDed.
-- Sweep scans each repo's default branch unless `--refs default|branches|tags|all` or `--ref GLOB` says otherwise. `--depth N` sets the Git fetch depth (`0` is full history), `-j N` the parallel Git workers (at most 32; default `github.sweep.sync_concurrency`), and `--no-owners` skips the CODEOWNERS lookup.
-- `github.sweep_repo` rows contain `repo`, `clone_url`, `refs_matched`, `hits`, `owners`, and `fetched_at`. `github.sweep_match` rows contain `repo`, plural `refs`, `path`, `line`, and `text`. Refs are reported by short name (`main`, `v1.2`); when a branch and a tag share a name, both are scanned and shown as `heads/NAME` and `tags/NAME`.
-- The sweep corpus lives under `github.corpus_path` (default `~/.untaped/github-corpus`) and is managed by `untaped github`. Use `cache worktree OWNER/NAME` for a one-off checkout path; it reads cached metadata locally and only materializes refs already present in the corpus. Use `untaped workspace` for human development workspaces.
-- `cache status` emits `github.corpus_repo` rows (raw `disk_bytes`/`fetched_at`; the table shows a readable size and fetch age) and prints cache count, total size, and freshness spread. `cache delete` takes `OWNER/NAME` arguments or `--all` (not both); a named repo that is not cached (or not in `--org`) fails with `cached repo not found` and exit `1` before anything is deleted; it prompts unless `--yes`/`-y` is passed, and `--dry-run` lists the selection without deleting. `cache prune --org ORG` removes cached repos in the org that departed or are now archived. With `cache delete`, `--org` (repeatable, case-insensitive) narrows the selection to repos owned by those orgs. There is no `--team` option because corpus metadata does not record team membership.
-- Sweep and cache commands shell out to `git`; Git must be installed and available on `PATH`.
-- `sweep --stdin` and `cache sync --stdin` use piped `github.repo` records (from `repos list`, which carry `pushed_at` for the unchanged-repo fast path) as-is, with no per-repo API call; other records and bare names are looked up. Refs sharing a tree are grepped once, all-predicate queries stop evaluating a ref at its first failed predicate, and concurrent sweeps are safe (each cached repo is locked while it is written).
-- Use `--format pipe` to chain sweep results into another sweep: `untaped github repos list 'svc-*' --org acme --format pipe | untaped github sweep --stdin --grep old_api --format pipe | untaped github sweep --stdin --not-grep new_api`.
+Contents: predicates, refs, freshness, the footer and failures, rows, piped
+input, cache commands.
+
+## Predicates
+
+- Content predicates run `git grep -I --extended-regexp`: POSIX extended
+  regexes whatever the user's `grep.patternType`. `a|b` alternates, `\(`
+  is a literal parenthesis, and Perl classes such as `\d` are unsupported
+  (use `[0-9]`). Binary files are skipped.
+- `-i`, `-F` and `--word-regexp` apply to every `--grep` and `--not-grep`.
+- `--has-file GLOB` and `--lacks-file GLOB` test that a file exists or not.
+  `--path SPEC` limits content predicates to a Git pathspec.
+- All predicates must hold by default. `--any` ORs the positive ones;
+  negative predicates stay ANDed.
+
+Illustrations:
+
+```bash
+untaped github sweep --org acme --grep 'requests\.get\(' --path 'src/**' --has-file Jenkinsfile
+untaped github sweep --team acme/platform --grep log4j --grep slf4j --any
+untaped github sweep --org acme --ref 'release/*' --grep jenkins --show matches
+```
+
+## Refs
+
+- Each repo's default branch is scanned unless `--refs
+  default|branches|tags|all` or `--ref GLOB` says otherwise.
+- Refs are reported by short name (`main`, `v1.2`). When a branch and a tag
+  share a name, both are scanned and shown as `heads/NAME` and `tags/NAME`.
+- Wide selections list remote refs first and fetch only new or moved refs,
+  in batches, pruning refs deleted upstream. An interrupted refresh resumes
+  where it stopped.
+- Refs that share a tree are grepped once.
+
+## Freshness
+
+- By default a sweep fetches repos that are uncached, older than
+  `github.sweep.max_age_seconds`, or cached with fewer refs than asked for.
+- An old copy whose GitHub `pushed_at` and default branch have not changed
+  since the last fetch counts as current and is not fetched.
+- `--refresh` fetches every repo; `--cached` never fetches.
+- Transient Git transport failures (dropped connections, `early EOF`, HTTP
+  429/5xx) are retried with a short backoff.
+
+## The footer and failures
+
+The stderr footer reports matched and scanned counts, refreshed and cached
+counts, the oldest fetch, and a warning per unscanned repo.
+
+- A repo that cannot be scanned (an explicit name GitHub cannot resolve,
+  corrupt corpus metadata, a local filesystem or Git error) is listed with
+  its reason; the rest of the sweep completes.
+- A failed refresh falls back to a cached copy that covers the query, counted
+  as cached, with `refresh failed for N repos; scanned cached copies` and a
+  reason per repo. Without such a copy the repo is unscanned.
+- Bad credentials (exit 4) and rate limits (exit 5) stop the whole sweep.
+  So does a sweep in which every explicitly requested repo fails to resolve.
+- `--strict` exits 3 when any repo went unscanned; `--fail-on-match` exits
+  3 when any repo matched. Bad scopes, patterns or pathspecs exit 2.
+
+## Rows
+
+| `--show` | Kind | Fields |
+|---|---|---|
+| `repos` (default) | `github.sweep_repo` | `repo`, `clone_url`, `refs_matched`, `hits`, `owners`, `fetched_at` |
+| `files` | `github.sweep_file` | `repo`, `path`, `refs`, `hits` (matching lines) |
+| `matches` | `github.sweep_match` | `repo`, `refs`, `path`, `line`, `text`; deduped across refs |
+
+`owners` comes from CODEOWNERS; `--no-owners` skips that lookup.
+
+## Piped input
+
+- `sweep --stdin` and `cache sync --stdin` read bare `owner/name` lines or
+  `github.repo`, `github.repo_hit` and `github.sweep_repo` records; other
+  kinds exit 2.
+- `github.repo` records from `repos list` are used as they are, with no
+  per-repo API call, and their `pushed_at` enables the unchanged-repo skip.
+  Other records and bare names are looked up.
+- Sweeps can chain: a `--format pipe` sweep feeds the next sweep's
+  `--stdin`, narrowing the set at each step.
+
+## Cache commands
+
+- `cache sync` fetches the repos in scope without a query. Each
+  `github.sync_outcome` row says `synced`, `unchanged`, `skipped` or
+  `failed` (with `error`); a failure exits 1, or 5 when a fetch timed out.
+- `cache status` emits one `github.corpus_repo` row per cached repo and
+  prints the count, total size and freshness spread.
+- `cache worktree OWNER/NAME` checks out a cached ref and prints its path. It
+  works offline and only for refs already in the corpus.
+- `cache delete` takes `OWNER/NAME` arguments or `--all`, not both.
+  Repeatable `--org` narrows the selection. There is no `--team`, because the
+  corpus does not record team membership.
+- `cache prune --org ORG` deletes cached repos that left the org or were
+  archived.
+- Concurrent sweeps are safe: each cached repo is locked while it is written.

@@ -116,3 +116,11 @@ def test_detail_table_hides_empty_links() -> None:
     result, _ = _get([])
 
     assert "links:" not in result.stdout
+
+
+def test_links_create_help_keeps_the_outward_phrase_placeholder() -> None:
+    for args in (["issues", "links", "--help"], ["issues", "links", "create", "--help"]):
+        result = CliInvoker().invoke(app, args)
+
+        assert result.exit_code == 0, result.output
+        assert "OUTWARD-PHRASE" in result.stdout, result.stdout
