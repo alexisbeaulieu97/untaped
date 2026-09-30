@@ -54,12 +54,12 @@ Terms as `untaped` uses them in commands, output and these docs.
 - **source alias (ansible)**: A mapping from an Ansible role or Galaxy name to
   a GitHub `owner/repo`, so the dependency graph can follow it. Managed with
   `ansible source-alias`.
-- **stopped (ansible)**: A graph node whose own dependencies (or dependents)
-  were not read: `depth` when `--depth` ran out, `not_cached` when its ref is
-  not in the source's cache. The graph beyond it may be incomplete.
 - **state file**: `~/.untaped/state.yml` (or `$UNTAPED_STATE`). Data a
   capability manages itself, such as registered workspaces and Ansible sources.
   Change it only through the capability's commands.
+- **stopped (ansible)**: A graph node whose own dependencies (or dependents)
+  were not read: `depth` when `--depth` ran out, `not_cached` when its ref is
+  not in the source's cache. The graph beyond it may be incomplete.
 - **sweep (github)**: A content and file-presence query over the corpus:
   `github sweep`.
 - **workspace**: A directory of Git clones managed together through its
