@@ -428,6 +428,7 @@ def find_command(
                 ).graph
                 for warning in graph.warnings:
                     ui.message("warning", f"{_root_label(root)}: {warning}")
+                _report_depth_stops(graph, depth_limit, root=_root_label(root))
             matches.extend(find_matches(graph, wanted, source=source))
         emit(
             matches,
@@ -506,6 +507,7 @@ def graph_command(
             extra_warnings=_refresh_selected(env, options),
         )
         ui = _report_warnings(built.graph.warnings)
+        _report_depth_stops(built.graph, depth_limit)
         depth_note = "unlimited depth" if depth_limit is None else f"depth {depth_limit}"
         header_note = f"{built.data_source} · {depth_note}"
         _emit_graph(built.graph, fmt=fmt, output=output, ui=ui, header_note=header_note)
@@ -541,6 +543,7 @@ def _emit_reach(
             extra_warnings=_refresh_selected(env, options),
         ).graph
         _report_warnings(graph.warnings)
+        _report_depth_stops(graph, depth_limit)
         emit(
             [hit.node for hit in reach(graph, relation)],
             fmt=fmt,
@@ -570,6 +573,20 @@ _REACH_OUTPUT: dict[str, tuple[EdgeRelation, str, str]] = {
     "impact": ("impacts", "ansible.dependent", "dependents"),
 }
 """Per task command: the edges it walks, its record kind and its row noun."""
+
+
+def _report_depth_stops(graph: DependencyGraph, depth: int | None, *, root: str = "") -> None:
+    """Hint on stderr how many nodes the depth limit left unread, and how to read them."""
+    count = sum(1 for node in graph.nodes if node.stopped == "depth")
+    if depth is None or not count:
+        return
+    prefix = f"{root}: " if root else ""
+    them = "it" if count == 1 else "them"
+    echo(
+        f"hint: {prefix}{plural(count, 'repo')} not read beyond --depth {depth}; "
+        f"pass --depth unlimited to read {them}",
+        err=True,
+    )
 
 
 def _within(depth: int | None) -> str:

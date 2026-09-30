@@ -647,3 +647,103 @@ def test_ref_less_target_whose_default_branch_is_not_cached_reads_every_ref() ->
         "acme/web's default branch is not in the cached source data; showing the "
         "dependencies of every cached ref.",
     )
+
+
+def _stopped(graph: DependencyGraph) -> dict[str, str]:
+    return {node.id: node.stopped for node in graph.nodes if node.stopped is not None}
+
+
+def test_nodes_the_depth_limit_left_unread_are_stopped_by_depth() -> None:
+    index = StubIndex(_chain_edges(4))
+
+    graph = _build(
+        index, "acme/role-0000", "main", source_key="source:prod", direction="deps", depth=2
+    )
+
+    assert _stopped(graph) == {"acme/role-0002@main": "depth"}
+
+
+def test_a_node_read_through_a_shorter_path_is_not_stopped() -> None:
+    # a -> b -> c -> d and a -> d: at depth 2, d is read from the short path only.
+    index = StubIndex(
+        [
+            _dep("acme/a", "acme/b"),
+            _dep("acme/b", "acme/c"),
+            _dep("acme/c", "acme/d"),
+            _dep("acme/a", "acme/d"),
+            _dep("acme/d", "acme/e"),
+        ]
+    )
+
+    graph = _build(index, "acme/a", "main", source_key="source:prod", direction="deps", depth=2)
+
+    assert _stopped(graph) == {"acme/c@main": "depth", "acme/e@main": "depth"}
+
+
+def test_dependents_the_depth_limit_left_unread_are_stopped_by_depth() -> None:
+    index = StubIndex([_dep("acme/site", "acme/web"), _dep("acme/web", "acme/base")])
+
+    graph = _build(
+        index, "acme/base", "main", source_key="source:prod", direction="impact", depth=1
+    )
+
+    assert _stopped(graph) == {"acme/web@main": "depth"}
+
+
+def test_a_ref_missing_from_the_cache_is_stopped_as_not_cached() -> None:
+    index = StubIndex([_dep("acme/a", "acme/b", version="v9")], cached_refs={"acme/a": {"main"}})
+
+    graph = _build(index, "acme/a", "main", source_key="source:prod", direction="deps", depth=None)
+
+    assert _stopped(graph) == {"acme/b@v9": "not_cached"}
+    assert any("not expanding acme/b@v9" in warning for warning in graph.warnings)
+
+
+@pytest.mark.parametrize("source_key", ["source:prod", None])
+def test_a_fully_read_graph_has_no_stopped_nodes(source_key: str | None) -> None:
+    unresolved = IndexedDependency(
+        source_repo="acme/role-0002",
+        source_ref="main",
+        dependency_name="common",
+        dependency_version=None,
+        source_path="meta/main.yml",
+        unresolved="common",
+    )
+    edges = [*_chain_edges(3), unresolved]
+    index = StubIndex(
+        edges,
+        cached_refs={
+            "acme/role-0000": {"main"},
+            "acme/role-0001": {"main"},
+            "acme/role-0002": {"main"},
+        },
+    )
+
+    graph = _build(
+        index, "acme/role-0000", "main", source_key=source_key, direction="both", depth=None
+    )
+
+    assert _stopped(graph) == {}
+
+
+def test_a_ref_less_read_counts_as_reading_each_concrete_ref() -> None:
+    # a@main -> b (unpinned, default branch unknown); b@main -> c -> a.
+    index = StubIndex(
+        [
+            _dep("acme/a", "acme/b", version=None),
+            _dep("acme/b", "acme/c"),
+            _dep("acme/c", "acme/a"),
+        ]
+    )
+
+    graph = _build(index, "acme/a", "main", source_key="source:prod", direction="both", depth=2)
+
+    assert "acme/b@main" not in _stopped(graph)
+
+
+def test_a_ref_less_dependency_missing_from_the_cache_is_not_cached() -> None:
+    index = StubIndex([_dep("acme/a", "acme/b", version=None)], cached_refs={"acme/a": {"main"}})
+
+    graph = _build(index, "acme/a", "main", source_key="source:prod", direction="deps", depth=None)
+
+    assert _stopped(graph) == {"acme/b": "not_cached"}

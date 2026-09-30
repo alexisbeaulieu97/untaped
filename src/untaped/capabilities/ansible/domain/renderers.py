@@ -54,10 +54,11 @@ class TreeGlyphs:
     last: str
     pipe: str
     cycle: str
+    stopped: str
 
 
-UNICODE_GLYPHS = TreeGlyphs(branch="├── ", last="└── ", pipe="│   ", cycle="↻ cycle")
-ASCII_GLYPHS = TreeGlyphs(branch="|-- ", last="`-- ", pipe="|   ", cycle="(cycle)")
+UNICODE_GLYPHS = TreeGlyphs(branch="├── ", last="└── ", pipe="│   ", cycle="↻ cycle", stopped="…")
+ASCII_GLYPHS = TreeGlyphs(branch="|-- ", last="`-- ", pipe="|   ", cycle="(cycle)", stopped="...")
 _BLANK = "    "
 """The guide below a last child: as wide as the connectors, in any glyph set."""
 
@@ -66,6 +67,8 @@ _SECTIONS: tuple[tuple[str, EdgeRelation], ...] = (
     ("depends on", "requires"),
 )
 """Tree sections in display order: dependents above the target, dependencies below."""
+
+_STOP_NOTES = {"depth": "not read: depth limit", "not_cached": "not read: ref not cached"}
 
 _NOTE_COLUMN_MAX = 56
 """Notes line up after the widest node up to this column, then follow two spaces."""
@@ -102,8 +105,10 @@ def tree_lines(
     nodes = {node.id: node for node in graph.nodes}
     target = nodes[graph.target_id]
     header = [TreeSegment(target.label, "target")]
-    if header_note:
-        header.append(TreeSegment(f"  {header_note}", "note"))
+    if target.stopped:
+        header.append(TreeSegment(f" {glyphs.stopped}", "note"))
+    if header_notes := [note for note in (header_note, _stop_note(target)) if note]:
+        header.append(TreeSegment(f"  {' · '.join(header_notes)}", "note"))
     sections: list[tuple[str, list[_Labelled]]] = []
     numbered = 0
     for title, relation in _SECTIONS:
@@ -134,6 +139,7 @@ def _summary(graph: DependencyGraph, nodes: dict[str, GraphNode], target: GraphN
     target_repo = repo_key(target.repo) if target.repo else None
     repos = {repo_key(node.repo) for node in nodes.values() if node.repo} - {target_repo}
     unresolved = sum(1 for node in nodes.values() if node.unresolved)
+    stopped = sum(1 for node in nodes.values() if node.stopped)
     cycles = sum(1 for cycle in graph.cycles if cycle.kind == "cycle")
     groups = len(graph.cycles) - cycles
     parts = [plural(len(repos), "repo"), plural(len(graph.edges), "edge")]
@@ -143,6 +149,8 @@ def _summary(graph: DependencyGraph, nodes: dict[str, GraphNode], target: GraphN
         parts.append(plural(groups, "cyclic group"))
     if unresolved:
         parts.append(f"{unresolved} unresolved")
+    if stopped:
+        parts.append(f"{stopped} stopped")
     return " · ".join(parts)
 
 
@@ -170,11 +178,12 @@ class _Row(NamedTuple):
 
 
 class _Labelled(NamedTuple):
-    """A row's guide, label and marker, their width in cells, and the edge for its notes."""
+    """A row's guide, label and markers, their width in cells, and what its notes need."""
 
     segments: list[TreeSegment]
     width: int
     edge: GraphEdge | None
+    node: GraphNode
 
 
 def _section_rows(
@@ -266,8 +275,8 @@ def _labelled(
     An unresolved node shows the name as declared (its note says it is
     unresolved). The marker is ``[n]`` on a numbered subtree's first row,
     ``see [n]`` on a later one, and the cycle marker on a repo already on
-    the path. Width is in terminal cells, so wide characters keep the notes
-    aligned.
+    the path; ``…`` follows a node whose own edges were not read. Width is
+    in terminal cells, so wide characters keep the notes aligned.
     """
     node = nodes[row.node_id]
     segments = [
@@ -281,16 +290,24 @@ def _labelled(
         segments.append(TreeSegment(f" see [{number}]", "ref"))
     elif number is not None:
         segments.append(TreeSegment(f" [{number}]", "ref"))
+    if node.stopped and row.marker != "cycle":
+        segments.append(TreeSegment(f" {glyphs.stopped}", "note"))
     width = sum(cell_len(segment.text) for segment in segments)
-    return _Labelled(segments, width, row.edge)
+    return _Labelled(segments, width, row.edge, node)
 
 
 def _node_line(row: _Labelled, nodes: dict[str, GraphNode], column: int) -> TreeLine:
     notes = _edge_notes(row.edge, nodes) if row.edge is not None else []
+    if stop_note := _stop_note(row.node):
+        notes.append(stop_note)
     if not notes:
         return tuple(row.segments)
     padding = " " * max(column - row.width, 0) + "  "
     return (*row.segments, TreeSegment(padding, "note"), TreeSegment(" · ".join(notes), "note"))
+
+
+def _stop_note(node: GraphNode) -> str | None:
+    return _STOP_NOTES[node.stopped] if node.stopped else None
 
 
 def _edge_notes(edge: GraphEdge, nodes: dict[str, GraphNode]) -> list[str]:
