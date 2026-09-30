@@ -135,9 +135,9 @@ self-contained manual for the installed CLI.
   - **Behavior change:** workspace tables show a command's usual columns;
     `--columns ?` marks them and json, yaml, raw and pipe keep every field.
     `status` shows `repo`, `cloned`, `branch`, `upstream`, `ahead`,
-    `behind`, `modified`, `untracked` and `detail`; `sync` and
-    `branch apply` show `repo`, `action` and `detail` (`branch apply` adds
-    `target_branch` when repos target different branches); `repos list`
+    `behind`, `modified`, `untracked` and `detail`; `sync` shows `repo`,
+    `action` and `detail`; `branch apply` shows `repo`, `target_branch`,
+    `action` and `detail`; `repos list`
     shows `repo`, `url` and `target_branch`; `repos add` shows `repo`,
     `url`, `branch` and `action`. `status --all` and `sync --all` lead with
     `workspace`.
@@ -145,7 +145,8 @@ self-contained manual for the installed CLI.
     configured upstream (`origin/main`), or `null` when unset.
   - **Breaking:** `workspace.repo` (`repos list`) rows lead with `repo`
     instead of `workspace`, so `--format raw` prints the repo names rather
-    than the workspace name on every line.
+    than the workspace name on every line. A script that read the workspace
+    name passes `--columns workspace`.
 - GitHub
   - **Breaking:** a rejected token (401) or a missing permission (403) exits
     4, and a rate limit (429, rate-limited 403) or an unavailable API exits
@@ -396,8 +397,9 @@ self-contained manual for the installed CLI.
     `name` and `module`; `test` shows `pack` only when several packs ran;
     `backups list` shows `id`, `created_at` and `recipe`.
   - **New:** `recipe.backup` rows from `backups list` carry the bundle's
-    `created_at` and `recipe`, read from its metadata (`null`, with a
-    warning, when the metadata cannot be read).
+    `created_at` (from the bundle id, as `2026-01-02T03:04:05Z`) and
+    `recipe` (from its metadata; `null`, with a warning, when the metadata
+    cannot be read).
   - **Breaking:** `recipe.apply_outcome` renames its string field `error` to
     `detail`; a failed row's `error` is now the structured object. Errored
     `recipe.test` rows gain `error` too.

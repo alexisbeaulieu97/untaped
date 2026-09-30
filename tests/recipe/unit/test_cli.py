@@ -3121,10 +3121,15 @@ def test_backups_list_rows_carry_the_creation_time_and_recipe(tmp_path: Path) ->
     columns = invoker.invoke(app, ["backups", "list", "--columns", "?"])
 
     assert listed.exit_code == 0, listed.output
+    # The id's UTC stamp, rendered to the second with a ``Z``.
+    stamp = bundle.id[:15]
+    created_at = (
+        f"{stamp[:4]}-{stamp[4:6]}-{stamp[6:8]}T{stamp[9:11]}:{stamp[11:13]}:{stamp[13:15]}Z"
+    )
     assert json.loads(listed.stdout) == [
         {
             "id": bundle.id,
-            "created_at": bundle.created_at,
+            "created_at": created_at,
             "recipe": "demo",
             "path": str(bundle.path),
         }
@@ -3139,12 +3144,9 @@ def test_backups_list_warns_about_unreadable_metadata(tmp_path: Path) -> None:
     listed = CliInvoker().invoke(app, ["backups", "list", "--format", "json"])
 
     assert listed.exit_code == 0, listed.output
-    assert json.loads(listed.stdout)[0] == {
-        "id": bundle.id,
-        "created_at": None,
-        "recipe": None,
-        "path": str(bundle.path),
-    }
+    row = json.loads(listed.stdout)[0]
+    assert (row["id"], row["recipe"], row["path"]) == (bundle.id, None, str(bundle.path))
+    assert row["created_at"].endswith("Z")
     assert f"invalid backup metadata: {bundle.id}" in listed.stderr
 
 
