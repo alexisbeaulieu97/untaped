@@ -38,6 +38,13 @@ class GitError(WorkspaceError):
         self.returncode = returncode
 
 
+class PartialRemovalError(WorkspaceError):
+    """A repo left the manifest but its clone could not be deleted (``--prune``).
+
+    Keeps the deletion failure's attribution; the row it becomes is ``partial``.
+    """
+
+
 class ManifestError(WorkspaceError):
     """Raised when ``untaped.yml`` is missing (``not_found``) or invalid (``invalid``).
 

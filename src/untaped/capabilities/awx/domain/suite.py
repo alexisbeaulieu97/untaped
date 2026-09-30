@@ -38,7 +38,7 @@ from untaped.capabilities.awx.domain.case_failure import (
 )
 from untaped.capabilities.awx.domain.job import SUMMARY_FIELDS, HostSummary
 from untaped.capabilities.awx.domain.workflow_run import NEVER_RAN, NodeResult
-from untaped.capability_api import ConfigError, ErrorCategory, ExitCode, q
+from untaped.capability_api import ConfigError, ErrorCategory, ExitCode, UtcTimestamp, q
 
 
 @dataclass(frozen=True)
@@ -760,8 +760,8 @@ class CaseResult(BaseModel):
     rerun_job_id: int | None = None
     """The ``idempotent`` rerun's job (``None``: no rerun was launched)."""
     duration_s: float | None = None
-    started_at: str | None = None
-    finished_at: str | None = None
+    started_at: UtcTimestamp | None = None
+    finished_at: UtcTimestamp | None = None
     failure: CaseFailure | None = None
     """Why a case did not pass: the responsible system, category, summary and evidence."""
     expectations: tuple[ExpectationResult, ...] = ()

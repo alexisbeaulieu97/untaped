@@ -52,4 +52,5 @@ The finer points of `untaped recipe apply`: preview shapes, concurrency, input r
   `recipe.recipe`; `packs list`/`packs get` → `recipe.pack`; `hooks
   list`/`hooks get` → `recipe.hook`; `hooks run` → `recipe.hook_run`; `packs
   add` → `recipe.add_outcome`; `packs sync` → `recipe.sync_outcome`; `packs
-  remove` → `recipe.remove_outcome`; `backups` → `recipe.backup`.
+  remove` → `recipe.remove_outcome`; `backups prune` → `recipe.prune_outcome`
+  (`action` `planned`/`deleted`/`failed`); other `backups` → `recipe.backup`.

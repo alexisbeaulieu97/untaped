@@ -34,6 +34,13 @@ class GraphRequest(BaseModel):
     The application layer stays free of CLI strings; the CLI passes the exact
     refresh command (or flag guidance) to surface in actionable warnings.
     """
+    all_refs: bool = False
+    """Whether a ref-less target's dependencies are read at every cached ref.
+
+    Otherwise they are read at its cached default branch only (at every ref,
+    with a warning, when that branch is unknown or not cached). Its dependents are always those of
+    every ref: a repo pinning an older tag still uses the target.
+    """
     live: bool = False
     """Whether the index reads dependencies live rather than from cached source data.
 
@@ -115,7 +122,7 @@ class _GraphBuilder:
         depth = self._request.depth
         if self._request.direction in {"deps", "both"}:
             self._walk(
-                _Walk(self._request.repo, self._request.ref, depth),
+                _Walk(self._request.repo, self._dependencies_ref(), depth),
                 expand=self._expand_deps,
                 prefetch=self._prefetch_deps_level,
             )
@@ -147,6 +154,26 @@ class _GraphBuilder:
             cycles=cycles,
             warnings=tuple(warnings),
         )
+
+    def _dependencies_ref(self) -> str | None:
+        """The target ref whose dependencies are read; ``None`` reads every ref's."""
+        request = self._request
+        # A live ref-less read already resolves the repo's current default branch.
+        if request.ref is not None or request.all_refs or request.live:
+            return request.ref
+        default_branch = _first_default_branch(self._cached_ref_metadata_for(request.repo))
+        cached_refs = self._cached_refs_for(request.repo)
+        if default_branch in cached_refs:
+            return default_branch
+        # Unknown, or known but not scanned (a tags-only source): read every ref.
+        if cached_refs:
+            self._add_warning(
+                self._with_refresh_hint(
+                    f"{request.repo}'s default branch is not in the cached source data; "
+                    "showing the dependencies of every cached ref."
+                )
+            )
+        return None
 
     def _walk(
         self,
