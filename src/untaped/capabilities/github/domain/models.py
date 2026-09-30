@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -48,6 +48,13 @@ class RepoResult(BaseModel):
     """One row of ``GET /search/repositories``."""
 
     model_config = ConfigDict(extra="ignore")
+    table_columns: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "description",
+        "language",
+        "stargazers_count",
+        "updated_at",
+    )
 
     repo: str
     id: int
@@ -98,6 +105,7 @@ class CodeResult(BaseModel):
     """
 
     model_config = ConfigDict(extra="ignore")
+    table_columns: ClassVar[tuple[str, ...]] = ("repo", "path")
 
     name: str
     path: str
@@ -146,6 +154,8 @@ class CorpusSyncOutcome(OutcomeRecord):
     row says why in ``detail`` and carries the structured ``error``.
     """
 
+    table_columns: ClassVar[tuple[str, ...]] = ("repo", "action", "detail")
+
     repo: str
     fetched_at: UtcTimestamp | None = None
     detail: str | None = None
@@ -170,6 +180,7 @@ class IssueResult(BaseModel):
     """
 
     model_config = ConfigDict(extra="ignore")
+    table_columns: ClassVar[tuple[str, ...]] = ("repo", "number", "title", "state", "user_login")
 
     repo: str = ""
     number: int
@@ -218,6 +229,7 @@ class UserResult(BaseModel):
     """One row of ``GET /search/users``."""
 
     model_config = ConfigDict(extra="ignore")
+    table_columns: ClassVar[tuple[str, ...]] = ("login", "type")
 
     id: int
     login: str

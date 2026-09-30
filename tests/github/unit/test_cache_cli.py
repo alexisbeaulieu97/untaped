@@ -375,3 +375,13 @@ def test_cache_size_skips_a_file_that_vanishes_while_measured(
     result = CliInvoker().invoke(app, ["cache", "delete", "--all", "--yes", "--format", "json"])
 
     assert _rows(result) == ["acme/api", "acme/web"]
+
+
+def test_cache_sync_table_shows_repo_action_and_detail(source_repo: SourceRepo) -> None:
+    listed = [_repo("acme/api", source_repo("api", {"README.md": "hello\n"}))]
+
+    result = _cache(["cache", "sync", "--org", "acme", "--columns", "?"], org={"acme": listed})
+
+    assert result.exit_code == 0, result.output
+    starred = {line.split()[0] for line in result.stderr.splitlines() if line.endswith(" *")}
+    assert starred == {"repo", "action", "detail"}
