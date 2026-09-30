@@ -18,7 +18,9 @@ from dataclasses import dataclass
 from itertools import islice
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
+
+from untaped.capability_api import UtcTimestamp
 
 TERMINAL_STATUSES = frozenset({"successful", "failed", "error", "canceled"})
 
@@ -71,8 +73,12 @@ class Job(BaseModel):
 
     name: str | None = None
     status: str
-    started: str | None = None
-    finished: str | None = None
+    started_at: UtcTimestamp | None = Field(
+        default=None, validation_alias=AliasChoices("started_at", "started")
+    )
+    finished_at: UtcTimestamp | None = Field(
+        default=None, validation_alias=AliasChoices("finished_at", "finished")
+    )
     failed: bool = False
     scm_branch: str | None = None
     """The branch, tag or commit a job was launched on (empty: its project's)."""

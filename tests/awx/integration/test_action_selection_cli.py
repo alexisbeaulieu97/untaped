@@ -145,6 +145,27 @@ def test_jobs_wait_failed_terminal_is_nonzero(fake_aap: Any, status: str) -> Non
     assert json.loads(result.stdout)[0]["status"] == status
 
 
+@pytest.mark.parametrize("flag", ["--wait", "--follow"])
+def test_launch_wait_rows_report_start_and_finish_as_utc_timestamps(
+    fake_aap: Any, flag: str
+) -> None:
+    seed(fake_aap)
+    fake_aap.next_action_job_fields = {
+        "started": "2026-01-02T03:04:05.123456Z",
+        "finished": "2026-01-02T03:05:06.654321Z",
+    }
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "--yes", "deploy", flag, "--format", "json"]
+    )
+    assert result.exit_code == 0, result.output
+    [row] = json.loads(result.stdout)
+    assert (row["started_at"], row["finished_at"]) == (
+        "2026-01-02T03:04:05Z",
+        "2026-01-02T03:05:06Z",
+    )
+    assert "started" not in row
+
+
 def test_projects_update_removed(fake_aap: Any) -> None:
     seed(fake_aap)
     result = CliInvoker().invoke(app, ["projects", "update", "playbooks"])
