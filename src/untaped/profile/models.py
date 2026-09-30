@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Annotated, Any
 
-from untaped.records import OutcomeRecord
+from untaped.records import OutcomeRecord, Record, TableGlyph
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,15 @@ class ProfileDeletePreview:
 
     name: str
     top_level_keys: tuple[str, ...]
+
+
+class ProfileRow(Record):
+    """One row of ``profile list`` (kind ``untaped.profile``)."""
+
+    name: str
+    active: Annotated[bool, TableGlyph(true="✓", false="")]
+    keys: int
+    """Number of leaf keys the profile sets."""
 
 
 class ProfileOutcome(OutcomeRecord):

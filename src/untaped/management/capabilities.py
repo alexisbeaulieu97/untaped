@@ -73,6 +73,7 @@ def _show(
         fmt=fmt,
         columns=columns,
         kind="untaped.capability",
+        table_columns=["name", "origin", "status", "version"],
     )
 
 

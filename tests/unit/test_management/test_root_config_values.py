@@ -221,12 +221,24 @@ def test_list_json_emits_native_values(_isolated_config: Path) -> None:
     assert "—" not in result.stdout
 
 
-def test_table_and_raw_keep_display_glyphs(_isolated_config: Path) -> None:
-    raw = _invoke(["get", "github.token"])
-    assert raw.stdout.strip() == "—"
-    table = _invoke(["list", "--format", "raw", "--columns", "key", "--columns", "value"])
-    assert "http.ca_bundle\t—" in table.stdout
-    assert "http.verify_ssl\tTrue" in table.stdout
+def test_raw_prints_native_values_and_tables_show_glyphs(_isolated_config: Path) -> None:
+    assert _invoke(["get", "github.token"]).stdout == ""
+    raw = _invoke(["list", "--format", "raw", "--columns", "key", "--columns", "value"])
+    assert "http.ca_bundle\t" in raw.stdout.splitlines()
+    assert "http.verify_ssl\tTrue" in raw.stdout.splitlines()
+    assert "—" not in raw.stdout
+    table = _invoke(["list", "--format", "table"])
+    assert any("http.ca_bundle" in line and "—" in line for line in table.stdout.splitlines())
+    single = _invoke(["get", "github.token", "--format", "table"])
+    assert any("value" in line and "—" in line for line in single.stdout.splitlines())
+
+
+def test_secret_stays_masked_in_every_format(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    github:\n      token: t0k\n")
+    for fmt in ("table", "raw", "json"):
+        result = _invoke(["get", "github.token", "--format", fmt])
+        assert "***" in result.stdout
+        assert "t0k" not in result.stdout
 
 
 # ── `null` for optional typed settings ───────────────────────────────────────

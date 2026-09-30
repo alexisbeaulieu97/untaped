@@ -241,7 +241,8 @@ def _get(ctx: RootConfigContext, key: str, *, fmt: OutputFormat, show_secrets: b
     with report_errors():
         resolved = ctx.resolve_key(key)
         entry = GetSetting(SettingsFileRepository())(resolved, reveal_secrets=show_secrets)
-        columns = ["value"] if fmt == "raw" else None
+        # A detail view hides empty fields; naming them keeps an unset `—` shown.
+        columns = {"raw": ["value"], "table": ["key", "value", "default", "source"]}.get(fmt)
         emit(
             setting_entry_row(entry, human=fmt in ("table", "raw")),
             fmt=fmt,
