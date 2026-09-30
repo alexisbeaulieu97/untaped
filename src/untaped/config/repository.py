@@ -120,14 +120,42 @@ class SettingsFileRepository:
         Returns the resolved target profile name so callers can report where
         the write landed. ``dry_run`` validates the same way but writes nothing.
         """
+        return self.update_value(
+            key, lambda _target, _current: raw_value, profile=profile, dry_run=dry_run
+        )
+
+    def update_value(
+        self,
+        key: str,
+        update: Callable[[str, Any], str | None],
+        *,
+        profile: str | None = None,
+        dry_run: bool = False,
+    ) -> str:
+        """Read-modify-write ``key`` in the target profile under one config lock.
+
+        ``update(target, current)`` receives the target profile's name and
+        the key's raw value in that profile's own data (``None`` when unset),
+        and returns the raw string to store (validated as in
+        :meth:`set_value`) or ``None`` to remove the key. It runs inside the
+        locked mutation, so a concurrent writer's change is never replaced
+        from a stale read; raise from it to abort without writing. Returns the
+        target profile name.
+        """
         descriptor = self.descriptor(key)
-        value = _coerce_value(key, descriptor, raw_value)
         resolved: str | None = None
 
         def _apply(data: dict[str, Any]) -> None:
             nonlocal resolved
             target_data, resolved = active_settings_layout().write_profile(data, profile)
-            set_at_path(target_data, descriptor.path, value)
+            current: Any = target_data
+            for segment in descriptor.path:
+                current = current.get(segment) if isinstance(current, dict) else None
+            raw_value = update(resolved, current)
+            if raw_value is None:
+                unset_at_path(target_data, descriptor.path)
+            else:
+                set_at_path(target_data, descriptor.path, _coerce_value(key, descriptor, raw_value))
             try:
                 self._validate_section(data, descriptor, profile=resolved)
             except ValidationError as exc:
