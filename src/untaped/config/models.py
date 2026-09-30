@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, SecretStr
 from pydantic_core import to_jsonable_python
@@ -14,7 +14,7 @@ from untaped.config_schema import (
     FieldDescriptor,
     redact_nested_url_passwords,
 )
-from untaped.records import OutcomeRecord
+from untaped.records import OutcomeRecord, Record, TableGlyph
 from untaped.redaction import redact_url_password
 
 
@@ -72,29 +72,46 @@ class SettingOutcome(OutcomeRecord):
     profile: str
 
 
-UNSET_GLYPH = "—"
-"""Human-output placeholder for an unset value (table/raw only)."""
+_UNSET = TableGlyph(none="—")
+"""Tables show an unset value as ``—``; every other format prints it natively."""
 
 
-def setting_entry_row(entry: SettingEntry, *, human: bool) -> dict[str, object]:
+class SettingRow(Record):
+    """One row of ``config list``/``get`` (kind ``untaped.setting``).
+
+    ``value``/``default`` are native (``None`` when unset, secrets already
+    masked); table and raw output get a set value as its text, a mapping or
+    list as compact JSON, which is also valid input for ``config set``.
+    """
+
+    table_columns: ClassVar[tuple[str, ...]] = ("key", "value", "default", "source", "profile")
+
+    key: str
+    value: Annotated[object, _UNSET]
+    default: Annotated[object, _UNSET]
+    source: str
+    profile: str | None
+    """Set in ``--all-profiles`` mode to name the profile owning this row."""
+
+
+def setting_entry_row(entry: SettingEntry, *, human: bool) -> SettingRow:
     """Render a setting entry as the config list/get row contract.
 
-    ``human`` (table/raw output) renders display text — ``—`` for unset
-    values, ``""`` for no profile. Structured output keeps native values
-    (``null``, booleans, numbers).
+    ``human`` (table/raw output) writes a set value verbatim as text, so a
+    table never reformats it.
     """
-    return {
-        "key": entry.key,
-        "value": _human(entry.value) if human else entry.value,
-        "default": _human(entry.default) if human else entry.default,
-        "source": entry.source.label,
-        "profile": (entry.profile or "") if human else entry.profile,
-    }
+    return SettingRow(
+        key=entry.key,
+        value=_human(entry.value) if human else entry.value,
+        default=_human(entry.default) if human else entry.default,
+        source=entry.source.label,
+        profile=entry.profile,
+    )
 
 
-def _human(value: object) -> str:
+def _human(value: object) -> str | None:
     if value is None:
-        return UNSET_GLYPH
+        return None  # a table shows it as `—`, raw as nothing
     if isinstance(value, dict | list):
         # Compact JSON: readable, and valid input for ``config set``.
         return json.dumps(value, ensure_ascii=False)

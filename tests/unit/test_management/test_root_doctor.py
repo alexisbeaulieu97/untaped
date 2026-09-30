@@ -72,10 +72,31 @@ def test_all_pass_exits_zero(_isolated_config: Path) -> None:
 
 def test_contributed_passing_check_reports_detail(_isolated_config: Path) -> None:
     app = _doctor_app(make_spec("ext", doctor_checks=(check("ext.auth", detail="token valid"),)))
-    result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
+    result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
-    assert "ext.auth" in result.stdout
-    assert "token valid" in result.stdout
+    row = next(r for r in json.loads(result.stdout) if r["check"] == "ext.auth")
+    assert row["detail"] == "token valid"
+
+
+def test_table_blanks_a_pass_row_detail_that_the_record_keeps(_isolated_config: Path) -> None:
+    app = _doctor_app(
+        make_spec(
+            "ext",
+            doctor_checks=(
+                check("ext.auth", detail="token valid"),
+                check("ext.legacy", warn=True, detail="old key set"),
+            ),
+        )
+    )
+    table = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
+    assert table.exit_code == 0, table.output
+    header = [cell.strip() for cell in table.stdout.splitlines()[1].strip("│").split("│")]
+    assert header == ["check", "capability", "status", "title", "detail"]
+    assert "token valid" not in table.stdout
+    assert "old key set" in table.stdout
+    listed = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
+    row = next(r for r in json.loads(listed.stdout) if r["check"] == "ext.auth")
+    assert row["detail"] == "token valid"
 
 
 def test_contributed_warning_check_is_a_warn_row_that_exits_zero(
@@ -183,7 +204,7 @@ def test_invalid_capability_settings_fail_their_rows_only(_isolated_config: Path
     assert result.exit_code == 1
     assert "timeout" in result.stdout
     assert "github.auth" in result.stdout
-    assert "github ok" in result.stdout
+    assert any("github.auth" in line and "pass" in line for line in result.stdout.splitlines())
 
 
 def test_missing_required_field_is_a_failed_row(_isolated_config: Path) -> None:
