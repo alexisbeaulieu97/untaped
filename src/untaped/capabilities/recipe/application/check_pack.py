@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from untaped.capabilities.recipe.application.files import read_recipe_file
 from untaped.capabilities.recipe.application.harness import orphaned_test_dirs
@@ -25,7 +26,26 @@ from untaped.capabilities.recipe.domain.recipe import (
     ValidateStep,
 )
 from untaped.capabilities.recipe.errors import RecipeNotFoundError
-from untaped.capability_api import UntapedError
+from untaped.capability_api import CheckRecord, UntapedError
+
+CheckedType = Literal["pack", "recipe", "hook"]
+"""What a ``recipe validate`` row checked."""
+
+
+class LibraryCheckRecord(CheckRecord):
+    """One ``recipe validate`` row (kind ``recipe.check``).
+
+    ``name`` is the pack name, the ``PACK/RECIPE`` ref, or the built-in hook
+    name, and ``type`` says which, so a listing mixing packs and recipes keeps
+    one identifying column. ``status`` is ``pass`` or ``fail``; ``detail``
+    says why a check failed.
+    """
+
+    name: str
+    type: CheckedType
+    status: Literal["pass", "fail"]
+    path: str
+    detail: str | None = None
 
 
 def check_ref(
@@ -33,7 +53,7 @@ def check_ref(
     *,
     library: PackLibraryPort,
     inspector: PackInspectorPort,
-) -> dict[str, object]:
+) -> LibraryCheckRecord:
     """Check one installed pack, recipe ref, or explicit path."""
     if is_explicit_recipe_path(ref_text):
         path = Path(ref_text).expanduser()
@@ -41,7 +61,7 @@ def check_ref(
             try:
                 local = library.local_pack(path)
             except (ValueError, OSError) as exc:
-                return _pack_check_row(path.name, path, status="error", error=str(exc))
+                return _failed_pack(path.name, path, str(exc))
             return _check_pack(local, inspector)
         resolved = resolve_explicit_recipe(library, path, recipe_id=None)
         return _check_recipe(resolved.path, resolved.ref, resolved.local_hook_project, inspector)
@@ -54,7 +74,12 @@ def check_ref(
         if "/" not in ref_text:
             builtin = BUILTIN_HOOKS.get(ref_text)
             if builtin is not None:
-                return _builtin_check_row(ref_text, Path(builtin.module.__file__ or ""))
+                return LibraryCheckRecord(
+                    name=ref_text,
+                    type="hook",
+                    status="pass",
+                    path=builtin.module.__file__ or "",
+                )
         raise
     return _check_recipe(pack.root / recipe.path, f"{pack.name}/{name}", pack.root, inspector)
 
@@ -63,77 +88,40 @@ def check_library(
     *,
     library: PackLibraryPort,
     inspector: PackInspectorPort,
-) -> list[dict[str, object]]:
+) -> list[LibraryCheckRecord]:
     """Check every installed pack plus index/directory reconciliation."""
     rows = [
-        _pack_check_row(name, library.packs_dir / name, status="error", error=problem)
+        _failed_pack(name, library.packs_dir / name, problem)
         for name, problem in library.reconcile().items()
     ]
     pack_rows = [_check_pack(pack, inspector) for pack in library.packs()]
     pack_rows.extend(
-        _pack_check_row(name, library.packs_dir / name, status="error", error=error)
+        _failed_pack(name, library.packs_dir / name, error)
         for name, error in library.load_errors().items()
     )
-    rows.extend(sorted(pack_rows, key=lambda row: str(row["pack"])))
+    rows.extend(sorted(pack_rows, key=lambda row: row.name))
     return rows
 
 
-def _builtin_check_row(name: str, path: Path) -> dict[str, object]:
-    return {
-        "recipe": name,
-        "status": "pass",
-        "path": str(path),
-        "error": "",
-    }
+def _failed_pack(name: str, path: Path, detail: str) -> LibraryCheckRecord:
+    return LibraryCheckRecord(name=name, type="pack", status="fail", path=str(path), detail=detail)
 
 
-def _pack_check_row(
-    name: str,
-    path: Path,
-    *,
-    status: str,
-    recipes: int = 0,
-    hooks: int = 0,
-    error: str = "",
-) -> dict[str, object]:
-    return {
-        "pack": name,
-        "status": status,
-        "path": str(path),
-        "recipes": recipes,
-        "hooks": hooks,
-        "error": error,
-    }
-
-
-def _check_pack(pack: InstalledPack, inspector: PackInspectorPort) -> dict[str, object]:
+def _check_pack(pack: InstalledPack, inspector: PackInspectorPort) -> LibraryCheckRecord:
     try:
         inspector.check_hook_project(pack.root, pack.manifest)
         for recipe_name, recipe in sorted(pack.manifest.recipes.items()):
             row = _check_recipe(
                 pack.root / recipe.path, f"{pack.name}/{recipe_name}", pack.root, inspector
             )
-            if row["status"] == "error":
-                raise ValueError(f"{recipe_name}: {row['error']}")
+            if row.status == "fail":
+                raise ValueError(f"{recipe_name}: {row.detail}")
         orphans = orphaned_test_dirs(pack)
         if orphans:
             raise ValueError("tests directory names no known recipe: " + ", ".join(orphans))
     except (UntapedError, ValueError, OSError) as exc:
-        return _pack_check_row(
-            pack.name,
-            pack.root,
-            status="error",
-            recipes=len(pack.manifest.recipes),
-            hooks=len(pack.manifest.hooks),
-            error=str(exc),
-        )
-    return _pack_check_row(
-        pack.name,
-        pack.root,
-        status="pass",
-        recipes=len(pack.manifest.recipes),
-        hooks=len(pack.manifest.hooks),
-    )
+        return _failed_pack(pack.name, pack.root, str(exc))
+    return LibraryCheckRecord(name=pack.name, type="pack", status="pass", path=str(pack.root))
 
 
 def _check_recipe(
@@ -141,7 +129,7 @@ def _check_recipe(
     recipe_ref: str,
     local_hook_project: Path | None,
     inspector: PackInspectorPort,
-) -> dict[str, object]:
+) -> LibraryCheckRecord:
     try:
         recipe = read_recipe_file(recipe_path)
         validate_recipe_input_sources(recipe)
@@ -149,18 +137,10 @@ def _check_recipe(
         _check_local_hook_project(local_hook_project, inspector)
         _check_hooks(recipe, local_hook_project, inspector)
     except (UntapedError, ValueError, OSError) as exc:
-        return {
-            "recipe": recipe_ref,
-            "status": "error",
-            "path": str(recipe_path),
-            "error": str(exc),
-        }
-    return {
-        "recipe": recipe_ref,
-        "status": "pass",
-        "path": str(recipe_path),
-        "error": "",
-    }
+        return LibraryCheckRecord(
+            name=recipe_ref, type="recipe", status="fail", path=str(recipe_path), detail=str(exc)
+        )
+    return LibraryCheckRecord(name=recipe_ref, type="recipe", status="pass", path=str(recipe_path))
 
 
 def _check_assets(recipe: Recipe, recipe_dir: Path) -> None:

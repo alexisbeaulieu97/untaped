@@ -155,7 +155,10 @@ untaped recipe packs list --format pipe | untaped recipe packs sync --stdin
   with `packs add PATH --force`.
 - Packs are installed under `recipe.library_root`.
 - `recipe validate` checks the whole library, or one pack, recipe or path,
-  without importing hook code.
+  without importing hook code. Each `recipe.check` row has `name` (the pack,
+  the `PACK/RECIPE` ref or the built-in hook), `type` (`pack`, `recipe` or
+  `hook`), `status` (`pass` or `fail`), `path` and `detail` (why it failed);
+  any `fail` row exits 1.
 
 ## Write a pack
 

@@ -38,8 +38,11 @@
   projects requires `uv.lock` and verifies freshness with `uv lock --check`
   (hookless packs and recipe projects are exempt). Every persisted `packs.toml`
   row must include its `content_hash`; malformed or incomplete rows fail closed
-  before a library mutation. An installed pack whose `pyproject.toml` cannot be
-  parsed gets an error row in `validate`, is skipped with a warning by `list`, and
+  before a library mutation. Each `recipe.check` row has `name` (pack,
+  `PACK/RECIPE` ref, or built-in hook), `type` (`pack`/`recipe`/`hook`),
+  `status` (`pass`/`fail`), `path`, and `detail` (the reason for a `fail`);
+  any `fail` exits 1. An installed pack whose `pyproject.toml` cannot be
+  parsed gets a `fail` row in `validate`, is skipped with a warning by `list`, and
   is ignored by resolution unless named explicitly (then its error is shown).
   Template/copy sources containing `{{ input }}` tokens are only checked up to
   their literal directory prefix.

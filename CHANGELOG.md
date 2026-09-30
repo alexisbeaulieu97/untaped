@@ -352,6 +352,12 @@ self-contained manual for the installed CLI.
   - **Breaking:** `recipe.apply_outcome` renames its string field `error` to
     `detail`; a failed row's `error` is now the structured object. Errored
     `recipe.test` rows gain `error` too.
+  - **Breaking:** `recipe.check` (`validate`) rows share one shape: `name`
+    (the pack, `PACK/RECIPE` ref or built-in hook), `type` (`pack`, `recipe`
+    or `hook`), `status`, `path` and `detail`. The `pack`/`recipe` columns
+    are now `name`, the string `error` is now `detail` (`null` on a pass),
+    the `recipes`/`hooks` counts are gone (see `packs list`), and a failed
+    check is `fail` instead of `error`.
 
 ## 8.1.0
 
