@@ -17,8 +17,10 @@ It does not protect:
 
 - git-ignored files (`.env`, build output, local config);
 - commits that only stale remote-tracking refs still contain. The check never
-  fetches, so run `untaped workspace sync WS` or `git fetch --prune` in the
-  clone first when the remote may have dropped branches.
+  fetches, so refresh the refs first when the remote may have dropped
+  branches: `git fetch --prune` in the clone only updates refs, while
+  `untaped workspace sync WS` also pulls into the clones, so it is a write to
+  clear with the user.
 
 Ask the user before pruning a workspace that may hold ignored files they
 need.

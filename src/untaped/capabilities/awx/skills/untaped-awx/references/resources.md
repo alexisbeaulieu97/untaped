@@ -34,6 +34,8 @@ explicit selection or `--all`.
   with ids unless `--columns` narrows them or `--with-names` names them.
 - `job-templates list|get --with-scm` reads each project once; a template
   without a readable project gets `null` SCM values.
+- `get` on a job or workflow template includes its survey questions
+  (`survey_spec`); password defaults read as `$encrypted$`.
 
 ## Pipes between commands
 
