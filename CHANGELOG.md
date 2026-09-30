@@ -49,8 +49,9 @@ self-contained manual for the installed CLI.
     (`level`, `message`, `category`, `system`, `retryable`, `hint`,
     `exit_code`, `details`), per-item error (plus `item`), warning, hint and
     note (including the installed-skills warning after a command), and
-    progress is silent. A parse error follows a `--format` on the command
-    line or in `UNTAPED_FORMAT`. `UNTAPED_DIAGNOSTICS=text` keeps text.
+    progress is silent. A parse error and a quarantined-provider warning
+    follow a `--format` on the command line or in `UNTAPED_FORMAT`.
+    `UNTAPED_DIAGNOSTICS=text` keeps text.
     stdout and the pipe envelope are unchanged. See
     [stderr diagnostics](docs/reference/pipes.md#stderr-diagnostics).
   - **New:** failed rows of outcome records (`*_outcome` kinds) carry an
@@ -86,6 +87,13 @@ self-contained manual for the installed CLI.
     `hint:` line (the JSON `hint`), instead of in the message.
   - **Fix:** a URL password (`https://user:secret@host`) never appears in an
     error message, a JSON diagnostic's `details`, or a row's `error`.
+  - **Fix:** `alias set` and `alias remove` read and rewrite the alias map
+    under the config lock, so two overlapping alias commands no longer both
+    succeed while one of them drops the other's alias.
+  - **Fix:** `config edit` keeps the private copy when the editor saves
+    changes and then exits with an error (for example a wrapper's post-save
+    step fails): the config is left unchanged and the error names the copy
+    and how to apply it. Only an unchanged copy is removed.
 - Workspace
   - **Breaking:** a `sync` (or `add --sync`, `import --sync`) whose git call
     timed out or lost the network exits 5; git not installed exits 4; a

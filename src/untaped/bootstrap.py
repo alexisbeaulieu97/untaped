@@ -9,6 +9,7 @@ contribute command trees, settings sections, skills, or doctor checks.
 from __future__ import annotations
 
 import inspect
+import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextvars import ContextVar, Token
 from importlib import import_module, metadata
@@ -38,7 +39,14 @@ from untaped.capabilities.registry import (
     compose,
     discover_external_providers,
 )
-from untaped.cli import apply_default_format, create_app, echo, report_errors, run_cyclopts_app
+from untaped.cli import (
+    apply_default_format,
+    create_app,
+    echo,
+    note_requested_format,
+    report_errors,
+    run_cyclopts_app,
+)
 from untaped.diagnostics import diagnostics_scope
 from untaped.errors import ConfigError
 from untaped.management import (
@@ -420,9 +428,17 @@ def run_root(
     console: Any | None = None,
     error_console: Any | None = None,
 ) -> object:
-    """Compose the root app and run it. Use as the unified ``main()``."""
-    root = build_root_app(builtins=builtins, externals=externals)
-    return run_cyclopts_app(root.meta, tokens, console=console, error_console=error_console)
+    """Compose the root app and run it. Use as the unified ``main()``.
+
+    One diagnostics scope spans composition and dispatch, so composition
+    warnings (a quarantined provider) follow the ``--format`` the tokens ask
+    for, like an error found before parsing.
+    """
+    argv = list(tokens) if tokens is not None else sys.argv[1:]
+    with diagnostics_scope():
+        note_requested_format(argv)
+        root = build_root_app(builtins=builtins, externals=externals)
+        return run_cyclopts_app(root.meta, argv, console=console, error_console=error_console)
 
 
 def main(argv: Sequence[str] | None = None) -> None:

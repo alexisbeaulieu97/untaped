@@ -281,6 +281,34 @@ def test_config_edit_keeps_the_draft_when_it_is_not_utf8(
     assert kept.read_bytes() == b"profiles: {}  # \xff\n"
 
 
+def test_config_edit_keeps_edits_saved_before_the_editor_failed(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, "profiles: {}\n")
+    content = "# saved user edits\nprofiles: {}\n"
+    _scripted_editor(tmp_path, monkeypatch, None, code=f"p.write_text({content!r})\nsys.exit(1)")
+    result = CliInvoker().invoke(_config_app(), ["edit"])
+    assert result.exit_code == 1, result.output
+    assert "editor exited with status 1" in result.stderr
+    assert _isolated_config.read_text() == "profiles: {}\n"
+    kept = Path(result.stderr.split("your edits are in ")[1].split()[0])
+    assert kept.read_text() == content
+    assert kept.stat().st_mode & 0o777 == 0o600
+    assert f"copy {kept} over {_isolated_config}" in result.stderr
+
+
+def test_config_edit_drops_an_unchanged_copy_when_the_editor_fails(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, "profiles: {}\n")
+    _scripted_editor(tmp_path, monkeypatch, None, code="sys.exit(1)")
+    result = CliInvoker().invoke(_config_app(), ["edit"])
+    assert result.exit_code == 1, result.output
+    assert "editor exited with status 1" in result.stderr
+    assert "your edits" not in result.stderr
+    assert not list(tmp_path.glob("untaped-config-edit-*"))
+
+
 def test_config_edit_keeps_crlf_line_endings(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

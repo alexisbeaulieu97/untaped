@@ -71,8 +71,9 @@ Lines**: one object per error, per-item error, warning, hint or note, never
 mixed into the data stream. `UNTAPED_DIAGNOSTICS=json` turns this on for any
 format, and `UNTAPED_DIAGNOSTICS=text` keeps the text lines. Progress
 spinners are silent in this mode. A parse error (an unknown flag or command)
-follows a `--format` given on the command line or in `UNTAPED_FORMAT`; the
-`ui.format` setting applies only once the command is parsed.
+and a warning about a quarantined capability provider follow a `--format`
+given on the command line or in `UNTAPED_FORMAT`; the `ui.format` setting
+applies only once the command is parsed.
 
 ```json
 {"level": "error", "message": "AWX rejected the token (HTTP 401)", "category": "auth", "system": "awx", "retryable": false, "hint": "run `untaped config set awx.token --prompt`", "exit_code": 4, "details": {"status": 401, "url": "https://aap/api/v2/me/", "attempts": 1}}

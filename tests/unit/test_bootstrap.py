@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import json
 import os
 import shutil
 import subprocess
@@ -474,6 +475,41 @@ def test_quarantined_external_warns_and_boots(capsys: pytest.CaptureFixture[str]
     result = CliInvoker().invoke(root.meta, ["good", "who"])
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "default-token"
+
+
+@pytest.mark.parametrize(
+    ("argv", "env"),
+    [
+        (["config", "list", "--format", "json"], {}),
+        (["config", "list", "-f", "pipe"], {}),
+        (["config", "list"], {"UNTAPED_FORMAT": "json"}),
+    ],
+)
+def test_quarantine_warning_follows_the_requested_format(
+    _isolated_config: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    argv: list[str],
+    env: dict[str, str],
+) -> None:
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    broken = ExternalProvider(distribution="broken-dist", name="broken", target=lambda: None)
+    with pytest.raises(SystemExit) as exit_info:
+        bootstrap.run_root(argv, builtins=(), externals=(broken,))
+    assert exit_info.value.code in (0, None)
+    lines = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
+    assert [line["level"] for line in lines] == ["warning"]
+    assert "'broken-dist' quarantined" in lines[0]["message"]
+
+
+def test_quarantine_warning_is_text_without_a_structured_format(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    broken = ExternalProvider(distribution="broken-dist", name="broken", target=lambda: None)
+    with pytest.raises(SystemExit):
+        bootstrap.run_root(["config", "list"], builtins=(), externals=(broken,))
+    assert capsys.readouterr().err.startswith("warning: capability provider 'broken-dist'")
 
 
 def test_reset_restores_composed_state(_isolated_config: Path) -> None:

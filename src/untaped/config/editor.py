@@ -20,9 +20,10 @@ def run_config_editor() -> None:
 
     The copy is validated before anything is written; a valid change is saved
     like any other config write (under the config lock, atomic, owner-only,
-    through a symlink), line endings untouched. After the editor returns,
-    any failure leaves the config file as it was and keeps the edited copy
-    so the work is not lost.
+    through a symlink), line endings untouched. Once the editor has saved
+    changes to the copy (even if it then exits with an error), any failure
+    leaves the config file as it was and keeps the edited copy so the work is
+    not lost; an unchanged copy is removed.
     """
     with report_errors():
         path = resolve_config_path()
@@ -47,7 +48,7 @@ def run_config_editor() -> None:
                 raise ConfigError(str(exc), category="invalid") from exc
             replace_config_text(edited, expected=original, path=path)
         except (ConfigError, OSError, UnicodeDecodeError) as exc:
-            if not edited_by_user:
+            if not edited_by_user and not _saved_changes(draft, original or ""):
                 shutil.rmtree(workdir, ignore_errors=True)
                 if isinstance(exc, ConfigError):
                     raise
@@ -56,8 +57,24 @@ def run_config_editor() -> None:
             fields = attribution(exc)
             if isinstance(exc, UnicodeDecodeError):
                 fields = {"category": "invalid"}
+            if not edited_by_user:
+                # The editor failed after saving: its edits were never checked.
+                fields["hint"] = (
+                    f"to apply them, copy {draft} over {path}, then run `untaped doctor`"
+                )
             raise ConfigError(
                 f"{detail}\nconfig left unchanged; your edits are in {draft}", **fields
             ) from exc
         shutil.rmtree(workdir, ignore_errors=True)
         ui_context(strict=False).message("success", f"config saved and validated (config: {path})")
+
+
+def _saved_changes(draft: Path, original: str) -> bool:
+    """Whether ``draft`` no longer holds ``original`` (a missing draft holds no changes)."""
+    try:
+        with draft.open(encoding="utf-8", newline="") as handle:
+            return handle.read() != original
+    except UnicodeDecodeError:
+        return True
+    except OSError:
+        return False

@@ -2,10 +2,11 @@
 
 Aliases live in the shell's own settings section, ``shell.aliases``: a
 mapping of alias name to the argv it stands for (no shell ever runs it).
-``alias set``/``remove`` rewrite the target profile's own mapping (the
-active profile, or the root ``--profile``) through the validated
-``config set`` path; ``alias list`` shows the effective mapping, where
-``profiles.default`` aliases merge beneath the active profile's. The root
+``alias set``/``remove`` read and rewrite the target profile's own mapping
+(the active profile, or the root ``--profile``) inside one locked, validated
+config mutation, so overlapping commands never drop each other's aliases;
+``alias list`` shows the effective mapping, where ``profiles.default``
+aliases merge beneath the active profile's. The root
 dispatcher expands ``untaped NAME [ARGS…]`` (:func:`untaped._root_options.expand_alias`)
 only when ``NAME`` is not a built-in command, and never expands twice. Name
 and argv rules live with the settings model in :mod:`untaped.shell_settings`.
@@ -90,16 +91,21 @@ def build_root_alias_app(*, builtin_for: Callable[[str], str | None]) -> App:
             _check_name(name, builtin_for)
             if not command:
                 raise UsageError("alias set requires a command after NAME (`-- COMMAND ARGS…`)")
-            profile, own = _own_aliases()
             argv = list(command)
-            if own.get(name) == argv:
-                action = "unchanged"
-            else:
-                SettingsFileRepository().set_value(
-                    _ALIASES_KEY, json.dumps({**own, name: argv}), dry_run=dry_run
-                )
-                action = "planned" if dry_run else "updated" if name in own else "created"
-                if not dry_run:
+            action = "unchanged"
+
+            def _set(target: str, current: Any) -> str:
+                nonlocal action
+                own = _parse_aliases(target, current)
+                if own.get(name) != argv:
+                    action = "updated" if name in own else "created"
+                return json.dumps({**own, name: argv})
+
+            profile = SettingsFileRepository().update_value(_ALIASES_KEY, _set, dry_run=dry_run)
+            if action != "unchanged":
+                if dry_run:
+                    action = "planned"
+                else:
                     ui_context(strict=False).success(
                         f"alias {name} = {shlex.join(argv)} (profile {profile})"
                     )
@@ -144,12 +150,7 @@ def build_root_alias_app(*, builtin_for: Callable[[str], str | None]) -> App:
                     assume_yes=yes,
                     refusal="alias remove requires --yes when not interactive",
                 )
-                remaining = {key: argv for key, argv in own.items() if key != name}
-                repo = SettingsFileRepository()
-                if remaining:
-                    repo.set_value(_ALIASES_KEY, json.dumps(remaining))
-                else:
-                    repo.unset_value(_ALIASES_KEY)
+                SettingsFileRepository().update_value(_ALIASES_KEY, _without(name))
                 ui_context(strict=False).success(f"removed alias {name} (profile {profile})")
                 action = "deleted"
             emit(
@@ -171,6 +172,19 @@ def _check_name(name: str, builtin_for: Callable[[str], str | None]) -> None:
         raise UsageError(f"alias {q(name)} would shadow the built-in command {q(builtin)}")
 
 
+def _without(name: str) -> Callable[[str, Any], str | None]:
+    """The ``alias remove`` update: the target's aliases minus ``name`` (``None`` when empty)."""
+
+    def _remove(target: str, current: Any) -> str | None:
+        own = _parse_aliases(target, current)
+        if name not in own:
+            raise ConfigError(_missing_alias(name, target, own), category="not_found")
+        remaining = {key: argv for key, argv in own.items() if key != name}
+        return json.dumps(remaining) if remaining else None
+
+    return _remove
+
+
 def _missing_alias(name: str, profile: str, own: dict[str, list[str]]) -> str:
     """Not found in ``profile`` itself; point at the profile it is inherited from."""
     source = SettingsFileRepository().provenance().get(("shell", "aliases", name))
@@ -187,16 +201,22 @@ def _own_aliases() -> tuple[str, dict[str, list[str]]]:
     profile = effective_active_profile_name(read_config_dict()) or DEFAULT_PROFILE
     data = SettingsFileRepository().profile_data(profile) or {}
     shell = data.get("shell")
-    aliases = shell.get("aliases") if isinstance(shell, dict) else None
+    return profile, _parse_aliases(
+        profile, shell.get("aliases") if isinstance(shell, dict) else None
+    )
+
+
+def _parse_aliases(profile: str, aliases: Any) -> dict[str, list[str]]:
+    """Validate the raw ``shell.aliases`` a profile defines itself (``None`` when unset)."""
     if aliases is None:
-        return profile, {}
+        return {}
     try:
         settings = ShellProfileSettings.model_validate({"aliases": aliases})
     except ValidationError as exc:
         raise ConfigError(
             f"invalid {_ALIASES_KEY} in profile {profile}: {first_validation_error(exc)}"
         ) from exc
-    return profile, settings.aliases
+    return settings.aliases
 
 
 def _alias_rows() -> list[AliasRow]:
