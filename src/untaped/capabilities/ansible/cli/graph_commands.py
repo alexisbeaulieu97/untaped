@@ -14,7 +14,7 @@ from collections.abc import Iterable
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NamedTuple
 
 from cyclopts import App, Group, Parameter, validators
 
@@ -391,9 +391,7 @@ def find_command(
         )
         env = _graph_env(stack, options, command="find", depth=depth_limit, live=live)
         wanted = [_require_repo(env, repo) for repo in target]
-        ui = app_context().ui(strict=False)
-        for warning in _refresh_selected(env, options):
-            ui.message("warning", warning)
+        ui = _report_warnings(_refresh_selected(env, options))
         # Spellings of one repo (URL, .git, SSH, alias) share one graph build.
         graphs: dict[tuple[str, str | None, str | None], DependencyGraph] = {}
         matches: list[DependencyMatch] = []
@@ -410,7 +408,7 @@ def find_command(
                     target_repo=repo,
                     direction="deps",
                     extra_warnings=[],
-                )
+                ).graph
                 for warning in graph.warnings:
                     ui.message("warning", f"{_root_label(root)}: {warning}")
             matches.extend(find_matches(graph, wanted, source=source))
@@ -501,7 +499,7 @@ def graph_command(
     direction = _graph_direction(upstream=upstream, downstream=downstream, both=both)
     with report_errors(), ExitStack() as stack:
         env = _graph_env(stack, options, command="graph", depth=depth_limit, live=live)
-        graph = _target_graph(
+        built = _target_graph(
             env,
             target=target,
             ref=ref,
@@ -509,9 +507,10 @@ def graph_command(
             direction=direction,
             extra_warnings=_refresh_selected(env, options),
         )
-        ui = _report_warnings(graph)
-        header_note = _graph_header_note(env, target=target, direction=direction)
-        _emit_graph(graph, fmt=fmt, output=output, ui=ui, header_note=header_note)
+        ui = _report_warnings(built.graph.warnings)
+        depth_note = "unlimited depth" if depth_limit is None else f"depth {depth_limit}"
+        header_note = f"{built.data_source} · {depth_note}"
+        _emit_graph(built.graph, fmt=fmt, output=output, ui=ui, header_note=header_note)
 
 
 def _emit_reach(
@@ -538,8 +537,8 @@ def _emit_reach(
             target_repo=target_repo,
             direction=command,
             extra_warnings=_refresh_selected(env, options),
-        )
-        _report_warnings(graph)
+        ).graph
+        _report_warnings(graph.warnings)
         emit(
             [hit.node for hit in reach(graph, relation)],
             fmt=fmt,
@@ -549,10 +548,10 @@ def _emit_reach(
         )
 
 
-def _report_warnings(graph: DependencyGraph) -> UiContext:
-    """Print the graph's warnings on stderr; return the UI context used."""
+def _report_warnings(warnings: Iterable[str]) -> UiContext:
+    """Print warnings on stderr; return the UI context used."""
     ui = app_context().ui(strict=False)
-    for warning in graph.warnings:
+    for warning in warnings:
         ui.message("warning", warning)
     return ui
 
@@ -767,8 +766,8 @@ def _target_graph(
     target_repo: str | None,
     direction: GraphDirection,
     extra_warnings: list[str],
-) -> DependencyGraph:
-    """Build one root's graph, with its warnings attached."""
+) -> _BuiltGraph:
+    """Build one root's graph, with its warnings attached, and say what it read."""
     target_repo_name = _require_repo(env, target, target_repo=target_repo)
     graph_source = env.graph_source
     direction, graph_warnings = _effective_direction(
@@ -795,7 +794,7 @@ def _target_graph(
         )
         parse_warnings.extend(local_dependencies.warnings)
 
-    graph, read_warnings = _graph_for_target(
+    graph, read_warnings, reads = _graph_for_target(
         env.index,
         request=GraphRequest(
             repo=target_repo_name,
@@ -817,7 +816,7 @@ def _target_graph(
     )
     parse_warnings.extend(read_warnings)
 
-    return _with_graph_warnings(
+    graph = _with_graph_warnings(
         graph,
         [
             *extra_warnings,
@@ -831,6 +830,27 @@ def _target_graph(
             ),
         ],
     )
+    parts = ["local checkout"] if local_dependencies is not None else []
+    if reads.source and graph_source.header:
+        parts.append(graph_source.header)
+    if reads.live:
+        parts.append("downstream live" if reads.source else "live reads")
+    return _BuiltGraph(graph, ", ".join(parts))
+
+
+class _BuiltGraph(NamedTuple):
+    graph: DependencyGraph
+    data_source: str
+    """What the build read, for the tree header: ``source prod, downstream live``."""
+
+
+class _Reads(NamedTuple):
+    """What a graph build read besides a local checkout."""
+
+    source: bool
+    """The cached source data."""
+    live: bool
+    """Downstream dependencies from GitHub."""
 
 
 def _read_roots() -> list[tuple[GraphRoot, RootInput]]:
@@ -869,6 +889,13 @@ class _GraphSource:
     key: str | None
     label: str | None
     saved: bool
+
+    @property
+    def header(self) -> str | None:
+        """How the tree header names it: ``source prod``, ``sources a, b``, ``inline source K``."""
+        if self.saved and len(self.selections) == 1:
+            return f"source {self.label}"
+        return self.label
 
 
 @dataclass(frozen=True)
@@ -1163,7 +1190,7 @@ def _graph_for_target(
     use_live: bool,
     github_settings: GithubSettings,
     live_reads: _LiveReads,
-) -> tuple[DependencyGraph, list[str]]:
+) -> tuple[DependencyGraph, list[str], _Reads]:
     """Build the graph, reading transitive dependencies live when requested.
 
     Local target edges always overlay the chosen read index. Without a
@@ -1182,7 +1209,7 @@ def _graph_for_target(
         return BuildGraph(read_index)(request.model_copy(update={"live": use_live}))
 
     if not use_live:
-        return build(index), []
+        return build(index), [], _Reads(source=request.source_key is not None, live=False)
     if local is not None and request.source_key is None and github_settings.token is None:
         warnings = []
         if any(edge.dependency_repo is not None for edge in local.edges):
@@ -1190,15 +1217,21 @@ def _graph_for_target(
                 "transitive dependencies were not expanded: pass --source NAME to use "
                 "cached source data, or configure github.token for live GitHub reads"
             )
-        return build(NullDependencyIndex()), warnings
+        return build(NullDependencyIndex()), warnings, _Reads(source=False, live=False)
     live_index = live_reads.index()
     # The index is shared across roots: report only what this build read.
     seen_errors, seen_warnings = len(live_index.errors), len(live_index.warnings)
     graph = build(live_index)
-    return graph, [
-        *live_index.errors[seen_errors:],
-        *_live_parse_warning_messages(live_index.warnings[seen_warnings:]),
-    ]
+    # The live index falls back to the cached source for the upstream half.
+    reads = _Reads(source=request.source_key is not None and request.direction != "deps", live=True)
+    return (
+        graph,
+        [
+            *live_index.errors[seen_errors:],
+            *_live_parse_warning_messages(live_index.warnings[seen_warnings:]),
+        ],
+        reads,
+    )
 
 
 def _refresh_hint(source_state: _GraphSource) -> str | None:
@@ -1291,21 +1324,6 @@ def _emit_graph(
             return
     output.expanduser().parent.mkdir(parents=True, exist_ok=True)
     output.expanduser().write_text(rendered)
-
-
-def _graph_header_note(env: _GraphEnv, *, target: str, direction: GraphDirection) -> str:
-    """Where the graph's data came from and how deep it goes: ``source prod · depth 3``."""
-    source = env.graph_source
-    local = "local checkout, " if Path(target).expanduser().exists() else ""
-    if not source.selections:
-        data = f"{local}live reads"
-    else:
-        single_saved = source.saved and len(source.selections) == 1
-        data = local + (f"source {source.label}" if single_saved else str(source.label))
-        if _should_use_live_dependencies(direction=direction, source_key=source.key, live=env.live):
-            data = f"{data}, downstream live"
-    depth = "unlimited depth" if env.depth is None else f"depth {env.depth}"
-    return f"{data} · {depth}"
 
 
 def _parse_depth(value: str) -> int | None:

@@ -44,10 +44,7 @@ def print_tree(lines: list[TreeLine], ui: UiContext) -> None:
         role: (ui.theme.color_roles.get(theme_role) if theme_role else None) or default or ""
         for role, (theme_role, default) in _ROLE_STYLES.items()
     }
-    text = Text(no_wrap=True, overflow="ellipsis")
-    for index, line in enumerate(lines):
-        if index:
-            text.append("\n")
-        for segment in line:
-            text.append(segment.text, style=styles[segment.role])
-    ui.styled(text)
+    text = Text("\n").join(
+        Text.assemble(*((segment.text, styles[segment.role]) for segment in line)) for line in lines
+    )
+    ui.styled(text, truncate=True)

@@ -179,7 +179,9 @@ class UiContext:
         """Print a success line to stderr (muted by ``--quiet``)."""
         self.message("success", text)
 
-    def styled(self, text: Text | str, *, err: bool = False, tail: str = "") -> None:
+    def styled(
+        self, text: Text | str, *, err: bool = False, tail: str = "", truncate: bool = False
+    ) -> None:
         """Print a Rich-styled line to stdout, or to stderr with ``err``.
 
         Color is emitted only where the stream supports it (TTY, honoring
@@ -187,7 +189,9 @@ class UiContext:
         output such as live job events; unlike :meth:`message`, ``--quiet``
         does not mute it. ``tail`` follows the styled text verbatim: never
         wrapped, tab-expanded or styled (a streamed log line after a styled
-        ``[label] ``). Under JSON diagnostics a stderr line is an ``info``
+        ``[label] ``). With ``truncate``, each line of ``text`` too wide for
+        the terminal ends in an ellipsis instead of wrapping (aligned output
+        such as trees). Under JSON diagnostics a stderr line is an ``info``
         JSON line.
         """
         stream = self.stderr if err else self.stdout
@@ -199,7 +203,11 @@ class UiContext:
         trailing = plain[len(plain.rstrip()) :] if tail else ""
         if trailing:
             text = text[: len(plain) - len(trailing)]
-        styled = render_styled(text, colorize=should_colorize(stream)) if plain.strip() else ""
+        styled = (
+            render_styled(text, colorize=should_colorize(stream), truncate=truncate)
+            if plain.strip()
+            else ""
+        )
         print(styled + trailing + tail, file=stream, flush=True)
 
     def progress(self, label: str) -> AbstractContextManager[ProgressHandle]:

@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from functools import cmp_to_key
 from typing import Literal, NamedTuple
 
+from rich.cells import cell_len
+
 from untaped.capabilities.ansible.domain.graph import (
     DependencyGraph,
     EdgeRelation,
@@ -51,12 +53,13 @@ class TreeGlyphs:
     branch: str
     last: str
     pipe: str
-    blank: str
     cycle: str
 
 
-UNICODE_GLYPHS = TreeGlyphs(branch="├── ", last="└── ", pipe="│   ", blank="    ", cycle="↻ cycle")
-ASCII_GLYPHS = TreeGlyphs(branch="|-- ", last="`-- ", pipe="|   ", blank="    ", cycle="(cycle)")
+UNICODE_GLYPHS = TreeGlyphs(branch="├── ", last="└── ", pipe="│   ", cycle="↻ cycle")
+ASCII_GLYPHS = TreeGlyphs(branch="|-- ", last="`-- ", pipe="|   ", cycle="(cycle)")
+_BLANK = "    "
+"""The guide below a last child: as wide as the connectors, in any glyph set."""
 
 _SECTIONS: tuple[tuple[str, EdgeRelation], ...] = (
     ("used by", "impacts"),
@@ -93,49 +96,51 @@ def tree_lines(
     Each node line names the file that declares the edge leading to it and,
     when the declared version differs from the resolved ref, what it pins
     (``unpinned`` when it declares none). A shared subtree prints once per
-    section, numbered ``[n]``; later occurrences say ``see [n]``.
+    section, numbered ``[n]``; later occurrences say ``see [n]``. Markers sit
+    next to the label, before the notes, so a truncated line keeps them.
     """
     nodes = {node.id: node for node in graph.nodes}
     target = nodes[graph.target_id]
     header = [TreeSegment(target.label, "target")]
     if header_note:
         header.append(TreeSegment(f"  {header_note}", "note"))
-    sections: list[tuple[str, list[_Row], dict[str, int]]] = []
+    sections: list[tuple[str, list[_Labelled]]] = []
     numbered = 0
     for title, relation in _SECTIONS:
         if rows := _section_rows(graph, nodes, target, relation, glyphs):
             references = _number_references(rows, start=numbered + 1)
             numbered += len(references)
-            sections.append((title, rows, references))
-    labelled = [
-        [(row, _label_segments(row, nodes[row.node_id], references)) for row in rows]
-        for _, rows, references in sections
-    ]
-    widths = [_width(label) for section_rows in labelled for _, label in section_rows]
+            sections.append((title, [_labelled(row, nodes, references, glyphs) for row in rows]))
+    widths = [row.width for _, labelled in sections for row in labelled]
     column = min(max(widths, default=0), _NOTE_COLUMN_MAX)
     lines: list[TreeLine] = [tuple(header)]
-    for (title, _, references), section_rows in zip(sections, labelled, strict=True):
+    for title, labelled in sections:
         lines.append(())
         lines.append((TreeSegment(title, "section"),))
-        lines.extend(
-            _node_line(row, label, references, nodes, column, glyphs) for row, label in section_rows
-        )
-    if summary := tree_summary(graph):
+        lines.extend(_node_line(row, nodes, column) for row in labelled)
+    if summary := _summary(graph, nodes, target):
         lines.extend([(), (TreeSegment(summary, "note"),)])
     return lines
 
 
-def tree_summary(graph: DependencyGraph) -> str | None:
-    """``4 repos · 7 edges``, plus cycles and unresolved dependencies when there are any."""
+def _summary(graph: DependencyGraph, nodes: dict[str, GraphNode], target: GraphNode) -> str | None:
+    """``4 repos · 7 edges``, plus cycles and unresolved dependencies when there are any.
+
+    A strongly connected component with too many cycles to list counts as
+    one cyclic group, not one cycle.
+    """
     if not graph.edges:
         return None
-    target = next(node for node in graph.nodes if node.id == graph.target_id)
     target_repo = repo_key(target.repo) if target.repo else None
-    repos = {repo_key(node.repo) for node in graph.nodes if node.repo} - {target_repo}
-    unresolved = sum(1 for node in graph.nodes if node.unresolved)
+    repos = {repo_key(node.repo) for node in nodes.values() if node.repo} - {target_repo}
+    unresolved = sum(1 for node in nodes.values() if node.unresolved)
+    cycles = sum(1 for cycle in graph.cycles if cycle.kind == "cycle")
+    groups = len(graph.cycles) - cycles
     parts = [plural(len(repos), "repo"), plural(len(graph.edges), "edge")]
-    if graph.cycles:
-        parts.append(plural(len(graph.cycles), "cycle"))
+    if cycles:
+        parts.append(plural(cycles, "cycle"))
+    if groups:
+        parts.append(plural(groups, "cyclic group"))
     if unresolved:
         parts.append(f"{unresolved} unresolved")
     return " · ".join(parts)
@@ -155,14 +160,21 @@ def _render_mermaid(graph: DependencyGraph) -> str:
     return "\n".join(lines)
 
 
-@dataclass(frozen=True)
-class _Row:
+class _Row(NamedTuple):
     """One node occurrence in a section, before references are numbered."""
 
     prefix: str
     node_id: str
     edge: GraphEdge | None
     marker: Literal["cycle", "repeat"] | None = None
+
+
+class _Labelled(NamedTuple):
+    """A row's guide, label and marker, their width in cells, and the edge for its notes."""
+
+    segments: list[TreeSegment]
+    width: int
+    edge: GraphEdge | None
 
 
 def _section_rows(
@@ -204,14 +216,14 @@ def _section_rows(
     printed: set[str] = set()
     # Each frame: the children's prefix, the node whose children it walks, and those children.
     on_path = {target.id}
-    stack: list[tuple[str, str | None, Iterator[tuple[bool, tuple[str, GraphEdge | None]]]]]
-    stack = [("", None, _with_last(top))]
+    stack: list[tuple[str, str, Iterator[tuple[bool, tuple[str, GraphEdge | None]]]]]
+    stack = [("", target.id, _with_last(top))]
     while stack:
         prefix, parent_id, entries = stack[-1]
         entry = next(entries, None)
         if entry is None:
             stack.pop()
-            on_path.discard(parent_id or "")
+            on_path.discard(parent_id)
             continue
         is_last, (node_id, edge) = entry
         row_prefix = prefix + (glyphs.last if is_last else glyphs.branch)
@@ -227,7 +239,7 @@ def _section_rows(
             on_path.add(node_id)
             stack.append(
                 (
-                    prefix + (glyphs.blank if is_last else glyphs.pipe),
+                    prefix + (_BLANK if is_last else glyphs.pipe),
                     node_id,
                     _with_last(children[node_id]),
                 )
@@ -246,51 +258,39 @@ def _number_references(rows: list[_Row], *, start: int) -> dict[str, int]:
     return {node_id: number for number, node_id in enumerate(first_rows, start=start)}
 
 
-def _label_segments(row: _Row, node: GraphNode, references: dict[str, int]) -> list[TreeSegment]:
-    """Guide, label and, on a numbered subtree's first row, its ``[n]``."""
+def _labelled(
+    row: _Row, nodes: dict[str, GraphNode], references: dict[str, int], glyphs: TreeGlyphs
+) -> _Labelled:
+    """Guide, label and its marker.
+
+    An unresolved node shows the name as declared (its note says it is
+    unresolved). The marker is ``[n]`` on a numbered subtree's first row,
+    ``see [n]`` on a later one, and the cycle marker on a repo already on
+    the path. Width is in terminal cells, so wide characters keep the notes
+    aligned.
+    """
+    node = nodes[row.node_id]
     segments = [
         TreeSegment(row.prefix, "guide"),
-        TreeSegment(_display_label(node), "unresolved" if node.unresolved else "node"),
+        TreeSegment(node.unresolved or node.label, "unresolved" if node.unresolved else "node"),
     ]
     number = references.get(row.node_id)
-    if number is not None and row.marker is None:
-        segments.append(TreeSegment(f" [{number}]", "ref"))
-    return segments
-
-
-def _width(segments: Iterable[TreeSegment]) -> int:
-    return sum(len(segment.text) for segment in segments)
-
-
-def _node_line(
-    row: _Row,
-    label: list[TreeSegment],
-    references: dict[str, int],
-    nodes: dict[str, GraphNode],
-    column: int,
-    glyphs: TreeGlyphs,
-) -> TreeLine:
-    notes = _edge_notes(row.edge, nodes) if row.edge is not None else []
-    marker = None
     if row.marker == "cycle":
-        marker = TreeSegment(glyphs.cycle, "cycle")
+        segments.append(TreeSegment(f" {glyphs.cycle}", "cycle"))
     elif row.marker == "repeat":
-        marker = TreeSegment(f"see [{references[row.node_id]}]", "ref")
-    if not notes and marker is None:
-        return tuple(label)
-    segments = [*label, TreeSegment(" " * max(column - _width(label), 0) + "  ", "note")]
-    if notes:
-        segments.append(TreeSegment(" · ".join(notes), "note"))
-    if marker is not None:
-        if notes:
-            segments.append(TreeSegment("  ", "note"))
-        segments.append(marker)
-    return tuple(segments)
+        segments.append(TreeSegment(f" see [{number}]", "ref"))
+    elif number is not None:
+        segments.append(TreeSegment(f" [{number}]", "ref"))
+    width = sum(cell_len(segment.text) for segment in segments)
+    return _Labelled(segments, width, row.edge)
 
 
-def _display_label(node: GraphNode) -> str:
-    """An unresolved node shows the name as declared; its note says it is unresolved."""
-    return node.unresolved or node.label
+def _node_line(row: _Labelled, nodes: dict[str, GraphNode], column: int) -> TreeLine:
+    notes = _edge_notes(row.edge, nodes) if row.edge is not None else []
+    if not notes:
+        return tuple(row.segments)
+    padding = " " * max(column - row.width, 0) + "  "
+    return (*row.segments, TreeSegment(padding, "note"), TreeSegment(" · ".join(notes), "note"))
 
 
 def _edge_notes(edge: GraphEdge, nodes: dict[str, GraphNode]) -> list[str]:

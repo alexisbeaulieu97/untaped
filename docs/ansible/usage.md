@@ -138,14 +138,14 @@ only downstream and warns that upstream was omitted. The tree looks like this:
 acme/base-role@main  source platform · depth 3
 
 used by
-└── acme/site@main            roles/requirements.yml · unpinned
+└── acme/site@main                roles/requirements.yml · unpinned
 
 depends on
-├── acme/legacy@v1            meta/main.yml
-│   └── acme/shared@main [1]  meta/main.yml · unpinned
-│       └── acme/leaf@main    requirements.yml
-└── acme/users@v1.2.0         requirements.yml
-    └── acme/shared@main      requirements.yml · unpinned  see [1]
+├── acme/legacy@v1                meta/main.yml
+│   └── acme/shared@main [1]      meta/main.yml · unpinned
+│       └── acme/leaf@main        requirements.yml
+└── acme/users@v1.2.0             requirements.yml
+    └── acme/shared@main see [1]  requirements.yml · unpinned
 
 5 repos · 6 edges
 ```
@@ -155,9 +155,10 @@ The first line names the target, where the data came from and the depth.
 on. After each repo comes the file that declares that dependency, plus
 `unpinned` when it names no version, or `pins X` when the declared version
 differs from the ref it resolved to. The last line counts the repos, edges,
-cycles and unresolved dependencies. Warnings go to stderr, never into the
-tree or the `--out` file. With the `plain` theme (`ui.border: ascii`) the
-connectors are ASCII.
+cycles and unresolved dependencies. A line too wide for the terminal ends in
+`…` instead of wrapping. Warnings go to stderr, never into the tree or the
+`--out` file. With the `plain` theme (`ui.border: ascii`) the connectors are
+ASCII.
 
 ## Flags
 
@@ -230,6 +231,8 @@ afterwards.
   from.
 - `tree` prints a shared subtree once, numbered `[n]`, and marks later
   occurrences `see [n]`; a repo already on the path is marked `↻ cycle`.
+  The summary counts a component with too many cycles to list as one
+  cyclic group.
 - `json` has `nodes`, `edges` (with stable `id`s), `cycles` and `warnings`.
   A cycle is found only within the depth you asked for; raise `--depth` to
   look for longer loops.
