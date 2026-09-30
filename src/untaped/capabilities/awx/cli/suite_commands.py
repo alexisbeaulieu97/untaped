@@ -348,6 +348,8 @@ def run_command(
 
     With --source-ref, temporary copies of the templates with specs are created
     first (no confirmation) and deleted after the run, even when interrupted.
+
+    Experimental: may change in a minor release.
     """
     from untaped.capabilities.awx.application import RunAction, WatchJob  # noqa: PLC0415
     from untaped.capabilities.awx.application.suites.preflight import (  # noqa: PLC0415
@@ -631,7 +633,10 @@ def list_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """List the cases that would run, without launching anything."""
+    """List the cases that would run, without launching anything.
+
+    Experimental: may change in a minor release.
+    """
     cli_vars = parse_kv_pairs(var, flag="--var")
     files = _expand_paths(paths)
 
@@ -674,6 +679,8 @@ def validate_command(
 
     With --source-ref, also check the temporary copies a run would create (every
     link, name and project branch override) and print them.
+
+    Experimental: may change in a minor release.
     """
     _validate(
         paths,
@@ -902,7 +909,10 @@ def init_command(
         ),
     ] = False,
 ) -> None:
-    """Write a starter suite for a job template or workflow from its survey and launch prompts."""
+    """Write a starter suite for a job template or workflow from its survey and launch prompts.
+
+    Experimental: may change in a minor release.
+    """
     from untaped.capabilities.awx.application.suites.preflight import (  # noqa: PLC0415
         PreflightLaunch,
     )

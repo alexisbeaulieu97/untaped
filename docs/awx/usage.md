@@ -603,8 +603,8 @@ of every launchable kind.
 
 ## Test suites
 
-`awx test` is [experimental](../stability.md#experimental): its commands,
-suite format and result record may change in a minor release.
+`awx test` is [experimental](../stability.md#experimental) and may change in
+a minor release.
 
 `awx test` launches a job template with a matrix of parameters, checks each
 job against what the case expects, and reports one result per case. Suites

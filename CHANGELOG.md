@@ -11,13 +11,9 @@ temporary test sets from a git ref (`--source-ref`). Every built-in skill is a
 self-contained manual for the installed CLI.
 
 - Core
-  - **New:** a [versioning and stability](docs/stability.md) policy. It
-    lists what stays compatible within a major release (command and flag
-    names, exit codes, record kinds and fields, settings, environment
-    variables, the provider SDK) and what may change in any release
-    (human-readable output, experimental surfaces). From 9.0.0 on, breaking
-    changes are collected into major releases. `awx test` is marked
-    experimental.
+  - **New:** a [versioning and stability](docs/stability.md) policy: what
+    stays compatible within a major release, what is experimental, and,
+    from 9.0.0 on, breaking changes collected into major releases.
   - **New:** every built-in skill is a complete manual for the installed CLI.
     Each has a description naming the words that should make an agent load
     it, no skill points at `docs/` or the source repository any more, and the
@@ -126,6 +122,9 @@ self-contained manual for the installed CLI.
     permission (403) exit 4; 5xx, 429 and network failures exit 5; a missing
     issue stays 1 (`not_found`).
 - AWX
+  - **Behavior change:** `awx test` is
+    [experimental](docs/stability.md#experimental) and may change in a minor
+    release.
   - **New:** `untaped awx test init TEMPLATE` writes a commented starter
     suite for a job template from its survey and launch prompts: required
     survey variables get their default, first choice or `TODO` (a password
