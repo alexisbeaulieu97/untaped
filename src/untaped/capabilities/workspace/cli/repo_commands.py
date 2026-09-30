@@ -27,7 +27,7 @@ from untaped.capabilities.workspace.domain import (
     RepoRemoveOutcome,
     WorkspaceSummaryRow,
 )
-from untaped.capabilities.workspace.errors import WorkspaceError
+from untaped.capabilities.workspace.errors import PartialRemovalError, WorkspaceError
 from untaped.capabilities.workspace.infrastructure import (
     GitRunner,
     LocalFilesystem,
@@ -204,7 +204,7 @@ def _failed_remove(workspace: str, ident: str, exc: Exception) -> RepoRemoveOutc
     return RepoRemoveOutcome(
         workspace=workspace,
         repo=ident,
-        action="failed",
+        action="partial" if isinstance(exc, PartialRemovalError) else "failed",
         pruned=False,
         detail=info.message,
         error=info,
