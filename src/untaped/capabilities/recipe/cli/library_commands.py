@@ -421,6 +421,7 @@ def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) 
         kind="recipe.recipe",
         fmt=fmt,
         columns=columns,
+        table_columns=["pack", "name"],
     )
 
 
@@ -431,6 +432,7 @@ def list_packs_command(*, fmt: FormatOption = "table", columns: ColumnsOption = 
         kind="recipe.pack",
         fmt=fmt,
         columns=columns,
+        table_columns=["name", "version", "source", "rev", "recipes", "hooks"],
     )
 
 
@@ -444,6 +446,7 @@ def list_hooks_command(*, fmt: FormatOption = "table", columns: ColumnsOption = 
         kind="recipe.hook",
         fmt=fmt,
         columns=columns,
+        table_columns=["pack", "name", "module"],
         hint_when_empty=not BUILTIN_HOOKS,
     )
 
@@ -454,6 +457,7 @@ def _list_rows(
     kind: str,
     fmt: OutputFormat,
     columns: list[str] | None,
+    table_columns: list[str],
     hint_when_empty: bool = True,
 ) -> None:
     """Render one row kind for every loadable installed pack, warning about the rest."""
@@ -462,7 +466,9 @@ def _list_rows(
         installed = library.packs()
         for name, error in library.load_errors().items():
             recipe_ui().message("warning", f"skipping pack '{name}': {error}")
-        rendered = render_rows(rows_of(installed), fmt=fmt, columns=columns, kind=kind)
+        rendered = render_rows(
+            rows_of(installed), fmt=fmt, columns=columns, kind=kind, table_columns=table_columns
+        )
         if rendered:
             echo(rendered)
         # The hint is human guidance: structured formats stay machine-clean.

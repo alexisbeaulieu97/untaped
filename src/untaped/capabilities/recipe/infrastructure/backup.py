@@ -177,7 +177,7 @@ class BackupStore:
     ) -> builtins.list[_PlannedRestore]:
         bundle = self._resolve(backup_id)
         bundle_dir = bundle.path
-        metadata = _read_metadata(bundle)
+        metadata = read_metadata(bundle)
         planned: builtins.list[_PlannedRestore] = []
         for entry in _metadata_entries(metadata, bundle.id):
             target = Path(entry["target"])
@@ -225,7 +225,7 @@ class BackupStore:
 
     def metadata(self, backup_id: str) -> dict[str, object]:
         """Read raw metadata for a backup bundle."""
-        return _read_metadata(self._resolve(backup_id))
+        return read_metadata(self._resolve(backup_id))
 
     def _resolve(self, backup_id: str) -> BackupBundle:
         bundles = self.list()
@@ -284,7 +284,8 @@ def prune_selection(
     return [bundle for bundle in sorted(bundles, key=lambda b: b.id) if bundle.id in pruned]
 
 
-def _read_metadata(bundle: BackupBundle) -> dict[str, object]:
+def read_metadata(bundle: BackupBundle) -> dict[str, object]:
+    """One bundle's raw metadata; ``ValueError`` when it cannot be read."""
     try:
         metadata = json.loads((bundle.path / "metadata.json").read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:

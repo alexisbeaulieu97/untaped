@@ -89,7 +89,9 @@ def list_command(
             if any(isinstance(row, WorkspaceSummaryRow) for row in details)
             else "workspace.repo"
         )
-        emit(details, fmt=fmt, columns=columns, kind=kind)
+        # An empty workspace's summary row has no repo columns to default to.
+        defaults = None if kind == "workspace.repo.summary" else ["repo", "url", "target_branch"]
+        emit(details, fmt=fmt, columns=columns, kind=kind, table_columns=defaults)
 
 
 def _require_workspace_first(
@@ -194,6 +196,7 @@ def add_command(
                 added,
                 fmt=fmt,
                 columns=columns,
+                table_columns=["repo", "url", "branch", "action"],
                 kind="workspace.add_outcome",
             )
     finish(any_failed)

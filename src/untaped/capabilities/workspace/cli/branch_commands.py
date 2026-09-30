@@ -170,6 +170,7 @@ def print_branch_apply_outcomes(
         outcomes,
         fmt=fmt,
         columns=columns,
+        table_columns=["repo", "target_branch", "action", "detail"],
         kind="workspace.branch_outcome",
         empty="No matching repos to checkout.",
     )

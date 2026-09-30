@@ -61,7 +61,8 @@
 
 - Every apply creates one backup bundle by default. `backups list|get|restore
   <id>|prune` manage bundles; `get`/`restore` accept full ids, unambiguous
-  prefixes, or `latest`. `restore` and `prune` take `--dry-run`. Restore
+  prefixes, or `latest`. `list` rows carry `id`, `created_at`, `recipe` and
+  `path`. `restore` and `prune` take `--dry-run`. Restore
   previews and confirms like apply, applies the
   whole bundle as one transaction, and refuses to overwrite files changed after
   the backup unless `--force` is passed. Backups store text content only; mode

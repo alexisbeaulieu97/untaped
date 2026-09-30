@@ -249,7 +249,13 @@ def apply_command(
                 }
                 for row in rows
             ]
-        rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.apply_outcome")
+        rendered = render_rows(
+            rows,
+            fmt=fmt,
+            columns=columns,
+            kind="recipe.apply_outcome",
+            table_columns=["target_path", "action", "files_changed", "warnings", "detail"],
+        )
         if rendered:
             echo(rendered)
         _render_result_summary(context.plans, outcome, check=check, dry_run=dry_run)
