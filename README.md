@@ -60,6 +60,8 @@ Start with [Getting started](./docs/getting-started.md). The
 - references for [pipes](./docs/reference/pipes.md),
   [exit codes](./docs/reference/exit-codes.md) and
   [environment variables](./docs/reference/environment.md);
+- [versioning and stability](./docs/stability.md): what each release keeps
+  compatible;
 - [agent skills](./docs/skills.md) for AI coding agents;
 - [building a capability provider](./docs/plugins.md) for extending `untaped`.
 
