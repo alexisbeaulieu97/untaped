@@ -325,3 +325,15 @@ def test_cache_worktree_rejects_repos_it_cannot_materialize(repo: str, message: 
 
     assert result.exit_code == 1, result.output
     assert message in result.stderr
+
+
+@pytest.mark.parametrize("dry_run", [False, True], ids=["delete", "dry-run"])
+def test_cache_delete_reports_the_size_it_frees(source_repo: SourceRepo, dry_run: bool) -> None:
+    _populate(source_repo, "acme/api")
+    args = ["cache", "delete", "acme/api", "--yes", "--format", "json"]
+
+    result = CliInvoker().invoke(app, [*args, "--dry-run"] if dry_run else args)
+
+    assert result.exit_code == 0, result.output
+    [row] = json.loads(result.stdout)
+    assert row["disk_bytes"] > 0

@@ -1,4 +1,9 @@
-from untaped.capabilities.github.application.cache import CleanCorpus, StatusCorpus, WorktreeCorpus
+from untaped.capabilities.github.application.cache import (
+    CleanCorpus,
+    StatusCorpus,
+    WorktreeCorpus,
+    with_disk_bytes,
+)
 from untaped.capabilities.github.application.inventory import (
     RepositoryInventoryItem,
     RepositoryInventoryScope,
@@ -54,4 +59,5 @@ __all__ = [
     "WhoAmI",
     "WorktreeCorpus",
     "normalize_team_scopes",
+    "with_disk_bytes",
 ]
