@@ -143,7 +143,9 @@ untaped recipe packs list --format pipe | untaped recipe packs sync --stdin
 - `packs sync` and `packs remove` print a row for every pack they were
   given: a pack that could not be fetched, installed or removed is a
   `failed` row with `detail` and `error`, next to its `error:` line on
-  stderr.
+  stderr. A removal that stopped partway (some files, or the `packs.toml`
+  row, left behind) is a `partial` row; run `packs remove` again to finish
+  it.
 - `packs sync PACK...` or `packs sync --all` re-fetches packs from the
   source and `--rev` recorded at install (a branch or tag moves forward; a
   local path source is re-read). Packs whose files would change are listed
@@ -289,9 +291,9 @@ you pass `--force`. Backups hold file content only, not modes or times.
 Bundles are readable only by you: directories are created `0700`, files
 `0600`, and each bundle's `metadata.json` is replaced atomically.
 `prune` falls back to `recipe.backup_keep` and `recipe.backup_max_age_days`.
-It prints one `recipe.prune_outcome` row per bundle (`id`, `size_bytes`,
-`detail`, `action`): `planned` with `--dry-run`, then `deleted`, or `failed`
-with `detail` and `error`.
+It prints one `recipe.prune_outcome` row per bundle, with fields `id`,
+`size_bytes`, `action` and `detail`: `action` is `planned` with
+`--dry-run`, then `deleted`, or `failed` with `detail` and `error`.
 
 ## Output
 

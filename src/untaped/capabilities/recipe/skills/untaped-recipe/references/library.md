@@ -29,7 +29,9 @@
   built-ins such as `yaml_edit` (marked `(builtin)`; not editable). `packs
   remove <pack>...` is destructive, requires confirmation or `--yes`
   (`--dry-run` previews), exits 1 on a declined prompt, and warns when the
-  copy has local edits; a pack it cannot delete is a `failed` row. `packs sync` and `packs remove` take `--stdin`
+  copy has local edits; a pack it cannot delete is a `failed` row, and one
+  whose removal stopped partway is a `partial` row (run `packs remove`
+  again to finish it). `packs sync` and `packs remove` take `--stdin`
   (pack names or `recipe.pack` records, e.g. `packs list --format pipe`).
   `get`/`edit` on a pack or hook name, and `init NAME` without `/`, fail
   with a hint naming the `packs`/`hooks` command.

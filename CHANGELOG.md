@@ -103,11 +103,12 @@ self-contained manual for the installed CLI.
     command, exit 2. Failed `sync`, `branch apply` and uninspectable
     `status` rows carry `error`, and `status --check` exits with the
     failure's own code (5 when `git status` timed out).
-  - **Breaking:** `workspace.remove_outcome` (`repos remove`) rows gain
-    `detail`.
   - **Fix:** a repo `repos remove` could not remove (not declared, or a
     refused `--prune`) is a `failed` row with `detail` and `error`, after
-    the removed ones; it had no row.
+    the removed ones; it had no row. A `--prune` that took the repo out of
+    the manifest but could not delete its clone is a `partial` row
+    (`pruned: false`, exit 1) instead of aborting the batch.
+    `workspace.remove_outcome` rows gain `detail` for this.
   - **Behavior change:** during `sync`, a repo job failing for a reason
     other than git (such as a busy cache lock) becomes that repo's `failed`
     row with its own exit code (5 for a busy lock) instead of aborting the
@@ -357,23 +358,28 @@ self-contained manual for the installed CLI.
   - **Breaking:** `recipe.apply_outcome` renames its string field `error` to
     `detail`; a failed row's `error` is now the structured object. Errored
     `recipe.test` rows gain `error` too.
-  - **Breaking:** `recipe.check` (`validate`) rows share one shape: `name`
-    (the pack, `PACK/RECIPE` ref or built-in hook), `type` (`pack`, `recipe`
-    or `hook`), `status`, `path` and `detail`. The `pack`/`recipe` columns
-    are now `name`, the string `error` is now `detail` (`null` on a pass),
-    the `recipes`/`hooks` counts are gone (see `packs list`), and a failed
-    check is `fail` instead of `error`.
-  - **Breaking:** `recipe.add_outcome`, `recipe.sync_outcome` and
-    `recipe.remove_outcome` rows gain `detail`, and `remove` rows fill
-    `source`, `rev` and `commit` from the removed pack (they were always
-    `null`).
+  - **Breaking:** `recipe.check` (`validate`) rows share one shape, with
+    fields `name` (the pack, `PACK/RECIPE` ref or built-in hook), `type`
+    (`pack`, `recipe` or `hook`), `status`, `path` and `detail`. Scripts
+    must read `name` instead of `pack`/`recipe` and `detail` instead of the
+    string `error` (`detail` is `null` on a pass), test `status == "fail"`
+    instead of `"error"`, and take pack `recipes`/`hooks` counts from
+    `packs list`.
   - **Fix:** `packs sync` and `packs remove` print a `failed` row (with
     `detail` and `error`) for a pack that could not be fetched, installed
     or removed; such packs had no row. A `packs remove` that fails to delete
-    a pack's files reports it and moves on to the next pack.
-  - **Breaking:** `backups prune` emits `recipe.prune_outcome` rows (`id`,
-    `size_bytes`, `detail`, `action`) instead of `recipe.backup` rows, so a
-    `planned` (`--dry-run`) row is told apart from a `deleted` one.
+    a pack's files reports it and moves on to the next pack; one that
+    stopped partway (some files, or the `packs.toml` row, left behind) is a
+    `partial` row (exit 1), and running it again finishes the removal.
+    `validate` flags a pack directory with no `pyproject.toml`.
+    `recipe.add_outcome`, `recipe.sync_outcome` and `recipe.remove_outcome`
+    rows gain `detail` for this, and `remove` rows fill `source`, `rev` and
+    `commit` from the removed pack (they were always `null`).
+  - **Breaking:** `backups prune` emits `recipe.prune_outcome` rows (fields
+    `id`, `size_bytes`, `action`, `detail`) instead of `recipe.backup` rows,
+    so a `planned` (`--dry-run`) row is told apart from a `deleted` one.
+    Scripts that select prune output by kind must use
+    `recipe.prune_outcome`.
   - **Fix:** a bundle `backups prune` fails to delete is a `failed` row with
     `detail` and `error`; it had no row.
 

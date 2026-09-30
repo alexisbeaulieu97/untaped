@@ -15,7 +15,11 @@ from untaped.capabilities.recipe.application.files import read_recipe_file
 from untaped.capabilities.recipe.application.resolution import find_library_recipe
 from untaped.capabilities.recipe.builtins.registry import BUILTIN_HOOKS
 from untaped.capabilities.recipe.cli._context import recipe_ui
-from untaped.capabilities.recipe.cli.common import library_root, report_config_errors
+from untaped.capabilities.recipe.cli.common import (
+    as_recipe_error,
+    library_root,
+    report_config_errors,
+)
 from untaped.capabilities.recipe.cli.detail import (
     hook_detail,
     pack_detail,
@@ -35,6 +39,7 @@ from untaped.capabilities.recipe.errors import (
     HookNotFoundError,
     LocalChangesError,
     PackNotFoundError,
+    PartialRemovalError,
     PathNotFoundError,
     RecipeError,
     RecipeNotFoundError,
@@ -54,7 +59,6 @@ from untaped.capabilities.recipe.infrastructure.pack_store import (
 from untaped.capability_api import (
     ColumnsOption,
     DryRunOption,
-    ErrorCategory,
     ErrorInfo,
     FormatOption,
     OutcomeRecord,
@@ -230,7 +234,7 @@ def sync_command(
             library, _pack_names(names, stdin=stdin) if stdin else names or [], all_packs=all_packs
         )
 
-        @_as_recipe_error
+        @as_recipe_error
         def fetch(pack: InstalledPack) -> _SyncPlan:
             return _fetch_for_sync(library, pack, Path(temp_root), discard_edits=discard_edits)
 
@@ -247,7 +251,7 @@ def sync_command(
             _sync_preview(changed)
         outcome = batch_apply(
             changed,
-            _as_recipe_error(
+            as_recipe_error(
                 lambda plan: _install_for_sync(library, plan, discard_edits=discard_edits)
             ),
             verb="sync",
@@ -295,26 +299,6 @@ def _sync_selection(
         if name not in installed:
             raise PackNotFoundError(not_found("pack", name, known=sorted(installed)))
     return {name: installed[name] for name in names}
-
-
-def _as_recipe_error[T, R](action: Callable[[T], R]) -> Callable[[T], R]:
-    """Wrap ``action`` so its expected library errors are per-item ``UntapedError``s.
-
-    Typed errors keep their category; a plain ``ValueError`` is invalid input
-    and an ``OSError`` a failed file operation (both in ``local``).
-    """
-
-    def wrapped(item: T) -> R:
-        try:
-            return action(item)
-        except UntapedError:
-            raise
-        except ValueError as exc:
-            raise RecipeError(str(exc)) from exc
-        except OSError as exc:
-            raise RecipeError(str(exc), category=ErrorCategory.FAILED) from exc
-
-    return wrapped
 
 
 def _install_for_sync(library: PackLibrary, plan: _SyncPlan, *, discard_edits: bool) -> None:
@@ -606,12 +590,13 @@ def remove_command(
         library = PackLibrary(library_root=library_root())
         selected = _pack_names(names, stdin=stdin)
         installed = {pack.name: pack for pack in library.packs()}
-        known = set(installed) | set(library.load_errors())
+        # A removal that stopped partway leaves a name only reconcile() still sees.
+        known = set(installed) | set(library.load_errors()) | set(library.reconcile())
         for name in selected:
             if name not in known:
                 raise PackNotFoundError(not_found("pack", name, known=sorted(known)))
 
-        @_as_recipe_error
+        @as_recipe_error
         def _remove(item: str) -> str:
             library.remove(item)
             return item
@@ -651,7 +636,12 @@ def remove_command(
                 for name, _ in outcome.results
             ]
             rows.extend(
-                _pack_outcome(name, installed.get(name), action="failed", error=exc)
+                _pack_outcome(
+                    name,
+                    installed.get(name),
+                    action="partial" if isinstance(exc, PartialRemovalError) else "failed",
+                    error=exc,
+                )
                 for name, exc in outcome.failures
             )
         rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.remove_outcome")
