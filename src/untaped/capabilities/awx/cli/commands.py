@@ -258,7 +258,7 @@ _JOB_LIST_COLUMNS = ("id", "name", "status", "launch_type", "started", "elapsed"
 _RAW_JOB_LIST_COLUMNS = ("id", "name", "status")
 """``--format raw`` keeps its tab-separated projection."""
 _JOB_GET_COLUMNS = ("id", "name", "status", "started", "finished", "elapsed", "job_explanation")
-_JOB_WAIT_COLUMNS = ("id", "name", "status")
+_JOB_WAIT_COLUMNS = ("id", "name", "status", "finished_at")
 
 
 @jobs_app.command(name="list")
