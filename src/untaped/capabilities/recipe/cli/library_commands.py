@@ -542,7 +542,9 @@ def validate_command(
             if ref_text is None
             else [check_ref(ref_text, library=library, inspector=inspector)]
         )
-        rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.check")
+        rendered = render_rows(
+            [row.model_dump() for row in rows], fmt=fmt, columns=columns, kind="recipe.check"
+        )
         if rendered:
             echo(rendered)
         if ref_text is None and not rows:
@@ -550,7 +552,7 @@ def validate_command(
                 "info",
                 _EMPTY_LIBRARY_HINT,
             )
-        finish(any(row["status"] == "error" for row in rows))
+        finish(any(row.status == "fail" for row in rows))
 
 
 def remove_command(

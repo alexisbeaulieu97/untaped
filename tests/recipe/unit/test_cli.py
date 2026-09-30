@@ -2864,12 +2864,11 @@ def test_recipe_check_validates_package_assets_and_hooks(tmp_path: Path) -> None
     rows = json.loads(result.stdout)
     assert rows == [
         {
-            "pack": "recipe-hooks",
+            "name": "recipe-hooks",
+            "type": "pack",
             "status": "pass",
             "path": str(recipe_dir),
-            "recipes": 1,
-            "hooks": 1,
-            "error": "",
+            "detail": None,
         }
     ]
     assert "Recipe preview:" not in result.stderr
@@ -2905,8 +2904,8 @@ def test_recipe_check_rejects_step_hook_kind_mismatch(tmp_path: Path) -> None:
 
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
-    assert rows[0]["status"] == "error"
-    assert "validate step hook 'check' does not export a validate() function" in rows[0]["error"]
+    assert rows[0]["status"] == "fail"
+    assert "validate step hook 'check' does not export a validate() function" in rows[0]["detail"]
 
 
 @pytest.mark.parametrize(
@@ -2969,8 +2968,8 @@ def test_recipe_check_reports_invalid_packages(
 
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
-    assert rows[0]["status"] == "error"
-    assert expected in rows[0]["error"]
+    assert rows[0]["status"] == "fail"
+    assert expected in rows[0]["detail"]
     assert "Traceback" not in result.output
 
 
@@ -3014,8 +3013,8 @@ def test_recipe_check_reports_broken_local_hook_projects(
 
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
-    assert rows[0]["status"] == "error"
-    assert expected in rows[0]["error"]
+    assert rows[0]["status"] == "fail"
+    assert expected in rows[0]["detail"]
 
 
 def test_help_placeholders_and_ref_grammar_render_meaningfully(tmp_path: Path) -> None:
@@ -3080,8 +3079,8 @@ def test_recipe_check_validates_unreferenced_local_hook_project_metadata(
 
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
-    assert rows[0]["status"] == "error"
-    assert expected in rows[0]["error"]
+    assert rows[0]["status"] == "fail"
+    assert expected in rows[0]["detail"]
 
 
 def _config_backup(tmp_path: Path) -> tuple[BackupDraft, Path]:
@@ -3548,8 +3547,8 @@ def test_check_flags_orphaned_tests_directories(tmp_path: Path) -> None:
 
     assert result.exit_code == 1, result.output
     row = json.loads(result.stdout)[0]
-    assert row["status"] == "error"
-    assert row["error"] == "tests directory names no known recipe: renamed"
+    assert row["status"] == "fail"
+    assert row["detail"] == "tests directory names no known recipe: renamed"
 
 
 def test_check_reports_stale_lockfile_for_hook_pack(
@@ -3573,8 +3572,8 @@ def test_check_reports_stale_lockfile_for_hook_pack(
 
     assert result.exit_code == 1, result.output
     row = json.loads(result.stdout)[0]
-    assert row["status"] == "error"
-    assert "lockfile is stale — run 'uv lock' in" in row["error"]
+    assert row["status"] == "fail"
+    assert "lockfile is stale — run 'uv lock' in" in row["detail"]
 
 
 def test_check_hook_pack_without_lock_keeps_pack_error_exact(tmp_path: Path) -> None:
@@ -3592,7 +3591,7 @@ def test_check_hook_pack_without_lock_keeps_pack_error_exact(tmp_path: Path) -> 
     result = CliInvoker().invoke(app, ["validate", "ansible", "--format", "json"])
 
     assert result.exit_code == 1, result.output
-    assert json.loads(result.stdout)[0]["error"] == f"pack project is missing uv.lock: {installed}"
+    assert json.loads(result.stdout)[0]["detail"] == f"pack project is missing uv.lock: {installed}"
 
 
 def test_check_without_ref_reports_library_reconcile_and_pack_rows(tmp_path: Path) -> None:
@@ -3613,12 +3612,12 @@ def test_check_without_ref_reports_library_reconcile_and_pack_rows(tmp_path: Pat
 
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
-    errors = {row["error"] for row in rows if row["status"] == "error"}
+    errors = {row["detail"] for row in rows if row["status"] == "fail"}
     assert errors == {
         "pack 'stale' is in packs.toml but missing from packs/",
         "pack directory 'orphan' is not recorded in packs.toml",
     }
-    passes = {row["pack"] for row in rows if row["status"] == "pass"}
+    passes = {row["name"] for row in rows if row["status"] == "pass"}
     assert passes == {"good", "orphan"}
 
 
@@ -3708,12 +3707,12 @@ def test_check_reports_error_row_for_unparsable_pack(tmp_path: Path) -> None:
 
     result = CliInvoker().invoke(app, ["validate", "--format", "json"])
 
-    rows = {row["pack"]: row for row in json.loads(result.stdout)}
+    rows = {row["name"]: row for row in json.loads(result.stdout)}
     assert rows["good"]["status"] == "pass"
-    assert rows["broken"]["status"] == "error"
-    assert "pyproject" in rows["broken"]["error"]
+    assert rows["broken"]["status"] == "fail"
+    assert "pyproject" in rows["broken"]["detail"]
     # the TOML parse detail is included, not just the file path
-    assert "line" in rows["broken"]["error"]
+    assert "line" in rows["broken"]["detail"]
     assert result.exit_code != 0
 
 
@@ -3873,7 +3872,15 @@ def test_builtin_hook_get_and_validate_render_detail_and_pass_row(tmp_path: Path
     assert "transform" in detail["exports"]
     assert checked.exit_code == 0, checked.output
     rows = json.loads(checked.stdout)
-    assert rows == [{"recipe": "yaml_edit", "status": "pass", "path": rows[0]["path"], "error": ""}]
+    assert rows == [
+        {
+            "name": "yaml_edit",
+            "type": "hook",
+            "status": "pass",
+            "path": rows[0]["path"],
+            "detail": None,
+        }
+    ]
     assert rows[0]["path"].endswith("yaml_edit.py")
 
 
@@ -3891,10 +3898,12 @@ def test_check_prefers_library_refs_over_builtin(tmp_path: Path, shadow: str) ->
 
     assert result.exit_code == 0, result.output
     [row] = json.loads(result.stdout)
+    assert (row["type"], row["status"], row["detail"]) == (shadow, "pass", None)
+    assert "error" not in row
     if shadow == "pack":
-        assert (row["pack"], row["path"]) == ("yaml_edit", str(library_root() / "packs/yaml_edit"))
+        assert (row["name"], row["path"]) == ("yaml_edit", str(library_root() / "packs/yaml_edit"))
     else:
-        assert (row["recipe"], row["path"]) == (
+        assert (row["name"], row["path"]) == (
             "shadow/yaml_edit",
             str(library_root() / "packs" / "shadow" / "recipes/yaml.yml"),
         )
@@ -3930,12 +3939,11 @@ def test_check_hookless_pack_without_lock_passes_every_ref_form(tmp_path: Path) 
     (installed / "uv.lock").unlink()
     (source / "uv.lock").unlink()
     pack_row = {
-        "pack": "plain",
+        "name": "plain",
+        "type": "pack",
         "status": "pass",
         "path": str(installed),
-        "recipes": 1,
-        "hooks": 0,
-        "error": "",
+        "detail": None,
     }
 
     def validate(*ref: str) -> list[dict[str, object]]:
@@ -3947,10 +3955,11 @@ def test_check_hookless_pack_without_lock_passes_every_ref_form(tmp_path: Path) 
     assert validate() == [pack_row]
     assert validate("plain/ok") == [
         {
-            "recipe": "plain/ok",
+            "name": "plain/ok",
+            "type": "recipe",
             "status": "pass",
             "path": str(installed / "recipes/ok.yml"),
-            "error": "",
+            "detail": None,
         }
     ]
     assert validate(str(source)) == [{**pack_row, "path": str(source)}]
