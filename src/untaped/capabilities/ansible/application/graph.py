@@ -34,6 +34,12 @@ class GraphRequest(BaseModel):
     The application layer stays free of CLI strings; the CLI passes the exact
     refresh command (or flag guidance) to surface in actionable warnings.
     """
+    live: bool = False
+    """Whether the index reads dependencies live rather than from cached source data.
+
+    Cached default branches may be stale then, so an unpinned hop is pinned
+    only to the default branch its live ref-less read resolved.
+    """
 
 
 class BuildGraph:
@@ -309,12 +315,15 @@ class _GraphBuilder:
         An unbridged child walk makes exactly this read one level later; doing
         it now lets a live index record the default branch it resolved, so
         the metadata re-read below can bridge the hop (see :meth:`_dependency_ref`).
+        A live run reads every unpinned dependency: a cached default branch
+        may be stale (the repo renamed it).
         """
         source_key = self._request.source_key
         unknown = sorted(
             repo
             for repo in repos
-            if _first_default_branch(self._cached_ref_metadata[(repo, source_key)]) is None
+            if self._request.live
+            or _first_default_branch(self._cached_ref_metadata[(repo, source_key)]) is None
         )
         pairs = [
             (repo, None) for repo in unknown if (repo, None, source_key) not in self._dependencies
@@ -379,11 +388,15 @@ class _GraphBuilder:
 
         Unpinned declarations install the dependency's default branch, so they
         bridge to that indexed node and downstream walks stay connected. When
-        no default branch is recorded the target stays ref-less.
+        no default branch is recorded -- or, in a live run, none was read live
+        (depth limit) -- the target stays ref-less.
         """
         if indexed.dependency_version is not None or indexed.dependency_repo is None:
             return indexed.dependency_version
-        return _first_default_branch(self._cached_ref_metadata_for(indexed.dependency_repo))
+        repo = indexed.dependency_repo
+        if self._request.live and (repo, None, self._request.source_key) not in self._dependencies:
+            return None
+        return _first_default_branch(self._cached_ref_metadata_for(repo))
 
     def _emit_target_node(self, indexed: IndexedDependency, ref: str | None) -> None:
         """Emit the node (and any warning) for a dependency's target at ``ref``.
