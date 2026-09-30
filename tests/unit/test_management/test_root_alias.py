@@ -315,3 +315,14 @@ def test_config_rejects_an_invalid_alias(_isolated_config: Path) -> None:
     result = _invoke("config", "set", "shell.aliases", '{"Bad Name": ["config", "list"]}')
     assert result.exit_code == 1
     assert "invalid value for 'shell.aliases'" in result.stderr
+
+
+def test_list_table_shows_the_default_columns(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    shell:\n      aliases:\n        a: [config, list]\n",
+    )
+    result = _invoke("alias", "list")
+    assert result.exit_code == 0, result.output
+    header = [cell.strip() for cell in result.stdout.splitlines()[1].strip("│").split("│")]
+    assert header == ["name", "command", "profile"]

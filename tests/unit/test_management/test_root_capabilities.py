@@ -173,9 +173,11 @@ def test_table_headers_name_the_listing_contract() -> None:
     app = build_root_capabilities_app(result=result, candidates=(), shell_distribution="untaped")
     invoked = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
     assert invoked.exit_code == 0, invoked.output
-    for column in ("name", "origin", "status", "distribution", "version", "api"):
-        assert column in invoked.stdout
+    header = [cell.strip() for cell in invoked.stdout.splitlines()[1].strip("│").split("│")]
+    assert header == ["name", "origin", "status", "version"]
     assert "github" in invoked.stdout
+    listed = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
+    assert {"distribution", "api"} <= set(_rows(listed.stdout)[0])
 
 
 def test_listing_is_not_blocked_by_invalid_settings(_isolated_config: Path) -> None:
