@@ -218,7 +218,8 @@ ends up empty.
 `repos remove --prune`, `forget --prune` and `sync --prune` preview what they
 will delete and ask once; `--yes` / `-y` skips the question and `--dry-run`
 only previews. Without a terminal they need `--yes` (else exit `2`), and
-declining exits `1` with nothing changed. They never delete a clone with
+declining exits `1` with nothing deleted (`sync --prune` asks after the sync
+has run). They never delete a clone with
 uncommitted, staged or stashed work, or commits not on a remote-tracking
 branch. The check is offline, so fetch first if your remote-tracking refs
 may be stale. See [Exit codes](../reference/exit-codes.md).
