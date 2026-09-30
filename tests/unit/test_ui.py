@@ -465,6 +465,20 @@ def test_styled_tail_follows_verbatim_unwrapped_and_unexpanded() -> None:
     assert second == tail
 
 
+def test_styled_truncate_ends_each_too_wide_line_in_an_ellipsis(monkeypatch) -> None:
+    from rich.text import Text
+
+    monkeypatch.setenv("COLUMNS", "20")
+    wrapped, truncated = io.StringIO(), io.StringIO()
+    text = Text("├── acme/a-long-name@main  notes\n└── short")
+
+    UiContext(stdout=wrapped).styled(text)
+    UiContext(stdout=truncated).styled(text, truncate=True)
+
+    assert len(wrapped.getvalue().splitlines()) > 2
+    assert truncated.getvalue() == "├── acme/a-long-nam…\n└── short\n"
+
+
 def _closed() -> io.StringIO:
     stream = io.StringIO()
     stream.close()

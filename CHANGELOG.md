@@ -11,6 +11,9 @@ temporary test sets from a git ref (`--source-ref`). Every built-in skill is a
 self-contained manual for the installed CLI.
 
 - Core
+  - **New:** a [versioning and stability](docs/stability.md) policy: what
+    stays compatible within a major release, what is experimental, and,
+    from 9.0.0 on, breaking changes collected into major releases.
   - **New:** every built-in skill is a complete manual for the installed CLI.
     Each has a description naming the words that should make an agent load
     it, no skill points at `docs/` or the source repository any more, and the
@@ -123,6 +126,8 @@ self-contained manual for the installed CLI.
     changes and then exits with an error (for example a wrapper's post-save
     step fails): the config is left unchanged and the error names the copy
     and how to apply it. Only an unchanged copy is removed.
+  - **New:** `ui.styled(text, truncate=True)` ends each line too wide for
+    the terminal in an ellipsis instead of wrapping.
 - Workspace
   - **Breaking:** a `sync` (or `add --sync`, `import --sync`) whose git call
     timed out or lost the network exits 5; git not installed exits 4; a
@@ -161,6 +166,9 @@ self-contained manual for the installed CLI.
     permission (403) exit 4; 5xx, 429 and network failures exit 5; a missing
     issue stays 1 (`not_found`).
 - AWX
+  - **Behavior change:** `awx test` is
+    [experimental](docs/stability.md#experimental) and may change in a minor
+    release.
   - **New:** `untaped awx test init TEMPLATE` writes a commented starter
     suite for a job template from its survey and launch prompts: required
     survey variables get their default, first choice or `TODO` (a password
@@ -377,7 +385,7 @@ self-contained manual for the installed CLI.
     pause (per-repo failures stay warnings with exit 0).
     `ansible.default_source` naming a missing source, a broken saved source,
     or an index written by a newer untaped exits 4; `impact` (and
-    `graph --upstream`) without any source exits 2.
+    `graph --direction up`) without any source exits 2.
   - **Fix:** live graphs (`--live`, or no source) resolve an unpinned
     dependency's current default branch from GitHub instead of trusting the
     source's recorded one, so a repo that renamed its default branch (keeping
@@ -386,6 +394,32 @@ self-contained manual for the installed CLI.
   - **Behavior change:** each repo a `source refresh` could not index is an
     `error: <repo>: <reason>` line (was `failed <repo>: <reason>`), and the
     final error carries the most severe repo's category.
+  - **Behavior change:** `graph`'s tree is easier to read. It opens with the
+    target, its data source and depth, lists "used by" above "depends on"
+    with `├──`/`└──` connectors (ASCII with the `plain` theme), names the
+    file that declares each dependency and whether it is `unpinned`, numbers
+    a shared subtree `[n]` and refers back with `see [n]` (was
+    `(see above)`), and ends with a count of repos, edges, cycles and
+    unresolved dependencies. It is colored on a terminal, and a line too
+    wide for it ends in `…` instead of wrapping.
+  - **Behavior change:** `graph` prints its warnings on stderr for every
+    format, as `deps` and `impact` do; they no longer appear in the tree,
+    the Mermaid comments or the `--out` file. `--format json` still carries
+    them in `warnings`.
+  - **Breaking:** without `--ref`, `deps`, `find` and `graph` read what a
+    target depends on at its default branch only, instead of at every cached
+    ref (a repo with many tags gave one block or set of rows per tag). Pass
+    `--all-refs` for the old result. When the source has not scanned the
+    default branch (a tags-only source), every ref is still read, with a
+    warning. What depends on
+    a target (`impact`, `graph`'s "used by") still covers every ref a
+    dependent pins. A local checkout is unaffected.
+  - **Breaking:** `graph` defaults to `--depth unlimited`, like `deps`,
+    `impact` and `find` (was 3). Pass `--depth 3` for the old result.
+  - **Behavior change:** `graph --direction up|down|both` replaces
+    `--upstream`, `--downstream` and `--both`, which still work with a
+    deprecation warning until the next major release. Refresh hints now
+    suggest `--direction`.
 - Recipe
   - **Breaking:** recipe errors keep their own category instead of being
     reported as configuration errors: a missing recipe, pack, hook, backup or
