@@ -171,7 +171,7 @@ def sync_command(
                 auth_header=corpus_auth_header(settings),
             )(options, progress=progress)
         emit(
-            [outcome.model_dump(mode="json") for outcome in outcomes],
+            outcomes,
             fmt=fmt,
             columns=columns,
             kind="github.sync_outcome",
