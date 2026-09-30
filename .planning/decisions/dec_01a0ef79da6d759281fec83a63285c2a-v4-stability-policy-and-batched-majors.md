@@ -7,15 +7,15 @@ of them in three weeks. That history is public and immutable on PyPI, so it
 stays; resetting to 0.x would need yanking every release and would make
 versions sort backwards. Instead, from 9.0.0 on:
 
-- `docs/stability.md` lists what a major release keeps compatible (command
-  and flag names, exit codes, record kinds and fields, config and state
-  settings, environment variables, the provider SDK) and what it does not
-  (human-readable output, experimental surfaces, undocumented internals).
+- `docs/stability.md` is the single list of what a major release keeps
+  compatible and what it does not.
 - Surfaces still being shaped are marked experimental in `--help` and their
   guide, and may break in a minor release. This replaces the freedom a 0.x
   version would give.
-- Renames go through `deprecated_alias`; other breaking changes wait for the
-  next major, and are released together with an upgrade section.
+- Command and flag renames use `deprecated_alias`. Settings, environment
+  variables and record kinds or fields have no alias mechanism, so renaming
+  them, like every other breaking change, waits for the next major; majors
+  ship their breaking changes together with an upgrade section.
 
 ## Related decisions
 
