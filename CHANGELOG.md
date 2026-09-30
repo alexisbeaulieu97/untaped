@@ -12,6 +12,10 @@
     the `doctor` and `setup` tables leave a passing check's detail blank.
   - **Fix:** with `ui.detail_view: table`, a single record's status and
     outcome values are colored by meaning, as in lists.
+  - **Changed:** the packaged skills are rewritten as short maps with
+    reference files, and their descriptions (shown by `skills list`) are
+    shorter third-person summaries. Refresh installed copies with
+    `untaped skills update`.
 - GitHub
   - **Fix:** `cache delete` and `cache prune` report the space each removed
     repository frees in `disk_bytes` (it was always 0), including under
@@ -26,6 +30,9 @@
   - **Behavior change:** the `jobs wait` table shows when each job finished
     (`finished_at`) and how long it ran (`elapsed`). `awx.job` records and
     `launch`/`sync --wait` rows gain `elapsed` (seconds).
+- Jira
+  - **Fix:** `issues links create --help` shows how a link reads
+    (`KEY OUTWARD-PHRASE OTHER`); the placeholder was missing from the help.
 - Ansible
   - **Fix:** `--all-refs` exits 2 with `--live` or without a source
     instead of being silently ignored: live reads see only the default

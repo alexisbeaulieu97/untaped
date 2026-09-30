@@ -15,7 +15,10 @@ An agent that has only the installed ``untaped`` reads these files, so:
 - no skill file points at the source repository (``docs/…``, "the untaped
   repository"), which does not exist next to an installed CLI;
 - each skill's ``SPEC`` description matches its ``SKILL.md`` frontmatter, so
-  ``skills list`` shows what the agent's skill loader sees.
+  ``skills list`` shows what the agent's skill loader sees;
+- each description routes rather than instructs: it is read in every session
+  next to every other skill's, so it stays under 60 words and is written in
+  the third person (``Operates …``, never ``Use the …``).
 """
 
 from __future__ import annotations
@@ -236,3 +239,13 @@ def test_spec_description_matches_the_skill_frontmatter(name: str) -> None:
 
     assert frontmatter["name"] == name
     assert frontmatter["description"] == SKILLS[name].description
+
+
+@pytest.mark.parametrize("name", sorted(SKILLS))
+def test_description_is_a_short_third_person_router(name: str) -> None:
+    description = SKILLS[name].description
+
+    assert len(description.split()) < 60, "keep the description under 60 words"
+    assert not re.match(r"(Use|Run|Call)\b", description), (
+        "write the description in the third person ('Operates …'), not as an instruction"
+    )

@@ -1,6 +1,6 @@
 ---
 name: untaped-awx
-description: Use the `untaped awx` command to operate Ansible Automation Platform (AAP) or AWX and to prove playbook changes with `awx test` suites. Use when the user mentions AAP, AWX, Tower, automation controller, job templates, workflow templates, surveys, launching, syncing or following jobs, job logs, inventories, projects, schedules, or testing a playbook, role or template change.
+description: Operates Ansible Automation Platform (AAP) or AWX through the `untaped awx` command and proves playbook changes with `awx test` suites. Use when the user mentions AAP, AWX, Tower or automation controller, job or workflow templates, launching, syncing or following jobs, inventories, projects, schedules, or testing a playbook, role or template change.
 ---
 
 # untaped AWX/AAP
