@@ -15,7 +15,7 @@ has; ``apply`` only reads the files locally, so it does not.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from untaped.capabilities.awx.infrastructure.git_head import pushed_branch
@@ -41,6 +41,8 @@ class GitSource:
     sha: str
     root: Path
     cwd: Path
+    _texts: dict[str, str] = field(default_factory=dict, compare=False, repr=False)
+    """Files already read, by repo-relative path: each is read once."""
 
     @classmethod
     def resolve(cls, ref: str, *, cwd: Path | None = None) -> GitSource:
@@ -131,13 +133,17 @@ class GitSource:
 
     def read_text(self, rel: str) -> str:
         """The UTF-8 text of the repo-relative file ``rel`` at the pinned commit."""
-        data = self._git("show", f"{self.sha}:{rel}").stdout
-        try:
-            return data.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise ConfigError(
-                f"cannot read {self.label(rel)}: not UTF-8 text", category="invalid", system="git"
-            ) from exc
+        if rel not in self._texts:
+            data = self._git("show", f"{self.sha}:{rel}").stdout
+            try:
+                self._texts[rel] = data.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ConfigError(
+                    f"cannot read {self.label(rel)}: not UTF-8 text",
+                    category="invalid",
+                    system="git",
+                ) from exc
+        return self._texts[rel]
 
     def label(self, rel: str) -> str:
         """How messages name a file: ``REF:PATH``, git's own spelling."""

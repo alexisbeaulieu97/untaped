@@ -18,7 +18,13 @@ from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayl
 from untaped.capabilities.awx.application.suites.runner import LOG_TAIL_LINES, RunTestSuite
 from untaped.capabilities.awx.domain import Job, JobEvent
 from untaped.capabilities.awx.domain.case_failure import FailureEvidence
-from untaped.capabilities.awx.domain.suite import Baseline, Case, Suite, SuiteRunOutcome
+from untaped.capabilities.awx.domain.suite import (
+    Baseline,
+    Case,
+    Suite,
+    SuiteRunOutcome,
+    TemplateBinding,
+)
 from untaped.capabilities.awx.errors import ActionResponseError, LaunchPromptError
 from untaped.capabilities.awx.infrastructure import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
@@ -1122,6 +1128,24 @@ def test_scm_branch_overrides_every_case_and_rows_report_what_ran() -> None:
     [row] = runner([suite], scm_branch="fix").results
     assert [call["payload"] for call in launcher.calls] == [{"scm_branch": "fix", "limit": "web"}]
     assert (row.scm_branch, row.scm_revision) == ("fix", "c0")
+
+
+def test_a_suite_bound_to_a_pinned_copy_launches_it_without_a_launch_time_ref() -> None:
+    """A temporary copy runs the tested commit itself: no case passes scm_branch to it."""
+    launcher = StubLauncher({"__default__": {"job": _job(id_=5)}})
+    runner = _make_runner(fk=StubFk(), launcher=launcher, watcher=StubWatcher())
+    pinned = _case_suite({"launch": {"scm_branch": "main", "limit": "db"}})
+    other = _suite("other", {"c": {"limit": "web"}})
+    copy = TemplateBinding(
+        "JobTemplate", "JT [untaped-test 1a2b3c4 k3x9]", {"organization": "Ops"}, pinned=True
+    )
+
+    runner([pinned, other], bindings={"s": copy}, scm_branch="1a2b3c4d")
+
+    assert [(call["name"], call["scope"], call["payload"]) for call in launcher.calls] == [
+        ("JT [untaped-test 1a2b3c4 k3x9]", {"organization": "Ops"}, {"limit": "db"}),
+        ("JT", None, {"limit": "web", "scm_branch": "1a2b3c4d"}),
+    ]
 
 
 def test_preflight_failures_stop_the_run_before_any_launch() -> None:

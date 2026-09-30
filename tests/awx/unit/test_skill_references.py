@@ -10,7 +10,8 @@
   ``references/test-suites.md``, and the reference's field tables name only
   such properties.
 - Every field of an ``awx.test_result`` row (its ``failure``, ``evidence``,
-  failed tasks and host summaries included) is named in
+  failed tasks and host summaries included), and of a temporary copy's
+  ``awx.provision_outcome``/``awx.prune_outcome`` row, is named in
   ``references/test-results.md``, and its field tables name only such fields.
 """
 
@@ -25,6 +26,7 @@ import pytest
 from untaped.capabilities.awx import SPEC
 from untaped.capabilities.awx.application.suites.loader import LoadTestSuite
 from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
+from untaped.capabilities.awx.domain.outcomes import TemporaryCopyOutcome
 from untaped.capabilities.awx.domain.suite import CaseResult, Suite
 from untaped.capabilities.awx.domain.workflow_graph import WorkflowNodeSpec
 from untaped.capabilities.awx.infrastructure.catalog import AwxResourceCatalog
@@ -153,6 +155,18 @@ def _result_keys() -> set[str]:
     return keys - {"check", "expected", "actual", "passed"}
 
 
+def _copy_keys() -> set[str]:
+    """Every field of a temporary copy's row, its ``error`` included."""
+    schema = TemporaryCopyOutcome.model_json_schema()
+    models = [schema, *schema.get("$defs", {}).values()]
+    return {key for model in models for key in model.get("properties", {})}
+
+
+@pytest.mark.parametrize("key", sorted(_copy_keys()))
+def test_every_temporary_copy_field_is_in_the_results_reference(key: str) -> None:
+    assert f"`{key}`" in _results_reference(), f"references/test-results.md does not name {key!r}"
+
+
 def _results_reference() -> str:
     return (SKILL_DIR / "references" / "test-results.md").read_text(encoding="utf-8")
 
@@ -166,4 +180,4 @@ def test_the_results_reference_field_tables_name_only_result_fields() -> None:
     documented = _table_field_names(_results_reference())
 
     assert documented
-    assert documented - _result_keys() == set()
+    assert documented - _result_keys() - _copy_keys() == set()

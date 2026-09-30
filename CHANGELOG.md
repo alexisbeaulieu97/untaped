@@ -262,6 +262,21 @@
     baseline row gains `node`, and a workflow case still fails the same way
     only in the same node. `awx.test_case` rows gain `workflow_template`, and
     their `job_template` is `null` for a workflow suite.
+  - **New:** `awx test run --source-ref REF` runs each suite whose template
+    has a spec under `.untaped/awx/` at REF's commit against a temporary copy
+    of it (`NAME [untaped-test SHA RUN]`, pinned to the commit), refuses any
+    other template that would not run the commit, and always deletes the
+    copies after the run (`--keep` keeps them). It cannot go with
+    `--scm-branch` or `--baseline`.
+  - **New:** `awx test validate --source-ref REF` (and `awx test run
+    --dry-run`) checks everything but the writes (each copy's links, its
+    free name, the project's branch override, each case against the copy's
+    spec) and prints the copies as `awx.provision_outcome` rows, with the
+    prompts each enables. `validate` gains `--format` and `--columns`.
+  - **New:** `awx test prune [--older-than 2h] [--run RUN] [--dry-run] [--yes]`
+    deletes the copies a killed run left behind, found by their name and
+    description marker, after a preview and a confirmation;
+    `awx.prune_outcome` rows.
 - Ansible
   - **Breaking:** `source refresh` exits 5 when it pauses at the GraphQL
     rate-limit floor, hits a global rate limit, or any repo failed

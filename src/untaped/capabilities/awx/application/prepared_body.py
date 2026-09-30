@@ -35,6 +35,10 @@ class PreparedBody:
     dropped_undeclared: tuple[str, ...]
 
 
+UNVERIFIED_KEPT = "continuing because --allow-unverified was set"
+"""How the warning about a write kept unverified ends."""
+
+
 class BodyOperations:
     def __init__(
         self,
@@ -171,10 +175,7 @@ class BodyOperations:
         if fallback_error is not None:
             detail = f"{detail}; fallback GET failed"
         if self._allow_unverified:
-            self._warn(
-                f"{spec.kind} {resource.metadata.name!r}: {detail}; "
-                "continuing because --allow-unverified was set"
-            )
+            self._warn(f"{spec.kind} {resource.metadata.name!r}: {detail}; {UNVERIFIED_KEPT}")
             return detail
         message = (
             f"{spec.kind} {resource.metadata.name!r}: {detail}. "
