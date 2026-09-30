@@ -23,13 +23,21 @@ def emit_isolated(
     fmt: OutputFormat,
     columns: list[str] | None,
     kind: str | None = None,
+    table_columns: list[str] | None = None,
 ) -> None:
     """Render row data without letting invalid settings block the output.
 
     Settings are broken is often what the caller reports, so a ``table``
     falls back to the default theme instead of failing the listing.
     """
-    emit_with(rows, ui=ui_context(strict=False), fmt=fmt, columns=columns, kind=kind)
+    emit_with(
+        rows,
+        ui=ui_context(strict=False),
+        fmt=fmt,
+        columns=columns,
+        kind=kind,
+        table_columns=table_columns,
+    )
 
 
 __all__ = ["emit_isolated"]

@@ -221,12 +221,37 @@ def test_list_json_emits_native_values(_isolated_config: Path) -> None:
     assert "—" not in result.stdout
 
 
-def test_table_and_raw_keep_display_glyphs(_isolated_config: Path) -> None:
-    raw = _invoke(["get", "github.token"])
-    assert raw.stdout.strip() == "—"
-    table = _invoke(["list", "--format", "raw", "--columns", "key", "--columns", "value"])
-    assert "http.ca_bundle\t—" in table.stdout
-    assert "http.verify_ssl\tTrue" in table.stdout
+def test_raw_prints_native_values_and_tables_show_glyphs(_isolated_config: Path) -> None:
+    assert _invoke(["get", "github.token"]).stdout == ""
+    raw = _invoke(["list", "--format", "raw", "--columns", "key", "--columns", "value"])
+    assert "http.ca_bundle\t" in raw.stdout.splitlines()
+    assert "http.verify_ssl\tTrue" in raw.stdout.splitlines()
+    assert "—" not in raw.stdout
+    table = _invoke(["list", "--format", "table"])
+    assert any("http.ca_bundle" in line and "—" in line for line in table.stdout.splitlines())
+    single = _invoke(["get", "github.token", "--format", "table"])
+    assert any("value" in line and "—" in line for line in single.stdout.splitlines())
+
+
+def test_tables_show_setting_values_verbatim(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    http:\n      timeout: 1.2345\n")
+    assert "1.2345" in _invoke(["get", "http.timeout", "--format", "table"]).stdout
+    assert "1.2345" in _invoke(["list", "--format", "table"]).stdout
+
+
+def test_raw_prints_a_mapping_as_json_that_set_accepts(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      symbols: {ok: Y}\n")
+    assert _invoke(["get", "ui.symbols"]).stdout == '{"ok": "Y"}\n'
+    listed = json.loads(_invoke(["get", "ui.symbols", "--format", "json"]).stdout)
+    assert listed["value"] == {"ok": "Y"}
+
+
+def test_secret_stays_masked_in_every_format(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    github:\n      token: t0k\n")
+    for fmt in ("table", "raw", "json"):
+        result = _invoke(["get", "github.token", "--format", fmt])
+        assert "***" in result.stdout
+        assert "t0k" not in result.stdout
 
 
 # ── `null` for optional typed settings ───────────────────────────────────────

@@ -198,9 +198,9 @@ Because only the section a key belongs to is validated, you can repair a
 broken key through the CLI (`config set KEY --prompt` offers the raw stored
 value as the default). `config edit` opens `VISUAL`, falling back to
 `EDITOR`; include your GUI editor's wait option (`EDITOR="code --wait"`).
-`config get` prints only the value (raw) by default; structured output adds
-its source, profile and default, with secrets masked as `"***"` unless
-`--show-secrets` is passed.
+`config get` prints only the value (raw; nothing when unset) by default;
+structured output adds its source, profile and default, with secrets masked
+as `"***"` unless `--show-secrets` is passed.
 
 Capability state fields produce a “managed by untaped …” error when passed to
 `config set` or `config unset`. Use the owning capability's commands for state

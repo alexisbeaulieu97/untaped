@@ -121,12 +121,26 @@ def _run(
 def report_check_rows(
     rows: list[dict[str, object]], *, op: str, fmt: OutputFormat, columns: list[str] | None
 ) -> None:
-    """Emit ``untaped.doctor_check`` rows; exit 1 naming ``op`` when any failed."""
-    emit_isolated(rows, fmt=fmt, columns=columns, kind="untaped.doctor_check")
+    """Emit ``untaped.doctor_check`` rows; exit 1 naming ``op`` when any failed.
+
+    A table leaves a passing row's detail blank; the record keeps it.
+    """
+    shown = [_table_row(row) for row in rows] if fmt == "table" else rows
+    emit_isolated(
+        shown,
+        fmt=fmt,
+        columns=columns,
+        kind="untaped.doctor_check",
+        table_columns=["check", "capability", "status", "title", "detail"],
+    )
     failed = [row for row in rows if row["status"] == _FAIL]
     if failed:
         echo(f"{op}: {len(failed)} of {plural(len(rows), 'check')} failed", err=True)
         raise SystemExit(ExitCode.FAILURE)
+
+
+def _table_row(row: dict[str, object]) -> dict[str, object]:
+    return {**row, "detail": ""} if row["status"] == _PASS else row
 
 
 def _row(check: str, capability: str, status: str, title: str, detail: str) -> dict[str, object]:

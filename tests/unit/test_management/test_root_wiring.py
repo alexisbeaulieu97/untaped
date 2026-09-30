@@ -105,7 +105,7 @@ def test_jira_isolation_end_to_end(_isolated_config: Path) -> None:
     doctor = CliInvoker().invoke(root.meta, ["doctor"])  # type: ignore[union-attr]
     assert doctor.exit_code == 1
     assert "timeout" in doctor.stdout
-    assert "github ok" in doctor.stdout
+    assert any("github.auth" in line and "pass" in line for line in doctor.stdout.splitlines())
 
     repair = CliInvoker().invoke(root.meta, ["config", "set", "jira.timeout", "12"])  # type: ignore[union-attr]
     assert repair.exit_code == 0, repair.output

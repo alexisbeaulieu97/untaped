@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import shlex
 from collections.abc import Callable
-from typing import Annotated, Any
+from typing import Annotated, Any, ClassVar
 
 from cyclopts import App, Parameter
 from pydantic import ValidationError
@@ -47,6 +47,8 @@ _OUTCOME = "untaped.alias_outcome"
 
 class AliasRow(Record):
     """One effective alias (kind ``untaped.alias``)."""
+
+    table_columns: ClassVar[tuple[str, ...]] = ("name", "command", "profile")
 
     name: str
     command: str

@@ -24,7 +24,7 @@ from untaped.cli import (
 )
 from untaped.config_schema import redact_secrets, secret_field_paths
 from untaped.messages import q
-from untaped.profile.models import Profile, ProfileDeletePreview, ProfileOutcome
+from untaped.profile.models import ProfileDeletePreview, ProfileOutcome, ProfileRow
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile.use_cases import (
     CreateProfile,
@@ -72,8 +72,7 @@ def _make_list_command(empty_hint: str) -> Callable[..., None]:
         """List every profile, marking which one is active."""
         with report_errors():
             profiles = ListProfiles(ProfileFileRepository())()
-            human = fmt in ("table", "raw")
-            rows: list[dict[str, object]] = [_profile_row(p, human=human) for p in profiles]
+            rows = [ProfileRow(name=p.name, active=p.is_active, keys=p.key_count) for p in profiles]
             emit(
                 rows,
                 fmt=fmt,
@@ -264,15 +263,3 @@ def _show_delete_preview(preview: ProfileDeletePreview) -> None:
     echo(f"config: {resolve_config_path()}", err=True)
     echo(f"profile: {preview.name}", err=True)
     echo(f"top-level keys: {top_level}", err=True)
-
-
-def _profile_row(p: Profile, *, human: bool) -> dict[str, object]:
-    # ``name`` first: under ``--format raw`` the first key is what
-    # pipelines feed back into the next command (xargs identifier
-    # semantics). See root AGENTS.md '--format raw default-column contract'.
-    # ``active`` is a ✓ glyph for humans (table/raw) and a boolean otherwise.
-    return {
-        "name": p.name,
-        "active": ("✓" if p.is_active else "") if human else p.is_active,
-        "keys": p.key_count,
-    }

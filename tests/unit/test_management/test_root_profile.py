@@ -167,13 +167,16 @@ def test_list_json_marks_active_with_booleans(_isolated_config: Path) -> None:
     assert active == {"default": False, "prod": True, "stage": False}
 
 
-def test_list_table_keeps_the_check_mark(_isolated_config: Path) -> None:
+def test_list_marks_active_with_a_check_in_tables_only(_isolated_config: Path) -> None:
     _seed(_isolated_config)
     app = build_root_profile_app(command="untaped")
-    result = CliInvoker().invoke(
+    raw = CliInvoker().invoke(
         app, ["list", "--format", "raw", "--columns", "name", "--columns", "active"]
     )
-    assert "prod\t✓" in result.stdout.splitlines()
+    assert raw.stdout.splitlines() == ["default\tFalse", "prod\tTrue", "stage\tFalse"]
+    table = CliInvoker().invoke(app, ["list"])
+    marked = {line.split("│")[1].strip() for line in table.stdout.splitlines() if "✓" in line}
+    assert marked == {"prod"}
 
 
 # ── outcome records and --dry-run ────────────────────────────────────────────
