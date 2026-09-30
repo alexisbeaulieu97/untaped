@@ -15,6 +15,18 @@ Recipe verbs (`apply`, `list`, `get`, `edit`, `init`, `validate`, `test`) sit
 directly under `untaped recipe`. Packs, hooks and backups have their own
 nouns: `recipe packs …`, `recipe hooks …` and `recipe backups …`.
 
+The packaged skill is the full reference:
+[applying](../../src/untaped/capabilities/recipe/skills/untaped-recipe/references/apply.md),
+[packs, tests and backups](../../src/untaped/capabilities/recipe/skills/untaped-recipe/references/library.md)
+and [authoring](../../src/untaped/capabilities/recipe/skills/untaped-recipe/references/authoring.md).
+
+## Set up
+
+Recipes need no setup beyond installing a pack (below). `uv` must be on your
+`PATH` to run pack hooks. Settings such as `recipe.library_root` (where packs
+are installed) and hook timeouts are in the
+[configuration reference](../reference/config.md#recipe).
+
 ## Apply a recipe
 
 ```bash
@@ -22,29 +34,26 @@ untaped recipe list
 untaped recipe apply acme/editorconfig ~/work/api ~/work/web --dry-run
 untaped recipe apply acme/editorconfig ~/work/api ~/work/web
 untaped recipe apply ./my-pack/recipes/editorconfig/recipe.yml ~/work/api --yes
+untaped recipe apply acme/editorconfig ~/work/api --preview diff
 ```
 
 The recipe argument is a unique recipe name, a `pack/recipe` ref, or a path.
 A value is a path only when it starts with `./`, `../`, `/` or `~`, is `.` or
 `..`, or ends in `.yml`/`.yaml`. For a local pack directory, pass its path and
-`--recipe NAME`. A pack name or pack path alone selects the pack's recipe when
-it has exactly one.
+`--recipe NAME`.
 
-| Flag | Effect |
-|---|---|
-| `--dry-run` | Plan and preview; write nothing, back up nothing. Pack hooks still run, because they compute the plan. |
-| `--check` | Write nothing, ask nothing; exit 3 if any target would change. For CI. Pack hooks still run. |
-| `--yes` | Skip the confirmation. |
-| `--preview table\|diff\|none` | Preview style on stderr. `diff` prints unified diffs. |
-| `--no-backup` | Skip the backup bundle. |
-| `-j N` | Plan targets in parallel (at most 32). |
+`--dry-run` previews without writing; pack hooks still run, because they
+compute the plan. A target that fails to plan or write changes nothing and
+is reported; the other targets still run.
 
-A target that fails to plan or write changes nothing and is reported; the
-other targets still run. Within one target, writes roll back on failure.
-The run then exits 1, or 4 when the environment needs fixing (for example
-`uv` is not installed) and 5 when a retry can help; with `--format json`
-(or `UNTAPED_DIAGNOSTICS=json`) stderr errors are JSON Lines with their
-`category`, `system` and `hint`.
+### Check for drift in CI
+
+```bash
+untaped recipe apply acme/editorconfig ~/work/api --check
+```
+
+`--check` writes nothing and asks nothing, and exits `3` when any target
+would change.
 
 ### Apply to every repo of a workspace
 
@@ -70,51 +79,22 @@ untaped recipe apply acme/labels ~/work/api --var 'labels=[infra, tls]'
 untaped recipe apply acme/readme --stdin --input-from 'service={{ target.name }}' < dirs.txt
 ```
 
-- `--var` and `--vars-file` repeat. A later file wins over an earlier one,
-  and `--var` wins over every file. Each file is a YAML or JSON mapping with
-  string keys. Unknown input names are rejected.
-- `list` and `dict` inputs parse `--var` values as YAML. Other `--var`
-  values are plain strings, but `--vars-file` values are YAML: `3.10`
-  becomes `3.1` and `on` becomes `true` before a `str` input sees them.
-  Quote them (`python_version: "3.10"`).
-- `--input-from NAME=TEMPLATE` derives a value per target from
-  `target.path`, `target.name`, `target.parent_path`, `target.parent_name` or
-  the piped `record`.
-- For each input, the first value found wins: `--var`/`--vars-file` or
-  `--input-from`, the recipe's `from`, the recipe's `default`.
-- A required input still missing is prompted for when stdin is a terminal
-  (sensitive inputs as a hidden secret; `list`/`dict` inputs are never
-  prompted). Without a terminal (including with `--stdin`), or with
-  `--non-interactive` or `--check`, it fails with
-  `missing required input: NAME; pass --var NAME=VALUE or --vars-file FILE`.
-
-Sensitive inputs show as `***` in rows, previews and backups.
+A later file wins over an earlier one, and `--var` wins over every file.
+`--vars-file` values are YAML, so quote version-like strings
+(`python_version: "3.10"`). `--input-from` derives a value per target. A
+required input still missing is prompted for at a terminal; otherwise the
+run fails naming it. Sensitive inputs show as `***` in rows, previews and
+backups.
 
 ## Install and manage packs
 
 Installing a pack installs code: its hooks run on your machine with no
 sandbox, including during `apply --dry-run` and `--check`, since hooks compute
 the planned changes. Inspect a pack before you trust it (`recipe packs get`,
-`recipe validate`, `recipe test`).
-
-Hooks, and the `uv` commands untaped runs on a pack (`uv run`, `uv lock`,
-`uv lock --check`), get a reduced environment. Only `PATH`, `HOME`,
-`USER`/`LOGNAME`, locale (`LANG`, `LANGUAGE`, `LC_*`), `TZ`, temp directories,
-`UV_*` and `XDG_*` settings, `NETRC`, TLS trust (`SSL_CERT_FILE`,
-`SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`), proxies (`HTTP_PROXY`,
-`HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`) and, for `git+ssh` dependencies,
-`SSH_AUTH_SOCK` and `GIT_SSH_COMMAND` are passed through. Hook workers get
-`PYTHONPATH` set to the pack's `src/` only. Tokens held in other variables,
-such as `GITHUB_TOKEN` or untaped's Jira, AWX and GitHub credentials
-(`UNTAPED_*`), are not in a hook's environment.
-
-This limits what leaks through the environment only. `UV_*` variables are
-passed, and they can hold package-index credentials. Hooks also run as you,
-with full file access: they can read `~/.netrc`, your untaped `config.yml`,
-and git credential stores.
-
-Anything a hook writes to stdout, even at the file-descriptor level or from a
-subprocess, is shown as hook diagnostics; hooks read an empty stdin.
+`recipe validate`, `recipe test`). Hooks get a reduced environment without
+your tokens, but they run as you with full file access; the
+[trust model](../../src/untaped/capabilities/recipe/skills/untaped-recipe/references/library.md#backups-and-safety)
+lists exactly what they can see.
 
 ```bash
 untaped recipe packs add https://github.com/acme/untaped-recipes.git --rev v1.2.0
@@ -131,40 +111,13 @@ untaped recipe packs remove acme --yes
 untaped recipe packs list --format pipe | untaped recipe packs sync --stdin
 ```
 
-`packs edit` opens the pack's `pyproject.toml`; `edit` opens a recipe file.
-
-- A pack must contain a `uv.lock` and no symlinks (outside ignored build
-  directories such as `.venv`). Reinstalling needs `--force`; local edits
-  to the installed copy also need `--discard-edits`.
-- For a git source, `add` records both the `--rev` you asked for and the
-  resolved `commit` it installed; both appear in `packs list` and in the
-  `add`/`sync`/`remove` rows. `sync` also records a new commit when the
-  pack's files did not change.
-- `packs sync` and `packs remove` print a row for every pack they were
-  given: a pack that could not be fetched, installed or removed is a
-  `failed` row with `detail` and `error`, next to its `error:` line on
-  stderr. A removal that stopped partway (some files, or the `packs.toml`
-  row, left behind) is a `partial` row; run `packs remove` again to finish
-  it.
-- `packs sync PACK...` or `packs sync --all` re-fetches packs from the
-  source and `--rev` recorded at install (a branch or tag moves forward; a
-  local path source is re-read). Packs whose files would change are listed
-  and confirmed first, with the commit move (`old -> new`) and the hook-code
-  files that change. Hook code is everything under `src/`, any `*.py` at the
-  pack root (build scripts such as `setup.py`), and `pyproject.toml`,
-  `uv.lock`, `uv.toml`, `.python-version` and `setup.cfg`. Recipe files and
-  test cases are not hook code. `--yes` skips the question and `--dry-run`
-  only lists them; the rest report `unchanged`. Local edits to an installed
-  copy need `--discard-edits`.
-- `packs add` records a local path source as an absolute path. `packs sync`
-  refuses a pack recorded with a relative path (older installs); re-add it
-  with `packs add PATH --force`.
-- Packs are installed under `recipe.library_root`.
+- A pack must contain a `uv.lock` and no symlinks. Reinstalling needs
+  `--force`; local edits to the installed copy also need `--discard-edits`.
+- `packs sync` re-fetches packs from the source and `--rev` recorded at
+  install (a branch or tag moves forward). Packs whose files would change
+  are listed, with the hook code that changes, and confirmed first.
 - `recipe validate` checks the whole library, or one pack, recipe or path,
-  without importing hook code. Each `recipe.check` row has `name` (the pack,
-  the `PACK/RECIPE` ref or the built-in hook), `type` (`pack`, `recipe` or
-  `hook`), `status` (`pass` or `fail`), `path` and `detail` (why it failed);
-  any `fail` row exits 1.
+  without importing hook code; any failing check exits 1.
 
 ## Write a pack
 
@@ -215,51 +168,20 @@ steps:
 | `copy` | `source`, `dest`, `if_absent` | Copies a file as is, binary files included. |
 | `remove` | one of `file`/`files`/`globs`, `exclude` | Deletes files. |
 
-- Inputs have `type` (`str`, `int`, `bool`, `float`, `list`, `dict`),
-  `default`, `required`, `description`, `sensitive`, `scope` (`global` or
-  `target`) and `from` (derivation templates).
-- Templates render `{{ input }}` tokens and fail on unknown ones;
-  `unknown_tokens: keep` leaves foreign tokens such as GitHub Actions
-  expressions alone. Path fields render tokens too.
-- `globs` has no implicit excludes: add `exclude: [".git/**"]` when the
-  targets are Git clones.
-- `transform` works on UTF-8 text only; `copy` and `remove` also handle
-  binary files, which `--preview diff` shows as `Binary file PATH differs`.
-- All paths must be relative and stay inside the target; `..` and symlinks
-  out are rejected.
-- Hook `args` are passed to the hook as written. The built-in `yaml_edit`
-  renders `{{ input }}` tokens in its string values; your own hooks call
-  `helpers.render_template()` when they need that.
+`globs` has no implicit excludes: add `exclude: [".git/**"]` when the
+targets are Git clones.
 
 ### Hooks
 
 A hook module exports `transform()`, `validate()`, or both. `hooks init`
-writes a typed stub and a pytest for it. `hooks list` shows installed and
-built-in hooks, `hooks get` one hook, and `hooks edit` opens a pack hook's
-module. Debug one hook without a recipe:
+writes a typed stub and a pytest for it. For YAML files, use the built-in
+`yaml_edit` hook shown above. Debug one hook without a recipe:
 
 ```bash
 untaped recipe hooks run acme/pin_python --target ~/work/api --file pyproject.toml --diff
 untaped recipe hooks run acme/pin_python --target ~/work/api --file pyproject.toml \
   --var python_version=3.14 --args-file args.yml
 ```
-
-`hooks run` takes hook inputs with `--var KEY=YAML`/`--vars-file FILE` and
-hook args with `--arg KEY=YAML`/`--args-file FILE`. Both repeat with the same
-precedence as `apply`; values are parsed as YAML because a hook has no
-declared input types. YAML typing applies: `--var python_version=3.10` gives
-the number `3.1` and `--var enabled=on` gives `true`. Quote a value to keep it
-a string: `--var 'python_version="3.10"'`.
-
-Validate hooks return `helpers.pass_()`, `helpers.fail(msg)` or
-`helpers.skip(msg)`; a skipped target is not a failure. `helpers.warn(msg)`
-adds a warning to the target. Hooks must only read the target and their own
-pack: no writes, no network.
-
-For YAML files use the built-in `yaml_edit` hook shown above. Its
-`args.edits` list takes `op: set|merge|delete|ensure`, a `path` of mapping
-keys, `{index: N}` or `{where: {...}}` selectors, and a `value`. A file whose
-content would not change is left byte-identical.
 
 ### Golden tests
 
@@ -288,43 +210,15 @@ untaped recipe backups prune --keep 20
 
 `restore` refuses to overwrite a file that changed after the backup unless
 you pass `--force`. Backups hold file content only, not modes or times.
-Bundles are readable only by you: directories are created `0700`, files
-`0600`, and each bundle's `metadata.json` is replaced atomically.
-`prune` falls back to `recipe.backup_keep` and `recipe.backup_max_age_days`.
-It prints one `recipe.prune_outcome` row per bundle, with fields `id`,
-`size_bytes`, `action` and `detail`: `action` is `planned` with
-`--dry-run`, then `deleted`, or `failed` with `detail` and `error`.
 
 ## Output
 
-`apply` prints one `recipe.apply_outcome` row per target with `action`:
-`planned`, `applied`, `unchanged`, `skipped`, `cancelled` or `failed`. A
-failed row says why in `detail`, and in `error` (`category`, `system`,
-`retryable`, `message`, `hint`) for scripts; tables show `detail` only. See
-[Pipes and record kinds](../reference/pipes.md#recipe) for the other
-commands.
-
-A table shows each command's usual columns; `--columns ?` marks them and
-`--columns +inputs` adds one, while json, yaml, raw and pipe keep every
-field. `apply` shows `target_path`, `action`, `files_changed`, `warnings`
-and `detail`; `list` shows `pack` and `name`; `packs list` shows `name`,
-`version`, `source`, `rev`, `recipes` and `hooks`; `hooks list` shows
-`pack`, `name` and `module`; `test` shows `recipe`, `case`, `status` and
-`detail`, led by `pack` when several packs ran; `backups list` shows `id`,
-`created_at` and `recipe` (its rows also carry the bundle `path`).
-
-## Settings
-
-| Setting | Default | Purpose |
-|---|---|---|
-| `recipe.library_root` | `~/.untaped/untaped-recipes` | Installed packs. |
-| `recipe.hook_timeout_seconds` | `60` | Per-hook timeout; `0` disables. `apply --hook-timeout` overrides it. |
-| `recipe.hook_startup_timeout_seconds` | `300` | Time allowed to prepare a hook environment. |
-| `recipe.preview_max_rows` | `50` | Preview rows before per-file rows collapse; `0` is unlimited. |
-| `recipe.backup_keep`, `recipe.backup_max_age_days` | unset | Defaults for `backups prune`. |
+`apply` prints one `recipe.apply_outcome` row per target, with `action`
+`planned`, `applied`, `unchanged`, `skipped`, `cancelled` or `failed`; the
+preview goes to stderr. See [Pipes and record kinds](../reference/pipes.md#recipe)
+and [Exit codes](../reference/exit-codes.md).
 
 ## See also
 
 - [Workspaces](../workspace/usage.md)
-- [Exit codes](../reference/exit-codes.md)
 - [Configuration reference](../reference/config.md#recipe)

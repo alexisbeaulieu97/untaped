@@ -12,7 +12,6 @@ change repository settings without explicit approval for that exact action.
 ## Package Metadata
 
 - Package name: `untaped`
-- Current release target: `9.0.0`
 - License metadata: `license = "MIT"` and `license-files = ["LICENSE"]`
 - Build command: `uv build --no-sources`
 - Public manifest: [`release-manifest.toml`](../release-manifest.toml), which
@@ -109,12 +108,6 @@ ambiguous, or unverifiable remote state fails closed. A fully matching
 published release is a verified no-op after the published smoke. TestPyPI
 rehearsals omit the GitHub draft/publish states but retain immutable-file and
 smoke verification.
-
-## Release Order
-
-The `untaped` package is the release unit. Its supported Python floor,
-capability order, direct requirements, and reviewed source inputs are recorded
-in [`release-manifest.toml`](../release-manifest.toml).
 
 ## TestPyPI Caveat
 

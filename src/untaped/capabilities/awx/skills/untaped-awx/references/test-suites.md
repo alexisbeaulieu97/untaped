@@ -4,7 +4,8 @@ A test suite launches one job template (or one workflow, see
 [Workflow suites](#workflow-suites)) several times, once per case, with a
 different launch payload each time, and checks each job against what the case
 expects. This is the complete file format; `untaped awx schema AwxTestSuite`
-prints the body's JSON Schema for editors and validators, and the
+prints the body's JSON Schema for editors and validators (json, or
+`--format yaml`; the header's variables are `readOnly` in it), and the
 [examples](../examples/) are working starting points.
 
 ## Where suites live
@@ -409,9 +410,11 @@ delete a template while its job runs). The AWX user needs to create and
 delete job templates and workflows ([agent-profile.md](agent-profile.md)).
 
 `untaped awx test validate --source-ref REF` (or `untaped awx test run
---source-ref REF --dry-run`) does everything but the writes and prints one
-`awx.provision_outcome` row per copy; a case of a copied template is checked
-against the spec (its survey's required variables, the node ids it checks).
+--source-ref REF --dry-run`) does everything but the writes and prints the
+copies it would create
+([test-results.md](test-results.md#temporary-copies)); a case of a copied
+template is checked against the spec (its survey's required variables, the
+node ids it checks).
 
 `untaped awx test prune` deletes the copies a killed run left behind: job
 templates and workflows named like a copy whose description carries the
@@ -421,7 +424,7 @@ copies, as the teardown warning's hint does. An age below the longest run
 deletes the copies of runs still going, whose next launches then fail: prune
 another run's copies only once it has ended. It lists them and asks once
 (`--yes` skips the question, `--dry-run` only lists them), and prints one
-`awx.prune_outcome` row per copy.
+`awx.prune_outcome` row per copy (same page).
 
 ## Preflight: what `validate` and `run` check
 
@@ -437,13 +440,11 @@ case fails preflight when:
   is missing from `launch.extra_vars`;
 - the case sets `extra_vars`, `limit`, `inventory`, `credentials`,
   `scm_branch`, `job_tags`, `skip_tags`, `verbosity`, `diff_mode` or
-  `job_type` while the template's matching `ask_*_on_launch` is false (AWX
-  would ignore it), unless the template has that value already: its own,
-  its project's branch for an `scm_branch` it does not set, or extra vars
-  it saves with those values (AWX treats these as no-ops, and the run
-  leaves them out of the launch);
-- the template has a survey but does not prompt for variables, and
-  `extra_vars` holds a variable outside the survey;
+  `job_type` against the launch prompt rules of
+  [jobs.md](jobs.md#launch-templates) (a field whose `ask_*_on_launch` is
+  false, or `extra_vars` outside the survey of a template that does not
+  prompt for variables); a value the template already has is a no-op, and
+  the run leaves it out of the launch;
 - a workflow case checks a node id the workflow does not have
   (`workflow node not found: 'deplyo' in workflow 'Release'; did you mean
   'deploy'?`).

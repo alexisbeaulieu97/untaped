@@ -16,8 +16,6 @@ console script and does not own a second config or profile command group.
 external capabilities import untaped helpers from it and nothing else. Its
 closed composition set and helper exports are intentional; provider code must
 not import the internal registry or rely on other `untaped` modules as an API.
-The `untaped.api` module and the `from untaped import X` root forwarding were
-removed in 8.0 (capability API 2.0).
 
 ## 1. Provider package
 
@@ -80,23 +78,9 @@ tuples, compared as tuples (so `(1, 10)` is newer than `(1, 9)`). New exports
 are additive and bump the minor version; removing or breaking an export bumps
 the major, so `((3, 0), (4, 0))` stays compatible across 3.x. A provider that
 relies on an export added in `3.N` declares `((3, N), (4, 0))`. A missing,
-malformed (for example the float bounds of 1.x) or non-covering range
-quarantines the provider with an `api-range` reason naming the running
-version. Version `2.0` (untaped 8.0) removed the `untaped.api` module and the
-`from untaped import X` forwarding; 1.x ranges no longer compose. Version
-`2.1` (untaped 8.1) added `git_toplevel`, `file_lock`, `same_origin`,
-`UiContext.can_prompt`, the `flag` option of `read_structured_file`, and the
-`allow_empty` flag of `read_stdin_input`. Version `3.0` (untaped 9.0) changed
-the shape of `UntapedError` and the exit codes: every error has a `category`
-(`ErrorCategory`) and a `system`, `exit_code` is derived from the category
-(so a class no longer sets `exit_code` itself), `ConfigError` exits 4, and
-`unavailable` failures exit 5. `BatchOutcome` keeps `failures` (each item with
-its error) and derives `failed` from it; `OutcomeRecord` and `TargetRecord`
-reserve an `error` field. It added `ErrorCategory`, `ErrorInfo`, `most_severe`,
-`rejected_token_error`,
-`attribution`, `note_failure` and `report_error`. A 2.x provider must move to
-`((3, 0), (4, 0))` and check its error classes and any record field named
-`error`.
+malformed or non-covering range quarantines the provider with an `api-range`
+reason naming the running version. What each version added or broke is in
+the [changelog](../CHANGELOG.md).
 
 A built-in capability follows the same `SPEC` and `build_app()` shape but is
 constructed in the `untaped` source tree and listed in the root composition.
@@ -221,10 +205,8 @@ capability and is rejected by `untaped config set`.
 
 The root supplies position-independent `--profile`, `--verbose`, and `--quiet`
 options. Use `report_errors()` for user-facing configuration, input, and domain
-errors so the root preserves its standard diagnostics and exit codes: it exits
-with the error's `exit_code`, which its `category` selects (`2` usage, `4`
-config/auth/permission, `5` unavailable, `1` otherwise), or with a more
-severe failure the run already reported. Give your error classes a `category`
+errors so the root preserves its standard diagnostics and
+[exit codes](./reference/exit-codes.md). Give your error classes a `category`
 and `system` (your section name) as class defaults; see
 [Raise with a category](./conventions.md#raise-with-a-category-or-inherit-one).
 Follow [Command and output conventions](./conventions.md) for flags,
@@ -232,134 +214,31 @@ messages, exit codes and record shapes.
 
 ## 4. Stable helper surface
 
-Provider imports come from `untaped.capability_api` only. The module exports the
-composition types (`CapabilitySpec`, `SkillAsset`, `DoctorCheck`, and related
-records; `DoctorResult(..., warn=True)` reports a `warn` row that does not fail
-`doctor`), `CAPABILITY_API_VERSION`, and the supported helpers including
-`create_app`, `app_context`, `get_config_section`, `emit`, `read_identifiers`,
-`report_errors`, `FormatOption`, and `ColumnsOption`. The canonical v1 wire
-parser and record type are also exported as `parse_envelope_line` and
-`PipeEnvelope`; capabilities retain their own kind and required-ID validation.
+Provider imports come from `untaped.capability_api` only;
+[`src/untaped/capability_api.py`](../src/untaped/capability_api.py) lists every
+export, and each helper's docstring is its reference. The exports cover:
 
-The shared runtime helpers are exported from the same module:
+- composition types (`CapabilitySpec`, `SkillAsset`, `DoctorCheck`,
+  `DoctorResult`) and `CAPABILITY_API_VERSION`;
+- output, shared options and message wording (`emit`, `echo`, `FormatOption`,
+  `plural`, `q`, `not_found`, `hint`, ...);
+- errors and exit codes (`UntapedError`, `ErrorCategory`, `ConfigError`,
+  `UsageError`, `attribution`, `note_failure`, `report_error`, ...);
+- settings, context, tokens and doctor-check factories (`get_config_section`,
+  `app_context`, `TokenSources`, `connection_check`, `online_check`, ...);
+- HTTP, git, stdin and pipes, files, locks and state, UI, batches and
+  concurrency.
 
-- Output and arguments: `echo`, `emit`, `render_rows`, `OutputFormat`,
-  `raise_usage`, `parse_kv_pairs`, `parse_json_pairs`, `existing_file`,
-  `resolve_each`, `clamp_parallel`, and `deprecated_alias` (a hidden old
-  spelling of a renamed command or flag).
-- Shared options: `FormatOption`, `ColumnsOption`, `YesOption`,
-  `DryRunOption`, `StdinOption`, `ParallelOption` (>= 1), `LimitOption`
-  (>= 1).
-- Errors and exit codes: `UntapedError` (with `category`, `system`, `hint`,
-  `details`, and the derived `exit_code` and `retryable`), `ErrorCategory`,
-  `ConfigError` (exit 4), `UsageError` (exit 2), `OperationCancelledError`
-  (declined confirmation, exit 1), `HttpError`, `HttpStatusError` (category
-  from the status), `HttpTransportError` (unavailable, exit 5),
-  `first_validation_error`, `ExitCode`, `attribution(exc)` (the
-  `category`/`system`/`hint`/`details` keyword arguments to pass to an error
-  that replaces `exc`), `report_error(exc, item=…)` (print one failure, text
-  or JSON, and count it toward the exit code),
-  `note_failure(exc, message=…)` (count a failure you turned into a row
-  yourself; it returns the row's `ErrorInfo`), `most_severe(errors)` (the error
-  whose exit code wins), and `rejected_token_error(section, message, cause=…)`
-  (the standard `auth` error with the `config set <section>.token` hint).
-- Message wording: `plural`, `q`, `not_found`, `hint`, `summary`.
-- Tokens: declare `token_sources: ClassVar[TokenSources] =
-  TokenSources(env=(...))` and a `token_command: TokenCommand = None` field
-  beside `token` on your profile model. `app_context().section(...)` and
-  `get_config_section` then fill an unset `token` from `token_command` (run
-  lazily, once per process) and then from the listed environment variables.
-  See [Tokens](configuration.md#tokens).
-- Doctor checks: `connection_check(id, section=...)` reports the resolved
-  `base_url` and token source, and warns when the token is stored in plain
-  text in `config.yml` (`<section>.token`); `executable_check(id, program, purpose=...)`
-  warns when a program is not on `PATH`; `online_check(id, section=...,
-  probe=...)` runs only under `untaped doctor --online` (and `untaped setup`):
-  `probe` is a nullary callable doing your authenticated `whoami`-style call
-  (import your CLI lazily inside it) that returns the pass detail and raises
-  on failure. It runs inside `quick_probe()`, so `HttpClient` requests make
-  one attempt with a timeout of at most 10 seconds. The check keeps one line
-  of the error and names the fix (`config set <section>.token --prompt`,
-  `<section>.base_url`, or `http.ca_bundle`). Your
-  own `DoctorCheck(..., online=True)` is online-only too, and
-  `DoctorResult(..., fix="config set acme.token --prompt")` appends the
-  command to run to a failed or `warn` row.
-- Records: `OutcomeRecord`, `TargetRecord`, `CheckRecord`, and the
-  `UtcTimestamp` and `AbsolutePath` field types. A failed outcome or target
-  row carries `error=note_failure(exc, message=detail)`, which also counts
-  the failure toward the exit code (`ErrorInfo.from_exception` builds the
-  same object without counting it).
-- Settings and context: `get_config_section`, `get_core_settings`,
-  `HttpSettings`, `app_context`, `AppContext`.
-- HTTP: `connected_client`, `HttpClient`, `RetryPolicy`, `resolve_verify`, the
-  `paginate_link`, `paginate_offset`, and `paginate_pages` cursor loops, and
-  `same_origin(url, base)` (whether a server-supplied link stays on `base`'s
-  scheme, host and port; check it before following a link with credentials).
-  A client from `connected_client(section=…)` attributes its failures to that
-  section (`system`), and a failure's `details` include the number of
-  `attempts`.
-- Input and pipes: `read_identifiers`, `read_stdin_input`, `StdinInput`,
-  `read_records`, `read_stdin`, `resolve_text_input`, `is_envelope_line`,
-  `parse_envelope_line`, `PipeEnvelope`.
-- Files and state: `atomic_write` (durable; keeps the file's mode unless
-  given `mode=`, e.g. `mode=0o600` for owner-only files; writes through a
-  symlink), `read_structured_file(path, flag=None)` (one YAML mapping, or JSON
-  for a `.json` file, with string keys; `~` is expanded, a blank file is `{}`,
-  and with `flag="--vars-file"` every error names the flag and file),
-  `unified_diff_text`, `StateCollection`, `StateMap`, and
-  `file_lock(path, *, timeout, error, busy, failed)`, a context manager holding
-  an advisory lock file: when another process still holds it after `timeout`
-  seconds it raises `error(busy)`, and when the lock file cannot be opened
-  `error(f"{failed}: <reason>")`.
-- UI: `UiContext` (including `success`, `styled`, `confirm_action`,
-  `confirm_or_cancel`, `terminal` and `can_prompt`, which says whether its stdin
-  is a terminal a prompt can read), `ui_context`, `ProgressHandle`, `PromptChoice`.
-- Batches and concurrency: `batch_apply`, `BatchOutcome`, `finish`,
-  `bounded_map`.
-
-`bounded_map(fn, items, *, concurrency, on_each, on_abort=None,
-while_running=None)` applies `fn` to every item on at most `concurrency` worker
-threads (serially for one item or `concurrency=1`). `on_each(item, result)` runs
-on the calling thread, in completion order when parallel, and exceptions from
-`fn` propagate to the caller. On any escape, including Ctrl-C, queued work is
-cancelled and `on_abort` runs before in-flight calls are awaited so the caller
-can stop them. `while_running` runs on the calling thread after every item is
-submitted, for foreground work such as draining a queue the workers feed.
-
-`app_context().section(name, Model)`, `app_context().http`, and
-`get_config_section(name, Model)` validate only the requested section (plus its
-state section), once per context, so another capability's invalid settings
-never break your commands. `app_context().settings` still validates every
-section; prefer the section accessors.
-
-`run_editor(path, *, argv=None, stdin=None, stdout=None, stderr=None)` opens an
-external editor and waits for it to exit. Without explicit argv it parses
-`VISUAL`, falling back to `EDITOR`, as shell-free arguments. Configure a GUI
-editor with its wait flag. Omitted streams inherit the process streams; callers
-can route all three streams to a controlling terminal to protect piped stdout.
-The capability owns terminal requirements, temporary-file permissions, validation,
-and cleanup. Launch failures raise `ConfigError`.
-
-`run_git(args, *, timeout, cwd=None, capture=False, stdin=None, check=True,
-auth_header=None, auth_url=None, retry_transient=False, ...)` runs one `git`
-command non-interactively: stdin closed, terminal and credential-manager prompts
-disabled, ssh in `BatchMode` unless the user configured ssh, C locale, and
-inherited `GIT_DIR`-style variables dropped. It returns a `GitResult` and raises
-`GitCommandError` (with `returncode`, `timed_out`, and redacted `stderr`) on a
-missing binary, timeout, or non-zero exit. An `auth_header` (see
-`git_auth_header(token)`) reaches git only through a private, temporary include
-file, is redacted from errors, and disables Git trace variables.
-`retry_transient=True` retries transport failures of idempotent network commands
-with backoff. `safe_cache_path(url, root=...)` and `safe_path_segment(value)`
-give deterministic cache paths that cannot escape `root`.
-`git_toplevel(path)` returns the resolved root of the work tree containing the
-directory `path`, or `None` outside any checkout; it raises `GitCommandError`
-when git itself cannot run, so a missing git is never mistaken for "not a
-checkout".
+[Command and output conventions](./conventions.md) says which helper to use
+for each rule. Prefer `app_context().section(name, Model)` or
+`get_config_section(name, Model)`, which validate only your section, over
+`app_context().settings`. For a token, declare `token_sources:
+ClassVar[TokenSources] = TokenSources(env=(...))` and a `token_command:
+TokenCommand = None` field beside `token` on your profile model; see
+[Tokens](configuration.md#tokens).
 
 Use a provider's own dependency for domain-specific HTTP or filesystem adapters;
-do not reach into `untaped` internals to obtain an unexported helper. Shared
-settings, UI, error, and output behavior should use the stable exports. For
+do not reach into `untaped` internals to obtain an unexported helper. For
 example, a row-producing command can use `FormatOption`, `ColumnsOption`, and
 `emit` while retaining the capability namespace in its pipe kind:
 
@@ -417,18 +296,6 @@ Subclassing `TargetRecord` enforces this, and `OutcomeRecord` fixes the `action`
 field of mutation results. When `target_path` identifies the record, re-declare
 it as `target_path: AbsolutePath` so it leads the output.
 
-## Confirmation
-
-Gate destructive batches with `batch_apply(..., destructive=True,
-assume_yes=yes)` and pass its outcome to `finish()`; `outcome.failures` pairs
-each failed item with its error, for the item's row. A single confirmation uses
-`ui.confirm_or_cancel(message, assume_yes=yes, refusal="<verb> requires --yes
-when not interactive")`, which raises the decline for you. When stdin carries piped data, both prompt on the
-controlling terminal. With no terminal they exit 2. A decline prints
-`cancelled; no changes made` and exits 1. In tests,
-`untaped.testing.invoke_cli(..., terminal=True, prompt_backend=...)` simulates
-the controlling terminal. Without `terminal=True` there is none.
-
 ## 6. Packaged skills
 
 Declare skill assets on `CapabilitySpec.skills`. The root discovers the union and
@@ -440,11 +307,9 @@ untaped skills install acme --target codex
 untaped skills install --all --target all
 ```
 
-The short selector `acme` resolves the existing `untaped-acme` asset ID. The
-installed directory and `.untaped-skill.json` marker retain the full asset ID.
-See [Agent skills](./skills.md) for targets, scopes, overwrite behavior, and
-marker paths. Start the skill's `SKILL.md` from the
-[skill template](./templates/SKILL.md).
+The short selector `acme` resolves the full asset ID `untaped-acme`. Write
+the skill's `SKILL.md` from the [skill template](./templates/SKILL.md), which
+holds the skill rules; [Agent skills](./skills.md) covers installing.
 
 ## 7. Managed state
 

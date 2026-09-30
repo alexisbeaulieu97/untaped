@@ -32,16 +32,17 @@ untaped awx job-templates get Deploy --organization Default --format yaml
 - A name that is not found names its scope and suggests close names
   (`JobTemplate not found: 'deplyo' in organization 'Default'; did you mean
   'deploy'?`); a second line says when `awx.default_organization` chose the
-  organization (pass `--organization` to search elsewhere). An ambiguous name
-  needs a narrower scope or an id.
+  organization (pass `--organization` to search elsewhere), for `launch
+  --launch-inventory` and `--credential` names too. An ambiguous name needs a
+  narrower scope or an id.
 - The whole selection is resolved and validated before the first write; an
   empty or invalid selection writes nothing.
 - `list` and `get` tables show default columns (`list` also in `raw`) and
   name foreign keys (`inventory`, `organization`) from `summary_fields`;
   `json`, `yaml` and `pipe` carry complete records with ids unless
   `--columns` narrows them or `--with-names` names them. `--columns +name`
-  and `--columns=-name` edit a table's defaults. `--limit N` stops after N
-  records and `--limit 0` means all.
+  and `--columns=-name` edit a table's defaults; a column empty on every row
+  is left out. `--limit N` stops after N records and `--limit 0` means all.
 - `job-templates list|get --with-scm` adds `scm_url`, `effective_scm_ref`
   (the template's `scm_branch` when set and the project allows the override,
   else the project's `scm_branch`; empty stays empty) and
@@ -93,7 +94,8 @@ untaped awx job-templates patch --filter name__icontains=deploy \
   a warning.
 - Foreign keys: an integer is an AWX id, a string is a name in the selected
   scope. Keep a numeric-looking name a string with JSON quotes:
-  `--set 'inventory="123"'` (unquoted `inventory=123` is id 123).
+  `--set 'inventory="123"'` (unquoted `inventory=123` is id 123). An
+  ambiguous, missing or out-of-scope reference fails before any write.
 - Inventory cache timeouts are seconds and `0` is valid; changing
   `update_cache_timeout` does not change `update_on_launch`.
 - `patch` cannot create, rename, reparent or retarget, nor change identity,
@@ -101,7 +103,8 @@ untaped awx job-templates patch --filter name__icontains=deploy \
   `rename` to rename.
 - A schedule's survey password answers come back as `$encrypted$` in
   `extra_data`: applying them back keeps the stored answers, and changing
-  another `extra_data` key beside one is refused. A real answer typed into
+  another `extra_data` key beside one (removing another answer included) is
+  refused; a new schedule drops them with a warning. A real answer typed into
   `extra_data` is not recognised as secret and shows in previews.
 
 ## Edit in an editor
@@ -118,8 +121,10 @@ Removing a document deselects it; removing a field leaves it unchanged; a
 nested value replaces the whole field. Identity, name and parent changes, new
 or duplicate documents are refused. `edit` needs a real terminal at
 `/dev/tty` even with piped stdin or `--yes`, so an agent without one should
-use `patch` or `apply`. A failed session keeps the file and prints its path;
-a session with no change neither prompts nor writes.
+use `patch` or `apply`. The file is owner-only (mode `0600`) and removed
+after a clean session; invalid YAML can be reopened or cancelled; a failed
+session keeps the file and prints its path; a session with no change neither
+prompts nor writes.
 
 ## Copy and rename templates
 
@@ -131,9 +136,12 @@ untaped awx job-templates rename Deploy "Deploy app" --organization Default --dr
 - `copy SOURCE --name NEW` (job and workflow templates) copies server-side in
   the source's organization. It refuses a taken name, the source's own name,
   or a source AWX cannot copy (`can_copy: false`) before writing, and warns
-  about parts AWX will not carry (listed in `not_carried`). It emits
-  `awx.copy_outcome` (`id` is the new template).
-- `rename SOURCE NEW` refuses a name already used in the same scope, previews
+  about parts AWX will not carry without user input, such as a workflow's
+  references to templates, credentials or inventories the caller cannot use
+  (listed in `not_carried`). It emits `awx.copy_outcome` (`id` of the new
+  template, `name`, `source_id`, `kind`, `action`, `not_carried`).
+- `rename SOURCE NEW` refuses the current name and a name already used in the
+  same scope (the organization, or none for an org-less workflow), previews
   old → new, and re-reads the template: a name AWX did not take fails the row
   (exit 1). It emits `awx.rename_outcome` (`id`, `name`, `old_name`, `kind`,
   `action`: `planned`, `renamed` or `failed`).
@@ -163,16 +171,21 @@ to the top-level workflows); `nodes` lists what a workflow contains
 
 ## Confirmations and batches
 
-- `patch`, `edit`, `apply`, `delete`, `copy` and `rename` show one redacted
-  preview and ask once, No by default. `--yes` skips the prompt; `--dry-run`
+- `patch`, `edit`, `apply`, `delete`, `copy`, `rename` and membership
+  `add`/`remove` show one redacted preview and ask once, No by default (so do
+  `jobs cancel` and `jobs relaunch`, see [jobs.md](jobs.md#cancel-and-relaunch)). `--yes` skips the prompt; `--dry-run`
   never writes and wins over `--yes`. Declining exits 1 with `cancelled; no
   changes made`. Without a terminal they need `--yes` or `--dry-run` (exit 2).
 - Writes run one at a time; `--parallel N` allows up to ten at once. A
   failure stops scheduling new writes unless `--continue-on-error`; writes
   already running finish, and results keep the ids they reached. There is no
   transaction or rollback.
-- Each write re-reads what it changes to detect conflicting changes; a body
-  write whose membership or survey write then fails is reported `partial`.
+- Each write re-reads what it changes to detect conflicting changes (`delete`
+  re-reads after an interactive prompt; with `--yes` the read just before the
+  writes is the check); a body write whose membership or survey write then
+  fails is reported `partial`, keeping the resource id. A write AWX does not
+  read back as sent fails as unverified; `--allow-unverified --yes` keeps it,
+  still labelled unverified.
   Deleting an inventory is asynchronous (`deletion_requested`).
 - Previews and results redact known secrets. `apply`, `patch` and `edit`
   emit `awx.apply_outcome` rows whose `fields_changed` and

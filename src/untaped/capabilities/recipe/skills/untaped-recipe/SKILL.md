@@ -101,8 +101,8 @@ Details that do not fit here ship next to this file:
 ## Safety
 
 - Installing a pack is installing code: its hooks run as the user, with full
-  file access, even during `--dry-run` and `--check`. Inspect an unfamiliar
-  pack before installing it; see [references/library.md](references/library.md).
+  file access and an allowlisted environment. Inspect an unfamiliar pack
+  before installing it; see [references/library.md](references/library.md).
 - Exit codes: 0 success, 1 failure (a bad recipe, pack or input, a missing
   name, a failing hook) or declined confirmation, 2 usage error, 3 `--check`
   drift, 4 fix the environment (`uv` missing, `$EDITOR`, settings), 5

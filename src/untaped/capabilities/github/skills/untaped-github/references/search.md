@@ -6,6 +6,7 @@ How `untaped github repos list` matches names, and how `untaped github search re
 - Use `--limit` intentionally; GitHub search has stricter rate limits than normal REST reads. When `--limit` cuts results off, stderr says so (`showing 50 of 312 repositories; omit --limit to list all` for `repos list`; `showing the first 30 results; more match, raise --limit to see them` for search). No notice means you have every match, except that search cannot tell at a `--limit` that is a multiple of 100 or 1000 and up (checking would cost an extra request), so use an odd limit such as 150 when completeness matters.
 - When no repo/org/user/team/stdin scope is passed to repo/code/issue search, the CLI searches `github.default_org`, or else the authenticated user (`user:@me`) and prints `no user, org or repository in scope; searching user:@me ...` on stderr (also when `--team` resolves to no repos).
 - Repeated repo scopes are ORed together; do not rewrite them as separate AND qualifiers.
+- Search `--limit` defaults to 30; GitHub never returns more than 1000 results.
 - `search repos` automatically batches large team-expanded repo scopes around
   GitHub's search validation limits: at most five `AND`/`OR`/`NOT` operators
   and 256 user query-text characters per request, excluding generated

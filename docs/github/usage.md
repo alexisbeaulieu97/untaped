@@ -5,6 +5,10 @@ many repositories for content with local `git grep`. Sweeps run over a local
 Git corpus, so repeated questions over hundreds of repos avoid GitHub's search
 limits.
 
+The packaged skill is the full reference:
+[listing and searching](../../src/untaped/capabilities/github/skills/untaped-github/references/search.md)
+and [sweeps and the corpus](../../src/untaped/capabilities/github/skills/untaped-github/references/sweep.md).
+
 ## Set up
 
 ```bash
@@ -24,57 +28,33 @@ export `GH_TOKEN` or `GITHUB_TOKEN`. `github.token` wins over
 `github.token_command`, which wins over the variables; see
 [Tokens](../configuration.md#tokens).
 
-A rejected token (HTTP 401) fails with a hint to run `config set github.token`
-and exits 4; a rate limit exits 5 (retry later). With `--format json` (or
-`UNTAPED_DIAGNOSTICS=json`) stderr is JSON Lines whose errors carry
-`category`, `system` (`github`, `git`), `retryable` and `hint`.
-`sweep` and `cache` run `git`, so Git must be on your `PATH`.
-
-| Setting | Default | Purpose |
-|---|---|---|
-| `github.base_url` | `https://api.github.com` | API URL. |
-| `github.token` | unset | Token for the API and for Git fetches from the `base_url` host. |
-| `github.token_command` | unset | Command (argv list) that prints the token when `github.token` is unset. |
-| `github.default_org` | unset | Org scope used when a command gets no `--org`, `--team`, `--repo`, `--user` or `--stdin` (see [Scopes](#scopes-and-filters)). |
-| `github.corpus_path` | `~/.untaped/github-corpus` | Where `sweep` keeps its Git copies. |
-| `github.sweep.max_age_seconds` | `3600` | `sweep` and `cache sync` refresh cached copies older than this. |
-| `github.sweep.sync_concurrency` | `12` | Default `sweep --parallel` and `cache sync --parallel`. |
-
-Git fetches send the token only to the Git host of `github.base_url`:
-`github.com` for `https://api.github.com`, `HOST` for `https://HOST/api/v3`.
-A piped `clone_url` on any other host is fetched without credentials, so a
-private repo there fails to fetch instead of receiving your token.
+Git fetches send the token only to the Git host of `github.base_url`, so a
+piped `clone_url` on another host is fetched without credentials. `sweep`
+and `cache` run `git`, so Git must be on your `PATH`. The other settings
+(default org, corpus location, sweep freshness and parallelism) are in the
+[configuration reference](../reference/config.md#github).
 
 ## Scopes and filters
 
 `repos list`, `search repos|code|issues`, `sweep` and `cache sync` take the
 same scope flags: repeatable `--org` and `--team ORG/SLUG`. All but
-`repos list` also take repeatable `-r/--repo OWNER/NAME` and `--stdin` (see
-[Output](#output) for the records `--stdin` reads).
+`repos list` also take repeatable `-r/--repo OWNER/NAME` and `--stdin`.
 
 - With no scope flag, a command uses `github.default_org`:
   `untaped config set github.default_org acme` makes
   `untaped github sweep --grep old_api` sweep `acme`. Any scope flag replaces
-  the default org; it never adds to it. `cache prune` uses it when `--org` is
-  omitted too.
+  the default org; it never adds to it.
 - Without `github.default_org`, `repos list`, `sweep` and `cache sync` fail
-  with exit 2, and `search repos|code|issues` searches your own repositories
-  (`user:@me`), saying so on stderr.
-- `--archived include|exclude|only` on `repos list`, `search repos`, `sweep`
-  and `cache sync` keeps archived repositories, drops them, or keeps only
-  them. It defaults to `exclude` on all four, so `search repos` adds
-  `archived:false` unless the query already has an `archived:` qualifier.
-- `--limit N` caps the rows. When it cuts results off, a notice on stderr says
-  so: `showing 50 of 312 repositories; omit --limit to list all` for
-  `repos list`, `showing the first 30 results; more match, raise --limit to
-  see them` for `search`. `-q` mutes it. Search detects truncation by asking
-  for one row past `--limit`, except at a multiple of 100 or at 1000 and up,
-  where that row would cost an extra request; those limits print no notice.
+  with exit 2, and `search` searches your own repositories (`user:@me`).
+- `--archived include|exclude|only` keeps archived repositories, drops them
+  (the default), or keeps only them.
+- `--limit N` caps the rows, and a notice on stderr says when it cut results
+  off.
 
 ## List an org's or team's repos
 
-`repos list` returns the complete inventory of the scopes you name. It needs
-at least one `--org` or `--team` (or `github.default_org`); scopes add up.
+`repos list` returns the complete inventory of the scopes you name; scopes
+add up.
 
 ```bash
 untaped github repos list --org acme
@@ -84,14 +64,9 @@ untaped github repos list 'svc-*' --org acme
 untaped github repos list 'api|web' --org acme --regex
 ```
 
-- `PATTERN` is a case-insensitive glob. With `--regex` it is an unanchored,
-  case-insensitive regex. A pattern with `/` matches `repo`
-  (`acme/svc-*`); otherwise it matches the repo name.
-- `--team SLUG` without the org works when you pass exactly one `--org`;
-  `--org acme --team backend` means all of `acme` plus that team.
-- The table shows `repo`, `default_branch`, `private`, `archived`,
-  `fork` and `url`. Use `-c` or `--format json` for the rest (`clone_url`,
-  `ssh_url`, `pushed_at`, ...).
+`PATTERN` is a case-insensitive glob, or a regex with `--regex`. The table
+shows a few columns; use `-c` or `--format json` for the rest (`clone_url`,
+`ssh_url`, `pushed_at`, ...).
 
 Clone the result into a workspace:
 
@@ -102,9 +77,7 @@ untaped github repos list --team acme/platform --format pipe \
 
 ## Search GitHub
 
-`search` calls GitHub's search API. With no `--user`, `--org`, `--team`,
-`--repo` or `--stdin`, it searches `github.default_org`, or else your own
-repositories (`user:@me`) with a note on stderr.
+`search` calls GitHub's search API.
 
 ```bash
 untaped github search repos --org acme --language python
@@ -113,14 +86,9 @@ untaped github search issues --org acme --state open --label bug --kind pr
 untaped github search users --kind org --location Montreal
 ```
 
-- `--limit` defaults to 30. GitHub never returns more than 1000 results, and
-  search has stricter rate limits than other API calls.
-- A long team or `--repo` scope is split into several requests and the
-  results are merged. One command sends at most 9 code-search or 25
-  repository- or issue-search requests; past that it warns that results cover
-  only the first repositories.
-- Code search cannot sort, use regexes, or look past the default branch. Use
-  `sweep` for that.
+`--limit` defaults to 30; GitHub never returns more than 1000 results, and
+search has stricter rate limits than other API calls. Code search cannot
+sort, use regexes, or look past the default branch: use `sweep` for that.
 
 Feed repos from one search into another:
 
@@ -143,40 +111,14 @@ untaped github sweep --org acme --has-file Jenkinsfile --lacks-file renovate.jso
 untaped github sweep --org acme --ref 'release/*' --grep jenkins --show matches
 ```
 
-| Flag | Meaning |
-|---|---|
-| `--grep RE`, `--not-grep RE` | Content must (not) match. POSIX extended regex: `a\|b` alternates, `\(` is a literal parenthesis, use `[0-9]` not `\d`. Repeatable. |
-| `--has-file GLOB`, `--lacks-file GLOB` | A file must (not) exist. |
-| `--path SPEC` | Limit content predicates to a Git pathspec. |
-| `--any` | A repo matches when any positive predicate holds. Without it, all must hold. Negative predicates are always ANDed. |
-| `-i`, `-F`, `--word-regexp` | Case-insensitive, literal strings, whole words. They apply to every `--grep` and `--not-grep`. |
-| `--refs default\|branches\|tags\|all`, `--ref GLOB` | Which refs to scan. Default: each repo's default branch. |
-| `--refresh`, `--cached` | Fetch every repo, or scan only what is cached. Default: fetch copies older than `github.sweep.max_age_seconds`. |
-| `--show repos\|files\|matches` | One row per repo (`github.sweep_repo`), one per matching file with its line count (`github.sweep_file`), or one per matching line (`github.sweep_match`). |
-| `--no-owners` | Skip the CODEOWNERS column. |
-| `--depth N` | Git fetch depth; `0` is full history. |
-| `-j N` | Parallel Git workers (at most 32). |
+Patterns are POSIX extended regexes (`a|b` alternates, `\(` is a literal
+parenthesis, use `[0-9]` rather than `\d`). By default all predicates must
+hold, on each repo's default branch; `--any`, `--refs` and `--ref` change
+that, and `--show files|matches` prints files or lines instead of repos.
 
-Binary files are skipped. A branch and a tag with the same name are both
-scanned and shown as `heads/NAME` and `tags/NAME`. Refs that point at the same
-content (a tag on a branch tip, say) are scanned once and all reported.
-
-### Sweep a large org quickly
-
-- A cached copy older than `github.sweep.max_age_seconds` is fetched again
-  only when GitHub reports a push since the last fetch (the repo's
-  `pushed_at`). An unchanged repo costs no Git network call, so re-running a
-  sweep over a mostly quiet org takes seconds after the inventory listing.
-  `--refresh` always fetches.
-- Each repo is scanned as soon as its fetch ends, and the progress line shows
-  `Sweeping 312/1400 repos (45 fetched, 3 failed)`.
-- `repos list --format pipe | sweep --stdin` reuses the piped records instead
-  of looking each repo up again; their `pushed_at` lets unchanged repos skip
-  the fetch. A record without `pushed_at` is fetched when stale, and never
-  erases the `pushed_at` stored from an earlier fetch.
-- Warm the corpus ahead of time, for example from a nightly job, with
-  `cache sync` (see below). Two sweeps can run at once: each cached repo is
-  locked while it is fetched.
+A repeated sweep is fast: a cached copy is fetched again only when it is
+older than `github.sweep.max_age_seconds` and GitHub reports a push since.
+`--refresh` always fetches, and `--cached` never does.
 
 ### Sweep in CI
 
@@ -184,14 +126,9 @@ content (a tag on a branch tip, say) are scanned once and all reported.
 untaped github sweep --org acme --grep 'BEGIN RSA PRIVATE KEY' --fail-on-match
 ```
 
-- `--fail-on-match` exits 3 when any repo matches.
-- `--strict` exits 3 when any repo could not be scanned.
-- A repo that cannot be fetched or read never stops the sweep: it is listed as
-  unscanned in the footer on stderr. A bad token (401) or a rate limit does
-  stop it.
-
-When a refresh fails but an older copy is cached, the sweep scans that copy
-and warns `refresh failed for N repos; scanned cached copies`.
+`--fail-on-match` exits 3 when any repo matches, and `--strict` exits 3 when
+any repo could not be scanned. A repo that cannot be fetched or read never
+stops the sweep: it is listed as unscanned on stderr.
 
 ### Chain sweeps
 
@@ -213,21 +150,9 @@ untaped github cache delete --all --org acme --yes
 untaped github cache prune --org acme
 ```
 
-- `cache sync` fetches every repo in scope into the corpus without a query,
-  so later sweeps start warm. It takes the same scope, `--refs`, `--ref`,
-  `--depth`, `-j` and `--refresh` flags as `sweep`, and emits one
-  `github.sync_outcome` per repo: `synced`, `unchanged` (no push since the
-  last fetch), `skipped` (younger than `max_age_seconds`) or `failed`. A
-  failed row says why in `detail` and carries a structured `error`
-  (`category`, `system`, `retryable`, `message`, `hint`). Any failure exits
-  non-zero: 1 for a failed fetch, 5 when one timed out or lost the network.
-- `cache status` lists cached repos with their size and fetch age (`1.2 MiB`,
-  `3 hours ago` in the table; `disk_bytes` and `fetched_at` in json).
-- `cache worktree` checks out a cached ref and prints its path. It only uses
-  refs already in the corpus.
-- `cache delete` removes the repos you name, or `--all` (narrowed by `--org`).
-  A named repo that is not cached (or not in `--org`) fails with
-  `cached repo not found` and exit 1 before anything is deleted.
+- `cache sync` fetches every repo in scope without a query, so later sweeps
+  start warm — for example from a nightly job.
+- `cache worktree` checks out a cached ref and prints its path.
 - `cache prune --org ORG` removes cached repos that left the org or were
   archived.
 - `delete` and `prune` preview and ask first; `--yes` skips the question and
@@ -238,28 +163,13 @@ The corpus is for sweeps. For clones you work in, use
 
 ## Output
 
-| Command | Record kind |
-|---|---|
-| `whoami` | `github.user` |
-| `repos list` | `github.repo` |
-| `search repos` / `code` / `issues` / `users` | `github.repo_hit` / `github.code` / `github.issue` / `github.user_hit` |
-| `sweep` | `github.sweep_repo`; `github.sweep_file` with `--show files`; `github.sweep_match` with `--show matches` |
-| `cache status` / `delete` / `prune` | `github.corpus_repo` |
-| `cache sync` | `github.sync_outcome` |
-| `cache worktree` | `github.worktree` |
-
-Records name the repository `owner/name` in `repo` and link its web page in
-`url`.
-
-`--stdin` on `search repos`, `search code`, `search issues`, `sweep` and
-`cache sync` reads `owner/name` lines or `github.repo`, `github.repo_hit` and
-`github.sweep_repo` records (their `repo`). `sweep` and `cache sync` use a
-`github.repo` record as it is; other records and bare names are looked up
-through the API.
+Records name the repository `owner/name` in `repo`; `--stdin` reads such
+names or the repo records of another `github` command. See
+[Pipes and record kinds](../reference/pipes.md#github) and
+[Exit codes](../reference/exit-codes.md): a rejected token exits 4 and a
+rate limit exits 5 (retry later).
 
 ## See also
 
-- [Pipes and record kinds](../reference/pipes.md)
-- [Exit codes](../reference/exit-codes.md)
 - [Configuration reference](../reference/config.md#github)
 - [Workspaces](../workspace/usage.md)

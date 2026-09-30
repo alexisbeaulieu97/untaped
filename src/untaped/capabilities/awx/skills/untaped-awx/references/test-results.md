@@ -288,8 +288,8 @@ approval still waiting. `nodes` shows where each stood.
   waiting, and the case sets no approvals; cancel requested`. Set
   `approvals`. With `--no-cancel` the message names the waiting approval and
   the `untaped awx jobs cancel … --kind workflow_job` command instead.
-- AWX refusing to approve (a missing Approve role): `awx.credentials`
-  (exit 4).
+- AWX refusing to approve (a missing Approve role, see
+  [agent-profile.md](agent-profile.md)): `awx.credentials` (exit 4).
 - A node that ran a project or inventory update itself and failed is
   `awx.scm` or `awx.inventory`, whatever the case expects, as for a job.
 

@@ -13,8 +13,14 @@
   the scaffold stays in place with a repairable error; `--no-lock` skips
   locking, but hooks cannot run until `uv lock` succeeds because workers use
   `uv run --locked --no-dev`.
+- A pack's `pyproject.toml` lists its recipes under
+  `[tool.untaped_recipe.recipes]` and its hooks under
+  `[tool.untaped_recipe.hooks]`.
 - Recipe YAML is behavior-only: `version: 1`, optional `description`, optional
-  `inputs`, and `steps`; `name:` is rejected. Step types are `validate`,
+  `inputs`, and `steps`; `name:` is rejected. Each input takes `type` (`str`,
+  `int`, `bool`, `float`, `list`, `dict`), `default`, `required`,
+  `description`, `sensitive`, `scope` (`global` or `target`) and `from`
+  (derivation templates). Step types are `validate`,
   `transform`, `template`, `copy`, and `remove`. `transform`/`remove` take
   exactly one of `file`, `files` (load-time fan-out to per-file steps), or
   `globs` (planning-time discovery; `exclude` skips matches; no implicit

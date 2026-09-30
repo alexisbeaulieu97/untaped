@@ -9,7 +9,9 @@
   The pack must load, contain a `uv.lock`, and contain no symlinks (outside
   ignored dirs such as `.venv`). Reinstalling needs `--force`, which still refuses to
   overwrite a library copy with local edits unless `--discard-edits` is added.
-  A local path source is recorded as an absolute path; a git source records
+  A local path source is recorded as an absolute path (`packs sync` refuses
+  one recorded as a relative path by an older release: re-add it with
+  `packs add PATH --force`); a git source records
   the requested `rev` and the resolved `commit` (shown in `packs list` and
   the `add`/`sync`/`remove` rows; `sync` updates it even when no file changed).
 - `packs sync <pack>...` or `packs sync --all` re-fetches each installed pack from its
@@ -76,14 +78,19 @@
   engine-mediated read or write, again after path-field rendering.
 - Installing a pack is installing code (same trust model as `pip install`, no
   sandbox). Evaluate before trusting: the `packs add` summary, `packs get`, `validate`'s
-  no-import scan, and the golden test harness. Hook workers get an
-  allowlisted environment (`PATH`, `HOME`, locale, temp dirs, `UV_*`/`XDG_*`,
-  TLS and proxy settings, `SSH_AUTH_SOCK`/`GIT_SSH_COMMAND`, and `PYTHONPATH`
-  set to the pack's `src/` only), as do `uv lock` runs on packs. Tokens such as
-  `GITHUB_TOKEN` or untaped's `UNTAPED_*` Jira/AWX/GitHub credentials are not
-  in the environment, but `UV_*` (possibly index credentials) is, and hooks
-  run as the user with full file access (`~/.netrc`, `config.yml`, git
-  credential stores). Hook stdout (even raw fd 1 or a
+  no-import scan, and the golden test harness.
+- Hook workers, and the `uv` commands run on a pack (`uv run`, `uv lock`,
+  `uv lock --check`), get an allowlisted environment: `PATH`, `HOME`,
+  `USER`/`LOGNAME`, locale (`LANG`, `LANGUAGE`, `LC_*`), `TZ`, temp
+  directories, `UV_*` and `XDG_*`, `NETRC`, TLS trust (`SSL_CERT_FILE`,
+  `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`), proxies
+  (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`) and, for `git+ssh`
+  dependencies, `SSH_AUTH_SOCK` and `GIT_SSH_COMMAND`; hook workers also get
+  `PYTHONPATH` set to the pack's `src/` only. Tokens such as `GITHUB_TOKEN` or
+  untaped's `UNTAPED_*` Jira/AWX/GitHub credentials are not in the
+  environment, but `UV_*` (possibly index credentials) is, and hooks run as
+  the user with full file access (`~/.netrc`, `config.yml`, git credential
+  stores). Hooks read an empty stdin; hook stdout (even raw fd 1 or a
   subprocess) becomes diagnostics and never corrupts the worker protocol.
 - Run `untaped skills install --all` (or `untaped skills install untaped-recipe`)
   to install this packaged skill.

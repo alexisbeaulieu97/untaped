@@ -96,10 +96,9 @@ untaped profile use prod
 untaped profile current
 ```
 
-`--profile NAME` selects a profile for one command; put it anywhere in the
-command, for example `untaped github --profile work whoami`. `profile use`
-changes the default for every later command. `UNTAPED_PROFILE` does the same
-for one shell session.
+`--profile NAME` selects a profile for one command, anywhere in the command;
+`profile use` changes the default for every later command. See
+[Profiles](./configuration.md#profiles).
 
 ## First command in each capability
 
@@ -154,14 +153,10 @@ untaped github repos list --org acme --format raw --columns repo
   `--columns` you name separated by tabs. It suits `fzf`, `awk` and `xargs`.
 - `pipe` prints records that another `untaped` command reads with `--stdin`.
 
-To change the `table` default, set `ui.format` in your profile or export
-`UNTAPED_FORMAT` (which wins over the setting); an explicit `--format` always
-wins. A table written to a pipe or file is never wrapped to the terminal
-width.
+To change the `table` default, set `ui.format` or export `UNTAPED_FORMAT`:
 
 ```bash
 untaped config set ui.format json
-UNTAPED_FORMAT=yaml untaped github repos list --org acme
 ```
 
 Only data goes to stdout. Progress, warnings and errors go to stderr, so a
