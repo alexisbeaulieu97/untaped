@@ -64,7 +64,6 @@ def test_management_commands_dispatch_through_root(_isolated_config: Path) -> No
     ):
         result = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
         assert result.exit_code == 0, (argv, result.output)
-    assert bootstrap.current_capability() is None
     assert profile_override() is None
 
 

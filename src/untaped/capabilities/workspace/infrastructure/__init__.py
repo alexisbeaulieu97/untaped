@@ -17,7 +17,6 @@ from untaped.capabilities.workspace.infrastructure.system_adapters import (
     InterruptibleShellRunner,
     LocalFilesystem,
     resolve_editor_argv,
-    shell_runner,
 )
 
 __all__ = [
@@ -33,5 +32,4 @@ __all__ = [
     "YamlManifestRepository",
     "cache_path_for",
     "resolve_editor_argv",
-    "shell_runner",
 ]

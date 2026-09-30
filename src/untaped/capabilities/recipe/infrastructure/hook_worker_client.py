@@ -27,6 +27,8 @@ from untaped.capability_api import ErrorCategory
 APPLY_DIAGNOSTIC_LIMIT = 4000
 DEBUG_DIAGNOSTIC_LIMIT = 10 * 1024 * 1024
 DEBUG_DIAGNOSTIC_SETTLE_SECONDS = 0.05
+# How long close() waits for an exit before each escalation (EOF, SIGTERM, SIGKILL).
+CLOSE_GRACE_SECONDS = 2.0
 
 
 class HookWorkerResponse(BaseModel):
@@ -441,14 +443,14 @@ class UvHookWorker:
             with suppress(OSError):
                 self._process.stdin.close()
         try:
-            self._process.wait(timeout=2)
+            self._process.wait(timeout=CLOSE_GRACE_SECONDS)
         except subprocess.TimeoutExpired:
             self._signal_process(signal.SIGTERM)
             try:
-                self._process.wait(timeout=2)
+                self._process.wait(timeout=CLOSE_GRACE_SECONDS)
             except subprocess.TimeoutExpired:
                 self._signal_process(signal.SIGKILL)
-                self._process.wait(timeout=2)
+                self._process.wait(timeout=CLOSE_GRACE_SECONDS)
 
     def _signal_process(self, sig: signal.Signals) -> None:
         pid = getattr(self._process, "pid", None)

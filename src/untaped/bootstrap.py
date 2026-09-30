@@ -11,7 +11,6 @@ from __future__ import annotations
 import inspect
 import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from contextvars import ContextVar, Token
 from importlib import import_module, metadata
 from itertools import chain
 from typing import Any
@@ -91,17 +90,6 @@ BUILTIN_CAPABILITIES: tuple[CapabilitySpec, ...] = tuple(
     for name in ("workspace", "github", "jira", "awx", "ansible", "recipe")
 )
 
-#: Active capability name for the current invocation (spec §4). Set at
-#: dispatch time to the selected capability (or the shell name when dispatch
-#: has not selected one) and reset to its previous value in a ``finally``
-#: block, so nested in-process invocations restore the outer identity.
-_active_capability: ContextVar[str | None] = ContextVar("untaped_active_capability", default=None)
-
-
-def current_capability() -> str | None:
-    """Return the active capability name, or ``None`` outside dispatch."""
-    return _active_capability.get()
-
 
 def _shell_app() -> App:
     return create_app(name=SHELL_NAME, help="Unified untaped developer CLI.")
@@ -170,12 +158,11 @@ def compose_root(
 def reset() -> None:
     """Clear invocation-scoped state back to the just-composed composition.
 
-    Clears the identity variable, the profile/verbose/quiet overrides, the
+    Clears the profile/verbose/quiet overrides, the
     settings caches, and the config registry, then re-registers the
     just-composed shell and capabilities. Exists for test isolation; never
     called implicitly between user invocations (spec §4).
     """
-    _active_capability.set(None)
     set_profile_override(None)
     _reset_verbose(None)
     _reset_quiet(None)
@@ -243,12 +230,10 @@ def build_root_app(
         _mount_capability(root, capability)
     root.version = _resolve_version
     root.config = (apply_default_format,)
-    capability_names = frozenset(capability.spec.name for capability in result.capabilities)
     skills = composed_skills(SHELL_SPEC, result)
     _install_root_callback(
         root,
         _root_options(),
-        capability_names,
         after_command=lambda tokens, failed: _check_skills_after(tokens, skills, failed=failed),
     )
     root.register_install_completion_command()
@@ -345,7 +330,6 @@ def _check_skills_after(
 def _install_root_callback(
     app: App,
     root_options: dict[str, _RootOption],
-    capability_names: frozenset[str],
     *,
     after_command: Callable[[list[str], bool], None] | None = None,
 ) -> None:
@@ -359,13 +343,8 @@ def _install_root_callback(
     app.meta.end_of_options_delimiter = ""
 
     def _dispatch_root(*tokens: str) -> object:
-        # Identity is set at dispatch time to the selected capability (or the
-        # shell name when dispatch has not selected one) and reset to its
-        # previous value in a ``finally`` block, exactly like the root-option
-        # reset loop below. Nested in-process callers therefore restore the
-        # outer invocation's identity.
         applied_tokens: list[tuple[_RootOption, object]] = []
-        identity_token: Token[str | None] | None = None
+        dispatched = False
         command_tokens: list[str] = []
         failed = True
         try:
@@ -381,12 +360,7 @@ def _install_root_callback(
                     command_tokens = _consume_leading_root_options(
                         expanded, root_options, applied_tokens
                     )
-                selected = (
-                    command_tokens[0]
-                    if command_tokens and command_tokens[0] in capability_names
-                    else SHELL_NAME
-                )
-                identity_token = _active_capability.set(selected)
+                dispatched = True
                 result = _dispatch_with_root_options(
                     app, command_tokens, root_options, applied_tokens
                 )
@@ -397,10 +371,8 @@ def _install_root_callback(
             raise
         finally:
             # Runs on failures too: a stale skill is a likely cause of one.
-            if after_command is not None and identity_token is not None:
+            if after_command is not None and dispatched:
                 after_command(command_tokens, failed)
-            if identity_token is not None:
-                _active_capability.reset(identity_token)
             for option, token in reversed(applied_tokens):
                 option.resetter(token)
 
@@ -455,7 +427,6 @@ __all__ = [
     "ShellProfileSettings",
     "build_root_app",
     "compose_root",
-    "current_capability",
     "main",
     "reset",
     "run_root",

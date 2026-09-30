@@ -151,19 +151,6 @@ class CorpusSyncOutcome(OutcomeRecord):
     detail: str | None = None
 
 
-class CodeHitResult(BaseModel):
-    """One line matched by the local Git corpus scanner."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    repo: str
-    ref: str
-    path: str
-    line: int
-    column: int
-    text: str
-
-
 class WorktreeResult(BaseModel):
     """A materialized worktree path for a cached repository ref."""
 
