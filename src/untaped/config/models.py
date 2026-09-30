@@ -80,8 +80,8 @@ class SettingRow(Record):
     """One row of ``config list``/``get`` (kind ``untaped.setting``).
 
     ``value``/``default`` are native (``None`` when unset, secrets already
-    masked); in table and raw output a mapping or list is compact JSON, which
-    is also valid input for ``config set``.
+    masked); table and raw output get a set value as its text, a mapping or
+    list as compact JSON, which is also valid input for ``config set``.
     """
 
     table_columns: ClassVar[tuple[str, ...]] = ("key", "value", "default", "source", "profile")
@@ -97,7 +97,8 @@ class SettingRow(Record):
 def setting_entry_row(entry: SettingEntry, *, human: bool) -> SettingRow:
     """Render a setting entry as the config list/get row contract.
 
-    ``human`` (table/raw output) writes a mapping or list as compact JSON.
+    ``human`` (table/raw output) writes a set value verbatim as text, so a
+    table never reformats it.
     """
     return SettingRow(
         key=entry.key,
@@ -108,11 +109,13 @@ def setting_entry_row(entry: SettingEntry, *, human: bool) -> SettingRow:
     )
 
 
-def _human(value: object) -> object:
+def _human(value: object) -> str | None:
+    if value is None:
+        return None  # a table shows it as `—`, raw as nothing
     if isinstance(value, dict | list):
         # Compact JSON: readable, and valid input for ``config set``.
         return json.dumps(value, ensure_ascii=False)
-    return value
+    return str(value)
 
 
 def display_value(descriptor: FieldDescriptor, value: Any, *, reveal_secrets: bool) -> object:

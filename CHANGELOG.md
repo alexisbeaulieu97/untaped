@@ -9,7 +9,7 @@
     native values in `--format raw`, as json does, instead of `✓` and `—`
     (an unset `config get` prints nothing); only tables show the glyphs.
     `capabilities`, `alias list` and `doctor` tables show default columns, and
-    `doctor` and `setup` leave a passing check's detail blank.
+    the `doctor` and `setup` tables leave a passing check's detail blank.
   - **Fix:** with `ui.detail_view: table`, a single record's status and
     outcome values are colored by meaning, as in lists.
 - GitHub
