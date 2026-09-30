@@ -23,6 +23,7 @@ class RepositoryInventoryItem(BaseModel):
     clone_url: str | None = None
     ssh_url: str | None = None
     default_branch: str | None = None
+    description: str | None = None
     private: bool = False
     archived: bool = False
     fork: bool = False

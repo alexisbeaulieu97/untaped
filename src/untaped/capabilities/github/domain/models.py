@@ -78,12 +78,20 @@ class RepoListResult(BaseModel):
     """One row from GitHub repository inventory list endpoints."""
 
     model_config = ConfigDict(extra="ignore")
+    table_columns: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "default_branch",
+        "private",
+        "pushed_at",
+        "description",
+    )
 
     repo: str
     url: str | None = None
     clone_url: str | None = None
     ssh_url: str | None = None
     default_branch: str | None = None
+    description: str | None = None
     private: bool = False
     archived: bool = False
     fork: bool = False

@@ -37,8 +37,6 @@ PatternArgument = Annotated[
     ),
 ]
 app = create_app(name="repos", help="List GitHub repository inventory from org/team scopes.")
-# The table shows these; structured formats and -c/--columns reach every field.
-_TABLE_COLUMNS = ["repo", "default_branch", "private", "archived", "fork", "url"]
 
 
 def _validate_args(
@@ -96,12 +94,11 @@ def list_command(
         filters = RepoListFilters(pattern=pattern, regex=regex, archived=archived, fork=fork)
         with open_client() as (client, ui), ui.progress("Listing repositories…"):
             repos = list(ListRepos(client)(filters, orgs=orgs, team_scopes=team_scopes))
-            rows = [repo.model_dump(mode="json") for repo in repos[:limit]]
+            rows = repos[:limit]
         emit(
             rows,
             fmt=fmt,
             columns=columns,
-            table_columns=_TABLE_COLUMNS,
             kind="github.repo",
             empty="No repositories found. Broaden your pattern or scope filters.",
         )
