@@ -8,9 +8,17 @@ Skill template for a capability's packaged agent skill.
 
 Copy this file to src/<package>/skills/untaped-CAPABILITY/SKILL.md (built-ins:
 src/untaped/capabilities/CAPABILITY/skills/untaped-CAPABILITY/SKILL.md), declare
-it in CapabilitySpec.skills, and replace every UPPER_CASE placeholder.
+it in CapabilitySpec.skills, and replace every UPPER_CASE placeholder. An
+external provider ships the skill inside its own distribution.
 
 Rules:
+- The full ID (SkillAsset.name, untaped-CAPABILITY) is stable: installs keep
+  it in their directory and marker even when selected by the short name.
+- Update the skill in the same change as the command behavior, settings,
+  workflow or contract it describes. `skills install` copies and
+  `skills status` compares the whole directory.
+- Leave the shared install mechanics (`untaped skills ...`) out; they are
+  the root's, not the capability's.
 - The installed skill is the agent's whole manual: an agent that has only
   the installed CLI must be able to do the job with it. Never link to docs/
   or the source repository, which do not exist next to an installed CLI.
@@ -22,7 +30,9 @@ Rules:
 - Every command and flag must exist in `untaped CAPABILITY ... --help`.
   tests/unit/test_skill_files.py parses every quoted `untaped ...` command
   against the real CLI; write synopses as `[--flag VALUE]`, `a|b`, NAME or
-  <name> placeholders.
+  <name> placeholders. For AWX, every example suite must also load through
+  the real loader, and every suite field must be described in the skill's
+  suite reference.
 - The description is what makes an agent load the skill: name the task and
   the words a user would use (for example "job template", "inventory sync").
   Keep it identical to SkillAsset.description and free of ": " (YAML).

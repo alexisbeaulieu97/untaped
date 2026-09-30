@@ -1,34 +1,10 @@
 # Agent skills
 
-A capability may ship a packaged agent skill: a directory containing `SKILL.md`
-and optional `references/`, `scripts/`, or `assets/` resources. The capability
-adds each asset to its `CapabilitySpec.skills` tuple. The unified root discovers
-the union of shell and capability assets, so one command can list or install
-skills from the whole composed application.
-
-The stable asset ID remains the `SkillAsset.name` value. Built-in skills keep
-their full IDs (for example, `untaped-github`, `untaped-awx`, and
-`untaped-workspace`) even when selected through the unified root.
-
-```python
-from pathlib import Path
-
-from untaped.capability_api import CapabilitySpec, SkillAsset
-
-SPEC = CapabilitySpec(
-    name="acme",
-    app_factory=build_app,
-    config_section="acme",
-    profile_model=AcmeSettings,
-    skills=(
-        SkillAsset(
-            name="untaped-acme",
-            source=Path(__file__).parent / "skills" / "untaped-acme",
-            description="Use the acme capability from the unified untaped CLI.",
-        ),
-    ),
-)
-```
+Each capability ships an agent skill: a directory with `SKILL.md` and its
+reference files that teaches an AI coding agent to use that capability.
+`untaped skills` lists and installs the skills of every composed capability,
+built-in or external. Each skill has a stable full ID (for example,
+`untaped-github`, `untaped-awx`, and `untaped-workspace`).
 
 ## List available skills
 
@@ -179,26 +155,8 @@ in CI, run:
 untaped skills status --check
 ```
 
-## Authoring rules
+## See also
 
-A built-in capability owns its skill source under
-`src/untaped/capabilities/<name>/skills/<full-id>/` and declares that directory
-in `SPEC.skills`. An external provider packages the same asset with its
-provider distribution. Update the owning skill when its capability command,
-settings, workflow, or contract changes; do not duplicate the shared install
-mechanics in a capability-specific skill. Start a new skill from the
-[skill template](./templates/SKILL.md): its frontmatter, sections and length
-rules keep skills consistent across capabilities.
-
-An installed skill is the agent's complete manual: an agent with only the
-installed CLI must not need anything else. Details that do not fit in
-`SKILL.md` go in `references/*.md` beside it, and sample input files in
-`examples/`; `skills install` copies and `skills status` compares the whole
-directory. A skill never points at `docs/` or the source repository. Tests
-keep built-in skills honest: every `untaped …` command quoted in a skill
-file must parse against the real command tree, every AWX example suite must
-load through the real loader, and every suite field must be described in the
-skill's suite reference.
-
-See [Capability authoring](./plugins.md) for the provider entry-point contract
-and the current `untaped capabilities` output for the composed providers.
+- [Skill template](./templates/SKILL.md): writing a capability's skill.
+- [Building a capability provider](./plugins.md#6-packaged-skills): shipping
+  a skill from an external package.

@@ -18,7 +18,7 @@ Details that do not fit here ship next to this file:
 
 - The command is `untaped github`. It ships with the unified `untaped` CLI (no separate install).
 - Settings live under `profiles.<name>.github`: `base_url`, `token`, `default_org`, `corpus_path`, and `sweep` freshness/concurrency settings.
-- `untaped config set github.default_org ORG` gives `repos list`, `search repos|code|issues`, `sweep`, `cache sync` and `cache prune` an org scope when none of `--org`, `--team`, `--repo`, `--user` or `--stdin` is passed. Any explicit scope replaces it (never adds to it).
+- `untaped config set github.default_org ORG` gives `repos list`, `search repos|code|issues`, `sweep`, `cache sync` and `cache prune` an org scope when none of `--org`, `--team`, `--repo`, `--user` or `--stdin` is passed. Any explicit scope replaces it (never adds to it). Without it and without a scope flag, `repos list`, `sweep` and `cache sync` exit 2.
 - `base_url` defaults to `https://api.github.com`; GitHub Enterprise Server usually uses `https://HOST/api/v3`.
 - Git fetches (`sweep`, `cache sync`) send the token only to the Git host of `base_url` (`github.com`, or `HOST` for `https://HOST/api/v3`); a piped `clone_url` on another host is fetched without credentials.
 - Set the token with `untaped config set github.token --prompt` or `--stdin`, or point `github.token_command` at a command that prints it (`'["gh", "auth", "token"]'`). `GH_TOKEN`/`GITHUB_TOKEN` are the last fallback. A rejected token (HTTP 401) fails with a hint to run that command and exits 4.

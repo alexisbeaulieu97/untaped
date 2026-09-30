@@ -6,18 +6,22 @@ implements each one. Use the helper instead of writing your own version.
 
 ## Exit codes
 
-| Code | Meaning | How to produce it |
-|---|---|---|
-| 0 | Success | Return normally. |
-| 1 | The thing ran and failed, a failed item, a missing name, rejected input, or a declined confirmation | Raise an `UntapedError` whose category is `failed`, `not_found`, `invalid` or `conflict` inside `report_errors()`, or call `finish(any_failed)`. |
-| 2 | Usage error, found before any side effect | Raise `UsageError` inside `report_errors()`, or call `raise_usage()` outside it. |
-| 3 | Predicate hit (`--check` drift, `--fail-on-match`, `--strict`) | Call `finish(any_failed, predicate_hit=True)`. |
-| 4 | The environment needs fixing: config, a rejected token, missing permission | Raise with category `config` (`ConfigError`), `auth` or `permission`. |
-| 5 | Temporary: network, timeout, 5xx, 429, a busy lock | Raise with category `unavailable` (`HttpTransportError` and 429/5xx statuses already are). |
-| 130 | Interrupted with Ctrl-C, including at a prompt | Handled by the root shell. |
+[Exit codes](./reference/exit-codes.md) defines what each code means. To
+produce one:
 
-`ExitCode` names these values. Output into a closed pipe (`untaped … | head`)
-exits 0 quietly, for `--help` and data commands alike.
+- 0: return normally.
+- 1: raise an `UntapedError` whose category is `failed`, `not_found`,
+  `invalid` or `conflict` inside `report_errors()`, or call
+  `finish(any_failed)`.
+- 2: raise `UsageError` inside `report_errors()`, or call `raise_usage()`
+  outside it.
+- 3: call `finish(any_failed, predicate_hit=True)`.
+- 4: raise with category `config` (`ConfigError`), `auth` or `permission`.
+- 5: raise with category `unavailable` (`HttpTransportError` and 429/5xx
+  statuses already are).
+- 130: handled by the root shell.
+
+`ExitCode` names these values.
 
 Usage errors include conflicting flags, a value out of range, no selection,
 and "requires `--yes` when not interactive". Problems that depend on
@@ -44,7 +48,8 @@ who is responsible (`untaped`, `local`, `git`, or the service section, such as
   rather than in the message; text output prints it as a `hint:` line.
 - When a new error replaces a caught one, pass `**attribution(exc)` so the
   category, system, hint and details survive.
-- A run exits with the most severe failure it saw: `130 > 2 > 4 > 5 > 1 > 3 > 0`.
+- A run exits with the most severe failure it saw (see
+  [precedence](./reference/exit-codes.md#precedence)).
   `report_errors()`, `resolve_each`, `batch_apply` and `report_error` note
   each failure they print, and `finish(any_failed)` exits with the most
   severe one. A failure that becomes a row instead is noted with
@@ -142,7 +147,9 @@ come from a closed set:
   the answer instead).
 - When stdin carries piped data, prompts read from the controlling terminal
   (`/dev/tty`). If there is no terminal, the command exits 2 and names
-  `--yes`.
+  `--yes`. In tests, `untaped.testing.invoke_cli(..., terminal=True,
+  prompt_backend=...)` simulates that terminal; without `terminal=True` there
+  is none.
 - Read identifiers with `read_identifiers(names, stdin=stdin,
   id_field="…", accept_kinds={"<cap>.<noun>"})`. A pipe record of another
   kind exits 2. Empty stdin is an error, except for commands that act on a
