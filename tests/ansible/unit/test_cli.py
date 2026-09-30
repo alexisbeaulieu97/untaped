@@ -2651,21 +2651,28 @@ def _table(result: CliResult) -> tuple[list[str], list[list[str]]]:
     return header, body
 
 
-@pytest.mark.parametrize(("command", "role"), [("deps", "acme/r1"), ("impact", "acme/r4")])
+@pytest.mark.parametrize(
+    ("command", "role", "far", "near"),
+    [("deps", "acme/r1", "acme/r4", ["acme/r2", "main", _REQS, "acme/r1@main → acme/r2@main"]),
+     ("impact", "acme/r4", "acme/r1", ["acme/r3", "main", _REQS, "acme/r3@main → acme/r4@main"])],
+)  # fmt: skip
 def test_reach_table_shows_its_default_columns_with_a_short_path(
-    tmp_path: Path, monkeypatch, command: str, role: str
+    tmp_path: Path, monkeypatch, command: str, role: str, far: str, near: list[str]
 ) -> None:
     _seed_chain(tmp_path, monkeypatch)
     monkeypatch.setenv("COLUMNS", "200")
-    full = ["acme/r1@main", "acme/r2@main", "acme/r3@main", "acme/r4@main"]
-    repo = "acme/r4" if command == "deps" else "acme/r1"
+    args = [command, role, "--source", "platform"]
 
-    header, body = _table(_run(command, role, "--source", "platform"))
-    records = json.loads(_run(command, role, "--source", "platform", "-f", "json").stdout)
+    header, body = _table(_run(*args))
+    records = json.loads(_run(*args, "-f", "json").stdout)
+    raw = _run(*args, "-f", "raw", "-c", "path").stdout
 
     assert header == ["repo", "ref", "declared_in", "path"]
-    assert [repo, "main", _REQS, "acme/r1@main → … → acme/r4@main"] in body
+    assert [far, "main", _REQS, "acme/r1@main → … → acme/r4@main"] in body
+    assert near in body
+    full = ["acme/r1@main", "acme/r2@main", "acme/r3@main", "acme/r4@main"]
     assert full in [record["path"] for record in records]
+    assert ", ".join(full) in raw.splitlines()
 
 
 def test_find_table_shows_its_default_columns(tmp_path: Path, monkeypatch) -> None:
