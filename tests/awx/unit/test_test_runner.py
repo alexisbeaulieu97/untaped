@@ -846,7 +846,7 @@ def test_a_case_that_did_not_pass_lists_its_failed_tasks() -> None:
     assert events.calls == [
         (
             5,
-            {"event__in": "runner_on_failed,runner_on_async_failed,runner_on_unreachable"},
+            {"event__in": "runner_on_failed,runner_on_unreachable"},
             False,
         )
     ]
@@ -1816,4 +1816,159 @@ def test_a_cut_host_list_that_cannot_be_completed_is_the_cases_error() -> None:
     assert (row.result, row.failure.message) == (
         "error",
         "host summaries unreadable: 503 Service Unavailable",
+    )
+
+
+_UNSAVED = "AWX is still saving the events of job"
+
+
+@pytest.mark.parametrize(
+    "expect",
+    [
+        {"changed": 0},
+        {"hosts": {"*": {"failed": 0, "changed": 0}}},
+        {"log": {"not_contains": ["FAILED"]}},
+    ],
+)
+def test_checks_never_pass_on_events_awx_is_still_saving(expect: dict[str, Any]) -> None:
+    """Empty host summaries or a short log of a job AWX is still saving prove nothing."""
+    runner, _, _, _ = _regression_runner({5: "successful"}, job_reader=StubJobReader(unsaved=1))
+
+    outcome = runner([_case_suite({"expect": expect})])
+
+    [row] = outcome.results
+    assert row.failure is not None
+    assert (row.result, row.failure.system, row.failure.category) == (
+        "error",
+        "awx.controller",
+        "unavailable",
+    )
+    assert row.failure.message == (
+        f"{_UNSAVED} 5, so its log, host summaries and failed tasks are incomplete: "
+        "only its status was checked"
+    )
+    assert [check.check for check in row.expectations] == ["status"]
+    assert _exit_code(outcome) == 5
+
+
+def test_a_status_check_does_not_wait_for_the_events() -> None:
+    runner, _, _, _ = _regression_runner({5: "successful"}, job_reader=StubJobReader(unsaved=1))
+    [row] = runner([_case_suite({})]).results
+    assert (row.result, row.failure) == ("pass", None)
+
+
+def test_an_idempotent_rerun_awx_is_still_saving_is_not_proven_unchanged() -> None:
+    runner, _, _, _ = _regression_runner(
+        {5: "successful", 6: "successful"}, job_reader=StubJobReader(unsaved=2)
+    )
+
+    [row] = runner([_case_suite({"expect": {"idempotent": True}})]).results
+
+    assert row.failure is not None
+    assert (row.result, row.failure.system, row.failure.category) == (
+        "error",
+        "awx.controller",
+        "unavailable",
+    )
+    assert row.failure.message.startswith(f"rerun job 6: {_UNSAVED} 6")
+    assert row.expectations[-1].model_dump() == {
+        "check": "idempotent",
+        "expected": "successful, 0 changed",
+        "actual": "successful",
+        "passed": False,
+    }
+
+
+def test_failed_tasks_are_not_matched_while_awx_is_still_saving_the_events() -> None:
+    runner, _, _, _ = _regression_runner(
+        {5: "failed"},
+        hosts={5: [{"host_name": "web1", "failures": 1}]},
+        events={5: [_VALIDATE_FAILED]},
+        job_reader=StubJobReader(unsaved=1),
+    )
+    body = {"expect": {"status": "failed", "failed_tasks": [{"msg": "one of"}]}}
+
+    [row] = runner([_case_suite(body)]).results
+
+    assert row.failure is not None
+    assert (row.result, row.failure.system) == ("error", "awx.controller")
+    assert row.failure.message.startswith(f"{_UNSAVED} 5")
+
+
+def _failed_event(counter: int, task: str, msg: str, *, host: str = "web1") -> JobEvent:
+    return JobEvent.model_validate(
+        {
+            "counter": counter,
+            "event": "runner_on_failed",
+            "failed": True,
+            "host_name": host,
+            "play": "Deploy",
+            "task": task,
+            "event_data": {"ignore_errors": False, "res": {"failed": True, "msg": msg}},
+        }
+    )
+
+
+_RESCUED_THEN_FAILED = [
+    _failed_event(4, "Validate input", "expected validation error"),
+    _failed_event(9, "Write config", "unrelated disk full"),
+]
+
+
+def test_a_rescued_task_is_not_a_negative_match_on_a_host_that_failed_later() -> None:
+    """web1's first failure was rescued; the recap's one failure is the later task."""
+    runner, _, _, _ = _regression_runner(
+        {5: "failed"},
+        hosts={5: [{"host_name": "web1", "failures": 1, "rescued": 1}]},
+        events={5: _RESCUED_THEN_FAILED},
+    )
+    body = {"expect": {"status": "failed", "failed_tasks": [{"msg": "expected validation"}]}}
+
+    [row] = runner([_case_suite(body)]).results
+
+    assert row.failure is not None
+    assert (row.result, row.failure.system, row.failure.message) == (
+        "fail",
+        "awx.expectation",
+        "no failed task matches msg 'expected validation'",
+    )
+    assert row.failure.evidence.failed_tasks is not None
+    assert [task.task for task in row.failure.evidence.failed_tasks] == ["Write config"]
+
+
+def test_the_failure_after_a_rescue_is_the_one_blamed_and_matched() -> None:
+    hosts = {5: [{"host_name": "web1", "failures": 1, "rescued": 1}]}
+    events = {5: _RESCUED_THEN_FAILED}
+    runner, _, _, _ = _regression_runner({5: "failed"}, hosts=hosts, events=events)
+    [row] = runner([_case_suite({})]).results
+    assert row.failure is not None
+    assert row.failure.message == "task 'Write config' failed on web1: unrelated disk full"
+
+    runner, _, _, _ = _regression_runner({5: "failed"}, hosts=hosts, events=events)
+    body = {"expect": {"status": "failed", "failed_tasks": [{"msg": "disk full"}]}}
+    [row] = runner([_case_suite(body)]).results
+    assert (row.result, row.failure) == ("pass", None)
+
+
+def test_a_failed_task_that_may_have_been_rescued_proves_nothing() -> None:
+    """Two failures on web1, one counted and none rescued: which one was it?"""
+    runner, _, _, _ = _regression_runner(
+        {5: "failed"},
+        hosts={5: [{"host_name": "web1", "failures": 1}]},
+        events={5: _RESCUED_THEN_FAILED},
+    )
+    body = {"expect": {"status": "failed", "failed_tasks": [{"msg": "expected validation"}]}}
+
+    outcome = runner([_case_suite(body)])
+
+    [row] = outcome.results
+    assert row.failure is not None
+    assert (row.result, row.failure.system, row.failure.category) == (
+        "error",
+        "awx.controller",
+        "unavailable",
+    )
+    assert row.failure.message == (
+        "failed_tasks not proven: task 'Validate input' on web1 matches, but AWX's host "
+        "summaries do not show whether a rescue block handled it"
     )

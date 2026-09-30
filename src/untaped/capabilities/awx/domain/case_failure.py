@@ -14,8 +14,9 @@ The rules are pure and the first match wins:
 - ``awx.controller``: the API was unreachable or failed while the run polled
   or read; a job or its update ended in ``error``; a job was canceled outside
   the run, failed with a controller explanation (the reaper) or with events
-  not yet readable; or it never left ``pending``/``waiting`` before the
-  timeout.
+  not yet readable; a check needed its events while AWX was still saving
+  them, or a ``failed_tasks`` entry is matched only by a failure a rescue may
+  have handled; or it never left ``pending``/``waiting`` before the timeout.
 - ``awx.scm`` / ``awx.inventory``: AWX names a failed project or inventory
   update in ``Previous Task Failed: {…}``, even when the case expected the
   job to fail (a ref not overridable, found before launching, is
@@ -40,7 +41,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -58,8 +59,12 @@ HOSTS = "awx.hosts"
 PLAYBOOK = "awx.playbook"
 EXPECTATION = "awx.expectation"
 
-FAILED_TASK_EVENTS = ("runner_on_failed", "runner_on_async_failed", "runner_on_unreachable")
-"""Job events that end a task on a host in failure."""
+FAILED_TASK_EVENTS = ("runner_on_failed", "runner_on_unreachable")
+"""Job events that end a task on a host in failure.
+
+An async task that fails also sends ``runner_on_async_failed`` first, which
+AWX flags failed even under ``ignore_errors``; its ``runner_on_failed`` follows.
+"""
 
 _NOT_STARTED = frozenset({"new", "pending", "waiting"})
 """Statuses of a job the controller has not started running yet."""
@@ -120,6 +125,8 @@ class FailedTask(BaseModel):
     msg: str | None
     stderr: str | None
     """The end of the module's stderr (where errors usually are)."""
+    unsure: bool = Field(default=False, exclude=True)
+    """Its host's summary cannot show that no ``rescue`` (or ``ignore_unreachable``) handled it."""
 
     @classmethod
     def from_event(cls, event: JobEvent) -> FailedTask:
@@ -306,28 +313,50 @@ def responsible_update(job: Job) -> Job | None:
     return Job(id=job_id, kind=kind, name=name, status="unknown")
 
 
-def unrescued(
-    tasks: Sequence[FailedTask], hosts: Mapping[str, HostSummary] | None
+def unhandled(
+    events: Iterable[JobEvent], hosts: Mapping[str, HostSummary] | None
 ) -> tuple[FailedTask, ...]:
-    """``tasks`` without the failures a ``rescue`` block handled.
+    """The failed tasks of a job's ``events`` that nothing handled, in the order they ran.
 
-    Ansible reports a rescued task as failed, but the host's summary then
-    counts no failure: a failed task on a host whose summary says
-    ``failed: 0`` was rescued. Without summaries every task is kept.
+    Ansible reports a task a ``rescue`` block handled as failed, and so does
+    AWX's event; only the host's summary tells them apart, counting it
+    ``rescued`` rather than ``failed``. An unhandled failure ends the host's
+    play (only ``always`` sections and handlers still run, and a failure
+    there is unhandled too), so a host that counts ``failed: N`` failed on its
+    last N failed tasks, and the ones before were rescued. Likewise its last
+    ``unreachable`` ones found it unreachable; the ones before were let
+    through by ``ignore_unreachable``. When a host has no summary (or
+    ``hosts`` is ``None``: none were read) or its counters do not account for
+    its failed tasks, they are all kept, marked ``unsure``.
     """
-    if hosts is None:
-        return tuple(tasks)
-    return tuple(
-        task
-        for task in tasks
-        if task.status != "failed" or task.host is None or _failed_on(task.host, hosts)
+    failed = sorted(
+        (event for event in events if event.failed and event.event in FAILED_TASK_EVENTS),
+        key=lambda event: event.counter,
     )
-
-
-def _failed_on(host: str, hosts: Mapping[str, HostSummary]) -> bool:
-    """Whether ``host`` counts a failure (a host missing from the summaries does)."""
-    summary = hosts.get(host)
-    return summary is None or summary.failed > 0
+    tasks = [FailedTask.from_event(event) for event in failed]
+    groups: dict[tuple[str | None, str], list[int]] = {}
+    for index, task in enumerate(tasks):
+        groups.setdefault((task.host, task.status), []).append(index)
+    handled: set[int] = set()
+    unsure: set[int] = set()
+    for (host, status), indexes in groups.items():
+        summary = None if hosts is None or host is None else hosts.get(host)
+        if summary is None:
+            unsure.update(indexes)
+            continue
+        if status == "failed":
+            counted, handled_most = summary.failed, summary.rescued
+        else:
+            counted, handled_most = summary.unreachable, summary.ignored
+        if counted <= len(indexes) <= counted + handled_most:
+            handled.update(indexes[: len(indexes) - counted])
+        else:
+            unsure.update(indexes)
+    return tuple(
+        task.model_copy(update={"unsure": True}) if index in unsure else task
+        for index, task in enumerate(tasks)
+        if index not in handled
+    )
 
 
 def finished_failure(
@@ -455,6 +484,29 @@ def approval_failure(name: str | None, approval_id: int, *, denied: bool) -> Cas
 def tasks_unread(job: Job) -> CaseFailure:
     """A finished job whose ``failed_tasks`` expectation could not be checked."""
     message = f"failed_tasks not checked: {_events_unread(job)}"
+    return failure(CONTROLLER, ErrorCategory.UNAVAILABLE, message)
+
+
+def events_unsaved(job: Job) -> CaseFailure:
+    """A finished job whose checks read its events, which AWX was still saving.
+
+    AWX writes a job's log, host summaries and failed tasks from its events,
+    so until it has saved them all, an empty or short read proves nothing.
+    """
+    message = (
+        f"AWX is still saving the events of {job.kind.replace('_', ' ')} {job.id}, so its log, "
+        "host summaries and failed tasks are incomplete: only its status was checked"
+    )
+    hint = "retry later, once AWX has saved the job's events"
+    return failure(CONTROLLER, ErrorCategory.UNAVAILABLE, message, hint=hint)
+
+
+def unproven(task: FailedTask) -> CaseFailure:
+    """A ``failed_tasks`` entry only an ``unsure`` failed task matches: it may have been handled."""
+    message = (
+        f"failed_tasks not proven: task {q(task.task or '?')} on {task.host or '?'} matches, but "
+        "AWX's host summaries do not show whether a rescue block handled it"
+    )
     return failure(CONTROLLER, ErrorCategory.UNAVAILABLE, message)
 
 

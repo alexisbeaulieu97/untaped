@@ -74,7 +74,7 @@ the first rule that matches decides:
 | `awx.credentials` | AWX rejected the token or a permission, or the job (or the update it waited for) ended in `error` looking up a credential | `auth`, `permission` (4) | Fix the token (`untaped awx ping` checks it) or the credential in AWX; do not change the playbook. |
 | `awx.scm` | AWX names a failed `project_update` in the job's explanation (a branch not pushed, a bad ref, an SCM credential), even when the case expected the job to fail; or before launching, `--scm-branch` on a template that does not prompt for it | `failed` (1), `invalid` before launching | Push the branch (`git push -u origin HEAD`) or fix the ref; read `evidence.related` and its log tail. |
 | `awx.inventory` | AWX names a failed `inventory_update` in the job's explanation | `config` (4) | The inventory source is broken, not your change: read its log (`untaped awx jobs logs ID --kind inventory_update`). |
-| `awx.controller` | AWX was unreachable or failed while the run polled or read; the job (or its update) ended in `error` (execution environment pull, capacity, a runner crash); it was canceled outside the run, failed with a controller explanation (the job was lost), or failed before AWX saved its events; or it never left `pending`/`waiting` before the timeout | usually `unavailable` (5); a job AWX no longer finds while polling is `not_found` (1) | Retry later; `evidence.job_explanation` and `evidence.result_traceback` say what AWX saw. |
+| `awx.controller` | AWX was unreachable or failed while the run polled or read; the job (or its update) ended in `error` (execution environment pull, capacity, a runner crash); it was canceled outside the run, failed with a controller explanation (the job was lost), or failed before AWX saved its events; a check needed the job's log, host summaries or failed tasks while AWX was still saving its events, or a `failed_tasks` entry is matched only by a failure the host summaries cannot show was unhandled; or it never left `pending`/`waiting` before the timeout | usually `unavailable` (5); a job AWX no longer finds while polling is `not_found` (1) | Retry later; `evidence.job_explanation` and `evidence.result_traceback` say what AWX saw. |
 | `awx.expectation` | The job ran as intended but an expectation did not hold (it succeeded where the case expects a failure, a log check, a `changed` or `hosts` bound or a `failed_tasks` entry failed, or an `idempotent` rerun changed something) | `failed` (1) | Compare `expectations` with what the job did; fix the change or the case. |
 | `awx.hosts` | The job failed and every failed task is an unreachable host | `unavailable` (5) | Retry later, once the hosts in `evidence.unreachable_hosts` are reachable. |
 | `awx.playbook` | The job failed any other way (a failed task, or no failed task at all: a syntax error or a missing role, shown in the log tail), or it was still running at the timeout (a hang) | `failed` (1) | Fix the playbook, role or variables: `evidence.failed_tasks` names the host, task and message. |
@@ -150,7 +150,11 @@ field is `null` when it does not apply or could not be read.
 execution's events once AWX has saved them (`ignore_errors` failures, and
 failures a `rescue` block handled, are left out). It is `null` when the
 events could not be read or were still being saved (read them later with
-`untaped awx jobs events ID`).
+`untaped awx jobs events ID`). Only a host's summary tells a rescued failure
+from an unhandled one: a host that counts N failures failed on its last N
+failed tasks, and the ones before were rescued (unreachable tasks likewise,
+by its `unreachable` count). When a host has no summary, or its counters do
+not account for its failed tasks, all of them are listed.
 
 | Field | Meaning |
 |---|---|
@@ -214,6 +218,18 @@ For `awx.expectation`, `failure.message` joins the failed checks, for example
 or `no failed task matches task 'Validate', msg 'must be set'`. A check whose
 data could not be read (the log, the host summaries, the job's events) makes
 the case an `error` when nothing else failed, and a `note` otherwise.
+
+AWX writes a job's log, host summaries and failed tasks from its events,
+which it saves after the job ends. A check beyond `status` waits (briefly)
+until AWX has saved them; a job it is still saving after that is never
+checked on what it saved so far: its checks are left out, and the case is an
+`awx.controller` `error` (exit 5), `AWX is still saving the events of job
+4412, so its log, host summaries and failed tasks are incomplete: only its
+status was checked` (prefixed `node deploy:` for a workflow's node job, or
+`rerun job 4413:` for an `idempotent` rerun). Retry later. Likewise, a
+`failed_tasks` entry that only a failure the host summaries cannot show was
+unhandled matches is `failed_tasks not proven: …`, an `awx.controller`
+`error`, never a pass.
 
 ## Idempotent cases
 
