@@ -145,8 +145,9 @@ def test_repos_list_pipe_record_carries_kind_urls_and_repo() -> None:
     [envelope] = [json.loads(line) for line in result.stdout.splitlines()]
     record = envelope["record"]
     assert (envelope["untaped"], envelope["kind"]) == ("1", "github.repo")
-    assert record["repo"] == record["full_name"] == "acme/a"
-    assert record["url"] == record["html_url"] == "https://github.com/acme/a"
+    assert record["repo"] == "acme/a"
+    assert record["url"] == "https://github.com/acme/a"
+    assert not {"full_name", "html_url", "name"} & set(record)
     assert record["ssh_url"] == "git@github.com:acme/a.git"
 
 
@@ -158,7 +159,8 @@ def test_repos_list_table_shows_default_columns_and_json_every_field() -> None:
         as_json = CliInvoker().invoke(app, ["repos", "list", "--org", "acme", "-f", "json"])
 
     assert table.exit_code == 0, table.output
-    assert "full_name" in table.stdout
+    assert "repo" in table.stdout
+    assert "full_name" not in table.stdout
     assert "pushed_at" not in table.stdout
     assert "ssh_url" not in table.stdout
     [row] = json.loads(as_json.stdout)
@@ -186,5 +188,5 @@ def test_repos_list_help_documents_pattern_targeting() -> None:
     result = CliInvoker().invoke(app, ["repos", "list", "--help"])
 
     assert result.exit_code == 0, result.output
-    for phrase in ("glob", "full_name", "unanchored", "additive", "exactly one --org", "--regex"):
+    for phrase in ("glob", "owner/name", "unanchored", "additive", "exactly one --org", "--regex"):
         assert phrase in result.output
