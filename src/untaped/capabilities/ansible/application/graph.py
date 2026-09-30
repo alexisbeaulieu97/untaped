@@ -115,6 +115,10 @@ class _GraphBuilder:
         # walk; a node is expanded again only when reached with more depth
         # left, so shared dependencies cost one expansion, not one per path.
         self._scheduled: dict[str, int | None] = {}
+        # Node ids whose edges were read, and those the depth limit left unread.
+        self._read: set[str] = set()
+        self._depth_cut: set[str] = set()
+        self._not_cached: set[str] = set()
 
     def build(self) -> DependencyGraph:
         target_id = _node_id(self._request.repo, self._request.ref)
@@ -149,7 +153,7 @@ class _GraphBuilder:
         warnings.extend(cycle_warnings)
         return DependencyGraph(
             target_id=target_id,
-            nodes=tuple(self._nodes.values()),
+            nodes=tuple(self._with_stops(node) for node in self._nodes.values()),
             edges=tuple(self._edges),
             cycles=cycles,
             warnings=tuple(warnings),
@@ -198,7 +202,7 @@ class _GraphBuilder:
         self._replay(root)
 
     def _expand_deps(self, entry: _Walk) -> list[_Walk]:
-        if entry.remaining == 0:
+        if not self._reads(entry):
             return []
         next_remaining = None if entry.remaining is None else entry.remaining - 1
         dependencies = self._dependencies_for(entry.repo, entry.ref)
@@ -227,7 +231,7 @@ class _GraphBuilder:
         return children
 
     def _expand_impact(self, entry: _Walk) -> list[_Walk]:
-        if entry.remaining == 0:
+        if not self._reads(entry):
             return []
         next_remaining = None if entry.remaining is None else entry.remaining - 1
         children: list[_Walk] = []
@@ -248,6 +252,22 @@ class _GraphBuilder:
             entry.items.append(child)
             children.append(child)
         return children
+
+    def _reads(self, entry: _Walk) -> bool:
+        """Whether ``entry``'s edges are read, recording a depth cut when not."""
+        node_id = _node_id(entry.repo, entry.ref)
+        if entry.remaining == 0:
+            self._depth_cut.add(node_id)
+            return False
+        self._read.add(node_id)
+        return True
+
+    def _with_stops(self, node: GraphNode) -> GraphNode:
+        if node.id in self._not_cached:
+            return node.model_copy(update={"stopped": "not_cached"})
+        if node.id in self._depth_cut and node.id not in self._read:
+            return node.model_copy(update={"stopped": "depth"})
+        return node
 
     def _warn_unplaced_unpinned_dependents(self, repo: str, ref: str) -> None:
         """Warn when unpinned dependents cannot be matched to ``ref``.
@@ -501,6 +521,7 @@ class _GraphBuilder:
         node = _label(repo, ref)
         if ref in cached_refs:
             return
+        self._not_cached.add(_node_id(repo, ref))
         if cached_refs:
             available = ", ".join(self._sorted_cached_ref_names(repo, cached_refs))
             self._add_warning(
