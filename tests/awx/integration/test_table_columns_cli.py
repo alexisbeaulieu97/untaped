@@ -316,3 +316,50 @@ def test_unified_templates_list_json_keeps_whole_records(fake_aap: Any) -> None:
     records = json.loads(_run("unified-templates", "list", "--format", "json").stdout)
 
     assert records[0]["last_job_status"] == "ok"
+
+
+def test_jobs_list_raw_column_edits_start_from_the_table_defaults(fake_aap: Any) -> None:
+    fake_aap.seed("jobs", id=42, **_JOB)
+
+    out = _run("jobs", "list", "--format", "raw", "--columns", "+finished").stdout
+
+    assert out.strip().split("\t") == [
+        "42",
+        "deploy",
+        "failed",
+        "manual",
+        "2026-01-01T00:00:00Z",
+        "102.0",
+        "2026-01-01T00:01:42Z",
+    ]
+
+
+def test_jobs_events_raw_column_edits_start_from_the_table_defaults(fake_aap: Any) -> None:
+    _seed_events(fake_aap)
+
+    out = _run("jobs", "events", "42", "--format", "raw", "--columns=-task").stdout
+
+    assert out.strip().split("\t") == ["1", "runner_on_ok", "web-01", "True", "False"]
+
+
+def test_jobs_events_follow_json_lists_columns_once_and_streams_nothing(fake_aap: Any) -> None:
+    _seed_events(fake_aap)
+    fake_aap.seed("job_events", id=2, job=42, counter=2, event="runner_on_ok")
+
+    result = _run("jobs", "events", "42", "--follow", "--format", "json", "--columns", "?")
+
+    assert result.stdout == ""
+    assert result.stderr.count("available columns") == 1
+
+
+def test_jobs_events_follow_json_warns_once_about_an_unknown_column(fake_aap: Any) -> None:
+    _seed_events(fake_aap)
+    fake_aap.seed("job_events", id=2, job=42, counter=2, event="runner_on_ok")
+
+    result = _run("jobs", "events", "42", "--follow", "--format", "json", "-c", "counter,nope")
+
+    assert [json.loads(line) for line in result.stdout.splitlines()] == [
+        {"counter": 1, "nope": None},
+        {"counter": 2, "nope": None},
+    ]
+    assert result.stderr.count("unknown column 'nope'") == 1

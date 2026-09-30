@@ -37,7 +37,6 @@ SCHEDULE_SPEC = AwxResourceSpec(
     ),
     read_only_fields=(
         *UNIVERSAL_READ_ONLY,
-        "unified_job_template",  # the parent, carried by metadata.parent
         "last_run",
         "next_run",
         "dtstart",
