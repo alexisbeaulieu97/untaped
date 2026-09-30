@@ -170,35 +170,48 @@ def _watch(
 ) -> dict[str, list[str]]:
     """Monitor ``launched``, fold what it learns into ``rows``, abandon what it stops watching.
 
-    Executions AWX created for failed rows (``unmonitored``) are abandoned
-    too. Ctrl-C during the cancel requests is reported like Ctrl-C while
-    waiting. Returns the ids, by execution kind, that need a ``jobs wait`` hint.
+    Each execution is abandoned as soon as its own watch stops, never after
+    the others'; executions AWX created for failed rows (``unmonitored``)
+    before the wait. Ctrl-C during the cancel requests is reported like
+    Ctrl-C while waiting. Returns the ids, by execution kind, that need a
+    ``jobs wait`` hint.
     """
+    fates: dict[tuple[str, int], str] = {}
+
+    def abandon_now(job: Job) -> None:
+        fates[job.kind, job.id] = abandon(job)
+
+    try:
+        for _, job in unmonitored:
+            abandon_now(job)
+    except KeyboardInterrupt:
+        _interrupted([*launched, *unmonitored], abandon)
     finals, errors = (
-        _monitor(ctx, launched, unmonitored, follow=follow, timeout=timeout, abandon=abandon)
+        _monitor(
+            ctx,
+            launched,
+            unmonitored,
+            follow=follow,
+            timeout=timeout,
+            abandon=abandon,
+            on_abandon=abandon_now,
+        )
         if launched
         else ([], [])
     )
     row_of = {label: index for index, label in enumerate(labels)}
-    try:
-        unfinished = _record_finals(
-            rows, row_of, launched, finals, timeout=timeout, abandon=abandon
-        )
-        jobs = dict(launched)
-        for label, exc in errors:
-            index = row_of[label]
-            detail = error_detail(exc, index)
-            rows[index]["error"] = note_failure(exc, message=detail).model_dump(mode="json")
-            _fail_abandoned(rows[index], detail, jobs[label], abandon)
-        for label, job in unmonitored:
-            row = rows[row_of[label]]
-            _fail_abandoned(row, row["detail"], job, abandon)
-    except KeyboardInterrupt:
-        last = {(job.kind, job.id): job for job in finals}
-        _interrupted(
-            [(label, last.get((job.kind, job.id), job)) for label, job in launched] + unmonitored,
-            abandon,
-        )
+    unfinished = _record_finals(
+        rows, row_of, launched, finals, timeout=timeout, abandon=abandon, fates=fates
+    )
+    jobs = dict(launched)
+    for label, exc in errors:
+        index = row_of[label]
+        detail = error_detail(exc, index)
+        rows[index]["error"] = note_failure(exc, message=detail).model_dump(mode="json")
+        _fail_abandoned(rows[index], detail, jobs[label], abandon, fates)
+    for label, job in unmonitored:
+        row = rows[row_of[label]]
+        _fail_abandoned(row, row["detail"], job, abandon, fates)
     return unfinished
 
 
@@ -210,12 +223,14 @@ def _record_finals(
     *,
     timeout: float | None,
     abandon: AbandonJobs,
+    fates: dict[tuple[str, int], str],
 ) -> dict[str, list[str]]:
     """Fold each monitored execution's last state into its row.
 
     An execution still running when ``timeout`` ended the wait fails its row
-    and is abandoned. Returns the ids, by execution kind, of those neither
-    cancelled nor ended since: they keep running on the controller.
+    with what became of it once abandoned (its ``fates`` phrase). Returns
+    the ids, by execution kind, of those neither cancelled nor ended since:
+    they keep running on the controller.
     """
     row_by_job = {(job.kind, job.id): row_of[label] for label, job in launched}
     unfinished: dict[str, list[str]] = {}
@@ -223,7 +238,7 @@ def _record_finals(
         row = rows[row_by_job[(job.kind, job.id)]]
         row.update(job.model_dump())
         if not job.is_terminal:
-            detail = f"{still_running_detail(job, timeout)}; {abandon(job)}"
+            detail = f"{still_running_detail(job, timeout)}; {fates[job.kind, job.id]}"
             latest = abandon.latest(job)
             row.update(latest.model_dump(), action="failed", detail=detail)
             if not latest.is_terminal and (job.kind, job.id) not in abandon.cancelled:
@@ -233,10 +248,16 @@ def _record_finals(
     return unfinished
 
 
-def _fail_abandoned(row: dict[str, Any], detail: str, job: Job, abandon: AbandonJobs) -> None:
-    """Fail ``row``; with ``--cancel``, cancel ``job`` and say what became of it."""
+def _fail_abandoned(
+    row: dict[str, Any],
+    detail: str,
+    job: Job,
+    abandon: AbandonJobs,
+    fates: dict[tuple[str, int], str],
+) -> None:
+    """Fail ``row``; with ``--cancel``, say what became of the cancelled ``job``."""
     if abandon.cancels:
-        detail = f"{detail}; {abandon(job)}"
+        detail = f"{detail}; {fates[job.kind, job.id]}"
         if (latest := abandon.latest(job)) is not job:
             row.update(latest.model_dump())
     row.update(action="failed", detail=detail)
@@ -291,8 +312,12 @@ def _monitor(
     follow: bool,
     timeout: float | None = None,
     abandon: AbandonJobs,
+    on_abandon: Callable[[Job], None],
 ) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
-    """Wait on launched executions; Ctrl-C stops polling, abandons and names what still runs."""
+    """Wait on launched executions; Ctrl-C stops polling, abandons and names what still runs.
+
+    ``on_abandon`` runs as soon as a watch stops on an execution still running.
+    """
     finished: dict[str, Job] = {}
     try:
         if follow:
@@ -304,6 +329,7 @@ def _monitor(
                 lambda prefix, line: ui.styled(Text(prefix, style="dim cyan"), err=True, tail=line),
                 stop=ctx.stop,
                 finished=finished,
+                abandon=on_abandon,
             )
         return wait_parallel(
             ctx.repo,
@@ -312,6 +338,7 @@ def _monitor(
             stop=ctx.stop,
             finished=finished,
             timeout=timeout,
+            abandon=on_abandon,
         )
     except KeyboardInterrupt:
         _interrupted(

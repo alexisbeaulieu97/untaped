@@ -433,8 +433,9 @@ when their status is unknown) with an `untaped awx jobs wait ...` command to
 resume; the executions themselves keep running on the controller (`awx test
 run` cancels them unless `--no-cancel`). `--cancel` (with `--wait` or
 `--follow`, with or without `--timeout`) instead cancels every execution the
-command stops watching: one still running at `--timeout`, one whose polling
-failed, and one AWX created while ignoring fields. Its row still fails, and
+command stops watching, as soon as it stops watching it: one still running at
+`--timeout`, one whose polling failed, and one AWX created while ignoring
+fields (before the wait starts). Its row still fails, and
 its `detail` ends with `cancel requested`, `it ended (successful) before the
 cancel` (the row then shows that status), or `cancel failed: …` when AWX
 refuses. Only a timed-out execution whose cancel failed keeps its `jobs wait`
