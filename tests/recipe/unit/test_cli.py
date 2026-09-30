@@ -3351,12 +3351,42 @@ def test_backup_prune_counts_failed_deletions_and_continues(
 
     monkeypatch.setattr(BackupStore, "delete", flaky_delete)
 
-    result = CliInvoker().invoke(app, ["backups", "prune", "--keep", "1", "--yes"])
+    result = CliInvoker().invoke(
+        app, ["backups", "prune", "--keep", "1", "--yes", "--format", "json"]
+    )
 
     assert result.exit_code == 1, result.output
-    assert "error: 20250101T000000000000Z-aaaaaaaa" in result.stderr
+    assert result.stderr.count("error: 20250101T000000000000Z-aaaaaaaa") == 1
     assert first.exists()
     assert not second.exists()
+    failed, deleted = json.loads(result.stdout)
+    assert deleted["size_bytes"] > 0
+    assert (failed["id"], failed["action"]) == (first.name, "failed")
+    assert failed["detail"] == f"backup not found: {first.name}"
+    assert failed["error"]["message"] == failed["detail"]
+    assert deleted == {
+        "id": second.name,
+        "size_bytes": deleted["size_bytes"],
+        "detail": None,
+        "action": "deleted",
+    }
+
+
+def test_backup_prune_rows_say_planned_or_deleted(tmp_path: Path) -> None:
+    backups = library_root() / "backups"
+    old = _seed_bundle(backups, "20250101T000000000000Z-aaaaaaaa")
+    _seed_bundle(backups, "20990301T000000000000Z-cccccccc")
+    args = ["backups", "prune", "--keep", "1", "--yes", "-f", "pipe"]
+
+    planned = CliInvoker().invoke(app, [*args, "--dry-run"])
+    deleted = CliInvoker().invoke(app, args)
+
+    for result, action in ((planned, "planned"), (deleted, "deleted")):
+        assert result.exit_code == 0, result.output
+        envelope = json.loads(result.stdout)
+        assert envelope["kind"] == "recipe.prune_outcome"
+        assert (envelope["record"]["id"], envelope["record"]["action"]) == (old.name, action)
+    assert not old.exists()
 
 
 def test_recipe_check_accepts_input_templated_asset_paths(tmp_path: Path) -> None:
@@ -3692,6 +3722,7 @@ def test_cli_emit_kinds_are_the_surviving_pack_unification_set() -> None:
         "recipe.sync_outcome",
         "recipe.apply_outcome",
         "recipe.remove_outcome",
+        "recipe.prune_outcome",
         "recipe.backup",
         "recipe.hook_run",
         "recipe.recipe",
