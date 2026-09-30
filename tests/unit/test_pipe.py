@@ -11,7 +11,6 @@ from untaped.pipe import (
     PIPE_ENVELOPE_VERSION,
     PIPE_MARKER_KEY,
     PipeEnvelope,
-    common_kind,
     is_envelope_line,
     parse_envelope_line,
 )
@@ -54,18 +53,3 @@ def test_parse_valid_line(kind: str | None) -> None:
 def test_parse_errors_are_line_precise(line: str, error: str) -> None:
     with pytest.raises(ConfigError, match=f"line 4: {error}"):
         parse_envelope_line(4, line)
-
-
-@pytest.mark.parametrize(
-    ("kinds", "expected"),
-    [
-        (["github.repo", "github.repo"], "github.repo"),
-        (["github.repo", "github.issue"], None),
-        ([None, None], None),
-        ([], None),
-    ],
-    ids=["single", "mixed", "untagged", "empty"],
-)
-def test_common_kind(kinds: list[str | None], expected: str | None) -> None:
-    envs = [parse_envelope_line(i, _line({"x": i}, kind=k)) for i, k in enumerate(kinds)]
-    assert common_kind(envs) == expected

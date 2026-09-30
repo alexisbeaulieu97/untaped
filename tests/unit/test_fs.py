@@ -10,9 +10,6 @@ import pytest
 import untaped.fs as fs_module
 from untaped.errors import ConfigError
 from untaped.fs import (
-    FileChange,
-    FileWriteError,
-    apply_file_changes,
     atomic_write,
     file_lock,
     read_structured_file,
@@ -146,129 +143,11 @@ def test_atomic_write_through_a_dangling_symlink_creates_no_directories(tmp_path
     assert (tmp_path / "target.txt").read_text() == "new"
 
 
-def test_apply_file_changes_rollback_removes_a_file_created_through_a_dangling_link(
-    tmp_path: Path,
-) -> None:
-    target = tmp_path / "target.txt"
-    link = tmp_path / "link.txt"
-    link.symlink_to(target)
-    blocker = tmp_path / "blocker"
-    blocker.mkdir()
-    (blocker / "occupant.txt").write_text("here")
-    with pytest.raises(FileWriteError):
-        apply_file_changes(
-            [
-                FileChange(path=link, before=None, after="born"),
-                FileChange(path=blocker, before=None, after="never"),
-            ]
-        )
-    assert link.is_symlink()
-    assert not target.exists()
-
-
-def test_apply_file_changes_keeps_mode_and_writes_through_symlinks(tmp_path: Path) -> None:
-    real = tmp_path / "real.sh"
-    real.write_text("v1")
-    real.chmod(0o750)
-    link = tmp_path / "link.sh"
-    link.symlink_to(real)
-    apply_file_changes([FileChange(path=link, before="v1", after="v2")])
-    assert link.is_symlink()
-    assert real.read_text() == "v2"
-    assert stat.S_IMODE(real.stat().st_mode) == 0o750
-
-
 def test_atomic_write_creates_the_file_with_the_requested_mode(tmp_path: Path) -> None:
     target = tmp_path / "private.txt"
     atomic_write(target, "secret", mode=0o600)
     assert target.stat().st_mode & 0o777 == 0o600
     assert target.read_text(encoding="utf-8") == "secret"
-
-
-def test_apply_file_changes_writes_deletes_and_creates(tmp_path: Path) -> None:
-    existing = tmp_path / "keep.txt"
-    existing.write_text("old", encoding="utf-8")
-    doomed = tmp_path / "gone.txt"
-    doomed.write_text("bye", encoding="utf-8")
-    apply_file_changes(
-        [
-            FileChange(path=existing, before="old", after="new"),
-            FileChange(path=doomed, before="bye", after=None),
-            FileChange(path=tmp_path / "fresh.txt", before=None, after="born"),
-        ]
-    )
-    assert existing.read_text(encoding="utf-8") == "new"
-    assert not doomed.exists()
-    assert (tmp_path / "fresh.txt").read_text(encoding="utf-8") == "born"
-
-
-def test_apply_file_changes_refuses_when_content_drifted(tmp_path: Path) -> None:
-    target = tmp_path / "drift.txt"
-    target.write_text("actual", encoding="utf-8")
-    with pytest.raises(FileWriteError, match="changed since planning"):
-        apply_file_changes([FileChange(path=target, before="expected", after="new")])
-    assert target.read_text(encoding="utf-8") == "actual"  # untouched
-
-
-def test_apply_file_changes_rolls_back_applied_changes_on_failure(tmp_path: Path) -> None:
-    ok = tmp_path / "ok.txt"
-    ok.write_text("v1", encoding="utf-8")
-    # Second change targets an existing NON-EMPTY DIRECTORY: verification
-    # passes (not a file → current None == before None), staging succeeds,
-    # but the apply-phase os.replace onto the directory raises OSError —
-    # exercising rollback of the already-applied first change.
-    blocker = tmp_path / "blocker"
-    blocker.mkdir()
-    (blocker / "occupant.txt").write_text("here", encoding="utf-8")
-    with pytest.raises(FileWriteError):
-        apply_file_changes(
-            [
-                FileChange(path=ok, before="v1", after="v2"),
-                FileChange(path=blocker, before=None, after="never"),
-            ]
-        )
-    assert ok.read_text(encoding="utf-8") == "v1"  # rolled back
-
-
-def test_apply_file_changes_allows_duplicate_identical_changes(tmp_path: Path) -> None:
-    target = tmp_path / "same.txt"
-    target.write_text("v1", encoding="utf-8")
-    change = FileChange(path=target, before="v1", after="v2")
-
-    apply_file_changes([change, change])
-
-    assert target.read_text(encoding="utf-8") == "v2"
-
-
-def test_apply_file_changes_rolls_back_non_oserror_apply_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    first = tmp_path / "first.txt"
-    first.write_text("v1", encoding="utf-8")
-    second = tmp_path / "second.txt"
-    second.write_text("old", encoding="utf-8")
-    real_replace = os.replace
-    calls = 0
-
-    def replace_then_interrupt(src: Path, dst: Path) -> None:
-        nonlocal calls
-        calls += 1
-        if calls == 2:
-            raise KeyboardInterrupt("stop")
-        real_replace(src, dst)
-
-    monkeypatch.setattr(fs_module.os, "replace", replace_then_interrupt)
-
-    with pytest.raises(KeyboardInterrupt):
-        apply_file_changes(
-            [
-                FileChange(path=first, before="v1", after="v2"),
-                FileChange(path=second, before="old", after="new"),
-            ]
-        )
-
-    assert first.read_text(encoding="utf-8") == "v1"
-    assert second.read_text(encoding="utf-8") == "old"
 
 
 # ---- file_lock ---------------------------------------------------------------

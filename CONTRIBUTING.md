@@ -6,7 +6,7 @@ Thanks for contributing to `untaped`.
 
 ```bash
 uv sync
-uv run pytest
+uv run pytest -n auto
 uv run mypy
 uv run ruff check --fix
 uv run ruff format

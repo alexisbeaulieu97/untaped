@@ -6,6 +6,7 @@ import hashlib
 import os
 import stat
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -304,13 +305,23 @@ def test_timeout_maps_to_timed_out_error(monkeypatch: pytest.MonkeyPatch) -> Non
     assert excinfo.value.returncode is None
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX shell script stands in for git")
+@pytest.mark.skipif(os.name == "nt", reason="POSIX executable script stands in for git")
 def test_timeout_kills_a_real_hung_process(tmp_path: Path) -> None:
+    pid_file = tmp_path / "git.pid"
     script = tmp_path / "fake-git"
-    script.write_text("#!/bin/sh\nexec sleep 5\n")
+    script.write_text(
+        f"#!{sys.executable}\n"
+        "import os, sys, time\n"
+        # The SSH config probe must complete before the timed command starts.
+        "if sys.argv[1] == 'config':\n    sys.exit(1)\n"
+        f"with open({str(pid_file)!r}, 'w') as f:\n    f.write(str(os.getpid()))\n"
+        "time.sleep(60)\n"
+    )
     script.chmod(script.stat().st_mode | stat.S_IXUSR)
     with pytest.raises(GitCommandError, match=r"timed out after 0\.2s"):
         run_git(["fetch"], timeout=0.2, git=str(script))
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(pid_file.read_text()), 0)
 
 
 def test_failure_carries_status_and_stderr_gist(monkeypatch: pytest.MonkeyPatch) -> None:

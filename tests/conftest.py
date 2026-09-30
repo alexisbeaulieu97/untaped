@@ -10,6 +10,7 @@ specific fixtures on top of this one.
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TextIO
@@ -42,11 +43,14 @@ def _no_writes_to_the_repo_root() -> Iterator[None]:
 
     A subprocess that inherits the process cwd (the repo root under pytest)
     once committed junk such as ``core.sshCommand/HEAD``; write into
-    ``tmp_path`` or ``monkeypatch.chdir`` there instead.
+    ``tmp_path`` or ``monkeypatch.chdir`` there instead. Coverage data files
+    are exempt: parallel workers write them there while other tests run.
     """
     before = set(os.listdir(_REPO_ROOT))
     yield
-    leaked = sorted(set(os.listdir(_REPO_ROOT)) - before)
+    leaked = sorted(
+        name for name in set(os.listdir(_REPO_ROOT)) - before if not name.startswith(".coverage")
+    )
     if leaked:
         pytest.fail(f"test left files at the repository root: {', '.join(leaked)}")
 
@@ -62,6 +66,10 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
                 patch.delenv(key)
         patch.setenv("HOME", str(home))
         patch.setenv("UV_CACHE_DIR", uv_cache)
+        # A fresh HOME hides uv's managed interpreters. Use the test runner's
+        # Python for real hook workers instead of downloading it for each test.
+        patch.setenv("UV_PYTHON", sys.executable)
+        patch.setenv("UV_PYTHON_DOWNLOADS", "never")
         patch.setenv("UNTAPED_CONFIG", str(home / ".untaped" / "config.yml"))
         # ``UNTAPED_STATE`` was cleared above, so state.yml resolves next to
         # whichever temp config a test points ``UNTAPED_CONFIG`` at.
