@@ -73,6 +73,7 @@ from untaped.capability_api import (
     UsageError,
     app_context,
     clamp_parallel,
+    deprecated_alias,
     echo,
     emit,
     get_config_section,
@@ -110,9 +111,17 @@ DepthOption = Annotated[
     str | None, Parameter(name="--depth", help="Traversal depth, or 'unlimited' (default).")
 ]
 
+AllRefsOption = Annotated[
+    bool,
+    Parameter(
+        name="--all-refs",
+        negative="",
+        help="With no --ref, read what every cached ref depends on, not only the default branch.",
+    ),
+]
+
 # LimitedChoice() defaults to at-most-one selection — cyclopts' MutuallyExclusive
 # is an untyped alias for exactly this, so the typed parent is used directly.
-_DIRECTION_GROUP = Group("Direction", validator=validators.LimitedChoice())
 _SOURCE_DATA_GROUP = Group("Source Data", validator=validators.LimitedChoice())
 LiveOption = Annotated[
     bool,
@@ -243,6 +252,8 @@ def register_graph_commands(app: App) -> None:
     app.command(impact_command, name="impact")
     app.command(find_command, name="find")
     app.command(graph_command, name="graph")
+    for old, direction in (("--upstream", "up"), ("--downstream", "down"), ("--both", "both")):
+        deprecated_alias(app["graph"], old, f"--direction={direction}")
 
 
 def deps_command(
@@ -253,10 +264,10 @@ def deps_command(
         str | None,
         Parameter(
             name="--ref",
-            help="Branch, tag, or SHA of ROLE; omit for every cached ref (the default "
-            "branch for live reads).",
+            help="Branch, tag, or SHA of ROLE; omit for its default branch.",
         ),
     ] = None,
+    all_refs: AllRefsOption = False,
     target_repo: TargetRepoOption = None,
     depth: DepthOption = None,
     live: LiveOption = False,
@@ -264,7 +275,7 @@ def deps_command(
     columns: ColumnsOption = None,
     options: GraphSourceOptions = _SOURCE_DEFAULTS,
 ) -> None:
-    """Show what ROLE depends on (downstream), one row per repository per root ref.
+    """Show what ROLE depends on (downstream), one row per repository per ROLE ref.
 
     Reads cached data when a source is selected (--source, inline selectors,
     or ansible.default_source) and GitHub live otherwise (or with --live).
@@ -280,6 +291,7 @@ def deps_command(
         role,
         command="deps",
         ref=ref,
+        all_refs=all_refs,
         target_repo=target_repo,
         depth=depth,
         live=live,
@@ -321,6 +333,7 @@ def impact_command(
         role,
         command="impact",
         ref=ref,
+        all_refs=False,
         target_repo=target_repo,
         depth=depth,
         live=False,
@@ -360,6 +373,7 @@ def find_command(
             ),
         ),
     ] = False,
+    all_refs: AllRefsOption = False,
     depth: DepthOption = None,
     live: LiveOption = False,
     fmt: FormatOption = "table",
@@ -389,7 +403,9 @@ def find_command(
             if stdin
             else list(dict.fromkeys((root_from_line(r), RootInput()) for r in roots or []))
         )
-        env = _graph_env(stack, options, command="find", depth=depth_limit, live=live)
+        env = _graph_env(
+            stack, options, command="find", depth=depth_limit, live=live, all_refs=all_refs
+        )
         wanted = [_require_repo(env, repo) for repo in target]
         ui = _report_warnings(_refresh_selected(env, options))
         # Spellings of one repo (URL, .git, SSH, alias) share one graph build.
@@ -426,33 +442,15 @@ def graph_command(
     /,
     *,
     ref: RefOption = None,
-    upstream: Annotated[
-        bool,
+    direction: Annotated[
+        Literal["up", "down", "both"],
         Parameter(
-            name="--upstream",
-            negative="",
-            group=_DIRECTION_GROUP,
-            help="Show repos that depend on TARGET (reverse impact; requires a source).",
+            name="--direction",
+            help="up: what depends on TARGET (requires a source); down: what TARGET "
+            "depends on; both (default).",
         ),
-    ] = False,
-    downstream: Annotated[
-        bool,
-        Parameter(
-            name="--downstream",
-            negative="",
-            group=_DIRECTION_GROUP,
-            help="Show what TARGET depends on (works without a source).",
-        ),
-    ] = False,
-    both: Annotated[
-        bool,
-        Parameter(
-            name="--both",
-            negative="",
-            group=_DIRECTION_GROUP,
-            help="Show upstream and downstream (default). Upstream still requires a source.",
-        ),
-    ] = False,
+    ] = "both",
+    all_refs: AllRefsOption = False,
     cached: Annotated[
         bool,
         Parameter(
@@ -465,10 +463,7 @@ def graph_command(
             ),
         ),
     ] = False,
-    depth: Annotated[
-        str | None,
-        Parameter(name="--depth", help="Traversal depth or 'unlimited' (default 3)."),
-    ] = None,
+    depth: DepthOption = None,
     target_repo: TargetRepoOption = None,
     live: LiveOption = False,
     fmt: Annotated[
@@ -491,20 +486,21 @@ def graph_command(
 
     For example:
 
-        untaped ansible graph acme/base --org acme --team platform --upstream --refresh
-        untaped ansible graph acme/app --source prod --both --cached
-        untaped ansible graph ./roles/web --target-repo acme/web --downstream
+        untaped ansible graph acme/base --org acme --team platform --direction up --refresh
+        untaped ansible graph acme/app --source prod --depth 2
+        untaped ansible graph ./roles/web --target-repo acme/web --direction down
     """
-    depth_limit = _parse_depth(depth or "3")
-    direction = _graph_direction(upstream=upstream, downstream=downstream, both=both)
+    depth_limit = _parse_depth(depth or "unlimited")
     with report_errors(), ExitStack() as stack:
-        env = _graph_env(stack, options, command="graph", depth=depth_limit, live=live)
+        env = _graph_env(
+            stack, options, command="graph", depth=depth_limit, live=live, all_refs=all_refs
+        )
         built = _target_graph(
             env,
             target=target,
             ref=ref,
             target_repo=target_repo,
-            direction=direction,
+            direction=_DIRECTIONS[direction],
             extra_warnings=_refresh_selected(env, options),
         )
         ui = _report_warnings(built.graph.warnings)
@@ -518,6 +514,7 @@ def _emit_reach(
     *,
     command: Literal["deps", "impact"],
     ref: str | None,
+    all_refs: bool,
     target_repo: str | None,
     depth: str | None,
     live: bool,
@@ -529,7 +526,9 @@ def _emit_reach(
     relation, kind, noun = _REACH_OUTPUT[command]
     depth_limit = _parse_depth(depth or "unlimited")
     with report_errors(), ExitStack() as stack:
-        env = _graph_env(stack, options, command=command, depth=depth_limit, live=live)
+        env = _graph_env(
+            stack, options, command=command, depth=depth_limit, live=live, all_refs=all_refs
+        )
         graph = _target_graph(
             env,
             target=target,
@@ -556,6 +555,8 @@ def _report_warnings(warnings: Iterable[str]) -> UiContext:
     return ui
 
 
+_DIRECTIONS: dict[str, GraphDirection] = {"up": "impact", "down": "deps", "both": "both"}
+
 _REACH_OUTPUT: dict[str, tuple[EdgeRelation, str, str]] = {
     "deps": ("requires", "ansible.dependency", "dependencies"),
     "impact": ("impacts", "ansible.dependent", "dependents"),
@@ -574,6 +575,7 @@ def _graph_env(
     command: GraphCommand,
     depth: int | None,
     live: bool,
+    all_refs: bool = False,
 ) -> _GraphEnv:
     """Resolve settings and the selected source into what every root's build shares.
 
@@ -607,6 +609,7 @@ def _graph_env(
         graph_source=graph_source,
         live=live,
         depth=depth,
+        all_refs=all_refs,
         live_reads=_LiveReads(
             stack,
             github_settings=github_settings,
@@ -714,6 +717,7 @@ class _GraphEnv:
     graph_source: _GraphSource
     live: bool
     depth: int | None
+    all_refs: bool
     live_reads: _LiveReads
 
 
@@ -802,6 +806,8 @@ def _target_graph(
             source_key=graph_source.key,
             direction=direction,
             depth=env.depth,
+            # A local checkout is one state of its repo, overlaid at the ref-less node.
+            all_refs=env.all_refs or local_dependencies is not None,
             stale_after=env.settings.stale_after,
             refresh_hint=refresh_hint,
         ),
@@ -902,16 +908,6 @@ class _GraphSource:
 class _LocalDependencies:
     edges: list[IndexedDependency]
     warnings: list[str]
-
-
-def _graph_direction(*, upstream: bool, downstream: bool, both: bool) -> GraphDirection:
-    # Mutual exclusion is enforced at parse time by _DIRECTION_GROUP.
-    del both
-    if upstream:
-        return "impact"
-    if downstream:
-        return "deps"
-    return "both"
 
 
 def _graph_source(options: GraphSourceOptions, *, default_source: str | None) -> _GraphSource:
@@ -1108,8 +1104,8 @@ def _rerun_with_refresh(
 
 
 _DIRECTION_FLAGS: dict[GraphDirection, str] = {
-    "impact": " --upstream",
-    "deps": " --downstream",
+    "impact": " --direction up",
+    "deps": " --direction down",
     "both": "",
 }
 
