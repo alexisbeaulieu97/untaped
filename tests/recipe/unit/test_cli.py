@@ -12,6 +12,7 @@ from types import ModuleType
 import pytest
 
 import untaped.capabilities.recipe.infrastructure.file_writer as file_writer_module
+import untaped.capabilities.recipe.infrastructure.pack_store as pack_store_module
 from untaped import bootstrap
 from untaped.capabilities.recipe import SPEC
 from untaped.capabilities.recipe.builtins.registry import BUILTIN_HOOKS, BuiltinHook
@@ -309,6 +310,65 @@ def test_remove_failure_is_a_failed_row(tmp_path: Path, monkeypatch: pytest.Monk
     assert row["detail"] == "permission denied: demo"
     assert row["error"]["category"] == "failed"
     assert row["error"]["message"] == row["detail"]
+
+
+def test_remove_that_deletes_part_of_a_pack_is_partial_and_retryable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pack = tmp_path / "pack"
+    _write_pack_project(pack)
+    assert CliInvoker().invoke(app, ["packs", "add", str(pack)]).exit_code == 0
+    installed = library_root() / "packs" / "demo"
+    real_rmtree = shutil.rmtree
+
+    def _half_rmtree(path: Path, *args: object, **kwargs: object) -> None:
+        if Path(path) != installed:
+            real_rmtree(path, *args, **kwargs)  # type: ignore[arg-type]
+            return
+        (installed / "pyproject.toml").unlink()
+        raise OSError("permission denied")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(shutil, "rmtree", _half_rmtree)
+        result = CliInvoker().invoke(app, ["packs", "remove", "demo", "--yes", "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    [row] = json.loads(result.stdout)
+    assert row["action"] == "partial"
+    assert "could not delete the rest: permission denied" in row["detail"]
+    assert row["error"]["message"] == row["detail"]
+    checked = CliInvoker().invoke(app, ["validate", "--format", "json"])
+    assert [(row["name"], row["status"]) for row in json.loads(checked.stdout)] == [
+        ("demo", "fail")
+    ]
+    retried = CliInvoker().invoke(app, ["packs", "remove", "demo", "--yes"])
+    assert retried.exit_code == 0, retried.output
+    assert not installed.exists()
+    assert "demo" not in (library_root() / "packs.toml").read_text()
+
+
+def test_remove_that_cannot_update_the_index_is_partial_and_retryable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pack = tmp_path / "pack"
+    _write_pack_project(pack)
+    assert CliInvoker().invoke(app, ["packs", "add", str(pack)]).exit_code == 0
+
+    def _refuse(path: Path, text: str) -> None:
+        raise OSError("read-only file system")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(pack_store_module, "atomic_write", _refuse)
+        result = CliInvoker().invoke(app, ["packs", "remove", "demo", "--yes", "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    [row] = json.loads(result.stdout)
+    assert row["action"] == "partial"
+    assert "could not update packs.toml: read-only file system" in row["detail"]
+    assert not (library_root() / "packs" / "demo").exists()
+    retried = CliInvoker().invoke(app, ["packs", "remove", "demo", "--yes"])
+    assert retried.exit_code == 0, retried.output
+    assert "demo" not in (library_root() / "packs.toml").read_text()
 
 
 def test_remove_repeated_name_reports_the_second_as_failed(tmp_path: Path) -> None:

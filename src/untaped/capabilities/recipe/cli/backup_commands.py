@@ -8,8 +8,12 @@ from typing import Annotated
 from cyclopts import Parameter
 
 from untaped.capabilities.recipe.cli._context import recipe_ui
-from untaped.capabilities.recipe.cli.common import library_root, report_config_errors, settings
-from untaped.capabilities.recipe.errors import RecipeError
+from untaped.capabilities.recipe.cli.common import (
+    as_recipe_error,
+    library_root,
+    report_config_errors,
+    settings,
+)
 from untaped.capabilities.recipe.infrastructure.backup import (
     BackupBundle,
     BackupStore,
@@ -20,11 +24,9 @@ from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
     DryRunOption,
-    ErrorCategory,
     ErrorInfo,
     FormatOption,
     OutcomeRecord,
-    UntapedError,
     UsageError,
     YesOption,
     batch_apply,
@@ -180,17 +182,9 @@ def prune_command(
         sizes = {bundle.id: bundle_bytes(bundle) for bundle in pruned}
         ui = recipe_ui()
 
+        @as_recipe_error
         def _delete(bundle: BackupBundle) -> BackupBundle:
-            try:
-                store.delete(bundle.id)
-            except UntapedError:
-                raise
-            except ValueError as exc:
-                # batch_apply only counts UntapedError as a per-item failure;
-                # anything else would abort the whole batch mid-prune.
-                raise RecipeError(str(exc)) from exc
-            except OSError as exc:
-                raise RecipeError(str(exc), category=ErrorCategory.FAILED) from exc
+            store.delete(bundle.id)
             return bundle
 
         outcome = batch_apply(
