@@ -144,6 +144,18 @@ self-contained manual for the installed CLI.
     discarded.
   - **Fix:** `job_slice_count` in a case's `launch:` no longer warns as an
     unknown launch field.
+  - **Fix:** the launch preflight (`awx test run`/`validate`, and `launch`
+    of a job template) accepts values the template has already, as AWX
+    does: an `scm_branch` equal to the project's branch when the template
+    sets none, and extra vars it saves with those values. `awx test` leaves
+    them out of the launch, so an `idempotent` rerun no longer pins a commit
+    AWX would ignore. Any other value is still refused.
+  - **Fix:** a suite whose `kind: AwxTestSuite` has a trailing `# comment`
+    (or is a flow mapping) is found when its directory is run; it was
+    silently skipped.
+  - **Fix:** a test case whose launch AWX answered with `ignored_fields`
+    cancels the job AWX launched anyway (unless `--no-cancel`); it was left
+    running.
   - The `untaped-awx` skill documents the complete suite format, the
     `awx.test_result` record, the agent profile, and the resource, document
     and job commands in `references/`, with `smoke`, `variants` and

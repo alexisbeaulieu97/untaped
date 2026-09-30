@@ -9,6 +9,7 @@ stack trace.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from pathlib import Path, PurePath
 
 from untaped.capability_api import ConfigError
@@ -16,13 +17,21 @@ from untaped.capability_api import ConfigError
 DEFAULT_SUITE_DIR = Path(".untaped/awx/tests")
 """Where suites live when no path is given, relative to the git checkout root."""
 
-_SUITE_MARKER = re.compile(r"^kind:\s*[\"']?AwxTestSuite[\"']?\s*$", re.MULTILINE)
+
+def kind_marker(kinds: Iterable[str]) -> re.Pattern[str]:
+    """A ``kind:`` naming one of ``kinds``: block or flow style, quoted or not, commented or not."""
+    return re.compile(
+        rf"\bkind\s*:\s*[\"']?(?:{'|'.join(kinds)})[\"']?(?=\s*(?:[,}}#]|$))", re.MULTILINE
+    )
+
+
+_SUITE_MARKER = kind_marker(["AwxTestSuite"])
 
 
 def suites_under(directory: Path) -> list[Path]:
     """The suite files anywhere under ``directory``, sorted.
 
-    A suite is a ``.yml``/``.yaml`` file with a ``kind: AwxTestSuite`` line;
+    A suite is a ``.yml``/``.yaml`` file with a ``kind: AwxTestSuite`` key;
     other YAML (vars files, fixtures) and hidden entries below ``directory``
     are skipped.
     """
@@ -42,7 +51,7 @@ def is_hidden(relative: PurePath) -> bool:
 
 
 def is_suite_text(text: str) -> bool:
-    """Whether a YAML file's ``text`` is a suite: it has a ``kind: AwxTestSuite`` line."""
+    """Whether a YAML file's ``text`` is a suite: it has a ``kind: AwxTestSuite`` key."""
     return _SUITE_MARKER.search(text) is not None
 
 

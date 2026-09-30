@@ -835,6 +835,28 @@ def test_run_preflight_refuses_an_unknown_node_before_launching(
     assert not [call for call in aap.actions_called if call[2] == "launch"]
 
 
+def test_a_job_template_and_a_workflow_of_one_name_are_preflighted_apart(
+    cli: CliInvoker, aap: FakeAap, tmp_path: Path
+) -> None:
+    """The job template's prompts never stand in for the workflow's of the same name."""
+    _seed_release(aap)
+    aap.seed("job_templates", name="Release", organization=1, ask_variables_on_launch=False)
+    job = tmp_path / "a-job.yml"
+    job.write_text(
+        yaml.safe_dump(
+            {"kind": "AwxTestSuite", "name": "job", "jobTemplate": "Release", "cases": {"c": {}}}
+        )
+    )
+    workflow = _suite(tmp_path, {"c": {"launch": {"extra_vars": {"test": 1}}}})
+
+    result = cli.invoke(
+        app, ["test", "run", str(job), str(workflow), "--parallel", "1", "-f", "json"]
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert sorted(row["result"] for row in json.loads(result.stdout)) == ["pass", "pass"]
+
+
 def test_list_shows_the_workflow_template(cli: CliInvoker, tmp_path: Path) -> None:
     suite = _suite(tmp_path, {"c": {}})
 
