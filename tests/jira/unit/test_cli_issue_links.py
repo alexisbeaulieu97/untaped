@@ -112,7 +112,7 @@ def test_detail_table_lists_links() -> None:
     assert "is duplicated by ABC-9 (Closed): Same bug" in result.stdout
 
 
-def test_detail_table_without_links() -> None:
+def test_detail_table_hides_empty_links() -> None:
     result, _ = _get([])
 
-    assert "links:" in result.stdout
+    assert "links:" not in result.stdout
