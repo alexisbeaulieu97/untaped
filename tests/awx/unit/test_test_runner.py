@@ -1966,12 +1966,17 @@ def test_a_failed_task_that_may_have_been_rescued_proves_nothing() -> None:
 
     [row] = outcome.results
     assert row.failure is not None
-    assert (row.result, row.failure.system, row.failure.category) == (
+    # A rerun reads the same recap: the case is the expectation's, not worth retrying.
+    assert (row.result, row.failure.system, row.failure.category, row.failure.retryable) == (
         "error",
-        "awx.controller",
-        "unavailable",
+        "awx.expectation",
+        "failed",
+        False,
     )
     assert row.failure.message == (
         "failed_tasks not proven: task 'Validate input' on web1 matches, but AWX's host "
         "summaries do not show whether a rescue block handled it"
     )
+    assert row.failure.hint is not None
+    assert "expect a task that fails unhandled" in row.failure.hint
+    assert _exit_code(outcome) == 1
