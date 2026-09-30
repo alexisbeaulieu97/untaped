@@ -15,7 +15,11 @@ from untaped.capabilities.recipe.application.files import read_recipe_file
 from untaped.capabilities.recipe.application.resolution import find_library_recipe
 from untaped.capabilities.recipe.builtins.registry import BUILTIN_HOOKS
 from untaped.capabilities.recipe.cli._context import recipe_ui
-from untaped.capabilities.recipe.cli.common import library_root, report_config_errors
+from untaped.capabilities.recipe.cli.common import (
+    as_recipe_error,
+    library_root,
+    report_config_errors,
+)
 from untaped.capabilities.recipe.cli.detail import (
     hook_detail,
     pack_detail,
@@ -35,6 +39,7 @@ from untaped.capabilities.recipe.errors import (
     HookNotFoundError,
     LocalChangesError,
     PackNotFoundError,
+    PartialRemovalError,
     PathNotFoundError,
     RecipeError,
     RecipeNotFoundError,
@@ -54,7 +59,7 @@ from untaped.capabilities.recipe.infrastructure.pack_store import (
 from untaped.capability_api import (
     ColumnsOption,
     DryRunOption,
-    ErrorCategory,
+    ErrorInfo,
     FormatOption,
     OutcomeRecord,
     OutputFormat,
@@ -72,7 +77,7 @@ from untaped.capability_api import (
     q,
     read_identifiers,
     render_rows,
-    resolve_each,
+    report_error,
     run_editor,
 )
 
@@ -88,13 +93,16 @@ class PackOutcomeRecord(OutcomeRecord):
     Kinds ``recipe.add_outcome`` (``action``: ``created``/``updated``),
     ``recipe.sync_outcome`` (``updated``/``unchanged``, or ``planned`` with
     --dry-run) and ``recipe.remove_outcome`` (``removed``, or ``planned``).
-    ``commit`` is the resolved commit of a git source (``rev`` is the one asked for).
+    A pack that could not be fetched, installed or removed is ``failed``,
+    with ``detail`` and ``error``. ``commit`` is the resolved commit of a git
+    source (``rev`` is the one asked for).
     """
 
     name: str
     source: str | None = None
     rev: str | None = None
     commit: str | None = None
+    detail: str | None = None
 
 
 @dataclass(frozen=True)
@@ -225,20 +233,25 @@ def sync_command(
         selected = _sync_selection(
             library, _pack_names(names, stdin=stdin) if stdin else names or [], all_packs=all_packs
         )
-        plans, fetch_failed = resolve_each(
-            list(selected),
-            _as_recipe_error(
-                lambda name: _fetch_for_sync(
-                    library, selected[name], Path(temp_root), discard_edits=discard_edits
-                )
-            ),
-        )
+
+        @as_recipe_error
+        def fetch(pack: InstalledPack) -> _SyncPlan:
+            return _fetch_for_sync(library, pack, Path(temp_root), discard_edits=discard_edits)
+
+        plans: list[_SyncPlan] = []
+        failed: dict[str, UntapedError] = {}
+        for name, pack in selected.items():
+            try:
+                plans.append(fetch(pack))
+            except UntapedError as exc:
+                report_error(exc, item=name)
+                failed[name] = exc
         changed = [plan for plan in plans if plan.changed]
         if dry_run and changed:
             _sync_preview(changed)
         outcome = batch_apply(
             changed,
-            _as_recipe_error(
+            as_recipe_error(
                 lambda plan: _install_for_sync(library, plan, discard_edits=discard_edits)
             ),
             verb="sync",
@@ -259,16 +272,18 @@ def sync_command(
             for plan in plans:
                 if not plan.changed and plan.commit and plan.commit != plan.pack.commit:
                     library.record_commit(plan.pack.name, plan.commit)
-        synced = {plan.pack.name for plan, _ in outcome.results}
+        failed.update((plan.pack.name, exc) for plan, exc in outcome.failures)
+        by_name = {plan.pack.name: plan for plan in plans}
         rows = [
-            _sync_row(plan, action=action)
-            for plan in plans
-            if (action := _sync_action(plan, synced=synced, dry_run=dry_run))
+            _pack_outcome(name, pack, action="failed", error=failed[name])
+            if name in failed
+            else _sync_row(by_name[name], action=_sync_action(by_name[name], dry_run=dry_run))
+            for name, pack in selected.items()
         ]
         rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.sync_outcome")
         if rendered:
             echo(rendered)
-        finish(fetch_failed or outcome.any_failed)
+        finish(bool(failed))
 
 
 def _sync_selection(
@@ -284,26 +299,6 @@ def _sync_selection(
         if name not in installed:
             raise PackNotFoundError(not_found("pack", name, known=sorted(installed)))
     return {name: installed[name] for name in names}
-
-
-def _as_recipe_error[T, R](action: Callable[[T], R]) -> Callable[[T], R]:
-    """Wrap ``action`` so its expected library errors are per-item ``UntapedError``s.
-
-    Typed errors keep their category; a plain ``ValueError`` is invalid input
-    and an ``OSError`` a failed file operation (both in ``local``).
-    """
-
-    def wrapped(item: T) -> R:
-        try:
-            return action(item)
-        except UntapedError:
-            raise
-        except ValueError as exc:
-            raise RecipeError(str(exc)) from exc
-        except OSError as exc:
-            raise RecipeError(str(exc), category=ErrorCategory.FAILED) from exc
-
-    return wrapped
 
 
 def _install_for_sync(library: PackLibrary, plan: _SyncPlan, *, discard_edits: bool) -> None:
@@ -340,13 +335,11 @@ def _short_commit(commit: str | None) -> str:
     return commit[:12] if commit else "unrecorded"
 
 
-def _sync_action(plan: _SyncPlan, *, synced: set[str], dry_run: bool) -> str | None:
-    """The outcome ``action`` of one fetched pack; ``None`` when its install failed."""
+def _sync_action(plan: _SyncPlan, *, dry_run: bool) -> str:
+    """The outcome ``action`` of one fetched pack whose install did not fail."""
     if not plan.changed:
         return "unchanged"
-    if dry_run:
-        return "planned"
-    return "updated" if plan.pack.name in synced else None
+    return "planned" if dry_run else "updated"
 
 
 def _fetch_for_sync(
@@ -393,6 +386,29 @@ def _sync_row(plan: _SyncPlan, *, action: str) -> dict[str, object]:
         source=plan.pack.source,
         rev=plan.pack.rev or None,
         commit=plan.commit,
+    ).model_dump()
+
+
+def _pack_outcome(
+    name: str,
+    pack: InstalledPack | None,
+    *,
+    action: str,
+    error: UntapedError | None = None,
+) -> dict[str, object]:
+    """A row with ``pack``'s recorded source, rev and commit (none for an unloadable pack).
+
+    A failed row's ``error`` was already reported (and counted) on stderr.
+    """
+    info = None if error is None else ErrorInfo.from_exception(error)
+    return PackOutcomeRecord(
+        name=name,
+        action=action,
+        source=(pack.source or None) if pack else None,
+        rev=(pack.rev or None) if pack else None,
+        commit=(pack.commit or None) if pack else None,
+        detail=None if info is None else info.message,
+        error=info,
     ).model_dump()
 
 
@@ -542,7 +558,9 @@ def validate_command(
             if ref_text is None
             else [check_ref(ref_text, library=library, inspector=inspector)]
         )
-        rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.check")
+        rendered = render_rows(
+            [row.model_dump() for row in rows], fmt=fmt, columns=columns, kind="recipe.check"
+        )
         if rendered:
             echo(rendered)
         if ref_text is None and not rows:
@@ -550,7 +568,7 @@ def validate_command(
                 "info",
                 _EMPTY_LIBRARY_HINT,
             )
-        finish(any(row["status"] == "error" for row in rows))
+        finish(any(row.status == "fail" for row in rows))
 
 
 def remove_command(
@@ -571,11 +589,14 @@ def remove_command(
     with report_config_errors():
         library = PackLibrary(library_root=library_root())
         selected = _pack_names(names, stdin=stdin)
-        known = {pack.name for pack in library.packs()} | set(library.load_errors())
+        installed = {pack.name: pack for pack in library.packs()}
+        # A removal that stopped partway leaves a name only reconcile() still sees.
+        known = set(installed) | set(library.load_errors()) | set(library.reconcile())
         for name in selected:
             if name not in known:
                 raise PackNotFoundError(not_found("pack", name, known=sorted(known)))
 
+        @as_recipe_error
         def _remove(item: str) -> str:
             library.remove(item)
             return item
@@ -605,15 +626,24 @@ def remove_command(
             preview_only=dry_run,
             preview=_preview,
         )
+        if outcome.cancelled:
+            finish(outcome)
         if dry_run:
-            rows = [
-                PackOutcomeRecord(name=name, action="planned").model_dump() for name in selected
-            ]
+            rows = [_pack_outcome(name, installed.get(name), action="planned") for name in selected]
         else:
             rows = [
-                PackOutcomeRecord(name=item, action="removed").model_dump()
-                for item, _ in outcome.results
+                _pack_outcome(name, installed.get(name), action="removed")
+                for name, _ in outcome.results
             ]
+            rows.extend(
+                _pack_outcome(
+                    name,
+                    installed.get(name),
+                    action="partial" if isinstance(exc, PartialRemovalError) else "failed",
+                    error=exc,
+                )
+                for name, exc in outcome.failures
+            )
         rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.remove_outcome")
         if rendered:
             echo(rendered)
