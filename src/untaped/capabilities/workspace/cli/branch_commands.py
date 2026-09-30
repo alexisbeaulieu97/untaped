@@ -166,10 +166,13 @@ def print_branch_apply_outcomes(
     fmt: OutputFormat,
     columns: list[str] | None,
 ) -> None:
+    """Emit branch apply rows; the table shows ``target_branch`` only when it varies."""
+    varies = len({row.target_branch for row in outcomes}) > 1
     emit(
         outcomes,
         fmt=fmt,
         columns=columns,
+        table_columns=["repo", *(["target_branch"] if varies else []), "action", "detail"],
         kind="workspace.branch_outcome",
         empty="No matching repos to checkout.",
     )

@@ -55,6 +55,11 @@ def _install(tmp_path: Path) -> None:
     )
 
 
+def _default_columns(stderr: str) -> set[str]:
+    """The columns ``--columns ?`` marks as shown in a table by default."""
+    return {line.split()[0] for line in stderr.splitlines() if line.endswith(" *")}
+
+
 def test_recipe_verbs_stay_at_the_top_and_nouns_group_the_rest() -> None:
     assert _commands(app) == {
         "apply",
@@ -234,3 +239,26 @@ def test_packs_list_pipe_composes_into_sync_and_remove(tmp_path: Path) -> None:
         ("acme", "removed")
     ]
     assert not (library_root() / "packs" / "acme").exists()
+
+
+@pytest.mark.parametrize(
+    ("argv", "defaults"),
+    [
+        pytest.param(["list"], {"pack", "name"}, id="recipes"),
+        pytest.param(
+            ["packs", "list"],
+            {"name", "version", "source", "rev", "recipes", "hooks"},
+            id="packs",
+        ),
+        pytest.param(["hooks", "list"], {"pack", "name", "module"}, id="hooks"),
+    ],
+)
+def test_list_tables_leave_out_refs_paths_and_commits(
+    tmp_path: Path, argv: list[str], defaults: set[str]
+) -> None:
+    _install(tmp_path)
+
+    result = CliInvoker().invoke(app, [*argv, "--columns", "?"])
+
+    assert result.exit_code == 0, result.output
+    assert _default_columns(result.stderr) == defaults

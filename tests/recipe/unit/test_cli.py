@@ -41,6 +41,11 @@ def _out_recipe(root: Path, template: str = "hello\n") -> tuple[Path, Path]:
     return root / "recipe.yml", target
 
 
+def _default_columns(stderr: str) -> set[str]:
+    """The columns ``--columns ?`` marks as shown in a table by default."""
+    return {line.split()[0] for line in stderr.splitlines() if line.endswith(" *")}
+
+
 def _write_hook_project(
     root: Path,
     *,
@@ -1814,8 +1819,13 @@ def test_apply_outcome_inputs_render_in_yaml_and_table(tmp_path: Path) -> None:
 
     table_result = CliInvoker().invoke(app, ["apply", str(recipe), str(target), "--dry-run"])
     assert table_result.exit_code == 0, table_result.output
-    assert "inputs" in table_result.stdout
-    assert "service" in table_result.stdout
+    assert "service" not in table_result.stdout
+    added = CliInvoker().invoke(
+        app, ["apply", str(recipe), str(target), "--dry-run", "--columns", "+inputs"]
+    )
+    assert added.exit_code == 0, added.output
+    assert "inputs" in added.stdout
+    assert "service=api" in added.stdout
 
 
 def test_apply_derives_inputs_from_pipe_record_and_input_from_override(
@@ -3101,6 +3111,58 @@ def _config_backup(tmp_path: Path) -> tuple[BackupDraft, Path]:
     )
     config.write_text("after\n")
     return bundle, config
+
+
+def test_backups_list_rows_carry_the_creation_time_and_recipe(tmp_path: Path) -> None:
+    bundle, _config = _config_backup(tmp_path)
+    invoker = CliInvoker()
+
+    listed = invoker.invoke(app, ["backups", "list", "--format", "json"])
+    columns = invoker.invoke(app, ["backups", "list", "--columns", "?"])
+
+    assert listed.exit_code == 0, listed.output
+    assert json.loads(listed.stdout) == [
+        {
+            "id": bundle.id,
+            "created_at": bundle.created_at,
+            "recipe": "demo",
+            "path": str(bundle.path),
+        }
+    ]
+    assert _default_columns(columns.stderr) == {"id", "created_at", "recipe"}
+
+
+def test_backups_list_warns_about_unreadable_metadata(tmp_path: Path) -> None:
+    bundle, _config = _config_backup(tmp_path)
+    (bundle.path / "metadata.json").write_text("{")
+
+    listed = CliInvoker().invoke(app, ["backups", "list", "--format", "json"])
+
+    assert listed.exit_code == 0, listed.output
+    assert json.loads(listed.stdout)[0] == {
+        "id": bundle.id,
+        "created_at": None,
+        "recipe": None,
+        "path": str(bundle.path),
+    }
+    assert f"invalid backup metadata: {bundle.id}" in listed.stderr
+
+
+def test_apply_table_leaves_out_the_recipe_and_inputs(tmp_path: Path) -> None:
+    recipe, target = _out_recipe(tmp_path)
+
+    result = CliInvoker().invoke(
+        app, ["apply", str(recipe), str(target), "--dry-run", "--columns", "?"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert _default_columns(result.stderr) == {
+        "target_path",
+        "action",
+        "files_changed",
+        "warnings",
+        "detail",
+    }
 
 
 def test_backup_commands_show_list_and_restore(tmp_path: Path) -> None:
