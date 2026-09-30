@@ -179,7 +179,8 @@ depends on is read at its default branch; `--all-refs` (`deps`, `find`,
 `graph`) reads it at every cached ref instead, and when the source has not
 scanned the default branch (a tags-only source) every ref is read with a
 warning. `--all-refs` reads cached source data, so it exits 2 with `--ref`,
-with `--live`, or without a source. What depends on a
+with `--live`, or without a source. It changes nothing for a local checkout,
+which is read as it is, or for a `find` root that names its ref. What depends on a
 target is always gathered across all of its refs, since a repo pinning an
 older tag still uses it. `deps`, `impact` and `find` print
 `--format table` (default), `json`, `yaml`, `pipe` or `raw`, with

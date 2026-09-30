@@ -2514,6 +2514,7 @@ def test_all_refs_with_ref_is_a_usage_error(command: str) -> None:
         (["graph", "acme/site", "--direction", "down"], ["--source", "platform", "--live"]),
         (["deps", "acme/site"], []),
         (["graph", "acme/site"], []),
+        (["find", "acme/base", "--root", "acme/site"], []),
     ],
 )
 def test_all_refs_with_live_reads_is_a_usage_error(
@@ -2530,3 +2531,13 @@ def test_all_refs_with_live_reads_is_a_usage_error(
     assert result.exit_code == 2, result.output + result.stderr
     fix = "drop --live" if source_args else "select one with --source NAME"
     assert f"--all-refs reads cached source data; {fix}" in result.stderr
+
+
+def test_all_refs_reads_the_default_source(tmp_path: Path, monkeypatch) -> None:
+    _seed_two_refs(tmp_path)
+    _use_config(tmp_path, monkeypatch, _PLATFORM, ansible={"default_source": "platform"})
+
+    result = _run("deps", "acme/site", "--all-refs", "--format", "json")
+
+    assert result.exit_code == 0, result.output + result.stderr
+    assert "acme/legacy" in result.stdout
