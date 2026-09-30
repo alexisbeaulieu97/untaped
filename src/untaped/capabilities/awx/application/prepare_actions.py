@@ -16,21 +16,25 @@ from untaped.capabilities.awx.application.selection import (
     SelectionResolver,
 )
 from untaped.capabilities.awx.domain import ResourceSpec
+from untaped.capabilities.awx.domain.launch_prompts import PROMPT_FLAGS
 from untaped.capabilities.awx.errors import LaunchPromptError
 from untaped.capability_api import ConfigError, UsageError, q
 
+_CLI_FLAGS: dict[str, str] = {
+    "extra_vars": "--extra-vars",
+    "limit": "--host-pattern",
+    "inventory": "--launch-inventory",
+    "credentials": "--credential",
+    "scm_branch": "--scm-branch",
+    "job_tags": "--job-tag",
+    "skip_tags": "--skip-tag",
+    "verbosity": "--verbosity",
+    "diff_mode": "--diff-mode",
+    "job_type": "--job-type",
+}
 # Launch payload field → (template prompt flag, CLI flag that sets it).
 LAUNCH_PROMPTS: dict[str, tuple[str, str]] = {
-    "extra_vars": ("ask_variables_on_launch", "--extra-vars"),
-    "limit": ("ask_limit_on_launch", "--host-pattern"),
-    "inventory": ("ask_inventory_on_launch", "--launch-inventory"),
-    "credentials": ("ask_credential_on_launch", "--credential"),
-    "scm_branch": ("ask_scm_branch_on_launch", "--scm-branch"),
-    "job_tags": ("ask_tags_on_launch", "--job-tag"),
-    "skip_tags": ("ask_skip_tags_on_launch", "--skip-tag"),
-    "verbosity": ("ask_verbosity_on_launch", "--verbosity"),
-    "diff_mode": ("ask_diff_mode_on_launch", "--diff-mode"),
-    "job_type": ("ask_job_type_on_launch", "--job-type"),
+    field: (PROMPT_FLAGS[field], flag) for field, flag in _CLI_FLAGS.items()
 }
 
 
@@ -57,7 +61,7 @@ def preflight_launch(
     info = read("launch")
     label = f"{spec.kind} {item.name!r} (id={item.id})"
     needed = info.get("variables_needed_to_start") or []
-    supplied = _extra_var_names(payload.get("extra_vars"))
+    supplied = extra_var_names(payload.get("extra_vars"))
     missing = [name for name in needed if name not in supplied]
     if missing:
         raise LaunchPromptError(
@@ -74,7 +78,7 @@ def preflight_launch(
         if info.get(ask_key) is not False:
             continue
         if field == "extra_vars":
-            names = _extra_var_names(value)
+            names = extra_var_names(value)
             if not names:
                 continue
             if info.get("survey_enabled"):
@@ -227,7 +231,8 @@ def _redact_secret_names(key: str, value: Any) -> Any:
     return value
 
 
-def _extra_var_names(value: Any) -> set[str]:
+def extra_var_names(value: Any) -> set[str]:
+    """The variable names of an ``extra_vars`` value (a mapping, or its JSON text)."""
     if isinstance(value, str):
         try:
             value = json.loads(value)

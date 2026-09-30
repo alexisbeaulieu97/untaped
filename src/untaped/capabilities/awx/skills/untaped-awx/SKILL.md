@@ -6,15 +6,15 @@ description: Use the `untaped awx` command to operate Ansible Automation Platfor
 # untaped AWX/AAP
 
 `untaped awx` reads and changes AAP/AWX resources by name, launches and
-follows jobs, and runs declarative test suites that launch a job template with
-parameter variants and check every job. Prefer it to raw API calls: it
-resolves names, previews writes, redacts secrets and pipes typed records.
+follows jobs, and runs declarative test suites that check every job. Prefer
+it to raw API calls: it resolves names, previews writes, redacts secrets and
+pipes typed records.
 
 This page is the map; the details ship next to it:
 
 | File | Read it when |
 |---|---|
-| [references/test-suites.md](references/test-suites.md) | writing a test suite: every field, header variables, Jinja, merge rules, `!ref`, workflow suites (`approvals`, `expect.nodes`) |
+| [references/test-suites.md](references/test-suites.md) | writing a test suite: every field, header variables, Jinja, merge rules, `!ref`, workflow suites (`approvals`, `expect.nodes`), `--source-ref` |
 | [references/test-results.md](references/test-results.md) | reading `awx test run` results and deciding what to fix |
 | [references/agent-profile.md](references/agent-profile.md) | setting up the AWX user and untaped profile an agent runs as |
 | [references/resources.md](references/resources.md) | selecting, patching, editing, copying, renaming, deleting resources |
@@ -64,17 +64,18 @@ confirm options before acting.
 Suites live in the playbook repository under `.untaped/awx/tests/`. After
 changing a playbook, role or template variables:
 
-1. Without a suite yet, `untaped awx test init "Deploy app"` (a workflow:
-   `init Release --workflow`) writes a commented starter suite from the
-   template's survey and prompts and prints its path; edit its cases, starting
-   from the examples.
+1. Without a suite yet, `untaped awx test init "Deploy app"` (`--workflow`
+   for a workflow) writes a starter suite from the template's survey and
+   prompts; edit its cases, starting from the examples.
 2. Once per task, save the base branch's results outside the checkout:
    `untaped awx test run --scm-branch main --format json > /tmp/baseline-PROJ-123.json`
    (exit 1 when `main` already fails some cases is expected).
 3. Commit and push the branch (`git push -u origin HEAD`): AWX runs what the
    remote has.
 4. `untaped awx test validate` checks every case without launching: the file,
-   the template, its prompts and required survey variables.
+   the template, its prompts and required survey variables. When the change
+   edits a spec under `.untaped/awx/`, pass `--source-ref HEAD` here and in
+   step 5 instead of `--scm-branch HEAD`.
 5. `untaped awx test run --scm-branch HEAD --compare /tmp/baseline-PROJ-123.json --format json`
    runs every case on the pushed commit (refused until HEAD is pushed) and
    gives each row a `change`. Narrow it with `--case SUITE/CASE` or paths.

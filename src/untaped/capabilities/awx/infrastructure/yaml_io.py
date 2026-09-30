@@ -2,6 +2,7 @@
 
 Single-doc and multi-doc YAML are both supported. ``read_resource_files``
 also accepts a directory and walks every ``*.yml`` / ``*.yaml`` it finds;
+``read_resource_files_at`` does the same at a git commit, and
 ``read_resource_text`` parses documents already read (piped on stdin).
 A missing or invalid input file is a :class:`ConfigError` whose category
 (``not_found`` / ``invalid``) exits ``1``: the input, not the setup, is wrong.
@@ -9,12 +10,13 @@ A missing or invalid input file is a :class:`ConfigError` whose category
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import yaml
 
 from untaped.capabilities.awx.domain import Resource
+from untaped.capabilities.awx.infrastructure.git_source import GitSource
 from untaped.capability_api import ConfigError
 
 
@@ -33,6 +35,24 @@ def read_resource_files(path: Path) -> Iterator[tuple[Path, Resource]]:
     for f in files:
         for resource in _read_file(f):
             yield f, resource
+
+
+def read_resource_files_at(
+    source: GitSource, path: Path, *, skip: Callable[[str, str], bool] | None = None
+) -> list[tuple[str, Resource]]:
+    """Each :class:`Resource` of the files ``path`` names at ``source``'s commit.
+
+    Each comes with the ``REF:PATH`` it was read from. ``skip(rel, text)``
+    leaves a file out (its repo-relative path and its text).
+    """
+    found: list[tuple[str, Resource]] = []
+    for rel in source.files(path):
+        text = source.read_text(rel)
+        if skip is not None and skip(rel, text):
+            continue
+        label = source.label(rel)
+        found.extend((label, doc) for doc in read_resource_text(text, source=label))
+    return found
 
 
 def _read_file(path: Path) -> Iterator[Resource]:

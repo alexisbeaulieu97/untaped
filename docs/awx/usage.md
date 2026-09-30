@@ -626,6 +626,9 @@ untaped awx test run --case deploy-smoke/web --var env=prod --show-logs
 untaped awx test run --scm-branch main --format json > /tmp/baseline.json
 untaped awx test run --scm-branch HEAD --compare /tmp/baseline.json
 untaped awx test run --scm-branch HEAD --baseline main
+untaped awx test validate --source-ref HEAD
+untaped awx test run --source-ref HEAD --format json
+untaped awx test prune --dry-run
 ```
 
 - `test init TEMPLATE` reads the template's launch prompts and survey and
@@ -672,8 +675,28 @@ untaped awx test run --scm-branch HEAD --baseline main
   `expect.nodes` with the same checks as a case, plus `status: never_ran`.
   Each row lists the workflow's `nodes`, and a failed workflow is blamed on
   the node that failed it (`node deploy: …`, with that job's evidence).
+- Temporary test sets: `run --source-ref REF` tests REF with the template
+  configuration it carries.
+  - Suites and the job template and workflow specs under `.untaped/awx/`
+    are read at REF's commit, which must be pushed.
+  - Each suite whose template has a spec runs a temporary copy of it, named
+    `NAME [untaped-test SHA RUN]` and pinned to the commit (its project must
+    allow branch override). The copy prompts for every field its cases set.
+    A copied workflow's nodes run the copies of templates with specs.
+  - Links are looked up by name and never created. Every other template the
+    run launches must prompt for `scm_branch`, or the run is refused.
+  - The copies are created without a confirmation and deleted after the
+    run, even after Ctrl-C; `--keep` keeps them. A copy that could not be
+    provisioned stops the run before any launch, never as a test failure.
+  - `validate --source-ref REF` (or `run --dry-run`) checks it all without
+    writing and prints the copies (`awx.provision_outcome`); `validate`
+    takes `--format` and `--columns`.
+  - `test prune` deletes the copies a killed run left (`--older-than`,
+    default `2h`; `--run RUN` for one run's copies).
 - To let an AI agent run suites against its own changes, give it a dedicated
-  profile and token: see [AWX agent profile](./agent-profile.md).
+  profile and token: see [AWX agent profile](./agent-profile.md). Temporary
+  test sets need it to create and delete job templates and workflows in the
+  organization.
 
 ## Confirmations, failures, and integrity
 

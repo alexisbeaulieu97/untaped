@@ -97,7 +97,11 @@ Some rows carry a code of their own. It never becomes the process exit code:
   `--baseline`), a case that fails as it did in the baseline (`still_failing`:
   same `system`) does not count; a regression, a failure the baseline cannot
   vouch for (`unverified`) and a failing new case exit 1, and 4 and 5 still
-  count for any case, the `--baseline` run's included.
+  count for any case, the `--baseline` run's included. With `--source-ref`,
+  temporary copies that cannot be provisioned stop the run before any case
+  with their own code (1 for a spec or suite to fix, 4 when AWX refused the
+  agent's user, 5 when it was unavailable); a copy teardown cannot delete is
+  a warning that never changes the code.
 
 ## See also
 

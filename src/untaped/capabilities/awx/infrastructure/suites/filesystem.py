@@ -9,7 +9,7 @@ stack trace.
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from untaped.capability_api import ConfigError
 
@@ -30,10 +30,20 @@ def suites_under(directory: Path) -> list[Path]:
         path
         for path in sorted(directory.rglob("*"))
         if path.suffix.lower() in {".yml", ".yaml"}
-        and not any(part.startswith(".") for part in path.relative_to(directory).parts)
+        and not is_hidden(path.relative_to(directory))
         and path.is_file()
-        and _SUITE_MARKER.search(LocalFilesystem().read_text(path))
+        and is_suite_text(LocalFilesystem().read_text(path))
     ]
+
+
+def is_hidden(relative: PurePath) -> bool:
+    """Whether a part of ``relative`` (a path below the directory searched) is hidden."""
+    return any(part.startswith(".") for part in relative.parts)
+
+
+def is_suite_text(text: str) -> bool:
+    """Whether a YAML file's ``text`` is a suite: it has a ``kind: AwxTestSuite`` line."""
+    return _SUITE_MARKER.search(text) is not None
 
 
 def refuse_existing(path: Path) -> None:

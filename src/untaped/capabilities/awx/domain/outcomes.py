@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.capabilities.awx.domain.envelope import Resource
-from untaped.capability_api import OutcomeRecord
+from untaped.capability_api import OutcomeRecord, UtcTimestamp
 
 ApplyAction = Literal[
     "planned",
@@ -150,6 +150,32 @@ class RenameOutcome(OutcomeRecord):
     name: str
     old_name: str
     kind: str
+    action: str
+    detail: str | None = None
+
+
+class TemporaryCopyOutcome(OutcomeRecord):
+    """One copy of an ``awx test`` temporary set: ``planned`` (``validate --source-ref``),
+    ``deleted``, ``failed`` or ``kept`` (a run's teardown, ``test prune``).
+
+    ``kind`` is the resource kind (``JobTemplate``); ``template`` is the name
+    it was copied from, and ``run_id``, ``ref``, ``sha`` and ``created_at``
+    come from its description marker. A planned copy names the spec it is
+    read from (``path``) and the launch prompts it enables for its cases
+    (``prompts``).
+    """
+
+    id: int | None = None
+    name: str
+    kind: str
+    template: str
+    organization: str | None = None
+    run_id: str
+    ref: str
+    sha: str
+    created_at: UtcTimestamp
+    path: str | None = None
+    prompts: list[str] = Field(default_factory=list)
     action: str
     detail: str | None = None
 

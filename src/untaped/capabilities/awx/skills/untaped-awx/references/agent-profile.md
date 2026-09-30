@@ -21,7 +21,19 @@ changing something it should not.
 3. Grant it **Use** on any inventory or credential its suites pass at launch
    (`inventory: !ref …`, `credentials: …`). AWX refuses a prompted resource
    the launching user cannot use.
-4. Create a personal access token for the user with **Write** scope. A
+4. For `awx test run --source-ref` (temporary copies of the repository's
+   specs, see [test-suites.md](test-suites.md#temporary-test-sets---source-ref)),
+   the user creates and deletes job templates and workflows in the
+   organization: grant it the organization's **Job Template Admin** role and,
+   for workflow suites, **Workflow Admin**. It also needs **Use** on each
+   project, inventory and credential a spec names and on its instance groups
+   (verify on your AAP), read access to its execution environment and
+   labels, and **Execute** on each template AWX holds that a copied
+   workflow's nodes run. `awx test prune` deletes the copies of any run in
+   the organization with the same roles.
+   Without them, provisioning fails as `awx.credentials` (exit 4) before any
+   case launches.
+5. Create a personal access token for the user with **Write** scope. A
    read-scope token cannot launch or cancel jobs.
 
 For `--scm-branch`, each template must prompt for the branch
@@ -59,7 +71,10 @@ untaped --profile agent awx test run --scm-branch HEAD --format json
 ```
 
 `--scm-branch HEAD` is refused until HEAD is pushed, so the jobs test the
-agent's commit. Nothing prompts without a terminal, the exit code is 0 only
+agent's commit. When the change touches a template or workflow spec under
+`.untaped/awx/`, run `untaped --profile agent awx test run --source-ref HEAD
+--format json` instead: the suites run temporary copies of the specs at the
+commit, deleted after the run. Nothing prompts without a terminal, the exit code is 0 only
 when every case passed, and each JSON row carries the evidence to read; see
 [test-results.md](test-results.md). Exit 4 means the environment needs
 fixing, not the code: read the error's `system` (`awx`: AWX refused the
