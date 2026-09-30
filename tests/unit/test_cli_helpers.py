@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from untaped.capability_api import (
     HttpError,
     HttpTransportError,
+    OutcomeRecord,
     UntapedError,
     clamp_parallel,
     create_app,
@@ -583,3 +584,158 @@ def test_columns_question_mark_lists_columns_instead_of_rendering(
     assert captured.out == ""
     assert "name" in captured.err
     assert "value" in captured.err
+
+
+# ---- table columns: defaults, +/- edits, empty columns ------------------------
+
+
+class _Outcome(OutcomeRecord):
+    name: str
+    detail: str | None = None
+
+
+_SPARSE: list[dict[str, object]] = [
+    {"name": "a", "detail": None, "tags": [], "kind": "x"},
+    {"name": "b", "detail": "", "tags": [], "kind": "x"},
+]
+
+
+def _table_header(out: str) -> list[str]:
+    return [cell.strip() for cell in out.splitlines()[1].strip("│").split("│")]
+
+
+def test_table_hides_columns_empty_on_every_row(_isolated_config: Path) -> None:
+    assert _table_header(render_rows(_SPARSE, fmt="table")) == ["name", "kind"]
+
+
+def test_structured_formats_keep_empty_columns(_isolated_config: Path) -> None:
+    assert json.loads(render_rows(_SPARSE, fmt="json")) == _SPARSE
+
+
+def test_a_named_column_shows_even_when_empty(_isolated_config: Path) -> None:
+    out = render_rows(_SPARSE, fmt="table", columns=["name", "detail"])
+    assert _table_header(out) == ["name", "detail"]
+
+
+def test_hide_empty_columns_can_be_turned_off(_isolated_config: Path) -> None:
+    _isolated_config.write_text("profiles:\n  default:\n    ui:\n      hide_empty_columns: false\n")
+    get_settings.cache_clear()
+    assert _table_header(render_rows(_SPARSE, fmt="table")) == ["name", "detail", "tags", "kind"]
+
+
+def test_a_failed_rows_error_mapping_never_becomes_a_table_column(
+    _isolated_config: Path,
+) -> None:
+    rows: list[dict[str, object]] = [
+        {"name": "a", "action": "created"},
+        {"name": "b", "action": "failed", "error": {"category": "failed", "message": "x"}},
+    ]
+    assert _table_header(render_rows(rows, fmt="table")) == ["name", "action"]
+
+
+def test_table_columns_are_the_table_default_only(_isolated_config: Path) -> None:
+    rows: list[dict[str, object]] = [{"name": "a", "kind": "x", "url": "u"}]
+    table = render_rows(rows, fmt="table", table_columns=["name", "url"])
+    assert _table_header(table) == ["name", "url"]
+    assert json.loads(render_rows(rows, fmt="json", table_columns=["name"])) == rows
+    assert render_rows(rows, fmt="raw", table_columns=["url"]) == "a"
+
+
+def test_plus_adds_to_the_default_columns_and_always_shows(_isolated_config: Path) -> None:
+    out = render_rows(_SPARSE, fmt="table", columns=["+detail"], table_columns=["name"])
+    assert _table_header(out) == ["name", "detail"]
+
+
+def test_minus_removes_from_the_default_columns(_isolated_config: Path) -> None:
+    rows: list[dict[str, object]] = [{"name": "a", "kind": "x", "url": "u"}]
+    out = render_rows(rows, fmt="table", columns=["+kind,-url"], table_columns=["name", "url"])
+    assert _table_header(out) == ["name", "kind"]
+    assert json.loads(render_rows(rows, fmt="json", columns=["-url"])) == [
+        {"name": "a", "kind": "x"}
+    ]
+
+
+def test_mixing_column_names_and_edits_is_a_usage_error(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        render_rows(_SPARSE, fmt="table", columns=["name,+kind"])
+    assert exc.value.code == 2
+    assert "error: --columns" in capsys.readouterr().err
+
+
+def test_unknown_edited_column_is_checked(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit):
+        emit([_Widget(name="a", value=1)], fmt="table", columns=["+nope"])
+    assert "unknown column 'nope'" in capsys.readouterr().err
+
+
+def test_question_mark_marks_the_default_columns(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    render_rows(
+        [{"name": "a"}, {"name": "b", "url": "u"}],
+        fmt="table",
+        columns=["?"],
+        table_columns=["name"],
+    )
+    err = capsys.readouterr().err
+    assert "  name *" in err
+    assert "  url\n" in err
+
+
+def test_schema_column_absent_from_every_row_does_not_warn(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    emit([_Outcome(name="a", action="created")], fmt="table", columns=["name", "error"])
+    assert capsys.readouterr().err == ""
+
+
+def test_single_record_table_hides_empty_fields(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    emit({"key": "A-1", "comment_id": None, "action": "updated"}, fmt="table")
+    out = capsys.readouterr().out
+    assert "comment_id" not in out
+    assert "key: A-1" in out
+
+
+def test_edits_never_bring_back_a_failed_rows_error(_isolated_config: Path) -> None:
+    rows: list[dict[str, object]] = [
+        {"name": "b", "status": "failed", "detail": "boom", "error": {"message": "m"}}
+    ]
+    assert _table_header(render_rows(rows, fmt="table", columns=["-detail"])) == [
+        "name",
+        "status",
+    ]
+
+
+def test_removing_every_column_is_a_usage_error(_isolated_config: Path) -> None:
+    with pytest.raises(SystemExit) as exc:
+        render_rows([{"name": "a"}], fmt="json", columns=["-name"])
+    assert exc.value.code == 2
+
+
+def test_record_list_view_shows_each_rows_own_keys(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _isolated_config.write_text("profiles:\n  default:\n    ui:\n      collection_view: list\n")
+    get_settings.cache_clear()
+    out = render_rows([{"a": 1, "b": 2}, {"a": 3, "c": 4}], fmt="table")
+    assert out.split("\n\n") == ["a: 1\nb: 2", "a: 3\nc: 4"]
+
+
+def test_question_mark_on_no_rows_lists_the_default_columns(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    render_rows([], fmt="table", columns=["?"], table_columns=["name", "url"])
+    assert "  url *" in capsys.readouterr().err
+
+
+def test_raw_edits_start_from_the_default_columns(_isolated_config: Path) -> None:
+    rows: list[dict[str, object]] = [{"id": 1, "name": "a", "kind": "x", "url": "u"}]
+    out = render_rows(rows, fmt="raw", columns=["+url"], table_columns=["id", "name"])
+    assert out == "1\ta\tu"
+    assert render_rows(rows, fmt="raw", table_columns=["id", "name"]) == "1"

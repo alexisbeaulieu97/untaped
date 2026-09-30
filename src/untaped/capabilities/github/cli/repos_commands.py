@@ -100,7 +100,8 @@ def list_command(
         emit(
             rows,
             fmt=fmt,
-            columns=columns or (_TABLE_COLUMNS if fmt == "table" else None),
+            columns=columns,
+            table_columns=_TABLE_COLUMNS,
             kind="github.repo",
             empty="No repositories found. Broaden your pattern or scope filters.",
         )
