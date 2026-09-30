@@ -416,3 +416,14 @@ def test_a_status_role_set_to_empty_turns_its_color_off(monkeypatch: pytest.Monk
     theme = BUILTIN_THEMES["default"].model_copy(update={"color_roles": {"error": ""}})
     out = UiContext(theme=theme).collection([{"status": "failed"}], fmt="table")
     assert "\x1b[31m" not in out
+
+
+def test_detail_table_view_colors_a_status_field_by_meaning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    theme = BUILTIN_THEMES["default"].model_copy(update={"detail_view": "table"})
+    out = UiContext(theme=theme).detail({"name": "a", "status": "failed"}, fmt="table")
+    assert "\x1b[31mfailed" in out
+    assert "\x1b[31ma" not in out
