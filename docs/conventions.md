@@ -164,7 +164,8 @@ come from a closed set:
   URL and `api_url` is the API link.
 - A record's own fields come before the fields it inherits from the bases
   below, so its identifying field leads the table and `--format raw`. An
-  inherited `action` comes second, right after it.
+  inherited `action` follows it (after `name` when the record leads with
+  `id` and `name`).
 - Base mutation results on `OutcomeRecord`. `action` uses this vocabulary:
   `planned`, `created`, `updated`, `deleted`, `unchanged`, `skipped` (never a
   failure), `failed`, `partial`, `conflict`, `cancelled`, plus any
