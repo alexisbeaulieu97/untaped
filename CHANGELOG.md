@@ -12,7 +12,7 @@
     repository frees in `disk_bytes` (it was always 0), including under
     `--dry-run`.
 - AWX
-  - **New:** the `jobs wait` table shows when each job finished
+  - **Behavior change:** the `jobs wait` table shows when each job finished
     (`finished_at`).
 - Ansible
   - **Fix:** `--all-refs` exits 2 with `--live` or without a source
