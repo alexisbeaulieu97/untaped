@@ -6,15 +6,17 @@ alias never shadows a built-in command and never expands another alias.
 
 from __future__ import annotations
 
+import contextlib
 import json
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from test_management.support import GithubProfile, make_spec, write_config
-from untaped import bootstrap
-from untaped.config_file import read_config_dict
+from untaped import bootstrap, config_file
+from untaped.config_file import read_config_dict, write_config_dict
 from untaped.testing import CliInvoker, CliResult
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -197,6 +199,82 @@ def test_remove_needs_yes_when_not_interactive(_isolated_config: Path) -> None:
     assert removed.exit_code == 0, removed.output
     assert json.loads(removed.stdout) == {"name": "a", "profile": "default", "action": "deleted"}
     assert _aliases(_isolated_config) is None
+
+
+def _commit_before_lock(
+    monkeypatch: pytest.MonkeyPatch, commit: Callable[[dict[str, Any]], None]
+) -> None:
+    """Let another writer commit ``commit`` just before this command takes the config lock."""
+    real_lock = config_file.file_lock
+    pending = [commit]
+
+    @contextlib.contextmanager
+    def racing_lock(*args: Any, **kwargs: Any) -> Iterator[None]:
+        if pending:
+            data = read_config_dict()
+            pending.pop()(data)
+            write_config_dict(data)
+        with real_lock(*args, **kwargs):
+            yield
+
+    monkeypatch.setattr(config_file, "file_lock", racing_lock)
+
+
+def _add_alias_b(data: dict[str, Any]) -> None:
+    data["profiles"]["default"].setdefault("shell", {}).setdefault("aliases", {})["b"] = [
+        "profile",
+        "list",
+    ]
+
+
+def test_set_keeps_an_alias_another_command_saved_meanwhile(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, _CONFIG)
+    _commit_before_lock(monkeypatch, _add_alias_b)
+    result = _invoke("alias", "set", "a", "--format", "json", "--", "config", "list")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["action"] == "created"
+    assert _aliases(_isolated_config) == {"a": ["config", "list"], "b": ["profile", "list"]}
+
+
+def test_set_reports_the_action_against_the_saved_aliases(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, _CONFIG)
+    _commit_before_lock(monkeypatch, _add_alias_b)
+    result = _invoke("alias", "set", "b", "--format", "json", "--", "profile", "list")
+    assert json.loads(result.stdout)["action"] == "unchanged"
+
+
+def test_remove_keeps_an_alias_another_command_saved_meanwhile(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    shell:\n      aliases:\n        a: [config, list]\n",
+    )
+    _commit_before_lock(monkeypatch, _add_alias_b)
+    result = _invoke("alias", "remove", "a", "--yes", "--format", "json")
+    assert result.exit_code == 0, result.output
+    assert _aliases(_isolated_config) == {"b": ["profile", "list"]}
+
+
+def test_remove_reports_an_alias_another_command_removed_meanwhile(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    shell:\n      aliases:\n        a: [config, list]\n"
+        "        c: [profile, list]\n",
+    )
+    _commit_before_lock(
+        monkeypatch, lambda data: data["profiles"]["default"]["shell"]["aliases"].pop("a")
+    )
+    result = _invoke("alias", "remove", "a", "--yes")
+    assert result.exit_code == 1
+    assert "alias not found: 'a'; known: c" in result.stderr
+    assert _aliases(_isolated_config) == {"c": ["profile", "list"]}
 
 
 def test_remove_an_unknown_alias_names_the_known_ones(_isolated_config: Path) -> None:
