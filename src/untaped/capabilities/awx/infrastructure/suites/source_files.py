@@ -12,23 +12,24 @@ each file once.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 
 from untaped.capabilities.awx.domain import Resource
 from untaped.capabilities.awx.domain.temporary_set import TEMPLATE_KINDS
 from untaped.capabilities.awx.infrastructure.git_source import GitSource
-from untaped.capabilities.awx.infrastructure.suites.filesystem import is_hidden, is_suite_text
+from untaped.capabilities.awx.infrastructure.suites.filesystem import (
+    is_hidden,
+    is_suite_text,
+    kind_marker,
+)
 from untaped.capabilities.awx.infrastructure.yaml_io import read_resource_files_at
 from untaped.capability_api import ConfigError, ErrorCategory
 
 SPEC_ROOT = Path(".untaped/awx")
 """Where a repository keeps its specs and suites, at its root."""
 
-_SPEC_MARKER = re.compile(
-    rf"\bkind\s*:\s*[\"']?(?:{'|'.join(TEMPLATE_KINDS)})[\"']?(?=\s*(?:[,}}#]|$))", re.MULTILINE
-)
+_SPEC_MARKER = kind_marker(TEMPLATE_KINDS)
 """A ``kind:`` of a spec, block or flow style, with a trailing comment or not."""
 
 
