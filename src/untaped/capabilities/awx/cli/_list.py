@@ -1,6 +1,5 @@
 """``list`` builder for the spec-driven CLI factory."""
 
-from collections.abc import Sequence
 from contextlib import nullcontext
 from typing import Annotated
 
@@ -11,7 +10,7 @@ from untaped.capabilities.awx.application.template_scm import SCM_FIELDS
 from untaped.capabilities.awx.application.template_scm import with_scm as add_scm_fields
 from untaped.capabilities.awx.cli._selection import select_resources
 from untaped.capabilities.awx.cli.context import open_context
-from untaped.capabilities.awx.cli.names import flatten_fks
+from untaped.capabilities.awx.cli.names import name_fks
 from untaped.capabilities.awx.cli.options import (
     WITH_SCM_HELP,
     AllOption,
@@ -29,7 +28,6 @@ from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
-    OutputFormat,
     emit,
     raise_usage,
     report_errors,
@@ -76,8 +74,9 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
                 name="--with-names",
                 negative="",
                 help=(
-                    "Replace FK ids with names from summary_fields. Multi-valued "
-                    "FKs (e.g. credentials) become lists of names."
+                    "Replace FK ids with names from summary_fields in every format "
+                    "(a table always shows names). Multi-valued FKs (e.g. "
+                    "credentials) become lists of names."
                 ),
             ),
         ] = False,
@@ -129,23 +128,25 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
                     catalog=ctx.catalog,
                     warn=lambda msg: ctx.progress_ui().message("warning", msg),
                 )
-        # Default columns shape the human views; json/yaml/pipe keep full records.
-        cols = (
-            list(columns)
-            if columns
-            else _default_list_columns(
-                fmt, (*spec.list_columns, *SCM_FIELDS) if with_scm else spec.list_columns
-            )
+        # Default columns shape the table and raw views; json/yaml/pipe keep full records.
+        default_cols = (*spec.list_columns, *SCM_FIELDS) if with_scm else spec.list_columns
+        shown = default_cols if fmt in {"table", "raw"} else ()
+        # Display-only FK columns (e.g. Host's ``inventory``, which lives in
+        # ``read_only_fields`` rather than ``fk_refs``) are named too.
+        records = name_fks(
+            records,
+            spec,
+            with_names=with_names,
+            table=fmt == "table",
+            columns=columns,
+            defaults=shown,
         )
-        if with_names:
-            # Pass ``cols`` so display-only FK columns (e.g. Host's
-            # ``inventory``, which lives in ``read_only_fields`` rather
-            # than ``fk_refs``) get flattened from ``summary_fields``.
-            records = flatten_fks(records, spec, columns=cols)
         records = [redact_value(record, spec.secret_paths) for record in records]
-        emit(records, fmt=fmt, columns=cols, kind=pipe_kind_for_spec(spec), empty=False)
-
-
-def _default_list_columns(fmt: OutputFormat, default_cols: Sequence[str]) -> list[str] | None:
-    """``list`` projects its default columns for ``table`` and ``raw`` only."""
-    return list(default_cols) if fmt in {"table", "raw"} else None
+        emit(
+            records,
+            fmt=fmt,
+            columns=columns or (list(shown) if fmt == "raw" else None),
+            table_columns=default_cols,
+            kind=pipe_kind_for_spec(spec),
+            empty=False,
+        )

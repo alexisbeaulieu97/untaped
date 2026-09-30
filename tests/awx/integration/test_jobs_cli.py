@@ -681,6 +681,25 @@ def test_jobs_wait_stdin_honours_execution_kind_from_pipe(fake_aap: Any) -> None
     assert [(row["id"], row["kind"]) for row in rows] == [(77, "workflow_job"), (42, "job")]
 
 
+def test_jobs_wait_reports_start_and_finish_as_utc_timestamps(fake_aap: Any) -> None:
+    fake_aap.seed(
+        "jobs",
+        id=42,
+        status="successful",
+        started="2026-01-02T03:04:05.123456Z",
+        finished="2026-01-02T03:05:06.654321Z",
+    )
+    result = CliInvoker().invoke(app, ["jobs", "wait", "42", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    [row] = json.loads(result.stdout)
+    assert (row["started_at"], row["finished_at"]) == (
+        "2026-01-02T03:04:05Z",
+        "2026-01-02T03:05:06Z",
+    )
+    assert "started" not in row
+    assert "finished" not in row
+
+
 @pytest.mark.parametrize("command", ["get", "events", "logs", "wait"])
 def test_jobs_stdin_rejects_records_of_another_kind(fake_aap: Any, command: str) -> None:
     """Host ids piped into a jobs command never pass as job ids."""

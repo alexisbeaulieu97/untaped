@@ -12,6 +12,7 @@ from types import ModuleType
 import pytest
 
 import untaped.capabilities.recipe.infrastructure.file_writer as file_writer_module
+import untaped.capabilities.recipe.infrastructure.pack_store as pack_store_module
 from untaped import bootstrap
 from untaped.capabilities.recipe import SPEC
 from untaped.capabilities.recipe.builtins.registry import BUILTIN_HOOKS, BuiltinHook
@@ -124,6 +125,7 @@ def test_add_pack_installs_without_prompting_and_prints_summary(tmp_path: Path) 
         "source": str(pack),
         "rev": None,
         "commit": None,
+        "detail": None,
     }
     assert (library_root() / "packs" / "demo").exists()
 
@@ -258,6 +260,7 @@ def test_remove_warns_on_local_edits_before_confirm(tmp_path: Path) -> None:
         "command); removing discards them"
     ) in result.stderr
     assert "cancelled; no changes made" in result.stderr
+    assert result.stdout == ""
     assert backend.calls == [("confirm", "Continue?")]
     assert (library_root() / "packs" / "demo").exists()
 
@@ -270,9 +273,15 @@ def test_remove_dry_run_previews_without_removing(tmp_path: Path) -> None:
     result = CliInvoker().invoke(app, ["packs", "remove", "demo", "--dry-run", "--format", "json"])
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout) == [
-        {"action": "planned", "name": "demo", "source": None, "rev": None, "commit": None}
-    ]
+    planned = {
+        "action": "planned",
+        "name": "demo",
+        "source": str(pack),
+        "rev": None,
+        "commit": None,
+        "detail": None,
+    }
+    assert json.loads(result.stdout) == [planned]
     assert (library_root() / "packs" / "demo").exists()
 
     refused = CliInvoker().invoke(app, ["packs", "remove", "demo"])
@@ -284,8 +293,100 @@ def test_remove_dry_run_previews_without_removing(tmp_path: Path) -> None:
     assert removed.exit_code == 0, removed.output
     envelope = json.loads(removed.stdout)
     assert envelope["kind"] == "recipe.remove_outcome"
-    assert envelope["record"]["action"] == "removed"
+    assert envelope["record"] == {**planned, "action": "removed"}
     assert not (library_root() / "packs" / "demo").exists()
+
+
+def test_remove_failure_is_a_failed_row(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pack = tmp_path / "pack"
+    _write_pack_project(pack)
+    assert CliInvoker().invoke(app, ["packs", "add", str(pack)]).exit_code == 0
+
+    def _refuse(self: PackLibrary, name: str) -> None:
+        raise OSError(f"permission denied: {name}")
+
+    monkeypatch.setattr(PackLibrary, "remove", _refuse)
+    result = CliInvoker().invoke(app, ["packs", "remove", "demo", "--yes", "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    assert result.stderr.count("error: demo: permission denied: demo") == 1
+    [row] = json.loads(result.stdout)
+    assert (row["name"], row["action"], row["source"]) == ("demo", "failed", str(pack))
+    assert row["detail"] == "permission denied: demo"
+    assert row["error"]["category"] == "failed"
+    assert row["error"]["message"] == row["detail"]
+
+
+def test_remove_that_deletes_part_of_a_pack_is_partial_and_retryable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pack = tmp_path / "pack"
+    _write_pack_project(pack)
+    assert CliInvoker().invoke(app, ["packs", "add", str(pack)]).exit_code == 0
+    installed = library_root() / "packs" / "demo"
+    real_rmtree = shutil.rmtree
+
+    def _half_rmtree(path: Path, *args: object, **kwargs: object) -> None:
+        if Path(path) != installed:
+            real_rmtree(path, *args, **kwargs)  # type: ignore[arg-type]
+            return
+        (installed / "pyproject.toml").unlink()
+        raise OSError("permission denied")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(shutil, "rmtree", _half_rmtree)
+        result = CliInvoker().invoke(app, ["packs", "remove", "demo", "--yes", "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    [row] = json.loads(result.stdout)
+    assert row["action"] == "partial"
+    assert "could not delete the rest: permission denied" in row["detail"]
+    assert row["error"]["message"] == row["detail"]
+    checked = CliInvoker().invoke(app, ["validate", "--format", "json"])
+    assert [(row["name"], row["status"]) for row in json.loads(checked.stdout)] == [
+        ("demo", "fail")
+    ]
+    retried = CliInvoker().invoke(app, ["packs", "remove", "demo", "--yes"])
+    assert retried.exit_code == 0, retried.output
+    assert not installed.exists()
+    assert "demo" not in (library_root() / "packs.toml").read_text()
+
+
+def test_remove_that_cannot_update_the_index_is_partial_and_retryable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pack = tmp_path / "pack"
+    _write_pack_project(pack)
+    assert CliInvoker().invoke(app, ["packs", "add", str(pack)]).exit_code == 0
+
+    def _refuse(path: Path, text: str) -> None:
+        raise OSError("read-only file system")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(pack_store_module, "atomic_write", _refuse)
+        result = CliInvoker().invoke(app, ["packs", "remove", "demo", "--yes", "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    [row] = json.loads(result.stdout)
+    assert row["action"] == "partial"
+    assert "could not update packs.toml: read-only file system" in row["detail"]
+    assert not (library_root() / "packs" / "demo").exists()
+    retried = CliInvoker().invoke(app, ["packs", "remove", "demo", "--yes"])
+    assert retried.exit_code == 0, retried.output
+    assert "demo" not in (library_root() / "packs.toml").read_text()
+
+
+def test_remove_repeated_name_reports_the_second_as_failed(tmp_path: Path) -> None:
+    pack = tmp_path / "pack"
+    _write_pack_project(pack)
+    assert CliInvoker().invoke(app, ["packs", "add", str(pack)]).exit_code == 0
+
+    result = CliInvoker().invoke(
+        app, ["packs", "remove", "demo", "demo", "--yes", "--format", "json"]
+    )
+
+    assert result.exit_code == 1, result.output
+    assert [row["action"] for row in json.loads(result.stdout)] == ["removed", "failed"]
 
 
 def test_remove_rejects_index_rows_without_content_hash(
@@ -2874,12 +2975,11 @@ def test_recipe_check_validates_package_assets_and_hooks(tmp_path: Path) -> None
     rows = json.loads(result.stdout)
     assert rows == [
         {
-            "pack": "recipe-hooks",
+            "name": "recipe-hooks",
+            "type": "pack",
             "status": "pass",
             "path": str(recipe_dir),
-            "recipes": 1,
-            "hooks": 1,
-            "error": "",
+            "detail": None,
         }
     ]
     assert "Recipe preview:" not in result.stderr
@@ -2915,8 +3015,8 @@ def test_recipe_check_rejects_step_hook_kind_mismatch(tmp_path: Path) -> None:
 
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
-    assert rows[0]["status"] == "error"
-    assert "validate step hook 'check' does not export a validate() function" in rows[0]["error"]
+    assert rows[0]["status"] == "fail"
+    assert "validate step hook 'check' does not export a validate() function" in rows[0]["detail"]
 
 
 @pytest.mark.parametrize(
@@ -2979,8 +3079,8 @@ def test_recipe_check_reports_invalid_packages(
 
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
-    assert rows[0]["status"] == "error"
-    assert expected in rows[0]["error"]
+    assert rows[0]["status"] == "fail"
+    assert expected in rows[0]["detail"]
     assert "Traceback" not in result.output
 
 
@@ -3024,8 +3124,8 @@ def test_recipe_check_reports_broken_local_hook_projects(
 
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
-    assert rows[0]["status"] == "error"
-    assert expected in rows[0]["error"]
+    assert rows[0]["status"] == "fail"
+    assert expected in rows[0]["detail"]
 
 
 def test_help_placeholders_and_ref_grammar_render_meaningfully(tmp_path: Path) -> None:
@@ -3090,8 +3190,8 @@ def test_recipe_check_validates_unreferenced_local_hook_project_metadata(
 
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
-    assert rows[0]["status"] == "error"
-    assert expected in rows[0]["error"]
+    assert rows[0]["status"] == "fail"
+    assert expected in rows[0]["detail"]
 
 
 def _config_backup(tmp_path: Path) -> tuple[BackupDraft, Path]:
@@ -3388,12 +3488,42 @@ def test_backup_prune_counts_failed_deletions_and_continues(
 
     monkeypatch.setattr(BackupStore, "delete", flaky_delete)
 
-    result = CliInvoker().invoke(app, ["backups", "prune", "--keep", "1", "--yes"])
+    result = CliInvoker().invoke(
+        app, ["backups", "prune", "--keep", "1", "--yes", "--format", "json"]
+    )
 
     assert result.exit_code == 1, result.output
-    assert "error: 20250101T000000000000Z-aaaaaaaa" in result.stderr
+    assert result.stderr.count("error: 20250101T000000000000Z-aaaaaaaa") == 1
     assert first.exists()
     assert not second.exists()
+    failed, deleted = json.loads(result.stdout)
+    assert deleted["size_bytes"] > 0
+    assert (failed["id"], failed["action"]) == (first.name, "failed")
+    assert failed["detail"] == f"backup not found: {first.name}"
+    assert failed["error"]["message"] == failed["detail"]
+    assert deleted == {
+        "id": second.name,
+        "size_bytes": deleted["size_bytes"],
+        "detail": None,
+        "action": "deleted",
+    }
+
+
+def test_backup_prune_rows_say_planned_or_deleted(tmp_path: Path) -> None:
+    backups = library_root() / "backups"
+    old = _seed_bundle(backups, "20250101T000000000000Z-aaaaaaaa")
+    _seed_bundle(backups, "20990301T000000000000Z-cccccccc")
+    args = ["backups", "prune", "--keep", "1", "--yes", "-f", "pipe"]
+
+    planned = CliInvoker().invoke(app, [*args, "--dry-run"])
+    deleted = CliInvoker().invoke(app, args)
+
+    for result, action in ((planned, "planned"), (deleted, "deleted")):
+        assert result.exit_code == 0, result.output
+        envelope = json.loads(result.stdout)
+        assert envelope["kind"] == "recipe.prune_outcome"
+        assert (envelope["record"]["id"], envelope["record"]["action"]) == (old.name, action)
+    assert not old.exists()
 
 
 def test_recipe_check_accepts_input_templated_asset_paths(tmp_path: Path) -> None:
@@ -3612,8 +3742,8 @@ def test_check_flags_orphaned_tests_directories(tmp_path: Path) -> None:
 
     assert result.exit_code == 1, result.output
     row = json.loads(result.stdout)[0]
-    assert row["status"] == "error"
-    assert row["error"] == "tests directory names no known recipe: renamed"
+    assert row["status"] == "fail"
+    assert row["detail"] == "tests directory names no known recipe: renamed"
 
 
 def test_check_reports_stale_lockfile_for_hook_pack(
@@ -3637,8 +3767,8 @@ def test_check_reports_stale_lockfile_for_hook_pack(
 
     assert result.exit_code == 1, result.output
     row = json.loads(result.stdout)[0]
-    assert row["status"] == "error"
-    assert "lockfile is stale — run 'uv lock' in" in row["error"]
+    assert row["status"] == "fail"
+    assert "lockfile is stale — run 'uv lock' in" in row["detail"]
 
 
 def test_check_hook_pack_without_lock_keeps_pack_error_exact(tmp_path: Path) -> None:
@@ -3656,7 +3786,7 @@ def test_check_hook_pack_without_lock_keeps_pack_error_exact(tmp_path: Path) -> 
     result = CliInvoker().invoke(app, ["validate", "ansible", "--format", "json"])
 
     assert result.exit_code == 1, result.output
-    assert json.loads(result.stdout)[0]["error"] == f"pack project is missing uv.lock: {installed}"
+    assert json.loads(result.stdout)[0]["detail"] == f"pack project is missing uv.lock: {installed}"
 
 
 def test_check_without_ref_reports_library_reconcile_and_pack_rows(tmp_path: Path) -> None:
@@ -3677,12 +3807,12 @@ def test_check_without_ref_reports_library_reconcile_and_pack_rows(tmp_path: Pat
 
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
-    errors = {row["error"] for row in rows if row["status"] == "error"}
+    errors = {row["detail"] for row in rows if row["status"] == "fail"}
     assert errors == {
         "pack 'stale' is in packs.toml but missing from packs/",
         "pack directory 'orphan' is not recorded in packs.toml",
     }
-    passes = {row["pack"] for row in rows if row["status"] == "pass"}
+    passes = {row["name"] for row in rows if row["status"] == "pass"}
     assert passes == {"good", "orphan"}
 
 
@@ -3729,6 +3859,7 @@ def test_cli_emit_kinds_are_the_surviving_pack_unification_set() -> None:
         "recipe.sync_outcome",
         "recipe.apply_outcome",
         "recipe.remove_outcome",
+        "recipe.prune_outcome",
         "recipe.backup",
         "recipe.hook_run",
         "recipe.recipe",
@@ -3772,12 +3903,12 @@ def test_check_reports_error_row_for_unparsable_pack(tmp_path: Path) -> None:
 
     result = CliInvoker().invoke(app, ["validate", "--format", "json"])
 
-    rows = {row["pack"]: row for row in json.loads(result.stdout)}
+    rows = {row["name"]: row for row in json.loads(result.stdout)}
     assert rows["good"]["status"] == "pass"
-    assert rows["broken"]["status"] == "error"
-    assert "pyproject" in rows["broken"]["error"]
+    assert rows["broken"]["status"] == "fail"
+    assert "pyproject" in rows["broken"]["detail"]
     # the TOML parse detail is included, not just the file path
-    assert "line" in rows["broken"]["error"]
+    assert "line" in rows["broken"]["detail"]
     assert result.exit_code != 0
 
 
@@ -3937,7 +4068,15 @@ def test_builtin_hook_get_and_validate_render_detail_and_pass_row(tmp_path: Path
     assert "transform" in detail["exports"]
     assert checked.exit_code == 0, checked.output
     rows = json.loads(checked.stdout)
-    assert rows == [{"recipe": "yaml_edit", "status": "pass", "path": rows[0]["path"], "error": ""}]
+    assert rows == [
+        {
+            "name": "yaml_edit",
+            "type": "hook",
+            "status": "pass",
+            "path": rows[0]["path"],
+            "detail": None,
+        }
+    ]
     assert rows[0]["path"].endswith("yaml_edit.py")
 
 
@@ -3955,10 +4094,12 @@ def test_check_prefers_library_refs_over_builtin(tmp_path: Path, shadow: str) ->
 
     assert result.exit_code == 0, result.output
     [row] = json.loads(result.stdout)
+    assert (row["type"], row["status"], row["detail"]) == (shadow, "pass", None)
+    assert "error" not in row
     if shadow == "pack":
-        assert (row["pack"], row["path"]) == ("yaml_edit", str(library_root() / "packs/yaml_edit"))
+        assert (row["name"], row["path"]) == ("yaml_edit", str(library_root() / "packs/yaml_edit"))
     else:
-        assert (row["recipe"], row["path"]) == (
+        assert (row["name"], row["path"]) == (
             "shadow/yaml_edit",
             str(library_root() / "packs" / "shadow" / "recipes/yaml.yml"),
         )
@@ -3994,12 +4135,11 @@ def test_check_hookless_pack_without_lock_passes_every_ref_form(tmp_path: Path) 
     (installed / "uv.lock").unlink()
     (source / "uv.lock").unlink()
     pack_row = {
-        "pack": "plain",
+        "name": "plain",
+        "type": "pack",
         "status": "pass",
         "path": str(installed),
-        "recipes": 1,
-        "hooks": 0,
-        "error": "",
+        "detail": None,
     }
 
     def validate(*ref: str) -> list[dict[str, object]]:
@@ -4011,10 +4151,11 @@ def test_check_hookless_pack_without_lock_passes_every_ref_form(tmp_path: Path) 
     assert validate() == [pack_row]
     assert validate("plain/ok") == [
         {
-            "recipe": "plain/ok",
+            "name": "plain/ok",
+            "type": "recipe",
             "status": "pass",
             "path": str(installed / "recipes/ok.yml"),
-            "error": "",
+            "detail": None,
         }
     ]
     assert validate(str(source)) == [{**pack_row, "path": str(source)}]

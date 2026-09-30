@@ -36,10 +36,12 @@ untaped awx job-templates get Deploy --organization Default --format yaml
   needs a narrower scope or an id.
 - The whole selection is resolved and validated before the first write; an
   empty or invalid selection writes nothing.
-- `list` shows default columns in `table`/`raw` only; `json`, `yaml` and
-  `pipe` carry complete records unless `--columns` narrows them. `--limit N`
-  stops after N records and `--limit 0` means all. `get` prints a table of
-  default columns; use `--format yaml` or `--format json` for full records.
+- `list` and `get` tables show default columns (`list` also in `raw`) and
+  name foreign keys (`inventory`, `organization`) from `summary_fields`;
+  `json`, `yaml` and `pipe` carry complete records with ids unless
+  `--columns` narrows them or `--with-names` names them. `--columns +name`
+  and `--columns=-name` edit a table's defaults. `--limit N` stops after N
+  records and `--limit 0` means all.
 - `job-templates list|get --with-scm` adds `scm_url`, `effective_scm_ref`
   (the template's `scm_branch` when set and the project allows the override,
   else the project's `scm_branch`; empty stays empty) and

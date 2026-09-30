@@ -51,7 +51,7 @@ GROUP_SPEC = AwxResourceSpec(
             scope_field="inventory",
         ),
     ),
-    list_columns=("id", "name", "description"),
+    list_columns=("id", "name", "description", "inventory"),
     commands=("list", "get", "save", "apply", "delete"),
     apply_strategy="inventory_child",
     parent_field="inventory",

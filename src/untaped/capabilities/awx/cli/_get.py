@@ -1,11 +1,5 @@
-"""``get`` builder for the spec-driven CLI factory.
+"""``get`` builder for the spec-driven CLI factory."""
 
-Also owns ``default_get_columns`` — the public helper shared with
-``cli/unified_templates_commands.py`` so the polymorphic browser
-projects records the same way as factory-built ``get``.
-"""
-
-from collections.abc import Sequence
 from typing import Annotated
 
 from cyclopts import App, Parameter
@@ -15,7 +9,7 @@ from untaped.capabilities.awx.application.template_scm import SCM_FIELDS
 from untaped.capabilities.awx.application.template_scm import with_scm as add_scm_fields
 from untaped.capabilities.awx.cli._selection import select_resources
 from untaped.capabilities.awx.cli.context import open_context
-from untaped.capabilities.awx.cli.names import flatten_fks
+from untaped.capabilities.awx.cli.names import name_fks
 from untaped.capabilities.awx.cli.options import (
     WITH_SCM_HELP,
     AllOption,
@@ -35,7 +29,6 @@ from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
-    OutputFormat,
     emit,
     raise_usage,
     report_errors,
@@ -63,7 +56,10 @@ def _add_get(app: App, spec: AwxResourceSpec) -> None:
             Parameter(
                 name="--with-names",
                 negative="",
-                help="Replace FK ids with names from summary_fields.",
+                help=(
+                    "Replace FK ids with names from summary_fields in every format "
+                    "(a table always shows names)."
+                ),
             ),
         ] = False,
         with_scm: Annotated[
@@ -106,25 +102,24 @@ def _add_get(app: App, spec: AwxResourceSpec) -> None:
                 )
         if records:
             default_cols = (*spec.list_columns, *SCM_FIELDS) if with_scm else spec.list_columns
-            cols = list(columns) if columns else default_get_columns(fmt, default_cols)
-            if with_names:
-                # ``cols`` may be ``None`` for non-table formats — that's
-                # fine; ``flatten_fks`` then only flattens declared fk_refs.
-                records = flatten_fks(records, spec, columns=cols)
+            table = fmt == "table"
+            records = name_fks(
+                records,
+                spec,
+                with_names=with_names,
+                table=table,
+                columns=columns,
+                defaults=default_cols if table else (),
+            )
             records = [redact_value(record, spec.secret_paths) for record in records]
-            emit(records, fmt=fmt, columns=cols, kind=pipe_kind_for_spec(spec))
+            emit(
+                records,
+                fmt=fmt,
+                columns=columns,
+                table_columns=default_cols,
+                kind=pipe_kind_for_spec(spec),
+            )
         if not records:
             emit(
                 [], fmt=fmt, kind=pipe_kind_for_spec(spec), empty=f"No matching {spec.kind} found."
             )
-
-
-def default_get_columns(fmt: OutputFormat, default_cols: Sequence[str]) -> list[str] | None:
-    """Project a table to the spec's list columns (a full AWX record is a wall);
-    raw keeps its first-key default and yaml/json keep every field."""
-    if fmt == "table":
-        return list(default_cols)
-    return None
-
-
-__all__ = ["default_get_columns"]

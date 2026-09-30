@@ -55,7 +55,9 @@ before any POST. Results are `awx.sync_outcome` rows.
 These flags apply to `launch` and `sync`:
 
 - `--wait` waits for each execution and fails the row (exit 1) on `failed`,
-  `error` or `canceled`.
+  `error` or `canceled`. The row then has the execution's `status`,
+  `started_at` and `finished_at` (UTC, `2026-01-02T03:04:05Z`), as in the
+  `awx.job` record `untaped awx jobs wait` prints.
 - `--follow` does the same while streaming each job's log to stderr, ending
   with its PLAY RECAP (`[template]`-prefixed when several run), so failed
   hosts show as Ansible prints them (`fatal: [host]: FAILED! => …`). A
@@ -87,7 +89,9 @@ untaped awx jobs wait 101 --timeout 600
 ```
 
 - `jobs list` shows the newest 20 (`--limit 0` for all); `--template NAME|ID`
-  keeps one template's runs (digits mean an id).
+  keeps one template's runs (digits mean an id). `jobs list`, `get` and
+  `wait` tables show a summary (`id`, `name`, `status`, timings); json
+  and yaml carry every AWX field.
 - `jobs logs` prints a job's stdout, downloaded in full; with `--follow` it
   reads only new events on each poll (colours removed), and `--tail N
   --follow` starts from the newest events only. `jobs events` prints the
@@ -116,6 +120,7 @@ untaped awx jobs relaunch 101 --failed-hosts --yes --format pipe \
 Both read every id first (an unknown id rejects the batch), preview, and ask
 once (`--yes`, `--dry-run`). `cancel` rows are `awx.cancel_outcome`
 (`cancel_requested`, or `skipped` when already finished); `relaunch` rows are
-`awx.relaunch_outcome`, whose `id`/`kind` name the new execution.
+`awx.relaunch_outcome`, whose `id`/`kind` name the new execution. A cancel
+row's `status` is the one read before the request, so its table leaves it out.
 `--failed-hosts` reruns only the failed hosts of a job; project and inventory
 updates cannot be relaunched (sync them instead).

@@ -98,7 +98,7 @@ def test_cache_sync_warms_the_corpus_without_a_query(source_repo: SourceRepo) ->
 
     first, second, forced = sync(), sync(), sync("--refresh")
 
-    assert list(first) == ["repo", "fetched_at", "detail", "action"]
+    assert list(first) == ["repo", "action", "fetched_at", "detail"]
     assert (first["repo"], first["action"]) == ("acme/api", "synced")
     assert second["action"] == "skipped"
     assert forced["action"] == "synced"
@@ -144,8 +144,8 @@ def test_cache_sync_sends_the_token_only_to_the_enterprise_git_host(
     records = [
         {"untaped": "1", "kind": "github.repo", "record": {**row, "default_branch": "main"}}
         for row in (
-            {"full_name": "acme/api", "clone_url": "https://ghe.example/acme/api.git"},
-            {"full_name": "acme/web", "clone_url": "https://other.example/acme/web.git"},
+            {"repo": "acme/api", "clone_url": "https://ghe.example/acme/api.git"},
+            {"repo": "acme/web", "clone_url": "https://other.example/acme/web.git"},
         )
     ]
 

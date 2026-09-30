@@ -78,7 +78,7 @@ the helpers do this for you, so never print a JSON line yourself.
 | Summary | `<op>: 2 cloned, 1 failed` | `summary("sync", counts)` |
 | Decline | `cancelled; no changes made` (exit 1) | `raise OperationCancelledError`, or `finish(outcome)` after `batch_apply` |
 | Empty list | `No <plural> found.`, in table format only | `emit(rows, …, empty="No repos found.")` |
-| Styled line | A Rich `Text` line (live job events), ANSI only on a terminal; `tail=` text follows it verbatim (unwrapped) | `ui.styled(text)` for stdout, `ui.styled(text, err=True)` for stderr |
+| Styled line | A Rich `Text` line (live job events), ANSI only on a terminal; `tail=` text follows it verbatim (unwrapped); `truncate=True` cuts too-wide lines with an ellipsis instead of wrapping | `ui.styled(text)` for stdout, `ui.styled(text, err=True)` for stderr |
 
 Do not call `echo()` for `error:` or `warning:` lines, `print()`, or build a
 `rich.console.Console` yourself.
@@ -170,7 +170,9 @@ come from a closed set:
 - Fields are snake_case, with `id` and then `name` first. `url` is the web
   URL and `api_url` is the API link.
 - A record's own fields come before the fields it inherits from the bases
-  below, so its identifying field leads the table and `--format raw`.
+  below, so its identifying field leads the table and `--format raw`. An
+  inherited `action` follows it (after `name` when the record leads with
+  `id` and `name`).
 - Base mutation results on `OutcomeRecord`. `action` uses this vocabulary:
   `planned`, `created`, `updated`, `deleted`, `unchanged`, `skipped` (never a
   failure), `failed`, `partial`, `conflict`, `cancelled`, plus any

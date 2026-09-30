@@ -46,7 +46,7 @@ untaped jira issues comments list OPS-123
 - `--assignee @me` means you. `--sprint` takes a sprint ID, a sprint name, or
   `openSprints()`, `futureSprints()`, `closedSprints()`.
 - Search rows carry `key`, `summary`, `status`, `assignee`, `updated_at`,
-  `url` and `api_url`. `issues get` adds `issue_type`, `priority`, `reporter`,
+  `url`, `api_url`, `issue_type` and `priority`. `issues get` adds `reporter`,
   `labels`, `created_at`, `resolution`, `description`, `links` and `comments`.
 - `links` lists the issue's links (an empty list when there are none). Each
   link has the linked issue's `key`, `summary`, `status` and `url`, the link
@@ -56,14 +56,19 @@ untaped jira issues comments list OPS-123
   `is blocked by`, `duplicates`, ...). Linked issues are not fetched; run
   `issues get` on their keys for more. The detail table shows one line per
   link: `blocks ABC-2 (To Do): Release 2.0`.
-- The `issues get` table shows one issue as a detail view and several issues
-  as a compact table (`key`, `issue_type`, `status`, `priority`, `assignee`,
-  `summary`, `updated_at`); `--columns` picks others.
+- The `issues search` table, and the `issues get` table for several issues,
+  show `key`, `issue_type`, `status`, `priority`, `assignee`, `summary` and
+  `updated_at`. `issues assigned` leaves out `assignee` (always you).
+  `issues get` shows one issue as a detail view, leaving out empty fields.
+  `--columns +name` or `--columns=-name` edits the table's columns; JSON and
+  YAML keep every field.
 - `issues get --comments` also fetches every comment. The table lists them
-  after the issues; JSON and YAML nest them under `comments` (otherwise
+  after the issues (`author`, `created_at`, `body`, plus `issue_key` for
+  several issues); JSON and YAML nest them under `comments` (otherwise
   `null`). `issues comments list KEY` prints only the comments, as
   `jira.comment` records (`id`, `issue_key`, `author`, `created_at`,
-  `updated_at`, `body`, `api_url`).
+  `updated_at`, `body`, `api_url`); its table shows `author`, `created_at`
+  and `body`.
 
 ## Change issues
 
@@ -145,7 +150,8 @@ untaped jira issues transition OPS-123 OPS-124 --id 31 --yes
 untaped jira issues transition OPS-123 --to Done --resolution Fixed --comment "Shipped in 1.2."
 ```
 
-Pass exactly one of `--to NAME` or `--id ID`. `--resolution NAME` sets the
+`issues transitions KEY` lists `id`, `name` and `to_status`, the status each
+transition leads to. Pass exactly one of `--to NAME` or `--id ID`. `--resolution NAME` sets the
 resolution (many Done screens require one) and `--comment TEXT` adds a comment
 in the same request. The preview names the transition, shows the status
 change (`status: To Do → In Progress`) and the whole comment. It reads each
@@ -153,8 +159,9 @@ issue once; a transition picked by `--to` reuses the lookup, and an `--id`
 the issue does not offer shows `(not available from this status)`. When an
 issue cannot be read, its preview shows `(unknown)` instead of stopping the
 batch. Several keys are transitioned in
-one batch; each failed key prints `error: KEY: ...` and the command exits
-with the most severe failure (see Limits).
+one batch, shown as a table of `key`, `transition_id` and `action`; each
+failed key prints `error: KEY: ...` and the command exits with the most
+severe failure (see Limits).
 
 Transition every issue of a search:
 
@@ -184,6 +191,11 @@ untaped jira projects get OPS
 untaped jira boards list --project OPS --type scrum
 untaped jira sprints list --board-id 42 --state active,future
 ```
+
+Tables show projects as `key`, `name` and `project_type_key`, boards as
+`id`, `name` and `type`, and sprints as `id`, `name`, `state`, `start_at`,
+`end_at` and `goal` (hidden when no sprint has one). JSON and YAML also carry
+a project's `id`, a board's `api_url` and a sprint's `origin_board_id`.
 
 ## Output
 

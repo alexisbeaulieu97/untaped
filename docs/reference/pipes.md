@@ -14,7 +14,7 @@ untaped github repos list --org acme --format pipe \
 `--format pipe` writes NDJSON: one JSON object per line.
 
 ```json
-{"untaped": "1", "kind": "github.repo", "record": {"full_name": "acme/api", "...": "..."}}
+{"untaped": "1", "kind": "github.repo", "record": {"repo": "acme/api", "...": "..."}}
 ```
 
 | Field | Meaning |
@@ -161,7 +161,7 @@ skill names, one per line. With
 
 | Consumer | Reads | Field used |
 |---|---|---|
-| `github search repos/code/issues --stdin`, `github sweep --stdin`, `github cache sync --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`; or `owner/name` lines | `full_name` (`sweep` and `cache sync` use a `github.repo` record as-is, without an API call) |
+| `github search repos/code/issues --stdin`, `github sweep --stdin`, `github cache sync --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`; or `owner/name` lines | `repo` (`sweep` and `cache sync` use a `github.repo` record as-is, without an API call) |
 
 ### jira
 
@@ -259,7 +259,8 @@ output.
 | `recipe validate` | `recipe.check` |
 | `recipe test` | `recipe.test` |
 | `recipe hooks run` | `recipe.hook_run` |
-| `recipe backups list/get/restore/prune` | `recipe.backup` |
+| `recipe backups list/get/restore` | `recipe.backup` |
+| `recipe backups prune` | `recipe.prune_outcome` |
 
 `recipe packs sync --stdin` and `recipe packs remove --stdin` read pack
 names, or `recipe.pack` records from `recipe packs list --format pipe`.

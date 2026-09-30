@@ -24,6 +24,13 @@ change repository settings without explicit approval for that exact action.
   command offline. Local and published jobs call the same
   `.github/release/release.py smoke-unified` implementation.
 
+## Major releases
+
+A major release collects the breaking changes held back since the last one
+(see [Versioning and stability](./stability.md)). Before cutting it, open
+its changelog section with an **Upgrading** list: each breaking change and
+what a user or script must do about it.
+
 ## Trusted Publishers
 
 Create pending publishers on both TestPyPI and PyPI before dispatching the

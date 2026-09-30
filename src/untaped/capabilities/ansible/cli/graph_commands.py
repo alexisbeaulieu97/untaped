@@ -3,9 +3,9 @@
 ``deps``, ``impact`` and ``find`` answer one question each and print rows
 (``ansible.dependency``, ``ansible.dependent``, ``ansible.dependency_match``);
 ``graph`` renders the whole graph as a tree, Mermaid or JSON document, both
-directions at once by default. All four share the source-data flags of
-:class:`GraphSourceOptions` and fall back to ``ansible.default_source`` when
-no source is selected.
+directions at once by default. All four report warnings on stderr, share the
+source-data flags of :class:`GraphSourceOptions` and fall back to
+``ansible.default_source`` when no source is selected.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from collections.abc import Iterable
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NamedTuple
 
 from cyclopts import App, Group, Parameter, validators
 
@@ -22,6 +22,7 @@ import untaped.capabilities.ansible.cli.source_commands as source_commands
 from untaped.capabilities.ansible.application.graph import BuildGraph, GraphRequest
 from untaped.capabilities.ansible.application.ports import DependencyIndex
 from untaped.capabilities.ansible.application.refresh_git_index import RefreshResult
+from untaped.capabilities.ansible.cli.graph_tree import print_tree, tree_glyphs
 from untaped.capabilities.ansible.cli.refresh import (
     GIT_PARALLEL_CAP,
     format_skipped_dependency_file,
@@ -43,7 +44,12 @@ from untaped.capabilities.ansible.domain.models import DependencyDeclaration, Pa
 from untaped.capabilities.ansible.domain.parser import parse_dependency_file
 from untaped.capabilities.ansible.domain.payloads import IndexedDependency, SkippedDependencyFile
 from untaped.capabilities.ansible.domain.reach import reach
-from untaped.capabilities.ansible.domain.renderers import GraphFormat, render_graph
+from untaped.capabilities.ansible.domain.renderers import (
+    GraphFormat,
+    plain_text,
+    render_graph,
+    tree_lines,
+)
 from untaped.capabilities.ansible.errors import AnsibleError
 from untaped.capabilities.ansible.infrastructure import (
     AliasRepository,
@@ -67,6 +73,7 @@ from untaped.capability_api import (
     UsageError,
     app_context,
     clamp_parallel,
+    deprecated_alias,
     echo,
     emit,
     get_config_section,
@@ -91,7 +98,7 @@ RefOption = Annotated[
     str | None,
     Parameter(
         name="--ref",
-        help="Target branch, tag, or SHA for live dependency reads and cached upstream lookup.",
+        help="Target branch, tag, or SHA; omit for its default branch (and every ref upstream).",
     ),
 ]
 TargetRepoOption = Annotated[
@@ -104,9 +111,17 @@ DepthOption = Annotated[
     str | None, Parameter(name="--depth", help="Traversal depth, or 'unlimited' (default).")
 ]
 
+AllRefsOption = Annotated[
+    bool,
+    Parameter(
+        name="--all-refs",
+        negative="",
+        help="With no --ref, read what every cached ref depends on, not only the default branch.",
+    ),
+]
+
 # LimitedChoice() defaults to at-most-one selection — cyclopts' MutuallyExclusive
 # is an untyped alias for exactly this, so the typed parent is used directly.
-_DIRECTION_GROUP = Group("Direction", validator=validators.LimitedChoice())
 _SOURCE_DATA_GROUP = Group("Source Data", validator=validators.LimitedChoice())
 LiveOption = Annotated[
     bool,
@@ -237,6 +252,8 @@ def register_graph_commands(app: App) -> None:
     app.command(impact_command, name="impact")
     app.command(find_command, name="find")
     app.command(graph_command, name="graph")
+    for old, direction in (("--upstream", "up"), ("--downstream", "down"), ("--both", "both")):
+        deprecated_alias(app["graph"], old, f"--direction={direction}")
 
 
 def deps_command(
@@ -247,10 +264,10 @@ def deps_command(
         str | None,
         Parameter(
             name="--ref",
-            help="Branch, tag, or SHA of ROLE; omit for every cached ref (the default "
-            "branch for live reads).",
+            help="Branch, tag, or SHA of ROLE; omit for its default branch.",
         ),
     ] = None,
+    all_refs: AllRefsOption = False,
     target_repo: TargetRepoOption = None,
     depth: DepthOption = None,
     live: LiveOption = False,
@@ -258,7 +275,7 @@ def deps_command(
     columns: ColumnsOption = None,
     options: GraphSourceOptions = _SOURCE_DEFAULTS,
 ) -> None:
-    """Show what ROLE depends on (downstream), one row per repository per root ref.
+    """Show what ROLE depends on (downstream), one row per repository per ROLE ref.
 
     Reads cached data when a source is selected (--source, inline selectors,
     or ansible.default_source) and GitHub live otherwise (or with --live).
@@ -274,6 +291,7 @@ def deps_command(
         role,
         command="deps",
         ref=ref,
+        all_refs=all_refs,
         target_repo=target_repo,
         depth=depth,
         live=live,
@@ -315,6 +333,7 @@ def impact_command(
         role,
         command="impact",
         ref=ref,
+        all_refs=False,
         target_repo=target_repo,
         depth=depth,
         live=False,
@@ -354,6 +373,7 @@ def find_command(
             ),
         ),
     ] = False,
+    all_refs: AllRefsOption = False,
     depth: DepthOption = None,
     live: LiveOption = False,
     fmt: FormatOption = "table",
@@ -383,11 +403,11 @@ def find_command(
             if stdin
             else list(dict.fromkeys((root_from_line(r), RootInput()) for r in roots or []))
         )
-        env = _graph_env(stack, options, command="find", depth=depth_limit, live=live)
+        env = _graph_env(
+            stack, options, command="find", depth=depth_limit, live=live, all_refs=all_refs
+        )
         wanted = [_require_repo(env, repo) for repo in target]
-        ui = app_context().ui(strict=False)
-        for warning in _refresh_selected(env, options):
-            ui.message("warning", warning)
+        ui = _report_warnings(_refresh_selected(env, options))
         # Spellings of one repo (URL, .git, SSH, alias) share one graph build.
         graphs: dict[tuple[str, str | None, str | None], DependencyGraph] = {}
         matches: list[DependencyMatch] = []
@@ -404,7 +424,7 @@ def find_command(
                     target_repo=repo,
                     direction="deps",
                     extra_warnings=[],
-                )
+                ).graph
                 for warning in graph.warnings:
                     ui.message("warning", f"{_root_label(root)}: {warning}")
             matches.extend(find_matches(graph, wanted, source=source))
@@ -422,33 +442,15 @@ def graph_command(
     /,
     *,
     ref: RefOption = None,
-    upstream: Annotated[
-        bool,
+    direction: Annotated[
+        Literal["up", "down", "both"],
         Parameter(
-            name="--upstream",
-            negative="",
-            group=_DIRECTION_GROUP,
-            help="Show repos that depend on TARGET (reverse impact; requires a source).",
+            name="--direction",
+            help="up: what depends on TARGET (requires a source); down: what TARGET "
+            "depends on; both (default).",
         ),
-    ] = False,
-    downstream: Annotated[
-        bool,
-        Parameter(
-            name="--downstream",
-            negative="",
-            group=_DIRECTION_GROUP,
-            help="Show what TARGET depends on (works without a source).",
-        ),
-    ] = False,
-    both: Annotated[
-        bool,
-        Parameter(
-            name="--both",
-            negative="",
-            group=_DIRECTION_GROUP,
-            help="Show upstream and downstream (default). Upstream still requires a source.",
-        ),
-    ] = False,
+    ] = "both",
+    all_refs: AllRefsOption = False,
     cached: Annotated[
         bool,
         Parameter(
@@ -461,10 +463,7 @@ def graph_command(
             ),
         ),
     ] = False,
-    depth: Annotated[
-        str | None,
-        Parameter(name="--depth", help="Traversal depth or 'unlimited' (default 3)."),
-    ] = None,
+    depth: DepthOption = None,
     target_repo: TargetRepoOption = None,
     live: LiveOption = False,
     fmt: Annotated[
@@ -487,22 +486,28 @@ def graph_command(
 
     For example:
 
-        untaped ansible graph acme/base --org acme --team platform --upstream --refresh
-        untaped ansible graph acme/app --source prod --both --cached
-        untaped ansible graph ./roles/web --target-repo acme/web --downstream
+        untaped ansible graph acme/base --org acme --team platform --direction up --refresh
+        untaped ansible graph acme/app --source prod --depth 2
+        untaped ansible graph ./roles/web --target-repo acme/web --direction down
     """
-    depth_limit = _parse_depth(depth or "3")
+    _check_all_refs(ref, all_refs=all_refs)
+    depth_limit = _parse_depth(depth or "unlimited")
     with report_errors(), ExitStack() as stack:
-        env = _graph_env(stack, options, command="graph", depth=depth_limit, live=live)
-        graph = _target_graph(
+        env = _graph_env(
+            stack, options, command="graph", depth=depth_limit, live=live, all_refs=all_refs
+        )
+        built = _target_graph(
             env,
             target=target,
             ref=ref,
             target_repo=target_repo,
-            direction=_graph_direction(upstream=upstream, downstream=downstream, both=both),
+            direction=_DIRECTIONS[direction],
             extra_warnings=_refresh_selected(env, options),
         )
-        _emit_graph(graph, fmt=fmt, output=output)
+        ui = _report_warnings(built.graph.warnings)
+        depth_note = "unlimited depth" if depth_limit is None else f"depth {depth_limit}"
+        header_note = f"{built.data_source} · {depth_note}"
+        _emit_graph(built.graph, fmt=fmt, output=output, ui=ui, header_note=header_note)
 
 
 def _emit_reach(
@@ -510,6 +515,7 @@ def _emit_reach(
     *,
     command: Literal["deps", "impact"],
     ref: str | None,
+    all_refs: bool,
     target_repo: str | None,
     depth: str | None,
     live: bool,
@@ -519,9 +525,12 @@ def _emit_reach(
 ) -> None:
     """Print one row per repository reached from ``target`` in one direction."""
     relation, kind, noun = _REACH_OUTPUT[command]
+    _check_all_refs(ref, all_refs=all_refs)
     depth_limit = _parse_depth(depth or "unlimited")
     with report_errors(), ExitStack() as stack:
-        env = _graph_env(stack, options, command=command, depth=depth_limit, live=live)
+        env = _graph_env(
+            stack, options, command=command, depth=depth_limit, live=live, all_refs=all_refs
+        )
         graph = _target_graph(
             env,
             target=target,
@@ -529,10 +538,8 @@ def _emit_reach(
             target_repo=target_repo,
             direction=command,
             extra_warnings=_refresh_selected(env, options),
-        )
-        ui = app_context().ui(strict=False)
-        for warning in graph.warnings:
-            ui.message("warning", warning)
+        ).graph
+        _report_warnings(graph.warnings)
         emit(
             [hit.node for hit in reach(graph, relation)],
             fmt=fmt,
@@ -541,6 +548,21 @@ def _emit_reach(
             empty=f"No {noun} found{_within(depth_limit)}.",
         )
 
+
+def _check_all_refs(ref: str | None, *, all_refs: bool) -> None:
+    if ref is not None and all_refs:
+        raise_usage("--all-refs reads every ref; drop it or --ref")
+
+
+def _report_warnings(warnings: Iterable[str]) -> UiContext:
+    """Print warnings on stderr; return the UI context used."""
+    ui = app_context().ui(strict=False)
+    for warning in warnings:
+        ui.message("warning", warning)
+    return ui
+
+
+_DIRECTIONS: dict[str, GraphDirection] = {"up": "impact", "down": "deps", "both": "both"}
 
 _REACH_OUTPUT: dict[str, tuple[EdgeRelation, str, str]] = {
     "deps": ("requires", "ansible.dependency", "dependencies"),
@@ -560,6 +582,7 @@ def _graph_env(
     command: GraphCommand,
     depth: int | None,
     live: bool,
+    all_refs: bool,
 ) -> _GraphEnv:
     """Resolve settings and the selected source into what every root's build shares.
 
@@ -593,6 +616,7 @@ def _graph_env(
         graph_source=graph_source,
         live=live,
         depth=depth,
+        all_refs=all_refs,
         live_reads=_LiveReads(
             stack,
             github_settings=github_settings,
@@ -700,6 +724,7 @@ class _GraphEnv:
     graph_source: _GraphSource
     live: bool
     depth: int | None
+    all_refs: bool
     live_reads: _LiveReads
 
 
@@ -752,8 +777,8 @@ def _target_graph(
     target_repo: str | None,
     direction: GraphDirection,
     extra_warnings: list[str],
-) -> DependencyGraph:
-    """Build one root's graph, with its warnings attached."""
+) -> _BuiltGraph:
+    """Build one root's graph, with its warnings attached, and say what it read."""
     target_repo_name = _require_repo(env, target, target_repo=target_repo)
     graph_source = env.graph_source
     direction, graph_warnings = _effective_direction(
@@ -780,7 +805,7 @@ def _target_graph(
         )
         parse_warnings.extend(local_dependencies.warnings)
 
-    graph, read_warnings = _graph_for_target(
+    graph, read_warnings, reads = _graph_for_target(
         env.index,
         request=GraphRequest(
             repo=target_repo_name,
@@ -788,6 +813,8 @@ def _target_graph(
             source_key=graph_source.key,
             direction=direction,
             depth=env.depth,
+            # A local checkout is one state of its repo, overlaid at the ref-less node.
+            all_refs=env.all_refs or local_dependencies is not None,
             stale_after=env.settings.stale_after,
             refresh_hint=refresh_hint,
         ),
@@ -802,7 +829,7 @@ def _target_graph(
     )
     parse_warnings.extend(read_warnings)
 
-    return _with_graph_warnings(
+    graph = _with_graph_warnings(
         graph,
         [
             *extra_warnings,
@@ -816,6 +843,27 @@ def _target_graph(
             ),
         ],
     )
+    parts = ["local checkout"] if local_dependencies is not None else []
+    if reads.source and graph_source.header:
+        parts.append(graph_source.header)
+    if reads.live:
+        parts.append("downstream live" if reads.source else "live reads")
+    return _BuiltGraph(graph, ", ".join(parts))
+
+
+class _BuiltGraph(NamedTuple):
+    graph: DependencyGraph
+    data_source: str
+    """What the build read, for the tree header: ``source prod, downstream live``."""
+
+
+class _Reads(NamedTuple):
+    """What a graph build read besides a local checkout."""
+
+    source: bool
+    """The cached source data."""
+    live: bool
+    """Downstream dependencies from GitHub."""
 
 
 def _read_roots() -> list[tuple[GraphRoot, RootInput]]:
@@ -855,21 +903,18 @@ class _GraphSource:
     label: str | None
     saved: bool
 
+    @property
+    def header(self) -> str | None:
+        """How the tree header names it: ``source prod``, ``sources a, b``, ``inline source K``."""
+        if self.saved and len(self.selections) == 1:
+            return f"source {self.label}"
+        return self.label
+
 
 @dataclass(frozen=True)
 class _LocalDependencies:
     edges: list[IndexedDependency]
     warnings: list[str]
-
-
-def _graph_direction(*, upstream: bool, downstream: bool, both: bool) -> GraphDirection:
-    # Mutual exclusion is enforced at parse time by _DIRECTION_GROUP.
-    del both
-    if upstream:
-        return "impact"
-    if downstream:
-        return "deps"
-    return "both"
 
 
 def _graph_source(options: GraphSourceOptions, *, default_source: str | None) -> _GraphSource:
@@ -996,7 +1041,7 @@ def _effective_direction(
     )
     if missing and live and direction != "impact":
         # --live reads downstream from GitHub, so it never needs the cache;
-        # only the upstream half of --both does.
+        # only the upstream half of --direction both does.
         if direction == "deps":
             return direction, []
         labels = ", ".join(selection.label for selection in missing)
@@ -1066,8 +1111,8 @@ def _rerun_with_refresh(
 
 
 _DIRECTION_FLAGS: dict[GraphDirection, str] = {
-    "impact": " --upstream",
-    "deps": " --downstream",
+    "impact": " --direction up",
+    "deps": " --direction down",
     "both": "",
 }
 
@@ -1148,7 +1193,7 @@ def _graph_for_target(
     use_live: bool,
     github_settings: GithubSettings,
     live_reads: _LiveReads,
-) -> tuple[DependencyGraph, list[str]]:
+) -> tuple[DependencyGraph, list[str], _Reads]:
     """Build the graph, reading transitive dependencies live when requested.
 
     Local target edges always overlay the chosen read index. Without a
@@ -1167,7 +1212,7 @@ def _graph_for_target(
         return BuildGraph(read_index)(request.model_copy(update={"live": use_live}))
 
     if not use_live:
-        return build(index), []
+        return build(index), [], _Reads(source=request.source_key is not None, live=False)
     if local is not None and request.source_key is None and github_settings.token is None:
         warnings = []
         if any(edge.dependency_repo is not None for edge in local.edges):
@@ -1175,15 +1220,21 @@ def _graph_for_target(
                 "transitive dependencies were not expanded: pass --source NAME to use "
                 "cached source data, or configure github.token for live GitHub reads"
             )
-        return build(NullDependencyIndex()), warnings
+        return build(NullDependencyIndex()), warnings, _Reads(source=False, live=False)
     live_index = live_reads.index()
     # The index is shared across roots: report only what this build read.
     seen_errors, seen_warnings = len(live_index.errors), len(live_index.warnings)
     graph = build(live_index)
-    return graph, [
-        *live_index.errors[seen_errors:],
-        *_live_parse_warning_messages(live_index.warnings[seen_warnings:]),
-    ]
+    # The live index falls back to the cached source for the upstream half.
+    reads = _Reads(source=request.source_key is not None and request.direction != "deps", live=True)
+    return (
+        graph,
+        [
+            *live_index.errors[seen_errors:],
+            *_live_parse_warning_messages(live_index.warnings[seen_warnings:]),
+        ],
+        reads,
+    )
 
 
 def _refresh_hint(source_state: _GraphSource) -> str | None:
@@ -1254,11 +1305,26 @@ def _should_use_live_dependencies(
     return live
 
 
-def _emit_graph(graph: DependencyGraph, *, fmt: GraphFormat, output: Path | None) -> None:
-    rendered = render_graph(graph, fmt)
-    if output is None:
-        echo(rendered)
-        return
+def _emit_graph(
+    graph: DependencyGraph,
+    *,
+    fmt: GraphFormat,
+    output: Path | None,
+    ui: UiContext,
+    header_note: str,
+) -> None:
+    """Print the rendered graph (a styled tree on a terminal), or write it plain to ``output``."""
+    if fmt == "tree":
+        lines = tree_lines(graph, glyphs=tree_glyphs(ui), header_note=header_note)
+        if output is None:
+            print_tree(lines, ui)
+            return
+        rendered = plain_text(lines)
+    else:
+        rendered = render_graph(graph, fmt)
+        if output is None:
+            echo(rendered)
+            return
     output.expanduser().parent.mkdir(parents=True, exist_ok=True)
     output.expanduser().write_text(rendered)
 
