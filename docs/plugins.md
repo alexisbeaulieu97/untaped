@@ -156,7 +156,7 @@ def build_app() -> App:
     @app.command(name="import")
     def import_command(*, stdin: bool = False) -> None:
         """Echo identifiers received as arguments or an untaped pipe."""
-        for identifier in read_identifiers([], stdin=stdin, id_field="full_name"):
+        for identifier in read_identifiers([], stdin=stdin, id_field="repo"):
             echo(identifier)
 
     return app
@@ -380,7 +380,7 @@ def items_command(
 `--format pipe` emits the stable v1 NDJSON envelope, one object per line:
 
 ```json
-{"untaped": "1", "kind": "acme.item", "record": {"full_name": "octocat/Hello-World"}}
+{"untaped": "1", "kind": "acme.item", "record": {"repo": "octocat/Hello-World"}}
 ```
 
 Kinds use the lowercase capability namespace and a snake-case noun, with an
@@ -393,7 +393,7 @@ other kind exits 2 instead of being misread:
 from untaped.capability_api import read_identifiers
 
 identifiers = read_identifiers(
-    [], stdin=True, id_field="full_name", accept_kinds={"github.repo"}
+    [], stdin=True, id_field="repo", accept_kinds={"github.repo"}
 )
 ```
 

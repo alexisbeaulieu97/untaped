@@ -120,6 +120,13 @@ self-contained manual for the installed CLI.
   - **Breaking:** `github.sync_outcome` (`cache sync`) renames its string
     field `error` to `detail`; a failed row's `error` is now the structured
     object. A fetch that timed out exits 5.
+  - **Breaking:** github records name a repository only in `repo` and a web
+    page only in `url`: `full_name`, `html_url` and the duplicate `name`
+    (`github.repo`, `github.repo_hit`), `repository_url` (`github.issue`) and
+    the nested `repository` (`github.code`) are gone. The sweep records
+    (`github.sweep_repo`, `github.sweep_file`, `github.sweep_match`) rename
+    `full_name` to `repo` and `synced_at` to `fetched_at`, as in `github
+    cache`. `--stdin` reads `repo` from a piped record.
 - Jira
   - **Breaking:** a rejected token (401, same hint text) and a missing
     permission (403) exit 4; 5xx, 429 and network failures exit 5; a missing
@@ -233,6 +240,11 @@ self-contained manual for the installed CLI.
     on unreachable hosts, or failed (or was checked beyond its status)
     before AWX saved its events exits 5, instead of 1. A preflight failure names `awx.suite` (or
     `awx.credentials`, `awx.scm`) as its `system`.
+  - **Breaking:** the `awx.job` record (`jobs wait`) and the `launch` and
+    `sync` rows rename `started` and `finished` to `started_at` and
+    `finished_at`. These and the `started_at`/`finished_at` of
+    `awx.test_result` rows are UTC timestamps to the second
+    (`2026-01-02T03:04:05Z`) instead of AWX's strings with microseconds.
   - **Fix:** a case that expects its job to fail no longer passes when the
     job failed because a project or inventory update failed first: the
     playbook never ran, and the case fails as `awx.scm` or `awx.inventory`.

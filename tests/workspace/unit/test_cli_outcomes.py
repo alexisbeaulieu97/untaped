@@ -81,7 +81,7 @@ def test_add_stdin_reads_github_repo_clone_urls(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         ["repos", "add", "prod", "--stdin", "--format", "raw", "--columns", "url"],
-        input=_pipe("github.repo", full_name="acme/api", clone_url="https://x/api.git"),
+        input=_pipe("github.repo", repo="acme/api", clone_url="https://x/api.git"),
     )
 
     assert result.exit_code == 0, result.output
@@ -91,8 +91,8 @@ def test_add_stdin_reads_github_repo_clone_urls(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("kind", "record"),
     [
-        ("github.repo_hit", {"full_name": "acme/api", "url": "https://x/api"}),
-        ("github.sweep_repo", {"full_name": "acme/api", "clone_url": "https://x/api.git"}),
+        ("github.repo_hit", {"repo": "acme/api", "url": "https://x/api"}),
+        ("github.sweep_repo", {"repo": "acme/api", "clone_url": "https://x/api.git"}),
     ],
 )
 def test_add_stdin_reads_github_search_and_sweep_records(
