@@ -358,6 +358,14 @@ self-contained manual for the installed CLI.
     are now `name`, the string `error` is now `detail` (`null` on a pass),
     the `recipes`/`hooks` counts are gone (see `packs list`), and a failed
     check is `fail` instead of `error`.
+  - **Breaking:** `recipe.add_outcome`, `recipe.sync_outcome` and
+    `recipe.remove_outcome` rows gain `detail`, and `remove` rows fill
+    `source`, `rev` and `commit` from the removed pack (they were always
+    `null`).
+  - **Fix:** `packs sync` and `packs remove` print a `failed` row (with
+    `detail` and `error`) for a pack that could not be fetched, installed
+    or removed; such packs had no row. A `packs remove` that fails to delete
+    a pack's files reports it and moves on to the next pack.
 
 ## 8.1.0
 

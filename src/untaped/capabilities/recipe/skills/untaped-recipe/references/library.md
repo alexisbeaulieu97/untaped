@@ -11,7 +11,7 @@
   overwrite a library copy with local edits unless `--discard-edits` is added.
   A local path source is recorded as an absolute path; a git source records
   the requested `rev` and the resolved `commit` (shown in `packs list` and
-  the `add`/`sync` rows; `sync` updates it even when no file changed).
+  the `add`/`sync`/`remove` rows; `sync` updates it even when no file changed).
 - `packs sync <pack>...` or `packs sync --all` re-fetches each installed pack from its
   recorded source and `--rev` (a branch or tag moves forward). Packs whose
   content would change are listed on stderr with the commit move
@@ -19,8 +19,9 @@
   `pyproject.toml`, `uv.lock`, `uv.toml`, `.python-version`, `setup.cfg`;
   not recipe files or tests), and need confirmation or `--yes` (`--dry-run` previews); rows
   carry `action` `updated`, `unchanged` or `planned`. A pack with local edits in the library fails unless
-  `--discard-edits` is passed; a failed pack prints `error: PACK: ...`, the
-  others still sync, and the command exits 1 (5 when a fetch timed out).
+  `--discard-edits` is passed; a failed pack prints `error: PACK: ...` and a
+  `failed` row with `detail` and `error`, the others still sync, and the
+  command exits 1 (5 when a fetch timed out).
 - Each noun reads and edits only its own kind: `list`/`get <recipe>`/`edit
   <recipe>` for recipes, `packs list`/`packs get <pack>`/`packs edit <pack>`
   (opens `pyproject.toml`) for packs, and `hooks list`/`hooks get
@@ -28,7 +29,7 @@
   built-ins such as `yaml_edit` (marked `(builtin)`; not editable). `packs
   remove <pack>...` is destructive, requires confirmation or `--yes`
   (`--dry-run` previews), exits 1 on a declined prompt, and warns when the
-  copy has local edits. `packs sync` and `packs remove` take `--stdin`
+  copy has local edits; a pack it cannot delete is a `failed` row. `packs sync` and `packs remove` take `--stdin`
   (pack names or `recipe.pack` records, e.g. `packs list --format pipe`).
   `get`/`edit` on a pack or hook name, and `init NAME` without `/`, fail
   with a hint naming the `packs`/`hooks` command.
