@@ -409,11 +409,11 @@ def _table_cell(column: str, value: Any) -> str:
 
     Only the ``table`` format uses it; json, yaml, raw and pipe keep values
     verbatim. Mappings flatten to ``key=value`` pairs, empty containers are
-    blank, ``*_s`` durations read as ``1m42s``, other floats keep two
+    blank, durations (``*_s``, ``elapsed``) read as ``1m42s``, other floats keep two
     decimals, a 40-hex commit is shortened, and whitespace runs (newlines
     included) collapse to one space.
     """
-    if isinstance(value, int | float) and not isinstance(value, bool) and column.endswith("_s"):
+    if isinstance(value, int | float) and not isinstance(value, bool) and _is_duration(column):
         return _duration(value)
     if isinstance(value, float):
         return f"{value:.2f}".rstrip("0").rstrip(".")
@@ -437,6 +437,11 @@ def _flat_pairs(mapping: Mapping[str, Any], *, prefix: str) -> Iterator[tuple[st
             yield from _flat_pairs(value, prefix=f"{prefix}{key}.")
         elif text := _flat(value):
             yield f"{prefix}{key}", text
+
+
+def _is_duration(column: str) -> bool:
+    """Seconds by name: ``duration_s``, ``wait_s``, or AWX's ``elapsed``."""
+    return column.endswith("_s") or column == "elapsed"
 
 
 def _duration(seconds: float) -> str:
