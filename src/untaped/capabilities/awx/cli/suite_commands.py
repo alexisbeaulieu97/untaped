@@ -835,6 +835,8 @@ def prune_command(
 
     A copy is a job template or workflow named `NAME [untaped-test SHA RUN]` whose
     description carries the matching `untaped-test run=…` marker.
+
+    Experimental: may change in a minor release.
     """
     from untaped.capabilities.awx.cli import _temporary_sets as copies  # noqa: PLC0415
     from untaped.capabilities.awx.domain.temporary_set import parse_age  # noqa: PLC0415

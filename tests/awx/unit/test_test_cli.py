@@ -61,7 +61,7 @@ def test_test_help_lists_subcommands(cli: CliInvoker) -> None:
     assert "validate" in out
 
 
-@pytest.mark.parametrize("path", [[], ["run"], ["list"], ["validate"], ["init"]])
+@pytest.mark.parametrize("path", [[], ["run"], ["list"], ["validate"], ["init"], ["prune"]])
 def test_experimental_commands_say_so_in_help(cli: CliInvoker, path: list[str]) -> None:
     # docs/stability.md promises every experimental command says so in --help.
     result = cli.invoke(app, ["test", *path, "--help"])
