@@ -11,6 +11,10 @@
   - **Fix:** `cache delete` and `cache prune` report the space each removed
     repository frees in `disk_bytes` (it was always 0), including under
     `--dry-run`.
+- AWX
+  - **Behavior change:** the `jobs wait` table shows when each job finished
+    (`finished_at`) and how long it ran (`elapsed`). `awx.job` records and
+    `launch`/`sync --wait` rows gain `elapsed` (seconds).
 - Ansible
   - **Fix:** `--all-refs` exits 2 with `--live` or without a source
     instead of being silently ignored: live reads see only the default
