@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 9.1.0
+
+A backwards-compatible release (capability SDK 3.1): record types pick their
+own default table columns, the remaining tables (management, GitHub, AWX
+`jobs wait`, Ansible) show curated defaults, `ansible` graphs mark where
+reading stopped, and the packaged skills are rewritten as short maps with
+reference files (run `untaped skills update`). `--format raw` on `profile
+list`, `config list` and `config get` prints native values; see the
+**Behavior change** entries.
 
 - Core
   - **New (SDK):** a record type picks its default table columns with a
