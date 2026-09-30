@@ -9,6 +9,9 @@ from typing import Any
 from untaped.capabilities.awx.application.apply_field_diff import PRESERVED_SECRET_NOTE
 from untaped.capabilities.awx.domain import ApplyOutcome, FieldChange
 
+OUTCOME_TABLE_COLUMNS = ("id", "name", "kind", "action", "fields_changed", "detail")
+"""A mutation table's defaults; ``scope``, ``identity`` and the flags stay in the record."""
+
 
 def outcome_rows(outcomes: list[ApplyOutcome]) -> list[dict[str, Any]]:
     """Summary rows for every output format; a failed row keeps its ``error``."""

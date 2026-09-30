@@ -56,6 +56,8 @@ from untaped.capability_api import (
     report_errors,
 )
 
+_TABLE_COLUMNS = ("id", "name", "action", "associate", "disassociate", "detail")
+
 
 def register_membership_subapp(parent_app: App, spec: AwxResourceSpec, ref: FkRef) -> None:
     """Attach ``<ref.sub_endpoint> add/remove`` under ``parent_app``."""
@@ -206,7 +208,13 @@ def _add_membership_verb(
                             mode="json"
                         )
                         failed = True
-                emit([row], fmt=fmt, columns=columns, kind="awx.membership_outcome")
+                emit(
+                    [row],
+                    fmt=fmt,
+                    columns=columns,
+                    table_columns=_TABLE_COLUMNS,
+                    kind="awx.membership_outcome",
+                )
                 finish(failed)
 
 

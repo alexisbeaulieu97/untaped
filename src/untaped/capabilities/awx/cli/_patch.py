@@ -89,7 +89,7 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
                 ]
                 engine = build_mutation_engine(ctx, allow_unverified=controls.allow_unverified)
                 plan = engine.prepare(resources, mode="patch", existing=selected)
-                run_mutation_plan(ctx, engine, plan, controls)
+                run_mutation_plan(ctx, engine, plan, controls, per_kind=True)
 
 
 def _likely_typos(spec: AwxResourceSpec, overlay: dict[str, object]) -> list[tuple[str, str]]:

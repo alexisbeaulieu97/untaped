@@ -5,9 +5,40 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Sequence
 
     from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
+
+
+def name_fks(
+    rows: list[dict[str, Any]],
+    spec: AwxResourceSpec,
+    *,
+    with_names: bool,
+    table: bool,
+    columns: Sequence[str] | None,
+    defaults: Sequence[str] = (),
+) -> list[dict[str, Any]]:
+    """``rows`` with FK names where they are wanted: always in a ``table``, else ``with_names``.
+
+    Display-only FK columns are those ``columns`` mentions (``+``/``-``
+    edits included) plus ``defaults``, the columns the view shows unasked.
+    Names come from each row's ``summary_fields``, so this reads nothing.
+    """
+    if not (with_names or table):
+        return rows
+    return flatten_fks(rows, spec, columns=[*defaults, *column_names(columns)])
+
+
+def column_names(columns: Sequence[str] | None) -> list[str]:
+    """Every column name ``--columns`` mentions, ``+``/``-`` edit marks stripped.
+
+    Follows the core's ``--columns`` syntax (``-c a,b``, ``-c +a``,
+    ``-c=-a``; see ``_selected_columns`` in ``untaped.cli``), which
+    ``capability_api`` does not expose as a parser.
+    """
+    parts = (part.strip() for entry in columns or () for part in entry.split(","))
+    return [part.lstrip("+-") for part in parts if part]
 
 
 def flatten_fks(

@@ -143,6 +143,12 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
                     report_error(exc, item=target)
                     any_failed = True
         rows = [u.model_dump() for u in usages]
-        cols = list(columns) if columns else list(_DEFAULT_COLUMNS)
-        emit(rows, fmt=fmt, columns=cols, kind="awx.template_usage")
+        emit(
+            rows,
+            fmt=fmt,
+            columns=columns or (_DEFAULT_COLUMNS if fmt == "raw" else None),
+            table_columns=_DEFAULT_COLUMNS,
+            kind="awx.template_usage",
+            empty="No containing workflows found.",
+        )
         finish(any_failed)

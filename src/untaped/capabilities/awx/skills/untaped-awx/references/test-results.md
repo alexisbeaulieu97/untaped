@@ -5,8 +5,8 @@ order the cases are declared, then a summary on stderr
 (`4 cases: 3 pass, 1 fail`). Read the rows with `--format json` (or `yaml`
 or `pipe`); the table shows only `suite`, `case`, `result` (then `change`
 when comparing with a baseline), `job_status`, `job_id`, `duration_s`,
-`failure.system` and `failure.message`, and leaves out the evidence and the
-host summaries.
+`failure.system` and `failure.message` (when a case failed) and `job_url`,
+and leaves out the evidence and the host summaries.
 
 A failing row, abridged:
 
