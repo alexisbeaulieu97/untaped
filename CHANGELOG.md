@@ -70,25 +70,29 @@ self-contained manual for the installed CLI.
     row, not just the first. It fits the terminal by narrowing only its
     widest columns: a cell that does not fit ends in `…` and each row stays
     on one line, while `detail`, `message` and `hint` wrap. Nested values
-    read as `key=value` pairs instead of Python reprs, durations (`*_s`, `elapsed`) as
-    `1m42s`, other decimals to two places, and commits are shortened to 10
-    characters. Status and outcome words are colored by meaning, including
-    in the default theme. json, yaml, raw and pipe keep every field and
-    value (see the fixes below for the few exceptions).
+    read as `key=value` pairs instead of Python reprs, durations (`*_s`,
+    `elapsed`) as `1m42s`, other decimals to two places, and commits are
+    shortened to 10 characters. Status and outcome words are colored by
+    meaning, including in the default theme. json, yaml, raw and pipe keep
+    every field and value (see the fixes below for the few exceptions).
   - **New:** `--columns +name` adds a column to a table's default columns and
     `--columns=-name` removes one (`--columns +url,-kind` does both); in
     `raw` the edits also start from the defaults; in json and yaml, `-name`
-    removes a field from the whole record.
-    `--columns ?` marks the default columns with `*`. A single record in
-    table format leaves out its empty fields too. For providers, `emit` and
-    `render_rows` take `table_columns=` for a command's default columns.
+    removes a field from the whole record. `--columns ?` marks the default
+    columns with `*`. A single record in table format leaves out its empty
+    fields too. For providers, `emit` and `render_rows` take
+    `table_columns=` for a command's default columns.
   - **Fix:** asking for a column that exists on the record but is absent from
     every row (such as `error` when nothing failed) no longer warns that it
     is unknown; `--quiet` mutes the `No … found.` line; a column name
     containing a dot (`has-file:release.txt`) selects that key in every
-    format; a table
-    header is never read as Rich markup; a `datetime` in a plain row renders as `2026-01-02T03:04:05Z` in every format (a string in yaml); `doctor` and `capabilities` accept
-    `--columns a,b` and `--columns ?` even when the settings are broken.
+    format; a table header is never read as Rich markup; a `datetime` in a
+    plain row renders as `2026-01-02T03:04:05Z` in every format (a string in
+    yaml); `doctor` and `capabilities` accept `--columns a,b` and
+    `--columns ?` even when the settings are broken.
+  - **Behavior change:** an outcome record's `action` comes right after the
+    field identifying the row (`repo`, or `id` and `name`) instead of last,
+    in tables and in json/yaml key order. Fields are unchanged.
   - **Breaking (SDK):** the capability API is `3.0`
     (`CAPABILITY_API_VERSION = (3, 0)`); providers must declare
     `((3, 0), (4, 0))`. `UntapedError` gains `category`, `system`, `hint` and
@@ -128,6 +132,12 @@ self-contained manual for the installed CLI.
     command, exit 2. Failed `sync`, `branch apply` and uninspectable
     `status` rows carry `error`, and `status --check` exits with the
     failure's own code (5 when `git status` timed out).
+  - **Fix:** a repo `repos remove` could not remove (not declared, or a
+    refused `--prune`) is a `failed` row with `detail` and `error`, after
+    the removed ones; it had no row. A `--prune` that took the repo out of
+    the manifest but could not delete its clone is a `partial` row
+    (`pruned: false`, exit 1) instead of aborting the batch.
+    `workspace.remove_outcome` rows gain `detail` for this.
   - **Behavior change:** during `sync`, a repo job failing for a reason
     other than git (such as a busy cache lock) becomes that repo's `failed`
     row with its own exit code (5 for a busy lock) instead of aborting the
@@ -139,6 +149,13 @@ self-contained manual for the installed CLI.
   - **Breaking:** `github.sync_outcome` (`cache sync`) renames its string
     field `error` to `detail`; a failed row's `error` is now the structured
     object. A fetch that timed out exits 5.
+  - **Breaking:** github records name a repository only in `repo` and a web
+    page only in `url`: `full_name`, `html_url` and the duplicate `name`
+    (`github.repo`, `github.repo_hit`), `repository_url` (`github.issue`) and
+    the nested `repository` (`github.code`) are gone. The sweep records
+    (`github.sweep_repo`, `github.sweep_file`, `github.sweep_match`) rename
+    `full_name` to `repo` and `synced_at` to `fetched_at`, as in `github
+    cache`. `--stdin` reads `repo` from a piped record.
 - Jira
   - **Breaking:** a rejected token (401, same hint text) and a missing
     permission (403) exit 4; 5xx, 429 and network failures exit 5; a missing
@@ -252,6 +269,11 @@ self-contained manual for the installed CLI.
     on unreachable hosts, or failed (or was checked beyond its status)
     before AWX saved its events exits 5, instead of 1. A preflight failure names `awx.suite` (or
     `awx.credentials`, `awx.scm`) as its `system`.
+  - **Breaking:** the `awx.job` record (`jobs wait`) and the `launch` and
+    `sync` rows rename `started` and `finished` to `started_at` and
+    `finished_at`. These and the `started_at`/`finished_at` of
+    `awx.test_result` rows are UTC timestamps to the second
+    (`2026-01-02T03:04:05Z`) instead of AWX's strings with microseconds.
   - **Fix:** a case that expects its job to fail no longer passes when the
     job failed because a project or inventory update failed first: the
     playbook never ran, and the case fails as `awx.scm` or `awx.inventory`.
@@ -377,6 +399,30 @@ self-contained manual for the installed CLI.
   - **Breaking:** `recipe.apply_outcome` renames its string field `error` to
     `detail`; a failed row's `error` is now the structured object. Errored
     `recipe.test` rows gain `error` too.
+  - **Breaking:** `recipe.check` (`validate`) rows share one shape, with
+    fields `name` (the pack, `PACK/RECIPE` ref or built-in hook), `type`
+    (`pack`, `recipe` or `hook`), `status`, `path` and `detail`. Scripts
+    must read `name` instead of `pack`/`recipe` and `detail` instead of the
+    string `error` (`detail` is `null` on a pass), test `status == "fail"`
+    instead of `"error"`, and take pack `recipes`/`hooks` counts from
+    `packs list`.
+  - **Fix:** `packs sync` and `packs remove` print a `failed` row (with
+    `detail` and `error`) for a pack that could not be fetched, installed
+    or removed; such packs had no row. A `packs remove` that fails to delete
+    a pack's files reports it and moves on to the next pack; one that
+    stopped partway (some files, or the `packs.toml` row, left behind) is a
+    `partial` row (exit 1), and running it again finishes the removal.
+    `validate` flags a pack directory with no `pyproject.toml`.
+    `recipe.add_outcome`, `recipe.sync_outcome` and `recipe.remove_outcome`
+    rows gain `detail` for this, and `remove` rows fill `source`, `rev` and
+    `commit` from the removed pack (they were always `null`).
+  - **Breaking:** `backups prune` emits `recipe.prune_outcome` rows (fields
+    `id`, `size_bytes`, `action`, `detail`) instead of `recipe.backup` rows,
+    so a `planned` (`--dry-run`) row is told apart from a `deleted` one.
+    Scripts that select prune output by kind must use
+    `recipe.prune_outcome`.
+  - **Fix:** a bundle `backups prune` fails to delete is a `failed` row with
+    `detail` and `error`; it had no row.
 
 ## 8.1.0
 

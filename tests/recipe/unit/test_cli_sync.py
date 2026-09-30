@@ -60,6 +60,7 @@ def test_sync_reports_unchanged_packs_without_prompting(tmp_path: Path) -> None:
             "source": str(tmp_path / "alpha"),
             "rev": None,
             "commit": None,
+            "detail": None,
         }
     ]
 
@@ -146,8 +147,44 @@ def test_sync_reports_a_missing_source_and_continues(tmp_path: Path) -> None:
     result = invoke_cli(app, ["packs", "sync", "--all", "--yes", "--format", "json"])
 
     assert result.exit_code == 1, result.output
-    assert f"error: alpha: pack source not found: {tmp_path / 'alpha'}" in result.stderr
-    assert [row["name"] for row in json.loads(result.stdout)] == ["beta"]
+    message = f"pack source not found: {tmp_path / 'alpha'}"
+    assert result.stderr.count(f"error: alpha: {message}") == 1
+    rows = json.loads(result.stdout)
+    assert [(row["name"], row["action"]) for row in rows] == [
+        ("alpha", "failed"),
+        ("beta", "updated"),
+    ]
+    assert (rows[0]["source"], rows[0]["detail"]) == (str(tmp_path / "alpha"), message)
+    assert rows[0]["error"]["category"] == "not_found"
+    assert "error" not in rows[1]
+
+
+def test_sync_install_failure_is_a_failed_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("alpha", "beta"):
+        _write_pack(tmp_path / name, name=name)
+        _add(tmp_path / name)
+        (tmp_path / name / "recipes" / "seed.yml").write_text(_CHANGED)
+    original_add = PackLibrary.add
+
+    def _flaky_add(self: PackLibrary, source_dir: Path, **kwargs: object) -> None:
+        if kwargs.get("name") == "alpha":
+            raise OSError("disk full")
+        original_add(self, source_dir, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(PackLibrary, "add", _flaky_add)
+    result = invoke_cli(app, ["packs", "sync", "--all", "--yes", "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    assert result.stderr.count("error: alpha: disk full") == 1
+    rows = json.loads(result.stdout)
+    assert [(row["name"], row["action"]) for row in rows] == [
+        ("alpha", "failed"),
+        ("beta", "updated"),
+    ]
+    assert rows[0]["detail"] == "disk full"
+    assert rows[0]["error"]["category"] == "failed"
 
 
 def test_add_records_a_relative_path_source_as_absolute(
@@ -195,7 +232,14 @@ def test_sync_refetches_git_sources_at_the_recorded_rev(
     assert fetched == [(url, "v1"), (url, "v1")]
     assert json.loads(added.stdout)["commit"] == _OLD_SHA
     assert json.loads(result.stdout) == [
-        {"action": "updated", "name": "alpha", "source": url, "rev": "v1", "commit": _NEW_SHA}
+        {
+            "action": "updated",
+            "name": "alpha",
+            "source": url,
+            "rev": "v1",
+            "commit": _NEW_SHA,
+            "detail": None,
+        }
     ]
     assert _installed_recipe("alpha").read_text() == _CHANGED
     assert PackLibrary(library_root=library_root()).packs()[0].commit == _NEW_SHA
@@ -278,6 +322,7 @@ def test_sync_records_a_moved_commit_when_content_is_unchanged(
         "source": url,
         "rev": "main",
         "commit": _NEW_SHA,
+        "detail": None,
     }
     assert PackLibrary(library_root=library_root()).packs()[0].commit == _NEW_SHA
 
