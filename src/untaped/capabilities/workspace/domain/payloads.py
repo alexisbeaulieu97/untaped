@@ -123,14 +123,16 @@ class RepoRemoveOutcome(OutcomeRecord):
     """One row of ``workspace repos remove`` output.
 
     ``repo`` is the identifier as given for ``planned`` (``--dry-run``)
-    rows and the manifest name for ``removed`` rows; ``pruned`` says
-    whether the local clone is (or would be) deleted as well.
+    and ``failed`` rows and the manifest name for ``removed`` rows;
+    ``pruned`` says whether the local clone is (or would be) deleted as
+    well. A ``failed`` row says why in ``detail`` and ``error``.
     """
 
     workspace: str
     repo: str
     action: str
     pruned: bool
+    detail: str | None = None
 
 
 BranchApplyAction = Literal["checked_out", "unchanged", "skipped", "failed", "unmatched"]

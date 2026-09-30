@@ -135,7 +135,7 @@ def test_remove_dry_run_plans_without_mutating(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
-        {"workspace": "prod", "repo": "api", "action": "planned", "pruned": True}
+        {"workspace": "prod", "repo": "api", "action": "planned", "pruned": True, "detail": None}
     ]
     assert "api.git" in (target / "untaped.yml").read_text()
 
@@ -159,7 +159,26 @@ def test_remove_emits_remove_outcome_and_reads_repo_records(tmp_path: Path) -> N
         "repo": "api",
         "action": "removed",
         "pruned": False,
+        "detail": None,
     }
+
+
+def test_remove_reports_a_failed_identifier_as_a_failed_row(tmp_path: Path) -> None:
+    runner = CliInvoker()
+    _init(runner, tmp_path)
+    runner.invoke(app, ["repos", "add", "prod", "https://x/api.git"])
+
+    result = runner.invoke(app, ["repos", "remove", "prod", "ghost", "api", "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    message = "repo 'ghost' not declared in workspace 'prod'"
+    assert result.stderr.count(f"error: ghost: {message}") == 1
+    removed, failed = json.loads(result.stdout)
+    assert (failed["repo"], failed["action"], failed["pruned"]) == ("ghost", "failed", False)
+    assert failed["detail"] == message
+    assert (failed["error"]["category"], failed["error"]["system"]) == ("not_found", "local")
+    assert (removed["repo"], removed["action"]) == ("api", "removed")
+    assert "error" not in removed
 
 
 def test_remove_stdin_rejects_foreign_kind(tmp_path: Path) -> None:
