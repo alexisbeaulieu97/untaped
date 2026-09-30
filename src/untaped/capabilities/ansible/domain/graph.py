@@ -12,6 +12,7 @@ from untaped.capabilities.ansible.domain.identity import repo_key
 
 EdgeRelation = Literal["requires", "impacts"]
 CycleKind = Literal["cycle", "scc_group"]
+StopReason = Literal["depth", "not_cached"]
 
 
 class GraphNode(BaseModel):
@@ -26,6 +27,9 @@ class GraphNode(BaseModel):
     ref_kind: str | None = Field(default=None, exclude=True)
     default_branch: str | None = Field(default=None, exclude=True)
     unresolved: str | None = None
+    stopped: StopReason | None = None
+    """Why the graph did not read this node's own edges: ``depth`` when
+    ``--depth`` ran out, ``not_cached`` when its ref is not in the source's cache."""
 
 
 class GraphEdge(BaseModel):

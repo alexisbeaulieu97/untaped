@@ -21,6 +21,7 @@ from untaped.capabilities.ansible.domain.graph import (
     EdgeRelation,
     GraphEdge,
     GraphNode,
+    StopReason,
     walk_root_ids,
 )
 
@@ -43,6 +44,7 @@ class ReachedNode(BaseModel):
     depth: int
     path: list[str]
     root_ref: str | None
+    stopped: StopReason | None
 
 
 class Reach(BaseModel):
@@ -91,6 +93,7 @@ def reach(graph: DependencyGraph, relation: EdgeRelation) -> list[Reach]:
                             depth=len(path) - 1,
                             path=path[::-1] if upstream else path,
                             root_ref=root.ref,
+                            stopped=node.stopped,
                         ),
                     )
                 )

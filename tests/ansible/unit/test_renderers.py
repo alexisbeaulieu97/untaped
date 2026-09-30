@@ -385,3 +385,63 @@ def test_mermaid_ids_do_not_collide_and_labels_escape_quotes() -> None:
     assert "n0 --> n1" in rendered
     assert 'n2["unresolved: say #quot;hi#quot;"]' in rendered
     assert '\\"' not in rendered
+
+
+def _stopped_graph() -> DependencyGraph:
+    return _graph(
+        [
+            _node("target", "acme/base", "v1"),
+            _node("users", "acme/users", "main", stopped="depth"),
+            _node("old", "acme/old", "v9", stopped="not_cached"),
+            _node("site", "acme/site", "main", stopped="depth"),
+        ],
+        [
+            ("target", "users", "requires"),
+            ("target", "old", "requires"),
+            ("site", "target", "impacts"),
+        ],
+    )
+
+
+def test_tree_renderer_marks_where_the_graph_stopped_reading() -> None:
+    lines = tree_lines(_stopped_graph())
+
+    assert plain_text(lines).splitlines() == [
+        "acme/base@v1",
+        "",
+        "used by",
+        "└── acme/site@main …   not read: depth limit",
+        "",
+        "depends on",
+        "├── acme/old@v9 …      not read: ref not cached",
+        "└── acme/users@main …  not read: depth limit",
+        "",
+        "3 repos · 3 edges · 3 stopped",
+    ]
+
+
+def test_tree_stop_marker_sits_next_to_the_label_for_styling() -> None:
+    row = tree_lines(_stopped_graph())[3]
+
+    assert row[:3] == (
+        TreeSegment("└── ", "guide"),
+        TreeSegment("acme/site@main", "node"),
+        TreeSegment(" …", "note"),
+    )
+
+
+def test_tree_stop_marker_is_ascii_with_ascii_glyphs() -> None:
+    lines = plain_text(tree_lines(_stopped_graph(), glyphs=ASCII_GLYPHS)).splitlines()
+
+    assert lines[3] == "`-- acme/site@main ...   not read: depth limit"
+
+
+def test_json_renderer_carries_each_nodes_stop_reason() -> None:
+    nodes = json.loads(render_graph(_stopped_graph(), "json"))["nodes"]
+
+    assert {node["id"]: node["stopped"] for node in nodes} == {
+        "target": None,
+        "users": "depth",
+        "old": "not_cached",
+        "site": "depth",
+    }
