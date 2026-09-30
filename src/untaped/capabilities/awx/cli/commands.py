@@ -631,7 +631,7 @@ def jobs_wait(
             final = WatchJob(ctx.repo)(job, timeout=timeout)
             if not final.is_terminal:
                 timed_out.append(job_id)
-            return final.model_dump()
+            return final.model_dump(mode="json")
 
         records, any_failed = resolve_each(ids, _wait_one)
     if records:

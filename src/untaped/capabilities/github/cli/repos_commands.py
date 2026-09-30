@@ -31,14 +31,14 @@ PatternArgument = Annotated[
     str | None,
     Parameter(
         help=(
-            "Optional repo-name pattern. Glob by default; with / matches full_name, "
+            "Optional repo-name pattern. Glob by default; with / matches owner/name, "
             "otherwise matches name."
         )
     ),
 ]
 app = create_app(name="repos", help="List GitHub repository inventory from org/team scopes.")
 # The table shows these; structured formats and -c/--columns reach every field.
-_TABLE_COLUMNS = ["full_name", "default_branch", "private", "archived", "fork", "url"]
+_TABLE_COLUMNS = ["repo", "default_branch", "private", "archived", "fork", "url"]
 
 
 def _validate_args(
