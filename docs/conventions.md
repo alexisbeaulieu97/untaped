@@ -170,10 +170,11 @@ come from a closed set:
   identifying field, what changed or its state, and what the reader acts on
   next. Leave out fields that repeat the command's own arguments or are empty
   on most rows. A record with more than four fields (`error` aside) that a
-  command lists must declare them. `emit(rows, …, table_columns=[…])` overrides
-  them for one command; a single record shows every field. Never pass
-  defaults as `columns=` (`columns or DEFAULTS`): `--columns +name/-name`
-  edits the defaults, and a named column is always shown, even when empty.
+  command lists must declare them (a convention test checks this).
+  `emit(rows, …, table_columns=[…])` overrides them for one command; a single
+  record shows every field. Never pass defaults as `columns=` (`columns or
+  DEFAULTS`): `--columns +name/-name` edits the defaults, and a named column
+  is always shown, even when empty.
 - Kinds are `<cap>.<singular_noun>` for entities and `<cap>.<verb>_outcome`
   for mutation results. Root commands use `untaped.*`. Each kind has exactly
   one schema.

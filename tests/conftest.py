@@ -117,6 +117,8 @@ def table_default_violations(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[s
         emit_with(records, **kwargs)
 
     monkeypatch.setattr(cli, "emit_with", checked)
+    # Root commands bound the name at import.
+    monkeypatch.setattr("untaped.management._render.emit_with", checked)
     yield found
     new = sorted(set(found) - _known_table_default_violations())
     if new:

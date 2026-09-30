@@ -136,3 +136,15 @@ def test_a_column_unset_on_every_row_stays_hidden(
 ) -> None:
     emit([_Setting(key="a", action="updated")], fmt="table")
     assert _header(_out(capsys)) == ["key", "action", "active"]
+
+
+class _Optional(OutcomeRecord):
+    key: str
+    active: Annotated[bool, TableGlyph(true="✓")] | None = None
+
+
+def test_an_optional_fields_glyph_applies(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    emit(_Optional(key="a", action="updated", active=True), fmt="table")
+    assert "active: ✓" in _out(capsys)

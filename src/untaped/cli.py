@@ -607,7 +607,7 @@ def emit_with(
         kind=kind,
         table_columns=table_columns,
         schema=_model_schema(records),
-        glyphs=_row_glyphs(items),
+        glyphs=_row_glyphs(items) if fmt == "table" else None,
         ui=ui,
     )
     if rendered:
@@ -631,9 +631,9 @@ def _model_schema(
 
 def _record_table_columns(items: Sequence[BaseModel | Mapping[str, object]]) -> list[str] | None:
     """The default ``table`` columns every record's type declares (``None``: no shared ones)."""
-    if not items or not all(isinstance(item, BaseModel) for item in items):
-        return None
-    declared = {table_columns_of(type(item)) for item in items if isinstance(item, BaseModel)}
+    declared = {
+        table_columns_of(type(item)) if isinstance(item, BaseModel) else () for item in items
+    }
     return (list(declared.pop()) or None) if len(declared) == 1 else None
 
 
@@ -647,13 +647,21 @@ def _row_glyphs(
 
 @cache
 def _glyph_fields(model: type[BaseModel]) -> dict[str, TableGlyph]:
-    """The fields of ``model`` annotated with a :class:`TableGlyph`."""
+    """The fields of ``model`` annotated with a :class:`TableGlyph` (also inside ``| None``)."""
     return {
         name: meta
         for name, field in model.model_fields.items()
-        for meta in field.metadata
+        for meta in [
+            *field.metadata,
+            *(extra for arg in get_args(field.annotation) for extra in _metadata(arg)),
+        ]
         if isinstance(meta, TableGlyph)
     }
+
+
+def _metadata(annotation: object) -> tuple[object, ...]:
+    """The ``Annotated`` metadata of ``annotation`` (none when not annotated)."""
+    return tuple(getattr(annotation, "__metadata__", ()))
 
 
 def _as_row(record: BaseModel | Mapping[str, object]) -> dict[str, object]:
