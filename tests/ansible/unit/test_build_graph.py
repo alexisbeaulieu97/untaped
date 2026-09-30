@@ -439,7 +439,9 @@ def test_build_graph_attaches_ref_kind_and_default_branch_to_nodes() -> None:
         },
     )
 
-    graph = _build(index, "acme/site", None, source_key="source:prod", direction="deps", depth=1)
+    graph = _build(
+        index, "acme/site", None, source_key="source:prod", direction="deps", depth=1, all_refs=True
+    )
 
     assert {node.id: (node.ref_kind, node.default_branch) for node in graph.nodes} == {
         "acme/site": (None, None),
@@ -563,3 +565,85 @@ def test_shared_subtree_prints_once_and_later_occurrences_refer_back_to_it() -> 
     assert tree.count("acme/leaf@main") == 1
     assert "acme/shared@main [1]" in tree
     assert tree.count("see [1]") == 1
+
+
+def _two_ref_index() -> StubIndex:
+    return StubIndex(
+        [
+            _dep("acme/web", "acme/base", ref="trunk"),
+            _dep("acme/web", "acme/legacy", ref="v1"),
+            _dep("acme/site", "acme/web", ref="main", version="v1"),
+        ],
+        cached_ref_metadata={
+            "acme/web": (
+                CachedRef(name="trunk", kind="heads", default_branch="trunk"),
+                CachedRef(name="v1", kind="tags", default_branch="trunk"),
+            )
+        },
+    )
+
+
+def test_ref_less_target_reads_its_dependencies_at_the_default_branch_only() -> None:
+    graph = _build(_two_ref_index(), "acme/web", None, source_key="source:prod", depth=1)
+
+    # Dependents stay those of every ref: someone pinning v1 still uses acme/web.
+    assert _edges(graph) == [
+        ("acme/web@trunk", "acme/base@main", "requires"),
+        ("acme/site@main", "acme/web@v1", "impacts"),
+    ]
+    assert graph.target_id == "acme/web"
+
+
+def test_all_refs_reads_the_dependencies_of_every_cached_ref() -> None:
+    graph = _build(
+        _two_ref_index(), "acme/web", None, source_key="source:prod", depth=1, all_refs=True
+    )
+
+    assert sorted(_edges(graph)) == [
+        ("acme/site@main", "acme/web@v1", "impacts"),
+        ("acme/web@trunk", "acme/base@main", "requires"),
+        ("acme/web@v1", "acme/legacy@main", "requires"),
+    ]
+
+
+def test_ref_less_target_with_an_unknown_default_branch_reads_every_ref_and_says_so() -> None:
+    index = StubIndex(
+        [_dep("acme/web", "acme/base", ref="trunk"), _dep("acme/web", "acme/x", ref="v1")]
+    )
+
+    graph = _build(
+        index,
+        "acme/web",
+        None,
+        source_key="source:prod",
+        direction="deps",
+        depth=1,
+        refresh_hint=_HINT,
+    )
+
+    assert len(graph.edges) == 2
+    assert graph.warnings == (
+        "acme/web's default branch is not in the cached source data; showing the "
+        "dependencies of every cached ref. " + _HINT,
+    )
+
+
+def test_ref_less_target_whose_default_branch_is_not_cached_reads_every_ref() -> None:
+    # A tags-only source records the default branch without scanning it.
+    index = StubIndex(
+        [_dep("acme/web", "acme/base", ref="v1"), _dep("acme/web", "acme/x", ref="v2")],
+        cached_ref_metadata={
+            "acme/web": (
+                CachedRef(name="v1", kind="tags", default_branch="main"),
+                CachedRef(name="v2", kind="tags", default_branch="main"),
+            )
+        },
+    )
+
+    graph = _build(index, "acme/web", None, source_key="source:prod", direction="deps", depth=1)
+
+    assert len(graph.edges) == 2
+    assert graph.warnings == (
+        "acme/web's default branch is not in the cached source data; showing the "
+        "dependencies of every cached ref.",
+    )
