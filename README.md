@@ -49,21 +49,10 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
 ## Documentation
 
 Start with [Getting started](./docs/getting-started.md). The
-[documentation index](./docs/README.md) lists everything:
-
-- guides for [workspace](./docs/workspace/usage.md),
-  [github](./docs/github/usage.md), [jira](./docs/jira/usage.md),
-  [awx](./docs/awx/usage.md), [ansible](./docs/ansible/usage.md) and
-  [recipe](./docs/recipe/usage.md);
-- [configuration](./docs/configuration.md) and the generated
-  [configuration reference](./docs/reference/config.md);
-- references for [pipes](./docs/reference/pipes.md),
-  [exit codes](./docs/reference/exit-codes.md) and
-  [environment variables](./docs/reference/environment.md);
-- [versioning and stability](./docs/stability.md): what each release keeps
-  compatible;
-- [agent skills](./docs/skills.md) for AI coding agents;
-- [building a capability provider](./docs/plugins.md) for extending `untaped`.
+[documentation index](./docs/README.md) links the capability guides, the
+configuration, pipe, exit-code and environment references, the
+[stability policy](./docs/stability.md), [agent skills](./docs/skills.md) and
+[provider authoring](./docs/plugins.md).
 
 ## Security
 

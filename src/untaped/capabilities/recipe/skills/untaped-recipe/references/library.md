@@ -1,96 +1,103 @@
-# Recipe library, packs and backups
+# Recipe library: packs, checks, tests and backups
 
-## Packs
+## Install packs
 
-- `packs add <path|git-url>` installs a pack and prints its recipes and hooks on
-  stderr; it never prompts. `--rev` picks a git revision (git URL sources
-  only), `--name` overrides the installed key (the pack identity everywhere).
-  The row's `action` is `created`, or `updated` for a `--force` reinstall.
-  The pack must load, contain a `uv.lock`, and contain no symlinks (outside
-  ignored dirs such as `.venv`). Reinstalling needs `--force`, which still refuses to
-  overwrite a library copy with local edits unless `--discard-edits` is added.
-  A local path source is recorded as an absolute path (`packs sync` refuses
-  one recorded as a relative path by an older release: re-add it with
-  `packs add PATH --force`); a git source records
-  the requested `rev` and the resolved `commit` (shown in `packs list` and
-  the `add`/`sync`/`remove` rows; `sync` updates it even when no file changed).
-- `packs sync <pack>...` or `packs sync --all` re-fetches each installed pack from its
-  recorded source and `--rev` (a branch or tag moves forward). Packs whose
-  content would change are listed on stderr with the commit move
+- `packs add PATH_OR_GIT_URL` installs a pack and lists its recipes and hooks
+  on stderr without prompting. `--rev` picks a git revision; `--name` sets
+  the installed key, which is the pack's identity everywhere.
+- A pack must load, contain a `uv.lock`, and contain no symlinks (ignored
+  directories such as `.venv` excepted).
+- Reinstalling needs `--force`. It still refuses to overwrite local edits to
+  the library copy unless `--discard-edits` is added.
+- A local source is recorded as an absolute path; a git source records the
+  requested `rev` and the resolved `commit`, shown by `packs list` and in
+  `add`/`sync`/`remove` rows.
+
+## Sync and remove packs
+
+- `packs sync PACK...` (or `--all`, or `--stdin` with pack names or
+  `recipe.pack` records) re-fetches each pack from its recorded source and
+  rev, so a branch or tag moves forward.
+- Packs whose content would change are listed with the commit move
   (`old -> new`) and the hook-code files that change (`src/`, root `*.py`,
-  `pyproject.toml`, `uv.lock`, `uv.toml`, `.python-version`, `setup.cfg`;
-  not recipe files or tests), and need confirmation or `--yes` (`--dry-run` previews); rows
-  carry `action` `updated`, `unchanged` or `planned`. A pack with local edits in the library fails unless
-  `--discard-edits` is passed; a failed pack prints `error: PACK: ...` and a
-  `failed` row with `detail` and `error`, the others still sync, and the
-  command exits 1 (5 when a fetch timed out).
-- Each noun reads and edits only its own kind: `list`/`get <recipe>`/`edit
-  <recipe>` for recipes, `packs list`/`packs get <pack>`/`packs edit <pack>`
-  (opens `pyproject.toml`) for packs, and `hooks list`/`hooks get
-  <hook>`/`hooks edit <hook>` for hooks. `hooks list` and `hooks get` cover
-  built-ins such as `yaml_edit` (marked `(builtin)`; not editable). `packs
-  remove <pack>...` is destructive, requires confirmation or `--yes`
-  (`--dry-run` previews), exits 1 on a declined prompt, and warns when the
-  copy has local edits; a pack it cannot delete is a `failed` row, and one
-  whose removal stopped partway is a `partial` row (run `packs remove`
-  again to finish it). `packs sync` and `packs remove` take `--stdin`
-  (pack names or `recipe.pack` records, e.g. `packs list --format pipe`).
-  `get`/`edit` on a pack or hook name, and `init NAME` without `/`, fail
-  with a hint naming the `packs`/`hooks` command.
-- `validate [ref|path]` is static preflight: no ref validates the whole library
-  and `packs.toml`; a ref validates one pack, recipe, path, or built-in. It
-  AST-scans hook modules without importing them, and for hook-declaring
-  projects requires `uv.lock` and verifies freshness with `uv lock --check`
-  (hookless packs and recipe projects are exempt). Every persisted `packs.toml`
-  row must include its `content_hash`; malformed or incomplete rows fail closed
-  before a library mutation. Each `recipe.check` row has `name` (pack,
-  `PACK/RECIPE` ref, or built-in hook), `type` (`pack`/`recipe`/`hook`),
-  `status` (`pass`/`fail`), `path`, and `detail` (the reason for a `fail`);
-  any `fail` exits 1. An installed pack whose `pyproject.toml` cannot be
-  parsed gets a `fail` row in `validate`, is skipped with a warning by `list`, and
-  is ignored by resolution unless named explicitly (then its error is shown).
-  Template/copy sources containing `{{ input }}` tokens are only checked up to
-  their literal directory prefix.
-- `test [pack|path|pack/recipe]` runs golden-fixture cases under
-  `tests/<recipe>/<case>/`: `given/` is copied to a temp target, `expected/` is
-  the full expected tree (omitted = asserts no changes), optional data-only
-  `case.yml` supplies `inputs`, `expect: success|error`, `error_contains`, and
-  `verdict` assertions. `--update` regenerates `expected/` for an explicit pack
-  or recipe. Exits non-zero on fail/error, including "no test cases found" for
-  an explicit ref.
+  `pyproject.toml`, `uv.lock`, `uv.toml`, `.python-version`, `setup.cfg`).
+  Show that list to the user; it is the code that will run next.
+- Sync confirms (or takes `--yes`); `--dry-run` previews. Rows say
+  `updated`, `unchanged` or `planned`.
+- A pack with local edits fails unless `--discard-edits` is passed. A failed
+  pack gets a `failed` row and the others still sync; the run exits 1, or 5
+  when a fetch timed out.
+- `packs remove PACK...` confirms, previews with `--dry-run`, and warns when
+  the copy has local edits. A `partial` row means removal stopped partway;
+  run it again to finish.
 
-## Backups and safety
+## Inspect before trusting
 
-- Every apply creates one backup bundle by default. `backups list|get|restore
-  <id>|prune` manage bundles; `get`/`restore` accept full ids, unambiguous
-  prefixes, or `latest`. `list` rows carry `id`, `created_at`, `recipe` and
-  `path`. `restore` and `prune` take `--dry-run`. Restore
-  previews and confirms like apply, applies the
-  whole bundle as one transaction, and refuses to overwrite files changed after
-  the backup unless `--force` is passed. Backups store text content only; mode
-  and mtime are not preserved. Bundles are owner-only (dirs `0700`, files
-  `0600`) and their metadata is replaced atomically. `prune [--keep N] [--older-than DAYS]` falls
-  back to the `recipe.backup_keep`/`recipe.backup_max_age_days` settings and
-  prints one row per bundle with `action` `planned`, `deleted` or `failed`
-  (`detail`, `error`).
-- All recipe-local and target-relative paths must be safe relative paths:
-  absolute paths, `..` segments, and symlink traversal are rejected before any
-  engine-mediated read or write, again after path-field rendering.
-- Installing a pack is installing code (same trust model as `pip install`, no
-  sandbox). Evaluate before trusting: the `packs add` summary, `packs get`, `validate`'s
-  no-import scan, and the golden test harness.
-- Hook workers, and the `uv` commands run on a pack (`uv run`, `uv lock`,
-  `uv lock --check`), get an allowlisted environment: `PATH`, `HOME`,
-  `USER`/`LOGNAME`, locale (`LANG`, `LANGUAGE`, `LC_*`), `TZ`, temp
-  directories, `UV_*` and `XDG_*`, `NETRC`, TLS trust (`SSL_CERT_FILE`,
-  `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`), proxies
-  (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`) and, for `git+ssh`
-  dependencies, `SSH_AUTH_SOCK` and `GIT_SSH_COMMAND`; hook workers also get
-  `PYTHONPATH` set to the pack's `src/` only. Tokens such as `GITHUB_TOKEN` or
-  untaped's `UNTAPED_*` Jira/AWX/GitHub credentials are not in the
-  environment, but `UV_*` (possibly index credentials) is, and hooks run as
-  the user with full file access (`~/.netrc`, `config.yml`, git credential
-  stores). Hooks read an empty stdin; hook stdout (even raw fd 1 or a
-  subprocess) becomes diagnostics and never corrupts the worker protocol.
-- Run `untaped skills install --all` (or `untaped skills install untaped-recipe`)
-  to install this packaged skill.
+Installing a pack is installing code: the same trust model as
+`pip install`, with no sandbox. Before trusting one, read the `packs add`
+summary and `packs get`, run `validate` (it never imports hook code), and run
+the pack's golden tests.
+
+Each noun reads its own kind: `get`/`edit` for recipes, `packs get`/`packs
+edit` for packs (`edit` opens `pyproject.toml`), and `hooks get`/`hooks edit`
+for hooks. `hooks list` includes built-ins such as `yaml_edit`, marked
+`(builtin)` and not editable.
+
+## What hooks can reach
+
+Hook workers, and the `uv` commands run on a pack (`uv run`, `uv lock`,
+`uv lock --check`), get only this environment:
+
+- `PATH`, `HOME`, `USER`/`LOGNAME`, `TZ` and temp directories;
+- locale: `LANG`, `LANGUAGE`, `LC_*`;
+- `UV_*` (which may hold package-index credentials) and `XDG_*`, `NETRC`;
+- TLS trust: `SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`,
+  `CURL_CA_BUNDLE`;
+- proxies: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`;
+- for `git+ssh` dependencies: `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND`;
+- hook workers only: `PYTHONPATH`, set to the pack's `src/`.
+
+Tokens such as `GITHUB_TOKEN` and untaped's `UNTAPED_*` credentials are not
+passed. Hooks still run as the user with full file access, so `~/.netrc`,
+`config.yml` and git credential stores are readable. Hooks read an empty
+stdin; anything they print becomes diagnostics.
+
+## Validate
+
+- `validate` with no argument checks the whole library and `packs.toml`;
+  with a ref or path it checks one pack, recipe or built-in hook.
+- It scans hook modules without importing them. A pack that declares hooks
+  must have a `uv.lock` that `uv lock --check` accepts.
+- Each `recipe.check` row has `name`, `type` (`pack`/`recipe`/`hook`),
+  `status` (`pass`/`fail`), `path` and `detail` (why it failed). Any `fail`
+  exits 1.
+- An installed pack whose `pyproject.toml` does not parse fails `validate`,
+  is skipped with a warning by `list`, and is ignored when resolving refs
+  unless named explicitly.
+- Template and copy sources containing `{{ input }}` tokens are checked only
+  up to their literal directory prefix.
+
+## Golden tests
+
+- `test [PACK|PATH|PACK/RECIPE]` runs cases under `tests/<recipe>/<case>/`:
+  `given/` is copied to a temporary target, and `expected/` is the full
+  expected tree (omit it to assert no change).
+- An optional data-only `case.yml` sets `inputs`, `expect: success|error`,
+  `error_contains` and `verdict`.
+- `--update` regenerates `expected/` for an explicit pack or recipe; review
+  the diff before keeping it.
+- Any failing case exits non-zero, and so does an explicit ref with no cases.
+
+## Backups
+
+- Every apply writes one backup bundle unless `--no-backup` is passed.
+  `backups get` and `restore` accept a full id, an unambiguous prefix, or
+  `latest`.
+- `restore` previews and confirms like apply and restores the whole bundle as
+  one transaction. It refuses to overwrite files changed after the backup
+  unless `--force` is passed.
+- Backups hold text content only, not mode or mtime. Bundles are owner-only
+  (directories `0700`, files `0600`).
+- `backups prune [--keep N] [--older-than DAYS]` falls back to the
+  `recipe.backup_keep` and `recipe.backup_max_age_days` settings. Preview
+  with `--dry-run`; rows say `planned`, `deleted` or `failed`.

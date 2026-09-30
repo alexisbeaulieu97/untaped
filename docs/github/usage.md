@@ -49,7 +49,10 @@ same scope flags: repeatable `--org` and `--team ORG/SLUG`. All but
 - `--archived include|exclude|only` keeps archived repositories, drops them
   (the default), or keeps only them.
 - `--limit N` caps the rows, and a notice on stderr says when it cut results
-  off.
+  off. No notice means the result is complete; for search, the
+  [search reference](../../src/untaped/capabilities/github/skills/untaped-github/references/search.md#knowing-a-result-is-complete)
+  explains the one exception and how large team scopes are split into
+  batches.
 
 ## List an org's or team's repos
 
@@ -57,9 +60,7 @@ same scope flags: repeatable `--org` and `--team ORG/SLUG`. All but
 add up.
 
 ```bash
-untaped github repos list --org acme
 untaped github repos list --team acme/platform --no-fork
-untaped github repos list --org acme --archived only
 untaped github repos list 'svc-*' --org acme
 untaped github repos list 'api|web' --org acme --regex
 ```
@@ -128,7 +129,9 @@ untaped github sweep --org acme --grep 'BEGIN RSA PRIVATE KEY' --fail-on-match
 
 `--fail-on-match` exits 3 when any repo matches, and `--strict` exits 3 when
 any repo could not be scanned. A repo that cannot be fetched or read never
-stops the sweep: it is listed as unscanned on stderr.
+stops the sweep: it is listed as unscanned on stderr, so a sweep with no
+matches proves nothing about those repos. A failed refresh scans a cached
+copy when one covers the query, and the footer says so.
 
 ### Chain sweeps
 
@@ -141,13 +144,10 @@ untaped github repos list 'svc-*' --org acme --format pipe \
 ## Manage the corpus
 
 ```bash
-untaped github cache sync --org acme
-untaped github cache sync --team acme/platform --refs all --refresh
-untaped github cache status
+untaped github cache sync --team acme/platform --refs all
 untaped github cache worktree acme/api --ref main
-untaped github cache delete acme/old-service --dry-run
-untaped github cache delete --all --org acme --yes
-untaped github cache prune --org acme
+untaped github cache prune --org acme --dry-run
+untaped github cache delete --all --org acme --dry-run
 ```
 
 - `cache sync` fetches every repo in scope without a query, so later sweeps

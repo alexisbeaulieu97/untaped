@@ -89,22 +89,25 @@ Some rows carry a code of their own. It never becomes the process exit code:
   command; `124` means the command timed out (`--timeout`). The process then
   exits 1 if any repo failed, or 0 with `--ignore-errors`.
 - `untaped awx test run` reports each case's result in its rows. A case that
-  did not pass carries a `failure` with its own `category` and `system`
-  (such as `awx.scm` or `awx.hosts`), and the command exits with the most
-  severe one: 4 for a rejected token, a credential lookup or a failed
-  inventory update, 5 for an unavailable controller, a job stuck pending or
-  unreachable hosts, otherwise 1. Compared with a baseline (`--compare` or
-  `--baseline`), a case that fails as it did in the baseline (`still_failing`:
-  same `system`) does not count; a regression, a failure the baseline cannot
-  vouch for (`unverified`) and a failing new case exit 1, and 4 and 5 still
-  count for any case, the `--baseline` run's included. With `--source-ref`,
-  temporary copies that cannot be provisioned stop the run before any case
-  with their own code (1 for a spec or suite to fix, 4 when AWX refused the
-  agent's user, 5 when it was unavailable); a copy teardown cannot delete is
-  a warning that never changes the code.
+  did not pass carries a `failure` with its own `category` and `system` (such
+  as `awx.scm` or `awx.hosts`), and the command exits with the most severe:
+  - 4 for a rejected token, a credential lookup or a failed inventory update;
+  - 5 for an unavailable controller, a job stuck pending or unreachable hosts;
+  - otherwise 1.
+
+  Compared with a baseline (`--compare` or `--baseline`):
+  - a case that fails as it did in the baseline (`still_failing`: same
+    `system`) does not count;
+  - a regression, a failure the baseline cannot vouch for (`unverified`) and
+    a failing new case exit 1;
+  - 4 and 5 still count for any case, the `--baseline` run's included.
+
+  With `--source-ref`, temporary copies that cannot be provisioned stop the
+  run before any case, with their own code: 1 for a spec or suite to fix, 4
+  when AWX refused the agent's user, 5 when it was unavailable. A copy that
+  teardown cannot delete is a warning and never changes the code.
 
 ## See also
 
 - [Command and output conventions](../conventions.md#exit-codes): how
   capability code produces these codes.
-- [Pipes and record kinds](./pipes.md)

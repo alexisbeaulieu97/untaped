@@ -1,101 +1,91 @@
 ---
 name: untaped-CAPABILITY
-description: Use the `untaped CAPABILITY` command to TASK. Use when the user mentions TRIGGER WORDS (product names, nouns and verbs a user would say).
+description: Operates SYSTEM through the `untaped CAPABILITY` command (TASKS IN A FEW WORDS). Use when the user wants to INTENT, or mentions TRIGGER WORDS.
 ---
 
 <!--
-Skill template for a capability's packaged agent skill.
+Template for a capability's packaged agent skill. Copy it to
+src/untaped/capabilities/CAPABILITY/skills/untaped-CAPABILITY/SKILL.md (an
+external provider ships it inside its own package), declare it in
+CapabilitySpec.skills, replace every UPPER_CASE placeholder, and delete this
+comment.
 
-Copy this file to src/<package>/skills/untaped-CAPABILITY/SKILL.md (built-ins:
-src/untaped/capabilities/CAPABILITY/skills/untaped-CAPABILITY/SKILL.md), declare
-it in CapabilitySpec.skills, and replace every UPPER_CASE placeholder. An
-external provider ships the skill inside its own distribution.
+The principle: say only what the agent cannot learn from the installed CLI,
+and make the risky paths hard to get wrong. `--help` and `--columns ?`
+answer flags and fields; the skill says which commands form a workflow,
+which order is safe, what the output means and what to do next. The rules
+below are untaped's, on top of general skill-writing practice.
 
-Rules:
-- The full ID (SkillAsset.name, untaped-CAPABILITY) is stable: installs keep
-  it in their directory and marker even when selected by the short name.
-- Update the skill in the same change as the command behavior, settings,
-  workflow or contract it describes. `skills install` copies and
-  `skills status` compares the whole directory.
-- Leave the shared install mechanics (`untaped skills ...`) out; they are
-  the root's, not the capability's.
-- The installed skill is the agent's whole manual: an agent that has only
-  the installed CLI must be able to do the job with it. Never link to docs/
-  or the source repository, which do not exist next to an installed CLI.
-- SKILL.md is about 900 words: the map (when to use what, the main loop,
-  pitfalls). Details go in references/TOPIC.md files beside it, linked by
-  relative path; sample input files go in examples/.
-- Write for an agent operating the CLI: commands, flags, outputs, safety.
-  No implementation notes, class names, test details or release history.
-- Every command and flag must exist in `untaped CAPABILITY ... --help`.
-  tests/unit/test_skill_files.py parses every quoted `untaped ...` command
-  against the real CLI; write synopses as `[--flag VALUE]`, `a|b`, NAME or
-  <name> placeholders. For AWX, every example suite must also load through
-  the real loader, and every suite field must be described in the skill's
-  suite reference.
-- The description is what makes an agent load the skill: name the task and
-  the words a user would use (for example "job template", "inventory sync").
-  Keep it identical to SkillAsset.description and free of ": " (YAML).
-- Delete this comment.
+Frontmatter
+- description equals SkillAsset.description (SPEC.description) exactly;
+  tests/unit/test_skill_files.py compares them. It routes, it does not
+  instruct: third person, what the skill covers, then the intents that
+  should load it. Under 60 words, only this capability's ground, no ": ".
+- name is the full ID, untaped-CAPABILITY. It stays stable: installs keep it
+  in their directory and marker even when chosen by short selector.
+
+Content
+- The installed skill is the agent's whole manual. It never links to docs/
+  or the source tree, which do not exist next to an installed CLI.
+- It describes the version it ships with. Change it in the same PR as the
+  command, setting or contract it describes; history goes in the CHANGELOG.
+- Every quoted `untaped ...` command must parse against the real CLI (the
+  same test). Write synopses as `[--flag VALUE]`, `a|b`, NAME or <name>.
+- Exact commands only where a wrong flag is costly; elsewhere name the
+  command and the intent.
+- A destructive operation is a sequence: preview (--dry-run, --check, or
+  list the selection), show the user what it will touch, scope it
+  explicitly, wait for approval, then pass --yes. Say how to recover.
+- Leave out `untaped skills ...` mechanics (the root's) and implementation
+  notes, class names or test details.
+- Examples use invented names (acme, Deploy, prod). Write calmly: a reason
+  works better than capitals.
+
+Shape
+- SKILL.md holds what every use needs, in about 900 words. What only some
+  uses reach goes in references/TOPIC.md, one level deep, each pointer
+  saying when to read it. A reference over about 100 lines opens with a list
+  of its contents. Sample input files go in examples/.
+- Behaviour test cases live outside this directory: `skills install` copies
+  the whole folder.
 -->
 
 # untaped CAPABILITY
 
-One or two sentences: what this capability does and when to use it rather
-than another tool.
+## When to use
 
-Details: `references/TOPIC.md` (only when this page would pass ~900 words).
+One or two sentences: the job this capability does, and when another
+capability or tool fits better.
 
 ## Setup
 
-- The command ships with `untaped`; there is nothing else to install.
-- Settings (under `profiles.<name>.CAPABILITY`):
-
-  | Setting | Purpose |
-  |---|---|
-  | `CAPABILITY.base_url` | ... |
-  | `CAPABILITY.token` | Secret. Set with `untaped config set CAPABILITY.token --prompt`. |
-
-- Check the connection with `untaped CAPABILITY whoami` (or `ping`).
-- Never print, echo or log tokens.
+Settings live under `profiles.<name>.CAPABILITY`. Set the token with
+`untaped config set CAPABILITY.token --prompt` and check the connection with
+`untaped CAPABILITY whoami`. Never print, echo or log tokens.
 
 ## Commands
 
-| Task | Command |
+| When you need to | Run |
 |---|---|
-| ... | `untaped CAPABILITY NOUN list` |
-| ... | `untaped CAPABILITY NOUN get NAME` |
-| ... | `untaped CAPABILITY NOUN create ... --dry-run` |
+| CONDITION | `untaped CAPABILITY NOUN list` |
+| CONDITION | `untaped CAPABILITY NOUN get NAME` |
+| CONDITION, after a preview | `untaped CAPABILITY NOUN delete NAME --dry-run` |
 
-Run `untaped CAPABILITY --help` to confirm options before acting.
+## Workflows
 
-## Output and pipes
+1. STEP, ending on something the agent can check.
+2. Preview the change with `--dry-run` and show the user what it will touch.
+3. After the user approves, rerun with `--yes`. Exit 1 with
+   `cancelled; no changes made` means declined; other codes mean it failed.
 
-- Use `--format json` to read results; do not parse table output.
-- stdout carries data only; progress, warnings and errors go to stderr.
-- Record kinds: `CAPABILITY.NOUN` from `list`/`get`, `CAPABILITY.VERB_outcome`
-  from writes.
-- `--stdin` on `COMMAND` reads NAMES, or `CAPABILITY.NOUN` records from
-  `--format pipe`.
-
-## Safety
-
-- Commands that change things preview first. Run them with `--dry-run`, show
-  the user the preview, and pass `--yes` only after the user approves.
-- Without a terminal, a write with neither `--yes` nor `--dry-run` exits 2.
-- Exit codes: 0 success, 1 failure or declined, 2 usage error, 3 predicate
-  hit (if the capability has `--check`-style flags), 4 fix the environment
-  (config, token, permission), 5 temporary (retry later), 130 interrupted.
-  With `--format json` stderr is JSON Lines naming each failure's `category`,
-  `system` and `hint`.
+Read `--format json` rather than table output. Exit codes: 0 success, 1
+failure or declined, 2 usage (including a write without a terminal and
+without `--yes`), 3 predicate hit, 4 fix the environment, 5 retry later.
 
 ## Pitfalls
 
-- LIMITS, RATE LIMITS, SURPRISING DEFAULTS, COMMON MISTAKES.
+- A LIMIT, SURPRISING DEFAULT OR COMMON MISTAKE, with the reason.
 
-## Examples
+## References
 
-```bash
-untaped CAPABILITY NOUN list --format json
-untaped CAPABILITY NOUN list --format pipe | untaped CAPABILITY NOUN get --stdin
-```
+- Read `references/TOPIC.md` when SITUATION.

@@ -135,15 +135,11 @@ depends on
 ```
 
 The first line names the target, where the data came from and the depth.
-"used by" lists the repos that depend on it and "depends on" what it depends
-on. After each repo comes the file that declares that dependency, plus
+After each repo comes the file that declares that dependency, plus
 `unpinned` when it names no version, or `pins X` when the declared version
 differs from the ref it resolved to. A repo marked `…` with a `not read:`
 note is [stopped](../glossary.md): the graph beyond it was not read. The
-last line counts the repos, edges, cycles, unresolved dependencies and
-stopped repos. A line too wide for the terminal ends in `…` instead of
-wrapping. Warnings go to stderr, never into the tree or the `--out` file.
-With the `plain` theme (`ui.border: ascii`) the connectors are ASCII.
+[graph reference](../../src/untaped/capabilities/ansible/skills/untaped-ansible/references/graphs.md#tree-output) lists every marker.
 
 ## Flags
 
@@ -160,22 +156,15 @@ With the `plain` theme (`ui.border: ascii`) the connectors are ASCII.
   every cached ref instead. What depends on a target always covers all of
   its refs, since a repo pinning an older tag still uses it.
 
-`deps`, `impact` and `find` print rows (`--format table`, `json`, `yaml`,
-`pipe` or `raw`, with `--columns`); a table shortens each `path` to its
-first and last hop (`a → … → z`), while other formats keep it whole.
-`graph` prints `--format tree`, `mermaid` or `json`, optionally to
-`--out FILE`. `graph`'s old `--upstream`,
-`--downstream` and `--both` flags still work, with a warning, until 10.0;
-use `--direction up|down|both`.
+A table shortens each `path` to its first and last hop (`a → … → z`);
+other formats keep it whole.
 
 ## Manage sources
 
 ```bash
-untaped ansible source list
-untaped ansible source get platform
 untaped ansible source status
 untaped ansible source patch platform --add-repo acme/legacy-app --remove-team acme/platform
-untaped ansible source remove platform --yes
+untaped ansible source remove platform --dry-run
 ```
 
 `source set NAME` creates or replaces a source from `--org`, `--team` and
@@ -186,7 +175,9 @@ or `not_refreshed`.
 `source refresh` saves each repo that succeeds. When some repos fail it
 lists them and exits non-zero; run it again to retry only those. A large
 refresh that runs low on GitHub API budget stops early, exits 5 and resumes
-where it left off when you run it again.
+where it left off when you run it again. Backends, rate-limit fallbacks and
+tuning are in the
+[sources reference](../../src/untaped/capabilities/ansible/skills/untaped-ansible/references/sources.md#refreshing).
 
 ## Source aliases
 
@@ -195,36 +186,27 @@ map it to its repo:
 
 ```bash
 untaped ansible source-alias set acme.base acme/ansible-role-base
-untaped ansible source-alias list
-untaped ansible source-alias remove acme.base --yes
+untaped ansible source refresh platform
 ```
 
-Source aliases apply when a source is refreshed; run `source refresh`
-afterwards.
+Source aliases apply when a source is refreshed, which is why the refresh
+follows.
 
 ## Read the output
 
-- `deps` rows (`ansible.dependency`) and `impact` rows (`ansible.dependent`)
-  have `repo`, `ref`, `unresolved` (the declared name of a dependency that
-  names no GitHub repo), `declared_ref` and `declared_in` (from the edge that
-  reached the repo, verbatim), `depth`, `path`, `root_ref` and `stopped`
-  (`depth` or `not_cached` when the next level beyond the repo was not
-  read: its dependencies for `deps`, its dependents for `impact`; else
-  `null`; shown in a table only when set). `path` reads
-  in dependency order: from ROLE for `deps`, towards ROLE for `impact`. Each
-  repo appears once per root, at its shortest path; `root_ref` says which
-  ROLE ref a row was reached from (one per ref with `deps --all-refs`, and
-  every ref a dependent pins for `impact`).
-- `tree` prints a shared subtree once, numbered `[n]`, and marks later
-  occurrences `see [n]`; a repo already on the path is marked `↻ cycle`.
-  The summary counts a component with too many cycles to list as one
-  cyclic group.
-- `json` has `nodes`, `edges`, `cycles` and `warnings`; `mermaid` prints a
-  Mermaid diagram. A cycle is found only within the depth you asked for.
+- `stopped` on a row or node (`depth` or `not_cached`) means the next level
+  beyond that repo was not read: its dependencies for `deps`, its
+  dependents for `impact`. Treat the answer as incomplete there.
+- Each repo appears once per root ref, at its shortest path; `root_ref`
+  says which ROLE ref a row came from.
 - A dependency at `repo@v1` and one at `repo@main` are different nodes; an
   unpinned dependency points at the dependency's default-branch node.
+- A cycle is found only within the depth you asked for.
 - A malformed or templated dependency file is skipped with a warning; it
   never fails the command.
+
+Every row field, the tree markers and the JSON graph shape are in the
+[graph reference](../../src/untaped/capabilities/ansible/skills/untaped-ansible/references/graphs.md).
 
 ## Troubleshooting
 

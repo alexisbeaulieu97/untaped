@@ -1,19 +1,18 @@
 # Releasing `untaped` to PyPI/TestPyPI
 
-The unified `untaped` application releases through
-`.github/workflows/release.yml`. The workflow is manual-only, builds one wheel
-and one source archive, uses PyPI Trusted Publishing, smoke-installs the
-published package from the selected index, and publishes an exact GitHub draft
-only after the production smoke succeeds.
+`untaped` releases through `.github/workflows/release.yml`. The workflow is
+manual-only: it builds one wheel and one source archive, publishes through
+PyPI Trusted Publishing, smoke-installs the published package from the
+selected index, and publishes the matching GitHub draft only after the
+production smoke passes.
 
-Do not publish, dispatch release workflows, create tags/releases, merge PRs, or
-change repository settings without explicit approval for that exact action.
+Publishing, dispatching a release workflow, creating a tag or release,
+merging a PR and changing repository settings each need explicit approval for
+that exact action, because each changes shared or public state.
 
-## Package Metadata
+## Package metadata
 
-- Package name: `untaped`
-- License metadata: `license = "MIT"` and `license-files = ["LICENSE"]`
-- Build command: `uv build --no-sources`
+- Package name: `untaped`; build command: `uv build --no-sources`
 - Public manifest: [`release-manifest.toml`](../release-manifest.toml), which
   records the package identity, Python floor, six built-ins, direct
   requirements, and imported source OIDs.
@@ -30,7 +29,7 @@ A major release collects the breaking changes held back since the last one
 its changelog section with an **Upgrading** list: each breaking change and
 what a user or script must do about it.
 
-## Trusted Publishers
+## Trusted publishers
 
 Create pending publishers on both TestPyPI and PyPI before dispatching the
 workflow:
@@ -49,7 +48,7 @@ Create matching GitHub environments:
 Repository settings and environment changes are out-of-band operations. Make
 them deliberately, and record what changed in the release PR or release notes.
 
-## Workflow Dispatch
+## Workflow dispatch
 
 Inputs:
 
@@ -109,7 +108,7 @@ published release is a verified no-op after the published smoke. TestPyPI
 rehearsals omit the GitHub draft/publish states but retain immutable-file and
 smoke verification.
 
-## TestPyPI Caveat
+## TestPyPI caveat
 
 TestPyPI validates the release process and OIDC path, not reusable bytes.
 Versions are immutable there too. If a TestPyPI upload burns a version, bump the
@@ -118,7 +117,7 @@ patch version and restart that package's release cycle.
 For TestPyPI smokes, the workflow uses TestPyPI for the package under test and
 PyPI for third-party dependencies via `UV_INDEX_STRATEGY=unsafe-best-match`.
 
-## Burn Recovery
+## Burn recovery
 
 Use the following procedure when a release run needs to be resumed. Replace
 the placeholders with the externally recorded checkpoint bundle and reviewed
