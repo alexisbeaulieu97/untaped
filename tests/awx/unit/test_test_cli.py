@@ -61,6 +61,14 @@ def test_test_help_lists_subcommands(cli: CliInvoker) -> None:
     assert "validate" in out
 
 
+@pytest.mark.parametrize("path", [[], ["run"], ["list"], ["validate"], ["init"], ["prune"]])
+def test_experimental_commands_say_so_in_help(cli: CliInvoker, path: list[str]) -> None:
+    # docs/stability.md promises every experimental command says so in --help.
+    result = cli.invoke(app, ["test", *path, "--help"])
+    assert result.exit_code == 0, result.output
+    assert "Experimental: may change in a minor release." in result.stdout
+
+
 def test_run_against_missing_file_emits_clean_error(
     cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
 ) -> None:
@@ -610,6 +618,29 @@ def test_run_checks_expectations_and_reports_them(
     assert row["result"] == "pass"
     assert [check["check"] for check in row["expectations"]] == ["status", "log.contains"]
     assert row["job_url"].endswith(f"/{row['job_id']}/output")
+
+
+def test_run_reports_the_job_start_and_finish_as_utc_timestamps(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+    fake_aap.next_action_job_fields = {
+        "started": "2026-01-02T03:04:05.123456Z",
+        "finished": "2026-01-02T03:05:06.654321Z",
+    }
+    test_file = _write(
+        tmp_path / "t.yml",
+        "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\ncases:\n  c: {}\n",
+    )
+
+    result = cli.invoke(app, ["test", "run", str(test_file), "-f", "json"])
+
+    assert result.exit_code == 0, result.output
+    [row] = json.loads(result.stdout)
+    assert (row["started_at"], row["finished_at"]) == (
+        "2026-01-02T03:04:05Z",
+        "2026-01-02T03:05:06Z",
+    )
 
 
 def test_run_table_hides_evidence_columns(

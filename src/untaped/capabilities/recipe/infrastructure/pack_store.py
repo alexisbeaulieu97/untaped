@@ -29,6 +29,7 @@ from untaped.capabilities.recipe.errors import (
     LocalChangesError,
     PackFetchError,
     PackNotFoundError,
+    PartialRemovalError,
     PathNotFoundError,
     RecipeError,
     RecipeNotFoundError,
@@ -274,17 +275,36 @@ class PackLibrary:
         return pack_content_hash(dest) != recorded
 
     def remove(self, name: str) -> None:
-        """Remove an installed pack and its index row."""
+        """Remove an installed pack's directory and its index row.
+
+        Either one alone is enough to name the pack, so a removal that
+        stopped partway (:class:`PartialRemovalError`) can be run again.
+        """
         installed_name = safe_library_name(name, field="pack")
         dest = self.packs_dir / installed_name
-        if not dest.is_dir():
-            raise PackNotFoundError(f"pack not found: {name}")
         index = self._read_index()
-        shutil.rmtree(dest)
-        index.pop(installed_name, None)
-        self._write_index(index)
+        if not dest.is_dir() and installed_name not in index:
+            raise PackNotFoundError(f"pack not found: {name}")
         self._packs_cache = None
         self._load_errors = {}
+        if dest.is_dir():
+            entries = _entry_count(dest)
+            try:
+                shutil.rmtree(dest)
+            except OSError as exc:
+                if dest.is_dir() and _entry_count(dest) == entries:
+                    raise
+                raise PartialRemovalError(
+                    f"deleted part of the pack's files; could not delete the rest: {exc}"
+                ) from exc
+        if index.pop(installed_name, None) is None:
+            return
+        try:
+            self._write_index(index)
+        except OSError as exc:
+            raise PartialRemovalError(
+                f"deleted the pack's files; could not update packs.toml: {exc}"
+            ) from exc
 
     def packs(self) -> list[InstalledPack]:
         """Return installed packs keyed by their library identity.
@@ -345,8 +365,12 @@ class PackLibrary:
         if not self.packs_dir.is_dir():
             return problems
         for root in sorted(self.packs_dir.iterdir(), key=lambda path: path.name):
-            if root.is_dir() and root.name not in index:
+            if not root.is_dir():
+                continue
+            if root.name not in index:
                 problems[root.name] = f"pack directory '{root.name}' is not recorded in packs.toml"
+            elif not (root / "pyproject.toml").is_file():
+                problems[root.name] = f"pack directory '{root.name}' has no pyproject.toml"
         return problems
 
     def find_pack(self, name: str) -> InstalledPack | None:
@@ -450,6 +474,10 @@ class PackLibrary:
             table.add("content_hash", entry.content_hash)
             doc.add(name, table)
         atomic_write(self.index_path, tomlkit.dumps(doc))
+
+
+def _entry_count(root: Path) -> int:
+    return sum(1 for _ in root.rglob("*"))
 
 
 def validate_pack(source_dir: Path, manifest: PackManifest) -> None:
