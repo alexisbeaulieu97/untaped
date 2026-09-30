@@ -34,11 +34,16 @@ changes (details in the **Breaking** entries below):
   - awx: `started`/`finished` become `started_at`/`finished_at`, UTC to the
     second.
   - recipe: `recipe.check` rows are `name`, `type`, `status` (`fail`, was
-    `error`), `path` and `detail`; `backups prune` emits
-    `recipe.prune_outcome` rows.
+    `error`), `path` and `detail` (pack counts are in `packs list`);
+    `backups prune` emits `recipe.prune_outcome` rows.
 - Tables: default columns changed for most commands. Parse json, yaml or
-  pipe output, or pass `--columns`; `workspace repos list --format raw` now
-  prints repo names (pass `--columns workspace` for the old output).
+  pipe output, or pass `--columns`. A few `--format raw` outputs changed
+  too: `workspace repos list` prints repo names (pass `--columns workspace`
+  for the old output), awx `schedules list` prints `unified_job_template`
+  where the always-blank `last_run` was, and `groups`/`inventory-sources
+  list` add a trailing `inventory` column. awx `jobs list`, `jobs events`,
+  `unified-templates list` and `workflow-templates nodes` json/yaml carry
+  whole records instead of the table columns.
 - ansible: without `--ref`, `deps`, `find` and `graph` read a target's
   dependencies at its default branch (`--all-refs` for every cached ref);
   `graph` defaults to `--depth unlimited` (pass `--depth 3`);
