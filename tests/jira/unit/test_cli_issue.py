@@ -112,9 +112,19 @@ def test_issue_search_rows_stay_lean() -> None:
 
     assert result.exit_code == 0, result.output
     [row] = json.loads(result.stdout)
-    assert set(row) == {"key", "summary", "status", "assignee", "updated_at", "url", "api_url"}
+    assert set(row) == {
+        "key",
+        "summary",
+        "status",
+        "assignee",
+        "updated_at",
+        "url",
+        "api_url",
+        "issue_type",
+        "priority",
+    }
     body = json.loads(route.calls[0].request.content)
-    assert body["fields"] == ["summary", "status", "assignee", "updated"]
+    assert body["fields"] == ["summary", "status", "assignee", "updated", "issuetype", "priority"]
 
 
 _OPS_SCOPE = "assignee = currentUser() AND project = OPS"

@@ -165,6 +165,20 @@ self-contained manual for the installed CLI.
   - **Breaking:** a rejected token (401, same hint text) and a missing
     permission (403) exit 4; 5xx, 429 and network failures exit 5; a missing
     issue stays 1 (`not_found`).
+  - **New:** `issues search` and `issues assigned` rows carry `issue_type`
+    and `priority`, as `issues get` does. `jira.transition` records
+    (`issues transitions`) carry `to_status`, the status the transition
+    leads to.
+  - **Behavior change:** tables show fewer, more useful columns by default.
+    `issues search` and `issues assigned` show `key`, `issue_type`,
+    `status`, `priority`, `assignee` (not under `assigned`), `summary` and
+    `updated_at`, without `url` and `api_url`. `issues comments list` drops
+    `issue_key` (so does `issues get --comments` for one issue); a
+    transition of several issues shows `key`, `transition_id` and `action`;
+    `projects list` drops `id`, `boards list` drops `api_url` and
+    `sprints list` drops `origin_board_id`. The `issues get` detail view
+    leaves out empty fields. `--columns +name` adds a column back; JSON,
+    YAML and pipe output keep every field.
 - AWX
   - **Behavior change:** `awx test` is
     [experimental](docs/stability.md#experimental) and may change in a minor

@@ -12,11 +12,16 @@ from untaped.capability_api import OutcomeRecord, UtcTimestamp
 
 # Jira ``fields`` requested for list rows (search) and the richer single-issue
 # detail view (get); the client requests exactly what the models flatten.
-ISSUE_ROW_FIELDS: tuple[str, ...] = ("summary", "status", "assignee", "updated")
-ISSUE_DETAIL_FIELDS: tuple[str, ...] = (
-    *ISSUE_ROW_FIELDS,
+ISSUE_ROW_FIELDS: tuple[str, ...] = (
+    "summary",
+    "status",
+    "assignee",
+    "updated",
     "issuetype",
     "priority",
+)
+ISSUE_DETAIL_FIELDS: tuple[str, ...] = (
+    *ISSUE_ROW_FIELDS,
     "reporter",
     "labels",
     "created",
@@ -56,6 +61,8 @@ class IssueResult(BaseModel):
     updated_at: UtcTimestamp | None = None
     url: str = ""
     api_url: str | None = None
+    issue_type: str = ""
+    priority: str = ""
 
     @model_validator(mode="before")
     @classmethod
@@ -70,6 +77,8 @@ class IssueResult(BaseModel):
             "updated_at": _timestamp(fields.get("updated")),
             "url": _browser_url(data),
             "api_url": _api_url(data),
+            "issue_type": _name(fields.get("issuetype")),
+            "priority": _name(fields.get("priority")),
         }
         return {**data, **patch}
 
@@ -156,8 +165,6 @@ class IssueDetailResult(IssueResult):
     ``comments`` is ``None`` unless ``issues get --comments`` fetched them.
     """
 
-    issue_type: str = ""
-    priority: str = ""
     reporter: str = ""
     labels: list[str] = Field(default_factory=list)
     created_at: UtcTimestamp | None = None
@@ -174,8 +181,6 @@ class IssueDetailResult(IssueResult):
         fields = data.get("fields") or {}
         labels = fields.get("labels") or []
         patch = {
-            "issue_type": _name(fields.get("issuetype")),
-            "priority": _name(fields.get("priority")),
             "reporter": _display_name(fields.get("reporter")),
             "labels": [str(label) for label in labels] if isinstance(labels, list) else [],
             "created_at": _timestamp(fields.get("created")),
@@ -322,12 +327,23 @@ class IssueOutcome(OutcomeRecord):
 
 
 class TransitionResult(BaseModel):
-    """One available Jira workflow transition."""
+    """One available Jira workflow transition.
+
+    ``to_status`` is the status it leads to (``None`` when Jira does not say).
+    """
 
     model_config = _ROW_CONFIG
 
     id: str
     name: str
+    to_status: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _flatten_target(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or "to" not in data:
+            return data
+        return {**data, "to_status": _name(data.get("to")) or None}
 
 
 class ProjectResult(BaseModel):
