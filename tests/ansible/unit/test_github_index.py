@@ -272,3 +272,111 @@ def test_live_permission_403_is_a_per_repo_error() -> None:
 
     assert index.dependencies("acme/site", None, source_key=None) == []
     assert index.errors and "403" in index.errors[0]
+
+
+class RenamedDefaultGithub:
+    """``acme/base`` now defaults to ``trunk``; its old ``main`` still exists."""
+
+    def __init__(self) -> None:
+        self.reads: list[tuple[str, ...]] = []
+
+    def get_repository(self, owner: str, repo: str) -> dict[str, object]:
+        self.reads.append(("default", repo))
+        return {"default_branch": "trunk" if repo == "base" else "main"}
+
+    def list_matching_refs(self, owner: str, repo: str, namespace: str) -> list[dict[str, object]]:
+        return []
+
+    def get_tree(
+        self,
+        owner: str,
+        repo: str,
+        tree_sha: str,
+        *,
+        recursive: bool = False,
+    ) -> dict[str, object]:
+        self.reads.append(("tree", repo, tree_sha))
+        return {"tree": [{"path": "roles/requirements.yml"}] if repo in {"site", "base"} else []}
+
+    def get_raw_content(self, owner: str, repo: str, path: str, *, ref: str) -> str:
+        dependency = "base" if repo == "site" else ("right" if ref == "trunk" else "wrong")
+        return f"- src: https://github.com/acme/{dependency}\n"
+
+
+class StaleDefaultIndex(EmptyIndex):
+    """Cached source data scanned while ``acme/base`` still defaulted to ``main``."""
+
+    def cached_ref_metadata(self, repo: str, *, source_key: str | None) -> tuple[CachedRef, ...]:
+        if repo != "acme/base":
+            return ()
+        return (CachedRef(name="main", kind="heads", default_branch="main"),)
+
+    def cached_ref_metadata_batch(
+        self,
+        repos: Sequence[str],
+        *,
+        source_key: str | None,
+    ) -> dict[str, tuple[CachedRef, ...]]:
+        return {repo: self.cached_ref_metadata(repo, source_key=source_key) for repo in repos}
+
+
+def _renamed_default_graph(
+    github: RenamedDefaultGithub, *, depth: int | None
+) -> tuple[set[str], GithubDependencyIndex]:
+    index = GithubDependencyIndex(
+        github=github,
+        wrapped=StaleDefaultIndex(),
+        aliases={},
+        dependency_paths=["roles/requirements.yml"],
+    )
+    request = GraphRequest(
+        repo="acme/site", direction="deps", depth=depth, source_key="source:prod", live=True
+    )
+    graph = BuildGraph(index)(request)
+    return {node.id for node in graph.nodes}, index
+
+
+def test_live_unpinned_hop_follows_the_current_default_branch_not_the_cached_one() -> None:
+    github = RenamedDefaultGithub()
+
+    nodes, index = _renamed_default_graph(github, depth=None)
+
+    assert {"acme/base@trunk", "acme/right@main"} <= nodes
+    assert not nodes & {"acme/base@main", "acme/wrong@main"}
+    # Each repo's default branch is asked once; base@trunk reuses the ref-less read.
+    assert [read for read in github.reads if read[0] == "default"] == [
+        ("default", "site"),
+        ("default", "base"),
+        ("default", "right"),
+    ]
+    assert ("tree", "base", "main") not in github.reads
+    # The live default overrides the stale cached one in ref metadata.
+    assert index.cached_ref_metadata("acme/base", source_key="source:prod") == (
+        CachedRef(name="main", kind="heads", default_branch="trunk"),
+        CachedRef(name="trunk", default_branch="trunk"),
+    )
+
+
+def test_live_unpinned_hop_stays_ref_less_when_its_live_read_fails() -> None:
+    class GoneBaseGithub(RenamedDefaultGithub):
+        def get_repository(self, owner: str, repo: str) -> dict[str, object]:
+            if repo == "base":
+                raise HttpStatusError("404 Not Found", status_code=404)
+            return super().get_repository(owner, repo)
+
+    nodes, index = _renamed_default_graph(GoneBaseGithub(), depth=None)
+
+    # No live default was resolved, so the stale cached one is not trusted either.
+    assert nodes == {"acme/site", "acme/site@main", "acme/base"}
+    assert len(index.errors) == 1
+    assert index.errors[0].startswith("could not read acme/base live")
+
+
+def test_live_unpinned_hop_at_the_depth_limit_stays_ref_less() -> None:
+    github = RenamedDefaultGithub()
+
+    nodes, _ = _renamed_default_graph(github, depth=1)
+
+    # Not read live, so the stale cached default is not trusted to pin it.
+    assert nodes == {"acme/site", "acme/site@main", "acme/base"}
+    assert github.reads == [("default", "site"), ("tree", "site", "main")]
