@@ -84,7 +84,19 @@ def test_command(
         selection = _select(root, ref_text)
         results = _execute(root, selection, update=update)
         rows = [_row(result) for result in results]
-        rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.test") if rows else ""
+        # The table names the pack only when cases from several packs ran.
+        pack = ["pack"] if len({result.pack for result in results}) > 1 else []
+        rendered = (
+            render_rows(
+                rows,
+                fmt=fmt,
+                columns=columns,
+                kind="recipe.test",
+                table_columns=[*pack, "recipe", "case", "status", "detail"],
+            )
+            if rows
+            else ""
+        )
         if rendered:
             echo(rendered)
         if not update:

@@ -249,6 +249,11 @@ def bundle_bytes(bundle: BackupBundle) -> int:
     return sum(path.stat().st_size for path in bundle.path.rglob("*") if path.is_file())
 
 
+def bundle_metadata(bundle: BackupBundle) -> dict[str, object]:
+    """One bundle's raw metadata; ``ValueError`` when it cannot be read."""
+    return _read_metadata(bundle)
+
+
 def bundle_created_at(bundle: BackupBundle) -> datetime | None:
     """Creation time parsed from the bundle id; None when unparsable."""
     stamp = bundle.id.split("-", 1)[0]

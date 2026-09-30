@@ -110,6 +110,7 @@ class StatusEntry(TargetRecord):
     detail: str = ""
     cloned: bool
     branch: str | None = None
+    upstream: str | None = None
     ahead: int = 0
     behind: int = 0
     modified: int = 0

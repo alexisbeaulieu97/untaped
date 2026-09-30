@@ -84,6 +84,7 @@ class WorkspaceStatus:
             target_path=local,
             cloned=True,
             branch=status.branch,
+            upstream=status.upstream,
             ahead=status.ahead,
             behind=status.behind,
             modified=status.modified,

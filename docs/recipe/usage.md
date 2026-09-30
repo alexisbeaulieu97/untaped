@@ -292,6 +292,15 @@ failed row says why in `detail`, and in `error` (`category`, `system`,
 [Pipes and record kinds](../reference/pipes.md#recipe) for the other
 commands.
 
+A table shows each command's usual columns; `--columns ?` marks them and
+`--columns +inputs` adds one, while json, yaml, raw and pipe keep every
+field. `apply` shows `target_path`, `action`, `files_changed`, `warnings`
+and `detail`; `list` shows `pack` and `name`; `packs list` shows `name`,
+`version`, `source`, `rev`, `recipes` and `hooks`; `hooks list` shows
+`pack`, `name` and `module`; `test` shows `recipe`, `case`, `status` and
+`detail`, led by `pack` when several packs ran; `backups list` shows `id`,
+`created_at` and `recipe` (its rows also carry the bundle `path`).
+
 ## Settings
 
 | Setting | Default | Purpose |

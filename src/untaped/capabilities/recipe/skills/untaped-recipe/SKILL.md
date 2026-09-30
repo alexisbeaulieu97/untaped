@@ -82,7 +82,9 @@ Details that do not fit here ship next to this file:
   tool output can drive both target selection and input values.
 - Prefer `--format json` for machine-readable summaries and `--format pipe`
   (NDJSON envelope `{"untaped":"1","kind":...,"record":...}`) when chaining
-  into other untaped tools. `--columns`/`-c` narrows row fields. `--format`
+  into other untaped tools. A table shows each command's usual columns
+  (`--columns ?` marks them, `--columns +inputs` adds one); json, yaml, raw
+  and pipe keep every field. `--columns`/`-c` narrows row fields. `--format`
   and `--columns` affect stdout rows only, never the stderr preview.
 - `recipe.apply_outcome` rows carry absolute `target_path`, `action`,
   `files_changed`, `warnings` (a list: accumulated `helpers.warn(...)`

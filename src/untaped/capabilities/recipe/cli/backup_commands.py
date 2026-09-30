@@ -14,6 +14,7 @@ from untaped.capabilities.recipe.infrastructure.backup import (
     BackupBundle,
     BackupStore,
     bundle_bytes,
+    bundle_metadata,
     prune_selection,
 )
 from untaped.capability_api import (
@@ -37,13 +38,31 @@ from untaped.capability_api import (
 def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
     """List backup bundles."""
     with report_config_errors():
-        rows: list[dict[str, object]] = [
-            {"id": bundle.id, "path": str(bundle.path)}
-            for bundle in BackupStore(library_root() / "backups").list()
-        ]
-        rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.backup")
+        rows = [_backup_row(bundle) for bundle in BackupStore(library_root() / "backups").list()]
+        rendered = render_rows(
+            rows,
+            fmt=fmt,
+            columns=columns,
+            kind="recipe.backup",
+            table_columns=["id", "created_at", "recipe"],
+        )
         if rendered:
             echo(rendered)
+
+
+def _backup_row(bundle: BackupBundle) -> dict[str, object]:
+    """One ``backups list`` row; unreadable metadata warns and leaves its fields empty."""
+    try:
+        metadata = bundle_metadata(bundle)
+    except ValueError as exc:
+        recipe_ui().message("warning", str(exc))
+        metadata = {}
+    return {
+        "id": bundle.id,
+        "created_at": metadata.get("created_at"),
+        "recipe": metadata.get("recipe"),
+        "path": str(bundle.path),
+    }
 
 
 def get_command(
