@@ -311,6 +311,19 @@ def test_remove_failure_is_a_failed_row(tmp_path: Path, monkeypatch: pytest.Monk
     assert row["error"]["message"] == row["detail"]
 
 
+def test_remove_repeated_name_reports_the_second_as_failed(tmp_path: Path) -> None:
+    pack = tmp_path / "pack"
+    _write_pack_project(pack)
+    assert CliInvoker().invoke(app, ["packs", "add", str(pack)]).exit_code == 0
+
+    result = CliInvoker().invoke(
+        app, ["packs", "remove", "demo", "demo", "--yes", "--format", "json"]
+    )
+
+    assert result.exit_code == 1, result.output
+    assert [row["action"] for row in json.loads(result.stdout)] == ["removed", "failed"]
+
+
 def test_remove_rejects_index_rows_without_content_hash(
     tmp_path: Path,
 ) -> None:
