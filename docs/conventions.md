@@ -166,11 +166,15 @@ come from a closed set:
 
 - The record is for scripts and agents; the table is for a human scanning
   rows. Keep every field on the record and pick the table's default columns
-  with `emit(rows, …, table_columns=[…])`: the identifying field, what
-  changed or its state, and what the reader acts on next. Leave out fields
-  that repeat the command's own arguments or are empty on most rows. Never
-  pass defaults as `columns=` (`columns or DEFAULTS`): `--columns +name/-name`
-  edits `table_columns`, and a named column is always shown, even when empty.
+  on the record type, `table_columns: ClassVar[tuple[str, ...]] = (…)`: the
+  identifying field, what changed or its state, and what the reader acts on
+  next. Leave out fields that repeat the command's own arguments or are empty
+  on most rows. A record with more than four fields (`error` aside) that a
+  command lists must declare them (a convention test checks this).
+  `emit(rows, …, table_columns=[…])` overrides them for one command; a single
+  record shows every field. Never pass defaults as `columns=` (`columns or
+  DEFAULTS`): `--columns +name/-name` edits the defaults, and a named column
+  is always shown, even when empty.
 - Kinds are `<cap>.<singular_noun>` for entities and `<cap>.<verb>_outcome`
   for mutation results. Root commands use `untaped.*`. Each kind has exactly
   one schema.
@@ -195,7 +199,8 @@ come from a closed set:
 - Type timestamps as `UtcTimestamp` and name them `<event>_at`. They render
   as `2026-01-02T03:04:05Z`.
 - Use native booleans, `null` and lists in records. Do not use glyphs such as
-  `✓` or `—` as data.
+  `✓` or `—` as data; for a table, annotate the field with `TableGlyph`
+  (`Annotated[bool, TableGlyph(true="✓")]`), which every other format ignores.
 - `--format json` and `--format yaml` print one document per invocation: an
   array for a collection (even when it spans several ids), a mapping for a
   single record. `pipe` and `raw` print one line per record. Only a live

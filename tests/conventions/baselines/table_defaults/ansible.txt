@@ -1,0 +1,5 @@
+# Known violations of the table_defaults convention check for 'ansible'.
+# This list may only shrink: fix an entry and delete its line.
+# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
+untaped.capabilities.ansible.domain.containment.DependencyMatch::no-default-columns
+untaped.capabilities.ansible.domain.reach.ReachedNode::no-default-columns
