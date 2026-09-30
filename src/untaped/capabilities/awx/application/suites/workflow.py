@@ -5,7 +5,9 @@ never shared between the run's workers). It reads the nodes of the workflow
 job and of the workflows nested in it (once each has ended; afresh while it
 runs), each node's finished job once (:class:`NodeRun`, with what checking it
 read, so a node that is both checked and blamed is read once), and every host
-summary record of each node job once, summed for a workflow. :meth:`node_jobs`
+summary record of each node job once, summed for a workflow. Each node job is
+first re-read until AWX has saved its events (:meth:`WorkflowRun.settled`),
+and :meth:`WorkflowRun.unsaved` finds one it is still saving. :meth:`node_jobs`
 is the one walk over the nodes, nested ones included, :data:`MAX_NESTING`
 levels deep. While the workflow runs, :meth:`WorkflowRun.answer` approves or
 denies the approvals it waits on as the case says, or raises
@@ -102,6 +104,7 @@ class WorkflowRun:
         self._approvals = approvals
         self._nodes: dict[int, list[RunNode]] = {}
         self._runs: dict[int, NodeRun] = {}
+        self._settled: dict[int, Job] = {}
         self._host_records: dict[int, Sequence[Mapping[str, Any]]] = {}
         self.answered: dict[int, Approvals] = {}
         """The approvals this run answered, and how."""
@@ -139,15 +142,34 @@ class WorkflowRun:
         assert execution is not None  # callers check the node ran
         run = self._runs.get(execution.id)
         if run is None:
-            job = self._reader.settled(self._reader.fetch(execution))
+            job = self.settled(execution)
             run = self._runs[execution.id] = NodeRun(job, JobRead(source=job, workflow=self))
         return run
 
+    def settled(self, execution: Job) -> Job:
+        """A node's finished execution, re-read once AWX has saved its events (read once)."""
+        if execution.id not in self._settled:
+            self._settled[execution.id] = self._reader.settled(self._reader.fetch(execution))
+        return self._settled[execution.id]
+
+    def unsaved(self, workflow: Job) -> tuple[str, Job] | None:
+        """The first playbook job of the workflow whose events AWX is still saving, and its path."""
+        for path, _, execution in self.node_jobs(workflow):
+            if execution.kind in _PLAYBOOK_KINDS:
+                job = self.settled(execution)
+                if job.event_processing_finished is False:
+                    return path, job
+        return None
+
     def host_records(self, job: Job) -> Sequence[Mapping[str, Any]]:
-        """Every host summary record of a node job, read once; a workflow's, summed per host."""
+        """Every host summary record of a node job, read once AWX has saved them.
+
+        A workflow's are its playbook jobs', summed per host.
+        """
         if job.kind == WORKFLOW_JOB:
             return summed_host_records(map(self.host_records, self.playbook_jobs(job)))
         if job.id not in self._host_records:
+            self.settled(job)  # AWX writes the summaries last, from the job's events
             self._host_records[job.id] = list(self._read_hosts(job))
         return self._host_records[job.id]
 

@@ -4,9 +4,10 @@ With a :class:`LaunchCheck`, every case's launch is checked before any job
 runs. Each finished job is checked against its case's :class:`Expectation`
 (status, then log checks read through a :class:`LogReader`, host bounds read
 from its host summaries, completed with filtered reads past the 500-host cut,
-failed tasks from its events). An ``idempotent`` case that passed is launched
-again with the same payload (on the commit the first job ran), and the rerun
-must succeed without changing anything. A case that does not pass carries a
+failed tasks from its events; none of them while AWX is still saving its
+events, which makes the case an error). An ``idempotent`` case that passed is
+launched again with the same payload (on the commit the first job ran), and
+the rerun must succeed without changing anything. A case that does not pass carries a
 :class:`CaseFailure`: the system responsible, decided by the rules in
 :mod:`untaped.capabilities.awx.domain.case_failure` from the job, its
 explanation and its failed tasks (from job events), and, with ``evidence``,
@@ -84,6 +85,7 @@ from untaped.capabilities.awx.domain.case_failure import (
     FailedTask,
     FailureEvidence,
     approval_failure,
+    events_unsaved,
     finished_failure,
     in_node,
     request_failure,
@@ -91,7 +93,8 @@ from untaped.capabilities.awx.domain.case_failure import (
     stalled_node_failure,
     tasks_unread,
     timeout_failure,
-    unrescued,
+    unhandled,
+    unproven,
     workflow_failure,
 )
 from untaped.capabilities.awx.domain.case_failure import (
@@ -635,14 +638,18 @@ class RunTestSuite:
         status = expect.check_status(job.status)
         checks = [status]
         unread: list[CaseFailure] = []
-        if expect.needs_log:
+        # AWX writes the log, host summaries and failed tasks from the job's events.
+        saved = job.event_processing_finished is not False or not expect.checks_beyond_status
+        if not saved:
+            unread.append(events_unsaved(job))
+        if expect.needs_log and saved:
             try:
                 read.log = self._read_log(job)
             except Exception as exc:
                 unread.append(request_failure(exc, message=f"log fetch failed: {exc}"))
             else:
                 checks.extend(expect.log.evaluate(read.log))
-        if expect.needs_hosts:
+        if expect.needs_hosts and saved:
             host_checks = self._host_checks(job, expect, fields, read)
             if isinstance(host_checks, CaseFailure):
                 unread.append(host_checks)
@@ -650,12 +657,12 @@ class RunTestSuite:
                 checks.extend(host_checks)
         update = self._update(job, read)
         read.source = update or job
-        if expect.failed_tasks and update is None:
-            tasks = self._job_tasks(job, fields, read)
-            if tasks is None:
-                unread.append(tasks_unread(job))
+        if expect.failed_tasks and update is None and saved:
+            task_checks = _task_checks(job, expect, self._job_tasks(job, fields, read))
+            if isinstance(task_checks, CaseFailure):
+                unread.append(task_checks)
             else:
-                checks.extend(expect.check_failed_tasks(tasks))
+                checks.extend(task_checks)
         fields["expectations"] = tuple(checks)
         reasons = [check.describe_failure() for check in checks if not check.passed]
         if job.status != "successful" and not read.tasks_read and (update is not None or reasons):
@@ -706,7 +713,11 @@ class RunTestSuite:
         if expect.needs_log:
             message = "a workflow job has no log; check the log of a node under expect.nodes"
             unread.append(make_failure(SUITE, ErrorCategory.INVALID, message))
-        if expect.needs_hosts:
+        unsaved = self._unsaved_node_job(workflow, expect, run)
+        saved = unsaved is None
+        if unsaved is not None:
+            unread.append(unsaved)
+        if expect.needs_hosts and saved:
             host_checks = self._host_checks(workflow, expect, fields, read)
             if isinstance(host_checks, CaseFailure):
                 unread.append(host_checks)
@@ -722,12 +733,12 @@ class RunTestSuite:
                 unread.append(node_failure)  # a check it could not make, not one that failed
             else:
                 node_failures.append(node_failure)
-        if expect.failed_tasks:
-            tasks = self._workflow_tasks(workflow, run)
-            if tasks is None:
-                unread.append(tasks_unread(workflow))
+        if expect.failed_tasks and saved:
+            task_checks = _task_checks(workflow, expect, self._workflow_tasks(workflow, run))
+            if isinstance(task_checks, CaseFailure):
+                unread.append(task_checks)
             else:
-                checks.extend(expect.check_failed_tasks(tasks))
+                checks.extend(task_checks)
         fields["expectations"] = tuple(checks)
         reasons = [check.describe_failure() for check in checks if not check.passed]
         culprit = None
@@ -816,6 +827,24 @@ class RunTestSuite:
         found = self._check_node_job(node_run, Expectation(), depth)
         return None if found is None else in_node(found, node.label)
 
+    def _unsaved_node_job(
+        self, workflow: Job, expect: ExecutionChecks, run: WorkflowRun
+    ) -> CaseFailure | None:
+        """Why the workflow's checks cannot read its node jobs yet: one's events are still saving.
+
+        Host and ``failed_tasks`` checks read the node jobs' summaries and events.
+        """
+        if not (expect.needs_hosts or expect.failed_tasks):
+            return None
+        try:
+            found = run.unsaved(workflow)
+        except Exception as exc:
+            return request_failure(exc, message=f"workflow node jobs unreadable: {exc}")
+        if found is None:
+            return None
+        path, job = found
+        return in_node(events_unsaved(job), path)
+
     def _workflow_tasks(self, workflow: Job, run: WorkflowRun) -> tuple[FailedTask, ...] | None:
         """The failed tasks of every node job that failed (nested ones too); ``None``: unread."""
         tasks: list[FailedTask] = []
@@ -862,7 +891,8 @@ class RunTestSuite:
         else:
             # The job's summaries tell rescued failures from real ones.
             self._ensure_hosts(job, fields, read)
-            read.tasks = self._failed_tasks(job, fields["hosts"])
+            hosts = fields["hosts"] if read.all_hosts is None else read.all_hosts
+            read.tasks = self._failed_tasks(job, hosts)
         read.tasks_read = True
         return read.tasks
 
@@ -954,7 +984,7 @@ class RunTestSuite:
     def _failed_tasks(
         self, job: Job, hosts: dict[str, HostSummary] | None
     ) -> tuple[FailedTask, ...] | None:
-        """The job's failed tasks (``ignore_errors`` and rescued ones excluded); ``None`` if unread.
+        """The job's failed tasks nothing handled (see :func:`unhandled`); ``None`` if unread.
 
         ``None`` too when there are none while AWX is still saving the events.
         """
@@ -963,15 +993,10 @@ class RunTestSuite:
             events = list(self._read_events(job, params=params, follow=False))
         except Exception:
             return None
-        tasks = tuple(
-            FailedTask.from_event(event)
-            for event in events
-            # AWX also flags the play and task events above a failure.
-            if event.failed and event.event in FAILED_TASK_EVENTS
-        )
+        tasks = unhandled(events, hosts)
         if not tasks and job.event_processing_finished is False:
             return None  # the failures may not be saved yet
-        return unrescued(tasks, hosts)
+        return tasks
 
     def _tail(self, job: Job, read: JobRead) -> tuple[str, ...] | None:
         """The last log lines, from the newest events only, read once; ``None`` if unreadable."""
@@ -1022,6 +1047,22 @@ def _verdict(
             update={"evidence": found.evidence.model_copy(update={"note": note})}
         )
     return found
+
+
+def _task_checks(
+    execution: Job, expect: ExecutionChecks, tasks: Sequence[FailedTask] | None
+) -> list[ExpectationResult] | CaseFailure:
+    """The ``failed_tasks`` checks, or why they cannot be decided.
+
+    They cannot when the tasks are unread, or when an entry is matched only
+    by a failed task a rescue may have handled.
+    """
+    if tasks is None:
+        return tasks_unread(execution)
+    unsure = expect.unproven_match(tasks)
+    if unsure is not None:
+        return unproven(unsure)
+    return expect.check_failed_tasks(tasks)
 
 
 def _note(failures: Iterable[CaseFailure]) -> None:

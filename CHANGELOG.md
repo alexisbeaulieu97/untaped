@@ -212,14 +212,21 @@ self-contained manual for the installed CLI.
   - **Breaking:** `awx test run` exits with the most severe case's category:
     a failed inventory update or a credential lookup exits 4; a job that
     ended in `error`, never left `pending` before its timeout, failed only
-    on unreachable hosts, or failed before AWX saved its events exits 5,
-    instead of 1. A preflight failure names `awx.suite` (or
+    on unreachable hosts, or failed (or was checked beyond its status)
+    before AWX saved its events exits 5, instead of 1. A preflight failure names `awx.suite` (or
     `awx.credentials`, `awx.scm`) as its `system`.
   - **Fix:** a case that expects its job to fail no longer passes when the
     job failed because a project or inventory update failed first: the
     playbook never ran, and the case fails as `awx.scm` or `awx.inventory`.
     Failed tasks are read only once AWX has saved the job's events, and a
-    task a `rescue` block handled is not a failed task.
+    task a `rescue` block handled is not a failed task, even on a host that
+    failed later: a host that counts N failures failed on its last N failed
+    tasks.
+  - **Fix:** an `awx test` log check no longer passes (or fails) on a log AWX
+    is still writing: the finished job is re-read until AWX has saved its
+    events, and a case whose job is still being saved after that is an
+    `awx.controller` error (exit 5) naming the job, instead of passing
+    `not_contains` on a short log.
   - **New:** with `--format json`, `yaml` or `pipe`, every `awx.test_result`
     row carries `hosts`, each host's PLAY RECAP counters (`ok`, `changed`,
     `failed`, `unreachable`, `skipped`, `rescued`, `ignored`) read once from
@@ -257,10 +264,14 @@ self-contained manual for the installed CLI.
     (the failed tasks that prove a negative case failed for the right reason)
     and `idempotent: true` (run a passing case again; the rerun must succeed
     and change nothing, and a failure lists the tasks it changed). A failed
-    check is `awx.expectation`. Result rows gain `rerun_job_id`. `test
-    validate` warns about `status: failed` without `failed_tasks`, and
-    refuses `idempotent` with another status than `successful`. The awx
-    skill ships an `idempotent.yml` example.
+    check is `awx.expectation`. These checks read a job's host summaries and
+    events (a workflow's, each node job's) only once AWX has saved them; a
+    job AWX is still saving, or a `failed_tasks` entry matched only by a
+    failure the host summaries cannot show was unhandled, makes the case an
+    `awx.controller` error (exit 5), never a pass. Result rows gain
+    `rerun_job_id`. `test validate` warns about `status: failed` without
+    `failed_tasks`, and refuses `idempotent` with another status than
+    `successful`. The awx skill ships an `idempotent.yml` example.
   - **New:** `awx test run --compare FILE` compares the run with the saved
     `--format json` (or `pipe`) output of an earlier run, and
     `--baseline REF` runs every selected case on `REF` first, then compares.

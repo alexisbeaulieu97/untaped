@@ -459,6 +459,7 @@ def test_a_negative_workflow_case_matches_the_failed_tasks_of_its_nodes(
     aap.node_outcomes["verify"] = {
         "status": "failed",
         "events": [_failed_task("web2", "Check health", "HTTP 503")],
+        "host_summaries": [{"host_name": "web2", "failures": 1}],
     }
     expect = {"status": "failed", "failed_tasks": [{"task": "Check health", "msg": "503"}]}
     wrong = {"status": "failed", "failed_tasks": [{"task": "Migrate"}]}
@@ -845,3 +846,40 @@ def test_list_shows_the_workflow_template(cli: CliInvoker, tmp_path: Path) -> No
     assert (row["job_template"], row["workflow_template"]) == (None, "Release")
     table = cli.invoke(app, ["test", "list", str(suite)])
     assert "Release" in table.stdout
+
+
+@pytest.mark.parametrize(
+    ("unsaved_reads", "result"),
+    [(2, "fail"), (50, "error")],
+)
+def test_node_job_summaries_are_read_once_awx_has_saved_them(
+    cli: CliInvoker, aap: FakeAap, tmp_path: Path, unsaved_reads: int, result: str
+) -> None:
+    """A node job's summaries hide its changes until AWX has saved its events."""
+    _seed_release(aap)
+    aap.node_outcomes["deploy"] = {
+        "host_summaries": [{"host_name": "web1", "changed": 2}],
+        "unsaved_reads": unsaved_reads,
+    }
+    suite = _suite(
+        tmp_path,
+        {
+            "workflow": {"expect": {"changed": 0}},
+            "node": {"expect": {"nodes": {"deploy": {"changed": 0}}}},
+        },
+    )
+
+    code, rows, stderr = _run(cli, suite)
+
+    assert [row["result"] for row in rows] == [result, result], stderr
+    if result == "fail":
+        assert code == 1
+        assert [row["failure"]["system"] for row in rows] == ["awx.expectation"] * 2
+        return
+    assert code == 5
+    workflow, node = (row["failure"] for row in rows)
+    assert (workflow["system"], workflow["category"]) == ("awx.controller", "unavailable")
+    assert workflow["message"].startswith("node deploy: AWX is still saving the events of job ")
+    assert workflow["evidence"]["node"] == "deploy"
+    assert (node["system"], node["category"]) == ("awx.controller", "unavailable")
+    assert node["message"].startswith("node deploy: AWX is still saving the events of job ")
