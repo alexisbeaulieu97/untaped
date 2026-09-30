@@ -792,6 +792,25 @@ def test_ctrl_c_while_cancelling_after_the_wait_names_the_executions(
     assert f"untaped awx jobs wait {job['id']} --kind job" in result.stderr
 
 
+def test_ctrl_c_while_cancelling_before_the_wait_names_the_executions(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seed(fake_aap)
+    fake_aap.get_record("job_templates", 50)["ask_limit_on_launch"] = True
+    fake_aap.next_action_status = "running"
+    fake_aap.next_action_ignored_fields = {"limit": "web1"}
+    _cancel_raises_keyboard_interrupt(monkeypatch)
+
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "deploy", "--host-pattern", "web1", "--wait", "--cancel"]
+    )
+
+    assert result.exit_code == 130, result.output
+    (job,) = fake_aap.list_records("jobs")
+    assert f"interrupted: deploy: job {job['id']} was launched" in result.stderr
+    assert f"untaped awx jobs wait {job['id']} --kind job" in result.stderr
+
+
 def test_job_that_ends_before_its_cancel_reports_its_final_status(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -860,3 +879,63 @@ def test_cancel_cancels_executions_awx_created_while_ignoring_fields(
     assert "limit" in row["detail"]
     assert row["detail"].endswith("; cancel requested") is cancel
     assert fake_aap.get_record("jobs", row["id"])["status"] == ("canceled" if cancel else "running")
+
+
+@pytest.mark.parametrize("flag", ["--wait", "--follow"])
+@pytest.mark.parametrize("abandoned_by", ["polling error", "ignored fields"])
+def test_cancel_cancels_an_abandoned_execution_while_others_still_run(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch, abandoned_by: str, flag: str
+) -> None:
+    """``deploy``'s cancel must not wait for ``other``'s watch to end."""
+    import threading
+
+    from untaped.capabilities.awx.application import RunAction
+    from untaped.capabilities.awx.infrastructure.job_record_repo import JobRecordRepository
+
+    seed(fake_aap)
+    fake_aap.seed("job_templates", id=51, name="other", organization=1)
+    real_execute = RunAction.execute
+
+    def launch_running(self: Any, *args: Any, **kwargs: Any) -> Any:
+        fake_aap.next_action_status = "running"
+        return real_execute(self, *args, **kwargs)
+
+    monkeypatch.setattr(RunAction, "execute", launch_running)
+    args = ["job-templates", "launch", "deploy", "other", "--yes", flag, "--cancel"]
+    if abandoned_by == "ignored fields":
+        for template in (50, 51):
+            fake_aap.get_record("job_templates", template)["ask_limit_on_launch"] = True
+        fake_aap.next_action_ignored_fields = {"limit": "web1"}  # deploy's launch only
+        args += ["--host-pattern", "web1", "--continue-on-error"]
+    cancelled = threading.Event()
+    real_cancel = JobRecordRepository.cancel
+
+    def cancel(self: Any, *, kind: str, job_id: int) -> None:
+        real_cancel(self, kind=kind, job_id=job_id)
+        cancelled.set()
+
+    monkeypatch.setattr(JobRecordRepository, "cancel", cancel)
+    released_after_cancel: list[bool] = []
+
+    def read_job(request: httpx.Request) -> httpx.Response:
+        job = fake_aap.get_record("jobs", int(request.url.path.rstrip("/").rsplit("/", 1)[1]))
+        if job["name"] == "deploy-launch":
+            return httpx.Response(403, json={"detail": "denied"})
+        # other's watch blocks until deploy's cancel (or gives up waiting for it)
+        released_after_cancel.append(cancelled.wait(timeout=5))
+        return httpx.Response(200, json={**job, "type": "job", "status": "successful"})
+
+    fake_aap.router.routes.clear()
+    fake_aap.router.get(url__regex=r".*/jobs/\d+/$").mock(side_effect=read_job)
+    fake_aap.install(fake_aap.router)
+
+    result = CliInvoker().invoke(app, [*args, "--format", "json"])
+
+    assert released_after_cancel and all(released_after_cancel), result.output
+    deploy, other = json.loads(result.stdout)
+    assert (deploy["action"], other["action"]) == ("failed", "completed")
+    assert deploy["detail"].endswith("; cancel requested")
+    assert fake_aap.get_record("jobs", deploy["id"])["status"] == "canceled"
+    assert [(i, a) for _, i, a, _ in fake_aap.actions_called if a == "cancel"] == [
+        (deploy["id"], "cancel")
+    ]
