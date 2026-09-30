@@ -124,7 +124,10 @@ class RichTerminalRenderer:
             return _dump_yaml(selected)
         if fmt == "table":
             if theme.detail_view == "table":
-                rows = [{"field": key, "value": value} for key, value in selected.items()]
+                rows: list[Row] = [
+                    {"field": key, "value": _table_cell(key, value)}
+                    for key, value in selected.items()
+                ]
                 return _format_table(rows, theme, colorize=colorize)
             return _format_record_as_lines(selected, theme=theme, colorize=colorize)
 
@@ -273,20 +276,53 @@ def _format_table(rows: Sequence[Row], theme: ThemeSpec, *, colorize: bool) -> s
 _WRAPPED_COLUMNS = frozenset({"detail", "message", "hint"})
 
 
+def _min_width(column: str, *, first: bool) -> int:
+    """How narrow a column may get while another can still give way.
+
+    The first column identifies the row and a wrapped column explains it, so
+    both keep more room; any other keeps short values (``updated``) whole.
+    """
+    if first:
+        return 40
+    return 30 if column in _WRAPPED_COLUMNS else 10
+
+
 def _fit_widths(columns: list[str], cells: list[list[str]], *, budget: int) -> list[int | None]:
     """Column widths that fit ``budget`` by narrowing only the widest columns.
 
     Every column wider than a common cap is cut to it, the cap being the
-    largest that fits; no column goes below its header. ``None`` keeps a
-    column's natural width (everything fits, or nothing can).
+    largest that fits. A column keeps at least :func:`_min_width` while that
+    fits, else as much of it as fits for every column, and at least its
+    header. ``None`` keeps a column's natural width (everything fits, or
+    nothing can).
     """
+    if not columns:
+        return []
     natural = [
         max(cell_len(col), *(cell_len(texts[i]) for texts in cells))
         for i, col in enumerate(columns)
     ]
     if sum(natural) <= budget:
         return [None] * len(columns)
-    floor = [min(width, cell_len(col)) for width, col in zip(natural, columns, strict=True)]
+    headers = [cell_len(col) for col in columns]
+    preferred = [
+        max(header, _min_width(col, first=i == 0))
+        for i, (header, col) in enumerate(zip(headers, columns, strict=True))
+    ]
+    for tenths in range(10, -1, -1):
+        # Shrink every minimum toward its header until the minimums fit.
+        floor = [
+            min(width, header + (low - header) * tenths // 10)
+            for width, header, low in zip(natural, headers, preferred, strict=True)
+        ]
+        if sum(floor) <= budget:
+            cap = _widest_cap(natural, floor, budget=budget)
+            return [max(low, min(width, cap)) for width, low in zip(natural, floor, strict=True)]
+    return [None] * len(columns)
+
+
+def _widest_cap(natural: list[int], floor: list[int], *, budget: int) -> int:
+    """The largest cap on column widths (never below ``floor``) within ``budget``."""
 
     def total(cap: int) -> int:
         return sum(max(low, min(width, cap)) for width, low in zip(natural, floor, strict=True))
@@ -295,9 +331,7 @@ def _fit_widths(columns: list[str], cells: list[list[str]], *, budget: int) -> l
     while low < high:
         cap = (low + high + 1) // 2
         low, high = (cap, high) if total(cap) <= budget else (low, cap - 1)
-    if total(low) > budget:
-        return [None] * len(columns)
-    return [max(fl, min(width, low)) for width, fl in zip(natural, floor, strict=True)]
+    return low
 
 
 def _format_records_as_lines(
@@ -375,12 +409,14 @@ def _table_cell(column: str, value: Any) -> str:
 
     Only the ``table`` format uses it; json, yaml, raw and pipe keep values
     verbatim. Mappings flatten to ``key=value`` pairs, empty containers are
-    blank, ``*_s`` durations read as ``1m42s``, other floats keep two
+    blank, durations (``*_s``, ``elapsed``) read as ``1m42s``, other floats keep two
     decimals, a 40-hex commit is shortened, and whitespace runs (newlines
     included) collapse to one space.
     """
+    if isinstance(value, int | float) and not isinstance(value, bool) and _is_duration(column):
+        return _duration(value)
     if isinstance(value, float):
-        return _duration(value) if column.endswith("_s") else f"{value:.2f}".rstrip("0").rstrip(".")
+        return f"{value:.2f}".rstrip("0").rstrip(".")
     if isinstance(value, str) and column in _SHA_COLUMNS and _SHA_RE.match(value):
         return value[:_SHORT_SHA]
     return " ".join(_flat(value).split())
@@ -403,8 +439,13 @@ def _flat_pairs(mapping: Mapping[str, Any], *, prefix: str) -> Iterator[tuple[st
             yield f"{prefix}{key}", text
 
 
+def _is_duration(column: str) -> bool:
+    """Seconds by name: ``duration_s``, ``wait_s``, or AWX's ``elapsed``."""
+    return column.endswith("_s") or column == "elapsed"
+
+
 def _duration(seconds: float) -> str:
-    if seconds < 60:
+    if round(seconds, 1) < 60:
         return f"{seconds:.1f}s"
     minutes, secs = divmod(round(seconds), 60)
     if minutes < 60:
@@ -467,7 +508,9 @@ def _status_style(theme: ThemeSpec, column: str, value: Any, *, colorize: bool) 
     role = _STATUS_ROLES.get(value.lower())
     if role is None:
         return None
-    return theme.color_roles.get(role) or _STATUS_FALLBACK[role]
+    # A role the theme sets to "" turns the color off.
+    style = theme.color_roles.get(role, _STATUS_FALLBACK[role])
+    return style or None
 
 
 def _role_style(theme: ThemeSpec, role: str, *, colorize: bool) -> str | None:

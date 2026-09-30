@@ -348,33 +348,53 @@ def render_rows(
     every row unless ``--columns`` names it.
     """
     _validate_kind(kind)
-    return _render_collection(
-        rows, fmt=fmt, columns=columns, empty=empty, kind=kind, table_columns=table_columns
+    return _render(
+        rows,
+        single=False,
+        fmt=fmt,
+        columns=columns,
+        empty=empty,
+        kind=kind,
+        table_columns=table_columns,
+        schema=None,
+        ui=None,
     )
 
 
-def _render_collection(
+def _render(
     rows: Sequence[dict[str, object]],
     *,
+    single: bool,
     fmt: OutputFormat,
     columns: list[str] | None,
     empty: str | bool | None,
     kind: str | None,
     table_columns: Sequence[str] | None,
-    schema: Sequence[str] | None = None,
-    ui: UiContext | None = None,
+    schema: Sequence[str] | None,
+    ui: UiContext | None,
 ) -> str:
+    """Render ``rows`` as a collection, or its one row as a detail view (``single``)."""
     if columns == ["?"]:
-        _print_available_columns(schema or _row_keys(rows), defaults=table_columns)
+        known = schema or _row_keys(rows) or table_columns or ()
+        _print_available_columns(known, defaults=table_columns)
         return ""
     selection, named = _selected_columns(
         columns, rows, fmt=fmt, schema=schema, table_columns=table_columns
     )
-    if fmt != "table":
-        return UiContext().collection(rows, fmt=fmt, columns=selection, empty=empty, kind=kind)
-    ui = ui or ui_context()
-    shown = _table_columns(rows, selection, named, hide_empty=ui.theme.hide_empty_columns)
-    return ui.collection(rows, fmt=fmt, columns=shown, empty=empty, kind=kind)
+    if fmt == "table":
+        ui = ui or ui_context()
+        shown = _table_columns(rows, selection, named, hide_empty=ui.theme.hide_empty_columns)
+        if selection is None and ui.theme.collection_view == "list" and shown is not None:
+            # A record list shows each row's own keys, not the union of them all.
+            kept = set(shown)
+            rows = [{key: value for key, value in row.items() if key in kept} for row in rows]
+            shown = None
+        selection = shown
+    else:
+        ui = UiContext()
+    if single:
+        return ui.detail(rows[0], fmt=fmt, columns=selection, kind=kind)
+    return ui.collection(rows, fmt=fmt, columns=selection, empty=empty, kind=kind)
 
 
 def _selected_columns(
@@ -407,9 +427,16 @@ def _selected_columns(
         return names or None, frozenset(names)
     added = [name[1:] for name in edits if name[0] == "+"]
     removed = {name[1:] for name in edits if name[0] == "-"}
-    base = default or list(schema or _row_keys(rows))
+    base = default or [
+        name
+        for name in (schema or _row_keys(rows))
+        if fmt != "table" or not _is_error_column(rows, name)
+    ]
     kept = [name for name in base if name not in removed]
-    return kept + [name for name in added if name not in kept], frozenset(added)
+    selection = kept + [name for name in added if name not in kept]
+    if not selection:
+        raise_usage(f"--columns removes every column: {', '.join(names)}")
+    return selection, frozenset(added)
 
 
 def _check_columns(
@@ -520,8 +547,8 @@ def emit(
     applies to a sequence only.
     """
     emit_with(
-        None,
         records,
+        ui=None,
         fmt=fmt,
         columns=columns,
         empty=empty,
@@ -531,9 +558,9 @@ def emit(
 
 
 def emit_with(
-    ui: UiContext | None,
     records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
     *,
+    ui: UiContext | None,
     fmt: OutputFormat,
     columns: list[str] | None = None,
     empty: str | bool | None = None,
@@ -545,33 +572,21 @@ def emit_with(
     For root commands that must render even when the settings are broken.
     """
     _validate_kind(kind)
-    schema = _model_schema(records)
-    if not isinstance(records, BaseModel | Mapping):
-        rendered = _render_collection(
-            [_as_row(record) for record in records],
-            fmt=fmt,
-            columns=columns,
-            empty=empty,
-            kind=kind,
-            table_columns=table_columns,
-            schema=schema,
-            ui=ui,
-        )
-    else:
-        row = _as_row(records)
-        if columns == ["?"]:
-            _print_available_columns(schema or row, defaults=table_columns)
-            return
-        selection, named = _selected_columns(
-            columns, [row], fmt=fmt, schema=schema, table_columns=table_columns
-        )
-        if fmt == "table":
-            ui = ui or ui_context()
-            hide_empty = ui.theme.hide_empty_columns
-            selection = _table_columns([row], selection, named, hide_empty=hide_empty)
-        else:
-            ui = UiContext()
-        rendered = ui.detail(row, fmt=fmt, columns=selection, kind=kind)
+    single = isinstance(records, BaseModel | Mapping)
+    items: Sequence[BaseModel | Mapping[str, object]] = (
+        [records] if isinstance(records, BaseModel | Mapping) else records
+    )
+    rendered = _render(
+        [_as_row(item) for item in items],
+        single=single,
+        fmt=fmt,
+        columns=columns,
+        empty=empty,
+        kind=kind,
+        table_columns=table_columns,
+        schema=_model_schema(records),
+        ui=ui,
+    )
     if rendered:
         echo(rendered)
 
