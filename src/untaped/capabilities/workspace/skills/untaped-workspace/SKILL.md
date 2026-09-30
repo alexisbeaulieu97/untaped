@@ -94,7 +94,9 @@ Three commands delete files; each lists its targets and asks once.
    and repos (`sync --prune --dry-run` does not sync).
 2. Show the user the paths it would delete and any clone refused as unsafe.
 3. Rerun with `--yes` only after the user approves. Without a terminal and
-   without `--yes` the command exits 2 and changes nothing; declining exits 1.
+   without `--yes` the command exits 2 and deletes nothing; declining exits 1.
+   `sync --prune` asks only after the sync ran, so clones may already be
+   cloned or pulled by then.
 4. The safety check is offline and ignores git-ignored files; read
    [references/prune.md](references/prune.md) for what it protects and how to
    recover. `repos remove` without `--prune` keeps the clone, which the next
