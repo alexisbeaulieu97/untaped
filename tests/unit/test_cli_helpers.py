@@ -732,3 +732,10 @@ def test_question_mark_on_no_rows_lists_the_default_columns(
 ) -> None:
     render_rows([], fmt="table", columns=["?"], table_columns=["name", "url"])
     assert "  url *" in capsys.readouterr().err
+
+
+def test_raw_edits_start_from_the_default_columns(_isolated_config: Path) -> None:
+    rows: list[dict[str, object]] = [{"id": 1, "name": "a", "kind": "x", "url": "u"}]
+    out = render_rows(rows, fmt="raw", columns=["+url"], table_columns=["id", "name"])
+    assert out == "1\ta\tu"
+    assert render_rows(rows, fmt="raw", table_columns=["id", "name"]) == "1"
