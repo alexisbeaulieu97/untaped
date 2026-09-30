@@ -7,7 +7,8 @@
     instead of being silently ignored: live reads see only the default
     branch, and every ref exists only in a source's cache.
   - **New:** the graph commands say where they stopped reading. A node
-    whose own dependencies were not read carries `stopped`: `depth` when
+    whose next level was not read (its dependencies downstream, its
+    dependents upstream) carries `stopped`: `depth` when
     `--depth` ran out, `not_cached` when the source has not cached its ref.
     It is on graph JSON nodes and on `deps`/`impact` rows (a table shows it
     only when set); the tree marks the node `…` with a `not read:` note and

@@ -105,8 +105,10 @@ def tree_lines(
     nodes = {node.id: node for node in graph.nodes}
     target = nodes[graph.target_id]
     header = [TreeSegment(target.label, "target")]
-    if header_note:
-        header.append(TreeSegment(f"  {header_note}", "note"))
+    if target.stopped:
+        header.append(TreeSegment(f" {glyphs.stopped}", "note"))
+    if header_notes := [note for note in (header_note, _stop_note(target)) if note]:
+        header.append(TreeSegment(f"  {' · '.join(header_notes)}", "note"))
     sections: list[tuple[str, list[_Labelled]]] = []
     numbered = 0
     for title, relation in _SECTIONS:
@@ -296,12 +298,16 @@ def _labelled(
 
 def _node_line(row: _Labelled, nodes: dict[str, GraphNode], column: int) -> TreeLine:
     notes = _edge_notes(row.edge, nodes) if row.edge is not None else []
-    if row.node.stopped:
-        notes.append(_STOP_NOTES[row.node.stopped])
+    if stop_note := _stop_note(row.node):
+        notes.append(stop_note)
     if not notes:
         return tuple(row.segments)
     padding = " " * max(column - row.width, 0) + "  "
     return (*row.segments, TreeSegment(padding, "note"), TreeSegment(" · ".join(notes), "note"))
+
+
+def _stop_note(node: GraphNode) -> str | None:
+    return _STOP_NOTES[node.stopped] if node.stopped else None
 
 
 def _edge_notes(edge: GraphEdge, nodes: dict[str, GraphNode]) -> list[str]:
