@@ -447,10 +447,14 @@ class ExecutionChecks(BaseModel):
         return [{key: value} for key, value in dict.fromkeys(pairs)]
 
     def check_failed_tasks(self, tasks: Sequence[FailedTask]) -> list[ExpectationResult]:
-        """Each ``failed_tasks`` entry; ``actual`` is the first failed task it matches."""
+        """Each ``failed_tasks`` entry; ``actual`` is the first failed task it matches.
+
+        An ``unsure`` task (one a rescue may have handled) matches nothing:
+        see :meth:`unproven_match`.
+        """
         results: list[ExpectationResult] = []
         for match in self.failed_tasks:
-            hit = next((task for task in tasks if match.matched_by(task)), None)
+            hit = next((task for task in tasks if not task.unsure and match.matched_by(task)), None)
             actual = None if hit is None else f"[{hit.host or '?'}] {hit.task or '?'}: {hit.msg}"
             results.append(
                 ExpectationResult(
@@ -461,6 +465,16 @@ class ExecutionChecks(BaseModel):
                 )
             )
         return results
+
+    def unproven_match(self, tasks: Sequence[FailedTask]) -> FailedTask | None:
+        """The ``unsure`` task that alone matches an entry: the entry is neither met nor missed."""
+        for match in self.failed_tasks:
+            if any(not task.unsure and match.matched_by(task) for task in tasks):
+                continue
+            unsure = next((task for task in tasks if task.unsure and match.matched_by(task)), None)
+            if unsure is not None:
+                return unsure
+        return None
 
 
 class NodeExpectation(ExecutionChecks):

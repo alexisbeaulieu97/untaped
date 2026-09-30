@@ -249,15 +249,22 @@ the job's host summaries, so a misspelt host fails its check. `changed` and
 `hosts` read the job's host summaries in every output format. A job on more
 than 500 hosts keeps 500 in the result (failed and unreachable hosts first);
 the checks then read the hosts over each bound, and the named hosts, with
-filtered reads, so no host past the cut can hide a failure.
+filtered reads, so no host past the cut can hide a failure. Log, `changed`,
+`hosts` and `failed_tasks` checks read what AWX writes from the job's
+events, so they wait until AWX has saved them; a job AWX is still saving is
+an `awx.controller` error (exit 5, retry later), never a pass.
 
 A `failed_tasks` entry matches a failed task: a task that failed on a host or
 found it unreachable, as the result's `failure.evidence.failed_tasks` lists
 them (`ignore_errors` failures and failures a `rescue` block handled do not
-count). It needs at least one part, and every part it gives must match the
-same task. Every entry must match some failed task; other failed tasks do not
-fail the check. A job that succeeded has no failed task, so its
-`failed_tasks` entries fail without reading anything.
+count: a host that counts N failures failed on its last N failed tasks). It
+needs at least one part, and every part it gives must match the same task.
+Every entry must match some failed task; other failed tasks do not fail the
+check. An entry that only a failure the host summaries cannot show was
+unhandled matches is not proven: the case is an `awx.expectation` error
+(exit 1; a rerun reads the same recap). A
+job that succeeded has no failed task, so its `failed_tasks` entries fail
+without reading anything.
 
 | Field | Meaning |
 |---|---|
