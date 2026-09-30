@@ -491,3 +491,20 @@ def test_search_repos_rejects_oversized_query_before_http_and_explains_422() -> 
     assert "/search/repositories" in rejected.stderr
     assert "query text length" in rejected.stderr
     assert "Validation Failed" in rejected.stderr
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected"),
+    [
+        ("repos", {"repo", "description", "language", "stargazers_count", "updated_at"}),
+        ("code", {"repo", "path"}),
+        ("issues", {"repo", "number", "title", "state", "user_login"}),
+        ("users", {"login", "type"}),
+    ],
+)
+def test_search_tables_show_curated_default_columns(kind: str, expected: set[str]) -> None:
+    result, _ = _search([kind, "--columns", "?"], items=[ROW[kind](1)])
+
+    assert result.exit_code == 0, result.output
+    starred = {line.split()[0] for line in result.stderr.splitlines() if line.endswith(" *")}
+    assert starred == expected

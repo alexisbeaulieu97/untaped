@@ -94,7 +94,7 @@ def _probe(limit: int) -> int:
     return limit + 1
 
 
-def _cap(rows: list[dict[str, object]], limit: int, ui: UiContext) -> list[dict[str, object]]:
+def _cap[T](rows: list[T], limit: int, ui: UiContext) -> list[T]:
     """Keep ``limit`` rows; note on stderr when the probe row shows more match."""
     if len(rows) > limit:
         ui.message(
@@ -165,7 +165,7 @@ def repos_command(
             )
             team_scopes = parse_team_scopes(team, orgs=orgs)
             with ui.progress("Searching repositories…"):
-                rows = [r.model_dump() for r in use_case(filters, team_scopes=team_scopes)]
+                rows = list(use_case(filters, team_scopes=team_scopes))
             rows = _cap(rows, limit, ui)
         emit(
             rows,
@@ -235,7 +235,7 @@ def code_command(
             )
             team_scopes = parse_team_scopes(team, orgs=orgs)
             with ui.progress("Searching code…"):
-                rows = [r.model_dump() for r in use_case(filters, team_scopes=team_scopes)]
+                rows = list(use_case(filters, team_scopes=team_scopes))
             rows = _cap(rows, limit, ui)
         emit(
             rows,
@@ -317,7 +317,7 @@ def issues_command(
             )
             team_scopes = parse_team_scopes(team, orgs=orgs)
             with ui.progress("Searching issues and pull requests…"):
-                rows = [r.model_dump() for r in use_case(filters, team_scopes=team_scopes)]
+                rows = list(use_case(filters, team_scopes=team_scopes))
             rows = _cap(rows, limit, ui)
         emit(
             rows,
@@ -364,7 +364,7 @@ def users_command(
             limit=_probe(limit),
         )
         with open_client() as (client, ui), ui.progress("Searching users…"):
-            rows = [r.model_dump() for r in SearchUsers(client)(filters)]
+            rows = list(SearchUsers(client)(filters))
         rows = _cap(rows, limit, ui)
         emit(
             rows,

@@ -383,3 +383,20 @@ def test_piped_records_skip_lookups_and_bare_names_are_resolved(source_repo: Sou
 
     assert [row["repo"] for row in _json(result)] == ["acme/api", "acme/web"]
     assert requested == ["/repos/acme/web"]
+
+
+def test_sweep_table_leaves_out_negated_predicate_counts(source_repo: SourceRepo) -> None:
+    source = source_repo("api", {"a.py": "needle\n"})
+    predicates = ["--org", "acme", "--grep", "needle", "--not-grep", "hay", "--no-owners"]
+    predicates += ["--lacks-file", "missing.txt"]
+
+    table, _ = _sweep(predicates, org=[_repo("acme/api", source)])
+    edited, _ = _sweep([*predicates, "--cached", "--columns", "+not-grep:hay"])
+
+    assert table.exit_code == edited.exit_code == 0, table.output + edited.output
+    assert "grep:needle" in table.stdout
+    assert "not-grep:hay" not in table.stdout
+    assert "lacks-file:missing.txt" not in table.stdout
+    # -c +name edits the curated defaults instead of replacing them.
+    assert "grep:needle" in edited.stdout
+    assert "not-grep:hay" in edited.stdout
