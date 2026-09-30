@@ -17,7 +17,8 @@ for the fields the pipe contract fixes (``docs/conventions.md``):
 
 Records are frozen pydantic models; subclasses add their own fields, which
 serialize before the base fields they inherit (the identifying field stays
-first for ``--format raw`` and the first table column).
+first for ``--format raw`` and the first table column), except that an
+inherited ``action`` follows the identifying field.
 """
 
 from __future__ import annotations
@@ -104,19 +105,31 @@ def _field_order(model: type[BaseModel]) -> tuple[str, ...]:
     """Field names by declaring class, most derived first.
 
     Pydantic lists inherited fields first; records want their own fields
-    (including re-declared base fields) ahead of the base-class ones.
+    (including re-declared base fields) ahead of the base-class ones. An
+    inherited ``action`` follows the identifying field (``id`` and ``name``
+    when a record leads with both).
     """
     order: dict[str, None] = {}
+    declared_by: dict[str, type] = {}
     for klass in model.__mro__:
         own = annotationlib.get_annotations(klass, format=annotationlib.Format.FORWARDREF)
-        order.update(dict.fromkeys(name for name in own if name in model.model_fields))
-    return tuple(order)
+        for name in own:
+            if name in model.model_fields:
+                order.setdefault(name)
+                declared_by.setdefault(name, klass)
+    names = list(order)
+    if declared_by.get("action") is OutcomeRecord and declared_by[names[0]] not in _BASES:
+        # An outcome's ``action`` follows the field(s) identifying the row.
+        names.remove("action")
+        names.insert(2 if names[:2] == ["id", "name"] else 1, "action")
+    return tuple(names)
 
 
 class Record(BaseModel):
     """Base for emitted records: frozen, with unknown fields rejected.
 
-    Dumps list the record's own fields before inherited base fields.
+    Dumps list the record's own fields before inherited base fields, except
+    that an inherited ``action`` follows the identifying field.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -163,6 +176,10 @@ class TargetRecord(Record):
 
     target_path: AbsolutePath
     error: _RowError = None
+
+
+#: Record bases whose fields never identify a row.
+_BASES: Final = (OutcomeRecord, TargetRecord)
 
 
 class CheckRecord(Record):

@@ -422,7 +422,9 @@ submitting an action.
 
 `launch` and `sync` watch what they start with one flag family. `--wait`
 waits for terminal success and exits nonzero for failed, canceled, or error
-executions. `--follow` waits the same way and streams each job's log to
+executions; each row then carries the execution's `status`, `started_at`
+and `finished_at` (UTC, `2026-01-02T03:04:05Z`), the fields of the `awx.job`
+record `jobs wait` prints. `--follow` waits the same way and streams each job's log to
 stderr as it runs, ending with its PLAY RECAP (stdout keeps only the result
 rows). With several executions each log line is prefixed with its
 `[template]`. `--timeout SECONDS` (with `--wait` or `--follow`; zero or
@@ -602,6 +604,9 @@ whole graph, edges and prompts included. `unified-templates` is AWX's view
 of every launchable kind.
 
 ## Test suites
+
+`awx test` is [experimental](../stability.md#experimental) and may change in
+a minor release.
 
 `awx test` launches a job template with a matrix of parameters, checks each
 job against what the case expects, and reports one result per case. Suites

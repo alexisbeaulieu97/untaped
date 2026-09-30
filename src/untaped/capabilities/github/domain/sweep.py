@@ -63,13 +63,13 @@ class RefEvaluation:
 class RepoSweepOutcome:
     """Aggregated sweep result for one repository."""
 
-    full_name: str
+    repo: str
     clone_url: str | None
     matched: bool
     refs_matched: tuple[str, ...]
     hits: Mapping[str, int]
     owners: tuple[str, ...]
-    synced_at: str | None
+    fetched_at: str | None
 
 
 def ref_matches(query: SweepQuery, evaluation: RefEvaluation) -> bool:
