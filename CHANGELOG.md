@@ -234,6 +234,11 @@ self-contained manual for the installed CLI.
     on unreachable hosts, or failed (or was checked beyond its status)
     before AWX saved its events exits 5, instead of 1. A preflight failure names `awx.suite` (or
     `awx.credentials`, `awx.scm`) as its `system`.
+  - **Breaking:** the `awx.job` record (`jobs wait`) and the `launch` and
+    `sync` rows rename `started` and `finished` to `started_at` and
+    `finished_at`. These and the `started_at`/`finished_at` of
+    `awx.test_result` rows are UTC timestamps to the second
+    (`2026-01-02T03:04:05Z`) instead of AWX's strings with microseconds.
   - **Fix:** a case that expects its job to fail no longer passes when the
     job failed because a project or inventory update failed first: the
     playbook never ran, and the case fails as `awx.scm` or `awx.inventory`.
