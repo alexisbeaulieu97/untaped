@@ -64,8 +64,8 @@ These flags apply to `launch` and `sync`:
 
 - `--wait` waits for each execution and fails the row (exit 1) on `failed`,
   `error` or `canceled`. The row then has the execution's `status`,
-  `started_at` and `finished_at` (UTC, `2026-01-02T03:04:05Z`), as in the
-  `awx.job` record `untaped awx jobs wait` prints.
+  `started_at`, `finished_at` (UTC, `2026-01-02T03:04:05Z`) and `elapsed`
+  (seconds), as in the `awx.job` record `untaped awx jobs wait` prints.
 - `--follow` does the same while streaming each job's log to stderr, ending
   with its PLAY RECAP (`[template]`-prefixed when several run), so failed
   hosts show as Ansible prints them (`fatal: [host]: FAILED! => …`). A
@@ -103,10 +103,9 @@ untaped awx jobs wait 101 --timeout 600
 - `jobs list` shows the newest 20 (`--limit 0` for all); `--template NAME|ID`
   keeps one template's runs (the project for `--kind project_update`, the
   inventory source for `--kind inventory_update`; digits mean an id, so match
-  a numeric name with `--filter job_template__name=123`). `jobs list` and
-  `get` tables show a summary (`id`, `name`, `status`, timings) and the
-  `wait` table `id`, `name` and `status`; json and yaml carry every AWX
-  field.
+  a numeric name with `--filter job_template__name=123`). `jobs list`,
+  `get` and `wait` tables show a summary; json and yaml carry the whole
+  record.
 - `jobs logs` prints a job's stdout, downloaded in full; with `--follow` it
   reads only new events on each poll (colours removed), and `--tail N
   --follow` starts from the newest events only. `jobs events` prints the
