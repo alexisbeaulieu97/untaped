@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 9.0.0
+
+A major release that makes untaped a harness for AI agents. Every failure
+says what kind it is and which system is responsible, and selects the exit
+code: **4** means fix the environment, **5** means retry later (capability
+SDK 3.0; see the **Breaking** entries). `awx test` explains why a case failed
+and gains regression checks, baseline comparison, workflow suites and
+temporary test sets from a git ref (`--source-ref`). Every built-in skill is a
+self-contained manual for the installed CLI.
 
 - Core
   - **New:** every built-in skill is a complete manual for the installed CLI.
