@@ -204,7 +204,7 @@ def _sweep(
 
 
 def _names(report: SweepReport) -> list[str]:
-    return [row.full_name for row in report.rows]
+    return [row.repo for row in report.rows]
 
 
 _CACHED = (_row("acme/api"), _row("acme/old", archived=True), _row("Other/Tool"), _row("zed/x"))
@@ -391,7 +391,7 @@ def test_identical_line_across_refs_yields_one_match_row() -> None:
     )
 
     [match] = report.matches
-    assert (match.full_name, match.refs, match.path) == (
+    assert (match.repo, match.refs, match.path) == (
         "acme/api",
         ("main", "release/1"),
         "app.py",
@@ -470,7 +470,7 @@ def test_expired_copy_with_unchanged_pushed_at_is_touched_not_fetched() -> None:
     assert corpus.synced == []
     assert corpus.touched == ["acme/api"]
     assert (report.cached, report.refreshed) == (1, 0)
-    assert report.rows[0].synced_at == "2026-07-07T12:00:00+00:00"
+    assert report.rows[0].fetched_at == "2026-07-07T12:00:00+00:00"
 
 
 @pytest.mark.parametrize(
