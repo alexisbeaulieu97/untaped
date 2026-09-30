@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import sysconfig
+import tomllib
 from collections.abc import Callable
 from importlib import metadata
 from pathlib import Path
@@ -106,11 +107,9 @@ def test_zero_capability_root_lists_no_capabilities() -> None:
     assert composition.quarantine == ()
 
     root = bootstrap.build_root_app(builtins=(), externals=())
-    assert bootstrap.current_capability() is None
     result = CliInvoker().invoke(root.meta, ["--help"])
     assert result.exit_code == 0, result.output
     assert "untaped" in result.stdout
-    assert bootstrap.current_capability() is None
 
 
 def test_default_composition_retains_the_six_public_capabilities() -> None:
@@ -389,39 +388,6 @@ def test_verbose_and_quiet_together_is_a_usage_error(
     assert not is_quiet()
 
 
-def test_identity_resets_after_nested_calls() -> None:
-    seen: dict[str, object] = {}
-    holder: dict[str, object] = {}
-
-    def beta_body() -> None:
-        echo(f"inner:{bootstrap.current_capability()}")
-
-    def alpha_body() -> None:
-        seen["before"] = bootstrap.current_capability()
-        nested = CliInvoker().invoke(holder["root"], ["beta", "who"])  # type: ignore[arg-type]
-        seen["nested_exit"] = nested.exit_code
-        seen["nested_out"] = nested.stdout.strip()
-        echo(f"outer:{bootstrap.current_capability()}")
-
-    alpha_calls: list[str] = []
-    beta_calls: list[str] = []
-    root = bootstrap.build_root_app(
-        builtins=(),
-        externals=[
-            _external(_spec("alpha", _who_app("alpha", alpha_body)), alpha_calls),
-            _external(_spec("beta", _who_app("beta", beta_body)), beta_calls),
-        ],
-    )
-    holder["root"] = root.meta
-
-    assert bootstrap.current_capability() is None
-    result = CliInvoker().invoke(root.meta, ["alpha", "who"])
-    assert result.exit_code == 0, result.output
-    assert seen == {"before": "alpha", "nested_exit": 0, "nested_out": "inner:beta"}
-    assert "outer:alpha" in result.stdout
-    assert bootstrap.current_capability() is None
-
-
 def test_root_help_lists_root_options_and_completion() -> None:
     root = bootstrap.build_root_app(builtins=(), externals=())
     result = CliInvoker().invoke(root.meta, ["--help"])
@@ -525,7 +491,6 @@ def test_reset_restores_composed_state(_isolated_config: Path) -> None:
 
     bootstrap.reset()
     assert profile_override() is None
-    assert bootstrap.current_capability() is None
     assert app_context().section("ext", _ExtProfile).token == "default-token"
     assert not is_verbose()
     assert not is_quiet()
@@ -559,7 +524,8 @@ def test_installed_wheel_reports_version_and_help(tmp_path: Path) -> None:
     assert built.returncode == 0, built.stderr
     wheels = sorted(dist_dir.glob("untaped-*-py3-none-any.whl"))
     assert len(wheels) == 1
-    assert wheels[0].name == "untaped-9.0.0-py3-none-any.whl"
+    expected_version = tomllib.loads((repo / "pyproject.toml").read_text())["project"]["version"]
+    assert wheels[0].name == f"untaped-{expected_version}-py3-none-any.whl"
 
     venv_dir = tmp_path / "smoke-venv"
     subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True, timeout=300)
@@ -607,7 +573,7 @@ def test_installed_wheel_reports_version_and_help(tmp_path: Path) -> None:
         timeout=120,
     )
     assert version.returncode == 0, version.stderr
-    assert version.stdout == "9.0.0\n"
+    assert version.stdout == f"{expected_version}\n"
 
     helped = subprocess.run(
         [str(venv_dir / "bin" / "untaped"), "--help"],

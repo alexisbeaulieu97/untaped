@@ -89,7 +89,7 @@ jobs:
           TERM: dumb
           NO_COLOR: "1"
           COLUMNS: "200"
-        run: uv run pytest
+        run: uv run pytest -n auto --durations=25
 
       - name: Build package
         run: |

@@ -619,6 +619,8 @@ def test_close_kills_the_whole_process_group(
         )
 
     monkeypatch.setattr(UvHookWorker, "_start", start)
+    # The parent ignores SIGTERM, so close() waits out two grace periods.
+    monkeypatch.setattr(worker_client, "CLOSE_GRACE_SECONDS", 0.1)
     worker = UvHookWorker(tmp_path)
     pgid = os.getpgid(worker._process.pid)
     try:
