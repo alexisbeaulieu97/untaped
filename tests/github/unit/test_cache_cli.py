@@ -144,8 +144,8 @@ def test_cache_sync_sends_the_token_only_to_the_enterprise_git_host(
     records = [
         {"untaped": "1", "kind": "github.repo", "record": {**row, "default_branch": "main"}}
         for row in (
-            {"full_name": "acme/api", "clone_url": "https://ghe.example/acme/api.git"},
-            {"full_name": "acme/web", "clone_url": "https://other.example/acme/web.git"},
+            {"repo": "acme/api", "clone_url": "https://ghe.example/acme/api.git"},
+            {"repo": "acme/web", "clone_url": "https://other.example/acme/web.git"},
         )
     ]
 

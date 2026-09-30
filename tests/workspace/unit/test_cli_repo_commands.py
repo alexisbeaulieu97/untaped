@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from untaped.capabilities.workspace.cli import app
+from untaped.capabilities.workspace.errors import WorkspaceError
+from untaped.capabilities.workspace.infrastructure import LocalFilesystem
 from untaped.testing import CliInvoker, ScriptedPromptBackend, assert_destructive_contract
 
 pytestmark = pytest.mark.usefixtures("isolate_config")
@@ -103,6 +106,36 @@ def test_remove_prune_with_yes(tmp_path: Path, upstream: Path, isolated_cache: P
     assert not (target / "upstream").exists()
 
 
+def test_remove_prune_that_cannot_delete_the_clone_is_partial(
+    tmp_path: Path, upstream: Path, isolated_cache: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = CliInvoker()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["repos", "add", "smoke", f"file://{upstream}"])
+    runner.invoke(app, ["sync", "smoke"])
+
+    def _refuse(self: LocalFilesystem, path: Path) -> None:
+        raise WorkspaceError(f"could not remove {path}: permission denied")
+
+    monkeypatch.setattr(LocalFilesystem, "rmtree", _refuse)
+    rm = runner.invoke(
+        app, ["repos", "remove", "smoke", "upstream", "--prune", "--yes", "--format", "json"]
+    )
+
+    assert rm.exit_code == 1, rm.output
+    [row] = json.loads(rm.stdout)
+    assert (row["action"], row["pruned"]) == ("partial", False)
+    assert row["detail"] == (
+        "removed from the manifest; could not delete the clone: "
+        f"could not remove {target / 'upstream'}: permission denied"
+    )
+    assert row["error"]["message"] == row["detail"]
+    assert rm.stderr.count("error: upstream: removed from the manifest") == 1
+    assert (target / "upstream").is_dir()
+    assert "upstream" not in (target / "untaped.yml").read_text()
+
+
 def test_remove_prune_refuses_clean_local_commit(
     tmp_path: Path, upstream: Path, isolated_cache: Path
 ) -> None:
@@ -150,6 +183,7 @@ def test_remove_prune_decline_exits_one_without_mutation(
 
     assert rm.exit_code == 1, rm.output
     assert "cancelled; no changes made" in rm.stderr
+    assert rm.stdout == ""
     assert backend.calls == [("confirm", "Continue?")]
     assert "aborted" not in rm.output
     assert (target / "upstream").is_dir()
