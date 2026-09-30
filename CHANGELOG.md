@@ -293,6 +293,11 @@ self-contained manual for the installed CLI.
     `ansible.default_source` naming a missing source, a broken saved source,
     or an index written by a newer untaped exits 4; `impact` (and
     `graph --upstream`) without any source exits 2.
+  - **Fix:** live graphs (`--live`, or no source) resolve an unpinned
+    dependency's current default branch from GitHub instead of trusting the
+    source's recorded one, so a repo that renamed its default branch (keeping
+    the old one) is no longer walked at the old branch. An unpinned hop at the
+    depth limit, which is not read, stays ref-less.
   - **Behavior change:** each repo a `source refresh` could not index is an
     `error: <repo>: <reason>` line (was `failed <repo>: <reason>`), and the
     final error carries the most severe repo's category.
