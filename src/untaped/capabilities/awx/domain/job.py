@@ -79,6 +79,8 @@ class Job(BaseModel):
     finished_at: UtcTimestamp | None = Field(
         default=None, validation_alias=AliasChoices("finished_at", "finished")
     )
+    elapsed: float | None = None
+    """Seconds the job ran, as AWX reports it."""
     failed: bool = False
     scm_branch: str | None = None
     """The branch, tag or commit a job was launched on (empty: its project's)."""
