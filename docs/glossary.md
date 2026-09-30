@@ -38,6 +38,9 @@ Terms as `untaped` uses them in commands, output and these docs.
 - **provider**: A Python package that adds a capability to `untaped` through
   the `untaped.capabilities` entry point. Only capability authors deal with
   providers.
+- **quarantine**: What composition does with an external provider that fails
+  validation: its capability is left out, the others still load, a warning
+  names it, and `untaped capabilities` and `untaped doctor` show the reason.
 - **recipe**: A YAML file of steps that `recipe apply` plans and applies to
   target directories.
 - **root commands**: The commands that belong to `untaped` itself rather than
@@ -68,8 +71,3 @@ Terms as `untaped` uses them in commands, output and these docs.
   example `✓` for true or `—` for unset). Other formats print the value itself.
 - **workspace**: A directory of Git clones managed together through its
   manifest, and registered by name in the state file.
-
-## See also
-
-- [Getting started](./getting-started.md)
-- [Configuration](./configuration.md)

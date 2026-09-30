@@ -1,56 +1,71 @@
-# Apply details: previews, inputs and pipe records
+# Apply details: previews, inputs and targets
 
-The finer points of `untaped recipe apply`: preview shapes, concurrency, input resolution and prompting, sensitive inputs, how piped records become targets, and the record kinds every recipe command emits.
+## Previews
 
-- Preview goes to stderr; stdout carries only data rows. Normal apply and
-  `--dry-run` default to `--preview table` (changed files, absolute paths,
-  change kind, line counts); `--check` defaults to summary-only. `--preview
-  diff` gives patch-compatible unified diffs; `--preview none` gives the
-  summary line only. Large plans collapse from per-file to per-target rows at
-  the `recipe.preview_max_rows` setting (default 50, `0` = unlimited), then
-  truncate with an exact `showing first N of M targets` count — collapsed
-  previews are summaries backed by exact totals, and `--preview diff` is the
-  full-detail escape.
-- `--parallel N` plans targets concurrently (clamped, max 32) and sizes the
-  per-hook-project worker pool. `--hook-timeout SECONDS` overrides the per-hook
-  request timeout (`0` disables); worker environment startup runs under the
-  separate `recipe.hook_startup_timeout_seconds` bound (default 300) with a
-  `preparing hook environment...` stderr notice.
-- `--input-from NAME='<jinja>'` overrides a per-target derivation source. It
-  uses the same sandbox as recipe `from` (literal text, constants, and field
-  access on `target.path`/`target.name`/`target.parent_path`/
-  `target.parent_name`/`record` only — no filters, operators, calls, or
-  control blocks) and must resolve for every target, unlike recipe `from`
-  candidates which fall through silently.
-- Precedence per input: fixed value or source override → recipe `from` →
-  recipe default → prompt (required inputs only) → `missing required input`
-  error.
-  Combining `--var`/`--vars-file` with `--input-from` for one input is a usage
-  error. `scope: global` inputs reject `--input-from` but accept `--var`.
-  A `default:` must coerce to the input's `type` (checked at load, so `validate`
-  reports it) and cannot be combined with `required: true`.
-- A required input with no value is prompted for only when stdin is a
-  terminal (sensitive inputs as a hidden secret); optional and defaulted
-  inputs are never prompted, and structured (`list`/`dict`) inputs never are.
-  Without a TTY (piped `--stdin` targets included), or with
-  `--non-interactive` or `--check`, the input fails with `missing required input: NAME;
-  pass --var NAME=VALUE or --vars-file FILE` (a global input fails the run, a
-  target input fails that target's row). Prompts run serially in target
-  order before planning starts (planning stays parallel with `-j`), and
-  Ctrl-C at a prompt aborts the run with exit 130. Agents should pass every
-  required input explicitly or use `--non-interactive`.
-- Sensitive inputs render as `***` in rows, warnings, errors, and backup
-  metadata, and file-level preview detail and diffs are suppressed for targets
-  that resolve a sensitive input (not overridable by `--preview diff`). Real
-  values still reach templates and hooks.
-- Records resolve absolute `record.target_path` first, then generic
-  `record.path`. Records whose `kind` ends in `.summary` are skipped as
-  non-targets. Repo-grain records such as `workspace.repo` must provide
-  `target_path`; records without it are rejected before planning.
-- Emit kinds: `apply` → `recipe.apply_outcome` (one row per target);
-  `validate` → `recipe.check`; `test` → `recipe.test`; `list`/`get` →
-  `recipe.recipe`; `packs list`/`packs get` → `recipe.pack`; `hooks
-  list`/`hooks get` → `recipe.hook`; `hooks run` → `recipe.hook_run`; `packs
-  add` → `recipe.add_outcome`; `packs sync` → `recipe.sync_outcome`; `packs
-  remove` → `recipe.remove_outcome`; `backups prune` → `recipe.prune_outcome`
-  (`action` `planned`/`deleted`/`failed`); other `backups` → `recipe.backup`.
+- The preview goes to stderr. `apply` and `--dry-run` default to
+  `--preview table` (changed files, absolute paths, change kind, line
+  counts); `--check` defaults to `--preview none`, the summary line only.
+- `--preview diff` prints unified diffs that `patch` accepts. It is the only
+  full-detail view once a table collapses.
+- A table collapses from per-file to per-target rows past the
+  `recipe.preview_max_rows` setting (default 50, `0` for unlimited), then
+  truncates with an exact `showing first N of M targets` count.
+- Targets that resolve a sensitive input show no file detail or diff, even
+  with `--preview diff`. Their values appear as `***` in rows, warnings,
+  errors and backup metadata; templates and hooks still get the real value.
+
+## Failures and concurrency
+
+- A target that fails to plan or write is reported and writes nothing; the
+  other targets proceed. Within one target, writes are a transaction that
+  rolls back on failure.
+- `--parallel N` (`-j`, at most 32) plans targets concurrently and sizes the
+  hook worker pool.
+- `--hook-timeout SECONDS` bounds each hook call (`0` disables). Preparing a
+  pack's hook environment has its own bound,
+  `recipe.hook_startup_timeout_seconds` (default 300), and prints
+  `preparing hook environment...` on stderr.
+
+## Inputs
+
+- Precedence per input: `--var`/`--vars-file` or `--input-from` → the
+  recipe's `from` → the recipe's `default` → a prompt (required inputs only)
+  → a `missing required input` error.
+- Among fixed values, a later `--vars-file` wins over an earlier one and
+  `--var` wins over every file. Unknown input names are rejected.
+- `--var` parses the value as YAML only for inputs declared `list` or
+  `dict` (`--var 'cols=[name, owner]'`); scalar inputs take the literal
+  string.
+- `--input-from NAME='<jinja>'` derives one input per target. It must
+  resolve for every target, while a recipe's `from` candidates fall through
+  silently. It cannot be combined with `--var` for the same input, and
+  `scope: global` inputs reject it.
+- The expression sandbox (recipe `from` and `--input-from`) allows literal
+  text, constants and field access on `target.path`, `target.name`,
+  `target.parent_path`, `target.parent_name` and `record`. Filters,
+  operators, calls and control blocks are rejected.
+
+## Prompts
+
+- Only a required input with no value prompts, and only when stdin is a
+  terminal; sensitive inputs prompt hidden. `list`/`dict` inputs never
+  prompt.
+- With no terminal (piped `--stdin` included), `--non-interactive` or
+  `--check`, a missing input fails with `missing required input: NAME`. A
+  global input fails the run; a target input fails that target's row.
+- Prompts run in target order before planning starts. Ctrl-C at a prompt
+  exits 130.
+
+## Targets from stdin
+
+- `--stdin` replaces positional directories; passing both is a usage error.
+  The confirmation then reads the controlling terminal, and input prompts
+  never run.
+- A line is a path unless it is a JSON object carrying the untaped envelope
+  marker; a directory named `2024` is still a path.
+- A record's target is its absolute `target_path`, else `path`. Records whose
+  `kind` ends in `.summary` are skipped. Repo records such as
+  `workspace.repo` must carry `target_path` or are rejected before planning.
+- The same directory given twice, in any spelling, is planned once.
+- `from` expressions can read the target's `record`, so upstream output can
+  choose both the targets and their input values.

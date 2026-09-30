@@ -1,11 +1,6 @@
 # Versioning and stability
 
-`untaped` follows [semantic versioning](https://semver.org/). This page says
-what a version number promises: what stays compatible within a major release,
-what may change in any release, and how a breaking change reaches you.
-
-This policy applies from 9.0.0 on; earlier majors shipped each breaking
-change on its own.
+`untaped` follows [semantic versioning](https://semver.org/), from 9.0.0 on.
 
 ## Stable within a major release
 

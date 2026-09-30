@@ -1,7 +1,5 @@
 # Getting started
 
-This page takes you from install to a first command in each capability.
-
 ## Install
 
 `untaped` needs Python 3.14 and [uv](https://docs.astral.sh/uv/).
@@ -12,16 +10,11 @@ untaped --version
 untaped --help
 ```
 
-Optionally install shell completion:
+`untaped --install-completion` adds shell completion.
 
-```bash
-untaped --install-completion
-```
-
-`untaped doctor` checks the install and your configuration without any
-network access. Run it whenever something looks wrong; `--online` also
-contacts each configured service and prints the command that fixes each
-failure:
+`untaped doctor` checks the install and your configuration without network
+access. Run it whenever something looks wrong. `--online` also contacts each
+configured service and prints the command that fixes each failure.
 
 ```bash
 untaped doctor
@@ -30,26 +23,23 @@ untaped doctor --online
 
 ## Set up your services
 
-`untaped setup` walks you through a profile in a terminal: pick the services
-(`awx`, `github`, `jira`), enter each base URL, then type the token (stored
-like `config set KEY --prompt`), give a command that prints it
-(`token_command`), or keep the current one. It then checks each service
-online and exits 1 if one fails. A new profile name creates that profile.
+`untaped setup` walks you through one profile in a terminal. For each service
+you pick (`awx`, `github`, `jira`) it asks for the base URL and how to get
+the token: type it, give a command that prints it (`token_command`), or keep
+the current one. It then checks each service online and exits 1 if one
+fails. Naming a new profile creates it.
 
 ```bash
 untaped setup
 ```
 
-To script the same settings, use `config set` below. Shorten commands you
-repeat with [aliases](./configuration.md#command-aliases):
-`untaped alias set failed -- awx jobs list --status failed`, then
-`untaped failed`.
+To script the same settings, use `config set` as below.
 
 ## Store your tokens
 
 Settings live in `~/.untaped/config.yml`. Write them with `untaped config set`
 rather than by hand, so they are validated. Use `--prompt` for tokens: the
-value is read without echo and never lands in your shell history.
+value is read without echo and stays out of your shell history.
 
 ```bash
 untaped config set github.token --prompt
@@ -77,8 +67,8 @@ untaped config list
 untaped config get github.token
 ```
 
-Every setting, its default and its environment variable is in the
-[configuration reference](./reference/config.md).
+The [configuration reference](./reference/config.md) lists every setting,
+its default and its environment variable.
 
 ## Use profiles for more than one environment
 
@@ -102,7 +92,8 @@ untaped profile current
 
 ## First command in each capability
 
-Each capability has a guide with the full workflow.
+Each capability's guide, linked from the [documentation index](./README.md),
+has its full workflow.
 
 ```bash
 # workspace: register a directory of Git clones and sync it
@@ -129,14 +120,9 @@ untaped ansible deps acme/base-role
 untaped recipe list
 ```
 
-| Capability | Guide |
-|---|---|
-| `workspace` | [Workspaces](./workspace/usage.md) |
-| `github` | [GitHub](./github/usage.md) |
-| `jira` | [Jira](./jira/usage.md) |
-| `awx` | [AWX/AAP](./awx/usage.md) |
-| `ansible` | [Ansible dependency graphs](./ansible/usage.md) |
-| `recipe` | [Recipes](./recipe/usage.md) |
+Shorten a command you repeat with an [alias](./configuration.md#command-aliases):
+`untaped alias set failed -- awx jobs list --status failed`, then
+`untaped failed`.
 
 ## Output and piping
 
@@ -160,7 +146,8 @@ untaped config set ui.format json
 ```
 
 Only data goes to stdout. Progress, warnings and errors go to stderr, so a
-pipe never carries noise. `-q`/`--quiet` mutes progress and success messages.
+pipe carries only records. `-q`/`--quiet` mutes progress and success
+messages.
 
 ```bash
 # Clone every non-archived repo of a GitHub team into a workspace
@@ -173,7 +160,7 @@ untaped awx job-templates list --format raw --columns name \
   | untaped awx job-templates get --stdin --format yaml
 ```
 
-See [Pipes and record kinds](./reference/pipes.md) for which commands read
+[Pipes and record kinds](./reference/pipes.md) says which commands read
 which records.
 
 ## Commands that change things
@@ -187,7 +174,7 @@ Jira asks only before destructive writes by default (see
   unless you pass `--yes` or `--dry-run`.
 - Answering no exits 1 with `cancelled; no changes made`.
 
-Exit codes are the same everywhere: see [Exit codes](./reference/exit-codes.md).
+Every command uses the same [exit codes](./reference/exit-codes.md).
 
 ## Agent skills
 
@@ -198,9 +185,5 @@ untaped skills list
 untaped skills install --all --target claude
 ```
 
-See [Agent skills](./skills.md).
-
-## See also
-
-- [Configuration](./configuration.md)
-- [Glossary](./glossary.md)
+[Agent skills](./skills.md) covers targets, scopes and keeping installed
+skills current.

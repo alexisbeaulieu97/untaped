@@ -3,106 +3,61 @@
 Each capability ships an agent skill: a directory with `SKILL.md` and its
 reference files that teaches an AI coding agent to use that capability.
 `untaped skills` lists and installs the skills of every composed capability,
-built-in or external. Each skill has a stable full ID (for example,
-`untaped-github`, `untaped-awx`, and `untaped-workspace`).
-
-## List available skills
-
-The root list includes every skill accepted by the current composition:
-
-```bash
-untaped skills list
-untaped skills list --format raw
-untaped skills list --format json
-```
-
-The normal display uses each asset's full installed ID. Use the short selector
-as the primary form when installing a built-in skill; the root resolves
-`github` to the existing `untaped-github` asset, for example. The full ID is
-also accepted when a script already has it.
+built-in or external.
 
 ## Install skills
 
-Choose a skill by its short selector, or use `--all` for the composed set:
+A skill has a stable full ID (`untaped-github`) and a short selector
+(`github`). `skills list` shows full IDs; install commands accept either.
+Choose skills with exactly one of names, `--stdin` or `--all`; a bare
+`skills install` is a usage error.
 
 ```bash
-untaped skills install github --target codex
-untaped skills install workspace --target claude
-untaped skills install awx --target all --scope local
-untaped skills install --all --target all
-```
-
-The selector source is exactly one of positional names, `--stdin`, or `--all`.
-A raw list emits the stable full IDs, which can be fed back to the root:
-
-```bash
+untaped skills list
+untaped skills install github --target claude
+untaped skills install --all --target all --scope local
 untaped skills list --format raw | untaped skills install --stdin --target codex
 ```
 
-A bare `untaped skills install` is a usage error. It must receive names,
-`--stdin`, or `--all`.
+`--target` picks the agent (`codex`, the default, `claude`, or `all`), and
+`--scope` where its skill root is:
 
-## Targets and scopes
+| Scope | Codex | Claude |
+|---|---|---|
+| `global` (default) | `~/.agents/skills` | `~/.claude/skills` |
+| `local` | `<project-root>/.agents/skills` | `<project-root>/.claude/skills` |
 
-`--target codex` is the default and installs into the Codex skill root.
-`--target claude` installs into the Claude Code skill root. `--target all`
-installs into both target roots.
+For `local`, the project root is `--project-dir PATH`, else the current git
+repository root, else the current directory. `--target-dir PATH` names the
+directory outright; it cannot be combined with `--target all` or
+`--project-dir`.
 
-`--scope global` is the default:
+Each skill lands in `<root>/<full-id>/` with a `.untaped-skill.json` marker
+recording the asset, source, target, scope and install root. The full ID is
+used even when you installed by short selector. An existing directory is
+replaced only with `--force`.
 
-- Codex: `~/.agents/skills`
-- Claude: `~/.claude/skills`
-
-`--scope local` installs beneath a project root:
-
-- Codex: `<project-root>/.agents/skills`
-- Claude: `<project-root>/.claude/skills`
-
-Use `--project-dir PATH` with `--scope local` to select the project root. When
-it is omitted, the current git repository root is used when available,
-otherwise the current working directory is used. Use `--target-dir PATH` to
-select a target directory directly; it cannot be combined with `--target all`
-or `--project-dir`.
-
-Local installs create project files that can be committed when a skill should
-travel with the repository. Keep machine-local experiments uncommitted.
-
-## Overwrite policy and markers
-
-Installation refuses to replace an existing skill directory unless `--force`
-is passed:
-
-```bash
-untaped skills install awx --target codex --force
-```
-
-Codex installs land in `.agents/skills/<full-id>/`; Claude installs land in
-`.claude/skills/<full-id>/`. Each installed directory contains a
-`.untaped-skill.json` marker recording the asset name, source, target, scope,
-and resolved install root. The full ID in the directory and marker remains
-stable even when the short selector was used.
-
-Agents usually discover changed skills automatically. Restart the target agent
-if a newly created directory does not appear in its skill catalog.
+Agents usually pick up changed skills on their own. Restart the agent if a
+new skill does not appear in its catalog.
 
 ## Keep installed skills up to date
 
-An installed skill is a copy. Upgrading untaped does not change it, and a
+An installed skill is a copy. Upgrading `untaped` does not change it, and a
 stale copy can send an agent to commands or flags this version no longer has.
 After every command (except `untaped skills …` and `untaped doctor`), the root
-compares each installed skill with the copy this version ships and prints a
-warning when one differs:
+compares each installed skill with the copy this version ships and warns when
+one differs:
 
 ```text
 warning: installed skills are out of date: untaped-awx, untaped-github
 hint: run `untaped skills update` (set skills.updates to auto or off to change this)
 ```
 
-It looks in the global Codex and Claude skill directories and in
+The check looks in the global Codex and Claude roots and in
 `.agents/skills`/`.claude/skills` at the current git root (or the current
-directory outside a repository). Only directories with the
-`.untaped-skill.json` marker count; skills you wrote yourself are never
-touched. Installs made with `--target-dir` are not checked.
+directory outside a repository). Only directories with the marker count, so
+skills you wrote yourself are never touched. Installs made with
+`--target-dir` are not checked.
 
 The `skills.updates` setting picks what the check does:
 
@@ -117,46 +72,36 @@ untaped config set skills.updates auto
 UNTAPED_SKILLS__UPDATES=off untaped …      # one process only
 ```
 
-A skill this version no longer ships is reported as no longer shipped, even
-with `auto`. Remove it with `untaped skills remove`.
-
-### Inspect, update, and remove
+To manage installs by hand:
 
 ```bash
 untaped skills status                   # every installed skill and its state
-untaped skills status --check           # exit 3 when one is outdated or unshipped
-untaped skills update                   # update every outdated install in place
-untaped skills update github awx        # only these skills
 untaped skills update --dry-run         # show what would change
-untaped skills remove awx               # remove from every target and scope
+untaped skills update github awx        # update these in place
 untaped skills remove awx --target claude --scope local
-untaped skills remove --all --yes
 ```
 
 `status` reports each install's `state`: `current`, `outdated` (its files
 differ from this version's copy), or `orphaned` (this version no longer ships
-it). `update` rewrites an install where it already is: it keeps the target and
-scope and never installs anywhere new. `remove` previews the directories and
-asks before deleting; pass `--yes` when not interactive. Like `status`, both
-accept short selectors, `--stdin`, and `--project-dir PATH` to use another
-project's local skills.
+it). `auto` never removes an orphaned skill; run `untaped skills remove`.
+`update` rewrites an install where it is, keeping its target and scope; it
+never installs anywhere new. `remove` previews the directories and asks
+before deleting; pass `--yes` when not interactive. `status`, `update` and
+`remove` accept short selectors, `--stdin`, and `--project-dir PATH` for
+another project's local skills.
 
 ### Skills committed to a repository
 
 A `--scope local` install can be committed so everyone who works in the
-repository gets the skills. The Codex root `.agents/skills` is also read by
-other agents that load skills from that directory, such as GitHub Copilot.
-Everyone who runs untaped in the repository sees the warning when the
-committed copies do not match their untaped version. Run
-`untaped skills update` after upgrading and commit the result. To catch drift
-in CI, run:
+repository gets the skills. Other agents that read `.agents/skills`, such as
+GitHub Copilot, pick them up too. Everyone whose `untaped` version does not
+match the committed copies sees the warning. Run `untaped skills update`
+after upgrading and commit the result. To catch drift in CI:
 
 ```bash
-untaped skills status --check
+untaped skills status --check   # exits 3 when a skill is outdated or orphaned
 ```
 
-## See also
-
-- [Skill template](./templates/SKILL.md): writing a capability's skill.
-- [Building a capability provider](./plugins.md#6-packaged-skills): shipping
-  a skill from an external package.
+To write a capability's skill, start from the
+[skill template](./templates/SKILL.md); an external provider ships it as in
+[Building a capability provider](./plugins.md#6-packaged-skills).

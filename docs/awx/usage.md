@@ -1,9 +1,14 @@
 # AWX/AAP usage
 
-Use `untaped awx ...` for Ansible Automation Platform (AAP) or AWX. The
-current command surface is generated from the resource catalog; use
-`untaped awx --help` and `untaped awx <resource> --help` for the complete list
-of fields and options.
+`untaped awx ...` reads and changes Ansible Automation Platform (AAP) or AWX
+resources by name, launches and follows jobs, and tests playbook changes with
+declarative suites. The command surface is generated from the resource
+catalog: `untaped awx --help`, `untaped awx <resource> --help` and
+`--columns ?` list every command, option and column.
+
+The detailed manual ships with the CLI as the `untaped-awx` skill
+(`untaped skills install awx`). This page covers concepts, workflows that
+span commands, and surprising behavior, and links to the skill for detail.
 
 ## Connect to AAP
 
@@ -17,42 +22,42 @@ untaped awx ping
 ```
 
 `ping` reads the unauthenticated `/ping/` health endpoint and then `/me/`, so
-a rejected token fails the command; the output includes the authenticated
+a rejected token fails the command; the output names the authenticated
 `user`.
 
-Use `untaped --profile <name> awx ...` to select a different configured
-profile. Tokens are secret settings; do not put them in a manifest or command
-history. To keep the token out of `config.yml` too, set `awx.token_command`
-to a command that prints it, for example
-`untaped config set awx.token_command '["pass", "show", "aap/token"]'`, or
-export `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN` or `AAP_TOKEN` (the
-variables the `ansible.controller` collection reads). `awx.token` wins over
-`awx.token_command`, which wins over the variables, tried in that order; see
-[Tokens](../configuration.md#tokens).
+Use `untaped --profile <name> awx ...` to select another profile. Keep tokens
+out of manifests and command history. To keep one out of `config.yml` too,
+set `awx.token_command` to a command that prints it
+(`untaped config set awx.token_command '["pass", "show", "aap/token"]'`), or
+export one of the variables the `ansible.controller` collection reads; see
+[Tokens](../configuration.md#tokens) for the precedence.
 
-## Where the details are
+## Concepts
 
-The complete reference ships with the CLI in the `untaped-awx` skill, which
-an agent reads too; install it with `untaped skills install awx`. Each task
-below links to the skill page that has the details.
+- **Selection.** Every command picks its targets by name (scoped by
+  `--organization`, `--inventory` or `--parent`), by id with `--by-id`, by
+  query with `--filter`/`--search`, from `--stdin`, or with `--all`. Names
+  resolve inside a scope, so a name used in two organizations is ambiguous
+  until you pass `--organization` or set `awx.default_organization`. The
+  whole selection resolves before the first write.
+- **Typed pipes.** `--format pipe` emits records that carry their kind and
+  id; a `--stdin` consumer of the same kind uses the ids directly, so a
+  `list` feeds a `patch` or a `launch` feeds `jobs wait` without re-resolving
+  names. See [Pipes and record kinds](../reference/pipes.md).
+- **Documents.** `export` writes resources as portable YAML documents that
+  reference other resources by name, and `apply` creates or updates every
+  kind from them in dependency order. They are how you create resources, copy
+  configuration between controllers, and keep it in git.
+- **The controller runs what the remote holds.** A job checks out the
+  project's remote branch, so a local commit proves nothing until it is
+  pushed; `--scm-branch HEAD` and `--source-ref HEAD` refuse an unpushed
+  HEAD for that reason.
 
-## Find and read resources
+## Find and change resources
 
 ```bash
 untaped awx job-templates list --filter name__icontains=deploy
 untaped awx inventory-sources list --inventory Production --inventory-organization Default
-untaped awx job-templates get Deploy --organization Default --format yaml
-```
-
-Select by name (scoped by `--organization`, `--inventory`, `--parent`), with
-`--by-id`, `--filter`/`--search`, `--stdin` or `--all`. Read `json`, `yaml`
-or `pipe` output rather than a table, and chain commands with
-`--format pipe | … --stdin`. See
-[selecting resources](../../src/untaped/capabilities/awx/skills/untaped-awx/references/resources.md#select-resources).
-
-## Change fields
-
-```bash
 untaped awx inventory-sources patch Cloud --inventory Production \
   --inventory-organization Default --set update_cache_timeout=3600
 untaped awx job-templates edit --filter name__icontains=deploy --field verbosity
@@ -60,10 +65,12 @@ untaped awx job-templates edit --filter name__icontains=deploy --field verbosity
 
 `patch` sets the same values on every selected resource; `edit` opens them in
 `$VISUAL`/`$EDITOR` to change each one differently. Neither creates nor
-renames: `apply` creates, and `job-templates`/`workflow-templates` have
-`copy` and `rename`. See
-[changing resources](../../src/untaped/capabilities/awx/skills/untaped-awx/references/resources.md#patch-fields) for value coercion,
-name-vs-id references, secrets, the editor session, copy and rename.
+renames: `apply` creates, and templates have `copy` and `rename`. A value
+replaces the whole top-level field (nested maps are not merged), and a field
+AWX stores as a string stays a string (`scm_branch=1.10` is `"1.10"`).
+Memberships (credentials, labels, hosts in groups) have their own idempotent
+`add`/`remove` commands. See
+[changing resources](../../src/untaped/capabilities/awx/skills/untaped-awx/references/resources.md).
 
 ## Export and apply documents
 
@@ -74,10 +81,11 @@ untaped --profile staging awx export --kind job-templates --out-dir exported \
   | untaped --profile prod awx apply - --yes
 ```
 
-`apply` creates or updates every kind at once from YAML documents, after one
-preview; `--check` exits 3 on drift and `--source-ref REF` reads the files at
-a git ref. The document format, what an export cannot carry (secrets,
-access, history) and workflow node graphs are in
+`apply --check` exits 3 on drift, which makes it a CI gate for configuration
+kept in git; `--source-ref REF` applies the files as they are at a git ref.
+A document cannot carry secrets, access or history: password survey defaults
+and webhook keys export as `$encrypted$`, which keeps the stored value when
+applied back to the same resource. See
 [resource documents](../../src/untaped/capabilities/awx/skills/untaped-awx/references/specs.md).
 
 ## Launch, sync and follow jobs
@@ -85,66 +93,56 @@ access, history) and workflow node graphs are in
 ```bash
 untaped awx job-templates launch Deploy --organization Default \
   --extra-vars @vars.yml --extra-vars version=1.10.0 --host-pattern web --follow
-untaped awx projects sync Playbooks --wait
-untaped awx inventories sync Production --follow
-```
-
-`--wait` and `--follow` wait for the result (`--follow` streams the log to
-stderr), `--timeout` bounds the wait and `--cancel` cancels what the command
-stops watching. A launch field the template does not prompt for is refused
-before anything runs. `awx jobs` lists, inspects, cancels and relaunches
-executions:
-
-```bash
-untaped awx jobs list --status failed --limit 10
-untaped awx jobs logs 101 --tail 50 --follow
 untaped awx jobs relaunch 101 --failed-hosts --yes --format pipe \
   | untaped awx jobs wait --stdin
 ```
 
-See [jobs](../../src/untaped/capabilities/awx/skills/untaped-awx/references/jobs.md).
-
-## Memberships, SCM source and usage
-
-```bash
-untaped awx job-templates credentials add Deploy "Vault prod" --organization Default
-untaped awx groups hosts add web web-01 web-02 --inventory Production
-untaped awx job-templates list --organization Default --with-scm \
-  --columns name,scm_url,effective_scm_ref
-untaped awx job-templates usage Deploy --recursive
-```
-
-See [memberships](../../src/untaped/capabilities/awx/skills/untaped-awx/references/resources.md#memberships) and the sections after it.
+A launch field the template does not prompt for (`ask_*_on_launch` false) is
+refused before anything runs, because AWX would silently ignore it. A single
+named launch or sync submits at once; several targets are listed and
+confirmed once. A job the command stops watching keeps running unless you
+pass `--cancel`. See
+[jobs](../../src/untaped/capabilities/awx/skills/untaped-awx/references/jobs.md).
 
 ## Test suites
 
 `awx test` is [experimental](../stability.md#experimental) and may change in
-a minor release. It launches a template with a matrix of cases from a YAML
-suite under `.untaped/awx/tests/` and checks each job against what the case
-expects:
+a minor release. A suite under `.untaped/awx/tests/` in the playbook
+repository launches a template once per case and checks each job against what
+the case expects. The loop is: write a suite (`test init`), save a baseline
+of the base branch, push, `test validate`, then `test run --scm-branch HEAD
+--compare` the baseline:
 
 ```bash
 untaped awx test init "Deploy app"
+untaped awx test run --scm-branch main --format json > /tmp/baseline.json
 untaped awx test validate
-untaped awx test run --scm-branch HEAD --format json
-untaped awx test run --scm-branch HEAD --baseline main
+untaped awx test run --scm-branch HEAD --compare /tmp/baseline.json --format json
 ```
 
+A failing row names the system that must act (the playbook, SCM, inventory,
+controller, hosts or the suite), so a failure caused by the environment is
+not blamed on the change. When the change also edits template specs under
+`.untaped/awx/`, `--source-ref HEAD` runs the suites against temporary copies
+of those specs.
+
 See the [suite format](../../src/untaped/capabilities/awx/skills/untaped-awx/references/test-suites.md),
-[reading results](../../src/untaped/capabilities/awx/skills/untaped-awx/references/test-results.md) (what to do about each failure) and the
-[example suites](../../src/untaped/capabilities/awx/skills/untaped-awx/examples/).
+[reading results](../../src/untaped/capabilities/awx/skills/untaped-awx/references/test-results.md)
+and the [example suites](../../src/untaped/capabilities/awx/skills/untaped-awx/examples/).
 To let an AI agent run suites against its own changes, give it a dedicated
 AWX user, token and profile: see [AWX agent profile](../../src/untaped/capabilities/awx/skills/untaped-awx/references/agent-profile.md).
 
 ## Confirmations and failures
 
 Writes (`patch`, `edit`, `apply`, `delete`, `copy`, `rename`, membership
-`add`/`remove`, `jobs cancel`, `jobs relaunch`) preview once and ask with No as
-the default; `--dry-run` never writes and `--yes` skips the prompt, which a
-write without a terminal needs. Launching or syncing several targets asks
-once too. See
-[confirmations and batches](../../src/untaped/capabilities/awx/skills/untaped-awx/references/resources.md#confirmations-and-batches), and
-[Exit codes](../reference/exit-codes.md) for what each exit code means.
+`add`/`remove`, `jobs cancel`, `jobs relaunch`, `test prune`) preview once and
+ask with No as the default. `--dry-run` never writes, even with `--yes`;
+`--yes` skips the prompt, which a write without a terminal needs. There is no
+rollback: a batch that fails partway keeps what it wrote, so export before a
+large change to have something to apply back. `edit` needs a real terminal
+even with `--yes`. See
+[confirmations and batches](../../src/untaped/capabilities/awx/skills/untaped-awx/references/resources.md#confirmations-and-batches)
+and [Exit codes](../reference/exit-codes.md).
 
 ## Optional disposable live-AAP smoke
 
