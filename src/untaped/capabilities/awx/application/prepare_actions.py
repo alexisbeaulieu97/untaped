@@ -8,6 +8,8 @@ from collections.abc import Callable, Mapping, Sequence
 from itertools import pairwise
 from typing import Any
 
+import yaml
+
 from untaped.capabilities.awx.application.mutation_values import REDACTED
 from untaped.capabilities.awx.application.ports import Catalog, ResourceClient
 from untaped.capabilities.awx.application.selection import (
@@ -18,7 +20,7 @@ from untaped.capabilities.awx.application.selection import (
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.domain.launch_prompts import PROMPT_FLAGS
 from untaped.capabilities.awx.errors import LaunchPromptError
-from untaped.capability_api import ConfigError, UsageError, q
+from untaped.capability_api import ConfigError, UntapedError, UsageError, q
 
 _CLI_FLAGS: dict[str, str] = {
     "extra_vars": "--extra-vars",
@@ -44,14 +46,20 @@ def preflight_launch(
     item: SelectedResource,
     payload: Mapping[str, Any],
     *,
+    catalog: Catalog,
     read: Callable[[str], Mapping[str, Any]] | None = None,
     name_fields: bool = False,
-) -> None:
+) -> dict[str, Any]:
     """Raise :class:`LaunchPromptError` when AWX would ignore a field or lacks a survey var.
 
     ``read`` GETs one of the template's sub-endpoints (``launch``, ``survey_spec``),
     so a caller checking many payloads can cache them. Messages name the
     ``launch`` CLI flags, or with ``name_fields`` the payload fields.
+
+    A field the template does not prompt for is a no-op, not ignored, when
+    the template has its value already: its own value, the branch of its
+    project when it names none, or (with no survey) extra vars it saves with
+    those values. Returns ``payload`` without them, the launch AWX would run.
     """
     if read is None:
 
@@ -68,30 +76,68 @@ def preflight_launch(
             f"{label} requires survey variables {', '.join(map(str, missing))}; "
             + ("set them in extra_vars" if name_fields else "pass them with --extra-vars KEY=VAL")
         )
+    launch = dict(payload)
     for field, value in payload.items():
         prompt = LAUNCH_PROMPTS.get(field)
         if prompt is None:
             continue
-        ask_key, flag = prompt
-        if name_fields:
-            flag = field
+        ask_key, flag = prompt[0], field if name_fields else prompt[1]
         if info.get(ask_key) is not False:
             continue
+        current = _template_value(field, info, item.record)
         if field == "extra_vars":
-            names = extra_var_names(value)
-            if not names:
+            variables = _variables(value)
+            if not variables:
                 continue
+            saved = _variables(current)
+            names = {
+                name for name, var in variables.items() if name not in saved or saved[name] != var
+            }
             if info.get("survey_enabled"):
                 _check_survey_variables(read, label, names)
                 continue
-        elif _is_template_value(field, value, _template_value(field, info, item.record)):
+            if not names:
+                # AWX drops the variables the template saves with these values.
+                del launch[field]
+                continue
+        elif _is_template_value(field, value, current) or (
+            field == "scm_branch" and _is_project_branch(client, catalog, item, value, current)
+        ):
             # AWX treats a value equal to the template's own as a no-op.
+            del launch[field]
             continue
         raise LaunchPromptError(
             f"{label} does not prompt for {field} on launch ({ask_key} is false); "
             f"AWX would ignore {flag}; enable {ask_key} on the template or drop {flag}",
             details={"field": field},
         )
+    return launch
+
+
+def _variables(value: Any) -> dict[str, Any]:
+    """An ``extra_vars`` value (a mapping, or its YAML or JSON text) as a mapping."""
+    if isinstance(value, str):
+        try:
+            value = yaml.safe_load(value)
+        except yaml.YAMLError:
+            return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _is_project_branch(
+    client: ResourceClient, catalog: Catalog, item: SelectedResource, branch: Any, current: Any
+) -> bool:
+    """Whether a job template naming no branch (``current``) runs ``branch``, its project's.
+
+    ``False`` when the template has no project, or it cannot be read.
+    """
+    project = item.record.get("project")
+    if current != "" or not isinstance(project, int) or isinstance(project, bool):
+        return False
+    try:
+        return bool(client.get(catalog.get("Project"), project).get("scm_branch") == branch)
+    except UntapedError:
+        return False
 
 
 def _check_survey_variables(
@@ -323,7 +369,7 @@ def prepare_action_targets(
     if action == "launch":
         for item in selected:
             read = reads.for_item(item) if reads is not None else None
-            preflight_launch(client, spec, item, payload or {}, read=read)
+            preflight_launch(client, spec, item, payload or {}, catalog=catalog, read=read)
     if action != "sync":
         return spec, tuple(selected)
     targets = tuple(selected)

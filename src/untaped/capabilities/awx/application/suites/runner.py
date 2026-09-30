@@ -398,13 +398,14 @@ class RunTestSuite:
         problems: list[tuple[str, UntapedError]] = []
         for item in resolved:
             try:
-                self._preflight(
+                launch = self._preflight(
                     item.spec,
                     name=item.template,
                     scope=item.scope,
                     payload=item.payload,
                     nodes=tuple(item.expect.nodes),
                 )
+                item = replace(item, payload=launch)
                 if item.workflow:
                     gates = self._preflight.approval_nodes(
                         item.spec, name=item.template, scope=item.scope
@@ -490,18 +491,14 @@ class RunTestSuite:
             )
             self.launched.append(job)
         except Exception as exc:
-            # ``ignored_fields`` responses launched a job; keep its ID as evidence.
-            if isinstance(exc, ActionResponseError) and exc.execution_id is not None:
-                self.launched.append(
-                    Job(
-                        id=exc.execution_id,
-                        kind=exc.execution_kind or "job",
-                        status="unknown",
-                    )
-                )
-            job_id = exc.execution_id if isinstance(exc, ActionResponseError) else None
-            launch_failure = request_failure(exc, launching=True)
-            return row(result="error", job_id=job_id, failure=launch_failure), None, None
+            if not (isinstance(exc, ActionResponseError) and exc.execution_id is not None):
+                return row(result="error", failure=request_failure(exc, launching=True)), None, None
+            # ``ignored_fields`` responses launched a job: keep its ID as evidence, abandon it.
+            created = Job(id=exc.execution_id, kind=exc.execution_kind or "job", status="unknown")
+            self.launched.append(created)
+            message = f"{exc}; {self._abandon(created)}"
+            launch_failure = request_failure(exc, launching=True, message=message)
+            return row(result="error", job_id=created.id, failure=launch_failure), None, None
         read = JobRead(source=job, workflow=self._workflow_run(item))
         failure: CaseFailure | None = None
         try:
