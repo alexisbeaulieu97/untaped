@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Annotated, Any, get_args
 from cyclopts import Parameter
 from cyclopts.validators import Number
 
-from untaped.capabilities.awx.cli._get import default_get_columns
 from untaped.capabilities.awx.cli.context import AwxContext, open_context
 from untaped.capabilities.awx.cli.options import OrganizationOption
 from untaped.capabilities.awx.domain.case_failure import CaseFailure
@@ -92,14 +91,17 @@ _RESULT_TABLE_COLUMNS = [
     "suite",
     "case",
     "result",
+    "change",
     "job_status",
     "job_id",
     "duration_s",
     "failure.system",
     "failure.message",
+    "job_url",
 ]
+"""``change`` (against a baseline) and a failure's columns show only when a row has them."""
 
-_CASE_TABLE_COLUMNS = ["suite", "case", "job_template"]
+_CASE_TABLE_COLUMNS = ["suite", "case", "job_template", "workflow_template"]
 
 _PATHS_ARG = Annotated[
     list[Path] | None,
@@ -479,7 +481,8 @@ def _report_results(
     emit(
         [result.model_dump() for result in outcome.results],
         fmt=fmt,
-        columns=columns or default_get_columns(fmt, _result_columns(outcome)),
+        columns=columns,
+        table_columns=_RESULT_TABLE_COLUMNS,
         kind=_RESULT_KIND,
     )
     for line in _summary(outcome):
@@ -525,14 +528,6 @@ def _check_run_flags(
             "--no-cancel leaves jobs running, and AWX cannot delete a template while its job "
             "runs; add --keep"
         )
-
-
-def _result_columns(outcome: SuiteRunOutcome) -> list[str]:
-    """The table's columns, with ``change`` after ``result`` when compared with a baseline."""
-    if all(result.change is None for result in outcome.results):
-        return _RESULT_TABLE_COLUMNS
-    after = _RESULT_TABLE_COLUMNS.index("result") + 1
-    return [*_RESULT_TABLE_COLUMNS[:after], "change", *_RESULT_TABLE_COLUMNS[after:]]
 
 
 def _show_failure(result: CaseResult, failure: CaseFailure) -> None:
@@ -641,13 +636,11 @@ def list_command(
         )
 
     rows = [case_row(path, suite, case) for path, suite in loaded.items() for case in suite.cases]
-    shown = _CASE_TABLE_COLUMNS
-    if any(suite.workflow_template is not None for suite in loaded.values()):
-        shown = [*shown, "workflow_template"]
     emit(
         rows,
         fmt=fmt,
-        columns=columns or default_get_columns(fmt, shown),
+        columns=columns,
+        table_columns=_CASE_TABLE_COLUMNS,
         kind="awx.test_case",
     )
 
@@ -787,7 +780,8 @@ def _validate(
         emit(
             [planned_outcome(template, temp.marker).model_dump() for template in temp.templates],
             fmt=fmt,
-            columns=columns or default_get_columns(fmt, _PROVISION_COLUMNS),
+            columns=columns,
+            table_columns=_PROVISION_COLUMNS,
             kind=_PROVISION_KIND,
             empty="No temporary copies planned.",
         )
@@ -861,7 +855,8 @@ def prune_command(
     emit(
         [row.model_dump() for row in rows],
         fmt=fmt,
-        columns=columns or default_get_columns(fmt, _PRUNE_COLUMNS),
+        columns=columns,
+        table_columns=_PRUNE_COLUMNS,
         kind=_PRUNE_KIND,
         empty="No temporary copies found.",
     )

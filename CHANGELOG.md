@@ -345,6 +345,19 @@ self-contained manual for the installed CLI.
     deletes the copies a killed run left behind, found by their name and
     description marker, after a preview and a confirmation;
     `awx.prune_outcome` rows.
+  - **Behavior change:** awx tables show a few default columns a human
+    scans (`jobs get` no longer prints every AWX field; `jobs list` adds
+    `launch_type`, `started` and `elapsed`; outcome tables leave out
+    `scope`, `identity`, `partial`, `unverified`, `preserved_secrets` and a
+    constant `kind`; `jobs cancel` leaves out the status read before the
+    cancel; `schedules list` shows the template it runs instead of an
+    always-empty `last_run`; `groups` and `inventory-sources` show their
+    `inventory`), and `list`/`get` tables name foreign keys from
+    `summary_fields`. `--columns +name` / `--columns=-name` edit them. json
+    and yaml now carry whole records where they were narrowed to the table
+    columns (`jobs list`, `jobs events`, `unified-templates list`,
+    `workflow-templates nodes`); `raw` output is unchanged, except the
+    `schedules`, `groups` and `inventory-sources` list columns.
 - Ansible
   - **Breaking:** `source refresh` exits 5 when it pauses at the GraphQL
     rate-limit floor, hits a global rate limit, or any repo failed

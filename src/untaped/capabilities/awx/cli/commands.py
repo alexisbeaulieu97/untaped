@@ -253,6 +253,13 @@ def export_top_command(
 
 jobs_app = create_app(name="jobs", help="Inspect, cancel and relaunch AWX jobs.")
 
+# Default ``table`` columns (raw AWX field names); json, yaml and pipe keep whole records.
+_JOB_LIST_COLUMNS = ("id", "name", "status", "launch_type", "started", "elapsed")
+_RAW_JOB_LIST_COLUMNS = ["id", "name", "status"]
+"""``--format raw`` keeps its tab-separated projection."""
+_JOB_GET_COLUMNS = ("id", "name", "status", "started", "finished", "elapsed", "job_explanation")
+_JOB_WAIT_COLUMNS = ("id", "name", "status")
+
 
 @jobs_app.command(name="list")
 def jobs_list(
@@ -301,11 +308,11 @@ def jobs_list(
         filters[field if template.isdigit() else f"{field}__name"] = template
     with report_errors(), open_context() as ctx, ctx.progress_ui().progress("Loading jobs…"):
         records = list(ctx.jobs.list(kind=kind, params=filters, limit=limit or None))
-    cols = list(columns) if columns else ["id", "name", "status"]
     rendered = render_rows(
         records,
         fmt=fmt,
-        columns=cols,
+        columns=columns or (_RAW_JOB_LIST_COLUMNS if fmt == "raw" else None),
+        table_columns=_JOB_LIST_COLUMNS,
         kind="awx.job",
         empty="No jobs found. Try a different --status or --filter.",
     )
@@ -334,7 +341,7 @@ def jobs_get(
             ids, lambda n: ctx.jobs.get(kind=kinds.get(n, kind), job_id=_as_job_id(n))
         )
     if records:
-        emit(records, fmt=fmt, columns=list(columns) if columns else [], kind="awx.job")
+        emit(records, fmt=fmt, columns=columns, table_columns=_JOB_GET_COLUMNS, kind="awx.job")
     finish(any_failed)
 
 
@@ -378,7 +385,7 @@ def jobs_events(
     ``--follow``, json streams one object per line (NDJSON).
     """
     filters = parse_kv_pairs(filter_, flag="--filter")
-    cols = list(columns) if columns else _event_columns(fmt)
+    cols = columns or (list(_RAW_EVENT_COLUMNS) if fmt == "raw" else None)
     one_document = _is_one_document(fmt, follow=follow)
     rows: list[dict[str, object]] = []
     # Hoisted so post-``with`` exit dispatch is safe regardless of body outcome.
@@ -406,7 +413,7 @@ def jobs_events(
 
         drained, any_failed = resolve_each(ids, _events_for_id)
         if one_document and drained:
-            echo(render_rows(rows, fmt=fmt, columns=cols, kind="awx.event"))
+            echo(_render_events(rows, fmt=fmt, cols=cols))
     finish(any_failed)
 
 
@@ -420,10 +427,24 @@ def _is_one_document(fmt: OutputFormat, *, follow: bool) -> bool:
     return not follow and fmt in ("json", "yaml")
 
 
-def _event_columns(fmt: OutputFormat) -> list[str]:
-    """Default ``jobs events`` columns; structured formats lead with ``job``."""
-    base = ["counter", "event", "host_name", "task"]
-    return base if fmt in ("table", "raw") else ["job", *base]
+_EVENT_COLUMNS = ("counter", "event", "host_name", "task", "changed", "failed")
+_RAW_EVENT_COLUMNS = ("counter", "event", "host_name", "task")
+"""``--format raw`` keeps its tab-separated projection."""
+
+
+def _render_events(
+    rows: list[dict[str, object]], *, fmt: OutputFormat, cols: list[str] | None
+) -> str:
+    return render_rows(rows, fmt=fmt, columns=cols, table_columns=_EVENT_COLUMNS, kind="awx.event")
+
+
+def _echo_json_line(row: dict[str, object], cols: list[str] | None, *, kind: str) -> None:
+    """One NDJSON object for ``--follow --format json``, ``--columns`` applied as for a document."""
+    if cols is None:
+        echo(json.dumps(row, default=str))
+    elif rendered := render_rows([row], fmt="json", columns=cols, kind=kind):
+        [projected] = json.loads(rendered)
+        echo(json.dumps(projected))
 
 
 def _event_row(ev: JobEvent, job_id: int) -> dict[str, object]:
@@ -435,7 +456,7 @@ def _emit_events(
     *,
     job_id: int,
     fmt: OutputFormat,
-    cols: list[str],
+    cols: list[str] | None,
     follow: bool,
     ui: UiContext,
 ) -> None:
@@ -447,7 +468,7 @@ def _emit_events(
         # table / json document so columns line up and yaml stays a
         # well-formed list.
         rows = [_event_row(ev, job_id) for ev in events]
-        echo(render_rows(rows, fmt=fmt, columns=cols, kind="awx.event"))
+        echo(_render_events(rows, fmt=fmt, cols=cols))
         return
     if fmt == "table":
         # Table mode under --follow renders each event as a colored
@@ -464,12 +485,10 @@ def _emit_events(
     # ``jq`` can ingest it directly without ``jq -s '.[]'``.
     if fmt == "json":
         for ev in events:
-            full = _event_row(ev, job_id)
-            echo(json.dumps({c: full.get(c) for c in cols}, default=str))
+            _echo_json_line(_event_row(ev, job_id), cols, kind="awx.event")
         return
     for ev in events:
-        line = render_rows([_event_row(ev, job_id)], fmt=fmt, columns=cols, kind="awx.event")
-        echo(line)
+        echo(_render_events([_event_row(ev, job_id)], fmt=fmt, cols=cols))
 
 
 def _emit_log_lines(
@@ -482,14 +501,10 @@ def _emit_log_lines(
 ) -> None:
     """Render the stdout of a job. Sibling of :func:`_emit_events`.
 
-    ``cols=None`` (vs ``_emit_events``'s required ``list[str]``) means
-    "emit every field of the row" — logs has no default columns whereas
-    events has ``["counter","event","host_name","task"]``.
+    ``cols=None`` means the whole ``{job, line}`` row, less ``job`` in a table.
     """
     if not follow:
-        rendered = render_rows(
-            [_log_row(line, job_id) for line in lines], fmt=fmt, columns=cols, kind="awx.log"
-        )
+        rendered = _render_logs([_log_row(line, job_id) for line in lines], fmt=fmt, cols=cols)
         if rendered:
             echo(rendered)
         return
@@ -498,10 +513,7 @@ def _emit_log_lines(
     # and so ``jq`` can ingest it directly without ``jq -s '.[]'``.
     if fmt == "json":
         for line in lines:
-            row = _log_row(line, job_id)
-            if cols is not None:
-                row = {c: row.get(c) for c in cols}
-            echo(json.dumps(row, default=str))
+            _echo_json_line(_log_row(line, job_id), cols, kind="awx.log")
         return
     if fmt == "raw":
         # Skip the no-op row-rendering round-trip — raw lines are
@@ -518,11 +530,17 @@ def _emit_log_lines(
     # to per-line row rendering like yaml does. Table-per-line is
     # silly but the cost is on the user who asked for it.
     for line in lines:
-        echo(render_rows([_log_row(line, job_id)], fmt=fmt, columns=cols, kind="awx.log"))
+        echo(_render_logs([_log_row(line, job_id)], fmt=fmt, cols=cols))
 
 
 def _log_row(line: str, job_id: int) -> dict[str, object]:
     return {"job": job_id, "line": line}
+
+
+def _render_logs(
+    rows: list[dict[str, object]], *, fmt: OutputFormat, cols: list[str] | None
+) -> str:
+    return render_rows(rows, fmt=fmt, columns=cols, table_columns=("line",), kind="awx.log")
 
 
 @jobs_app.command(name="logs")
@@ -571,7 +589,7 @@ def jobs_logs(
         ids, kinds = _job_targets(job_ids, stdin=stdin, kind=kind)
         show_breadcrumb = len(ids) > 1
         # Log rows are ``{job, line}``; the line-oriented formats show the line.
-        cols = list(columns) if columns else (["line"] if fmt in ("table", "raw") else None)
+        cols = columns or (["line"] if fmt == "raw" else None)
         one_document = _is_one_document(fmt, follow=follow)
         rows: list[dict[str, object]] = []
 
@@ -592,7 +610,7 @@ def jobs_logs(
 
         drained, any_failed = resolve_each(ids, _logs_for_id)
         if one_document and drained:
-            echo(render_rows(rows, fmt=fmt, columns=cols, kind="awx.log"))
+            echo(_render_logs(rows, fmt=fmt, cols=cols))
     finish(any_failed)
 
 
@@ -635,7 +653,7 @@ def jobs_wait(
 
         records, any_failed = resolve_each(ids, _wait_one)
     if records:
-        emit(records, fmt=fmt, columns=columns, kind="awx.job")
+        emit(records, fmt=fmt, columns=columns, table_columns=_JOB_WAIT_COLUMNS, kind="awx.job")
     for job_id in timed_out:
         echo(f"timeout: job {job_id} did not reach terminal state", err=True)
     finish(any_failed or bool(timed_out) or any(r["status"] != "successful" for r in records))
