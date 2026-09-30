@@ -605,6 +605,9 @@ of every launchable kind.
 
 ## Test suites
 
+`awx test` is [experimental](../stability.md#experimental) and may change in
+a minor release.
+
 `awx test` launches a job template with a matrix of parameters, checks each
 job against what the case expects, and reports one result per case. Suites
 live in the repository they test, under `.untaped/awx/tests/`. A suite file
