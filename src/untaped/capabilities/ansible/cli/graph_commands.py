@@ -3,9 +3,9 @@
 ``deps``, ``impact`` and ``find`` answer one question each and print rows
 (``ansible.dependency``, ``ansible.dependent``, ``ansible.dependency_match``);
 ``graph`` renders the whole graph as a tree, Mermaid or JSON document, both
-directions at once by default. All four share the source-data flags of
-:class:`GraphSourceOptions` and fall back to ``ansible.default_source`` when
-no source is selected.
+directions at once by default. All four report warnings on stderr, share the
+source-data flags of :class:`GraphSourceOptions` and fall back to
+``ansible.default_source`` when no source is selected.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from collections.abc import Iterable
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NamedTuple
 
 from cyclopts import App, Group, Parameter, validators
 
@@ -22,6 +22,7 @@ import untaped.capabilities.ansible.cli.source_commands as source_commands
 from untaped.capabilities.ansible.application.graph import BuildGraph, GraphRequest
 from untaped.capabilities.ansible.application.ports import DependencyIndex
 from untaped.capabilities.ansible.application.refresh_git_index import RefreshResult
+from untaped.capabilities.ansible.cli.graph_tree import print_tree, tree_glyphs
 from untaped.capabilities.ansible.cli.refresh import (
     GIT_PARALLEL_CAP,
     format_skipped_dependency_file,
@@ -43,7 +44,12 @@ from untaped.capabilities.ansible.domain.models import DependencyDeclaration, Pa
 from untaped.capabilities.ansible.domain.parser import parse_dependency_file
 from untaped.capabilities.ansible.domain.payloads import IndexedDependency, SkippedDependencyFile
 from untaped.capabilities.ansible.domain.reach import reach
-from untaped.capabilities.ansible.domain.renderers import GraphFormat, render_graph
+from untaped.capabilities.ansible.domain.renderers import (
+    GraphFormat,
+    plain_text,
+    render_graph,
+    tree_lines,
+)
 from untaped.capabilities.ansible.errors import AnsibleError
 from untaped.capabilities.ansible.infrastructure import (
     AliasRepository,
@@ -385,9 +391,7 @@ def find_command(
         )
         env = _graph_env(stack, options, command="find", depth=depth_limit, live=live)
         wanted = [_require_repo(env, repo) for repo in target]
-        ui = app_context().ui(strict=False)
-        for warning in _refresh_selected(env, options):
-            ui.message("warning", warning)
+        ui = _report_warnings(_refresh_selected(env, options))
         # Spellings of one repo (URL, .git, SSH, alias) share one graph build.
         graphs: dict[tuple[str, str | None, str | None], DependencyGraph] = {}
         matches: list[DependencyMatch] = []
@@ -404,7 +408,7 @@ def find_command(
                     target_repo=repo,
                     direction="deps",
                     extra_warnings=[],
-                )
+                ).graph
                 for warning in graph.warnings:
                     ui.message("warning", f"{_root_label(root)}: {warning}")
             matches.extend(find_matches(graph, wanted, source=source))
@@ -492,17 +496,21 @@ def graph_command(
         untaped ansible graph ./roles/web --target-repo acme/web --downstream
     """
     depth_limit = _parse_depth(depth or "3")
+    direction = _graph_direction(upstream=upstream, downstream=downstream, both=both)
     with report_errors(), ExitStack() as stack:
         env = _graph_env(stack, options, command="graph", depth=depth_limit, live=live)
-        graph = _target_graph(
+        built = _target_graph(
             env,
             target=target,
             ref=ref,
             target_repo=target_repo,
-            direction=_graph_direction(upstream=upstream, downstream=downstream, both=both),
+            direction=direction,
             extra_warnings=_refresh_selected(env, options),
         )
-        _emit_graph(graph, fmt=fmt, output=output)
+        ui = _report_warnings(built.graph.warnings)
+        depth_note = "unlimited depth" if depth_limit is None else f"depth {depth_limit}"
+        header_note = f"{built.data_source} · {depth_note}"
+        _emit_graph(built.graph, fmt=fmt, output=output, ui=ui, header_note=header_note)
 
 
 def _emit_reach(
@@ -529,10 +537,8 @@ def _emit_reach(
             target_repo=target_repo,
             direction=command,
             extra_warnings=_refresh_selected(env, options),
-        )
-        ui = app_context().ui(strict=False)
-        for warning in graph.warnings:
-            ui.message("warning", warning)
+        ).graph
+        _report_warnings(graph.warnings)
         emit(
             [hit.node for hit in reach(graph, relation)],
             fmt=fmt,
@@ -540,6 +546,14 @@ def _emit_reach(
             kind=kind,
             empty=f"No {noun} found{_within(depth_limit)}.",
         )
+
+
+def _report_warnings(warnings: Iterable[str]) -> UiContext:
+    """Print warnings on stderr; return the UI context used."""
+    ui = app_context().ui(strict=False)
+    for warning in warnings:
+        ui.message("warning", warning)
+    return ui
 
 
 _REACH_OUTPUT: dict[str, tuple[EdgeRelation, str, str]] = {
@@ -752,8 +766,8 @@ def _target_graph(
     target_repo: str | None,
     direction: GraphDirection,
     extra_warnings: list[str],
-) -> DependencyGraph:
-    """Build one root's graph, with its warnings attached."""
+) -> _BuiltGraph:
+    """Build one root's graph, with its warnings attached, and say what it read."""
     target_repo_name = _require_repo(env, target, target_repo=target_repo)
     graph_source = env.graph_source
     direction, graph_warnings = _effective_direction(
@@ -780,7 +794,7 @@ def _target_graph(
         )
         parse_warnings.extend(local_dependencies.warnings)
 
-    graph, read_warnings = _graph_for_target(
+    graph, read_warnings, reads = _graph_for_target(
         env.index,
         request=GraphRequest(
             repo=target_repo_name,
@@ -802,7 +816,7 @@ def _target_graph(
     )
     parse_warnings.extend(read_warnings)
 
-    return _with_graph_warnings(
+    graph = _with_graph_warnings(
         graph,
         [
             *extra_warnings,
@@ -816,6 +830,27 @@ def _target_graph(
             ),
         ],
     )
+    parts = ["local checkout"] if local_dependencies is not None else []
+    if reads.source and graph_source.header:
+        parts.append(graph_source.header)
+    if reads.live:
+        parts.append("downstream live" if reads.source else "live reads")
+    return _BuiltGraph(graph, ", ".join(parts))
+
+
+class _BuiltGraph(NamedTuple):
+    graph: DependencyGraph
+    data_source: str
+    """What the build read, for the tree header: ``source prod, downstream live``."""
+
+
+class _Reads(NamedTuple):
+    """What a graph build read besides a local checkout."""
+
+    source: bool
+    """The cached source data."""
+    live: bool
+    """Downstream dependencies from GitHub."""
 
 
 def _read_roots() -> list[tuple[GraphRoot, RootInput]]:
@@ -854,6 +889,13 @@ class _GraphSource:
     key: str | None
     label: str | None
     saved: bool
+
+    @property
+    def header(self) -> str | None:
+        """How the tree header names it: ``source prod``, ``sources a, b``, ``inline source K``."""
+        if self.saved and len(self.selections) == 1:
+            return f"source {self.label}"
+        return self.label
 
 
 @dataclass(frozen=True)
@@ -1148,7 +1190,7 @@ def _graph_for_target(
     use_live: bool,
     github_settings: GithubSettings,
     live_reads: _LiveReads,
-) -> tuple[DependencyGraph, list[str]]:
+) -> tuple[DependencyGraph, list[str], _Reads]:
     """Build the graph, reading transitive dependencies live when requested.
 
     Local target edges always overlay the chosen read index. Without a
@@ -1167,7 +1209,7 @@ def _graph_for_target(
         return BuildGraph(read_index)(request.model_copy(update={"live": use_live}))
 
     if not use_live:
-        return build(index), []
+        return build(index), [], _Reads(source=request.source_key is not None, live=False)
     if local is not None and request.source_key is None and github_settings.token is None:
         warnings = []
         if any(edge.dependency_repo is not None for edge in local.edges):
@@ -1175,15 +1217,21 @@ def _graph_for_target(
                 "transitive dependencies were not expanded: pass --source NAME to use "
                 "cached source data, or configure github.token for live GitHub reads"
             )
-        return build(NullDependencyIndex()), warnings
+        return build(NullDependencyIndex()), warnings, _Reads(source=False, live=False)
     live_index = live_reads.index()
     # The index is shared across roots: report only what this build read.
     seen_errors, seen_warnings = len(live_index.errors), len(live_index.warnings)
     graph = build(live_index)
-    return graph, [
-        *live_index.errors[seen_errors:],
-        *_live_parse_warning_messages(live_index.warnings[seen_warnings:]),
-    ]
+    # The live index falls back to the cached source for the upstream half.
+    reads = _Reads(source=request.source_key is not None and request.direction != "deps", live=True)
+    return (
+        graph,
+        [
+            *live_index.errors[seen_errors:],
+            *_live_parse_warning_messages(live_index.warnings[seen_warnings:]),
+        ],
+        reads,
+    )
 
 
 def _refresh_hint(source_state: _GraphSource) -> str | None:
@@ -1254,11 +1302,26 @@ def _should_use_live_dependencies(
     return live
 
 
-def _emit_graph(graph: DependencyGraph, *, fmt: GraphFormat, output: Path | None) -> None:
-    rendered = render_graph(graph, fmt)
-    if output is None:
-        echo(rendered)
-        return
+def _emit_graph(
+    graph: DependencyGraph,
+    *,
+    fmt: GraphFormat,
+    output: Path | None,
+    ui: UiContext,
+    header_note: str,
+) -> None:
+    """Print the rendered graph (a styled tree on a terminal), or write it plain to ``output``."""
+    if fmt == "tree":
+        lines = tree_lines(graph, glyphs=tree_glyphs(ui), header_note=header_note)
+        if output is None:
+            print_tree(lines, ui)
+            return
+        rendered = plain_text(lines)
+    else:
+        rendered = render_graph(graph, fmt)
+        if output is None:
+            echo(rendered)
+            return
     output.expanduser().parent.mkdir(parents=True, exist_ok=True)
     output.expanduser().write_text(rendered)
 
