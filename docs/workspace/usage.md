@@ -257,9 +257,7 @@ one URL is a usage error (exit `2`). Each added repo produces one
 `action: added`, `target_path`). With `--sync`, also clone the URLs
 that landed (a duplicate that fails to register won't try to clone);
 the command then prints the `workspace.sync_outcome` rows instead of
-the add rows. A URL that cannot be added (invalid, or already declared)
-has no row: it prints `error: <url>: <reason>` on stderr (a JSON line
-under `--format json`) and the command exits non-zero.
+the add rows.
 
 `--stdin` reads one URL per line, or a `--format pipe` stream of
 `github.repo`, `github.repo_hit` or `github.sweep_repo` records (their
@@ -286,7 +284,9 @@ identifier and changes nothing (it wins over `--yes`). Each removed
 repo produces one `workspace.remove_outcome` row (`workspace`, `repo`,
 `action`, `pruned`, `detail`); an identifier that could not be removed
 prints `error: <repo>: <reason>` and a `failed` row (after the removed
-ones) with `detail` and `error`. The
+ones) with `detail` and `error`. A `--prune` that removed the repo from
+the manifest but could not delete its clone is a `partial` row
+(`pruned: false`) and exits `1`; delete the clone yourself. The
 prune is refused if the clone has unsafe local
 state: dirty/untracked/staged work, stash entries, or commits not
 reachable from local remote-tracking refs, including commits reachable
