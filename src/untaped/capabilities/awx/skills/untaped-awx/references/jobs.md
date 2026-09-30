@@ -28,7 +28,7 @@ untaped awx workflow-templates launch "Release train" --follow
   values (AWX treats these as no-ops). With a survey but no
   `ask_variables_on_launch`, `--extra-vars` may carry only survey variables.
   A missing required survey variable is a usage error too; an empty
-  `--extra-vars` mapping is never refused. If AWX still reports
+  `--extra-vars` mapping is never refused as unprompted. If AWX still reports
   `ignored_fields`, that row fails and keeps the job id.
 - `--dry-run` submits nothing and shows each target's resolved `payload`
   (names resolved to ids, `extra_vars` merged). Survey password answers and

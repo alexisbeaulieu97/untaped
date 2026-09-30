@@ -7,5 +7,24 @@ How `untaped github repos list` matches names, and how `untaped github search re
 - When no repo/org/user/team/stdin scope is passed to repo/code/issue search, the CLI searches `github.default_org`, or else the authenticated user (`user:@me`) and prints `no user, org or repository in scope; searching user:@me ...` on stderr (also when `--team` resolves to no repos).
 - Repeated repo scopes are ORed together; do not rewrite them as separate AND qualifiers.
 - Search `--limit` defaults to 30; GitHub never returns more than 1000 results.
-- Large team-expanded, `--repo` or `--stdin` scopes are split into several search requests to stay within GitHub's query limits (at most five `AND`/`OR`/`NOT` operators and 256 query characters per request), and the results are deduped (`repo` for repos, `url` for code, `id` for issues) with `--limit` applied across them. Sorted multi-batch searches (`--sort`, or a `sort:` qualifier in an issue query) query every batch and merge-sort locally; an unsupported `sort:` field warns and keeps batch order.
-- To stay under GitHub's per-minute search limits, one invocation sends at most 9 code-search or 25 repository- or issue-search requests; beyond that it warns that results cover only the first N repositories — narrow the scope to search the rest. A rate limit after the first request returns the partial merged results with a warning.
+- `search repos` automatically batches large team-expanded repo scopes around
+  GitHub's search validation limits: at most five `AND`/`OR`/`NOT` operators
+  and 256 user query-text characters per request, excluding generated
+  qualifiers/operators and unquoted supported raw qualifiers. Quoted terms
+  count as literal query text and quoted boolean-looking tokens do not reduce
+  the repo batch budget. Results are deduped by `repo`; best-match and
+  `help-wanted-issues` stop once `--limit` unique rows are available. Multi-batch
+  `help-wanted-issues` emits a warning, while `stars`, `forks`, and
+  `updated` query all batches and locally merge-sort before the final limit.
+- `search code` and `search issues` batch team-expanded and `--repo`/`--stdin`
+  scopes the same way (at most five boolean operators per request, counting
+  unquoted `AND`/`OR`/`NOT` in the query). To stay under GitHub's per-minute
+  search limits, one invocation sends at most 9 code-search or 25 issue-search
+  batch requests (`search repos` is capped at 25 the same way); beyond that it warns that results cover only the first N
+  repositories — narrow the scope to search the rest. A rate limit after the
+  first batch returns the partial merged results with a warning. Code results
+  are deduped by `url` and issue results by `id`; `--limit` applies across
+  batches, and a sorted multi-batch issue search (`--sort`, or a
+  `sort:<field>[-asc|-desc]` qualifier in the raw query) queries every batch and
+  merge-sorts locally before the limit; an unsupported `sort:` field warns and
+  keeps batch order.

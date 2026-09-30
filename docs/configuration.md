@@ -40,8 +40,11 @@ lock (see `UNTAPED_CONFIG_LOCK_TIMEOUT` in
 [Environment variables](./reference/environment.md)); a symlinked file stays a
 symlink. Writes rewrite only the keys they change, keeping your comments, key
 order, quoting and indentation. `config edit` validates your result before
-saving it; if the result is invalid or the save fails, `config.yml` is left
-as it was and the error names the copy that holds your edits.
+saving it; if the result is invalid, the file changed while you edited, the
+save fails, or the editor exits with an error, `config.yml` is left as it was
+and the error names the copy that holds your edits. After an editor error the
+edits are not checked: copy the file over `config.yml` yourself and run
+`untaped doctor` to keep them.
 
 `config.yml` keeps profile-scoped settings under `profiles.<name>`. `active`
 is optional; when it is absent, `default` is the fallback profile.
@@ -185,7 +188,9 @@ untaped config edit
 parsing it as YAML: string and secret settings store the input verbatim
 (`p4ss #word`, `0123456` and `no` stay as typed), and an invalid value is
 rejected before anything is written. Mapping and list settings take the whole
-value as JSON or YAML. To clear a value, use `config unset`. Both write to the
+value as JSON or YAML. For an optional non-string setting, the literal
+`null` stores an explicit null (a string setting stores it as text); to remove
+the key, use `config unset`. Both write to the
 active profile, or to the one the root `--profile NAME` names, and print an
 `untaped.setting_outcome` record that never echoes the value.
 
