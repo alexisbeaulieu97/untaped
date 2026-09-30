@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from cyclopts import Parameter
+from pydantic import BaseModel, ConfigDict
 
 from untaped.capabilities.recipe.cli._context import recipe_ui
 from untaped.capabilities.recipe.cli.common import library_root, report_config_errors, settings
@@ -14,8 +15,9 @@ from untaped.capabilities.recipe.infrastructure.backup import (
     BackupBundle,
     BackupStore,
     bundle_bytes,
-    bundle_metadata,
+    bundle_created_at,
     prune_selection,
+    read_metadata,
 )
 from untaped.capability_api import (
     ColumnsOption,
@@ -25,6 +27,7 @@ from untaped.capability_api import (
     FormatOption,
     UntapedError,
     UsageError,
+    UtcTimestamp,
     YesOption,
     batch_apply,
     echo,
@@ -38,31 +41,43 @@ from untaped.capability_api import (
 def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
     """List backup bundles."""
     with report_config_errors():
-        rows = [_backup_row(bundle) for bundle in BackupStore(library_root() / "backups").list()]
-        rendered = render_rows(
-            rows,
+        emit(
+            [_backup_row(bundle) for bundle in BackupStore(library_root() / "backups").list()],
             fmt=fmt,
             columns=columns,
             kind="recipe.backup",
             table_columns=["id", "created_at", "recipe"],
         )
-        if rendered:
-            echo(rendered)
 
 
-def _backup_row(bundle: BackupBundle) -> dict[str, object]:
-    """One ``backups list`` row; unreadable metadata warns and leaves its fields empty."""
+class BackupListRecord(BaseModel):
+    """One ``backups list`` row (kind ``recipe.backup``).
+
+    ``created_at`` comes from the bundle id; ``recipe`` from its metadata
+    (``None`` when that cannot be read).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str
+    created_at: UtcTimestamp | None
+    recipe: str | None
+    path: str
+
+
+def _backup_row(bundle: BackupBundle) -> BackupListRecord:
+    """One ``backups list`` row; unreadable metadata warns and leaves ``recipe`` empty."""
     try:
-        metadata = bundle_metadata(bundle)
+        recipe = read_metadata(bundle).get("recipe")
     except ValueError as exc:
         recipe_ui().message("warning", str(exc))
-        metadata = {}
-    return {
-        "id": bundle.id,
-        "created_at": metadata.get("created_at"),
-        "recipe": metadata.get("recipe"),
-        "path": str(bundle.path),
-    }
+        recipe = None
+    return BackupListRecord(
+        id=bundle.id,
+        created_at=bundle_created_at(bundle),
+        recipe=recipe if isinstance(recipe, str) else None,
+        path=str(bundle.path),
+    )
 
 
 def get_command(

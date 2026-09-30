@@ -81,18 +81,14 @@ def test_sync_table_defaults_add_the_workspace_only_across_workspaces() -> None:
     assert _defaults(every.stderr) == {"workspace", "repo", "action", "detail"}
 
 
-def test_branch_apply_table_shows_the_target_branch_only_when_it_varies(tmp_path: Path) -> None:
+def test_branch_apply_table_names_the_target_branch(tmp_path: Path) -> None:
     runner = CliInvoker()
     runner.invoke(app, ["init", "prod", "--path", str(tmp_path / "ws"), "--branch", "develop"])
     runner.invoke(app, ["repos", "add", "prod", "https://x/api.git", "--repo-name", "api"])
-    runner.invoke(app, ["repos", "add", "prod", "https://x/ui.git", "--repo-name", "ui"])
 
-    same = runner.invoke(app, ["branch", "apply", "prod", "--columns", "?"])
-    runner.invoke(app, ["branch", "set", "prod", "release", "--repo", "ui"])
-    varies = runner.invoke(app, ["branch", "apply", "prod", "--columns", "?"])
+    result = runner.invoke(app, ["branch", "apply", "prod", "--columns", "?"])
 
-    assert _defaults(same.stderr) == {"repo", "action", "detail"}
-    assert _defaults(varies.stderr) == {"repo", "target_branch", "action", "detail"}
+    assert _defaults(result.stderr) == {"repo", "target_branch", "action", "detail"}
 
 
 def test_repos_list_table_defaults_and_repo_first(tmp_path: Path) -> None:

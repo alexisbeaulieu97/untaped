@@ -347,8 +347,8 @@ create a stray branch in every repo. Pass `--create` (to `branch apply`
 or `branch set --apply`) to create it from the current clean HEAD
 instead.
 
-The `branch apply` table shows `repo`, `action` and `detail`, plus
-`target_branch` when the repos target different branches.
+The `branch apply` table shows `repo`, `target_branch`, `action` and
+`detail`.
 
 ### `sync`
 
