@@ -1,6 +1,6 @@
 # Environment variables
 
-These are all the environment variables `untaped` reads or sets.
+Every environment variable `untaped` reads or sets.
 
 ## untaped
 
@@ -79,8 +79,3 @@ locale, temp directories, `UV_*`, `XDG_*`, TLS and proxy settings, and
 `UNTAPED_*` credentials are not passed. Hook workers get `PYTHONPATH` set to
 the pack's `src/` only. The full list is in the recipe skill's
 [pack library reference](../../src/untaped/capabilities/recipe/skills/untaped-recipe/references/library.md).
-
-## See also
-
-- [Configuration](../configuration.md)
-- [Configuration reference](./config.md)

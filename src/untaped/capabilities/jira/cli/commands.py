@@ -755,7 +755,7 @@ def link_create_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Link KEY to OTHER, read as "KEY <outward phrase> OTHER" (OPS-1 Blocks OPS-2)."""
+    """Link KEY to OTHER, read as "KEY OUTWARD-PHRASE OTHER" (OPS-1 Blocks OPS-2)."""
 
     from untaped.capabilities.jira.application import LinkIssues  # noqa: PLC0415
 

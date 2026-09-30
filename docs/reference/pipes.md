@@ -1,8 +1,8 @@
 # Pipes and record kinds
 
-`--format pipe` writes records that another `untaped` command can read with
-`--stdin`. Each record keeps its full fields and says what it is, so the
-consumer does not have to parse table text.
+`--format pipe` writes records that another `untaped` command reads with
+`--stdin`. Each record keeps all its fields and names its kind, so the
+consumer never parses table text.
 
 ```bash
 untaped github repos list --org acme --format pipe \
@@ -64,16 +64,17 @@ Tables leave `error` out (the `detail` column says the same); ask for it with
 
 ## stderr diagnostics
 
-stdout carries data only. With `--format json`, `yaml` or `pipe` (the flag,
-or the same value from `UNTAPED_FORMAT` or `ui.format`; a command's own
-default, such as `export`'s YAML, does not count), stderr carries **JSON
-Lines**: one object per error, per-item error, warning, hint or note, never
-mixed into the data stream. `UNTAPED_DIAGNOSTICS=json` turns this on for any
-format, and `UNTAPED_DIAGNOSTICS=text` keeps the text lines. Progress
-spinners are silent in this mode. A parse error (an unknown flag or command)
-and a warning about a quarantined capability provider follow a `--format`
-given on the command line or in `UNTAPED_FORMAT`; the `ui.format` setting
-applies only once the command is parsed.
+stdout carries data only. With `--format json`, `yaml` or `pipe`, stderr
+carries JSON Lines: one object per error, per-item error, warning, hint or
+note. Progress spinners are silent in this mode.
+
+- The format counts whether it comes from the flag, `UNTAPED_FORMAT` or
+  `ui.format`. A command's own default, such as `export`'s YAML, does not.
+- `UNTAPED_DIAGNOSTICS=json` turns JSON Lines on for any format;
+  `UNTAPED_DIAGNOSTICS=text` keeps text lines.
+- A parse error (an unknown flag or command) and a warning about a
+  quarantined provider come before `ui.format` is read, so only a `--format`
+  on the command line or in `UNTAPED_FORMAT` switches them.
 
 ```json
 {"level": "error", "message": "AWX rejected the token (HTTP 401)", "category": "auth", "system": "awx", "retryable": false, "hint": "run `untaped config set awx.token --prompt`", "exit_code": 4, "details": {"status": 401, "url": "https://aap/api/v2/me/", "attempts": 1}}
@@ -96,30 +97,29 @@ still follows the rules in [exit codes](./exit-codes.md#precedence).
 
 ## Producers and consumers
 
-The tables list what each command writes and which kinds each `--stdin`
-reads. Commands not listed write no records.
+What each command writes, and which kinds each `--stdin` reads. Commands not
+listed write no records. `--columns ?` on a command lists its record's fields.
 
 ### Root
 
 | Command | Writes |
 |---|---|
 | `config list`, `config get` | `untaped.setting` |
-| `config set`, `config unset` | `untaped.setting_outcome` (`key`, `profile`, `action`; never the value) |
+| `config set`, `config unset` | `untaped.setting_outcome` (never the value) |
 | `profile list` | `untaped.profile` |
-| `profile create`, `profile delete`, `profile rename` | `untaped.profile_outcome` (`name`, `previous_name`, `copied_from`, `action`) |
+| `profile create`, `profile delete`, `profile rename` | `untaped.profile_outcome` |
 | `skills list` | `untaped.skill` |
-| `skills status` | `untaped.installed_skill` (`name`, `target`, `scope`, `state`, `target_path`) |
-| `skills update`, `skills remove` | `untaped.skill_outcome` (`name`, `target`, `scope`, `target_path`, `action`) |
+| `skills status` | `untaped.installed_skill` |
+| `skills update`, `skills remove` | `untaped.skill_outcome` |
 | `doctor`, `setup` | `untaped.doctor_check` |
 | `capabilities` | `untaped.capability` |
-| `alias list` | `untaped.alias` (`name`, `command`, `argv`, `profile`) |
-| `alias set`, `alias remove` | `untaped.alias_outcome` (`name`, `profile`, `action`) |
+| `alias list` | `untaped.alias` |
+| `alias set`, `alias remove` | `untaped.alias_outcome` |
 
 `--stdin` on `skills install`, `status`, `update` and `remove` reads bare
-skill names, one per line. With
-`--dry-run`, `config set/unset`, `profile create/delete/rename` and
-`alias set/remove` validate, write nothing and print their outcome with
-`action` `planned`.
+skill names, one per line. With `--dry-run`, `config set/unset`,
+`profile create/delete/rename` and `alias set/remove` validate, write nothing
+and print their outcome with `action` `planned`.
 
 ### workspace
 
@@ -278,6 +278,5 @@ untaped workspace repos list prod --format pipe \
 
 - [Command and output conventions](../conventions.md#output-records): record
   field rules.
-- [Exit codes](./exit-codes.md)
 - [Building a capability provider](../plugins.md#5-piping): emitting and
   reading records from capability code.

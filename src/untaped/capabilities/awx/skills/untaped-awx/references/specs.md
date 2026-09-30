@@ -4,6 +4,13 @@
 creates or updates resources from them. Together they copy configuration
 between controllers and profiles, and keep it in a repository.
 
+- [The document](#the-document)
+- [Export](#export)
+- [Apply](#apply)
+- [Workflow templates and their nodes](#workflow-templates-and-their-nodes)
+- [Apply from a git ref](#apply-from-a-git-ref)
+- [Copy a template's configuration](#copy-a-templates-configuration)
+
 ## The document
 
 ```yaml
@@ -34,49 +41,44 @@ spec:
   `Inventory`, `InventorySource`, `Host`, `Group` and `Schedule`.
   `apiVersion` is `untaped.dev/awx/v1` (optional when applying).
 - `metadata` is the identity: `name`, plus `organization` for
-  organization-scoped kinds (templates, projects, inventories). Hosts, groups
-  and inventory sources name their inventory as
-  `parent: {kind: Inventory, name: Production, organization: Default}`; a
-  schedule names what it runs as
+  organization-scoped kinds (templates, projects, inventories).
+- Hosts, groups and inventory sources name their inventory as
+  `parent: {kind: Inventory, name: Production, organization: Default}`.
+- A schedule names what it runs as
   `parent: {kind: JobTemplate, name: Deploy, organization: Default}` (or a
   workflow template, project or inventory source).
 - `spec` holds the settings with AWX's field names (`untaped awx
-  job-templates get NAME --format yaml` shows them). References travel by
-  name (organization, project, inventory, credentials, labels, instance
-  groups, execution environment), so they must exist where the document is
-  applied or be created by the same `apply`; ids, timestamps, `status` and
-  `last_job_*` are left out. A workflow template also holds its node graph under `nodes`
+  job-templates get NAME --format yaml` shows them); ids, timestamps,
+  `status` and `last_job_*` are left out.
+- References (organization, project, inventory, credentials, labels,
+  instance groups, execution environment) travel by name. They must exist
+  where the document is applied, or be created by the same `apply`.
+- A workflow template also holds its node graph under `nodes`
   (see [Workflow templates and their nodes](#workflow-templates-and-their-nodes)).
 - Unknown fields are sent with a warning.
 
 ## Export
 
 ```bash
-untaped awx job-templates export Deploy --organization Default --out deploy.yml
-untaped awx inventories export Production --organization Default --out inventory.yml
 untaped awx inventory-sources export Cloud --inventory Production \
   --inventory-organization Default --out source.yml
-untaped awx export --kind job-templates --organization Default --out-dir exported
-untaped awx export --all-kinds --out-dir backup
+untaped awx export --all-kinds --organization Default --out-dir backup
 ```
 
 - A group's `export` writes its selection as one multi-document YAML stream
-  to stdout (also `--out -`), or to `--out FILE` (a symlink is written
-  through).
-- `untaped awx export --out-dir DIR` writes one file per resource named by its
-  full identity, and prints the same documents on stdout (`--print-paths`
-  prints the file names instead). `--kind` limits it to one kind,
-  `--all-kinds` exports every exportable kind (credentials are skipped).
+  to stdout or `--out FILE`. `untaped awx export --out-dir DIR` writes one
+  file per resource and prints the same stream, which pipes into `apply -`.
+- Credentials are never exported.
 - An export of an org-less record writes `metadata.organization: null`, so
   applying it never lands in the default organization.
 
 What a document cannot carry:
 
 - **Secrets.** `webhook_key` and the default of every `password` survey
-  question are written as `$encrypted$`. Applied to the resource they came
-  from, they keep the stored values. A new template drops the password
-  defaults with a warning, and a `webhook_key` placeholder refuses the create.
-  Other survey defaults are exported as they are.
+  question are written as `$encrypted$`, which keeps the stored values when
+  applied to the resource they came from. A new template drops the password
+  defaults with a warning, and a `webhook_key` placeholder refuses the
+  create. Other survey defaults are exported as they are.
 - **Access and history.** Roles, permissions, notification attachments,
   schedules of a template (a separate `Schedule` document) and past jobs.
 - **Nodes whose template was deleted.** Such a workflow node runs nothing
@@ -94,23 +96,24 @@ untaped --profile staging awx export --kind job-templates --out-dir exported \
   | untaped --profile prod awx apply - --yes
 ```
 
-- `apply PATH...` reads complete documents from files and directories (a
-  directory contributes every `*.yml`/`*.yaml`, so keep other YAML out of it;
-  `-` reads stdin). It creates what is missing and updates what differs, for
-  every kind at once, in dependency order, after one preview and confirmation.
+- `apply` creates what is missing and updates what differs, every kind at
+  once, in dependency order, after one preview and confirmation.
+- A directory contributes every `*.yml`/`*.yaml` in it, so keep other YAML
+  out of it.
 - `--check` plans without writing: exit 3 when anything would change, 0 when
   nothing would (rows show `planned` or `unchanged`).
-- A document without `metadata.organization` of an organization-scoped kind
-  is scoped by `awx.default_organization`; without a default, a name that
-  exists in several organizations is an error, not a guess. A
-  `spec.organization` name is used as the identity when metadata omits one,
-  and `metadata.organization: null` means the org-less record.
+- An organization-scoped document without `metadata.organization` is
+  scoped by `awx.default_organization`; without a default, a name in several
+  organizations is an error, not a guess.
+- A `spec.organization` name is used as the identity when metadata omits
+  one; `metadata.organization: null` means the org-less record.
 - Relationship lists (`credentials`, `labels`, job template and inventory
   `instance_groups`, group `hosts`/`children`, and the same lists on workflow
-  nodes) are replaced by adding new members before removing old ones; only a
-  credential sharing a type with an incoming one is removed first (AWX allows
-  one per type), and a failed add re-adds it and reports `partial`. Instance
-  groups are global names, and their order (the fallback order) is kept.
+  nodes) are replaced by adding new members before removing old ones.
+- Only a credential sharing a type with an incoming one is removed first
+  (AWX allows one per type); a failed add re-adds it and reports `partial`.
+- Instance groups are global names, and their order (the fallback order) is
+  kept.
 - Labels are resolved by name in the template's organization. An unknown
   label fails the apply before any write: apply never creates labels. AWX
   deletes a label once nothing uses it, so removing its last use deletes it.
@@ -118,10 +121,10 @@ untaped --profile staging awx export --kind job-templates --out-dir exported \
   template's `survey_spec/` endpoint.
 - A file that cannot be read or parsed, an unknown kind, or stdin with no
   documents fails the apply, naming the file (`<stdin>` for `apply -`).
-- Inventory documents: `apply` accepts every representable inventory and
-  refuses only incompatible source/configuration combinations. Changing an
-  inventory's settings does not rewrite source-managed hosts or groups. A
-  constructed inventory and its generated source share `source_vars`,
+- Inventory documents: `apply` refuses only incompatible
+  source/configuration combinations. Changing an inventory's settings does
+  not rewrite source-managed hosts or groups.
+- A constructed inventory and its generated source share `source_vars`,
   `update_cache_timeout`, `limit` and `verbosity`; a batch cannot give them
   different values through both.
 
@@ -202,9 +205,9 @@ Apply reconciles the graph by `id`, after the workflow itself is written:
   leaves the graph alone.
 - Survey-password `extra_vars` read back as `$encrypted$`. A placeholder, in
   the document or in AWX, matches any value, so re-applying an export changes
-  nothing and a document holding the plain password converges too. A new node
-  cannot take the placeholder: it is created without that variable, with a
-  warning.
+  nothing and a document holding the plain password converges too.
+- A new node cannot take the placeholder: it is created without that
+  variable, with a warning.
 - The templates the nodes run are ordering dependencies: a job template created
   by the same `apply` is created before the workflow that runs it, and a
   workflow whose template fails is skipped.
@@ -230,9 +233,9 @@ Refused before any write:
 - a template name that does not exist (with a "did you mean" hint).
 
 A node write that fails after the workflow itself was written leaves a
-`partial` row naming the node and step it stopped at (`nodes[deploy] update:
-…`); re-running the same apply picks up from what AWX then holds and finishes
-the graph. A graph that does not read back as declared fails with `workflow
+`partial` row naming the node and step (`nodes[deploy] update: …`).
+Re-running the same apply picks up from what AWX then holds and finishes the
+graph. A graph that does not read back as declared fails with `workflow
 nodes did not converge: nodes[deploy].prompts.limit`.
 
 ## Apply from a git ref
@@ -270,13 +273,6 @@ copies of these specs, pinned to REF's commit (see
 
 Export, change `metadata.name`, apply: the new template gets the same
 non-secret configuration (credentials, labels, instance groups, extra vars,
-survey, and a workflow's nodes).
-
-```bash
-untaped awx job-templates export Deploy --organization Default --out deploy.yml
-untaped awx apply deploy.yml --yes
-```
-
-Edit `metadata.name` between the two commands. `untaped awx job-templates
-copy` does the same server-side in one step (see
-[resources.md](resources.md#copy-and-rename-templates)).
+survey, and a workflow's nodes). Use this to copy to another controller;
+on the same controller, `copy` does it server-side in one step
+([resources.md](resources.md#copy-and-rename-templates)).

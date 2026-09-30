@@ -1,48 +1,114 @@
 ---
 name: untaped-workspace
-description: Use the `untaped workspace` command to manage local multi-repository git workspaces (register them, add or remove repos, clone and pull them together, check their status, switch branches, and run a command in every repo). Use when the user mentions a workspace, several repos at once, cloning or syncing many repos, dirty or behind repos, or running a command across repos.
+description: Manages local multi-repository git workspaces through the `untaped workspace` command (registering them, adding or removing repos, cloning and pulling them together, status, branch switching, running a command in every repo, and pruning clones safely). Use when the user mentions a workspace, cloning or syncing many repos, dirty or behind repos, or running a command across repos.
 ---
 
-# Untaped Workspace
+# untaped workspace
 
-Use this skill when the user wants an agent to operate `untaped workspace` for local multi-repo git workspaces.
+A workspace is a directory whose `untaped.yml` manifest declares a set of git
+repos. `untaped workspace` moves the clones toward the manifest without ever
+discarding local work: anything it cannot do safely it skips with a reason,
+and deleting a clone is always the user's decision.
+
+This page is the map; the details ship next to it:
+
+| File | Read it when |
+|---|---|
+| [references/manifest.md](references/manifest.md) | creating, adopting or importing a workspace, editing `untaped.yml`, choosing which workspace a command acts on, settings and the clone cache |
+| [references/sync.md](references/sync.md) | reading `sync`, `status` or `branch apply` rows, working out why a repo was skipped or failed, running across `--all` workspaces |
+| [references/prune.md](references/prune.md) | before any `--prune`: what gets deleted, what counts as unsafe, prompts and recovery |
+| [references/foreach.md](references/foreach.md) | running a command in several repos: selecting repos, failure modes, output, timeouts |
+| [references/output.md](references/output.md) | piping records between commands, or reading exit codes |
 
 ## Setup
 
-- The command is `untaped workspace`. It ships with the unified `untaped` CLI (no separate install).
-- A workspace is a directory with an `untaped.yml` manifest (`name`, `defaults.branch`, and `repos` entries of `url`, optional `name` = local directory, optional `branch`), plus a `name → path` entry in the registry state.
-- Repo names and URLs are unique within a manifest (names compared case-insensitively). A repo name, explicit, from `--repo-name`, or derived from the URL, and a `workspace init` name must be a single path segment: not empty, `.` or `..`, no `/`, `\`, `:` or NUL, not `untaped.yml`. A manifest that breaks this is rejected on load.
-- Profile settings are `cache_dir`, `workspaces_dir` and `parallel` (default `sync`/`foreach` workers; unset means `min(8, 2 × CPUs)`), addressed as `workspace.<field>` (e.g. `untaped config set workspace.cache_dir ...`); the `workspaces` name→path registry is tool-managed state written by `adopt`/`init`/`import`/`forget`, not a setting.
-- The workspace is the first positional argument, `WS`: a registered name, or a path inside a workspace (`.`, `..`, anything starting with `~` or containing `/`; so workspace names cannot start with `~`). Omitted, it is the workspace containing the current directory. A path must exist; untaped walks up from it to the nearest `untaped.yml`, so unregistered workspaces work too. `repos add WS URL...` and `repos remove WS REPO...` need it before positional repos (`.` works; a lone argument is the workspace); `foreach [WS] CMD` and `branch set [WS] BRANCH` read two positionals as workspace then value. Commands take no `--workspace` option; `init --path/-p DIR` only chooses where a new workspace is created (default `<workspaces_dir>/<name>`).
-- Use `untaped workspace repos list WS` to inspect a workspace before mutating it.
+- Settings live under `profiles.<name>.workspace`; the list of registered
+  workspaces is state that `init`, `adopt`, `import` and `forget` maintain.
+- Most commands take the workspace as the first positional argument, `WS`: a
+  registered name or a path inside a workspace. Omitted, it is the workspace
+  containing the current directory, which may not be the one the user means,
+  so pass it explicitly.
 
-## Command Patterns
+## Commands
 
-- `untaped workspace list` shows registered workspaces.
-- `init NAME [--path DIR] [--branch B]` creates a directory with a starter manifest and registers it; `init` and `import` refuse a name already registered, before writing anything. `adopt PATH [--name N]` registers a directory: an existing `untaped.yml` is validated and kept as is (`--name` registers it under another name without rewriting it); without one, each immediate subdirectory with `.git` is recorded with its `origin` URL and checked-out branch (detached HEAD → `branch: null`; a clone without `origin` is skipped with a warning), and the clones stay where they are. `import SOURCE.yml DEST [--name N] [--sync]` copies a shared manifest into a new workspace directory (`--sync` clones its repos).
-- `untaped workspace repos list|add|remove` reads or edits the repos declared in one workspace's manifest (`repos list` reads `untaped.yml` only, no git). `repos add` applies `--branch` and `--repo-name` to every URL given (`--repo-name` with several URLs exits 2); `--sync` clones the URLs that were added and prints `workspace.sync_outcome` rows instead of add rows. `repos remove` takes repo names or URLs.
-- `untaped workspace status` reports repo branch/upstream/dirty/ahead/behind state; it never fetches, so `behind` is as of the last fetch. `--dirty` / `--behind` keep only repos needing attention (either matches); `--check` exits 3 when any repo is dirty or behind, or with the failure's own code when a repo could not be inspected (1, or 5 when `git status` timed out; filters never hide uncloned, failed or unavailable rows). A declared directory without its own `.git` is `cloned=false` with `detail="not a git repository"` (git never runs there; `sync` and `branch apply` skip it with the same detail); a failed `git status` keeps `cloned=true` with the error in `detail`/`error`.
-- `untaped workspace sync [WS | --all] [--repo R]...` clones missing repos and fast-forwards clean repos on their target branch to the branch's `@{upstream}` (a branch without an upstream is `skipped` with `no upstream`). Dirty, diverged or wrong-branch repos are `skipped`, never checked out. It runs up to `workspace.parallel` repo jobs at once; `-j N` / `--parallel N` overrides (`-j 1` is serial); the cap is global across selected repos and not host-aware. `-j` below 1 exits 2 (also for `foreach`); `workspace.parallel` below 1 exits 4.
-- `sync --timeout N` caps every git call in the run (defaults: 60s local, 600s clone/fetch). A failed or timed-out clone removes its directory so the next sync retries it. Git never prompts for credentials (`GIT_TERMINAL_PROMPT=0`, `ssh -o BatchMode=yes`, stdin closed): a remote that needs them fails that repo; a user-configured `GIT_SSH_COMMAND`/`GIT_SSH`/`core.sshCommand` is left alone, so add `-o BatchMode=yes` there. Use an SSH agent or credential helper for private remotes.
-- `sync --all --repo R` filters per workspace: a workspace whose manifest lacks `R` emits one `unmatched` row per identifier and the run continues (so a typo shows up in every workspace); single-workspace `--repo` with an unknown repo aborts. Under `--all`, a missing or invalid workspace manifest is one `action="unavailable"` row with `repo=""` (a workspace-level failure, not a repo skip; the registry is not repaired), while a malformed registry aborts before the sweep; `status --all` does the same and `foreach --all` skips such a workspace with a warning.
-- `sync --prune` removes orphan clones (immediate child git clones no longer in the manifest) after all sync jobs finish; unsafe orphans are `skipped` with `unsafe local state: <first>; +N more`, uninspectable ones with `not a usable git repo`, and symlinks are never followed. `sync --prune --dry-run` skips the sync entirely and prints `planned` / `skipped` orphan rows; `--dry-run` without `--prune` exits 2 (also for `forget`).
-- `forget NAME` removes only the registry entry; `forget --prune` also deletes safe declared and orphan clones, symlinks standing in for them (never their targets) and `untaped.yml`, keeps loose files and non-git directories, and removes the workspace directory only if it ends up empty (a `warning: left <path> in place` names what stayed). With `--prune`, a missing manifest is refused and a missing directory is tolerated; the registry entry is removed only once the prune succeeds, so a refusal or failure leaves the workspace registered. `forget --prune --dry-run` lists every path it would delete and fails on unsafe clones like the real prune.
-- Destructive commands (`repos remove --prune`, `forget --prune`, `sync --prune` when safe orphans exist) preview their targets and prompt once; `--yes` / `-y` skips the prompt, and without a terminal and without `--yes` (or `--dry-run`) they exit 2 changing nothing. Declining exits 1 (`cancelled; no changes made`) and preserves manifest, registry and files (for `sync --prune` the sync itself has already run; only the orphans are kept); `--dry-run` wins over `--yes` and prints `planned` rows.
-- Prune safety is local-only. `sync --prune` skips, and `remove --prune` / `forget --prune` refuse, a clone with dirty/untracked/staged work, stash entries, or commits/local tags not reachable from local remote-tracking refs. The check does not fetch; stale remote-tracking refs are trusted, so fetch first if they must reflect the remote.
-- `init`, `repos add`, `repos remove`, `forget` and `branch unset` print outcome rows on stdout (`workspace.init_outcome`, `workspace.add_outcome`, `workspace.remove_outcome`, `workspace.forget_outcome`, `workspace.branch_unset_outcome`) and honour `--format`/`--columns`. A repo `repos remove` cannot remove is a `failed` row (`detail`, `error`); with `--prune`, a repo that left the manifest but kept its clone (the delete failed) is a `partial` row with `pruned: false` and exits 1.
-- Sync rows use `action` values `planned`, `cloned`, `pulled`, `unchanged`, `skipped`, `failed`, `removed`, `unmatched`, `unavailable`; `branch apply` rows use `checked_out`, `unchanged`, `skipped`, `failed`. Sync, status, foreach, branch apply and `repos list` rows carry an absolute `target_path` (the workspace directory on `unmatched`/`unavailable` rows). A `failed` row keeps its `detail` and adds `error` (`category`, `system`, `retryable`, `message`, `hint`; not in tables). `skipped` rows alone exit 0.
-- Exit codes: 1 the thing failed (unknown workspace or repo, invalid `untaped.yml`, a failed git step), 2 usage, 3 predicate hit, 4 fix the environment (settings, `$EDITOR`, git missing), 5 temporary (git timed out or lost the network; retry later); a run exits with its most severe failure (also `repos add --sync` and `import --sync`). With `--format json` stderr is JSON Lines with each error's `category`, `system` and `hint`.
-- `untaped workspace foreach [WS | --all] CMD` runs a shell command across selected repos; use care with side effects. Quote multi-word commands: `foreach 'make build'` (an unquoted first word that is not a workspace fails with that hint). Select repos with `--repo` or `--stdin` (repo names, or `workspace.repo` / `workspace.status` / `workspace.sync_outcome` records of `WS`; records from another workspace exit 2; an empty pipe runs nothing and exits 0; `--stdin` cannot combine with `--repo` or `--all`). `--all` runs in every registered workspace in registry order, naming repos `<workspace>/<repo>`, with `--repo` as a per-workspace filter.
-- `foreach` stops at the first failure by default (in-flight commands finish, queued ones are cancelled, later `--all` workspaces too); `--continue-on-error` runs every repo and still exits non-zero; `--ignore-errors` runs every repo and always exits 0 (it wins over `--continue-on-error`). Table output prints each repo's buffered stdout/stderr prefixed `[<repo>]` as it finishes, and a stderr `failed in: <repos>` summary when any failed; json/yaml/raw/pipe emit one `workspace.foreach_outcome` row per repo (`returncode`, `command`, `duration_s`, `target_path`). It runs `workspace.parallel` repos at once by default; pass `-j 1` for strict fail-fast ordering. Child stdin is closed; each command has a 600s timeout unless `--timeout N` is passed, and a timed-out command gets return code 124 with `timed out after <N>s` on stderr. Ctrl-C cancels queued sync/foreach work and stops running foreach commands.
-- `branch set [WS] BRANCH` / `branch unset [WS]` edit `defaults.branch`, or with `--repo R` that repo's override; they never run `git checkout`. A new clone checks out the repo's `branch`, else `defaults.branch`, else the remote HEAD. `branch apply [WS] [--repo R]...` (or `branch set ... --apply`) fetches, then checks out existing clones to their explicit manifest target: an existing local branch, or a new tracking branch from `origin/<branch>`. It skips missing clones, repos with no target, and dirty or diverged repos; a branch that exists neither locally nor on origin is skipped with `branch not found locally or on origin` unless `--create` creates it from the current clean HEAD.
-- `path NAME...` (or `--stdin`) prints absolute workspace paths (`cd "$(untaped workspace path prod)"`). `shell-init zsh|bash|fish` prints a snippet defining `uwcd NAME` with completion of workspace names (`eval "$(untaped workspace shell-init zsh)"` in the shell rc). `edit [WS] [--editor CMD]` opens the workspace root in `$VISUAL`/`$EDITOR`; with none set it exits 4, and an editor exiting non-zero exits 1.
+| When | Command |
+|---|---|
+| Start an empty workspace | `untaped workspace init NAME` |
+| Clones already sit in one directory | `untaped workspace adopt PATH` |
+| Someone shared a manifest file | `untaped workspace import SOURCE DEST --sync` |
+| See what a workspace declares (reads the manifest only) | `untaped workspace repos list WS` |
+| See live git state before changing anything | `untaped workspace status WS` |
+| Declare or drop repos | `untaped workspace repos add WS URL`, `untaped workspace repos remove WS REPO` |
+| Clone missing repos and fast-forward clean ones | `untaped workspace sync WS` |
+| Move repos to another branch | `untaped workspace branch set WS BRANCH`, then `untaped workspace branch apply WS` |
+| Run one shell command in each repo | `untaped workspace foreach WS 'CMD'` |
+| Unregister a workspace, keeping its files | `untaped workspace forget NAME` |
+| Print a workspace's directory | `untaped workspace path NAME` |
 
-## Agent Guidance
+`--help` on any command lists its options; `--columns ?` lists a table's
+fields.
 
-- Prefer `--format json` for structured state and `--format raw --columns ...` for shell pipelines.
-- A table shows each command's usual columns (`status`: `repo`, `cloned`, `branch`, `upstream`, `ahead`, `behind`, `modified`, `untracked`, `detail`; `sync`: `repo`, `action`, `detail`; `branch apply`: `repo`, `target_branch`, `action`, `detail`; `repos list`: `repo`, `url`, `target_branch`; `workspace` leads under `--all`). `--columns ?` marks the defaults and `--columns +target_path` adds one; json, yaml, raw and pipe keep every field. `repos list` rows lead with `repo`, so `--format raw` prints repo names.
-- Use `--format pipe` to chain commands: it emits one self-describing record per line tagged with a `kind` (e.g. `workspace.workspace`, `workspace.repo`); `path --stdin` reads `workspace.workspace` streams back (`untaped workspace list --format pipe | untaped workspace path --stdin`), `repos add --stdin` reads `github.repo`/`github.repo_hit`/`github.sweep_repo` (`clone_url`, else `url`) or `workspace.repo` (`url`) records, and `repos remove --stdin` reads `workspace.repo`/`workspace.sync_outcome` records (`repo`); any other kind exits 2. `repos list --format pipe` repo rows keep `path` as the workspace root and include `target_path` for the concrete repo checkout; an empty workspace emits a `workspace.repo.summary` row with no `target_path`.
-- Every command accepts `--quiet`/`-q` to mute the spinner and success/info lines (errors and data still print). `untaped doctor` diagnoses the active config and `untaped config edit` edits it.
-- Do not assume the current directory is the intended workspace: pass `WS` explicitly. Without it, commands use the nearest parent `untaped.yml`.
-- Treat destructive repo operations as explicit user intent. Inspect `untaped workspace status` before broad sync or branch changes.
-- Sync uses a central bare cache (`workspace.cache_dir`) plus `git clone --reference --dissociate` for missing clones, so clones are self-contained and pruning or deleting the cache never breaks them; `adopt` does not rewire existing clones. Existing clones fetch/pull their own `origin` and do not touch the bare cache. Clones made by older releases may still borrow cache objects (`.git/objects/info/alternates`); run `git repack -a -d && rm .git/objects/info/alternates` in one to make it independent before deleting the cache.
+## Workflows
+
+### Set up a workspace
+
+1. Create or register it with `init`, `adopt` or `import`.
+2. `untaped workspace repos list WS`: check the repo names, URLs and branches.
+3. `untaped workspace sync WS`: each row should be `cloned` or `unchanged`.
+   Look up any `skipped` or `failed` row in
+   [references/sync.md](references/sync.md).
+4. `untaped workspace status WS`: every repo shows `cloned` and the expected
+   branch.
+
+### Update repos safely
+
+1. `untaped workspace status WS --dirty --behind --format json` shows repos
+   holding local work (`behind` is as of their last fetch).
+2. `untaped workspace sync WS` fetches every clone, then fast-forwards only
+   the clean ones that are on their target branch and have an upstream. It
+   never checks out, merges or rebases.
+3. Treat each `skipped` row as a question for the user (commit, stash,
+   rebase, or `branch apply`), then sync again. Done when no row is `failed`
+   and the remaining `skipped` rows are ones the user accepts.
+
+### Switch branches
+
+1. `untaped workspace branch set WS BRANCH` (add `--repo REPO` for one repo)
+   edits only the manifest.
+2. `untaped workspace branch apply WS` checks out clean clones: rows are
+   `checked_out` or `unchanged`. A `skipped` row reading
+   `branch not found locally or on origin` is usually a typo; pass `--create`
+   only when the user wants a new branch.
+
+## Deleting clones
+
+Three commands delete files; each lists its targets and asks once.
+
+| Command | Deletes |
+|---|---|
+| `untaped workspace sync WS --prune` | clones in the workspace directory that the manifest no longer declares, after syncing |
+| `untaped workspace repos remove WS REPO --prune` | the named repos' clones, as they leave the manifest |
+| `untaped workspace forget NAME --prune` | every clone, `untaped.yml`, and the directory if nothing else remains |
+
+1. Preview with the same command plus `--dry-run`, scoped to the named workspace
+   and repos (`sync --prune --dry-run` does not sync).
+2. Show the user the paths it would delete and any clone refused as unsafe.
+3. Rerun with `--yes` only after the user approves. Without a terminal and
+   without `--yes` the command exits 2 and deletes nothing; declining exits 1.
+   `sync --prune` asks only after the sync ran, so clones may already be
+   cloned or pulled by then.
+4. The safety check is offline and ignores git-ignored files; read
+   [references/prune.md](references/prune.md) for what it protects and how to
+   recover. `repos remove` without `--prune` keeps the clone, which the next
+   `sync --prune` treats as an orphan.
+
+## Pitfalls
+
+- `status` never fetches; `sync` does. Compare `behind` counts only after a
+  sync or a fetch.
+- `sync` leaves a repo on a branch other than its manifest target alone
+  (`skipped`); that is not an error.
+- Git never prompts for credentials, so a remote that needs them fails that
+  repo. Use an SSH agent or a credential helper.
+- Quote the `foreach` command (`'make build'`); it stops at the first failure
+  unless told otherwise.

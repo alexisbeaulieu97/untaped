@@ -11,10 +11,8 @@ requests. No recipe step runs a shell command, but pack hooks are Python
 code that runs on your machine (see [Install and manage
 packs](#install-and-manage-packs)).
 
-Recipe verbs (`apply`, `list`, `get`, `edit`, `init`, `validate`, `test`) sit
-directly under `untaped recipe`. Packs, hooks and backups have their own
-nouns: `recipe packs …`, `recipe hooks …` and `recipe backups …`.
-
+Recipe verbs sit directly under `untaped recipe`; packs, hooks and backups
+have their own nouns (`recipe packs …`, `recipe hooks …`, `recipe backups …`).
 The packaged skill is the full reference:
 [applying](../../src/untaped/capabilities/recipe/skills/untaped-recipe/references/apply.md),
 [packs, tests and backups](../../src/untaped/capabilities/recipe/skills/untaped-recipe/references/library.md)
@@ -30,11 +28,9 @@ are installed) and hook timeouts are in the
 ## Apply a recipe
 
 ```bash
-untaped recipe list
 untaped recipe apply acme/editorconfig ~/work/api ~/work/web --dry-run
+untaped recipe apply acme/editorconfig ~/work/api ~/work/web --preview diff
 untaped recipe apply acme/editorconfig ~/work/api ~/work/web
-untaped recipe apply ./my-pack/recipes/editorconfig/recipe.yml ~/work/api --yes
-untaped recipe apply acme/editorconfig ~/work/api --preview diff
 ```
 
 The recipe argument is a unique recipe name, a `pack/recipe` ref, or a path.
@@ -44,7 +40,8 @@ A value is a path only when it starts with `./`, `../`, `/` or `~`, is `.` or
 
 `--dry-run` previews without writing; pack hooks still run, because they
 compute the plan. A target that fails to plan or write changes nothing and
-is reported; the other targets still run.
+is reported; the other targets still run. Within a target, writes are one
+transaction.
 
 ### Check for drift in CI
 
@@ -52,8 +49,8 @@ is reported; the other targets still run.
 untaped recipe apply acme/editorconfig ~/work/api --check
 ```
 
-`--check` writes nothing and asks nothing, and exits `3` when any target
-would change.
+`--check` writes nothing, asks nothing and makes no backup, and exits `3`
+when any target would change.
 
 ### Apply to every repo of a workspace
 
@@ -73,18 +70,17 @@ Recipes declare inputs. Give them values with `--var KEY=VALUE` or YAML
 files, the same flags `awx test` uses for suite variables:
 
 ```bash
-untaped recipe apply acme/codeowners ~/work/api --var owner=@acme/platform
-untaped recipe apply acme/codeowners ~/work/api --vars-file base.yml --vars-file prod.yml
-untaped recipe apply acme/labels ~/work/api --var 'labels=[infra, tls]'
+untaped recipe apply acme/codeowners ~/work/api --vars-file base.yml --var owner=@acme/platform
 untaped recipe apply acme/readme --stdin --input-from 'service={{ target.name }}' < dirs.txt
 ```
 
-A later file wins over an earlier one, and `--var` wins over every file.
+`--var` wins over every file, and a later file over an earlier one.
 `--vars-file` values are YAML, so quote version-like strings
 (`python_version: "3.10"`). `--input-from` derives a value per target. A
 required input still missing is prompted for at a terminal; otherwise the
 run fails naming it. Sensitive inputs show as `***` in rows, previews and
-backups.
+backups, and their targets show no diff. The full precedence and prompt
+rules are in the [apply reference](../../src/untaped/capabilities/recipe/skills/untaped-recipe/references/apply.md#inputs).
 
 ## Install and manage packs
 
@@ -93,29 +89,21 @@ sandbox, including during `apply --dry-run` and `--check`, since hooks compute
 the planned changes. Inspect a pack before you trust it (`recipe packs get`,
 `recipe validate`, `recipe test`). Hooks get a reduced environment without
 your tokens, but they run as you with full file access; the
-[trust model](../../src/untaped/capabilities/recipe/skills/untaped-recipe/references/library.md#backups-and-safety)
-lists exactly what they can see.
+[environment list](../../src/untaped/capabilities/recipe/skills/untaped-recipe/references/library.md#what-hooks-can-reach)
+says exactly what they can see.
 
 ```bash
-untaped recipe packs add https://github.com/acme/untaped-recipes.git --rev v1.2.0
-untaped recipe packs add ./my-pack --name acme --force
+untaped recipe packs add https://git.example.com/acme/untaped-recipes.git --rev v1.2.0
+untaped recipe validate acme
 untaped recipe packs sync --all --dry-run
-untaped recipe packs sync acme
-untaped recipe packs list
-untaped recipe packs get acme
-untaped recipe packs edit acme
-untaped recipe get acme/editorconfig
-untaped recipe edit acme/editorconfig
-untaped recipe validate
-untaped recipe packs remove acme --yes
-untaped recipe packs list --format pipe | untaped recipe packs sync --stdin
 ```
 
 - A pack must contain a `uv.lock` and no symlinks. Reinstalling needs
   `--force`; local edits to the installed copy also need `--discard-edits`.
 - `packs sync` re-fetches packs from the source and `--rev` recorded at
-  install (a branch or tag moves forward). Packs whose files would change
-  are listed, with the hook code that changes, and confirmed first.
+  install, so a branch or tag moves forward. It lists the packs whose files
+  would change, with the hook code that changes, and confirms first: review
+  that list as you would a dependency upgrade.
 - `recipe validate` checks the whole library, or one pack, recipe or path,
   without importing hook code; any failing check exits 1.
 
@@ -160,14 +148,10 @@ steps:
     file: .travis.yml
 ```
 
-| Step | Fields | Does |
-|---|---|---|
-| `validate` | `hook`, `args` | Runs a hook that returns pass, fail or skip for the target. |
-| `transform` | `hook`, one of `file`/`files`/`globs`, `exclude`, `optional`, `args` | Rewrites file content through a hook. |
-| `template` | `template`, `dest`, `unknown_tokens`, `if_absent` | Renders a template file into the target. |
-| `copy` | `source`, `dest`, `if_absent` | Copies a file as is, binary files included. |
-| `remove` | one of `file`/`files`/`globs`, `exclude` | Deletes files. |
-
+A `validate` step runs a hook that passes, fails or skips the target;
+`transform` rewrites file content through a hook; `template`, `copy` and
+`remove` render, copy and delete files. Step fields are in the
+[authoring reference](../../src/untaped/capabilities/recipe/skills/untaped-recipe/references/authoring.md#recipe-files).
 `globs` has no implicit excludes: add `exclude: [".git/**"]` when the
 targets are Git clones.
 
@@ -178,10 +162,12 @@ writes a typed stub and a pytest for it. For YAML files, use the built-in
 `yaml_edit` hook shown above. Debug one hook without a recipe:
 
 ```bash
-untaped recipe hooks run acme/pin_python --target ~/work/api --file pyproject.toml --diff
 untaped recipe hooks run acme/pin_python --target ~/work/api --file pyproject.toml \
-  --var python_version=3.14 --args-file args.yml
+  --var python_version=3.14 --diff
 ```
+
+Hooks compute the plan, so they must only read the target tree and their
+own pack: no writes, no network.
 
 ### Golden tests
 
@@ -201,11 +187,9 @@ untaped recipe test acme/editorconfig --update
 Each apply writes one backup bundle unless you pass `--no-backup`.
 
 ```bash
-untaped recipe backups list
-untaped recipe backups get latest
 untaped recipe backups restore latest --dry-run
 untaped recipe backups restore latest
-untaped recipe backups prune --keep 20
+untaped recipe backups prune --keep 20 --dry-run
 ```
 
 `restore` refuses to overwrite a file that changed after the backup unless
