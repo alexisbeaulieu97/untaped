@@ -41,11 +41,11 @@ SPEC = CapabilitySpec(
                 str(files("untaped.capabilities.ansible").joinpath("skills", "untaped-ansible"))
             ),
             description=(
-                "Use the `untaped ansible` command to map Ansible role and project dependencies"
-                " across GitHub repositories (what a role depends on, what depends on it, which"
-                " projects reach a repo, and dependency graphs). Use when the user mentions "
-                "Ansible roles, requirements.yml, meta/main.yml dependencies, impact or blast-"
-                "radius analysis, who uses a role, or a dependency graph."
+                "Maps Ansible role and project dependencies across GitHub repositories through "
+                "the `untaped ansible` command (what a role depends on, what depends on it, which"
+                " projects reach a repo, and dependency graphs). Use when the user asks who uses "
+                "a role, the impact of changing one, or about requirements.yml or meta/main.yml "
+                "dependencies."
             ),
         ),
     ),

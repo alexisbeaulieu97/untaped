@@ -20,7 +20,8 @@ Frontmatter
 - description equals SkillAsset.description (SPEC.description) exactly;
   tests/unit/test_skill_files.py compares them. It routes, it does not
   instruct: third person, what the skill covers, then the intents that
-  should load it. Under 60 words, only this capability's ground, no ": ".
+  should load it. Under 60 words, only this capability's ground, no ": ";
+  the same test checks the length and the third person.
 - name is the full ID, untaped-CAPABILITY. It stays stable: installs keep it
   in their directory and marker even when chosen by short selector.
 

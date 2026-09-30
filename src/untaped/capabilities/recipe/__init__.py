@@ -40,11 +40,11 @@ SPEC = CapabilitySpec(
                 str(files("untaped.capabilities.recipe").joinpath("skills", "untaped-recipe"))
             ),
             description=(
-                "Use the `untaped recipe` command to apply reusable file recipes (templated "
-                "files, YAML edits, copies, removals) across many directories or repos with a "
-                "preview, backups and a CI drift check, and to author and test recipe packs. "
-                "Use when the user mentions recipes, recipe packs, codemods, bulk or fleet-wide"
-                " file changes, applying the same change to many repos, or drift checks."
+                "Applies reusable file recipes (templated files, YAML edits, copies, removals) "
+                "across many directories or repos through the `untaped recipe` command, with a "
+                "preview, backups and a CI drift check, and authors and tests recipe packs. Use "
+                "when the user mentions recipes or recipe packs, codemods, the same file change "
+                "across many repos, or drift checks."
             ),
         ),
     ),
