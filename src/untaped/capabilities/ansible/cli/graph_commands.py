@@ -98,7 +98,7 @@ RefOption = Annotated[
     str | None,
     Parameter(
         name="--ref",
-        help="Target branch, tag, or SHA for live dependency reads and cached upstream lookup.",
+        help="Target branch, tag, or SHA; omit for its default branch (and every ref upstream).",
     ),
 ]
 TargetRepoOption = Annotated[
@@ -490,6 +490,7 @@ def graph_command(
         untaped ansible graph acme/app --source prod --depth 2
         untaped ansible graph ./roles/web --target-repo acme/web --direction down
     """
+    _check_all_refs(ref, all_refs=all_refs)
     depth_limit = _parse_depth(depth or "unlimited")
     with report_errors(), ExitStack() as stack:
         env = _graph_env(
@@ -524,6 +525,7 @@ def _emit_reach(
 ) -> None:
     """Print one row per repository reached from ``target`` in one direction."""
     relation, kind, noun = _REACH_OUTPUT[command]
+    _check_all_refs(ref, all_refs=all_refs)
     depth_limit = _parse_depth(depth or "unlimited")
     with report_errors(), ExitStack() as stack:
         env = _graph_env(
@@ -545,6 +547,11 @@ def _emit_reach(
             kind=kind,
             empty=f"No {noun} found{_within(depth_limit)}.",
         )
+
+
+def _check_all_refs(ref: str | None, *, all_refs: bool) -> None:
+    if ref is not None and all_refs:
+        raise_usage("--all-refs reads every ref; drop it or --ref")
 
 
 def _report_warnings(warnings: Iterable[str]) -> UiContext:
@@ -575,7 +582,7 @@ def _graph_env(
     command: GraphCommand,
     depth: int | None,
     live: bool,
-    all_refs: bool = False,
+    all_refs: bool,
 ) -> _GraphEnv:
     """Resolve settings and the selected source into what every root's build shares.
 
@@ -1034,7 +1041,7 @@ def _effective_direction(
     )
     if missing and live and direction != "impact":
         # --live reads downstream from GitHub, so it never needs the cache;
-        # only the upstream half of --both does.
+        # only the upstream half of --direction both does.
         if direction == "deps":
             return direction, []
         labels = ", ".join(selection.label for selection in missing)

@@ -176,8 +176,9 @@ ASCII.
 `deps`, `impact` and `graph` also take `--ref REF` (branch, tag or SHA of the
 target) and `--target-repo OWNER/NAME`. Without `--ref`, what a target
 depends on is read at its default branch; `--all-refs` (`deps`, `find`,
-`graph`) reads it at every cached ref instead, and when the source does not
-know the default branch every ref is read with a warning. What depends on a
+`graph`) reads it at every cached ref instead, and when the source has not
+scanned the default branch (a tags-only source) every ref is read with a
+warning. `--all-refs` with `--ref` exits 2. What depends on a
 target is always gathered across all of its refs, since a repo pinning an
 older tag still uses it. `deps`, `impact` and `find` print
 `--format table` (default), `json`, `yaml`, `pipe` or `raw`, with

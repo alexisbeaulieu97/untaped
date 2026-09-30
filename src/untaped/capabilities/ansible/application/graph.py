@@ -37,8 +37,8 @@ class GraphRequest(BaseModel):
     all_refs: bool = False
     """Whether a ref-less target's dependencies are read at every cached ref.
 
-    Otherwise they are read at its cached default branch only (at every ref
-    when that is unknown, with a warning). Its dependents are always those of
+    Otherwise they are read at its cached default branch only (at every ref,
+    with a warning, when that branch is unknown or not cached). Its dependents are always those of
     every ref: a repo pinning an older tag still uses the target.
     """
     live: bool = False
@@ -162,14 +162,18 @@ class _GraphBuilder:
         if request.ref is not None or request.all_refs or request.live:
             return request.ref
         default_branch = _first_default_branch(self._cached_ref_metadata_for(request.repo))
-        if default_branch is None and self._cached_refs_for(request.repo):
+        cached_refs = self._cached_refs_for(request.repo)
+        if default_branch in cached_refs:
+            return default_branch
+        # Unknown, or known but not scanned (a tags-only source): read every ref.
+        if cached_refs:
             self._add_warning(
                 self._with_refresh_hint(
                     f"{request.repo}'s default branch is not in the cached source data; "
                     "showing the dependencies of every cached ref."
                 )
             )
-        return default_branch
+        return None
 
     def _walk(
         self,
