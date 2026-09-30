@@ -61,6 +61,10 @@ confirm options before acting.
 
 ## Test a change
 
+`awx test` is experimental and may change in a minor release: after
+upgrading untaped, re-run `untaped awx test validate` and take a fresh
+baseline before comparing.
+
 Suites live in the playbook repository under `.untaped/awx/tests/`. After
 changing a playbook, role or template variables:
 

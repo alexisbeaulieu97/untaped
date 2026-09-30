@@ -60,7 +60,7 @@ SCHEDULE_SPEC = AwxResourceSpec(
     optional_secret_paths=("extra_data.*[=$encrypted$]",),
     apply_strategy="schedule",
     parent_field="unified_job_template",
-    list_columns=("id", "name", "last_run", "next_run", "enabled"),
+    list_columns=("id", "name", "unified_job_template", "next_run", "enabled"),
     commands=("list", "get", "save", "apply", "delete"),
     fidelity="full",
 )

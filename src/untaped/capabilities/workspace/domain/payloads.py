@@ -122,15 +122,18 @@ class RepoAddOutcome(OutcomeRecord, TargetRecord):
 class RepoRemoveOutcome(OutcomeRecord):
     """One row of ``workspace repos remove`` output.
 
-    ``repo`` is the identifier as given for ``planned`` (``--dry-run``)
-    rows and the manifest name for ``removed`` rows; ``pruned`` says
-    whether the local clone is (or would be) deleted as well.
+    ``repo`` is the identifier as given for ``planned`` (``--dry-run``),
+    ``failed`` and ``partial`` rows and the manifest name for ``removed``
+    rows; ``pruned`` says whether the local clone is (or would be) deleted
+    as well. A ``failed`` row says why in ``detail`` and ``error``; a
+    ``partial`` one left the manifest but kept its clone.
     """
 
     workspace: str
     repo: str
     action: str
     pruned: bool
+    detail: str | None = None
 
 
 BranchApplyAction = Literal["checked_out", "unchanged", "skipped", "failed", "unmatched"]

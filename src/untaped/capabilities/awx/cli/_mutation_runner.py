@@ -9,7 +9,12 @@ from cyclopts import Parameter
 from untaped.capabilities.awx.application.mutation_engine import BatchMutationEngine
 from untaped.capabilities.awx.application.mutation_types import MutationPlan
 from untaped.capabilities.awx.cli.context import AwxContext
-from untaped.capabilities.awx.cli.format import format_scope, format_value, outcome_rows
+from untaped.capabilities.awx.cli.format import (
+    OUTCOME_TABLE_COLUMNS,
+    format_scope,
+    format_value,
+    outcome_rows,
+)
 from untaped.capabilities.awx.cli.options import (
     ContinueOption,
     DryRunOption,
@@ -96,12 +101,20 @@ def emit_outcomes(
     columns: list[str] | None,
     allow_unverified: bool = False,
     predicate_hit: bool = False,
+    per_kind: bool = False,
 ) -> None:
     """Preserve structured identity/status and nonzero failure conventions.
 
     ``predicate_hit`` (``apply --check`` drift) exits 3 when nothing failed.
+    ``per_kind`` (a ``<kind>`` command) leaves the constant ``kind`` out of the table.
     """
-    emit(outcome_rows(outcomes), fmt=fmt, columns=columns, kind="awx.apply_outcome")
+    emit(
+        outcome_rows(outcomes),
+        fmt=fmt,
+        columns=columns,
+        table_columns=[c for c in OUTCOME_TABLE_COLUMNS if not (per_kind and c == "kind")],
+        kind="awx.apply_outcome",
+    )
     finish(
         any(
             o.action in {"failed", "partial", "conflict", "skipped"}
@@ -142,7 +155,12 @@ def preview_and_execute(
 
 
 def run_mutation_plan(
-    ctx: AwxContext, engine: BatchMutationEngine, plan: MutationPlan, controls: WriteControls
+    ctx: AwxContext,
+    engine: BatchMutationEngine,
+    plan: MutationPlan,
+    controls: WriteControls,
+    *,
+    per_kind: bool = False,
 ) -> None:
     """Execute the CLI gate and emit its final results and exit status."""
     emit_outcomes(
@@ -150,4 +168,5 @@ def run_mutation_plan(
         fmt=controls.fmt,
         columns=controls.columns,
         allow_unverified=controls.allow_unverified,
+        per_kind=per_kind,
     )

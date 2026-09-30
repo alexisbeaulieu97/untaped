@@ -85,3 +85,12 @@ class UvMissingError(RecipeError, ValueError):
     """The ``uv`` executable hook projects need is not installed (fix the environment)."""
 
     category = ErrorCategory.CONFIG
+
+
+class PartialRemovalError(RecipeError):
+    """A pack removal stopped partway: some of its files, or its index row, remain.
+
+    ``packs remove`` reports it as a ``partial`` row; running it again finishes the job.
+    """
+
+    category = ErrorCategory.FAILED

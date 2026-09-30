@@ -30,6 +30,25 @@ def test_job_ignores_unknown_fields() -> None:
     assert job.status == "running"
 
 
+def test_job_reads_awx_started_and_finished_as_utc_timestamps() -> None:
+    job = Job.model_validate(
+        {
+            "id": 1,
+            "kind": "job",
+            "status": "successful",
+            "started": "2026-01-02T03:04:05.123456Z",
+            "finished": "2026-01-02T03:05:06.654321+00:00",
+        }
+    )
+    dumped = job.model_dump(mode="json")
+    assert (dumped["started_at"], dumped["finished_at"]) == (
+        "2026-01-02T03:04:05Z",
+        "2026-01-02T03:05:06Z",
+    )
+    assert "started" not in dumped
+    assert "finished" not in dumped
+
+
 def test_job_event_accepts_int_host_with_separate_host_name() -> None:
     """Regression: AWX returns ``host`` as an FK id and ``host_name`` as the
     denormalised string; ``host: str | None`` rejected every host event."""

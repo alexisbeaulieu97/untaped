@@ -422,7 +422,9 @@ submitting an action.
 
 `launch` and `sync` watch what they start with one flag family. `--wait`
 waits for terminal success and exits nonzero for failed, canceled, or error
-executions. `--follow` waits the same way and streams each job's log to
+executions; each row then carries the execution's `status`, `started_at`
+and `finished_at` (UTC, `2026-01-02T03:04:05Z`), the fields of the `awx.job`
+record `jobs wait` prints. `--follow` waits the same way and streams each job's log to
 stderr as it runs, ending with its PLAY RECAP (stdout keeps only the result
 rows). With several executions each log line is prefixed with its
 `[template]`. `--timeout SECONDS` (with `--wait` or `--follow`; zero or
@@ -488,10 +490,32 @@ inventory source for `--kind inventory_update`); digits mean an AWX id, so
 match a numeric name with `--filter job_template__name=123`.
 `<kind> list --limit N` stops paging once N records are read. `--limit 0` means no limit on every awx list.
 
-`get` prints a table of the default columns; pass `--format yaml` or
-`--format json` for the complete records. `export` stays YAML by default.
-`list` applies its default columns to `table` and `raw` only; `json`, `yaml`
-and `pipe` carry the complete records unless `--columns` narrows them.
+Every awx command's table shows a few default columns for a human scanning
+rows; `json`, `yaml` and `pipe` carry the complete records unless
+`--columns` narrows them, so read those instead of parsing a table.
+`--columns +name` adds a column to the table and `--columns=-name` removes
+one, and a column empty on every row is left out. `list` also applies its
+default columns to `raw`. A `list` or `get` table shows foreign keys by name
+(`inventory`, `organization`, `credential_type`) from the record's
+`summary_fields`, without extra requests; `--with-names` does the same in
+every format. `export` stays YAML by default.
+
+| Command | Default table columns |
+|---|---|
+| `jobs list` | `id`, `name`, `status`, `launch_type`, `started`, `elapsed` |
+| `jobs get` | `id`, `name`, `status`, `started`, `finished`, `elapsed`, `job_explanation` |
+| `jobs wait` | `id`, `name`, `status` |
+| `jobs events` | `counter`, `event`, `host_name`, `task`, `changed`, `failed` |
+| `jobs cancel` | `id`, `name`, `action`, `detail` (the record's `status` is the one read before the cancel) |
+| `jobs relaunch` | `id`, `name`, `status`, `target_id`, `action`, `detail` |
+| `<kind> launch`, `sync` | `target_name`, `id`, `status`, `action`, `detail` (`payload` with `--dry-run`) |
+| `apply` | `id`, `name`, `kind`, `action`, `fields_changed`, `detail` |
+| `<kind> patch`, `edit` | `id`, `name`, `action`, `fields_changed`, `detail` |
+| `<kind> delete` | `id`, `name`, `action`, `detail` |
+| `<kind> <field> add`, `remove` | `id`, `name`, `action`, `associate`, `disassociate`, `detail` |
+| `groups list` | `id`, `name`, `description`, `inventory` |
+| `inventory-sources list` | `id`, `name`, `source`, `status`, `inventory` |
+| `schedules list` | `id`, `name`, `unified_job_template` (the template it runs), `next_run`, `enabled` |
 
 Launch and sync results are `awx.launch_outcome` and `awx.sync_outcome`
 records (`jobs * --stdin` accepts them). Every preview row, including
@@ -598,10 +622,14 @@ untaped awx unified-templates list --type workflow_job_template
 `usage` lists the workflow templates that contain a template (`--recursive`
 walks up to the top-level workflows). `nodes` lists what a workflow contains
 (`--recursive` expands nested workflows); `workflow-templates export` shows its
-whole graph, edges and prompts included. `unified-templates` is AWX's view
+whole graph, edges and prompts included. When nothing matches, both say so
+on stderr (`No containing workflows found.`, `No workflow nodes found.`). `unified-templates` is AWX's view
 of every launchable kind.
 
 ## Test suites
+
+`awx test` is [experimental](../stability.md#experimental) and may change in
+a minor release.
 
 `awx test` launches a job template with a matrix of parameters, checks each
 job against what the case expects, and reports one result per case. Suites

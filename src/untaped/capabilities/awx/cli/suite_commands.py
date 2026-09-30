@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Annotated, Any, get_args
 from cyclopts import Parameter
 from cyclopts.validators import Number
 
-from untaped.capabilities.awx.cli._get import default_get_columns
 from untaped.capabilities.awx.cli.context import AwxContext, open_context
 from untaped.capabilities.awx.cli.options import OrganizationOption
 from untaped.capabilities.awx.domain.case_failure import CaseFailure
@@ -79,7 +78,10 @@ if TYPE_CHECKING:
 
 app = create_app(
     name="test",
-    help="Run declarative AWX-job test suites (parameterized launch matrices).",
+    help=(
+        "Run declarative AWX-job test suites (parameterized launch matrices). "
+        "Experimental: may change in a minor release."
+    ),
 )
 
 
@@ -92,14 +94,17 @@ _RESULT_TABLE_COLUMNS = [
     "suite",
     "case",
     "result",
+    "change",
     "job_status",
     "job_id",
     "duration_s",
     "failure.system",
     "failure.message",
+    "job_url",
 ]
+"""``change`` (against a baseline) and a failure's columns show only when a row has them."""
 
-_CASE_TABLE_COLUMNS = ["suite", "case", "job_template"]
+_CASE_TABLE_COLUMNS = ["suite", "case", "job_template", "workflow_template"]
 
 _PATHS_ARG = Annotated[
     list[Path] | None,
@@ -345,6 +350,8 @@ def run_command(
 
     With --source-ref, temporary copies of the templates with specs are created
     first (no confirmation) and deleted after the run, even when interrupted.
+
+    Experimental: may change in a minor release.
     """
     from untaped.capabilities.awx.application import RunAction, WatchJob  # noqa: PLC0415
     from untaped.capabilities.awx.application.suites.preflight import (  # noqa: PLC0415
@@ -477,9 +484,10 @@ def _report_results(
                 _show_failure(result, result.failure)
 
     emit(
-        [result.model_dump() for result in outcome.results],
+        [result.model_dump(mode="json") for result in outcome.results],
         fmt=fmt,
-        columns=columns or default_get_columns(fmt, _result_columns(outcome)),
+        columns=columns,
+        table_columns=_RESULT_TABLE_COLUMNS,
         kind=_RESULT_KIND,
     )
     for line in _summary(outcome):
@@ -525,14 +533,6 @@ def _check_run_flags(
             "--no-cancel leaves jobs running, and AWX cannot delete a template while its job "
             "runs; add --keep"
         )
-
-
-def _result_columns(outcome: SuiteRunOutcome) -> list[str]:
-    """The table's columns, with ``change`` after ``result`` when compared with a baseline."""
-    if all(result.change is None for result in outcome.results):
-        return _RESULT_TABLE_COLUMNS
-    after = _RESULT_TABLE_COLUMNS.index("result") + 1
-    return [*_RESULT_TABLE_COLUMNS[:after], "change", *_RESULT_TABLE_COLUMNS[after:]]
 
 
 def _show_failure(result: CaseResult, failure: CaseFailure) -> None:
@@ -628,7 +628,10 @@ def list_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """List the cases that would run, without launching anything."""
+    """List the cases that would run, without launching anything.
+
+    Experimental: may change in a minor release.
+    """
     cli_vars = parse_kv_pairs(var, flag="--var")
     files = _expand_paths(paths)
 
@@ -641,13 +644,11 @@ def list_command(
         )
 
     rows = [case_row(path, suite, case) for path, suite in loaded.items() for case in suite.cases]
-    shown = _CASE_TABLE_COLUMNS
-    if any(suite.workflow_template is not None for suite in loaded.values()):
-        shown = [*shown, "workflow_template"]
     emit(
         rows,
         fmt=fmt,
-        columns=columns or default_get_columns(fmt, shown),
+        columns=columns,
+        table_columns=_CASE_TABLE_COLUMNS,
         kind="awx.test_case",
     )
 
@@ -671,6 +672,8 @@ def validate_command(
 
     With --source-ref, also check the temporary copies a run would create (every
     link, name and project branch override) and print them.
+
+    Experimental: may change in a minor release.
     """
     _validate(
         paths,
@@ -787,7 +790,8 @@ def _validate(
         emit(
             [planned_outcome(template, temp.marker).model_dump() for template in temp.templates],
             fmt=fmt,
-            columns=columns or default_get_columns(fmt, _PROVISION_COLUMNS),
+            columns=columns,
+            table_columns=_PROVISION_COLUMNS,
             kind=_PROVISION_KIND,
             empty="No temporary copies planned.",
         )
@@ -825,6 +829,8 @@ def prune_command(
 
     A copy is a job template or workflow named `NAME [untaped-test SHA RUN]` whose
     description carries the matching `untaped-test run=…` marker.
+
+    Experimental: may change in a minor release.
     """
     from untaped.capabilities.awx.cli import _temporary_sets as copies  # noqa: PLC0415
     from untaped.capabilities.awx.domain.temporary_set import parse_age  # noqa: PLC0415
@@ -861,7 +867,8 @@ def prune_command(
     emit(
         [row.model_dump() for row in rows],
         fmt=fmt,
-        columns=columns or default_get_columns(fmt, _PRUNE_COLUMNS),
+        columns=columns,
+        table_columns=_PRUNE_COLUMNS,
         kind=_PRUNE_KIND,
         empty="No temporary copies found.",
     )
@@ -899,7 +906,10 @@ def init_command(
         ),
     ] = False,
 ) -> None:
-    """Write a starter suite for a job template or workflow from its survey and launch prompts."""
+    """Write a starter suite for a job template or workflow from its survey and launch prompts.
+
+    Experimental: may change in a minor release.
+    """
     from untaped.capabilities.awx.application.suites.preflight import (  # noqa: PLC0415
         PreflightLaunch,
     )

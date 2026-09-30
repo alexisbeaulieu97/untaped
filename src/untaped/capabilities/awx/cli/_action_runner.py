@@ -89,7 +89,7 @@ def run_action_selection(
     if dry_run:
         _preview_payloads(rows, targets, payload, reads, fmt=fmt)
     if dry_run or (confirm and not yes and not _confirm_targets(ctx, targets, action=action)):
-        emit(rows, fmt=fmt, columns=columns, kind=f"awx.{action}_outcome")
+        _emit_rows(rows, action=action, fmt=fmt, columns=columns)
         return
 
     def safe_error(exc: Exception, target: SelectedResource) -> str:
@@ -113,7 +113,7 @@ def run_action_selection(
         if isinstance(outcome.error, ActionResponseError):
             row.update(id=outcome.error.execution_id, kind=outcome.error.execution_kind)
         if outcome.result is not None:
-            row.update(outcome.result.model_dump())
+            row.update(outcome.result.model_dump(mode="json"))
             launched.append((labels[index], outcome.result))
     unfinished: dict[str, list[str]] = {}
     if wait or follow:
@@ -133,8 +133,24 @@ def run_action_selection(
             echo(f"{row['action']}: {row['target_name']}: {row['detail']}", err=True)
     for kind, ids in unfinished.items():
         echo(hint(f"awx jobs wait {' '.join(ids)} --kind {kind}"), err=True)
-    emit(rows, fmt=fmt, columns=columns, kind=f"awx.{action}_outcome")
+    _emit_rows(rows, action=action, fmt=fmt, columns=columns)
     finish(any(row["action"] != "completed" for row in rows))
+
+
+_TABLE_COLUMNS = ("target_name", "id", "status", "action", "detail", "payload")
+"""A row's target, its execution and what became of it (``payload`` under ``--dry-run``)."""
+
+
+def _emit_rows(
+    rows: list[dict[str, Any]], *, action: str, fmt: FormatOption, columns: ColumnsOption
+) -> None:
+    emit(
+        rows,
+        fmt=fmt,
+        columns=columns,
+        table_columns=_TABLE_COLUMNS,
+        kind=f"awx.{action}_outcome",
+    )
 
 
 def _preview_payloads(
@@ -236,11 +252,11 @@ def _record_finals(
     unfinished: dict[str, list[str]] = {}
     for job in finals:
         row = rows[row_by_job[(job.kind, job.id)]]
-        row.update(job.model_dump())
+        row.update(job.model_dump(mode="json"))
         if not job.is_terminal:
             detail = f"{still_running_detail(job, timeout)}; {fates[job.kind, job.id]}"
             latest = abandon.latest(job)
-            row.update(latest.model_dump(), action="failed", detail=detail)
+            row.update(latest.model_dump(mode="json"), action="failed", detail=detail)
             if not latest.is_terminal and (job.kind, job.id) not in abandon.cancelled:
                 unfinished.setdefault(job.kind, []).append(str(job.id))
         elif job.status != "successful":
@@ -259,7 +275,7 @@ def _fail_abandoned(
     if abandon.cancels:
         detail = f"{detail}; {fates[job.kind, job.id]}"
         if (latest := abandon.latest(job)) is not job:
-            row.update(latest.model_dump())
+            row.update(latest.model_dump(mode="json"))
     row.update(action="failed", detail=detail)
 
 

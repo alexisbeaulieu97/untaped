@@ -28,7 +28,6 @@ from typing import Annotated
 from cyclopts import Parameter
 
 from untaped.capabilities.awx.application import GetUnifiedTemplate
-from untaped.capabilities.awx.cli._get import default_get_columns
 from untaped.capabilities.awx.cli.context import open_context
 from untaped.capability_api import (
     ColumnsOption,
@@ -103,11 +102,11 @@ def list_command(
         filters["type"] = type_
     with report_errors(), open_context() as ctx, ctx.progress_ui().progress("Loading templates…"):
         records = list(ctx.ujts.list(params=filters, limit=limit))
-    cols = list(columns) if columns else list(_DEFAULT_LIST_COLUMNS)
     rendered = render_rows(
         records,
         fmt=fmt,
-        columns=cols,
+        columns=columns or (_DEFAULT_LIST_COLUMNS if fmt == "raw" else None),
+        table_columns=_DEFAULT_LIST_COLUMNS,
         kind="awx.unified_template",
         empty="No templates found. Try a different --type or --filter.",
     )
@@ -159,6 +158,11 @@ def get_command(
     for raw in missing:
         ui.message("error", f"{raw}: not found")
     if records:
-        cols = list(columns) if columns else default_get_columns(fmt, _DEFAULT_LIST_COLUMNS)
-        emit(records, fmt=fmt, columns=cols, kind="awx.unified_template")
+        emit(
+            records,
+            fmt=fmt,
+            columns=columns,
+            table_columns=_DEFAULT_LIST_COLUMNS,
+            kind="awx.unified_template",
+        )
     finish(bool(missing))

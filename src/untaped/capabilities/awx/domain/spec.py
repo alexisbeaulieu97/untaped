@@ -202,7 +202,8 @@ class ResourceSpec(BaseModel):
         """Every field this spec has metadata for.
 
         The union of ``canonical_fields``, ``identity_keys``, the ``fk_refs``
-        field names, ``read_only_fields`` and ``node_field`` — the single source of truth for
+        field names, ``read_only_fields``, ``parent_field`` and ``node_field`` —
+        the single source of truth for
         "does this tool recognize this field?" Consumed by the apply
         unrecognized-field warning, bulk-save filter validation, and the
         catalog list-column invariant.
@@ -212,6 +213,7 @@ class ResourceSpec(BaseModel):
             | frozenset(self.identity_keys)
             | {ref.field for ref in self.fk_refs}
             | frozenset(self.read_only_fields)
+            | ({self.parent_field} if self.parent_field else frozenset())
             | ({self.node_field} if self.node_field else frozenset())
         )
 
