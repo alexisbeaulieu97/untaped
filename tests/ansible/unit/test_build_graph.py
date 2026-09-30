@@ -266,7 +266,7 @@ def test_long_chain_builds_and_renders_without_recursion_error(cycle: bool) -> N
             "requires",
             length + 1,
         )
-        assert "(cycle)" in rendered
+        assert "└── acme/role-0000@main ↻ cycle  roles/requirements.yml" in rendered
     else:
         assert graph.cycles == ()
         assert f"acme/role-{length - 1:04d}@main" in rendered
@@ -540,10 +540,10 @@ def test_shared_nodes_are_expanded_once_in_a_layered_dag(direction: str) -> None
         assert len(requested) <= 1 + width * layers
         assert len(graph.nodes) == 1 + width * layers
         assert len(graph.edges) == width + width * width * (layers - 1)
-        assert any(line.endswith("(see above)") for line in lines)
+        assert any("@main see [1]" in line for line in lines)
 
 
-def test_shared_subtree_prints_once_and_later_occurrences_point_above() -> None:
+def test_shared_subtree_prints_once_and_later_occurrences_refer_back_to_it() -> None:
     pairs = [
         ("acme/app", "acme/a"),
         ("acme/app", "acme/b"),
@@ -561,4 +561,5 @@ def test_shared_subtree_prints_once_and_later_occurrences_point_above() -> None:
     tree = render_graph(graph, "tree")
 
     assert tree.count("acme/leaf@main") == 1
-    assert "acme/shared@main (see above)" in tree
+    assert "acme/shared@main [1]" in tree
+    assert tree.count("see [1]") == 1

@@ -314,14 +314,17 @@ def should_colorize(stream: TextIO) -> bool:
     return stream_is_tty(stream)
 
 
-def render_styled(text: Text | str, *, colorize: bool) -> str:
+def render_styled(text: Text | str, *, colorize: bool, truncate: bool = False) -> str:
     """Render one Rich ``Text`` line (a plain ``str`` is taken literally).
 
     ANSI styling is kept only when ``colorize``; the line wraps at the
-    terminal width (never when output is not a terminal) and carries no
-    trailing newline.
+    terminal width (never when output is not a terminal), or with
+    ``truncate`` ends in an ellipsis there instead, and carries no trailing
+    newline.
     """
-    return _render_rich(text if isinstance(text, Text) else Text(text), colorize=colorize)
+    return _render_rich(
+        text if isinstance(text, Text) else Text(text), colorize=colorize, truncate=truncate
+    )
 
 
 def _render_text(text: Text, *, colorize: bool) -> str:
@@ -346,7 +349,7 @@ def _output_size() -> tuple[int, int]:
     return size.columns, size.lines if size.lines > 0 else 25
 
 
-def _render_rich(renderable: Table | Text, *, colorize: bool) -> str:
+def _render_rich(renderable: Table | Text, *, colorize: bool, truncate: bool = False) -> str:
     buf = io.StringIO()
     # An explicit height too: with only a width Rich pins a TERM=dumb terminal to 80.
     width, height = _output_size()
@@ -357,5 +360,10 @@ def _render_rich(renderable: Table | Text, *, colorize: bool) -> str:
         no_color=not colorize,
         width=width,
         height=height,
-    ).print(renderable)
+    ).print(
+        renderable,
+        # Console.print re-wraps a Text by its own flags, not the Text's.
+        no_wrap=truncate or None,
+        overflow="ellipsis" if truncate else None,
+    )
     return buf.getvalue().rstrip()
