@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from untaped.capabilities.awx.application.suites.runner import RunTestSuite
+from untaped.capabilities.awx.application.suites.temporary_set import TemporarySets
 from untaped.capabilities.awx.cli import app
 from untaped.capabilities.awx.cli.context import AwxContext
 from untaped.testing import CliInvoker
@@ -215,7 +216,7 @@ def test_a_missing_link_fails_before_anything_is_created(aap: FakeAap, repo: Pat
     assert (code, rows) == (1, [])
     [error] = _errors(stderr)
     assert error["message"].startswith(
-        "cannot provision the temporary test set (nothing was created); nothing launched:"
+        "cannot provision the temporary test set of HEAD (nothing was created); nothing launched:"
     )
     assert "Machin" in error["message"] and "did you mean 'Machine'?" in error["message"]
     assert (error["category"], error["system"]) == ("not_found", "awx.suite")
@@ -253,6 +254,27 @@ def test_a_copy_name_already_taken_is_refused(
     assert (error["category"], error["system"]) == ("conflict", "awx.suite")
 
 
+def test_a_spec_in_another_organization_is_named_and_does_not_bind(
+    aap: FakeAap, repo: Path
+) -> None:
+    _commit(
+        repo,
+        {
+            "templates/deploy.yml": _DEPLOY.replace("Default", "Ops") % "Machine",
+            "tests/deploy.yml": _SUITE.replace("cases:", "organization: Default\ncases:"),
+        },
+    )
+
+    code, rows, stderr = _run()
+
+    assert (code, rows) == (1, [])
+    assert (
+        "deploy: the spec of JobTemplate 'Deploy' (HEAD:.untaped/awx/templates/deploy.yml) "
+        "is not in organization Default"
+    ) in stderr
+    assert "deploy: JobTemplate not found: 'Deploy'" in _errors(stderr)[0]["message"]
+
+
 def test_a_template_without_a_spec_that_does_not_exist_is_refused(aap: FakeAap, repo: Path) -> None:
     _commit(repo, {"tests/gone.yml": "kind: AwxTestSuite\njobTemplate: Gone\ncases: {c: {}}\n"})
 
@@ -273,8 +295,10 @@ def test_a_template_without_a_spec_must_prompt_for_the_branch(aap: FakeAap, repo
     assert (code, rows) == (1, [])
     [error] = _errors(stderr)
     assert "other: JobTemplate 'Other' has no spec in the repository at HEAD" in error["message"]
+    sha7 = _git(repo, "rev-parse", "--short=7", "HEAD")
+    assert f"other: runs AWX's JobTemplate 'Other' at {sha7} (no spec)" in stderr
     assert error["hint"] == (
-        "add its spec to `.untaped/awx/templates/` or enable `ask_scm_branch_on_launch`"
+        "add its spec under `.untaped/awx/` or enable `ask_scm_branch_on_launch`"
     )
     assert (error["category"], error["system"]) == ("invalid", "awx.scm")
     assert [record["id"] for record in aap.list_records("job_templates")] == [other["id"]]
@@ -355,7 +379,96 @@ def test_a_teardown_failure_is_a_warning_and_never_changes_the_result(
     assert any(
         f"teardown: JobTemplate '{copy['name']}' is left" in line["message"] for line in warnings
     )
-    assert "untaped awx test prune" in stderr
+    run_id = copy["name"][-5:-1]
+    assert f"run `untaped awx test prune --run {run_id} --older-than 0`" in stderr
+
+
+def test_a_second_ctrl_c_during_teardown_still_reports_the_results_and_what_is_left(
+    aap: FakeAap, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def interrupted(self: Any, copy: Any, **kwargs: Any) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(TemporarySets, "delete", interrupted)
+
+    code, [row], stderr = _run()
+
+    assert (code, row["result"]) == (0, "pass")
+    [copy] = aap.list_records("job_templates")
+    assert f"teardown: JobTemplate '{copy['name']}' is left: teardown interrupted" in stderr
+    assert "--older-than 0" in stderr
+
+
+def test_a_workflow_node_running_a_template_that_would_not_run_the_commit_is_refused(
+    aap: FakeAap, repo: Path
+) -> None:
+    legacy = aap.seed("job_templates", name="Legacy", organization=1, project=5)
+    release = _RELEASE + "    - id: old\n      run: {job_template: Legacy}\n"
+    suite = "kind: AwxTestSuite\nworkflowTemplate: Release\ncases: {happy: {}}\n"
+    _commit(repo, {"workflows/release.yml": release, "tests/release.yml": suite})
+
+    code, rows, stderr = _run("--case", "release/happy")
+
+    assert (code, rows) == (1, [])
+    [error] = _errors(stderr)
+    assert "release (node old): JobTemplate 'Legacy' has no spec" in error["message"]
+    assert (error["category"], error["system"]) == ("invalid", "awx.scm")
+    assert [record["id"] for record in aap.list_records("job_templates")] == [legacy["id"]]
+
+    legacy["ask_scm_branch_on_launch"] = True
+    code, rows, stderr = _run("--case", "release/happy")
+
+    assert code == 0, stderr
+
+
+def test_the_nodes_of_a_workflow_awx_holds_must_run_the_commit_too(
+    aap: FakeAap, repo: Path
+) -> None:
+    workflow = aap.seed(
+        "workflow_job_templates", name="Nightly", organization=1, ask_scm_branch_on_launch=True
+    )
+    job = aap.seed("job_templates", name="Backup", organization=1, project=5)
+    aap.seed(
+        "workflow_nodes",
+        workflow_job_template=workflow["id"],
+        identifier="backup",
+        unified_job_template=job["id"],
+    )
+    suite = "kind: AwxTestSuite\nworkflowTemplate: Nightly\ncases: {c: {}}\n"
+    _commit(repo, {"tests/nightly.yml": suite})
+
+    code, rows, stderr = _run("--case", "nightly/c")
+
+    assert (code, rows) == (1, [])
+    [error] = _errors(stderr)
+    assert "nightly (node backup): JobTemplate 'Backup' has no spec" in error["message"]
+    assert "cannot run HEAD; nothing launched:" in error["message"]
+    assert "nightly: runs AWX's WorkflowJobTemplate 'Nightly' at" in stderr
+
+
+def test_a_project_that_cannot_be_read_is_part_of_the_refusal(aap: FakeAap, repo: Path) -> None:
+    aap.detail_errors[("projects", 5)] = 503
+
+    code, rows, stderr = _run()
+
+    assert (code, rows) == (5, [])
+    [error] = _errors(stderr)
+    assert error["message"].startswith("cannot provision the temporary test set of HEAD")
+    assert (error["category"], error["system"]) == ("unavailable", "awx.controller")
+
+
+def test_a_copy_awx_does_not_store_as_written_is_refused(aap: FakeAap, repo: Path) -> None:
+    aap.ignored_write_fields = {"playbook"}
+
+    code, rows, stderr = _run()
+
+    assert (code, rows) == (1, [])
+    [error] = _errors(stderr)
+    assert "AWX did not store it as the spec asks (unverified 1 field: playbook" in error["message"]
+    assert error["hint"] == "rerun with --keep to inspect the copy, then fix the spec"
+    assert "--allow-unverified" not in stderr
+    assert aap.list_records("job_templates") == []
+    assert _launches(aap) == []
 
 
 def test_a_provisioning_failure_keeps_the_controllers_attribution(aap: FakeAap, repo: Path) -> None:
@@ -366,7 +479,7 @@ def test_a_provisioning_failure_keeps_the_controllers_attribution(aap: FakeAap, 
     assert (code, rows) == (4, [])
     [error] = _errors(stderr)
     assert error["message"].startswith(
-        "cannot provision the temporary test set (the copies created are torn down)"
+        "cannot provision the temporary test set of HEAD (the copies created are torn down)"
     )
     assert (error["category"], error["system"]) == ("permission", "awx.credentials")
     assert "Job Template Admin" in error["hint"]
@@ -396,6 +509,9 @@ def test_an_interrupted_run_still_tears_down(
         (["--scm-branch", "main"], "--source-ref and --scm-branch cannot be combined"),
         (["--baseline", "main"], "--source-ref and --baseline cannot be combined"),
         (["--no-cancel"], "add --keep"),
+        (["--dry-run", "--keep"], "--dry-run launches nothing, so --keep does not apply"),
+        (["--dry-run", "--no-cancel"], "so --no-cancel does not apply"),
+        (["--dry-run", "--baseline", "main"], "so --baseline does not apply"),
     ],
 )
 def test_flags_source_ref_cannot_go_with_are_refused(

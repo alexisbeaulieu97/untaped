@@ -359,9 +359,10 @@ temporary copy of its template as the ref describes it.
    or `kind: WorkflowJobTemplate` (for `workflowTemplate`) document anywhere
    under `.untaped/awx/` has the template's name and organization (the
    suite's `organization`, else `awx.default_organization`), the suite runs a
-   copy of it. A copied workflow's nodes that run a template with a spec run
-   that template's copy; its other nodes run the templates AWX holds. Two
-   specs matching one suite are refused.
+   copy of it. A copied workflow's nodes that run a template with a spec
+   (same name and organization) run that template's copy. A spec of the
+   template in another organization does not bind, with a warning; each
+   suite that runs a template AWX holds is named on stderr.
 3. Each copy is created as `apply` would create the spec, with these
    changes:
    - its name is `NAME [untaped-test SHA RUN]` (the commit's first 7 digits
@@ -375,47 +376,44 @@ temporary copy of its template as the ref describes it.
    - it prompts on launch (`ask_*_on_launch`) for every field a case sets in
      `launch`, so a case can target a test inventory without changing the
      spec;
-   - it has no webhook settings (nor notifications or schedules, which a
-     spec never holds).
+   - it has no webhook settings.
 
    Everything a spec names (project, inventory, credentials, execution
    environment, labels, instance groups, the templates its nodes run) is
    looked up by name and must exist: nothing but the copies is created.
-4. A suite whose template has no spec runs the template AWX holds with
-   `scm_branch` set to the commit. A template that does not prompt for it
-   would silently run its own branch, so the run is refused before anything
-   is created: add its spec to `.untaped/awx/templates/` or enable
+4. Every template the run launches without copying it must prompt for
+   `scm_branch`, which is then the commit: a suite's template without a
+   spec, and each job template or workflow a workflow of the run (copied or
+   not, nested ones too) runs without a copy. Any other would silently run
+   its own branch, so the run is refused before anything is created, naming
+   the suite and node: add its spec under `.untaped/awx/` or enable
    `ask_scm_branch_on_launch`.
-5. The copies are created without a confirmation, job templates first, then
-   the cases run, then the copies are deleted, workflows first, however the
-   run ends (a failed case, a preflight failure, Ctrl-C: running jobs are
-   cancelled first). `--keep` keeps them and prints their names on stderr.
-   A copy that cannot be deleted is a warning naming it, with a hint to run
-   `untaped awx test prune`; it never changes a case's result or the exit
-   code.
+5. The copies are created without a confirmation, the cases run, and the
+   copies are deleted however the run ends (running jobs are cancelled
+   first); `--keep` keeps them. See
+   [test-results.md](test-results.md#temporary-copies) for what the run
+   reports, a copy it could not provision or delete included.
 
 A case's `launch.scm_branch` is replaced by the commit, as `--scm-branch`
 does. `--source-ref` cannot be combined with `--scm-branch` or `--baseline`
 (compare with `--compare`), and `--no-cancel` needs `--keep` (AWX cannot
-delete a template while its job runs). A copy that cannot be provisioned
-stops the run before any case launches; see
-[test-results.md](test-results.md#temporary-copies) for how it is reported.
-The AWX user needs to create and delete job templates and workflows
-([agent-profile.md](agent-profile.md)).
+delete a template while its job runs). The AWX user needs to create and
+delete job templates and workflows ([agent-profile.md](agent-profile.md)).
 
 `untaped awx test validate --source-ref REF` (or `untaped awx test run
---source-ref REF --dry-run`) does everything but the writes: it resolves every
-link of every copy, checks that its name is free and its project allows
-branch override, checks each case against the copy's spec (its survey's
-required variables, the node ids it checks) or the template it runs, and
-prints one `awx.provision_outcome` row per copy, with the prompts it enables.
+--source-ref REF --dry-run`) does everything but the writes and prints one
+`awx.provision_outcome` row per copy; a case of a copied template is checked
+against the spec (its survey's required variables, the node ids it checks).
 
 `untaped awx test prune` deletes the copies a killed run left behind: job
 templates and workflows named like a copy whose description carries the
 matching marker, created more than `--older-than` ago (`2h` by default;
-`30m`, `1d`, `90s`; `0` takes every copy, a running test's included). It lists
-them and asks once (`--yes` skips the question, `--dry-run` only lists them),
-and prints one `awx.prune_outcome` row per copy.
+`30m`, `1d`, `90s`; `0` takes every copy). `--run RUN` takes only one run's
+copies, as the teardown warning's hint does. An age below the longest run
+deletes the copies of runs still going, whose next launches then fail: prune
+another run's copies only once it has ended. It lists them and asks once
+(`--yes` skips the question, `--dry-run` only lists them), and prints one
+`awx.prune_outcome` row per copy.
 
 ## Preflight: what `validate` and `run` check
 
@@ -460,7 +458,7 @@ untaped awx test validate --source-ref HEAD       # the copies a run would creat
 untaped awx test run --source-ref HEAD --format json
 untaped awx test run --source-ref v1.4.0 --keep --case deploy-smoke/web
 untaped awx test prune --dry-run                  # leftover copies older than 2h
-untaped awx test prune --older-than 30m --yes
+untaped awx test prune --run k3x9 --older-than 0 --yes   # one ended run's copies
 untaped awx schema AwxTestSuite                   # the body's JSON Schema
 ```
 

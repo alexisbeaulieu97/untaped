@@ -63,6 +63,7 @@ from untaped.capabilities.awx.application.suites.ports import (
     TailReader,
     Watcher,
 )
+from untaped.capabilities.awx.application.suites.preflight import refused
 from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
 from untaped.capabilities.awx.application.suites.workflow import (
     JobRead,
@@ -83,7 +84,6 @@ from untaped.capabilities.awx.domain.case_failure import (
     FailedTask,
     FailureEvidence,
     approval_failure,
-    failure_system,
     finished_failure,
     in_node,
     request_failure,
@@ -135,9 +135,7 @@ from untaped.capability_api import (
     ConfigError,
     ErrorCategory,
     UntapedError,
-    attribution,
     bounded_map,
-    most_severe,
     note_failure,
 )
 
@@ -319,10 +317,7 @@ class RunTestSuite:
 
         Each suite is bound once: to ``bindings``' template for it, else to its own.
         """
-        bound = {
-            suite.name: bindings.get(suite.name) or suite.binding(self._jt_scope)
-            for suite in suites
-        }
+        bound = {suite.name: suite.binding(self._jt_scope, bindings) for suite in suites}
         return [
             (suite, bound[suite.name], case_name, case)
             for suite, case_name, case in select_cases(suites, case_filter)
@@ -400,8 +395,7 @@ class RunTestSuite:
         if self._preflight is None:
             return list(resolved)
         checked: list[_ResolvedCase] = []
-        problems: list[str] = []
-        errors: list[UntapedError] = []
+        problems: list[tuple[str, UntapedError]] = []
         for item in resolved:
             try:
                 self._preflight(
@@ -417,15 +411,10 @@ class RunTestSuite:
                     )
                     item = replace(item, approval_nodes=tuple(gates))
             except (AwxApiError, ConfigError) as exc:
-                problems.append(f"  {item.suite_name}/{item.case_name}: {exc}")
-                errors.append(exc)
+                problems.append((f"{item.suite_name}/{item.case_name}", exc))
             checked.append(item)
         if problems:
-            worst = most_severe(errors)
-            raise ConfigError(
-                "\n".join(["preflight failed, nothing launched:", *problems]),
-                **(attribution(worst) | {"system": failure_system(worst, launching=True)}),
-            )
+            raise refused("preflight failed, nothing launched:", problems)
         return checked
 
     def _launch_and_wait(self, item: _ResolvedCase) -> CaseResult:

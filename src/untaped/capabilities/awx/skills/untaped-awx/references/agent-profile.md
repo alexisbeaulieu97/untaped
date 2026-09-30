@@ -26,9 +26,11 @@ changing something it should not.
    the user creates and deletes job templates and workflows in the
    organization: grant it the organization's **Job Template Admin** role and,
    for workflow suites, **Workflow Admin**. It also needs **Use** on each
-   project, inventory and credential a spec names, and read access to its
-   execution environment, labels and instance groups. `awx test prune`
-   deletes the copies of any run in the organization with the same roles.
+   project, inventory and credential a spec names and on its instance groups
+   (verify on your AAP), read access to its execution environment and
+   labels, and **Execute** on each template AWX holds that a copied
+   workflow's nodes run. `awx test prune` deletes the copies of any run in
+   the organization with the same roles.
    Without them, provisioning fails as `awx.credentials` (exit 4) before any
    case launches.
 5. Create a personal access token for the user with **Write** scope. A

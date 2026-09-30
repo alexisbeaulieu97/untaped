@@ -1,8 +1,12 @@
-"""PreflightLaunch: check a test case's launch against its template before any job runs."""
+"""PreflightLaunch: check a test case's launch against its template before any job runs.
+
+:func:`refused` turns every problem found before a run launches anything into
+one error, attributed as the worst of them.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Mapping, Sequence
 from functools import cache
 from typing import Any
 
@@ -14,6 +18,7 @@ from untaped.capabilities.awx.application.selection import (
     SelectionResolver,
 )
 from untaped.capabilities.awx.domain import ResourceSpec
+from untaped.capabilities.awx.domain.case_failure import failure_system
 from untaped.capabilities.awx.domain.workflow_run import (
     MAX_NESTING,
     WORKFLOW_JOB,
@@ -21,6 +26,7 @@ from untaped.capabilities.awx.domain.workflow_run import (
     approval_labels,
 )
 from untaped.capabilities.awx.errors import ResourceNotFoundError
+from untaped.capability_api import ConfigError, UntapedError, attribution, most_severe
 
 
 class PreflightLaunch:
@@ -42,6 +48,7 @@ class PreflightLaunch:
             tuple[SelectedResource, Callable[[str], Mapping[str, Any]]],
         ] = {}
         self._nodes: dict[int, list[TemplateNode]] = {}
+        self._launches: dict[tuple[str, int], Mapping[str, Any]] = {}
 
     def __call__(
         self,
@@ -85,6 +92,15 @@ class PreflightLaunch:
             self._templates[key] = (template, read)
         return self._templates[key]
 
+    def launch_of(self, spec: ResourceSpec, template_id: int) -> Mapping[str, Any]:
+        """A template's ``launch/`` answer, by id, read once."""
+        key = (spec.kind, template_id)
+        if key not in self._launches:
+            self._launches[key] = self._client.sub_endpoint_request(
+                spec, template_id, "launch", "GET"
+            )
+        return self._launches[key]
+
     def nodes(self, spec: ResourceSpec, template_id: int) -> list[TemplateNode]:
         """A workflow template's nodes (its ``workflow_nodes/`` records, every page), read once."""
         if template_id not in self._nodes:
@@ -114,3 +130,23 @@ class PreflightLaunch:
                     spec, node.template_id, depth=depth + 1, prefix=nested
                 )
         return found
+
+
+def refused(header: str, problems: Sequence[tuple[str, UntapedError]]) -> ConfigError:
+    """One error listing ``problems`` (``label: message``) under ``header``.
+
+    It carries the most severe problem's category, hint and system (the
+    system responsible for a launch AWX would refuse); every other problem
+    keeps its hint on its own line.
+    """
+    worst = most_severe([error for _, error in problems])
+    lines = [header]
+    for label, error in problems:
+        line = f"  {label}: {error}"
+        if error is not worst and error.hint:
+            line += f" (hint: {error.hint})"
+        lines.append(line)
+    return ConfigError(
+        "\n".join(lines),
+        **(attribution(worst) | {"system": failure_system(worst, launching=True)}),
+    )

@@ -89,6 +89,8 @@ class FakeAap:
         self.every_request_error: int | None = None
         # HTTP status every DELETE answers with once set (e.g. 403 for a missing role).
         self.delete_error: int | None = None
+        # ``(collection, id)`` → HTTP status its ``GET <collection>/<id>/`` reads fail with.
+        self.detail_errors: dict[tuple[str, int], int] = {}
         # How the job a workflow node runs ends, by node ``identifier``: a mapping of
         # ``status``, ``events``, ``host_summaries``, ``stdout`` and ``job_fields`` (the
         # ``next_action_*`` values), or a list of them used one per run (the last repeats).
@@ -225,6 +227,8 @@ class FakeAap:
         return _page_response(records, params, f"{self.api_prefix}{api_path}/")
 
     def _get(self, api_path: str, id_: int) -> httpx.Response:
+        if (api_path, id_) in self.detail_errors:
+            return _err(self.detail_errors[(api_path, id_)], f"{api_path}/{id_}/ refused")
         if api_path == "workflow_jobs":
             self._tick_held()
         record = self.store.get(_TOP_PATH_STORE.get(api_path, api_path), {}).get(id_)
@@ -344,6 +348,13 @@ class FakeAap:
             # Like AWX's RelatedJobsPreventDeleteMixin: not while a job of it runs.
             return _err(409, "Resource is being used by running jobs.")
         record = self.store[store_path].pop(id_)
+        if store_path == "workflow_job_templates":
+            # Like AWX: a workflow's nodes, and their approval templates, go with it.
+            for node_id in [node["id"] for node in self._nodes_of(id_)]:
+                node = self.store["workflow_nodes"].pop(node_id)
+                self.store["workflow_approval_templates"].pop(
+                    node.get("unified_job_template"), None
+                )
         if store_path == "workflow_nodes":
             # Like AWX: edges into the node go with it, and so does its approval.
             for node in self.store["workflow_nodes"].values():
@@ -629,7 +640,12 @@ class FakeAap:
                 timed_out=timed_out,
             )
         elif kind == "workflow_job":
-            execution = self.seed("workflow_jobs", name=template.get("name"), status="running")
+            execution = self.seed(
+                "workflow_jobs",
+                name=template.get("name"),
+                status="running",
+                unified_job_template=node["unified_job_template"],
+            )
         else:
             execution = self._run_node_job(node, job_id, kind or "job")
         node["job"] = execution["id"]
@@ -669,6 +685,7 @@ class FakeAap:
         status = outcome.get("status", "successful")
         fields: dict[str, Any] = {
             "name": template.get("name"),
+            "unified_job_template": node["unified_job_template"],
             "status": outcome.get("hold_status", "running") if outcome.get("hold") else status,
             **outcome.get("job_fields", {}),
         }

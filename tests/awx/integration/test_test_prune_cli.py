@@ -10,7 +10,7 @@ import pytest
 
 from untaped.capabilities.awx.cli import app
 from untaped.capabilities.awx.domain.temporary_set import Marker
-from untaped.testing import CliInvoker
+from untaped.testing import CliInvoker, ScriptedPromptBackend
 
 if TYPE_CHECKING:  # pragma: no cover — pytest --import-mode=importlib hides 'tests'
     from tests.conftest import FakeAap
@@ -78,6 +78,17 @@ def test_old_copies_are_deleted_workflows_first(aap: FakeAap) -> None:
     assert aap.list_records("workflow_job_templates") == []
 
 
+def test_run_prunes_only_that_runs_copies(aap: FakeAap) -> None:
+    mine = _copy(aap, "job_templates", "Deploy", "k3x9", timedelta(0))
+    other = _copy(aap, "job_templates", "Deploy", "abcd", timedelta(0))
+
+    result = _prune("--run", "k3x9", "--older-than", "0", "--yes")
+
+    assert result.exit_code == 0, result.stderr
+    assert [row["id"] for row in json.loads(result.stdout)] == [mine["id"]]
+    assert aap.list_records("job_templates") == [other]
+
+
 def test_dry_run_lists_without_deleting(aap: FakeAap) -> None:
     copy = _copy(aap, "job_templates", "Deploy", "k3x9", timedelta(minutes=10))
 
@@ -118,6 +129,22 @@ def test_without_a_terminal_prune_needs_yes(aap: FakeAap) -> None:
 
     assert result.exit_code == 2
     assert "--yes" in result.stderr
+    assert "copys" not in result.stderr
+
+
+def test_a_declined_prune_deletes_and_prints_nothing(aap: FakeAap) -> None:
+    copy = _copy(aap, "job_templates", "Deploy", "k3x9", timedelta(hours=3))
+    backend = ScriptedPromptBackend(confirms=[False])
+
+    result = CliInvoker().invoke(
+        app, ["test", "prune", "-f", "json"], interactive=True, prompt_backend=backend
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "About to delete 1 temporary template" in result.stderr
+    assert result.stderr.rstrip().endswith("cancelled; no changes made")
+    assert aap.list_records("job_templates") == [copy]
 
 
 def test_nothing_to_prune(aap: FakeAap) -> None:

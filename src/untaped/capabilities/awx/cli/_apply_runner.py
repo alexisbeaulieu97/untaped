@@ -18,6 +18,7 @@ from untaped.capabilities.awx.domain import Resource
 from untaped.capabilities.awx.infrastructure.git_source import GitSource
 from untaped.capabilities.awx.infrastructure.yaml_io import (
     read_resource_files,
+    read_resource_files_at,
     read_resource_text,
 )
 from untaped.capability_api import ConfigError, resolve_text_input
@@ -71,11 +72,7 @@ def _read_documents(path: Path, source: GitSource | None) -> list[tuple[str, Res
     With ``source``, ``path`` is read at its pinned commit, never the working tree.
     """
     if source is not None:
-        return [
-            (source.label(rel), doc)
-            for rel in source.files(path)
-            for doc in read_resource_text(source.read_text(rel), source=source.label(rel))
-        ]
+        return read_resource_files_at(source, path)
     if path != STDIN:
         return [(str(source), doc) for source, doc in read_resource_files(path)]
     empty = ConfigError("no YAML documents on stdin; pipe them into `apply -`", category="invalid")

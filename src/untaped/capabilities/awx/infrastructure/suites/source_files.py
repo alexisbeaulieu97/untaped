@@ -6,7 +6,8 @@ discovery does) and names each ``REF:PATH``, so every error names the file
 at the ref. :func:`template_specs` reads the ``JobTemplate`` and
 ``WorkflowJobTemplate`` documents anywhere under ``.untaped/awx/`` at that
 commit (suites, vars files and other kinds are skipped). Both read through
-:class:`GitSource`, the reader ``awx apply --source-ref`` uses.
+:class:`GitSource`, the reader ``awx apply --source-ref`` uses, which reads
+each file once.
 """
 
 from __future__ import annotations
@@ -18,14 +19,17 @@ from pathlib import Path, PurePosixPath
 from untaped.capabilities.awx.domain import Resource
 from untaped.capabilities.awx.domain.temporary_set import TEMPLATE_KINDS
 from untaped.capabilities.awx.infrastructure.git_source import GitSource
-from untaped.capabilities.awx.infrastructure.suites.filesystem import is_suite_text
-from untaped.capabilities.awx.infrastructure.yaml_io import read_resource_text
+from untaped.capabilities.awx.infrastructure.suites.filesystem import is_hidden, is_suite_text
+from untaped.capabilities.awx.infrastructure.yaml_io import read_resource_files_at
 from untaped.capability_api import ConfigError, ErrorCategory
 
 SPEC_ROOT = Path(".untaped/awx")
 """Where a repository keeps its specs and suites, at its root."""
 
-_SPEC_MARKER = re.compile(rf"^kind:\s*[\"']?(?:{'|'.join(TEMPLATE_KINDS)})[\"']?\s*$", re.MULTILINE)
+_SPEC_MARKER = re.compile(
+    rf"\bkind\s*:\s*[\"']?(?:{'|'.join(TEMPLATE_KINDS)})[\"']?(?=\s*(?:[,}}#]|$))", re.MULTILINE
+)
+"""A ``kind:`` of a spec, block or flow style, with a trailing comment or not."""
 
 
 class GitSuiteFiles:
@@ -45,7 +49,8 @@ class GitSuiteFiles:
                 listed = [
                     rel
                     for rel in listed
-                    if not _hidden(rel, under=named) and is_suite_text(self._read(rel))
+                    if not is_hidden(PurePosixPath(rel).relative_to(named or "."))
+                    and is_suite_text(self._source.read_text(rel))
                 ]
                 if not listed:
                     raise ConfigError(
@@ -57,47 +62,30 @@ class GitSuiteFiles:
         return list(dict.fromkeys(found))
 
     def read_text(self, path: Path) -> str:
-        return self._read(self._files[path])
+        return self._source.read_text(self._files[path])
 
     def _label(self, rel: str) -> Path:
         path = Path(self._source.label(rel))
         self._files[path] = rel
         return path
 
-    def _read(self, rel: str) -> str:
-        return self._source.read_text(rel)
-
 
 def template_specs(source: GitSource) -> list[tuple[str, Resource]]:
     """Every job template and workflow spec under :data:`SPEC_ROOT` at the commit.
 
     Each comes with the ``REF:PATH`` it was read from; none when the commit
-    has no such directory.
+    has no such directory. Suites are skipped first: a ``!ref {kind:
+    JobTemplate, …}`` in one would look like a spec.
     """
-    root = source.root / SPEC_ROOT
+
+    def skip(rel: str, text: str) -> bool:
+        hidden = is_hidden(PurePosixPath(rel).relative_to(SPEC_ROOT.as_posix()))
+        return hidden or is_suite_text(text) or not _SPEC_MARKER.search(text)
+
     try:
-        listed = source.files(root)
+        found = read_resource_files_at(source, source.root / SPEC_ROOT, skip=skip)
     except ConfigError as exc:
         if exc.category == ErrorCategory.NOT_FOUND:
             return []
         raise
-    specs: list[tuple[str, Resource]] = []
-    for rel in listed:
-        if _hidden(rel, under=SPEC_ROOT.as_posix()):
-            continue
-        text = source.read_text(rel)
-        if is_suite_text(text) or not _SPEC_MARKER.search(text):
-            continue
-        label = source.label(rel)
-        specs.extend(
-            (label, doc)
-            for doc in read_resource_text(text, source=label)
-            if doc.kind in TEMPLATE_KINDS
-        )
-    return specs
-
-
-def _hidden(rel: str, *, under: str) -> bool:
-    """Whether a part of ``rel`` below the directory ``under`` is hidden."""
-    parts = PurePosixPath(rel).relative_to(under).parts if under else PurePosixPath(rel).parts
-    return any(part.startswith(".") for part in parts)
+    return [(label, doc) for label, doc in found if doc.kind in TEMPLATE_KINDS]
