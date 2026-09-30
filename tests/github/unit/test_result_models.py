@@ -6,7 +6,13 @@ from typing import Any
 
 import pytest
 
-from untaped.capabilities.github.domain import CodeResult, IssueResult
+from untaped.capabilities.github.domain import (
+    CodeResult,
+    IssueResult,
+    RepoListResult,
+    RepoResult,
+    UserResult,
+)
 
 _ISSUE = {
     "id": 1,
@@ -53,3 +59,48 @@ def test_issue_result_flattens_repo_user_and_pull_request(
     row = IssueResult.model_validate({**_ISSUE, **extra})
 
     assert (row.repo, row.user_login, row.is_pull_request) == expected
+
+
+@pytest.mark.parametrize(
+    ("model", "payload"),
+    [
+        (
+            RepoResult,
+            {
+                "id": 1,
+                "name": "p",
+                "full_name": "me/p",
+                "html_url": "https://github.com/me/p",
+                "url": "https://api.github.com/repos/me/p",
+            },
+        ),
+        (
+            RepoListResult,
+            {"name": "p", "full_name": "me/p", "html_url": "https://github.com/me/p"},
+        ),
+        (
+            CodeResult,
+            {
+                "name": "m.py",
+                "path": "m.py",
+                "sha": "s",
+                "html_url": "https://github.com/me/p",
+                "repository": {"full_name": "me/p"},
+            },
+        ),
+        (IssueResult, {**_ISSUE, "html_url": "https://github.com/me/p"}),
+        (
+            UserResult,
+            {"id": 1, "login": "me", "type": "User", "html_url": "https://github.com/me/p"},
+        ),
+    ],
+)
+def test_records_carry_one_repo_and_web_url_field(model: Any, payload: dict[str, Any]) -> None:
+    record = model.model_validate(payload).model_dump()
+
+    assert record["url"] == "https://github.com/me/p"
+    assert not {"full_name", "html_url", "repository_url", "repository"} & set(record)
+    if model is not UserResult:
+        assert record["repo"] == "me/p"
+    if model in (RepoResult, RepoListResult):
+        assert "name" not in record

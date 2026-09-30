@@ -311,12 +311,12 @@ def _validate_content_patterns(
 def _repo_records(rows: tuple[RepoSweepOutcome, ...]) -> list[dict[str, object]]:
     return [
         {
-            "full_name": row.full_name,
+            "repo": row.repo,
             "clone_url": row.clone_url,
             "refs_matched": list(row.refs_matched),
             "hits": dict(row.hits),
             "owners": list(row.owners),
-            "synced_at": row.synced_at,
+            "fetched_at": row.fetched_at,
         }
         for row in rows
     ]
@@ -325,7 +325,7 @@ def _repo_records(rows: tuple[RepoSweepOutcome, ...]) -> list[dict[str, object]]
 def _match_records(rows: tuple[SweepMatch, ...]) -> list[dict[str, object]]:
     return [
         {
-            "full_name": row.full_name,
+            "repo": row.repo,
             "refs": list(row.refs),
             "path": row.path,
             "line": row.line,
@@ -340,12 +340,11 @@ def _file_records(rows: tuple[SweepMatch, ...]) -> list[dict[str, object]]:
     refs: dict[tuple[str, str], dict[str, None]] = {}
     hits: dict[tuple[str, str], int] = {}
     for row in rows:
-        key = (row.full_name, row.path)
+        key = (row.repo, row.path)
         refs.setdefault(key, {}).update(dict.fromkeys(row.refs))
         hits[key] = hits.get(key, 0) + 1
     return [
-        {"full_name": key[0], "path": key[1], "refs": list(refs[key]), "hits": hits[key]}
-        for key in refs
+        {"repo": key[0], "path": key[1], "refs": list(refs[key]), "hits": hits[key]} for key in refs
     ]
 
 
@@ -363,7 +362,7 @@ def _display_rows(
     display: list[dict[str, object]] = []
     for row in rows:
         hits = row["hits"]
-        display_row: dict[str, object] = {"full_name": row["full_name"]}
+        display_row: dict[str, object] = {"repo": row["repo"]}
         for label in labels:
             display_row[label] = hits.get(label, 0)  # type: ignore[attr-defined]
         if query.refs.beyond_default():
@@ -378,7 +377,7 @@ def _default_columns(*, query: SweepQuery, owners: bool, fmt: OutputFormat) -> l
     # Only the table view flattens ``hits`` into per-predicate columns.
     if fmt != "table" or (not query.refs.beyond_default() and owners):
         return None
-    columns = ["full_name", *query.labels()]
+    columns = ["repo", *query.labels()]
     if query.refs.beyond_default():
         columns.append("refs_matched")
     if owners:

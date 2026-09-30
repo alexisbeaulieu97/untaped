@@ -88,9 +88,8 @@ def test_list_repos_handles_sparse_inventory_rows_with_leaf_name_fallback() -> N
 
     rows = list(use_case(RepoListFilters(pattern="play*"), orgs=("acme",)))
 
-    assert [row.full_name for row in rows] == ["acme/play-api"]
-    assert rows[0].name == "play-api"
-    assert rows[0].html_url is None
+    assert [row.repo for row in rows] == ["acme/play-api"]
+    assert rows[0].url is None
 
 
 def test_resolve_repository_inventory_expands_dedupes_sorts_and_prefers_explicit_repos() -> None:
