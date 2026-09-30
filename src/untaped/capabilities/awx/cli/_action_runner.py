@@ -89,7 +89,7 @@ def run_action_selection(
     if dry_run:
         _preview_payloads(rows, targets, payload, reads, fmt=fmt)
     if dry_run or (confirm and not yes and not _confirm_targets(ctx, targets, action=action)):
-        emit(rows, fmt=fmt, columns=columns, kind=f"awx.{action}_outcome")
+        _emit_rows(rows, action=action, fmt=fmt, columns=columns)
         return
 
     def safe_error(exc: Exception, target: SelectedResource) -> str:
@@ -133,8 +133,24 @@ def run_action_selection(
             echo(f"{row['action']}: {row['target_name']}: {row['detail']}", err=True)
     for kind, ids in unfinished.items():
         echo(hint(f"awx jobs wait {' '.join(ids)} --kind {kind}"), err=True)
-    emit(rows, fmt=fmt, columns=columns, kind=f"awx.{action}_outcome")
+    _emit_rows(rows, action=action, fmt=fmt, columns=columns)
     finish(any(row["action"] != "completed" for row in rows))
+
+
+_TABLE_COLUMNS = ("target_name", "id", "status", "action", "detail", "payload")
+"""A row's target, its execution and what became of it (``payload`` under ``--dry-run``)."""
+
+
+def _emit_rows(
+    rows: list[dict[str, Any]], *, action: str, fmt: FormatOption, columns: ColumnsOption
+) -> None:
+    emit(
+        rows,
+        fmt=fmt,
+        columns=columns,
+        table_columns=_TABLE_COLUMNS,
+        kind=f"awx.{action}_outcome",
+    )
 
 
 def _preview_payloads(

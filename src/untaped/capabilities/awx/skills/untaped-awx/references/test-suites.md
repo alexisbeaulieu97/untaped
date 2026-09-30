@@ -500,8 +500,8 @@ untaped awx schema AwxTestSuite                   # the body's JSON Schema
   detached, has no upstream, or is not pushed.
 - `list` emits one `awx.test_case` row per case (`suite`, `case`,
   `job_template`, `workflow_template`, `organization`, `path`, `variables`);
-  the table shows `suite`, `case` and `job_template` (and
-  `workflow_template` when a suite has one).
+  the table shows `suite`, `case`, and `job_template` or
+  `workflow_template` when a suite sets it.
 - `validate` prints `SUITE/CASE: problem` on stderr per failing case and
   exits 1, else reports `N cases validated`. It also warns (without failing)
   about each case that expects `status: failed` without `failed_tasks`, and

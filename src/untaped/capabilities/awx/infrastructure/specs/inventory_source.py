@@ -57,5 +57,5 @@ INVENTORY_SOURCE_SPEC = AwxResourceSpec(
     parent_field="inventory",
     actions=(ActionSpec(name="sync", path="update", returns=frozenset({"inventory_update"})),),
     commands=("list", "get", "save", "apply", "delete"),
-    list_columns=("id", "name", "source", "status"),
+    list_columns=("id", "name", "source", "status", "inventory"),
 )
