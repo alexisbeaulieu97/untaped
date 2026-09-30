@@ -626,3 +626,24 @@ def test_ref_less_target_with_an_unknown_default_branch_reads_every_ref_and_says
         "acme/web's default branch is not in the cached source data; showing the "
         "dependencies of every cached ref. " + _HINT,
     )
+
+
+def test_ref_less_target_whose_default_branch_is_not_cached_reads_every_ref() -> None:
+    # A tags-only source records the default branch without scanning it.
+    index = StubIndex(
+        [_dep("acme/web", "acme/base", ref="v1"), _dep("acme/web", "acme/x", ref="v2")],
+        cached_ref_metadata={
+            "acme/web": (
+                CachedRef(name="v1", kind="tags", default_branch="main"),
+                CachedRef(name="v2", kind="tags", default_branch="main"),
+            )
+        },
+    )
+
+    graph = _build(index, "acme/web", None, source_key="source:prod", direction="deps", depth=1)
+
+    assert len(graph.edges) == 2
+    assert graph.warnings == (
+        "acme/web's default branch is not in the cached source data; showing the "
+        "dependencies of every cached ref.",
+    )

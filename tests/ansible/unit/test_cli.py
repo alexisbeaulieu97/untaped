@@ -2496,3 +2496,11 @@ def test_find_reads_a_ref_less_root_at_its_default_branch_unless_all_refs(
 
     assert result.exit_code == 0, result.output + result.stderr
     assert ("acme/legacy" in result.stdout) is all_refs
+
+
+@pytest.mark.parametrize("command", ["graph", "deps"])
+def test_all_refs_with_ref_is_a_usage_error(command: str) -> None:
+    result = _run(command, "acme/site", "--ref", "main", "--all-refs")
+
+    assert result.exit_code == 2
+    assert "--all-refs reads every ref; drop it or --ref" in result.stderr

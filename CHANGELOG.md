@@ -356,8 +356,9 @@ self-contained manual for the installed CLI.
   - **Breaking:** without `--ref`, `deps`, `find` and `graph` read what a
     target depends on at its default branch only, instead of at every cached
     ref (a repo with many tags gave one block or set of rows per tag). Pass
-    `--all-refs` for the old result. When the source does not know the
-    default branch, every ref is still read, with a warning. What depends on
+    `--all-refs` for the old result. When the source has not scanned the
+    default branch (a tags-only source), every ref is still read, with a
+    warning. What depends on
     a target (`impact`, `graph`'s "used by") still covers every ref a
     dependent pins. A local checkout is unaffected.
   - **Breaking:** `graph` defaults to `--depth unlimited`, like `deps`,
