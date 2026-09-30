@@ -2,13 +2,55 @@
 
 ## 9.0.0
 
-A major release that makes untaped a harness for AI agents. Every failure
-says what kind it is and which system is responsible, and selects the exit
-code: **4** means fix the environment, **5** means retry later (capability
-SDK 3.0; see the **Breaking** entries). `awx test` explains why a case failed
-and gains regression checks, baseline comparison, workflow suites and
-temporary test sets from a git ref (`--source-ref`). Every built-in skill is a
+A major release that makes untaped a harness for AI agents, and the first
+under the [versioning and stability](docs/stability.md) policy: from here on,
+breaking changes are collected into major releases. Every failure says what
+kind it is and which system is responsible, and selects the exit code: **4**
+means fix the environment, **5** means retry later (capability SDK 3.0).
+`awx test` (now [experimental](docs/stability.md#experimental)) explains why a
+case failed and gains regression checks, baseline comparison, workflow suites
+and temporary test sets from a git ref (`--source-ref`). Records name things
+the same way everywhere (`repo`, `url`, `*_at` UTC timestamps), tables show a
+few curated columns that fit the terminal (`--columns +name`/`-name` edit
+them), `ansible graph` draws a readable tree, and every built-in skill is a
 self-contained manual for the installed CLI.
+
+**Upgrading.** Scripts and providers that use `untaped` will hit these
+changes (details in the **Breaking** entries below):
+
+- Exit codes: a failure is no longer always 1. **4** means fix the setup (a
+  config error, a rejected token, a missing permission) and **5** means
+  retry later (network, timeout, 5xx, 429, a busy lock); a run exits with its
+  most severe failure. More misuse exits 2. Scripts that test for `1` must
+  also handle 4 and 5.
+- Failed rows carry a structured `error` object. `github.sync_outcome` and
+  `recipe.apply_outcome` move their old string `error` to `detail`, and a
+  failed `awx.test_result` carries a `failure` object instead of
+  `failure_reason`, `failed_tasks` and `log_tail`.
+- Renamed record fields:
+  - github: `full_name` becomes `repo` and `html_url` becomes `url`;
+    `name`, `repository_url` and the nested `repository` are gone; the sweep
+    records' `synced_at` becomes `fetched_at`.
+  - awx: `started`/`finished` become `started_at`/`finished_at`, UTC to the
+    second.
+  - recipe: `recipe.check` rows are `name`, `type`, `status` (`fail`, was
+    `error`), `path` and `detail` (pack counts are in `packs list`);
+    `backups prune` emits `recipe.prune_outcome` rows.
+- Tables: default columns changed for most commands. Parse json, yaml or
+  pipe output, or pass `--columns`. A few `--format raw` outputs changed
+  too: `workspace repos list` prints repo names (pass `--columns workspace`
+  for the old output), awx `schedules list` prints `unified_job_template`
+  where the always-blank `last_run` was, and `groups`/`inventory-sources
+  list` add a trailing `inventory` column. awx `jobs list`, `jobs events`,
+  `unified-templates list` and `workflow-templates nodes` json/yaml carry
+  whole records instead of the table columns.
+- ansible: without `--ref`, `deps`, `find` and `graph` read a target's
+  dependencies at its default branch (`--all-refs` for every cached ref);
+  `graph` defaults to `--depth unlimited` (pass `--depth 3`);
+  `--upstream`/`--downstream`/`--both` become `--direction up|down|both`
+  (the old flags warn and go away in 10.0).
+- Capability providers: declare `((3, 0), (4, 0))` and give errors a
+  `category` and `system` instead of an `exit_code`.
 
 - Core
   - **New:** a [versioning and stability](docs/stability.md) policy: what
