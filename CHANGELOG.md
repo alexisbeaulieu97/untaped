@@ -70,7 +70,7 @@ self-contained manual for the installed CLI.
     row, not just the first. It fits the terminal by narrowing only its
     widest columns: a cell that does not fit ends in `…` and each row stays
     on one line, while `detail`, `message` and `hint` wrap. Nested values
-    read as `key=value` pairs instead of Python reprs, `*_s` durations as
+    read as `key=value` pairs instead of Python reprs, durations (`*_s`, `elapsed`) as
     `1m42s`, other decimals to two places, and commits are shortened to 10
     characters. Status and outcome words are colored by meaning, including
     in the default theme. json, yaml, raw and pipe keep every field and

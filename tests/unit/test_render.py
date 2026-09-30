@@ -395,9 +395,12 @@ def test_fitting_keeps_every_column_visible_when_the_terminal_is_narrow(
     assert all(col in header for col in row)
 
 
-@pytest.mark.parametrize(("value", "expected"), [(5, "5.0s"), (59.96, "1m00s")])
-def test_duration_edges(value: float, expected: str) -> None:
-    assert expected in _table([{"wait_s": value}])
+@pytest.mark.parametrize(
+    ("column", "value", "expected"),
+    [("wait_s", 5, "5.0s"), ("wait_s", 59.96, "1m00s"), ("elapsed", 102.0, "1m42s")],
+)
+def test_duration_edges(column: str, value: float, expected: str) -> None:
+    assert expected in _table([{column: value}])
 
 
 def test_detail_table_view_formats_each_field_by_name() -> None:
