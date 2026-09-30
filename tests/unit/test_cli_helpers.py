@@ -739,3 +739,10 @@ def test_raw_edits_start_from_the_default_columns(_isolated_config: Path) -> Non
     out = render_rows(rows, fmt="raw", columns=["+url"], table_columns=["id", "name"])
     assert out == "1\ta\tu"
     assert render_rows(rows, fmt="raw", table_columns=["id", "name"]) == "1"
+
+
+def test_removing_a_column_keeps_the_records_own_fields_in_order(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    emit([_Outcome(name="a", action="created", detail="d")], fmt="json", columns=["-detail"])
+    assert capsys.readouterr().out == '[{"name": "a", "action": "created"}]\n'

@@ -10,6 +10,8 @@
     (an unset `config get` prints nothing); only tables show the glyphs.
     `capabilities`, `alias list` and `doctor` tables show default columns, and
     the `doctor` and `setup` tables leave a passing check's detail blank.
+  - **Fix:** `--columns=-name` outside a table keeps the record's field order
+    and no longer adds an omitted `error` as `null`.
   - **Fix:** with `ui.detail_view: table`, a single record's status and
     outcome values are colored by meaning, as in lists.
   - **Changed:** the packaged skills are rewritten as short maps with
