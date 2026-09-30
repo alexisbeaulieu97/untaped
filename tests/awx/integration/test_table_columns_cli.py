@@ -90,13 +90,14 @@ def test_jobs_get_table_is_a_summary_not_every_awx_field(fake_aap: Any) -> None:
     assert record["summary_fields"] == _JOB["summary_fields"]
 
 
-def test_jobs_wait_table_leaves_out_constant_and_duplicate_fields(fake_aap: Any) -> None:
+def test_jobs_wait_table_shows_when_it_finished(fake_aap: Any) -> None:
     fake_aap.seed("jobs", id=42, **{**_JOB, "status": "successful", "failed": False})
 
     table = _run("jobs", "wait", "42").stdout
     record = json.loads(_run("jobs", "wait", "42", "--format", "json").stdout)[0]
 
-    assert _header(table) == ["id", "name", "status"]
+    assert _header(table) == ["id", "name", "status", "finished_at"]
+    assert "2026-01-01T00:01:42Z" in table
     assert {"kind", "failed", "scm_branch"} <= record.keys()
 
 
