@@ -73,7 +73,8 @@ changing a playbook, role or template variables:
    prompts; edit its cases, starting from the examples.
 2. Once per task, save the base branch's results outside the checkout:
    `untaped awx test run --scm-branch main --format json > /tmp/baseline-PROJ-123.json`
-   (exit 1 when `main` already fails some cases is expected).
+   (exit 1 when `main` already fails some cases is expected; see
+   [references/test-results.md](references/test-results.md#comparing-with-a-baseline)).
 3. Commit and push the branch (`git push -u origin HEAD`): AWX runs what the
    remote has.
 4. `untaped awx test validate` checks every case without launching: the file,
@@ -102,8 +103,9 @@ Run as the dedicated agent profile when one exists
 
 ## Safety
 
-- `patch`, `edit`, `apply`, `delete`, `copy`, `rename`, `jobs cancel` and
-  `jobs relaunch` preview once and ask with No as the default. Run them with
+- `patch`, `edit`, `apply`, `delete`, `copy`, `rename`, membership
+  `add`/`remove`, `jobs cancel`, `jobs relaunch` and `test prune` preview once
+  and ask with No as the default. Run them with
   `--dry-run`, show the user the preview, then pass `--yes` only once the user
   approves. Without a terminal, a configuration write needs `--yes` or
   `--dry-run` (exit 2 otherwise).
@@ -111,8 +113,10 @@ Run as the dedicated agent profile when one exists
   `--filter`, `--search` or `--stdin` list them and ask once.
 - Exit codes: 0 success, 1 failure or declined, 2 usage error, 3 drift
   (`apply --check`), 4 fix the environment, 5 retry later, 130
-  interrupted. `--format json` makes stderr JSON Lines, and failed rows
-  carry an `error` (see [references/resources.md](references/resources.md)).
+  interrupted; for `awx test run`, which system each belongs to is in
+  [references/test-results.md](references/test-results.md#exit-code).
+  `--format json` makes stderr JSON Lines, and failed rows carry an `error`
+  (see [references/resources.md](references/resources.md#pipes-between-commands)).
 - Keep `$encrypted$` placeholders as they are; they preserve stored secrets.
 
 ## Pitfalls

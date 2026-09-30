@@ -28,8 +28,9 @@ the version you have installed.
 
 - [Agent skills](./skills.md): install and update the skills that teach AI
   coding agents to use each capability.
-- [AWX agent profile](./awx/agent-profile.md): a dedicated AWX user, token and
-  profile for an agent that tests its changes with `awx test`.
+- [AWX agent profile](../src/untaped/capabilities/awx/skills/untaped-awx/references/agent-profile.md):
+  a dedicated AWX user, token and profile for an agent that tests its changes
+  with `awx test`.
 
 ## Reference
 
@@ -57,7 +58,3 @@ the version you have installed.
 - [Releasing](./release.md): the PyPI release workflow.
 - [AGENTS.md](../AGENTS.md) and [CONTRIBUTING.md](../CONTRIBUTING.md): repo
   rules and local setup.
-
-The configuration reference is generated. After changing a settings model,
-run `uv run python scripts/gen_config_reference.py`; the test suite fails
-while the page is stale.
