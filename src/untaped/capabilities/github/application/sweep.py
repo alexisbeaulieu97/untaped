@@ -94,7 +94,7 @@ class CorpusSyncOptions:
 class SweepMatch:
     """One deduped content match, possibly reachable from multiple refs."""
 
-    full_name: str
+    repo: str
     refs: tuple[str, ...]
     path: str
     line: int
@@ -141,7 +141,7 @@ class _TreeScan:
 
 @dataclass(frozen=True)
 class _ContentMatch:
-    full_name: str
+    repo: str
     ref: str
     path: str
     line: int
@@ -330,7 +330,7 @@ class Sweep(_CorpusUseCase):
         rows = tuple(
             sorted(
                 (scan.outcome for scan in scans if scan.outcome is not None),
-                key=lambda row: row.full_name,
+                key=lambda row: row.repo,
             )
         )
         all_matches = [match for scan in scans for match in scan.matches]
@@ -447,13 +447,13 @@ class Sweep(_CorpusUseCase):
         owners = self._owners_for(ready.repo, paths=owner_paths) if options.owners else ()
         return _RepoScan(
             outcome=RepoSweepOutcome(
-                full_name=ready.repo.full_name,
+                repo=ready.repo.full_name,
                 clone_url=ready.repo.clone_url,
                 matched=True,
                 refs_matched=tuple(refs_matched),
                 hits=aggregate_hits,
                 owners=owners,
-                synced_at=ready.fetched_at.isoformat() if ready.fetched_at else None,
+                fetched_at=ready.fetched_at.isoformat() if ready.fetched_at else None,
             ),
             matches=tuple(matches),
         )
@@ -713,10 +713,10 @@ def _dedupe_matches(matches: Iterable[_ContentMatch]) -> tuple[SweepMatch, ...]:
     # Refs showing the same line at the same place collapse into one row.
     grouped: dict[tuple[str, str, int, str], dict[str, None]] = {}
     for match in matches:
-        key = (match.full_name, match.path, match.line, match.text)
+        key = (match.repo, match.path, match.line, match.text)
         grouped.setdefault(key, {})[match.ref] = None
     rows = [
-        SweepMatch(full_name=full_name, refs=tuple(refs), path=path, line=line, text=text)
-        for (full_name, path, line, text), refs in grouped.items()
+        SweepMatch(repo=repo, refs=tuple(refs), path=path, line=line, text=text)
+        for (repo, path, line, text), refs in grouped.items()
     ]
-    return tuple(sorted(rows, key=lambda row: (row.full_name, row.path, row.line, row.text)))
+    return tuple(sorted(rows, key=lambda row: (row.repo, row.path, row.line, row.text)))

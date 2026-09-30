@@ -9,7 +9,7 @@ from untaped.capabilities.workspace.application.ports import (
 )
 from untaped.capabilities.workspace.application.prune_safety import format_all_prune_blockers
 from untaped.capabilities.workspace.domain import Repo, Workspace
-from untaped.capabilities.workspace.errors import GitError, WorkspaceError
+from untaped.capabilities.workspace.errors import GitError, PartialRemovalError, WorkspaceError
 from untaped.capability_api import attribution
 
 
@@ -58,5 +58,11 @@ class RemoveRepo:
         self._manifests.write(workspace.path, new_manifest)
 
         if should_prune:
-            self._fs.rmtree(local)
+            try:
+                self._fs.rmtree(local)
+            except WorkspaceError as exc:
+                raise PartialRemovalError(
+                    f"removed from the manifest; could not delete the clone: {exc}",
+                    **attribution(exc),
+                ) from exc
         return repo
