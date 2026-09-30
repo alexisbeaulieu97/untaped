@@ -16,6 +16,8 @@ Terms as `untaped` uses them in commands, output and these docs.
   profile` write it.
 - **corpus (github)**: The local Git copies of repositories that `github sweep`
   searches, under `github.corpus_path`. Managed with `github cache`.
+- **default columns**: The fields a table shows when you pass no `--columns`,
+  set by the record type (`table_columns`). `--columns ?` marks them.
 - **envelope**: One `--format pipe` line: `{"untaped": "1", "kind": ...,
   "record": ...}`. See [Pipes and record kinds](./reference/pipes.md).
 - **hook (recipe)**: A Python function in a recipe pack that validates or
@@ -62,6 +64,8 @@ Terms as `untaped` uses them in commands, output and these docs.
   not in the source's cache. The graph beyond it may be incomplete.
 - **sweep (github)**: A content and file-presence query over the corpus:
   `github sweep`.
+- **table glyph**: A symbol a table shows in place of a field's value (`✓`
+  for true, `—` for unset). Other formats print the value itself.
 - **workspace**: A directory of Git clones managed together through its
   manifest, and registered by name in the state file.
 
