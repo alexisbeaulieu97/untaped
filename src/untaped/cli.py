@@ -9,6 +9,7 @@ import sys
 import weakref
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
+from functools import cache
 from pathlib import Path
 from typing import Annotated, Any, NoReturn, get_args
 
@@ -32,6 +33,7 @@ from untaped.diagnostics import (
     write_record,
 )
 from untaped.errors import ExitCode, OperationCancelledError, UntapedError, UsageError
+from untaped.records import TableGlyph, table_columns_of
 from untaped.render import column_value
 from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context
@@ -357,6 +359,7 @@ def render_rows(
         kind=kind,
         table_columns=table_columns,
         schema=None,
+        glyphs=None,
         ui=None,
     )
 
@@ -371,9 +374,14 @@ def _render(
     kind: str | None,
     table_columns: Sequence[str] | None,
     schema: Sequence[str] | None,
+    glyphs: Sequence[Mapping[str, TableGlyph]] | None,
     ui: UiContext | None,
 ) -> str:
-    """Render ``rows`` as a collection, or its one row as a detail view (``single``)."""
+    """Render ``rows`` as a collection, or its one row as a detail view (``single``).
+
+    ``glyphs`` holds each row's :class:`TableGlyph` fields, applied in a
+    ``table`` only, after empty columns are hidden.
+    """
     if columns == ["?"]:
         known = schema or _row_keys(rows) or table_columns or ()
         _print_available_columns(known, defaults=table_columns)
@@ -390,6 +398,8 @@ def _render(
             rows = [{key: value for key, value in row.items() if key in kept} for row in rows]
             shown = None
         selection = shown
+        if glyphs:
+            rows = [_glyphed(row, glyph) for row, glyph in zip(rows, glyphs, strict=True)]
     else:
         ui = UiContext()
     if single:
@@ -500,6 +510,11 @@ def _table_columns(
     return selection
 
 
+def _glyphed(row: dict[str, object], glyphs: Mapping[str, TableGlyph]) -> dict[str, object]:
+    """``row`` with each :class:`TableGlyph` field shown as its glyph."""
+    return {key: glyphs[key].show(value) if key in glyphs else value for key, value in row.items()}
+
+
 def _row_keys(rows: Iterable[Mapping[str, object]]) -> list[str]:
     return list(dict.fromkeys(key for row in rows for key in row))
 
@@ -547,7 +562,9 @@ def emit(
     directly — no manual ``model_dump()`` — and writes the result itself, so
     there is no "forgot to ``echo``" silent-no-output trap. ``empty``,
     ``kind`` and ``table_columns`` behave as in :func:`render_rows`; ``empty``
-    applies to a sequence only.
+    applies to a sequence only. Without ``table_columns``, a collection of
+    records shows their type's ``table_columns``; a table shows a field's
+    :class:`~untaped.records.TableGlyph` instead of its value.
     """
     emit_with(
         records,
@@ -579,6 +596,8 @@ def emit_with(
     items: Sequence[BaseModel | Mapping[str, object]] = (
         [records] if isinstance(records, BaseModel | Mapping) else records
     )
+    if table_columns is None and not single:
+        table_columns = _record_table_columns(items)
     rendered = _render(
         [_as_row(item) for item in items],
         single=single,
@@ -588,6 +607,7 @@ def emit_with(
         kind=kind,
         table_columns=table_columns,
         schema=_model_schema(records),
+        glyphs=_row_glyphs(items) if fmt == "table" else None,
         ui=ui,
     )
     if rendered:
@@ -607,6 +627,41 @@ def _model_schema(
         assert issubclass(model, BaseModel)
         names.update(dict.fromkeys([*model.model_fields, *model.model_computed_fields]))
     return list(names)
+
+
+def _record_table_columns(items: Sequence[BaseModel | Mapping[str, object]]) -> list[str] | None:
+    """The default ``table`` columns every record's type declares (``None``: no shared ones)."""
+    declared = {
+        table_columns_of(type(item)) if isinstance(item, BaseModel) else () for item in items
+    }
+    return (list(declared.pop()) or None) if len(declared) == 1 else None
+
+
+def _row_glyphs(
+    items: Sequence[BaseModel | Mapping[str, object]],
+) -> list[dict[str, TableGlyph]] | None:
+    """Each record's :class:`TableGlyph` fields (``None``: no record has any)."""
+    glyphs = [_glyph_fields(type(item)) if isinstance(item, BaseModel) else {} for item in items]
+    return glyphs if any(glyphs) else None
+
+
+@cache
+def _glyph_fields(model: type[BaseModel]) -> dict[str, TableGlyph]:
+    """The fields of ``model`` annotated with a :class:`TableGlyph` (also inside ``| None``)."""
+    return {
+        name: meta
+        for name, field in model.model_fields.items()
+        for meta in [
+            *field.metadata,
+            *(extra for arg in get_args(field.annotation) for extra in _metadata(arg)),
+        ]
+        if isinstance(meta, TableGlyph)
+    }
+
+
+def _metadata(annotation: object) -> tuple[object, ...]:
+    """The ``Annotated`` metadata of ``annotation`` (none when not annotated)."""
+    return tuple(getattr(annotation, "__metadata__", ()))
 
 
 def _as_row(record: BaseModel | Mapping[str, object]) -> dict[str, object]:

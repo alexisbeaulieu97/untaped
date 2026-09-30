@@ -111,12 +111,13 @@ EXPECTED_ALL = [
     "report_error",
     "most_severe",
     "rejected_token_error",
+    "TableGlyph",
 ]
 
 
 def test_all_contains_exact_surface() -> None:
     assert capi.__all__ == EXPECTED_ALL
-    assert capi.CAPABILITY_API_VERSION == (3, 0)
+    assert capi.CAPABILITY_API_VERSION == (3, 1)
 
 
 def test_no_extra_module_level_names_leak() -> None:

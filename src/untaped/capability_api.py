@@ -95,6 +95,7 @@ from untaped.records import (
     AbsolutePath,
     CheckRecord,
     OutcomeRecord,
+    TableGlyph,
     TargetRecord,
     UtcTimestamp,
 )
@@ -220,4 +221,6 @@ __all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by
     "report_error",
     "most_severe",
     "rejected_token_error",
+    # 3.1 table defaults.
+    "TableGlyph",
 ]

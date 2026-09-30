@@ -13,7 +13,12 @@ for the fields the pipe contract fixes (``docs/conventions.md``):
   outcome or target row (``category``, ``system``, ``retryable``, ``message``,
   ``hint``);
 - :data:`UtcTimestamp` — a ``datetime`` normalized to UTC that serializes as
-  RFC 3339 with a ``Z`` suffix (``2026-01-02T03:04:05Z``).
+  RFC 3339 with a ``Z`` suffix (``2026-01-02T03:04:05Z``);
+- :class:`TableGlyph` — a field annotation that shows a value as a glyph in
+  tables only.
+
+A record type picks the columns a table of it shows by default with a
+``table_columns`` class variable (:func:`table_columns_of`).
 
 Records are frozen pydantic models; subclasses add their own fields, which
 serialize before the base fields they inherit (the identifying field stays
@@ -24,10 +29,11 @@ inherited ``action`` follows the identifying field.
 from __future__ import annotations
 
 import annotationlib
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import cache
 from pathlib import Path
-from typing import Annotated, Any, Final, Literal
+from typing import Annotated, Any, ClassVar, Final, Literal
 
 from pydantic import (
     AfterValidator,
@@ -100,6 +106,38 @@ CheckStatus = Literal["pass", "warn", "fail", "error"]
 """The check vocabulary for ``status``."""
 
 
+@dataclass(frozen=True)
+class TableGlyph:
+    """How a table shows a field's ``True``, ``False`` or unset (``None``) value.
+
+    Annotate the field, as in ``Annotated[bool, TableGlyph(true="✓")]`` or
+    ``Annotated[str | None, TableGlyph(none="—")]``. Only tables use it; every
+    other format keeps the native value. A value without a glyph renders as
+    usual.
+    """
+
+    true: str | None = None
+    false: str | None = None
+    none: str | None = None
+
+    def show(self, value: object) -> object:
+        """The glyph for ``value``, or ``value`` itself when it has none."""
+        if value is None:
+            glyph = self.none
+        elif value is True:
+            glyph = self.true
+        elif value is False:
+            glyph = self.false
+        else:
+            return value
+        return value if glyph is None else glyph
+
+
+def table_columns_of(model: type[BaseModel]) -> tuple[str, ...]:
+    """The columns a table of ``model`` records shows by default (none: every field)."""
+    return tuple(getattr(model, "table_columns", ()))
+
+
 @cache
 def _field_order(model: type[BaseModel]) -> tuple[str, ...]:
     """Field names by declaring class, most derived first.
@@ -133,6 +171,9 @@ class Record(BaseModel):
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
+
+    #: The fields a table of these records shows by default (empty: every field).
+    table_columns: ClassVar[tuple[str, ...]] = ()
 
     @model_serializer(mode="wrap")
     def _own_fields_first(self, handler: SerializerFunctionWrapHandler) -> Any:
@@ -196,7 +237,9 @@ __all__ = [
     "CheckStatus",
     "OutcomeRecord",
     "Record",
+    "TableGlyph",
     "TargetRecord",
     "UtcTimestamp",
     "format_utc",
+    "table_columns_of",
 ]
