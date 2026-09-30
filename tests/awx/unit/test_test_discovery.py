@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from untaped.capabilities.awx.infrastructure.suites.filesystem import suites_under
 
 _SUITE = "kind: AwxTestSuite\nname: {name}\njobTemplate: jt\ncases: {{c: {{}}}}\n"
@@ -31,3 +33,20 @@ def test_a_hidden_directory_can_itself_be_searched(tmp_path: Path) -> None:
     tests_dir.mkdir(parents=True)
     (tests_dir / "a.yml").write_text(_SUITE.format(name="a"))
     assert suites_under(tests_dir) == [tests_dir / "a.yml"]
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "kind: AwxTestSuite # smoke tests",
+        "kind: 'AwxTestSuite'  # quoted",
+        'kind : "AwxTestSuite"',
+    ],
+)
+def test_a_suite_marker_may_be_quoted_or_carry_a_comment(tmp_path: Path, marker: str) -> None:
+    (tmp_path / "a.yml").write_text(f"{marker}\nname: a\njobTemplate: jt\ncases: {{c: {{}}}}\n")
+    (tmp_path / "b.yml").write_text(
+        "{kind: AwxTestSuite, name: b, jobTemplate: jt, cases: {c: {}}}\n"
+    )
+    (tmp_path / "c.yml").write_text("kind: AwxTestSuites\n")
+    assert suites_under(tmp_path) == [tmp_path / "a.yml", tmp_path / "b.yml"]

@@ -20,6 +20,7 @@ from typing import Any
 import httpx
 import pytest
 import respx
+import yaml
 
 from untaped.capabilities.awx.settings import AwxSettings
 from untaped.settings import get_settings, register_profile_settings
@@ -485,14 +486,21 @@ class FakeAap:
         }
         if action == "launch":
             # Real AWX accepts unprompted fields and reports them as ignored,
-            # unless the value equals the template's own (a no-op).
+            # unless the template has the value already (a no-op): its own,
+            # its project's branch when it names none, extra vars it saves.
             ignored = {
                 field: value
                 for field, value in body.items()
                 if field in _LAUNCH_PROMPTS
                 and not self._prompts_for(record, field)
                 and _template_launch_value(record, field) != value
-                and not (field == "extra_vars" and value in ("{}", {}))
+                and not (field == "extra_vars" and _saved_vars(record, value))
+                and not (
+                    field == "scm_branch"
+                    and record.get("scm_branch") == ""
+                    and value
+                    == self.store["projects"].get(record.get("project"), {}).get("scm_branch")
+                )
                 and not (
                     field == "credentials"
                     and set(value) <= set(_template_launch_value(record, field))
@@ -980,6 +988,13 @@ _LAUNCH_PROMPTS: dict[str, str] = {
     "diff_mode": "ask_diff_mode_on_launch",
     "job_type": "ask_job_type_on_launch",
 }
+
+
+def _saved_vars(record: dict[str, Any], value: Any) -> bool:
+    """Whether every launch extra var is one the template saves with that value."""
+    supplied = json.loads(value) if isinstance(value, str) else value
+    saved = yaml.safe_load(record.get("extra_vars") or "") or {}
+    return all(name in saved and saved[name] == var for name, var in supplied.items())
 
 
 def _template_launch_value(record: dict[str, Any], field: str) -> Any:

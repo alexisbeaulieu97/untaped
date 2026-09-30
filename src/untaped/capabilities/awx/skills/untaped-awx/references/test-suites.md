@@ -17,7 +17,8 @@ prints the body's JSON Schema for editors and validators, and the
   current directory outside a git checkout; without `git` on `PATH`, pass
   the paths).
 - A directory path is searched recursively: every `*.yml`/`*.yaml` file with
-  a line `kind: AwxTestSuite` is a suite. Hidden files and directories are
+  a `kind: AwxTestSuite` key (quoted or not, with a trailing `# comment` or
+  not) is a suite. Hidden files and directories are
   skipped and directory symlinks are not followed, so vars files and fixtures
   can sit beside the suites. A file named directly must be a suite.
 - Each file is read once, and suite names must be unique across the files
@@ -430,7 +431,10 @@ case fails preflight when:
 - the case sets `extra_vars`, `limit`, `inventory`, `credentials`,
   `scm_branch`, `job_tags`, `skip_tags`, `verbosity`, `diff_mode` or
   `job_type` while the template's matching `ask_*_on_launch` is false (AWX
-  would ignore it), unless the value equals the template's own;
+  would ignore it), unless the template has that value already: its own,
+  its project's branch for an `scm_branch` it does not set, or extra vars
+  it saves with those values (AWX treats these as no-ops, and the run
+  leaves them out of the launch);
 - the template has a survey but does not prompt for variables, and
   `extra_vars` holds a variable outside the survey;
 - a workflow case checks a node id the workflow does not have
@@ -439,7 +443,8 @@ case fails preflight when:
 
 Enable the prompt on the template (see the export/apply format in
 [specs.md](specs.md)), or drop the field. A field the preflight does not know
-that AWX still ignores fails its case as `error` at launch.
+that AWX still ignores fails its case as `error` at launch, and the job AWX
+launched anyway is cancelled (unless `--no-cancel`).
 
 ## Commands
 
