@@ -643,16 +643,17 @@ def remove_command(
         )
         if outcome.cancelled:
             finish(outcome)
-        failed = dict(outcome.failures)
-        rows = [
-            _pack_outcome(
-                name,
-                installed.get(name),
-                action="planned" if dry_run else "failed" if name in failed else "removed",
-                error=failed.get(name),
+        if dry_run:
+            rows = [_pack_outcome(name, installed.get(name), action="planned") for name in selected]
+        else:
+            rows = [
+                _pack_outcome(name, installed.get(name), action="removed")
+                for name, _ in outcome.results
+            ]
+            rows.extend(
+                _pack_outcome(name, installed.get(name), action="failed", error=exc)
+                for name, exc in outcome.failures
             )
-            for name in selected
-        ]
         rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.remove_outcome")
         if rendered:
             echo(rendered)
