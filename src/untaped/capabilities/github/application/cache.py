@@ -17,17 +17,22 @@ class StatusCorpus:
         self._corpus = corpus
 
     def __call__(self, *, root: Path) -> tuple[CorpusRepoResult, ...]:
-        return tuple(_with_disk_bytes(row) for row in self._corpus.list_repos(root=root))
+        return tuple(with_disk_bytes(row) for row in self._corpus.list_repos(root=root))
 
 
 class CleanCorpus:
-    """Remove repositories from the managed local corpus."""
+    """Remove repositories from the managed local corpus.
+
+    The removed row keeps the ``disk_bytes`` of the ``repo`` it was given (the
+    space the removal freed; see :func:`with_disk_bytes`).
+    """
 
     def __init__(self, corpus: GitCorpus) -> None:
         self._corpus = corpus
 
     def __call__(self, *, root: Path, repo: CorpusRepoResult) -> CorpusRepoResult:
-        return self._corpus.clean_repo(root=root, repo=repo)
+        removed = self._corpus.clean_repo(root=root, repo=repo)
+        return removed.model_copy(update={"disk_bytes": repo.disk_bytes})
 
 
 class WorktreeCorpus:
@@ -44,7 +49,8 @@ class WorktreeCorpus:
         return self._corpus.materialize_worktree(item, root=root, ref=ref)
 
 
-def _with_disk_bytes(row: CorpusRepoResult) -> CorpusRepoResult:
+def with_disk_bytes(row: CorpusRepoResult) -> CorpusRepoResult:
+    """``row`` with ``disk_bytes`` measured from its bare repository on disk."""
     return row.model_copy(update={"disk_bytes": _disk_bytes(Path(row.path))})
 
 

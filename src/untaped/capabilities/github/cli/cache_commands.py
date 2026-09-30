@@ -291,9 +291,14 @@ def _delete(
     columns: list[str] | None,
 ) -> None:
     """Confirm, then delete ``selected`` from the corpus and emit the removed rows."""
-    from untaped.capabilities.github.application import CleanCorpus  # noqa: PLC0415
+    from untaped.capabilities.github.application import (  # noqa: PLC0415
+        CleanCorpus,
+        with_disk_bytes,
+    )
     from untaped.capabilities.github.infrastructure import GitCorpusCache  # noqa: PLC0415
 
+    # Measured before anything is deleted: each row reports the space it frees.
+    selected = tuple(with_disk_bytes(row) for row in selected)
     ctx = app_context()
     settings = ctx.section("github", GithubSettings)
     cleaner = CleanCorpus(GitCorpusCache(auth_host=None))
