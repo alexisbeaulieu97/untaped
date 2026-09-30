@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Ansible
+  - **Fix:** `--all-refs` exits 2 with `--live` or without a source
+    instead of being silently ignored: live reads see only the default
+    branch, and every ref exists only in a source's cache.
+
 ## 9.0.0
 
 A major release that makes untaped a harness for AI agents, and the first

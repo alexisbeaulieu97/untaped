@@ -116,7 +116,8 @@ AllRefsOption = Annotated[
     Parameter(
         name="--all-refs",
         negative="",
-        help="With no --ref, read what every cached ref depends on, not only the default branch.",
+        help="With no --ref, read what every cached ref depends on, not only the default "
+        "branch. Needs a source; not with --live.",
     ),
 ]
 
@@ -603,6 +604,14 @@ def _graph_env(
     github_settings = load_github_settings()
     github_host = github_web_host(github_settings.base_url)
     graph_source = _graph_source(options, default_source=settings.default_source)
+    # Live reads resolve only the default branch; every ref exists only in a source's cache.
+    if all_refs and live:
+        raise UsageError("--all-refs reads cached source data; drop --live")
+    if all_refs and not graph_source.selections:
+        raise UsageError(
+            "--all-refs reads cached source data; select one with --source NAME "
+            "(or set ansible.default_source)"
+        )
     sqlite_index = SqliteDependencyIndex(settings.index_path)
     index = _dependency_index_for_graph_source(sqlite_index, graph_source)
     return _GraphEnv(
