@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
     from untaped.capabilities.workspace.domain.models import (
         ArchivedRecord,
+        CachedRepo,
         Checkout,
         CommandResult,
         RepoSpec,
@@ -37,6 +38,14 @@ class GitWorktrees(Protocol):
         ...
 
     def cache_exists(self, url: str) -> bool: ...
+
+    def remote_branches(self, url: str) -> list[str]:
+        """Branch names of ``url``'s cache as last fetched, sorted; ``[]`` when it is missing."""
+        ...
+
+    def cached_repos(self) -> list[CachedRepo]:
+        """Every bare cache under the cache dir, sorted by :attr:`CachedRepo.ident`."""
+        ...
 
     def remove(self, url: str, dest: Path, *, force: bool) -> None:
         """Remove the worktree at ``dest`` and prune stale worktree entries."""

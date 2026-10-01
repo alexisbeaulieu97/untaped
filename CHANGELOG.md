@@ -9,28 +9,39 @@
     `Picked`; API `3.2`). `ScriptedPromptBackend(picks=...)` scripts it in
     tests.
 - Workspace
-  - **Breaking:** `untaped workspace` manages task workspaces: `create`,
-    `add`, `list`, `status`, `path` and `archive` (experimental). A workspace
-    is one directory of git worktrees on a shared branch, archived when done.
+  - **Breaking:** `untaped workspace` now manages task workspaces of git
+    worktrees (`create`, `add`, `list`, `status`, `path`, `archive`, `run`)
+    and is experimental.
   - **Breaking:** removed `init`, `adopt`, `import`, `forget`, `sync`,
-    `repos list/add/remove`, `branch set/unset/apply`, `foreach` (replaced
-    by `run`), `edit`
-    and `shell-init`, the `untaped.yml` manifest, and the registry
-    (`state.yml` key `workspace.workspaces`, now ignored). Old workspace
-    directories are left as they are; existing repo caches are reused. An
-    old directory under the same `workspaces_dir` blocks its name: `create`
-    refuses that name until you move the directory aside.
-  - **Breaking:** record kinds are now `workspace.workspace`,
-    `workspace.repo_outcome`, `workspace.status`,
-    `workspace.archive_outcome` and `workspace.run_outcome`. The others are
-    gone.
+    `repos`, `branch`, `edit`, `shell-init` (`uwcd`), the `untaped.yml`
+    manifest, and the `state.yml` key `workspace.workspaces`. That key is now
+    ignored; delete it.
+  - **Breaking:** `foreach` becomes `run`. Failures no longer stop the run;
+    pass `--fail-fast` to stop. `--all`, `--continue-on-error` and
+    `--ignore-errors` are gone.
+  - **Breaking:** workspace arguments are names, not paths. `path` takes one
+    name and no `--stdin`.
+  - **Breaking:** `status` drops `--repo`, `--dirty` and `--behind`, and
+    `--check` now exits 3 on archive blockers.
+  - **Breaking:** kinds `workspace.repo`, `workspace.repo.summary` and the
+    `init_`, `forget_`, `add_`, `remove_`, `sync_`, `branch_`,
+    `branch_unset_` and `foreach_outcome` kinds are gone. `workspace.workspace`
+    and `workspace.status` have new fields. Pipe `workspace status --format
+    pipe` where you piped `repos list`.
+  - **Breaking:** old workspace directories are left in place and no longer
+    listed. A non-empty one under `workspaces_dir` blocks `create` of that
+    name until you move it. Repo caches are reused.
   - **New:** `workspace.branch_template` and `workspace.protocol` settings.
   - **New:** `workspace run` runs a command, a script file or a stdin script
     in each repo, with `UNTAPED_*` context variables (experimental).
+  - **New:** in a terminal, `workspace create` and `add` without repos open
+    a repo picker (search the GitHub inventory, set mode/base/branch per
+    repo).
 - GitHub
   - **New:** `github.inventory` settings (`path`, `orgs`, `teams`,
-    `max_age_seconds`) for a cached, metadata-only repository list that the
-    workspace picker searches; it falls back to `github.default_org`.
+    `max_age_seconds`) for a cached, metadata-only repository list that
+    workspace `create`/`add` resolve names from and the picker searches; it
+    falls back to `github.default_org`.
 
 ## 9.1.0
 

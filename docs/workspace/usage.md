@@ -37,11 +37,41 @@ branch later resumes the work.
 untaped workspace add PROJ-123 --repo acme/infra
 ```
 
-`add` also reads repos from a pipe, for example a GitHub inventory:
+`add` also reads repos from a pipe, for example a GitHub repo listing:
 
 ```bash
 untaped github repos list --team acme/platform --format pipe | untaped workspace add PROJ-123 --stdin
 ```
+
+## Pick repos interactively
+
+In a terminal, `untaped workspace create [NAME]` and `untaped workspace add
+[NAME]` open a picker when you give no `--repo`, `--read-only` or `--stdin`.
+Without a terminal they exit `2` and name those flags. On `create`, an
+omitted NAME is asked first; the field refuses invalid names, active
+workspace names and directories that exist and are not empty.
+
+The picker lists the [GitHub inventory](../reference/config.md#github)
+(`github.inventory`; it opens from the cache and refreshes when stale),
+repos already in the local repo cache (shown by their cache path,
+`host/[owner/]name`, checked out from their cached URL), and any git URL you type or paste. `add` leaves
+out repos already in the workspace.
+
+Each selected repo has a mode (write or read-only), a base (completes from
+cached branches) and a branch (empty uses `workspace.branch_template`).
+`--branch` and `--base` without repo flags prefill these defaults.
+
+| Key | Action |
+|---|---|
+| `space` | select or unselect |
+| `/` | search |
+| `tab` | switch pane |
+| `enter` | edit a setting |
+| `←` `→` | change a setting |
+| `ctrl-s` | create (or add) the selected repos |
+| `ctrl-r` | refresh the inventory |
+| `esc` | clear the search; never quits |
+| `ctrl-c` | quit, asking first when anything is selected; nothing is created |
 
 ## Read-only repos
 
@@ -61,6 +91,7 @@ Inside a workspace directory, the name may be left out.
 ## Run a command in every repo
 
 ```bash
+untaped workspace status PROJ-123   # check the selection first
 untaped workspace run PROJ-123 'git push -u origin HEAD'
 ```
 
@@ -68,14 +99,15 @@ untaped workspace run PROJ-123 'git push -u origin HEAD'
 repos, and exits 1 if any repo failed. Forms, environment variables,
 selection and timeouts are in the
 [run reference](../../src/untaped/capabilities/workspace/skills/untaped-workspace/references/run.md).
+The `UNTAPED_*` variables it sets are in
+[environment](../reference/environment.md).
 
 ## Settings
 
 `workspace.cache_dir`, `workspaces_dir`, `parallel`, `branch_template` and
 `protocol` are in the [configuration reference](../reference/config.md#workspace).
-Do not delete the cache directory while workspaces are active: the worktrees
-point into it. A repo name that is not found is looked up in the GitHub
-inventory, set by `github.inventory` orgs and teams.
+`OWNER/NAME` and bare names are looked up in the GitHub
+inventory, scoped by `github.inventory` orgs and teams.
 
 ## Output
 

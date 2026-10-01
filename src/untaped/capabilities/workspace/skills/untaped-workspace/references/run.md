@@ -27,20 +27,20 @@ EOF
 
 Each run starts in the repo directory with stdin from `/dev/null`.
 Background processes the command starts are stopped when it exits; one that
-still holds the command's output gets about 2 seconds first. The row keeps the
+still holds the command's output is stopped shortly after the command exits. The row keeps the
 command's own exit status. Processes that start their own session or process
 group (such as `setsid`) are not stopped on exit, timeout or cancel, and can
-keep the command's output open for up to 5 more seconds.
+keep the command's output open for a few more seconds.
 
 ## Environment
 
 | Variable | Value |
 |---|---|
-| `UNTAPED_WORKSPACE` | workspace name |
-| `UNTAPED_REPO` | repo display name |
-| `UNTAPED_BRANCH` | task branch; empty for a read-only repo |
-| `UNTAPED_BASE` | base branch |
-| `UNTAPED_READ_ONLY` | `1` for a read-only repo, else `0` |
+| `UNTAPED_WORKSPACE` | Workspace name. |
+| `UNTAPED_REPO` | Repo display name. |
+| `UNTAPED_BRANCH` | Task branch; empty for a read-only repo. |
+| `UNTAPED_BASE` | Base branch. |
+| `UNTAPED_READ_ONLY` | `1` for a read-only repo, else `0`. |
 
 ## Choosing repos
 
@@ -62,6 +62,11 @@ untaped workspace status NAME --format pipe | untaped workspace run NAME 'git st
 
 When nothing is left to run (an empty pipe, or only read-only repos), `run`
 warns on stderr and exits 0.
+
+## Before you run
+
+`run` has no preview. List the selection with `untaped workspace status NAME`
+and get the user's approval before a command that rewrites history or pushes.
 
 ## Failures
 

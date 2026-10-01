@@ -88,7 +88,6 @@ Some rows carry a code of their own. It never becomes the process exit code:
 - `untaped workspace run` reports each repo's command status as `returncode`
   in its `workspace.run_outcome` row. Any failed repo makes the command exit
   1, whatever the `returncode`.
-
 - `untaped awx test run` reports each case's result in its rows. A case that
   did not pass carries a `failure` with its own `category` and `system` (such
   as `awx.scm` or `awx.hosts`), and the command exits with the most severe:
