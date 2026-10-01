@@ -20,7 +20,7 @@ class SweepSettings(BaseModel):
 
 
 class InventorySettings(BaseModel):
-    """Settings for the cached repository inventory the workspace picker lists."""
+    """Settings for the cached repository inventory workspace `create`/`add` and the picker use."""
 
     model_config = ConfigDict(frozen=True)
 

@@ -34,6 +34,8 @@ from untaped.capability_api import (
 
 STDIN_KINDS = frozenset({"github.repo", "github.repo_hit", "github.sweep_repo"})
 """Pipe kinds ``create``/``add --stdin`` read repos from (see :func:`stdin_repos`)."""
+NO_REPOS_HINT = "pass --repo OWNER/NAME (repeatable) or --stdin; the repo picker needs a terminal"
+NO_NAME_HINT = "pass NAME and --repo OWNER/NAME (or --stdin); the repo picker needs a terminal"
 
 NameArg = Annotated[
     str | None,
@@ -159,7 +161,7 @@ def repo_args(
         args += [arg.model_copy(update={"branch": branch, "base": base}) for arg in stdin_repos()]
     args += [RepoArg(ident=ident, read_only=True, base=base) for ident in read_only or []]
     if not args:
-        raise UsageError("no repos given", hint="pass --repo OWNER/NAME (repeatable) or --stdin")
+        raise UsageError("no repos given", hint=NO_REPOS_HINT)
     return args
 
 

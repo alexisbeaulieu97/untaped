@@ -10,6 +10,7 @@ import pytest
 
 from untaped.capabilities.workspace.application.provision import ProvisionRepos
 from untaped.capabilities.workspace.domain import Checkout, RepoArg, ResolvedRepo, repo_identity
+from untaped.capabilities.workspace.domain.records import RepoOutcome
 from untaped.capabilities.workspace.errors import WorkspaceError
 from untaped.capabilities.workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
 from untaped.capability_api import UsageError
@@ -228,3 +229,23 @@ def test_an_unknown_name_without_a_fallback_still_fails(tmp_path: Path) -> None:
         _recording(tmp_path, _RecordingGit(), UrlCatalog()).create(
             "J-1", [RepoArg(ident="acme/gone")]
         )
+
+
+def test_on_done_reports_each_finished_checkout(
+    provision: ProvisionRepos, make_upstream: Callable[..., Path]
+) -> None:
+    api, web = make_upstream("api"), make_upstream("web")
+    done: list[tuple[str, int, int]] = []
+
+    def on_done(row: RepoOutcome, finished: int, total: int) -> None:
+        done.append((row.repo, finished, total))
+
+    provision.create("J-1", [RepoArg(ident=str(api))], on_done=on_done)
+    record = StateWorkspaceStore().get("J-1")
+    assert record is not None
+    provision.add(
+        record,
+        [RepoArg(ident=str(api)), RepoArg(ident=str(web)), RepoArg(ident=str(web))],
+        on_done=on_done,
+    )
+    assert done == [("acme/api", 1, 1), ("acme/web", 1, 1)]

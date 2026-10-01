@@ -23,6 +23,18 @@ default. The [configuration reference](./config.md) lists the variable for
 every setting. `untaped doctor` names the variable when an override holds an
 invalid value.
 
+## Workspace run
+
+`untaped workspace run` sets these in each repo's process.
+
+| Variable | Value |
+|---|---|
+| `UNTAPED_WORKSPACE` | Workspace name. |
+| `UNTAPED_REPO` | Repo display name. |
+| `UNTAPED_BRANCH` | Task branch; empty for a read-only repo. |
+| `UNTAPED_BASE` | Base branch. |
+| `UNTAPED_READ_ONLY` | `1` for a read-only repo, else `0`. |
+
 ## Editors
 
 | Variable | Used by |

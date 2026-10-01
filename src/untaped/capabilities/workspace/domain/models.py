@@ -98,6 +98,21 @@ class WorktreeStatus(BaseModel):
 
 
 @dataclass(frozen=True)
+class CachedRepo:
+    """A bare repo cache found under the cache dir."""
+
+    key: tuple[str, ...]
+    """Its path under the cache dir, a :func:`repo_key`: ``(host, [owner, ...] name.git)``."""
+    origin: str | None
+    """Its ``remote.origin.url``; ``None`` when unreadable."""
+
+    @property
+    def ident(self) -> str:
+        """``host/owner/name`` (``host/name`` without an owner): the key without ``.git``."""
+        return "/".join((*self.key[:-1], self.key[-1].removesuffix(".git")))
+
+
+@dataclass(frozen=True)
 class CommandResult:
     """What one command run produced; ``returncode`` is ``None`` when it timed out or was cancelled.
 

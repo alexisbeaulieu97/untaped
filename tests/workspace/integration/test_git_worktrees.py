@@ -11,9 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from untaped.capabilities.workspace.domain import archive_blockers
+from untaped.capabilities.workspace.domain import CachedRepo, archive_blockers
 from untaped.capabilities.workspace.errors import GitError, WorkspaceError
 from untaped.capabilities.workspace.infrastructure import LocalGitWorktrees
+from untaped.capabilities.workspace.infrastructure import git_worktrees as git_worktrees_module
 from untaped.capabilities.workspace.infrastructure.git_worktrees import cache_path_for
 from workspace.conftest import add_submodule, commit_in, git, init_submodules
 
@@ -509,3 +510,97 @@ def test_remove_rechecks_for_work_made_after_the_status_check(
     assert caught.value.hint == "the repo changed since the check; run status and archive again"
     assert (dest / "README.md").exists()
     assert git(dest, "rev-parse", "--abbrev-ref", "HEAD") == "b"
+
+
+def test_remote_branches_lists_cached_origin_branches(
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+) -> None:
+    url = str(make_upstream("api", branches=("release/2",)))
+    assert worktrees.remote_branches(url) == []
+    worktrees.checkout(url, tmp_path / "ws" / "api", branch=None, base=None)
+    assert worktrees.remote_branches(url) == ["main", "release/2"]
+
+
+def _bare(cache: Path, relative: str, origin: str | None = None) -> Path:
+    bare = cache / relative
+    bare.parent.mkdir(parents=True, exist_ok=True)
+    git(cache, "init", "-q", "--bare", str(bare))
+    if origin is not None:
+        git(bare, "remote", "add", "origin", origin)
+    return bare
+
+
+def test_cached_repos_lists_caches_with_their_origins(
+    worktrees: LocalGitWorktrees, tmp_path: Path
+) -> None:
+    cache = tmp_path / "cache"
+    assert worktrees.cached_repos() == []
+    _bare(cache, "github.com/team/tool.git", "git@github.com:team/tool.git")
+    _bare(cache, "gitlab.example/team/tool.git")
+    _bare(cache, "github.com/grp/sub/repo.git", "https://github.com/grp/sub/repo.git")
+    _bare(cache, "git.example/project.git", "https://git.example/project.git")
+    _bare(cache, "_unknown/0123456789abcdef.git", "/srv/somewhere.git")
+    _bare(cache, "toplevel.git")
+    assert worktrees.cached_repos() == [
+        CachedRepo(key=("git.example", "project.git"), origin="https://git.example/project.git"),
+        CachedRepo(
+            key=("github.com", "grp", "sub", "repo.git"),
+            origin="https://github.com/grp/sub/repo.git",
+        ),
+        CachedRepo(key=("github.com", "team", "tool.git"), origin="git@github.com:team/tool.git"),
+        CachedRepo(key=("gitlab.example", "team", "tool.git"), origin=None),
+    ]
+    assert worktrees.cached_repos()[0].ident == "git.example/project"
+
+
+def test_cached_repos_treats_git_dirs_as_leaves(
+    worktrees: LocalGitWorktrees, tmp_path: Path
+) -> None:
+    bare = _bare(tmp_path / "cache", "github.com/acme/api.git", "https://github.com/acme/api.git")
+    for inner in ("modules/foo.git", "refs/heads/x.git", "objects/deep.git"):
+        (bare / inner).mkdir(parents=True)
+    assert [repo.key for repo in worktrees.cached_repos()] == [("github.com", "acme", "api.git")]
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "ssh://git@h.example:2222/o/r.git",
+        "https://h.example/o/r;semi#hash.git",
+        'https://h.example/o/"quoted"\\back.git',
+    ],
+)
+def test_cached_repos_reads_the_origin_git_wrote(
+    worktrees: LocalGitWorktrees, tmp_path: Path, origin: str
+) -> None:
+    bare = _bare(tmp_path / "cache", "h.example/o/r.git")
+    git(bare, "config", "remote.origin.url", origin)
+    git(bare, "config", "--add", "remote.upstream.url", "https://elsewhere/x.git")
+    assert git(bare, "config", "--get", "remote.origin.url") == origin
+    assert [repo.origin for repo in worktrees.cached_repos()] == [origin]
+
+
+def test_cached_repos_runs_no_git(
+    worktrees: LocalGitWorktrees, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("a", "b", "c"):
+        _bare(tmp_path / "cache", f"github.com/team/{name}.git", f"https://github.com/team/{name}")
+
+    def no_git(*args: object, **kwargs: object) -> None:
+        raise AssertionError("git ran")
+
+    monkeypatch.setattr(git_worktrees_module, "run_git", no_git)
+    assert len(worktrees.cached_repos()) == 3
+
+
+def test_cached_repos_reads_hand_edited_configs(
+    worktrees: LocalGitWorktrees, tmp_path: Path
+) -> None:
+    edited = _bare(tmp_path / "cache", "h.example/o/edited.git")
+    with (edited / "config").open("a") as config:
+        config.write('[Remote "origin"]\n  URL = https://h.example/o/edited.git  ; moved\n')
+    (tmp_path / "cache" / "h.example" / "o" / "bare-dir.git").mkdir()  # no config file
+    assert [(repo.ident, repo.origin) for repo in worktrees.cached_repos()] == [
+        ("h.example/o/bare-dir", None),
+        ("h.example/o/edited", "https://h.example/o/edited.git"),
+    ]

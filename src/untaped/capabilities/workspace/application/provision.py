@@ -68,8 +68,19 @@ class ProvisionRepos:
         self._parallel = max(1, parallel)
         self._now = now
 
-    def create(self, name: str, repos: Sequence[RepoArg]) -> list[RepoOutcome]:
-        """Create workspace ``name`` and check out ``repos`` into it."""
+    def create(
+        self,
+        name: str,
+        repos: Sequence[RepoArg],
+        *,
+        on_done: Callable[[RepoOutcome, int, int], None] | None = None,
+    ) -> list[RepoOutcome]:
+        """Create workspace ``name`` and check out ``repos`` into it.
+
+        ``on_done(row, done, total)`` runs (on the calling thread) as each
+        checkout finishes; ``total`` counts the checkouts started (repos
+        already present or requested twice are not).
+        """
         validate_workspace_name(name)
         if not repos:
             raise UsageError(
@@ -77,17 +88,24 @@ class ProvisionRepos:
             )
         resolved = self._resolve(repos)
         with self._store.locked(name):
-            self._refuse_occupied(name)
+            refuse_occupied(self._store, self._workspaces_dir, name)
             record = WorkspaceRecord(name=name, created_at=self._now())
             self._store.create(record)
             workspace_root(self._workspaces_dir, name).mkdir(parents=True, exist_ok=True)
-            return self._provision(record, repos, resolved)
+            return self._provision(record, repos, resolved, on_done)
 
-    def add(self, record: WorkspaceRecord, repos: Sequence[RepoArg]) -> list[RepoOutcome]:
+    def add(
+        self,
+        record: WorkspaceRecord,
+        repos: Sequence[RepoArg],
+        *,
+        on_done: Callable[[RepoOutcome, int, int], None] | None = None,
+    ) -> list[RepoOutcome]:
         """Check out ``repos`` into the existing workspace ``record``.
 
         The record is read again under the workspace lock: an ``archive`` that
         ran meanwhile makes this fail as not found instead of adding worktrees.
+        ``on_done`` is as for :meth:`create`.
         """
         if not repos:
             raise UsageError(
@@ -97,23 +115,7 @@ class ProvisionRepos:
         with self._store.locked(record.name):
             current = active_workspace(self._store, record.name)
             workspace_root(self._workspaces_dir, current.name).mkdir(parents=True, exist_ok=True)
-            return self._provision(current, repos, resolved)
-
-    def _refuse_occupied(self, name: str) -> None:
-        """Refuse a new workspace whose directory already holds files (an old workspace?).
-
-        An active workspace of that name is left for the store to report.
-        """
-        path = workspace_root(self._workspaces_dir, name)
-        if self._store.get(name) is None and path.is_dir() and any(path.iterdir()):
-            raise WorkspaceError(
-                f"workspace directory {q(str(path))} already exists and is not empty",
-                category="conflict",
-                hint=(
-                    "a directory with that name already exists (perhaps an old workspace); "
-                    "move it aside or pick another name"
-                ),
-            )
+            return self._provision(current, repos, resolved, on_done)
 
     def _resolve(self, repos: Sequence[RepoArg]) -> list[ResolvedRepo]:
         return [self._resolve_one(arg) for arg in repos]
@@ -128,12 +130,17 @@ class ProvisionRepos:
             return self._catalog.resolve(arg.fallback)
 
     def _provision(
-        self, record: WorkspaceRecord, repos: Sequence[RepoArg], resolved: Sequence[ResolvedRepo]
+        self,
+        record: WorkspaceRecord,
+        repos: Sequence[RepoArg],
+        resolved: Sequence[ResolvedRepo],
+        on_done: Callable[[RepoOutcome, int, int], None] | None,
     ) -> list[RepoOutcome]:
         workspace_dir = workspace_root(self._workspaces_dir, record.name)
         rows, fresh = _partition(record, repos, resolved, workspace_dir)
         jobs = self._jobs(record, fresh)
         specs: dict[int, RepoSpec] = {}
+        finished = 0
 
         def _run(job: _Job) -> Checkout | UntapedError:
             base = job.arg.base or job.resolved.default_branch
@@ -145,7 +152,11 @@ class ProvisionRepos:
                 return exc
 
         def _collect(job: _Job, result: Checkout | UntapedError) -> None:
+            nonlocal finished
             rows[job.index] = self._row(record.name, workspace_dir, job, result)
+            finished += 1
+            if on_done is not None:
+                on_done(rows[job.index], finished, len(jobs))
             if isinstance(result, Checkout):
                 specs[job.index] = RepoSpec(
                     url=job.resolved.url,
@@ -199,6 +210,23 @@ class ProvisionRepos:
             base=job.arg.base or job.resolved.default_branch or "",
             detail=str(result),
             error=note_failure(result, message=str(result)),
+        )
+
+
+def refuse_occupied(store: WorkspaceStore, workspaces_dir: Path, name: str) -> None:
+    """Refuse a new workspace whose directory already holds files (an old workspace?).
+
+    An active workspace of that name is left for the store to report.
+    """
+    path = workspace_root(workspaces_dir, name)
+    if store.get(name) is None and path.is_dir() and any(path.iterdir()):
+        raise WorkspaceError(
+            f"workspace directory {q(str(path))} already exists and is not empty",
+            category="conflict",
+            hint=(
+                "a directory with that name already exists (perhaps an old workspace); "
+                "move it aside or pick another name"
+            ),
         )
 
 
