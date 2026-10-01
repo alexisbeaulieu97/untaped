@@ -163,6 +163,10 @@ def _bindings(
     def _refresh(_event: KeyPressEvent) -> None:
         refresh(True)
 
+    @bindings.add(Keys.SIGINT)
+    def _interrupted(event: KeyPressEvent) -> None:
+        event.app.exit(exception=KeyboardInterrupt())
+
     def feed(text: str) -> None:
         for char in text:
             if outcome() != "running":

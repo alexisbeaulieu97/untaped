@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from rich.cells import cell_len
+
 from untaped.picker import PickCatalog, PickItem, PickRequest, PickSetting
 from untaped.picker.state import (
     PickerState,
@@ -126,3 +128,23 @@ def test_a_failed_refresh_stays_marked_until_one_succeeds() -> None:
     assert "30 · refreshed 2h ago · refresh failed" in _text(failed)
     recovered = with_catalog(begin_refresh(failed), PickCatalog(ITEMS, note="just now"))
     assert "refresh failed" not in _text(recovered)
+
+
+def test_wide_characters_are_measured_in_terminal_cells() -> None:
+    wide = PickItem(id="wide", label="界" * 40, description="説明")
+    request = PickRequest(
+        heading="New workspace", catalog=PickCatalog((wide, *ITEMS)), settings=SETTINGS
+    )
+    state = handle(handle(handle(initial_state(request), "down"), " "), "tab")
+    for width in (100, 80):
+        lines = _lines(state, width)
+        assert all(cell_len(line) in (0, width) for line in lines), width  # 0: the blank line
+
+
+def test_narrow_terminals_render_at_their_real_width() -> None:
+    state = handle(handle(_state(), "down"), " ")
+    for width in range(12, 41):
+        lines = _lines(state, width)
+        assert all(cell_len(line) <= width for line in lines), width
+        assert any("Create" in line for line in lines), width
+        assert not any("Creat…" in line for line in lines), width
