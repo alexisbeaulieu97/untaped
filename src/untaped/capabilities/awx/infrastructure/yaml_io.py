@@ -80,6 +80,23 @@ def read_resource_text(text: str, *, source: str) -> Iterator[Resource]:
             raise ConfigError(f"{source}: {exc}", category="invalid") from exc
 
 
+class _DocumentDumper(yaml.SafeDumper):
+    """Safe dumper that writes multi-line strings as ``|`` literal blocks.
+
+    PyYAML falls back to a quoted scalar when a block cannot hold the value
+    exactly (trailing spaces, some control characters), so output stays lossless.
+    """
+
+
+def _represent_str(dumper: yaml.SafeDumper, value: str) -> yaml.ScalarNode:
+    return dumper.represent_scalar(
+        "tag:yaml.org,2002:str", value, style="|" if "\n" in value else None
+    )
+
+
+_DocumentDumper.add_representer(str, _represent_str)
+
+
 def dump_resource(resource: Resource, *, header_comment: str | None = None) -> str:
     """Return the YAML representation of ``resource`` (``header_comment`` as a ``#`` line)."""
     payload = resource.model_dump(exclude_none=True)
@@ -90,7 +107,13 @@ def dump_resource(resource: Resource, *, header_comment: str | None = None) -> s
         payload["metadata"] = {"name": resource.metadata.name, "organization": None} | payload[
             "metadata"
         ]
-    body = yaml.safe_dump(payload, sort_keys=False, default_flow_style=False, allow_unicode=True)
+    body = yaml.dump(
+        payload,
+        Dumper=_DocumentDumper,
+        sort_keys=False,
+        default_flow_style=False,
+        allow_unicode=True,
+    )
     if header_comment:
         return f"# {header_comment}\n{body}"
     return body
