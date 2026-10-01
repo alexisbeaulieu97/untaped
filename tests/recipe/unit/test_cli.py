@@ -3338,6 +3338,24 @@ def test_backup_restore_emits_an_outcome_record(tmp_path: Path) -> None:
     assert config.read_text() == "before\n"
 
 
+@pytest.mark.parametrize("selector", ["latest", "prefix"])
+def test_backup_restore_record_carries_the_resolved_bundle_id(
+    tmp_path: Path, selector: str
+) -> None:
+    bundle, _config = _config_backup(tmp_path)
+    backup_id = "latest" if selector == "latest" else bundle.id[:15]
+
+    result = CliInvoker().invoke(app, ["backups", "restore", backup_id, "--yes", "-f", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {
+        "id": bundle.id,
+        "files": 1,
+        "detail": None,
+        "action": "restored",
+    }
+
+
 def test_backup_restore_yaml_is_one_mapping(tmp_path: Path) -> None:
     bundle, _config = _config_backup(tmp_path)
 

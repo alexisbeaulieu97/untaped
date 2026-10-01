@@ -175,7 +175,7 @@ class BackupStore:
         *,
         force: bool,
     ) -> builtins.list[_PlannedRestore]:
-        bundle = self._resolve(backup_id)
+        bundle = self.resolve(backup_id)
         bundle_dir = bundle.path
         metadata = read_metadata(bundle)
         planned: builtins.list[_PlannedRestore] = []
@@ -225,9 +225,10 @@ class BackupStore:
 
     def metadata(self, backup_id: str) -> dict[str, object]:
         """Read raw metadata for a backup bundle."""
-        return read_metadata(self._resolve(backup_id))
+        return read_metadata(self.resolve(backup_id))
 
-    def _resolve(self, backup_id: str) -> BackupBundle:
+    def resolve(self, backup_id: str) -> BackupBundle:
+        """Resolve an exact id, unique prefix or ``latest`` to its bundle."""
         bundles = self.list()
         if backup_id == "latest":
             if not bundles:

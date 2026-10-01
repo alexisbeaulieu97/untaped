@@ -158,7 +158,8 @@ def restore_command(
     """Restore a backup bundle."""
     with report_config_errors():
         store = BackupStore(library_root() / "backups")
-        items = store.plan_restore(backup_id, force=force)
+        resolved_id = store.resolve(backup_id).id
+        items = store.plan_restore(resolved_id, force=force)
         ui = recipe_ui()
         file_rows = [{"path": str(item.path), "action": item.action} for item in items]
 
@@ -175,7 +176,7 @@ def restore_command(
             return bundle_id
 
         outcome = batch_apply(
-            [backup_id],
+            [resolved_id],
             _restore,
             verb="restore",
             noun="backup",
@@ -194,13 +195,13 @@ def restore_command(
         if fmt != "table":
             failed = {bundle_id: exc for bundle_id, exc in outcome.failures}
             row = BackupRestoreRecord(
-                id=backup_id,
+                id=resolved_id,
                 files=len(items),
-                **_outcome_fields(failed.get(backup_id), dry_run=dry_run, done="restored"),
+                **_outcome_fields(failed.get(resolved_id), dry_run=dry_run, done="restored"),
             )
             emit(row, fmt=fmt, columns=columns, kind="recipe.restore_outcome")
         if not outcome.any_failed and outcome.results:
-            ui.message("success", f"restored {backup_id}")
+            ui.message("success", f"restored {resolved_id}")
         finish(outcome)
 
 
