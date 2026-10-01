@@ -2465,14 +2465,16 @@ def test_local_checkout_keeps_its_own_declarations_over_the_cached_default_branc
     assert _tree(result.stdout) == ["acme/users@main"]
 
 
-def test_old_direction_flags_are_gone(tmp_path: Path, monkeypatch) -> None:
+@pytest.mark.parametrize("flag", ["--upstream", "--downstream", "--both"])
+def test_old_direction_flags_are_gone(tmp_path: Path, monkeypatch, flag: str) -> None:
     _seed(tmp_path, "source:platform", _edge())
     _use_config(tmp_path, monkeypatch, _PLATFORM)
     result = invoke_cli(
         build_root_app(externals=[]),
-        ["ansible", "graph", "acme/site", "--source", "platform", "--upstream"],
+        ["ansible", "graph", "acme/site", "--source", "platform", flag],
     )
     assert result.exit_code == 2
+    assert f"Unknown option: {flag}" in result.output + result.stderr
 
 
 @pytest.mark.parametrize("all_refs", [False, True])

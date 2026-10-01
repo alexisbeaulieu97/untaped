@@ -207,6 +207,33 @@ def test_a_9x_cache_is_refused_with_a_hint(
     assert caught.value.hint == "delete it; the next command re-fetches"
 
 
+def test_a_9x_cache_without_its_remote_is_refused(
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+) -> None:
+    url = str(make_upstream("api"))
+    cache = cache_path_for(url, cache_dir=tmp_path / "cache")
+    cache.parent.mkdir(parents=True)
+    git(tmp_path, "clone", "-q", "--bare", url, str(cache))
+    git(cache, "remote", "remove", "origin")
+    with pytest.raises(WorkspaceError) as caught:
+        worktrees.checkout(url, tmp_path / "ws" / "api", branch="b", base=None)
+    assert str(caught.value) == f"{cache} is a cache from untaped 9.x"
+
+
+def test_a_marked_cache_with_a_wrong_refspec_is_repaired(
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+) -> None:
+    url = str(make_upstream("api"))
+    cache = cache_path_for(url, cache_dir=tmp_path / "cache")
+    worktrees.checkout(url, tmp_path / "a" / "api", branch="b", base=None)
+    worktrees.remove(url, tmp_path / "a" / "api", force=False)
+    git(cache, "config", "--replace-all", "remote.origin.fetch", "+refs/heads/*:refs/heads/*")
+    worktrees.checkout(url, tmp_path / "b" / "api", branch="b", base=None)
+    assert git(cache, "config", "--get-all", "remote.origin.fetch") == (
+        "+refs/heads/*:refs/remotes/origin/*"
+    )
+
+
 def test_a_new_cache_is_marked_with_the_layout(
     worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
 ) -> None:
@@ -304,6 +331,7 @@ def test_half_initialised_cache_is_repaired(
     checkout = worktrees.checkout(url, tmp_path / "ws" / "api", branch="x", base=None)
     assert checkout.action == "created"
     assert git(cache, "config", "remote.origin.url") == url
+    assert git(cache, "config", "remote.origin.fetch") == "+refs/heads/*:refs/remotes/origin/*"
 
 
 def test_hand_deleted_destination_can_be_checked_out_again(
