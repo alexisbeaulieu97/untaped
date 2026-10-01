@@ -84,7 +84,7 @@ untaped --profile staging awx export --kind job-templates --out-dir exported \
 `apply --check` exits 3 on drift, which makes it a CI gate for configuration
 kept in git; `--source-ref REF` applies the files as they are at a git ref.
 A document cannot carry secrets, access or history: password survey defaults
-and webhook keys export as `$encrypted$`, which keeps the stored value when
+and callback keys (`host_config_key`) export as `$encrypted$`, which keeps the stored value when
 applied back to the same resource. See
 [resource documents](../../src/untaped/capabilities/awx/skills/untaped-awx/references/specs.md).
 
