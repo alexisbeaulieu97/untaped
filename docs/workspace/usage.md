@@ -53,8 +53,8 @@ workspace names and directories that exist and are not empty.
 
 The picker lists the [GitHub inventory](../reference/config.md#github)
 (`github.inventory`; it opens from the cache and refreshes when stale),
-repos already in the local repo cache (shown as `host/owner/name`, checked
-out from their cached URL), and any git URL you type or paste. `add` leaves
+repos already in the local repo cache (shown by their cache path,
+`host/[owner/]name`, checked out from their cached URL), and any git URL you type or paste. `add` leaves
 out repos already in the workspace.
 
 Each selected repo has a mode (write or read-only), a base (completes from
