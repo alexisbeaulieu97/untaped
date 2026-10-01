@@ -23,7 +23,12 @@ _KERNEL_SURFACE_MODULES = frozenset({"untaped.capability_api"})
 #: ``(importing capability, imported module)`` pairs exempt from the
 #: own-subtree rule. ansible reads GitHub only through github's closed
 #: API module, never its implementation modules.
-ALLOWED_CROSS_CAPABILITY_IMPORTS = frozenset({("ansible", "untaped.capabilities.github.api")})
+ALLOWED_CROSS_CAPABILITY_IMPORTS = frozenset(
+    {
+        ("ansible", "untaped.capabilities.github.api"),
+        ("workspace", "untaped.capabilities.github.api"),
+    }
+)
 
 
 def discover_capabilities(src: Path = CAPABILITIES_SRC) -> list[str]:
