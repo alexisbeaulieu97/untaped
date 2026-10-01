@@ -68,6 +68,7 @@ class RepoPickSource:
     def catalog(self, *, refresh: bool | None) -> PickCatalog:
         """Inventory items then cached-only repos; a footer note says how fresh that is."""
         items: list[PickItem] = []
+        known: set[tuple[str, ...]] = set()
         note = ""
         try:
             inventory = self._inventory(refresh)
@@ -79,6 +80,7 @@ class RepoPickSource:
             note = _note(inventory)
             for repo in inventory.repos:
                 url = repo.clone_url or repo.ssh_url
+                known |= {repo_key(u) for u in (repo.clone_url, repo.ssh_url) if u}
                 if self._excluded(repo.clone_url, repo.ssh_url):
                     continue
                 if url:
@@ -91,10 +93,9 @@ class RepoPickSource:
                         dimmed=repo.archived,
                     )
                 )
-        known = {item.id for item in items}
         self._cached = self._scan_cache()
         for ident, key in self._cached.items():
-            if ident in known or key in self._exclude:
+            if key in known or key in self._exclude:
                 continue
             items.append(PickItem(id=ident, label=ident, description="cached"))
         return PickCatalog(items=tuple(items), note=note)
@@ -106,6 +107,17 @@ class RepoPickSource:
         if item_id in self._cached:
             return self._cache_url(item_id, self._cached[item_id])
         return item_id if looks_like_url(item_id) else None
+
+    def ident_for(self, item_id: str) -> str:
+        """What to resolve for a pick: a cached-only repo's cache URL, else ``item_id``.
+
+        Inventory items keep their ``full_name`` (resolved through the
+        inventory); a cached-only repo may come from another host, so its
+        ``host/owner/name`` id is never resolved as a GitHub name.
+        """
+        if item_id in self._cached and item_id not in self._urls:
+            return self._cache_url(item_id, self._cached[item_id])
+        return item_id
 
     def branches(self, item_id: str | None) -> list[str]:
         """Cached remote branches of ``item_id`` (no network); ``[]`` for the all-items row."""
@@ -127,10 +139,12 @@ class RepoPickSource:
     def _cache_url(self, ident: str, key: tuple[str, ...]) -> str:
         """The cache's ``origin`` URL, else a URL with the same cache identity."""
         origin = self._git.cache_origin(self._cache_dir.joinpath(*key))
-        return origin or f"https://{key[0]}/{ident}"
+        return origin or f"https://{ident}"
 
     def _scan_cache(self) -> dict[str, tuple[str, ...]]:
-        """``owner/name`` (any depth) -> :func:`repo_key` path, for each ``<host>/.../<name>.git``.
+        """``host/owner/name`` (any depth) -> :func:`repo_key` path, per ``<host>/.../<name>.git``.
+
+        The id keeps the host, so one ``owner/name`` cached from two hosts is two items.
 
         A ``*.git`` directory is a leaf: never entered, so its contents are not scanned.
         """
@@ -151,7 +165,7 @@ class RepoPickSource:
                 if not entry.name.endswith(".git"):
                     stack.append(key)
                 elif len(key) >= 3:
-                    found["/".join((*key[1:-1], entry.name.removesuffix(".git")))] = key
+                    found["/".join((*key[:-1], entry.name.removesuffix(".git")))] = key
         return dict(sorted(found.items()))
 
 

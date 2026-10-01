@@ -9,9 +9,11 @@ agents always pass flags. It runs before the workspace lock is taken.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from pathlib import Path
 
 from untaped.capabilities.workspace.application.ports import WorkspaceStore
-from untaped.capabilities.workspace.cli.common import NO_REPOS_HINT, git_worktrees
+from untaped.capabilities.workspace.application.provision import refuse_occupied
+from untaped.capabilities.workspace.cli.common import NO_REPOS_HINT, git_worktrees, workspaces_dir
 from untaped.capabilities.workspace.cli.common import repo_args as flag_repo_args
 from untaped.capabilities.workspace.domain.models import RepoArg, WorkspaceRecord
 from untaped.capabilities.workspace.domain.naming import (
@@ -29,6 +31,7 @@ from untaped.capability_api import (
     PickResult,
     PickSetting,
     UiContext,
+    UntapedError,
     UsageError,
     q,
 )
@@ -102,8 +105,12 @@ def repo_args(result: PickResult) -> list[RepoArg]:
     ]
 
 
-def name_validator(store: WorkspaceStore) -> Callable[[str], str | None]:
-    """Checks a typed workspace name: the invalid-name message, already exists, or ``None``."""
+def name_validator(store: WorkspaceStore, root: Path) -> Callable[[str], str | None]:
+    """Checks a typed workspace name; returns why ``create`` would refuse it, else ``None``.
+
+    Invalid, already active, or a non-empty directory under ``root`` (the
+    workspaces dir): caught in the picker, so the selection is not lost.
+    """
 
     def check(name: str) -> str | None:
         try:
@@ -112,6 +119,10 @@ def name_validator(store: WorkspaceStore) -> Callable[[str], str | None]:
             return str(exc)
         if store.get(name) is not None:
             return f"workspace {q(name)} already exists"
+        try:
+            refuse_occupied(store, root, name)
+        except UntapedError as exc:
+            return str(exc)
         return None
 
     return check
@@ -172,17 +183,12 @@ def _pick(
         template=template,
         title=title,
         title_label=title_label,
-        validate_title=None if record else name_validator(store),
+        validate_title=None if record else name_validator(store, workspaces_dir(settings)),
         branch=branch or "",
         base=base or "",
     )
     result = ui.pick_many(request)
-    args = [_with_fallback(arg, source) for arg in repo_args(result)]
+    args = [
+        arg.model_copy(update={"ident": source.ident_for(arg.ident)}) for arg in repo_args(result)
+    ]
     return (record.name if record else result.title.strip() or title), args
-
-
-def _with_fallback(arg: RepoArg, source: RepoPickSource) -> RepoArg:
-    """A picked ``owner/name`` falls back to its known URL (a cached-only repo off-inventory)."""
-    if looks_like_url(arg.ident):
-        return arg
-    return arg.model_copy(update={"fallback": source.url_for(arg.ident)})

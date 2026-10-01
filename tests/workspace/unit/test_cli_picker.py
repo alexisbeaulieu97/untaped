@@ -41,13 +41,18 @@ def test_repo_args_map_settings() -> None:
     ]
 
 
-def test_name_validator() -> None:
+def test_name_validator(tmp_path: Path) -> None:
     store = StateWorkspaceStore()
     store.create(WorkspaceRecord(name="taken", created_at=datetime(2026, 10, 1, tzinfo=UTC)))
-    check = name_validator(store)
+    (tmp_path / "old").mkdir()
+    (tmp_path / "old" / "leftover.txt").write_text("x")
+    (tmp_path / "empty").mkdir()
+    check = name_validator(store, tmp_path)
     assert check("J-1") is None
+    assert check("empty") is None
     assert "invalid workspace name" in (check("a/b") or "")
     assert "already exists" in (check("taken") or "")
+    assert "not empty" in (check("old") or "")
 
 
 class FakeGit:
