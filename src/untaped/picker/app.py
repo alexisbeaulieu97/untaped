@@ -73,6 +73,11 @@ def _daemon(work: Callable[[], None]) -> None:
     threading.Thread(target=work, daemon=True, name="untaped-picker-refresh").start()
 
 
+def _size(output: Output) -> tuple[int, int]:
+    size = output.get_size()
+    return size.columns, size.rows
+
+
 def _fetch(
     source: Callable[[bool], PickCatalog], force: bool
 ) -> Callable[[PickerState], PickerState]:
@@ -111,7 +116,7 @@ def run_picker(
 
     def refresh(force: bool) -> None:
         source = request.refresh
-        if source is None:
+        if source is None or box[0].refreshing:
             return
         box[0] = begin_refresh(box[0])
         loop = asyncio.get_running_loop()
@@ -129,7 +134,7 @@ def run_picker(
         start(work)
 
     control = FormattedTextControl(
-        lambda: render(box[0], app.output.get_size().columns), focusable=True, show_cursor=False
+        lambda: render(box[0], *_size(app.output)), focusable=True, show_cursor=False
     )
     app: Application[PickResult | None] = Application(
         layout=Layout(Window(control, dont_extend_height=True, always_hide_cursor=True)),

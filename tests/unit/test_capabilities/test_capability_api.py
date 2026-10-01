@@ -117,6 +117,7 @@ EXPECTED_ALL = [
     "PickRequest",
     "PickResult",
     "PickSetting",
+    "Picked",
 ]
 
 

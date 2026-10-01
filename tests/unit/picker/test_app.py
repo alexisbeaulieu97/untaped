@@ -110,3 +110,18 @@ def test_pasted_text_lands_in_the_search() -> None:
 
 def test_paste_after_the_outcome_is_set_exits_once() -> None:
     assert _run(DOWN + " " + CTRL_C + "\x1b[200~yy\x1b[201~", _request()) is None
+
+
+def test_ctrl_r_while_a_refresh_is_running_does_not_start_another() -> None:
+    pending: list[Callable[[], None]] = []
+
+    def refresh(force: bool) -> PickCatalog:
+        raise AssertionError("deferred work never runs")
+
+    picked = _run(
+        CTRL_R + CTRL_R + "api" + DOWN + " " + CTRL_S,
+        _request(refresh=refresh),
+        spawn=pending.append,
+    )
+    assert len(pending) == 1
+    assert picked is not None

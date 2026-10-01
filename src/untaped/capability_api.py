@@ -88,7 +88,7 @@ from untaped.http import (
     same_origin,
 )
 from untaped.messages import hint, not_found, plural, q, summary
-from untaped.picker import PickCatalog, PickItem, PickRequest, PickResult, PickSetting
+from untaped.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult, PickSetting
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.progress import ProgressHandle
 from untaped.prompts import PromptChoice
@@ -230,4 +230,5 @@ __all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by
     "PickRequest",
     "PickResult",
     "PickSetting",
+    "Picked",
 ]

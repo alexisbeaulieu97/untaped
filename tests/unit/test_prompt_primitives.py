@@ -8,9 +8,11 @@ from contextlib import contextmanager
 from typing import Any, TypeVar
 
 import pytest
+from prompt_toolkit.styles import Style, merge_styles
 
 from untaped.errors import ConfigError, OperationCancelledError, PromptInterruptedError, UsageError
 from untaped.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult
+from untaped.picker.app import DEFAULT_STYLE
 from untaped.prompts import PromptToolkitPromptBackend, prompt_style_from_roles
 from untaped.ui import PromptChoice, UiContext
 
@@ -245,6 +247,23 @@ def test_prompt_style_preserves_white_and_bright_white_distinction() -> None:
 
     assert style.get_attrs_for_style_str("class:prompt").color == "ansigray"
     assert style.get_attrs_for_style_str("class:input-selection").color == "ansiwhite"
+
+
+def test_prompt_style_colours_the_picker_from_the_roles() -> None:
+    def picker_style(roles: dict[str, str]) -> Style:
+        return merge_styles([Style.from_dict(DEFAULT_STYLE), prompt_style_from_roles(roles)])
+
+    themed = picker_style({"key": "magenta", "border": "blue", "error": "yellow"})
+    for name in ("cursor", "mark", "border.focus", "subtitle"):
+        assert themed.get_attrs_for_style_str(f"class:picker.{name}").color == "ansimagenta"
+    assert themed.get_attrs_for_style_str("class:picker.border").color == "ansiblue"
+    assert themed.get_attrs_for_style_str("class:picker.error").color == "ansiyellow"
+    assert themed.get_attrs_for_style_str("class:picker.cursor").bold is True
+
+    plain = picker_style({})
+    assert plain.get_attrs_for_style_str("class:picker.cursor").color == "ansicyan"
+    assert plain.get_attrs_for_style_str("class:picker.border").color == "ansibrightblack"
+    assert plain.get_attrs_for_style_str("class:picker.error").color == "ansired"
 
 
 def test_prompt_toolkit_multiselect_handles_cancelled_dialog(

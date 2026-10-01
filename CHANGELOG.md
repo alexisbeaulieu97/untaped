@@ -5,8 +5,9 @@
 - Core
   - **New (SDK):** `UiContext.pick_many` opens an inline two-pane picker: fuzzy
     search with multi-select on the left, per-item settings on the right
-    (`PickRequest`, `PickItem`, `PickSetting`, `PickCatalog`, `PickResult`;
-    API `3.2`). `ScriptedPromptBackend(picks=...)` scripts it in tests.
+    (`PickRequest`, `PickItem`, `PickSetting`, `PickCatalog`, `PickResult`,
+    `Picked`; API `3.2`). It fits the terminal height, refreshes the catalog
+    in the background, and can validate the title (`validate_title`). `ScriptedPromptBackend(picks=...)` scripts it in tests.
 
 ## 9.1.0
 

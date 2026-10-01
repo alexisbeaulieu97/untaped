@@ -61,6 +61,7 @@ class PickerState:
     editing: str | None = None
     quitting: bool = False
     refreshing: bool = False
+    stale: bool = False
     error: str = ""
     outcome: Outcome = "running"
 
@@ -152,12 +153,15 @@ def begin_refresh(state: PickerState) -> PickerState:
 def with_catalog(state: PickerState, catalog: PickCatalog) -> PickerState:
     """Swap in a refreshed catalog; selected items stay selected."""
     known = {**state.known, **{item.id: item for item in catalog.items}}
-    return replace(state, items=catalog.items, note=catalog.note, known=known, refreshing=False)
+    swapped = replace(
+        state, items=catalog.items, note=catalog.note, known=known, refreshing=False, stale=False
+    )
+    return replace(swapped, cursor=min(state.cursor, max(0, len(visible(swapped)) - 1)))
 
 
 def refresh_failed(state: PickerState, message: str) -> PickerState:
-    """Keep the current catalog and say why the refresh failed."""
-    return replace(state, refreshing=False, error=f"refresh failed: {message}")
+    """Keep the current catalog, say why the refresh failed, and mark it stale."""
+    return replace(state, refreshing=False, stale=True, error=f"refresh failed: {message}")
 
 
 # --- key handling ----------------------------------------------------------
@@ -344,6 +348,10 @@ def _edit_key(state: PickerState, key: str) -> PickerState:
 def _confirm(state: PickerState) -> PickerState:
     if state.request.title_label and not state.title.strip():
         return replace(state, focus="title", error=f"{state.request.title_label} is required")
+    if state.request.title_label and state.request.validate_title is not None:
+        problem = state.request.validate_title(state.title.strip())
+        if problem:
+            return replace(state, focus="title", error=problem)
     if not state.selected:
         return replace(state, error="select at least one item")
     return replace(state, outcome="confirmed")

@@ -2,7 +2,8 @@
 
 The output is prompt_toolkit ``StyleAndTextTuples`` (``(style, text)`` pairs)
 built from plain tuples, so this module never imports prompt_toolkit. Panes
-sit side by side from :data:`WIDE` columns and stack below that.
+sit side by side from :data:`WIDE` columns and stack below that; list windows
+shrink so the whole picker fits the terminal height.
 """
 
 # ruff: noqa: RUF001  (the pane glyphs are intentional)
@@ -25,7 +26,7 @@ Fragment = tuple[str, str]
 Line = list[Fragment]
 
 LIST_ROWS = 10
-"""Visible rows in each pane's list."""
+"""Most visible rows in each pane's list."""
 WIDE = 100
 """Terminal width from which the panes sit side by side."""
 
@@ -33,34 +34,49 @@ _KEYS = (
     "space toggle · / search · tab pane · enter edit · ←→ change · "
     "ctrl-s create · ctrl-r refresh · ctrl-c quit"
 )
+_SHORT_KEYS = "space select · tab pane · ctrl-s create · ctrl-r refresh · ctrl-c quit"
+
+_CHROME = 3
+"""Lines outside the panes: header, blank line, footer."""
+_LEFT_FIXED = 4
+"""Search pane lines besides its list: two borders, search line, status line."""
+_RIGHT_FIXED = 3
+"""Selected pane lines besides its rows: two borders, the [ Create ] button."""
 
 
-def render(state: PickerState, width: int) -> list[Fragment]:
-    """The whole picker as fragments, lines separated by ``"\\n"``."""
+def render(state: PickerState, width: int, height: int) -> list[Fragment]:
+    """The whole picker as fragments, lines separated by ``"\\n"``.
+
+    Fits ``height`` lines whenever the terminal is tall enough for one list row
+    per pane; shorter terminals overflow rather than drop the chrome.
+    """
     width = max(width, 40)
     lines: list[Line] = [_header(state, width), []]
+    search_focused = state.focus != "selected"
     if width >= WIDE:
+        left_rows = max(1, min(LIST_ROWS, height - _CHROME - _LEFT_FIXED))
         left_width = width // 2
         left = _pane(
-            "Search", _left_body(state, left_width - 4), left_width, state.focus != "selected"
+            "Search", _left_body(state, left_width - 4, left_rows), left_width, search_focused
         )
         right = _pane(
             f"Selected {len(state.selected)}",
-            _right_body(state, width - left_width - 4),
+            _right_body(state, width - left_width - 4, left_rows + 1),
             width - left_width,
-            state.focus == "selected",
+            not search_focused,
         )
         lines.extend(a + b for a, b in zip(left, right, strict=True))
     else:
+        left_rows, right_rows = _stacked_rows(height, search_focused)
         lines.extend(
-            _pane("Search", _left_body(state, width - 4), width, state.focus != "selected")
+            _pane("Search", _left_body(state, width - 4, left_rows), width, search_focused)
         )
         lines.extend(
             _pane(
                 f"Selected {len(state.selected)}",
-                _right_body(state, width - 4),
+                _right_body(state, width - 4, right_rows),
                 width,
-                state.focus == "selected",
+                not search_focused,
             )
         )
     lines.append(_footer(state, width))
@@ -73,6 +89,17 @@ def render(state: PickerState, width: int) -> list[Fragment]:
 
 
 # --- layout helpers ---------------------------------------------------------
+
+
+def _stacked_rows(height: int, search_focused: bool) -> tuple[int, int]:
+    """List rows for the stacked panes: the focused pane first, the other gets the rest."""
+    budget = height - _CHROME - _LEFT_FIXED - _RIGHT_FIXED
+    most = (LIST_ROWS, LIST_ROWS + 1)
+    focused_most, other_most = most if search_focused else most[::-1]
+    other = max(1, min(other_most, budget // 3))
+    focused = max(1, min(focused_most, budget - other))
+    other = max(1, min(other_most, budget - focused))
+    return (focused, other) if search_focused else (other, focused)
 
 
 def _length(line: Line) -> int:
@@ -140,21 +167,22 @@ def _footer(state: PickerState, width: int) -> Line:
         )
     if state.error:
         return _fit([("class:picker.error", f" {state.error}")], width)
-    return _fit([("class:picker.keys", f" {_KEYS}")], width)
+    keys = _KEYS if len(_KEYS) < width else _SHORT_KEYS
+    return _fit([("class:picker.keys", f" {keys}")], width)
 
 
 # --- left pane --------------------------------------------------------------
 
 
-def _left_body(state: PickerState, inner: int) -> list[Line]:
+def _left_body(state: PickerState, inner: int, list_rows: int) -> list[Line]:
     search: Line = [("class:picker.dim", "/ "), ("", state.query)]
     if state.focus == "search":
         search.append(("class:picker.cursor", "█"))
     ranked = visible(state)
     cursor = min(state.cursor, max(0, len(ranked) - 1))
-    start = max(0, min(cursor - LIST_ROWS // 2, len(ranked) - LIST_ROWS))
+    start = max(0, min(cursor - list_rows // 2, len(ranked) - list_rows))
     body: list[Line] = [search]
-    for index in range(start, start + LIST_ROWS):
+    for index in range(start, start + list_rows):
         if index >= len(ranked):
             body.append([])
             continue
@@ -176,6 +204,8 @@ def _left_body(state: PickerState, inner: int) -> list[Line]:
     status = f"{len(ranked)}" + (f" · {state.note}" if state.note else "")
     if state.refreshing:
         status += " · refreshing…"
+    elif state.stale:
+        status += " · refresh failed"
     body.append([("class:picker.dim", status.rjust(inner))])
     return body
 
@@ -183,12 +213,11 @@ def _left_body(state: PickerState, inner: int) -> list[Line]:
 # --- right pane -------------------------------------------------------------
 
 
-def _right_body(state: PickerState, inner: int) -> list[Line]:
+def _right_body(state: PickerState, inner: int, window: int) -> list[Line]:
     all_rows = rows(state)
     body: list[Line] = []
     for row in all_rows[:-1]:
         body.append(_right_row(state, row))
-    window = LIST_ROWS + 1
     if len(body) > window:
         current = all_rows.index(state.row) if state.row in all_rows else 0
         start = max(0, min(current - window // 2, len(body) - window))
