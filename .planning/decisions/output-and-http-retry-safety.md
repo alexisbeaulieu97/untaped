@@ -18,4 +18,4 @@ to be safe.
 
 - Supersedes: [dec_019f68b6b7f87484ae84f7b788f38138](https://github.com/alexisbeaulieu97/untaped/blob/de9a55d4842c50f5ba6afb93e6715d810c27b62f/.untaped/orchestration/decisions/dec_019f68b6b7f87484ae84f7b788f38138-emit-detail-routing-and-safe-http-retries-sdk-2-1.md) (historical record)
 
-Source: [preserved decision record](https://github.com/alexisbeaulieu97/untaped/blob/de9a55d4842c50f5ba6afb93e6715d810c27b62f/.untaped/orchestration/decisions/output-and-http-retry-safety.md).
+Source: [preserved decision record](https://github.com/alexisbeaulieu97/untaped/blob/de9a55d4842c50f5ba6afb93e6715d810c27b62f/.untaped/orchestration/decisions/dec_01a0820d60a074ec98d9f6ad27a28508-v4-output-and-http-retry-safety.md).
