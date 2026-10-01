@@ -222,6 +222,11 @@ def test_ctrl_c_with_a_selection_asks_first() -> None:
     assert press(state, "ctrl-c").outcome == "cancelled"
 
 
+def test_keys_after_the_outcome_is_decided_are_ignored() -> None:
+    cancelled = press(_state(), "ctrl-c")
+    assert press(cancelled, "a", "down", "ctrl-s") is cancelled
+
+
 def test_result_resolves_every_setting() -> None:
     state = press(typed(_state(), "web"), "down", " ", "tab", "down", "right", "ctrl-s")
     picked = result(state)
