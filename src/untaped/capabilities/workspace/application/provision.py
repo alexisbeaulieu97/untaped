@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from untaped.capabilities.workspace.application.locate import active_workspace
 from untaped.capabilities.workspace.domain.models import (
     Checkout,
     RepoArg,
@@ -75,21 +76,28 @@ class ProvisionRepos:
                 "no repos given", hint=f"run `untaped workspace create {name} --repo REPO`"
             )
         resolved = self._resolve(repos)
-        self._refuse_occupied(name)
-        record = WorkspaceRecord(name=name, created_at=self._now())
-        self._store.create(record)
-        self._workspace_dir(name).mkdir(parents=True, exist_ok=True)
-        return self._provision(record, repos, resolved)
+        with self._store.locked(name):
+            self._refuse_occupied(name)
+            record = WorkspaceRecord(name=name, created_at=self._now())
+            self._store.create(record)
+            self._workspace_dir(name).mkdir(parents=True, exist_ok=True)
+            return self._provision(record, repos, resolved)
 
     def add(self, record: WorkspaceRecord, repos: Sequence[RepoArg]) -> list[RepoOutcome]:
-        """Check out ``repos`` into the existing workspace ``record``."""
+        """Check out ``repos`` into the existing workspace ``record``.
+
+        The record is read again under the workspace lock: an ``archive`` that
+        ran meanwhile makes this fail as not found instead of adding worktrees.
+        """
         if not repos:
             raise UsageError(
                 "no repos given", hint=f"run `untaped workspace add {record.name} --repo REPO`"
             )
         resolved = self._resolve(repos)
-        self._workspace_dir(record.name).mkdir(parents=True, exist_ok=True)
-        return self._provision(record, repos, resolved)
+        with self._store.locked(record.name):
+            current = active_workspace(self._store, record.name)
+            self._workspace_dir(current.name).mkdir(parents=True, exist_ok=True)
+            return self._provision(current, repos, resolved)
 
     def _workspace_dir(self, name: str) -> Path:
         return self._workspaces_dir.expanduser().absolute() / name
