@@ -30,8 +30,9 @@ URL the inventory supplies.
 ## Branches and bases
 
 Writable repos share one branch: `--branch`, else `workspace.branch_template`
-with `{name}` replaced by the workspace name (default `{name}`). Each is
-based on `--base`, else the repo's default branch. A base missing on origin
+with `{name}` replaced by the workspace name (default `{name}`). Every repo,
+read-only ones included, is based on `--base`, else the repo's default
+branch. `--branch` applies to writable repos only. A base missing on origin
 fails that repo as `not_found`.
 
 How a writable repo is checked out, with the row's `action` and `detail`:
@@ -51,8 +52,8 @@ checked out in another worktree is a `failed` row with category `conflict`.
 ## Read-only repos
 
 `--read-only` checks a repo out detached at `origin/BASE`, for reference code.
-The row is `checked_out` with `read-only at origin/BASE`. Archiving ignores
-unpushed commits there; only local changes count.
+The row is `checked_out` with `read-only at origin/BASE`. A commit made there
+is on no branch, so archiving counts it as unpushed and refuses.
 
 ## Partial failure
 
@@ -68,20 +69,34 @@ first. A repo blocks archiving with any of:
 
 - uncommitted changes;
 - stash entries made on that repo's branch;
-- commits not pushed (read-only repos: only local changes count);
-- "repo cache missing; local work cannot be checked".
+- commits not pushed: commits on `HEAD` that no remote branch has, in
+  read-only repos too;
+- "submodules: archive cannot verify or remove them safely" (any initialised
+  submodule);
+- "repo cache missing; local work cannot be checked";
+- "git state unreadable: ..." (status `state` `error`, for example after the
+  cache was recreated).
 
-While any repo blocks, archive exits 1 and removes nothing.
-`untaped workspace status NAME --check` reports the same blockers and exits 3.
-`--dry-run` previews with `planned` rows. `--force` archives anyway and
-discards that work after a confirmation; without a terminal it needs `--yes`
-(else exit 2). If removing a repo fails, the workspace stays active so
-archive can be retried.
+While any repo blocks, archive exits 1, removes nothing, and its hint says
+what to do for each kind of blocker. `untaped workspace status NAME --check`
+is the gate: it reports the same blockers and exits 3 (1 when a repo's git
+state is unreadable). `--dry-run` previews with `planned` and `skipped` rows
+and always exits 0.
+
+`--force` archives anyway after a confirmation; without a terminal it needs
+`--yes` (else exit 2). It discards uncommitted work and removes the
+directories, deleting a worktree git refuses to remove. Branch commits and
+stashes stay in the repo cache; commits made on a read-only repo do not. If
+removing a repo fails, the workspace stays active so archive can be retried.
+Stashes are shared by every workspace of a repo: never drop one you did not
+make.
 
 ## After archiving
 
 Archiving removes the worktrees and the workspace directory, and records the
-workspace under `untaped workspace list --archived`. The branches stay in the
+workspace under `untaped workspace list --archived`. Other files left in the
+workspace directory stay, with a `skipped` workspace row; `create` refuses
+that name until the directory is moved aside. The branches stay in the
 repo cache and on the remote, so a later `untaped workspace create NAME --repo
 OWNER/NAME --branch BRANCH` resumes the work.
 

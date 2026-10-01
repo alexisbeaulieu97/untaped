@@ -152,8 +152,8 @@ come from a closed set:
   is none.
 - Read identifiers with `read_identifiers(names, stdin=stdin,
   id_field="…", accept_kinds={"<cap>.<noun>"})`. A pipe record of another
-  kind exits 2. Empty stdin is an error, except for commands that act on a
-  filtered selection (such as `workspace add NAME --stdin`), which read it with
+  kind exits 2. Empty stdin is an error. A command that acts on a filtered
+  selection, where an empty selection is normal, may read it with
   `read_stdin_input(allow_empty=True)`: an empty pipe then does nothing,
   reports like an empty list, and exits 0.
 - Before prompting, check `ui.can_prompt` on the `UiContext` that will prompt;

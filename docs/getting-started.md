@@ -95,7 +95,7 @@ untaped profile current
 Each capability's guide, linked from the [documentation index](./README.md),
 has its full workflow.
 
-```text
+```bash
 # workspace: a task directory of git worktrees on a shared branch
 untaped workspace create demo --repo acme/api
 untaped workspace status demo
@@ -148,7 +148,7 @@ Only data goes to stdout. Progress, warnings and errors go to stderr, so a
 pipe carries only records. `-q`/`--quiet` mutes progress and success
 messages.
 
-```text
+```bash
 # Check out every non-archived repo of a GitHub team into a workspace
 untaped github repos list --team acme/platform --format pipe \
   | untaped workspace create demo --stdin

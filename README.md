@@ -28,7 +28,7 @@ untaped doctor
 
 ## Quick start
 
-```text
+```bash
 # Store a token without echoing it
 untaped config set github.token --prompt
 untaped github whoami

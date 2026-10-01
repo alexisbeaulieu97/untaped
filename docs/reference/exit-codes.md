@@ -65,7 +65,7 @@ pipe keeps its own exit code.
 | `untaped awx apply --check` | Any document would change the controller. |
 | `untaped recipe apply --check` | Any target would change. |
 | `untaped skills status --check` | An installed skill is outdated or no longer shipped. |
-| `untaped workspace status --check` | Any repo would block `workspace archive` (uncommitted changes, stashes on its branch, unpushed commits, or a missing repo cache). |
+| `untaped workspace status --check` | Any repo would block `workspace archive` (uncommitted changes, stashes on its branch, unpushed commits, initialised submodules, or a missing repo cache). A repo whose git state cannot be read exits 1 instead. |
 
 Use these in CI to tell "the check found something" (3) apart from "the tool
 failed" (1), "fix the setup" (4) and "try again later" (5):
