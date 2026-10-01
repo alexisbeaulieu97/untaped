@@ -38,15 +38,17 @@
     a repo picker (search the GitHub inventory, set mode/base/branch per
     repo).
 - AWX
-  - **Security:** `export` writes a job template's `host_config_key` as
-    `$encrypted$`, and `get`/`list` mask a set `host_config_key`; empty secrets
-    stay empty instead of becoming placeholders.
-  - **Changed:** `export` no longer writes controller-derived fields
+  - **Breaking (security):** `export` writes a job template's
+    `host_config_key` as `$encrypted$`, and `get`/`list` records mask a set
+    `host_config_key`; empty secrets stay empty instead of becoming
+    placeholders.
+  - **Breaking:** `export` documents no longer carry controller-derived fields
     (`custom_virtualenv`, `webhook_key`, SCM projects' `local_path`) or a
-    `spec.organization` copy, and `apply` ignores them in older files.
-    Multi-line text is written as YAML `|` blocks. `patch`/`edit` reject
-    `webhook_key`, `custom_virtualenv` and an SCM project's `local_path`,
-    which the controller never accepted.
+    `spec.organization` copy; `apply` ignores them in older files.
+  - **Breaking:** `patch`/`edit` exit 2 when changing `webhook_key`,
+    `custom_virtualenv` or an SCM project's `local_path`, which the
+    controller never accepted.
+  - **Changed:** `export` writes multi-line text as YAML `|` blocks.
   - **New:** `export --comment TEXT` heads each document with `# TEXT`.
 - GitHub
   - **New:** `github.inventory` settings (`path`, `orgs`, `teams`,
