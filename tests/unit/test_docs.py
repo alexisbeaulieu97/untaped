@@ -63,7 +63,8 @@ def _markdown_files() -> list[Path]:
 
 
 def _slug(heading: str) -> str:
-    text = re.sub(r"[`*_]|\[([^\]]*)\]\([^)]*\)", r"\1", heading).strip().lower()
+    # GitHub keeps underscores and hyphens and drops other punctuation.
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", heading).strip().lower()
     return re.sub(r"[^\w\- ]", "", text).replace(" ", "-")
 
 
@@ -74,7 +75,7 @@ def _anchors(path: Path) -> set[str]:
 
 def _broken_links(path: Path) -> list[str]:
     text = _FENCE.sub("", path.read_text(encoding="utf-8"))
-    text = re.sub(r"`[^`\n]*`", "", text)
+    text = re.sub(r"(`+)[^\n]*?\1", "", text)
     broken: list[str] = []
     for target in _LINK.findall(text):
         if re.match(r"^[a-z][a-z0-9+.-]*:", target):
@@ -177,3 +178,18 @@ def test_command_examples_use_real_commands_and_options() -> None:
                     for problem in _unknown_options(root, argv, aliases)
                 )
     assert problems == []
+
+
+@pytest.mark.parametrize(
+    ("heading", "slug"),
+    [("`failed_tasks`", "failed_tasks"), ("Header: `variables`", "header-variables")],
+)
+def test_heading_slugs_match_github(heading: str, slug: str) -> None:
+    assert _slug(heading) == slug
+
+
+def test_links_inside_double_backtick_code_are_ignored(tmp_path: Path) -> None:
+    page = tmp_path / "page.md"
+    page.write_text("Literal ``[example](missing.md)`` text.\n", encoding="utf-8")
+
+    assert _broken_links(page) == []
