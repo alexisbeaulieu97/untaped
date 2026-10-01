@@ -60,7 +60,7 @@ def test_inventory_items_and_cached_only_repos(tmp_path: Path) -> None:
     assert [(i.id, i.dimmed) for i in catalog.items] == [
         ("acme/api", False),
         ("acme/old", True),
-        ("team/tool", False),
+        ("github.com/team/tool", False),
     ]
     assert catalog.items[0].description == "Core API"
     assert catalog.items[2].description == "cached"
@@ -73,7 +73,7 @@ def test_github_not_configured_falls_back_to_the_cache(tmp_path: Path) -> None:
 
     source = _source(_cache(tmp_path, "team/tool"), inventory=broken)
     catalog = source.catalog(refresh=None)
-    assert [i.id for i in catalog.items] == ["team/tool"]
+    assert [i.id for i in catalog.items] == ["github.com/team/tool"]
     assert catalog.note == "cached repos only — no scope"
     with pytest.raises(UntapedError):
         source.catalog(refresh=True)
@@ -110,9 +110,13 @@ def test_cached_only_url_is_the_cache_origin(tmp_path: Path) -> None:
     git = FakeGit({"tool.git": "git@github.com:team/tool.git"})
     source = _source(_cache(tmp_path, "team/tool", "team/other"), git, inventory=_inventory())
     source.catalog(refresh=False)
-    assert source.url_for("team/tool") == "git@github.com:team/tool.git"
+    assert source.url_for("github.com/team/tool") == "git@github.com:team/tool.git"
     # No readable origin: a URL with the same cache identity.
-    assert repo_key(source.url_for("team/other") or "") == ("github.com", "team", "other.git")
+    assert repo_key(source.url_for("github.com/team/other") or "") == (
+        "github.com",
+        "team",
+        "other.git",
+    )
     assert source.url_for("nope/missing") is None
     assert source.url_for("https://h/o/r") == "https://h/o/r"
 
@@ -121,7 +125,7 @@ def test_nested_group_and_unknown_caches(tmp_path: Path) -> None:
     cache = _cache(tmp_path, "grp/sub/repo")
     (cache / "_unknown" / "0123456789abcdef.git").mkdir(parents=True)
     source = _source(cache, inventory=_inventory())
-    assert [i.id for i in source.catalog(refresh=False).items][-1] == "grp/sub/repo"
+    assert [i.id for i in source.catalog(refresh=False).items][-1] == "github.com/grp/sub/repo"
     assert len(source.catalog(refresh=False).items) == 3
 
 
@@ -148,17 +152,48 @@ def test_scan_treats_git_dirs_as_leaves(tmp_path: Path) -> None:
     for inner in ("modules/foo.git", "refs/heads/x.git", "objects/deep.git"):
         (bare / inner).mkdir(parents=True)
     source = _source(cache, inventory=_no_inventory)
-    assert [i.id for i in source.catalog(refresh=False).items] == ["acme/api"]
+    assert [i.id for i in source.catalog(refresh=False).items] == ["github.com/acme/api"]
 
 
 def test_branches_before_the_catalog_is_not_memoised(tmp_path: Path) -> None:
     git = FakeGit()
     source = _source(_cache(tmp_path, "team/tool"), git, inventory=_inventory())
-    assert source.branches("team/tool") == []
+    assert source.branches("github.com/team/tool") == []
     source.catalog(refresh=False)
-    assert source.branches("team/tool") == ["main", "release/2"]
+    assert source.branches("github.com/team/tool") == ["main", "release/2"]
     assert git.calls == ["https://github.com/team/tool"]
 
 
 def _no_inventory(refresh: bool | None) -> RepoInventory:
     return RepoInventory(repos=(), refreshed_at=NOW, scope_key="k")
+
+
+def test_one_repo_cached_from_two_hosts_is_two_items(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    for host in ("github.com", "gitlab.example"):
+        (cache / host / "team" / "tool.git").mkdir(parents=True)
+    source = _source(cache, inventory=_no_inventory)
+    items = source.catalog(refresh=False).items
+    assert [(i.id, i.label) for i in items] == [
+        ("github.com/team/tool", "github.com/team/tool"),
+        ("gitlab.example/team/tool", "gitlab.example/team/tool"),
+    ]
+
+
+def test_ident_for_a_cached_only_pick_is_its_cache_url(tmp_path: Path) -> None:
+    def broken(refresh: bool | None) -> RepoInventory:
+        raise UntapedError("HTTP 503", category="failed", system="github")
+
+    cache = _cache(tmp_path)
+    (cache / "gitlab.example" / "team" / "tool.git").mkdir(parents=True)
+    git = FakeGit({"tool.git": "git@gitlab.example:team/tool.git"})
+    source = _source(cache, git, inventory=broken)
+    source.catalog(refresh=None)
+    assert source.ident_for("gitlab.example/team/tool") == "git@gitlab.example:team/tool.git"
+
+
+def test_ident_for_an_inventory_pick_is_its_full_name(tmp_path: Path) -> None:
+    source = _source(_cache(tmp_path, "acme/api"), inventory=_inventory())
+    source.catalog(refresh=False)
+    assert source.ident_for("acme/api") == "acme/api"
+    assert source.ident_for("https://h/o/r") == "https://h/o/r"

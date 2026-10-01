@@ -123,7 +123,7 @@ def create_command(
         )
         provision = provisioner(settings, parallel)
         with ui.progress(f"Creating workspace {name}…") as progress:
-            rows = provision.create(name, args, on_done=_progress_line(progress, len(args)))
+            rows = provision.create(name, args, on_done=_progress_line(progress))
         _show_provisioned(rows, settings, name, fmt=fmt, columns=columns)
 
 
@@ -162,7 +162,7 @@ def add_command(
         )
         provision = provisioner(settings, parallel)
         with ui.progress(f"Adding repos to {record.name}…") as progress:
-            rows = provision.add(record, args, on_done=_progress_line(progress, len(args)))
+            rows = provision.add(record, args, on_done=_progress_line(progress))
         _show_provisioned(rows, settings, record.name, fmt=fmt, columns=columns)
 
 
@@ -438,14 +438,11 @@ def _show_run_summary(rows: Sequence[RunOutcome]) -> None:
     ui_context(strict=False).message("error" if failed else "success", " · ".join(parts))
 
 
-def _progress_line(progress: ProgressHandle, total: int) -> Callable[[RepoOutcome], None]:
+def _progress_line(progress: ProgressHandle) -> Callable[[RepoOutcome, int, int], None]:
     """``on_done`` for provisioning: ``<done>/<total> <repo>`` per finished checkout."""
-    done = 0
 
-    def update(row: RepoOutcome) -> None:
-        nonlocal done
-        done += 1
-        progress.update(f"{done}/{total} {row.repo}", fraction=min(done / total, 1.0))
+    def update(row: RepoOutcome, done: int, total: int) -> None:
+        progress.update(f"{done}/{total} {row.repo}", fraction=done / total)
 
     return update
 

@@ -13,6 +13,7 @@ from untaped.capabilities.workspace.domain import RepoSpec, WorkspaceRecord
 from untaped.capabilities.workspace.infrastructure import StateWorkspaceStore
 from untaped.capability_api import Picked, PickItem, PickRequest, PickResult
 from untaped.testing import CliInvoker, ScriptedPromptBackend
+from workspace.conftest import git
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("workspace_env")]
 run = CliInvoker().invoke
@@ -43,7 +44,9 @@ def test_cancelled_picker_creates_nothing(workspace_env: Path) -> None:
         app, ["create", "J-1"], interactive=True, prompt_backend=ScriptedPromptBackend(picks=[None])
     )
     assert result.exit_code == 1
+    assert "cancelled" in result.output
     assert not (workspace_env / "J-1").exists()
+    assert StateWorkspaceStore().get("J-1") is None
 
 
 def test_no_terminal_is_a_usage_error_naming_the_flags() -> None:
@@ -112,23 +115,67 @@ def test_add_does_not_offer_repos_already_in_the_workspace(workspace_env: Path) 
     assert result.exit_code == 1
     (request,) = backend.requests
     assert request.title_label == ""
-    assert [item.id for item in request.catalog.items] == ["acme/web"]
+    assert [item.id for item in request.catalog.items] == ["github.com/acme/web"]
     assert request.subtitle is not None
     assert request.subtitle("", {"branch": ""}).endswith("J-1")
 
 
-def test_create_picker_prefills_the_name_and_flag_defaults() -> None:
-    backend = _Capture(_pick("J-1"))
-    run(
+def test_create_picker_prefills_the_name_and_flag_defaults(
+    make_upstream: Callable[..., Path],
+) -> None:
+    backend = _Capture(_pick("J-1", str(make_upstream("api"))))
+    result = run(
         app,
-        ["create", "J-1", "--base", "release/2", "--branch", "hotfix"],
+        ["create", "J-1", "--base", "main", "--branch", "hotfix"],
         interactive=True,
         prompt_backend=backend,
     )
+    assert result.exit_code == 0, result.output
     (request,) = backend.requests
     assert (request.title, request.title_label) == ("J-1", "name")
     assert {s.key: s.default for s in request.settings} == {
         "mode": "write",
-        "base": "release/2",
+        "base": "main",
         "branch": "hotfix",
     }
+
+
+def test_read_only_pick_is_a_detached_checkout(
+    make_upstream: Callable[..., Path], workspace_env: Path
+) -> None:
+    url = str(make_upstream("api"))
+    settings = {"mode": "read-only", "base": "", "branch": ""}
+    pick = PickResult(
+        title="J-1",
+        defaults={"mode": "write", "base": "", "branch": ""},
+        picks=(Picked(item=PickItem(id=url, label=url), settings=settings),),
+    )
+    result = run(
+        app, ["create"], interactive=True, prompt_backend=ScriptedPromptBackend(picks=[pick])
+    )
+    assert result.exit_code == 0, result.output
+    record = StateWorkspaceStore().get("J-1")
+    assert record is not None and record.repos[0].read_only
+    assert git(workspace_env / "J-1" / "api", "rev-parse", "--abbrev-ref", "HEAD") == "HEAD"
+
+
+def test_cached_only_pick_uses_its_cache_url(
+    make_upstream: Callable[..., Path], workspace_env: Path
+) -> None:
+    """The inventory is unavailable (no scope) while GitHub is the default host: the
+    cached-only repo must come from its own cache's origin, not github.com/acme/api."""
+    upstream = make_upstream("api")
+    cache = workspace_env.parent / "cache" / "gitlab.example" / "acme" / "api.git"
+    cache.parent.mkdir(parents=True)
+    git(workspace_env.parent, "clone", "-q", "--bare", str(upstream), str(cache))
+    settings = {"mode": "write", "base": "", "branch": ""}
+    item = PickItem(id="gitlab.example/acme/api", label="gitlab.example/acme/api")
+    backend = _Capture(
+        PickResult(title="J-1", defaults=settings, picks=(Picked(item=item, settings=settings),))
+    )
+    result = run(app, ["create"], interactive=True, prompt_backend=backend)
+    assert result.exit_code == 0, result.output
+    assert [i.id for i in backend.requests[0].catalog.items] == ["gitlab.example/acme/api"]
+    record = StateWorkspaceStore().get("J-1")
+    assert record is not None and record.repos[0].url == str(upstream)
+    assert (workspace_env / "J-1" / "api" / "README.md").exists()
