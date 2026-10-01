@@ -201,42 +201,54 @@ RUN_STDIN_KINDS = frozenset({"workspace.status", "workspace.repo_outcome", "work
 def select_run_repos(
     specs: Sequence[RepoSpec],
     *,
+    workspace: str,
     repo: Sequence[str] | None,
     stdin: bool,
     include_read_only: bool,
 ) -> list[RepoSpec]:
-    """The repos ``run`` targets: ``--repo``/``--stdin`` names (display or dir), else all.
+    """The repos ``run`` targets: ``--repo`` and ``--stdin`` names (display or dir), else all.
 
-    Writable repos only unless ``include_read_only``. An unknown name is a
-    usage error listing the valid ones.
+    Writable repos only unless ``include_read_only``: a read-only ``--repo`` is
+    a usage error, while read-only repos arriving on stdin (``status`` rows
+    list every repo) are dropped. Stdin records of another workspace are
+    ignored, and an empty pipe selects nothing. An unknown name is a usage
+    error listing the valid ones.
     """
-    wanted = list(repo or [])
+    if not (repo or stdin):
+        return [spec for spec in specs if include_read_only or not spec.read_only]
+    chosen = _named_repos(specs, list(repo or []))
+    read_only = sorted(spec.dir for spec in chosen if spec.read_only)
+    if read_only and not include_read_only:
+        raise UsageError(
+            f"read-only repo selected: {', '.join(read_only)}",
+            hint="add --include-read-only to run in read-only repos",
+        )
     if stdin:
-        wanted += _stdin_repo_names()
-    if wanted:
-        by_name = {key: spec for spec in specs for key in (spec.name, spec.dir)}
-        unknown = [name for name in wanted if name not in by_name]
-        if unknown:
-            valid = ", ".join(f"{spec.name} ({spec.dir})" for spec in specs)
-            raise UsageError(f"unknown repo: {', '.join(unknown)}", hint=f"valid repos: {valid}")
-        chosen = {by_name[name] for name in wanted}
-        read_only = sorted(spec.dir for spec in chosen if spec.read_only)
-        if read_only and not include_read_only:
-            raise UsageError(
-                f"read-only repo selected: {', '.join(read_only)}",
-                hint="add --include-read-only to run in read-only repos",
-            )
-        specs = [spec for spec in specs if spec in chosen]
-    return [spec for spec in specs if include_read_only or not spec.read_only]
+        piped = _named_repos(specs, _stdin_repo_names(workspace))
+        chosen |= {spec for spec in piped if include_read_only or not spec.read_only}
+    return [spec for spec in specs if spec in chosen]
 
 
-def _stdin_repo_names() -> list[str]:
-    data = read_stdin_input(accept_kinds=RUN_STDIN_KINDS, what="repos")
+def _named_repos(specs: Sequence[RepoSpec], names: Sequence[str]) -> set[RepoSpec]:
+    by_name = {key: spec for spec in specs for key in (spec.name, spec.dir)}
+    unknown = [name for name in names if name not in by_name]
+    if unknown:
+        valid = ", ".join(f"{spec.name} ({spec.dir})" for spec in specs)
+        raise UsageError(f"unknown repo: {', '.join(unknown)}", hint=f"valid repos: {valid}")
+    return {by_name[name] for name in names}
+
+
+def _stdin_repo_names(workspace: str) -> list[str]:
+    """Repo names piped on stdin; records naming another ``workspace`` are skipped."""
+    data = read_stdin_input(accept_kinds=RUN_STDIN_KINDS, what="repos", allow_empty=True)
     if data.records is None:
         return list(data.values)
     names: list[str] = []
     for envelope in data.records:
-        name = _text(envelope.record.get("repo")) or _text(envelope.record.get("dir"))
+        record = envelope.record
+        if _text(record.get("workspace")) not in (None, workspace):
+            continue
+        name = _text(record.get("repo")) or _text(record.get("dir"))
         if name is None:
             raise UsageError(f"stdin line {envelope.lineno}: record has no repo or dir")
         names.append(name)

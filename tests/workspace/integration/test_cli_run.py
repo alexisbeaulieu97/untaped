@@ -169,3 +169,125 @@ def test_json_mode_keeps_summary_off_stdout(ws: Path) -> None:
     result = run(app, ["run", "J-1", "true", "--format", "json"])
     assert " ok" not in result.stdout
     assert "──" not in result.stdout
+
+
+def _pipe(*args: str) -> str:
+    result = run(app, [*args, "--format", "pipe"])
+    assert result.exit_code == 0, result.output
+    return result.stdout
+
+
+def test_stdin_status_rows_skip_read_only_repos(ws: Path) -> None:
+    piped = _pipe("status", "J-1")
+    result = run(app, ["run", "J-1", "true", "--stdin", "--format", "json"], input=piped)
+    assert result.exit_code == 0, result.output
+    assert [r["dir"] for r in _rows(result)] == ["api"]
+
+
+def test_stdin_status_rows_with_include_read_only(ws: Path) -> None:
+    piped = _pipe("status", "J-1")
+    rows = _rows(
+        run(
+            app,
+            ["run", "J-1", "true", "--stdin", "--include-read-only", "--format", "json"],
+            input=piped,
+        )
+    )
+    assert sorted(r["dir"] for r in rows) == ["api", "docs"]
+
+
+def test_empty_pipe_runs_nothing(ws: Path) -> None:
+    result = run(app, ["run", "J-1", "touch RAN", "--stdin"], input="")
+    assert result.exit_code == 0, result.output
+    assert not (ws / "api" / "RAN").exists()
+
+
+def test_stdin_only_read_only_runs_nothing(ws: Path) -> None:
+    result = run(app, ["run", "J-1", "touch RAN", "--stdin", "--format", "json"], input="docs\n")
+    assert result.exit_code == 0, result.output
+    assert _rows(result) == []
+    assert not (ws / "docs" / "RAN").exists()
+
+
+def test_no_writable_repos_warns_and_exits_zero(
+    make_upstream: Callable[..., Path], workspace_env: Path
+) -> None:
+    created = run(app, ["create", "J-3", "--read-only", str(make_upstream("docs"))])
+    assert created.exit_code == 0, created.output
+    result = run(app, ["run", "J-3", "true"])
+    assert result.exit_code == 0, result.output
+    assert "no repos to run in (read-only repos need --include-read-only)" in result.stderr
+    assert "──" not in result.stdout
+
+
+def test_stdin_pipe_envelope_records(two: Path) -> None:
+    piped = _pipe("status", "J-2")
+    web_only = "".join(line + "\n" for line in piped.splitlines() if '"web"' in line)
+    rows = _rows(run(app, ["run", "J-2", "true", "--stdin", "--format", "json"], input=web_only))
+    assert [r["dir"] for r in rows] == ["web"]
+
+
+def _envelope(template: str, record: dict[str, object]) -> str:
+    envelope = json.loads(template.splitlines()[0])
+    envelope["record"] = record
+    return json.dumps(envelope) + "\n"
+
+
+def test_stdin_records_from_another_workspace_are_ignored(two: Path) -> None:
+    piped = _pipe("status", "J-2")
+    lines = (
+        _envelope(piped, {"workspace": "OTHER", "repo": "acme/api"})
+        + _envelope(piped, {"workspace": "J-2", "repo": "acme/web"})
+        + _envelope(piped, {"workspace": "OTHER", "dir": "nope"})
+    )
+    result = run(app, ["run", "J-2", "true", "--stdin", "--format", "json"], input=lines)
+    assert result.exit_code == 0, result.output
+    assert [r["dir"] for r in _rows(result)] == ["web"]
+
+
+def test_stdin_record_without_repo_or_dir_is_usage(two: Path) -> None:
+    line = _envelope(_pipe("status", "J-2"), {"workspace": "J-2"})
+    result = run(app, ["run", "J-2", "true", "--stdin"], input=line)
+    assert result.exit_code == 2
+    assert "record has no repo or dir" in result.output
+
+
+def test_stdin_script_temp_file_is_removed(ws: Path) -> None:
+    rows = _rows(run(app, ["run", "J-1", "-", "--format", "json"], input='echo "$0"\n'))
+    script = Path(str(rows[0]["stdout"]).strip())
+    assert script.name.endswith(".sh")
+    assert not script.exists()
+
+
+def test_signal_death_names_the_signal(ws: Path) -> None:
+    result = run(app, ["run", "J-1", "kill -TERM $$"])
+    assert result.exit_code == 1
+    assert "── acme/api (api) · killed by SIGTERM ──" in result.stdout
+    rows = _rows(run(app, ["run", "J-1", "kill -TERM $$", "--format", "json"]))
+    assert (rows[0]["returncode"], rows[0]["detail"]) == (-15, "killed by SIGTERM")
+
+
+def test_background_holder_does_not_hold_the_run(ws: Path) -> None:
+    result = run(
+        app, ["run", "J-1", "sleep 30 & echo started", "--timeout", "20", "--format", "json"]
+    )
+    [row] = _rows(result)
+    assert (row["action"], row["returncode"]) == ("ran", 0)
+    assert "started" in str(row["stdout"])
+    assert float(row["duration_s"]) < 15  # not held until the 20s timeout
+
+
+def test_command_after_name_and_double_dash(ws: Path) -> None:
+    rows = _rows(run(app, ["run", "J-1", "--format", "json", "--", "-x"]))
+    assert rows[0]["action"] == "failed"
+
+
+def test_mistyped_long_option_as_command_is_usage(ws: Path) -> None:
+    result = run(app, ["run", "J-1", "--formt"])
+    assert result.exit_code == 2
+
+
+def test_help_names_the_positionals() -> None:
+    result = run(app, ["run", "--help"])
+    assert "run [OPTIONS] [NAME] CMD" in result.stdout
+    assert "NAME_OR_CMD" in result.stdout

@@ -235,3 +235,17 @@ def test_interrupt_cancels_the_runner_and_propagates(tmp_path: Path) -> None:
             _targets(tmp_path, "a", "b"), ["x"]
         )
     assert runner.cancelled
+
+
+def test_signal_death_names_the_signal(tmp_path: Path) -> None:
+    [row] = RunInRepos(FakeRunner({"api": -15}), parallel=1, timeout=5, fail_fast=False)(
+        _targets(tmp_path, "api"), ["x"]
+    )
+    assert (row.action, row.returncode, row.detail) == ("failed", -15, "killed by SIGTERM")
+
+
+def test_unknown_signal_number_still_reads_as_killed(tmp_path: Path) -> None:
+    [row] = RunInRepos(FakeRunner({"api": -200}), parallel=1, timeout=5, fail_fast=False)(
+        _targets(tmp_path, "api"), ["x"]
+    )
+    assert (row.returncode, row.detail) == (-200, "killed by signal 200")
