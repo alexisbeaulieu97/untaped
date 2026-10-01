@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -122,3 +123,69 @@ def test_on_done_streams_each_row(tmp_path: Path) -> None:
         on_done=lambda r: seen.append(r.repo),
     )(_targets(tmp_path, "api", "web"), ["x"])
     assert sorted(seen) == ["acme/api", "acme/web"]
+
+
+class SlowRunner:
+    """Counts concurrent calls; ``slow`` names sleep longer."""
+
+    def __init__(self, codes: Mapping[str, int | None] | None = None, slow: str = "") -> None:
+        self.codes = codes or {}
+        self.slow = slow
+        self.active = 0
+        self.max_active = 0
+        self.started: list[str] = []
+        self.lock = threading.Lock()
+
+    def run(
+        self, argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], timeout: float
+    ) -> CommandResult:
+        with self.lock:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            self.started.append(cwd.name)
+        time.sleep(0.3 if cwd.name == self.slow else 0.05)
+        with self.lock:
+            self.active -= 1
+        return CommandResult(
+            returncode=self.codes.get(cwd.name, 0),
+            stdout="",
+            stderr="",
+            duration_s=0.05,
+            timed_out=False,
+        )
+
+
+def test_parallelism_is_bounded(tmp_path: Path) -> None:
+    runner = SlowRunner()
+    RunInRepos(runner, parallel=2, timeout=5, fail_fast=False)(
+        _targets(tmp_path, "a", "b", "c", "d", "e"), ["x"]
+    )
+    assert runner.max_active == 2
+
+
+def test_fail_fast_with_parallel_lets_running_jobs_finish(tmp_path: Path) -> None:
+    runner = SlowRunner({"a": 1}, slow="b")
+    rows = RunInRepos(runner, parallel=2, timeout=5, fail_fast=True)(
+        _targets(tmp_path, "a", "b", "c", "d"), ["x"]
+    )
+    assert [r.action for r in rows] == ["failed", "ran", "skipped", "skipped"]
+    assert sorted(runner.started) == ["a", "b"]
+
+
+def test_rows_keep_target_order(tmp_path: Path) -> None:
+    rows = RunInRepos(SlowRunner(slow="a"), parallel=2, timeout=5, fail_fast=False)(
+        _targets(tmp_path, "a", "b"), ["x"]
+    )
+    assert [r.repo for r in rows] == ["acme/a", "acme/b"]
+
+
+def test_on_done_called_once_per_row(tmp_path: Path) -> None:
+    seen: list[str] = []
+    RunInRepos(
+        SlowRunner({"a": 1}),
+        parallel=2,
+        timeout=5,
+        fail_fast=True,
+        on_done=lambda r: seen.append(r.repo),
+    )(_targets(tmp_path, "a", "b", "c"), ["x"])
+    assert sorted(seen) == ["acme/a", "acme/b", "acme/c"]

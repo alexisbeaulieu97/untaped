@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from untaped.capabilities.workspace.infrastructure import SubprocessRunner
@@ -49,3 +50,19 @@ def test_unrunnable_file_is_127(tmp_path: Path) -> None:
         [str(script)], cwd=tmp_path, env={}, timeout=10
     )  # not executable
     assert result.returncode == 127
+
+
+def test_timeout_kills_the_process_tree_and_keeps_partial_output(tmp_path: Path) -> None:
+    result = SubprocessRunner().run(
+        ["sh", "-c", "echo partial; sleep 1; touch MARKER"], cwd=tmp_path, env={}, timeout=0.2
+    )
+    time.sleep(1.5)
+    assert (result.timed_out, result.returncode) == (True, None)
+    assert "partial" in result.stdout
+    assert not (tmp_path / "MARKER").exists()
+
+
+def test_bad_input_is_127_not_an_exception(tmp_path: Path) -> None:
+    runner = SubprocessRunner()
+    assert runner.run(["a\0b"], cwd=tmp_path, env={}, timeout=5).returncode == 127
+    assert runner.run([], cwd=tmp_path, env={}, timeout=5).returncode == 127

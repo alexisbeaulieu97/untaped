@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
+import signal
 import subprocess
 import time
 from typing import TYPE_CHECKING
@@ -23,31 +25,28 @@ def _text(data: bytes | str | None) -> str:
 
 
 class SubprocessRunner:
-    """:class:`CommandRunner` backed by ``subprocess.run``; stdin is ``/dev/null``."""
+    """:class:`CommandRunner` backed by ``Popen``; stdin is ``/dev/null``.
+
+    The command runs in its own session so a timeout can kill its whole process tree.
+    """
 
     def run(
         self, argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], timeout: float
     ) -> CommandResult:
         start = time.monotonic()
         try:
-            proc = subprocess.run(
+            if not argv:
+                raise ValueError("empty command")
+            proc = subprocess.Popen(
                 list(argv),
                 cwd=cwd,
                 env={**os.environ, **env},
                 stdin=subprocess.DEVNULL,
-                capture_output=True,
-                timeout=timeout,
-                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
             )
-        except subprocess.TimeoutExpired as exc:
-            return CommandResult(
-                returncode=None,
-                stdout=_text(exc.stdout),
-                stderr=_text(exc.stderr),
-                duration_s=time.monotonic() - start,
-                timed_out=True,
-            )
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             return CommandResult(
                 returncode=127,
                 stdout="",
@@ -55,10 +54,18 @@ class SubprocessRunner:
                 duration_s=time.monotonic() - start,
                 timed_out=False,
             )
+        timed_out = False
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            out, err = proc.communicate()
         return CommandResult(
-            returncode=proc.returncode,
-            stdout=_text(proc.stdout),
-            stderr=_text(proc.stderr),
+            returncode=None if timed_out else proc.returncode,
+            stdout=_text(out),
+            stderr=_text(err),
             duration_s=time.monotonic() - start,
-            timed_out=False,
+            timed_out=timed_out,
         )
