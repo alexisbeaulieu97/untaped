@@ -217,3 +217,72 @@ def test_repo_inventory_scope_includes_the_host() -> None:
         route = mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=ACME[:1]))
         assert [r.full_name for r in repo_inventory().repos] == ["acme/api"]
     assert route.call_count == 1
+
+
+def test_repo_inventory_rejected_token_is_auth_with_a_hint() -> None:
+    _configure("      inventory:\n        orgs: [acme]\n")
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/orgs/acme/repos").mock(
+            return_value=httpx.Response(401, json={"message": "Bad credentials"})
+        )
+        with pytest.raises(UntapedError) as caught:
+            repo_inventory()
+    assert caught.value.category == "auth"
+    assert caught.value.system == "github"
+    assert caught.value.hint is not None
+    assert "github.token" in caught.value.hint
+
+
+def test_repo_inventory_rate_limit_is_unavailable() -> None:
+    _configure("      inventory:\n        orgs: [acme]\n")
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/orgs/acme/repos").mock(
+            return_value=httpx.Response(
+                403,
+                headers={"x-ratelimit-remaining": "0"},
+                json={"message": "API rate limit exceeded for user ID 1."},
+            )
+        )
+        with pytest.raises(UntapedError) as caught:
+            repo_inventory()
+    assert caught.value.category == "unavailable"
+    assert caught.value.system == "github"
+
+
+def test_repo_inventory_bare_team_narrows_default_org() -> None:
+    _configure("      default_org: acme\n      inventory:\n        teams: [platform]\n")
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/orgs/acme/teams/platform/repos").mock(
+            return_value=httpx.Response(200, json=ACME[:1])
+        )
+        assert [r.full_name for r in repo_inventory().repos] == ["acme/api"]
+
+
+def test_repo_inventory_bare_team_resolves_against_the_single_inventory_org() -> None:
+    _configure(
+        "      default_org: other\n      inventory:\n        orgs: [acme]\n"
+        "        teams: [platform]\n"
+    )
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=ACME))
+        mock.get("/orgs/acme/teams/platform/repos").mock(
+            return_value=httpx.Response(200, json=ACME[:1])
+        )
+        assert len(repo_inventory().repos) == 2
+
+
+def test_repo_inventory_without_a_scope_hints_the_fix() -> None:
+    _configure("")
+    with pytest.raises(UntapedError) as caught:
+        repo_inventory()
+    assert caught.value.hint is not None
+    assert "config set github.inventory.orgs" in caught.value.hint
+
+
+def test_repo_inventory_bare_team_without_an_org_hints_the_fix() -> None:
+    _configure("      inventory:\n        teams: [platform]\n")
+    with pytest.raises(UntapedError, match=r"ORG/SLUG") as caught:
+        repo_inventory()
+    assert caught.value.category == "config"
+    assert caught.value.hint is not None
+    assert "github.default_org" in caught.value.hint

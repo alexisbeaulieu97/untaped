@@ -69,7 +69,7 @@ variable shown.
 | `github.sweep.sync_concurrency` | integer | `12` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | Default `sweep --parallel` and `cache sync --parallel` Git workers. |
 | `github.inventory.path` | path | `~/.untaped/github-inventory.json` | `UNTAPED_GITHUB__INVENTORY__PATH` | Cached repository list (metadata only) that the workspace picker searches. |
 | `github.inventory.orgs` | list | empty | `UNTAPED_GITHUB__INVENTORY__ORGS` | Orgs whose repositories the inventory lists. With no orgs or teams, `github.default_org`. |
-| `github.inventory.teams` | list | empty | `UNTAPED_GITHUB__INVENTORY__TEAMS` | Teams (`ORG/SLUG`, or `SLUG` with exactly one org) whose repositories the inventory lists. |
+| `github.inventory.teams` | list | empty | `UNTAPED_GITHUB__INVENTORY__TEAMS` | Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else in `github.default_org`) whose repositories the inventory lists. |
 | `github.inventory.max_age_seconds` | integer | `86400` | `UNTAPED_GITHUB__INVENTORY__MAX_AGE_SECONDS` | Refresh the inventory when it is older than this. |
 
 ## `jira`

@@ -6,19 +6,23 @@ re-exported here for existing importers.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 from untaped.capabilities.github.errors import (
     GitCorpusError,
     GithubError,
     GithubGraphqlError,
     GithubGraphqlErrorKind,
 )
-from untaped.capability_api import HttpError
+from untaped.capability_api import ErrorCategory, HttpError, UntapedError, rejected_token_error
 
 __all__ = [
     "GitCorpusError",
     "GithubError",
     "GithubGraphqlError",
     "GithubGraphqlErrorKind",
+    "github_failures",
     "is_auth_failure",
     "is_global_github_failure",
     "is_rate_limit_failure",
@@ -70,6 +74,26 @@ def is_auth_failure(exc: BaseException) -> bool:
         or (isinstance(current, HttpError) and current.status_code == 401)
         for current in _chain(exc)
     )
+
+
+@contextmanager
+def github_failures() -> Iterator[None]:
+    """Attribute GitHub failures raised inside the block.
+
+    A rejected token (401) becomes the standard ``auth`` error with the
+    ``config set github.token`` hint; a rate limit becomes ``unavailable``
+    (GitHub answers an exhausted budget with 403 too: retry later).
+    """
+    try:
+        yield
+    except UntapedError as exc:
+        if is_auth_failure(exc):
+            raise rejected_token_error(
+                "github", "GitHub rejected the configured token (HTTP 401)", cause=exc
+            ) from exc
+        if is_rate_limit_failure(exc):
+            exc.category = ErrorCategory.UNAVAILABLE
+        raise
 
 
 def is_global_github_failure(exc: BaseException) -> bool:

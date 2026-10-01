@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 from pathlib import Path
+
+import pytest
 
 from untaped.capabilities.github.application.inventory import RepositoryInventoryItem
 from untaped.capabilities.github.application.inventory_cache import RepoInventory
 from untaped.capabilities.github.infrastructure.inventory_store import JsonInventoryStore
+from untaped.capability_api import UntapedError
 
 INVENTORY = RepoInventory(
     repos=(
@@ -53,12 +57,46 @@ def test_save_creates_parent_directories(tmp_path: Path) -> None:
     assert store.load() == INVENTORY
 
 
-def test_lock_is_reentrant_across_instances_in_sequence(tmp_path: Path) -> None:
+def test_lock_can_be_taken_again_after_release(tmp_path: Path) -> None:
     path = tmp_path / "inv.json"
     with JsonInventoryStore(path).lock():
-        pass
+        assert (tmp_path / "inv.json.lock").exists()
     with JsonInventoryStore(path).lock():
         pass
+
+
+_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
+
+
+@pytest.mark.skipif(_ROOT, reason="root ignores directory permissions")
+def test_save_into_a_read_only_directory_is_an_attributed_error(tmp_path: Path) -> None:
+    parent = tmp_path / "ro"
+    parent.mkdir()
+    parent.chmod(0o500)
+    try:
+        with pytest.raises(UntapedError, match="could not write the repository inventory") as e:
+            JsonInventoryStore(parent / "inv.json").save(INVENTORY)
+    finally:
+        parent.chmod(0o700)
+    assert e.value.category == "failed"
+    assert e.value.system == "local"
+
+
+@pytest.mark.skipif(_ROOT, reason="root ignores directory permissions")
+def test_lock_under_a_read_only_directory_is_an_attributed_error(tmp_path: Path) -> None:
+    parent = tmp_path / "ro"
+    parent.mkdir()
+    parent.chmod(0o500)
+    try:
+        with (
+            pytest.raises(UntapedError, match="could not write the repository inventory") as e,
+            JsonInventoryStore(parent / "deep" / "inv.json").lock(),
+        ):
+            pass
+    finally:
+        parent.chmod(0o700)
+    assert e.value.category == "failed"
+    assert e.value.system == "local"
 
 
 def test_naive_timestamp_loads_as_none(tmp_path: Path) -> None:

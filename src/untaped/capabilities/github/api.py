@@ -21,6 +21,7 @@ from untaped.capabilities.github.application.scopes import TeamScope, normalize_
 from untaped.capabilities.github.domain.errors import (
     GithubGraphqlError,
     GithubGraphqlErrorKind,
+    github_failures,
     is_global_github_failure,
 )
 from untaped.capabilities.github.domain.hosts import github_web_host
@@ -75,13 +76,15 @@ def repo_inventory(*, refresh: bool | None = None) -> RepoInventory:
     (``github.inventory.max_age_seconds``) or for another scope; when that
     fetch fails, the stale repos come back with ``error`` set. ``True`` always
     fetches; ``False`` never touches the network. The scope is
-    ``github.inventory.orgs`` and ``teams``, else ``github.default_org``.
+    ``github.inventory.orgs`` and ``teams`` (a bare team slug belongs to the
+    one inventory org, else ``github.default_org``); with neither,
+    ``github.default_org``.
     """
     settings = github_settings()
     scope = _inventory_scope(settings)
 
     def fetch() -> tuple[RepositoryInventoryItem, ...]:
-        with GithubClient(settings, http=get_core_settings().http) as client:
+        with GithubClient(settings, http=get_core_settings().http) as client, github_failures():
             return ResolveRepositoryInventory(client)(scope)
 
     cache = CachedRepoInventory(
@@ -96,20 +99,24 @@ def repo_inventory(*, refresh: bool | None = None) -> RepoInventory:
 def _inventory_scope(settings: GithubSettings) -> RepositoryInventoryScope:
     inventory = settings.inventory
     orgs = tuple(inventory.orgs)
-    if not orgs and not inventory.teams and settings.default_org:
-        orgs = (settings.default_org,)
+    team_orgs = orgs if len(orgs) == 1 or not settings.default_org else (settings.default_org,)
     try:
-        teams = normalize_team_scopes(inventory.teams, orgs=orgs)
+        teams = normalize_team_scopes(inventory.teams, orgs=team_orgs)
     except ValueError as exc:
         raise GithubError(
             "github.inventory.teams entries must be ORG/SLUG unless exactly one org is set",
             category="config",
+            hint="write each team as ORG/SLUG, or run `untaped config set github.default_org ORG`",
         ) from exc
+    if not orgs and not teams and settings.default_org:
+        orgs = (settings.default_org,)
     if not orgs and not teams:
         raise GithubError(
             "the repository inventory has no scope: set github.inventory.orgs, "
             "github.inventory.teams or github.default_org",
             category="config",
+            hint="run `untaped config set github.inventory.orgs '[\"ORG\"]'` "
+            "or `untaped config set github.default_org ORG`",
         )
     return RepositoryInventoryScope(orgs=orgs, teams=teams)
 

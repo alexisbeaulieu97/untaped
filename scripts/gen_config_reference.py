@@ -74,8 +74,8 @@ DESCRIPTIONS: dict[str, str] = {
     "picker searches.",
     "github.inventory.orgs": "Orgs whose repositories the inventory lists. With no orgs "
     "or teams, `github.default_org`.",
-    "github.inventory.teams": "Teams (`ORG/SLUG`, or `SLUG` with exactly one org) whose "
-    "repositories the inventory lists.",
+    "github.inventory.teams": "Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else "
+    "in `github.default_org`) whose repositories the inventory lists.",
     "github.inventory.max_age_seconds": "Refresh the inventory when it is older than this.",
     "jira.base_url": "Jira Data Center URL, for example `https://jira.example.com`.",
     "jira.token": "Jira personal access token. Falls back to `token_command`, then "

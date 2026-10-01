@@ -2,7 +2,8 @@
 
 One file (``github.inventory.path``) holds a versioned document; anything
 unreadable loads as ``None`` so the use case refetches. Writes are atomic and
-refreshes take ``<path>.lock``.
+refreshes take ``<path>.lock``; a disk failure on either is a ``local``
+``failed`` error.
 """
 
 from __future__ import annotations
@@ -53,11 +54,17 @@ class JsonInventoryStore:
             "refreshed_at": inventory.refreshed_at.isoformat() if inventory.refreshed_at else None,
             "repos": [repo.model_dump(mode="json") for repo in inventory.repos],
         }
-        atomic_write(self._path, json.dumps(document, sort_keys=True) + "\n")
+        try:
+            atomic_write(self._path, json.dumps(document, sort_keys=True) + "\n")
+        except OSError as exc:
+            raise self._write_error(exc) from exc
 
     @contextmanager
     def lock(self) -> Iterator[None]:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise self._write_error(exc) from exc
         with file_lock(
             self._path.with_name(self._path.name + ".lock"),
             timeout=self._lock_timeout,
@@ -66,3 +73,11 @@ class JsonInventoryStore:
             failed=f"could not lock the repository inventory {self._path}",
         ):
             yield
+
+    def _write_error(self, exc: OSError) -> GithubError:
+        # A local disk failure, attributed like workspace's and ansible's.
+        return GithubError(
+            f"could not write the repository inventory {self._path}: {exc.strerror or exc}",
+            category="failed",
+            system="local",
+        )
