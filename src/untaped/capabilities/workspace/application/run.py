@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import signal
 from collections.abc import Callable, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
@@ -94,10 +95,20 @@ class RunInRepos:
         if result.timed_out:
             detail = f"timed out after {self._timeout:g}s"
         elif result.returncode:
-            detail = f"exit {result.returncode}"
+            detail = _exit_detail(result.returncode)
         else:
             return _outcome(target, "ran", result)
         return _failed(target, WorkspaceError(detail, category="failed"), result, detail)
+
+
+def _exit_detail(returncode: int) -> str:
+    """``exit N``, or ``killed by SIGTERM`` for a signal death (a negative code)."""
+    if returncode > 0:
+        return f"exit {returncode}"
+    try:
+        return f"killed by {signal.Signals(-returncode).name}"
+    except ValueError:
+        return f"killed by signal {-returncode}"
 
 
 def _env(target: RunTarget) -> dict[str, str]:

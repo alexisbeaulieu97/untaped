@@ -6,9 +6,12 @@ from __future__ import annotations
 import time
 from pathlib import Path
 from threading import Thread
+from types import SimpleNamespace
+
+import pytest
 
 from untaped.capabilities.workspace.domain import CommandResult
-from untaped.capabilities.workspace.infrastructure import SubprocessRunner
+from untaped.capabilities.workspace.infrastructure import SubprocessRunner, command_runner
 
 
 def test_captures_output_and_code(tmp_path: Path) -> None:
@@ -138,3 +141,38 @@ def test_tracking_is_empty_after_normal_and_timeout_runs(tmp_path: Path) -> None
     assert runner.active_count() == 0
     runner.run(["sh", "-c", "sleep 5"], cwd=tmp_path, env={}, timeout=0.2)
     assert runner.active_count() == 0
+
+
+def test_second_interrupt_during_cancel_still_kills(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = SubprocessRunner()
+    results: list[CommandResult] = []
+    thread = _start(runner, "trap '' TERM; touch STARTED; sleep 30", tmp_path, results)
+    _wait_for([tmp_path / "STARTED"])
+
+    def interrupted(_seconds: float) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        command_runner, "time", SimpleNamespace(monotonic=time.monotonic, sleep=interrupted)
+    )
+    with pytest.raises(KeyboardInterrupt):
+        runner.cancel()
+    thread.join(timeout=15)  # the command ignores TERM and would sleep 30s
+    assert not thread.is_alive()
+
+
+def test_background_child_is_stopped_after_the_leader_exits(tmp_path: Path) -> None:
+    started = time.monotonic()
+    result = SubprocessRunner().run(
+        ["sh", "-c", "(sleep 6; touch MARKER) & echo started; exit 3"],
+        cwd=tmp_path,
+        env={},
+        timeout=60,
+    )
+    assert (result.returncode, result.timed_out) == (3, False)
+    assert "started" in result.stdout
+    # Past the background sleep: it would have written MARKER by now.
+    time.sleep(max(0.0, started + 7 - time.monotonic()))
+    assert not (tmp_path / "MARKER").exists()

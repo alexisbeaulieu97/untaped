@@ -245,7 +245,8 @@ def run_command(
     first: Annotated[
         str,
         Parameter(
-            allow_leading_hyphen=True,
+            name="NAME_OR_CMD",
+            allow_leading_hyphen=True,  # the lone command may be `-` (a stdin script)
             help=(
                 "Workspace name, or the command when it is the only argument "
                 "(the workspace is then found from the current directory)."
@@ -255,7 +256,8 @@ def run_command(
     second: Annotated[
         str | None,
         Parameter(
-            allow_leading_hyphen=True,
+            name="CMD",
+            allow_leading_hyphen=True,  # `-` (a stdin script); see run_argv
             help=(
                 "The command: a shell string, a script file, or - to read a script "
                 "from stdin. Runs in each repo directory with stdin from /dev/null."
@@ -314,16 +316,26 @@ def run_command(
     """
     with report_errors():
         name, command = (None, first) if second is None else (first, second)
-        if command == "-" and stdin:
-            raise UsageError("a script on stdin (-) cannot be combined with --stdin")
+        _check_run_positionals(name, command, stdin=stdin)
         settings = workspace_settings()
         record = locate(settings, name)
         specs = select_run_repos(
-            record.repos, repo=repo, stdin=stdin, include_read_only=include_read_only
+            record.repos,
+            workspace=record.name,
+            repo=repo,
+            stdin=stdin,
+            include_read_only=include_read_only,
         )
         root = workspace_dir(settings, record.name)
         targets = [RunTarget(record.name, spec, root / spec.dir) for spec in specs]
         human = fmt == "table"
+        if not targets:
+            ui_context(strict=False).message(
+                "warning", "no repos to run in (read-only repos need --include-read-only)"
+            )
+            if not human:
+                emit([], fmt=fmt, columns=columns, kind=RUN_OUTCOME)
+            return
         with run_argv(command) as argv:
             run = RunInRepos(
                 SubprocessRunner(),
@@ -338,6 +350,22 @@ def run_command(
         else:
             emit(rows, fmt=fmt, columns=columns, kind=RUN_OUTCOME)
     finish(any(row.failed for row in rows))
+
+
+def _check_run_positionals(name: str | None, command: str, *, stdin: bool) -> None:
+    """Usage errors ``run`` catches before touching anything.
+
+    The positionals accept a leading hyphen (``-`` is a stdin script), so a
+    mistyped long option would otherwise run as a command in every repo.
+    """
+    for value in (name, command):
+        if value is not None and value.startswith("--") and " " not in value:
+            raise UsageError(
+                f"unknown option: {value}",
+                hint="a command that starts with -- needs quoting with a space, e.g. ' --x'",
+            )
+    if command == "-" and stdin:
+        raise UsageError("a script on stdin (-) cannot be combined with --stdin")
 
 
 def _echo_block(row: RunOutcome) -> None:
@@ -435,4 +463,4 @@ app.command(list_command, name="list")
 app.command(status_command, name="status")
 app.command(path_command, name="path")
 app.command(archive_command, name="archive")
-app.command(run_command, name="run")
+app.command(run_command, name="run", usage="Usage: untaped workspace run [OPTIONS] [NAME] CMD")

@@ -1,7 +1,8 @@
 # Running a command in each repo
 
 `untaped workspace run [NAME] CMD` runs one command or script in every
-writable repo of a workspace. `NAME` may be left out inside a workspace.
+writable repo of a workspace. `NAME` may be left out inside a workspace: a
+lone positional is always the command.
 
 ## Forms
 
@@ -20,8 +21,13 @@ EOF
   is executable and starts with `#!`; otherwise it runs through `sh`.
 - `-` reads the script from stdin. Nothing piped, or `-` together with
   `--stdin`, exits 2.
+- A command that starts with a hyphen goes after `--`:
+  `untaped workspace run NAME -- -x`. A single word starting with `--`
+  (such as `--formt`) is taken as a mistyped option and exits 2.
 
 Each run starts in the repo directory with stdin from `/dev/null`.
+Background processes the command starts are stopped about 2 seconds after it
+exits; the row keeps the command's own exit status.
 
 ## Environment
 
@@ -46,19 +52,28 @@ takes a display name or a directory name; naming a read-only repo without
 untaped workspace status NAME --format pipe | untaped workspace run NAME 'git stash' --stdin
 ```
 
+- Read-only repos on stdin are dropped unless `--include-read-only`, so the
+  `status` rows of a whole workspace pipe straight in.
+- Records whose `workspace` is another workspace are ignored.
+- With `--repo` as well, both sets run.
+
+When nothing is left to run (an empty pipe, or only read-only repos), `run`
+warns on stderr and exits 0.
+
 ## Failures
 
-Every selected repo runs, and the exit code is 1 if any failed (a non-zero
-status, a timeout, or a missing directory, reported as "missing").
-`--fail-fast` stops starting new repos after the first failure; the rest
-become `skipped` rows. Ctrl-C stops the running commands.
+Every selected repo runs, and the exit code is 1 if any failed: a non-zero
+status, a timeout, a signal (detail `killed by SIGTERM`) or a missing
+directory (`missing`). `--fail-fast` stops starting new repos after the first
+failure; the rest become `skipped` rows. Ctrl-C stops the running commands.
 
 ## Timeouts, parallelism and output
 
-`--timeout` (seconds, above 0, default 600) kills the command's whole process
-tree. `--parallel/-j` sets concurrent repos, defaulting to `workspace.parallel`.
+`--timeout` (seconds per repo) kills the command's whole process tree.
+`--parallel/-j` sets how many repos run at once.
 
-In a terminal, each finished repo prints one block, with the reason in the
-header for failures, then a summary on stderr. `--format json`, `yaml` and
-`pipe` emit `workspace.run_outcome` records only; see
-[output.md](output.md).
+In the default table format, in a terminal or not, each finished repo prints
+one block: a header (with the reason for a failure), the command's stdout,
+then its stderr. Skipped repos print no block. A summary follows on stderr.
+`--format json`, `yaml` and `pipe` emit `workspace.run_outcome` records only;
+see [output.md](output.md).

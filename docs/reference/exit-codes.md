@@ -81,14 +81,13 @@ case $? in
 esac
 ```
 
-## Commands that exit 1 on row failures
-
-`untaped workspace run` exits 1 when the command failed, timed out or the
-repo directory was missing in any repo. Usage errors exit 2.
-
 ## Codes inside records
 
 Some rows carry a code of their own. It never becomes the process exit code:
+
+- `untaped workspace run` reports each repo's command status as `returncode`
+  in its `workspace.run_outcome` row. Any failed repo makes the command exit
+  1, whatever the `returncode`.
 
 - `untaped awx test run` reports each case's result in its rows. A case that
   did not pass carries a `failure` with its own `category` and `system` (such

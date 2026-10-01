@@ -32,6 +32,7 @@ def _signal_group(proc: subprocess.Popen[bytes], sig: int) -> None:
 
 _REAP_TIMEOUT_S = 5.0
 _GRACE_S = 2.0
+_POLL_S = 0.1
 
 
 class SubprocessRunner:
@@ -60,14 +61,16 @@ class SubprocessRunner:
         with self._lock:
             self._cancelled = True
             procs = list(self._live)
-        for proc in procs:
-            _signal_group(proc, signal.SIGTERM)
-        deadline = time.monotonic() + _GRACE_S
-        while time.monotonic() < deadline and any(p.poll() is None for p in procs):
-            time.sleep(0.02)
-        # A dead leader can leave live grandchildren holding the pipes: kill every group.
-        for proc in procs:
-            _signal_group(proc, signal.SIGKILL)
+        try:
+            for proc in procs:
+                _signal_group(proc, signal.SIGTERM)
+            deadline = time.monotonic() + _GRACE_S
+            while time.monotonic() < deadline and any(p.poll() is None for p in procs):
+                time.sleep(0.02)
+        finally:  # a second Ctrl-C during the grace wait must not skip the kill
+            # A dead leader can leave live grandchildren holding the pipes: kill every group.
+            for proc in procs:
+                _signal_group(proc, signal.SIGKILL)
 
     def run(
         self, argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], timeout: float
@@ -108,16 +111,37 @@ class SubprocessRunner:
 
     @staticmethod
     def _collect(proc: subprocess.Popen[bytes], timeout: float, start: float) -> CommandResult:
+        """Wait for the output; past the timeout, or a grace after the leader exits, kill.
+
+        A background process the command started can hold the pipes open after
+        the command itself exits: it gets :data:`_GRACE_S`, then its group is
+        killed and the command's own exit status is reported.
+        """
+        deadline = start + timeout
+        exited_at: float | None = None
         try:
-            raw_out, raw_err = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            _signal_group(proc, signal.SIGKILL)
-            out, err = _drain(proc)
-            return _result(None, out, err, start, timed_out=True)
+            while True:
+                now = time.monotonic()
+                limit = deadline if exited_at is None else min(deadline, exited_at + _GRACE_S)
+                try:
+                    raw_out, raw_err = proc.communicate(timeout=max(0.0, min(limit - now, _POLL_S)))
+                except subprocess.TimeoutExpired:
+                    if exited_at is None and proc.poll() is not None:
+                        exited_at = time.monotonic()
+                    if time.monotonic() >= limit:
+                        break
+                else:
+                    return _result(
+                        proc.returncode, _text(raw_out), _text(raw_err), start, timed_out=False
+                    )
         except BaseException:
             _signal_group(proc, signal.SIGKILL)
             raise
-        return _result(proc.returncode, _text(raw_out), _text(raw_err), start, timed_out=False)
+        _signal_group(proc, signal.SIGKILL)
+        out, err = _drain(proc)
+        if exited_at is None:
+            return _result(None, out, err, start, timed_out=True)
+        return _result(proc.returncode, out, err, start, timed_out=False)
 
 
 def _drain(proc: subprocess.Popen[bytes]) -> tuple[str, str]:

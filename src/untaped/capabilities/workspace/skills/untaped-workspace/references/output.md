@@ -12,6 +12,7 @@ directory for `workspace.workspace`, the repo directory for the others.
 | `create`, `add` | `workspace.repo_outcome` | `repo`, `action` (`created`, `checked_out`, `unchanged`, `failed`), `branch`, `base`, `read_only`, `detail` |
 | `status` | `workspace.status` | `repo`, `branch`, `state` (`ok`, `missing`, `cache_missing`, `error`), `upstream` (null until the branch is on origin), `ahead`, `behind`, `modified`, `untracked`, `stashed`, `unpushed`, `blockers`, `detail` |
 | `archive` | `workspace.archive_outcome` | `repo`, `action` (`removed`, `planned`, `skipped`, `failed`), `detail`; a last row with an empty `repo` is the workspace directory (`skipped` when other files stay in it) |
+| `run` | `workspace.run_outcome` | `repo`, `action` (`ran`, `failed`, `skipped`), `returncode` (null for a timeout or a repo not run; negative for a signal), `stdout`, `stderr`, `duration_s`, `detail` |
 
 `status --fetch` fetches each repo first (status is otherwise offline); a
 repo whose fetch fails keeps its local state, with `detail` "fetch failed:
@@ -32,6 +33,10 @@ default branch apply; its clone URL is used when the inventory lacks it:
 untaped github repos list --team acme/platform --format pipe | untaped workspace create NAME --stdin
 ```
 
+`run --stdin` takes `status`, `create`/`add` or `run` rows (or repo
+names) to choose the repos it runs in; see
+[run.md](run.md#choosing-repos).
+
 `untaped recipe apply --stdin` reads `target_path` from `status` or
 `create` rows:
 
@@ -44,7 +49,7 @@ untaped workspace status NAME --format pipe | untaped recipe apply acme/editorco
 | Code | Meaning |
 |---|---|
 | 0 | Success |
-| 1 | A `failed` row from `create` or `add`; archive refused (blocked repos); a `status --fetch` failure or `error` row; an unknown workspace name; `create` on a name whose directory already holds files |
+| 1 | A `failed` row from `create`, `add` or `run` (see [run.md](run.md#failures)); archive refused (blocked repos); a `status --fetch` failure or `error` row; an unknown workspace name; `create` on a name whose directory already holds files |
 | 2 | Usage error, including no NAME outside a workspace, an unknown repo, or `archive --force` without a terminal and without `--yes` |
 | 3 | `status --check` and some repo would block archive |
 | 4, 5 | By failure category: fix the setup (4), try again later (5) |
