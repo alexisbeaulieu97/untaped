@@ -20,12 +20,10 @@ CAPABILITIES_SRC = REPO_ROOT / "src" / "untaped" / "capabilities"
 
 _KERNEL_SURFACE_MODULES = frozenset({"untaped.capability_api"})
 
-#: Wave 2 amendment 1 (import plan): the single sanctioned cross-capability
-#: import — ansible consumes GitHub behavior only through this closed API
-#: module, also recorded as the [[allow]] entry in
-#: ``docs/dependency-policy.toml``. Blanket sibling imports stay forbidden.
-ANSIBLE_PREFIX = "untaped.capabilities.ansible"
-ANSIBLE_GITHUB_API = "untaped.capabilities.github.ansible"
+#: ``(importing capability, imported module)`` pairs exempt from the
+#: own-subtree rule. ansible reads GitHub only through github's closed
+#: ``ansible`` API module, never its implementation modules.
+ALLOWED_CROSS_CAPABILITY_IMPORTS = frozenset({("ansible", "untaped.capabilities.github.ansible")})
 
 
 def discover_capabilities(src: Path = CAPABILITIES_SRC) -> list[str]:
@@ -115,7 +113,7 @@ def _from_violation(module: str, own_prefix: str) -> str | None:
         return None
     if module == own_prefix or module.startswith(own_prefix + "."):
         return None
-    if module == ANSIBLE_GITHUB_API and own_prefix == ANSIBLE_PREFIX:
+    if (own_prefix.rpartition(".")[2], module) in ALLOWED_CROSS_CAPABILITY_IMPORTS:
         return None
     return (
         "capability code must import kernel helpers only via "
@@ -131,13 +129,26 @@ def _import_violation(name: str, own_prefix: str) -> str | None:
         return None
     if name == own_prefix or name.startswith(own_prefix + "."):
         return None
-    if name == ANSIBLE_GITHUB_API and own_prefix == ANSIBLE_PREFIX:
+    if (own_prefix.rpartition(".")[2], name) in ALLOWED_CROSS_CAPABILITY_IMPORTS:
         return None
     return (
         "capability code must import kernel helpers only via "
         "untaped.capability_api "
         f"and sibling code only from its own {own_prefix} subtree"
     )
+
+
+def imported_modules(capability_dir: Path, own_prefix: str) -> set[str]:
+    """Every absolute module a capability's files import."""
+    modules: set[str] = set()
+    for py_file in capability_dir.rglob("*.py"):
+        package = _package_of(py_file, own_prefix, capability_dir)
+        for node in ast.walk(ast.parse(py_file.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom):
+                modules.update(_resolve_import_from(package, node.level, node.module, node.names))
+            elif isinstance(node, ast.Import):
+                modules.update(alias.name for alias in node.names)
+    return modules
 
 
 def _rel(py_file: Path) -> str:
@@ -152,6 +163,16 @@ def _rel(py_file: Path) -> str:
 
 def test_capability_code_imports_kernel_only_surface() -> None:
     assert surface_violations() == []
+
+
+def test_allowed_cross_capability_imports_are_used() -> None:
+    stale = [
+        (capability, module)
+        for capability, module in sorted(ALLOWED_CROSS_CAPABILITY_IMPORTS)
+        if module
+        not in imported_modules(CAPABILITIES_SRC / capability, f"untaped.capabilities.{capability}")
+    ]
+    assert stale == []
 
 
 # ── negatives (hermetic probes) ──────────────────────────────────────────────

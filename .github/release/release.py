@@ -25,7 +25,6 @@ from _publication import (  # noqa: E402
     prepare_index_upload,
     publish_github_draft,
     run_publication,
-    validate_release_manifest,
     verify_index_artifacts,
 )
 from _release_core import (  # noqa: E402
@@ -33,12 +32,10 @@ from _release_core import (  # noqa: E402
     BUILTIN_CAPABILITIES,
     FULL_SHA_RE,
     MANAGEMENT_COMMANDS,
-    MANIFEST,
     PYPI_INDEX,
     PYPROJECT,
     ROOT,
     SHA256_RE,
-    SOURCE_EVIDENCE_PATH,
     TESTPYPI_INDEX,
     VERSION_RE,
     ReleaseCheckError,
@@ -49,12 +46,10 @@ __all__ = [
     "BUILTIN_CAPABILITIES",
     "FULL_SHA_RE",
     "MANAGEMENT_COMMANDS",
-    "MANIFEST",
     "PYPI_INDEX",
     "PYPROJECT",
     "ROOT",
     "SHA256_RE",
-    "SOURCE_EVIDENCE_PATH",
     "TESTPYPI_INDEX",
     "VERSION_RE",
     "GitHubRelease",
@@ -70,7 +65,6 @@ __all__ = [
     "prepare_index_upload",
     "publish_github_draft",
     "run_publication",
-    "validate_release_manifest",
     "verify_index_artifacts",
 ]
 
@@ -235,11 +229,6 @@ def _handle_smoke_unified(args: argparse.Namespace) -> None:
 
 
 def _handle_verify_candidate(args: argparse.Namespace) -> None:
-    validate_release_manifest(
-        args.manifest,
-        pyproject_path=args.pyproject,
-        lock_path=ROOT / "uv.lock",
-    )
     candidate = _collect_cli_candidate(args)
     print(f"ok: candidate {candidate.candidate_oid} has {len(candidate.artifacts)} exact artifacts")
 
@@ -275,15 +264,6 @@ def _handle_publish_github_draft(args: argparse.Namespace) -> None:
     print(f"ok: GitHub release {release.tag} is published")
 
 
-def _handle_verify_manifest(args: argparse.Namespace) -> None:
-    validate_release_manifest(
-        args.manifest,
-        pyproject_path=args.pyproject,
-        lock_path=args.lock,
-    )
-    print(f"ok: release manifest {args.manifest} matches package metadata and lockfile")
-
-
 _COMMAND_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "verify-version": _handle_verify_version,
     "smoke-unified": _handle_smoke_unified,
@@ -292,7 +272,6 @@ _COMMAND_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "verify-index-artifacts": _handle_verify_index_artifacts,
     "prepare-index-upload": _handle_prepare_index_upload,
     "publish-github-draft": _handle_publish_github_draft,
-    "verify-manifest": _handle_verify_manifest,
 }
 
 
@@ -317,7 +296,6 @@ def main(argv: list[str] | None = None) -> int:
     candidate_parser.add_argument("--current-oid", required=True)
     candidate_parser.add_argument("--dist", type=Path, required=True)
     candidate_parser.add_argument("--pyproject", type=Path, default=PYPROJECT)
-    candidate_parser.add_argument("--manifest", type=Path, default=MANIFEST)
 
     draft_parser = subparsers.add_parser("ensure-github-draft")
     draft_parser.add_argument("--version", required=True)
@@ -353,11 +331,6 @@ def main(argv: list[str] | None = None) -> int:
     publish_parser.add_argument("--repo", required=True)
     publish_parser.add_argument("--token", default=os.environ.get("GH_TOKEN"))
     publish_parser.add_argument("--pyproject", type=Path, default=PYPROJECT)
-
-    manifest_parser = subparsers.add_parser("verify-manifest")
-    manifest_parser.add_argument("--manifest", type=Path, default=MANIFEST)
-    manifest_parser.add_argument("--pyproject", type=Path, default=PYPROJECT)
-    manifest_parser.add_argument("--lock", type=Path, default=ROOT / "uv.lock")
 
     args = parser.parse_args(argv)
     handler = _COMMAND_HANDLERS[args.command]
