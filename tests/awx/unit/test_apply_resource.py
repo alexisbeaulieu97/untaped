@@ -506,10 +506,12 @@ def test_undeclared_encrypted_warns_and_drops() -> None:
 def test_create_with_optional_placeholder_secret_drops_it() -> None:
     """A new JT's optional `host_config_key` placeholder is dropped, not an error."""
     strategy = _StubStrategy(existing=None)
+    warnings: list[str] = []
     apply = _make_apply(
         catalog_specs={"JobTemplate": JOB_TEMPLATE_SPEC},
         fk_names={("Organization", "Default"): 1},
         strategy=strategy,
+        warn=warnings,
     )
     resource = Resource(
         kind="JobTemplate",
@@ -519,6 +521,26 @@ def test_create_with_optional_placeholder_secret_drops_it() -> None:
     apply(resource, write=True)
     assert strategy.created is not None
     assert "host_config_key" not in strategy.created
+    assert any("host_config_key placeholders dropped" in w for w in warnings)
+
+
+def test_create_with_required_placeholder_secret_errors() -> None:
+    """A declared, non-optional secret holding `$encrypted$` refuses the create."""
+    strategy = _StubStrategy(existing=None)
+    required = JOB_TEMPLATE_SPEC.model_copy(update={"optional_secret_paths": ()})
+    apply = _make_apply(
+        catalog_specs={"JobTemplate": required},
+        fk_names={("Organization", "Default"): 1},
+        strategy=strategy,
+    )
+    resource = Resource(
+        kind="JobTemplate",
+        metadata=Metadata(name="deploy", organization="Default"),
+        spec={"playbook": "deploy.yml", "host_config_key": "$encrypted$"},
+    )
+    with pytest.raises(BadRequestError, match="placeholder secrets"):
+        apply(resource, write=True)
+    assert strategy.created is None
 
 
 def test_fks_resolved_for_create() -> None:
