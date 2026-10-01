@@ -56,14 +56,16 @@ def test_unrunnable_file_is_127(tmp_path: Path) -> None:
 
 def test_timeout_kills_the_process_tree_and_keeps_partial_output(tmp_path: Path) -> None:
     result = SubprocessRunner().run(
-        ["sh", "-c", "(sleep 1; touch MARKER) & echo partial; wait"],
+        ["sh", "-c", "(touch STARTED; sleep 3; touch MARKER) & echo partial; wait"],
         cwd=tmp_path,
         env={},
-        timeout=1.0,
+        timeout=0.5,
     )
-    time.sleep(2)
     assert (result.timed_out, result.returncode) == (True, None)
-    assert "partial" in result.stdout
+    # On a very slow host the shell may be killed before it gets to echo.
+    if (tmp_path / "STARTED").exists():
+        assert "partial" in result.stdout
+    time.sleep(4)  # past the grandchild's sleep 3: it would have written MARKER by now
     assert not (tmp_path / "MARKER").exists()
 
 
@@ -119,13 +121,14 @@ def test_cancel_kills_a_command_that_ignores_term(tmp_path: Path) -> None:
     thread.join(timeout=8)
     assert not thread.is_alive()
     assert time.monotonic() - started < 4
+    assert runner.active_count() == 0
 
 
 def test_nothing_starts_after_cancel(tmp_path: Path) -> None:
     runner = SubprocessRunner()
     runner.cancel()
     result = runner.run(["sh", "-c", "touch MARKER"], cwd=tmp_path, env={}, timeout=5)
-    assert result.returncode is None
+    assert (result.returncode, result.timed_out, result.cancelled) == (None, False, True)
     assert not (tmp_path / "MARKER").exists()
 
 

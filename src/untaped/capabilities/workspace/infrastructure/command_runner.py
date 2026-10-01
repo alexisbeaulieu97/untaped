@@ -74,7 +74,14 @@ class SubprocessRunner:
     ) -> CommandResult:
         start = time.monotonic()
         if self._is_cancelled():
-            return _result(None, "", "cancelled\n", start, timed_out=False)
+            return CommandResult(
+                returncode=None,
+                stdout="",
+                stderr="",
+                duration_s=0.0,
+                timed_out=False,
+                cancelled=True,
+            )
         try:
             if not argv:
                 raise ValueError("empty command")

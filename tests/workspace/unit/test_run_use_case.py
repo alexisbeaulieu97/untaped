@@ -111,6 +111,27 @@ def test_timeout_is_a_failure(tmp_path: Path) -> None:
     assert (row.action, row.returncode, row.detail) == ("failed", None, "timed out after 5s")
 
 
+class CancelledRunner(FakeRunner):
+    def run(
+        self, argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], timeout: float
+    ) -> CommandResult:
+        return CommandResult(
+            returncode=None, stdout="", stderr="", duration_s=0.0, timed_out=False, cancelled=True
+        )
+
+
+def test_cancelled_run_is_skipped(tmp_path: Path) -> None:
+    [row] = RunInRepos(CancelledRunner({}), parallel=1, timeout=5, fail_fast=False)(
+        _targets(tmp_path, "api"), ["x"]
+    )
+    assert (row.action, row.returncode, row.detail, row.error) == (
+        "skipped",
+        None,
+        "cancelled",
+        None,
+    )
+
+
 def test_missing_dir_fails_without_running(tmp_path: Path) -> None:
     [target] = _targets(tmp_path, "api")
     target.path.rmdir()
