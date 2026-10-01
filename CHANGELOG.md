@@ -11,6 +11,7 @@
     no longer limited to a closed verb list.
   - **New:** `untaped.testing.check_conventions(NAME)` runs the convention
     checks for any capability, plugins included.
+  - **New:** `report_row_errors` reports each failed row's error and hint.
   - **New (SDK):** `UiContext.pick_many` opens an inline two-pane picker: fuzzy
     search with multi-select on the left, per-item settings on the right
     (`PickRequest`, `PickItem`, `PickSetting`, `PickCatalog`, `PickResult`,
@@ -22,8 +23,8 @@
 - Workspace
   - **Breaking:** a cache left by untaped 9.x is refused; delete
     `~/.untaped/repositories` (or the configured `workspace.cache_dir`).
-  - **New:** `workspace create` and `add` print failed rows' errors with
-    hints on stderr.
+  - **New:** `workspace create`, `add` and `archive` print failed rows'
+    errors with hints on stderr.
   - **Breaking:** `untaped workspace` now manages task workspaces of git
     worktrees (`create`, `add`, `list`, `status`, `path`, `archive`, `run`)
     and is experimental.

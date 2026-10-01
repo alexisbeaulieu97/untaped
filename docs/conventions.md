@@ -73,7 +73,7 @@ the helpers do this for you, so never print a JSON line yourself.
 | Message | Shape | Helper |
 |---|---|---|
 | Error | `error: <msg>`: lowercase, no trailing period | Raise an `UntapedError`; `report_errors()` prints it. |
-| Per-item error | `error: <item>: <msg>` | `resolve_each`, `batch_apply`, `report_error(exc, item=…)` |
+| Per-item error | `error: <item>: <msg>` | `resolve_each`, `batch_apply`, `report_error(exc, item=…)`, `report_row_errors(rows, item=…)` for failed rows |
 | Not found | `<noun> not found: 'x'; known: a, b` | `not_found("profile", name, known=names)` |
 | Quoted name | `'name'` | `q(name)` |
 | Count | `3 repos`, never `repo(s)` | `plural(3, "repo")` |
@@ -209,5 +209,5 @@ free, but a command that writes declares it with `@writes`, or
 ## Enforcement
 
 `untaped.testing.check_conventions(NAME)` runs these checks for one
-capability; each capability's tests call it. A line can opt out of one rule
-with `# untaped: allow <rule>`, placed on the first line of the flagged node.
+capability; each capability's tests call it. `# untaped: allow <rule>` on the
+flagged node's first line allows that one violation.

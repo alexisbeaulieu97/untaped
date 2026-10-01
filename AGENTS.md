@@ -52,7 +52,7 @@ Commands follow [`docs/conventions.md`](docs/conventions.md) (flags,
 messages, exit codes, record shapes) through the `untaped.sdk` helpers it
 lists: `UsageError`, shared option aliases, `plural`/`q`/`not_found`/`hint`,
 `ui.success`, `batch_apply`/`ui.confirm_action`, `read_identifiers(accept_kinds=…)`,
-and the `OutcomeRecord`/`TargetRecord` bases. each capability's tests run
+and the `OutcomeRecord`/`TargetRecord` bases. Each capability's tests run
 `untaped.testing.check_conventions`. Every error raises with
 a `category` and `system` (class defaults in the capability's `errors.py`) and
 keeps that attribution when replaced or turned into a row; see
