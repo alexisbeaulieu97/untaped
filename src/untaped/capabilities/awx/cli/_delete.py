@@ -30,11 +30,13 @@ from untaped.sdk import (
     emit,
     finish,
     report_errors,
+    writes,
 )
 
 
 def _add_delete(app: App, spec: AwxResourceSpec) -> None:
     @app.command(name="delete")
+    @writes(destructive=True)
     def delete_command(
         names: NamesArgument = None,
         /,

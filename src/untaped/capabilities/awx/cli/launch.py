@@ -48,6 +48,7 @@ from untaped.sdk import (
     raise_usage,
     read_structured_file,
     report_errors,
+    writes,
 )
 
 
@@ -61,6 +62,7 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
     hidden_by_flag = {f.flag: f.accepts_key not in accepts for f in LAUNCH_FLAGS}
 
     @app.command(name="launch")
+    @writes
     def launch_command(
         names: NamesArgument = None,
         /,

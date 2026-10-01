@@ -30,6 +30,7 @@ from untaped.cli import (
     create_app,
     emit,
     report_errors,
+    writes,
 )
 from untaped.config.repository import SettingsFileRepository
 from untaped.config_file import read_config_dict
@@ -75,6 +76,7 @@ def build_root_alias_app(*, builtin_for: Callable[[str], str | None]) -> App:
     app = create_app(name="alias", help="Manage command aliases (``untaped NAME [ARGS…]``).")
 
     @app.command(name="set")
+    @writes
     def set_command(
         name: Annotated[str, Parameter(help="Alias name (lowercase letters, digits, dashes).")],
         /,
@@ -131,6 +133,7 @@ def build_root_alias_app(*, builtin_for: Callable[[str], str | None]) -> App:
             )
 
     @app.command(name="remove")
+    @writes(destructive=True)
     def remove_command(
         name: Annotated[str, Parameter(help="Alias to remove from the profile.")],
         /,

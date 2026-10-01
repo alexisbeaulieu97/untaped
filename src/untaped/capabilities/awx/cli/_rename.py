@@ -26,11 +26,13 @@ from untaped.sdk import (
     emit,
     q,
     report_errors,
+    writes,
 )
 
 
 def _add_rename(app: App, spec: AwxResourceSpec) -> None:
     @app.command(name="rename")
+    @writes
     def rename_command(
         source: Annotated[
             str, Parameter(help="Current name of the resource, or its AWX id with --by-id.")

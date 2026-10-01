@@ -21,6 +21,7 @@ from untaped.cli import (
     echo,
     emit,
     report_errors,
+    writes,
 )
 from untaped.config_schema import redact_secrets, secret_field_paths
 from untaped.messages import q
@@ -185,6 +186,7 @@ def _current_command() -> None:
         echo(f"(source: {result.source})", err=True)
 
 
+@writes
 def _create_command(
     name: Annotated[str, Parameter(help="Name of the new profile.")],
     /,
@@ -209,6 +211,7 @@ def _create_command(
         emit(outcome, fmt=fmt, columns=columns, kind=_PROFILE_OUTCOME)
 
 
+@writes(destructive=True)
 def _delete_command(
     name: Annotated[str, Parameter(help="Profile to remove.")],
     /,
@@ -238,6 +241,7 @@ def _delete_command(
         emit(outcome, fmt=fmt, columns=columns, kind=_PROFILE_OUTCOME)
 
 
+@writes
 def _rename_command(
     old_name: Annotated[str, Parameter(help="Existing profile name.")],
     new_name: Annotated[str, Parameter(help="New profile name.")],

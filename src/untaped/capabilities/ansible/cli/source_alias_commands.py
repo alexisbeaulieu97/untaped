@@ -23,6 +23,7 @@ from untaped.sdk import (
     not_found,
     q,
     report_errors,
+    writes,
 )
 
 app = create_app(
@@ -33,6 +34,7 @@ _KIND = "ansible.source_alias_outcome"
 
 
 @app.command(name="set")
+@writes
 def alias_set_command(
     alias: Annotated[str, Parameter(help="Alias to set.")],
     repo: Annotated[str, Parameter(help="Canonical GitHub owner/repo.")],
@@ -79,6 +81,7 @@ def alias_list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = 
 
 
 @app.command(name="remove")
+@writes(destructive=True)
 def alias_remove_command(
     alias: Annotated[str, Parameter(help="Alias to remove.")],
     /,

@@ -70,6 +70,7 @@ from untaped.sdk import (
     report_errors,
     summary,
     ui_context,
+    writes,
 )
 
 if TYPE_CHECKING:
@@ -262,6 +263,7 @@ def _jt_scope(ctx: AwxContext, spec: AwxResourceSpec) -> dict[str, str] | None:
 
 
 @app.command(name="run")
+@writes
 def run_command(
     paths: _PATHS_ARG = None,
     /,
@@ -803,6 +805,7 @@ def _validate(
 
 
 @app.command(name="prune")
+@writes(destructive=True)
 def prune_command(
     *,
     older_than: Annotated[

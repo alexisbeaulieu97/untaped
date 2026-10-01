@@ -11,11 +11,12 @@ and checks each visible command against ``docs/conventions.md``:
 - ``positional-or-keyword`` — a parameter can be passed both ways (options
   must never be positional);
 - ``command-name`` — a command or group name is not kebab-case;
-- ``verb`` — a leaf verb is outside the closed verb set;
 - ``reserved-short`` — a reserved short flag means something else;
 - ``ambiguous-short`` — a non-reserved short flag has two meanings;
-- ``mutation-format`` — a mutation verb has no ``--format``;
-- ``destructive-controls`` — a destructive verb lacks ``--yes``/``--dry-run``.
+- ``undeclared-write`` — a command exposes ``--yes``/``--dry-run`` without
+  declaring ``@writes``;
+- ``mutation-format`` — a declared write has no ``--format``;
+- ``destructive-controls`` — a destructive command lacks ``--yes``/``--dry-run``.
 
 Existing violations live in ``baselines/help_tree/<owner>.txt``.
 """
@@ -26,77 +27,17 @@ import inspect
 import re
 from collections import Counter, defaultdict
 from collections.abc import Iterator
-from typing import Any
+from typing import Annotated, Any
 
-from cyclopts import App
+from cyclopts import App, Parameter
 
 from untaped.bootstrap import build_root_app
+from untaped.cli import write_kind
 
 ROOT_COMMANDS = frozenset(
     {"config", "profile", "skills", "doctor", "capabilities", "setup", "alias"}
 )
 
-VERBS = frozenset(
-    {
-        # read
-        "list",
-        "get",
-        "status",
-        "whoami",
-        "ping",
-        "path",
-        # write
-        "create",
-        "set",
-        "unset",
-        "add",
-        "remove",
-        "delete",
-        "prune",
-        "edit",
-        "patch",
-        "apply",
-        "copy",
-        "rename",
-        "archive",
-        # update
-        "sync",
-        "refresh",
-        # query
-        "find",
-        "deps",
-        "impact",
-        "graph",
-        # other
-        "export",
-        "init",
-        "run",
-        "launch",
-        "wait",
-        "validate",
-        "test",
-        "cancel",
-        "relaunch",
-        "schema",
-    }
-)
-MUTATION_VERBS = frozenset(
-    {
-        "create",
-        "set",
-        "unset",
-        "add",
-        "remove",
-        "delete",
-        "prune",
-        "patch",
-        "apply",
-        "copy",
-        "rename",
-        "archive",
-    }
-)
-DESTRUCTIVE_VERBS = frozenset({"delete", "remove", "prune", "cancel", "archive"})
 RESERVED_SHORTS = {
     "-f": "--format",
     "-c": "--columns",
@@ -143,9 +84,6 @@ def _command_violations(path: tuple[str, ...], app: App) -> Iterator[tuple[str, 
         yield "command-name", name
     if app.default_command is None:
         return
-    has_subcommands = any(True for _ in _subcommands(app))
-    if not has_subcommands and name not in VERBS and path[0] not in ROOT_COMMANDS:
-        yield "verb", name
     arguments = [
         argument
         for argument in app.assemble_argument_collection(parse_docstring=True)
@@ -153,9 +91,12 @@ def _command_violations(path: tuple[str, ...], app: App) -> Iterator[tuple[str, 
     ]
     yield from _argument_violations(arguments)
     options = {flag for argument in arguments for flag in argument.names}
-    if name in MUTATION_VERBS and "--format" not in options:
+    kind = write_kind(app.default_command)
+    if kind is None and options & {"--yes", "--dry-run"}:
+        yield "undeclared-write", " ".join(sorted(options & {"--yes", "--dry-run"}))
+    if kind is not None and "--format" not in options:
         yield "mutation-format", name
-    if name in DESTRUCTIVE_VERBS:
+    if kind == "destructive":
         for flag in ("--yes", "--dry-run"):
             if flag not in options:
                 yield "destructive-controls", flag
@@ -220,3 +161,36 @@ def collect_violations() -> dict[str, list[str]]:
 
 def test_help_tree_follows_the_command_grammar(baseline: Any) -> None:
     baseline("help_tree", collect_violations())
+
+
+def _leaf(*, declare: str | None) -> App:
+    from untaped.sdk import create_app, writes
+
+    app = create_app(name="demo")
+
+    def body(
+        *,
+        yes: Annotated[bool, Parameter(name="--yes", help="Skip confirmation.")] = False,
+        dry_run: Annotated[bool, Parameter(name="--dry-run", help="Preview.")] = False,
+        format: Annotated[str, Parameter(name="--format", help="Output format.")] = "table",
+    ) -> None:
+        """Do it."""
+
+    if declare == "write":
+        body = writes(body)
+    elif declare == "destructive":
+        body = writes(destructive=True)(body)
+    app.command(body, name="nuke")
+    return app["nuke"]
+
+
+def test_flags_without_a_declaration_are_flagged() -> None:
+    rules = {rule for rule, _ in _command_violations(("demo", "nuke"), _leaf(declare=None))}
+    assert "undeclared-write" in rules
+
+
+def test_any_name_is_fine_when_declared() -> None:
+    rules = {
+        rule for rule, _ in _command_violations(("demo", "nuke"), _leaf(declare="destructive"))
+    }
+    assert "verb" not in rules and "undeclared-write" not in rules

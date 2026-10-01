@@ -47,6 +47,7 @@ from untaped.sdk import (
     report_errors,
     resolve_each,
     resolve_text_input,
+    writes,
 )
 
 if TYPE_CHECKING:
@@ -434,6 +435,7 @@ def _send(
 
 
 @issues_app.command(name="create")
+@writes
 def issue_create_command(
     *,
     fields_file: FieldsFileOption = None,
@@ -486,6 +488,7 @@ def issue_create_command(
 
 
 @issues_app.command(name="patch")
+@writes
 def issue_patch_command(
     key: IssueKeyArgument,
     /,
@@ -569,6 +572,7 @@ def issue_patch_command(
 
 
 @issues_app.command(name="comment")
+@writes
 def issue_comment_command(
     key: IssueKeyArgument,
     /,
@@ -642,6 +646,7 @@ def issue_transitions_command(
 
 
 @issues_app.command(name="transition")
+@writes
 def issue_transition_command(
     keys: IssueKeysArgument = None,
     /,
@@ -744,6 +749,7 @@ def issue_transition_command(
 
 
 @links_app.command(name="create")
+@writes
 def link_create_command(
     key: IssueKeyArgument,
     link_type: Annotated[str, Parameter(help="Link type name (e.g. Blocks, Relates).")],
