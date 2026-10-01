@@ -157,6 +157,14 @@ def test_an_external_capability_fails_with_every_violation_in_its_own_files(
     )
 
 
+def test_a_main_module_is_checked_without_running_it(
+    demo: list[ExternalProvider], tmp_path: Path
+) -> None:
+    main = tmp_path / "site" / "demo_plugin" / "__main__.py"
+    main.write_text('"""Demo entry point."""\n\nraise SystemExit("ran __main__")\n')
+    assert capability_violations("demo", externals=demo) == _FOUND
+
+
 def test_a_quarantined_provider_is_warned_about_once(
     demo: list[ExternalProvider], capsys: pytest.CaptureFixture[str]
 ) -> None:
