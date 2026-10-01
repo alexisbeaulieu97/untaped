@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -94,3 +95,18 @@ class WorktreeStatus(BaseModel):
     stashed: int
     unpushed: int
     submodules: bool = False
+
+
+@dataclass(frozen=True)
+class CommandResult:
+    """What one command run produced; ``returncode`` is ``None`` when it timed out or was cancelled.
+
+    ``cancelled`` means the runner was cancelled before the command started.
+    """
+
+    returncode: int | None
+    stdout: str
+    stderr: str
+    duration_s: float
+    timed_out: bool
+    cancelled: bool = False

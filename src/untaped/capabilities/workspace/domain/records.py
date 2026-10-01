@@ -83,3 +83,28 @@ class ArchiveOutcome(OutcomeRecord, TargetRecord):
     repo: str
     action: ArchiveAction
     detail: str = ""
+
+
+RunAction = Literal["ran", "failed", "skipped"]
+
+
+class RunOutcome(OutcomeRecord, TargetRecord):
+    """``workspace.run_outcome``: what ``run`` did for one repo."""
+
+    table_columns: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "action",
+        "returncode",
+        "duration_s",
+        "detail",
+    )
+
+    workspace: str
+    repo: str
+    dir: str
+    action: RunAction
+    returncode: int | None = None
+    stdout: str = ""
+    stderr: str = ""
+    duration_s: float = 0.0
+    detail: str = ""

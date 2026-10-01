@@ -58,6 +58,17 @@ cd "$(untaped workspace path PROJ-123)"
 `untaped workspace list` shows active workspaces (`--archived` the rest).
 Inside a workspace directory, the name may be left out.
 
+## Run a command in every repo
+
+```bash
+untaped workspace run PROJ-123 'git push -u origin HEAD'
+```
+
+`run` also takes a script file or a script on stdin, runs in the writable
+repos, and exits 1 if any repo failed. Forms, environment variables,
+selection and timeouts are in the
+[run reference](../../src/untaped/capabilities/workspace/skills/untaped-workspace/references/run.md).
+
 ## Settings
 
 `workspace.cache_dir`, `workspaces_dir`, `parallel`, `branch_template` and
