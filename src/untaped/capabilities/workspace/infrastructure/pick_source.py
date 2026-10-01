@@ -69,7 +69,8 @@ class RepoPickSource:
     def catalog(self, *, refresh: bool | None) -> PickCatalog:
         """Inventory items then cached-only repos; a footer note says how fresh that is."""
         note, inventory, known = self._inventory_items(refresh)
-        loaded: list[tuple[PickItem, _Entry]] = [*inventory, *self._cached_items(known)]
+        cached = self._cached_items(known, taken={item.id for item, _ in inventory})
+        loaded: list[tuple[PickItem, _Entry]] = [*inventory, *cached]
         self._loaded = {item.id: entry for item, entry in loaded}
         self._seen.update({item.id: url for item, url in inventory if url})
         return PickCatalog(items=tuple(item for item, _ in loaded), note=note)
@@ -135,11 +136,18 @@ class RepoPickSource:
             items.append((item, repo.clone_url or repo.ssh_url))
         return _note(inventory), items, known
 
-    def _cached_items(self, known: Collection[_Key]) -> list[tuple[PickItem, CachedRepo]]:
-        """Cached repos neither in ``known`` (the inventory's) nor excluded."""
+    def _cached_items(
+        self, known: Collection[_Key], *, taken: Collection[str]
+    ) -> list[tuple[PickItem, CachedRepo]]:
+        """Cached repos neither in ``known`` (the inventory's) nor excluded.
+
+        A cached id in ``taken`` (the inventory's ids) is skipped: an owner-less
+        cache on a dotless host (``acme/api.git``) would otherwise shadow the
+        inventory's ``acme/api``.
+        """
         items: list[tuple[PickItem, CachedRepo]] = []
         for cached in self._git.cached_repos():
-            if cached.key in known or cached.key in self._exclude:
+            if cached.key in known or cached.key in self._exclude or cached.ident in taken:
                 continue
             if cached.origin and repo_key(cached.origin) != cached.key:
                 continue  # rewritten origin: would fill another cache

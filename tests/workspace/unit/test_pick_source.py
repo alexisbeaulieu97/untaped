@@ -229,3 +229,15 @@ def test_an_owner_less_hosted_cache_is_offered() -> None:
     items = _source(git, inventory=_no_inventory).catalog(refresh=False).items
     assert [i.id for i in items] == ["git.example/project"]
     assert repo_key("https://git.example/project.git") == ("git.example", "project.git")
+
+
+def test_a_cached_id_never_shadows_an_inventory_id() -> None:
+    """An owner-less cache on a dotless host (``acme/api.git``) has the id ``acme/api``."""
+    git = FakeGit(_cached("acme/api", "http://acme/api.git"))
+    source = _source(git, inventory=_inventory())
+    ids = [item.id for item in source.catalog(refresh=False).items]
+    assert ids == ["acme/api", "acme/old"]
+    assert source.pick_arg(RepoArg(ident="acme/api")) == RepoArg(
+        ident="acme/api", fallback="https://github.com/acme/api.git"
+    )
+    assert source.url_for("acme/api") == "https://github.com/acme/api.git"
