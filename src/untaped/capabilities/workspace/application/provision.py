@@ -22,7 +22,7 @@ from untaped.capabilities.workspace.domain.naming import (
     validate_workspace_name,
 )
 from untaped.capabilities.workspace.domain.records import RepoOutcome
-from untaped.capability_api import UntapedError, UsageError, bounded_map, hint, note_failure
+from untaped.capability_api import UntapedError, UsageError, bounded_map, note_failure
 
 if TYPE_CHECKING:
     from untaped.capabilities.workspace.application.ports import (
@@ -69,7 +69,9 @@ class ProvisionRepos:
         """Create workspace ``name`` and check out ``repos`` into it."""
         validate_workspace_name(name)
         if not repos:
-            raise UsageError("no repos given", hint=hint(f"workspace create {name} --repo REPO"))
+            raise UsageError(
+                "no repos given", hint=f"run `untaped workspace create {name} --repo REPO`"
+            )
         resolved = self._resolve(repos)
         record = WorkspaceRecord(name=name, created_at=self._now())
         self._store.create(record)
@@ -80,7 +82,7 @@ class ProvisionRepos:
         """Check out ``repos`` into the existing workspace ``record``."""
         if not repos:
             raise UsageError(
-                "no repos given", hint=hint(f"workspace add {record.name} --repo REPO")
+                "no repos given", hint=f"run `untaped workspace add {record.name} --repo REPO`"
             )
         resolved = self._resolve(repos)
         self._workspace_dir(record.name).mkdir(parents=True, exist_ok=True)

@@ -19,6 +19,8 @@ if TYPE_CHECKING:
     from untaped.capabilities.github.api import RepositoryInventoryItem
 
 _SCP = re.compile(r"^[\w.-]+@[\w.-]+:.+")
+_SLUG = re.compile(r"[A-Za-z0-9][\w.-]*")
+"""An owner or repo name a URL may be built from (so ``./x`` never becomes one)."""
 _REFRESH_HINT = (
     "check the name, or the github.inventory orgs/teams settings that scope the inventory"
 )
@@ -64,7 +66,7 @@ class GithubRepoCatalog:
 
     def _without_inventory(self, ident: str, error: UntapedError) -> ResolvedRepo:
         owner, _, name = ident.partition("/")
-        if owner and name and "/" not in name:
+        if _SLUG.fullmatch(owner) and _SLUG.fullmatch(name):
             host = _web_host()
             if host:
                 url = (
