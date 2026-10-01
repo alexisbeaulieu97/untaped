@@ -287,6 +287,56 @@ def test_patch_rejects_local_path_on_scm_project(fake_aap: Any) -> None:
     assert "server-derived" in result.output
 
 
+def test_patch_scm_project_to_manual_sends_local_path(fake_aap: Any) -> None:
+    seed(fake_aap, "projects")
+    fake_aap.seed(
+        "projects",
+        id=11,
+        name="scm",
+        organization=1,
+        scm_type="git",
+        local_path="_11__scm",
+        summary_fields={"organization": {"id": 1, "name": "Default"}},
+    )
+    result = CliInvoker().invoke(
+        app,
+        ["projects", "patch", "scm", "--set", "scm_type=", "--set", "local_path=x", "--yes"],
+    )
+    assert result.exit_code == 0, result.output
+    record = fake_aap.get_record("projects", 11)
+    assert record["scm_type"] == ""
+    assert record["local_path"] == "x"
+
+
+def test_patch_manual_project_to_scm_accepts_unchanged_local_path(fake_aap: Any) -> None:
+    seed(fake_aap, "projects")
+    fake_aap.seed(
+        "projects",
+        id=11,
+        name="manual",
+        organization=1,
+        scm_type="",
+        local_path="_11__manual",
+        summary_fields={"organization": {"id": 1, "name": "Default"}},
+    )
+    result = CliInvoker().invoke(
+        app,
+        [
+            "projects",
+            "patch",
+            "manual",
+            "--set",
+            "scm_type=git",
+            "--set",
+            "local_path=_11__manual",
+            "--yes",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    patches = [c for c in fake_aap.router.calls if c.request.method == "PATCH"]
+    assert [json.loads(c.request.content) for c in patches] == [{"scm_type": "git"}]
+
+
 def test_patch_outcome_lists_are_native_lists(fake_aap: Any) -> None:
     seed(fake_aap, "projects")
     result = CliInvoker().invoke(
@@ -620,6 +670,28 @@ def test_reads_redact_known_secrets_with_explicit_columns(
     assert "synthetic-nested-secret" not in result.output
     assert "redacted" in result.stdout
     assert fake_aap.get_record("job_templates", 10)["host_config_key"] == "synthetic-read-secret"
+
+
+@pytest.mark.parametrize("command", ["get", "list"])
+def test_reads_show_an_unset_host_config_key_as_empty(fake_aap: Any, command: str) -> None:
+    seed(fake_aap, "job_templates")
+    for value, shown in (("", ""), ("k", "<redacted>")):
+        fake_aap.store["job_templates"][10]["host_config_key"] = value
+        result = CliInvoker().invoke(
+            app,
+            [
+                "job-templates",
+                command,
+                "10",
+                "--by-id",
+                "--columns",
+                "host_config_key",
+                "--format",
+                "json",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout)[0]["host_config_key"] == shown
 
 
 def test_get_redacts_full_readonly_credential_record(fake_aap: Any) -> None:
