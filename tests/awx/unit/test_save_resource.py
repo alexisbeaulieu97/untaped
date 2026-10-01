@@ -175,3 +175,26 @@ def test_save_workflow_template_omits_webhook_key_and_spec_organization() -> Non
     )
     assert "webhook_key" not in saved.spec
     assert "organization" not in saved.spec
+
+
+def _save_project(**fields: Any) -> dict[str, Any]:
+    client = _StubClient(
+        find_result={
+            "id": 1,
+            "name": "playbooks",
+            "organization": 1,
+            "summary_fields": {"organization": {"name": "Default"}},
+            **fields,
+        }
+    )
+    fk = _StubFk({("Organization", 1): "Default"})
+    use = SaveResource(cast(ResourceClient, client), cast(FkResolver, fk))
+    return use.from_record(PROJECT_SPEC, client.record).spec
+
+
+def test_save_scm_project_omits_derived_local_path() -> None:
+    assert "local_path" not in _save_project(scm_type="git", local_path="_2146__prj")
+
+
+def test_save_manual_project_keeps_local_path() -> None:
+    assert _save_project(scm_type="", local_path="my_playbooks")["local_path"] == "my_playbooks"

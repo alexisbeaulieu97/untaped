@@ -268,6 +268,25 @@ def test_patch_rejects_server_owned_template_fields(fake_aap: Any, field: str) -
     assert "read-only" in result.output
 
 
+def test_patch_rejects_local_path_on_scm_project(fake_aap: Any) -> None:
+    seed(fake_aap, "projects")
+    fake_aap.seed(
+        "projects",
+        id=11,
+        name="scm",
+        organization=1,
+        scm_type="git",
+        local_path="_11__scm",
+        summary_fields={"organization": {"id": 1, "name": "Default"}},
+    )
+    result = CliInvoker().invoke(
+        app, ["projects", "patch", "scm", "--set", "local_path=x", "--yes"]
+    )
+    assert result.exit_code != 0
+    assert "local_path" in result.output
+    assert "server-derived" in result.output
+
+
 def test_patch_outcome_lists_are_native_lists(fake_aap: Any) -> None:
     seed(fake_aap, "projects")
     result = CliInvoker().invoke(
