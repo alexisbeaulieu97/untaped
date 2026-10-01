@@ -67,8 +67,8 @@ class RunInRepos:
                     stop = self._finish(rows, index, row) or stop
         except BaseException:
             # Ctrl-C: the commands run in their own sessions, so stop them explicitly.
-            self._runner.cancel()
             pool.shutdown(wait=False, cancel_futures=True)
+            self._runner.cancel()
             raise
         pool.shutdown()
         for index, target in queue:
