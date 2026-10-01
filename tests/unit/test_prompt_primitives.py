@@ -138,15 +138,19 @@ def test_optional_text_prompts_allow_empty_values() -> None:
 
 
 @pytest.mark.parametrize("method_name", ["confirm", "text", "secret", "select", "multiselect"])
-@pytest.mark.parametrize("exc", [EOFError(), KeyboardInterrupt()])
-def test_prompt_cancellation_maps_to_config_error(
+@pytest.mark.parametrize(
+    ("exc", "expected"),
+    [(EOFError(), ConfigError), (KeyboardInterrupt(), PromptInterruptedError)],
+)
+def test_prompt_cancellation_maps_to_its_error(
     method_name: str,
     exc: BaseException,
+    expected: type[Exception],
 ) -> None:
     ui = UiContext(stdin=TtyStringIO(), prompt_backend=FakePromptBackend(exc=exc))
     choices = [PromptChoice(value="one", label="One")]
 
-    with pytest.raises(ConfigError, match="prompt cancelled"):
+    with pytest.raises(expected, match="prompt cancelled"):
         match method_name:
             case "confirm":
                 ui.confirm("continue?")
@@ -378,3 +382,15 @@ def test_scripted_backend_answers_pick_many() -> None:
     assert backend.pick_many(_REQUEST) is picked
     with pytest.raises(ConfigError, match="no scripted pick_many answer"):
         backend.pick_many(_REQUEST)
+
+
+def test_interrupt_escapes_a_config_error_handler() -> None:
+    from untaped.testing import ScriptedPromptBackend, TtyStringIO
+    from untaped.ui import UiContext
+
+    ui = UiContext(stdin=TtyStringIO(), prompt_backend=ScriptedPromptBackend(interrupt=True))
+    with pytest.raises(PromptInterruptedError):
+        try:
+            ui.confirm("Continue?")
+        except ConfigError:  # pragma: no cover - must not catch the interrupt
+            pytest.fail("Ctrl-C was swallowed by a ConfigError handler")

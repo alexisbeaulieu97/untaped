@@ -263,3 +263,8 @@ def test_attribution_survives_pickling() -> None:
         "awx",
         {"status": 401},
     )
+
+
+def test_prompt_interrupted_is_not_a_config_error() -> None:
+    assert issubclass(PromptInterruptedError, UntapedError)
+    assert not issubclass(PromptInterruptedError, ConfigError)
