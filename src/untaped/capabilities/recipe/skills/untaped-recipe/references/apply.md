@@ -65,7 +65,7 @@
   marker; a directory named `2024` is still a path.
 - A record's target is its absolute `target_path`, else `path`. Records whose
   `kind` ends in `.summary` are skipped. Repo records such as
-  `workspace.repo` must carry `target_path` or are rejected before planning.
+  `workspace.status` must carry `target_path` or are rejected before planning.
 - The same directory given twice, in any spelling, is planned once.
 - `from` expressions can read the target's `record`, so upstream output can
   choose both the targets and their input values.

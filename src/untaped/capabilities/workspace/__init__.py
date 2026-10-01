@@ -25,7 +25,10 @@ def build_app() -> App:
 SPEC = CapabilitySpec(
     name="workspace",
     app_factory=build_app,
-    help="Manage local git workspaces (collections of repos).",
+    help=(
+        "Create and archive task workspaces (git worktrees of several repos). "
+        "Experimental: may change in a minor release."
+    ),
     config_section="workspace",
     profile_model=WorkspaceSettings,
     state_model=WorkspaceState,
@@ -36,11 +39,11 @@ SPEC = CapabilitySpec(
                 str(files("untaped.capabilities.workspace").joinpath("skills", "untaped-workspace"))
             ),
             description=(
-                "Manages local multi-repository git workspaces through the `untaped workspace` "
-                "command (registering them, adding or removing repos, cloning and pulling them "
-                "together, status, branch switching, running a command in every repo, and pruning"
-                " clones safely). Use when the user mentions a workspace, cloning or syncing many"
-                " repos, dirty or behind repos, or running a command across repos."
+                "Creates, inspects and archives task workspaces through the `untaped workspace` "
+                "command (one directory per task holding git worktrees of several repos on a "
+                "shared branch, safe archiving once work is pushed). Use when the user starts "
+                "work on a ticket across repos, asks where a workspace is, or wants to clean "
+                "one up."
             ),
         ),
     ),

@@ -141,7 +141,8 @@ def test_set_preserves_other_keys_and_state(_isolate_settings: Path) -> None:
         "  default:\n"
         "    skills:\n      updates: auto\n"
         "    demo:\n      base_url: https://prod\n"
-        "workspace:\n  workspaces:\n    - name: ws1\n      path: /tmp/ws1\n"
+        "workspace:\n  active:\n    - name: ws1\n"
+        '      created_at: "2026-10-01T00:00:00Z"\n      repos: []\n'
     )
     SetSetting(SettingsFileRepository())("demo.token", "tok")
     data = yaml.safe_load(_isolate_settings.read_text())
@@ -149,7 +150,7 @@ def test_set_preserves_other_keys_and_state(_isolate_settings: Path) -> None:
     assert default["skills"] == {"updates": "auto"}
     assert default["demo"] == {"base_url": "https://prod", "token": "tok"}
     # Unknown top-level keys are untouched by a profile write.
-    assert data["workspace"]["workspaces"][0]["name"] == "ws1"
+    assert data["workspace"]["active"][0]["name"] == "ws1"
 
 
 @pytest.mark.parametrize(

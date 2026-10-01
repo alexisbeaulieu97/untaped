@@ -1,52 +1,50 @@
-# Output, pipes and exit codes
+# Workspace output
 
-## Reading results
+Every row is a record with an absolute `target_path`: the workspace
+directory for `workspace.workspace`, the repo directory for the others.
+`--columns ?` lists the fields of a table.
 
-- Read `--format json` (or `yaml`) rather than tables; tables show a subset
-  of each row's fields, and `--columns ?` lists them all.
-- `--format raw --columns repo` prints bare values for shell loops.
-- Rows about a repo carry an absolute `target_path`; on `unmatched` and
-  `unavailable` rows it is the workspace directory.
-- A `failed` row keeps its `detail` and adds an `error` object (`category`,
-  `system`, `retryable`, `message`, `hint`) that tables leave out.
-- `--quiet` (`-q`) mutes progress and success lines; data and errors still
-  print.
+## Record kinds
 
-## Pipes
+| Command | Kind | Key fields |
+|---|---|---|
+| `list` | `workspace.workspace` | `name`, `repos`, `created_at`, `archived_at` |
+| `create`, `add` | `workspace.repo_outcome` | `repo`, `action` (`created`, `checked_out`, `unchanged`, `failed`), `branch`, `base`, `read_only`, `detail` |
+| `status` | `workspace.status` | `repo`, `branch`, `state` (`ok`, `missing`, `cache_missing`, `error`), `upstream` (null until the branch is on origin), `ahead`, `behind`, `modified`, `untracked`, `stashed`, `unpushed`, `blockers`, `detail` |
+| `archive` | `workspace.archive_outcome` | `repo`, `action` (`removed`, `planned`, `skipped`, `failed`), `detail`; a last row with an empty `repo` is the workspace directory (`skipped` when other files stay in it) |
 
-`--format pipe` emits one record per line, tagged with its `kind`. A command
-with `--stdin` reads plain lines or the record kinds it accepts; any other
-kind exits 2.
+`status --fetch` fetches each repo first (status is otherwise offline); a
+repo whose fetch fails keeps its local state, with `detail` "fetch failed:
+..." and an error. A repo whose git state cannot be read is an `error` row
+with an `error` field. `status --all` covers every active workspace.
 
-| Consumer | Reads |
-|---|---|
-| `repos add --stdin` | URLs, `workspace.repo`, or GitHub repo records (`github.repo`, `github.repo_hit`, `github.sweep_repo`) |
-| `repos remove --stdin` | repo names, `workspace.repo`, `workspace.sync_outcome` |
-| `foreach --stdin` | repo names, `workspace.repo`, `workspace.status`, `workspace.sync_outcome` |
-| `path --stdin` | workspace names, `workspace.workspace` |
+`create` and `add` in table format end with the workspace path as the last
+stdout line; `-q` prints only the path. Other formats print records only.
 
-Illustrations with invented names:
+## Piping
+
+Pipe `github.repo`, `github.repo_hit` or `github.sweep_repo` records to
+`create` or `add` with `--stdin`. Each record's full name (`full_name`, else
+`repo`) is resolved through the inventory, so `workspace.protocol` and the
+default branch apply; its clone URL is used when the inventory lacks it:
 
 ```bash
-untaped github repos list --team acme/platform --format pipe \
-  | untaped workspace repos add acme-platform --stdin --sync
-untaped workspace list --format pipe | untaped workspace path --stdin
+untaped github repos list --team acme/platform --format pipe | untaped workspace create NAME --stdin
 ```
 
-`repos list` on an empty workspace emits a single `workspace.repo.summary`
-row with no `target_path`.
+`untaped recipe apply --stdin` reads `target_path` from `status` or
+`create` rows:
+
+```bash
+untaped workspace status NAME --format pipe | untaped recipe apply acme/editorconfig --stdin --dry-run
+```
 
 ## Exit codes
 
-| Code | Meaning | Next step |
-|---|---|---|
-| 0 | success; `skipped` rows alone are success | none |
-| 1 | something failed: unknown workspace or repo, invalid `untaped.yml`, a failed git step, or a declined prompt | read the `failed` rows |
-| 2 | usage error, or a prompt with no terminal and no `--yes` | fix the command line |
-| 3 | `status --check` found a dirty or behind repo | act on the matching rows |
-| 4 | fix the environment: settings, git or `$EDITOR` missing | fix the setup, not the command |
-| 5 | temporary: git timed out or lost the network | retry later |
-
-A run with several failures exits with the most severe one. With
-`--format json`, stderr is JSON Lines naming each failure's `category`,
-`system` and `hint`.
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | A `failed` row from `create` or `add`; archive refused (blocked repos); a `status --fetch` failure or `error` row; an unknown workspace name; `create` on a name whose directory already holds files |
+| 2 | Usage error, including no NAME outside a workspace, an unknown repo, or `archive --force` without a terminal and without `--yes` |
+| 3 | `status --check` and some repo would block archive |
+| 4, 5 | By failure category: fix the setup (4), try again later (5) |

@@ -56,7 +56,7 @@ To apply across a workspace, pipe its repos and keep the same preview-first
 order:
 
 ```bash
-untaped workspace repos list prod --format pipe \
+untaped workspace status NAME --format pipe \
   | untaped recipe apply acme/editorconfig --stdin --dry-run
 ```
 

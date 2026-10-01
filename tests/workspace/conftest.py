@@ -1,274 +1,79 @@
-"""Shared stubs for the workspace use-case tests.
-
-Import them as ``from workspace.conftest import StubGit, ...``:
-``tests/workspace`` is a package, so pytest's ``--import-mode=importlib``
-resolves ``workspace.*`` from the ``tests/`` root. ``StubGit`` satisfies the
-``GitRunner`` port with per-test failure injection through its keyword
-arguments; ``StubRegistry``, ``StubFilesystem`` and ``StubManifests`` are
-in-memory registry, filesystem and manifest ports.
-"""
+"""Real-git fixtures: throwaway upstream repos and an isolated workspace config."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Set
+import shutil
+import subprocess
+from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any
 
-from untaped.capabilities.workspace.domain import (
-    BareCacheEntry,
-    ManifestSource,
-    RepoStatus,
-    Workspace,
-    WorkspaceManifest,
-)
-from untaped.capabilities.workspace.domain.prune_safety import (
-    DIRTY_WORKTREE_BLOCKER,
-    UNREACHABLE_COMMITS_BLOCKER,
-)
-from untaped.capabilities.workspace.errors import (
-    GitError,
-    ManifestError,
-    RegistryError,
-    WorkspaceError,
-)
+import pytest
 
-# ``pytest_plugins`` is only honored in the root conftest; this package-level
-# conftest re-exports the shared CLI fixtures instead so they stay scoped to
-# ``tests/workspace/`` (``__all__`` marks the intentional re-export).
-from workspace.cli_fixtures import (
-    existing_clones,
-    isolate_config,
-    isolated_cache,
-    upstream,
-)
-
-__all__ = ["existing_clones", "isolate_config", "isolated_cache", "upstream"]
+from untaped.settings import get_settings
 
 
-_DEFAULT_STATUS = RepoStatus(branch="main", upstream="origin/main")
+def git(cwd: Path, *args: str) -> str:
+    result = subprocess.run(["git", *args], cwd=cwd, text=True, capture_output=True, check=False)
+    assert result.returncode == 0, result.stderr
+    return result.stdout.strip()
 
 
-class StubGit:
-    """Stub satisfying the ``GitRunner`` port for unit tests."""
+@pytest.fixture
+def make_upstream(tmp_path: Path) -> Callable[..., Path]:
+    """Create a bare upstream repo with one commit on ``main``; return its path."""
+    if shutil.which("git") is None:
+        pytest.skip("git not on PATH")
 
-    def __init__(
-        self,
-        *,
-        statuses: dict[str, RepoStatus] | None = None,
-        clone_fail: Set[str] = frozenset(),
-        fetch_fail: bool = False,
-        local_fetch_fail: Set[str] = frozenset(),
-        status_fail: Set[str] = frozenset(),
-        prune_fail: Set[str] = frozenset(),
-        prune_blockers: dict[str, tuple[str, ...]] | None = None,
-        pull_fail: Set[str] = frozenset(),
-        checkout_fail: Set[str] = frozenset(),
-        missing_branches: Set[str] = frozenset(),
-    ) -> None:
-        self.events: list[tuple[Any, ...]] = []
-        self._statuses = statuses or {}
-        self._clone_fail = clone_fail
-        self._fetch_fail = fetch_fail
-        self._local_fetch_fail = local_fetch_fail
-        self._status_fail = status_fail
-        self._prune_fail = prune_fail
-        self._prune_blockers = prune_blockers or {}
-        self._pull_fail = pull_fail
-        self._checkout_fail = checkout_fail
-        self._missing_branches = missing_branches
+    def make(name: str = "api", *, branches: tuple[str, ...] = ()) -> Path:
+        bare = tmp_path / "remotes" / "acme" / f"{name}.git"
+        bare.parent.mkdir(parents=True, exist_ok=True)
+        git(tmp_path, "init", "-q", "--bare", "--initial-branch=main", str(bare))
+        seed = tmp_path / f"_seed_{name}"
+        git(tmp_path, "clone", "-q", str(bare), str(seed))
+        for key, value in (("user.email", "t@t"), ("user.name", "t"), ("commit.gpgsign", "false")):
+            git(seed, "config", key, value)
+        (seed / "README.md").write_text(name)
+        git(seed, "add", ".")
+        git(seed, "commit", "-q", "-m", "init")
+        git(seed, "push", "-q", "origin", "main")
+        for branch in branches:
+            git(seed, "push", "-q", "origin", f"main:{branch}")
+        shutil.rmtree(seed)
+        return bare
 
-    def bare_cache_path(self, url: str, *, cache_dir: Path) -> Path:
-        return Path(f"/tmp/cache/{url.split('/')[-1]}")
-
-    def ensure_bare(self, url: str, *, cache_dir: Path) -> BareCacheEntry:
-        self.events.append(("ensure_bare", url))
-        return BareCacheEntry(path=self.bare_cache_path(url, cache_dir=cache_dir), created=False)
-
-    def bare_fetch(self, bare_path: Path) -> None:
-        self.events.append(("bare_fetch", bare_path))
-        if self._fetch_fail:
-            raise GitError("network down")
-
-    def clone_with_reference(
-        self, *, url: str, dest: Path, bare: Path, branch: str | None = None
-    ) -> None:
-        self.events.append(("clone", str(dest), branch))
-        if dest.name in self._clone_fail:
-            raise GitError("clone failed")
-        dest.mkdir(parents=True, exist_ok=True)
-
-    def fetch(self, repo_path: Path) -> None:
-        self.events.append(("fetch", repo_path.name))
-        if repo_path.name in self._local_fetch_fail:
-            raise GitError("network down")
-
-    def status(self, repo_path: Path) -> RepoStatus:
-        self.events.append(("status", repo_path.name))
-        if repo_path.name in self._status_fail:
-            raise GitError("status failed")
-        return self._statuses.get(repo_path.name, _DEFAULT_STATUS)
-
-    def prune_blockers(self, repo_path: Path) -> tuple[str, ...]:
-        self.events.append(("prune_blockers", repo_path.name))
-        if repo_path.name in self._prune_fail:
-            raise GitError("status failed")
-        if repo_path.name in self._prune_blockers:
-            return self._prune_blockers[repo_path.name]
-        status = self._statuses.get(repo_path.name, _DEFAULT_STATUS)
-        if status.dirty:
-            return (DIRTY_WORKTREE_BLOCKER,)
-        if status.ahead:
-            return (UNREACHABLE_COMMITS_BLOCKER,)
-        return ()
-
-    def ff_only_pull(self, repo_path: Path, *, branch: str) -> None:
-        self.events.append(("pull", repo_path.name, branch))
-        if repo_path.name in self._pull_fail:
-            raise GitError("non-fast-forward pull")
-
-    def has_branch(self, repo_path: Path, *, branch: str) -> bool:
-        self.events.append(("has_branch", repo_path.name, branch))
-        return branch not in self._missing_branches
-
-    def checkout_branch(self, repo_path: Path, *, branch: str) -> None:
-        self.events.append(("checkout", repo_path.name, branch))
-        if repo_path.name in self._checkout_fail:
-            raise GitError("checkout failed")
-        current = self._statuses.get(repo_path.name, _DEFAULT_STATUS)
-        self._statuses[repo_path.name] = current.model_copy(update={"branch": branch})
+    return make
 
 
-class StubRegistry:
-    """Stub satisfying the ``WorkspaceRegistryRepository`` port."""
-
-    def __init__(self, seeded: Iterable[Workspace] = ()) -> None:
-        self.registered: list[Workspace] = list(seeded)
-        self.unregistered: list[str] = []
-
-    def register(self, *, name: str, path: Path) -> Workspace:
-        ws = Workspace(name=name, path=path)
-        self.registered.append(ws)
-        return ws
-
-    def find_by_path(self, path: Path) -> Workspace | None:
-        for w in self.registered:
-            if w.path == path:
-                return w
-        return None
-
-    def entries(self) -> list[Workspace]:
-        return list(self.registered)
-
-    def get(self, name: str) -> Workspace:
-        for w in self.registered:
-            if w.name == name:
-                return w
-        raise RegistryError(f"unknown workspace: {name!r}")
-
-    def unregister(self, name: str) -> bool:
-        before = len(self.registered)
-        self.registered = [w for w in self.registered if w.name != name]
-        if len(self.registered) < before:
-            self.unregistered.append(name)
-            return True
-        return False
+@pytest.fixture
+def workspace_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    """Point the workspace cache and workspaces dir at tmp; return the workspaces dir."""
+    workspaces = tmp_path / "workspaces"
+    monkeypatch.setenv("UNTAPED_WORKSPACE__CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("UNTAPED_WORKSPACE__WORKSPACES_DIR", str(workspaces))
+    get_settings.cache_clear()
+    yield workspaces
+    get_settings.cache_clear()
 
 
-class StubFilesystem:
-    """In-memory ``Filesystem`` for use-case tests that don't need real I/O.
-
-    Seed the constructor with the directories that should "exist".
-    ``mkdir`` and ``rmtree`` mutate the set so call sequences are
-    observable; the ``events`` list records every operation for tests
-    that need to pin the order.
-
-    **Semantic divergences from real ``pathlib`` / ``shutil``** worth
-    knowing when reading test failures:
-
-    - ``iterdir(p)`` yields seeded entries whose ``parent == p``. Real
-      ``iterdir`` only yields entries that *literally exist* under
-      ``p`` on disk — if a test seeds ``Path("/ws/a")`` without seeding
-      ``Path("/ws")``, ``iterdir(Path("/ws"))`` still yields ``a``.
-      Fine for the current callers (`RepoSyncEngine.plan_prune` only
-      iterdirs a path it has already established exists), worth a
-      thought before adding new callers.
-    - ``rmtree(p)`` removes ``p`` and every seeded descendant; matches
-      ``shutil.rmtree`` for the dirs-only model used here.
-    """
-
-    def __init__(self, dirs: Iterable[Path] = (), symlinks: Iterable[Path] = ()) -> None:
-        self._dirs: set[Path] = {Path(p) for p in dirs}
-        self._symlinks: set[Path] = {Path(p) for p in symlinks}
-        self.events: list[tuple[str, Path]] = []
-
-    def exists(self, path: Path) -> bool:
-        return path in self._dirs or path in self._symlinks
-
-    def is_dir(self, path: Path) -> bool:
-        return path in self._dirs
-
-    def is_symlink(self, path: Path) -> bool:
-        return path in self._symlinks
-
-    def mkdir(self, path: Path, *, parents: bool, exist_ok: bool) -> None:
-        # Honour `exist_ok` so tests catch any caller that flips it to
-        # `False` against a path already in the set — keeps the stub
-        # faithful to `pathlib.Path.mkdir` semantics for the cases that
-        # matter. `parents` would require modelling the full path tree;
-        # not worth it until a real caller cares.
-        if not exist_ok and path in self._dirs:
-            raise FileExistsError(path)
-        self.events.append(("mkdir", path))
-        self._dirs.add(path)
-
-    def iterdir(self, path: Path) -> Iterator[Path]:
-        return iter([p for p in self._dirs if p.parent == path])
-
-    def rmtree(self, path: Path) -> None:
-        self.events.append(("rmtree", path))
-        self._dirs = {p for p in self._dirs if p != path and path not in p.parents}
-        self._symlinks.discard(path)
-
-    def unlink(self, path: Path) -> None:
-        self.events.append(("unlink", path))
-        self._symlinks.discard(path)
-
-    def rmdir(self, path: Path) -> None:
-        self.events.append(("rmdir", path))
-        if any(p.parent == path for p in self._dirs | self._symlinks):
-            raise WorkspaceError(f"could not remove {path}: directory not empty")
-        self._dirs.discard(path)
+def commit_in(worktree: Path, name: str = "change.txt") -> None:
+    for key, value in (("user.email", "t@t"), ("user.name", "t"), ("commit.gpgsign", "false")):
+        git(worktree, "config", key, value)
+    (worktree / name).write_text("x")
+    git(worktree, "add", name)
+    git(worktree, "commit", "-q", "-m", f"add {name}")
 
 
-class StubManifests:
-    """In-memory ``ManifestRepository`` for stub-driven use-case tests.
+def add_submodule(upstream: Path, sub: Path, *, path: str = "lib") -> None:
+    """Push a commit adding ``sub`` as a submodule at ``path`` to ``upstream``'s ``main``."""
+    seed = upstream.parent / f"_seed_sub_{upstream.stem}"
+    git(upstream.parent, "clone", "-q", str(upstream), str(seed))
+    for key, value in (("user.email", "t@t"), ("user.name", "t"), ("commit.gpgsign", "false")):
+        git(seed, "config", key, value)
+    git(seed, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(sub), path)
+    git(seed, "commit", "-q", "-m", "add submodule")
+    git(seed, "push", "-q", "origin", "main")
+    shutil.rmtree(seed)
 
-    Seed ``manifests`` with the workspace dirs that should have a
-    manifest; ``exists`` and ``read`` honour the map. ``read`` on an
-    unseeded dir raises :class:`ManifestError` to match the real
-    adapter's contract; ``write`` / ``read_external`` are stubbed out
-    (no caller in the stub-only test set today).
-    """
 
-    def __init__(self, manifests: dict[Path, WorkspaceManifest] | None = None) -> None:
-        self._manifests = dict(manifests or {})
-
-    def exists(self, workspace_dir: Path) -> bool:
-        return workspace_dir in self._manifests
-
-    def read(self, workspace_dir: Path) -> WorkspaceManifest:
-        if workspace_dir not in self._manifests:
-            raise ManifestError(f"no manifest at {workspace_dir}/untaped.yml")
-        return self._manifests[workspace_dir]
-
-    def write(self, workspace_dir: Path, manifest: WorkspaceManifest) -> None:
-        self._manifests[workspace_dir] = manifest
-
-    def manifest_path(self, workspace_dir: Path) -> Path:
-        return workspace_dir / "untaped.yml"
-
-    def delete(self, workspace_dir: Path) -> None:
-        self._manifests.pop(workspace_dir, None)
-
-    def read_external(self, source: Path) -> ManifestSource:
-        raise NotImplementedError("StubManifests.read_external is not used by current tests")
+def init_submodules(worktree: Path) -> None:
+    git(worktree, "-c", "protocol.file.allow=always", "submodule", "update", "-q", "--init")

@@ -15,7 +15,7 @@ of the version you have installed, run `untaped --help` or
 
 | Capability | Guide | What it does |
 |---|---|---|
-| `workspace` | [Workspaces](./workspace/usage.md) | Declare, clone, sync and run commands across sets of Git repos. |
+| `workspace` | [Workspaces](./workspace/usage.md) | Create and archive task workspaces of git worktrees across repos. |
 | `github` | [GitHub](./github/usage.md) | Repo inventory, GitHub search, and content sweeps across many repos. |
 | `jira` | [Jira](./jira/usage.md) | Search, create, update and transition Jira Data Center issues. |
 | `awx` | [AWX/AAP](./awx/usage.md) | Inspect, change, launch, sync and test AWX/AAP resources. |

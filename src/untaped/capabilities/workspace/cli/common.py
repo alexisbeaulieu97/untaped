@@ -1,57 +1,82 @@
-"""Shared helpers for workspace CLI command modules."""
+"""Shared workspace CLI plumbing: settings, adapters, repo arguments and options."""
 
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated
 
 from cyclopts import Parameter
 
-from untaped.capabilities.workspace.application import WorkspaceResolver
-from untaped.capabilities.workspace.domain import Workspace
+from untaped.capabilities.workspace.application.locate import locate_workspace, workspace_root
+from untaped.capabilities.workspace.application.provision import ProvisionRepos
+from untaped.capabilities.workspace.application.status import WorkspaceStatus
+from untaped.capabilities.workspace.domain.models import RepoArg, WorkspaceRecord
 from untaped.capabilities.workspace.infrastructure import (
-    LocalFilesystem,
-    WorkspaceRegistryRepository,
-    YamlManifestRepository,
+    GithubRepoCatalog,
+    LocalGitWorktrees,
+    StateWorkspaceStore,
 )
 from untaped.capabilities.workspace.settings import WorkspaceSettings
 from untaped.capability_api import (
     ParallelOption,
+    UsageError,
     clamp_parallel,
     get_config_section,
-    raise_usage,
+    read_stdin_input,
 )
 
-WORKSPACE_ARG_HELP = (
-    "Workspace name, or a path inside one (`.` is the current directory). "
-    "Default: the workspace containing the current directory."
-)
+STDIN_KINDS = frozenset({"github.repo", "github.repo_hit", "github.sweep_repo"})
+"""Pipe kinds ``create``/``add --stdin`` read repos from (see :func:`stdin_repos`)."""
 
-RepoSelectorOption = Annotated[
+NameArg = Annotated[
+    str | None,
+    Parameter(
+        name="NAME",
+        help="Workspace name. Default: the workspace containing the current directory.",
+    ),
+]
+RepoOption = Annotated[
     list[str] | None,
     Parameter(
         name=["--repo", "-r"],
         negative="",
-        help="Limit to these repos (repeatable; name or URL).",
         consume_multiple=False,
+        help=(
+            "Repo to check out on the workspace branch: owner/name, a name unique in "
+            "the GitHub inventory, or a clone URL (repeatable)."
+        ),
     ),
 ]
-WorkspaceArg = Annotated[str | None, Parameter(name="WS", help=WORKSPACE_ARG_HELP)]
-"""Optional sole positional ``WS`` (see :class:`WorkspaceResolver`)."""
-LeadingWorkspaceArg = Annotated[
+ReadOnlyOption = Annotated[
+    list[str] | None,
+    Parameter(
+        name="--read-only",
+        negative="",
+        consume_multiple=False,
+        help="Repo to check out read-only, detached at its base branch (repeatable).",
+    ),
+]
+BranchOption = Annotated[
     str | None,
     Parameter(
-        name="WS",
-        help=f"{WORKSPACE_ARG_HELP} When more arguments follow, the first one is the workspace.",
+        name="--branch",
+        help="Branch for every writable repo. Default: the workspace.branch_template setting.",
     ),
 ]
-"""``WS`` ahead of other positionals (``foreach``, ``branch set``, ``repos add|remove``)."""
-
+BaseOption = Annotated[
+    str | None,
+    Parameter(
+        name="--base",
+        help="Base branch for every repo, read-only ones too. Default: each repo's default branch.",
+    ),
+]
 WorkspaceParallelOption = Annotated[
     ParallelOption,
     Parameter(
         help=(
-            "Concurrent workers. Default: the workspace.parallel setting, else "
+            "Concurrent checkouts. Default: the workspace.parallel setting, else "
             "min(8, 2 x CPUs). Values above 2 x CPUs are clamped with a stderr warning."
         ),
     ),
@@ -59,56 +84,106 @@ WorkspaceParallelOption = Annotated[
 
 
 def workspace_settings() -> WorkspaceSettings:
-    """Typed workspace profile settings for the active profile.
-
-    Stays on ``get_config_section`` rather than ``app_context().section``:
-    the CLI app is exercised directly in tests (without section registration),
-    where only ``get_config_section`` can build its one-off section model.
-    Profile selection is owned by the root ``--profile`` option (valid in any
-    token position); commands no longer take a command-local override.
-    """
+    """Typed workspace profile settings for the active profile."""
     return get_config_section("workspace", WorkspaceSettings)
 
 
-def resolve_workspace(workspace: str | None) -> Workspace:
-    """Resolve a ``WS`` argument (name, path, or ``None`` for the cwd)."""
-    return WorkspaceResolver(
-        registry=WorkspaceRegistryRepository(),
-        manifests=YamlManifestRepository(),
-        fs=LocalFilesystem(),
-    ).resolve(workspace)
+def workspaces_dir(settings: WorkspaceSettings) -> Path:
+    return settings.workspaces_dir.expanduser().resolve()
 
 
-def target_workspaces(workspace: str | None, *, all_workspaces: bool) -> list[Workspace]:
-    if all_workspaces:
-        if workspace is not None:
-            raise_usage("--all cannot be combined with a workspace argument")
-        return WorkspaceRegistryRepository().entries()
-    return [resolve_workspace(workspace)]
+def workspace_dir(settings: WorkspaceSettings, name: str) -> Path:
+    """Absolute directory of workspace ``name``."""
+    return workspace_root(settings.workspaces_dir, name)
 
 
-def leading_workspace(
-    first: str | None, second: str | None, *, missing: str
-) -> tuple[str | None, str]:
-    """Split ``[WS] VALUE`` positionals: one token is ``VALUE``, two are ``WS VALUE``.
-
-    No token at all is a usage error naming ``missing`` (the ``VALUE``).
-    """
-    if second is not None:
-        return first, second
-    if first is None:
-        raise_usage(f"missing argument {missing}")
-    return None, first
+def git_worktrees(settings: WorkspaceSettings) -> LocalGitWorktrees:
+    return LocalGitWorktrees(settings.cache_dir.expanduser())
 
 
-def parallel_workers(requested: int | None) -> int:
-    """Worker count: ``--parallel``, else ``workspace.parallel``, else ``min(8, cap)``.
+def utc_now() -> datetime:
+    return datetime.now(UTC)
 
-    The cap, ``2 * os.cpu_count()``, is the I/O-bound rule of thumb shared by
-    sync and foreach; it is computed per call so ``os.cpu_count``
-    monkeypatching in tests stays live.
-    """
+
+def locate(settings: WorkspaceSettings, name: str | None) -> WorkspaceRecord:
+    """The workspace ``name``, or the one containing the current directory."""
+    return locate_workspace(
+        StateWorkspaceStore(), name=name, workspaces_dir=workspaces_dir(settings), cwd=Path.cwd()
+    )
+
+
+def parallel_workers(settings: WorkspaceSettings, requested: int | None) -> int:
+    """Worker count: ``--parallel``, else ``workspace.parallel``, else ``min(8, 2 x CPUs)``."""
     cap = (os.cpu_count() or 1) * 2
     if requested is None:
-        requested = workspace_settings().parallel or min(8, cap)
+        requested = settings.parallel or min(8, cap)
     return clamp_parallel(requested, cap=cap, policy="2 * os.cpu_count()")
+
+
+def status_reader(settings: WorkspaceSettings, git: LocalGitWorktrees) -> WorkspaceStatus:
+    """The ``status`` use case (also ``archive``'s safety check), ``workspace.parallel`` wide."""
+    return WorkspaceStatus(
+        git, workspaces_dir=workspaces_dir(settings), parallel=parallel_workers(settings, None)
+    )
+
+
+def provisioner(settings: WorkspaceSettings, parallel: int | None) -> ProvisionRepos:
+    """The ``create``/``add`` use case wired to the real adapters."""
+    return ProvisionRepos(
+        StateWorkspaceStore(workspaces_dir=workspaces_dir(settings)),
+        git_worktrees(settings),
+        GithubRepoCatalog(protocol=settings.protocol),
+        workspaces_dir=workspaces_dir(settings),
+        branch_template=settings.branch_template,
+        parallel=parallel_workers(settings, parallel),
+        now=utc_now,
+    )
+
+
+def repo_args(
+    repo: list[str] | None,
+    read_only: list[str] | None,
+    *,
+    branch: str | None,
+    base: str | None,
+    stdin: bool,
+) -> list[RepoArg]:
+    """``--repo`` then ``--stdin`` repos (writable), then ``--read-only`` repos."""
+    args = [RepoArg(ident=ident, branch=branch, base=base) for ident in repo or []]
+    if stdin:
+        args += [arg.model_copy(update={"branch": branch, "base": base}) for arg in stdin_repos()]
+    args += [RepoArg(ident=ident, read_only=True, base=base) for ident in read_only or []]
+    if not args:
+        raise UsageError("no repos given", hint="pass --repo OWNER/NAME (repeatable) or --stdin")
+    return args
+
+
+def stdin_repos() -> list[RepoArg]:
+    """Repos from stdin: bare lines (any repo identifier), or github pipe records.
+
+    A record names its repo by ``full_name`` (else ``repo``, which github rows
+    fill with the full name), resolved through the inventory so
+    ``workspace.protocol`` and the default branch apply; its ``clone_url``
+    (else ``url``) is the fallback, used alone when there is no name.
+    """
+    data = read_stdin_input(accept_kinds=STDIN_KINDS, what="repos")
+    if data.records is None:
+        return [RepoArg(ident=value) for value in data.values]
+    args: list[RepoArg] = []
+    for envelope in data.records:
+        record = envelope.record
+        name = _text(record.get("full_name")) or _text(record.get("repo"))
+        url = _text(record.get("clone_url")) or _text(record.get("url"))
+        if name:
+            args.append(RepoArg(ident=name, fallback=url))
+        elif url:
+            args.append(RepoArg(ident=url))
+        else:
+            raise UsageError(
+                f"stdin line {envelope.lineno}: record has no full_name, repo, clone_url or url"
+            )
+    return args
+
+
+def _text(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None

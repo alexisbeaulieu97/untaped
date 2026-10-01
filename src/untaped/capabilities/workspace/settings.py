@@ -1,17 +1,13 @@
-"""Settings model for the workspace tool."""
+"""Workspace settings (profile) and state models."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
-class WorkspaceEntry(BaseModel):
-    """One row mapping a workspace name to its directory."""
-
-    name: str
-    path: str
+from untaped.capabilities.workspace.domain.models import ArchivedRecord, WorkspaceRecord
 
 
 class WorkspaceSettings(BaseModel):
@@ -22,12 +18,18 @@ class WorkspaceSettings(BaseModel):
     cache_dir: Path = Field(default=Path("~/.untaped/repositories"))
     workspaces_dir: Path = Field(default=Path("~/.untaped/workspaces"))
     parallel: int | None = Field(default=None, ge=1)
-    """Default ``sync`` / ``foreach`` workers; ``None`` means ``min(8, 2 x CPUs)``."""
+    """Workers for ``create``/``add`` checkouts and ``status``/``archive`` checks.
+
+    ``None`` means ``min(8, 2 x CPUs)``.
+    """
+    branch_template: str = "{name}"
+    protocol: Literal["https", "ssh"] = "https"
 
 
 class WorkspaceState(BaseModel):
-    """Top-level workspace app state."""
+    """Active and archived workspaces (``state.yml`` → ``workspace``)."""
 
     model_config = ConfigDict(frozen=True)
 
-    workspaces: list[WorkspaceEntry] = Field(default_factory=list)
+    active: list[WorkspaceRecord] = Field(default_factory=list)
+    archived: list[ArchivedRecord] = Field(default_factory=list)

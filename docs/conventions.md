@@ -127,9 +127,9 @@ The old spelling never appears in `--help`. Aliases apply through the
 Command names are kebab-case. Use plural nouns for collections. Leaf verbs
 come from a closed set:
 
-- Read: `list`, `get`, `status`, `whoami`, `ping`
+- Read: `list`, `get`, `status`, `whoami`, `ping`, `path`
 - Write: `create`, `set`, `unset`, `add`, `remove`, `delete`, `prune`, `edit`,
-  `patch`, `apply`, `copy`, `rename`
+  `patch`, `apply`, `copy`, `rename`, `archive`
 - Update: `sync`, `refresh`
 - Query: `find`, `deps`, `impact`, `graph`
 - Other: `export`, `init`, `run`, `launch`, `wait`, `validate`, `test`,
@@ -152,8 +152,8 @@ come from a closed set:
   is none.
 - Read identifiers with `read_identifiers(names, stdin=stdin,
   id_field="…", accept_kinds={"<cap>.<noun>"})`. A pipe record of another
-  kind exits 2. Empty stdin is an error, except for commands that act on a
-  filtered selection (such as `workspace foreach --stdin`), which read it with
+  kind exits 2. Empty stdin is an error. A command that acts on a filtered
+  selection, where an empty selection is normal, may read it with
   `read_stdin_input(allow_empty=True)`: an empty pipe then does nothing,
   reports like an empty list, and exits 0.
 - Before prompting, check `ui.can_prompt` on the `UiContext` that will prompt;
