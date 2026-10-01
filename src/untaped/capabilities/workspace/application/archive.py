@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -19,6 +20,8 @@ if TYPE_CHECKING:
 class ArchiveWorkspace:
     """``workspace archive`` once the caller has decided it is safe (or forced).
 
+    The caller holds :meth:`hold` from its safety check to the removal, so no
+    ``create``/``add`` of the workspace can land in between.
     Each repo's worktree is removed; a failure becomes a ``failed`` row and
     leaves the workspace active so ``archive`` can be retried. When every repo
     is gone, the directory is deleted if empty and the record moves to the
@@ -39,16 +42,18 @@ class ArchiveWorkspace:
         self._workspaces_dir = workspaces_dir
         self._now = now
 
-    def __call__(self, record: WorkspaceRecord, *, force: bool) -> list[ArchiveOutcome]:
-        """Archive ``record``'s workspace as stored now, under its workspace lock.
+    @contextmanager
+    def hold(self, name: str) -> Iterator[WorkspaceRecord]:
+        """Hold workspace ``name``'s lock; yield its record as stored now.
 
         Not found when it was archived meanwhile; repos an ``add`` recorded
-        after ``record`` was read are removed too.
+        before the lock was taken are in the yielded record.
         """
-        with self._store.locked(record.name):
-            return self._archive(active_workspace(self._store, record.name), force=force)
+        with self._store.locked(name):
+            yield active_workspace(self._store, name)
 
-    def _archive(self, record: WorkspaceRecord, *, force: bool) -> list[ArchiveOutcome]:
+    def __call__(self, record: WorkspaceRecord, *, force: bool) -> list[ArchiveOutcome]:
+        """Archive ``record``, the one :meth:`hold` yielded (the caller holds the lock)."""
         root = workspace_root(self._workspaces_dir, record.name)
         rows = [self._remove(record.name, root, spec, force=force) for spec in record.repos]
         if any(row.action == "failed" for row in rows):

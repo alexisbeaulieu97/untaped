@@ -207,24 +207,25 @@ def archive_command(
     """
     with report_errors():
         settings = workspace_settings()
-        record = locate(settings, name)
+        located = locate(settings, name)
         git = git_worktrees(settings)
-        rows = status_reader(settings, git)(record)
-        blocked = [row for row in rows if row.blockers]
-        if dry_run or (blocked and not force):
-            _show_plan(rows, force=force, fmt=fmt, columns=columns)
-            if dry_run:
-                return
-            raise WorkspaceError(
-                f"{plural(len(blocked), 'repo')} would lose work; nothing archived",
-                hint=archive_hint(blocked),
-            )
-        if blocked:
-            _confirm_discard(record.name, blocked, yes=yes)
         root = workspaces_dir(settings)
         store = StateWorkspaceStore(workspaces_dir=root)
         archive = ArchiveWorkspace(store, git, workspaces_dir=root, now=utc_now)
-        outcomes = archive(record, force=force)
+        with archive.hold(located.name) as record:  # from the check through the removal
+            rows = status_reader(settings, git)(record)
+            blocked = [row for row in rows if row.blockers]
+            if dry_run or (blocked and not force):
+                _show_plan(rows, force=force, fmt=fmt, columns=columns)
+                if dry_run:
+                    return
+                raise WorkspaceError(
+                    f"{plural(len(blocked), 'repo')} would lose work; nothing archived",
+                    hint=archive_hint(blocked),
+                )
+            if blocked:
+                _confirm_discard(record.name, blocked, yes=yes)
+            outcomes = archive(record, force=force)
         emit(outcomes, fmt=fmt, columns=columns, kind=ARCHIVE_OUTCOME)
         failed = any(row.failed for row in outcomes)
         if not failed:

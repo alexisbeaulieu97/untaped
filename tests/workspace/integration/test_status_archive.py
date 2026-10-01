@@ -161,7 +161,8 @@ def test_archive_removes_repos_added_after_its_record_was_read(
     env: Env, make_upstream: Callable[..., Path]
 ) -> None:
     env.provision.add(env.record, [RepoArg(ident=str(make_upstream("web")))])
-    rows = env.archive(env.record, force=False)  # env.record predates the add
+    with env.archive.hold(env.record.name) as record:  # env.record predates the add
+        rows = env.archive(record, force=False)
     assert [(r.repo, r.action) for r in rows if r.repo] == [
         ("acme/api", "removed"),
         ("acme/web", "removed"),
@@ -209,7 +210,12 @@ def test_add_during_archive_waits_then_fails_without_a_worktree(
     assert record is not None
     gated = _GatedGit(real)
     archive = ArchiveWorkspace(store, gated, workspaces_dir=workspaces, now=lambda: T0)  # type: ignore[arg-type]
-    archiver = threading.Thread(target=archive, args=(record,), kwargs={"force": False})
+
+    def archive_held() -> None:
+        with archive.hold("J-1") as held:
+            archive(held, force=False)
+
+    archiver = threading.Thread(target=archive_held)
     archiver.start()
     assert gated.removing.wait(10)
     errors: list[BaseException] = []
