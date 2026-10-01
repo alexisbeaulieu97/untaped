@@ -2,39 +2,29 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
+import pytest
+
 from untaped.cli import write_kind
 from untaped.sdk import writes
 
 
-def test_bare_decorator_marks_a_write() -> None:
-    @writes
-    def set_command() -> None: ...
+@pytest.mark.parametrize(
+    ("decorate", "kind"),
+    [(writes, "write"), (writes(destructive=True), "destructive")],
+    ids=["bare", "destructive"],
+)
+def test_writes_marks_and_returns_the_same_function(
+    decorate: Callable[[Callable[[], None]], Callable[[], None]], kind: str
+) -> None:
+    def command() -> None: ...
 
-    assert write_kind(set_command) == "write"
-
-
-def test_destructive_flag_marks_destructive() -> None:
-    @writes(destructive=True)
-    def purge_command() -> None: ...
-
-    assert write_kind(purge_command) == "destructive"
+    assert decorate(command) is command
+    assert write_kind(command) == kind
 
 
 def test_undecorated_is_none() -> None:
     def list_command() -> None: ...
 
     assert write_kind(list_command) is None
-
-
-def test_bare_decorator_returns_the_same_function() -> None:
-    def f() -> None: ...
-
-    assert writes(f) is f
-    assert write_kind(f) == "write"
-
-
-def test_called_decorator_returns_the_same_function() -> None:
-    def g() -> None: ...
-
-    assert writes(destructive=True)(g) is g
-    assert write_kind(g) == "destructive"

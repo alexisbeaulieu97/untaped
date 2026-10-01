@@ -12,7 +12,7 @@ from untaped.capabilities.github import api as github_api
 from untaped.capabilities.github.api import RepoInventory, RepositoryInventoryItem
 from untaped.capabilities.workspace.cli import app
 from untaped.capabilities.workspace.domain import RepoSpec, WorkspaceRecord
-from untaped.capabilities.workspace.infrastructure import StateWorkspaceStore
+from untaped.capabilities.workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
 from untaped.sdk import Picked, PickItem, PickRequest, PickResult
 from untaped.testing import CliInvoker, ScriptedPromptBackend
 from workspace.conftest import git
@@ -190,18 +190,18 @@ def test_cached_only_pick_uses_its_cache_url(
     """The inventory is unavailable (no scope) while GitHub is the default host: the
     cached-only repo must come from its own cache's origin, not github.com/acme/api."""
     upstream = make_upstream("api")
-    cache = workspace_env.parent / "cache" / "gitlab.example" / "acme" / "api.git"
-    cache.parent.mkdir(parents=True)
     origin = "https://gitlab.example/acme/api.git"
-    git(workspace_env.parent, "clone", "-q", "--bare", str(upstream), str(cache))
-    git(cache, "remote", "set-url", "origin", origin)
-    git(cache, "config", "untaped.layout", "2")  # a 10.x cache
     for key, value in {
         "GIT_CONFIG_COUNT": "1",
         "GIT_CONFIG_KEY_0": f"url.{upstream}.insteadOf",
         "GIT_CONFIG_VALUE_0": origin,
     }.items():
         monkeypatch.setenv(key, value)
+    # A 10.x cache, made the way `create` makes one; its worktree is gone again.
+    caches = LocalGitWorktrees(workspace_env.parent / "cache")
+    scratch = workspace_env.parent / "scratch"
+    caches.checkout(origin, scratch, branch=None, base=None)
+    caches.remove(origin, scratch, force=True)
     settings = {"mode": "write", "base": "", "branch": ""}
     item = PickItem(id="gitlab.example/acme/api", label="gitlab.example/acme/api")
     backend = _Capture(
