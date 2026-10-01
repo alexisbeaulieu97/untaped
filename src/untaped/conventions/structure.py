@@ -41,10 +41,15 @@ SECTION_READERS = frozenset({"get_config_section", "section"})
 
 
 def _modules(package: str) -> Iterator[Any]:
+    """``package`` and its modules, imported; ``__main__`` modules are skipped.
+
+    A ``__main__`` module runs the program when imported (it may exit).
+    """
     root = importlib.import_module(package)
     yield root
     for info in pkgutil.walk_packages(root.__path__, prefix=f"{package}."):
-        yield importlib.import_module(info.name)
+        if info.name.rpartition(".")[2] != "__main__":
+            yield importlib.import_module(info.name)
 
 
 def _own_classes(module: Any) -> Iterator[type]:
