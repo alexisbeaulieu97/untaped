@@ -26,7 +26,7 @@ from untaped.capabilities.recipe.domain.recipe import (
     ValidateStep,
 )
 from untaped.capabilities.recipe.errors import RecipeNotFoundError
-from untaped.capability_api import CheckRecord, UntapedError
+from untaped.sdk import CheckRecord, UntapedError
 
 CheckedType = Literal["pack", "recipe", "hook"]
 """What a ``recipe validate`` row checked."""

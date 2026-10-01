@@ -17,7 +17,7 @@ import yaml
 
 from untaped.capabilities.awx.domain import Resource
 from untaped.capabilities.awx.infrastructure.git_source import GitSource
-from untaped.capability_api import ConfigError
+from untaped.sdk import ConfigError
 
 
 def read_resource_files(path: Path) -> Iterator[tuple[Path, Resource]]:

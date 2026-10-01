@@ -39,7 +39,7 @@ from untaped.capabilities.awx.domain import Job, JobEvent
 from untaped.capabilities.awx.domain.job import JOB_ROUTES
 from untaped.capabilities.awx.domain.suite import Suite
 from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     FormatOption,
     OutputFormat,

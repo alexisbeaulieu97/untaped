@@ -25,7 +25,7 @@ from untaped.capabilities.awx.errors import (
     ResourceNotFoundError,
     default_organization_note,
 )
-from untaped.capability_api import ConfigError, PipeEnvelope, UsageError
+from untaped.sdk import ConfigError, PipeEnvelope, UsageError
 
 
 @dataclass(frozen=True)

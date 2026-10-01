@@ -10,7 +10,7 @@ from untaped.capabilities.ansible.domain.payloads import AliasOutcome
 from untaped.capabilities.ansible.errors import AnsibleError
 from untaped.capabilities.ansible.infrastructure import AliasRepository, SourceRepository
 from untaped.capabilities.ansible.settings import is_repo_name
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     DryRunOption,
     FormatOption,

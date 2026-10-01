@@ -12,7 +12,7 @@ from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.options import NamesArgument
 from untaped.capabilities.awx.cli.save_runner import run_save_selection
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
-from untaped.capability_api import ColumnsOption, FormatOption, UsageError, report_errors
+from untaped.sdk import ColumnsOption, FormatOption, UsageError, report_errors
 
 
 def _add_save(app: App, spec: AwxResourceSpec) -> None:

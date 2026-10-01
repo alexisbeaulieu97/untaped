@@ -16,13 +16,13 @@ from pydantic import BaseModel, SecretStr
 
 from test_management.support import ExtProfile, make_spec, write_config
 from untaped import bootstrap
-from untaped.capability_api import (
+from untaped.config_file import read_config_dict
+from untaped.sdk import (
     HttpStatusError,
     TokenCommand,
     TokenSources,
     online_check,
 )
-from untaped.config_file import read_config_dict
 from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")

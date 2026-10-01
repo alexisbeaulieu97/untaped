@@ -19,7 +19,7 @@ from untaped.capabilities.awx.errors import (
     WaitCancelledError,
 )
 from untaped.capabilities.awx.infrastructure.errors import map_awx_errors, to_awx_error
-from untaped.capability_api import (
+from untaped.sdk import (
     ConfigError,
     ErrorCategory,
     HttpError,

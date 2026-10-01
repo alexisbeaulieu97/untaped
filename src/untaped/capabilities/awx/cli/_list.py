@@ -25,7 +25,7 @@ from untaped.capabilities.awx.cli.options import (
 )
 from untaped.capabilities.awx.cli.pipe import pipe_kind_for_spec
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     FormatOption,
     emit,

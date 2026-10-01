@@ -56,7 +56,7 @@ from untaped.capabilities.recipe.infrastructure.pack_store import (
     pack_content_hash,
     validate_pack,
 )
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     DryRunOption,
     ErrorInfo,

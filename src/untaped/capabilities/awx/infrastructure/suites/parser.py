@@ -21,7 +21,7 @@ import yaml
 from jinja2 import Environment, StrictUndefined, TemplateError, UndefinedError
 
 from untaped.capabilities.awx.domain.suite import RefSentinel
-from untaped.capability_api import ConfigError, plural
+from untaped.sdk import ConfigError, plural
 
 __all__ = [
     "DefaultParser",

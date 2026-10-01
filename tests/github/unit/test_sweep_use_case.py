@@ -35,7 +35,7 @@ from untaped.capabilities.github.domain import (
     SweepQuery,
 )
 from untaped.capabilities.github.domain.errors import GitCorpusError
-from untaped.capability_api import ConfigError, HttpStatusError, UntapedError, UsageError
+from untaped.sdk import ConfigError, HttpStatusError, UntapedError, UsageError
 
 README = SweepQuery(has_files=("README.md",))
 

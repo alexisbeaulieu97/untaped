@@ -13,7 +13,7 @@ from typing import Any
 from untaped.capabilities.awx.errors import AwxApiError
 from untaped.capabilities.awx.infrastructure.errors import map_awx_errors
 from untaped.capabilities.awx.settings import AwxSettings
-from untaped.capability_api import HttpSettings, connected_client, same_origin
+from untaped.sdk import HttpSettings, connected_client, same_origin
 
 
 class AwxClient:

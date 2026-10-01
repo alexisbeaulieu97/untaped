@@ -14,7 +14,7 @@ from untaped.capabilities.awx.application.secret_paths import (
     values_at,
 )
 from untaped.capabilities.awx.domain import ApplyOutcome, FieldChange, ResourceSpec
-from untaped.capability_api import UntapedError
+from untaped.sdk import UntapedError
 
 REDACTED = "<redacted>"
 

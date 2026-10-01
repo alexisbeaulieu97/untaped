@@ -16,7 +16,7 @@ from cyclopts import App
 
 from test_management.support import GithubProfile, make_spec, write_config
 from untaped import bootstrap
-from untaped.capability_api import CapabilitySpec, FormatOption, create_app, emit
+from untaped.sdk import CapabilitySpec, FormatOption, create_app, emit
 from untaped.testing import CliInvoker, CliResult
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")

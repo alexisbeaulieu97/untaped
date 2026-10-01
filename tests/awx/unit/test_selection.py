@@ -14,7 +14,7 @@ from untaped.capabilities.awx.application.selection import (
 )
 from untaped.capabilities.awx.domain import ResourceSpec, ServerRecord
 from untaped.capabilities.awx.infrastructure.specs import PROJECT_SPEC
-from untaped.capability_api import ConfigError, UsageError, parse_envelope_line
+from untaped.sdk import ConfigError, UsageError, parse_envelope_line
 
 
 class _Client:
@@ -220,7 +220,7 @@ def test_nested_scope_follows_numeric_parent_ids_and_builds_name_filters() -> No
     "kind,id_value", [(None, 7), ("awx.inventory", 7), ("awx.project", True), ("awx.project", "7")]
 )
 def test_typed_pipe_requires_correct_kind_and_integer_id(kind: Any, id_value: Any) -> None:
-    from untaped.capability_api import PipeEnvelope
+    from untaped.sdk import PipeEnvelope
 
     with pytest.raises((ConfigError, UsageError)) as caught:
         _resolver(_Client()).resolve(

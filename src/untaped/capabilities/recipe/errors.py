@@ -1,7 +1,7 @@
 """Recipe capability exception hierarchy.
 
 Every error the capability raises on purpose derives from :class:`RecipeError`
-(itself an :class:`~untaped.capability_api.UntapedError`), so ``report_errors``
+(itself an :class:`~untaped.sdk.UntapedError`), so ``report_errors``
 prints it as a clean ``error: ...`` line instead of a traceback. Recipe, pack
 and hook files and the inputs a command reads are local input, so an error is
 ``invalid`` in ``local`` unless its class (or the raise) says otherwise.
@@ -10,7 +10,7 @@ Errors that older code catches as ``ValueError`` keep that base too.
 
 from __future__ import annotations
 
-from untaped.capability_api import ErrorCategory, UntapedError
+from untaped.sdk import ErrorCategory, UntapedError
 
 
 class RecipeError(UntapedError):

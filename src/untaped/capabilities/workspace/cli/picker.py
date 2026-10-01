@@ -29,7 +29,7 @@ from untaped.capabilities.workspace.domain.naming import (
 )
 from untaped.capabilities.workspace.infrastructure.pick_source import RepoPickSource
 from untaped.capabilities.workspace.settings import WorkspaceSettings
-from untaped.capability_api import (
+from untaped.sdk import (
     PickCatalog,
     PickItem,
     PickRequest,

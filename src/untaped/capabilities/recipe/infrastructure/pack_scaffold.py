@@ -21,7 +21,7 @@ from untaped.capabilities.recipe.infrastructure.pack_files import (
 )
 from untaped.capabilities.recipe.infrastructure.project_toml import read_toml_document, toml_table
 from untaped.capabilities.recipe.infrastructure.uv_project import lock_project
-from untaped.capability_api import ErrorCategory, attribution
+from untaped.sdk import ErrorCategory, attribution
 
 
 def hook_api_requirements(

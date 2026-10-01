@@ -16,7 +16,7 @@ from untaped.capabilities.awx.infrastructure.specs import (
     JOB_TEMPLATE_SPEC,
     SCHEDULE_SPEC,
 )
-from untaped.capability_api import ConfigError
+from untaped.sdk import ConfigError
 
 
 class _StubClient:

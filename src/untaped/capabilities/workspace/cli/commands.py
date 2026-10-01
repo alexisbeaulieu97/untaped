@@ -46,7 +46,7 @@ from untaped.capabilities.workspace.domain.safety import archive_hint
 from untaped.capabilities.workspace.errors import WorkspaceError
 from untaped.capabilities.workspace.infrastructure import StateWorkspaceStore, SubprocessRunner
 from untaped.capabilities.workspace.settings import WorkspaceSettings
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     DryRunOption,
     FormatOption,

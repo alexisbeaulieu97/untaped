@@ -17,7 +17,7 @@ import httpx
 import pytest
 import respx
 
-import untaped.capability_api as capability_api
+import untaped.sdk as sdk
 from untaped.capabilities.github import api as github_api
 from untaped.capabilities.github.api import (
     BatchRepoRefsFailure,
@@ -39,7 +39,7 @@ from untaped.capabilities.github.api import (
     normalize_team_scopes,
     repo_inventory,
 )
-from untaped.capability_api import UntapedError
+from untaped.sdk import UntapedError
 from untaped.settings import get_settings
 
 EXPECTED_ALL = [
@@ -96,11 +96,11 @@ def test_exports_are_canonical_objects() -> None:
     assert GithubSettings is settings.GithubSettings
 
 
-def test_github_specific_api_does_not_leak_into_capability_api() -> None:
+def test_github_specific_api_does_not_leak_into_sdk() -> None:
     # GitHub behavior belongs to its explicit inter-capability interface,
     # independently of legitimate additions to the shared provider helpers.
-    assert set(EXPECTED_ALL).isdisjoint(capability_api.__all__)
-    assert not any(hasattr(capability_api, name) for name in EXPECTED_ALL)
+    assert set(EXPECTED_ALL).isdisjoint(sdk.__all__)
+    assert not any(hasattr(sdk, name) for name in EXPECTED_ALL)
 
 
 def _params(name: str) -> Any:

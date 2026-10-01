@@ -14,7 +14,7 @@ from untaped.capabilities.github.infrastructure.graphql import (
 )
 from untaped.capabilities.github.infrastructure.pagination import paginate_list, paginate_search
 from untaped.capabilities.github.settings import GithubSettings
-from untaped.capability_api import HttpSettings, connected_client
+from untaped.sdk import HttpSettings, connected_client
 
 
 class GithubClient:

@@ -22,7 +22,7 @@ from untaped.capabilities.ansible.domain.payloads import (
     ProbeTarget,
 )
 from untaped.capabilities.github.api import GithubGraphqlError
-from untaped.capability_api import ErrorCategory, HttpError, UntapedError, bounded_map
+from untaped.sdk import ErrorCategory, HttpError, UntapedError, bounded_map
 
 if TYPE_CHECKING:
     from untaped.capabilities.ansible.application.ports import BatchRepoRefsClient

@@ -15,7 +15,7 @@ from untaped.capabilities.awx.application.ports import (
 )
 from untaped.capabilities.awx.application.save_resource import SaveResource
 from untaped.capabilities.awx.domain import IdentityRef, Metadata, ResourceSpec, SaveOutcome
-from untaped.capability_api import ConfigError, UsageError
+from untaped.sdk import ConfigError, UsageError
 
 _UNSAFE_FILENAME_CHARS = re.compile(r"[/\\\x00-\x1f]")
 

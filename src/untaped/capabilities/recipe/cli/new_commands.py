@@ -14,7 +14,7 @@ from untaped.capabilities.recipe.domain.paths import is_path_ref, safe_library_n
 from untaped.capabilities.recipe.errors import PackNotFoundError
 from untaped.capabilities.recipe.infrastructure import pack_scaffold
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
-from untaped.capability_api import echo, hint
+from untaped.sdk import echo, hint
 
 _NO_LOCK_NOTE = "uv.lock was not created/refreshed for {path}; hooks need `uv lock` before running"
 

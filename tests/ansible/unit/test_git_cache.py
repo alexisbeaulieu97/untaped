@@ -16,7 +16,7 @@ from untaped.capabilities.ansible.infrastructure.git_cache import (
     GitCacheError,
     GitRepositoryCache,
 )
-from untaped.capability_api import GitResult
+from untaped.sdk import GitResult
 
 
 def _fake_batch_git(

@@ -6,7 +6,7 @@ import httpx
 import respx
 
 from untaped.capabilities.github.infrastructure.pagination import paginate_list, paginate_search
-from untaped.capability_api import HttpClient
+from untaped.sdk import HttpClient
 
 
 def _client() -> HttpClient:

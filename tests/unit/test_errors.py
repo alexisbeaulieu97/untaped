@@ -1,7 +1,6 @@
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from untaped.capability_api import first_validation_error
 from untaped.errors import (
     ConfigError,
     ErrorCategory,
@@ -18,6 +17,7 @@ from untaped.errors import (
     most_severe,
 )
 from untaped.git import GitCommandError
+from untaped.sdk import first_validation_error
 
 
 def test_untaped_error_is_exception() -> None:

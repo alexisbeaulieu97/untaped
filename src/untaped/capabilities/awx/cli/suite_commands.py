@@ -40,7 +40,7 @@ from untaped.capabilities.awx.infrastructure.suites.filesystem import (
     suites_under,
     write_new_text,
 )
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     ConfigError,
     DryRunOption,

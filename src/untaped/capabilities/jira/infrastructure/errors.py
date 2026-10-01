@@ -18,7 +18,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from untaped.capabilities.jira.errors import JiraApiError
-from untaped.capability_api import (
+from untaped.sdk import (
     HttpStatusError,
     UntapedError,
     attribution,

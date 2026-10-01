@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-import untaped.capability_api as api
+import untaped.sdk as api
 
 
 def test_editor_prefers_visual_and_never_interprets_shell(

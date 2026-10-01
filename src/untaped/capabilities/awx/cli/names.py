@@ -35,7 +35,7 @@ def column_names(columns: Sequence[str] | None) -> list[str]:
 
     Follows the core's ``--columns`` syntax (``-c a,b``, ``-c +a``,
     ``-c=-a``; see ``_selected_columns`` in ``untaped.cli``), which
-    ``capability_api`` does not expose as a parser.
+    ``untaped.sdk`` does not expose as a parser.
     """
     parts = (part.strip() for entry in columns or () for part in entry.split(","))
     return [part.lstrip("+-") for part in parts if part]

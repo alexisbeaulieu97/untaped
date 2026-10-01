@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-import untaped.capability_api as capi
+import untaped.sdk as capi
 
 EXPECTED_ALL = [
     "ApplicationSpec",
@@ -136,3 +136,14 @@ def test_no_extra_module_level_names_leak() -> None:
 def test_every_name_is_a_reexport_of_its_core_module(name: str) -> None:
     """The SDK module only re-exports; nothing is (re)defined there."""
     assert getattr(getattr(capi, name), "__module__", None) != capi.__name__
+
+
+def test_the_sdk_module_is_untaped_sdk_and_the_old_name_is_gone() -> None:
+    import importlib
+
+    import pytest
+
+    sdk = importlib.import_module("untaped.sdk")
+    assert "UntapedError" in sdk.__all__
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("untaped.capability" + "_api")

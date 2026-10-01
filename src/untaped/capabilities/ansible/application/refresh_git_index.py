@@ -48,7 +48,7 @@ from untaped.capabilities.github.api import (
     ResolveRepositoryInventory,
     normalize_team_scopes,
 )
-from untaped.capability_api import UntapedError, bounded_map
+from untaped.sdk import UntapedError, bounded_map
 
 ProgressCallback = Callable[[RefreshProgressEvent], None]
 ProbeMode = Literal["all", "default_branch"]

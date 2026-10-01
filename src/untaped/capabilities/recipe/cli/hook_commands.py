@@ -33,7 +33,7 @@ from untaped.capabilities.recipe.infrastructure.hook_executor import HookExecuto
 from untaped.capabilities.recipe.infrastructure.hook_resolver import HookResolver
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
 from untaped.capabilities.recipe.infrastructure.pack_files import read_hook_project
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     UsageError,
     echo,

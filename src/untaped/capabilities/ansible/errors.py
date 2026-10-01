@@ -1,7 +1,7 @@
 """Ansible capability exception hierarchy.
 
 Every error the capability raises on purpose derives from :class:`AnsibleError`
-(itself an :class:`~untaped.capability_api.UntapedError`) so ``report_errors`` turns it
+(itself an :class:`~untaped.sdk.UntapedError`) so ``report_errors`` turns it
 into a clean ``error: ...`` message instead of a traceback. Failures are
 attributed to ``local`` (sources, the dependency index, files), except
 :class:`GitCacheError` (``git``, ``unavailable`` when git timed out or lost
@@ -10,7 +10,7 @@ the network).
 
 from __future__ import annotations
 
-from untaped.capability_api import UntapedError
+from untaped.sdk import UntapedError
 
 
 class AnsibleError(UntapedError):

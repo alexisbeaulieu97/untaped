@@ -10,13 +10,13 @@ from cyclopts.validators import Number
 
 from untaped.capabilities.awx.cli.context import supported_scopes
 from untaped.capabilities.awx.domain import ResourceSpec
-from untaped.capability_api import (
+from untaped.sdk import (
     DryRunOption,
     StdinOption,
     YesOption,
     raise_usage,
 )
-from untaped.capability_api import ParallelOption as _CoreParallelOption
+from untaped.sdk import ParallelOption as _CoreParallelOption
 
 
 def resolve_max_depth(depth: int | None, recursive: bool) -> int | None:

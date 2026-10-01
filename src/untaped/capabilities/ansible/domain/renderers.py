@@ -29,7 +29,7 @@ from untaped.capabilities.ansible.domain.ref_display import (
     compare_ref_displays,
     natural_compare,
 )
-from untaped.capability_api import plural
+from untaped.sdk import plural
 
 GraphFormat = Literal["tree", "mermaid", "json"]
 

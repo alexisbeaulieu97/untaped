@@ -15,7 +15,7 @@ from untaped.capabilities.github.application import (
     ResolveRepositoryInventory,
     TeamScope,
 )
-from untaped.capability_api import HttpError, UntapedError
+from untaped.sdk import HttpError, UntapedError
 
 
 class _StubRepoLists:

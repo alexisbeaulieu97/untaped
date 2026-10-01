@@ -38,7 +38,7 @@ from untaped.capabilities.awx.domain.case_failure import (
 )
 from untaped.capabilities.awx.domain.job import SUMMARY_FIELDS, HostSummary
 from untaped.capabilities.awx.domain.workflow_run import NEVER_RAN, NodeResult
-from untaped.capability_api import ConfigError, ErrorCategory, ExitCode, UtcTimestamp, q
+from untaped.sdk import ConfigError, ErrorCategory, ExitCode, UtcTimestamp, q
 
 
 @dataclass(frozen=True)

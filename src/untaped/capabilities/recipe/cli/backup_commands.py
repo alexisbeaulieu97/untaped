@@ -23,7 +23,7 @@ from untaped.capabilities.recipe.infrastructure.backup import (
     prune_selection,
     read_metadata,
 )
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     ConfigError,
     DryRunOption,

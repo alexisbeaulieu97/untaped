@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from untaped.capability_api import UsageError, q
+from untaped.sdk import UsageError, q
 
 # A Jira project key starts with a letter and holds letters, digits and
 # underscores; an issue key appends ``-<number>``. Numeric ids pass too.

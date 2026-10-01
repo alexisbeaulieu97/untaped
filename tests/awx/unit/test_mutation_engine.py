@@ -508,7 +508,7 @@ def test_unexpected_worker_exception_becomes_a_failed_row() -> None:
 
 
 def test_auth_failure_aborts_remaining_items_but_keeps_completed_rows() -> None:
-    from untaped.capability_api import ConfigError
+    from untaped.sdk import ConfigError
 
     class Unauthorized(_Client):
         def create(self, spec: ResourceSpec, payload: Any) -> ServerRecord:
@@ -540,7 +540,7 @@ def test_an_environment_failure_of_any_class_aborts_the_batch(category: str) -> 
 
 
 def test_failed_rows_carry_the_attributed_error() -> None:
-    from untaped.capability_api import ConfigError
+    from untaped.sdk import ConfigError
 
     class Failing(_Client):
         def create(self, spec: ResourceSpec, payload: Any) -> ServerRecord:

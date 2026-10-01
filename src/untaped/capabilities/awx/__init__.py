@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.capabilities.awx.settings import AwxSettings
-from untaped.capability_api import CapabilitySpec, SkillAsset, connection_check, online_check
+from untaped.sdk import CapabilitySpec, SkillAsset, connection_check, online_check
 
 if TYPE_CHECKING:
     from cyclopts import App

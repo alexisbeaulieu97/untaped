@@ -12,7 +12,7 @@ from untaped.capabilities.awx.cli.save_runner import run_save_batch
 from untaped.capabilities.awx.domain import ResourceSpec, ServerRecord
 from untaped.capabilities.awx.errors import AwxApiError
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC, PROJECT_SPEC
-from untaped.capability_api import ConfigError
+from untaped.sdk import ConfigError
 
 
 class _Catalog:

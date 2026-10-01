@@ -134,7 +134,7 @@ from untaped.capabilities.awx.domain.workflow_run import (
     blamed_node,
 )
 from untaped.capabilities.awx.errors import ActionResponseError, AwxApiError, PendingApprovalError
-from untaped.capability_api import (
+from untaped.sdk import (
     ConfigError,
     ErrorCategory,
     UntapedError,

@@ -39,7 +39,7 @@ from untaped.capabilities.recipe.infrastructure.pack_files import (
     hook_exports,
     read_pack_manifest,
 )
-from untaped.capability_api import (
+from untaped.sdk import (
     ErrorCategory,
     GitCommandError,
     UsageError,

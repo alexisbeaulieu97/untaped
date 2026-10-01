@@ -22,7 +22,7 @@ from untaped.capabilities.github.cli.scopes import (
     org_scope,
     parse_team_scopes,
 )
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     FormatOption,
     StdinOption,
@@ -34,7 +34,7 @@ from untaped.capability_api import (
 )
 
 if TYPE_CHECKING:
-    from untaped.capability_api import UiContext
+    from untaped.sdk import UiContext
 
 # Shared across all four search subcommands. GitHub-specific (the
 # 1000-result cap belongs to GitHub, not untaped), so it lives

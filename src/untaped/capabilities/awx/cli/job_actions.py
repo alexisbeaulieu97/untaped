@@ -25,7 +25,7 @@ from untaped.capabilities.awx.cli.job_targets import (
 from untaped.capabilities.awx.cli.options import DryRunOption, YesOption
 from untaped.capabilities.awx.domain.job import JOB_ROUTES, TERMINAL_STATUSES
 from untaped.capabilities.awx.domain.outcomes import JobCancelOutcome, JobRelaunchOutcome
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     FormatOption,
     UntapedError,

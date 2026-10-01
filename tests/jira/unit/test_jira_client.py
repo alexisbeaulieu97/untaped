@@ -14,7 +14,7 @@ from untaped.capabilities.jira.domain.models import ISSUE_DETAIL_FIELDS
 from untaped.capabilities.jira.errors import JiraError
 from untaped.capabilities.jira.infrastructure import JiraClient
 from untaped.capabilities.jira.settings import JiraSettings
-from untaped.capability_api import ConfigError, HttpStatusError, get_config_section
+from untaped.sdk import ConfigError, HttpStatusError, get_config_section
 
 BASE = "https://jira.example.com"
 

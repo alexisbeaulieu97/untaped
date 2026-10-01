@@ -80,7 +80,7 @@ def _violations(capability: str) -> Iterator[str]:
             tree = ast.parse(path.read_text(encoding="utf-8"))
             package = _package(path)
             for node in _runtime_imports(tree):
-                if isinstance(node, ast.ImportFrom) and node.module == "untaped.capability_api":
+                if isinstance(node, ast.ImportFrom) and node.module == "untaped.sdk":
                     for alias in node.names:
                         if alias.name in SETTINGS_READERS:
                             yield f"{rel}::settings::{layer} -> {alias.name}"

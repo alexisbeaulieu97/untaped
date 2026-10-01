@@ -11,7 +11,7 @@ import pytest
 from untaped.capabilities.github.application.inventory import RepositoryInventoryItem
 from untaped.capabilities.github.application.inventory_cache import CachedRepoInventory
 from untaped.capabilities.github.domain.inventory import RepoInventory
-from untaped.capability_api import UntapedError
+from untaped.sdk import UntapedError
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
 API = RepositoryInventoryItem(full_name="acme/api", clone_url="https://github.com/acme/api.git")

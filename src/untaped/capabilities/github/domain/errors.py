@@ -15,7 +15,7 @@ from untaped.capabilities.github.errors import (
     GithubGraphqlError,
     GithubGraphqlErrorKind,
 )
-from untaped.capability_api import ErrorCategory, HttpError, UntapedError, rejected_token_error
+from untaped.sdk import ErrorCategory, HttpError, UntapedError, rejected_token_error
 
 __all__ = [
     "GitCorpusError",
