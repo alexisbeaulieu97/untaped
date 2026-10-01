@@ -100,7 +100,8 @@ stdin; anything they print becomes diagnostics.
   `latest`.
 - `restore` previews and confirms like apply and restores the whole bundle as
   one transaction. It refuses to overwrite files changed after the backup
-  unless `--force` is passed.
+  unless `--force` is passed. With `--format json|yaml|pipe` its row says
+  `planned`, `restored` or `failed`.
 - Backups hold text content only, not mode or mtime. Bundles are owner-only
   (directories `0700`, files `0600`).
 - `backups prune [--keep N] [--older-than DAYS]` falls back to the

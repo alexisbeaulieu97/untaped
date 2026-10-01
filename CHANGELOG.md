@@ -55,6 +55,10 @@
     `max_age_seconds`) for a cached, metadata-only repository list that
     workspace `create`/`add` resolve names from and the picker searches; it
     falls back to `github.default_org`.
+- Recipe
+  - **New:** `recipe backups restore` takes `--format` and `--columns`; with
+    `json`, `yaml` or `pipe` it prints one `recipe.restore_outcome` row
+    (`planned`, `restored` or `failed`). Table output is unchanged.
 
 ## 9.1.0
 

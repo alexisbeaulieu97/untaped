@@ -55,6 +55,18 @@ class BackupPruneRecord(OutcomeRecord):
     detail: str | None = None
 
 
+class BackupRestoreRecord(OutcomeRecord):
+    """The ``backups restore`` row (kind ``recipe.restore_outcome``).
+
+    ``files`` counts the bundle's files. ``action`` is ``planned``
+    (``--dry-run``), ``restored`` or ``failed`` (with ``detail`` and ``error``).
+    """
+
+    id: str
+    files: int
+    detail: str | None = None
+
+
 def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
     """List backup bundles."""
     with report_config_errors():
@@ -139,6 +151,8 @@ def restore_command(
     ] = False,
     yes: YesOption = False,
     dry_run: DryRunOption = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
     """Restore a backup bundle."""
     with report_config_errors():
@@ -174,6 +188,24 @@ def restore_command(
         )
         if dry_run:
             _preview(outcome.planned_rows)
+        if outcome.cancelled:
+            finish(outcome)
+        if fmt != "table":
+            failed = {
+                bundle_id: ErrorInfo.from_exception(exc) for bundle_id, exc in outcome.failures
+            }
+            row = BackupRestoreRecord(
+                id=backup_id,
+                files=len(items),
+                action="planned" if dry_run else "failed" if backup_id in failed else "restored",
+                detail=failed[backup_id].message if backup_id in failed else None,
+                error=failed.get(backup_id),
+            )
+            echo(
+                render_rows(
+                    [row.model_dump()], fmt=fmt, columns=columns, kind="recipe.restore_outcome"
+                )
+            )
         if not outcome.any_failed and outcome.results:
             ui.message("success", f"restored {backup_id}")
         finish(outcome)

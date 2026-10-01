@@ -252,7 +252,8 @@ output.
 | `recipe validate` | `recipe.check` |
 | `recipe test` | `recipe.test` |
 | `recipe hooks run` | `recipe.hook_run` |
-| `recipe backups list/get/restore` | `recipe.backup` |
+| `recipe backups list/get` | `recipe.backup` |
+| `recipe backups restore` | `recipe.restore_outcome` |
 | `recipe backups prune` | `recipe.prune_outcome` |
 
 `recipe packs sync --stdin` and `recipe packs remove --stdin` read pack
