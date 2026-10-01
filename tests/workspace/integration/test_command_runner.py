@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 
@@ -66,3 +67,29 @@ def test_bad_input_is_127_not_an_exception(tmp_path: Path) -> None:
     runner = SubprocessRunner()
     assert runner.run(["a\0b"], cwd=tmp_path, env={}, timeout=5).returncode == 127
     assert runner.run([], cwd=tmp_path, env={}, timeout=5).returncode == 127
+
+
+def test_cancel_stops_running_commands(tmp_path: Path) -> None:
+    runner = SubprocessRunner()
+    results = []
+    threads = [
+        threading.Thread(
+            target=lambda i=i: results.append(
+                runner.run(
+                    ["sh", "-c", f"sleep 5; touch MARKER_{i}"], cwd=tmp_path, env={}, timeout=30
+                )
+            )
+        )
+        for i in range(2)
+    ]
+    for t in threads:
+        t.start()
+    time.sleep(0.3)
+    started = time.monotonic()
+    runner.cancel()
+    for t in threads:
+        t.join(timeout=5)
+    assert time.monotonic() - started < 4
+    assert len(results) == 2
+    time.sleep(0.2)
+    assert not list(tmp_path.glob("MARKER_*"))

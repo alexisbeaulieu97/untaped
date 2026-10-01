@@ -8,6 +8,8 @@ import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+import pytest
+
 from untaped.capabilities.workspace.application.run import RunInRepos, RunTarget
 from untaped.capabilities.workspace.domain import CommandResult, RepoSpec
 
@@ -17,6 +19,10 @@ class FakeRunner:
         self.codes = codes
         self.calls: list[tuple[str, dict[str, str]]] = []
         self.lock = threading.Lock()
+        self.cancelled = False
+
+    def cancel(self) -> None:
+        self.cancelled = True
 
     def run(
         self, argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], timeout: float
@@ -135,6 +141,10 @@ class SlowRunner:
         self.max_active = 0
         self.started: list[str] = []
         self.lock = threading.Lock()
+        self.cancelled = False
+
+    def cancel(self) -> None:
+        self.cancelled = True
 
     def run(
         self, argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], timeout: float
@@ -189,3 +199,18 @@ def test_on_done_called_once_per_row(tmp_path: Path) -> None:
         on_done=lambda r: seen.append(r.repo),
     )(_targets(tmp_path, "a", "b", "c"), ["x"])
     assert sorted(seen) == ["acme/a", "acme/b", "acme/c"]
+
+
+def test_interrupt_cancels_the_runner_and_propagates(tmp_path: Path) -> None:
+    class Interrupting(FakeRunner):
+        def run(
+            self, argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], timeout: float
+        ) -> CommandResult:
+            raise KeyboardInterrupt
+
+    runner = Interrupting({})
+    with pytest.raises(KeyboardInterrupt):
+        RunInRepos(runner, parallel=2, timeout=5, fail_fast=False)(
+            _targets(tmp_path, "a", "b"), ["x"]
+        )
+    assert runner.cancelled
