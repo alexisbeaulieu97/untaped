@@ -9,9 +9,8 @@ exempt) that crosses a layer the wrong way is flagged as
 - ``application`` imports nothing from ``infrastructure`` or ``cli``;
 - ``infrastructure`` imports nothing from ``cli`` and ``application`` only
   under ``TYPE_CHECKING`` (adapters satisfy ports structurally);
-- none of them resolves settings (``app_context``, ``get_config_section``,
-  ``get_core_settings``): only ``cli`` does, as the composition root
-  (flagged as ``<file>::settings::<layer> -> <name>``).
+- none of them resolves settings (``app_context``, ``get_config_section``): only ``cli``
+  does, as the composition root (flagged as ``<file>::settings::<layer> -> <name>``).
 
 Imports between capabilities are covered by
 ``tests/unit/test_capabilities/test_capability_imports.py``. Existing
@@ -34,7 +33,7 @@ FORBIDDEN = {
     "infrastructure": ("cli", "application"),
 }
 # Only ``cli/`` resolves settings; lower layers receive narrowed models.
-SETTINGS_READERS = frozenset({"app_context", "get_config_section", "get_core_settings"})
+SETTINGS_READERS = frozenset({"app_context", "get_config_section"})
 
 
 def _is_type_checking(test: ast.expr) -> bool:
