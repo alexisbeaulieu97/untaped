@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
     from untaped.capabilities.workspace.domain.models import (
         ArchivedRecord,
+        CachedRepo,
         Checkout,
         CommandResult,
         RepoSpec,
@@ -42,8 +43,8 @@ class GitWorktrees(Protocol):
         """Branch names of ``url``'s cache as last fetched, sorted; ``[]`` when it is missing."""
         ...
 
-    def cache_origin(self, cache: Path) -> str | None:
-        """``remote.origin.url`` of the cache at ``cache``; ``None`` when unreadable."""
+    def cached_repos(self) -> list[CachedRepo]:
+        """Every bare cache under the cache dir, sorted by :attr:`CachedRepo.ident`."""
         ...
 
     def remove(self, url: str, dest: Path, *, force: bool) -> None:

@@ -9,7 +9,7 @@ import pytest
 
 from untaped.capabilities.github.api import RepoInventory, RepositoryInventoryItem
 from untaped.capabilities.workspace.cli.picker import build_request, name_validator, repo_args
-from untaped.capabilities.workspace.domain import RepoArg, WorkspaceRecord
+from untaped.capabilities.workspace.domain import CachedRepo, RepoArg, WorkspaceRecord
 from untaped.capabilities.workspace.infrastructure import StateWorkspaceStore
 from untaped.capabilities.workspace.infrastructure.pick_source import RepoPickSource
 from untaped.capability_api import Picked, PickItem, PickResult, UntapedError
@@ -63,11 +63,11 @@ class FakeGit:
         self.calls.append(url)
         return ["main", "release/2"]
 
-    def cache_origin(self, cache: Path) -> str | None:
-        return None
+    def cached_repos(self) -> list[CachedRepo]:
+        return []
 
 
-def _source(tmp_path: Path, git: FakeGit, refreshes: list[bool | None]) -> RepoPickSource:
+def _source(git: FakeGit, refreshes: list[bool | None]) -> RepoPickSource:
     item = RepositoryInventoryItem(full_name="acme/api", clone_url="https://h/acme/api.git")
 
     def inventory(refresh: bool | None) -> RepoInventory:
@@ -76,14 +76,14 @@ def _source(tmp_path: Path, git: FakeGit, refreshes: list[bool | None]) -> RepoP
             raise UntapedError("offline")
         return RepoInventory(repos=(item,), refreshed_at=None, scope_key="k")
 
-    return RepoPickSource(cache_dir=tmp_path, git=git, inventory=inventory)  # type: ignore[arg-type]
+    return RepoPickSource(git=git, inventory=inventory)  # type: ignore[arg-type]
 
 
-def test_build_request(tmp_path: Path) -> None:
+def test_build_request() -> None:
     git, refreshes = FakeGit(), []
     request = build_request(
         heading="New workspace",
-        source=_source(tmp_path, git, refreshes),
+        source=_source(git, refreshes),
         template="feature/{name}",
         title="",
         title_label="name",
