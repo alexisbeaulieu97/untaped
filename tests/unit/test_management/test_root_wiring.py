@@ -219,3 +219,15 @@ def test_target_profile_option_is_gone(_isolated_config: Path, verb: list[str]) 
     result = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
     assert result.exit_code == 2
     assert read_config_dict(_isolated_config)["profiles"] == {"default": {}, "prod": {}}
+
+
+def test_ctrl_c_at_a_config_prompt_exits_130() -> None:
+    from untaped.testing import ScriptedPromptBackend, invoke_cli
+
+    result = invoke_cli(
+        bootstrap.build_root_app(builtins=(), externals=()),
+        ["config", "set", "ui.theme", "--prompt"],
+        interactive=True,
+        prompt_backend=ScriptedPromptBackend(interrupt=True),
+    )
+    assert result.exit_code == 130

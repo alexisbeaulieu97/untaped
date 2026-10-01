@@ -14,7 +14,7 @@ from cyclopts import App
 from rich.console import Console
 
 from untaped.cli import run_cyclopts_app
-from untaped.errors import ConfigError
+from untaped.errors import ConfigError, PromptInterruptedError
 from untaped.prompts import (
     PromptBackend,
     PromptChoice,
@@ -202,7 +202,9 @@ class ScriptedPromptBackend:
 
     Each prompt method pops its next scripted answer and records
     ``(method, message)`` in ``calls``; an exhausted queue raises
-    :class:`ConfigError` so a test fails cleanly instead of hanging.
+    :class:`ConfigError` so a test fails cleanly instead of hanging. With
+    ``interrupt=True`` every prompt raises :class:`PromptInterruptedError`,
+    simulating Ctrl-C.
     """
 
     def __init__(
@@ -214,7 +216,9 @@ class ScriptedPromptBackend:
         selections: Sequence[Any] = (),
         multiselects: Sequence[list[Any]] = (),
         picks: Sequence[PickResult | None] = (),
+        interrupt: bool = False,
     ) -> None:
+        self._interrupt = interrupt
         self._confirms = deque(confirms)
         self._texts = deque(texts)
         self._secrets = deque(secrets)
@@ -225,6 +229,8 @@ class ScriptedPromptBackend:
 
     def _next(self, queue: deque[Any], method: str, message: str) -> Any:
         self.calls.append((method, message))
+        if self._interrupt:
+            raise PromptInterruptedError("prompt cancelled")
         if not queue:
             raise ConfigError(f"no scripted {method} answer for prompt {message!r}")
         return queue.popleft()

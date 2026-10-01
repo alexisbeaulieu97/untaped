@@ -93,3 +93,12 @@ def test_destructive_contract_flags_a_missing_refusal() -> None:
 
     with pytest.raises(AssertionError, match="refuse"):
         assert_destructive_contract(command, [])
+
+
+def test_scripted_backend_interrupt_raises_prompt_interrupted() -> None:
+    from untaped.errors import PromptInterruptedError
+
+    backend = ScriptedPromptBackend(interrupt=True)
+    with pytest.raises(PromptInterruptedError):
+        backend.text("Name", default=None)
+    assert backend.calls == [("text", "Name")]
