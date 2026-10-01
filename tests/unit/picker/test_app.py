@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
+from prompt_toolkit.application import get_app
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
@@ -125,3 +126,11 @@ def test_ctrl_r_while_a_refresh_is_running_does_not_start_another() -> None:
     )
     assert len(pending) == 1
     assert picked is not None
+
+
+def test_an_external_sigint_interrupts_the_picker() -> None:
+    def interrupt(_work: Callable[[], None]) -> None:
+        get_app().key_processor.send_sigint()  # what `kill -INT` triggers on the loop
+
+    with pytest.raises(KeyboardInterrupt):
+        _run("", _request(refresh=lambda _force: PickCatalog(ITEMS)), spawn=interrupt)

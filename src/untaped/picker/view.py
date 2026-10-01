@@ -3,12 +3,17 @@
 The output is prompt_toolkit ``StyleAndTextTuples`` (``(style, text)`` pairs)
 built from plain tuples, so this module never imports prompt_toolkit. Panes
 sit side by side from :data:`WIDE` columns and stack below that; list windows
-shrink so the whole picker fits the terminal height.
+shrink so the whole picker fits the terminal height. Widths are terminal
+cells (``rich.cells``), so wide characters line up; narrow terminals render at
+their real width, with the [ Create ] button shortened to ``Create`` below ten
+inner columns.
 """
 
 # ruff: noqa: RUF001  (the pane glyphs are intentional)
 
 from __future__ import annotations
+
+from rich.cells import cell_len, set_cell_size
 
 from untaped.picker.state import (
     ALL,
@@ -50,7 +55,6 @@ def render(state: PickerState, width: int, height: int) -> list[Fragment]:
     Fits ``height`` lines whenever the terminal is tall enough for one list row
     per pane; shorter terminals overflow rather than drop the chrome.
     """
-    width = max(width, 40)
     lines: list[Line] = [_header(state, width), []]
     search_focused = state.focus != "selected"
     if width >= WIDE:
@@ -103,23 +107,24 @@ def _stacked_rows(height: int, search_focused: bool) -> tuple[int, int]:
 
 
 def _length(line: Line) -> int:
-    return sum(len(text) for _style, text in line)
+    return sum(cell_len(text) for _style, text in line)
 
 
 def _fit(line: Line, width: int) -> Line:
-    """Truncate (with ``…``) or pad ``line`` to exactly ``width`` characters."""
+    """Truncate (with ``…``) or pad ``line`` to exactly ``width`` cells."""
     out: Line = []
     used = 0
     for style, text in line:
         room = width - used
         if room <= 0:
             break
-        if len(text) > room:
-            out.append((style, text[: room - 1] + "…"))
+        cells = cell_len(text)
+        if cells > room:
+            out.append((style, set_cell_size(text, room - 1) + "…"))
             used = width
             break
         out.append((style, text))
-        used += len(text)
+        used += cells
     if used < width:
         out.append(("", " " * (width - used)))
     return out
@@ -132,12 +137,12 @@ def _pane(title: str, body: list[Line], width: int, focused: bool) -> list[Line]
     top: Line = [
         (border, "╭─"),
         (border, top_label),
-        (border, "─" * max(0, width - 4 - len(top_label)) + "─╮"),
+        (border, "─" * max(0, width - 4 - cell_len(top_label)) + "─╮"),
     ]
     lines = [_fit(top, width)]
     for line in body:
         lines.append([(border, "│ "), *_fit(line, inner), (border, " │")])
-    lines.append([(border, "╰" + "─" * (width - 2) + "╯")])
+    lines.append(_fit([(border, "╰" + "─" * (width - 2) + "╯")], width))
     return lines
 
 
@@ -154,7 +159,7 @@ def _header(state: PickerState, width: int) -> Line:
             line.append(("class:picker.cursor", "█"))
     if state.request.subtitle is not None:
         subtitle = state.request.subtitle(state.title, state.defaults)
-        gap = width - _length(line) - len(subtitle) - 1
+        gap = width - _length(line) - cell_len(subtitle) - 1
         if gap >= 2:
             line += [("", " " * gap), ("class:picker.subtitle", subtitle)]
     return _fit(line, width)
@@ -167,7 +172,7 @@ def _footer(state: PickerState, width: int) -> Line:
         )
     if state.error:
         return _fit([("class:picker.error", f" {state.error}")], width)
-    keys = _KEYS if len(_KEYS) < width else _SHORT_KEYS
+    keys = _KEYS if cell_len(_KEYS) < width else _SHORT_KEYS
     return _fit([("class:picker.keys", f" {keys}")], width)
 
 
@@ -206,7 +211,7 @@ def _left_body(state: PickerState, inner: int, list_rows: int) -> list[Line]:
         status += " · refreshing…"
     elif state.stale:
         status += " · refresh failed"
-    body.append([("class:picker.dim", status.rjust(inner))])
+    body.append([("", " " * (inner - cell_len(status))), ("class:picker.dim", status)])
     return body
 
 
@@ -225,7 +230,8 @@ def _right_body(state: PickerState, inner: int, window: int) -> list[Line]:
     body += [[] for _ in range(window - len(body))]
     create_focus = state.focus == "selected" and state.row == (CREATE, None)
     button = "class:picker.button.focus" if create_focus else "class:picker.button"
-    body.append([("", " " * max(0, (inner - 10) // 2)), (button, "[ Create ]")])
+    label = "[ Create ]" if inner >= 10 else "Create"
+    body.append([("", " " * ((inner - cell_len(label)) // 2)), (button, label)])
     return body
 
 
@@ -245,7 +251,8 @@ def _right_row(state: PickerState, row: Row) -> Line:
             ("class:picker.dim", summary),
         ]
     setting = next(s for s in state.request.settings if s.key == key)
-    line: Line = [pointer, ("", "    "), ("class:picker.dim", f"{setting.label:<8}")]
+    label = setting.label + " " * (8 - cell_len(setting.label))
+    line: Line = [pointer, ("", "    "), ("class:picker.dim", label)]
     if here and state.editing is not None:
         hints = "  ".join(completions(state)[:4])
         return [
