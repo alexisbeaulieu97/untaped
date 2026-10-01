@@ -49,7 +49,8 @@ class RunInRepos:
         pending: dict[Future[CommandResult], int] = {}
         queue = list(enumerate(targets))
         stop = False
-        with ThreadPoolExecutor(max_workers=self._parallel) as pool:
+        pool = ThreadPoolExecutor(max_workers=self._parallel)
+        try:
             while queue or pending:
                 while queue and not stop and len(pending) < self._parallel:
                     index, target = queue.pop(0)
@@ -64,6 +65,12 @@ class RunInRepos:
                     index = pending.pop(future)
                     row = self._row(targets[index], future.result())
                     stop = self._finish(rows, index, row) or stop
+        except BaseException:
+            # Ctrl-C: do not wait for running jobs (their process trees are their own sessions,
+            # so the terminal's SIGINT does not reach them).
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise
+        pool.shutdown()
         for index, target in queue:
             self._finish(rows, index, _skipped(target))
         return [rows[i] for i in sorted(rows)]
