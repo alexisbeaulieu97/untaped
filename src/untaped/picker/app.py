@@ -158,15 +158,22 @@ def _bindings(
     def _refresh(_event: KeyPressEvent) -> None:
         refresh(True)
 
-    @bindings.add(Keys.Any)
-    def _typed(event: KeyPressEvent) -> None:
-        if isinstance(event.key_sequence[0].key, Keys):
-            return  # tail of an unbound escape sequence (Home, F1, ...), not typed text
-        for char in event.data:
+    def feed(text: str) -> None:
+        for char in text:
             if outcome() != "running":
                 return
             if char.isprintable():
                 apply(char)
+
+    @bindings.add(Keys.BracketedPaste)
+    def _pasted(event: KeyPressEvent) -> None:
+        feed(event.data)
+
+    @bindings.add(Keys.Any)
+    def _typed(event: KeyPressEvent) -> None:
+        if isinstance(event.key_sequence[0].key, Keys):
+            return  # tail of an unbound escape sequence (Home, F1, ...), not typed text
+        feed(event.data)
 
     return bindings
 
