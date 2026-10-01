@@ -51,8 +51,9 @@ spec:
   job-templates get NAME --format yaml` shows them); ids, timestamps,
   `status` and `last_job_*` are left out; so are fields the controller
   derives (`custom_virtualenv`, `webhook_key`, and `local_path` unless the
-  project is manual) and `organization`, which lives in `metadata`. Multi-line text such as `extra_vars` is written as a `|`
-  block, as the UI shows it.
+  project is manual) and `organization`, which lives in `metadata`.
+  Multi-line text such as `extra_vars` is written as a `|` block, as the UI
+  shows it.
 - References (organization, project, inventory, credentials, labels,
   instance groups, execution environment) travel by name. They must exist
   where the document is applied, or be created by the same `apply`.

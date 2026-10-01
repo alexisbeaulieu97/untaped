@@ -39,7 +39,8 @@
     repo).
 - AWX
   - **Security:** `export` writes a job template's `host_config_key` as
-    `$encrypted$`; empty secrets stay empty instead of becoming placeholders.
+    `$encrypted$`, and `get`/`list` mask a set `host_config_key`; empty secrets
+    stay empty instead of becoming placeholders.
   - **Changed:** `export` no longer writes controller-derived fields
     (`custom_virtualenv`, `webhook_key`, SCM projects' `local_path`) or a
     `spec.organization` copy, and `apply` ignores them in older files.
