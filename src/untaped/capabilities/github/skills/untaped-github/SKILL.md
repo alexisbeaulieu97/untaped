@@ -13,7 +13,8 @@ unscanned before reporting "none" or "all".
 
 - Settings live under `profiles.<name>.github`: `base_url`, `token` or
   `token_command`, `default_org`, `corpus_path`, `sweep` freshness and
-  concurrency, and `inventory` (the cached repo list the workspace picker searches).
+  concurrency, and `inventory` (the cached repo list the workspace picker
+  searches).
 - `base_url` defaults to `https://api.github.com`; GitHub Enterprise Server
   usually needs `untaped config set github.base_url https://HOST/api/v3`.
 - Set the token with `untaped config set github.token --prompt`, or point

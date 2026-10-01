@@ -108,13 +108,16 @@ rules below.
    profile/state models, its skills, and its doctor checks. Never read or
    write another capability's section; never mutate another capability's
    state.
-2. **No cross-capability private-helper coupling.** Capability code imports
-   shared code only from `untaped.capability_api` (or core framework
-   modules through it). Never import a sibling capability's private
-   helpers (`from untaped.capabilities.<other>...` except through the
-   owning capability's public SPEC surface). If two capabilities need the
-   same logic, it belongs in core (exposed via `capability_api`) or in
-   exactly one owning capability — never forked into both.
+2. **Cross-capability code goes through a declared public module.**
+   Capability code imports core only from `untaped.capability_api`. It may
+   import another capability only through that capability's public module,
+   `untaped.capabilities.<other>.api`, never its other internals; each
+   importing pair is listed in `ALLOWED_CROSS_CAPABILITY_IMPORTS`
+   (`tests/unit/test_capabilities/test_capability_imports.py`).
+   Dependencies are one-way (no cycles) and imported lazily on CLI paths.
+   Logic two capabilities need lives in exactly one owner's `api.py` or in
+   core — never forked into both; extract a protocol into core only when a
+   second provider appears.
 3. **Keep `AGENTS.md` and `docs/` up to date.** If you change the
    composition contract, a management workflow, or a cross-cutting helper,
    edit the relevant docs in the same commit. Each fact has one home, and
