@@ -107,7 +107,7 @@ def test_float_range_external_shows_its_raw_range_and_the_running_sdk() -> None:
     assert quarantined["title"] == "api-range"
     assert str(quarantined["detail"]).startswith(
         "malformed api_requires (1.0, 2.0): expected ((major, minor), (major, minor)) "
-        "int tuples as (min_inclusive, max_exclusive); running SDK 3.1, "
+        "int tuples as (min_inclusive, max_exclusive); running SDK 3.2, "
         "declare e.g. ((3, 0), (4, 0))"
     )
 

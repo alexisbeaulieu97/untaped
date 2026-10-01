@@ -343,7 +343,7 @@ def test_api_3_0_rejects_2_x_providers() -> None:
     )
     (record,) = capped.quarantine
     assert record.reason == "api-range"
-    assert "does not admit SDK version 3.1" in record.detail
+    assert "does not admit SDK version 3.2" in record.detail
 
 
 @pytest.mark.parametrize(
