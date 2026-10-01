@@ -272,13 +272,17 @@ class LocalGitWorktrees:
         """
         admin = Path(self._run(["rev-parse", "--absolute-git-dir"], cwd=dest, capture=True).strip())
         try:
-            back = Path((admin / "gitdir").read_text().strip()).resolve()
+            back = (admin / (admin / "gitdir").read_text().strip()).resolve()
         except OSError:
             back = None
         if back != (dest / ".git").resolve():
             raise GitError(
                 f"{dest} is not registered as a worktree of its repo cache",
                 category="failed",
+                hint=(
+                    "if the workspace directory moved, run git worktree repair in the repo; "
+                    "otherwise archive with --force after checking it"
+                ),
             )
 
     # -- plumbing ----------------------------------------------------------

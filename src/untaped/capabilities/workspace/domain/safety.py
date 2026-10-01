@@ -16,6 +16,10 @@ UNREADABLE = "git state unreadable"
 """Prefix of the blocker for a worktree git cannot read (``UNREADABLE: <reason>``)."""
 
 _LOCAL_WORK_HINT = "commit and push your changes"
+_READ_ONLY_HINT = (
+    "create a branch for the commits in the read-only repo and push it "
+    "(git switch -c NAME && git push -u origin NAME)"
+)
 _BY_HAND_HINT = "check the repo by hand, then pass --force"
 _STASH_SUFFIXES = ("stash entry", "stash entries")
 
@@ -44,8 +48,11 @@ def archive_hint(blocked: Sequence[StatusRow]) -> str:
     """A non-destructive next step for each kind of blocker in ``blocked``."""
     pairs = [(row, blocker) for row in blocked for blocker in row.blockers]
     parts: list[str] = []
-    if any(b == UNCOMMITTED or b.endswith(" not pushed") for _, b in pairs):
+    unpushed = [row for row, b in pairs if b.endswith(" not pushed")]
+    if any(b == UNCOMMITTED for _, b in pairs) or any(not row.read_only for row in unpushed):
         parts.append(_LOCAL_WORK_HINT)
+    if any(row.read_only for row in unpushed):
+        parts.append(_READ_ONLY_HINT)
     stash_branches = dict.fromkeys(
         row.branch or "(no branch)" for row, b in pairs if b.endswith(_STASH_SUFFIXES)
     )

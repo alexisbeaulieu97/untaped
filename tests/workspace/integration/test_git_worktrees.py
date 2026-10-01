@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import threading
 from collections.abc import Callable
@@ -343,13 +344,32 @@ def test_status_of_an_unregistered_worktree_raises_git_error(
     cache = cache_path_for(url, cache_dir=tmp_path / "cache")
     cache.rename(cache.with_name("moved.git"))
     worktrees.checkout(url, tmp_path / "b" / other, branch="b", base=None)  # a fresh cache
-    with pytest.raises(GitError):
+    with pytest.raises(GitError) as caught:
         worktrees.status(dest, branch="a", base="main")
+    if other == "api":  # aliased: the admin dir exists but points at another worktree
+        assert caught.value.hint is not None and "git worktree repair" in caught.value.hint
     with pytest.raises(GitError):
         worktrees.remove(url, dest, force=False)
     assert dest.exists()
     worktrees.remove(url, dest, force=True)
     assert not dest.exists()
+
+
+def test_status_accepts_a_relative_admin_gitdir(
+    worktrees: LocalGitWorktrees,
+    make_upstream: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """git 2.48+ with worktree.useRelativePaths writes the admin gitdir relative to it."""
+    url = str(make_upstream("api"))
+    dest = tmp_path / "ws" / "api"
+    worktrees.checkout(url, dest, branch="b", base=None)
+    admin = Path(git(dest, "rev-parse", "--absolute-git-dir"))
+    (admin / "gitdir").write_text(os.path.relpath(dest / ".git", admin) + "\n")
+    monkeypatch.chdir(tmp_path)
+    status = worktrees.status(dest, branch="b", base="main")
+    assert status is not None and status.branch == "b"
 
 
 def test_force_remove_reports_a_directory_it_cannot_delete(
