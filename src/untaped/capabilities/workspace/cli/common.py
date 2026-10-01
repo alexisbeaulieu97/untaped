@@ -9,8 +9,9 @@ from typing import Annotated
 
 from cyclopts import Parameter
 
-from untaped.capabilities.workspace.application.locate import locate_workspace
+from untaped.capabilities.workspace.application.locate import locate_workspace, workspace_root
 from untaped.capabilities.workspace.application.provision import ProvisionRepos
+from untaped.capabilities.workspace.application.status import WorkspaceStatus
 from untaped.capabilities.workspace.domain.models import RepoArg, WorkspaceRecord
 from untaped.capabilities.workspace.infrastructure import (
     GithubRepoCatalog,
@@ -88,12 +89,12 @@ def workspace_settings() -> WorkspaceSettings:
 
 
 def workspaces_dir(settings: WorkspaceSettings) -> Path:
-    return settings.workspaces_dir.expanduser().absolute()
+    return settings.workspaces_dir.expanduser().resolve()
 
 
 def workspace_dir(settings: WorkspaceSettings, name: str) -> Path:
     """Absolute directory of workspace ``name``."""
-    return workspaces_dir(settings) / name
+    return workspace_root(settings.workspaces_dir, name)
 
 
 def git_worktrees(settings: WorkspaceSettings) -> LocalGitWorktrees:
@@ -117,6 +118,13 @@ def parallel_workers(settings: WorkspaceSettings, requested: int | None) -> int:
     if requested is None:
         requested = settings.parallel or min(8, cap)
     return clamp_parallel(requested, cap=cap, policy="2 * os.cpu_count()")
+
+
+def status_reader(settings: WorkspaceSettings, git: LocalGitWorktrees) -> WorkspaceStatus:
+    """The ``status`` use case (also ``archive``'s safety check), ``workspace.parallel`` wide."""
+    return WorkspaceStatus(
+        git, workspaces_dir=workspaces_dir(settings), parallel=parallel_workers(settings, None)
+    )
 
 
 def provisioner(settings: WorkspaceSettings, parallel: int | None) -> ProvisionRepos:

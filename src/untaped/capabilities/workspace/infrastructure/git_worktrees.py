@@ -1,6 +1,6 @@
 """Git worktrees over a shared bare cache: one cache per repo URL, many worktrees.
 
-Each repo URL maps to a bare cache (``cache_path_for``) whose
+Each repo URL maps to a bare cache (:func:`cache_path_for`) whose
 ``origin`` remote fetches into ``refs/remotes/origin/*``; workspaces get
 ``git worktree`` checkouts from it. Every cache write runs under the cache's
 advisory lock, so parallel provisioning of one repo serializes safely. All
@@ -15,19 +15,34 @@ import shutil
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from untaped.capabilities.workspace.domain.models import Checkout, WorktreeStatus
+from untaped.capabilities.workspace.domain.naming import repo_key
 from untaped.capabilities.workspace.domain.safety import archive_blockers
 from untaped.capabilities.workspace.errors import GitError, WorkspaceError
-from untaped.capabilities.workspace.infrastructure.bare_cache import cache_path_for
 from untaped.capability_api import GitCommandError, attribution, file_lock, run_git
 
+if TYPE_CHECKING:
+    from untaped.capability_api import GitResult
+
 _FETCH_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
+_LAYOUT_KEY = "untaped.layout"
+_LAYOUT = "2"
+"""Marks a cache already on the remote-tracking layout (legacy heads dropped)."""
+_CACHE_CONFIG = r"^(remote\.origin\.(url|fetch)|untaped\.layout)$"
+_STASH_MARKERS = ("refs/stash", "logs/refs/stash", "reftable")
+"""Paths under a common git dir whose absence means no stash (reftable: cannot tell)."""
 _BRANCH_IN_USE = ("already checked out", "used by worktree")
 _BRANCH_IN_USE_HINT = (
     "the branch is checked out in another workspace: archive that workspace or pick another branch"
 )
 _EXISTS_HINT = "move the existing directory aside, or use another branch name"
+
+
+def cache_path_for(url: str, *, cache_dir: Path) -> Path:
+    """The bare cache of ``url``: ``<cache_dir>/<host>/<owner>/<name>.git`` (:func:`repo_key`)."""
+    return cache_dir.expanduser().resolve().joinpath(*repo_key(url))
 
 
 class LocalGitWorktrees:
@@ -57,16 +72,19 @@ class LocalGitWorktrees:
         with self._locked(cache):
             self._ensure_cache(cache, url)
             self._fetch(cache)
-            if base is None and not self._has_ref(cache, "refs/remotes/origin/HEAD"):
-                self._run(["remote", "set-head", "origin", "--auto"], cwd=cache, check=False)
-            picked = self._pick_base(cache, url, base)
+            picked = base if base is not None else self._default_branch(cache)
+            refs = self._refs(cache, branch, picked)
+            if f"refs/remotes/origin/{picked}" not in refs:
+                raise GitError(
+                    f"base branch '{picked}' not found on origin of {url}", category="not_found"
+                )
             self._run(["worktree", "prune"], cwd=cache)
             if branch is None:
                 self._run(["worktree", "add", "--detach", target, f"origin/{picked}"], cwd=cache)
                 return Checkout(
                     action="checked_out", base=picked, detail=f"read-only at origin/{picked}"
                 )
-            checkout = self._add_writable(cache, target, branch, picked)
+            checkout = self._add_writable(cache, target, branch, picked, refs)
             self._set_upstream(cache, branch)
             return checkout
 
@@ -74,8 +92,8 @@ class LocalGitWorktrees:
         """Git state of the worktree at ``dest``; ``None`` when it is missing."""
         if not dest.exists():
             return None
-        self._check_registered(dest)
-        out = self._run(["status", "--porcelain=v2", "--branch"], cwd=dest, capture=True)
+        common = self._check_registered(dest)
+        out = self._run(["status", "--porcelain=v2", "--branch"], cwd=dest, capture=True).text
         head, upstream, ahead, behind, modified, untracked = _parse_status(out)
         if upstream is not None and not self._has_ref(dest, f"refs/remotes/{upstream}"):
             upstream = None  # configured for the first push, but not on origin yet
@@ -86,9 +104,9 @@ class LocalGitWorktrees:
             behind=behind,
             modified=modified,
             untracked=untracked,
-            stashed=self._stashed(dest, branch),
+            stashed=self._stashed(dest, branch, common=common),
             unpushed=self._unpushed(dest),
-            submodules=self._has_submodules(dest),
+            submodules=(dest / ".gitmodules").exists() and self._has_submodules(dest),
         )
 
     def fetch(self, url: str) -> None:
@@ -117,17 +135,17 @@ class LocalGitWorktrees:
         with self._locked(cache):
             if dest.exists():
                 if not force:
-                    self._recheck(dest)
+                    self._recheck(cache, dest)
                 self._remove_worktree(cache, dest, force=force)
             self._run(["worktree", "prune"], cwd=cache)
 
-    def _recheck(self, dest: Path) -> None:
+    def _recheck(self, cache: Path, dest: Path) -> None:
         """Refuse (``conflict``) when work appeared in ``dest`` since the caller's status check.
 
         Run under the cache lock right before ``worktree remove``: changes,
         stashes on the checked-out branch, or unpushed commits block it.
         """
-        out = self._run(["status", "--porcelain=v2", "--branch"], cwd=dest, capture=True)
+        out = self._run(["status", "--porcelain=v2", "--branch"], cwd=dest, capture=True).text
         head, _, _, _, modified, untracked = _parse_status(out)
         status = WorktreeStatus(
             branch=head,
@@ -136,7 +154,7 @@ class LocalGitWorktrees:
             behind=0,
             modified=modified,
             untracked=untracked,
-            stashed=self._stashed(dest, head),
+            stashed=self._stashed(dest, head, common=cache),
             unpushed=self._unpushed(dest),
         )
         blockers = archive_blockers(status)
@@ -166,24 +184,43 @@ class LocalGitWorktrees:
     # -- checkout steps ----------------------------------------------------
 
     def _ensure_cache(self, cache: Path, url: str) -> None:
+        """Create or repair the cache; one config read when it is already set up.
+
+        A cache not yet marked ``untaped.layout = 2`` is migrated once (legacy
+        heads dropped, refspec set), then marked.
+        """
+        config: dict[str, list[str]] = {}
         if _cache_ready(cache):
-            self._drop_legacy_heads(cache)
+            config = self._cache_config(cache)
+            if config.get(_LAYOUT_KEY) != [_LAYOUT]:
+                self._drop_legacy_heads(cache, config.get("remote.origin.fetch", []))
         else:
             self._run(["init", "--bare", "--quiet", str(cache)], cwd=cache.parent)
-        self._ensure_remote(cache, url)
-        self._run(["config", "--replace-all", "remote.origin.fetch", _FETCH_REFSPEC], cwd=cache)
+        self._ensure_remote(cache, url, (config.get("remote.origin.url") or [""])[0])
+        if config.get("remote.origin.fetch") != [_FETCH_REFSPEC]:
+            self._run(["config", "--replace-all", "remote.origin.fetch", _FETCH_REFSPEC], cwd=cache)
+        if config.get(_LAYOUT_KEY) != [_LAYOUT]:
+            self._run(["config", "--replace-all", _LAYOUT_KEY, _LAYOUT], cwd=cache)
 
-    def _ensure_remote(self, cache: Path, url: str) -> None:
+    def _cache_config(self, cache: Path) -> dict[str, list[str]]:
+        """The cache's origin URL and fetch refspecs, and its layout mark, by key."""
+        out = self._run(
+            ["config", "--get-regexp", _CACHE_CONFIG], cwd=cache, capture=True, check=False
+        ).text
+        config: dict[str, list[str]] = {}
+        for line in out.splitlines():
+            key, _, value = line.partition(" ")
+            config.setdefault(key, []).append(value)
+        return config
+
+    def _ensure_remote(self, cache: Path, url: str, current: str) -> None:
         """Add ``origin`` (missing after a crash mid-init) or point it at ``url``."""
-        current = self._run(
-            ["config", "--get", "remote.origin.url"], cwd=cache, capture=True, check=False
-        ).strip()
         if not current:
             self._run(["remote", "add", "origin", url], cwd=cache)
         elif current != url:
             self._run(["remote", "set-url", "origin", url], cwd=cache)
 
-    def _drop_legacy_heads(self, cache: Path) -> None:
+    def _drop_legacy_heads(self, cache: Path, refspecs: list[str]) -> None:
         """Delete the mirrored ``refs/heads/*`` of an old-style ``clone --bare`` cache.
 
         Such caches fetched origin's heads straight into ``refs/heads``, so
@@ -191,21 +228,18 @@ class LocalGitWorktrees:
         in place of origin (reviving deleted or force-pushed branches). Only
         done before the refspec is swapped and while no worktree is registered.
         """
-        refspecs = self._run(
-            ["config", "--get-all", "remote.origin.fetch"], cwd=cache, capture=True, check=False
-        )
-        if refspecs.split() == [_FETCH_REFSPEC] or self._worktree_branches(cache) is not None:
+        if refspecs == [_FETCH_REFSPEC] or self._worktree_branches(cache) is not None:
             return
         heads = self._run(
             ["for-each-ref", "--format=%(refname)", "refs/heads"], cwd=cache, capture=True
-        ).split()
+        ).text.split()
         if heads:
             script = "".join(f"delete {ref}\n" for ref in heads)
             self._run(["update-ref", "--stdin"], cwd=cache, stdin=script)
 
     def _worktree_branches(self, cache: Path) -> set[str] | None:
         """Branches checked out in registered worktrees; ``None`` when there are none."""
-        out = self._run(["worktree", "list", "--porcelain"], cwd=cache, capture=True)
+        out = self._run(["worktree", "list", "--porcelain"], cwd=cache, capture=True).text
         lines = out.splitlines()
         if sum(1 for line in lines if line.startswith("worktree ")) <= 1:
             return None
@@ -219,24 +253,34 @@ class LocalGitWorktrees:
             retry_transient=True,
         )
 
-    def _pick_base(self, cache: Path, url: str, base: str | None) -> str:
-        if base is None:
-            head = self._run(
-                ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
-                cwd=cache,
-                capture=True,
-                check=False,
-            ).strip()
-            base = head.removeprefix("origin/") if head else "main"
-        if not self._has_ref(cache, f"refs/remotes/origin/{base}"):
-            raise GitError(
-                f"base branch '{base}' not found on origin of {url}", category="not_found"
-            )
-        return base
+    def _default_branch(self, cache: Path) -> str:
+        """origin's default branch (``origin/HEAD``, learnt once if unknown), else ``main``."""
+        head = self._origin_head(cache)
+        if head is None:
+            self._run(["remote", "set-head", "origin", "--auto"], cwd=cache, check=False)
+            head = self._origin_head(cache)
+        return head or "main"
 
-    def _add_writable(self, cache: Path, target: str, branch: str, base: str) -> Checkout:
-        local = self._has_ref(cache, f"refs/heads/{branch}")
-        remote = self._has_ref(cache, f"refs/remotes/origin/{branch}")
+    def _origin_head(self, cache: Path) -> str | None:
+        args = ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]
+        head = self._run(args, cwd=cache, capture=True, check=False).text.strip()
+        return head.removeprefix("origin/") or None
+
+    def _refs(self, cache: Path, branch: str | None, base: str) -> dict[str, str]:
+        """Object ids of whichever of the branch (local and origin) and base refs exist."""
+        names = [f"refs/remotes/origin/{base}"]
+        if branch is not None:
+            names += [f"refs/heads/{branch}", f"refs/remotes/origin/{branch}"]
+        args = ["for-each-ref", "--format=%(refname) %(objectname)", *names]
+        out = self._run(args, cwd=cache, capture=True).text
+        pairs = (line.partition(" ") for line in out.splitlines())
+        return {ref: oid for ref, _, oid in pairs if ref in names}
+
+    def _add_writable(
+        self, cache: Path, target: str, branch: str, base: str, refs: dict[str, str]
+    ) -> Checkout:
+        local = refs.get(f"refs/heads/{branch}")
+        remote = refs.get(f"refs/remotes/origin/{branch}")
         tracking = f"origin/{branch}"
         if local and f"refs/heads/{branch}" in (self._worktree_branches(cache) or set()):
             raise GitError(
@@ -245,7 +289,7 @@ class LocalGitWorktrees:
                 hint=_BRANCH_IN_USE_HINT,
             )
         if local and remote:
-            detail = self._reconcile(cache, branch)
+            detail = self._reconcile(cache, branch, same=local == remote)
             self._run(["worktree", "add", target, branch], cwd=cache)
             return Checkout(action="checked_out", base=base, detail=detail)
         if remote:
@@ -257,12 +301,13 @@ class LocalGitWorktrees:
         self._run(["worktree", "add", "-b", branch, target, f"origin/{base}"], cwd=cache)
         return Checkout(action="created", base=base, detail=f"from origin/{base}")
 
-    def _reconcile(self, cache: Path, branch: str) -> str:
+    def _reconcile(self, cache: Path, branch: str, *, same: bool) -> str:
         """Fast-forward a local branch behind its remote; describe how the two relate."""
         tracking = f"origin/{branch}"
+        if same:
+            return f"tracking {tracking}"
         if self._is_ancestor(cache, branch, tracking):
-            if self._rev(cache, branch) != self._rev(cache, tracking):
-                self._run(["branch", "-f", branch, tracking], cwd=cache)
+            self._run(["branch", "-f", branch, tracking], cwd=cache)
             return f"tracking {tracking}"
         if self._is_ancestor(cache, tracking, branch):
             return f"resumed; ahead of {tracking}"
@@ -274,9 +319,12 @@ class LocalGitWorktrees:
 
     # -- status helpers ----------------------------------------------------
 
-    def _stashed(self, dest: Path, branch: str | None) -> int:
+    def _stashed(self, dest: Path, branch: str | None, *, common: Path) -> int:
+        """Stash entries made on ``branch``; no git run when ``common`` has no stash."""
+        if not any((common / marker).exists() for marker in _STASH_MARKERS):
+            return 0
         label = branch if branch is not None else "(no branch)"
-        out = self._run(["stash", "list", "--format=%gs"], cwd=dest, capture=True)
+        out = self._run(["stash", "list", "--format=%gs"], cwd=dest, capture=True).text
         prefixes = (f"WIP on {label}:", f"On {label}:")
         return sum(1 for line in out.splitlines() if line.startswith(prefixes))
 
@@ -284,22 +332,25 @@ class LocalGitWorktrees:
         """Commits on ``HEAD`` that no remote-tracking branch has (detached or not)."""
         out = self._run(
             ["rev-list", "--count", "HEAD", "--not", "--remotes"], cwd=dest, capture=True
-        )
+        ).text
         return int(out.strip() or 0)
 
     def _has_submodules(self, dest: Path) -> bool:
         """Whether any submodule is initialised (``-`` marks an uninitialised one)."""
-        out = self._run(["submodule", "status", "--recursive"], cwd=dest, capture=True)
+        out = self._run(["submodule", "status", "--recursive"], cwd=dest, capture=True).text
         return any(line and not line.startswith("-") for line in out.splitlines())
 
-    def _check_registered(self, dest: Path) -> None:
+    def _check_registered(self, dest: Path) -> Path:
         """Raise unless ``dest`` is the worktree its git admin directory points back to.
+
+        Returns the worktree's common git directory (its repo cache).
 
         A recreated cache can leave an old worktree pointing at an admin
         directory that now belongs to another worktree with the same name;
         reading it would report that other worktree's state.
         """
-        admin = Path(self._run(["rev-parse", "--absolute-git-dir"], cwd=dest, capture=True).strip())
+        out = self._run(["rev-parse", "--absolute-git-dir"], cwd=dest, capture=True).text
+        admin = Path(out.strip())
         try:
             back = (admin / (admin / "gitdir").read_text().strip()).resolve()
         except OSError:
@@ -313,6 +364,10 @@ class LocalGitWorktrees:
                     "otherwise archive with --force after checking it"
                 ),
             )
+        try:
+            return (admin / (admin / "commondir").read_text().strip()).resolve()
+        except OSError:
+            return admin
 
     # -- plumbing ----------------------------------------------------------
 
@@ -331,24 +386,13 @@ class LocalGitWorktrees:
         ):
             yield
 
-    def _rev(self, cwd: Path, rev: str) -> str:
-        return self._run(["rev-parse", "--verify", rev], cwd=cwd, capture=True).strip()
-
     def _has_ref(self, cwd: Path, ref: str) -> bool:
-        return self._returncode(["show-ref", "--verify", "--quiet", ref], cwd=cwd) == 0
+        args = ["show-ref", "--verify", "--quiet", ref]
+        return self._run(args, cwd=cwd, check=False).returncode == 0
 
     def _is_ancestor(self, cwd: Path, ancestor: str, descendant: str) -> bool:
         args = ["merge-base", "--is-ancestor", ancestor, descendant]
-        return self._returncode(args, cwd=cwd) == 0
-
-    def _returncode(self, args: Sequence[str], *, cwd: Path) -> int:
-        try:
-            result = run_git(
-                args, cwd=cwd, git=self._git, timeout=self._timeout, check=False, ceiling=True
-            )
-        except GitCommandError as exc:
-            raise _git_error(exc) from exc
-        return result.returncode
+        return self._run(args, cwd=cwd, check=False).returncode == 0
 
     def _run(
         self,
@@ -360,9 +404,9 @@ class LocalGitWorktrees:
         timeout: float | None = None,
         retry_transient: bool = False,
         stdin: str | None = None,
-    ) -> str:
+    ) -> GitResult:
         try:
-            result = run_git(
+            return run_git(
                 args,
                 cwd=cwd,
                 git=self._git,
@@ -375,9 +419,6 @@ class LocalGitWorktrees:
             )
         except GitCommandError as exc:
             raise _git_error(exc) from exc
-        if result.returncode != 0:
-            return ""
-        return result.text if capture else ""
 
 
 def _cache_ready(cache: Path) -> bool:

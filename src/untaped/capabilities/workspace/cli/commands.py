@@ -10,7 +10,6 @@ from typing import Annotated
 from cyclopts import Parameter
 
 from untaped.capabilities.workspace.application.archive import ArchiveWorkspace
-from untaped.capabilities.workspace.application.status import WorkspaceStatus
 from untaped.capabilities.workspace.cli.common import (
     BaseOption,
     BranchOption,
@@ -22,6 +21,7 @@ from untaped.capabilities.workspace.cli.common import (
     locate,
     provisioner,
     repo_args,
+    status_reader,
     utc_now,
     workspace_dir,
     workspace_settings,
@@ -164,7 +164,7 @@ def status_command(
             raise UsageError("--all cannot be combined with a workspace name")
         settings = workspace_settings()
         records = StateWorkspaceStore().active() if all_workspaces else [locate(settings, name)]
-        status = WorkspaceStatus(git_worktrees(settings), workspaces_dir=workspaces_dir(settings))
+        status = status_reader(settings, git_worktrees(settings))
         progress = ui_context(strict=False).progress("Fetching repos…") if fetch else nullcontext()
         with progress:
             rows = [row for record in records for row in status(record, fetch=fetch)]
@@ -209,7 +209,7 @@ def archive_command(
         settings = workspace_settings()
         record = locate(settings, name)
         git = git_worktrees(settings)
-        rows = WorkspaceStatus(git, workspaces_dir=workspaces_dir(settings))(record)
+        rows = status_reader(settings, git)(record)
         blocked = [row for row in rows if row.blockers]
         if dry_run or (blocked and not force):
             _show_plan(rows, force=force, fmt=fmt, columns=columns)

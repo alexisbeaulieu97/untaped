@@ -18,7 +18,10 @@ class WorkspaceSettings(BaseModel):
     cache_dir: Path = Field(default=Path("~/.untaped/repositories"))
     workspaces_dir: Path = Field(default=Path("~/.untaped/workspaces"))
     parallel: int | None = Field(default=None, ge=1)
-    """Default ``create``/``add`` workers; ``None`` means ``min(8, 2 x CPUs)``."""
+    """Workers for ``create``/``add`` checkouts and ``status``/``archive`` checks.
+
+    ``None`` means ``min(8, 2 x CPUs)``.
+    """
     branch_template: str = "{name}"
     protocol: Literal["https", "ssh"] = "https"
 

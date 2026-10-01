@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import threading
@@ -13,10 +14,48 @@ import pytest
 from untaped.capabilities.workspace.domain import archive_blockers
 from untaped.capabilities.workspace.errors import GitError, WorkspaceError
 from untaped.capabilities.workspace.infrastructure import LocalGitWorktrees
-from untaped.capabilities.workspace.infrastructure.bare_cache import cache_path_for
+from untaped.capabilities.workspace.infrastructure.git_worktrees import cache_path_for
 from workspace.conftest import add_submodule, commit_in, git, init_submodules
 
 pytestmark = pytest.mark.integration
+
+
+def _unknown(url: str) -> str:
+    return f"_unknown/{hashlib.sha256(url.encode()).hexdigest()[:16]}.git"
+
+
+@pytest.mark.parametrize(
+    ("url", "relative"),
+    [
+        ("https://github.com/org/svc-a.git", "github.com/org/svc-a.git"),
+        ("git@github.com:org/svc-bee.git", "github.com/org/svc-bee.git"),
+        ("https://github.com/org/svc-c", "github.com/org/svc-c.git"),
+        # No host (plain path, file:// URL, garbage) -> deterministic hashed leaf.
+        ("/local/path/no-host", _unknown("/local/path/no-host")),
+        ("file:///tmp/foo/svc-a.git", _unknown("file:///tmp/foo/svc-a.git")),
+        ("not a url at all", _unknown("not a url at all")),
+    ],
+)
+def test_cache_layout(tmp_path: Path, url: str, relative: str) -> None:
+    assert cache_path_for(url, cache_dir=tmp_path) == (tmp_path / relative).resolve()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://evil/../../tmp/pwn.git",
+        "https://evil/org/..",
+        "git@evil:../../../tmp/pwn.git",
+        "a@evil/../..:x/y.git",
+        "https://evil/org/..\\..\\x.git",
+    ],
+)
+def test_dot_dot_segments_stay_inside_cache_root(tmp_path: Path, url: str) -> None:
+    root = tmp_path.resolve()
+    p = cache_path_for(url, cache_dir=tmp_path)
+    assert p.resolve().is_relative_to(root)
+    assert ".." not in p.parts
+    assert "\\" not in str(p.relative_to(root))
 
 
 @pytest.fixture
@@ -157,13 +196,28 @@ def test_remove_prunes_a_hand_deleted_worktree(
 def test_existing_cache_gets_the_remote_tracking_refspec(
     worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
 ) -> None:
-    from untaped.capabilities.workspace.infrastructure.bare_cache import cache_path_for
-
     url = str(make_upstream("api"))
     cache = cache_path_for(url, cache_dir=tmp_path / "cache")
     cache.parent.mkdir(parents=True)
     git(tmp_path, "clone", "-q", "--bare", url, str(cache))  # an old-style mirror cache
     worktrees.checkout(url, tmp_path / "ws" / "api", branch="b", base=None)
+    assert (
+        git(cache, "config", "--get-all", "remote.origin.fetch")
+        == "+refs/heads/*:refs/remotes/origin/*"
+    )
+
+
+def test_a_cache_is_marked_migrated_once(
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+) -> None:
+    url = str(make_upstream("api", branches=("feat",)))
+    cache = cache_path_for(url, cache_dir=tmp_path / "cache")
+    worktrees.checkout(url, tmp_path / "a" / "api", branch="feat", base=None)
+    assert git(cache, "config", "untaped.layout") == "2"
+    worktrees.remove(url, tmp_path / "a" / "api", force=False)
+    git(cache, "config", "--replace-all", "remote.origin.fetch", "+refs/heads/*:refs/heads/*")
+    worktrees.checkout(url, tmp_path / "b" / "api", branch="feat", base=None)
+    assert git(cache, "rev-parse", "--verify", "refs/heads/feat")  # a marked cache keeps heads
     assert (
         git(cache, "config", "--get-all", "remote.origin.fetch")
         == "+refs/heads/*:refs/remotes/origin/*"
@@ -191,8 +245,6 @@ def test_in_use_remote_branch_is_a_conflict(
 def test_legacy_mirror_heads_are_not_resumed(
     worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
 ) -> None:
-    from untaped.capabilities.workspace.infrastructure.bare_cache import cache_path_for
-
     upstream = make_upstream("api", branches=("feat",))
     url = str(upstream)
     cache = cache_path_for(url, cache_dir=tmp_path / "cache")
@@ -255,8 +307,6 @@ def test_resume_a_branch_diverged_from_origin(
 def test_half_initialised_cache_is_repaired(
     worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
 ) -> None:
-    from untaped.capabilities.workspace.infrastructure.bare_cache import cache_path_for
-
     url = str(make_upstream("api"))
     cache = cache_path_for(url, cache_dir=tmp_path / "cache")
     cache.parent.mkdir(parents=True)

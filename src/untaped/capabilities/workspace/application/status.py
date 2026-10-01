@@ -5,13 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from untaped.capabilities.workspace.application.locate import workspace_root
 from untaped.capabilities.workspace.domain.records import StatusRow
 from untaped.capabilities.workspace.domain.safety import (
     CACHE_MISSING,
     UNREADABLE,
     archive_blockers,
 )
-from untaped.capability_api import ErrorInfo, UntapedError, note_failure
+from untaped.capability_api import ErrorInfo, UntapedError, bounded_map, note_failure
 
 if TYPE_CHECKING:
     from untaped.capabilities.workspace.application.ports import GitWorktrees
@@ -21,27 +22,39 @@ if TYPE_CHECKING:
 class WorkspaceStatus:
     """``workspace status``: one :class:`StatusRow` per repo, offline unless ``fetch``.
 
+    Repos are read ``parallel`` at a time; rows keep the record's order.
+
     A failed fetch does not stop the others: that repo's row still reports
     its local state, with ``detail`` and ``error`` saying why the fetch failed.
     A worktree git cannot read gets an ``error`` row that blocks archiving.
     """
 
-    def __init__(self, git: GitWorktrees, *, workspaces_dir: Path) -> None:
+    def __init__(self, git: GitWorktrees, *, workspaces_dir: Path, parallel: int) -> None:
         self._git = git
         self._workspaces_dir = workspaces_dir
+        self._parallel = max(1, parallel)
 
     def __call__(self, record: WorkspaceRecord, *, fetch: bool = False) -> list[StatusRow]:
-        root = self._workspaces_dir.expanduser().absolute() / record.name
-        rows: list[StatusRow] = []
-        for spec in record.repos:
+        root = workspace_root(self._workspaces_dir, record.name)
+        rows: dict[int, StatusRow] = {}
+
+        def _one(item: tuple[int, RepoSpec]) -> StatusRow:
+            spec = item[1]
             failure = self._fetch(spec.url) if fetch else None
             row = self._row(record.name, root, spec)
             if failure is not None and row.error is None:
                 row = row.model_copy(
                     update={"detail": f"fetch failed: {failure.message}", "error": failure}
                 )
-            rows.append(row)
-        return rows
+            return row
+
+        def _collect(item: tuple[int, RepoSpec], row: StatusRow) -> None:
+            rows[item[0]] = row
+
+        bounded_map(
+            _one, list(enumerate(record.repos)), concurrency=self._parallel, on_each=_collect
+        )
+        return [rows[i] for i in sorted(rows)]
 
     def _fetch(self, url: str) -> ErrorInfo | None:
         try:
