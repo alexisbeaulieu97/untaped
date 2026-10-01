@@ -119,6 +119,22 @@ class LocalGitWorktrees:
     def cache_exists(self, url: str) -> bool:
         return _cache_ready(self._cache(url))
 
+    def remote_branches(self, url: str) -> list[str]:
+        """Branch names of ``url``'s cache as last fetched, sorted; ``[]`` when it is missing."""
+        cache = self._cache(url)
+        if not _cache_ready(cache):
+            return []
+        args = ["for-each-ref", "--format=%(refname:lstrip=3)", "refs/remotes/origin"]
+        names = self._run(args, cwd=cache, capture=True).text.split()
+        return [name for name in names if name != "HEAD"]
+
+    def cache_origin(self, cache: Path) -> str | None:
+        """``remote.origin.url`` of the cache at ``cache``; ``None`` when unreadable."""
+        if not _cache_ready(cache):
+            return None
+        args = ["config", "--get", "remote.origin.url"]
+        return self._run(args, cwd=cache, capture=True, check=False).text.strip() or None
+
     def remove(self, url: str, dest: Path, *, force: bool) -> None:
         """Remove the worktree at ``dest`` and prune stale worktree entries."""
         cache = self._cache(url)

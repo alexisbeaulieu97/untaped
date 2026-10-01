@@ -13,6 +13,7 @@ from untaped.capabilities.workspace.domain.models import (
 from untaped.capabilities.workspace.domain.naming import (
     assign_dirs,
     branch_for,
+    looks_like_url,
     repo_identity,
     repo_key,
     validate_workspace_name,
@@ -32,6 +33,7 @@ __all__ = [
     "archive_hint",
     "assign_dirs",
     "branch_for",
+    "looks_like_url",
     "repo_identity",
     "repo_key",
     "validate_workspace_name",

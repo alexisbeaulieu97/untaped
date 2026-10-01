@@ -38,6 +38,14 @@ class GitWorktrees(Protocol):
 
     def cache_exists(self, url: str) -> bool: ...
 
+    def remote_branches(self, url: str) -> list[str]:
+        """Branch names of ``url``'s cache as last fetched, sorted; ``[]`` when it is missing."""
+        ...
+
+    def cache_origin(self, cache: Path) -> str | None:
+        """``remote.origin.url`` of the cache at ``cache``; ``None`` when unreadable."""
+        ...
+
     def remove(self, url: str, dest: Path, *, force: bool) -> None:
         """Remove the worktree at ``dest`` and prune stale worktree entries."""
         ...
