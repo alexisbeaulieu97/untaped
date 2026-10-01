@@ -474,6 +474,9 @@ def _show_provisioned(
         ready = sum(1 for row in rows if not row.failed)
         ui.success(f"workspace {q(name)}: {plural(ready, 'repo')} ready")
         echo(str(workspace_dir(settings, name)))
+    for row in rows:
+        if row.error is not None:
+            report_error(row.error, item=f"{name}/{row.dir}")
     finish(failed)
 
 

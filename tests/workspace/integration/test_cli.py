@@ -16,6 +16,7 @@ from untaped.capabilities.github.api import RepositoryInventoryItem
 from untaped.capabilities.workspace.cli import app
 from untaped.capabilities.workspace.errors import WorkspaceError
 from untaped.capabilities.workspace.infrastructure import StateWorkspaceStore
+from untaped.capabilities.workspace.infrastructure.git_worktrees import cache_path_for
 from untaped.testing import CliInvoker, CliResult, ScriptedPromptBackend
 from workspace.conftest import add_submodule, commit_in, git, init_submodules
 
@@ -262,6 +263,19 @@ def test_same_branch_in_two_workspaces_conflicts(make_upstream: Callable[..., Pa
     error = row["error"]
     assert isinstance(error, dict)
     assert error["category"] == "conflict"
+
+
+def test_a_9x_cache_failure_shows_its_hint_on_stderr(
+    make_upstream: Callable[..., Path], workspace_env: Path
+) -> None:
+    url = str(make_upstream("api"))
+    cache = cache_path_for(url, cache_dir=workspace_env.parent / "cache")
+    cache.parent.mkdir(parents=True)
+    git(workspace_env.parent, "clone", "-q", "--bare", url, str(cache))
+    result = run(app, ["create", "J-1", "--repo", url])
+    assert result.exit_code == 1
+    assert f"error: J-1/api: {cache} is a cache from untaped 9.x" in result.stderr
+    assert "delete it; the next command re-fetches" in result.stderr
 
 
 def test_read_only_commit_blocks_archive(

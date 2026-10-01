@@ -233,7 +233,9 @@ class LocalGitWorktrees:
         config: dict[str, list[str]] = {}
         if _cache_ready(cache):
             config = self._cache_config(cache)
-            if config.get(_LAYOUT_KEY) != [_LAYOUT] and config.get("remote.origin.url"):
+            if config.get(_LAYOUT_KEY) != [_LAYOUT] and (
+                config.get("remote.origin.url") or self._has_heads(cache)
+            ):
                 raise WorkspaceError(
                     f"{cache} is a cache from untaped 9.x",
                     hint="delete it; the next command re-fetches",
@@ -247,6 +249,15 @@ class LocalGitWorktrees:
             self._run(["config", "--replace-all", "remote.origin.fetch", _FETCH_REFSPEC], cwd=cache)
         if config.get(_LAYOUT_KEY) != [_LAYOUT]:
             self._run(["config", "--replace-all", _LAYOUT_KEY, _LAYOUT], cwd=cache)
+
+    def _has_heads(self, cache: Path) -> bool:
+        """Whether the cache holds any ``refs/heads/*`` (mirrored heads of a 9.x cache)."""
+        heads = self._run(
+            ["for-each-ref", "--count=1", "--format=%(refname)", "refs/heads"],
+            cwd=cache,
+            capture=True,
+        ).text
+        return bool(heads.strip())
 
     def _cache_config(self, cache: Path) -> dict[str, list[str]]:
         """The cache's origin URL and fetch refspecs, and its layout mark, by key."""
