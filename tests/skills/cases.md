@@ -96,4 +96,4 @@ Request: "Show me how the Deploy job template is configured."
 |---|---|---|---|---|
 | 2026-09-30 | 9.0 skills (before the 9.1 rewrite) | Claude Opus | 22/25 | No recovery point before the bulk AWX write; vague about clones prune skips; `stopped` only a caveat; invented the ansible source scope. |
 | 2026-09-30 | 9.1 rewrite | Claude Opus | 25/25 | Ran a workspace `sync` (a write) before approval; fixed in the same PR. |
-| 2026-09-30 | 9.1 rewrite | GPT (Codex) | 24/25 | C2c partial: names what prune refuses, not how to resolve it (commit and push, or stash, then prune again). Commands checked against `--help`; none invented. |
+| 2026-09-30 | 9.1 rewrite | GPT (Codex) | 24/25 | C2c partial: names what prune refuses, not how to resolve it (commit and push, or drop the stash, then prune again). Commands checked against `--help`; none invented. |
