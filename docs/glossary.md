@@ -26,8 +26,6 @@ Terms as `untaped` uses them in commands, output and these docs.
   `github.token` or `http.verify_ssl`.
 - **kind**: The type name of a record, `<capability>.<noun>` (`github.repo`,
   `awx.job`). Outcome records use `<capability>.<verb>_outcome`.
-- **manifest (workspace)**: The `untaped.yml` file in a workspace directory. It
-  lists the workspace's repos and branches.
 - **outcome record**: The row a command that changes something prints for each
   item, with an `action` field.
 - **pack (recipe)**: An installable project that contains recipes and hooks.
@@ -60,7 +58,7 @@ Terms as `untaped` uses them in commands, output and these docs.
   a GitHub `owner/repo`, so the dependency graph can follow it. Managed with
   `ansible source-alias`.
 - **state file**: `~/.untaped/state.yml` (or `$UNTAPED_STATE`). Data a
-  capability manages itself, such as registered workspaces and Ansible sources.
+  capability manages itself, such as active workspaces and Ansible sources.
   Change it only through the capability's commands.
 - **stopped (ansible)**: A graph node whose own dependencies (or dependents)
   were not read: `depth` when `--depth` ran out, `not_cached` when its ref is
@@ -69,5 +67,5 @@ Terms as `untaped` uses them in commands, output and these docs.
   `github sweep`.
 - **table glyph**: A symbol a table shows in place of a field's value (for
   example `✓` for true or `—` for unset). Other formats print the value itself.
-- **workspace**: A directory of Git clones managed together through its
-  manifest, and registered by name in the state file.
+- **workspace**: A directory for one task, holding git worktrees of several
+  repos on a shared branch, created and archived as a unit.

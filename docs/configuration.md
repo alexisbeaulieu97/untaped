@@ -51,6 +51,7 @@ profiles:
     workspace:
       cache_dir: ~/.untaped/repositories
       workspaces_dir: ~/.untaped/workspaces
+      branch_template: "{name}"
 
   prod:
     awx:
@@ -62,9 +63,9 @@ profiles:
 
 ```yaml
 workspace:
-  workspaces:
-    - name: prod
-      path: ~/work/prod
+  active:
+    - name: PROJ-123
+      path: ~/.untaped/workspaces/PROJ-123
 ```
 
 Things that surprise people:
@@ -110,8 +111,7 @@ profile; before any profile exists, only `default` may be named.
 `--profile` is a root option and goes anywhere in the command: before the
 capability, between command names (`untaped github --profile work whoami`) or
 after the command. So do `--verbose`/`-v` and `--quiet`/`-q`. Tokens after
-`--` belong to the command, so `untaped workspace foreach -- "tool --profile x"`
-passes `--profile x` through.
+`--` belong to the command and are never read as `untaped` options.
 
 - `default` is created by the first setting write. Other profiles must exist
   before a write targets them.

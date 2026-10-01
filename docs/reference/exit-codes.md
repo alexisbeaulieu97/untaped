@@ -65,7 +65,7 @@ pipe keeps its own exit code.
 | `untaped awx apply --check` | Any document would change the controller. |
 | `untaped recipe apply --check` | Any target would change. |
 | `untaped skills status --check` | An installed skill is outdated or no longer shipped. |
-| `untaped workspace status --check` | Any repo is dirty or behind its upstream (only the `--dirty` / `--behind` condition when one is given); exits with the failure's own code instead when a repo cannot be inspected (1, 5 when `git status` timed out, 4 when git is missing). |
+| `untaped workspace status --check` | Any repo would block `workspace archive` (uncommitted changes, stashes on its branch, unpushed commits, or a missing repo cache). |
 
 Use these in CI to tell "the check found something" (3) apart from "the tool
 failed" (1), "fix the setup" (4) and "try again later" (5):
@@ -85,9 +85,6 @@ esac
 
 Some rows carry a code of their own. It never becomes the process exit code:
 
-- `untaped workspace foreach` rows have a `returncode` for each repo's
-  command; `124` means the command timed out (`--timeout`). The process then
-  exits 1 if any repo failed, or 0 with `--ignore-errors`.
 - `untaped awx test run` reports each case's result in its rows. A case that
   did not pass carries a `failure` with its own `category` and `system` (such
   as `awx.scm` or `awx.hosts`), and the command exits with the most severe:

@@ -27,12 +27,11 @@ invalid value.
 
 | Variable | Used by |
 |---|---|
-| `VISUAL`, then `EDITOR` | `untaped config edit`, `untaped awx <resource> edit`, `untaped recipe edit` (and `recipe packs edit`, `recipe hooks edit`), `untaped workspace edit`. |
+| `VISUAL`, then `EDITOR` | `untaped config edit`, `untaped awx <resource> edit`, `untaped recipe edit` (and `recipe packs edit`, `recipe hooks edit`). |
 
 The value is split like a shell command line but no shell runs it. Include your
 GUI editor's wait flag, for example `VISUAL="code --wait"`. If neither is set,
-`workspace edit` runs `vi`; the other commands fail and ask you to set one.
-`workspace edit --editor CMD` overrides both.
+the commands fail and ask you to set one.
 
 ## Terminal output
 

@@ -69,11 +69,11 @@ untaped github repos list 'api|web' --org acme --regex
 shows a few columns; use `-c` or `--format json` for the rest (`clone_url`,
 `ssh_url`, ...).
 
-Clone the result into a workspace:
+Check the result out into a workspace:
 
-```text
+```bash
 untaped github repos list --team acme/platform --format pipe \
-  | untaped workspace repos add platform --stdin --sync
+  | untaped workspace create platform --stdin
 ```
 
 ## Search GitHub
