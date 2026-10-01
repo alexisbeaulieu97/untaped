@@ -14,7 +14,9 @@ from untaped import quiet
 from untaped.capabilities.github import api as github_api
 from untaped.capabilities.github.api import RepositoryInventoryItem
 from untaped.capabilities.workspace.cli import app
-from untaped.testing import CliInvoker, CliResult
+from untaped.capabilities.workspace.errors import WorkspaceError
+from untaped.capabilities.workspace.infrastructure import StateWorkspaceStore
+from untaped.testing import CliInvoker, CliResult, ScriptedPromptBackend
 from workspace.conftest import add_submodule, commit_in, git, init_submodules
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("workspace_env")]
@@ -169,6 +171,37 @@ def test_status_fetch_failure_is_per_repo(make_upstream: Callable[..., Path]) ->
     error = rows[0]["error"]
     assert isinstance(error, dict) and error["system"] == "git"
     assert "error" not in rows[1]
+
+
+class _ProbingBackend(ScriptedPromptBackend):
+    """Confirms; first tries the workspace lock, as a concurrent ``add`` would."""
+
+    def __init__(self, workspaces: Path) -> None:
+        super().__init__(confirms=[True])
+        self.workspaces = workspaces
+        self.busy: str | None = None
+
+    def confirm(self, message: str, *, default: bool) -> bool:
+        try:
+            with StateWorkspaceStore(workspaces_dir=self.workspaces, lock_timeout=0.1).locked(
+                "J-1"
+            ):
+                pass
+        except WorkspaceError as exc:
+            self.busy = str(exc)
+        return super().confirm(message, default=default)
+
+
+def test_archive_holds_the_workspace_lock_from_check_to_removal(
+    make_upstream: Callable[..., Path], workspace_env: Path
+) -> None:
+    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+    commit_in(workspace_env / "J-1" / "api")
+    backend = _ProbingBackend(workspace_env)
+    forced = run(app, ["archive", "J-1", "--force"], interactive=True, prompt_backend=backend)
+    assert forced.exit_code == 0, forced.output
+    assert [method for method, _ in backend.calls] == ["confirm"]
+    assert backend.busy == "workspace J-1 is busy (another untaped process)"
 
 
 def test_archive_refuses_dirty_then_forces(

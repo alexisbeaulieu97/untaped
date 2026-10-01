@@ -107,5 +107,6 @@ OWNER/NAME --branch BRANCH` resumes the work.
 Worktrees point into the bare cache at `workspace.cache_dir`. Do not delete
 it while workspaces are active. Every cache write runs under a per-repo lock, so concurrent runs wait
 rather than corrupt it. `create`, `add` and `archive` of one workspace also
-wait for each other: an `add` queued behind an `archive` then fails as not
-found.
+wait for each other (`archive` holds the workspace from its check, through
+any confirmation, to the removal): an `add` queued behind an `archive` then
+fails as not found.
