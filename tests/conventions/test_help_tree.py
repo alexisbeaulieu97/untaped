@@ -163,34 +163,66 @@ def test_help_tree_follows_the_command_grammar(baseline: Any) -> None:
     baseline("help_tree", collect_violations())
 
 
-def _leaf(*, declare: str | None) -> App:
+_ALL_FLAGS = frozenset({"--yes", "--dry-run", "--format"})
+_FLAG_PARAMS: dict[str, tuple[str, type]] = {
+    "--yes": ("yes", bool),
+    "--dry-run": ("dry_run", bool),
+    "--format": ("format", str),
+}
+
+
+def _leaf(*, declare: str | None, flags: frozenset[str] = _ALL_FLAGS) -> App:
+    """A ``demo nuke`` command exposing exactly ``flags``, declared as ``declare``."""
     from untaped.sdk import create_app, writes
 
-    app = create_app(name="demo")
-
-    def body(
-        *,
-        yes: Annotated[bool, Parameter(name="--yes", help="Skip confirmation.")] = False,
-        dry_run: Annotated[bool, Parameter(name="--dry-run", help="Preview.")] = False,
-        format: Annotated[str, Parameter(name="--format", help="Output format.")] = "table",
-    ) -> None:
+    def body(**_: object) -> None:
         """Do it."""
 
+    body.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
+        [
+            inspect.Parameter(
+                _FLAG_PARAMS[flag][0],
+                inspect.Parameter.KEYWORD_ONLY,
+                default=False if _FLAG_PARAMS[flag][1] is bool else "table",
+                annotation=Annotated[
+                    _FLAG_PARAMS[flag][1],
+                    Parameter(name=flag, negative="", help=f"The {flag} option."),
+                ],
+            )
+            for flag in sorted(flags)
+        ]
+    )
+    body.__annotations__ = {}
     if declare == "write":
         body = writes(body)
     elif declare == "destructive":
         body = writes(destructive=True)(body)
+    app = create_app(name="demo")
     app.command(body, name="nuke")
     return app["nuke"]
 
 
+def _violations(*, declare: str | None, flags: frozenset[str] = _ALL_FLAGS) -> set[tuple[str, str]]:
+    return set(_command_violations(("demo", "nuke"), _leaf(declare=declare, flags=flags)))
+
+
 def test_flags_without_a_declaration_are_flagged() -> None:
-    rules = {rule for rule, _ in _command_violations(("demo", "nuke"), _leaf(declare=None))}
-    assert "undeclared-write" in rules
+    assert _violations(declare=None) == {("undeclared-write", "--dry-run --yes")}
 
 
-def test_any_name_is_fine_when_declared() -> None:
-    rules = {
-        rule for rule, _ in _command_violations(("demo", "nuke"), _leaf(declare="destructive"))
+def test_declared_write_without_format_is_flagged() -> None:
+    assert _violations(declare="write", flags=frozenset()) == {("mutation-format", "nuke")}
+
+
+def test_declared_destructive_without_a_control_is_flagged() -> None:
+    no_dry_run = _ALL_FLAGS - {"--dry-run"}
+    no_yes = _ALL_FLAGS - {"--yes"}
+    assert _violations(declare="destructive", flags=no_dry_run) == {
+        ("destructive-controls", "--dry-run")
     }
-    assert "verb" not in rules and "undeclared-write" not in rules
+    assert _violations(declare="destructive", flags=no_yes) == {("destructive-controls", "--yes")}
+
+
+def test_declared_command_with_any_name_and_all_flags_is_clean() -> None:
+    assert _violations(declare="destructive") == set()
+    assert _violations(declare="write") == set()

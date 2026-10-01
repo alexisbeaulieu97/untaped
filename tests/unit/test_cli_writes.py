@@ -26,8 +26,15 @@ def test_undecorated_is_none() -> None:
     assert write_kind(list_command) is None
 
 
-def test_decorator_returns_the_same_function() -> None:
+def test_bare_decorator_returns_the_same_function() -> None:
     def f() -> None: ...
 
     assert writes(f) is f
-    assert writes(destructive=True)(f) is f
+    assert write_kind(f) == "write"
+
+
+def test_called_decorator_returns_the_same_function() -> None:
+    def g() -> None: ...
+
+    assert writes(destructive=True)(g) is g
+    assert write_kind(g) == "destructive"
