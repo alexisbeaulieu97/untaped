@@ -83,6 +83,7 @@ class ApplyPlanner:
         resource: Resource,
         *,
         fk: FkResolver,
+        existing: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Pass ``resource.spec`` through (minus a drop-set) and resolve FKs.
 
@@ -99,7 +100,9 @@ class ApplyPlanner:
           ``credentials``) — reconciled out-of-band via
           associate/disassociate POSTs, not the body;
         - the ``node_field`` graph (WorkflowJobTemplate ``nodes``) — reconciled
-          through the node endpoints.
+          through the node endpoints;
+        - ``derived_fields`` the server derives for this body overlaid on the
+          existing record (SCM project ``local_path``);
         """
         raw = resource.spec
         # FK fields handled out-of-band (polymorphic ⇒ metadata; sub_endpoint
@@ -109,7 +112,12 @@ class ApplyPlanner:
             for ref in spec.fk_refs
             if ref.polymorphic or (ref.multi and ref.sub_endpoint is not None)
         }
-        drop = set(spec.read_only_fields) | set(spec.identity_keys) | out_of_band_fks
+        drop = (
+            set(spec.read_only_fields)
+            | set(spec.identity_keys)
+            | out_of_band_fks
+            | spec.derived_in({**(existing or {}), **raw})
+        )
         if spec.node_field:
             drop.add(spec.node_field)
         body: dict[str, Any] = {field: value for field, value in raw.items() if field not in drop}

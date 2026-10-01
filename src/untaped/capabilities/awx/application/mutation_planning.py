@@ -320,16 +320,20 @@ class MutationPlanner:
                         "renaming, reparenting, or changing the kind or ID "
                         "of a selected resource is not supported"
                     )
-                read_only = set(spec.read_only_fields).intersection(resource.spec)
+                read_only = (
+                    set(spec.read_only_fields)
+                    | spec.derived_in({**(existing_record or {}), **resource.spec})
+                ).intersection(resource.spec)
                 if read_only:
                     raise BadRequestError(
-                        "explicit patch/edit contains read-only fields: "
+                        "explicit patch/edit contains read-only or server-derived fields: "
                         + ", ".join(sorted(read_only))
                     )
             payload = self._planner.plan_payload(
                 spec,
                 resource,
                 fk=resolver,
+                existing=existing_record,
             )
             if selected is not None and existing_record is not None:
                 _validate_selected_identity(

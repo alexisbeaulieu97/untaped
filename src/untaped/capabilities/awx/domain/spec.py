@@ -114,6 +114,20 @@ class ActionSpec(BaseModel):
     """Optional payload fields the CLI factory exposes as flags."""
 
 
+class DerivedField(BaseModel):
+    """A field the server derives whenever a sibling field is set.
+
+    Project ``local_path`` is user-chosen for a manual project but derived from
+    the id once ``scm_type`` is set; export omits it and apply never sends it then.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    field: str
+    unless_empty: str
+    """Sibling field: a non-empty value makes ``field`` server-derived."""
+
+
 class ResourceSpec(BaseModel):
     """Per-kind domain configuration consumed by application use cases."""
 
@@ -132,6 +146,7 @@ class ResourceSpec(BaseModel):
     gate.
     """
     read_only_fields: tuple[str, ...] = ()
+    derived_fields: tuple[DerivedField, ...] = ()
     fk_refs: tuple[FkRef, ...] = ()
     launch_fk_refs: tuple[FkRef, ...] = ()
     """Foreign keys exposed only on the ``launch`` action payload.
@@ -196,6 +211,10 @@ class ResourceSpec(BaseModel):
         if extra:
             raise ValueError(f"optional_secret_paths not in secret_paths: {sorted(extra)}")
         return self
+
+    def derived_in(self, body: Mapping[str, Any]) -> frozenset[str]:
+        """Fields of ``body`` the server derives, so documents never carry them."""
+        return frozenset(d.field for d in self.derived_fields if body.get(d.unless_empty))
 
     @property
     def known_fields(self) -> frozenset[str]:

@@ -421,3 +421,47 @@ def test_plan_payload_ignores_fields_old_exports_carried() -> None:
     )
     assert "custom_virtualenv" not in payload
     assert "webhook_key" not in payload
+
+
+@pytest.mark.parametrize(
+    ("spec_body", "kept"),
+    [
+        ({"scm_type": "git", "local_path": "_2146__prj"}, False),
+        ({"scm_type": "", "local_path": "mine"}, True),
+        ({"local_path": "mine"}, True),  # hand-written manual project
+    ],
+)
+def test_plan_payload_sends_local_path_only_for_manual_projects(
+    spec_body: dict[str, Any], kept: bool
+) -> None:
+    resource = Resource(
+        kind="Project", metadata=Metadata(name="p", organization="Default"), spec=spec_body
+    )
+    payload = ApplyPlanner().plan_payload(
+        PROJECT_SPEC, resource, fk=cast(FkResolver, _StubFk({("Organization", "Default"): 1}))
+    )
+    assert ("local_path" in payload) is kept
+
+
+@pytest.mark.parametrize(
+    ("existing_scm", "spec_body", "kept"),
+    [
+        ("git", {"local_path": "x"}, False),  # partial update of an SCM project
+        ("git", {"scm_type": "", "local_path": "x"}, True),  # SCM -> manual
+        ("", {"scm_type": "git", "local_path": "x"}, False),  # manual -> SCM
+        ("", {"local_path": "x"}, True),  # partial update of a manual project
+    ],
+)
+def test_plan_payload_derived_check_overlays_existing_record(
+    existing_scm: str, spec_body: dict[str, Any], kept: bool
+) -> None:
+    resource = Resource(
+        kind="Project", metadata=Metadata(name="p", organization="Default"), spec=spec_body
+    )
+    payload = ApplyPlanner().plan_payload(
+        PROJECT_SPEC,
+        resource,
+        fk=cast(FkResolver, _StubFk({("Organization", "Default"): 1})),
+        existing={"scm_type": existing_scm, "local_path": "_1__p"},
+    )
+    assert ("local_path" in payload) is kept

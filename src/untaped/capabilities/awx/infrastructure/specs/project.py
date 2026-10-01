@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from untaped.capabilities.awx.domain import ActionSpec, FkRef
+from untaped.capabilities.awx.domain import ActionSpec, DerivedField, FkRef
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capabilities.awx.infrastructure.specs._support import UNIVERSAL_READ_ONLY
 
@@ -40,6 +40,7 @@ PROJECT_SPEC = AwxResourceSpec(
         "last_updated",
         "custom_virtualenv",
     ),
+    derived_fields=(DerivedField(field="local_path", unless_empty="scm_type"),),
     fk_refs=(
         FkRef(field="organization", kind="Organization"),
         FkRef(field="credential", kind="Credential", scope_field="organization"),

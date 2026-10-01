@@ -177,6 +177,8 @@ class SaveResource:
             if field not in record:
                 continue
             body[field] = record[field]
+        for field in spec.derived_in(record):
+            body.pop(field, None)
         for fk in spec.fk_refs:
             if fk.polymorphic or fk.field not in body or body[fk.field] is None:
                 continue
