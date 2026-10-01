@@ -19,3 +19,4 @@ implementation behavior. This index is navigation only; work is tracked in GitHu
 - [stability policy: documented contracts, experimental surfaces, batched majors](stability-policy-and-batched-majors.md)
 - [unified application and capability composition](unified-application-and-capability-composition.md)
 - [unified distribution and CLI version identity](unified-distribution-and-cli-version-identity.md)
+- [workspaces are task-scoped worktrees](workspaces-are-task-scoped-worktrees.md)

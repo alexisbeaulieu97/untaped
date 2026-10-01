@@ -41,9 +41,10 @@ profiles:
 
 # capability state below
 workspace:
-  workspaces:
+  active:
     - name: alpha   # first
-      path: /tmp/alpha
+      created_at: "2026-10-01T00:00:00Z"
+      repos: []
 """
 
 
@@ -114,22 +115,22 @@ def test_written_strings_read_back_as_strings(cfg: Path, value: str) -> None:
 def test_tool_state_write_preserves_state_file_comments(cfg: Path) -> None:
     state_file = cfg.parent / "state.yml"
     state_file.write_text(
-        "# managed by untaped\nworkspace:\n  workspaces:\n    - name: alpha   # first\n"
-        "      path: /tmp/alpha\n",
+        "# managed by untaped\nworkspace:\n  active:\n    - name: alpha   # first\n"
+        '      created_at: "2026-10-01T00:00:00Z"\n      repos: []\n',
         encoding="utf-8",
     )
 
     def _add(state: dict[str, object]) -> None:
-        rows = state["workspaces"]
+        rows = state["active"]
         assert isinstance(rows, list)
-        rows.append({"name": "beta", "path": "/tmp/beta"})
+        rows.append({"name": "beta", "created_at": "2026-10-01T00:00:00Z", "repos": []})
 
     mutate_tool_state("workspace", _add)
 
     text = state_file.read_text(encoding="utf-8")
     assert "    - name: alpha   # first\n" in text
     assert text.startswith("# managed by untaped\n")
-    assert [row["name"] for row in read_config_dict(state_file)["workspace"]["workspaces"]] == [
+    assert [row["name"] for row in read_config_dict(state_file)["workspace"]["active"]] == [
         "alpha",
         "beta",
     ]

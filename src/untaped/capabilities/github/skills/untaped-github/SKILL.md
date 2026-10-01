@@ -34,7 +34,7 @@ unscanned before reporting "none" or "all".
 | Search issues and PRs | `untaped github search issues --org acme --state open --kind pr` | finding issues or pull requests |
 | Sweep clones | `untaped github sweep --team acme/platform --grep old_api` | regexes, negation, path or file predicates, refs beyond the default branch, or repeated checks over many repos |
 | Warm the corpus | `untaped github cache sync --org acme` | before a batch of sweeps, or on a schedule; `cache status` shows size and fetch age |
-| Check out one cached ref | `untaped github cache worktree acme/api` | reading a repo's files once; use `untaped workspace` for clones you edit |
+| Check out one cached ref | `untaped github cache worktree acme/api` | reading a repo's files once; use `untaped workspace` for checkouts you edit |
 | Free disk | `untaped github cache delete acme/api --dry-run`, `untaped github cache prune --org acme --dry-run` | see the protocol below |
 
 ## Scopes
@@ -75,9 +75,8 @@ untaped github repos list 'svc-*' --org acme --format pipe \
   | untaped github sweep --stdin --not-grep new_api
 ```
 
-To clone the matches, pipe them into `untaped workspace repos add NAME
---stdin`, which reads the same record kinds or raw URL lines
-(`--format raw --columns clone_url`).
+To check the matches out into a workspace, pipe them to
+`untaped workspace create NAME --stdin`.
 
 ### Gate CI on a banned pattern
 

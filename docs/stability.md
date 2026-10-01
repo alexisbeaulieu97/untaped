@@ -43,6 +43,7 @@ entry that says so. Currently experimental:
 - `awx test`: its commands, the suite file format, the `awx.test_case` and
   `awx.test_result` records, and the `awx.test_timeout` and
   `awx.test_parallel` settings with their environment variables.
+- `workspace`: its commands, record kinds and the `workspace.*` settings.
 
 ## Breaking changes
 

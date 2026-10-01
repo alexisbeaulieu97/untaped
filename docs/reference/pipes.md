@@ -6,7 +6,7 @@ consumer never parses table text.
 
 ```bash
 untaped github repos list --org acme --format pipe \
-  | untaped workspace repos add acme --stdin
+  | untaped workspace create acme --stdin
 ```
 
 ## Envelope format
@@ -34,7 +34,7 @@ valid.
 - A consumer lists the kinds it accepts. A record of another kind exits 2
   (`record kind 'awx.host' is not accepted here`). A record whose `kind` is
   `null` is accepted.
-- Kinds ending in `.summary` (for example `workspace.repo.summary`) are summary
+- Kinds ending in `.summary` (`<capability>.<noun>.summary`) are summary
   rows, not items. `recipe apply --stdin` skips them.
 - Empty stdin is an error (`no identifiers received on stdin`).
 - `--stdin` and positional arguments cannot be combined (exit 2).
@@ -43,9 +43,9 @@ valid.
 
 ## Failed rows: the `error` field
 
-A failed row of an outcome record (`*_outcome` kinds, and records about a
-directory such as `workspace.sync_outcome`) carries an `error` object next to
-its human `detail`. Rows that did not fail have no `error` key.
+A failed row of an outcome record (`*_outcome` kinds such as
+`workspace.repo_outcome`, and records about a directory such as
+`workspace.status`) carries an `error` object next to its human `detail`. Rows that did not fail have no `error` key.
 
 ```json
 {"name": "Deploy", "action": "failed", "detail": "HTTP 503 for https://aap/api/v2/job_templates/7/", "error": {"category": "unavailable", "system": "awx", "retryable": true, "message": "HTTP 503 for https://aap/api/v2/job_templates/7/", "hint": null}}
@@ -126,23 +126,13 @@ and print their outcome with `action` `planned`.
 | Command | Writes |
 |---|---|
 | `workspace list` | `workspace.workspace` |
-| `workspace repos list` | `workspace.repo`; `workspace.repo.summary` for an empty manifest |
-| `workspace init` | `workspace.init_outcome` |
-| `workspace forget` | `workspace.forget_outcome` |
-| `workspace repos add` | `workspace.add_outcome` (`workspace.sync_outcome` with `--sync`) |
-| `workspace repos remove` | `workspace.remove_outcome` |
-| `workspace branch set`, `workspace branch apply` | `workspace.branch_outcome` |
-| `workspace branch unset` | `workspace.branch_unset_outcome` |
-| `workspace sync` | `workspace.sync_outcome` |
+| `workspace create`, `workspace add` | `workspace.repo_outcome` |
 | `workspace status` | `workspace.status` |
-| `workspace foreach` | `workspace.foreach_outcome` |
+| `workspace archive` | `workspace.archive_outcome` |
 
 | Consumer | Reads | Field used |
 |---|---|---|
-| `workspace repos add --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`, `workspace.repo`; or URL lines | `clone_url`, else `url` |
-| `workspace repos remove --stdin` | `workspace.repo`, `workspace.sync_outcome`; or repo lines | `repo` |
-| `workspace foreach --stdin` | `workspace.repo`, `workspace.status`, `workspace.sync_outcome`; or repo lines | `repo` |
-| `workspace path --stdin` | `workspace.workspace`; or name lines | `name` |
+| `workspace create --stdin`, `workspace add --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`; or lines, each any repo identifier (`owner/name`, a unique name, a URL) | `full_name`, else `repo`, resolved through the GitHub inventory; `clone_url`, else `url`, when there is no name or the inventory lacks it |
 
 ### github
 
@@ -267,10 +257,10 @@ names, or `recipe.pack` records from `recipe packs list --format pipe`.
 
 `recipe apply --stdin` reads target directories: path lines, or records of any
 kind that carry an absolute `target_path` (else `path`), such as
-`workspace.repo`, `workspace.status` or `workspace.sync_outcome`.
+`workspace.status` or `workspace.repo_outcome`.
 
 ```bash
-untaped workspace repos list prod --format pipe \
+untaped workspace status NAME --format pipe \
   | untaped recipe apply acme/ci-baseline --stdin --dry-run
 ```
 

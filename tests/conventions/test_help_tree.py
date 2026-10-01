@@ -44,6 +44,7 @@ VERBS = frozenset(
         "status",
         "whoami",
         "ping",
+        "path",
         # write
         "create",
         "set",
@@ -57,6 +58,7 @@ VERBS = frozenset(
         "apply",
         "copy",
         "rename",
+        "archive",
         # update
         "sync",
         "refresh",
@@ -91,6 +93,7 @@ MUTATION_VERBS = frozenset(
         "apply",
         "copy",
         "rename",
+        "archive",
     }
 )
 DESTRUCTIVE_VERBS = frozenset({"delete", "remove", "prune", "cancel"})

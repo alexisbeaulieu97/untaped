@@ -1,162 +1,67 @@
-"""Cross-use-case port Protocols and adapter Callable aliases.
-
-Transport DTOs live in :mod:`untaped.capabilities.workspace.domain.payloads`.
-"""
+"""Workspace port Protocols: git worktrees, the workspace store, and repo resolution."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from pathlib import Path
-from typing import Protocol
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Protocol
 
-from untaped.capabilities.workspace.domain import (
-    BareCacheEntry,
-    DiscoveryResult,
-    ManifestSource,
-    RepoStatus,
-    Workspace,
-    WorkspaceManifest,
-)
+if TYPE_CHECKING:
+    from contextlib import AbstractContextManager
+    from datetime import datetime
+    from pathlib import Path
 
-
-class ManifestReader(Protocol):
-    def exists(self, workspace_dir: Path) -> bool: ...
-    def read(self, workspace_dir: Path) -> WorkspaceManifest: ...
-
-
-class ManifestRemover(ManifestReader, Protocol):
-    """Read plus delete, for ``forget --prune``."""
-
-    def manifest_path(self, workspace_dir: Path) -> Path: ...
-    def delete(self, workspace_dir: Path) -> None: ...
+    from untaped.capabilities.workspace.domain.models import (
+        ArchivedRecord,
+        Checkout,
+        RepoSpec,
+        ResolvedRepo,
+        WorkspaceRecord,
+        WorktreeStatus,
+    )
 
 
-class ExternalManifestReader(Protocol):
-    """Read a manifest from an arbitrary source path (not a workspace dir).
+class GitWorktrees(Protocol):
+    """Worktrees checked out from a shared bare cache per repo URL."""
 
-    Split out from :class:`ManifestRepository` so :class:`ImportWorkspace`
-    can declare the narrowest dep it actually needs — the rest of the
-    repository (``exists`` / ``read`` / ``write``) is owned by the
-    bootstrapper it composes with.
-    """
+    def checkout(self, url: str, dest: Path, *, branch: str | None, base: str | None) -> Checkout:
+        """Add a worktree at ``dest``: on ``branch``, or detached at the base when ``None``."""
+        ...
 
-    def read_external(self, source: Path) -> ManifestSource: ...
+    def status(self, dest: Path, *, branch: str | None, base: str) -> WorktreeStatus | None:
+        """Git state of the worktree at ``dest``; ``None`` when it is missing."""
+        ...
 
+    def fetch(self, url: str) -> None:
+        """Fetch the cache for ``url`` (no-op when it is missing)."""
+        ...
 
-class ManifestRepository(ManifestRemover, ExternalManifestReader, Protocol):
-    def write(self, workspace_dir: Path, manifest: WorkspaceManifest) -> None: ...
+    def cache_exists(self, url: str) -> bool: ...
 
-
-class RegistryReader(Protocol):
-    def get(self, name: str) -> Workspace: ...
-    def entries(self) -> list[Workspace]: ...
-    # `find_by_path` is a pure read — belongs on the reader port so
-    # `WorkspaceResolver` can take a narrow `RegistryReader` rather
-    # than the fatter `WorkspaceRegistry` (the resolver is a reader,
-    # not a registrar).
-    def find_by_path(self, path: Path) -> Workspace | None: ...
+    def remove(self, url: str, dest: Path, *, force: bool) -> None:
+        """Remove the worktree at ``dest`` and prune stale worktree entries."""
+        ...
 
 
-class WorkspaceRegistry(RegistryReader, Protocol):
-    def register(self, *, name: str, path: Path) -> Workspace: ...
-    def unregister(self, name: str) -> bool: ...
+class WorkspaceStore(Protocol):
+    """Active and archived workspace records."""
+
+    def active(self) -> list[WorkspaceRecord]: ...
+    def archived(self) -> list[ArchivedRecord]: ...
+    def get(self, name: str) -> WorkspaceRecord | None: ...
+    def create(self, record: WorkspaceRecord) -> None:
+        """Store a new active workspace; conflict if the name is active."""
+        ...
+
+    def add_repos(self, name: str, repos: Sequence[RepoSpec]) -> WorkspaceRecord: ...
+    def archive(self, name: str, *, at: datetime) -> ArchivedRecord: ...
+    def locked(self, name: str) -> AbstractContextManager[None]:
+        """Serialise ``create``/``add``/``archive`` of workspace ``name`` across processes."""
+        ...
 
 
-class Filesystem(Protocol):
-    def exists(self, path: Path) -> bool: ...
-    def is_dir(self, path: Path) -> bool: ...
-    def is_symlink(self, path: Path) -> bool: ...
-    # `parents` / `exist_ok` are keyword-only with no defaults so call
-    # sites read explicitly — `pathlib.Path.mkdir` defaults them to
-    # ``False`` and a silent flip would be a debugging trap. No
-    # application-layer caller today (workspace-dir creation is owned
-    # by `ManifestRepository.write`); retained as the blessed mkdir
-    # entry point for future lifecycle commands. See AGENTS.md.
-    def mkdir(self, path: Path, *, parents: bool, exist_ok: bool) -> None: ...
-    def iterdir(self, path: Path) -> Iterable[Path]: ...
-    def rmtree(self, path: Path) -> None: ...
-    def unlink(self, path: Path) -> None: ...
-    def rmdir(self, path: Path) -> None: ...
+class RepoCatalog(Protocol):
+    """Resolve a repo identifier to a clone URL."""
 
-
-class PruneSafetyInspector(Protocol):
-    def prune_blockers(self, repo_path: Path) -> tuple[str, ...]: ...
-
-
-class GitInspector(PruneSafetyInspector, Protocol):
-    def status(self, repo_path: Path) -> RepoStatus: ...
-    def read_remote_url(self, repo_path: Path, *, remote: str = "origin") -> str | None: ...
-    def read_current_branch(self, repo_path: Path) -> str | None: ...
-
-
-class BranchOperations(GitInspector, Protocol):
-    def fetch(self, repo_path: Path) -> None: ...
-    def checkout_branch(self, repo_path: Path, *, branch: str) -> None: ...
-    def has_branch(self, repo_path: Path, *, branch: str) -> bool: ...
-
-
-class GitOperations(BranchOperations, Protocol):
-    def bare_cache_path(self, url: str, *, cache_dir: Path) -> Path: ...
-    def ensure_bare(self, url: str, *, cache_dir: Path) -> BareCacheEntry: ...
-    def bare_fetch(self, bare_path: Path) -> None: ...
-    def clone_with_reference(
-        self, *, url: str, dest: Path, bare: Path, branch: str | None = None
-    ) -> None: ...
-    def ff_only_pull(self, repo_path: Path, *, branch: str) -> None: ...
-
-
-class RepoDiscoverer(Protocol):
-    def discover(self, path: Path) -> DiscoveryResult: ...
-
-
-class CompletedCommand(Protocol):
-    """Structural shape of ``subprocess.CompletedProcess[str]`` —
-    keeps :mod:`subprocess` out of the application layer.
-
-    ``stdout`` / ``stderr`` are typed as ``str`` rather than
-    ``str | None`` because the default :data:`ShellRunner` always
-    runs with ``capture_output=True``, which guarantees both fields
-    are populated. :class:`Foreach` defensively coerces ``None`` to
-    ``""`` regardless, so a custom runner returning ``None`` is
-    handled at runtime even though it's a Protocol violation.
-
-    Shell timeouts are intentionally represented as ordinary failed
-    command results (return code ``124``) so ``foreach`` can keep
-    row-level outcome semantics. This differs from :class:`GitRunner`,
-    which raises for git invocation timeouts.
-    """
-
-    returncode: int
-    stdout: str
-    stderr: str
-
-
-class ShellRunner(Protocol):
-    def __call__(self, cmd: str, cwd: Path, *, timeout: float) -> CompletedCommand: ...
-
-
-class ProgressNotify(Protocol):
-    """Progress callback a long-running sweep reports through."""
-
-    def __call__(
-        self, message: str, *, fraction: float | None = None, new_phase: bool = False
-    ) -> None: ...
-
-
-__all__ = [
-    "BranchOperations",
-    "CompletedCommand",
-    "ExternalManifestReader",
-    "Filesystem",
-    "GitInspector",
-    "GitOperations",
-    "ManifestReader",
-    "ManifestRemover",
-    "ManifestRepository",
-    "ProgressNotify",
-    "PruneSafetyInspector",
-    "RegistryReader",
-    "RepoDiscoverer",
-    "ShellRunner",
-    "WorkspaceRegistry",
-]
+    def resolve(self, ident: str) -> ResolvedRepo:
+        """Raise ``UsageError`` when ``ident`` is unknown or ambiguous."""
+        ...
