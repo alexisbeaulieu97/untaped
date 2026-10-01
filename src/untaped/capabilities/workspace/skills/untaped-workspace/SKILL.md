@@ -13,6 +13,7 @@ archive it.
 | File | Read it when |
 |---|---|
 | [references/lifecycle.md](references/lifecycle.md) | creating or extending a workspace, choosing branches and bases, read-only repos, how existing branches are reused, archiving and what blocks it |
+| [references/run.md](references/run.md) | running a command or script in each repo, the `UNTAPED_*` variables, selecting repos, failures and timeouts |
 | [references/output.md](references/output.md) | reading rows, piping records, or exit codes |
 
 ## Commands
@@ -26,6 +27,7 @@ archive it.
 | Find the directory | `untaped workspace path NAME` |
 | See branches, uncommitted and unpushed work | `untaped workspace status NAME` |
 | Done? (exit 3 while anything would block archive) | `untaped workspace status NAME --check` |
+| Run one command or script in each repo | `untaped workspace run NAME 'CMD'` |
 | Clean up after pushing | `untaped workspace archive NAME` |
 | List workspaces | `untaped workspace list`, `untaped workspace list --archived` |
 
@@ -50,6 +52,8 @@ pass it.
 
 ## Pitfalls
 
+- Quote the command; `-` reads a script from stdin (heredoc). Read-only repos
+  are skipped unless `--include-read-only`.
 - Repos are named `OWNER/NAME`, a unique bare `NAME`, or a full git URL. An
   unknown name exits 2 and suggests close matches from the inventory; an
   ambiguous one exits 2 and lists the candidates.

@@ -128,7 +128,9 @@ def test_fail_fast_skip_prints_no_block(two: Path) -> None:
 def test_command_starting_with_hyphen(ws: Path) -> None:
     result = run(app, ["run", "J-1", "--format", "json", "--", "-x"])
     assert result.exit_code == 1
-    assert "-x" in _rows(result)[0]["stderr"] or _rows(result)[0]["returncode"] != 0
+    stderr = str(_rows(result)[0]["stderr"])
+    assert "-x" in stderr
+    assert "requires an argument" not in stderr
 
 
 def test_dash_with_nothing_piped_is_usage(ws: Path) -> None:
