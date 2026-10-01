@@ -26,7 +26,6 @@ PROJECT_SPEC = AwxResourceSpec(
         "credential",
         "signature_validation_credential",
         "default_environment",
-        "organization",
         "local_path",
         "timeout",
     ),

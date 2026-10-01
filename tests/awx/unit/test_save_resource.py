@@ -12,6 +12,7 @@ from untaped.capabilities.awx.infrastructure.specs import (
     JOB_TEMPLATE_SPEC,
     PROJECT_SPEC,
     SCHEDULE_SPEC,
+    WORKFLOW_JOB_TEMPLATE_SPEC,
 )
 
 
@@ -130,3 +131,47 @@ def test_save_job_template_keeps_empty_host_config_key() -> None:
 def test_save_keeps_empty_survey_password_default() -> None:
     survey = {"spec": [{"variable": "pw", "type": "password", "default": ""}]}
     assert _save_jt(survey_spec=survey)["survey_spec"]["spec"][0]["default"] == ""
+
+
+def test_save_job_template_omits_server_owned_and_duplicate_fields() -> None:
+    spec = _save_jt(custom_virtualenv="/venv/x", webhook_key="k", webhook_service="")
+    assert "custom_virtualenv" not in spec
+    assert "webhook_key" not in spec
+    assert "organization" not in spec
+
+
+def test_save_project_has_no_spec_organization() -> None:
+    client = _StubClient(
+        find_result={
+            "id": 1,
+            "name": "playbooks",
+            "organization": 1,
+            "scm_type": "git",
+            "summary_fields": {"organization": {"name": "Default"}},
+        }
+    )
+    fk = _StubFk({("Organization", 1): "Default"})
+    saved = SaveResource(cast(ResourceClient, client), cast(FkResolver, fk)).from_record(
+        PROJECT_SPEC, client.record
+    )
+    assert saved.metadata.organization == "Default"
+    assert "organization" not in saved.spec
+
+
+def test_save_workflow_template_omits_webhook_key_and_spec_organization() -> None:
+    client = _StubClient(
+        find_result={
+            "id": 40,
+            "name": "pipeline",
+            "organization": 1,
+            "summary_fields": {"organization": {"name": "Default"}},
+            "survey_spec": {"spec": []},
+            "webhook_key": "k",
+        }
+    )
+    fk = _StubFk({("Organization", 1): "Default"})
+    saved = SaveResource(cast(ResourceClient, client), cast(FkResolver, fk)).from_record(
+        WORKFLOW_JOB_TEMPLATE_SPEC, client.record
+    )
+    assert "webhook_key" not in saved.spec
+    assert "organization" not in saved.spec
