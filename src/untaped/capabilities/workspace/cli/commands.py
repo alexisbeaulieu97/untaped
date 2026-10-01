@@ -221,9 +221,9 @@ def archive_command(
             )
         if blocked:
             _confirm_discard(record.name, blocked, yes=yes)
-        archive = ArchiveWorkspace(
-            StateWorkspaceStore(), git, workspaces_dir=workspaces_dir(settings), now=utc_now
-        )
+        root = workspaces_dir(settings)
+        store = StateWorkspaceStore(workspaces_dir=root)
+        archive = ArchiveWorkspace(store, git, workspaces_dir=root, now=utc_now)
         outcomes = archive(record, force=force)
         emit(outcomes, fmt=fmt, columns=columns, kind=ARCHIVE_OUTCOME)
         failed = any(row.failed for row in outcomes)

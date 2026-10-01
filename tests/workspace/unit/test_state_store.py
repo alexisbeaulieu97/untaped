@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -64,3 +65,18 @@ def test_one_repo_under_two_url_forms_records_once() -> None:
     ssh = SPEC.model_copy(update={"url": "git@github.com:acme/api.git", "dir": "acme-api"})
     store.add_repos("w", [https])
     assert store.add_repos("w", [ssh]).repos == (https,)
+
+
+def test_a_held_workspace_lock_makes_others_wait_then_fail(tmp_path: Path) -> None:
+    holder = StateWorkspaceStore(workspaces_dir=tmp_path)
+    other = StateWorkspaceStore(workspaces_dir=tmp_path, lock_timeout=0.1)
+    with holder.locked("w"):
+        with pytest.raises(WorkspaceError) as caught, other.locked("w"):
+            pass
+        with other.locked("v"):  # another workspace is not held
+            pass
+    assert (caught.value.category, caught.value.system) == ("unavailable", "local")
+    assert str(caught.value) == "workspace w is busy (another untaped process)"
+    assert caught.value.hint
+    with other.locked("w"):  # free again
+        pass

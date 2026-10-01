@@ -1,15 +1,23 @@
-"""``StateWorkspaceStore``: active and archived workspaces in ``state.yml``."""
+"""``StateWorkspaceStore``: active and archived workspaces in ``state.yml``.
+
+Also the per-workspace advisory lock (``<workspaces_dir>/.<name>.lock``)
+that serialises ``create``, ``add`` and ``archive`` of one workspace.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from untaped.capabilities.workspace.domain.models import ArchivedRecord, RepoSpec, WorkspaceRecord
 from untaped.capabilities.workspace.domain.naming import repo_key
 from untaped.capabilities.workspace.errors import WorkspaceError, WorkspaceNotFoundError
-from untaped.capability_api import StateCollection, not_found, q
+from untaped.capability_api import StateCollection, file_lock, not_found, q
+
+_BUSY_HINT = "wait for the other untaped command on this workspace to finish, then retry"
 
 
 def _dump(record: WorkspaceRecord) -> dict[str, Any]:
@@ -17,11 +25,32 @@ def _dump(record: WorkspaceRecord) -> dict[str, Any]:
 
 
 class StateWorkspaceStore:
-    """Workspace records kept under ``workspace.active`` / ``workspace.archived``."""
+    """Workspace records kept under ``workspace.active`` / ``workspace.archived``.
 
-    def __init__(self) -> None:
+    ``workspaces_dir`` is only needed by :meth:`locked`.
+    """
+
+    def __init__(self, *, workspaces_dir: Path | None = None, lock_timeout: float = 600.0) -> None:
         self._active = StateCollection("workspace", "active", id_field="name")
         self._archived = StateCollection("workspace", "archived", id_field="name")
+        self._workspaces_dir = workspaces_dir
+        self._lock_timeout = lock_timeout
+
+    @contextmanager
+    def locked(self, name: str) -> Iterator[None]:
+        """Hold workspace ``name``'s lock; another process waits, then fails as busy."""
+        if self._workspaces_dir is None:
+            raise WorkspaceError("this workspace store was built without a workspaces_dir")
+        root = self._workspaces_dir.expanduser().resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        with file_lock(
+            root / f".{name}.lock",
+            timeout=self._lock_timeout,
+            error=lambda message: WorkspaceError(message, hint=_BUSY_HINT),
+            busy=f"workspace {name} is busy (another untaped process)",
+            failed=f"could not lock workspace {name}",
+        ):
+            yield
 
     def active(self) -> list[WorkspaceRecord]:
         return [WorkspaceRecord.model_validate(row) for row in self._active.entries()]
@@ -70,12 +99,20 @@ class StateWorkspaceStore:
         return updated
 
     def archive(self, name: str, *, at: datetime) -> ArchivedRecord:
-        record = self.get(name)
-        if record is None:
-            raise WorkspaceNotFoundError(
-                not_found("workspace", name, known=[r.name for r in self.active()])
-            )
-        archived = ArchivedRecord(**record.model_dump(), archived_at=at)
+        """Move ``name`` to the archived list, from the record read as it is removed."""
+        removed: dict[str, Any] | None = None
+
+        def _take(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            nonlocal removed
+            removed = next((row for row in rows if row.get("name") == name), None)
+            if removed is None:
+                raise WorkspaceNotFoundError(
+                    not_found("workspace", name, known=[r.get("name") for r in rows])
+                )
+            return [row for row in rows if row is not removed]
+
+        self._active.mutate(_take)
+        assert removed is not None
+        archived = ArchivedRecord.model_validate({**removed, "archived_at": at})
         self._archived.mutate(lambda rows: [*rows, _dump(archived)])
-        self._active.remove(name)
         return archived

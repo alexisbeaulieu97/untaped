@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from contextlib import AbstractContextManager
     from datetime import datetime
     from pathlib import Path
 
@@ -53,6 +54,9 @@ class WorkspaceStore(Protocol):
 
     def add_repos(self, name: str, repos: Sequence[RepoSpec]) -> WorkspaceRecord: ...
     def archive(self, name: str, *, at: datetime) -> ArchivedRecord: ...
+    def locked(self, name: str) -> AbstractContextManager[None]:
+        """Serialise ``create``/``add``/``archive`` of workspace ``name`` across processes."""
+        ...
 
 
 class RepoCatalog(Protocol):

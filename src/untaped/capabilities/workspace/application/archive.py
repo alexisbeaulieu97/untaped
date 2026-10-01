@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from untaped.capabilities.workspace.application.locate import active_workspace
 from untaped.capabilities.workspace.domain.records import ArchiveOutcome
 from untaped.capability_api import UntapedError, note_failure
 
@@ -39,6 +40,15 @@ class ArchiveWorkspace:
         self._now = now
 
     def __call__(self, record: WorkspaceRecord, *, force: bool) -> list[ArchiveOutcome]:
+        """Archive ``record``'s workspace as stored now, under its workspace lock.
+
+        Not found when it was archived meanwhile; repos an ``add`` recorded
+        after ``record`` was read are removed too.
+        """
+        with self._store.locked(record.name):
+            return self._archive(active_workspace(self._store, record.name), force=force)
+
+    def _archive(self, record: WorkspaceRecord, *, force: bool) -> list[ArchiveOutcome]:
         root = self._workspaces_dir.expanduser().absolute() / record.name
         rows = [self._remove(record.name, root, spec, force=force) for spec in record.repos]
         if any(row.action == "failed" for row in rows):

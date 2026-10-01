@@ -28,7 +28,7 @@ class UrlCatalog:
 @pytest.fixture
 def provision(tmp_path: Path) -> ProvisionRepos:
     return ProvisionRepos(
-        StateWorkspaceStore(),
+        StateWorkspaceStore(workspaces_dir=tmp_path / "ws"),
         LocalGitWorktrees(tmp_path / "cache"),
         UrlCatalog(),
         workspaces_dir=tmp_path / "ws",
@@ -110,7 +110,7 @@ class _FlakyGit:
 
 def test_unexpected_error_still_persists_finished_repos(tmp_path: Path) -> None:
     provision = ProvisionRepos(
-        StateWorkspaceStore(),
+        StateWorkspaceStore(workspaces_dir=tmp_path / "ws"),
         _FlakyGit(),  # type: ignore[arg-type]
         UrlCatalog(),
         workspaces_dir=tmp_path / "ws",
@@ -193,7 +193,7 @@ class _PassThrough:
 
 def _recording(tmp_path: Path, git: _RecordingGit, catalog: object) -> ProvisionRepos:
     return ProvisionRepos(
-        StateWorkspaceStore(),
+        StateWorkspaceStore(workspaces_dir=tmp_path / "ws"),
         git,  # type: ignore[arg-type]
         catalog,  # type: ignore[arg-type]
         workspaces_dir=tmp_path / "ws",

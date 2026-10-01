@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from untaped.capabilities.workspace.domain import archive_blockers
 from untaped.capabilities.workspace.errors import GitError, WorkspaceError
 from untaped.capabilities.workspace.infrastructure import LocalGitWorktrees
 from untaped.capabilities.workspace.infrastructure.bare_cache import cache_path_for
@@ -227,7 +228,7 @@ def test_resume_a_branch_ahead_of_origin(
     first = tmp_path / "a" / "api"
     worktrees.checkout(url, first, branch="b", base=None)
     commit_in(first)
-    worktrees.remove(url, first, force=False)
+    worktrees.remove(url, first, force=True)  # unpushed: the branch keeps it
     second = tmp_path / "b" / "api"
     checkout = worktrees.checkout(url, second, branch="b", base=None)
     assert checkout.detail == "resumed; ahead of origin/b"
@@ -243,7 +244,7 @@ def test_resume_a_branch_diverged_from_origin(
     first = tmp_path / "a" / "api"
     worktrees.checkout(url, first, branch="b", base=None)
     commit_in(first)
-    worktrees.remove(url, first, force=False)
+    worktrees.remove(url, first, force=True)  # unpushed: the branch keeps it
     _advance_origin(url, "b", tmp_path / "other")
     second = tmp_path / "b" / "api"
     checkout = worktrees.checkout(url, second, branch="b", base=None)
@@ -416,3 +417,34 @@ def test_an_existing_directory_hint_never_suggests_deleting(
     assert caught.value.category == "conflict"
     assert caught.value.hint == "move the existing directory aside, or use another branch name"
     assert (dest / "notes.md").exists()
+
+
+def _stash_a_change(worktree: Path) -> None:
+    for key, value in (("user.email", "t@t"), ("user.name", "t")):
+        git(worktree, "config", key, value)
+    (worktree / "README.md").write_text("changed")
+    git(worktree, "stash", "push", "-q")
+
+
+@pytest.mark.parametrize(
+    "change",
+    [commit_in, _stash_a_change, lambda dest: (dest / "scratch.txt").write_text("x")],
+    ids=["commit", "stash", "untracked"],
+)
+def test_remove_rechecks_for_work_made_after_the_status_check(
+    worktrees: LocalGitWorktrees,
+    make_upstream: Callable[..., Path],
+    tmp_path: Path,
+    change: Callable[[Path], object],
+) -> None:
+    url = str(make_upstream("api"))
+    dest = tmp_path / "ws" / "api"
+    worktrees.checkout(url, dest, branch="b", base=None)
+    assert archive_blockers(worktrees.status(dest, branch="b", base="main")) == ()
+    change(dest)  # after the check, before the removal
+    with pytest.raises(GitError) as caught:
+        worktrees.remove(url, dest, force=False)
+    assert (caught.value.category, caught.value.system) == ("conflict", "git")
+    assert caught.value.hint == "the repo changed since the check; run status and archive again"
+    assert (dest / "README.md").exists()
+    assert git(dest, "rev-parse", "--abbrev-ref", "HEAD") == "b"

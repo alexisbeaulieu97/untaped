@@ -17,6 +17,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from untaped.capabilities.workspace.domain.models import Checkout, WorktreeStatus
+from untaped.capabilities.workspace.domain.safety import archive_blockers
 from untaped.capabilities.workspace.errors import GitError, WorkspaceError
 from untaped.capabilities.workspace.infrastructure.bare_cache import cache_path_for
 from untaped.capability_api import GitCommandError, attribution, file_lock, run_git
@@ -115,8 +116,36 @@ class LocalGitWorktrees:
             return
         with self._locked(cache):
             if dest.exists():
+                if not force:
+                    self._recheck(dest)
                 self._remove_worktree(cache, dest, force=force)
             self._run(["worktree", "prune"], cwd=cache)
+
+    def _recheck(self, dest: Path) -> None:
+        """Refuse (``conflict``) when work appeared in ``dest`` since the caller's status check.
+
+        Run under the cache lock right before ``worktree remove``: changes,
+        stashes on the checked-out branch, or unpushed commits block it.
+        """
+        out = self._run(["status", "--porcelain=v2", "--branch"], cwd=dest, capture=True)
+        head, _, _, _, modified, untracked = _parse_status(out)
+        status = WorktreeStatus(
+            branch=head,
+            upstream=None,
+            ahead=0,
+            behind=0,
+            modified=modified,
+            untracked=untracked,
+            stashed=self._stashed(dest, head),
+            unpushed=self._unpushed(dest),
+        )
+        blockers = archive_blockers(status)
+        if blockers:
+            raise GitError(
+                f"{dest}: {', '.join(blockers)}; nothing removed",
+                category="conflict",
+                hint="the repo changed since the check; run status and archive again",
+            )
 
     def _remove_worktree(self, cache: Path, dest: Path, *, force: bool) -> None:
         """``git worktree remove``; forced, a worktree git refuses is deleted outright.

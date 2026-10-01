@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -19,6 +20,7 @@ from untaped.capabilities.workspace.domain import (
     WorkspaceRecord,
     repo_identity,
 )
+from untaped.capabilities.workspace.errors import WorkspaceNotFoundError
 from untaped.capabilities.workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
 from workspace.conftest import commit_in, git
 
@@ -38,14 +40,15 @@ class Env:
     status: WorkspaceStatus
     archive: ArchiveWorkspace
     repo: Path
+    provision: ProvisionRepos
 
 
 @pytest.fixture
 def env(tmp_path: Path, make_upstream: Callable[..., Path]) -> Env:
     git_ = LocalGitWorktrees(tmp_path / "cache")
-    store = StateWorkspaceStore()
     workspaces = tmp_path / "ws"
-    ProvisionRepos(
+    store = StateWorkspaceStore(workspaces_dir=workspaces)
+    provision = ProvisionRepos(
         store,
         git_,
         UrlCatalog(),
@@ -53,7 +56,8 @@ def env(tmp_path: Path, make_upstream: Callable[..., Path]) -> Env:
         branch_template="{name}",
         parallel=2,
         now=lambda: T0,
-    ).create("J-1", [RepoArg(ident=str(make_upstream("api")))])
+    )
+    provision.create("J-1", [RepoArg(ident=str(make_upstream("api")))])
     record = store.get("J-1")
     assert record is not None
     return Env(
@@ -61,6 +65,7 @@ def env(tmp_path: Path, make_upstream: Callable[..., Path]) -> Env:
         WorkspaceStatus(git_, workspaces_dir=workspaces),
         ArchiveWorkspace(store, git_, workspaces_dir=workspaces, now=lambda: T0),
         workspaces / "J-1" / "api",
+        provision,
     )
 
 
@@ -97,7 +102,7 @@ def test_hand_deleted_repo_is_missing(env: Env) -> None:
 
 def test_read_only_commit_blocks(tmp_path: Path, make_upstream: Callable[..., Path]) -> None:
     git_ = LocalGitWorktrees(tmp_path / "cache")
-    store = StateWorkspaceStore()
+    store = StateWorkspaceStore(workspaces_dir=tmp_path / "ws")
     ProvisionRepos(
         store,
         git_,
@@ -150,3 +155,79 @@ def test_archive_failure_keeps_the_record(env: Env) -> None:
     assert [r.action for r in rows if r.repo] == ["failed"]
     assert rows[0].error is not None
     assert StateWorkspaceStore().get("J-1") is not None
+
+
+def test_archive_removes_repos_added_after_its_record_was_read(
+    env: Env, make_upstream: Callable[..., Path]
+) -> None:
+    env.provision.add(env.record, [RepoArg(ident=str(make_upstream("web")))])
+    rows = env.archive(env.record, force=False)  # env.record predates the add
+    assert [(r.repo, r.action) for r in rows if r.repo] == [
+        ("acme/api", "removed"),
+        ("acme/web", "removed"),
+    ]
+    assert not env.repo.parent.exists()
+    [archived] = StateWorkspaceStore().archived()
+    assert [spec.dir for spec in archived.repos] == ["api", "web"]
+
+
+class _GatedGit:
+    """Real git whose ``remove`` signals ``removing``, then waits for ``release``."""
+
+    def __init__(self, inner: LocalGitWorktrees) -> None:
+        self.inner = inner
+        self.removing = threading.Event()
+        self.release = threading.Event()
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self.inner, name)
+
+    def remove(self, url: str, dest: Path, *, force: bool) -> None:
+        self.removing.set()
+        assert self.release.wait(10)
+        self.inner.remove(url, dest, force=force)
+
+
+def test_add_during_archive_waits_then_fails_without_a_worktree(
+    tmp_path: Path, make_upstream: Callable[..., Path]
+) -> None:
+    workspaces = tmp_path / "ws"
+    real = LocalGitWorktrees(tmp_path / "cache")
+    store = StateWorkspaceStore(workspaces_dir=workspaces)
+    provision = ProvisionRepos(
+        store,
+        real,
+        UrlCatalog(),
+        workspaces_dir=workspaces,
+        branch_template="{name}",
+        parallel=1,
+        now=lambda: T0,
+    )
+    provision.create("J-1", [RepoArg(ident=str(make_upstream("api")))])
+    web = RepoArg(ident=str(make_upstream("web")))
+    record = store.get("J-1")
+    assert record is not None
+    gated = _GatedGit(real)
+    archive = ArchiveWorkspace(store, gated, workspaces_dir=workspaces, now=lambda: T0)  # type: ignore[arg-type]
+    archiver = threading.Thread(target=archive, args=(record,), kwargs={"force": False})
+    archiver.start()
+    assert gated.removing.wait(10)
+    errors: list[BaseException] = []
+
+    def add() -> None:
+        try:
+            provision.add(record, [web])
+        except BaseException as exc:
+            errors.append(exc)
+
+    adder = threading.Thread(target=add)
+    adder.start()
+    adder.join(0.5)  # time enough for an unserialised add to check out
+    gated.release.set()
+    archiver.join()
+    adder.join()
+    assert [type(exc) for exc in errors] == [WorkspaceNotFoundError]
+    assert not (workspaces / "J-1" / "web").exists()
+    assert store.get("J-1") is None
+    [archived] = store.archived()
+    assert [spec.dir for spec in archived.repos] == ["api"]

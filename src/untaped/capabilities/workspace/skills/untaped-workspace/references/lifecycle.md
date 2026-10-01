@@ -88,6 +88,8 @@ and always exits 0.
 directories, deleting a worktree git refuses to remove. Branch commits and
 stashes stay in the repo cache; commits made on a read-only repo do not. If
 removing a repo fails, the workspace stays active so archive can be retried.
+Without `--force`, each repo is checked again just before it is removed:
+work made after the first check fails that repo (a `conflict`), and it stays.
 Stashes are shared by every workspace of a repo: never drop one you did not
 make.
 
@@ -104,4 +106,6 @@ OWNER/NAME --branch BRANCH` resumes the work.
 
 Worktrees point into the bare cache at `workspace.cache_dir`. Do not delete
 it while workspaces are active. Every cache write runs under a per-repo lock, so concurrent runs wait
-rather than corrupt it.
+rather than corrupt it. `create`, `add` and `archive` of one workspace also
+wait for each other: an `add` queued behind an `archive` then fails as not
+found.

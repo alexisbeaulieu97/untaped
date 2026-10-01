@@ -18,12 +18,7 @@ def locate_workspace(
 ) -> WorkspaceRecord:
     """The active workspace called ``name``, or the one whose directory contains ``cwd``."""
     if name is not None:
-        record = store.get(name)
-        if record is None:
-            raise WorkspaceNotFoundError(
-                not_found("workspace", name, known=[r.name for r in store.active()])
-            )
-        return record
+        return active_workspace(store, name)
     root = workspaces_dir.expanduser().resolve()
     try:
         parts = cwd.resolve().relative_to(root).parts
@@ -35,5 +30,15 @@ def locate_workspace(
             "not inside a workspace",
             category="usage",
             hint=f"pass a workspace name, or cd into {root}/NAME",
+        )
+    return record
+
+
+def active_workspace(store: WorkspaceStore, name: str) -> WorkspaceRecord:
+    """The stored active workspace ``name``; not found (listing the known ones) otherwise."""
+    record = store.get(name)
+    if record is None:
+        raise WorkspaceNotFoundError(
+            not_found("workspace", name, known=[r.name for r in store.active()])
         )
     return record

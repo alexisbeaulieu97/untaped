@@ -122,7 +122,7 @@ def parallel_workers(settings: WorkspaceSettings, requested: int | None) -> int:
 def provisioner(settings: WorkspaceSettings, parallel: int | None) -> ProvisionRepos:
     """The ``create``/``add`` use case wired to the real adapters."""
     return ProvisionRepos(
-        StateWorkspaceStore(),
+        StateWorkspaceStore(workspaces_dir=workspaces_dir(settings)),
         git_worktrees(settings),
         GithubRepoCatalog(protocol=settings.protocol),
         workspaces_dir=workspaces_dir(settings),
