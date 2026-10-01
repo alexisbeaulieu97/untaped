@@ -124,18 +124,15 @@ root shell rewrites the old token and prints
 The old spelling never appears in `--help`. Aliases apply through the
 `untaped` root, so test them with `build_root_app()`.
 
-Command names are kebab-case. Use plural nouns for collections. Leaf verbs
-come from a closed set:
+Command names are kebab-case; use plural nouns for collections. Names are
+free, but a command that writes declares it with `@writes`, or
+`@writes(destructive=True)` when it deletes or overwrites data:
 
-- Read: `list`, `get`, `status`, `whoami`, `ping`, `path` (prints a
-  workspace's directory)
-- Write: `create`, `set`, `unset`, `add`, `remove`, `delete`, `prune`, `edit`,
-  `patch`, `apply`, `copy`, `rename`, `archive` (retires a workspace, removing
-  its worktrees)
-- Update: `sync`, `refresh`
-- Query: `find`, `deps`, `impact`, `graph`
-- Other: `export`, `init`, `run`, `launch`, `wait`, `validate`, `test`,
-  `cancel`, `relaunch`, `schema` (prints the JSON Schema of a document kind)
+- A command exposing `--yes` or `--dry-run` must be declared
+  (`undeclared-write`).
+- A declared write takes `--format` (`mutation-format`).
+- A destructive command takes both `--yes` and `--dry-run`
+  (`destructive-controls`).
 
 ## Confirmation and stdin
 
@@ -211,17 +208,6 @@ come from a closed set:
 
 ## Enforcement
 
-`tests/conventions/` checks these rules on every test run:
-
-| Test | What it checks |
-|---|---|
-| `test_help_tree.py` | Verbs, flags and help text |
-| `test_message_lint.py` | stderr wording |
-| `test_structure.py` | `errors.py`, exception names, ports, config sections, private test imports |
-| `test_layering.py` | Import direction inside a capability; only `cli` resolves settings |
-| `test_table_defaults.py` | Wide record collections declare default table columns |
-
-Existing violations are listed in
-`tests/conventions/baselines/<check>/<owner>.txt`. A new violation fails the
-tests. A fixed violation also fails until you delete its baseline line, so the
-baselines can only shrink.
+`untaped.testing.check_conventions(NAME)` runs these checks for one
+capability; each capability's tests call it. A line can opt out of one rule
+with `# untaped: allow <rule>`, placed on the first line of the flagged node.
