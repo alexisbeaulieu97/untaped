@@ -4,7 +4,7 @@
 `--stdin`. Each record keeps all its fields and names its kind, so the
 consumer never parses table text.
 
-```bash
+```text
 untaped github repos list --org acme --format pipe \
   | untaped workspace repos add acme --stdin
 ```
@@ -269,7 +269,7 @@ names, or `recipe.pack` records from `recipe packs list --format pipe`.
 kind that carry an absolute `target_path` (else `path`), such as
 `workspace.repo`, `workspace.status` or `workspace.sync_outcome`.
 
-```bash
+```text
 untaped workspace repos list prod --format pipe \
   | untaped recipe apply acme/ci-baseline --stdin --dry-run
 ```

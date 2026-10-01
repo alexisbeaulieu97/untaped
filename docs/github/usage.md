@@ -71,7 +71,7 @@ shows a few columns; use `-c` or `--format json` for the rest (`clone_url`,
 
 Clone the result into a workspace:
 
-```bash
+```text
 untaped github repos list --team acme/platform --format pipe \
   | untaped workspace repos add platform --stdin --sync
 ```
