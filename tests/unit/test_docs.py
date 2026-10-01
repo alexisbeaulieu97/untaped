@@ -3,7 +3,8 @@
 - ``docs/reference/config.md`` must match ``scripts/gen_config_reference.py``
   output, and every setting must have a description.
 - Every relative Markdown link (and ``#anchor``) in ``docs/``, ``README.md``,
-  ``AGENTS.md`` and ``CONTRIBUTING.md`` must resolve.
+  ``AGENTS.md``, ``CONTRIBUTING.md`` and the packaged skills must resolve, so
+  renaming a heading cannot silently break a pointer to it.
 - Every ``untaped`` example in a ``bash`` block must name a real command and
   only options that command accepts.
 """
@@ -56,7 +57,9 @@ def test_every_setting_has_a_description() -> None:
 
 def _markdown_files() -> list[Path]:
     files = sorted((REPO_ROOT / "docs").rglob("*.md"))
-    return [*files, *(REPO_ROOT / name for name in ("README.md", "AGENTS.md", "CONTRIBUTING.md"))]
+    skills = sorted((REPO_ROOT / "src" / "untaped" / "capabilities").glob("*/skills/**/*.md"))
+    root = (REPO_ROOT / name for name in ("README.md", "AGENTS.md", "CONTRIBUTING.md"))
+    return [*files, *skills, *root]
 
 
 def _slug(heading: str) -> str:

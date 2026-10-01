@@ -47,8 +47,9 @@ Shape
   uses reach goes in references/TOPIC.md, one level deep, each pointer
   saying when to read it. A reference over about 100 lines opens with a list
   of its contents. Sample input files go in examples/.
-- Behaviour test cases live outside this directory: `skills install` copies
-  the whole folder.
+- Behaviour test cases live in tests/skills/cases.md, outside this
+  directory, because `skills install` copies the whole folder. Rerun them
+  when a change could alter what an agent does.
 -->
 
 # untaped CAPABILITY

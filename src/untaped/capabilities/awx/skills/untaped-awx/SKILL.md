@@ -51,7 +51,7 @@ read-only.
    yaml` shows the patched value.
 5. To undo, apply the recovery point, preview first. It restores fields on the
    template that still exists; it cannot recreate secrets, access or schedules
-   (read references/specs.md "Export" before relying on it for a delete).
+   (read [references/specs.md#export](references/specs.md#export) before relying on it for a delete).
 
 ### Test a change
 
@@ -94,7 +94,7 @@ previews once and asks once, No by default.
   Reapply a prior export; a deleted resource returns with a new id and
   without its secrets, access or history, and a job template exported with a
   `webhook_key` refuses to be recreated until its `$encrypted$` placeholder is
-  removed (see references/specs.md "Export").
+  removed (see [references/specs.md#export](references/specs.md#export)).
 - A single named `launch` or `sync` submits at once; several targets or a
   query selection are listed and confirmed once.
 
