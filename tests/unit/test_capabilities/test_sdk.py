@@ -4,146 +4,166 @@ from __future__ import annotations
 
 import pytest
 
-import untaped.sdk as capi
+import untaped.sdk as sdk
+from untaped.capabilities import registry
 
-EXPECTED_ALL = [
-    "ApplicationSpec",
-    "CapabilitySpec",
-    "CapabilityProvider",
-    "CAPABILITY_API_VERSION",
-    "SkillAsset",
-    "DoctorCheck",
-    "DoctorResult",
-    "CapabilityContext",
-    "ColumnsOption",
-    "ConfigError",
-    "FormatOption",
-    "PipeEnvelope",
-    "StateCollection",
-    "UiContext",
-    "UntapedError",
-    "app_context",
-    "create_app",
-    "echo",
-    "emit",
-    "finish",
-    "first_validation_error",
-    "get_config_section",
-    "parse_envelope_line",
-    "raise_usage",
-    "read_identifiers",
-    "report_errors",
-    "run_editor",
-    "GitCommandError",
-    "GitResult",
-    "git_auth_header",
-    "run_git",
-    "safe_cache_path",
-    "safe_path_segment",
-    # Additive helpers folded in from the retired ``untaped.api`` module.
-    "AppContext",
-    "BatchOutcome",
-    "HttpClient",
-    "HttpError",
-    "HttpSettings",
-    "HttpStatusError",
-    "HttpTransportError",
-    "OutputFormat",
-    "ProgressHandle",
-    "PromptChoice",
-    "RetryPolicy",
-    "StateMap",
-    "atomic_write",
-    "batch_apply",
-    "bounded_map",
-    "clamp_parallel",
-    "connected_client",
-    "existing_file",
-    "get_core_settings",
-    "is_envelope_line",
-    "paginate_link",
-    "paginate_offset",
-    "paginate_pages",
-    "parse_json_pairs",
-    "parse_kv_pairs",
-    "read_stdin",
-    "read_structured_file",
-    "render_rows",
-    "resolve_each",
-    "resolve_text_input",
-    "resolve_verify",
-    "ui_context",
-    "unified_diff_text",
-    "AbsolutePath",
-    "CheckRecord",
-    "DryRunOption",
-    "ExitCode",
-    "LimitOption",
-    "OperationCancelledError",
-    "OutcomeRecord",
-    "ParallelOption",
-    "StdinInput",
-    "StdinOption",
-    "TargetRecord",
-    "UsageError",
-    "UtcTimestamp",
-    "YesOption",
-    "deprecated_alias",
-    "hint",
-    "not_found",
-    "plural",
-    "q",
-    "read_records",
-    "read_stdin_input",
-    "summary",
-    "TokenCommand",
-    "TokenSources",
-    "connection_check",
-    "executable_check",
-    "online_check",
-    "file_lock",
-    "git_toplevel",
-    "same_origin",
-    "ErrorCategory",
-    "ErrorInfo",
-    "attribution",
-    "note_failure",
-    "report_error",
-    "most_severe",
-    "rejected_token_error",
-    "TableGlyph",
-    "PickCatalog",
-    "PickItem",
-    "PickRequest",
-    "PickResult",
-    "PickSetting",
-    "Picked",
-]
+SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
+    "composition": (
+        "ApplicationSpec",
+        "CapabilityContext",
+        "CapabilityProvider",
+        "CapabilitySpec",
+        "DoctorCheck",
+        "DoctorResult",
+        "SkillAsset",
+        "create_app",
+    ),
+    "settings and state": (
+        "AppContext",
+        "StateCollection",
+        "StateMap",
+        "app_context",
+        "get_config_section",
+    ),
+    "output and records": (
+        "CheckRecord",
+        "ColumnsOption",
+        "FormatOption",
+        "OutcomeRecord",
+        "OutputFormat",
+        "PipeEnvelope",
+        "TableGlyph",
+        "TargetRecord",
+        "UtcTimestamp",
+        "echo",
+        "emit",
+        "finish",
+        "is_envelope_line",
+        "parse_envelope_line",
+        "read_records",
+        "render_rows",
+        "summary",
+        "unified_diff_text",
+    ),
+    "errors": (
+        "ConfigError",
+        "ErrorCategory",
+        "ErrorInfo",
+        "OperationCancelledError",
+        "UntapedError",
+        "UsageError",
+        "attribution",
+        "first_validation_error",
+        "hint",
+        "most_severe",
+        "not_found",
+        "note_failure",
+        "raise_usage",
+        "rejected_token_error",
+        "report_error",
+        "report_errors",
+    ),
+    "input": (
+        "AbsolutePath",
+        "StdinInput",
+        "StdinOption",
+        "existing_file",
+        "parse_json_pairs",
+        "parse_kv_pairs",
+        "read_identifiers",
+        "read_stdin",
+        "read_stdin_input",
+        "read_structured_file",
+        "resolve_each",
+        "resolve_text_input",
+    ),
+    "batch and concurrency": (
+        "BatchOutcome",
+        "DryRunOption",
+        "LimitOption",
+        "ParallelOption",
+        "YesOption",
+        "batch_apply",
+        "bounded_map",
+        "clamp_parallel",
+    ),
+    "http": (
+        "HttpClient",
+        "HttpError",
+        "HttpSettings",
+        "HttpStatusError",
+        "HttpTransportError",
+        "RetryPolicy",
+        "TokenCommand",
+        "TokenSources",
+        "connected_client",
+        "paginate_link",
+        "paginate_offset",
+        "paginate_pages",
+        "resolve_verify",
+    ),
+    "git and filesystem": (
+        "GitCommandError",
+        "GitResult",
+        "atomic_write",
+        "file_lock",
+        "git_auth_header",
+        "git_toplevel",
+        "run_git",
+        "safe_cache_path",
+        "safe_path_segment",
+        "same_origin",
+    ),
+    "prompts and ui": (
+        "PickCatalog",
+        "PickItem",
+        "PickRequest",
+        "PickResult",
+        "PickSetting",
+        "Picked",
+        "ProgressHandle",
+        "PromptChoice",
+        "UiContext",
+        "run_editor",
+        "ui_context",
+    ),
+    "doctor checks": ("connection_check", "executable_check", "online_check"),
+    "conventions": ("ExitCode", "deprecated_alias", "plural", "q"),
+}
+EXPECTED_ALL = [name for group in SURFACE_GROUPS.values() for name in group]
 
 
-def test_all_contains_exact_surface() -> None:
-    assert capi.__all__ == EXPECTED_ALL
-    assert capi.CAPABILITY_API_VERSION == (3, 2)
+def test_all_is_the_topic_groups_in_order() -> None:
+    assert sdk.__all__ == EXPECTED_ALL
+    assert len(set(EXPECTED_ALL)) == len(EXPECTED_ALL)
+
+
+def test_removed_names_are_gone() -> None:
+    for name in ("CAPABILITY_API_VERSION", "get_core_settings"):
+        assert name not in sdk.__all__
+        assert not hasattr(sdk, name)
+
+
+def test_registry_keeps_the_internal_api_version() -> None:
+    assert registry.CAPABILITY_API_VERSION == (3, 2)
 
 
 def test_no_extra_module_level_names_leak() -> None:
     """Nothing beyond ``__all__`` is public (retired and registry names stay out)."""
-    public = {name for name in dir(capi) if not name.startswith("_")}
-    assert public == set(capi.__all__) | {"annotations"}
+    public = {name for name in dir(sdk) if not name.startswith("_")}
+    assert public == set(sdk.__all__) | {"annotations"}
 
 
 @pytest.mark.parametrize("name", EXPECTED_ALL)
 def test_every_name_is_a_reexport_of_its_core_module(name: str) -> None:
     """The SDK module only re-exports; nothing is (re)defined there."""
-    assert getattr(getattr(capi, name), "__module__", None) != capi.__name__
+    assert getattr(getattr(sdk, name), "__module__", None) != sdk.__name__
 
 
 def test_the_sdk_module_is_untaped_sdk_and_the_old_name_is_gone() -> None:
     import importlib
 
-    import pytest
-
-    sdk = importlib.import_module("untaped.sdk")
-    assert "UntapedError" in sdk.__all__
+    mod = importlib.import_module("untaped.sdk")
+    assert "UntapedError" in mod.__all__
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module("untaped.capability" + "_api")
