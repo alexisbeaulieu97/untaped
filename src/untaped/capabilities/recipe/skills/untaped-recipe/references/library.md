@@ -1,5 +1,8 @@
 # Recipe library: packs, checks, tests and backups
 
+Contents: installing, syncing and removing packs, inspecting before trusting,
+what hooks can reach, validation, golden tests, backups.
+
 ## Install packs
 
 - `packs add PATH_OR_GIT_URL` installs a pack and lists its recipes and hooks
