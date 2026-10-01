@@ -31,6 +31,8 @@ archive it.
 | Clean up after pushing | `untaped workspace archive NAME` |
 | List workspaces | `untaped workspace list`, `untaped workspace list --archived` |
 
+In a terminal, `untaped workspace create` with no repos opens a picker; agents pass `--repo` or `--stdin`.
+
 `NAME` is optional on every command that takes a `NAME`, except `create`:
 inside a workspace directory it is the current workspace. Agents should still
 pass it.
