@@ -66,8 +66,8 @@ class RunInRepos:
                     row = self._row(targets[index], future.result())
                     stop = self._finish(rows, index, row) or stop
         except BaseException:
-            # Ctrl-C: do not wait for running jobs (their process trees are their own sessions,
-            # so the terminal's SIGINT does not reach them).
+            # Ctrl-C: the commands run in their own sessions, so stop them explicitly.
+            self._runner.cancel()
             pool.shutdown(wait=False, cancel_futures=True)
             raise
         pool.shutdown()

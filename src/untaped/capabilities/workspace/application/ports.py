@@ -76,3 +76,7 @@ class CommandRunner(Protocol):
     ) -> CommandResult:
         """Run ``argv`` with ``env`` added to the caller's environment; failure is a result."""
         ...
+
+    def cancel(self) -> None:
+        """Stop every command still running (an interrupted ``run``)."""
+        ...
