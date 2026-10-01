@@ -8,7 +8,7 @@ from typing import Any
 
 from untaped.capabilities.workspace.domain.models import ArchivedRecord, RepoSpec, WorkspaceRecord
 from untaped.capabilities.workspace.errors import WorkspaceError, WorkspaceNotFoundError
-from untaped.capability_api import StateCollection, hint, not_found, q
+from untaped.capability_api import StateCollection, not_found, q
 
 
 def _dump(record: WorkspaceRecord) -> dict[str, Any]:
@@ -38,7 +38,7 @@ class StateWorkspaceStore:
                 raise WorkspaceError(
                     f"workspace {q(record.name)} already exists",
                     category="conflict",
-                    hint=hint(f"workspace add {record.name} --repo REPO"),
+                    hint=f"run `untaped workspace add {record.name} --repo REPO`",
                 )
             return [*rows, _dump(record)]
 

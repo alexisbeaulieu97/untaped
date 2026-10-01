@@ -296,7 +296,6 @@ def test_root_options_apply_between_nested_command_names(
     assert not is_quiet()
 
 
-@pytest.mark.xfail(strict=True, reason="workspace list returns in plan c Task 5")
 def test_root_option_after_a_lazy_builtin_name_is_not_a_command(
     _isolated_config: Path,
 ) -> None:

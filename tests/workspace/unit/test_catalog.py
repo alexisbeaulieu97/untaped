@@ -95,3 +95,12 @@ def test_inventory_failure_for_bare_name_reraises_with_hint() -> None:
         _failing().resolve("api")
     assert "no inventory scope" in str(caught.value)
     assert caught.value.hint
+
+
+@pytest.mark.parametrize("ident", ["./api", "../acme/api", "acme/.", "-x/api"])
+def test_inventory_failure_never_builds_a_url_from_a_non_slug(
+    monkeypatch: pytest.MonkeyPatch, ident: str
+) -> None:
+    _host(monkeypatch, "https://api.github.com")
+    with pytest.raises(UntapedError, match="no inventory scope"):
+        _failing().resolve(ident)
