@@ -18,6 +18,8 @@ if TYPE_CHECKING:
     from prompt_toolkit.formatted_text import AnyFormattedText
     from prompt_toolkit.styles import Style
 
+    from untaped.picker import PickRequest, PickResult
+
 
 T = TypeVar("T")
 T_co = TypeVar("T_co", covariant=True)
@@ -57,6 +59,8 @@ class PromptBackend(Protocol):
         *,
         defaults: Sequence[T],
     ) -> list[T]: ...
+
+    def pick_many(self, request: PickRequest) -> PickResult | None: ...
 
 
 _backend_override: ContextVar[PromptBackend | None] = ContextVar(
@@ -206,6 +210,20 @@ class PromptToolkitPromptBackend:
         if selected_indexes is None:
             raise ConfigError("prompt cancelled", category="failed", system="untaped")
         return [choices[index].value for index in selected_indexes]
+
+    def pick_many(self, request: PickRequest) -> PickResult | None:
+        """Run the two-pane picker on this backend's terminal streams."""
+        from prompt_toolkit.input.defaults import create_input  # noqa: PLC0415
+        from prompt_toolkit.output.defaults import create_output  # noqa: PLC0415
+
+        from untaped.picker.app import run_picker  # noqa: PLC0415
+
+        return run_picker(
+            request,
+            input=create_input(self.stdin),
+            output=create_output(self.stderr),
+            style=self.style,
+        )
 
     def _search_select(
         self,
