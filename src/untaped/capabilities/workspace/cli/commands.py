@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Annotated
 
 from cyclopts import Parameter
+from cyclopts.validators import Number
 
 from untaped.capabilities.workspace.application.archive import ArchiveWorkspace
 from untaped.capabilities.workspace.application.run import RunInRepos, RunTarget
@@ -60,7 +61,6 @@ from untaped.capability_api import (
     q,
     report_error,
     report_errors,
-    summary,
     ui_context,
 )
 
@@ -287,7 +287,12 @@ def run_command(
         ),
     ] = False,
     timeout: Annotated[
-        float, Parameter(name="--timeout", help="Seconds allowed per repo before it is killed.")
+        float,
+        Parameter(
+            name="--timeout",
+            validator=Number(gt=0),
+            help="Seconds allowed per repo before it is killed.",
+        ),
     ] = 600.0,
     parallel: Annotated[
         ParallelOption,
@@ -336,24 +341,30 @@ def run_command(
 
 
 def _echo_block(row: RunOutcome) -> None:
-    """One finished repo's output: a header, then its stdout and stderr."""
-    echo(f"── {row.repo} ({row.dir}) ──")
+    """One finished repo's output: a header (with the reason unless it ran), stdout, stderr.
+
+    Skipped rows print nothing (the summary counts them); stdout is flushed so
+    blocks stream through pipes.
+    """
+    if row.action == "skipped":
+        return
+    reason = f" · {row.detail}" if row.action != "ran" and row.detail else ""
+    echo(f"── {row.repo} ({row.dir}){reason} ──")
     for text in (row.stdout, row.stderr):
         if text:
             echo(text.rstrip("\n"))
+    ui_context(strict=False).stdout.flush()
 
 
 def _show_run_summary(rows: Sequence[RunOutcome]) -> None:
     failed = [row.dir for row in rows if row.failed]
-    counts = {
-        "ok": sum(1 for row in rows if row.action == "ran"),
-        "failed": len(failed),
-        "skipped": sum(1 for row in rows if row.action == "skipped"),
-    }
-    text = summary("run", counts).removeprefix("run: ")
+    parts = [f"{sum(1 for row in rows if row.action == 'ran')} ok"]
     if failed:
-        text = text.replace(f"{len(failed)} failed", f"{len(failed)} failed ({', '.join(failed)})")
-    ui_context(strict=False).message("error" if failed else "success", text)
+        parts.append(f"{len(failed)} failed ({', '.join(failed)})")
+    skipped = sum(1 for row in rows if row.action == "skipped")
+    if skipped:
+        parts.append(f"{skipped} skipped")
+    ui_context(strict=False).message("error" if failed else "success", " · ".join(parts))
 
 
 def _show_provisioned(
