@@ -22,7 +22,7 @@ from untaped.capabilities.workspace.infrastructure.bare_cache import cache_path_
 from untaped.capability_api import GitCommandError, attribution, file_lock, run_git
 
 _FETCH_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
-_BRANCH_IN_USE = ("already checked out", "is already used by worktree")
+_BRANCH_IN_USE = ("already checked out", "used by worktree")
 _BRANCH_IN_USE_HINT = (
     "the branch is checked out in another workspace: archive that workspace or pick another branch"
 )
@@ -58,6 +58,7 @@ class LocalGitWorktrees:
             self._fetch(cache)
             self._run(["remote", "set-head", "origin", "--auto"], cwd=cache, check=False)
             picked = self._pick_base(cache, url, base)
+            self._run(["worktree", "prune"], cwd=cache)
             if branch is None:
                 self._run(["worktree", "add", "--detach", target, f"origin/{picked}"], cwd=cache)
                 return Checkout(
@@ -117,10 +118,50 @@ class LocalGitWorktrees:
     # -- checkout steps ----------------------------------------------------
 
     def _ensure_cache(self, cache: Path, url: str) -> None:
-        if not _cache_ready(cache):
+        if _cache_ready(cache):
+            self._drop_legacy_heads(cache)
+        else:
             self._run(["init", "--bare", "--quiet", str(cache)], cwd=cache.parent)
-            self._run(["remote", "add", "origin", url], cwd=cache)
+        self._ensure_remote(cache, url)
         self._run(["config", "--replace-all", "remote.origin.fetch", _FETCH_REFSPEC], cwd=cache)
+
+    def _ensure_remote(self, cache: Path, url: str) -> None:
+        """Add ``origin`` (missing after a crash mid-init) or point it at ``url``."""
+        current = self._run(
+            ["config", "--get", "remote.origin.url"], cwd=cache, capture=True, check=False
+        ).strip()
+        if not current:
+            self._run(["remote", "add", "origin", url], cwd=cache)
+        elif current != url:
+            self._run(["remote", "set-url", "origin", url], cwd=cache)
+
+    def _drop_legacy_heads(self, cache: Path) -> None:
+        """Delete the mirrored ``refs/heads/*`` of an old-style ``clone --bare`` cache.
+
+        Such caches fetched origin's heads straight into ``refs/heads``, so
+        those heads are mirrors, never user work; kept, they would be resumed
+        in place of origin (reviving deleted or force-pushed branches). Only
+        done before the refspec is swapped and while no worktree is registered.
+        """
+        refspecs = self._run(
+            ["config", "--get-all", "remote.origin.fetch"], cwd=cache, capture=True, check=False
+        )
+        if refspecs.split() == [_FETCH_REFSPEC] or self._worktree_branches(cache) is not None:
+            return
+        heads = self._run(
+            ["for-each-ref", "--format=%(refname)", "refs/heads"], cwd=cache, capture=True
+        ).split()
+        if heads:
+            script = "".join(f"delete {ref}\n" for ref in heads)
+            self._run(["update-ref", "--stdin"], cwd=cache, stdin=script)
+
+    def _worktree_branches(self, cache: Path) -> set[str] | None:
+        """Branches checked out in registered worktrees; ``None`` when there are none."""
+        out = self._run(["worktree", "list", "--porcelain"], cwd=cache, capture=True)
+        lines = out.splitlines()
+        if sum(1 for line in lines if line.startswith("worktree ")) <= 1:
+            return None
+        return {line.removeprefix("branch ") for line in lines if line.startswith("branch ")}
 
     def _fetch(self, cache: Path) -> None:
         self._run(
@@ -149,6 +190,12 @@ class LocalGitWorktrees:
         local = self._has_ref(cache, f"refs/heads/{branch}")
         remote = self._has_ref(cache, f"refs/remotes/origin/{branch}")
         tracking = f"origin/{branch}"
+        if local and f"refs/heads/{branch}" in (self._worktree_branches(cache) or set()):
+            raise GitError(
+                f"branch '{branch}' is already checked out in another worktree",
+                category="conflict",
+                hint=_BRANCH_IN_USE_HINT,
+            )
         if local and remote:
             detail = self._reconcile(cache, branch)
             self._run(["worktree", "add", target, branch], cwd=cache)
@@ -166,7 +213,8 @@ class LocalGitWorktrees:
         """Fast-forward a local branch behind its remote; describe how the two relate."""
         tracking = f"origin/{branch}"
         if self._is_ancestor(cache, branch, tracking):
-            self._run(["branch", "-f", branch, tracking], cwd=cache)
+            if self._rev(cache, branch) != self._rev(cache, tracking):
+                self._run(["branch", "-f", branch, tracking], cwd=cache)
             return f"tracking {tracking}"
         if self._is_ancestor(cache, tracking, branch):
             return f"resumed; ahead of {tracking}"
@@ -209,6 +257,9 @@ class LocalGitWorktrees:
         ):
             yield
 
+    def _rev(self, cwd: Path, rev: str) -> str:
+        return self._run(["rev-parse", "--verify", rev], cwd=cwd, capture=True).strip()
+
     def _has_ref(self, cwd: Path, ref: str) -> bool:
         return self._returncode(["show-ref", "--verify", "--quiet", ref], cwd=cwd) == 0
 
@@ -234,6 +285,7 @@ class LocalGitWorktrees:
         check: bool = True,
         timeout: float | None = None,
         retry_transient: bool = False,
+        stdin: str | None = None,
     ) -> str:
         try:
             result = run_git(
@@ -245,6 +297,7 @@ class LocalGitWorktrees:
                 check=check,
                 ceiling=True,
                 retry_transient=retry_transient,
+                stdin=stdin,
             )
         except GitCommandError as exc:
             raise _git_error(exc) from exc
