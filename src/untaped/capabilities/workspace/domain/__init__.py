@@ -3,6 +3,7 @@
 from untaped.capabilities.workspace.domain.models import (
     ArchivedRecord,
     Checkout,
+    CommandResult,
     RepoArg,
     RepoSpec,
     ResolvedRepo,
@@ -21,6 +22,7 @@ from untaped.capabilities.workspace.domain.safety import archive_blockers, archi
 __all__ = [
     "ArchivedRecord",
     "Checkout",
+    "CommandResult",
     "RepoArg",
     "RepoSpec",
     "ResolvedRepo",

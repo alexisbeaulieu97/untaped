@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from untaped.capabilities.workspace.domain.models import (
         ArchivedRecord,
         Checkout,
+        CommandResult,
         RepoSpec,
         ResolvedRepo,
         WorkspaceRecord,
@@ -64,4 +65,14 @@ class RepoCatalog(Protocol):
 
     def resolve(self, ident: str) -> ResolvedRepo:
         """Raise ``UsageError`` when ``ident`` is unknown or ambiguous."""
+        ...
+
+
+class CommandRunner(Protocol):
+    """Run one command in a directory."""
+
+    def run(
+        self, argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], timeout: float
+    ) -> CommandResult:
+        """Run ``argv`` with ``env`` added to the caller's environment; failure is a result."""
         ...

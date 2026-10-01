@@ -1,0 +1,130 @@
+"""Run one command in every selected repo of a workspace, bounded in parallel."""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from untaped.capabilities.workspace.domain.models import CommandResult, RepoSpec
+from untaped.capabilities.workspace.domain.records import RunAction, RunOutcome
+from untaped.capabilities.workspace.errors import WorkspaceError
+from untaped.capability_api import note_failure
+
+if TYPE_CHECKING:
+    from untaped.capabilities.workspace.application.ports import CommandRunner
+
+
+@dataclass(frozen=True)
+class RunTarget:
+    """One repo directory to run the command in."""
+
+    workspace: str
+    spec: RepoSpec
+    path: Path
+
+
+class RunInRepos:
+    """Run ``argv`` in each target; every target runs unless ``fail_fast`` stops scheduling."""
+
+    def __init__(
+        self,
+        runner: CommandRunner,
+        *,
+        parallel: int,
+        timeout: float,
+        fail_fast: bool,
+        on_done: Callable[[RunOutcome], None] | None = None,
+    ) -> None:
+        self._runner = runner
+        self._parallel = max(1, parallel)
+        self._timeout = timeout
+        self._fail_fast = fail_fast
+        self._on_done = on_done
+
+    def __call__(self, targets: Sequence[RunTarget], argv: Sequence[str]) -> list[RunOutcome]:
+        rows: dict[int, RunOutcome] = {}
+        pending: dict[Future[CommandResult], int] = {}
+        queue = list(enumerate(targets))
+        stop = False
+        with ThreadPoolExecutor(max_workers=self._parallel) as pool:
+            while queue or pending:
+                while queue and not stop and len(pending) < self._parallel:
+                    index, target = queue.pop(0)
+                    if not target.path.is_dir():
+                        stop = self._finish(rows, index, self._missing(target)) or stop
+                        continue
+                    pending[pool.submit(self._execute, target, argv)] = index
+                if not pending:
+                    break
+                done, _ = wait(pending, return_when=FIRST_COMPLETED)
+                for future in done:
+                    index = pending.pop(future)
+                    row = self._row(targets[index], future.result())
+                    stop = self._finish(rows, index, row) or stop
+        for index, target in queue:
+            self._finish(rows, index, _skipped(target))
+        return [rows[i] for i in sorted(rows)]
+
+    def _finish(self, rows: dict[int, RunOutcome], index: int, row: RunOutcome) -> bool:
+        """Record ``row``; whether scheduling should stop (a failure under ``fail_fast``)."""
+        rows[index] = row
+        if self._on_done is not None:
+            self._on_done(row)
+        return self._fail_fast and row.action == "failed"
+
+    def _execute(self, target: RunTarget, argv: Sequence[str]) -> CommandResult:
+        return self._runner.run(argv, cwd=target.path, env=_env(target), timeout=self._timeout)
+
+    def _missing(self, target: RunTarget) -> RunOutcome:
+        return _failed(target, WorkspaceError("missing", category="failed"), None, "missing")
+
+    def _row(self, target: RunTarget, result: CommandResult) -> RunOutcome:
+        if result.timed_out:
+            detail = f"timed out after {self._timeout:g}s"
+        elif result.returncode:
+            detail = f"exit {result.returncode}"
+        else:
+            return _outcome(target, "ran", result)
+        return _failed(target, WorkspaceError(detail, category="failed"), result, detail)
+
+
+def _env(target: RunTarget) -> dict[str, str]:
+    spec = target.spec
+    return {
+        "UNTAPED_WORKSPACE": target.workspace,
+        "UNTAPED_REPO": spec.name,
+        "UNTAPED_BRANCH": spec.branch or "",
+        "UNTAPED_BASE": spec.base,
+        "UNTAPED_READ_ONLY": "1" if spec.read_only else "0",
+    }
+
+
+def _outcome(
+    target: RunTarget, action: RunAction, result: CommandResult | None, detail: str = ""
+) -> RunOutcome:
+    return RunOutcome(
+        workspace=target.workspace,
+        repo=target.spec.name,
+        dir=target.spec.dir,
+        action=action,
+        returncode=None if result is None else result.returncode,
+        stdout="" if result is None else result.stdout,
+        stderr="" if result is None else result.stderr,
+        duration_s=0.0 if result is None else result.duration_s,
+        detail=detail,
+        target_path=target.path,
+    )
+
+
+def _failed(
+    target: RunTarget, error: WorkspaceError, result: CommandResult | None, detail: str
+) -> RunOutcome:
+    row = _outcome(target, "failed", result, detail)
+    return row.model_copy(update={"error": note_failure(error)})
+
+
+def _skipped(target: RunTarget) -> RunOutcome:
+    return _outcome(target, "skipped", None, "not run (--fail-fast)")
