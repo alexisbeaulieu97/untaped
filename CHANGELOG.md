@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Core
+  - **New (SDK):** `UiContext.pick_many` opens an inline two-pane picker: fuzzy
+    search with multi-select on the left, per-item settings on the right
+    (`PickRequest`, `PickItem`, `PickSetting`, `PickCatalog`, `PickResult`,
+    `Picked`; API `3.2`). `ScriptedPromptBackend(picks=...)` scripts it in
+    tests.
 - GitHub
   - **New:** `github.inventory` settings (`path`, `orgs`, `teams`,
     `max_age_seconds`) for a cached, metadata-only repository list that the

@@ -18,6 +18,8 @@ if TYPE_CHECKING:
     from prompt_toolkit.formatted_text import AnyFormattedText
     from prompt_toolkit.styles import Style
 
+    from untaped.picker import PickRequest, PickResult
+
 
 T = TypeVar("T")
 T_co = TypeVar("T_co", covariant=True)
@@ -57,6 +59,8 @@ class PromptBackend(Protocol):
         *,
         defaults: Sequence[T],
     ) -> list[T]: ...
+
+    def pick_many(self, request: PickRequest) -> PickResult | None: ...
 
 
 _backend_override: ContextVar[PromptBackend | None] = ContextVar(
@@ -207,6 +211,20 @@ class PromptToolkitPromptBackend:
             raise ConfigError("prompt cancelled", category="failed", system="untaped")
         return [choices[index].value for index in selected_indexes]
 
+    def pick_many(self, request: PickRequest) -> PickResult | None:
+        """Run the two-pane picker on this backend's terminal streams."""
+        from prompt_toolkit.input.defaults import create_input  # noqa: PLC0415
+        from prompt_toolkit.output.defaults import create_output  # noqa: PLC0415
+
+        from untaped.picker.app import run_picker  # noqa: PLC0415
+
+        return run_picker(
+            request,
+            input=create_input(self.stdin),
+            output=create_output(self.stderr),
+            style=self.style,
+        )
+
     def _search_select(
         self,
         message: str,
@@ -265,12 +283,22 @@ class PromptToolkitPromptBackend:
 
 
 def prompt_style_from_roles(color_roles: dict[str, str]) -> Style:
-    """Build a prompt_toolkit style from conservative UI color roles."""
+    """Build a prompt_toolkit style from conservative UI color roles.
+
+    Picker classes are only emitted for roles that resolve to a style, so the
+    picker's own defaults stay in effect for the rest.
+    """
     from prompt_toolkit.styles import Style  # noqa: PLC0415
 
     key = _prompt_toolkit_style(color_roles.get("key") or color_roles.get("header"))
     value = _prompt_toolkit_style(color_roles.get("value"))
     border = _prompt_toolkit_style(color_roles.get("border"))
+    error = _prompt_toolkit_style(color_roles.get("error"))
+    picker = {
+        **dict.fromkeys(("cursor", "mark", "border.focus", "subtitle"), key),
+        "border": border,
+        "error": error,
+    }
     return Style.from_dict(
         {
             "prompt": key,
@@ -278,6 +306,7 @@ def prompt_style_from_roles(color_roles: dict[str, str]) -> Style:
             "selected-option": value,
             "frame.border": border,
             "dialog.body": "",
+            **{f"picker.{name}": style for name, style in picker.items() if style},
         }
     )
 
