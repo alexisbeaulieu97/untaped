@@ -98,6 +98,8 @@ def run_picker(
     start = spawn or _daemon
 
     def settle() -> None:
+        if app.is_done:
+            return
         if box[0].outcome == "confirmed":
             app.exit(result=result(box[0]))
         elif box[0].outcome == "cancelled":
@@ -131,7 +133,7 @@ def run_picker(
     )
     app: Application[PickResult | None] = Application(
         layout=Layout(Window(control, dont_extend_height=True, always_hide_cursor=True)),
-        key_bindings=_bindings(apply, refresh),
+        key_bindings=_bindings(apply, refresh, lambda: box[0].outcome),
         style=merge_styles([Style.from_dict(DEFAULT_STYLE), style or Style([])]),
         full_screen=False,
         erase_when_done=True,
@@ -143,7 +145,11 @@ def run_picker(
     return app.run(pre_run=lambda: refresh(False))
 
 
-def _bindings(apply: Callable[[str], None], refresh: Callable[[bool], None]) -> KeyBindings:
+def _bindings(
+    apply: Callable[[str], None],
+    refresh: Callable[[bool], None],
+    outcome: Callable[[], str],
+) -> KeyBindings:
     bindings = KeyBindings()
     for ptk_key, name in _KEYS.items():
         bindings.add(ptk_key)(_bound(apply, name))
@@ -154,7 +160,11 @@ def _bindings(apply: Callable[[str], None], refresh: Callable[[bool], None]) -> 
 
     @bindings.add(Keys.Any)
     def _typed(event: KeyPressEvent) -> None:
+        if isinstance(event.key_sequence[0].key, Keys):
+            return  # tail of an unbound escape sequence (Home, F1, ...), not typed text
         for char in event.data:
+            if outcome() != "running":
+                return
             if char.isprintable():
                 apply(char)
 
