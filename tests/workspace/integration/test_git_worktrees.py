@@ -509,3 +509,15 @@ def test_remove_rechecks_for_work_made_after_the_status_check(
     assert caught.value.hint == "the repo changed since the check; run status and archive again"
     assert (dest / "README.md").exists()
     assert git(dest, "rev-parse", "--abbrev-ref", "HEAD") == "b"
+
+
+def test_remote_branches_lists_cached_origin_branches(
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+) -> None:
+    url = str(make_upstream("api", branches=("release/2",)))
+    assert worktrees.remote_branches(url) == []
+    worktrees.checkout(url, tmp_path / "ws" / "api", branch=None, base=None)
+    assert worktrees.remote_branches(url) == ["main", "release/2"]
+    cache = cache_path_for(url, cache_dir=tmp_path / "cache")
+    assert worktrees.cache_origin(cache) == url
+    assert worktrees.cache_origin(tmp_path / "nope.git") is None

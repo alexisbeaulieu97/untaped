@@ -21,8 +21,13 @@ def validate_workspace_name(name: str) -> str:
 
 
 def looks_like_url(ident: str) -> bool:
-    """Whether ``ident`` is a URL (``scheme://``) or scp-style ``user@host:path``."""
-    return "://" in ident or bool(_SCP.match(ident))
+    """Whether ``ident`` is a URL, scp-style ``user@host:path``, a path, or ends in ``.git``."""
+    return (
+        "://" in ident
+        or ident.startswith(("/", "~"))
+        or ident.endswith(".git")
+        or bool(_SCP.match(ident))
+    )
 
 
 def repo_identity(url: str) -> tuple[str, str]:

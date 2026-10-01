@@ -27,10 +27,6 @@ _REFRESH_HINT = (
 _URL_HINT = "pass a full clone URL instead"
 
 
-def _is_url_or_path(ident: str) -> bool:
-    return looks_like_url(ident) or ident.startswith(("/", "~")) or ident.endswith(".git")
-
-
 def _default_inventory() -> Sequence[RepositoryInventoryItem]:
     from untaped.capabilities.github.api import repo_inventory  # noqa: PLC0415
 
@@ -51,7 +47,7 @@ class GithubRepoCatalog:
         self._items: Sequence[RepositoryInventoryItem] | UntapedError | None = None
 
     def resolve(self, ident: str) -> ResolvedRepo:
-        if _is_url_or_path(ident):
+        if looks_like_url(ident):
             owner, name = repo_identity(ident)
             return ResolvedRepo(url=ident, name=f"{owner}/{name}" if owner else name)
         items = self._load()
