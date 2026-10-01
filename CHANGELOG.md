@@ -3,12 +3,27 @@
 ## Unreleased
 
 - Core
+  - **Breaking:** the SDK module is now `untaped.sdk`; `untaped.capability_api`
+    is gone. `CAPABILITY_API_VERSION` and `get_core_settings` are removed.
+  - **Breaking:** `PromptInterruptedError` is no longer a `ConfigError`;
+    Ctrl-C at a prompt now always exits 130.
+  - **New:** `@writes` declares a command that writes; command names are
+    no longer limited to a closed verb list.
+  - **New:** `untaped.testing.check_conventions(NAME)` runs the convention
+    checks for any capability, plugins included.
   - **New (SDK):** `UiContext.pick_many` opens an inline two-pane picker: fuzzy
     search with multi-select on the left, per-item settings on the right
     (`PickRequest`, `PickItem`, `PickSetting`, `PickCatalog`, `PickResult`,
     `Picked`; API `3.2`). `ScriptedPromptBackend(picks=...)` scripts it in
     tests.
+- Ansible
+  - **Breaking:** `graph --upstream/--downstream/--both` are removed; use
+    `--direction up|down|both`. Graph sources re-index once.
 - Workspace
+  - **Breaking:** a cache left by untaped 9.x is refused; delete
+    `~/.untaped/repositories` (or the configured `workspace.cache_dir`).
+  - **New:** `workspace create` and `add` print failed rows' errors with
+    hints on stderr.
   - **Breaking:** `untaped workspace` now manages task workspaces of git
     worktrees (`create`, `add`, `list`, `status`, `path`, `archive`, `run`)
     and is experimental.
@@ -30,7 +45,7 @@
     pipe` where you piped `repos list`.
   - **Breaking:** old workspace directories are left in place and no longer
     listed. A non-empty one under `workspaces_dir` blocks `create` of that
-    name until you move it. Repo caches are reused.
+    name until you move it.
   - **New:** `workspace.branch_template` and `workspace.protocol` settings.
   - **New:** `workspace run` runs a command, a script file or a stdin script
     in each repo, with `UNTAPED_*` context variables (experimental).

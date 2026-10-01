@@ -69,8 +69,8 @@ The entry-point name must equal `CapabilitySpec.name`. The resolved object
 must be callable, expose an `api_requires` range, and return one
 `CapabilitySpec` when called without arguments.
 
-`CAPABILITY_API_VERSION` is a `(major, minor)` tuple of ints, and
-`api_requires` is a `(min_inclusive, max_exclusive)` pair of such tuples,
+The registry's API version is a `(major, minor)` tuple of ints (not exported
+from `untaped.sdk`), and `api_requires` is a `(min_inclusive, max_exclusive)` pair of such tuples,
 compared as tuples (so `(1, 10)` is newer than `(1, 9)`).
 
 - New exports bump the minor version; removing or breaking one bumps the
@@ -327,6 +327,12 @@ uv run pytest
 uv run mypy
 uv run ruff check
 ```
+
+Call `untaped.testing.check_conventions(NAME)` from the plugin's own tests.
+Define `build_app` (the `app_factory`) in the capability package's
+`__init__.py`, because the checks scan that package. Declare writing commands
+with `@writes` (or `@writes(destructive=True)`); a rule can be waived with
+`# untaped: allow <rule>` on the flagged node's first line.
 
 Test the provider callable and `SPEC.app_factory()` in isolation, assert that
 the entry-point name matches `SPEC.name`, and exercise root config, profile,

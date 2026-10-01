@@ -48,12 +48,12 @@ src/untaped/capabilities/<name>/
 Import direction inside a capability: `cli → application → domain` and
 `infrastructure → domain`; `domain/` imports nothing from the other layers.
 
-Commands follow [`docs/conventions.md`](docs/conventions.md) (verbs, flags,
+Commands follow [`docs/conventions.md`](docs/conventions.md) (flags,
 messages, exit codes, record shapes) through the `untaped.sdk` helpers it
 lists: `UsageError`, shared option aliases, `plural`/`q`/`not_found`/`hint`,
 `ui.success`, `batch_apply`/`ui.confirm_action`, `read_identifiers(accept_kinds=…)`,
-and the `OutcomeRecord`/`TargetRecord` bases. `tests/conventions/` enforces them
-against per-capability baselines that may only shrink. Every error raises with
+and the `OutcomeRecord`/`TargetRecord` bases. each capability's tests run
+`untaped.testing.check_conventions`. Every error raises with
 a `category` and `system` (class defaults in the capability's `errors.py`) and
 keeps that attribution when replaced or turned into a row; see
 [Raise with a category](docs/conventions.md#raise-with-a-category-or-inherit-one).

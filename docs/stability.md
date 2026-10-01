@@ -16,7 +16,7 @@ alongside them.
 | JSON stderr diagnostics | [Stderr diagnostics](./reference/pipes.md#stderr-diagnostics) |
 | `config.yml` and `state.yml` settings | [Configuration reference](./reference/config.md) |
 | Environment variables | [Environment variables](./reference/environment.md) |
-| The provider SDK: `CAPABILITY_API_VERSION` changes major only in a major release | [Building a capability provider](./plugins.md) |
+| The `untaped.sdk` and `untaped.testing` surface is stable within a major release | [Building a capability provider](./plugins.md) |
 
 The pipe envelope is versioned on its own (`"untaped": "1"`) and outlives
 application majors.
