@@ -72,8 +72,7 @@ class LocalGitWorktrees:
         with self._locked(cache):
             self._ensure_cache(cache, url)
             self._fetch(cache)
-            picked = base if base is not None else self._default_branch(cache)
-            refs = self._refs(cache, branch, picked)
+            picked, refs = self._base_and_refs(cache, branch, base)
             if f"refs/remotes/origin/{picked}" not in refs:
                 raise GitError(
                     f"base branch '{picked}' not found on origin of {url}", category="not_found"
@@ -252,6 +251,22 @@ class LocalGitWorktrees:
             timeout=self._slow_timeout,
             retry_transient=True,
         )
+
+    def _base_and_refs(
+        self, cache: Path, branch: str | None, base: str | None
+    ) -> tuple[str, dict[str, str]]:
+        """The base (``base``, else origin's default) and :meth:`_refs` for it.
+
+        A default whose ref is gone (origin renamed its default branch, and
+        ``fetch --prune`` left ``origin/HEAD`` dangling) is learnt again once.
+        """
+        picked = base if base is not None else self._default_branch(cache)
+        refs = self._refs(cache, branch, picked)
+        if base is None and f"refs/remotes/origin/{picked}" not in refs:
+            self._run(["remote", "set-head", "origin", "--auto"], cwd=cache, check=False)
+            picked = self._origin_head(cache) or "main"
+            refs = self._refs(cache, branch, picked)
+        return picked, refs
 
     def _default_branch(self, cache: Path) -> str:
         """origin's default branch (``origin/HEAD``, learnt once if unknown), else ``main``."""
