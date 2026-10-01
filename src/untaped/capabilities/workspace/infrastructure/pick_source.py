@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from untaped.capabilities.workspace.domain.models import CachedRepo, RepoArg
 from untaped.capabilities.workspace.domain.naming import looks_like_url, repo_key
-from untaped.capability_api import PickCatalog, PickItem, UntapedError
+from untaped.sdk import PickCatalog, PickItem, UntapedError
 
 if TYPE_CHECKING:
     from untaped.capabilities.github.api import RepoInventory

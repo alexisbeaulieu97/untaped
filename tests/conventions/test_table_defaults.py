@@ -20,8 +20,8 @@ from typing import Any, ClassVar
 import pytest
 from pydantic import BaseModel
 
-from untaped.capability_api import OutcomeRecord, emit
 from untaped.records import table_columns_of
+from untaped.sdk import OutcomeRecord, emit
 
 BASELINES = Path(__file__).parent / "baselines" / "table_defaults"
 RULE = "::no-default-columns"

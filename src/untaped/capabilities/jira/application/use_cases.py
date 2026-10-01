@@ -32,7 +32,7 @@ from untaped.capabilities.jira.domain import (
     transition_changes,
 )
 from untaped.capabilities.jira.errors import JiraError, JiraTransitionError
-from untaped.capability_api import UntapedError, UsageError, attribution, not_found, q
+from untaped.sdk import UntapedError, UsageError, attribution, not_found, q
 
 
 class WhoAmI:

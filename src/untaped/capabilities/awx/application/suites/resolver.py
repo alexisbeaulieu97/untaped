@@ -18,7 +18,7 @@ from untaped.capabilities.awx.application.suites.ports import FkLookup
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.domain.spec import FkRef
 from untaped.capabilities.awx.domain.suite import WORKFLOW_TEMPLATE, Case, RefSentinel
-from untaped.capability_api import ConfigError
+from untaped.sdk import ConfigError
 
 # v2.x AWX launch endpoint payload fields. Anything outside this set
 # (and not a declared FK) triggers an UnknownLaunchFieldWarning so users

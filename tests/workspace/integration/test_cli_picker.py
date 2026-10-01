@@ -13,7 +13,7 @@ from untaped.capabilities.github.api import RepoInventory, RepositoryInventoryIt
 from untaped.capabilities.workspace.cli import app
 from untaped.capabilities.workspace.domain import RepoSpec, WorkspaceRecord
 from untaped.capabilities.workspace.infrastructure import StateWorkspaceStore
-from untaped.capability_api import Picked, PickItem, PickRequest, PickResult
+from untaped.sdk import Picked, PickItem, PickRequest, PickResult
 from untaped.testing import CliInvoker, ScriptedPromptBackend
 from workspace.conftest import git
 

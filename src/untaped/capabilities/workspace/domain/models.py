@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from untaped.capability_api import UtcTimestamp
+from untaped.sdk import UtcTimestamp
 
 
 class RepoSpec(BaseModel):

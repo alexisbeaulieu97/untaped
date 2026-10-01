@@ -13,7 +13,7 @@ from typing import Any
 from pydantic import AliasPath, BaseModel, ConfigDict, Field, ValidationError
 
 from untaped.capabilities.awx.domain.suite import Baseline, CaseStatus
-from untaped.capability_api import ErrorCategory, first_validation_error
+from untaped.sdk import ErrorCategory, first_validation_error
 
 
 class _SavedRow(BaseModel):

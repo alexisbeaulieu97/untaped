@@ -8,7 +8,7 @@ from pathlib import Path
 
 from untaped.capabilities.recipe.errors import RecipeError
 from untaped.capabilities.recipe.settings import RecipeSettings
-from untaped.capability_api import (
+from untaped.sdk import (
     ErrorCategory,
     UiContext,
     UntapedError,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from untaped.capabilities.awx.application.ports import ResourceClient
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.errors import ResourceNotFoundError
-from untaped.capability_api import ConfigError
+from untaped.sdk import ConfigError
 
 
 def parse_resource_id(identifier: str) -> int:

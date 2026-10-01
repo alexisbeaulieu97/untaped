@@ -37,7 +37,7 @@ from untaped.capabilities.github.errors import GithubError
 from untaped.capabilities.github.infrastructure.github_client import GithubClient
 from untaped.capabilities.github.infrastructure.inventory_store import JsonInventoryStore
 from untaped.capabilities.github.settings import GithubSettings
-from untaped.capability_api import get_config_section, get_core_settings
+from untaped.sdk import get_config_section, get_core_settings
 
 __all__ = [
     "BatchRepoRefsFailure",

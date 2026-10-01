@@ -24,7 +24,7 @@ from untaped.capabilities.github.domain import (
     IssueSearchFilters,
     RepoSearchFilters,
 )
-from untaped.capability_api import HttpStatusError, UntapedError
+from untaped.sdk import HttpStatusError, UntapedError
 
 Page = list[dict[str, Any]] | Exception
 

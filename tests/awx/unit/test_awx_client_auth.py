@@ -17,7 +17,7 @@ import respx
 
 from untaped.capabilities.awx.infrastructure import AwxClient
 from untaped.capabilities.awx.settings import AwxSettings
-from untaped.capability_api import get_config_section
+from untaped.sdk import get_config_section
 
 
 def test_awx_client_sends_bearer_token(awx_config: AwxSettings) -> None:

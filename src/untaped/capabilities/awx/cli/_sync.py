@@ -24,7 +24,7 @@ from untaped.capabilities.awx.cli.options import (
     YesOption,
 )
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
-from untaped.capability_api import ColumnsOption, FormatOption, report_errors
+from untaped.sdk import ColumnsOption, FormatOption, report_errors
 
 
 def _add_sync(app: App, spec: AwxResourceSpec) -> None:

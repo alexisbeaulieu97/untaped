@@ -44,7 +44,7 @@ from untaped.capabilities.awx.infrastructure.awx_client import AwxClient
 from untaped.capabilities.awx.infrastructure.errors import map_awx_errors
 from untaped.capabilities.awx.infrastructure.pagination import paginate
 from untaped.capabilities.awx.infrastructure.spec import awx_api_path, awx_relationship_path
-from untaped.capability_api import ConfigError, attribution
+from untaped.sdk import ConfigError, attribution
 
 
 def scope_params(scope: dict[str, str] | None) -> dict[str, str]:

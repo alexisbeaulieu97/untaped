@@ -1,7 +1,7 @@
 """GitHub capability exception hierarchy.
 
 Every error the capability raises on purpose derives from :class:`GithubError`
-(itself an :class:`~untaped.capability_api.UntapedError`) so ``report_errors``
+(itself an :class:`~untaped.sdk.UntapedError`) so ``report_errors``
 turns it into a clean ``error: ...`` line instead of a traceback. Failures are
 attributed to ``github``, except :class:`GitCorpusError` (``git``) and
 repository-inventory disk failures (``local``); a
@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Literal
 
-from untaped.capability_api import ErrorCategory, UntapedError
+from untaped.sdk import ErrorCategory, UntapedError
 
 GithubGraphqlErrorKind = Literal[
     "rate_limited",

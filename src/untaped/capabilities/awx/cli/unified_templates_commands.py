@@ -29,7 +29,7 @@ from cyclopts import Parameter
 
 from untaped.capabilities.awx.application import GetUnifiedTemplate
 from untaped.capabilities.awx.cli.context import open_context
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     FormatOption,
     create_app,

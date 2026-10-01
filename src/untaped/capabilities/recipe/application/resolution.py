@@ -9,7 +9,7 @@ from untaped.capabilities.recipe.application.ports import PackLibraryPort
 from untaped.capabilities.recipe.domain.pack import InstalledPack, RecipeEntry, parse_ref
 from untaped.capabilities.recipe.domain.paths import is_path_ref
 from untaped.capabilities.recipe.errors import RecipeFileNotFoundError, RecipeNotFoundError
-from untaped.capability_api import not_found, plural, q
+from untaped.sdk import not_found, plural, q
 
 
 @dataclass(frozen=True)

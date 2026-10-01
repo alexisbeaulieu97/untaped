@@ -32,7 +32,7 @@ These may change in any release:
   which may change. Name the field, as in `--format raw --columns name`.
 - Commands and file formats marked experimental (below).
 - Anything not documented, including internal modules. Providers import only
-  `untaped.capability_api`.
+  `untaped.sdk`.
 
 ## Experimental
 

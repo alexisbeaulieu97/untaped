@@ -19,7 +19,7 @@ from untaped.capabilities.recipe.application.targets import Target, dedupe_targe
 from untaped.capabilities.recipe.domain.plan import TargetPlan
 from untaped.capabilities.recipe.domain.recipe import Recipe
 from untaped.capabilities.recipe.errors import RecipeError
-from untaped.capability_api import attribution, bounded_map
+from untaped.sdk import attribution, bounded_map
 
 SENSITIVE_DIAGNOSTIC_SUPPRESSED = "diagnostic suppressed for target with sensitive inputs"
 SENSITIVE_ERROR_SUPPRESSED = (

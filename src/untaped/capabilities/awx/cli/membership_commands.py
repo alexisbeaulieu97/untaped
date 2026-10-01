@@ -45,7 +45,7 @@ from untaped.capabilities.awx.cli.options import (
 from untaped.capabilities.awx.domain import FkRef
 from untaped.capabilities.awx.errors import BadRequestError
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     FormatOption,
     create_app,

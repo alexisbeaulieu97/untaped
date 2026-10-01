@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from untaped.capability_api import ErrorCategory, UntapedError
+from untaped.sdk import ErrorCategory, UntapedError
 
 
 class JiraError(UntapedError):

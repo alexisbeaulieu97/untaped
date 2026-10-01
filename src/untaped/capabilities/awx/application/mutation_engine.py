@@ -55,7 +55,7 @@ from untaped.capabilities.awx.errors import (
     MutationConflictError,
     PartialWriteError,
 )
-from untaped.capability_api import ErrorCategory, ErrorInfo, UntapedError, note_failure
+from untaped.sdk import ErrorCategory, ErrorInfo, UntapedError, note_failure
 
 
 class _AbortBatchError(AwxError):

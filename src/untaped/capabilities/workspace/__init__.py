@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.capabilities.workspace.settings import WorkspaceSettings, WorkspaceState
-from untaped.capability_api import CapabilitySpec, SkillAsset, executable_check
+from untaped.sdk import CapabilitySpec, SkillAsset, executable_check
 
 if TYPE_CHECKING:
     from cyclopts import App

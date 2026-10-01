@@ -1,4 +1,4 @@
-"""The single public SDK surface for capability code (spec §2).
+"""The untaped SDK: the one module capability code (first- or third-party) imports from core.
 
 Every capability — built-in or external provider — imports untaped helpers
 from this module only. It carries the composition set, the provider

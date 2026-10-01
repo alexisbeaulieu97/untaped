@@ -22,7 +22,7 @@ from untaped.capabilities.awx.application.secret_paths import (
 )
 from untaped.capabilities.awx.domain import FieldChange, Resource, ResourceSpec
 from untaped.capabilities.awx.errors import AwxApiError, BadRequestError
-from untaped.capability_api import plural
+from untaped.sdk import plural
 
 
 @dataclass(frozen=True)

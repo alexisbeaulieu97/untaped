@@ -64,7 +64,7 @@ from untaped.capabilities.ansible.infrastructure import (
 from untaped.capabilities.ansible.settings import AnsibleSettings, SourceDefinition
 from untaped.capabilities.github.api import GithubClient, GithubSettings, github_web_host
 from untaped.capabilities.github.api import github_settings as load_github_settings
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     FormatOption,
     HttpSettings,

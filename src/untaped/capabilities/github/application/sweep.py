@@ -35,7 +35,7 @@ from untaped.capabilities.github.domain import (
     unchanged_upstream,
 )
 from untaped.capabilities.github.domain.errors import GitCorpusError, is_global_github_failure
-from untaped.capability_api import (
+from untaped.sdk import (
     ConfigError,
     ErrorInfo,
     ProgressHandle,

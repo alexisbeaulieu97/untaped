@@ -21,7 +21,7 @@ from untaped.capabilities.workspace.domain import (
 )
 from untaped.capabilities.workspace.domain.records import RepoOutcome, StatusRow
 from untaped.capabilities.workspace.domain.safety import CACHE_MISSING, SUBMODULES
-from untaped.capability_api import UsageError
+from untaped.sdk import UsageError
 
 
 @pytest.mark.parametrize("name", ["JIRA-1234", "feature_x", "a.b"])

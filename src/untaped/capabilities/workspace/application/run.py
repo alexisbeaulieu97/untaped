@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from untaped.capabilities.workspace.domain.models import CommandResult, RepoSpec
 from untaped.capabilities.workspace.domain.records import RunAction, RunOutcome
 from untaped.capabilities.workspace.errors import WorkspaceError
-from untaped.capability_api import ErrorInfo, note_failure
+from untaped.sdk import ErrorInfo, note_failure
 
 if TYPE_CHECKING:
     from untaped.capabilities.workspace.application.ports import CommandRunner

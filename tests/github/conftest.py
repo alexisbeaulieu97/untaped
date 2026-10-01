@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 
 from untaped.capabilities.github.settings import GithubSettings
-from untaped.capability_api import GitResult
+from untaped.sdk import GitResult
 from untaped.settings import get_settings, register_profile_settings
 
 

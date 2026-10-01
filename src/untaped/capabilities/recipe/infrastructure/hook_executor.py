@@ -22,7 +22,7 @@ from untaped.capabilities.recipe.infrastructure.hook_worker_client import (
     DEBUG_DIAGNOSTIC_LIMIT,
     DEBUG_DIAGNOSTIC_SETTLE_SECONDS,
 )
-from untaped.capability_api import ErrorCategory, attribution
+from untaped.sdk import ErrorCategory, attribution
 
 if TYPE_CHECKING:
     from untaped.capabilities.recipe.application.ports import HookWorkerPort

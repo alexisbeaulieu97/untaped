@@ -49,7 +49,7 @@ Import direction inside a capability: `cli → application → domain` and
 `infrastructure → domain`; `domain/` imports nothing from the other layers.
 
 Commands follow [`docs/conventions.md`](docs/conventions.md) (verbs, flags,
-messages, exit codes, record shapes) through the `capability_api` helpers it
+messages, exit codes, record shapes) through the `untaped.sdk` helpers it
 lists: `UsageError`, shared option aliases, `plural`/`q`/`not_found`/`hint`,
 `ui.success`, `batch_apply`/`ui.confirm_action`, `read_identifiers(accept_kinds=…)`,
 and the `OutcomeRecord`/`TargetRecord` bases. `tests/conventions/` enforces them
@@ -58,9 +58,9 @@ a `category` and `system` (class defaults in the capability's `errors.py`) and
 keeps that attribution when replaced or turned into a row; see
 [Raise with a category](docs/conventions.md#raise-with-a-category-or-inherit-one).
 
-## Capability registry + capability_api
+## Capability registry + the SDK (`untaped.sdk`)
 
-- `capability_api.py` is the single public SDK surface and the **only** core
+- `sdk.py` is the single public SDK surface and the **only** core
   module capability code (built-in or external) imports from; built-ins may
   also use another capability's declared `api.py` (Hard Rule 2). Its
   exported types, helpers, and `(major, minor)` API version tuple are the
@@ -111,7 +111,7 @@ rules below.
    write another capability's section; never mutate another capability's
    state.
 2. **Cross-capability code goes through a declared public module.**
-   Capability code imports core only from `untaped.capability_api`. It may
+   Capability code imports core only from `untaped.sdk`. It may
    import another capability only through that capability's public module,
    `untaped.capabilities.<other>.api`, never its other internals; each
    importing pair is listed in `ALLOWED_CROSS_CAPABILITY_IMPORTS`
@@ -151,9 +151,9 @@ what it owns (re-export stubs exempt). Lazy imports on CLI startup paths
 (`ban-relative-imports = "all"`, tests included). Secrets are
 `pydantic.SecretStr`; HTTP clients resolve TLS via `resolve_verify`. Git
 subprocesses go through `untaped.git` (`run_git`, `git_toplevel`, re-exported by
-`untaped.capability_api`); never fork your own `subprocess` git plumbing.
+`untaped.sdk`); never fork your own `subprocess` git plumbing.
 Advisory lock files go through `untaped.fs` (`file_lock`, re-exported by
-`untaped.capability_api`).
+`untaped.sdk`).
 
 ## Planning and decisions
 

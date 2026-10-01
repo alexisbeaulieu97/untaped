@@ -26,7 +26,7 @@ from untaped.capabilities.awx.errors import (
     ResourceNotFoundError,
 )
 from untaped.capabilities.awx.infrastructure import AwxResourceCatalog
-from untaped.capability_api import HttpTransportError
+from untaped.sdk import HttpTransportError
 
 MARKER = Marker(run_id="k3x9", ref="main", sha="1a2b3c4", created=datetime(2026, 9, 29, tzinfo=UTC))
 NAMES = ["Deploy [untaped-test 1a2b3c4 k3x9]", "Smoke [untaped-test 1a2b3c4 k3x9]"]

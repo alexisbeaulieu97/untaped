@@ -17,7 +17,7 @@ from untaped.capabilities.recipe.infrastructure.pack_files import (
     read_hook_project,
 )
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
-from untaped.capability_api import not_found
+from untaped.sdk import not_found
 
 
 @dataclass(frozen=True)

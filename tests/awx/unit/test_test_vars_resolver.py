@@ -10,7 +10,7 @@ import pytest
 from untaped.capabilities.awx.application.suites.ports import Prompt
 from untaped.capabilities.awx.domain.suite import VariableSpec
 from untaped.capabilities.awx.infrastructure.suites.vars_resolver import resolve_variables
-from untaped.capability_api import ConfigError, UsageError
+from untaped.sdk import ConfigError, UsageError
 
 
 class StubPrompt(Prompt):

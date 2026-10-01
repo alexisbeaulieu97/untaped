@@ -6,13 +6,13 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from untaped.capabilities.jira.settings import JiraSettings
-from untaped.capability_api import app_context
+from untaped.sdk import app_context
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from untaped.capabilities.jira.infrastructure import JiraClient
-    from untaped.capability_api import UiContext
+    from untaped.sdk import UiContext
 
 
 @contextmanager

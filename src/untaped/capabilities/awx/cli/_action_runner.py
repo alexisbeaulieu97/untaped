@@ -30,7 +30,7 @@ from untaped.capabilities.awx.cli.parallel import drain_parallel, wait_parallel
 from untaped.capabilities.awx.domain import Job, ResourceSpec
 from untaped.capabilities.awx.domain.job import still_running_detail
 from untaped.capabilities.awx.errors import ActionResponseError, LaunchPromptError
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     FormatOption,
     UntapedError,

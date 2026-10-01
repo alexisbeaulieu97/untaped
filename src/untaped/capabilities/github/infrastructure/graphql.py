@@ -38,7 +38,7 @@ from untaped.capabilities.github.domain.models import (
     RepoRefs,
 )
 from untaped.capabilities.github.errors import GithubGraphqlError, GithubGraphqlErrorKind
-from untaped.capability_api import (
+from untaped.sdk import (
     ErrorCategory,
     HttpClient,
     HttpError,

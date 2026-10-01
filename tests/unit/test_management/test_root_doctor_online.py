@@ -19,7 +19,8 @@ from pydantic import BaseModel, SecretStr
 
 from test_management.support import GithubProfile, compose, make_spec, write_config
 from untaped import bootstrap
-from untaped.capability_api import (
+from untaped.management.doctor import build_root_doctor_app
+from untaped.sdk import (
     CapabilityContext,
     ConfigError,
     DoctorCheck,
@@ -32,7 +33,6 @@ from untaped.capability_api import (
     TokenSources,
     online_check,
 )
-from untaped.management.doctor import build_root_doctor_app
 from untaped.testing import CliInvoker, CliResult
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")

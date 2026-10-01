@@ -12,7 +12,7 @@ from untaped.capabilities.awx.application.scheduling import (
     Schedule,
     ScheduleInterruptedError,
 )
-from untaped.capability_api import UsageError
+from untaped.sdk import UsageError
 
 
 def test_serial_run_follows_lowest_ready_index_after_dependencies() -> None:

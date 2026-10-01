@@ -2,12 +2,12 @@
 
 Files under ``src/untaped/capabilities/<name>/`` are provider-side code:
 every ``untaped``-rooted import in them must resolve to the kernel-only
-surface — ``untaped.capability_api`` (the single public SDK surface) — or
+surface — ``untaped.sdk`` (the single public SDK surface) — or
 the capability's own subtree. Anything else (kernel internals by module
 path, the removed ``untaped.api`` shim, the composition kernel
 ``untaped.capabilities.registry``, sibling capabilities, or the bare
 ``untaped`` root) fails this suite. The surface itself is pinned in
-``test_capability_api.py``.
+``test_sdk.py``.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CAPABILITIES_SRC = REPO_ROOT / "src" / "untaped" / "capabilities"
 
-_KERNEL_SURFACE_MODULES = frozenset({"untaped.capability_api"})
+_KERNEL_SURFACE_MODULES = frozenset({"untaped.sdk"})
 
 #: ``(importing capability, imported module)`` pairs exempt from the
 #: own-subtree rule. ansible reads GitHub only through github's closed
@@ -122,7 +122,7 @@ def _from_violation(module: str, own_prefix: str) -> str | None:
         return None
     return (
         "capability code must import kernel helpers only via "
-        "untaped.capability_api "
+        "untaped.sdk "
         f"and sibling code only from its own {own_prefix} subtree"
     )
 
@@ -138,7 +138,7 @@ def _import_violation(name: str, own_prefix: str) -> str | None:
         return None
     return (
         "capability code must import kernel helpers only via "
-        "untaped.capability_api "
+        "untaped.sdk "
         f"and sibling code only from its own {own_prefix} subtree"
     )
 
@@ -203,7 +203,7 @@ def test_kernel_internal_import_fails(tmp_path: Path) -> None:
     violations = surface_violations(src)
     assert len(violations) == 1
     assert "untaped.settings" in violations[0]
-    assert "capability_api" in violations[0]
+    assert "untaped.sdk" in violations[0]
 
 
 def test_sibling_capability_import_fails(tmp_path: Path) -> None:
@@ -262,12 +262,12 @@ def test_stable_surface_and_own_subtree_pass(tmp_path: Path) -> None:
     src = _probe_tree(
         tmp_path,
         {
-            "atlas/__init__.py": "from untaped.capability_api import CapabilitySpec\n",
+            "atlas/__init__.py": "from untaped.sdk import CapabilitySpec\n",
             "atlas/mod.py": (
-                "from untaped.capability_api import echo, report_errors\n"
+                "from untaped.sdk import echo, report_errors\n"
                 "from untaped.capabilities.atlas.inner import thing\n"
                 "from . import sibling\n"
-                "import untaped.capability_api\n"
+                "import untaped.sdk\n"
             ),
         },
     )

@@ -24,7 +24,7 @@ from untaped.capabilities.jira.domain import (
     validate_project_key,
 )
 from untaped.capabilities.jira.errors import JiraError
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     DryRunOption,
     FormatOption,
@@ -52,7 +52,7 @@ from untaped.capability_api import (
 if TYPE_CHECKING:
     from untaped.capabilities.jira.domain import IssueDetailResult
     from untaped.capabilities.jira.infrastructure import JiraClient
-    from untaped.capability_api import OutputFormat, UiContext
+    from untaped.sdk import OutputFormat, UiContext
 
 # One write request as previewed: method, path and its readable change lines.
 PreviewRequest = tuple[str, str, list[str]]

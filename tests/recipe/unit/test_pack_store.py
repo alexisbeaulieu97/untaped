@@ -25,7 +25,7 @@ from untaped.capabilities.recipe.infrastructure.pack_store import (
     is_git_url,
     pack_content_hash,
 )
-from untaped.capability_api import UsageError
+from untaped.sdk import UsageError
 
 
 def _write_pack(

@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 
 import untaped.skills as skills_module
-from untaped.capability_api import SkillAsset
 from untaped.errors import ConfigError, UsageError
 from untaped.git import run_git
+from untaped.sdk import SkillAsset
 from untaped.skills import SkillInstallScope, SkillInstallTarget
 
 

@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from untaped.capability_api import OutcomeRecord, UtcTimestamp
+from untaped.sdk import OutcomeRecord, UtcTimestamp
 
 # Jira ``fields`` requested for list rows (search) and the richer single-issue
 # detail view (get); the client requests exactly what the models flatten.

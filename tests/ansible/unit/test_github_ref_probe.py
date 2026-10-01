@@ -19,7 +19,7 @@ from untaped.capabilities.github.api import (
     RepoRef,
     RepoRefs,
 )
-from untaped.capability_api import ErrorCategory, HttpError, UntapedError
+from untaped.sdk import ErrorCategory, HttpError, UntapedError
 
 
 class FakeBatchClient:

@@ -6,7 +6,7 @@ from collections.abc import Sequence
 
 from untaped.capabilities.workspace.domain.models import WorktreeStatus
 from untaped.capabilities.workspace.domain.records import StatusRow
-from untaped.capability_api import plural
+from untaped.sdk import plural
 
 UNCOMMITTED = "uncommitted changes"
 CACHE_MISSING = "repo cache missing; local work cannot be checked"

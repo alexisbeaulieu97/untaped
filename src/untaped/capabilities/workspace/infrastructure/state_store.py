@@ -15,7 +15,7 @@ from typing import Any
 from untaped.capabilities.workspace.domain.models import ArchivedRecord, RepoSpec, WorkspaceRecord
 from untaped.capabilities.workspace.domain.naming import repo_key
 from untaped.capabilities.workspace.errors import WorkspaceError, WorkspaceNotFoundError
-from untaped.capability_api import StateCollection, file_lock, not_found, q
+from untaped.sdk import StateCollection, file_lock, not_found, q
 
 _BUSY_HINT = "wait for the other untaped command on this workspace to finish, then retry"
 

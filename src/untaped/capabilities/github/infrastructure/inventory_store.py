@@ -16,7 +16,7 @@ from pathlib import Path
 
 from untaped.capabilities.github.domain.inventory import RepoInventory, RepositoryInventoryItem
 from untaped.capabilities.github.errors import GithubError
-from untaped.capability_api import atomic_write, file_lock
+from untaped.sdk import atomic_write, file_lock
 
 _VERSION = 1
 

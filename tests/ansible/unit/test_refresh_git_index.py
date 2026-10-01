@@ -32,7 +32,7 @@ from untaped.capabilities.ansible.domain.payloads import (
 from untaped.capabilities.ansible.infrastructure.git_cache import GitCacheError
 from untaped.capabilities.ansible.infrastructure.sqlite_index import SqliteDependencyIndex
 from untaped.capabilities.ansible.settings import SourceDefinition
-from untaped.capability_api import UntapedError
+from untaped.sdk import UntapedError
 
 _REQS = "roles/requirements.yml"
 

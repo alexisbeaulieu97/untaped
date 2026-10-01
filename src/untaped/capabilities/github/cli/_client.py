@@ -8,13 +8,13 @@ from typing import TYPE_CHECKING
 
 from untaped.capabilities.github.domain.errors import github_failures
 from untaped.capabilities.github.settings import GithubSettings
-from untaped.capability_api import app_context, git_auth_header
+from untaped.sdk import app_context, git_auth_header
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from untaped.capabilities.github.infrastructure import GithubClient
-    from untaped.capability_api import UiContext
+    from untaped.sdk import UiContext
 
 
 def corpus_auth_header(settings: GithubSettings) -> Callable[[], str | None]:

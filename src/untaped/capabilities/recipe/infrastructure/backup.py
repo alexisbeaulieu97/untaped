@@ -18,7 +18,7 @@ from untaped.capabilities.recipe.domain.paths import confined_path
 from untaped.capabilities.recipe.domain.plan import CONTENT_ERRORS, FileChange
 from untaped.capabilities.recipe.errors import BackupNotFoundError, LocalChangesError
 from untaped.capabilities.recipe.infrastructure.file_writer import flush_changes
-from untaped.capability_api import atomic_write
+from untaped.sdk import atomic_write
 
 _PRIVATE_DIR_MODE = 0o700
 _PRIVATE_FILE_MODE = 0o600

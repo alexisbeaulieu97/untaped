@@ -34,7 +34,7 @@ from untaped.capabilities.recipe.errors import RecipeError
 from untaped.capabilities.recipe.infrastructure import HookExecutor, HookResolver
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     FormatOption,
     UntapedError,

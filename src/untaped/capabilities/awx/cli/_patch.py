@@ -22,7 +22,7 @@ from untaped.capabilities.awx.cli.options import NamesArgument
 from untaped.capabilities.awx.cli.patch_values import build_patch, parse_set_pairs
 from untaped.capabilities.awx.domain import Resource
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
-from untaped.capability_api import UsageError, plural, raise_usage, report_errors
+from untaped.sdk import UsageError, plural, raise_usage, report_errors
 
 
 def _add_patch(app: App, spec: AwxResourceSpec) -> None:

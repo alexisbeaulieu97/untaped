@@ -27,7 +27,7 @@ from untaped.capabilities.github.cli.scopes import (
 from untaped.capabilities.github.domain import CorpusRepoResult, github_web_host
 from untaped.capabilities.github.errors import GithubError
 from untaped.capabilities.github.settings import GithubSettings
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     DryRunOption,
     FormatOption,

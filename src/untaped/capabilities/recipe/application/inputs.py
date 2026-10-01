@@ -20,7 +20,7 @@ from untaped.capabilities.recipe.domain.input_jinja import (
 )
 from untaped.capabilities.recipe.domain.recipe import InputSpec, Recipe
 from untaped.capabilities.recipe.errors import RecipeError
-from untaped.capability_api import UsageError
+from untaped.sdk import UsageError
 
 REDACTED = "***"
 _UNSET = object()

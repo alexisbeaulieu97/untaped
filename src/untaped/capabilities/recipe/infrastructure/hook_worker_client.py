@@ -22,7 +22,7 @@ from untaped.capabilities.recipe._worker import worker_protocol as protocol
 from untaped.capabilities.recipe.errors import HookFailedError, RecipeError, UvMissingError
 from untaped.capabilities.recipe.infrastructure.hook_resolver import UvHookRef
 from untaped.capabilities.recipe.infrastructure.uv_project import uv_environment
-from untaped.capability_api import ErrorCategory
+from untaped.sdk import ErrorCategory
 
 APPLY_DIAGNOSTIC_LIMIT = 4000
 DEBUG_DIAGNOSTIC_LIMIT = 10 * 1024 * 1024

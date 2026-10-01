@@ -20,7 +20,7 @@ from untaped.capabilities.ansible.domain.payloads import (
 )
 from untaped.capabilities.ansible.infrastructure.sqlite_index import SqliteDependencyIndex
 from untaped.capabilities.ansible.infrastructure.sqlite_schema import SCHEMA_VERSION
-from untaped.capability_api import UntapedError
+from untaped.sdk import UntapedError
 
 
 def _edge(

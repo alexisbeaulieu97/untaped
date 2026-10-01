@@ -9,7 +9,7 @@ import pytest
 from untaped.capabilities.github import api as github_api
 from untaped.capabilities.github.api import RepositoryInventoryItem
 from untaped.capabilities.workspace.infrastructure import GithubRepoCatalog
-from untaped.capability_api import UntapedError, UsageError
+from untaped.sdk import UntapedError, UsageError
 
 ITEMS = [
     RepositoryInventoryItem(

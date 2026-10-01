@@ -13,13 +13,13 @@ from pydantic import BaseModel, SecretStr
 
 from test_management.support import GithubProfile, asset, compose, make_spec, write_config
 from untaped import bootstrap
-from untaped.capability_api import (
+from untaped.management.doctor import build_root_doctor_app
+from untaped.sdk import (
     TokenCommand,
     TokenSources,
     connection_check,
     executable_check,
 )
-from untaped.management.doctor import build_root_doctor_app
 from untaped.skills import SkillInstallScope, SkillInstallTarget, install_skills
 from untaped.testing import CliInvoker
 

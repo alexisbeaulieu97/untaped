@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from untaped.capabilities.awx.domain.suite import VariableSpec
-from untaped.capability_api import PromptChoice, ui_context
+from untaped.sdk import PromptChoice, ui_context
 
 
 class UiPrompt:

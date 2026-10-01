@@ -4,7 +4,7 @@ Each repo URL maps to a bare cache (:func:`cache_path_for`) whose
 ``origin`` remote fetches into ``refs/remotes/origin/*``; workspaces get
 ``git worktree`` checkouts from it. Every cache write runs under the cache's
 advisory lock, so parallel provisioning of one repo serializes safely. All
-git runs go through :func:`untaped.capability_api.run_git`; failures become
+git runs go through :func:`untaped.sdk.run_git`; failures become
 :class:`GitError` keeping git's attribution, and a branch or directory that
 is already in use becomes a ``conflict``. :meth:`LocalGitWorktrees.cached_repos`
 lists the caches without running git (the repo picker opens on it).
@@ -24,10 +24,10 @@ from untaped.capabilities.workspace.domain.models import CachedRepo, Checkout, W
 from untaped.capabilities.workspace.domain.naming import repo_key
 from untaped.capabilities.workspace.domain.safety import archive_blockers
 from untaped.capabilities.workspace.errors import GitError, WorkspaceError
-from untaped.capability_api import GitCommandError, attribution, file_lock, run_git
+from untaped.sdk import GitCommandError, attribution, file_lock, run_git
 
 if TYPE_CHECKING:
-    from untaped.capability_api import GitResult
+    from untaped.sdk import GitResult
 
 _FETCH_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
 _LAYOUT_KEY = "untaped.layout"

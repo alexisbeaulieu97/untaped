@@ -13,7 +13,7 @@ from untaped.capabilities.workspace.domain import Checkout, RepoArg, ResolvedRep
 from untaped.capabilities.workspace.domain.records import RepoOutcome
 from untaped.capabilities.workspace.errors import WorkspaceError
 from untaped.capabilities.workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
-from untaped.capability_api import UsageError
+from untaped.sdk import UsageError
 
 pytestmark = pytest.mark.integration
 

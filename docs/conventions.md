@@ -1,7 +1,7 @@
 # Command and output conventions
 
 Every `untaped` command, built-in or external, looks and behaves the same
-way. Each rule below names the `untaped.capability_api` helper that implements
+way. Each rule below names the `untaped.sdk` helper that implements
 it; use the helper rather than your own version.
 
 ## Exit codes

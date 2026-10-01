@@ -30,7 +30,7 @@ from untaped.capabilities.ansible.domain.payloads import (
     SourceRepoMetadata,
 )
 from untaped.capabilities.ansible.infrastructure import SqliteDependencyIndex
-from untaped.capability_api import ui_context
+from untaped.sdk import ui_context
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, CliResult, invoke_cli
 

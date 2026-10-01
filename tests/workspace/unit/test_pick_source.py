@@ -11,7 +11,7 @@ import pytest
 from untaped.capabilities.github.api import RepoInventory, RepositoryInventoryItem
 from untaped.capabilities.workspace.domain import CachedRepo, RepoArg, looks_like_url, repo_key
 from untaped.capabilities.workspace.infrastructure.pick_source import RepoPickSource
-from untaped.capability_api import UntapedError
+from untaped.sdk import UntapedError
 
 NOW = datetime.now(UTC)
 ITEMS = (

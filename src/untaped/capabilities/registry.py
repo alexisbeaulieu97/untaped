@@ -7,7 +7,7 @@ violations yield :class:`QuarantineRecord` entries while composition
 continues. Doctor-check bodies never run here.
 
 This module is intentionally NOT re-exported: provider authors import the
-stable surface from :mod:`untaped.capability_api` instead.
+stable surface from :mod:`untaped.sdk` instead.
 """
 
 from __future__ import annotations

@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.capabilities.awx.domain.envelope import Resource
-from untaped.capability_api import OutcomeRecord, UtcTimestamp
+from untaped.sdk import OutcomeRecord, UtcTimestamp
 
 ApplyAction = Literal[
     "planned",

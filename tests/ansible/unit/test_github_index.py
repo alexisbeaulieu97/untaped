@@ -14,7 +14,7 @@ from untaped.capabilities.ansible.domain.payloads import (
     SkippedDependencyFile,
 )
 from untaped.capabilities.ansible.infrastructure.github_index import GithubDependencyIndex
-from untaped.capability_api import HttpStatusError
+from untaped.sdk import HttpStatusError
 
 
 class StubGithub:
