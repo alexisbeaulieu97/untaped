@@ -297,6 +297,7 @@ def test_export_comment_rejects_non_yaml_stdout(fake_aap: Any, fmt: str) -> None
     _seed_basic(fake_aap)
     result = _save_to(None, "--comment", "x", "--format", fmt)
     assert result.exit_code == 2
+    assert "--comment needs YAML output" in result.stderr
 
 
 def test_export_comment_allowed_with_out_dash_and_json(fake_aap: Any) -> None:

@@ -89,9 +89,11 @@ class _DocumentDumper(yaml.SafeDumper):
 
 
 def _represent_str(dumper: yaml.SafeDumper, value: str) -> yaml.ScalarNode:
-    return dumper.represent_scalar(
-        "tag:yaml.org,2002:str", value, style="|" if "\n" in value else None
-    )
+    # The loader folds NEL and the Unicode line/paragraph separators into "\n";
+    # only double quotes escape them, so force that style for such strings.
+    folds = any(c in value for c in "\x85\u2028\u2029")
+    style = '"' if folds else ("|" if "\n" in value else None)
+    return dumper.represent_scalar("tag:yaml.org,2002:str", value, style=style)
 
 
 _DocumentDumper.add_representer(str, _represent_str)

@@ -131,7 +131,16 @@ def test_multiline_strings_dump_as_literal_blocks(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "value", ["trailing space \nx", "tab\there\nx", "cr\r\nx", "no newline at end\nx", "\n"]
+    "value",
+    [
+        "trailing space \nx",
+        "tab\there\nx",
+        "cr\r\nx",
+        "no newline at end\nx",
+        "\n",
+        "a\x85b\nc",
+        "a\u2028b\nc",
+    ],
 )
 def test_awkward_multiline_strings_round_trip(tmp_path: Path, value: str) -> None:
     r = _resource("JobTemplate", "deploy", extra_vars=value)
