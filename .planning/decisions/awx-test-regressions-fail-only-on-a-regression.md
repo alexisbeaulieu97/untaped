@@ -29,4 +29,4 @@ already fails some cases.
 
 ## Related decisions
 
-- Builds on: [awx test failures name the responsible system](dec_01a0ee3c7ace70f6afb9ccbbac9d6d93-v4-awx-test-failures-name-the-responsible-system.md)
+- Builds on: [awx test failures name the responsible system](awx-test-failures-name-the-responsible-system.md)
