@@ -13,7 +13,12 @@ from pathlib import Path
 
 from untaped.capabilities.workspace.application.ports import WorkspaceStore
 from untaped.capabilities.workspace.application.provision import refuse_occupied
-from untaped.capabilities.workspace.cli.common import NO_REPOS_HINT, git_worktrees, workspaces_dir
+from untaped.capabilities.workspace.cli.common import (
+    NO_NAME_HINT,
+    NO_REPOS_HINT,
+    git_worktrees,
+    workspaces_dir,
+)
 from untaped.capabilities.workspace.cli.common import repo_args as flag_repo_args
 from untaped.capabilities.workspace.domain.models import RepoArg, WorkspaceRecord
 from untaped.capabilities.workspace.domain.naming import (
@@ -37,7 +42,6 @@ from untaped.capability_api import (
 )
 
 READ_ONLY = "read-only"
-NO_NAME_HINT = "pass NAME and --repo OWNER/NAME (or --stdin); the repo picker needs a terminal"
 
 
 def build_request(
@@ -148,14 +152,14 @@ def choose_repos(
     Without a terminal and without flags this is a usage error naming them.
     """
     name = record.name if record is not None else name
-    if repo or read_only or stdin:
+    flags = bool(repo or read_only or stdin)
+    if flags or not ui.can_prompt:
         if name is None:
-            raise UsageError("a workspace name is required", hint="pass NAME before the options")
+            hint = "pass NAME before the options" if flags else NO_NAME_HINT
+            raise UsageError("a workspace name is required", hint=hint)
+        if not flags:
+            raise UsageError("no repos given", hint=NO_REPOS_HINT)
         return name, flag_repo_args(repo, read_only, branch=branch, base=base, stdin=stdin)
-    if not ui.can_prompt:
-        if name is None:
-            raise UsageError("a workspace name is required", hint=NO_NAME_HINT)
-        raise UsageError("no repos given", hint=NO_REPOS_HINT)
     return _pick(ui, settings, store, name=name, record=record, branch=branch, base=base)
 
 
@@ -170,27 +174,31 @@ def _pick(
     base: str | None,
 ) -> tuple[str, list[RepoArg]]:
     """Open the picker: ``create`` asks for the name too, ``add`` hides present repos."""
-    validate = name_validator(store, workspaces_dir(settings))
-    if record is None and name and (problem := validate(name)):
-        raise UsageError(problem)
-    template, title, title_label = settings.branch_template, name or "", "name"
-    if record is not None:  # add: no name field; the preview uses the workspace's name
-        template, title, title_label = branch_for(template, record.name), "", ""
-    source = RepoPickSource(
-        cache_dir=settings.cache_dir,
-        git=git_worktrees(settings),
-        exclude={repo_key(spec.url) for spec in record.repos} if record else (),
-    )
+    validate: Callable[[str], str | None] | None = None
+    exclude: set[tuple[str, ...]] = set()
+    fixed_name: str | None = None
+    if record is None:
+        validate = name_validator(store, workspaces_dir(settings))
+        if name and (problem := validate(name)):
+            raise UsageError(problem)
+        heading, template = "New workspace", settings.branch_template
+        title, title_label = name or "", "name"
+    else:  # add: no name field; the preview uses the workspace's name
+        heading = f"Add to {record.name}"
+        template = branch_for(settings.branch_template, record.name)
+        title, title_label, fixed_name = "", "", record.name
+        exclude = {repo_key(spec.url) for spec in record.repos}
+    source = RepoPickSource(git=git_worktrees(settings), exclude=exclude)
     request = build_request(
-        heading=f"Add to {record.name}" if record else "New workspace",
+        heading=heading,
         source=source,
         template=template,
         title=title,
         title_label=title_label,
-        validate_title=None if record else validate,
+        validate_title=validate,
         branch=branch or "",
         base=base or "",
     )
     result = ui.pick_many(request)
     args = [source.pick_arg(arg) for arg in repo_args(result)]
-    return (record.name if record else result.title.strip() or title), args
+    return fixed_name or result.title.strip() or title, args

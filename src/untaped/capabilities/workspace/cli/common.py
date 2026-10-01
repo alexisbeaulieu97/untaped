@@ -35,6 +35,7 @@ from untaped.capability_api import (
 STDIN_KINDS = frozenset({"github.repo", "github.repo_hit", "github.sweep_repo"})
 """Pipe kinds ``create``/``add --stdin`` read repos from (see :func:`stdin_repos`)."""
 NO_REPOS_HINT = "pass --repo OWNER/NAME (repeatable) or --stdin; the repo picker needs a terminal"
+NO_NAME_HINT = "pass NAME and --repo OWNER/NAME (or --stdin); the repo picker needs a terminal"
 
 NameArg = Annotated[
     str | None,

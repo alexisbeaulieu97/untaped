@@ -6,18 +6,21 @@ Each repo URL maps to a bare cache (:func:`cache_path_for`) whose
 advisory lock, so parallel provisioning of one repo serializes safely. All
 git runs go through :func:`untaped.capability_api.run_git`; failures become
 :class:`GitError` keeping git's attribution, and a branch or directory that
-is already in use becomes a ``conflict``.
+is already in use becomes a ``conflict``. :meth:`LocalGitWorktrees.cached_repos`
+lists the caches without running git (the repo picker opens on it).
 """
 
 from __future__ import annotations
 
+import os
+import re
 import shutil
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.capabilities.workspace.domain.models import Checkout, WorktreeStatus
+from untaped.capabilities.workspace.domain.models import CachedRepo, Checkout, WorktreeStatus
 from untaped.capabilities.workspace.domain.naming import repo_key
 from untaped.capabilities.workspace.domain.safety import archive_blockers
 from untaped.capabilities.workspace.errors import GitError, WorkspaceError
@@ -38,6 +41,10 @@ _BRANCH_IN_USE_HINT = (
     "the branch is checked out in another workspace: archive that workspace or pick another branch"
 )
 _EXISTS_HINT = "move the existing directory aside, or use another branch name"
+_UNKNOWN = "_unknown"
+"""Cache directory of repos whose URL has no host (see :func:`repo_key`)."""
+_ORIGIN_SECTION = re.compile(r'\[\s*(?i:remote)\s+"origin"\s*\]')
+_ESCAPES = {"n": "\n", "t": "\t", "b": "\b"}
 
 
 def cache_path_for(url: str, *, cache_dir: Path) -> Path:
@@ -128,12 +135,35 @@ class LocalGitWorktrees:
         names = self._run(args, cwd=cache, capture=True).text.split()
         return [name for name in names if name != "HEAD"]
 
-    def cache_origin(self, cache: Path) -> str | None:
-        """``remote.origin.url`` of the cache at ``cache``; ``None`` when unreadable."""
-        if not _cache_ready(cache):
-            return None
-        args = ["config", "--get", "remote.origin.url"]
-        return self._run(args, cwd=cache, capture=True, check=False).text.strip() or None
+    def cached_repos(self) -> list[CachedRepo]:
+        """Every bare cache under ``cache_dir``, sorted by :attr:`CachedRepo.ident`; no git runs.
+
+        A cache is a ``<host>/[<owner>/...]<name>.git`` directory, a leaf:
+        never entered, so its contents are not scanned. ``_unknown`` (caches of
+        host-less URLs, keyed on a hash) is skipped. Each origin is read from
+        the cache's ``config`` file rather than by running git per cache.
+        """
+        root = self._cache_dir.expanduser()
+        found: list[CachedRepo] = []
+        stack: list[tuple[str, ...]] = [()]
+        while stack:
+            parts = stack.pop()
+            try:
+                entries = list(os.scandir(root.joinpath(*parts)))
+            except OSError:
+                continue
+            for entry in entries:
+                if not entry.is_dir(follow_symlinks=False) or (
+                    not parts and entry.name == _UNKNOWN
+                ):
+                    continue
+                key = (*parts, entry.name)
+                if not entry.name.endswith(".git"):
+                    stack.append(key)
+                elif len(key) >= 2:
+                    origin = _config_origin(Path(entry.path, "config"))
+                    found.append(CachedRepo(key=key, origin=origin))
+        return sorted(found, key=lambda repo: repo.ident)
 
     def remove(self, url: str, dest: Path, *, force: bool) -> None:
         """Remove the worktree at ``dest`` and prune stale worktree entries."""
@@ -450,6 +480,46 @@ class LocalGitWorktrees:
             )
         except GitCommandError as exc:
             raise _git_error(exc) from exc
+
+
+def _config_origin(config: Path) -> str | None:
+    """``remote.origin.url`` from a git config file, as ``git config --get`` reads it.
+
+    Only the file itself (no includes); the last ``url`` of ``[remote "origin"]``
+    wins. ``None`` when the file is unreadable or has no origin URL.
+    """
+    try:
+        lines = config.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    origin, in_origin = None, False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("["):
+            in_origin = _ORIGIN_SECTION.match(stripped) is not None
+            continue
+        name, sep, value = stripped.partition("=")
+        if in_origin and sep and name.strip().lower() == "url":
+            origin = _config_value(value) or None
+    return origin
+
+
+def _config_value(raw: str) -> str:
+    """A git config value: quotes removed, escapes decoded, a trailing comment dropped."""
+    out: list[str] = []
+    quoted = False
+    chars = iter(raw.strip())
+    for char in chars:
+        if char == "\\":
+            escaped = next(chars, "")
+            out.append(_ESCAPES.get(escaped, escaped))
+        elif char == '"':
+            quoted = not quoted
+        elif char in "#;" and not quoted:
+            break
+        else:
+            out.append(char)
+    return "".join(out).strip()
 
 
 def _cache_ready(cache: Path) -> bool:
