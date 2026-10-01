@@ -15,9 +15,7 @@ HTTP/TLS helpers, or agent workflows. Keep capability-specific command and
 settings guidance with the capability that owns it, and link to the core pages
 for shared mechanics.
 
-Update a capability's skill in the same change when its command behavior,
-settings, workflow, or contract changes; the
-[skill template](docs/templates/SKILL.md) holds the skill rules.
+Capability skills follow the [skill template](docs/templates/SKILL.md).
 
 ## Sensitive data
 
