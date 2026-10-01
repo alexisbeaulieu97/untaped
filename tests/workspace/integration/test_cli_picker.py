@@ -1,0 +1,134 @@
+"""The picker path of `create`/`add`, scripted (no real terminal)."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+
+from untaped.capabilities.workspace.cli import app
+from untaped.capabilities.workspace.domain import RepoSpec, WorkspaceRecord
+from untaped.capabilities.workspace.infrastructure import StateWorkspaceStore
+from untaped.capability_api import Picked, PickItem, PickRequest, PickResult
+from untaped.testing import CliInvoker, ScriptedPromptBackend
+
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("workspace_env")]
+run = CliInvoker().invoke
+
+
+def _pick(title: str, *urls: str) -> PickResult:
+    settings = {"mode": "write", "base": "", "branch": ""}
+    return PickResult(
+        title=title,
+        defaults=settings,
+        picks=tuple(Picked(item=PickItem(id=url, label=url), settings=settings) for url in urls),
+    )
+
+
+def test_create_without_repos_opens_the_picker(
+    make_upstream: Callable[..., Path], workspace_env: Path
+) -> None:
+    url = str(make_upstream("api"))
+    backend = ScriptedPromptBackend(picks=[_pick("J-1", url)])
+    result = run(app, ["create"], interactive=True, prompt_backend=backend)
+    assert result.exit_code == 0, result.output
+    assert (workspace_env / "J-1" / "api" / "README.md").exists()
+    assert backend.calls == [("pick_many", "New workspace")]
+
+
+def test_cancelled_picker_creates_nothing(workspace_env: Path) -> None:
+    result = run(
+        app, ["create", "J-1"], interactive=True, prompt_backend=ScriptedPromptBackend(picks=[None])
+    )
+    assert result.exit_code == 1
+    assert not (workspace_env / "J-1").exists()
+
+
+def test_no_terminal_is_a_usage_error_naming_the_flags() -> None:
+    result = run(app, ["create", "J-1"])
+    assert result.exit_code == 2
+    assert "--repo" in result.output and "--stdin" in result.output
+    assert "terminal" in result.output
+
+
+def test_no_terminal_and_no_name_is_a_usage_error() -> None:
+    result = run(app, ["create"])
+    assert result.exit_code == 2
+    assert "workspace name is required" in result.output
+
+
+def test_repo_flags_without_a_name_is_a_usage_error(make_upstream: Callable[..., Path]) -> None:
+    result = run(app, ["create", "--repo", str(make_upstream("api"))], interactive=True)
+    assert result.exit_code == 2
+    assert "workspace name is required" in result.output
+
+
+def test_repo_flags_skip_the_picker(make_upstream: Callable[..., Path]) -> None:
+    backend = ScriptedPromptBackend()
+    result = run(
+        app,
+        ["create", "J-1", "--repo", str(make_upstream("api"))],
+        interactive=True,
+        prompt_backend=backend,
+    )
+    assert result.exit_code == 0, result.output
+    assert backend.calls == []
+
+
+def test_add_opens_the_picker(make_upstream: Callable[..., Path], workspace_env: Path) -> None:
+    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+    web = str(make_upstream("web"))
+    backend = ScriptedPromptBackend(picks=[_pick("", web)])
+    result = run(app, ["add", "J-1"], interactive=True, prompt_backend=backend)
+    assert result.exit_code == 0, result.output
+    assert (workspace_env / "J-1" / "web").exists()
+    assert backend.calls == [("pick_many", "Add to J-1")]
+
+
+class _Capture(ScriptedPromptBackend):
+    def __init__(self, result: PickResult | None) -> None:
+        super().__init__(picks=[result])
+        self.requests: list[PickRequest] = []
+
+    def pick_many(self, request: PickRequest) -> PickResult | None:
+        self.requests.append(request)
+        return super().pick_many(request)
+
+
+def test_add_does_not_offer_repos_already_in_the_workspace(workspace_env: Path) -> None:
+    cache = workspace_env.parent / "cache" / "github.com" / "acme"
+    for name in ("api", "web"):
+        (cache / f"{name}.git").mkdir(parents=True)
+    store = StateWorkspaceStore()
+    store.create(WorkspaceRecord(name="J-1", created_at=datetime(2026, 10, 1, tzinfo=UTC)))
+    spec = RepoSpec(
+        url="git@github.com:acme/api.git", name="acme/api", dir="api", branch="J-1", base="main"
+    )
+    store.add_repos("J-1", [spec])
+    backend = _Capture(None)
+    result = run(app, ["add", "J-1"], interactive=True, prompt_backend=backend)
+    assert result.exit_code == 1
+    (request,) = backend.requests
+    assert request.title_label == ""
+    assert [item.id for item in request.catalog.items] == ["acme/web"]
+    assert request.subtitle is not None
+    assert request.subtitle("", {"branch": ""}).endswith("J-1")
+
+
+def test_create_picker_prefills_the_name_and_flag_defaults() -> None:
+    backend = _Capture(_pick("J-1"))
+    run(
+        app,
+        ["create", "J-1", "--base", "release/2", "--branch", "hotfix"],
+        interactive=True,
+        prompt_backend=backend,
+    )
+    (request,) = backend.requests
+    assert (request.title, request.title_label) == ("J-1", "name")
+    assert {s.key: s.default for s in request.settings} == {
+        "mode": "write",
+        "base": "release/2",
+        "branch": "hotfix",
+    }

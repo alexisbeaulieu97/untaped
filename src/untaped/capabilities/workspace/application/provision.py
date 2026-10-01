@@ -68,8 +68,17 @@ class ProvisionRepos:
         self._parallel = max(1, parallel)
         self._now = now
 
-    def create(self, name: str, repos: Sequence[RepoArg]) -> list[RepoOutcome]:
-        """Create workspace ``name`` and check out ``repos`` into it."""
+    def create(
+        self,
+        name: str,
+        repos: Sequence[RepoArg],
+        *,
+        on_done: Callable[[RepoOutcome], None] | None = None,
+    ) -> list[RepoOutcome]:
+        """Create workspace ``name`` and check out ``repos`` into it.
+
+        ``on_done(row)`` runs (on the calling thread) as each checkout finishes.
+        """
         validate_workspace_name(name)
         if not repos:
             raise UsageError(
@@ -81,13 +90,20 @@ class ProvisionRepos:
             record = WorkspaceRecord(name=name, created_at=self._now())
             self._store.create(record)
             workspace_root(self._workspaces_dir, name).mkdir(parents=True, exist_ok=True)
-            return self._provision(record, repos, resolved)
+            return self._provision(record, repos, resolved, on_done)
 
-    def add(self, record: WorkspaceRecord, repos: Sequence[RepoArg]) -> list[RepoOutcome]:
+    def add(
+        self,
+        record: WorkspaceRecord,
+        repos: Sequence[RepoArg],
+        *,
+        on_done: Callable[[RepoOutcome], None] | None = None,
+    ) -> list[RepoOutcome]:
         """Check out ``repos`` into the existing workspace ``record``.
 
         The record is read again under the workspace lock: an ``archive`` that
         ran meanwhile makes this fail as not found instead of adding worktrees.
+        ``on_done`` is as for :meth:`create`.
         """
         if not repos:
             raise UsageError(
@@ -97,7 +113,7 @@ class ProvisionRepos:
         with self._store.locked(record.name):
             current = active_workspace(self._store, record.name)
             workspace_root(self._workspaces_dir, current.name).mkdir(parents=True, exist_ok=True)
-            return self._provision(current, repos, resolved)
+            return self._provision(current, repos, resolved, on_done)
 
     def _refuse_occupied(self, name: str) -> None:
         """Refuse a new workspace whose directory already holds files (an old workspace?).
@@ -128,7 +144,11 @@ class ProvisionRepos:
             return self._catalog.resolve(arg.fallback)
 
     def _provision(
-        self, record: WorkspaceRecord, repos: Sequence[RepoArg], resolved: Sequence[ResolvedRepo]
+        self,
+        record: WorkspaceRecord,
+        repos: Sequence[RepoArg],
+        resolved: Sequence[ResolvedRepo],
+        on_done: Callable[[RepoOutcome], None] | None,
     ) -> list[RepoOutcome]:
         workspace_dir = workspace_root(self._workspaces_dir, record.name)
         rows, fresh = _partition(record, repos, resolved, workspace_dir)
@@ -146,6 +166,8 @@ class ProvisionRepos:
 
         def _collect(job: _Job, result: Checkout | UntapedError) -> None:
             rows[job.index] = self._row(record.name, workspace_dir, job, result)
+            if on_done is not None:
+                on_done(rows[job.index])
             if isinstance(result, Checkout):
                 specs[job.index] = RepoSpec(
                     url=job.resolved.url,
