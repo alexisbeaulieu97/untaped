@@ -9,6 +9,7 @@ private to GitHub.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import timedelta
 
 from untaped.capabilities.github.application.inventory import (
@@ -123,4 +124,7 @@ def _inventory_scope(settings: GithubSettings) -> RepositoryInventoryScope:
 
 def _scope_key(settings: GithubSettings, scope: RepositoryInventoryScope) -> str:
     teams = ",".join(sorted(f"{team.org}/{team.slug}" for team in scope.teams))
-    return f"{settings.base_url}|orgs={','.join(sorted(scope.orgs))}|teams={teams}"
+    token = settings.token.get_secret_value() if settings.token else ""
+    # A short irreversible fingerprint: profiles with other tokens may see other repos.
+    identity = hashlib.sha256(token.encode()).hexdigest()[:16] if token else "anonymous"
+    return f"{settings.base_url}|token={identity}|orgs={','.join(sorted(scope.orgs))}|teams={teams}"

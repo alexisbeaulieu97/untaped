@@ -16,7 +16,7 @@ from untaped.capabilities.github.application.ports import InventoryStore
 from untaped.capabilities.github.domain.inventory import RepoInventory, RepositoryInventoryItem
 from untaped.capability_api import UntapedError
 
-__all__ = ["CachedRepoInventory", "RepoInventory"]
+__all__ = ["CachedRepoInventory"]
 
 
 def _utcnow() -> datetime:
