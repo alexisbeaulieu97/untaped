@@ -100,9 +100,13 @@ documents itself, so the files can go in one directory.
 untaped awx export --kind projects --filter name=playbooks --out-dir rec
 untaped awx export --kind job-templates --filter project__name=playbooks --out-dir rec
 untaped awx schedules export --parent Deploy --all --out rec/schedules.yml
+untaped awx job-templates usage Deploy
+untaped awx workflow-templates export Release --out rec/workflows.yml
 ```
 
-Find workflows that use a template with `untaped awx job-templates usage NAME`.
+`usage` lists the workflows that run a template; export the ones you want
+kept. Inventories and credentials stay references (see the References bullet
+above): they must exist where the documents are applied.
 
 ## Apply
 
