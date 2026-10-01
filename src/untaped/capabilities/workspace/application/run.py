@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import signal
+from collections import deque
 from collections.abc import Callable, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
@@ -12,7 +13,7 @@ from typing import TYPE_CHECKING
 from untaped.capabilities.workspace.domain.models import CommandResult, RepoSpec
 from untaped.capabilities.workspace.domain.records import RunAction, RunOutcome
 from untaped.capabilities.workspace.errors import WorkspaceError
-from untaped.capability_api import note_failure
+from untaped.capability_api import ErrorInfo, note_failure
 
 if TYPE_CHECKING:
     from untaped.capabilities.workspace.application.ports import CommandRunner
@@ -48,24 +49,23 @@ class RunInRepos:
     def __call__(self, targets: Sequence[RunTarget], argv: Sequence[str]) -> list[RunOutcome]:
         rows: dict[int, RunOutcome] = {}
         pending: dict[Future[CommandResult], int] = {}
-        queue = list(enumerate(targets))
+        queue = deque(enumerate(targets))
         stop = False
         pool = ThreadPoolExecutor(max_workers=self._parallel)
         try:
-            while queue or pending:
-                while queue and not stop and len(pending) < self._parallel:
-                    index, target = queue.pop(0)
-                    if not target.path.is_dir():
+            while True:
+                # Rows that already finished come first: a failure stops the next start.
+                stop = self._reap(rows, targets, pending, block=False) or stop
+                if queue and not stop and len(pending) < self._parallel:
+                    index, target = queue.popleft()
+                    if target.path.is_dir():
+                        pending[pool.submit(self._execute, target, argv)] = index
+                    else:
                         stop = self._finish(rows, index, self._missing(target)) or stop
-                        continue
-                    pending[pool.submit(self._execute, target, argv)] = index
+                    continue
                 if not pending:
                     break
-                done, _ = wait(pending, return_when=FIRST_COMPLETED)
-                for future in done:
-                    index = pending.pop(future)
-                    row = self._row(targets[index], future.result())
-                    stop = self._finish(rows, index, row) or stop
+                stop = self._reap(rows, targets, pending, block=True) or stop
         except BaseException:
             # Ctrl-C: the commands run in their own sessions, so stop them explicitly.
             pool.shutdown(wait=False, cancel_futures=True)
@@ -75,6 +75,31 @@ class RunInRepos:
         for index, target in queue:
             self._finish(rows, index, _skipped(target))
         return [rows[i] for i in sorted(rows)]
+
+    def _reap(
+        self,
+        rows: dict[int, RunOutcome],
+        targets: Sequence[RunTarget],
+        pending: dict[Future[CommandResult], int],
+        *,
+        block: bool,
+    ) -> bool:
+        """Record every finished run (waiting for one when ``block``); whether to stop.
+
+        Runs that finish while ``on_done`` reports a row are recorded too.
+        """
+        timeout = None if block else 0
+        stop = False
+        while pending:
+            done, _ = wait(pending, timeout=timeout, return_when=FIRST_COMPLETED)
+            if not done:
+                break
+            timeout = 0
+            for future in done:
+                index = pending.pop(future)
+                row = self._row(targets[index], future.result())
+                stop = self._finish(rows, index, row) or stop
+        return stop
 
     def _finish(self, rows: dict[int, RunOutcome], index: int, row: RunOutcome) -> bool:
         """Record ``row``; whether scheduling should stop (a failure under ``fail_fast``)."""
@@ -123,27 +148,36 @@ def _env(target: RunTarget) -> dict[str, str]:
 
 
 def _outcome(
-    target: RunTarget, action: RunAction, result: CommandResult | None, detail: str = ""
+    target: RunTarget,
+    action: RunAction,
+    result: CommandResult | None,
+    detail: str = "",
+    error: ErrorInfo | None = None,
 ) -> RunOutcome:
+    result = result or _NOT_RUN
     return RunOutcome(
         workspace=target.workspace,
         repo=target.spec.name,
         dir=target.spec.dir,
         action=action,
-        returncode=None if result is None else result.returncode,
-        stdout="" if result is None else result.stdout,
-        stderr="" if result is None else result.stderr,
-        duration_s=0.0 if result is None else result.duration_s,
+        returncode=result.returncode,
+        stdout=result.stdout,
+        stderr=result.stderr,
+        duration_s=result.duration_s,
         detail=detail,
         target_path=target.path,
+        error=error,
     )
+
+
+_NOT_RUN = CommandResult(returncode=None, stdout="", stderr="", duration_s=0.0, timed_out=False)
+"""The result fields of a row whose command never ran."""
 
 
 def _failed(
     target: RunTarget, error: WorkspaceError, result: CommandResult | None, detail: str
 ) -> RunOutcome:
-    row = _outcome(target, "failed", result, detail)
-    return row.model_copy(update={"error": note_failure(error)})
+    return _outcome(target, "failed", result, detail, note_failure(error))
 
 
 def _skipped(target: RunTarget) -> RunOutcome:

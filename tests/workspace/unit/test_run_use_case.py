@@ -12,6 +12,7 @@ import pytest
 
 from untaped.capabilities.workspace.application.run import RunInRepos, RunTarget
 from untaped.capabilities.workspace.domain import CommandResult, RepoSpec
+from untaped.capabilities.workspace.domain.records import RunOutcome
 
 
 class FakeRunner:
@@ -249,3 +250,43 @@ def test_unknown_signal_number_still_reads_as_killed(tmp_path: Path) -> None:
         _targets(tmp_path, "api"), ["x"]
     )
     assert (row.returncode, row.detail) == (-200, "killed by signal 200")
+
+
+class OrderedRunner(FakeRunner):
+    """``a`` returns once ``b`` started; ``b`` returns exit 1 once ``a``'s row is reported."""
+
+    def __init__(self) -> None:
+        super().__init__({"b": 1})
+        self.b_started = threading.Event()
+        self.a_reported = threading.Event()
+        self.b_returned = threading.Event()
+
+    def run(
+        self, argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], timeout: float
+    ) -> CommandResult:
+        if cwd.name == "a":
+            assert self.b_started.wait(10)
+        if cwd.name == "b":
+            self.b_started.set()
+            assert self.a_reported.wait(10)
+            try:
+                return super().run(argv, cwd=cwd, env=env, timeout=timeout)
+            finally:
+                self.b_returned.set()
+        return super().run(argv, cwd=cwd, env=env, timeout=timeout)
+
+
+def test_fail_fast_reports_finished_failures_before_starting_more(tmp_path: Path) -> None:
+    runner = OrderedRunner()
+
+    def on_done(row: RunOutcome) -> None:
+        if row.dir == "a":
+            runner.a_reported.set()
+            assert runner.b_returned.wait(10)
+            time.sleep(0.5)  # b's future completes right after its run() returns
+
+    rows = RunInRepos(runner, parallel=2, timeout=5, fail_fast=True, on_done=on_done)(
+        _targets(tmp_path, "a", "b", "c"), ["x"]
+    )
+    assert [r.action for r in rows] == ["ran", "failed", "skipped"]
+    assert [name for name, _ in runner.calls] == ["a", "b"]

@@ -26,8 +26,11 @@ EOF
   (such as `--formt`) is taken as a mistyped option and exits 2.
 
 Each run starts in the repo directory with stdin from `/dev/null`.
-Background processes the command starts are stopped about 2 seconds after it
-exits; the row keeps the command's own exit status.
+Background processes the command starts are stopped when it exits; one that
+still holds the command's output gets about 2 seconds first. The row keeps the
+command's own exit status. Processes that start their own session or process
+group (such as `setsid`) are not stopped on exit, timeout or cancel, and can
+keep the command's output open for up to 5 more seconds.
 
 ## Environment
 

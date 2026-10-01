@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from untaped.capabilities.workspace.cli import app
+from untaped.capabilities.workspace.cli.common import run_argv
 from untaped.testing import CliInvoker
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("workspace_env")]
@@ -139,8 +140,8 @@ def test_dash_with_nothing_piped_is_usage(ws: Path) -> None:
     assert "nothing was piped" in result.output
 
 
-@pytest.mark.parametrize("value", ["0", "-1"])
-def test_timeout_must_be_positive(ws: Path, value: str) -> None:
+@pytest.mark.parametrize("value", ["0", "-1", "nan", "inf"])
+def test_timeout_must_be_positive_and_finite(ws: Path, value: str) -> None:
     assert run(app, ["run", "J-1", "true", "--timeout", value]).exit_code == 2
 
 
@@ -291,3 +292,9 @@ def test_help_names_the_positionals() -> None:
     result = run(app, ["run", "--help"])
     assert "run [OPTIONS] [NAME] CMD" in result.stdout
     assert "NAME_OR_CMD" in result.stdout
+
+
+def test_unknown_user_tilde_is_a_command_string() -> None:
+    command = "~no_such_user_untaped/x"
+    with run_argv(command) as argv:
+        assert argv == ["sh", "-c", "--", command]
