@@ -96,6 +96,10 @@ def _no_controlling_terminal() -> TextIO:
     raise OSError("no controlling terminal in tests")
 
 
+#: The rule suffix of a ``table_default_violations`` line.
+NO_DEFAULT_COLUMNS = "::no-default-columns"
+
+
 @pytest.fixture(autouse=True)
 def table_default_violations(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
     """Fail the test whose command emits a wide record collection without default columns.
@@ -116,12 +120,11 @@ def table_default_violations(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[s
     # Root commands bound the name at import.
     monkeypatch.setattr("untaped.management._render.emit_with", checked)
     yield found
-    new = sorted(set(found))
-    if new:
+    if found:
         pytest.fail(
             "record collections emitted without default table columns (declare "
             "`table_columns` on the record; see docs/conventions.md#output-records):\n"
-            + "\n".join(f"  {line}" for line in new)
+            + "\n".join(f"  {line}" for line in sorted(set(found)))
         )
 
 
@@ -130,4 +133,4 @@ def _lacking_default_columns(records: Sequence[object]) -> Iterator[str]:
         fields = {*model.model_fields, *model.model_computed_fields} - {"error"}
         own = model.__module__.startswith("untaped.")
         if own and len(fields) > 4 and not table_columns_of(model):
-            yield f"{model.__module__}.{model.__qualname__}::no-default-columns"
+            yield f"{model.__module__}.{model.__qualname__}{NO_DEFAULT_COLUMNS}"

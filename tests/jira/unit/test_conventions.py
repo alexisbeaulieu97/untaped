@@ -8,4 +8,4 @@ from untaped.testing import check_conventions
 
 
 def test_jira_follows_the_conventions() -> None:
-    check_conventions("jira", tests_dir=Path(__file__).resolve().parents[1])
+    check_conventions("jira", tests_dir=Path(__file__).resolve().parents[1], externals=[])
