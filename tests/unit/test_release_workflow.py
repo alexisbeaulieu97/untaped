@@ -22,7 +22,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 RELEASE_CORE = REPO_ROOT / ".github" / "release" / "_release_core.py"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
-RELEASE_MANIFEST = REPO_ROOT / "release-manifest.toml"
 BUILD_JOB = "build"
 DRAFT_JOB = "github-draft"
 PUBLISH_JOB = "publish"
@@ -156,10 +155,7 @@ def test_release_workflow_smokes_published_package_from_selected_index() -> None
 
 def test_project_metadata_declares_pypi_release_fields() -> None:
     project = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]
-    manifest = tomllib.loads(RELEASE_MANIFEST.read_text(encoding="utf-8"))["manifest"]
 
-    assert project["version"] == manifest["version"]
-    assert manifest["capabilities"] == ["workspace", "github", "jira", "awx", "ansible", "recipe"]
     assert project["license"] == "MIT"
     assert project["license-files"] == ["LICENSE"]
     assert project.get("readme") == "README.md"

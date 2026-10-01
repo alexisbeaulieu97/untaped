@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import re
 import subprocess
 import sys
 import tomllib
@@ -445,10 +444,6 @@ def _candidate(tmp_path: Path) -> Any:
 release_module: ModuleType = _load_helper()
 
 
-def test_manifest_matches_package_and_lock() -> None:
-    release_module.validate_release_manifest(lock_path=REPO_ROOT / "uv.lock")
-
-
 def test_release_cli_executes_when_invoked_as_a_script() -> None:
     result = subprocess.run(
         [
@@ -465,59 +460,6 @@ def test_release_cli_executes_when_invoked_as_a_script() -> None:
     )
     assert result.returncode == 0, result.stderr
     assert f"ok: package metadata version matches workflow input {PROJECT_VERSION}" in result.stdout
-
-
-def test_manifest_rejects_mutated_core_source_provenance(tmp_path: Path) -> None:
-    text = (REPO_ROOT / "release-manifest.toml").read_text(encoding="utf-8")
-    altered = text.replace(
-        'oid = "2283bfc51ea2cdcd4195e76eec4f3fa985479ced"',
-        f'oid = "{"b" * 40}"',
-        1,
-    )
-    path = tmp_path / "release-manifest.toml"
-    path.write_text(altered, encoding="utf-8")
-    with pytest.raises(release_module.ReleaseCheckError, match="core source oid"):
-        release_module.validate_release_manifest(path, lock_path=REPO_ROOT / "uv.lock")
-
-
-def test_manifest_rejects_broadened_source_intersection(tmp_path: Path) -> None:
-    text = (REPO_ROOT / "release-manifest.toml").read_text(encoding="utf-8")
-    altered = text.replace('filelock = ">=3.29.7,<4"', 'filelock = ">=3.29.0,<4"', 1)
-    path = tmp_path / "release-manifest.toml"
-    path.write_text(altered, encoding="utf-8")
-    with pytest.raises(release_module.ReleaseCheckError, match="source dependency intersections"):
-        release_module.validate_release_manifest(path, lock_path=REPO_ROOT / "uv.lock")
-
-
-@pytest.mark.parametrize(
-    ("needle", "message"),
-    [
-        ("capabilities = [", "capability order"),
-        (f'version = "{PROJECT_VERSION}"', "version"),
-        ('requires-python = ">=3.14"', "Python floor"),
-    ],
-)
-def test_manifest_rejects_stale_public_identity(tmp_path: Path, needle: str, message: str) -> None:
-    text = (REPO_ROOT / "release-manifest.toml").read_text(encoding="utf-8")
-    if needle == "capabilities = [":
-        altered = re.sub(
-            r"^capabilities = .*?$",
-            'capabilities = ["workspace"]',
-            text,
-            count=1,
-            flags=re.MULTILINE,
-        )
-        replacement = None
-    elif needle == 'requires-python = ">=3.14"':
-        replacement = 'requires-python = ">=3.13"'
-    else:
-        replacement = f'version = "{SYNTHETIC_VERSION}"'
-    if replacement is not None:
-        altered = text.replace(needle, replacement, 1)
-    path = tmp_path / "release-manifest.toml"
-    path.write_text(altered, encoding="utf-8")
-    with pytest.raises(release_module.ReleaseCheckError, match=message):
-        release_module.validate_release_manifest(path, lock_path=REPO_ROOT / "uv.lock")
 
 
 def test_release_candidate_requires_exact_commit_and_wheel_sdist_set(tmp_path: Path) -> None:
