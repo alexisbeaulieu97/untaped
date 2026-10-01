@@ -24,11 +24,11 @@ on the flagged line suppresses one.
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 from untaped.conventions.allow import allowed
-from untaped.conventions.source import callee, source_files
+from untaped.conventions.source import SourceFile, callee
 
 USAGE_PHRASES = ("mutually exclusive", "must be >=", "not both", "cannot be combined")
 USAGE_RAISERS = frozenset({"UsageError", "raise_usage"})
@@ -137,10 +137,10 @@ def _call_violations(node: ast.Call) -> Iterator[tuple[str, str]]:
             yield "usage-phrase", _snippet(text)
 
 
-def message_violations(source_dir: Path) -> list[str]:
-    """Violations under ``source_dir``, with paths relative to its parent."""
+def message_violations(source_dir: Path, files: Sequence[SourceFile]) -> list[str]:
+    """Violations in ``files`` (under ``source_dir``), with paths relative to its parent."""
     found: list[str] = []
-    for source in source_files(source_dir):
+    for source in files:
         rel = source.path.relative_to(source_dir.parent).as_posix()
         for lineno, rule, detail in tree_violations(source.tree):
             if not allowed(source.lines, lineno, rule):

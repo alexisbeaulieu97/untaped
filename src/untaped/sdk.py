@@ -42,6 +42,7 @@ from untaped.cli import (
     render_rows,
     report_error,
     report_errors,
+    report_row_errors,
     resolve_each,
     writes,
 )
@@ -163,6 +164,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "rejected_token_error",
     "report_error",
     "report_errors",
+    "report_row_errors",
     # input
     "AbsolutePath",
     "StdinInput",

@@ -112,6 +112,13 @@ def test_zero_capability_root_lists_no_capabilities() -> None:
     assert "untaped" in result.stdout
 
 
+def test_composition_is_the_last_composed_result() -> None:
+    with pytest.raises(RuntimeError):
+        bootstrap.composition()
+    composed = bootstrap.compose_root(builtins=(), externals=())
+    assert bootstrap.composition() is composed
+
+
 def test_default_composition_retains_the_six_public_capabilities() -> None:
     expected = ("workspace", "github", "jira", "awx", "ansible", "recipe")
 

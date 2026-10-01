@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import ast
 
-from untaped.conventions.layering import import_targets, runtime_imports
+import pytest
+
+from untaped.conventions.layering import runtime_imports
+from untaped.conventions.source import import_targets
 
 
 def test_runtime_imports_skip_only_type_checking_bodies() -> None:
@@ -26,3 +29,17 @@ from ..application import use_case
         "untaped.capabilities.demo.application",  # the else branch
         "untaped.capabilities.demo.application",  # the relative import
     ]
+
+
+@pytest.mark.parametrize(
+    ("statement", "targets"),
+    [
+        ("from . import x, y", ["demo.cli.x", "demo.cli.y"]),
+        ("from .. import x", ["demo.x"]),
+        ("from ... import x", []),  # above the top-level package
+    ],
+)
+def test_import_targets_resolve_relative_imports(statement: str, targets: list[str]) -> None:
+    (node,) = ast.parse(statement).body
+    assert isinstance(node, ast.ImportFrom)
+    assert import_targets(node, "demo.cli") == targets

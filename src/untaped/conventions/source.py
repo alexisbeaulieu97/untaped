@@ -1,4 +1,4 @@
-"""Source walking shared by the AST-based convention checks."""
+"""Source walking and import resolution shared by the AST-based convention checks."""
 
 from __future__ import annotations
 
@@ -32,3 +32,23 @@ def callee(node: ast.Call) -> str:
     if isinstance(func, ast.Attribute):
         return func.attr
     return ""
+
+
+def import_targets(node: ast.Import | ast.ImportFrom, package: str) -> list[str]:
+    """The absolute modules ``node`` imports, resolving a relative import against ``package``.
+
+    ``package`` is the importing module's package. ``from . import x`` binds
+    the submodule ``<base>.x``; a relative import reaching above the
+    top-level package resolves to nothing.
+    """
+    if isinstance(node, ast.Import):
+        return [alias.name for alias in node.names]
+    if node.level == 0:
+        return [node.module] if node.module else []
+    parts = package.split(".")
+    if node.level > len(parts):
+        return []
+    base = ".".join(parts[: len(parts) - node.level + 1])
+    if node.module:
+        return [f"{base}.{node.module}"]
+    return [base if alias.name == "*" else f"{base}.{alias.name}" for alias in node.names]
