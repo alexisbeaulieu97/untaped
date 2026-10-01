@@ -44,3 +44,13 @@ def test_a_name_can_be_archived_twice() -> None:
 def test_add_to_unknown_workspace() -> None:
     with pytest.raises(WorkspaceNotFoundError):
         StateWorkspaceStore().add_repos("nope", [SPEC])
+
+
+def test_add_repos_twice_records_once() -> None:
+    store = StateWorkspaceStore()
+    store.create(WorkspaceRecord(name="w", created_at=T0))
+    store.add_repos("w", [SPEC])
+    record = store.add_repos("w", [SPEC])
+    assert record.repos == (SPEC,)
+    stored = store.get("w")
+    assert stored is not None and stored.repos == (SPEC,)
