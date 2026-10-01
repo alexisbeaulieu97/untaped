@@ -1,18 +1,21 @@
-"""Github-owned ansible-facing API surface (Wave 2 prerequisite amendment 1).
+"""The closed surface of github's public ``api`` module.
 
-Proves the closed surface of ``untaped.capabilities.github.api``:
-every name the ansible capability may import, pinned identical to its
-canonical implementation, plus the client signatures ansible calls.
-Their behaviour is tested with the owning modules.
+Proves ``untaped.capabilities.github.api`` exports exactly the pinned names,
+each identical to its canonical implementation, plus the client signatures
+ansible calls, and the behaviour of :func:`repo_inventory`. The rest of their
+behaviour is tested with the owning modules.
 """
 
 from __future__ import annotations
 
 import inspect
+import os
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
+import respx
 
 import untaped.capability_api as capability_api
 from untaped.capabilities.github import api as github_api
@@ -23,6 +26,7 @@ from untaped.capabilities.github.api import (
     GithubGraphqlError,
     GithubGraphqlErrorKind,
     GithubSettings,
+    RepoInventory,
     RepoRef,
     RepoRefs,
     RepositoryInventoryItem,
@@ -33,7 +37,10 @@ from untaped.capabilities.github.api import (
     github_web_host,
     is_global_github_failure,
     normalize_team_scopes,
+    repo_inventory,
 )
+from untaped.capability_api import UntapedError
+from untaped.settings import get_settings
 
 EXPECTED_ALL = [
     "BatchRepoRefsFailure",
@@ -42,6 +49,7 @@ EXPECTED_ALL = [
     "GithubGraphqlError",
     "GithubGraphqlErrorKind",
     "GithubSettings",
+    "RepoInventory",
     "RepoRef",
     "RepoRefs",
     "RepositoryInventoryItem",
@@ -52,6 +60,7 @@ EXPECTED_ALL = [
     "github_web_host",
     "is_global_github_failure",
     "normalize_team_scopes",
+    "repo_inventory",
 ]
 
 
@@ -64,6 +73,7 @@ def test_exports_are_canonical_objects() -> None:
     import untaped.capabilities.github.application.scopes as scopes
     import untaped.capabilities.github.domain.errors as errors
     import untaped.capabilities.github.domain.hosts as hosts
+    import untaped.capabilities.github.domain.inventory as domain_inventory
     import untaped.capabilities.github.domain.models as models
     import untaped.capabilities.github.infrastructure.github_client as client
     import untaped.capabilities.github.settings as settings
@@ -71,6 +81,7 @@ def test_exports_are_canonical_objects() -> None:
     assert ResolveRepositoryInventory is inventory.ResolveRepositoryInventory
     assert RepositoryInventoryScope is inventory.RepositoryInventoryScope
     assert RepositoryInventoryItem is inventory.RepositoryInventoryItem
+    assert RepoInventory is domain_inventory.RepoInventory
     assert TeamScope is scopes.TeamScope
     assert normalize_team_scopes is scopes.normalize_team_scopes
     assert GithubGraphqlError is errors.GithubGraphqlError
@@ -141,3 +152,68 @@ def test_github_settings_reads_the_active_github_section(
     assert isinstance(settings, GithubSettings)
     assert settings.token is not None
     assert settings.token.get_secret_value() == "ghp_test"
+
+
+def _configure(extra: str) -> None:
+    cfg = Path(os.environ["UNTAPED_CONFIG"])
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text("profiles:\n  default:\n    github:\n      token: ghp_test\n" + extra)
+    get_settings.cache_clear()
+
+
+ACME = [
+    {
+        "full_name": "acme/api",
+        "clone_url": "https://github.com/acme/api.git",
+        "default_branch": "main",
+    },
+    {"full_name": "acme/web", "clone_url": "https://github.com/acme/web.git", "archived": True},
+]
+
+
+def test_repo_inventory_lists_the_configured_orgs_and_caches_them() -> None:
+    _configure("      inventory:\n        orgs: [acme]\n")
+    with respx.mock(base_url="https://api.github.com") as mock:
+        route = mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=ACME))
+        first = repo_inventory()
+        second = repo_inventory()
+    assert [r.full_name for r in first.repos] == ["acme/api", "acme/web"]
+    assert second.repos == first.repos
+    assert route.call_count == 1
+    assert Path("~/.untaped/github-inventory.json").expanduser().is_file()
+
+
+def test_repo_inventory_falls_back_to_default_org() -> None:
+    _configure("      default_org: acme\n")
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=ACME))
+        assert len(repo_inventory().repos) == 2
+
+
+def test_repo_inventory_without_a_scope_is_a_config_error() -> None:
+    _configure("")
+    with pytest.raises(UntapedError, match=r"github\.inventory\.orgs") as caught:
+        repo_inventory()
+    assert caught.value.category == "config"
+
+
+def test_repo_inventory_refresh_false_never_calls_github() -> None:
+    _configure("      inventory:\n        orgs: [acme]\n")
+    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
+        route = mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=ACME))
+        assert repo_inventory(refresh=False).repos == ()
+    assert route.call_count == 0
+
+
+def test_repo_inventory_scope_includes_the_host() -> None:
+    _configure("      inventory:\n        orgs: [acme]\n")
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=ACME))
+        repo_inventory()
+    _configure(
+        "      base_url: https://ghe.example/api/v3\n      inventory:\n        orgs: [acme]\n"
+    )
+    with respx.mock(base_url="https://ghe.example/api/v3") as mock:
+        route = mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=ACME[:1]))
+        assert [r.full_name for r in repo_inventory().repos] == ["acme/api"]
+    assert route.call_count == 1

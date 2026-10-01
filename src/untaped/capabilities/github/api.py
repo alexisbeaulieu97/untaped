@@ -9,11 +9,14 @@ private to GitHub.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from untaped.capabilities.github.application.inventory import (
     RepositoryInventoryItem,
     RepositoryInventoryScope,
     ResolveRepositoryInventory,
 )
+from untaped.capabilities.github.application.inventory_cache import CachedRepoInventory
 from untaped.capabilities.github.application.scopes import TeamScope, normalize_team_scopes
 from untaped.capabilities.github.domain.errors import (
     GithubGraphqlError,
@@ -21,15 +24,18 @@ from untaped.capabilities.github.domain.errors import (
     is_global_github_failure,
 )
 from untaped.capabilities.github.domain.hosts import github_web_host
+from untaped.capabilities.github.domain.inventory import RepoInventory
 from untaped.capabilities.github.domain.models import (
     BatchRepoRefsFailure,
     BatchRepoRefsResult,
     RepoRef,
     RepoRefs,
 )
+from untaped.capabilities.github.errors import GithubError
 from untaped.capabilities.github.infrastructure.github_client import GithubClient
+from untaped.capabilities.github.infrastructure.inventory_store import JsonInventoryStore
 from untaped.capabilities.github.settings import GithubSettings
-from untaped.capability_api import get_config_section
+from untaped.capability_api import get_config_section, get_core_settings
 
 __all__ = [
     "BatchRepoRefsFailure",
@@ -38,6 +44,7 @@ __all__ = [
     "GithubGraphqlError",
     "GithubGraphqlErrorKind",
     "GithubSettings",
+    "RepoInventory",
     "RepoRef",
     "RepoRefs",
     "RepositoryInventoryItem",
@@ -48,6 +55,7 @@ __all__ = [
     "github_web_host",
     "is_global_github_failure",
     "normalize_team_scopes",
+    "repo_inventory",
 ]
 
 
@@ -58,3 +66,54 @@ def github_settings() -> GithubSettings:
     so the GitHub capability stays the only reader of its section.
     """
     return get_config_section("github", GithubSettings)
+
+
+def repo_inventory(*, refresh: bool | None = None) -> RepoInventory:
+    """The repositories the configured inventory scope can see, from the metadata cache.
+
+    ``refresh=None`` fetches only when the cache is missing, stale
+    (``github.inventory.max_age_seconds``) or for another scope; when that
+    fetch fails, the stale repos come back with ``error`` set. ``True`` always
+    fetches; ``False`` never touches the network. The scope is
+    ``github.inventory.orgs`` and ``teams``, else ``github.default_org``.
+    """
+    settings = github_settings()
+    scope = _inventory_scope(settings)
+
+    def fetch() -> tuple[RepositoryInventoryItem, ...]:
+        with GithubClient(settings, http=get_core_settings().http) as client:
+            return ResolveRepositoryInventory(client)(scope)
+
+    cache = CachedRepoInventory(
+        JsonInventoryStore(settings.inventory.path.expanduser()),
+        fetch,
+        scope_key=_scope_key(settings, scope),
+        max_age=timedelta(seconds=settings.inventory.max_age_seconds),
+    )
+    return cache(refresh=refresh)
+
+
+def _inventory_scope(settings: GithubSettings) -> RepositoryInventoryScope:
+    inventory = settings.inventory
+    orgs = tuple(inventory.orgs)
+    if not orgs and not inventory.teams and settings.default_org:
+        orgs = (settings.default_org,)
+    try:
+        teams = normalize_team_scopes(inventory.teams, orgs=orgs)
+    except ValueError as exc:
+        raise GithubError(
+            "github.inventory.teams entries must be ORG/SLUG unless exactly one org is set",
+            category="config",
+        ) from exc
+    if not orgs and not teams:
+        raise GithubError(
+            "the repository inventory has no scope: set github.inventory.orgs, "
+            "github.inventory.teams or github.default_org",
+            category="config",
+        )
+    return RepositoryInventoryScope(orgs=orgs, teams=teams)
+
+
+def _scope_key(settings: GithubSettings, scope: RepositoryInventoryScope) -> str:
+    teams = ",".join(sorted(f"{team.org}/{team.slug}" for team in scope.teams))
+    return f"{settings.base_url}|orgs={','.join(sorted(scope.orgs))}|teams={teams}"
