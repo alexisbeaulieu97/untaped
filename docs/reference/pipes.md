@@ -44,8 +44,9 @@ valid.
 ## Failed rows: the `error` field
 
 A failed row of an outcome record (`*_outcome` kinds such as
-`workspace.repo_outcome`, and records about a directory such as
-`workspace.status`) carries an `error` object next to its human `detail`. Rows that did not fail have no `error` key.
+`workspace.repo_outcome`, and per-repo records such as `workspace.status`)
+carries an `error` object next to its human `detail`. Rows that did not fail
+have no `error` key.
 
 ```json
 {"name": "Deploy", "action": "failed", "detail": "HTTP 503 for https://aap/api/v2/job_templates/7/", "error": {"category": "unavailable", "system": "awx", "retryable": true, "message": "HTTP 503 for https://aap/api/v2/job_templates/7/", "hint": null}}

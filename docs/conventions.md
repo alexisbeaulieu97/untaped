@@ -127,9 +127,11 @@ The old spelling never appears in `--help`. Aliases apply through the
 Command names are kebab-case. Use plural nouns for collections. Leaf verbs
 come from a closed set:
 
-- Read: `list`, `get`, `status`, `whoami`, `ping`, `path`
+- Read: `list`, `get`, `status`, `whoami`, `ping`, `path` (prints a
+  workspace's directory)
 - Write: `create`, `set`, `unset`, `add`, `remove`, `delete`, `prune`, `edit`,
-  `patch`, `apply`, `copy`, `rename`, `archive`
+  `patch`, `apply`, `copy`, `rename`, `archive` (retires a workspace, removing
+  its worktrees)
 - Update: `sync`, `refresh`
 - Query: `find`, `deps`, `impact`, `graph`
 - Other: `export`, `init`, `run`, `launch`, `wait`, `validate`, `test`,

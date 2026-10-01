@@ -3,6 +3,9 @@
 Create, extend and archive a task workspace. Options are in
 `untaped workspace <command> --help`.
 
+Contents: names, naming repos, branches and bases, read-only repos, partial
+failure, archiving and force, after archiving, the cache.
+
 ## Names
 
 - A workspace name is one path segment: letters, digits, `.`, `_` and `-`,
@@ -86,8 +89,16 @@ and always exits 0.
 `--force` archives anyway after a confirmation; without a terminal it needs
 `--yes` (else exit 2). It discards uncommitted work and removes the
 directories, deleting a worktree git refuses to remove. Branch commits and
-stashes stay in the repo cache; commits made on a read-only repo do not. If
-removing a repo fails, the workspace stays active so archive can be retried.
+stashes stay in the repo cache. Uncommitted work and commits made in a
+read-only repo cannot be recovered after `--force`. Follow these steps:
+
+1. Preview with `untaped workspace status NAME --check` or
+   `untaped workspace archive NAME --dry-run`.
+2. Show the user which repos and what work would be lost.
+3. Wait for explicit approval.
+4. Only then run `untaped workspace archive NAME --force --yes`.
+
+If removing a repo fails, the workspace stays active so archive can be retried.
 Without `--force`, each repo is checked again just before it is removed:
 work made after the first check fails that repo (a `conflict`), and it stays.
 Stashes are shared by every workspace of a repo: never drop one you did not

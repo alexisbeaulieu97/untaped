@@ -26,16 +26,16 @@ archive it.
 | Add repos from a GitHub listing | `untaped github repos list --team ORG/SLUG --format pipe` piped to `untaped workspace add NAME --stdin` |
 | Find the directory | `untaped workspace path NAME` |
 | See branches, uncommitted and unpushed work | `untaped workspace status NAME` |
-| Done? (exit 3 while anything would block archive) | `untaped workspace status NAME --check` |
+| Check nothing blocks archiving (exit 3 while anything does) | `untaped workspace status NAME --check` |
 | Run one command or script in each repo | `untaped workspace run NAME 'CMD'` |
 | Clean up after pushing | `untaped workspace archive NAME` |
 | List workspaces | `untaped workspace list`, `untaped workspace list --archived` |
 
-In a terminal, `untaped workspace create` or `add` with no repos opens a picker; agents pass `--repo` or `--stdin`.
+In a terminal, `untaped workspace create` or `add` with no repos opens a
+picker; agents pass `--repo` or `--stdin`.
 
-`NAME` is optional on every command that takes a `NAME`, except `create`, where agents must pass it (a terminal picker asks otherwise):
-inside a workspace directory it is the current workspace. Agents should still
-pass it.
+Inside a workspace directory, NAME defaults to the current workspace (except
+on `create`); agents always pass it.
 
 ## Workflow
 
@@ -54,8 +54,8 @@ pass it.
 
 ## Pitfalls
 
-- `run`: quote the command; `-` reads a script from stdin (heredoc). Read-only repos
-  are skipped unless `--include-read-only`.
+- `run`: quote the command; `-` reads a script from stdin (heredoc).
+  Read-only repos are skipped unless `--include-read-only`.
 - Repos are named `OWNER/NAME`, a unique bare `NAME`, or a full git URL. An
   unknown name exits 2 and suggests close matches from the inventory; an
   ambiguous one exits 2 and lists the candidates.
@@ -64,9 +64,15 @@ pass it.
   on the same branch gets a `conflict` row.
 - `archive` refuses while any repo has uncommitted changes, stashes made on
   its branch, unpushed commits (read-only repos too), or initialised
-  submodules; the hint says what to do for each. `--force`, after a
-  confirmation (`--yes` without a terminal), discards uncommitted work and
-  removes the directories. Branch commits and stashes stay in the repo cache;
-  commits made on a read-only (detached) repo do not.
+  submodules; the hint says what to do for each.
+- `--force` is destructive. Uncommitted work and commits made in a read-only
+  (detached) repo cannot be recovered afterwards. Never run it without:
+  1. previewing with `untaped workspace status NAME --check` or
+     `untaped workspace archive NAME --dry-run`;
+  2. showing the user which repos and what work would be lost;
+  3. waiting for explicit approval;
+  4. then `untaped workspace archive NAME --force --yes`.
+- `run` has no preview. List the selection with `untaped workspace status NAME`
+  and get approval before commands that rewrite history or push.
 - Stashes are shared by every workspace of a repo: `git stash list` shows
   other workspaces' stashes too. Never drop or clear a stash you did not make.
