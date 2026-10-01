@@ -36,6 +36,7 @@ A capability owns its directory end to end:
 src/untaped/capabilities/<name>/
 ├── __init__.py        # SPEC: CapabilitySpec (with one-line help) + nullary build_app() (lazy CLI import; never build at import time)
 ├── settings.py        # profile model + state model (field sets must be disjoint)
+├── api.py             # optional: declared public module other built-ins may import (Hard Rule 2)
 ├── cli/               # cyclopts commands (thin)
 ├── application/       # use cases (orchestration); ports in application/ports.py
 ├── domain/            # entities, value objects (pure, no I/O)
@@ -115,7 +116,9 @@ rules below.
    `untaped.capabilities.<other>.api`, never its other internals; each
    importing pair is listed in `ALLOWED_CROSS_CAPABILITY_IMPORTS`
    (`tests/unit/test_capabilities/test_capability_imports.py`).
-   Dependencies are one-way (no cycles) and imported lazily on CLI paths.
+   Dependencies are one-way (no cycles) and imported lazily on CLI paths
+   where possible (a settings model that validates against the other
+   capability imports it at module top).
    Logic two capabilities need lives in exactly one owner's `api.py` or in
    core — never forked into both; extract a protocol into core only when a
    second provider appears.
