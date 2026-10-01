@@ -13,6 +13,9 @@ when it has any of:
 - commits on local branches, tags or HEAD that no remote-tracking ref
   contains (`local commits not reachable from any remote-tracking ref`).
 
+To make a refused clone prunable, commit and push its work and drop its stash
+entries (or discard what the user doesn't need), then rerun.
+
 It does not protect:
 
 - git-ignored files (`.env`, build output, local config);
@@ -86,7 +89,7 @@ need.
   local-only branch name, or commits that only stale refs still held, may not
   come back. Ignored files are gone.
 - A refused repo or workspace is unchanged: resolve what the refusal names
-  (commit and push, drop the stash) and rerun.
+  (see [The safety check](#the-safety-check)) and rerun.
 - A `partial` row left the clone on disk: delete it by hand, or let the next
   `sync --prune` treat it as an orphan.
 - `forget` without `--prune` keeps every file; `untaped workspace adopt PATH`
