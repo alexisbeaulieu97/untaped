@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from untaped.capabilities.workspace.domain.models import Checkout, WorktreeStatus
-from untaped.capabilities.workspace.errors import GitError
+from untaped.capabilities.workspace.errors import GitError, WorkspaceError
 from untaped.capabilities.workspace.infrastructure.bare_cache import cache_path_for
 from untaped.capability_api import GitCommandError, attribution, file_lock, run_git
 
@@ -26,7 +26,7 @@ _BRANCH_IN_USE = ("already checked out", "used by worktree")
 _BRANCH_IN_USE_HINT = (
     "the branch is checked out in another workspace: archive that workspace or pick another branch"
 )
-_EXISTS_HINT = "remove the existing directory or branch, or pick another name"
+_EXISTS_HINT = "move the existing directory aside, or use another branch name"
 
 
 class LocalGitWorktrees:
@@ -56,7 +56,8 @@ class LocalGitWorktrees:
         with self._locked(cache):
             self._ensure_cache(cache, url)
             self._fetch(cache)
-            self._run(["remote", "set-head", "origin", "--auto"], cwd=cache, check=False)
+            if base is None and not self._has_ref(cache, "refs/remotes/origin/HEAD"):
+                self._run(["remote", "set-head", "origin", "--auto"], cwd=cache, check=False)
             picked = self._pick_base(cache, url, base)
             self._run(["worktree", "prune"], cwd=cache)
             if branch is None:
@@ -72,8 +73,11 @@ class LocalGitWorktrees:
         """Git state of the worktree at ``dest``; ``None`` when it is missing."""
         if not dest.exists():
             return None
+        self._check_registered(dest)
         out = self._run(["status", "--porcelain=v2", "--branch"], cwd=dest, capture=True)
         head, upstream, ahead, behind, modified, untracked = _parse_status(out)
+        if upstream is not None and not self._has_ref(dest, f"refs/remotes/{upstream}"):
+            upstream = None  # configured for the first push, but not on origin yet
         return WorktreeStatus(
             branch=head,
             upstream=upstream,
@@ -82,7 +86,8 @@ class LocalGitWorktrees:
             modified=modified,
             untracked=untracked,
             stashed=self._stashed(dest, branch),
-            unpushed=self._unpushed(dest, branch, base),
+            unpushed=self._unpushed(dest),
+            submodules=self._has_submodules(dest),
         )
 
     def fetch(self, url: str) -> None:
@@ -106,14 +111,28 @@ class LocalGitWorktrees:
                     category="failed",
                     hint="pass --force to delete the directory",
                 )
-            if dest.exists():
-                shutil.rmtree(dest)
+            _delete_tree(dest)
             return
         with self._locked(cache):
             if dest.exists():
-                flags = ["--force"] if force else []
-                self._run(["worktree", "remove", *flags, str(dest.absolute())], cwd=cache)
+                self._remove_worktree(cache, dest, force=force)
             self._run(["worktree", "prune"], cwd=cache)
+
+    def _remove_worktree(self, cache: Path, dest: Path, *, force: bool) -> None:
+        """``git worktree remove``; forced, a worktree git refuses is deleted outright.
+
+        ``--force`` twice also removes a locked worktree or one with
+        submodules. Git still refuses a worktree the cache does not know
+        (its cache was recreated) or cannot read; forced, that directory is
+        deleted directly.
+        """
+        flags = ["--force", "--force"] if force else []
+        try:
+            self._run(["worktree", "remove", *flags, str(dest.absolute())], cwd=cache)
+        except GitError:
+            if not force:
+                raise
+            _delete_tree(dest)
 
     # -- checkout steps ----------------------------------------------------
 
@@ -232,13 +251,35 @@ class LocalGitWorktrees:
         prefixes = (f"WIP on {label}:", f"On {label}:")
         return sum(1 for line in out.splitlines() if line.startswith(prefixes))
 
-    def _unpushed(self, dest: Path, branch: str | None, base: str) -> int:
-        if branch is None:
-            return 0
-        remote = f"refs/remotes/origin/{branch}"
-        upstream = f"origin/{branch}" if self._has_ref(dest, remote) else f"origin/{base}"
-        out = self._run(["rev-list", "--count", f"{upstream}..HEAD"], cwd=dest, capture=True)
+    def _unpushed(self, dest: Path) -> int:
+        """Commits on ``HEAD`` that no remote-tracking branch has (detached or not)."""
+        out = self._run(
+            ["rev-list", "--count", "HEAD", "--not", "--remotes"], cwd=dest, capture=True
+        )
         return int(out.strip() or 0)
+
+    def _has_submodules(self, dest: Path) -> bool:
+        """Whether any submodule is initialised (``-`` marks an uninitialised one)."""
+        out = self._run(["submodule", "status", "--recursive"], cwd=dest, capture=True)
+        return any(line and not line.startswith("-") for line in out.splitlines())
+
+    def _check_registered(self, dest: Path) -> None:
+        """Raise unless ``dest`` is the worktree its git admin directory points back to.
+
+        A recreated cache can leave an old worktree pointing at an admin
+        directory that now belongs to another worktree with the same name;
+        reading it would report that other worktree's state.
+        """
+        admin = Path(self._run(["rev-parse", "--absolute-git-dir"], cwd=dest, capture=True).strip())
+        try:
+            back = Path((admin / "gitdir").read_text().strip()).resolve()
+        except OSError:
+            back = None
+        if back != (dest / ".git").resolve():
+            raise GitError(
+                f"{dest} is not registered as a worktree of its repo cache",
+                category="failed",
+            )
 
     # -- plumbing ----------------------------------------------------------
 
@@ -308,6 +349,21 @@ class LocalGitWorktrees:
 
 def _cache_ready(cache: Path) -> bool:
     return (cache / "HEAD").exists()
+
+
+def _delete_tree(path: Path) -> None:
+    """Delete ``path`` (gone already is fine); failures are attributed locally."""
+    if not path.exists():
+        return
+    try:
+        shutil.rmtree(path)
+    except OSError as exc:
+        raise WorkspaceError(
+            f"could not delete {path}: {exc.strerror or exc}",
+            category="failed",
+            system="local",
+            hint="check its permissions and that no process holds it, then retry",
+        ) from exc
 
 
 def _git_error(exc: GitCommandError) -> GitError:

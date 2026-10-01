@@ -19,10 +19,12 @@ from untaped.capabilities.workspace.domain.naming import (
     assign_dirs,
     branch_for,
     repo_identity,
+    repo_key,
     validate_workspace_name,
 )
 from untaped.capabilities.workspace.domain.records import RepoOutcome
-from untaped.capability_api import UntapedError, UsageError, bounded_map, note_failure
+from untaped.capabilities.workspace.errors import WorkspaceError
+from untaped.capability_api import UntapedError, UsageError, bounded_map, note_failure, q
 
 if TYPE_CHECKING:
     from untaped.capabilities.workspace.application.ports import (
@@ -73,6 +75,7 @@ class ProvisionRepos:
                 "no repos given", hint=f"run `untaped workspace create {name} --repo REPO`"
             )
         resolved = self._resolve(repos)
+        self._refuse_occupied(name)
         record = WorkspaceRecord(name=name, created_at=self._now())
         self._store.create(record)
         self._workspace_dir(name).mkdir(parents=True, exist_ok=True)
@@ -91,22 +94,48 @@ class ProvisionRepos:
     def _workspace_dir(self, name: str) -> Path:
         return self._workspaces_dir.expanduser().absolute() / name
 
+    def _refuse_occupied(self, name: str) -> None:
+        """Refuse a new workspace whose directory already holds files (an old workspace?).
+
+        An active workspace of that name is left for the store to report.
+        """
+        path = self._workspace_dir(name)
+        if self._store.get(name) is None and path.is_dir() and any(path.iterdir()):
+            raise WorkspaceError(
+                f"workspace directory {q(str(path))} already exists and is not empty",
+                category="conflict",
+                hint=(
+                    "a directory with that name already exists (perhaps an old workspace); "
+                    "move it aside or pick another name"
+                ),
+            )
+
     def _resolve(self, repos: Sequence[RepoArg]) -> list[ResolvedRepo]:
-        return [self._catalog.resolve(arg.ident) for arg in repos]
+        return [self._resolve_one(arg) for arg in repos]
+
+    def _resolve_one(self, arg: RepoArg) -> ResolvedRepo:
+        """Resolve ``arg.ident``; when that fails, its ``fallback`` URL if it has one."""
+        try:
+            return self._catalog.resolve(arg.ident)
+        except UntapedError:
+            if arg.fallback is None:
+                raise
+            return self._catalog.resolve(arg.fallback)
 
     def _provision(
         self, record: WorkspaceRecord, repos: Sequence[RepoArg], resolved: Sequence[ResolvedRepo]
     ) -> list[RepoOutcome]:
         workspace_dir = self._workspace_dir(record.name)
         rows: dict[int, RepoOutcome] = {}
-        present = {spec.url: spec for spec in record.repos}
+        present = {repo_key(spec.url): spec for spec in record.repos}
         fresh: list[tuple[int, RepoArg, ResolvedRepo]] = []
-        seen: set[str] = set()
+        seen: set[tuple[str, ...]] = set()
         for index, (arg, repo) in enumerate(zip(repos, resolved, strict=True)):
-            if repo.url in seen:
+            key = repo_key(repo.url)
+            if key in seen:
                 continue
-            seen.add(repo.url)
-            if (spec := present.get(repo.url)) is not None:
+            seen.add(key)
+            if (spec := present.get(key)) is not None:
                 rows[index] = RepoOutcome(
                     workspace=record.name,
                     repo=spec.name,

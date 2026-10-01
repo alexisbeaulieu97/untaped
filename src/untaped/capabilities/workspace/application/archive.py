@@ -21,7 +21,8 @@ class ArchiveWorkspace:
     Each repo's worktree is removed; a failure becomes a ``failed`` row and
     leaves the workspace active so ``archive`` can be retried. When every repo
     is gone, the directory is deleted if empty and the record moves to the
-    archived list.
+    archived list; a directory with other files in it stays, as a
+    ``skipped`` workspace row.
     """
 
     def __init__(
@@ -42,10 +43,14 @@ class ArchiveWorkspace:
         rows = [self._remove(record.name, root, spec, force=force) for spec in record.repos]
         if any(row.action == "failed" for row in rows):
             return rows
-        detail = "workspace directory" if _remove_if_empty(root) else f"left other files in {root}"
+        emptied = _remove_if_empty(root)
         rows.append(
             ArchiveOutcome(
-                workspace=record.name, repo="", action="removed", detail=detail, target_path=root
+                workspace=record.name,
+                repo="",
+                action="removed" if emptied else "skipped",
+                detail="workspace directory" if emptied else f"left other files in {root}",
+                target_path=root,
             )
         )
         self._store.archive(record.name, at=self._now())

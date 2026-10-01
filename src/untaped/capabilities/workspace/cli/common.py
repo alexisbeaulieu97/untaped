@@ -27,7 +27,7 @@ from untaped.capability_api import (
 )
 
 STDIN_KINDS = frozenset({"github.repo", "github.repo_hit", "github.sweep_repo"})
-"""Pipe kinds ``create``/``add --stdin`` read repos from (``clone_url``, ``url`` or ``repo``)."""
+"""Pipe kinds ``create``/``add --stdin`` read repos from (see :func:`stdin_repos`)."""
 
 NameArg = Annotated[
     str | None,
@@ -68,7 +68,7 @@ BaseOption = Annotated[
     str | None,
     Parameter(
         name="--base",
-        help="Base branch for every writable repo. Default: each repo's default branch.",
+        help="Base branch for every repo, read-only ones too. Default: each repo's default branch.",
     ),
 ]
 WorkspaceParallelOption = Annotated[
@@ -141,26 +141,41 @@ def repo_args(
     stdin: bool,
 ) -> list[RepoArg]:
     """``--repo`` then ``--stdin`` repos (writable), then ``--read-only`` repos."""
-    writable = [*(repo or []), *(stdin_repos() if stdin else [])]
-    args = [RepoArg(ident=ident, branch=branch, base=base) for ident in writable]
-    args += [RepoArg(ident=ident, read_only=True) for ident in read_only or []]
+    args = [RepoArg(ident=ident, branch=branch, base=base) for ident in repo or []]
+    if stdin:
+        args += [arg.model_copy(update={"branch": branch, "base": base}) for arg in stdin_repos()]
+    args += [RepoArg(ident=ident, read_only=True, base=base) for ident in read_only or []]
     if not args:
         raise UsageError("no repos given", hint="pass --repo OWNER/NAME (repeatable) or --stdin")
     return args
 
 
-def stdin_repos() -> list[str]:
-    """Repo identifiers from stdin: bare lines, or pipe records' ``clone_url``/``url``/``repo``."""
+def stdin_repos() -> list[RepoArg]:
+    """Repos from stdin: bare lines (any repo identifier), or github pipe records.
+
+    A record names its repo by ``full_name`` (else ``repo``, which github rows
+    fill with the full name), resolved through the inventory so
+    ``workspace.protocol`` and the default branch apply; its ``clone_url``
+    (else ``url``) is the fallback, used alone when there is no name.
+    """
     data = read_stdin_input(accept_kinds=STDIN_KINDS, what="repos")
     if data.records is None:
-        return list(data.values)
-    idents: list[str] = []
+        return [RepoArg(ident=value) for value in data.values]
+    args: list[RepoArg] = []
     for envelope in data.records:
         record = envelope.record
-        ident = record.get("clone_url") or record.get("url") or record.get("repo")
-        if not isinstance(ident, str):
+        name = _text(record.get("full_name")) or _text(record.get("repo"))
+        url = _text(record.get("clone_url")) or _text(record.get("url"))
+        if name:
+            args.append(RepoArg(ident=name, fallback=url))
+        elif url:
+            args.append(RepoArg(ident=url))
+        else:
             raise UsageError(
-                f"stdin line {envelope.lineno}: record has no clone_url, url or repo field"
+                f"stdin line {envelope.lineno}: record has no full_name, repo, clone_url or url"
             )
-        idents.append(ident)
-    return idents
+    return args
+
+
+def _text(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None

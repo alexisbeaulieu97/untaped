@@ -7,6 +7,7 @@ looked up in the inventory ``untaped.capabilities.github.api`` exposes
 
 from __future__ import annotations
 
+import difflib
 import re
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Literal
@@ -53,16 +54,25 @@ class GithubRepoCatalog:
     ) -> None:
         self._protocol = protocol
         self._inventory = inventory or _default_inventory
+        self._items: Sequence[RepositoryInventoryItem] | UntapedError | None = None
 
     def resolve(self, ident: str) -> ResolvedRepo:
         if _is_url_or_path(ident):
             owner, name = repo_identity(ident)
             return ResolvedRepo(url=ident, name=f"{owner}/{name}" if owner else name)
-        try:
-            items = self._inventory()
-        except UntapedError as error:
-            return self._without_inventory(ident, error)
+        items = self._load()
+        if isinstance(items, UntapedError):
+            return self._without_inventory(ident, items)
         return self._from_item(self._match(ident, items))
+
+    def _load(self) -> Sequence[RepositoryInventoryItem] | UntapedError:
+        """The inventory (or why it is unavailable), read once per catalog."""
+        if self._items is None:
+            try:
+                self._items = self._inventory()
+            except UntapedError as error:
+                self._items = error
+        return self._items
 
     def _without_inventory(self, ident: str, error: UntapedError) -> ResolvedRepo:
         owner, _, name = ident.partition("/")
@@ -92,7 +102,7 @@ class GithubRepoCatalog:
                 if wanted in {(item.name or "").lower(), item.full_name.rpartition("/")[2].lower()}
             ]
         if not matches:
-            raise UsageError(not_found("repo", ident), hint=_REFRESH_HINT)
+            raise UsageError(_not_found(ident, items), hint=_REFRESH_HINT)
         if len(matches) > 1:
             names = ", ".join(sorted(item.full_name for item in matches))
             raise UsageError(f"repo name {q(ident)} is ambiguous: {names}", hint="pass owner/name")
@@ -106,6 +116,20 @@ class GithubRepoCatalog:
                 hint=_URL_HINT,
             )
         return ResolvedRepo(url=url, name=item.full_name, default_branch=item.default_branch)
+
+
+def _not_found(ident: str, items: Sequence[RepositoryInventoryItem]) -> str:
+    """``repo not found: 'x'``, with the inventory's close matches when there are any."""
+    by_key: dict[str, list[str]] = {}
+    for item in items:
+        key = item.full_name if "/" in ident else item.full_name.rpartition("/")[2]
+        by_key.setdefault(key.lower(), []).append(item.full_name)
+    close = difflib.get_close_matches(ident.lower(), list(by_key), n=3)
+    suggestions = sorted({name for key in close for name in by_key[key]})
+    message = not_found("repo", ident)
+    if suggestions:
+        message += f"; did you mean {', '.join(map(q, suggestions))}?"
+    return message
 
 
 def _web_host() -> str | None:

@@ -36,7 +36,7 @@ class RepoOutcome(OutcomeRecord, TargetRecord):
     detail: str = ""
 
 
-StatusState = Literal["ok", "missing", "cache_missing"]
+StatusState = Literal["ok", "missing", "cache_missing", "error"]
 
 
 class StatusRow(TargetRecord):
