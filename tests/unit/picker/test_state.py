@@ -279,3 +279,50 @@ def test_ctrl_u_in_the_list_clears_the_query_and_returns_to_search() -> None:
     assert state.focus == "list"
     state = press(state, "ctrl-u")
     assert (state.query, state.focus) == ("", "search")
+
+
+def test_refresh_clamps_the_cursor_to_the_new_list() -> None:
+    state = press(_state(), "down", "down", "down", "down")
+    assert state.cursor == 3
+    state = with_catalog(state, PickCatalog(ITEMS[:2]))
+    assert state.cursor == 1
+    assert with_catalog(state, PickCatalog(())).cursor == 0
+
+
+def test_a_failed_refresh_stays_flagged_until_a_refresh_succeeds() -> None:
+    state = press(refresh_failed(begin_refresh(_state()), "HTTP 503"), "down")
+    assert state.error == ""
+    assert state.stale is True
+    assert with_catalog(begin_refresh(state), PickCatalog(ITEMS)).stale is False
+
+
+def test_validate_title_blocks_confirm_with_its_message() -> None:
+    seen: list[str] = []
+
+    def validate(title: str) -> str | None:
+        seen.append(title)
+        return None if title.startswith("JIRA-") else "name must start with JIRA-"
+
+    state = press(typed(_state(title_label="name", validate_title=validate), " bad "), "down")
+    state = press(state, "down", " ", "ctrl-s")
+    assert seen == ["bad"]
+    assert (state.outcome, state.focus) == ("running", "title")
+    assert state.error == "name must start with JIRA-"
+    state = press(state, "ctrl-u", *"JIRA-1", "ctrl-s")
+    assert state.outcome == "confirmed"
+
+
+def test_validate_title_is_not_called_without_a_title_field() -> None:
+    def validate(_title: str) -> str | None:
+        raise AssertionError("no title field")
+
+    state = press(_state(validate_title=validate), "down", " ", "ctrl-s")
+    assert state.outcome == "confirmed"
+
+
+def test_validate_title_runs_on_the_create_button() -> None:
+    state = typed(_state(title_label="name", validate_title=lambda _t: "nope"), "x")
+    state = press(state, "down", "down", " ", "tab", *["down"] * 10)
+    assert state.row == (CREATE, None)
+    state = press(state, "enter")
+    assert (state.outcome, state.error) == ("running", "nope")

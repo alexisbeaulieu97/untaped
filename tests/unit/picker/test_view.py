@@ -3,7 +3,14 @@
 from __future__ import annotations
 
 from untaped.picker import PickCatalog, PickItem, PickRequest, PickSetting
-from untaped.picker.state import PickerState, handle, initial_state
+from untaped.picker.state import (
+    PickerState,
+    begin_refresh,
+    handle,
+    initial_state,
+    refresh_failed,
+    with_catalog,
+)
 from untaped.picker.view import render
 
 ITEMS = tuple(PickItem(id=f"acme/r{i:02}", label=f"acme/r{i:02}") for i in range(30))
@@ -25,12 +32,12 @@ def _state() -> PickerState:
     )
 
 
-def _text(state: PickerState, width: int = 120) -> str:
-    return "".join(text for _style, text in render(state, width))
+def _text(state: PickerState, width: int = 120, height: int = 40) -> str:
+    return "".join(text for _style, text in render(state, width, height))
 
 
-def _lines(state: PickerState, width: int = 120) -> list[str]:
-    return _text(state, width).split("\n")
+def _lines(state: PickerState, width: int = 120, height: int = 40) -> list[str]:
+    return _text(state, width, height).split("\n")
 
 
 def test_every_line_fits_the_width() -> None:
@@ -93,3 +100,29 @@ def test_errors_replace_the_key_hints() -> None:
 def test_quit_prompt_replaces_the_key_hints() -> None:
     state = handle(handle(handle(_state(), "down"), " "), "ctrl-c")
     assert "discard 1 selected? y/n" in _text(state)
+
+
+def test_the_picker_fits_the_terminal_height() -> None:
+    selecting = handle(handle(_state(), "down"), " ")
+    for state in (_state(), selecting, handle(selecting, "tab")):
+        for width, height in ((80, 24), (100, 24), (120, 30), (80, 15)):
+            assert len(_lines(state, width, height)) <= height, (width, height)
+
+
+def test_a_short_terminal_keeps_create_and_the_footer_visible() -> None:
+    selecting = handle(handle(_state(), "down"), " ")
+    for state in (_state(), handle(selecting, "tab")):
+        lines = _lines(state, 80, 24)
+        assert any("[ Create ]" in line for line in lines)
+        assert "ctrl-c quit" in lines[-1]
+
+
+def test_key_hints_fit_80_columns() -> None:
+    assert "ctrl-c quit" in _text(_state(), 80)
+
+
+def test_a_failed_refresh_stays_marked_until_one_succeeds() -> None:
+    failed = handle(refresh_failed(begin_refresh(_state()), "HTTP 503"), "down")
+    assert "30 · refreshed 2h ago · refresh failed" in _text(failed)
+    recovered = with_catalog(begin_refresh(failed), PickCatalog(ITEMS, note="just now"))
+    assert "refresh failed" not in _text(recovered)

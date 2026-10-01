@@ -28,7 +28,8 @@ class PickSetting:
     With ``choices`` the value cycles with ←/→; otherwise it is free text
     edited with enter. ``placeholder`` is shown for an empty value.
     ``complete(item_id)`` returns completion candidates for a text field
-    (``None`` for the all-items row).
+    (``None`` for the all-items row). It is called on every render while the
+    field is edited, so it must be cheap: cache anything slow.
     """
 
     key: str
@@ -52,10 +53,14 @@ class PickRequest:
     """Everything the picker needs.
 
     ``title_label`` turns on an editable title field in the header (focused
-    first while ``title`` is empty). ``subtitle(title, defaults)`` renders a
-    live preview at the right of the header. ``refresh(force)`` runs in the
-    background at start (``force=False``) and on ctrl-r (``force=True``).
-    ``adhoc(query)`` may turn the typed query into an extra item (a URL).
+    first while ``title`` is empty). ``validate_title(title)`` checks the
+    stripped title on confirm; a returned message blocks it and is shown.
+    ``subtitle(title, defaults)`` renders a live preview at the right of the
+    header. ``refresh(force)`` runs in the background at start
+    (``force=False``) and on ctrl-r (``force=True``); it is never called
+    concurrently (ctrl-r is ignored while one runs), but may still be running
+    after the picker returns. ``adhoc(query)`` may turn the typed query into
+    an extra item (a URL).
     """
 
     heading: str
@@ -63,6 +68,7 @@ class PickRequest:
     settings: tuple[PickSetting, ...] = ()
     title: str = ""
     title_label: str = ""
+    validate_title: Callable[[str], str | None] | None = None
     subtitle: Callable[[str, Mapping[str, str]], str] | None = None
     refresh: Callable[[bool], PickCatalog] | None = None
     adhoc: Callable[[str], PickItem | None] | None = None
