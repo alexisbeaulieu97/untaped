@@ -19,6 +19,17 @@ class SweepSettings(BaseModel):
     sync_concurrency: int = 12
 
 
+class InventorySettings(BaseModel):
+    """Settings for the cached repository inventory the workspace picker lists."""
+
+    model_config = ConfigDict(frozen=True)
+
+    path: Path = Path("~/.untaped/github-inventory.json")
+    orgs: list[str] = Field(default_factory=list)
+    teams: list[str] = Field(default_factory=list)
+    max_age_seconds: int = Field(default=86400, ge=1)
+
+
 class GithubSettings(BaseModel):
     """GitHub API settings."""
 
@@ -32,3 +43,4 @@ class GithubSettings(BaseModel):
     default_org: str | None = None
     corpus_path: Path = Path("~/.untaped/github-corpus")
     sweep: SweepSettings = Field(default_factory=SweepSettings)
+    inventory: InventorySettings = Field(default_factory=InventorySettings)
