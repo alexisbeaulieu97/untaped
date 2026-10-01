@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.capabilities.workspace.application.locate import active_workspace
+from untaped.capabilities.workspace.application.locate import active_workspace, workspace_root
 from untaped.capabilities.workspace.domain.models import (
     Checkout,
     RepoArg,
@@ -80,7 +80,7 @@ class ProvisionRepos:
             self._refuse_occupied(name)
             record = WorkspaceRecord(name=name, created_at=self._now())
             self._store.create(record)
-            self._workspace_dir(name).mkdir(parents=True, exist_ok=True)
+            workspace_root(self._workspaces_dir, name).mkdir(parents=True, exist_ok=True)
             return self._provision(record, repos, resolved)
 
     def add(self, record: WorkspaceRecord, repos: Sequence[RepoArg]) -> list[RepoOutcome]:
@@ -96,18 +96,15 @@ class ProvisionRepos:
         resolved = self._resolve(repos)
         with self._store.locked(record.name):
             current = active_workspace(self._store, record.name)
-            self._workspace_dir(current.name).mkdir(parents=True, exist_ok=True)
+            workspace_root(self._workspaces_dir, current.name).mkdir(parents=True, exist_ok=True)
             return self._provision(current, repos, resolved)
-
-    def _workspace_dir(self, name: str) -> Path:
-        return self._workspaces_dir.expanduser().absolute() / name
 
     def _refuse_occupied(self, name: str) -> None:
         """Refuse a new workspace whose directory already holds files (an old workspace?).
 
         An active workspace of that name is left for the store to report.
         """
-        path = self._workspace_dir(name)
+        path = workspace_root(self._workspaces_dir, name)
         if self._store.get(name) is None and path.is_dir() and any(path.iterdir()):
             raise WorkspaceError(
                 f"workspace directory {q(str(path))} already exists and is not empty",
@@ -133,34 +130,9 @@ class ProvisionRepos:
     def _provision(
         self, record: WorkspaceRecord, repos: Sequence[RepoArg], resolved: Sequence[ResolvedRepo]
     ) -> list[RepoOutcome]:
-        workspace_dir = self._workspace_dir(record.name)
-        rows: dict[int, RepoOutcome] = {}
-        present = {repo_key(spec.url): spec for spec in record.repos}
-        fresh: list[tuple[int, RepoArg, ResolvedRepo]] = []
-        seen: set[tuple[str, ...]] = set()
-        for index, (arg, repo) in enumerate(zip(repos, resolved, strict=True)):
-            key = repo_key(repo.url)
-            if key in seen:
-                continue
-            seen.add(key)
-            if (spec := present.get(key)) is not None:
-                rows[index] = RepoOutcome(
-                    workspace=record.name,
-                    repo=spec.name,
-                    dir=spec.dir,
-                    action="unchanged",
-                    branch=spec.branch,
-                    base=spec.base,
-                    read_only=spec.read_only,
-                    target_path=workspace_dir / spec.dir,
-                )
-            else:
-                fresh.append((index, arg, repo))
-        dirs = assign_dirs([repo_identity(repo.url) for _, _, repo in fresh], record.repos)
-        jobs = [
-            _Job(index, arg, repo, dir_, self._branch(record.name, arg))
-            for (index, arg, repo), dir_ in zip(fresh, dirs, strict=True)
-        ]
+        workspace_dir = workspace_root(self._workspaces_dir, record.name)
+        rows, fresh = _partition(record, repos, resolved, workspace_dir)
+        jobs = self._jobs(record, fresh)
         specs: dict[int, RepoSpec] = {}
 
         def _run(job: _Job) -> Checkout | UntapedError:
@@ -190,6 +162,16 @@ class ProvisionRepos:
                 self._store.add_repos(record.name, [specs[i] for i in sorted(specs)])
         return [rows[i] for i in sorted(rows)]
 
+    def _jobs(
+        self, record: WorkspaceRecord, fresh: Sequence[tuple[int, RepoArg, ResolvedRepo]]
+    ) -> list[_Job]:
+        """One checkout job per new repo, with its directory and branch."""
+        dirs = assign_dirs([repo_identity(repo.url) for _, _, repo in fresh], record.repos)
+        return [
+            _Job(index, arg, repo, dir_, self._branch(record.name, arg))
+            for (index, arg, repo), dir_ in zip(fresh, dirs, strict=True)
+        ]
+
     def _branch(self, workspace: str, arg: RepoArg) -> str | None:
         if arg.read_only:
             return None
@@ -218,3 +200,38 @@ class ProvisionRepos:
             detail=str(result),
             error=note_failure(result, message=str(result)),
         )
+
+
+def _partition(
+    record: WorkspaceRecord,
+    repos: Sequence[RepoArg],
+    resolved: Sequence[ResolvedRepo],
+    workspace_dir: Path,
+) -> tuple[dict[int, RepoOutcome], list[tuple[int, RepoArg, ResolvedRepo]]]:
+    """Split requested repos into ``unchanged`` rows (already present) and new ones.
+
+    Both are keyed by request position; a repo requested twice counts once.
+    """
+    rows: dict[int, RepoOutcome] = {}
+    present = {repo_key(spec.url): spec for spec in record.repos}
+    fresh: list[tuple[int, RepoArg, ResolvedRepo]] = []
+    seen: set[tuple[str, ...]] = set()
+    for index, (arg, repo) in enumerate(zip(repos, resolved, strict=True)):
+        key = repo_key(repo.url)
+        if key in seen:
+            continue
+        seen.add(key)
+        if (spec := present.get(key)) is not None:
+            rows[index] = RepoOutcome(
+                workspace=record.name,
+                repo=spec.name,
+                dir=spec.dir,
+                action="unchanged",
+                branch=spec.branch,
+                base=spec.base,
+                read_only=spec.read_only,
+                target_path=workspace_dir / spec.dir,
+            )
+        else:
+            fresh.append((index, arg, repo))
+    return rows, fresh

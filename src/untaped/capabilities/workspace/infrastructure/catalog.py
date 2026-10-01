@@ -13,13 +13,12 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Literal
 
 from untaped.capabilities.workspace.domain.models import ResolvedRepo
-from untaped.capabilities.workspace.domain.naming import repo_identity
+from untaped.capabilities.workspace.domain.naming import looks_like_url, repo_identity
 from untaped.capability_api import UntapedError, UsageError, not_found, q
 
 if TYPE_CHECKING:
     from untaped.capabilities.github.api import RepositoryInventoryItem
 
-_SCP = re.compile(r"^[\w.-]+@[\w.-]+:.+")
 _SLUG = re.compile(r"[A-Za-z0-9][\w.-]*")
 """An owner or repo name a URL may be built from (so ``./x`` never becomes one)."""
 _REFRESH_HINT = (
@@ -29,12 +28,7 @@ _URL_HINT = "pass a full clone URL instead"
 
 
 def _is_url_or_path(ident: str) -> bool:
-    return (
-        "://" in ident
-        or ident.startswith(("/", "~"))
-        or bool(_SCP.match(ident))
-        or ident.endswith(".git")
-    )
+    return looks_like_url(ident) or ident.startswith(("/", "~")) or ident.endswith(".git")
 
 
 def _default_inventory() -> Sequence[RepositoryInventoryItem]:

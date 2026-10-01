@@ -10,8 +10,7 @@ from urllib.parse import urlparse
 from untaped.capabilities.workspace.domain.models import RepoSpec
 from untaped.capability_api import UsageError, q, safe_path_segment
 
-_SCP = re.compile(r"^[^@/]+@[^:/]+:(?P<path>.+)$")
-_SCP_HOST = re.compile(r"^(?P<user>[^@]+)@(?P<host>[^:]+):(?P<path>.+)$")
+_SCP = re.compile(r"^(?P<user>[^@]+)@(?P<host>[^:]+):(?P<path>.+)$")
 
 
 def validate_workspace_name(name: str) -> str:
@@ -21,13 +20,16 @@ def validate_workspace_name(name: str) -> str:
     return name
 
 
+def looks_like_url(ident: str) -> bool:
+    """Whether ``ident`` is a URL (``scheme://``) or scp-style ``user@host:path``."""
+    return "://" in ident or bool(_SCP.match(ident))
+
+
 def repo_identity(url: str) -> tuple[str, str]:
     """``(owner, name)`` from a clone URL or path; owner is ``""`` when absent."""
-    match = _SCP.match(url)
-    path = match.group("path") if match else (urlparse(url).path if "://" in url else url)
-    parts = [part for part in path.replace("\\", "/").split("/") if part]
-    name = parts[-1].removesuffix(".git") if parts else url
-    owner = parts[-2] if len(parts) > 1 else ""
+    _, segments = _host_and_path(url)
+    name = segments[-1] if segments else url
+    owner = segments[-2] if len(segments) > 1 else ""
     return owner, name
 
 
@@ -47,15 +49,18 @@ def repo_key(url: str) -> tuple[str, ...]:
 
 
 def _host_and_path(url: str) -> tuple[str | None, list[str]]:
-    """``(host, path segments without .git)`` of a URL or ``user@host:path``."""
+    """``(host, path segments, the last without .git)`` of a URL, ``user@host:path`` or path.
+
+    A plain path (or a ``file://`` URL) has no host.
+    """
+    match = _SCP.match(url)
     if "://" in url:
         parsed = urlparse(url)
         host, path = parsed.hostname, parsed.path or ""
-    else:
-        match = _SCP_HOST.match(url)
-        if not match:
-            return None, []
+    elif match:
         host, path = match.group("host"), match.group("path")
+    else:
+        host, path = None, url
     segments = [s for s in path.replace("\\", "/").split("/") if s]
     if segments:
         segments[-1] = segments[-1].removesuffix(".git")

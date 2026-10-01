@@ -34,6 +34,11 @@ def locate_workspace(
     return record
 
 
+def workspace_root(workspaces_dir: Path, name: str) -> Path:
+    """Absolute directory of workspace ``name`` (``~`` expanded, symlinks resolved)."""
+    return workspaces_dir.expanduser().resolve() / name
+
+
 def active_workspace(store: WorkspaceStore, name: str) -> WorkspaceRecord:
     """The stored active workspace ``name``; not found (listing the known ones) otherwise."""
     record = store.get(name)

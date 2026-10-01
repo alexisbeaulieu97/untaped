@@ -62,7 +62,7 @@ def env(tmp_path: Path, make_upstream: Callable[..., Path]) -> Env:
     assert record is not None
     return Env(
         record,
-        WorkspaceStatus(git_, workspaces_dir=workspaces),
+        WorkspaceStatus(git_, workspaces_dir=workspaces, parallel=2),
         ArchiveWorkspace(store, git_, workspaces_dir=workspaces, now=lambda: T0),
         workspaces / "J-1" / "api",
         provision,
@@ -115,7 +115,7 @@ def test_read_only_commit_blocks(tmp_path: Path, make_upstream: Callable[..., Pa
     commit_in(tmp_path / "ws" / "J-2" / "web")
     record = store.get("J-2")
     assert record is not None
-    [row] = WorkspaceStatus(git_, workspaces_dir=tmp_path / "ws")(record)
+    [row] = WorkspaceStatus(git_, workspaces_dir=tmp_path / "ws", parallel=1)(record)
     assert row.blockers == ("1 commit not pushed",)
 
 
