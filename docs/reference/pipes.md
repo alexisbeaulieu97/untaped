@@ -129,9 +129,11 @@ and print their outcome with `action` `planned`.
 | `workspace create`, `workspace add` | `workspace.repo_outcome` |
 | `workspace status` | `workspace.status` |
 | `workspace archive` | `workspace.archive_outcome` |
+| `workspace run` | `workspace.run_outcome` |
 
 | Consumer | Reads | Field used |
 |---|---|---|
+| `workspace run --stdin` | `workspace.status`, `workspace.repo_outcome`, `workspace.run_outcome`; or lines, each a repo name or directory | `repo`, else `dir` |
 | `workspace create --stdin`, `workspace add --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`; or lines, each any repo identifier (`owner/name`, a unique name, a URL) | `full_name`, else `repo`, resolved through the GitHub inventory; `clone_url`, else `url`, when there is no name or the inventory lacks it |
 
 ### github

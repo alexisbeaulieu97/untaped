@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import math
+from collections import Counter
 from collections.abc import Sequence
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import Parameter
+from cyclopts.validators import Number
 
 from untaped.capabilities.workspace.application.archive import ArchiveWorkspace
+from untaped.capabilities.workspace.application.run import RunInRepos, RunTarget
 from untaped.capabilities.workspace.cli.common import (
     BaseOption,
     BranchOption,
@@ -19,8 +23,11 @@ from untaped.capabilities.workspace.cli.common import (
     WorkspaceParallelOption,
     git_worktrees,
     locate,
+    parallel_workers,
     provisioner,
     repo_args,
+    run_argv,
+    select_run_repos,
     status_reader,
     utc_now,
     workspace_dir,
@@ -31,18 +38,20 @@ from untaped.capabilities.workspace.domain.models import ArchivedRecord, Workspa
 from untaped.capabilities.workspace.domain.records import (
     ArchiveOutcome,
     RepoOutcome,
+    RunOutcome,
     StatusRow,
     WorkspaceRow,
 )
 from untaped.capabilities.workspace.domain.safety import archive_hint
 from untaped.capabilities.workspace.errors import WorkspaceError
-from untaped.capabilities.workspace.infrastructure import StateWorkspaceStore
+from untaped.capabilities.workspace.infrastructure import StateWorkspaceStore, SubprocessRunner
 from untaped.capabilities.workspace.settings import WorkspaceSettings
 from untaped.capability_api import (
     ColumnsOption,
     DryRunOption,
     FormatOption,
     OutputFormat,
+    ParallelOption,
     StdinOption,
     UsageError,
     YesOption,
@@ -67,6 +76,7 @@ app = create_app(
 
 REPO_OUTCOME = "workspace.repo_outcome"
 ARCHIVE_OUTCOME = "workspace.archive_outcome"
+RUN_OUTCOME = "workspace.run_outcome"
 
 
 def create_command(
@@ -233,6 +243,165 @@ def archive_command(
     finish(failed)
 
 
+def run_command(
+    first: Annotated[
+        str,
+        Parameter(
+            name="NAME_OR_CMD",
+            allow_leading_hyphen=True,  # the lone command may be `-` (a stdin script)
+            help=(
+                "Workspace name, or the command when it is the only argument "
+                "(the workspace is then found from the current directory)."
+            ),
+        ),
+    ],
+    second: Annotated[
+        str | None,
+        Parameter(
+            name="CMD",
+            allow_leading_hyphen=True,  # `-` (a stdin script); see run_argv
+            help=(
+                "The command: a shell string, a script file, or - to read a script "
+                "from stdin. Runs in each repo directory with stdin from /dev/null."
+            ),
+        ),
+    ] = None,
+    /,
+    *,
+    repo: Annotated[
+        list[str] | None,
+        Parameter(
+            name=["--repo", "-r"],
+            negative="",
+            consume_multiple=False,
+            help="Only this repo, by display name or directory (repeatable).",
+        ),
+    ] = None,
+    stdin: StdinOption = False,
+    include_read_only: Annotated[
+        bool,
+        Parameter(name="--include-read-only", negative="", help="Also run in read-only repos."),
+    ] = False,
+    fail_fast: Annotated[
+        bool,
+        Parameter(
+            name="--fail-fast",
+            negative="",
+            help="Stop starting repos after the first failure; the rest are skipped.",
+        ),
+    ] = False,
+    timeout: Annotated[
+        float,
+        Parameter(
+            name="--timeout",
+            validator=(Number(gt=0), _finite),
+            help="Seconds allowed per repo before it is killed.",
+        ),
+    ] = 600.0,
+    parallel: Annotated[
+        ParallelOption,
+        Parameter(
+            help=(
+                "Concurrent repos. Default: the workspace.parallel setting, else "
+                "min(8, 2 x CPUs). Values above 2 x CPUs are clamped with a stderr warning."
+            ),
+        ),
+    ]
+    | None = None,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Run a command in each repo of a workspace.
+
+    Each run gets UNTAPED_WORKSPACE, UNTAPED_REPO, UNTAPED_BRANCH, UNTAPED_BASE
+    and UNTAPED_READ_ONLY in its environment. Exits 1 when any repo failed.
+    """
+    with report_errors():
+        name, command = (None, first) if second is None else (first, second)
+        _check_run_positionals(name, command, stdin=stdin)
+        settings = workspace_settings()
+        record = locate(settings, name)
+        specs = select_run_repos(
+            record.repos,
+            workspace=record.name,
+            repo=repo,
+            stdin=stdin,
+            include_read_only=include_read_only,
+        )
+        root = workspace_dir(settings, record.name)
+        targets = [RunTarget(record.name, spec, root / spec.dir) for spec in specs]
+        human = fmt == "table"
+        rows: list[RunOutcome] = []
+        if not targets:
+            ui_context(strict=False).message(
+                "warning", "no repos to run in (read-only repos need --include-read-only)"
+            )
+        else:
+            with run_argv(command) as argv:
+                run = RunInRepos(
+                    SubprocessRunner(),
+                    parallel=parallel_workers(settings, parallel),
+                    timeout=timeout,
+                    fail_fast=fail_fast,
+                    on_done=_echo_block if human else None,
+                )
+                rows = run(targets, argv)
+        if not human:
+            emit(rows, fmt=fmt, columns=columns, kind=RUN_OUTCOME)
+        elif rows:
+            _show_run_summary(rows)
+    finish(any(row.failed for row in rows))
+
+
+def _finite(type_: object, value: float) -> None:
+    """Cyclopts validator: ``nan`` and ``inf`` would disable the deadline."""
+    if not math.isfinite(value):
+        raise ValueError(f"must be a finite number, got {value}")
+
+
+def _check_run_positionals(name: str | None, command: str, *, stdin: bool) -> None:
+    """Usage errors ``run`` catches before touching anything.
+
+    The positionals accept a leading hyphen (``-`` is a stdin script), so a
+    mistyped long option would otherwise run as a command in every repo.
+    """
+    for value in (name, command):
+        if value is not None and value.startswith("--") and " " not in value:
+            raise UsageError(
+                f"unknown option: {value}",
+                hint="a command that starts with -- needs quoting with a space, e.g. ' --x'",
+            )
+    if command == "-" and stdin:
+        raise UsageError("a script on stdin (-) cannot be combined with --stdin")
+
+
+def _echo_block(row: RunOutcome) -> None:
+    """One finished repo's output: a header (with the reason unless it ran), stdout, stderr.
+
+    Skipped rows print nothing (the summary counts them); stdout is flushed so
+    blocks stream through pipes.
+    """
+    if row.action == "skipped":
+        return
+    reason = f" · {row.detail}" if row.action != "ran" and row.detail else ""
+    echo(f"── {row.repo} ({row.dir}){reason} ──")
+    for text in (row.stdout, row.stderr):
+        if text:
+            echo(text.rstrip("\n"))
+    ui_context(strict=False).stdout.flush()
+
+
+def _show_run_summary(rows: Sequence[RunOutcome]) -> None:
+    failed = [row.dir for row in rows if row.failed]
+    actions = Counter(row.action for row in rows)
+    parts = [f"{actions['ran']} ok"]
+    if failed:
+        parts.append(f"{len(failed)} failed ({', '.join(failed)})")
+    if actions["skipped"]:
+        parts.append(f"{actions['skipped']} skipped")
+    ui_context(strict=False).message("error" if failed else "success", " · ".join(parts))
+
+
 def _show_provisioned(
     rows: Sequence[RepoOutcome],
     settings: WorkspaceSettings,
@@ -301,3 +470,4 @@ app.command(list_command, name="list")
 app.command(status_command, name="status")
 app.command(path_command, name="path")
 app.command(archive_command, name="archive")
+app.command(run_command, name="run", usage="Usage: untaped workspace run [OPTIONS] [NAME] CMD")

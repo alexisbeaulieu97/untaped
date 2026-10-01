@@ -13,16 +13,20 @@
     `add`, `list`, `status`, `path` and `archive` (experimental). A workspace
     is one directory of git worktrees on a shared branch, archived when done.
   - **Breaking:** removed `init`, `adopt`, `import`, `forget`, `sync`,
-    `repos list/add/remove`, `branch set/unset/apply`, `foreach`, `edit`
+    `repos list/add/remove`, `branch set/unset/apply`, `foreach` (replaced
+    by `run`), `edit`
     and `shell-init`, the `untaped.yml` manifest, and the registry
     (`state.yml` key `workspace.workspaces`, now ignored). Old workspace
     directories are left as they are; existing repo caches are reused. An
     old directory under the same `workspaces_dir` blocks its name: `create`
     refuses that name until you move the directory aside.
   - **Breaking:** record kinds are now `workspace.workspace`,
-    `workspace.repo_outcome`, `workspace.status` and
-    `workspace.archive_outcome`. The others are gone.
+    `workspace.repo_outcome`, `workspace.status`,
+    `workspace.archive_outcome` and `workspace.run_outcome`. The others are
+    gone.
   - **New:** `workspace.branch_template` and `workspace.protocol` settings.
+  - **New:** `workspace run` runs a command, a script file or a stdin script
+    in each repo, with `UNTAPED_*` context variables (experimental).
 - GitHub
   - **New:** `github.inventory` settings (`path`, `orgs`, `teams`,
     `max_age_seconds`) for a cached, metadata-only repository list that the
