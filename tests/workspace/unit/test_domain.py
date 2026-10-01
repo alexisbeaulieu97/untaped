@@ -148,6 +148,14 @@ def test_hint_for_local_work_is_commit_and_push() -> None:
     assert hint == "commit and push your changes"
 
 
+def test_hint_for_unpushed_read_only_commits_says_to_branch_and_push() -> None:
+    hint = archive_hint([_blocked(("1 commit not pushed",), branch=None)])
+    assert hint == (
+        "create a branch for the commits in the read-only repo and push it "
+        "(git switch -c NAME && git push -u origin NAME)"
+    )
+
+
 def test_hint_for_stashes_names_the_branch_and_protects_other_stashes() -> None:
     hint = archive_hint([_blocked(("1 stash entry",), branch="J-1")])
     assert "pop or drop the stashes you made on J-1" in hint
