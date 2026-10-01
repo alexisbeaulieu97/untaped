@@ -48,7 +48,7 @@ variable shown.
 |---|---|---|---|---|
 | `workspace.cache_dir` | path | `~/.untaped/repositories` | `UNTAPED_WORKSPACE__CACHE_DIR` | Bare-clone cache that workspace worktrees are created from. Worktrees depend on it: don't delete it while workspaces are active. |
 | `workspace.workspaces_dir` | path | `~/.untaped/workspaces` | `UNTAPED_WORKSPACE__WORKSPACES_DIR` | Parent directory of every workspace (`<workspaces_dir>/NAME`). |
-| `workspace.parallel` | integer (optional) | unset | `UNTAPED_WORKSPACE__PARALLEL` | Default `create`/`add` workers. Unset means `min(8, 2 * CPUs)`; values above `2 * CPUs` are clamped. |
+| `workspace.parallel` | integer (optional) | unset | `UNTAPED_WORKSPACE__PARALLEL` | Default workers for `create`/`add`/`run` and for status/archive checks. Unset means `min(8, 2 * CPUs)`; values above `2 * CPUs` are clamped. |
 | `workspace.branch_template` | string | `{name}` | `UNTAPED_WORKSPACE__BRANCH_TEMPLATE` | Branch name for writable repos; `{name}` is the workspace name. |
 | `workspace.protocol` | `https` \| `ssh` | `https` | `UNTAPED_WORKSPACE__PROTOCOL` | Clone URL the GitHub inventory supplies: `https` or `ssh`. |
 
@@ -70,7 +70,7 @@ variable shown.
 | `github.corpus_path` | path | `~/.untaped/github-corpus` | `UNTAPED_GITHUB__CORPUS_PATH` | Local Git corpus that `github sweep` and `github cache` manage. |
 | `github.sweep.max_age_seconds` | integer | `3600` | `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS` | `sweep` and `cache sync` refresh cached repos older than this that GitHub reports as pushed since. |
 | `github.sweep.sync_concurrency` | integer | `12` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | Default `sweep --parallel` and `cache sync --parallel` Git workers. |
-| `github.inventory.path` | path | `~/.untaped/github-inventory.json` | `UNTAPED_GITHUB__INVENTORY__PATH` | Cached repository list (metadata only) that the workspace picker searches. |
+| `github.inventory.path` | path | `~/.untaped/github-inventory.json` | `UNTAPED_GITHUB__INVENTORY__PATH` | Cached repository list (metadata only) that workspace `create`/`add` resolve names from and the picker searches. |
 | `github.inventory.orgs` | list | empty | `UNTAPED_GITHUB__INVENTORY__ORGS` | Orgs whose repositories the inventory lists. With no orgs or teams, `github.default_org`. |
 | `github.inventory.teams` | list | empty | `UNTAPED_GITHUB__INVENTORY__TEAMS` | Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else in `github.default_org`) whose repositories the inventory lists. |
 | `github.inventory.max_age_seconds` | integer | `86400` | `UNTAPED_GITHUB__INVENTORY__MAX_AGE_SECONDS` | Refresh the inventory when it is older than this. |

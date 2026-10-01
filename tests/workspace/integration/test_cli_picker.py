@@ -60,6 +60,29 @@ def test_no_terminal_and_no_name_is_a_usage_error() -> None:
     result = run(app, ["create"])
     assert result.exit_code == 2
     assert "workspace name is required" in result.output
+    assert "pass NAME and --repo OWNER/NAME (or --stdin)" in result.output
+    assert "needs a terminal" in result.output
+
+
+@pytest.mark.parametrize("name", ["a/b", "taken"])
+def test_bad_name_is_refused_before_the_picker(name: str) -> None:
+    StateWorkspaceStore().create(
+        WorkspaceRecord(name="taken", created_at=datetime(2026, 10, 1, tzinfo=UTC))
+    )
+    backend = ScriptedPromptBackend()
+    result = run(app, ["create", name], interactive=True, prompt_backend=backend)
+    assert result.exit_code == 2
+    assert backend.calls == []
+
+
+def test_occupied_name_is_refused_before_the_picker(workspace_env: Path) -> None:
+    (workspace_env / "old").mkdir(parents=True)
+    (workspace_env / "old" / "x.txt").write_text("x")
+    backend = ScriptedPromptBackend()
+    result = run(app, ["create", "old"], interactive=True, prompt_backend=backend)
+    assert result.exit_code == 2
+    assert "not empty" in result.output
+    assert backend.calls == []
 
 
 def test_repo_flags_without_a_name_is_a_usage_error(make_upstream: Callable[..., Path]) -> None:
@@ -160,14 +183,22 @@ def test_read_only_pick_is_a_detached_checkout(
 
 
 def test_cached_only_pick_uses_its_cache_url(
-    make_upstream: Callable[..., Path], workspace_env: Path
+    make_upstream: Callable[..., Path], workspace_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The inventory is unavailable (no scope) while GitHub is the default host: the
     cached-only repo must come from its own cache's origin, not github.com/acme/api."""
     upstream = make_upstream("api")
     cache = workspace_env.parent / "cache" / "gitlab.example" / "acme" / "api.git"
     cache.parent.mkdir(parents=True)
+    origin = "https://gitlab.example/acme/api.git"
     git(workspace_env.parent, "clone", "-q", "--bare", str(upstream), str(cache))
+    git(cache, "remote", "set-url", "origin", origin)
+    for key, value in {
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": f"url.{upstream}.insteadOf",
+        "GIT_CONFIG_VALUE_0": origin,
+    }.items():
+        monkeypatch.setenv(key, value)
     settings = {"mode": "write", "base": "", "branch": ""}
     item = PickItem(id="gitlab.example/acme/api", label="gitlab.example/acme/api")
     backend = _Capture(
@@ -177,5 +208,5 @@ def test_cached_only_pick_uses_its_cache_url(
     assert result.exit_code == 0, result.output
     assert [i.id for i in backend.requests[0].catalog.items] == ["gitlab.example/acme/api"]
     record = StateWorkspaceStore().get("J-1")
-    assert record is not None and record.repos[0].url == str(upstream)
+    assert record is not None and record.repos[0].url == origin
     assert (workspace_env / "J-1" / "api" / "README.md").exists()

@@ -31,9 +31,9 @@ archive it.
 | Clean up after pushing | `untaped workspace archive NAME` |
 | List workspaces | `untaped workspace list`, `untaped workspace list --archived` |
 
-In a terminal, `untaped workspace create` with no repos opens a picker; agents pass `--repo` or `--stdin`.
+In a terminal, `untaped workspace create` or `add` with no repos opens a picker; agents pass `--repo` or `--stdin`.
 
-`NAME` is optional on every command that takes a `NAME`, except `create`:
+`NAME` is optional on every command that takes a `NAME`, except `create`, where agents must pass it (a terminal picker asks otherwise):
 inside a workspace directory it is the current workspace. Agents should still
 pass it.
 
@@ -54,7 +54,7 @@ pass it.
 
 ## Pitfalls
 
-- Quote the command; `-` reads a script from stdin (heredoc). Read-only repos
+- `run`: quote the command; `-` reads a script from stdin (heredoc). Read-only repos
   are skipped unless `--include-read-only`.
 - Repos are named `OWNER/NAME`, a unique bare `NAME`, or a full git URL. An
   unknown name exits 2 and suggests close matches from the inventory; an

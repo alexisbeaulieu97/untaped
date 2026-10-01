@@ -37,7 +37,7 @@ branch later resumes the work.
 untaped workspace add PROJ-123 --repo acme/infra
 ```
 
-`add` also reads repos from a pipe, for example a GitHub inventory:
+`add` also reads repos from a pipe, for example a GitHub repo listing:
 
 ```bash
 untaped github repos list --team acme/platform --format pipe | untaped workspace add PROJ-123 --stdin
@@ -104,8 +104,8 @@ selection and timeouts are in the
 `workspace.cache_dir`, `workspaces_dir`, `parallel`, `branch_template` and
 `protocol` are in the [configuration reference](../reference/config.md#workspace).
 Do not delete the cache directory while workspaces are active: the worktrees
-point into it. A repo name that is not found is looked up in the GitHub
-inventory, set by `github.inventory` orgs and teams.
+point into it. `OWNER/NAME` and bare names are looked up in the GitHub
+inventory, scoped by `github.inventory` orgs and teams.
 
 ## Output
 

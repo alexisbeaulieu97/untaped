@@ -121,6 +121,14 @@ def test_cached_only_url_is_the_cache_origin(tmp_path: Path) -> None:
     assert source.url_for("https://h/o/r") == "https://h/o/r"
 
 
+def test_cached_repo_with_a_rewritten_origin_is_skipped(tmp_path: Path) -> None:
+    git = FakeGit({"tool.git": "https://github.com/other/place.git"})
+    source = _source(_cache(tmp_path, "team/tool", "team/ok"), git, inventory=_inventory())
+    ids = [item.id for item in source.catalog(refresh=False).items]
+    assert "github.com/team/tool" not in ids
+    assert "github.com/team/ok" in ids
+
+
 def test_nested_group_and_unknown_caches(tmp_path: Path) -> None:
     cache = _cache(tmp_path, "grp/sub/repo")
     (cache / "_unknown" / "0123456789abcdef.git").mkdir(parents=True)
