@@ -1,6 +1,6 @@
 """Github-owned ansible-facing API surface (Wave 2 prerequisite amendment 1).
 
-Proves the closed surface of ``untaped.capabilities.github.ansible``:
+Proves the closed surface of ``untaped.capabilities.github.api``:
 every name the ansible capability may import, pinned identical to its
 canonical implementation, plus the client signatures ansible calls.
 Their behaviour is tested with the owning modules.
@@ -15,8 +15,8 @@ from typing import Any
 import pytest
 
 import untaped.capability_api as capability_api
-from untaped.capabilities.github import ansible as ansible_api
-from untaped.capabilities.github.ansible import (
+from untaped.capabilities.github import api as github_api
+from untaped.capabilities.github.api import (
     BatchRepoRefsFailure,
     BatchRepoRefsResult,
     GithubClient,
@@ -56,7 +56,7 @@ EXPECTED_ALL = [
 
 
 def test_surface_is_closed() -> None:
-    assert ansible_api.__all__ == EXPECTED_ALL
+    assert github_api.__all__ == EXPECTED_ALL
 
 
 def test_exports_are_canonical_objects() -> None:

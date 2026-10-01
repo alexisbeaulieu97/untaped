@@ -1,8 +1,8 @@
 """GitHub capability for the unified ``untaped`` shell.
 
 The nullary :func:`build_app` factory is imported on demand when the root
-mounts the capability. GitHub-owned integration types used by Ansible live in
-:mod:`untaped.capabilities.github.ansible`.
+mounts the capability. Other capabilities import GitHub only through
+:mod:`untaped.capabilities.github.api`.
 """
 
 from __future__ import annotations

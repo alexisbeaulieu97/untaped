@@ -25,7 +25,7 @@ from untaped.capabilities.ansible.settings import (
     SourceDefinition,
     normalize_team_refs,
 )
-from untaped.capabilities.github.ansible import github_settings
+from untaped.capabilities.github.api import github_settings
 from untaped.capability_api import (
     ColumnsOption,
     DryRunOption,

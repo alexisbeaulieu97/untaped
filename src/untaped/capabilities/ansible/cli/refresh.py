@@ -25,7 +25,7 @@ from untaped.capabilities.ansible.infrastructure import (
     SqliteDependencyIndex,
 )
 from untaped.capabilities.ansible.settings import AnsibleSettings, SourceDefinition
-from untaped.capabilities.github.ansible import GithubClient, GithubSettings, github_web_host
+from untaped.capabilities.github.api import GithubClient, GithubSettings, github_web_host
 from untaped.capability_api import HttpSettings, ProgressHandle, UiContext, git_auth_header, plural
 
 GIT_PARALLEL_CAP = 32

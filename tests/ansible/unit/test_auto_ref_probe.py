@@ -17,7 +17,7 @@ from untaped.capabilities.ansible.domain.payloads import (
     ProbeTarget,
 )
 from untaped.capabilities.ansible.infrastructure.auto_ref_probe import AutoRefProbe
-from untaped.capabilities.github.ansible import GithubGraphqlError
+from untaped.capabilities.github.api import GithubGraphqlError
 
 
 class FakeProbe:

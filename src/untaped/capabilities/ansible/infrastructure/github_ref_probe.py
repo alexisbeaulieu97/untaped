@@ -21,12 +21,12 @@ from untaped.capabilities.ansible.domain.payloads import (
     ProbeReport,
     ProbeTarget,
 )
-from untaped.capabilities.github.ansible import GithubGraphqlError
+from untaped.capabilities.github.api import GithubGraphqlError
 from untaped.capability_api import ErrorCategory, HttpError, UntapedError, bounded_map
 
 if TYPE_CHECKING:
     from untaped.capabilities.ansible.application.ports import BatchRepoRefsClient
-    from untaped.capabilities.github.ansible import BatchRepoRefsResult
+    from untaped.capabilities.github.api import BatchRepoRefsResult
 
 ALL_REFS_GRAPHQL_CHUNK_SIZE = 50
 DEFAULT_BRANCH_GRAPHQL_CHUNK_SIZE = 100
