@@ -15,7 +15,7 @@ class WorkspaceSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    cache_dir: Path = Field(default=Path("~/.untaped/repositories"))
+    cache_dir: Path = Field(default=Path("~/.untaped/workspace-cache"))
     workspaces_dir: Path = Field(default=Path("~/.untaped/workspaces"))
     parallel: int | None = Field(default=None, ge=1)
     """Workers for ``create``/``add`` checkouts and ``status``/``archive`` checks.

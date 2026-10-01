@@ -295,7 +295,10 @@ def test_a_9x_cache_failure_shows_its_hint_on_stderr(
     result = run(app, ["create", "J-1", "--repo", url])
     assert result.exit_code == 1
     assert f"error: J-1/api: {cache} is a cache from untaped 9.x" in result.stderr
-    assert "delete it; the next command re-fetches" in result.stderr
+    assert (
+        "set workspace.cache_dir to a new directory; keep this one while clones"
+        " made before untaped 7.0 borrow objects from it"
+    ) in result.stderr
 
 
 def test_read_only_commit_blocks_archive(

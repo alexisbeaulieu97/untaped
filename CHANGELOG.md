@@ -21,8 +21,10 @@
   - **Breaking:** `graph --upstream/--downstream/--both` are removed; use
     `--direction up|down|both`. Graph sources re-index once.
 - Workspace
-  - **Breaking:** a cache left by untaped 9.x is refused; delete
-    `~/.untaped/repositories` (or the configured `workspace.cache_dir`).
+  - **Breaking:** 10.0 caches live in `~/.untaped/workspace-cache`. The 9.x
+    `~/.untaped/repositories` is left untouched (clones made before 7.0 may
+    borrow objects from it); a `workspace.cache_dir` pointing at a 9.x cache
+    is refused.
   - **New:** `workspace create`, `add` and `archive` print failed rows'
     errors with hints on stderr.
   - **Breaking:** `untaped workspace` now manages task workspaces of git
