@@ -99,20 +99,17 @@ class StateWorkspaceStore:
         return updated
 
     def archive(self, name: str, *, at: datetime) -> ArchivedRecord:
-        """Move ``name`` to the archived list, from the record read as it is removed."""
-        removed: dict[str, Any] | None = None
+        """Move ``name`` to the archived list (callers hold :meth:`locked`).
 
-        def _take(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-            nonlocal removed
-            removed = next((row for row in rows if row.get("name") == name), None)
-            if removed is None:
-                raise WorkspaceNotFoundError(
-                    not_found("workspace", name, known=[r.get("name") for r in rows])
-                )
-            return [row for row in rows if row is not removed]
-
-        self._active.mutate(_take)
-        assert removed is not None
-        archived = ArchivedRecord.model_validate({**removed, "archived_at": at})
+        The archived copy is written first: a failure in between leaves a
+        recoverable duplicate rather than losing the workspace's history.
+        """
+        record = self.get(name)
+        if record is None:
+            raise WorkspaceNotFoundError(
+                not_found("workspace", name, known=[r.name for r in self.active()])
+            )
+        archived = ArchivedRecord(**record.model_dump(), archived_at=at)
         self._archived.mutate(lambda rows: [*rows, _dump(archived)])
+        self._active.remove(name)
         return archived

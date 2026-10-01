@@ -10,6 +10,7 @@ import pytest
 from untaped.capabilities.workspace.domain import RepoSpec, WorkspaceRecord
 from untaped.capabilities.workspace.errors import WorkspaceError, WorkspaceNotFoundError
 from untaped.capabilities.workspace.infrastructure import StateWorkspaceStore
+from untaped.capability_api import StateCollection
 
 T0 = datetime(2026, 10, 1, tzinfo=UTC)
 SPEC = RepoSpec(url="u", name="acme/api", dir="api", branch="b", base="main")
@@ -80,3 +81,21 @@ def test_a_held_workspace_lock_makes_others_wait_then_fail(tmp_path: Path) -> No
     assert caught.value.hint
     with other.locked("w"):  # free again
         pass
+
+
+def test_archive_keeps_the_history_record_when_removing_the_active_one_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = StateWorkspaceStore()
+    store.create(WorkspaceRecord(name="w", created_at=T0))
+    store.add_repos("w", [SPEC])
+
+    def fail(self: StateCollection, ident: str) -> bool:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(StateCollection, "remove", fail)
+    with pytest.raises(OSError):
+        store.archive("w", at=T0)
+    [archived] = store.archived()
+    assert (archived.name, archived.repos) == ("w", (SPEC,))
+    assert store.get("w") is not None  # a recoverable duplicate, not a loss

@@ -224,6 +224,17 @@ def test_a_cache_is_marked_migrated_once(
     )
 
 
+def test_a_renamed_default_branch_is_picked_up(
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+) -> None:
+    upstream = make_upstream("api")
+    url = str(upstream)
+    worktrees.checkout(url, tmp_path / "a" / "api", branch="a", base=None)
+    git(upstream, "branch", "-m", "main", "trunk")  # origin renames its default branch
+    checkout = worktrees.checkout(url, tmp_path / "b" / "api", branch="b", base=None)
+    assert checkout.base == "trunk"
+
+
 def _advance_origin(url: str, branch: str, clone: Path) -> None:
     """Push one new commit (``upstream.txt``) to ``branch`` from a separate clone."""
     git(clone.parent, "clone", "-q", "-b", branch, url, str(clone))
