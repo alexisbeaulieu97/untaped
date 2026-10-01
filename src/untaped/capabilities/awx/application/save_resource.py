@@ -158,7 +158,9 @@ class SaveResource:
             resource=Resource(
                 kind=spec.kind,
                 metadata=metadata,
-                spec=redact_value(spec_data, spec.secret_paths, replacement="$encrypted$"),
+                spec=redact_value(
+                    spec_data, spec.secret_paths, replacement="$encrypted$", skip_empty=True
+                ),
             ),
             record=copy.deepcopy(record),
             read_only_fields=(

@@ -111,8 +111,8 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
         FkRef(field="instance_groups", kind="InstanceGroup", multi=True),
     ),
     sub_document_fields=("survey_spec",),
-    secret_paths=("webhook_key", "survey_spec.spec.*[type=password].default"),
-    optional_secret_paths=("survey_spec.spec.*[type=password].default",),
+    secret_paths=("webhook_key", "host_config_key", "survey_spec.spec.*[type=password].default"),
+    optional_secret_paths=("host_config_key", "survey_spec.spec.*[type=password].default"),
     # AWX may normalize and enrich the submitted survey document while
     # retaining the user-owned questions/defaults.  Batch verification allows
     # that explicitly instead of silently weakening comparison for all fields.
