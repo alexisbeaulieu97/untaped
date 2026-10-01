@@ -9,7 +9,11 @@ from typing import Any
 
 import yaml
 
-from untaped.capabilities.awx.application.secret_paths import replace_at, values_at
+from untaped.capabilities.awx.application.secret_paths import (
+    path_slots,
+    replace_at,
+    values_at,
+)
 from untaped.capabilities.awx.domain import ApplyOutcome, FieldChange, ResourceSpec
 from untaped.capability_api import UntapedError
 
@@ -54,11 +58,23 @@ def semantic_equal(
     return bool(left == right)
 
 
-def redact_value(value: Any, paths: Iterable[str], *, replacement: str = REDACTED) -> Any:
-    """Deep-copy ``value`` and replace every known secret path."""
+def redact_value(
+    value: Any, paths: Iterable[str], *, replacement: str = REDACTED, skip_empty: bool = False
+) -> Any:
+    """Deep-copy ``value`` and replace every known secret path.
+
+    ``skip_empty`` leaves unset secrets (``None``/``""``) visible: an empty
+    secret holds nothing to hide and a placeholder for it would only warn on create.
+    """
     result = copy.deepcopy(value)
     for path in paths:
-        replace_at(result, path, replacement)
+        if skip_empty:
+            for container, key in list(path_slots(result, path)):
+                # Same mutable-container guard as ``replace_at`` (tuples are skipped).
+                if isinstance(container, dict | list) and container[key] not in (None, ""):
+                    container[key] = replacement
+        else:
+            replace_at(result, path, replacement)
     return result
 
 

@@ -9,6 +9,7 @@ from untaped.capabilities.awx.application import SaveResource
 from untaped.capabilities.awx.application.ports import FkResolver, ResourceClient
 from untaped.capabilities.awx.domain import ResourceSpec, ServerRecord
 from untaped.capabilities.awx.infrastructure.specs import (
+    JOB_TEMPLATE_SPEC,
     PROJECT_SPEC,
     SCHEDULE_SPEC,
 )
@@ -96,3 +97,36 @@ def test_save_schedule_extracts_polymorphic_parent() -> None:
     assert saved.metadata.parent.kind == "JobTemplate"
     assert saved.metadata.parent.name == "deploy"
     assert saved.metadata.parent.organization == "Default"
+
+
+def _jt_record(**fields: Any) -> dict[str, Any]:
+    return {
+        "id": 30,
+        "name": "deploy",
+        "organization": 1,
+        "summary_fields": {"organization": {"name": "Default"}},
+        "playbook": "deploy.yml",
+        # Present so SaveResource does not re-GET the record for sub-documents.
+        "survey_spec": {"spec": []},
+        **fields,
+    }
+
+
+def _save_jt(**fields: Any) -> dict[str, Any]:
+    client = _StubClient(find_result=_jt_record(**fields))
+    fk = _StubFk({("Organization", 1): "Default"})
+    use = SaveResource(cast(ResourceClient, client), cast(FkResolver, fk))
+    return use.from_record(JOB_TEMPLATE_SPEC, client.record).spec
+
+
+def test_save_job_template_redacts_host_config_key() -> None:
+    assert _save_jt(host_config_key="s3cr3t")["host_config_key"] == "$encrypted$"
+
+
+def test_save_job_template_keeps_empty_host_config_key() -> None:
+    assert _save_jt(host_config_key="")["host_config_key"] == ""
+
+
+def test_save_keeps_empty_survey_password_default() -> None:
+    survey = {"spec": [{"variable": "pw", "type": "password", "default": ""}]}
+    assert _save_jt(survey_spec=survey)["survey_spec"]["spec"][0]["default"] == ""
