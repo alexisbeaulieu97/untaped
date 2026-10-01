@@ -2465,24 +2465,14 @@ def test_local_checkout_keeps_its_own_declarations_over_the_cached_default_branc
     assert _tree(result.stdout) == ["acme/users@main"]
 
 
-@pytest.mark.parametrize(
-    ("old", "new"),
-    [("--upstream", "up"), ("--downstream", "down"), ("--both", "both")],
-)
-def test_old_direction_flags_still_work_with_a_deprecation_warning(
-    tmp_path: Path, monkeypatch, old: str, new: str
-) -> None:
+def test_old_direction_flags_are_gone(tmp_path: Path, monkeypatch) -> None:
     _seed(tmp_path, "source:platform", _edge())
     _use_config(tmp_path, monkeypatch, _PLATFORM)
-    root = build_root_app(externals=[])
-    args = ["ansible", "graph", "acme/site", "--source", "platform", "--format", "json"]
-
-    result = invoke_cli(root, [*args, old])
-
-    assert result.exit_code == 0, result.output + result.stderr
-    assert f"`{old}` is deprecated" in result.stderr
-    assert f"use `--direction={new}`" in result.stderr
-    assert result.stdout == invoke_cli(root, [*args, "--direction", new]).stdout
+    result = invoke_cli(
+        build_root_app(externals=[]),
+        ["ansible", "graph", "acme/site", "--source", "platform", "--upstream"],
+    )
+    assert result.exit_code == 2
 
 
 @pytest.mark.parametrize("all_refs", [False, True])

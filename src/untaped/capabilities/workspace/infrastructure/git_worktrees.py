@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 _FETCH_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
 _LAYOUT_KEY = "untaped.layout"
 _LAYOUT = "2"
-"""Marks a cache already on the remote-tracking layout (legacy heads dropped)."""
+"""Marks a cache on the 10.x remote-tracking layout; unmarked caches are refused."""
 _CACHE_CONFIG = r"^(remote\.origin\.(url|fetch)|untaped\.layout)$"
 _STASH_MARKERS = ("refs/stash", "logs/refs/stash", "reftable")
 """Paths under a common git dir whose absence means no stash (reftable: cannot tell)."""
@@ -229,18 +229,19 @@ class LocalGitWorktrees:
     # -- checkout steps ----------------------------------------------------
 
     def _ensure_cache(self, cache: Path, url: str) -> None:
-        """Create or repair the cache; one config read when it is already set up.
-
-        A cache not yet marked ``untaped.layout = 2`` is migrated once (legacy
-        heads dropped, refspec set), then marked.
-        """
+        """Create the cache, or repair a 10.x one (origin URL, refspec); one config read."""
         config: dict[str, list[str]] = {}
         if _cache_ready(cache):
             config = self._cache_config(cache)
-            if config.get(_LAYOUT_KEY) != [_LAYOUT]:
-                self._drop_legacy_heads(cache, config.get("remote.origin.fetch", []))
+            if config.get(_LAYOUT_KEY) != [_LAYOUT] and config.get("remote.origin.url"):
+                raise WorkspaceError(
+                    f"{cache} is a cache from untaped 9.x",
+                    hint="delete it; the next command re-fetches",
+                )
         else:
             self._run(["init", "--bare", "--quiet", str(cache)], cwd=cache.parent)
+            self._run(["config", _LAYOUT_KEY, _LAYOUT], cwd=cache)
+            config[_LAYOUT_KEY] = [_LAYOUT]
         self._ensure_remote(cache, url, (config.get("remote.origin.url") or [""])[0])
         if config.get("remote.origin.fetch") != [_FETCH_REFSPEC]:
             self._run(["config", "--replace-all", "remote.origin.fetch", _FETCH_REFSPEC], cwd=cache)
@@ -264,23 +265,6 @@ class LocalGitWorktrees:
             self._run(["remote", "add", "origin", url], cwd=cache)
         elif current != url:
             self._run(["remote", "set-url", "origin", url], cwd=cache)
-
-    def _drop_legacy_heads(self, cache: Path, refspecs: list[str]) -> None:
-        """Delete the mirrored ``refs/heads/*`` of an old-style ``clone --bare`` cache.
-
-        Such caches fetched origin's heads straight into ``refs/heads``, so
-        those heads are mirrors, never user work; kept, they would be resumed
-        in place of origin (reviving deleted or force-pushed branches). Only
-        done before the refspec is swapped and while no worktree is registered.
-        """
-        if refspecs == [_FETCH_REFSPEC] or self._worktree_branches(cache) is not None:
-            return
-        heads = self._run(
-            ["for-each-ref", "--format=%(refname)", "refs/heads"], cwd=cache, capture=True
-        ).text.split()
-        if heads:
-            script = "".join(f"delete {ref}\n" for ref in heads)
-            self._run(["update-ref", "--stdin"], cwd=cache, stdin=script)
 
     def _worktree_branches(self, cache: Path) -> set[str] | None:
         """Branches checked out in registered worktrees; ``None`` when there are none."""

@@ -195,6 +195,7 @@ def test_cached_only_pick_uses_its_cache_url(
     origin = "https://gitlab.example/acme/api.git"
     git(workspace_env.parent, "clone", "-q", "--bare", str(upstream), str(cache))
     git(cache, "remote", "set-url", "origin", origin)
+    git(cache, "config", "untaped.layout", "2")  # a 10.x cache
     for key, value in {
         "GIT_CONFIG_COUNT": "1",
         "GIT_CONFIG_KEY_0": f"url.{upstream}.insteadOf",

@@ -73,7 +73,6 @@ from untaped.sdk import (
     UsageError,
     app_context,
     clamp_parallel,
-    deprecated_alias,
     echo,
     emit,
     get_config_section,
@@ -253,8 +252,6 @@ def register_graph_commands(app: App) -> None:
     app.command(impact_command, name="impact")
     app.command(find_command, name="find")
     app.command(graph_command, name="graph")
-    for old, direction in (("--upstream", "up"), ("--downstream", "down"), ("--both", "both")):
-        deprecated_alias(app["graph"], old, f"--direction={direction}")
 
 
 def deps_command(

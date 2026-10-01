@@ -282,7 +282,6 @@ def test_graph_help_lists_current_flags_only() -> None:
     shown = "--direction --all-refs --source --refresh --cached --live --target-repo"
     shown += " --parallel --out"
     hidden = "--concurrency --output --kind --cache-backend --scope --contains --stdin"
-    hidden += " --upstream --downstream --both"
     assert [flag for flag in shown.split() if flag not in output] == []
     assert [flag for flag in hidden.split() if flag in output] == []
 
