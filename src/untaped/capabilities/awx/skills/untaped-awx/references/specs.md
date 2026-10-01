@@ -51,7 +51,7 @@ spec:
   job-templates get NAME --format yaml` shows them); ids, timestamps,
   `status` and `last_job_*` are left out; so are fields the controller
   derives (`custom_virtualenv`, `webhook_key`, and `local_path` unless the
-  project is manual). Multi-line text such as `extra_vars` is written as a `|`
+  project is manual) and `organization`, which lives in `metadata`. Multi-line text such as `extra_vars` is written as a `|`
   block, as the UI shows it.
 - References (organization, project, inventory, credentials, labels,
   instance groups, execution environment) travel by name. They must exist
@@ -82,9 +82,8 @@ What a document cannot carry:
   non-empty default of every `password` survey question are written as
   `$encrypted$`, which keeps the stored values when applied to the resource
   they came from; empty ones stay empty. A new template drops these
-  placeholders with a warning: set a new callback key afterwards. Other survey defaults are exported as they are.
-- **Server-owned fields.** `webhook_key` and `custom_virtualenv` are read-only
-  upstream and not exported; `organization` lives in `metadata`, not `spec`.
+  placeholders with a warning: set a new callback key afterwards. Other survey
+  defaults are exported as they are.
 - **Access and history.** Roles, permissions, notification attachments,
   schedules of a template (a separate `Schedule` document) and past jobs.
 - **Nodes whose template was deleted.** Such a workflow node runs nothing
