@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from untaped.capabilities.github.application.inventory import RepositoryInventoryItem
-from untaped.capabilities.github.application.inventory_cache import RepoInventory
+from untaped.capabilities.github.domain.inventory import RepoInventory
 from untaped.capabilities.github.infrastructure.inventory_store import JsonInventoryStore
 from untaped.capability_api import UntapedError
 
@@ -96,6 +96,40 @@ def test_lock_under_a_read_only_directory_is_an_attributed_error(tmp_path: Path)
     finally:
         parent.chmod(0o700)
     assert e.value.category == "failed"
+    assert e.value.system == "local"
+
+
+def test_a_symlink_alias_and_its_target_share_one_lock_file(tmp_path: Path) -> None:
+    target = tmp_path / "real.json"
+    alias = tmp_path / "alias.json"
+    alias.symlink_to(target)
+    with JsonInventoryStore(alias).lock():
+        assert (tmp_path / "real.json.lock").exists()
+    assert not (tmp_path / "alias.json.lock").exists()
+
+
+def test_a_symlink_alias_writes_through_to_its_target(tmp_path: Path) -> None:
+    target = tmp_path / "real.json"
+    alias = tmp_path / "alias.json"
+    alias.symlink_to(target)  # dangling until the first save
+    JsonInventoryStore(alias).save(INVENTORY)
+    assert JsonInventoryStore(target).load() == INVENTORY
+
+
+@pytest.mark.skipif(_ROOT, reason="root ignores file permissions")
+def test_an_unopenable_lock_file_is_attributed_locally(tmp_path: Path) -> None:
+    path = tmp_path / "inv.json"
+    lock_file = tmp_path / "inv.json.lock"
+    lock_file.write_text("")
+    lock_file.chmod(0o000)
+    try:
+        with (
+            pytest.raises(UntapedError, match="could not lock the repository inventory") as e,
+            JsonInventoryStore(path).lock(),
+        ):
+            pass
+    finally:
+        lock_file.chmod(0o600)
     assert e.value.system == "local"
 
 

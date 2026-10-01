@@ -14,8 +14,6 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-from pydantic import ValidationError
-
 from untaped.capabilities.github.domain.inventory import RepoInventory, RepositoryInventoryItem
 from untaped.capabilities.github.errors import GithubError
 from untaped.capability_api import atomic_write, file_lock
@@ -27,7 +25,8 @@ class JsonInventoryStore:
     """Read and write the inventory file at ``path``."""
 
     def __init__(self, path: Path, *, lock_timeout: float = 60.0) -> None:
-        self._path = path
+        # Resolve symlinks so the lock file and the (symlink-following) write agree.
+        self._path = path.resolve()
         self._lock_timeout = lock_timeout
 
     def load(self) -> RepoInventory | None:
@@ -44,7 +43,7 @@ class JsonInventoryStore:
                 refreshed_at=refreshed_at,
                 scope_key=str(data["scope_key"]),
             )
-        except OSError, ValueError, KeyError, TypeError, AttributeError, ValidationError:
+        except OSError, ValueError, KeyError, TypeError, AttributeError:
             return None
 
     def save(self, inventory: RepoInventory) -> None:
@@ -68,7 +67,7 @@ class JsonInventoryStore:
         with file_lock(
             self._path.with_name(self._path.name + ".lock"),
             timeout=self._lock_timeout,
-            error=GithubError,
+            error=lambda message: GithubError(message, system="local"),
             busy=f"repository inventory is being refreshed by another process: {self._path}",
             failed=f"could not lock the repository inventory {self._path}",
         ):

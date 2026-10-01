@@ -154,10 +154,10 @@ def test_github_settings_reads_the_active_github_section(
     assert settings.token.get_secret_value() == "ghp_test"
 
 
-def _configure(extra: str) -> None:
+def _configure(extra: str, *, token: str = "ghp_test") -> None:
     cfg = Path(os.environ["UNTAPED_CONFIG"])
     cfg.parent.mkdir(parents=True, exist_ok=True)
-    cfg.write_text("profiles:\n  default:\n    github:\n      token: ghp_test\n" + extra)
+    cfg.write_text(f"profiles:\n  default:\n    github:\n      token: {token}\n" + extra)
     get_settings.cache_clear()
 
 
@@ -217,6 +217,22 @@ def test_repo_inventory_scope_includes_the_host() -> None:
         route = mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=ACME[:1]))
         assert [r.full_name for r in repo_inventory().repos] == ["acme/api"]
     assert route.call_count == 1
+
+
+def test_repo_inventory_is_keyed_by_the_token_and_never_stores_it() -> None:
+    scope = "      inventory:\n        orgs: [acme]\n"
+    _configure(scope, token="ghp_first_secret")
+    with respx.mock(base_url="https://api.github.com") as mock:
+        route = mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=ACME))
+        repo_inventory()
+        repo_inventory()
+        assert route.call_count == 1
+        _configure(scope, token="ghp_second_secret")
+        repo_inventory()
+        assert route.call_count == 2
+    cache = Path("~/.untaped/github-inventory.json").expanduser().read_text()
+    assert "ghp_first_secret" not in cache
+    assert "ghp_second_secret" not in cache
 
 
 def test_repo_inventory_rejected_token_is_auth_with_a_hint() -> None:
