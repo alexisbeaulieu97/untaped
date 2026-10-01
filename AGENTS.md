@@ -59,8 +59,9 @@ keeps that attribution when replaced or turned into a row; see
 
 ## Capability registry + capability_api
 
-- `capability_api.py` is the single public SDK surface and the **only**
-  untaped module capability code (built-in or external) imports from. Its
+- `capability_api.py` is the single public SDK surface and the **only** core
+  module capability code (built-in or external) imports from; built-ins may
+  also use another capability's declared `api.py` (Hard Rule 2). Its
   exported types, helpers, and `(major, minor)` API version tuple are the
   source of truth for provider compatibility; the package root re-exports
   nothing.
