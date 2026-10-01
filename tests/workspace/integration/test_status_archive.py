@@ -99,6 +99,7 @@ def test_deleted_cache_is_cache_missing(env: Env, tmp_path: Path) -> None:
     shutil.rmtree(tmp_path / "cache")
     [row] = env.status(env.record)
     assert row.state == "cache_missing"
+    assert row.blockers == ("repo cache missing; local work cannot be checked",)
 
 
 def test_archive_removes_and_records(env: Env) -> None:

@@ -33,6 +33,7 @@ def locate_workspace(
     if record is None:
         raise WorkspaceNotFoundError(
             "not inside a workspace",
+            category="usage",
             hint=f"pass a workspace name, or cd into {root}/NAME",
         )
     return record

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
@@ -117,8 +118,54 @@ def test_outside_a_workspace_is_usage_with_hint(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     result = run(app, ["path"])
-    assert result.exit_code in (1, 2), result.output
+    assert result.exit_code == 2, result.output
     assert "not inside a workspace" in result.stderr
+    assert "hint:" in result.stderr
+
+
+def test_unknown_name_is_not_found(workspace_env: Path) -> None:
+    assert run(app, ["path", "nope"]).exit_code == 1
+
+
+def test_duplicate_create_hint(make_upstream: Callable[..., Path]) -> None:
+    url = str(make_upstream("api"))
+    run(app, ["create", "J-1", "--repo", url])
+    again = run(app, ["create", "J-1", "--repo", url])
+    assert again.exit_code == 1
+    assert "hint: run `untaped workspace add J-1 --repo REPO`" in again.stderr
+    assert "hint: hint:" not in again.stderr
+
+
+def test_missing_cache_blocks_archive_until_confirmed(
+    make_upstream: Callable[..., Path], workspace_env: Path, tmp_path: Path
+) -> None:
+    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+    work = workspace_env / "J-1" / "api" / "scratch.txt"
+    work.write_text("precious")
+    shutil.rmtree(tmp_path / "cache")
+    assert run(app, ["status", "J-1", "--check"]).exit_code == 3
+    refused = run(app, ["archive", "J-1"])
+    assert refused.exit_code == 1
+    assert "--force" in refused.stderr
+    assert run(app, ["archive", "J-1", "--force"]).exit_code == 2  # no terminal, no --yes
+    assert work.exists()
+    forced = run(app, ["archive", "J-1", "--force", "--yes"])
+    assert forced.exit_code == 0, forced.output
+    assert not work.exists()
+
+
+def test_status_fetch_failure_is_per_repo(make_upstream: Callable[..., Path]) -> None:
+    api, web = make_upstream("api"), make_upstream("web")
+    run(app, ["create", "J-1", "--repo", str(api), "--repo", str(web)])
+    api.rename(api.with_name("moved.git"))
+    result = run(app, ["status", "J-1", "--fetch", "--format", "json"])
+    assert result.exit_code == 1, result.output
+    rows = _rows(result)
+    assert [(r["dir"], r["state"]) for r in rows] == [("api", "ok"), ("web", "ok")]
+    assert str(rows[0]["detail"]).startswith("fetch failed: ")
+    error = rows[0]["error"]
+    assert isinstance(error, dict) and error["system"] == "git"
+    assert "error" not in rows[1]
 
 
 def test_archive_refuses_dirty_then_forces(

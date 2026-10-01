@@ -39,6 +39,7 @@ def test_outside_any_workspace(store: StateWorkspaceStore, tmp_path: Path) -> No
     with pytest.raises(WorkspaceNotFoundError) as caught:
         locate_workspace(store, name=None, workspaces_dir=tmp_path / "ws", cwd=tmp_path)
     assert caught.value.hint
+    assert caught.value.category == "usage"
 
 
 def test_cwd_equal_to_workspaces_dir(store: StateWorkspaceStore, tmp_path: Path) -> None:

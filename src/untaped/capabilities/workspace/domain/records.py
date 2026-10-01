@@ -68,6 +68,7 @@ class StatusRow(TargetRecord):
     stashed: int = 0
     unpushed: int = 0
     blockers: tuple[str, ...] = ()
+    detail: str = ""
 
 
 ArchiveAction = Literal["removed", "planned", "skipped", "failed"]
