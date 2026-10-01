@@ -6,15 +6,9 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-from untaped.capabilities.github.domain.errors import is_auth_failure, is_rate_limit_failure
+from untaped.capabilities.github.domain.errors import github_failures
 from untaped.capabilities.github.settings import GithubSettings
-from untaped.capability_api import (
-    ErrorCategory,
-    UntapedError,
-    app_context,
-    git_auth_header,
-    rejected_token_error,
-)
+from untaped.capability_api import app_context, git_auth_header
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -39,15 +33,8 @@ def open_client() -> Iterator[tuple[GithubClient, UiContext]]:
     # search/whoami. Progress is auxiliary feedback; it falls back to the
     # default theme rather than raising on the data path (e.g. --format raw).
     ui = ctx.ui(strict=False)
-    with GithubClient(ctx.section("github", GithubSettings), http=ctx.http) as client:
-        try:
-            yield client, ui
-        except UntapedError as exc:
-            if is_auth_failure(exc):
-                raise rejected_token_error(
-                    "github", "GitHub rejected the configured token (HTTP 401)", cause=exc
-                ) from exc
-            if is_rate_limit_failure(exc):
-                # GitHub answers an exhausted budget with 403 too: retry later.
-                exc.category = ErrorCategory.UNAVAILABLE
-            raise
+    with (
+        GithubClient(ctx.section("github", GithubSettings), http=ctx.http) as client,
+        github_failures(),
+    ):
+        yield client, ui

@@ -36,6 +36,7 @@ A capability owns its directory end to end:
 src/untaped/capabilities/<name>/
 ├── __init__.py        # SPEC: CapabilitySpec (with one-line help) + nullary build_app() (lazy CLI import; never build at import time)
 ├── settings.py        # profile model + state model (field sets must be disjoint)
+├── api.py             # optional: declared public module other built-ins may import (Hard Rule 2)
 ├── cli/               # cyclopts commands (thin)
 ├── application/       # use cases (orchestration); ports in application/ports.py
 ├── domain/            # entities, value objects (pure, no I/O)
@@ -59,8 +60,9 @@ keeps that attribution when replaced or turned into a row; see
 
 ## Capability registry + capability_api
 
-- `capability_api.py` is the single public SDK surface and the **only**
-  untaped module capability code (built-in or external) imports from. Its
+- `capability_api.py` is the single public SDK surface and the **only** core
+  module capability code (built-in or external) imports from; built-ins may
+  also use another capability's declared `api.py` (Hard Rule 2). Its
   exported types, helpers, and `(major, minor)` API version tuple are the
   source of truth for provider compatibility; the package root re-exports
   nothing.
@@ -108,13 +110,18 @@ rules below.
    profile/state models, its skills, and its doctor checks. Never read or
    write another capability's section; never mutate another capability's
    state.
-2. **No cross-capability private-helper coupling.** Capability code imports
-   shared code only from `untaped.capability_api` (or core framework
-   modules through it). Never import a sibling capability's private
-   helpers (`from untaped.capabilities.<other>...` except through the
-   owning capability's public SPEC surface). If two capabilities need the
-   same logic, it belongs in core (exposed via `capability_api`) or in
-   exactly one owning capability — never forked into both.
+2. **Cross-capability code goes through a declared public module.**
+   Capability code imports core only from `untaped.capability_api`. It may
+   import another capability only through that capability's public module,
+   `untaped.capabilities.<other>.api`, never its other internals; each
+   importing pair is listed in `ALLOWED_CROSS_CAPABILITY_IMPORTS`
+   (`tests/unit/test_capabilities/test_capability_imports.py`).
+   Dependencies are one-way (no cycles). Import them lazily on CLI paths;
+   the one exception is a settings model that validates against the other
+   capability, which imports it at module top.
+   Logic two capabilities need lives in exactly one owner's `api.py` or in
+   core — never forked into both; extract a protocol into core only when a
+   second provider appears.
 3. **Keep `AGENTS.md` and `docs/` up to date.** If you change the
    composition contract, a management workflow, or a cross-cutting helper,
    edit the relevant docs in the same commit. Each fact has one home, and

@@ -1,7 +1,7 @@
 """Ansible capability for the unified ``untaped`` shell.
 
 GitHub behavior is consumed through the closed API in
-:mod:`untaped.capabilities.github.ansible`.
+:mod:`untaped.capabilities.github.api`.
 """
 
 from __future__ import annotations

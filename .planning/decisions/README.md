@@ -8,6 +8,7 @@ implementation behavior. This index is navigation only; work is tracked in GitHu
 - [awx test regression tools: declarative checks; a baseline excuses only the same failure](awx-test-regressions-fail-only-on-a-regression.md)
 - [awx test temporary test sets: repo specs are copied per run, pinned, and always torn down](awx-temporary-test-sets-are-provisioned-per-run.md)
 - [awx test workflow suites reuse the job case; a workflow is blamed on its failing node](awx-workflow-suites-reuse-the-job-case.md)
+- [capabilities share code through a declared public module](capabilities-share-code-through-a-public-api-module.md)
 - [capability state lives in state.yml](capability-state-lives-in-state-yml.md)
 - [capability-owned packaged skills](capability-owned-packaged-skills.md)
 - [failures carry category and system; exit codes 4/5; JSON diagnostics](failures-carry-category-and-system.md)

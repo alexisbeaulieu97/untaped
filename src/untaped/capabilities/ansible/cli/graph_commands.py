@@ -62,8 +62,8 @@ from untaped.capabilities.ansible.infrastructure import (
     local_remote_url,
 )
 from untaped.capabilities.ansible.settings import AnsibleSettings, SourceDefinition
-from untaped.capabilities.github.ansible import GithubClient, GithubSettings, github_web_host
-from untaped.capabilities.github.ansible import github_settings as load_github_settings
+from untaped.capabilities.github.api import GithubClient, GithubSettings, github_web_host
+from untaped.capabilities.github.api import github_settings as load_github_settings
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,

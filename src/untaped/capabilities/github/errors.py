@@ -3,7 +3,8 @@
 Every error the capability raises on purpose derives from :class:`GithubError`
 (itself an :class:`~untaped.capability_api.UntapedError`) so ``report_errors``
 turns it into a clean ``error: ...`` line instead of a traceback. Failures are
-attributed to ``github``, except :class:`GitCorpusError` (``git``); a
+attributed to ``github``, except :class:`GitCorpusError` (``git``) and
+repository-inventory disk failures (``local``); a
 :class:`GithubGraphqlError` takes its category from its ``kind`` (a rate
 limit is ``unavailable``, bad credentials ``auth``, a forbidden scope
 ``permission``).
