@@ -89,6 +89,8 @@ class RunInRepos:
         return _failed(target, WorkspaceError("missing", category="failed"), None, "missing")
 
     def _row(self, target: RunTarget, result: CommandResult) -> RunOutcome:
+        if result.cancelled:
+            return _outcome(target, "skipped", result, "cancelled")
         if result.timed_out:
             detail = f"timed out after {self._timeout:g}s"
         elif result.returncode:

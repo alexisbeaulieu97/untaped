@@ -99,10 +99,14 @@ class WorktreeStatus(BaseModel):
 
 @dataclass(frozen=True)
 class CommandResult:
-    """What one command run produced; ``returncode`` is ``None`` when it timed out."""
+    """What one command run produced; ``returncode`` is ``None`` when it timed out or was cancelled.
+
+    ``cancelled`` means the runner was cancelled before the command started.
+    """
 
     returncode: int | None
     stdout: str
     stderr: str
     duration_s: float
     timed_out: bool
+    cancelled: bool = False
