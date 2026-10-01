@@ -1,13 +1,10 @@
-"""GitHub-owned capability API consumed by the Ansible capability.
+"""GitHub's declared public module: the only github code other capabilities import.
 
-Ansible uses this module as the narrow inter-capability surface for repository
-inventory, client operations, reference probing, settings, and result/error
-types. The closed :data:`__all__` keeps that boundary explicit.
-
-The exported types cover repository inventory, GitHub client operations,
-reference-probe results, settings (and :func:`github_settings` to read them),
-the Git host behind the configured base URL (:func:`github_web_host`), and
-GitHub error classification.
+Ansible uses it for repository inventory, client operations, reference
+probing, settings, and result/error types; workspace uses
+:func:`repo_inventory` for its repo picker. The closed :data:`__all__` keeps
+the boundary explicit; everything else under ``capabilities/github`` is
+private to GitHub.
 """
 
 from __future__ import annotations

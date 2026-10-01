@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 from untaped.capabilities.ansible.domain import payloads
 
 if TYPE_CHECKING:
-    from untaped.capabilities.github.ansible import BatchRepoRefsResult
+    from untaped.capabilities.github.api import BatchRepoRefsResult
 
 
 class DependencyIndex(Protocol):
@@ -214,7 +214,7 @@ class LsRemoteGit(Protocol):
 
 
 class BatchRepoRefsClient(Protocol):
-    """The slice of ``untaped.capabilities.github.ansible.GithubClient`` the probe needs."""
+    """The slice of ``untaped.capabilities.github.api.GithubClient`` the probe needs."""
 
     def batch_repo_refs(
         self,

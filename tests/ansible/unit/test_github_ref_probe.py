@@ -12,7 +12,7 @@ from untaped.capabilities.ansible.infrastructure.github_ref_probe import (
     GithubRefProbe,
     is_transient_ref_probe_failure,
 )
-from untaped.capabilities.github.ansible import (
+from untaped.capabilities.github.api import (
     BatchRepoRefsFailure,
     BatchRepoRefsResult,
     GithubGraphqlError,

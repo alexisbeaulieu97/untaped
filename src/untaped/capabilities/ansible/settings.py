@@ -7,7 +7,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from untaped.capabilities.github.ansible import normalize_team_scopes
+from untaped.capabilities.github.api import normalize_team_scopes
 
 DEFAULT_DEPENDENCY_PATHS = (
     "roles/requirements.yml",
