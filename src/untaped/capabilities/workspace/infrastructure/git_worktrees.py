@@ -238,7 +238,10 @@ class LocalGitWorktrees:
             ):
                 raise WorkspaceError(
                     f"{cache} is a cache from untaped 9.x",
-                    hint="delete it; the next command re-fetches",
+                    hint=(
+                        "set workspace.cache_dir to a new directory; keep this one"
+                        " while clones made before untaped 7.0 borrow objects from it"
+                    ),
                 )
         else:
             self._run(["init", "--bare", "--quiet", str(cache)], cwd=cache.parent)

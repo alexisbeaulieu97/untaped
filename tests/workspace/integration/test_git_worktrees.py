@@ -204,7 +204,10 @@ def test_a_9x_cache_is_refused_with_a_hint(
     with pytest.raises(WorkspaceError) as caught:
         worktrees.checkout(url, tmp_path / "ws" / "api", branch="b", base=None)
     assert str(caught.value) == f"{cache} is a cache from untaped 9.x"
-    assert caught.value.hint == "delete it; the next command re-fetches"
+    assert caught.value.hint == (
+        "set workspace.cache_dir to a new directory; keep this one while clones"
+        " made before untaped 7.0 borrow objects from it"
+    )
 
 
 def test_a_9x_cache_without_its_remote_is_refused(
