@@ -407,3 +407,17 @@ def test_scope_for_returns_none_when_no_scope_field() -> None:
         spec={},
     )
     assert scope_for(ref, resource) is None
+
+
+def test_plan_payload_ignores_fields_old_exports_carried() -> None:
+    planner = ApplyPlanner()
+    resource = Resource(
+        kind="JobTemplate",
+        metadata=Metadata(name="deploy", organization="Default"),
+        spec={"playbook": "x.yml", "custom_virtualenv": "/v", "webhook_key": "$encrypted$"},
+    )
+    payload = planner.plan_payload(
+        JOB_TEMPLATE_SPEC, resource, fk=cast(FkResolver, _StubFk({("Organization", "Default"): 1}))
+    )
+    assert "custom_virtualenv" not in payload
+    assert "webhook_key" not in payload

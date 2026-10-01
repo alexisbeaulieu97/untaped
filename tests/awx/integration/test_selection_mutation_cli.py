@@ -238,7 +238,7 @@ def test_patch_rejects_invalid_pipe_before_write(fake_aap: Any, kind: str, id_: 
 @pytest.mark.parametrize("fmt", ["json", "yaml", "pipe", "table", "raw"])
 def test_patch_secret_values_redacted_in_all_formats(fake_aap: Any, fmt: str) -> None:
     seed(fake_aap, "job_templates")
-    fake_aap.store["job_templates"][10]["webhook_key"] = "old-secret-value"
+    fake_aap.store["job_templates"][10]["host_config_key"] = "old-secret-value"
     result = CliInvoker().invoke(
         app,
         [
@@ -246,7 +246,7 @@ def test_patch_secret_values_redacted_in_all_formats(fake_aap: Any, fmt: str) ->
             "patch",
             "target",
             "--set",
-            "webhook_key=new-secret-value",
+            "host_config_key=new-secret-value",
             "--yes",
             "--format",
             fmt,
@@ -255,7 +255,17 @@ def test_patch_secret_values_redacted_in_all_formats(fake_aap: Any, fmt: str) ->
     assert result.exit_code == 0, result.output
     assert "old-secret-value" not in result.output
     assert "new-secret-value" not in result.output
-    assert fake_aap.get_record("job_templates", 10)["webhook_key"] == "new-secret-value"
+    assert fake_aap.get_record("job_templates", 10)["host_config_key"] == "new-secret-value"
+
+
+@pytest.mark.parametrize("field", ["webhook_key", "custom_virtualenv"])
+def test_patch_rejects_server_owned_template_fields(fake_aap: Any, field: str) -> None:
+    seed(fake_aap, "job_templates")
+    result = CliInvoker().invoke(
+        app, ["job-templates", "patch", "target", "--set", f"{field}=x", "--yes"]
+    )
+    assert result.exit_code != 0
+    assert "read-only" in result.output
 
 
 def test_patch_outcome_lists_are_native_lists(fake_aap: Any) -> None:
@@ -504,7 +514,7 @@ def test_patch_map_is_top_level_replacement_with_set_precedence(
 
 def test_save_masks_secrets_with_preservation_placeholder(fake_aap: Any, tmp_path: Path) -> None:
     seed(fake_aap, "job_templates")
-    fake_aap.store["job_templates"][10]["webhook_key"] = "secret-for-export"
+    fake_aap.store["job_templates"][10]["host_config_key"] = "secret-for-export"
     output = tmp_path / "saved.yml"
     result = CliInvoker().invoke(app, ["job-templates", "export", "target", "--out", str(output)])
     assert result.exit_code == 0, result.output
@@ -574,13 +584,13 @@ def test_membership_already_absent_remove_does_not_prompt_or_write(fake_aap: Any
 
 @pytest.mark.parametrize("command", ["get", "list"])
 @pytest.mark.parametrize("fmt", ["json", "yaml", "pipe", "table", "raw"])
-@pytest.mark.parametrize("field", ["webhook_key", "survey_spec"])
+@pytest.mark.parametrize("field", ["host_config_key", "survey_spec"])
 def test_reads_redact_known_secrets_with_explicit_columns(
     fake_aap: Any, command: str, fmt: str, field: str
 ) -> None:
     seed(fake_aap, "job_templates")
     fake_aap.store["job_templates"][10].update(
-        webhook_key="synthetic-read-secret",
+        host_config_key="synthetic-read-secret",
         survey_spec={"spec": [{"type": "password", "default": "synthetic-nested-secret"}]},
     )
     result = CliInvoker().invoke(
@@ -590,7 +600,7 @@ def test_reads_redact_known_secrets_with_explicit_columns(
     assert "synthetic-read-secret" not in result.output
     assert "synthetic-nested-secret" not in result.output
     assert "redacted" in result.stdout
-    assert fake_aap.get_record("job_templates", 10)["webhook_key"] == "synthetic-read-secret"
+    assert fake_aap.get_record("job_templates", 10)["host_config_key"] == "synthetic-read-secret"
 
 
 def test_get_redacts_full_readonly_credential_record(fake_aap: Any) -> None:

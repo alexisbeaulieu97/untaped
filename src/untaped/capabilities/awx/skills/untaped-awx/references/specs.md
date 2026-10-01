@@ -74,11 +74,13 @@ untaped awx export --all-kinds --organization Default --out-dir backup
 
 What a document cannot carry:
 
-- **Secrets.** `webhook_key` and the default of every `password` survey
-  question are written as `$encrypted$`, which keeps the stored values when
-  applied to the resource they came from. A new template drops the password
-  defaults with a warning, and a `webhook_key` placeholder refuses the
-  create. Other survey defaults are exported as they are.
+- **Secrets.** A job template's non-empty `host_config_key` and the
+  non-empty default of every `password` survey question are written as
+  `$encrypted$`, which keeps the stored values when applied to the resource
+  they came from; empty ones stay empty. A new template drops these
+  placeholders with a warning. Other survey defaults are exported as they are.
+- **Server-owned fields.** `webhook_key` and `custom_virtualenv` are read-only
+  upstream and not exported; `organization` lives in `metadata`, not `spec`.
 - **Access and history.** Roles, permissions, notification attachments,
   schedules of a template (a separate `Schedule` document) and past jobs.
 - **Nodes whose template was deleted.** Such a workflow node runs nothing

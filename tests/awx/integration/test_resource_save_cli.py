@@ -47,7 +47,6 @@ def _seed_basic(fake: Any) -> None:
         playbook="deploy.yml",
         description="deploy the app",
         last_job_status="successful",
-        webhook_key="$encrypted$",
     )
 
 

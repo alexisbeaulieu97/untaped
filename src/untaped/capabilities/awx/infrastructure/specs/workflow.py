@@ -19,7 +19,6 @@ WORKFLOW_JOB_TEMPLATE_SPEC = AwxResourceSpec(
     canonical_fields=(
         "description",
         "extra_vars",
-        "organization",
         "inventory",
         "scm_branch",
         "limit",
@@ -37,7 +36,6 @@ WORKFLOW_JOB_TEMPLATE_SPEC = AwxResourceSpec(
         "survey_spec",
         "webhook_service",
         "webhook_credential",
-        "webhook_key",
         "labels",
     ),
     read_only_fields=(
@@ -47,6 +45,7 @@ WORKFLOW_JOB_TEMPLATE_SPEC = AwxResourceSpec(
         "last_job_status",
         "next_job_run",
         "status",
+        "webhook_key",
     ),
     fk_refs=(
         FkRef(field="organization", kind="Organization"),
@@ -62,7 +61,7 @@ WORKFLOW_JOB_TEMPLATE_SPEC = AwxResourceSpec(
     launch_fk_refs=(FkRef(field="labels", kind="Label", scope_field="organization", multi=True),),
     sub_document_fields=("survey_spec",),
     node_field="nodes",
-    secret_paths=("webhook_key", "survey_spec.spec.*[type=password].default"),
+    secret_paths=("survey_spec.spec.*[type=password].default",),
     optional_secret_paths=("survey_spec.spec.*[type=password].default",),
     # AWX enriches a submitted survey as it does a job template's.
     server_enriched_fields=("survey_spec",),
