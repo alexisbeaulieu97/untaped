@@ -26,37 +26,55 @@ def _text(data: bytes | str | None) -> str:
 
 
 def _signal_group(proc: subprocess.Popen[bytes], sig: int) -> None:
-    with contextlib.suppress(ProcessLookupError):
+    with contextlib.suppress(ProcessLookupError, PermissionError):
         os.killpg(proc.pid, sig)
+
+
+_REAP_TIMEOUT_S = 5.0
+_GRACE_S = 2.0
 
 
 class SubprocessRunner:
     """:class:`CommandRunner` backed by ``Popen``; stdin is ``/dev/null``.
 
     The command runs in its own session so a timeout can kill its whole process tree.
+    After :meth:`cancel` the runner starts nothing new.
     """
 
     def __init__(self) -> None:
         self._live: set[subprocess.Popen[bytes]] = set()
+        self._cancelled = False
         self._lock = threading.Lock()
 
-    def cancel(self) -> None:
-        """Stop every running command: SIGTERM its process group, SIGKILL what outlives ~2s."""
+    def active_count(self) -> int:
+        """How many commands are running right now."""
         with self._lock:
+            return len(self._live)
+
+    def _is_cancelled(self) -> bool:
+        with self._lock:
+            return self._cancelled
+
+    def cancel(self) -> None:
+        """Stop every running command: SIGTERM its group, then SIGKILL it after ~2s."""
+        with self._lock:
+            self._cancelled = True
             procs = list(self._live)
         for proc in procs:
             _signal_group(proc, signal.SIGTERM)
-        deadline = time.monotonic() + 2.0
+        deadline = time.monotonic() + _GRACE_S
         while time.monotonic() < deadline and any(p.poll() is None for p in procs):
             time.sleep(0.02)
+        # A dead leader can leave live grandchildren holding the pipes: kill every group.
         for proc in procs:
-            if proc.poll() is None:
-                _signal_group(proc, signal.SIGKILL)
+            _signal_group(proc, signal.SIGKILL)
 
     def run(
         self, argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], timeout: float
     ) -> CommandResult:
         start = time.monotonic()
+        if self._is_cancelled():
+            return _result(None, "", "cancelled\n", start, timed_out=False)
         try:
             if not argv:
                 raise ValueError("empty command")
@@ -70,29 +88,50 @@ class SubprocessRunner:
                 start_new_session=True,
             )
         except (OSError, ValueError) as exc:
-            return CommandResult(
-                returncode=127,
-                stdout="",
-                stderr=f"{exc}\n",
-                duration_s=time.monotonic() - start,
-                timed_out=False,
-            )
+            return _result(127, "", f"{exc}\n", start, timed_out=False)
         with self._lock:
             self._live.add(proc)
-        timed_out = False
+            if self._cancelled:  # cancel() ran between Popen and registration
+                _signal_group(proc, signal.SIGKILL)
         try:
-            out, err = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            _signal_group(proc, signal.SIGKILL)
-            out, err = proc.communicate()
+            return self._collect(proc, timeout, start)
         finally:
             with self._lock:
                 self._live.discard(proc)
-        return CommandResult(
-            returncode=None if timed_out else proc.returncode,
-            stdout=_text(out),
-            stderr=_text(err),
-            duration_s=time.monotonic() - start,
-            timed_out=timed_out,
-        )
+
+    @staticmethod
+    def _collect(proc: subprocess.Popen[bytes], timeout: float, start: float) -> CommandResult:
+        try:
+            raw_out, raw_err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _signal_group(proc, signal.SIGKILL)
+            out, err = _drain(proc)
+            return _result(None, out, err, start, timed_out=True)
+        except BaseException:
+            _signal_group(proc, signal.SIGKILL)
+            raise
+        return _result(proc.returncode, _text(raw_out), _text(raw_err), start, timed_out=False)
+
+
+def _drain(proc: subprocess.Popen[bytes]) -> tuple[str, str]:
+    """Output of a killed process; closes the pipes if a stray holder keeps them open."""
+    try:
+        out, err = proc.communicate(timeout=_REAP_TIMEOUT_S)
+    except subprocess.TimeoutExpired as exc:
+        for pipe in (proc.stdout, proc.stderr):
+            if pipe is not None:
+                pipe.close()
+        return _text(exc.stdout), _text(exc.stderr)
+    return _text(out), _text(err)
+
+
+def _result(
+    returncode: int | None, stdout: str, stderr: str, start: float, *, timed_out: bool
+) -> CommandResult:
+    return CommandResult(
+        returncode=returncode,
+        stdout=stdout,
+        stderr=stderr,
+        duration_s=time.monotonic() - start,
+        timed_out=timed_out,
+    )
