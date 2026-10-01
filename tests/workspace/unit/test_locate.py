@@ -39,3 +39,24 @@ def test_outside_any_workspace(store: StateWorkspaceStore, tmp_path: Path) -> No
     with pytest.raises(WorkspaceNotFoundError) as caught:
         locate_workspace(store, name=None, workspaces_dir=tmp_path / "ws", cwd=tmp_path)
     assert caught.value.hint
+
+
+def test_cwd_equal_to_workspaces_dir(store: StateWorkspaceStore, tmp_path: Path) -> None:
+    with pytest.raises(WorkspaceNotFoundError) as caught:
+        locate_workspace(store, name=None, workspaces_dir=tmp_path, cwd=tmp_path)
+    assert caught.value.hint
+
+
+def test_through_a_symlink(store: StateWorkspaceStore, tmp_path: Path) -> None:
+    deep = tmp_path / "ws" / "w" / "api"
+    deep.mkdir(parents=True)
+    link = tmp_path / "link"
+    link.symlink_to(deep)
+    assert locate_workspace(store, name=None, workspaces_dir=tmp_path / "ws", cwd=link).name == "w"
+
+
+def test_first_component_not_an_active_record(store: StateWorkspaceStore, tmp_path: Path) -> None:
+    other = tmp_path / "other" / "api"
+    other.mkdir(parents=True)
+    with pytest.raises(WorkspaceNotFoundError):
+        locate_workspace(store, name=None, workspaces_dir=tmp_path, cwd=other)

@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from untaped.capabilities.workspace.application.provision import ProvisionRepos
-from untaped.capabilities.workspace.domain import RepoArg, ResolvedRepo, repo_identity
+from untaped.capabilities.workspace.domain import Checkout, RepoArg, ResolvedRepo, repo_identity
 from untaped.capabilities.workspace.errors import WorkspaceError
 from untaped.capabilities.workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
 from untaped.capability_api import UsageError
@@ -93,3 +93,57 @@ def test_create_on_an_existing_name_is_a_conflict(
     with pytest.raises(WorkspaceError) as caught:
         provision.create("J-1", [RepoArg(ident=str(api))])
     assert caught.value.category == "conflict"
+
+
+class _FlakyGit:
+    """Succeeds for the first checkout, then raises an unexpected error."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def checkout(self, url: str, dest: Path, *, branch: str | None, base: str | None) -> Checkout:
+        self.calls += 1
+        if self.calls > 1:
+            raise RuntimeError("boom")
+        return Checkout(action="created", base="main")
+
+
+def test_unexpected_error_still_persists_finished_repos(tmp_path: Path) -> None:
+    provision = ProvisionRepos(
+        StateWorkspaceStore(),
+        _FlakyGit(),  # type: ignore[arg-type]
+        UrlCatalog(),
+        workspaces_dir=tmp_path / "ws",
+        branch_template="{name}",
+        parallel=1,
+        now=lambda: datetime(2026, 10, 1, tzinfo=UTC),
+    )
+    with pytest.raises(RuntimeError):
+        provision.create(
+            "J-1", [RepoArg(ident="/x/acme/one.git"), RepoArg(ident="/x/acme/two.git")]
+        )
+    record = StateWorkspaceStore().get("J-1")
+    assert record is not None and [s.dir for s in record.repos] == ["one"]
+
+
+def test_same_url_twice_in_one_request(
+    provision: ProvisionRepos, make_upstream: Callable[..., Path]
+) -> None:
+    api = make_upstream("api")
+    rows = provision.create("J-1", [RepoArg(ident=str(api)), RepoArg(ident=str(api))])
+    assert len(rows) == 1
+    record = StateWorkspaceStore().get("J-1")
+    assert record is not None and len(record.repos) == 1
+
+
+def test_add_with_unresolvable_ident_changes_nothing(
+    provision: ProvisionRepos, make_upstream: Callable[..., Path], tmp_path: Path
+) -> None:
+    api = make_upstream("api")
+    provision.create("J-1", [RepoArg(ident=str(api))])
+    before = StateWorkspaceStore().get("J-1")
+    assert before is not None
+    with pytest.raises(UsageError):
+        provision.add(before, [RepoArg(ident="typo")])
+    assert StateWorkspaceStore().get("J-1") == before
+    assert sorted(p.name for p in (tmp_path / "ws" / "J-1").iterdir()) == ["api"]

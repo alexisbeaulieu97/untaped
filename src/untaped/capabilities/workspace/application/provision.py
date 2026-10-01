@@ -144,9 +144,11 @@ class ProvisionRepos:
                     base=result.base,
                 )
 
-        bounded_map(_run, jobs, concurrency=self._parallel, on_each=_collect)
-        if specs:
-            self._store.add_repos(record.name, [specs[i] for i in sorted(specs)])
+        try:
+            bounded_map(_run, jobs, concurrency=self._parallel, on_each=_collect)
+        finally:
+            if specs:
+                self._store.add_repos(record.name, [specs[i] for i in sorted(specs)])
         return [rows[i] for i in sorted(rows)]
 
     def _branch(self, workspace: str, arg: RepoArg) -> str | None:

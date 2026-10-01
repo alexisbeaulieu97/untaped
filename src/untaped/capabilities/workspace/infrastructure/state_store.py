@@ -53,7 +53,9 @@ class StateWorkspaceStore:
             for row in rows:
                 if row.get("name") == name:
                     current = WorkspaceRecord.model_validate(row)
-                    updated = current.model_copy(update={"repos": (*current.repos, *repos)})
+                    have = {spec.url for spec in current.repos}
+                    new = [spec for spec in repos if spec.url not in have]
+                    updated = current.model_copy(update={"repos": (*current.repos, *new)})
                     row = _dump(updated)
                 out.append(row)
             if updated is None:
