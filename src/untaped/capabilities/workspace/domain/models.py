@@ -52,6 +52,8 @@ class RepoArg(BaseModel):
     read_only: bool = False
     branch: str | None = None
     base: str | None = None
+    fallback: str | None = None
+    """Clone URL to use when ``ident`` cannot be resolved (a piped record's own URL)."""
 
 
 class ResolvedRepo(BaseModel):
@@ -75,7 +77,11 @@ class Checkout(BaseModel):
 
 
 class WorktreeStatus(BaseModel):
-    """Git state of one worktree; ``unpushed`` counts commits no remote branch has."""
+    """Git state of one worktree; ``unpushed`` counts commits no remote branch has.
+
+    ``upstream`` is ``None`` until the branch exists on origin; ``submodules``
+    is whether any submodule is initialised in the worktree.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -87,3 +93,4 @@ class WorktreeStatus(BaseModel):
     untracked: int
     stashed: int
     unpushed: int
+    submodules: bool = False

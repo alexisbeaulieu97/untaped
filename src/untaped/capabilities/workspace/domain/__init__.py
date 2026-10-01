@@ -13,9 +13,10 @@ from untaped.capabilities.workspace.domain.naming import (
     assign_dirs,
     branch_for,
     repo_identity,
+    repo_key,
     validate_workspace_name,
 )
-from untaped.capabilities.workspace.domain.safety import archive_blockers
+from untaped.capabilities.workspace.domain.safety import archive_blockers, archive_hint
 
 __all__ = [
     "ArchivedRecord",
@@ -26,8 +27,10 @@ __all__ = [
     "WorkspaceRecord",
     "WorktreeStatus",
     "archive_blockers",
+    "archive_hint",
     "assign_dirs",
     "branch_for",
     "repo_identity",
+    "repo_key",
     "validate_workspace_name",
 ]

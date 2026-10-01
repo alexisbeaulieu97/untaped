@@ -34,6 +34,7 @@ from untaped.capabilities.workspace.domain.records import (
     StatusRow,
     WorkspaceRow,
 )
+from untaped.capabilities.workspace.domain.safety import archive_hint
 from untaped.capabilities.workspace.errors import WorkspaceError
 from untaped.capabilities.workspace.infrastructure import StateWorkspaceStore
 from untaped.capabilities.workspace.settings import WorkspaceSettings
@@ -58,7 +59,10 @@ from untaped.capability_api import (
 
 app = create_app(
     name="workspace",
-    help="Create and archive task workspaces (git worktrees of several repos).",
+    help=(
+        "Create and archive task workspaces (git worktrees of several repos). "
+        "Experimental: may change in a minor release."
+    ),
 )
 
 REPO_OUTCOME = "workspace.repo_outcome"
@@ -213,10 +217,7 @@ def archive_command(
                 return
             raise WorkspaceError(
                 f"{plural(len(blocked), 'repo')} would lose work; nothing archived",
-                hint=(
-                    "commit/push or stash, or pass --force to discard the work "
-                    "and delete the directories after confirmation"
-                ),
+                hint=archive_hint(blocked),
             )
         if blocked:
             _confirm_discard(record.name, blocked, yes=yes)

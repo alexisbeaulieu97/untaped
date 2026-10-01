@@ -61,3 +61,19 @@ def commit_in(worktree: Path, name: str = "change.txt") -> None:
     (worktree / name).write_text("x")
     git(worktree, "add", name)
     git(worktree, "commit", "-q", "-m", f"add {name}")
+
+
+def add_submodule(upstream: Path, sub: Path, *, path: str = "lib") -> None:
+    """Push a commit adding ``sub`` as a submodule at ``path`` to ``upstream``'s ``main``."""
+    seed = upstream.parent / f"_seed_sub_{upstream.stem}"
+    git(upstream.parent, "clone", "-q", str(upstream), str(seed))
+    for key, value in (("user.email", "t@t"), ("user.name", "t"), ("commit.gpgsign", "false")):
+        git(seed, "config", key, value)
+    git(seed, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(sub), path)
+    git(seed, "commit", "-q", "-m", "add submodule")
+    git(seed, "push", "-q", "origin", "main")
+    shutil.rmtree(seed)
+
+
+def init_submodules(worktree: Path) -> None:
+    git(worktree, "-c", "protocol.file.allow=always", "submodule", "update", "-q", "--init")

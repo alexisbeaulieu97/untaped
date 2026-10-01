@@ -147,3 +147,84 @@ def test_add_with_unresolvable_ident_changes_nothing(
         provision.add(before, [RepoArg(ident="typo")])
     assert StateWorkspaceStore().get("J-1") == before
     assert sorted(p.name for p in (tmp_path / "ws" / "J-1").iterdir()) == ["api"]
+
+
+def test_create_refuses_an_existing_non_empty_directory(
+    provision: ProvisionRepos, make_upstream: Callable[..., Path], tmp_path: Path
+) -> None:
+    old = tmp_path / "ws" / "J-1"
+    old.mkdir(parents=True)
+    (old / "untaped.yml").write_text("an old workspace")
+    with pytest.raises(WorkspaceError) as caught:
+        provision.create("J-1", [RepoArg(ident=str(make_upstream("api")))])
+    assert (caught.value.category, caught.value.system) == ("conflict", "local")
+    assert caught.value.hint == (
+        "a directory with that name already exists (perhaps an old workspace); "
+        "move it aside or pick another name"
+    )
+    assert StateWorkspaceStore().get("J-1") is None
+    assert sorted(p.name for p in old.iterdir()) == ["untaped.yml"]
+
+
+def test_create_accepts_an_existing_empty_directory(
+    provision: ProvisionRepos, make_upstream: Callable[..., Path], tmp_path: Path
+) -> None:
+    (tmp_path / "ws" / "J-1").mkdir(parents=True)
+    rows = provision.create("J-1", [RepoArg(ident=str(make_upstream("api")))])
+    assert [r.action for r in rows] == ["created"]
+
+
+class _RecordingGit:
+    """Checks out nothing; records which URLs it was asked for."""
+
+    def __init__(self) -> None:
+        self.urls: list[str] = []
+
+    def checkout(self, url: str, dest: Path, *, branch: str | None, base: str | None) -> Checkout:
+        self.urls.append(url)
+        return Checkout(action="created", base="main")
+
+
+class _PassThrough:
+    def resolve(self, ident: str) -> ResolvedRepo:
+        owner, name = repo_identity(ident)
+        return ResolvedRepo(url=ident, name=f"{owner}/{name}")
+
+
+def _recording(tmp_path: Path, git: _RecordingGit, catalog: object) -> ProvisionRepos:
+    return ProvisionRepos(
+        StateWorkspaceStore(),
+        git,  # type: ignore[arg-type]
+        catalog,  # type: ignore[arg-type]
+        workspaces_dir=tmp_path / "ws",
+        branch_template="{name}",
+        parallel=1,
+        now=lambda: datetime(2026, 10, 1, tzinfo=UTC),
+    )
+
+
+def test_https_and_ssh_urls_of_one_repo_are_the_same_repo(tmp_path: Path) -> None:
+    git = _RecordingGit()
+    provision = _recording(tmp_path, git, _PassThrough())
+    https, ssh = "https://github.com/acme/api.git", "git@github.com:acme/api.git"
+    assert len(provision.create("J-1", [RepoArg(ident=https), RepoArg(ident=ssh)])) == 1
+    record = StateWorkspaceStore().get("J-1")
+    assert record is not None
+    [row] = provision.add(record, [RepoArg(ident=ssh)])
+    assert row.action == "unchanged"
+    assert git.urls == [https]
+
+
+def test_an_unknown_name_falls_back_to_its_clone_url(tmp_path: Path) -> None:
+    git = _RecordingGit()
+    provision = _recording(tmp_path, git, UrlCatalog())
+    rows = provision.create("J-1", [RepoArg(ident="acme/gone", fallback="/srv/acme/gone.git")])
+    assert [r.action for r in rows] == ["created"]
+    assert git.urls == ["/srv/acme/gone.git"]
+
+
+def test_an_unknown_name_without_a_fallback_still_fails(tmp_path: Path) -> None:
+    with pytest.raises(UsageError):
+        _recording(tmp_path, _RecordingGit(), UrlCatalog()).create(
+            "J-1", [RepoArg(ident="acme/gone")]
+        )

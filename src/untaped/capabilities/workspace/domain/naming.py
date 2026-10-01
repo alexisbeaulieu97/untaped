@@ -1,7 +1,8 @@
-"""Naming rules: workspace names, repo identities, directory names, branches."""
+"""Naming rules: workspace names, repo identities and keys, directory names, branches."""
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Sequence
 from urllib.parse import urlparse
@@ -10,6 +11,7 @@ from untaped.capabilities.workspace.domain.models import RepoSpec
 from untaped.capability_api import UsageError, q, safe_path_segment
 
 _SCP = re.compile(r"^[^@/]+@[^:/]+:(?P<path>.+)$")
+_SCP_HOST = re.compile(r"^(?P<user>[^@]+)@(?P<host>[^:]+):(?P<path>.+)$")
 
 
 def validate_workspace_name(name: str) -> str:
@@ -27,6 +29,37 @@ def repo_identity(url: str) -> tuple[str, str]:
     name = parts[-1].removesuffix(".git") if parts else url
     owner = parts[-2] if len(parts) > 1 else ""
     return owner, name
+
+
+def repo_key(url: str) -> tuple[str, ...]:
+    """The path of ``url``'s bare cache under ``cache_dir``: one key per repo.
+
+    ``<host>/<owner>/<name>.git``, so the https and ssh URLs of one repo
+    share a key. A URL without a host (a local path, ``file://``) keys on
+    a hash of the whole string. Every part is one safe path segment, so a
+    hostile URL (``https://evil/../../tmp/pwn.git``) never escapes the cache.
+    """
+    host, segments = _host_and_path(url)
+    if host is None or not segments:
+        return ("_unknown", f"{hashlib.sha256(url.encode()).hexdigest()[:16]}.git")
+    *parents, leaf = (safe_path_segment(part) for part in segments)
+    return (safe_path_segment(host), *parents, f"{leaf}.git")
+
+
+def _host_and_path(url: str) -> tuple[str | None, list[str]]:
+    """``(host, path segments without .git)`` of a URL or ``user@host:path``."""
+    if "://" in url:
+        parsed = urlparse(url)
+        host, path = parsed.hostname, parsed.path or ""
+    else:
+        match = _SCP_HOST.match(url)
+        if not match:
+            return None, []
+        host, path = match.group("host"), match.group("path")
+    segments = [s for s in path.replace("\\", "/").split("/") if s]
+    if segments:
+        segments[-1] = segments[-1].removesuffix(".git")
+    return host, segments
 
 
 def assign_dirs(new: Sequence[tuple[str, str]], existing: Sequence[RepoSpec]) -> list[str]:

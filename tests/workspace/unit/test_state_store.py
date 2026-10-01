@@ -55,3 +55,12 @@ def test_add_repos_twice_records_once() -> None:
     assert record.repos == (SPEC,)
     stored = store.get("w")
     assert stored is not None and stored.repos == (SPEC,)
+
+
+def test_one_repo_under_two_url_forms_records_once() -> None:
+    store = StateWorkspaceStore()
+    store.create(WorkspaceRecord(name="w", created_at=T0))
+    https = SPEC.model_copy(update={"url": "https://github.com/acme/api.git"})
+    ssh = SPEC.model_copy(update={"url": "git@github.com:acme/api.git", "dir": "acme-api"})
+    store.add_repos("w", [https])
+    assert store.add_repos("w", [ssh]).repos == (https,)

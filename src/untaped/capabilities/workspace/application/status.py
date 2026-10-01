@@ -6,7 +6,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.capabilities.workspace.domain.records import StatusRow
-from untaped.capabilities.workspace.domain.safety import archive_blockers
+from untaped.capabilities.workspace.domain.safety import (
+    CACHE_MISSING,
+    UNREADABLE,
+    archive_blockers,
+)
 from untaped.capability_api import ErrorInfo, UntapedError, note_failure
 
 if TYPE_CHECKING:
@@ -14,15 +18,12 @@ if TYPE_CHECKING:
     from untaped.capabilities.workspace.domain.models import RepoSpec, WorkspaceRecord
 
 
-CACHE_MISSING = "repo cache missing; local work cannot be checked"
-"""Blocker for a repo whose cache is gone: its worktree's state is unknown."""
-
-
 class WorkspaceStatus:
     """``workspace status``: one :class:`StatusRow` per repo, offline unless ``fetch``.
 
     A failed fetch does not stop the others: that repo's row still reports
     its local state, with ``detail`` and ``error`` saying why the fetch failed.
+    A worktree git cannot read gets an ``error`` row that blocks archiving.
     """
 
     def __init__(self, git: GitWorktrees, *, workspaces_dir: Path) -> None:
@@ -35,7 +36,7 @@ class WorkspaceStatus:
         for spec in record.repos:
             failure = self._fetch(spec.url) if fetch else None
             row = self._row(record.name, root, spec)
-            if failure is not None:
+            if failure is not None and row.error is None:
                 row = row.model_copy(
                     update={"detail": f"fetch failed: {failure.message}", "error": failure}
                 )
@@ -62,7 +63,18 @@ class WorkspaceStatus:
             return StatusRow(
                 **common, branch=spec.branch, state="cache_missing", blockers=(CACHE_MISSING,)
             )
-        status = self._git.status(root / spec.dir, branch=spec.branch, base=spec.base)
+        try:
+            status = self._git.status(root / spec.dir, branch=spec.branch, base=spec.base)
+        except UntapedError as exc:
+            reason = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
+            return StatusRow(
+                **common,
+                branch=spec.branch,
+                state="error",
+                blockers=(f"{UNREADABLE}: {reason}",),
+                detail=str(exc),
+                error=note_failure(exc, message=str(exc)),
+            )
         if status is None:
             return StatusRow(**common, branch=spec.branch, state="missing")
         return StatusRow(
@@ -76,5 +88,5 @@ class WorkspaceStatus:
             untracked=status.untracked,
             stashed=status.stashed,
             unpushed=status.unpushed,
-            blockers=archive_blockers(status, read_only=spec.read_only),
+            blockers=archive_blockers(status),
         )

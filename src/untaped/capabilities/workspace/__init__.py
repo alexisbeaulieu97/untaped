@@ -25,7 +25,10 @@ def build_app() -> App:
 SPEC = CapabilitySpec(
     name="workspace",
     app_factory=build_app,
-    help="Create and archive task workspaces (git worktrees of several repos).",
+    help=(
+        "Create and archive task workspaces (git worktrees of several repos). "
+        "Experimental: may change in a minor release."
+    ),
     config_section="workspace",
     profile_model=WorkspaceSettings,
     state_model=WorkspaceState,

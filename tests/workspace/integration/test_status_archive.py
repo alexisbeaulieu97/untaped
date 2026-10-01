@@ -95,6 +95,25 @@ def test_hand_deleted_repo_is_missing(env: Env) -> None:
     assert row.state == "missing"
 
 
+def test_read_only_commit_blocks(tmp_path: Path, make_upstream: Callable[..., Path]) -> None:
+    git_ = LocalGitWorktrees(tmp_path / "cache")
+    store = StateWorkspaceStore()
+    ProvisionRepos(
+        store,
+        git_,
+        UrlCatalog(),
+        workspaces_dir=tmp_path / "ws",
+        branch_template="{name}",
+        parallel=1,
+        now=lambda: T0,
+    ).create("J-2", [RepoArg(ident=str(make_upstream("web")), read_only=True)])
+    commit_in(tmp_path / "ws" / "J-2" / "web")
+    record = store.get("J-2")
+    assert record is not None
+    [row] = WorkspaceStatus(git_, workspaces_dir=tmp_path / "ws")(record)
+    assert row.blockers == ("1 commit not pushed",)
+
+
 def test_deleted_cache_is_cache_missing(env: Env, tmp_path: Path) -> None:
     shutil.rmtree(tmp_path / "cache")
     [row] = env.status(env.record)
@@ -119,7 +138,7 @@ def test_archive_leaves_other_files(env: Env) -> None:
     (env.repo.parent / "notes.md").write_text("keep")
     rows = env.archive(env.record, force=False)
     [summary] = [r for r in rows if not r.repo]
-    assert (summary.action, summary.target_path) == ("removed", env.repo.parent)
+    assert (summary.action, summary.target_path) == ("skipped", env.repo.parent)
     assert "left other files" in summary.detail
     assert (env.repo.parent / "notes.md").exists()
     assert not env.repo.exists()

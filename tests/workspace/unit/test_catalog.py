@@ -65,6 +65,43 @@ def test_unknown_name() -> None:
     with pytest.raises(UsageError) as caught:
         _catalog().resolve("nope")
     assert caught.value.hint
+    assert "did you mean" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("ident", "suggested"), [("acme/apii", "'acme/api'"), ("wbe", "'acme/web'")]
+)
+def test_unknown_name_suggests_close_matches(ident: str, suggested: str) -> None:
+    with pytest.raises(UsageError, match="did you mean") as caught:
+        _catalog().resolve(ident)
+    assert suggested in str(caught.value)
+
+
+def test_the_inventory_is_read_once_per_catalog() -> None:
+    calls: list[int] = []
+
+    def inventory() -> list[RepositoryInventoryItem]:
+        calls.append(1)
+        return ITEMS
+
+    catalog = GithubRepoCatalog(protocol="https", inventory=inventory)
+    catalog.resolve("acme/api")
+    catalog.resolve("acme/web")
+    assert len(calls) == 1
+
+
+def test_a_failed_inventory_is_not_retried_per_repo() -> None:
+    calls: list[int] = []
+
+    def boom() -> list[RepositoryInventoryItem]:
+        calls.append(1)
+        raise UntapedError("no inventory scope")
+
+    catalog = GithubRepoCatalog(protocol="https", inventory=boom)
+    for ident in ("api", "web"):
+        with pytest.raises(UntapedError):
+            catalog.resolve(ident)
+    assert len(calls) == 1
 
 
 def test_repo_without_any_url() -> None:
