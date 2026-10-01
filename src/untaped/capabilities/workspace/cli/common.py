@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import os
+import tempfile
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
@@ -12,7 +15,7 @@ from cyclopts import Parameter
 from untaped.capabilities.workspace.application.locate import locate_workspace, workspace_root
 from untaped.capabilities.workspace.application.provision import ProvisionRepos
 from untaped.capabilities.workspace.application.status import WorkspaceStatus
-from untaped.capabilities.workspace.domain.models import RepoArg, WorkspaceRecord
+from untaped.capabilities.workspace.domain.models import RepoArg, RepoSpec, WorkspaceRecord
 from untaped.capabilities.workspace.infrastructure import (
     GithubRepoCatalog,
     LocalGitWorktrees,
@@ -25,6 +28,7 @@ from untaped.capability_api import (
     clamp_parallel,
     get_config_section,
     read_stdin_input,
+    resolve_text_input,
 )
 
 STDIN_KINDS = frozenset({"github.repo", "github.repo_hit", "github.sweep_repo"})
@@ -187,3 +191,71 @@ def stdin_repos() -> list[RepoArg]:
 
 def _text(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+RUN_STDIN_KINDS = frozenset({"workspace.status", "workspace.repo_outcome", "workspace.run_outcome"})
+"""Pipe kinds ``run --stdin`` reads repos from."""
+
+
+def select_run_repos(
+    specs: Sequence[RepoSpec],
+    *,
+    repo: Sequence[str] | None,
+    stdin: bool,
+    include_read_only: bool,
+) -> list[RepoSpec]:
+    """The repos ``run`` targets: ``--repo``/``--stdin`` names (display or dir), else all.
+
+    Writable repos only unless ``include_read_only``. An unknown name is a
+    usage error listing the valid ones.
+    """
+    wanted = list(repo or [])
+    if stdin:
+        wanted += _stdin_repo_names()
+    if wanted:
+        by_name = {key: spec for spec in specs for key in (spec.name, spec.dir)}
+        unknown = [name for name in wanted if name not in by_name]
+        if unknown:
+            valid = ", ".join(f"{spec.name} ({spec.dir})" for spec in specs)
+            raise UsageError(f"unknown repo: {', '.join(unknown)}", hint=f"valid repos: {valid}")
+        chosen = {by_name[name] for name in wanted}
+        specs = [spec for spec in specs if spec in chosen]
+    return [spec for spec in specs if include_read_only or not spec.read_only]
+
+
+def _stdin_repo_names() -> list[str]:
+    data = read_stdin_input(accept_kinds=RUN_STDIN_KINDS, what="repos")
+    if data.records is None:
+        return list(data.values)
+    names: list[str] = []
+    for envelope in data.records:
+        name = _text(envelope.record.get("repo")) or _text(envelope.record.get("dir"))
+        if name is None:
+            raise UsageError(f"stdin line {envelope.lineno}: record has no repo or dir")
+        names.append(name)
+    return names
+
+
+@contextmanager
+def run_argv(command: str) -> Iterator[list[str]]:
+    """The argv for ``run``'s command argument.
+
+    ``-`` is a script read from stdin (kept in a temp file for the duration);
+    an existing file runs directly when executable, else through ``sh``;
+    anything else is a ``sh -c`` string.
+    """
+    if command == "-":
+        script = resolve_text_input(value=None, file=None, what="script")
+        with tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False) as handle:
+            handle.write(script + "\n")
+        try:
+            yield ["sh", handle.name]
+        finally:
+            Path(handle.name).unlink(missing_ok=True)
+        return
+    path = Path(command).expanduser()
+    if path.is_file():
+        absolute = str(Path.cwd() / path)
+        yield [absolute] if os.access(absolute, os.X_OK) else ["sh", absolute]
+    else:
+        yield ["sh", "-c", command]
