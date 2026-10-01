@@ -275,12 +275,24 @@ def run_argv(command: str) -> Iterator[list[str]]:
         finally:
             Path(handle.name).unlink(missing_ok=True)
         return
-    path = Path(command).expanduser()
-    if path.is_file():
+    path = _existing_file(command)
+    if path is not None:
         absolute = str(Path.cwd() / path)
         yield [absolute] if _runs_directly(absolute) else ["sh", absolute]
     else:
         yield ["sh", "-c", "--", command]
+
+
+def _existing_file(command: str) -> Path | None:
+    """``command`` as a path when it names an existing file; ``None`` for a command string.
+
+    ``~nosuchuser/x`` raises ``RuntimeError`` from ``expanduser``: a command string too.
+    """
+    try:
+        path = Path(command).expanduser()
+        return path if path.is_file() else None
+    except RuntimeError, OSError, ValueError:
+        return None
 
 
 def _runs_directly(path: str) -> bool:

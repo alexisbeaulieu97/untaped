@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+from collections import Counter
 from collections.abc import Sequence
 from contextlib import nullcontext
 from pathlib import Path
@@ -292,7 +294,7 @@ def run_command(
         float,
         Parameter(
             name="--timeout",
-            validator=Number(gt=0),
+            validator=(Number(gt=0), _finite),
             help="Seconds allowed per repo before it is killed.",
         ),
     ] = 600.0,
@@ -329,27 +331,32 @@ def run_command(
         root = workspace_dir(settings, record.name)
         targets = [RunTarget(record.name, spec, root / spec.dir) for spec in specs]
         human = fmt == "table"
+        rows: list[RunOutcome] = []
         if not targets:
             ui_context(strict=False).message(
                 "warning", "no repos to run in (read-only repos need --include-read-only)"
             )
-            if not human:
-                emit([], fmt=fmt, columns=columns, kind=RUN_OUTCOME)
-            return
-        with run_argv(command) as argv:
-            run = RunInRepos(
-                SubprocessRunner(),
-                parallel=parallel_workers(settings, parallel),
-                timeout=timeout,
-                fail_fast=fail_fast,
-                on_done=_echo_block if human else None,
-            )
-            rows = run(targets, argv)
-        if human:
-            _show_run_summary(rows)
         else:
+            with run_argv(command) as argv:
+                run = RunInRepos(
+                    SubprocessRunner(),
+                    parallel=parallel_workers(settings, parallel),
+                    timeout=timeout,
+                    fail_fast=fail_fast,
+                    on_done=_echo_block if human else None,
+                )
+                rows = run(targets, argv)
+        if not human:
             emit(rows, fmt=fmt, columns=columns, kind=RUN_OUTCOME)
+        elif rows:
+            _show_run_summary(rows)
     finish(any(row.failed for row in rows))
+
+
+def _finite(type_: object, value: float) -> None:
+    """Cyclopts validator: ``nan`` and ``inf`` would disable the deadline."""
+    if not math.isfinite(value):
+        raise ValueError(f"must be a finite number, got {value}")
 
 
 def _check_run_positionals(name: str | None, command: str, *, stdin: bool) -> None:
@@ -386,12 +393,12 @@ def _echo_block(row: RunOutcome) -> None:
 
 def _show_run_summary(rows: Sequence[RunOutcome]) -> None:
     failed = [row.dir for row in rows if row.failed]
-    parts = [f"{sum(1 for row in rows if row.action == 'ran')} ok"]
+    actions = Counter(row.action for row in rows)
+    parts = [f"{actions['ran']} ok"]
     if failed:
         parts.append(f"{len(failed)} failed ({', '.join(failed)})")
-    skipped = sum(1 for row in rows if row.action == "skipped")
-    if skipped:
-        parts.append(f"{skipped} skipped")
+    if actions["skipped"]:
+        parts.append(f"{actions['skipped']} skipped")
     ui_context(strict=False).message("error" if failed else "success", " · ".join(parts))
 
 

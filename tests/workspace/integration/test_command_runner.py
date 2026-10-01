@@ -3,9 +3,10 @@
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
-from threading import Thread
+from threading import Thread, current_thread, main_thread
 from types import SimpleNamespace
 
 import pytest
@@ -151,7 +152,12 @@ def test_second_interrupt_during_cancel_still_kills(
     thread = _start(runner, "trap '' TERM; touch STARTED; sleep 30", tmp_path, results)
     _wait_for([tmp_path / "STARTED"])
 
-    def interrupted(_seconds: float) -> None:
+    real_sleep = time.sleep
+
+    def interrupted(seconds: float) -> None:
+        if current_thread() is not main_thread():  # the run's own waits are not interrupted
+            real_sleep(seconds)
+            return
         raise KeyboardInterrupt
 
     monkeypatch.setattr(
@@ -176,3 +182,30 @@ def test_background_child_is_stopped_after_the_leader_exits(tmp_path: Path) -> N
     # Past the background sleep: it would have written MARKER by now.
     time.sleep(max(0.0, started + 7 - time.monotonic()))
     assert not (tmp_path / "MARKER").exists()
+
+
+def _is_dead(pid: int) -> bool:
+    """Gone, or a zombie waiting for a reaper (it no longer runs)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    stat = Path(f"/proc/{pid}/stat")
+    try:
+        return stat.read_text().rsplit(")", 1)[1].split()[0] == "Z"
+    except OSError, IndexError:
+        return not stat.parent.exists() and Path("/proc/self").exists()
+
+
+def test_background_process_that_closed_the_pipes_is_stopped(tmp_path: Path) -> None:
+    result = SubprocessRunner().run(
+        ["sh", "-c", "sleep 60 >/dev/null 2>&1 & echo $!"], cwd=tmp_path, env={}, timeout=30
+    )
+    assert (result.returncode, result.timed_out) == (0, False)
+    pid = int(result.stdout.strip())
+    deadline = time.monotonic() + 10
+    while not _is_dead(pid):
+        if time.monotonic() > deadline:
+            os.kill(pid, 9)  # do not leak the sleeper past the test
+            pytest.fail(f"background process {pid} survived the run")
+        time.sleep(0.05)

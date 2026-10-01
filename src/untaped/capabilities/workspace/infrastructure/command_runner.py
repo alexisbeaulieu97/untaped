@@ -30,8 +30,26 @@ def _signal_group(proc: subprocess.Popen[bytes], sig: int) -> None:
         os.killpg(proc.pid, sig)
 
 
+def _stop_group(proc: subprocess.Popen[bytes]) -> None:
+    """Stop what is left of an exited command's group: SIGTERM, a short wait, SIGKILL."""
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError, PermissionError:
+        return  # nothing left: the usual case
+    try:
+        deadline = time.monotonic() + _TERM_WAIT_S
+        while time.monotonic() < deadline:
+            os.killpg(proc.pid, 0)
+            time.sleep(0.02)
+    except ProcessLookupError, PermissionError:
+        pass
+    finally:
+        _signal_group(proc, signal.SIGKILL)
+
+
 _REAP_TIMEOUT_S = 5.0
 _GRACE_S = 2.0
+_TERM_WAIT_S = 0.5
 _POLL_S = 0.1
 
 
@@ -113,9 +131,9 @@ class SubprocessRunner:
     def _collect(proc: subprocess.Popen[bytes], timeout: float, start: float) -> CommandResult:
         """Wait for the output; past the timeout, or a grace after the leader exits, kill.
 
-        A background process the command started can hold the pipes open after
-        the command itself exits: it gets :data:`_GRACE_S`, then its group is
-        killed and the command's own exit status is reported.
+        Once the command itself exits, whatever is left of its process group is
+        stopped. A background process still holding the pipes open first gets
+        :data:`_GRACE_S`. The command's own exit status is reported.
         """
         deadline = start + timeout
         exited_at: float | None = None
@@ -131,17 +149,18 @@ class SubprocessRunner:
                     if time.monotonic() >= limit:
                         break
                 else:
+                    _stop_group(proc)  # a background process may have closed the pipes
                     return _result(
                         proc.returncode, _text(raw_out), _text(raw_err), start, timed_out=False
                     )
         except BaseException:
             _signal_group(proc, signal.SIGKILL)
             raise
-        _signal_group(proc, signal.SIGKILL)
-        out, err = _drain(proc)
         if exited_at is None:
-            return _result(None, out, err, start, timed_out=True)
-        return _result(proc.returncode, out, err, start, timed_out=False)
+            _signal_group(proc, signal.SIGKILL)
+            return _result(None, *_drain(proc), start, timed_out=True)
+        _stop_group(proc)
+        return _result(proc.returncode, *_drain(proc), start, timed_out=False)
 
 
 def _drain(proc: subprocess.Popen[bytes]) -> tuple[str, str]:
