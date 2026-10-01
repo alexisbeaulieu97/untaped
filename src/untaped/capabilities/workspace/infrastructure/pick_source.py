@@ -8,6 +8,7 @@ configured. Branch completion reads the local cache only, never the network.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Collection
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -61,7 +62,7 @@ class RepoPickSource:
         self._inventory = inventory or _default_inventory
         self._exclude = frozenset(exclude)
         self._urls: dict[str, str] = {}
-        self._cached: dict[str, Path] = {}
+        self._cached: dict[str, tuple[str, ...]] = {}
         self._branches: dict[str, list[str]] = {}
 
     def catalog(self, *, refresh: bool | None) -> PickCatalog:
@@ -92,8 +93,8 @@ class RepoPickSource:
                 )
         known = {item.id for item in items}
         self._cached = self._scan_cache()
-        for ident, path in self._cached.items():
-            if ident in known or (self._exclude and self._excluded(self._cache_url(ident, path))):
+        for ident, key in self._cached.items():
+            if ident in known or key in self._exclude:
                 continue
             items.append(PickItem(id=ident, label=ident, description="cached"))
         return PickCatalog(items=tuple(items), note=note)
@@ -110,9 +111,12 @@ class RepoPickSource:
         """Cached remote branches of ``item_id`` (no network); ``[]`` for the all-items row."""
         if item_id is None:
             return []
-        if item_id not in self._branches:
-            url = self.url_for(item_id)
-            self._branches[item_id] = self._git.remote_branches(url) if url else []
+        if item_id in self._branches:
+            return self._branches[item_id]
+        url = self.url_for(item_id)
+        if url is None:
+            return []
+        self._branches[item_id] = self._git.remote_branches(url)
         return self._branches[item_id]
 
     # -- helpers -----------------------------------------------------------
@@ -120,25 +124,35 @@ class RepoPickSource:
     def _excluded(self, *urls: str | None) -> bool:
         return any(repo_key(url) in self._exclude for url in urls if url)
 
-    def _cache_url(self, ident: str, path: Path) -> str:
+    def _cache_url(self, ident: str, key: tuple[str, ...]) -> str:
         """The cache's ``origin`` URL, else a URL with the same cache identity."""
-        origin = self._git.cache_origin(path)
-        if origin:
-            return origin
-        host = path.relative_to(self._cache_dir).parts[0]
-        return f"https://{host}/{ident}"
+        origin = self._git.cache_origin(self._cache_dir.joinpath(*key))
+        return origin or f"https://{key[0]}/{ident}"
 
-    def _scan_cache(self) -> dict[str, Path]:
-        """``owner/name`` (any depth) -> cache path, for ``<host>/<owner>/<name>.git`` caches."""
-        found: dict[str, Path] = {}
-        if not self._cache_dir.is_dir():
-            return found
-        for path in sorted(self._cache_dir.rglob("*.git")):
-            parts = path.relative_to(self._cache_dir).parts
-            if len(parts) < 3 or parts[0] == _UNKNOWN or not path.is_dir():
+    def _scan_cache(self) -> dict[str, tuple[str, ...]]:
+        """``owner/name`` (any depth) -> :func:`repo_key` path, for each ``<host>/.../<name>.git``.
+
+        A ``*.git`` directory is a leaf: never entered, so its contents are not scanned.
+        """
+        found: dict[str, tuple[str, ...]] = {}
+        stack: list[tuple[str, ...]] = [()]
+        while stack:
+            parts = stack.pop()
+            try:
+                entries = sorted(os.scandir(self._cache_dir.joinpath(*parts)), key=lambda e: e.name)
+            except OSError:
                 continue
-            found["/".join((*parts[1:-1], parts[-1].removesuffix(".git")))] = path
-        return found
+            for entry in entries:
+                if not entry.is_dir(follow_symlinks=False) or (
+                    not parts and entry.name == _UNKNOWN
+                ):
+                    continue
+                key = (*parts, entry.name)
+                if not entry.name.endswith(".git"):
+                    stack.append(key)
+                elif len(key) >= 3:
+                    found["/".join((*key[1:-1], entry.name.removesuffix(".git")))] = key
+        return dict(sorted(found.items()))
 
 
 def _note(inventory: RepoInventory) -> str:

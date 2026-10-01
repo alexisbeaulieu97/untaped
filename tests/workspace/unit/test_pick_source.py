@@ -132,9 +132,33 @@ def test_nested_group_and_unknown_caches(tmp_path: Path) -> None:
         ("https://h/o/r", True),
         ("/srv/r.git", True),
         ("~/r", True),
+        ("api.git", True),
+        ("./x", False),
         ("acme/api", False),
         ("api", False),
     ],
 )
 def test_looks_like_url(ident: str, expected: bool) -> None:
     assert looks_like_url(ident) is expected
+
+
+def test_scan_treats_git_dirs_as_leaves(tmp_path: Path) -> None:
+    cache = _cache(tmp_path, "acme/api")
+    bare = cache / "github.com" / "acme" / "api.git"
+    for inner in ("modules/foo.git", "refs/heads/x.git", "objects/deep.git"):
+        (bare / inner).mkdir(parents=True)
+    source = _source(cache, inventory=_no_inventory)
+    assert [i.id for i in source.catalog(refresh=False).items] == ["acme/api"]
+
+
+def test_branches_before_the_catalog_is_not_memoised(tmp_path: Path) -> None:
+    git = FakeGit()
+    source = _source(_cache(tmp_path, "team/tool"), git, inventory=_inventory())
+    assert source.branches("team/tool") == []
+    source.catalog(refresh=False)
+    assert source.branches("team/tool") == ["main", "release/2"]
+    assert git.calls == ["https://github.com/team/tool"]
+
+
+def _no_inventory(refresh: bool | None) -> RepoInventory:
+    return RepoInventory(repos=(), refreshed_at=NOW, scope_key="k")
