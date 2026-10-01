@@ -37,6 +37,7 @@ from untaped.capability_api import (
 )
 
 READ_ONLY = "read-only"
+NO_NAME_HINT = "pass NAME and --repo OWNER/NAME (or --stdin); the repo picker needs a terminal"
 
 
 def build_request(
@@ -153,7 +154,7 @@ def choose_repos(
         return name, flag_repo_args(repo, read_only, branch=branch, base=base, stdin=stdin)
     if not ui.can_prompt:
         if name is None:
-            raise UsageError("a workspace name is required", hint=NO_REPOS_HINT)
+            raise UsageError("a workspace name is required", hint=NO_NAME_HINT)
         raise UsageError("no repos given", hint=NO_REPOS_HINT)
     return _pick(ui, settings, store, name=name, record=record, branch=branch, base=base)
 
@@ -169,6 +170,9 @@ def _pick(
     base: str | None,
 ) -> tuple[str, list[RepoArg]]:
     """Open the picker: ``create`` asks for the name too, ``add`` hides present repos."""
+    validate = name_validator(store, workspaces_dir(settings))
+    if record is None and name and (problem := validate(name)):
+        raise UsageError(problem)
     template, title, title_label = settings.branch_template, name or "", "name"
     if record is not None:  # add: no name field; the preview uses the workspace's name
         template, title, title_label = branch_for(template, record.name), "", ""
@@ -183,7 +187,7 @@ def _pick(
         template=template,
         title=title,
         title_label=title_label,
-        validate_title=None if record else name_validator(store, workspaces_dir(settings)),
+        validate_title=None if record else validate,
         branch=branch or "",
         base=base or "",
     )

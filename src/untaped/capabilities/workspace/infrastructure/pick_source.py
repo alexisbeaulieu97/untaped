@@ -97,6 +97,9 @@ class RepoPickSource:
         for ident, key in self._cached.items():
             if key in known or key in self._exclude:
                 continue
+            origin = self._git.cache_origin(self._cache_dir.joinpath(*key))
+            if origin and repo_key(origin) != key:  # rewritten origin: would fill another cache
+                continue
             items.append(PickItem(id=ident, label=ident, description="cached"))
         return PickCatalog(items=tuple(items), note=note)
 

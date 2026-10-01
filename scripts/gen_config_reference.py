@@ -54,7 +54,8 @@ DESCRIPTIONS: dict[str, str] = {
     "workspace.cache_dir": "Bare-clone cache that workspace worktrees are created from. "
     "Worktrees depend on it: don't delete it while workspaces are active.",
     "workspace.workspaces_dir": "Parent directory of every workspace (`<workspaces_dir>/NAME`).",
-    "workspace.parallel": "Default `create`/`add` workers. Unset means `min(8, 2 * CPUs)`; "
+    "workspace.parallel": "Default workers for `create`/`add`/`run` and for status/archive "
+    "checks. Unset means `min(8, 2 * CPUs)`; "
     "values above `2 * CPUs` are clamped.",
     "workspace.branch_template": "Branch name for writable repos; `{name}` is the workspace name.",
     "workspace.protocol": "Clone URL the GitHub inventory supplies: `https` or `ssh`.",
@@ -73,8 +74,8 @@ DESCRIPTIONS: dict[str, str] = {
     "this that GitHub reports as pushed since.",
     "github.sweep.sync_concurrency": "Default `sweep --parallel` and `cache sync --parallel` Git "
     "workers.",
-    "github.inventory.path": "Cached repository list (metadata only) that the workspace "
-    "picker searches.",
+    "github.inventory.path": "Cached repository list (metadata only) that workspace "
+    "`create`/`add` resolve names from and the picker searches.",
     "github.inventory.orgs": "Orgs whose repositories the inventory lists. With no orgs "
     "or teams, `github.default_org`.",
     "github.inventory.teams": "Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else "

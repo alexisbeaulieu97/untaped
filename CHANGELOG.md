@@ -14,12 +14,11 @@
     is one directory of git worktrees on a shared branch, archived when done.
   - **Breaking:** removed `init`, `adopt`, `import`, `forget`, `sync`,
     `repos list/add/remove`, `branch set/unset/apply`, `foreach` (replaced
-    by `run`), `edit`
-    and `shell-init`, the `untaped.yml` manifest, and the registry
-    (`state.yml` key `workspace.workspaces`, now ignored). Old workspace
-    directories are left as they are; existing repo caches are reused. An
-    old directory under the same `workspaces_dir` blocks its name: `create`
-    refuses that name until you move the directory aside.
+    by `run`), `edit` and `shell-init`, the `untaped.yml` manifest, and the
+    registry (`state.yml` key `workspace.workspaces`, now ignored). Old
+    workspace directories are left as they are; existing repo caches are
+    reused. An old directory under the same `workspaces_dir` blocks its
+    name: `create` refuses that name until you move the directory aside.
   - **Breaking:** record kinds are now `workspace.workspace`,
     `workspace.repo_outcome`, `workspace.status`,
     `workspace.archive_outcome` and `workspace.run_outcome`. The others are
@@ -32,8 +31,9 @@
     repo).
 - GitHub
   - **New:** `github.inventory` settings (`path`, `orgs`, `teams`,
-    `max_age_seconds`) for a cached, metadata-only repository list that the
-    workspace picker searches; it falls back to `github.default_org`.
+    `max_age_seconds`) for a cached, metadata-only repository list that
+    workspace `create`/`add` resolve names from and the picker searches; it
+    falls back to `github.default_org`.
 
 ## 9.1.0
 
