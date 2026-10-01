@@ -41,6 +41,8 @@ from untaped.verbose import is_verbose
 if TYPE_CHECKING:
     from rich.text import Text
 
+    from untaped.picker import PickRequest, PickResult
+
 
 class UiContext:
     """Theme-aware UI context for tool commands."""
@@ -363,6 +365,26 @@ class UiContext:
         if len(values) < min_count:
             raise ConfigError(f"select at least {plural(min_count, 'value')}", category="invalid")
         return values
+
+    def pick_many(self, request: PickRequest) -> PickResult:
+        """Run the two-pane multi-select picker.
+
+        Raises :class:`OperationCancelledError` when the user quits, and
+        :class:`UsageError` without a TTY on stdin.
+        """
+        self._ensure_promptable()
+        ids = [item.id for item in request.catalog.items]
+        if len(set(ids)) != len(ids):
+            raise ConfigError(
+                "picker items must have unique ids", category="failed", system="untaped"
+            )
+        try:
+            picked = self.prompt_backend.pick_many(request)
+        except (ConfigError, EOFError, KeyboardInterrupt) as exc:
+            raise handle_prompt_exception(exc) from exc
+        if picked is None:
+            raise OperationCancelledError
+        return picked
 
     def _ensure_promptable(self) -> None:
         if not self.can_prompt:

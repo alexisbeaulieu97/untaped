@@ -8,7 +8,7 @@ from collections import deque
 from collections.abc import Callable, Iterable, Sequence
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
-from typing import Any, TextIO
+from typing import TYPE_CHECKING, Any, TextIO, cast
 
 from cyclopts import App
 from rich.console import Console
@@ -23,6 +23,9 @@ from untaped.prompts import (
     set_prompt_backend_override,
     set_terminal_override,
 )
+
+if TYPE_CHECKING:
+    from untaped.picker import PickRequest, PickResult
 
 __all__ = [
     "CliInvoker",
@@ -210,12 +213,14 @@ class ScriptedPromptBackend:
         secrets: Sequence[str] = (),
         selections: Sequence[Any] = (),
         multiselects: Sequence[list[Any]] = (),
+        picks: Sequence[PickResult | None] = (),
     ) -> None:
         self._confirms = deque(confirms)
         self._texts = deque(texts)
         self._secrets = deque(secrets)
         self._selections = deque(selections)
         self._multiselects = deque(multiselects)
+        self._picks = deque(picks)
         self.calls: list[tuple[str, str]] = []
 
     def _next(self, queue: deque[Any], method: str, message: str) -> Any:
@@ -251,6 +256,9 @@ class ScriptedPromptBackend:
         defaults: Sequence[Any],
     ) -> list[Any]:
         return list(self._next(self._multiselects, "multiselect", message))
+
+    def pick_many(self, request: PickRequest) -> PickResult | None:
+        return cast("PickResult | None", self._next(self._picks, "pick_many", request.heading))
 
 
 def _call_command(
