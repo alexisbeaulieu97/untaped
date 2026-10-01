@@ -65,7 +65,13 @@ profiles:
 workspace:
   active:
     - name: PROJ-123
-      path: ~/.untaped/workspaces/PROJ-123
+      created_at: '2026-10-01T09:00:00Z'
+      repos:
+        - url: https://github.com/acme/api.git
+          name: acme/api
+          dir: api
+          branch: PROJ-123
+          base: main
 ```
 
 Things that surprise people:

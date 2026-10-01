@@ -4,7 +4,7 @@
 `--stdin`. Each record keeps all its fields and names its kind, so the
 consumer never parses table text.
 
-```text
+```bash
 untaped github repos list --org acme --format pipe \
   | untaped workspace create acme --stdin
 ```
@@ -34,7 +34,7 @@ valid.
 - A consumer lists the kinds it accepts. A record of another kind exits 2
   (`record kind 'awx.host' is not accepted here`). A record whose `kind` is
   `null` is accepted.
-- Kinds ending in `.summary` (for example `workspace.repo.summary`) are summary
+- Kinds ending in `.summary` (`<capability>.<noun>.summary`) are summary
   rows, not items. `recipe apply --stdin` skips them.
 - Empty stdin is an error (`no identifiers received on stdin`).
 - `--stdin` and positional arguments cannot be combined (exit 2).
@@ -43,9 +43,9 @@ valid.
 
 ## Failed rows: the `error` field
 
-A failed row of an outcome record (`*_outcome` kinds, and records about a
-directory such as `workspace.sync_outcome`) carries an `error` object next to
-its human `detail`. Rows that did not fail have no `error` key.
+A failed row of an outcome record (`*_outcome` kinds such as
+`workspace.repo_outcome`, and records about a directory such as
+`workspace.status`) carries an `error` object next to its human `detail`. Rows that did not fail have no `error` key.
 
 ```json
 {"name": "Deploy", "action": "failed", "detail": "HTTP 503 for https://aap/api/v2/job_templates/7/", "error": {"category": "unavailable", "system": "awx", "retryable": true, "message": "HTTP 503 for https://aap/api/v2/job_templates/7/", "hint": null}}
@@ -132,7 +132,7 @@ and print their outcome with `action` `planned`.
 
 | Consumer | Reads | Field used |
 |---|---|---|
-| `workspace create --stdin`, `workspace add --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`; or URL lines | `clone_url`, else `url` |
+| `workspace create --stdin`, `workspace add --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`; or lines, each any repo identifier (`owner/name`, a unique name, a URL) | `full_name`, else `repo`, resolved through the GitHub inventory; `clone_url`, else `url`, when there is no name or the inventory lacks it |
 
 ### github
 

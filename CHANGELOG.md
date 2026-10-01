@@ -16,7 +16,9 @@
     `repos list/add/remove`, `branch set/unset/apply`, `foreach`, `edit`
     and `shell-init`, the `untaped.yml` manifest, and the registry
     (`state.yml` key `workspace.workspaces`, now ignored). Old workspace
-    directories are left as they are; existing repo caches are reused.
+    directories are left as they are; existing repo caches are reused. An
+    old directory under the same `workspaces_dir` blocks its name: `create`
+    refuses that name until you move the directory aside.
   - **Breaking:** record kinds are now `workspace.workspace`,
     `workspace.repo_outcome`, `workspace.status` and
     `workspace.archive_outcome`. The others are gone.

@@ -1,5 +1,8 @@
 # Workspaces
 
+`workspace` is [experimental](../stability.md#experimental) and may change in
+a minor release.
+
 A *workspace* is one directory per task. It holds a git worktree for each
 repo you need, all on the same branch, so you (or an agent) can change several
 repos for one ticket and archive the lot when the work is pushed. Worktrees
@@ -43,7 +46,8 @@ untaped github repos list --team acme/platform --format pipe | untaped workspace
 ## Read-only repos
 
 `--read-only` checks a repo out at its base branch, detached, for reference
-code you will not change. Archiving only checks it for local changes.
+code you will not change. Archiving still refuses while it has local changes
+or commits of its own.
 
 ## Jump in
 

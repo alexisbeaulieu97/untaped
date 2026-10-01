@@ -15,7 +15,8 @@ Constraints:
 - The bare cache is load-bearing: worktrees reference it.
 - Every cache write runs under a per-repo lock.
 - Archiving never discards uncommitted, stashed or unpushed work without
-  `--force`.
+  `--force`. That includes commits on a read-only (detached) checkout: they
+  are on no branch, so removing the worktree would lose them.
 
 ## Related decisions
 

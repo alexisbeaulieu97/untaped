@@ -22,14 +22,16 @@ archive it.
 | Start a task | `untaped workspace create NAME --repo OWNER/NAME --repo OWNER/NAME` |
 | Add reference code you won't change | `untaped workspace create NAME --repo OWNER/NAME --read-only OWNER/NAME` |
 | Bring in another repo later | `untaped workspace add NAME --repo OWNER/NAME` |
+| Add repos from a GitHub listing | `untaped github repos list --team ORG/SLUG --format pipe` piped to `untaped workspace add NAME --stdin` |
 | Find the directory | `untaped workspace path NAME` |
 | See branches, uncommitted and unpushed work | `untaped workspace status NAME` |
 | Done? (exit 3 while anything would block archive) | `untaped workspace status NAME --check` |
 | Clean up after pushing | `untaped workspace archive NAME` |
 | List workspaces | `untaped workspace list`, `untaped workspace list --archived` |
 
-`NAME` is optional on every command but `create`: inside a workspace directory
-it is the current workspace. Agents should still pass it.
+`NAME` is optional on every command that takes a `NAME`, except `create`:
+inside a workspace directory it is the current workspace. Agents should still
+pass it.
 
 ## Workflow
 
@@ -40,7 +42,8 @@ it is the current workspace. Agents should still pass it.
 2. `cd "$(untaped workspace path NAME)"` and work. Commit and `git push` in
    each repo; the upstream is already set.
 3. `untaped workspace status NAME --check` exits 0 when nothing blocks
-   archiving.
+   archiving. It is the gate: `archive --dry-run` only previews and exits 0
+   even when repos would block.
 4. `untaped workspace archive NAME` removes the worktrees and keeps a record.
    Branches stay in the cache and on the remote, so creating a workspace with the
    same branch later resumes the work.
@@ -48,10 +51,16 @@ it is the current workspace. Agents should still pass it.
 ## Pitfalls
 
 - Repos are named `OWNER/NAME`, a unique bare `NAME`, or a full git URL. An
-  unknown or ambiguous name exits 2 and lists candidates.
+  unknown name exits 2 and suggests close matches from the inventory; an
+  ambiguous one exits 2 and lists the candidates.
 - Git never prompts for credentials. Use an SSH agent or a credential helper.
 - A branch can be checked out in one workspace at a time; a second workspace
   on the same branch gets a `conflict` row.
 - `archive` refuses while any repo has uncommitted changes, stashes made on
-  its branch, or unpushed commits. `--force` discards them, after a
-  confirmation (`--yes` without a terminal).
+  its branch, unpushed commits (read-only repos too), or initialised
+  submodules; the hint says what to do for each. `--force`, after a
+  confirmation (`--yes` without a terminal), discards uncommitted work and
+  removes the directories. Branch commits and stashes stay in the repo cache;
+  commits made on a read-only (detached) repo do not.
+- Stashes are shared by every workspace of a repo: `git stash list` shows
+  other workspaces' stashes too. Never drop or clear a stash you did not make.
