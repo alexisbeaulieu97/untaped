@@ -215,6 +215,10 @@ def export_top_command(
             help="Emit written filenames on stdout instead of the YAML envelopes for scripts.",
         ),
     ] = False,
+    comment: Annotated[
+        str | None,
+        Parameter(name="--comment", help="Add TEXT as a '#' comment at the top of each document."),
+    ] = None,
 ) -> None:
     """Bulk-export resources to a directory.
 
@@ -245,6 +249,7 @@ def export_top_command(
             filters=filters,
             organization=organization,
             print_paths=print_paths,
+            comment=comment,
         )
 
 

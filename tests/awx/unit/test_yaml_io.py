@@ -139,3 +139,13 @@ def test_awkward_multiline_strings_round_trip(tmp_path: Path, value: str) -> Non
     write_resource(out, r)
     [back] = read_resources(out)
     assert back.spec["extra_vars"] == value
+
+
+def test_comment_lines_follow_fidelity_note(tmp_path: Path) -> None:
+    r = _resource("JobTemplate", "deploy")
+    text = dump_resource(r, header_comment="partial", comment="Owner: team\n\nTicket 42")
+    assert text.startswith("# partial\n# Owner: team\n#\n# Ticket 42\nkind: JobTemplate\n")
+    out = tmp_path / "jt.yml"
+    out.write_text(text)
+    [back] = read_resources(out)
+    assert back == r

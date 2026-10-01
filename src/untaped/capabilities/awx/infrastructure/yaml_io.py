@@ -97,8 +97,14 @@ def _represent_str(dumper: yaml.SafeDumper, value: str) -> yaml.ScalarNode:
 _DocumentDumper.add_representer(str, _represent_str)
 
 
-def dump_resource(resource: Resource, *, header_comment: str | None = None) -> str:
-    """Return the YAML representation of ``resource`` (``header_comment`` as a ``#`` line)."""
+def dump_resource(
+    resource: Resource, *, header_comment: str | None = None, comment: str | None = None
+) -> str:
+    """Return the YAML representation of ``resource``.
+
+    ``header_comment`` is one ``#`` line; ``comment`` follows it, one ``#``
+    line per line of text.
+    """
     payload = resource.model_dump(exclude_none=True)
     if resource.metadata.organization is None and "organization" in (
         resource.metadata.model_fields_set
@@ -114,6 +120,6 @@ def dump_resource(resource: Resource, *, header_comment: str | None = None) -> s
         default_flow_style=False,
         allow_unicode=True,
     )
-    if header_comment:
-        return f"# {header_comment}\n{body}"
-    return body
+    lines = ([header_comment] if header_comment else []) + (comment.splitlines() if comment else [])
+    prefix = "".join(f"# {line}\n" if line else "#\n" for line in lines)
+    return prefix + body
