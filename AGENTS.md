@@ -116,9 +116,9 @@ rules below.
    `untaped.capabilities.<other>.api`, never its other internals; each
    importing pair is listed in `ALLOWED_CROSS_CAPABILITY_IMPORTS`
    (`tests/unit/test_capabilities/test_capability_imports.py`).
-   Dependencies are one-way (no cycles) and imported lazily on CLI paths
-   where possible (a settings model that validates against the other
-   capability imports it at module top).
+   Dependencies are one-way (no cycles). Import them lazily on CLI paths;
+   the one exception is a settings model that validates against the other
+   capability, which imports it at module top.
    Logic two capabilities need lives in exactly one owner's `api.py` or in
    core — never forked into both; extract a protocol into core only when a
    second provider appears.
