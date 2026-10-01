@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import TYPE_CHECKING, Protocol, TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
-HOOK_API_VERSION = "0.10.0"
+from untaped.capabilities.recipe.application.ports import HookHelpers as HookHelpers
+from untaped.capabilities.recipe.domain.hook_project import HOOK_API_VERSION as HOOK_API_VERSION
 
 
 class YamlIndentOptions(TypedDict, total=False):
@@ -25,37 +25,6 @@ class YamlDumpOptions(TypedDict, total=False):
     block_seq_indent: int
     explicit_start: bool
     explicit_end: bool
-
-
-class HookHelpers(Protocol):
-    """Helper methods available to external hook projects."""
-
-    def pass_(self, message: str = "") -> dict[str, str]:
-        """Return a passing validation verdict."""
-
-    def fail(self, message: str) -> dict[str, str]:
-        """Return a failing validation verdict."""
-
-    def skip(self, message: str = "") -> dict[str, str]:
-        """Return a skip verdict marking the target not applicable."""
-
-    def warn(self, message: str) -> None:
-        """Accumulate a non-fatal warning for the current target."""
-
-    def render_template(
-        self,
-        template: str,
-        inputs: dict[str, object],
-        *,
-        unknown_tokens: str = "error",
-    ) -> str:
-        """Render simple recipe placeholders."""
-
-    def load_yaml(self, content: str) -> object:
-        """Round-trip-load YAML content."""
-
-    def dump_yaml(self, data: object, *, options: Mapping[str, object] | None = None) -> str:
-        """Round-trip-dump YAML data with optional formatting controls."""
 
 
 __all__ = ["HOOK_API_VERSION", "HookHelpers", "YamlDumpOptions", "YamlIndentOptions"]
