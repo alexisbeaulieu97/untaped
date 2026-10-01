@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Core
+  - **New (SDK):** `UiContext.pick_many` opens an inline two-pane picker: fuzzy
+    search with multi-select on the left, per-item settings on the right
+    (`PickRequest`, `PickItem`, `PickSetting`, `PickCatalog`, `PickResult`;
+    API `3.2`). `ScriptedPromptBackend(picks=...)` scripts it in tests.
+
 ## 9.1.0
 
 A minor release (capability SDK 3.1, additive). Tables open on a few curated
