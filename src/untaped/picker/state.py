@@ -1,8 +1,8 @@
 """Pure state machine behind the picker: one key name in, a new frozen state out.
 
 Nothing here touches a terminal, so every interaction is unit-testable. The
-prompt_toolkit front end (:mod:`untaped.picker.app`) maps real keys to the
-names in :data:`KEY_NAMES` (or one printable character) and calls
+prompt_toolkit front end (:mod:`untaped.picker.app`) maps real keys to names
+such as ``up``, ``enter`` or ``ctrl-s`` (or one printable character) and calls
 :func:`handle`.
 """
 
@@ -33,13 +33,6 @@ CREATE = "\x00create"
 
 Row = tuple[str, str | None]
 """``(owner, setting key)``; a ``None`` key is the owner's header row."""
-
-KEY_NAMES = frozenset(
-    {
-        "up", "down", "left", "right", "tab", "enter", "esc",
-        "backspace", "delete", "ctrl-u", "ctrl-w", "ctrl-s", "ctrl-c",
-    }
-)  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -83,8 +76,23 @@ def initial_state(request: PickRequest) -> PickerState:
 # --- derived views ---------------------------------------------------------
 
 
+_VisibleKey = tuple[str, tuple[PickItem, ...], Callable[[str], PickItem | None] | None]
+_last_visible: list[tuple[_VisibleKey, list[Ranked]]] = []
+"""One-slot cache; the key holds ``items`` itself, so identity checks stay valid."""
+
+
 def visible(state: PickerState) -> list[Ranked]:
-    """The left-pane rows for the current query, best match first."""
+    """The left-pane rows for the current query, best match first (memoised)."""
+    if _last_visible:
+        (query, items, adhoc), ranked = _last_visible[0]
+        if query == state.query and items is state.items and adhoc is state.request.adhoc:
+            return ranked
+    ranked = _visible(state)
+    _last_visible[:] = [((state.query, state.items, state.request.adhoc), ranked)]
+    return ranked
+
+
+def _visible(state: PickerState) -> list[Ranked]:
     items = state.items
     query = state.query.strip()
     if state.request.adhoc is not None and query:
@@ -106,6 +114,17 @@ def rows(state: PickerState) -> list[Row]:
     return out
 
 
+def row_index(state: PickerState) -> int:
+    """Where the highlighted row sits in :func:`rows` (0 if it is gone)."""
+    all_rows = rows(state)
+    return all_rows.index(state.row) if state.row in all_rows else 0
+
+
+def setting_for(state: PickerState, key: str) -> PickSetting:
+    """The request's setting with this key."""
+    return next(setting for setting in state.request.settings if setting.key == key)
+
+
 def setting_value(state: PickerState, owner: str, key: str) -> str:
     """The effective value: the owner's override, else the default."""
     own = state.overrides.get(owner, {})
@@ -122,7 +141,7 @@ def completions(state: PickerState) -> list[str]:
     owner, key = state.row
     if state.editing is None or key is None:
         return []
-    setting = _setting(state, key)
+    setting = setting_for(state, key)
     if setting.complete is None:
         return []
     item_id = None if owner == ALL else owner
@@ -168,7 +187,9 @@ def refresh_failed(state: PickerState, message: str) -> PickerState:
 
 
 def handle(state: PickerState, key: str) -> PickerState:
-    """Apply one key: a name from :data:`KEY_NAMES` or one printable character."""
+    """Apply one key: a key name or one printable character; ignored once decided."""
+    if state.outcome != "running":
+        return state
     if state.error:
         state = replace(state, error="")
     if state.quitting:
@@ -183,14 +204,14 @@ def handle(state: PickerState, key: str) -> PickerState:
     return state
 
 
-def _edit_text(text: str, key: str) -> str | None:
+def _edit_text(text: str, key: str) -> str:
     if key == "backspace":
         return text[:-1]
     if key == "ctrl-u":
         return ""
     if key == "ctrl-w":
         return re.sub(r"\S+\s*$", "", text)
-    return None
+    return text
 
 
 def _type(state: PickerState, char: str) -> PickerState:
@@ -201,16 +222,11 @@ def _type(state: PickerState, char: str) -> PickerState:
     return state
 
 
-def _edit_title(key: str) -> Callable[[PickerState], PickerState]:
+def _edit(key: str) -> Callable[[PickerState], PickerState]:
     def apply(state: PickerState) -> PickerState:
-        return replace(state, title=_edit_text(state.title, key) or "")
-
-    return apply
-
-
-def _edit_query(key: str) -> Callable[[PickerState], PickerState]:
-    def apply(state: PickerState) -> PickerState:
-        return replace(state, focus="search", query=_edit_text(state.query, key) or "", cursor=0)
+        if state.focus == "title":
+            return replace(state, title=_edit_text(state.title, key))
+        return replace(state, focus="search", query=_edit_text(state.query, key), cursor=0)
 
     return apply
 
@@ -267,15 +283,10 @@ def _tab(state: PickerState) -> PickerState:
 def _move_row(step: int) -> Callable[[PickerState], PickerState]:
     def apply(state: PickerState) -> PickerState:
         all_rows = rows(state)
-        index = all_rows.index(state.row) if state.row in all_rows else 0
-        target = all_rows[max(0, min(index + step, len(all_rows) - 1))]
+        target = all_rows[max(0, min(row_index(state) + step, len(all_rows) - 1))]
         return replace(state, row=target)
 
     return apply
-
-
-def _setting(state: PickerState, key: str) -> PickSetting:
-    return next(setting for setting in state.request.settings if setting.key == key)
 
 
 def _set_value(state: PickerState, owner: str, key: str, value: str) -> PickerState:
@@ -293,9 +304,9 @@ def _set_value(state: PickerState, owner: str, key: str, value: str) -> PickerSt
 def _cycle(step: int) -> Callable[[PickerState], PickerState]:
     def apply(state: PickerState) -> PickerState:
         owner, key = state.row
-        if key is None or owner == CREATE:
+        if key is None:
             return state
-        choices = _setting(state, key).choices
+        choices = setting_for(state, key).choices
         if not choices:
             return state
         current = setting_value(state, owner, key)
@@ -311,7 +322,7 @@ def _activate(state: PickerState) -> PickerState:
         return _confirm(state)
     if key is None:
         return state
-    if _setting(state, key).choices:
+    if setting_for(state, key).choices:
         return _cycle(1)(state)
     return replace(state, editing=setting_value(state, owner, key))
 
@@ -337,19 +348,16 @@ def _edit_key(state: PickerState, key: str) -> PickerState:
     if key == "tab":
         candidates = completions(state)
         return replace(state, editing=candidates[0]) if candidates else state
-    edited = _edit_text(buffer, key)
-    if edited is not None:
-        return replace(state, editing=edited)
     if len(key) == 1 and key.isprintable():
         return replace(state, editing=buffer + key)
-    return state
+    return replace(state, editing=_edit_text(buffer, key))
 
 
 def _confirm(state: PickerState) -> PickerState:
-    if state.request.title_label and not state.title.strip():
-        return replace(state, focus="title", error=f"{state.request.title_label} is required")
-    if state.request.title_label and state.request.validate_title is not None:
-        problem = state.request.validate_title(state.title.strip())
+    label, validate = state.request.title_label, state.request.validate_title
+    if label:
+        title = state.title.strip()
+        problem = f"{label} is required" if not title else validate(title) if validate else None
         if problem:
             return replace(state, focus="title", error=problem)
     if not state.selected:
@@ -377,18 +385,18 @@ _BY_FOCUS: dict[Focus, dict[str, _Action]] = {
     "title": {
         "enter": _focus("search"),
         "down": _focus("search"),
-        "backspace": _edit_title("backspace"),
-        "ctrl-u": _edit_title("ctrl-u"),
-        "ctrl-w": _edit_title("ctrl-w"),
+        "backspace": _edit("backspace"),
+        "ctrl-u": _edit("ctrl-u"),
+        "ctrl-w": _edit("ctrl-w"),
     },
     "search": {
         "down": _focus("list"),
         "enter": _focus("list"),
         "up": _focus("title"),
         "esc": _clear_query,
-        "backspace": _edit_query("backspace"),
-        "ctrl-u": _edit_query("ctrl-u"),
-        "ctrl-w": _edit_query("ctrl-w"),
+        "backspace": _edit("backspace"),
+        "ctrl-u": _edit("ctrl-u"),
+        "ctrl-w": _edit("ctrl-w"),
     },
     "list": {
         "up": _list_up,
@@ -397,9 +405,9 @@ _BY_FOCUS: dict[Focus, dict[str, _Action]] = {
         "enter": _toggle,
         "esc": _clear_query,
         "/": _focus("search"),
-        "backspace": _edit_query("backspace"),
-        "ctrl-u": _edit_query("ctrl-u"),
-        "ctrl-w": _edit_query("ctrl-w"),
+        "backspace": _edit("backspace"),
+        "ctrl-u": _edit("ctrl-u"),
+        "ctrl-w": _edit("ctrl-w"),
     },
     "selected": {
         "up": _move_row(-1),

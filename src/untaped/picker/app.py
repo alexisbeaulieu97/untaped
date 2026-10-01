@@ -66,16 +66,11 @@ _KEYS: dict[str, str] = {
     "c-s": "ctrl-s",
     "c-c": "ctrl-c",
 }
-"""prompt_toolkit key → :data:`untaped.picker.state.KEY_NAMES` name."""
+"""prompt_toolkit key → :func:`untaped.picker.state.handle` key name."""
 
 
 def _daemon(work: Callable[[], None]) -> None:
     threading.Thread(target=work, daemon=True, name="untaped-picker-refresh").start()
-
-
-def _size(output: Output) -> tuple[int, int]:
-    size = output.get_size()
-    return size.columns, size.rows
 
 
 def _fetch(
@@ -133,12 +128,14 @@ def run_picker(
 
         start(work)
 
-    control = FormattedTextControl(
-        lambda: render(box[0], *_size(app.output)), focusable=True, show_cursor=False
-    )
+    def draw() -> list[tuple[str, str]]:
+        size = app.output.get_size()
+        return render(box[0], size.columns, size.rows)
+
+    control = FormattedTextControl(draw, focusable=True, show_cursor=False)
     app: Application[PickResult | None] = Application(
         layout=Layout(Window(control, dont_extend_height=True, always_hide_cursor=True)),
-        key_bindings=_bindings(apply, refresh, lambda: box[0].outcome),
+        key_bindings=_bindings(apply, refresh),
         style=merge_styles([Style.from_dict(DEFAULT_STYLE), style or Style([])]),
         full_screen=False,
         erase_when_done=True,
@@ -150,11 +147,7 @@ def run_picker(
     return app.run(pre_run=lambda: refresh(False))
 
 
-def _bindings(
-    apply: Callable[[str], None],
-    refresh: Callable[[bool], None],
-    outcome: Callable[[], str],
-) -> KeyBindings:
+def _bindings(apply: Callable[[str], None], refresh: Callable[[bool], None]) -> KeyBindings:
     bindings = KeyBindings()
     for ptk_key, name in _KEYS.items():
         bindings.add(ptk_key)(_bound(apply, name))
@@ -169,8 +162,6 @@ def _bindings(
 
     def feed(text: str) -> None:
         for char in text:
-            if outcome() != "running":
-                return
             if char.isprintable():
                 apply(char)
 

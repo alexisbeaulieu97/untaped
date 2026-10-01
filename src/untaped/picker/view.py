@@ -22,7 +22,9 @@ from untaped.picker.state import (
     Row,
     completions,
     is_inherited,
+    row_index,
     rows,
+    setting_for,
     setting_value,
     visible,
 )
@@ -106,6 +108,11 @@ def _stacked_rows(height: int, search_focused: bool) -> tuple[int, int]:
     return (focused, other) if search_focused else (other, focused)
 
 
+def _window(total: int, current: int, size: int) -> int:
+    """First index of a ``size``-row window over ``total`` rows that centres ``current``."""
+    return max(0, min(current - size // 2, total - size))
+
+
 def _length(line: Line) -> int:
     return sum(cell_len(text) for _style, text in line)
 
@@ -185,7 +192,7 @@ def _left_body(state: PickerState, inner: int, list_rows: int) -> list[Line]:
         search.append(("class:picker.cursor", "█"))
     ranked = visible(state)
     cursor = min(state.cursor, max(0, len(ranked) - 1))
-    start = max(0, min(cursor - list_rows // 2, len(ranked) - list_rows))
+    start = _window(len(ranked), cursor, list_rows)
     body: list[Line] = [search]
     for index in range(start, start + list_rows):
         if index >= len(ranked):
@@ -219,14 +226,9 @@ def _left_body(state: PickerState, inner: int, list_rows: int) -> list[Line]:
 
 
 def _right_body(state: PickerState, inner: int, window: int) -> list[Line]:
-    all_rows = rows(state)
-    body: list[Line] = []
-    for row in all_rows[:-1]:
-        body.append(_right_row(state, row))
-    if len(body) > window:
-        current = all_rows.index(state.row) if state.row in all_rows else 0
-        start = max(0, min(current - window // 2, len(body) - window))
-        body = body[start : start + window]
+    body = [_right_row(state, row) for row in rows(state) if row[0] != CREATE]
+    start = _window(len(body), row_index(state), window)
+    body = body[start : start + window]
     body += [[] for _ in range(window - len(body))]
     create_focus = state.focus == "selected" and state.row == (CREATE, None)
     button = "class:picker.button.focus" if create_focus else "class:picker.button"
@@ -250,7 +252,7 @@ def _right_row(state: PickerState, row: Row) -> Line:
             ("", "  "),
             ("class:picker.dim", summary),
         ]
-    setting = next(s for s in state.request.settings if s.key == key)
+    setting = setting_for(state, key)
     label = setting.label + " " * (8 - cell_len(setting.label))
     line: Line = [pointer, ("", "    "), ("class:picker.dim", label)]
     if here and state.editing is not None:
@@ -279,5 +281,4 @@ def _shown(state: PickerState, owner: str, key: str) -> str:
     value = setting_value(state, owner, key)
     if value:
         return value
-    setting = next(s for s in state.request.settings if s.key == key)
-    return setting.placeholder or "—"
+    return setting_for(state, key).placeholder or "—"

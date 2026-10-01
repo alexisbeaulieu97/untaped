@@ -69,7 +69,7 @@ def rank(query: str, items: Sequence[PickItem]) -> list[Ranked]:
     A term matches the label fuzzily or the description as a substring (worth
     less). With no terms, the catalog order is kept, dimmed items last.
     """
-    terms = query.split()
+    terms = query.lower().split()
     scored: list[tuple[bool, int, int, Ranked]] = []
     for index, item in enumerate(items):
         found = _score(terms, item)
@@ -81,6 +81,7 @@ def rank(query: str, items: Sequence[PickItem]) -> list[Ranked]:
 
 
 def _score(terms: list[str], item: PickItem) -> tuple[int, tuple[int, ...]] | None:
+    """Score lowercased ``terms`` against one item, or ``None`` if one misses."""
     total = 0
     positions: set[int] = set()
     for term in terms:
@@ -88,7 +89,7 @@ def _score(terms: list[str], item: PickItem) -> tuple[int, tuple[int, ...]] | No
         if match is not None:
             total += match.score
             positions.update(match.positions)
-        elif term.lower() in item.description.lower():
+        elif term in item.description.lower():
             total += 1
         else:
             return None
