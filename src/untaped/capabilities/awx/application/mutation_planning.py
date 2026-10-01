@@ -320,10 +320,14 @@ class MutationPlanner:
                         "renaming, reparenting, or changing the kind or ID "
                         "of a selected resource is not supported"
                     )
-                read_only = (
-                    set(spec.read_only_fields)
-                    | spec.derived_in({**(existing_record or {}), **resource.spec})
-                ).intersection(resource.spec)
+                current = existing_record or {}
+                # An unchanged derived value is no explicit change; plan_payload drops it.
+                derived = {
+                    field
+                    for field in spec.derived_in({**current, **resource.spec})
+                    if field not in current or resource.spec.get(field) != current[field]
+                }
+                read_only = (set(spec.read_only_fields) | derived).intersection(resource.spec)
                 if read_only:
                     raise BadRequestError(
                         "explicit patch/edit contains read-only or server-derived fields: "

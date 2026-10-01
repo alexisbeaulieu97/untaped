@@ -265,6 +265,27 @@ def test_noop_batch_with_secret_and_existing_membership_never_prompts(
         assert not paths[0].parent.exists()
 
 
+def test_edit_manual_project_to_scm_keeps_unchanged_local_path(fake_aap: Any, editor: Any) -> None:
+    seed(fake_aap, "projects")
+    fake_aap.store["projects"][10].update(scm_type="", local_path="_10__target")
+
+    def to_scm(docs: list[Any]) -> list[Any]:
+        docs[0]["spec"]["scm_type"] = "git"
+        docs[0]["spec"]["local_path"] = "_10__target"  # the old value stays in the document
+        return docs
+
+    editor(to_scm)
+    result = CliInvoker().invoke(
+        app,
+        ["projects", "edit", "target", "--yes", "--format", "json"],
+        prompt_backend=ScriptedPromptBackend(confirms=[True]),
+        terminal=True,
+    )
+    assert result.exit_code == 0, result.output
+    patches = [c for c in fake_aap.router.calls if c.request.method == "PATCH"]
+    assert [json.loads(c.request.content) for c in patches] == [{"scm_type": "git"}]
+
+
 def test_retarget_to_same_named_selected_id_is_invalid(fake_aap: Any, editor: Any) -> None:
     seed(fake_aap, "projects")
     fake_aap.seed("projects", id=11, name="target", organization=1, description="old")
