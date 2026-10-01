@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from untaped.capabilities.github import api as github_api
+from untaped.capabilities.github.api import RepoInventory, RepositoryInventoryItem
 from untaped.capabilities.workspace.cli import app
 from untaped.capabilities.workspace.domain import RepoSpec, WorkspaceRecord
 from untaped.capabilities.workspace.infrastructure import StateWorkspaceStore
@@ -210,3 +212,45 @@ def test_cached_only_pick_uses_its_cache_url(
     record = StateWorkspaceStore().get("J-1")
     assert record is not None and record.repos[0].url == origin
     assert (workspace_env / "J-1" / "api" / "README.md").exists()
+
+
+class _RefreshThenPick(_Capture):
+    """Selects, then forces a refresh in the picker before confirming."""
+
+    def pick_many(self, request: PickRequest) -> PickResult | None:
+        assert request.refresh is not None
+        request.refresh(True)
+        return super().pick_many(request)
+
+
+def test_a_pick_dropped_by_a_refresh_uses_its_remembered_url(
+    make_upstream: Callable[..., Path], workspace_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    url = str(make_upstream("api"))
+    item = RepositoryInventoryItem(full_name="acme/api", clone_url=url)
+    refreshed: list[bool] = []
+
+    def inventory(*, refresh: bool | None = None) -> RepoInventory:
+        if refresh is True:
+            refreshed.append(True)
+        repos = () if refreshed else (item,)
+        return RepoInventory(repos=repos, refreshed_at=None, scope_key="k")
+
+    monkeypatch.setattr(github_api, "repo_inventory", inventory)
+    backend = _RefreshThenPick(_pick("J-1", "acme/api"))
+    result = run(app, ["create"], interactive=True, prompt_backend=backend)
+    assert result.exit_code == 0, result.output
+    assert refreshed == [True]
+    record = StateWorkspaceStore().get("J-1")
+    assert record is not None and record.repos[0].url == url
+
+
+def test_an_owner_less_hosted_cache_is_offered(workspace_env: Path) -> None:
+    cache = workspace_env.parent / "cache" / "git.example" / "project.git"
+    cache.parent.mkdir(parents=True)
+    git(workspace_env.parent, "init", "-q", "--bare", str(cache))
+    git(cache, "remote", "add", "origin", "https://git.example/project.git")
+    backend = _Capture(None)
+    run(app, ["create", "J-1"], interactive=True, prompt_backend=backend)
+    (request,) = backend.requests
+    assert [item.id for item in request.catalog.items] == ["git.example/project"]

@@ -192,7 +192,5 @@ def _pick(
         base=base or "",
     )
     result = ui.pick_many(request)
-    args = [
-        arg.model_copy(update={"ident": source.ident_for(arg.ident)}) for arg in repo_args(result)
-    ]
+    args = [source.pick_arg(arg) for arg in repo_args(result)]
     return (record.name if record else result.title.strip() or title), args

@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from untaped.capabilities.workspace.domain.models import RepoArg
 from untaped.capabilities.workspace.domain.naming import looks_like_url, repo_key
 from untaped.capability_api import PickCatalog, PickItem, UntapedError
 
@@ -62,6 +63,7 @@ class RepoPickSource:
         self._inventory = inventory or _default_inventory
         self._exclude = frozenset(exclude)
         self._urls: dict[str, str] = {}
+        """Inventory id -> URL across loads (never cleared): a pick a refresh dropped keeps it."""
         self._cached: dict[str, tuple[str, ...]] = {}
         self._branches: dict[str, list[str]] = {}
 
@@ -111,16 +113,21 @@ class RepoPickSource:
             return self._cache_url(item_id, self._cached[item_id])
         return item_id if looks_like_url(item_id) else None
 
-    def ident_for(self, item_id: str) -> str:
-        """What to resolve for a pick: a cached-only repo's cache URL, else ``item_id``.
+    def pick_arg(self, arg: RepoArg) -> RepoArg:
+        """``arg`` (its ident a picked item id) with what to resolve and the URL to fall back on.
 
         Inventory items keep their ``full_name`` (resolved through the
-        inventory); a cached-only repo may come from another host, so its
-        ``host/owner/name`` id is never resolved as a GitHub name.
+        inventory), falling back on the URL last seen for it, so a pick that
+        a refresh dropped still provisions; a cached-only repo may come from
+        another host, so its ``host/owner/name`` id is never resolved as a
+        GitHub name: its cache URL is resolved instead.
         """
+        item_id = arg.ident
         if item_id in self._cached and item_id not in self._urls:
-            return self._cache_url(item_id, self._cached[item_id])
-        return item_id
+            ident, fallback = self._cache_url(item_id, self._cached[item_id]), None
+        else:
+            ident, fallback = item_id, self._urls.get(item_id)
+        return arg.model_copy(update={"ident": ident, "fallback": fallback})
 
     def branches(self, item_id: str | None) -> list[str]:
         """Cached remote branches of ``item_id`` (no network); ``[]`` for the all-items row."""
@@ -145,7 +152,7 @@ class RepoPickSource:
         return origin or f"https://{ident}"
 
     def _scan_cache(self) -> dict[str, tuple[str, ...]]:
-        """``host/owner/name`` (any depth) -> :func:`repo_key` path, per ``<host>/.../<name>.git``.
+        """``host/[owner/]name`` -> :func:`repo_key` path, per ``<host>/.../<name>.git``.
 
         The id keeps the host, so one ``owner/name`` cached from two hosts is two items.
 
@@ -167,7 +174,7 @@ class RepoPickSource:
                 key = (*parts, entry.name)
                 if not entry.name.endswith(".git"):
                     stack.append(key)
-                elif len(key) >= 3:
+                elif len(key) >= 2:
                     found["/".join((*key[:-1], entry.name.removesuffix(".git")))] = key
         return dict(sorted(found.items()))
 
