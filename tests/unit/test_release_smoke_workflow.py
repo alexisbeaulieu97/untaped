@@ -15,7 +15,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
-WORKFLOWS = [WORKFLOW_DIR / name for name in ("ci.yml", "release-smoke.yml", "release.yml")]
+WORKFLOWS = [WORKFLOW_DIR / name for name in ("ci.yml", "release.yml")]
 EXPECTED_UV_VERSION = "0.11.26"
 # action -> (reviewed release tag, the full commit SHA it must be pinned to)
 EXPECTED_ACTION_REFS = {
@@ -33,17 +33,17 @@ def _steps(path: Path) -> list[dict[str, Any]]:
     return [step for job in workflow["jobs"].values() for step in job["steps"]]
 
 
-def test_release_smoke_runs_on_pr_and_main_and_uses_the_shared_smoke() -> None:
-    path = WORKFLOW_DIR / "release-smoke.yml"
-    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+def test_ci_wheel_smoke_runs_on_pr_and_main_and_uses_the_shared_smoke() -> None:
+    workflow = yaml.safe_load((WORKFLOW_DIR / "ci.yml").read_text(encoding="utf-8"))
     assert workflow["on"] == {
-        "pull_request": None,
         "push": {"branches": ["main"]},
+        "pull_request": None,
         "workflow_dispatch": None,
     }
     assert workflow["permissions"] == {"contents": "read"}
 
-    run = "\n".join(str(step.get("run", "")) for step in _steps(path))
+    job = workflow["jobs"]["unified-app-wheel-smoke"]
+    run = "\n".join(str(step.get("run", "")) for step in job["steps"])
     assert "uv build --wheel" in run
     assert "dist/*.whl" in run
     assert "release.py smoke-unified" in run
