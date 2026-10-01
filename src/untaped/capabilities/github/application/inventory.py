@@ -10,6 +10,13 @@ from untaped.capabilities.github.application.scopes import TeamScope
 from untaped.capabilities.github.domain.inventory import RepositoryInventoryItem
 from untaped.capability_api import HttpError, UntapedError, attribution
 
+__all__ = [
+    "RepositoryInventoryItem",
+    "RepositoryInventoryScope",
+    "ResolveRepositoryInventory",
+    "split_full_name",
+]
+
 
 @dataclass(frozen=True)
 class RepositoryInventoryScope:
