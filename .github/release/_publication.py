@@ -7,29 +7,20 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
 from _release_core import (
-    BUILTIN_CAPABILITIES,
     FULL_SHA_RE,
-    MANIFEST,
     PYPROJECT,
     SHA256_RE,
-    SOURCE_EVIDENCE_PATH,
     ReleaseCheckError,
-    dependency_name,
-    load_toml,
     normalize_package_name,
     project_metadata,
-    requirement_specifier,
     verify_version,
 )
 
-_load_toml = load_toml
-_dependency_name = dependency_name
 _normalize_package_name = normalize_package_name
 _project_metadata = project_metadata
-_requirement_specifier = requirement_specifier
 
 # GitHub's release list and PyPI's CDN-cached simple index lag writes by a few
 # seconds; poll with backoff (2+4+8+16+32 = 62s) before calling a write lost.
@@ -219,151 +210,6 @@ def verify_candidate_oid(candidate_oid: str, current_oid: str) -> None:
             f"{candidate_oid!r}"
         )
     print(f"ok: checked-out commit matches reviewed candidate {candidate_oid}")
-
-
-def validate_release_manifest(
-    manifest_path: Path = MANIFEST,
-    *,
-    pyproject_path: Path = PYPROJECT,
-    lock_path: Path | None = None,
-) -> dict[str, Any]:
-    """Validate the public static manifest against package metadata and lock data."""
-    data = _load_toml(manifest_path)
-    evidence_data = _load_toml(SOURCE_EVIDENCE_PATH)
-    evidence = evidence_data.get("evidence")
-    if (
-        not isinstance(evidence, dict)
-        or evidence.get("schema") != "untaped.release-source-evidence.v1"
-    ):
-        raise ReleaseCheckError("release source evidence has an unsupported schema")
-    manifest = data.get("manifest")
-    distribution = data.get("distribution")
-    requirements = data.get("requirements")
-    provenance = data.get("provenance")
-    if not all(
-        isinstance(section, dict) for section in (manifest, distribution, requirements, provenance)
-    ):
-        raise ReleaseCheckError("release manifest is missing required sections")
-    assert isinstance(manifest, dict)
-    assert isinstance(distribution, dict)
-    assert isinstance(requirements, dict)
-    assert isinstance(provenance, dict)
-
-    project = _project_metadata(pyproject_path)
-    project_direct = project.get("dependencies", [])
-    _validate_manifest_identity(manifest, distribution, project)
-    _validate_manifest_requirements(requirements, project_direct, evidence)
-    _validate_manifest_core_source(provenance, evidence)
-    _validate_manifest_sources(provenance, evidence)
-
-    if lock_path is not None:
-        lock_text = lock_path.read_text(encoding="utf-8")
-        for requirement in project_direct:
-            if f'name = "{_dependency_name(str(requirement))}"' not in lock_text:
-                raise ReleaseCheckError(f"lockfile is missing direct dependency {requirement}")
-    return data
-
-
-def _validate_manifest_core_source(provenance: dict[str, Any], evidence: dict[str, Any]) -> None:
-    """Bind the public manifest to the accepted base SDK source record."""
-    source = provenance.get("core-source")
-    expected = evidence.get("core-source")
-    if not isinstance(source, dict) or not isinstance(expected, dict):
-        raise ReleaseCheckError("release manifest is missing the accepted core source")
-    for field in ("repository", "oid", "requires-python", "dependencies"):
-        if source.get(field) != expected.get(field):
-            raise ReleaseCheckError(f"release manifest core source {field} is stale")
-    if source.get("repository") != "untaped":
-        raise ReleaseCheckError("release manifest core source must be untaped")
-    if not FULL_SHA_RE.fullmatch(str(source.get("oid", ""))):
-        raise ReleaseCheckError("release manifest core source OID is malformed")
-
-
-def _validate_manifest_identity(
-    manifest: dict[str, Any], distribution: dict[str, Any], project: dict[str, Any]
-) -> None:
-    if manifest.get("schema") != "untaped.release-manifest.v1":
-        raise ReleaseCheckError("release manifest has an unsupported schema")
-    if distribution.get("name") != project.get("name"):
-        raise ReleaseCheckError("release manifest distribution name does not match pyproject.toml")
-    if manifest.get("version") != project.get("version"):
-        raise ReleaseCheckError("release manifest version does not match pyproject.toml")
-    if manifest.get("requires-python") != project.get("requires-python"):
-        raise ReleaseCheckError("release manifest Python floor does not match pyproject.toml")
-    if manifest.get("capabilities") != list(BUILTIN_CAPABILITIES):
-        raise ReleaseCheckError("release manifest capability order does not match built-ins")
-
-
-def _validate_manifest_requirements(
-    requirements: dict[str, Any], project_direct: object, evidence: dict[str, Any]
-) -> None:
-    direct = requirements.get("direct")
-    if not isinstance(project_direct, list):
-        raise ReleaseCheckError("project metadata dependencies are malformed")
-    if any(_dependency_name(str(item)) == "untaped" for item in project_direct):
-        raise ReleaseCheckError("unified package must not retain a self dependency")
-    if not isinstance(direct, list) or sorted(map(str, direct)) != sorted(map(str, project_direct)):
-        raise ReleaseCheckError("release manifest direct requirements are stale")
-    intersections = requirements.get("source-intersections")
-    if not isinstance(intersections, dict):
-        raise ReleaseCheckError("release manifest is missing source dependency intersections")
-    evidence_intersections = evidence.get("intersections")
-    if not isinstance(evidence_intersections, dict):
-        raise ReleaseCheckError("release source evidence is missing intersections")
-    if {str(name): str(spec) for name, spec in intersections.items()} != {
-        str(name): str(spec) for name, spec in evidence_intersections.items()
-    }:
-        raise ReleaseCheckError("release manifest source dependency intersections are stale")
-    project_by_name = {_dependency_name(str(item)): str(item) for item in project_direct}
-    for name, source_spec in intersections.items():
-        project_spec = project_by_name.get(_normalize_package_name(str(name)))
-        if project_spec is None or str(source_spec) != _requirement_specifier(project_spec):
-            raise ReleaseCheckError(f"release manifest dependency intersection is stale: {name}")
-
-
-def _validate_manifest_sources(provenance: dict[str, Any], evidence: dict[str, Any]) -> None:
-    source_records = provenance.get("sources")
-    evidence_sources = evidence.get("sources")
-    if not isinstance(source_records, list) or not isinstance(evidence_sources, list):
-        raise ReleaseCheckError("release manifest/source evidence source records are malformed")
-    if len(source_records) != len(BUILTIN_CAPABILITIES) or len(evidence_sources) != len(
-        BUILTIN_CAPABILITIES
-    ):
-        raise ReleaseCheckError("release manifest must contain one source record per capability")
-    evidence_by_capability = {
-        str(record.get("capability")): record
-        for record in evidence_sources
-        if isinstance(record, dict)
-    }
-    evidence_floor = evidence.get("requires-python")
-    seen_capabilities: set[str] = set()
-    for record in source_records:
-        if not isinstance(record, dict):
-            raise ReleaseCheckError("release manifest source record is malformed")
-        capability = str(record.get("capability", ""))
-        oid = str(record.get("oid", ""))
-        expected = evidence_by_capability.get(capability)
-        if capability not in BUILTIN_CAPABILITIES or capability in seen_capabilities:
-            raise ReleaseCheckError(
-                f"release manifest source capability is invalid: {capability!r}"
-            )
-        if expected is None or oid != expected.get("oid"):
-            raise ReleaseCheckError(
-                f"release manifest source OID is not the accepted source for {capability}"
-            )
-        if record.get("repository") != expected.get("repository"):
-            raise ReleaseCheckError(f"release manifest source repository is stale for {capability}")
-        if record.get("requires-python") != evidence_floor:
-            raise ReleaseCheckError(
-                f"release manifest source Python floor is stale for {capability}"
-            )
-        if tuple(record.get("dependencies", ())) != tuple(expected.get("dependencies", ())):
-            raise ReleaseCheckError(
-                f"release manifest source dependencies are stale for {capability}"
-            )
-        seen_capabilities.add(capability)
-    if seen_capabilities != set(BUILTIN_CAPABILITIES):
-        raise ReleaseCheckError("release manifest is missing a capability source record")
 
 
 def run_publication(

@@ -10,8 +10,6 @@ PYPROJECT = ROOT / "pyproject.toml"
 VERSION_RE = re.compile(r"^(?P<base>[0-9]+\.[0-9]+\.[0-9]+)(?P<prerelease>(?:a|b|rc)[0-9]+)?$")
 TESTPYPI_INDEX = "https://test.pypi.org/simple/"
 PYPI_INDEX = "https://pypi.org/simple/"
-MANIFEST = ROOT / "release-manifest.toml"
-SOURCE_EVIDENCE_PATH = ROOT / "release-source-evidence.toml"
 FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 BUILTIN_CAPABILITIES = (
@@ -47,22 +45,6 @@ def load_toml(path: Path) -> dict[str, Any]:
     except (OSError, ValueError) as error:
         raise ReleaseCheckError(f"could not read TOML file {path}: {error}") from error
     return parsed
-
-
-def requirement_specifier(requirement: str) -> str:
-    """Return the specifier portion of a PEP 508 requirement."""
-    match = re.match(r"^[A-Za-z0-9_.-]+(.*)$", requirement)
-    if match is None or not match.group(1):
-        return ""
-    return match.group(1).replace(" ", "")
-
-
-def dependency_name(requirement: str) -> str:
-    """Return a normalized distribution name from a requirement string."""
-    match = re.match(r"([A-Za-z0-9_.-]+)", requirement)
-    if match is None:
-        return ""
-    return normalize_package_name(match.group(1))
 
 
 def normalize_package_name(name: str) -> str:

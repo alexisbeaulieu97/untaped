@@ -13,13 +13,16 @@ that exact action, because each changes shared or public state.
 ## Package metadata
 
 - Package name: `untaped`; build command: `uv build --no-sources`
-- Public manifest: [`release-manifest.toml`](../release-manifest.toml), which
-  records the package identity, Python floor, six built-ins, direct
-  requirements, and imported source OIDs.
+- Package identity, version, Python floor, and dependencies come from
+  `pyproject.toml`; the release helper checks the dispatch version and the
+  built filenames against it.
 - Unified smoke: install the wheel, invoke the executable `untaped`, require
-  exact metadata and `untaped --version`, check the seven management and six
+  exact metadata and `untaped --version`, check the management and built-in
   capability roots in root help, then resolve every capability's `--help`
-  command offline. Local and published jobs call the same
+  command offline. The expected roots are constants in
+  `.github/release/_release_core.py`; `tests/unit/test_release_workflow.py`
+  pins the built-in list to the real CLI. CI's `unified-app-wheel-smoke` job
+  and the release's local and published jobs call the same
   `.github/release/release.py smoke-unified` implementation.
 
 ## Major releases
@@ -70,7 +73,7 @@ Rules:
 - Visibility checks right after a write (the new GitHub draft, the uploaded
   index files) poll with backoff for about a minute, because GitHub's release
   list and PyPI's CDN-cached simple index lag writes by a few seconds.
-- Candidate identity and the package manifest are checked before any remote
+- Candidate identity and package metadata are checked before any remote
   mutation. Build/test/local smoke run in a read-only job.
 - A production run creates or resumes a GitHub draft targeted at the exact
   candidate and containing exactly the wheel and source archive. Existing
