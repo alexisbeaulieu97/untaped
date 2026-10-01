@@ -1,7 +1,6 @@
-"""Help-tree lint: every command follows the command-grammar conventions.
+"""Help-tree rules: every command follows the command grammar (``docs/conventions.md``).
 
-Walks the fully composed built-in tree (``build_root_app(externals=[])``)
-and checks each visible command against ``docs/conventions.md``:
+Checks each visible command of a command subtree:
 
 - ``missing-help`` — a parameter (positional or option) has no help text;
 - ``duplicate-option`` — two parameters of one command answer to one name;
@@ -12,13 +11,15 @@ and checks each visible command against ``docs/conventions.md``:
   must never be positional);
 - ``command-name`` — a command or group name is not kebab-case;
 - ``reserved-short`` — a reserved short flag means something else;
-- ``ambiguous-short`` — a non-reserved short flag has two meanings;
+- ``ambiguous-short`` — a non-reserved short flag has two meanings within
+  the checked subtrees;
 - ``undeclared-write`` — a command exposes ``--yes``/``--dry-run`` without
   declaring ``@writes``;
 - ``mutation-format`` — a declared write has no ``--format``;
 - ``destructive-controls`` — a destructive command lacks ``--yes``/``--dry-run``.
 
-Existing violations live in ``baselines/help_tree/<owner>.txt``.
+Lines are ``<command path>::<rule>::<detail>``; they carry no source line, so
+no inline marker can suppress them.
 """
 
 from __future__ import annotations
@@ -26,14 +27,14 @@ from __future__ import annotations
 import inspect
 import re
 from collections import Counter, defaultdict
-from collections.abc import Iterator
-from typing import Annotated, Any
+from collections.abc import Iterable, Iterator
+from typing import Any
 
-from cyclopts import App, Parameter
+from cyclopts import App
 
-from untaped.bootstrap import build_root_app
 from untaped.cli import write_kind
 
+#: Management commands the root shell mounts beside the capabilities.
 ROOT_COMMANDS = frozenset(
     {"config", "profile", "skills", "doctor", "capabilities", "setup", "alias"}
 )
@@ -69,15 +70,11 @@ def _walk(app: App, path: tuple[str, ...]) -> Iterator[tuple[tuple[str, ...], Ap
         yield from _walk(sub, (*path, name))
 
 
-def _owner(path: tuple[str, ...]) -> str:
-    return "root" if path[0] in ROOT_COMMANDS else path[0]
-
-
 def _long_name(names: tuple[str, ...]) -> str:
     return next((name for name in names if name.startswith("--")), names[0])
 
 
-def _command_violations(path: tuple[str, ...], app: App) -> Iterator[tuple[str, str]]:
+def command_violations(path: tuple[str, ...], app: App) -> Iterator[tuple[str, str]]:
     """Yield ``(rule, detail)`` for one command (group names and leaves)."""
     name = path[-1]
     if not _KEBAB.match(name):
@@ -133,18 +130,19 @@ def _shorts(app: App) -> Iterator[tuple[str, str]]:
                 yield flag, long_name
 
 
-def collect_violations() -> dict[str, list[str]]:
-    """``{owner: ["<command path>::<rule>::<detail>", ...]}`` for the built-in tree."""
-    root = build_root_app(externals=[])
-    found: dict[str, list[str]] = defaultdict(list)
+def help_tree_violations(root: App, names: Iterable[str]) -> list[str]:
+    """``["<command path>::<rule>::<detail>", ...]`` for the subtrees ``root[name]``."""
+    found: list[str] = []
     shorts: dict[str, dict[str, list[tuple[str, ...]]]] = defaultdict(lambda: defaultdict(list))
-    for path, app in _walk(root, ()):
-        command = " ".join(path)
-        for rule, detail in _command_violations(path, app):
-            found[_owner(path)].append(f"{command}::{rule}::{detail}")
-        if app.default_command is not None:
-            for flag, long_name in _shorts(app):
-                shorts[flag][long_name].append(path)
+    for top in names:
+        subtree = root[top]
+        for path, app in [((top,), subtree), *_walk(subtree, (top,))]:
+            command = " ".join(path)
+            for rule, detail in command_violations(path, app):
+                found.append(f"{command}::{rule}::{detail}")
+            if app.default_command is not None:
+                for flag, long_name in _shorts(app):
+                    shorts[flag][long_name].append(path)
     for flag, meanings in sorted(shorts.items()):
         reserved = RESERVED_SHORTS.get(flag)
         for long_name, paths in sorted(meanings.items()):
@@ -155,74 +153,5 @@ def collect_violations() -> dict[str, list[str]]:
             else:
                 continue
             for path in paths:
-                found[_owner(path)].append(f"{' '.join(path)}::{rule}::{flag} {long_name}")
+                found.append(f"{' '.join(path)}::{rule}::{flag} {long_name}")
     return found
-
-
-def test_help_tree_follows_the_command_grammar(baseline: Any) -> None:
-    baseline("help_tree", collect_violations())
-
-
-_ALL_FLAGS = frozenset({"--yes", "--dry-run", "--format"})
-_FLAG_PARAMS: dict[str, tuple[str, type]] = {
-    "--yes": ("yes", bool),
-    "--dry-run": ("dry_run", bool),
-    "--format": ("format", str),
-}
-
-
-def _leaf(*, declare: str | None, flags: frozenset[str] = _ALL_FLAGS) -> App:
-    """A ``demo nuke`` command exposing exactly ``flags``, declared as ``declare``."""
-    from untaped.sdk import create_app, writes
-
-    def body(**_: object) -> None:
-        """Do it."""
-
-    body.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
-        [
-            inspect.Parameter(
-                _FLAG_PARAMS[flag][0],
-                inspect.Parameter.KEYWORD_ONLY,
-                default=False if _FLAG_PARAMS[flag][1] is bool else "table",
-                annotation=Annotated[
-                    _FLAG_PARAMS[flag][1],
-                    Parameter(name=flag, negative="", help=f"The {flag} option."),
-                ],
-            )
-            for flag in sorted(flags)
-        ]
-    )
-    body.__annotations__ = {}
-    if declare == "write":
-        body = writes(body)
-    elif declare == "destructive":
-        body = writes(destructive=True)(body)
-    app = create_app(name="demo")
-    app.command(body, name="nuke")
-    return app["nuke"]
-
-
-def _violations(*, declare: str | None, flags: frozenset[str] = _ALL_FLAGS) -> set[tuple[str, str]]:
-    return set(_command_violations(("demo", "nuke"), _leaf(declare=declare, flags=flags)))
-
-
-def test_flags_without_a_declaration_are_flagged() -> None:
-    assert _violations(declare=None) == {("undeclared-write", "--dry-run --yes")}
-
-
-def test_declared_write_without_format_is_flagged() -> None:
-    assert _violations(declare="write", flags=frozenset()) == {("mutation-format", "nuke")}
-
-
-def test_declared_destructive_without_a_control_is_flagged() -> None:
-    no_dry_run = _ALL_FLAGS - {"--dry-run"}
-    no_yes = _ALL_FLAGS - {"--yes"}
-    assert _violations(declare="destructive", flags=no_dry_run) == {
-        ("destructive-controls", "--dry-run")
-    }
-    assert _violations(declare="destructive", flags=no_yes) == {("destructive-controls", "--yes")}
-
-
-def test_declared_command_with_any_name_and_all_flags_is_clean() -> None:
-    assert _violations(declare="destructive") == set()
-    assert _violations(declare="write") == set()

@@ -142,9 +142,9 @@ class RefreshGitSourceIndex:
         if concurrency < 1 or concurrency > 32:
             raise ValueError("concurrency must be between 1 and 32")
         if repo_batch_size < 1:
-            raise ValueError("repo_batch_size must be >= 1")
+            raise ValueError("repo_batch_size must be at least 1")
         if rate_limit_floor < 0:
-            raise ValueError("rate_limit_floor must be >= 0")
+            raise ValueError("rate_limit_floor cannot be negative")
         self._github = github
         self._git = git
         self._probe = probe

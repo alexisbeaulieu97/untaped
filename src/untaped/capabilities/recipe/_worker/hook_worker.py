@@ -142,7 +142,7 @@ def _protocol_channel() -> tuple[TextIO, TextIO]:
 
 
 def _configure_standard_streams() -> None:
-    for stream in (sys.stdin, sys.stdout, sys.stderr):
+    for stream in (sys.stdin, sys.stdout, sys.stderr):  # untaped: allow sys-stdin
         reconfigure = getattr(stream, "reconfigure", None)
         if callable(reconfigure):
             reconfigure(encoding="utf-8", errors="replace")

@@ -1,4 +1,9 @@
-"""Testing helpers for driving Cyclopts command apps with captured output."""
+"""Testing helpers for driving Cyclopts command apps with captured output.
+
+:func:`check_conventions` checks one installed capability against
+``docs/conventions.md``; its ``externals`` argument composes a provider
+passed in directly instead of one discovered through entry points.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +13,7 @@ from collections import deque
 from collections.abc import Callable, Iterable, Sequence
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO, cast
 
 from cyclopts import App
@@ -25,6 +31,7 @@ from untaped.prompts import (
 )
 
 if TYPE_CHECKING:
+    from untaped.capabilities.registry import ExternalProvider
     from untaped.picker import PickRequest, PickResult
 
 __all__ = [
@@ -34,6 +41,7 @@ __all__ = [
     "ScriptedPromptBackend",
     "TtyStringIO",
     "assert_destructive_contract",
+    "check_conventions",
     "invoke_cli",
 ]
 
@@ -183,6 +191,27 @@ def assert_destructive_contract(
     )
     if assert_unchanged is not None:
         assert_unchanged()
+
+
+def check_conventions(
+    capability: str,
+    *,
+    tests_dir: Path | None = None,
+    externals: Sequence[ExternalProvider] | None = None,
+) -> None:
+    """Fail with every convention violation of ``capability`` (docs/plugins.md).
+
+    Checks the installed capability's command subtree and its own source
+    files: command grammar, stderr wording, package structure and layering.
+    ``tests_dir`` adds the private-test-import check over those tests.
+    ``externals`` replaces entry-point discovery, so a test can compose a
+    provider that is not installed. ``# untaped: allow <rule>`` on a flagged
+    source line allows that one violation.
+    """
+    from untaped.conventions import capability_violations  # noqa: PLC0415
+
+    found = capability_violations(capability, tests_dir=tests_dir, externals=externals)
+    assert not found, "convention violations:\n" + "\n".join(f"  {line}" for line in found)
 
 
 class TtyStringIO(io.StringIO):
