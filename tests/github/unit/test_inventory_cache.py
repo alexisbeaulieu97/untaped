@@ -104,6 +104,7 @@ def test_a_refresh_by_another_process_while_waiting_for_the_lock_is_reused() -> 
 def test_forced_refresh_always_fetches() -> None:
     store, fetch = MemoryStore(_cached(timedelta(seconds=1))), Fetch((WEB,))
     assert _use(store, fetch)(refresh=True).repos == (WEB,)
+    assert (store.saves, store.locks) == (1, 1)
 
 
 def test_refresh_false_never_fetches() -> None:

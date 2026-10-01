@@ -59,3 +59,11 @@ def test_lock_is_reentrant_across_instances_in_sequence(tmp_path: Path) -> None:
         pass
     with JsonInventoryStore(path).lock():
         pass
+
+
+def test_naive_timestamp_loads_as_none(tmp_path: Path) -> None:
+    path = tmp_path / "inv.json"
+    path.write_text(
+        '{"version": 1, "scope_key": "s", "refreshed_at": "2026-10-01T12:00:00", "repos": []}'
+    )
+    assert JsonInventoryStore(path).load() is None

@@ -35,9 +35,12 @@ class JsonInventoryStore:
             if data.get("version") != _VERSION:
                 return None
             refreshed = data["refreshed_at"]
+            refreshed_at = datetime.fromisoformat(refreshed) if refreshed else None
+            if refreshed_at is not None and refreshed_at.tzinfo is None:
+                return None  # a naive timestamp cannot be compared with now(UTC)
             return RepoInventory(
                 repos=tuple(RepositoryInventoryItem.model_validate(row) for row in data["repos"]),
-                refreshed_at=datetime.fromisoformat(refreshed) if refreshed else None,
+                refreshed_at=refreshed_at,
                 scope_key=str(data["scope_key"]),
             )
         except OSError, ValueError, KeyError, TypeError, AttributeError, ValidationError:
