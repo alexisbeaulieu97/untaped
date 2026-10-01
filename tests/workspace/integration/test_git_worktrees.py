@@ -194,35 +194,26 @@ def test_remove_prunes_a_hand_deleted_worktree(
     worktrees.checkout(url, tmp_path / "ws2" / "api", branch="b", base=None)  # branch is free again
 
 
-def test_existing_cache_gets_the_remote_tracking_refspec(
+def test_a_9x_cache_is_refused_with_a_hint(
     worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
 ) -> None:
     url = str(make_upstream("api"))
     cache = cache_path_for(url, cache_dir=tmp_path / "cache")
     cache.parent.mkdir(parents=True)
-    git(tmp_path, "clone", "-q", "--bare", url, str(cache))  # an old-style mirror cache
-    worktrees.checkout(url, tmp_path / "ws" / "api", branch="b", base=None)
-    assert (
-        git(cache, "config", "--get-all", "remote.origin.fetch")
-        == "+refs/heads/*:refs/remotes/origin/*"
-    )
+    git(tmp_path, "clone", "-q", "--bare", url, str(cache))  # an unmarked, 9.x-style cache
+    with pytest.raises(WorkspaceError) as caught:
+        worktrees.checkout(url, tmp_path / "ws" / "api", branch="b", base=None)
+    assert str(caught.value) == f"{cache} is a cache from untaped 9.x"
+    assert caught.value.hint == "delete it; the next command re-fetches"
 
 
-def test_a_cache_is_marked_migrated_once(
+def test_a_new_cache_is_marked_with_the_layout(
     worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api", branches=("feat",)))
+    url = str(make_upstream("api"))
     cache = cache_path_for(url, cache_dir=tmp_path / "cache")
-    worktrees.checkout(url, tmp_path / "a" / "api", branch="feat", base=None)
+    worktrees.checkout(url, tmp_path / "a" / "api", branch="b", base=None)
     assert git(cache, "config", "untaped.layout") == "2"
-    worktrees.remove(url, tmp_path / "a" / "api", force=False)
-    git(cache, "config", "--replace-all", "remote.origin.fetch", "+refs/heads/*:refs/heads/*")
-    worktrees.checkout(url, tmp_path / "b" / "api", branch="feat", base=None)
-    assert git(cache, "rev-parse", "--verify", "refs/heads/feat")  # a marked cache keeps heads
-    assert (
-        git(cache, "config", "--get-all", "remote.origin.fetch")
-        == "+refs/heads/*:refs/remotes/origin/*"
-    )
 
 
 def test_a_renamed_default_branch_is_picked_up(
@@ -252,19 +243,6 @@ def test_in_use_remote_branch_is_a_conflict(
         worktrees.checkout(url, tmp_path / "b" / "api", branch="feature/x", base=None)
     assert caught.value.category == "conflict"
     assert caught.value.hint
-
-
-def test_legacy_mirror_heads_are_not_resumed(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
-) -> None:
-    upstream = make_upstream("api", branches=("feat",))
-    url = str(upstream)
-    cache = cache_path_for(url, cache_dir=tmp_path / "cache")
-    cache.parent.mkdir(parents=True)
-    git(tmp_path, "clone", "-q", "--bare", url, str(cache))  # an old-style mirror cache
-    git(upstream, "branch", "-D", "feat")
-    checkout = worktrees.checkout(url, tmp_path / "ws" / "api", branch="feat", base=None)
-    assert (checkout.action, checkout.detail) == ("created", "from origin/main")
 
 
 def test_resume_fast_forwards_a_branch_behind_origin(

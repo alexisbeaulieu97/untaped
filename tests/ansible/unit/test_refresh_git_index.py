@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import threading
 import time
 from collections.abc import Callable, Iterable, Sequence
@@ -760,6 +762,28 @@ def test_git_refresh_reuses_parsed_dependencies_for_duplicate_remote_shas(h: Har
     assert {
         edge.source_ref for edge in h.index.dependents("acme/base", None, source_key="source:prod")
     } == {"main", "release"}
+
+
+def test_the_aliases_fingerprint_always_folds_the_github_host_in(h: Harness) -> None:
+    h.set_refs("acme/site", ("main", "sha-main", "- common\n"))
+    aliases = {"a": "b"}
+    nine_x = hashlib.sha256(
+        json.dumps(aliases, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    folded = json.dumps(
+        {"aliases": aliases, "github_host": "github.com"}, sort_keys=True, separators=(",", ":")
+    ).encode()
+
+    def stored(**overrides: Any) -> str:
+        h.run(aliases=aliases, **overrides)
+        return h.index.ref_scans("source:prod", "acme/site", [("heads", "main")])[
+            ("heads", "main")
+        ].aliases_fingerprint
+
+    default_host = stored()
+    assert default_host == hashlib.sha256(folded).hexdigest()
+    assert default_host != nine_x
+    assert stored(github_host="GitHub.com") == default_host
 
 
 def test_git_refresh_reindexes_unchanged_ref_when_aliases_change(h: Harness) -> None:

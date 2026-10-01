@@ -709,14 +709,8 @@ def _dependency_paths_fingerprint(paths: list[str]) -> str:
 
 
 def _aliases_fingerprint(aliases: dict[str, str], github_host: str | None = None) -> str:
-    """Fingerprint of everything identity resolution depends on.
-
-    The default ``github.com`` host keeps the historical aliases-only payload
-    so existing snapshots stay reusable; an Enterprise host is folded in.
-    """
-    resolution: object = aliases
-    if github_host and github_host.lower() != DEFAULT_GITHUB_HOST:
-        resolution = {"aliases": aliases, "github_host": github_host.lower()}
+    """Fingerprint of everything identity resolution depends on: aliases and GitHub host."""
+    resolution = {"aliases": aliases, "github_host": (github_host or DEFAULT_GITHUB_HOST).lower()}
     payload = json.dumps(resolution, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(payload).hexdigest()
 
