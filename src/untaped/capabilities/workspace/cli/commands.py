@@ -65,6 +65,7 @@ from untaped.sdk import (
     report_error,
     report_errors,
     ui_context,
+    writes,
 )
 
 app = create_app(
@@ -80,6 +81,7 @@ ARCHIVE_OUTCOME = "workspace.archive_outcome"
 RUN_OUTCOME = "workspace.run_outcome"
 
 
+@writes
 def create_command(
     name: Annotated[
         str | None,
@@ -127,6 +129,7 @@ def create_command(
         _show_provisioned(rows, settings, name, fmt=fmt, columns=columns)
 
 
+@writes
 def add_command(
     name: NameArg = None,
     /,
@@ -228,6 +231,7 @@ def path_command(name: NameArg = None, /) -> None:
         echo(str(workspace_dir(settings, locate(settings, name).name)))
 
 
+@writes(destructive=True)
 def archive_command(
     name: NameArg = None,
     /,

@@ -39,6 +39,7 @@ from untaped.sdk import (
     finish,
     plural,
     render_rows,
+    writes,
 )
 
 
@@ -127,6 +128,7 @@ def get_command(
                     echo(f"  - {entry}")
 
 
+@writes
 def restore_command(
     backup_id: Annotated[str, Parameter(help="Backup id, prefix, or latest.")],
     /,
@@ -177,6 +179,7 @@ def restore_command(
         finish(outcome)
 
 
+@writes(destructive=True)
 def prune_command(
     *,
     keep: Annotated[

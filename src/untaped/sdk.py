@@ -43,6 +43,7 @@ from untaped.cli import (
     report_error,
     report_errors,
     resolve_each,
+    writes,
 )
 from untaped.concurrency import bounded_map
 from untaped.diagnostics import ErrorInfo, note_failure
@@ -230,4 +231,5 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "deprecated_alias",
     "plural",
     "q",
+    "writes",
 ]

@@ -33,6 +33,7 @@ from untaped.cli import (
     existing_directory,
     raise_usage,
     report_errors,
+    writes,
 )
 from untaped.errors import ConfigError, UntapedError, UsageError
 from untaped.messages import hint, not_found, plural
@@ -175,6 +176,7 @@ def build_root_skills_app(*, shell: ApplicationSpec, result: CompositionResult) 
         finish(False, predicate_hit=check and any(_stale(item) for item in found))
 
     @app.command(name="update")
+    @writes
     def update_command(
         skill_names: SkillNamesArgument = None,
         /,
@@ -197,6 +199,7 @@ def build_root_skills_app(*, shell: ApplicationSpec, result: CompositionResult) 
         )
 
     @app.command(name="remove")
+    @writes(destructive=True)
     def remove_command(
         skill_names: SkillNamesArgument = None,
         /,

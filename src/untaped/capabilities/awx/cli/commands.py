@@ -53,6 +53,7 @@ from untaped.sdk import (
     render_rows,
     report_errors,
     resolve_each,
+    writes,
 )
 
 app = create_app(
@@ -100,6 +101,7 @@ def schema_command(
 
 
 @app.command(name="apply")
+@writes
 def apply_command(
     files: Annotated[
         list[Path],

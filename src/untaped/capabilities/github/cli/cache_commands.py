@@ -47,6 +47,7 @@ from untaped.sdk import (
     report_error,
     report_errors,
     summary,
+    writes,
 )
 
 AllOption = Annotated[
@@ -185,6 +186,7 @@ def sync_command(
 
 
 @app.command(name="delete")
+@writes(destructive=True)
 def delete_command(
     repos: Annotated[
         list[str] | None,
@@ -216,6 +218,7 @@ def delete_command(
 
 
 @app.command(name="prune")
+@writes(destructive=True)
 def prune_command(
     *,
     org: Annotated[

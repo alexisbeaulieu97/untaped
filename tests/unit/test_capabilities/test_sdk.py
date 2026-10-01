@@ -128,7 +128,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "ui_context",
     ),
     "doctor checks": ("connection_check", "executable_check", "online_check"),
-    "conventions": ("ExitCode", "deprecated_alias", "plural", "q"),
+    "conventions": ("ExitCode", "deprecated_alias", "plural", "q", "writes"),
 }
 EXPECTED_ALL = [name for group in SURFACE_GROUPS.values() for name in group]
 

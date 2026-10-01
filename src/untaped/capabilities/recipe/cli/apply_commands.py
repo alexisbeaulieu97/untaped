@@ -60,6 +60,7 @@ from untaped.sdk import (
     parse_kv_pairs,
     read_stdin,
     render_rows,
+    writes,
 )
 
 MessageKind = Literal["success", "warning", "error", "info"]
@@ -111,6 +112,7 @@ class TargetInput:
     stdin_records: bool = False
 
 
+@writes
 def apply_command(
     recipe_ref: Annotated[str, Parameter(help="Recipe id, pack/recipe ref, or path.")],
     dirs: Annotated[list[Path] | None, Parameter(help="Target directories.")] = None,

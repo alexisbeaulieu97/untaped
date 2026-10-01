@@ -54,6 +54,7 @@ from untaped.sdk import (
     finish,
     note_failure,
     report_errors,
+    writes,
 )
 
 _TABLE_COLUMNS = ("id", "name", "action", "associate", "disassociate", "detail")
@@ -107,6 +108,7 @@ def _add_membership_verb(
     # Positional-only: a keyword spelling of ``parent`` would claim ``--parent``,
     # which belongs to the ``ParentOption`` scope filter below.
     @sub.command(name=verb, help=help_text)
+    @writes(destructive=action == "disassociate")
     def cmd(
         parent: Annotated[
             str, Parameter(help=f"Name of the {parent_noun}, or its id with --by-id.")
