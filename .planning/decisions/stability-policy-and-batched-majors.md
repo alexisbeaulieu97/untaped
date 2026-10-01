@@ -19,5 +19,5 @@ versions sort backwards. Instead, from 9.0.0 on:
 
 ## Related decisions
 
-- Builds on: [unified distribution and CLI version identity](dec_01a0820d62a473538c658510093a134c-v4-unified-distribution-and-cli-version-identity.md)
-- Builds on: [pipe envelope remains a stable v1 wire contract](dec_01a0820adfe072c48ea74907b7a9120e-v4-pipe-envelope-remains-a-stable-v1-wire-contract.md)
+- Builds on: [unified distribution and CLI version identity](unified-distribution-and-cli-version-identity.md)
+- Builds on: [pipe envelope remains a stable v1 wire contract](pipe-envelope-remains-a-stable-v1-wire-contract.md)

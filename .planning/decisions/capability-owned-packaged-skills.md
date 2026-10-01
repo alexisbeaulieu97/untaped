@@ -16,4 +16,4 @@ capability-specific usage belongs in the capability's packaged skill.
 
 - Supersedes: [dec_019f68b6b6f0748b8a01f0cbe11b7f12](https://github.com/alexisbeaulieu97/untaped/blob/de9a55d4842c50f5ba6afb93e6715d810c27b62f/.untaped/orchestration/decisions/dec_019f68b6b6f0748b8a01f0cbe11b7f12-the-sdk-ships-no-core-agent-skill.md) (historical record)
 
-Source: [preserved decision record](https://github.com/alexisbeaulieu97/untaped/blob/de9a55d4842c50f5ba6afb93e6715d810c27b62f/.untaped/orchestration/decisions/dec_01a0820d443870069dfe37af04c1fcc2-v4-capability-owned-packaged-skills.md).
+Source: [preserved decision record](https://github.com/alexisbeaulieu97/untaped/blob/de9a55d4842c50f5ba6afb93e6715d810c27b62f/.untaped/orchestration/decisions/capability-owned-packaged-skills.md).
