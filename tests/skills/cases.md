@@ -18,7 +18,7 @@ check that the packaged skills parse and link. These cases check what an agent
    P (partial) or N (not met), with a quoted reason. Write the criteria before
    any run.
 4. A case the previous version already passes doesn't test the change. Trust
-   only differences that repeat. Record each run in [Results](#results).
+   only differences that repeat.
 
 Runner prompt (replace SKILLDIR and REQUEST):
 
@@ -89,11 +89,3 @@ Request: "Show me how the Deploy job template is configured."
 - b. Doesn't ask for approval or run preview rituals meant for writes.
 - c. Picks a readable format (yaml or json) or explains the table view.
 - d. Invents no flags or commands.
-
-## Results
-
-| Date | Skills | Runner model | Score | Notes |
-|---|---|---|---|---|
-| 2026-09-30 | 9.0 skills (before the 9.1 rewrite) | Claude Opus | 22/25 | No recovery point before the bulk AWX write; vague about clones prune skips; `stopped` only a caveat; invented the ansible source scope. |
-| 2026-09-30 | 9.1 rewrite | Claude Opus | 25/25 | Ran a workspace `sync` (a write) before approval; fixed in the same PR. |
-| 2026-09-30 | 9.1 rewrite | GPT (Codex) | 24/25 | C2c partial: names what prune refuses, not how to resolve it (commit and push, or drop the stash, then prune again). Commands checked against `--help`; none invented. |
