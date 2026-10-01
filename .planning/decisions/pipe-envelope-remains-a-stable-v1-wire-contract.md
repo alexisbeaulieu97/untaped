@@ -16,4 +16,4 @@ record contract rather than branching on another capability's domain fields.
 
 - Supersedes: [dec_019f68b6b4e475179664a514f3771211](https://github.com/alexisbeaulieu97/untaped/blob/de9a55d4842c50f5ba6afb93e6715d810c27b62f/.untaped/orchestration/decisions/dec_019f68b6b4e475179664a514f3771211-pipe-envelope-v1-versioned-independently-of-the-sdk.md) (historical record)
 
-Source: [preserved decision record](https://github.com/alexisbeaulieu97/untaped/blob/de9a55d4842c50f5ba6afb93e6715d810c27b62f/.untaped/orchestration/decisions/pipe-envelope-remains-a-stable-v1-wire-contract.md).
+Source: [preserved decision record](https://github.com/alexisbeaulieu97/untaped/blob/de9a55d4842c50f5ba6afb93e6715d810c27b62f/.untaped/orchestration/decisions/dec_01a0820adfe072c48ea74907b7a9120e-v4-pipe-envelope-remains-a-stable-v1-wire-contract.md).
