@@ -25,5 +25,5 @@ a workflow unattended, and read which node failed and why.
 
 ## Related decisions
 
-- Builds on: [awx test regression tools](dec_01a0ee7aa1b0734c84536654eaf40cb0-v4-awx-test-regressions-fail-only-on-a-regression.md)
-- Builds on: [awx test failures name the responsible system](dec_01a0ee3c7ace70f6afb9ccbbac9d6d93-v4-awx-test-failures-name-the-responsible-system.md)
+- Builds on: [awx test regression tools](awx-test-regressions-fail-only-on-a-regression.md)
+- Builds on: [awx test failures name the responsible system](awx-test-failures-name-the-responsible-system.md)

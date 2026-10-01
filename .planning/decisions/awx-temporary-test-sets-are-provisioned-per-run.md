@@ -33,5 +33,5 @@ configuration it carries.
 
 ## Related decisions
 
-- Builds on: [AWX specs are plain export documents in the repo](dec_01a0eb415a9e7195873ec9f8a91da3dd-v4-awx-specs-are-plain-export-documents-in-the-repo.md)
-- Builds on: [awx test workflow suites reuse the job case](dec_01a0eebbe4e37457a4975c6fd4c3bfb8-v4-awx-workflow-suites-reuse-the-job-case.md)
+- Builds on: [AWX specs are plain export documents in the repo](awx-specs-are-plain-export-documents-in-the-repo.md)
+- Builds on: [awx test workflow suites reuse the job case](awx-workflow-suites-reuse-the-job-case.md)

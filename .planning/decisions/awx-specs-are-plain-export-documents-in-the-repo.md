@@ -15,7 +15,7 @@ documents `export` writes and `apply` reads, with no templating inside them:
 Folder names are a convention; each document's `kind` decides what it is.
 
 Rationale: `export` → commit → `apply` must stay a pure round trip. Jinja in
-specs (the superseded proposal's `source.*` context) would need a second
+specs (a `source.*` template context) would need a second
 loader, a render step before every apply, and a new concept to learn, and an
 exported file would no longer be the file that is applied. Everything specific
 to one test run (a temporary name, the pinned SHA, links between temporary
@@ -42,7 +42,3 @@ Constraints:
   nor prompting for `scm_branch` is refused under `--source-ref`.
 - Secrets never live in the repository; notification attachments, schedules
   and webhook settings are not part of temporary copies.
-
-## Related decisions
-
-- Supersedes: [AWX template specs and test suites stored with source](dec_01a0d5b790bd7341b4e493c1bbc4ea54-v4-awx-template-specs-and-suites-stored-with-source.md)
