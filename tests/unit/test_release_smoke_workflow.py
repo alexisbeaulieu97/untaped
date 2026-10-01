@@ -35,7 +35,11 @@ def _steps(path: Path) -> list[dict[str, Any]]:
 
 def test_ci_wheel_smoke_runs_on_pr_and_main_and_uses_the_shared_smoke() -> None:
     workflow = yaml.safe_load((WORKFLOW_DIR / "ci.yml").read_text(encoding="utf-8"))
-    assert workflow["on"] == {"push": {"branches": ["main"]}, "pull_request": None}
+    assert workflow["on"] == {
+        "push": {"branches": ["main"]},
+        "pull_request": None,
+        "workflow_dispatch": None,
+    }
     assert workflow["permissions"] == {"contents": "read"}
 
     job = workflow["jobs"]["unified-app-wheel-smoke"]
