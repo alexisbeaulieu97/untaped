@@ -328,6 +328,8 @@ def _edit_key(state: PickerState, key: str) -> PickerState:
         return _confirm(committed) if key == "ctrl-s" else committed
     if key == "esc":
         return replace(state, editing=None)
+    if key == "ctrl-c":
+        return _ctrl_c(replace(state, editing=None))
     if key == "tab":
         candidates = completions(state)
         return replace(state, editing=candidates[0]) if candidates else state
@@ -388,6 +390,8 @@ _BY_FOCUS: dict[Focus, dict[str, _Action]] = {
         "esc": _clear_query,
         "/": _focus("search"),
         "backspace": _edit_query("backspace"),
+        "ctrl-u": _edit_query("ctrl-u"),
+        "ctrl-w": _edit_query("ctrl-w"),
     },
     "selected": {
         "up": _move_row(-1),

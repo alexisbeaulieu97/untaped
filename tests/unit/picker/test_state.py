@@ -258,3 +258,24 @@ def test_refresh_failure_keeps_the_catalog_and_reports() -> None:
     assert state.refreshing is False
     assert state.error == "refresh failed: HTTP 503"
     assert len(state.items) == len(ITEMS)
+
+
+def test_ctrl_c_while_editing_abandons_the_edit_and_asks_to_discard() -> None:
+    state = press(typed(_state(), "web"), "down", " ", "tab", "down", "down", "enter")
+    assert state.editing is not None
+    state = press(state, "ctrl-c")
+    assert (state.quitting, state.editing) == (True, None)
+
+
+def test_ctrl_c_while_editing_with_nothing_selected_cancels() -> None:
+    state = press(_state(), "tab", "down", "down", "enter")
+    assert state.row == (ALL, "base")
+    assert state.editing is not None
+    assert press(state, "ctrl-c").outcome == "cancelled"
+
+
+def test_ctrl_u_in_the_list_clears_the_query_and_returns_to_search() -> None:
+    state = press(typed(_state(), "web"), "down")
+    assert state.focus == "list"
+    state = press(state, "ctrl-u")
+    assert (state.query, state.focus) == ("", "search")
