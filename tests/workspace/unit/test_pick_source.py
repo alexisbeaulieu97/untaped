@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from untaped.capabilities.github.api import RepoInventory, RepositoryInventoryItem
-from untaped.capabilities.workspace.domain import looks_like_url, repo_key
+from untaped.capabilities.workspace.domain import RepoArg, looks_like_url, repo_key
 from untaped.capabilities.workspace.infrastructure.pick_source import RepoPickSource
 from untaped.capability_api import UntapedError
 
@@ -188,7 +188,7 @@ def test_one_repo_cached_from_two_hosts_is_two_items(tmp_path: Path) -> None:
     ]
 
 
-def test_ident_for_a_cached_only_pick_is_its_cache_url(tmp_path: Path) -> None:
+def test_a_cached_only_pick_resolves_its_cache_url(tmp_path: Path) -> None:
     def broken(refresh: bool | None) -> RepoInventory:
         raise UntapedError("HTTP 503", category="failed", system="github")
 
@@ -197,11 +197,36 @@ def test_ident_for_a_cached_only_pick_is_its_cache_url(tmp_path: Path) -> None:
     git = FakeGit({"tool.git": "git@gitlab.example:team/tool.git"})
     source = _source(cache, git, inventory=broken)
     source.catalog(refresh=None)
-    assert source.ident_for("gitlab.example/team/tool") == "git@gitlab.example:team/tool.git"
+    assert source.pick_arg(RepoArg(ident="gitlab.example/team/tool")) == RepoArg(
+        ident="git@gitlab.example:team/tool.git"
+    )
 
 
-def test_ident_for_an_inventory_pick_is_its_full_name(tmp_path: Path) -> None:
+def test_an_inventory_pick_resolves_its_full_name_falling_back_on_its_url(
+    tmp_path: Path,
+) -> None:
     source = _source(_cache(tmp_path, "acme/api"), inventory=_inventory())
     source.catalog(refresh=False)
-    assert source.ident_for("acme/api") == "acme/api"
-    assert source.ident_for("https://h/o/r") == "https://h/o/r"
+    assert source.pick_arg(RepoArg(ident="acme/api", read_only=True)) == RepoArg(
+        ident="acme/api", read_only=True, fallback="https://github.com/acme/api.git"
+    )
+    assert source.pick_arg(RepoArg(ident="https://h/o/r")) == RepoArg(ident="https://h/o/r")
+
+
+def test_a_pick_dropped_by_a_refresh_keeps_its_url(tmp_path: Path) -> None:
+    loads = iter([ITEMS, ITEMS[1:]])
+    source = _source(
+        _cache(tmp_path),
+        inventory=lambda refresh: RepoInventory(repos=next(loads), refreshed_at=NOW, scope_key="k"),
+    )
+    source.catalog(refresh=False)
+    assert [i.id for i in source.catalog(refresh=True).items] == ["acme/old"]
+    assert source.pick_arg(RepoArg(ident="acme/api")).fallback == "https://github.com/acme/api.git"
+
+
+def test_an_owner_less_hosted_cache_is_offered(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    (cache / "git.example" / "project.git").mkdir(parents=True)
+    (cache / "toplevel.git").mkdir()
+    source = _source(cache, inventory=_no_inventory)
+    assert [i.id for i in source.catalog(refresh=False).items] == ["git.example/project"]
