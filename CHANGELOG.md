@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 9.1.0
+
+A minor release (capability SDK 3.1, additive). Tables open on a few curated
+default columns, now declared by each record type (`table_columns`), and
+`ansible` graphs mark where reading stopped (`stopped`). The packaged skills
+are rewritten as short maps with reference files; run `untaped skills update`.
+Scripts may notice three changes, each a **Behavior change** entry below:
+`--format raw` on `profile list`, `config list` and `config get` prints native
+values instead of `✓`/`—`; an unknown `--columns` name on GitHub `repos list`,
+`search` and `cache sync` exits 2 instead of warning; and `awx.job` records
+gain `elapsed`.
 
 - Core
   - **New (SDK):** a record type picks its default table columns with a
@@ -26,8 +36,9 @@
     `search users` and `cache sync` tables show curated default columns
     (`repos list` records gain `description`), and `sweep` leaves out the
     negated-predicate counts, which are always 0; `--columns +name` now edits
-    the `sweep` defaults. An unknown `--columns` name on `repos list`, `search`
-    and `cache sync` exits 2 instead of warning.
+    the `sweep` defaults.
+  - **Behavior change:** an unknown `--columns` name on `repos list`, `search`
+    and `cache sync` exits 2 instead of warning, as on every other command.
 - AWX
   - **Behavior change:** the `jobs wait` table shows when each job finished
     (`finished_at`) and how long it ran (`elapsed`). `awx.job` records and
