@@ -75,9 +75,8 @@ untaped github repos list 'svc-*' --org acme --format pipe \
   | untaped github sweep --stdin --not-grep new_api
 ```
 
-To clone the matches, pipe them into `untaped workspace repos add NAME
---stdin`, which reads the same record kinds or raw URL lines
-(`--format raw --columns clone_url`).
+To clone the matches into a workspace, feed them to the workspace commands
+(being rewritten).
 
 ### Gate CI on a banned pattern
 

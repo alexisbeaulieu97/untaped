@@ -28,7 +28,7 @@ hold the options and fields.
 
 Create a workspace, or register one that already exists:
 
-```bash
+```text
 untaped workspace init prod                     # new workspace at ~/.untaped/workspaces/prod
 untaped workspace adopt ~/work/prod --name prod # a directory you already cloned into
 untaped workspace import ~/manifests/prod.yml ~/work/prod --sync  # a colleague's manifest
@@ -60,7 +60,7 @@ repos:
 `repos[].name` is the directory on disk and what you pass to `--repo` and
 `repos remove`. Naming rules and how `adopt` and `import` fill the manifest
 are in the skill's
-[manifest reference](../../src/untaped/capabilities/workspace/skills/untaped-workspace/references/manifest.md).
+manifest reference (removed; being rewritten).
 
 ### Choosing the workspace
 
@@ -74,7 +74,7 @@ a lone argument is read as the workspace.
 
 ## Keep repos up to date
 
-```bash
+```text
 untaped workspace status --all --dirty --behind   # what needs attention
 untaped workspace sync --all                      # a morning routine
 ```
@@ -91,21 +91,21 @@ has uncommitted work.
 
 Git never waits for credentials; set up an SSH agent or a credential helper
 for private remotes. Row meanings, `--all` behaviour and timeouts are in the
-[sync reference](../../src/untaped/capabilities/workspace/skills/untaped-workspace/references/sync.md).
+sync reference (removed; being rewritten).
 
 ## Add repos from elsewhere
 
 `repos add --stdin` reads URLs or pipe records, for example a GitHub
 inventory:
 
-```bash
+```text
 untaped github repos list --team acme/platform --format pipe \
   | untaped workspace repos add platform --stdin --sync
 ```
 
 Or pick repos to drop with `fzf`:
 
-```bash
+```text
 untaped workspace status prod --format raw --columns repo \
   | fzf -m \
   | untaped workspace repos remove prod --stdin
@@ -115,7 +115,7 @@ untaped workspace status prod --format raw --columns repo \
 
 ## Switch branches
 
-```bash
+```text
 untaped workspace branch set prod develop --repo api
 untaped workspace branch set prod main --apply  # edit the manifest, then check out
 ```
@@ -128,7 +128,7 @@ to create it from the current HEAD.
 
 ## Run a command in every repo
 
-```bash
+```text
 untaped workspace foreach prod 'git status -s'
 
 # Stash only the dirty repos
@@ -139,7 +139,7 @@ untaped workspace status prod --dirty --format pipe \
 Quote the command. By default `foreach` stops at the first failure;
 `--continue-on-error` runs every repo and still fails, and `--ignore-errors`
 always exits 0. See the
-[foreach reference](../../src/untaped/capabilities/workspace/skills/untaped-workspace/references/foreach.md)
+foreach reference (removed; being rewritten)
 for selection, timeouts and output.
 
 ## Destructive commands
@@ -154,11 +154,11 @@ They never delete a clone with uncommitted, untracked, staged or stashed
 work, or commits not on a remote-tracking branch. The check is offline and
 does not see git-ignored files, so fetch first and mind local `.env` or build
 files. What each prune deletes and how to recover are in the
-[prune reference](../../src/untaped/capabilities/workspace/skills/untaped-workspace/references/prune.md).
+prune reference (removed; being rewritten).
 
 ## Jump between workspaces
 
-```bash
+```text
 cd "$(untaped workspace path prod)"
 
 # in ~/.zshrc (or bash, fish): defines `uwcd <workspace>` with completion

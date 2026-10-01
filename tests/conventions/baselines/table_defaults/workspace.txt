@@ -1,6 +1,0 @@
-# Known violations of the table_defaults convention check for 'workspace'.
-# This list may only shrink: fix an entry and delete its line.
-# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
-untaped.capabilities.workspace.domain.payloads.RepoRemoveOutcome::no-default-columns
-untaped.capabilities.workspace.domain.payloads.WorkspaceSummaryRow::no-default-columns
-untaped.capabilities.workspace.domain.state.ForeachOutcome::no-default-columns

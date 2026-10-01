@@ -55,7 +55,7 @@ its path and `--recipe NAME`.
 To apply across a workspace, pipe its repos and keep the same preview-first
 order:
 
-```bash
+```text
 untaped workspace repos list prod --format pipe \
   | untaped recipe apply acme/editorconfig --stdin --dry-run
 ```

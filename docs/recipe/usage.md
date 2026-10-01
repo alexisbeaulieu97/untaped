@@ -56,7 +56,7 @@ when any target would change.
 
 `--stdin` reads target paths, or records with a `target_path`:
 
-```bash
+```text
 untaped workspace repos list prod --format pipe \
   | untaped recipe apply acme/editorconfig --stdin --dry-run
 ```
