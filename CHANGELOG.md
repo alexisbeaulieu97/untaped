@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- GitHub
+  - **New:** `github.inventory` settings (`path`, `orgs`, `teams`,
+    `max_age_seconds`) for a cached, metadata-only repository list that the
+    workspace picker searches; it falls back to `github.default_org`.
+
 ## 9.1.0
 
 A minor release (capability SDK 3.1, additive). Tables open on a few curated

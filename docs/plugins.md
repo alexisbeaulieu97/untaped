@@ -11,6 +11,8 @@ Provider code imports from `untaped.capability_api` and nothing else in
 `untaped`; [`src/untaped/capability_api.py`](../src/untaped/capability_api.py)
 is the authoritative API surface. The internal registry and other modules are
 not an API and may change in any release.
+Built-in capabilities may also use each other's declared `api.py` modules;
+those are internal to `untaped` and not part of the provider API.
 
 ## 1. Provider package
 
