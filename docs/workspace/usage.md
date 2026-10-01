@@ -91,6 +91,7 @@ Inside a workspace directory, the name may be left out.
 ## Run a command in every repo
 
 ```bash
+untaped workspace status PROJ-123   # check the selection first
 untaped workspace run PROJ-123 'git push -u origin HEAD'
 ```
 
@@ -98,13 +99,14 @@ untaped workspace run PROJ-123 'git push -u origin HEAD'
 repos, and exits 1 if any repo failed. Forms, environment variables,
 selection and timeouts are in the
 [run reference](../../src/untaped/capabilities/workspace/skills/untaped-workspace/references/run.md).
+The `UNTAPED_*` variables it sets are in
+[environment](../reference/environment.md).
 
 ## Settings
 
 `workspace.cache_dir`, `workspaces_dir`, `parallel`, `branch_template` and
 `protocol` are in the [configuration reference](../reference/config.md#workspace).
-Do not delete the cache directory while workspaces are active: the worktrees
-point into it. `OWNER/NAME` and bare names are looked up in the GitHub
+`OWNER/NAME` and bare names are looked up in the GitHub
 inventory, scoped by `github.inventory` orgs and teams.
 
 ## Output

@@ -96,7 +96,7 @@ MUTATION_VERBS = frozenset(
         "archive",
     }
 )
-DESTRUCTIVE_VERBS = frozenset({"delete", "remove", "prune", "cancel"})
+DESTRUCTIVE_VERBS = frozenset({"delete", "remove", "prune", "cancel", "archive"})
 RESERVED_SHORTS = {
     "-f": "--format",
     "-c": "--columns",

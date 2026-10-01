@@ -6,6 +6,9 @@ Terms as `untaped` uses them in commands, output and these docs.
   item: `planned`, `created`, `updated`, `deleted`, `unchanged`, `skipped`,
   `failed`, `partial`, `conflict`, `cancelled`, or a capability's own
   past-tense verb (`cloned`, `applied`, `transitioned`).
+- **archive (workspace)**: Retiring a finished workspace: `workspace archive`
+  removes its worktrees and records it under `workspace list --archived`. It
+  refuses while any repo has unsaved work, unless `--force`.
 - **backup bundle (recipe)**: The copy of files that `recipe apply` takes
   before it writes. Restore it with `recipe backups restore`.
 - **capability**: One command subtree of `untaped` (`workspace`, `github`,
@@ -39,11 +42,16 @@ Terms as `untaped` uses them in commands, output and these docs.
 - **quarantine**: What composition does with an external provider that fails
   validation: its capability is left out, the others still load, a warning
   names it, and `untaped capabilities` and `untaped doctor` show the reason.
+- **read-only repo (workspace)**: A repo checked out detached at its base
+  branch for reference, added with `--read-only`. Commits made there are on no
+  branch.
 - **recipe**: A YAML file of steps that `recipe apply` plans and applies to
   target directories.
 - **root commands**: The commands that belong to `untaped` itself rather than
   to a capability: `config`, `profile`, `skills`, `doctor`, `capabilities`,
   `setup`, `alias`.
+- **repo cache (workspace)**: The bare clone of a repo under
+  `workspace.cache_dir` that every worktree of it points into.
 - **section**: The part of a profile that one capability owns, for example
   `profiles.default.awx`. `http`, `ui`, `skills` and `shell` are shared root
   sections.
@@ -69,3 +77,5 @@ Terms as `untaped` uses them in commands, output and these docs.
   example `✓` for true or `—` for unset). Other formats print the value itself.
 - **workspace**: A directory for one task, holding git worktrees of several
   repos on a shared branch, created and archived as a unit.
+- **worktree (workspace)**: A git checkout of a repo that shares the repo
+  cache's object store. Each repo in a workspace is one.
