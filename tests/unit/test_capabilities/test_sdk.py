@@ -62,6 +62,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "rejected_token_error",
         "report_error",
         "report_errors",
+        "report_row_errors",
     ),
     "input": (
         "AbsolutePath",

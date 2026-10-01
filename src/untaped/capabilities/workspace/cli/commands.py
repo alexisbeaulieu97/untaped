@@ -62,8 +62,8 @@ from untaped.sdk import (
     finish,
     plural,
     q,
-    report_error,
     report_errors,
+    report_row_errors,
     ui_context,
     writes,
 )
@@ -218,10 +218,11 @@ def status_command(
         with progress:
             rows = [row for record in records for row in status(record, fetch=fetch)]
         emit(rows, fmt=fmt, columns=columns, kind="workspace.status", empty="No repos found.")
-        failures = [(row, row.error) for row in rows if row.error is not None]
-        for row, error in failures:
-            report_error(error, item=f"{row.workspace}/{row.dir}")
-    finish(bool(failures), predicate_hit=check and any(row.blockers for row in rows))
+        report_row_errors(rows, item=lambda row: f"{row.workspace}/{row.dir}")
+    finish(
+        any(row.error is not None for row in rows),
+        predicate_hit=check and any(row.blockers for row in rows),
+    )
 
 
 def path_command(name: NameArg = None, /) -> None:
@@ -277,6 +278,7 @@ def archive_command(
                 _confirm_discard(record.name, blocked, yes=yes)
             outcomes = archive(record, force=force)
         emit(outcomes, fmt=fmt, columns=columns, kind=ARCHIVE_OUTCOME)
+        report_row_errors(outcomes, item=lambda row: f"{row.workspace}/{row.repo}")
         failed = any(row.failed for row in outcomes)
         if not failed:
             ui_context(strict=False).success(f"archived workspace {q(record.name)}")
@@ -474,9 +476,7 @@ def _show_provisioned(
         ready = sum(1 for row in rows if not row.failed)
         ui.success(f"workspace {q(name)}: {plural(ready, 'repo')} ready")
         echo(str(workspace_dir(settings, name)))
-    for row in rows:
-        if row.error is not None:
-            report_error(row.error, item=f"{name}/{row.dir}")
+    report_row_errors(rows, item=lambda row: f"{name}/{row.dir}")
     finish(failed)
 
 

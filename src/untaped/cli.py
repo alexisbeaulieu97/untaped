@@ -11,7 +11,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from functools import cache
 from pathlib import Path
-from typing import Annotated, Any, Literal, NoReturn, get_args, overload
+from typing import Annotated, Any, Literal, NoReturn, Protocol, get_args, overload
 
 from cyclopts import App, ArgumentCollection, Parameter, ResultAction, Token
 from cyclopts.exceptions import CycloptsError
@@ -289,6 +289,22 @@ def _error_text(failure: UntapedError | ErrorInfo) -> str:
     if isinstance(failure, UntapedError):
         return format_error(failure)
     return failure.message if failure.hint is None else f"{failure.message}\nhint: {failure.hint}"
+
+
+class _FailableRow(Protocol):
+    """A row that may carry the :class:`ErrorInfo` of its failure."""
+
+    @property
+    def error(self) -> ErrorInfo | None: ...
+
+
+def report_row_errors[RowT: _FailableRow](
+    rows: Iterable[RowT], *, item: Callable[[RowT], str]
+) -> None:
+    """:func:`report_error` each row that carries an ``error``, labelled ``item(row)``."""
+    for row in rows:
+        if row.error is not None:
+            report_error(row.error, item=item(row))
 
 
 def note_requested_format(tokens: Sequence[str]) -> None:

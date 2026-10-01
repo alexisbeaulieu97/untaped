@@ -205,8 +205,8 @@ def check_conventions(
     files: command grammar, stderr wording, package structure and layering.
     ``tests_dir`` adds the private-test-import check over those tests.
     ``externals`` replaces entry-point discovery, so a test can compose a
-    provider that is not installed. ``# untaped: allow <rule>`` on a flagged
-    source line allows that one violation.
+    provider that is not installed. ``# untaped: allow <rule>`` on the flagged
+    node's first line allows that one violation.
     """
     from untaped.conventions import capability_violations  # noqa: PLC0415
 

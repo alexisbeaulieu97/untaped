@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from cyclopts import Parameter
 from pydantic import BaseModel, ConfigDict
@@ -30,6 +30,7 @@ from untaped.sdk import (
     ErrorInfo,
     FormatOption,
     OutcomeRecord,
+    UntapedError,
     UsageError,
     UtcTimestamp,
     YesOption,
@@ -191,21 +192,13 @@ def restore_command(
         if outcome.cancelled:
             finish(outcome)
         if fmt != "table":
-            failed = {
-                bundle_id: ErrorInfo.from_exception(exc) for bundle_id, exc in outcome.failures
-            }
+            failed = {bundle_id: exc for bundle_id, exc in outcome.failures}
             row = BackupRestoreRecord(
                 id=backup_id,
                 files=len(items),
-                action="planned" if dry_run else "failed" if backup_id in failed else "restored",
-                detail=failed[backup_id].message if backup_id in failed else None,
-                error=failed.get(backup_id),
+                **_outcome_fields(failed.get(backup_id), dry_run=dry_run, done="restored"),
             )
-            echo(
-                render_rows(
-                    [row.model_dump()], fmt=fmt, columns=columns, kind="recipe.restore_outcome"
-                )
-            )
+            emit(row, fmt=fmt, columns=columns, kind="recipe.restore_outcome")
         if not outcome.any_failed and outcome.results:
             ui.message("success", f"restored {backup_id}")
         finish(outcome)
@@ -270,14 +263,12 @@ def prune_command(
         )
         if outcome.cancelled:
             finish(outcome)
-        failed = {bundle.id: ErrorInfo.from_exception(exc) for bundle, exc in outcome.failures}
+        failed = {bundle.id: exc for bundle, exc in outcome.failures}
         rows = [
             BackupPruneRecord(
                 id=bundle.id,
                 size_bytes=sizes[bundle.id],
-                action="planned" if dry_run else "failed" if bundle.id in failed else "deleted",
-                detail=failed[bundle.id].message if bundle.id in failed else None,
-                error=failed.get(bundle.id),
+                **_outcome_fields(failed.get(bundle.id), dry_run=dry_run, done="deleted"),
             ).model_dump()
             for bundle in pruned
         ]
@@ -300,3 +291,13 @@ def prune_command(
                 f"kept {kept}, reclaimed {reclaimed} bytes",
             )
         finish(outcome)
+
+
+def _outcome_fields(failure: UntapedError | None, *, dry_run: bool, done: str) -> dict[str, Any]:
+    """A backup row's ``action``, ``detail`` and ``error``: planned, ``done`` or failed."""
+    if dry_run:
+        return {"action": "planned"}
+    if failure is None:
+        return {"action": done}
+    error = ErrorInfo.from_exception(failure)
+    return {"action": "failed", "detail": error.message, "error": error}

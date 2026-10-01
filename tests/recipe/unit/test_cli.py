@@ -10,6 +10,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+import yaml
 
 import untaped.capabilities.recipe.infrastructure.file_writer as file_writer_module
 import untaped.capabilities.recipe.infrastructure.pack_store as pack_store_module
@@ -3321,14 +3322,36 @@ def test_backup_restore_emits_an_outcome_record(tmp_path: Path) -> None:
     restored = CliInvoker().invoke(app, [*restore, "--yes", "--format", "json"])
 
     assert planned.exit_code == 0, planned.output
-    assert json.loads(planned.stdout) == [
-        {"id": bundle.id, "files": 1, "detail": None, "action": "planned"}
-    ]
+    assert json.loads(planned.stdout) == {
+        "id": bundle.id,
+        "files": 1,
+        "detail": None,
+        "action": "planned",
+    }
     assert restored.exit_code == 0, restored.output
-    assert json.loads(restored.stdout) == [
-        {"id": bundle.id, "files": 1, "detail": None, "action": "restored"}
-    ]
+    assert json.loads(restored.stdout) == {
+        "id": bundle.id,
+        "files": 1,
+        "detail": None,
+        "action": "restored",
+    }
     assert config.read_text() == "before\n"
+
+
+def test_backup_restore_yaml_is_one_mapping(tmp_path: Path) -> None:
+    bundle, _config = _config_backup(tmp_path)
+
+    result = CliInvoker().invoke(
+        app, ["backups", "restore", bundle.id, "--dry-run", "--format", "yaml"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert yaml.safe_load(result.stdout) == {
+        "id": bundle.id,
+        "files": 1,
+        "detail": None,
+        "action": "planned",
+    }
 
 
 def test_backup_restore_table_output_is_the_success_line(tmp_path: Path) -> None:
@@ -3386,7 +3409,7 @@ def test_backup_restore_failing_item_exits_nonzero(
 
     assert result.exit_code == 1, result.output
     assert "disk full" in result.output
-    [row] = json.loads(result.stdout)
+    row = json.loads(result.stdout)
     assert (row["id"], row["files"], row["action"]) == (bundle.id, 2, "failed")
     assert "disk full" in row["detail"]
     assert row["error"]["message"] == row["detail"]

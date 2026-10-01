@@ -28,13 +28,13 @@ import ast
 import importlib
 import inspect
 import pkgutil
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
 from untaped.capabilities.registry import CapabilitySpec
 from untaped.conventions.allow import allowed
-from untaped.conventions.source import callee, source_files
+from untaped.conventions.source import SourceFile, callee, source_files
 from untaped.errors import UntapedError
 
 SECTION_READERS = frozenset({"get_config_section", "section"})
@@ -88,10 +88,12 @@ def _unattributed_base(cls: type, package: str) -> bool:
     return not own_parents and "system" not in vars(cls)
 
 
-def _source_violations(source_dir: Path, section: str) -> Iterator[str]:
+def _source_violations(
+    source_dir: Path, files: Sequence[SourceFile], section: str
+) -> Iterator[str]:
     if not (source_dir / "errors.py").is_file():
         yield f"{source_dir.name}/errors.py::errors-module"
-    for source in source_files(source_dir):
+    for source in files:
         rel = source.path.relative_to(source_dir.parent).as_posix()
         for node in ast.walk(source.tree):
             if not (isinstance(node, ast.Call) and node.args):
@@ -141,16 +143,22 @@ def _private(name: str) -> bool:
 
 
 def structure_violations(
-    spec: CapabilitySpec, package: str, source_dir: Path, *, tests_dir: Path | None = None
+    spec: CapabilitySpec,
+    package: str,
+    source_dir: Path,
+    files: Sequence[SourceFile],
+    *,
+    tests_dir: Path | None = None,
 ) -> list[str]:
     """Violations of the capability ``spec`` whose code is ``package`` in ``source_dir``.
 
+    ``files`` are the parsed sources under ``source_dir``.
     ``tests_dir``, when given, is scanned for private imports of ``untaped``
     or ``package``.
     """
     found = [
         *_runtime_violations(package),
-        *_source_violations(source_dir, spec.config_section),
+        *_source_violations(source_dir, files, spec.config_section),
         *_settings_violations(spec),
     ]
     if tests_dir is not None:

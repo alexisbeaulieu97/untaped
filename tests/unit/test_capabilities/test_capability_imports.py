@@ -15,6 +15,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from untaped.conventions.source import import_targets
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CAPABILITIES_SRC = REPO_ROOT / "src" / "untaped" / "capabilities"
 
@@ -53,34 +55,6 @@ def _package_of(py_file: Path, own_prefix: str, capability_dir: Path) -> str:
     return own_prefix + "." + ".".join(parts)
 
 
-def _resolve_import_from(
-    package: str, level: int, module: str | None, names: list[ast.alias]
-) -> list[str]:
-    """Resolve an ``ImportFrom`` to absolute dotted paths.
-
-    Level 0 returns ``[module]``; level > 0 resolves from the containing
-    package. ``from . import name`` binds the submodule ``base.name``.
-    Unresolvable levels (beyond top-level) return ``[]``.
-    """
-    if level == 0:
-        return [module] if module else []
-    base = package
-    for _ in range(level - 1):
-        if "." in base:
-            base = base.rpartition(".")[0]
-        else:
-            return []
-    if module:
-        return [f"{base}.{module}"]
-    resolved: list[str] = []
-    for alias in names:
-        if alias.name == "*":
-            resolved.append(base)
-        else:
-            resolved.append(f"{base}.{alias.name}")
-    return resolved
-
-
 def surface_violations(src: Path = CAPABILITIES_SRC) -> list[str]:
     """Flag capability files importing outside the kernel-only surface."""
     violations: list[str] = []
@@ -98,7 +72,7 @@ def _file_violations(py_file: Path, own_prefix: str, package: str) -> list[str]:
     tree = ast.parse(py_file.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
-            for absolute in _resolve_import_from(package, node.level, node.module, node.names):
+            for absolute in import_targets(node, package):
                 problem = _from_violation(absolute, own_prefix)
                 if problem is not None:
                     where = f"{_rel(py_file)}:{node.lineno}"
@@ -149,10 +123,8 @@ def imported_modules(capability_dir: Path, own_prefix: str) -> set[str]:
     for py_file in capability_dir.rglob("*.py"):
         package = _package_of(py_file, own_prefix, capability_dir)
         for node in ast.walk(ast.parse(py_file.read_text(encoding="utf-8"))):
-            if isinstance(node, ast.ImportFrom):
-                modules.update(_resolve_import_from(package, node.level, node.module, node.names))
-            elif isinstance(node, ast.Import):
-                modules.update(alias.name for alias in node.names)
+            if isinstance(node, ast.Import | ast.ImportFrom):
+                modules.update(import_targets(node, package))
     return modules
 
 
