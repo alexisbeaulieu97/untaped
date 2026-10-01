@@ -27,6 +27,9 @@
   - **New:** `workspace.branch_template` and `workspace.protocol` settings.
   - **New:** `workspace run` runs a command, a script file or a stdin script
     in each repo, with `UNTAPED_*` context variables (experimental).
+  - **New:** in a terminal, `workspace create` and `add` without repos open
+    a repo picker (search the GitHub inventory, set mode/base/branch per
+    repo).
 - GitHub
   - **New:** `github.inventory` settings (`path`, `orgs`, `teams`,
     `max_age_seconds`) for a cached, metadata-only repository list that the

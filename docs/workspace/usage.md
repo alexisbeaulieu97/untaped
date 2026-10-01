@@ -43,6 +43,36 @@ untaped workspace add PROJ-123 --repo acme/infra
 untaped github repos list --team acme/platform --format pipe | untaped workspace add PROJ-123 --stdin
 ```
 
+## Pick repos interactively
+
+In a terminal, `untaped workspace create [NAME]` and `untaped workspace add
+[NAME]` open a picker when you give no `--repo`, `--read-only` or `--stdin`.
+Without a terminal they exit `2` and name those flags. On `create`, an
+omitted NAME is asked first; the field refuses invalid names, active
+workspace names and directories that exist and are not empty.
+
+The picker lists the [GitHub inventory](../reference/config.md#github)
+(`github.inventory`; it opens from the cache and refreshes when stale),
+repos already in the local repo cache (shown as `host/owner/name`, checked
+out from their cached URL), and any git URL you type or paste. `add` leaves
+out repos already in the workspace.
+
+Each selected repo has a mode (write or read-only), a base (completes from
+cached branches) and a branch (empty uses `workspace.branch_template`).
+`--branch` and `--base` without repo flags prefill these defaults.
+
+| Key | Action |
+|---|---|
+| `space` | select or unselect |
+| `/` | search |
+| `tab` | switch pane |
+| `enter` | edit a setting |
+| `←` `→` | change a setting |
+| `ctrl-s` | create (or add) the selected repos |
+| `ctrl-r` | refresh the inventory |
+| `esc` | clear the search; never quits |
+| `ctrl-c` | quit, asking first when anything is selected; nothing is created |
+
 ## Read-only repos
 
 `--read-only` checks a repo out at its base branch, detached, for reference
