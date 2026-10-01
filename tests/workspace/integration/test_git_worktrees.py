@@ -164,3 +164,112 @@ def test_existing_cache_gets_the_remote_tracking_refspec(
         git(cache, "config", "--get-all", "remote.origin.fetch")
         == "+refs/heads/*:refs/remotes/origin/*"
     )
+
+
+def _advance_origin(url: str, branch: str, clone: Path) -> None:
+    """Push one new commit (``upstream.txt``) to ``branch`` from a separate clone."""
+    git(clone.parent, "clone", "-q", "-b", branch, url, str(clone))
+    commit_in(clone, "upstream.txt")
+    git(clone, "push", "-q", "origin", branch)
+
+
+def test_in_use_remote_branch_is_a_conflict(
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+) -> None:
+    url = str(make_upstream("api", branches=("feature/x",)))
+    worktrees.checkout(url, tmp_path / "a" / "api", branch="feature/x", base=None)
+    with pytest.raises(GitError) as caught:
+        worktrees.checkout(url, tmp_path / "b" / "api", branch="feature/x", base=None)
+    assert caught.value.category == "conflict"
+    assert caught.value.hint
+
+
+def test_legacy_mirror_heads_are_not_resumed(
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+) -> None:
+    from untaped.capabilities.workspace.infrastructure.bare_cache import cache_path_for
+
+    upstream = make_upstream("api", branches=("feat",))
+    url = str(upstream)
+    cache = cache_path_for(url, cache_dir=tmp_path / "cache")
+    cache.parent.mkdir(parents=True)
+    git(tmp_path, "clone", "-q", "--bare", url, str(cache))  # an old-style mirror cache
+    git(upstream, "branch", "-D", "feat")
+    checkout = worktrees.checkout(url, tmp_path / "ws" / "api", branch="feat", base=None)
+    assert (checkout.action, checkout.detail) == ("created", "from origin/main")
+
+
+def test_resume_fast_forwards_a_branch_behind_origin(
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+) -> None:
+    url = str(make_upstream("api"))
+    first = tmp_path / "a" / "api"
+    worktrees.checkout(url, first, branch="b", base=None)
+    commit_in(first)
+    git(first, "push", "-q")
+    worktrees.remove(url, first, force=False)
+    _advance_origin(url, "b", tmp_path / "other")
+    second = tmp_path / "b" / "api"
+    checkout = worktrees.checkout(url, second, branch="b", base=None)
+    assert checkout.detail == "tracking origin/b"
+    assert (second / "upstream.txt").exists()
+    status = worktrees.status(second, branch="b", base="main")
+    assert status is not None and status.unpushed == 0
+
+
+def test_resume_a_branch_ahead_of_origin(
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+) -> None:
+    url = str(make_upstream("api", branches=("b",)))
+    first = tmp_path / "a" / "api"
+    worktrees.checkout(url, first, branch="b", base=None)
+    commit_in(first)
+    worktrees.remove(url, first, force=False)
+    second = tmp_path / "b" / "api"
+    checkout = worktrees.checkout(url, second, branch="b", base=None)
+    assert checkout.detail == "resumed; ahead of origin/b"
+    assert (second / "change.txt").exists()
+    status = worktrees.status(second, branch="b", base="main")
+    assert status is not None and status.unpushed == 1
+
+
+def test_resume_a_branch_diverged_from_origin(
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+) -> None:
+    url = str(make_upstream("api", branches=("b",)))
+    first = tmp_path / "a" / "api"
+    worktrees.checkout(url, first, branch="b", base=None)
+    commit_in(first)
+    worktrees.remove(url, first, force=False)
+    _advance_origin(url, "b", tmp_path / "other")
+    second = tmp_path / "b" / "api"
+    checkout = worktrees.checkout(url, second, branch="b", base=None)
+    assert checkout.detail == "resumed; diverged from origin/b"
+    assert (second / "change.txt").exists()
+
+
+def test_half_initialised_cache_is_repaired(
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+) -> None:
+    from untaped.capabilities.workspace.infrastructure.bare_cache import cache_path_for
+
+    url = str(make_upstream("api"))
+    cache = cache_path_for(url, cache_dir=tmp_path / "cache")
+    cache.parent.mkdir(parents=True)
+    git(tmp_path, "init", "-q", "--bare", str(cache))  # crashed before `remote add`
+    checkout = worktrees.checkout(url, tmp_path / "ws" / "api", branch="x", base=None)
+    assert checkout.action == "created"
+    assert git(cache, "config", "remote.origin.url") == url
+
+
+def test_hand_deleted_destination_can_be_checked_out_again(
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+) -> None:
+    import shutil
+
+    url = str(make_upstream("api"))
+    dest = tmp_path / "ws" / "api"
+    worktrees.checkout(url, dest, branch="b", base=None)
+    shutil.rmtree(dest)
+    worktrees.checkout(url, dest, branch="b", base=None)
+    assert (dest / "README.md").exists()
