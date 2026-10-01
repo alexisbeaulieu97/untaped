@@ -62,6 +62,11 @@ def test_collision_with_an_existing_dir() -> None:
     assert assign_dirs([("other", "api")], existing=[_spec("acme/api", "api")]) == ["other-api"]
 
 
+def test_clash_without_an_owner_still_gets_a_free_dir() -> None:
+    dirs = assign_dirs([("", "api")], existing=[_spec("acme/api", "api")])
+    assert dirs[0] != "api"
+
+
 def test_branch_template() -> None:
     assert branch_for("feature/{name}", "JIRA-1") == "feature/JIRA-1"
     assert branch_for("{name}", "JIRA-1") == "JIRA-1"
