@@ -94,3 +94,15 @@ def test_refresh_errors_keep_the_picker_usable() -> None:
     picked = _run("api" + DOWN + " " + CTRL_S, _request(refresh=refresh), spawn=lambda work: work())
     assert picked is not None
     assert [p.item.id for p in picked.picks] == ["acme/api"]
+
+
+def test_unbound_escape_sequences_do_not_type() -> None:
+    picked = _run("\x1b[H" + "api" + DOWN + " " + CTRL_S, _request())
+    assert picked is not None
+    assert [p.item.id for p in picked.picks] == ["acme/api"]
+
+
+def test_bracketed_paste_is_ignored_and_never_exits_twice() -> None:
+    # A paste arrives as one Keys.BracketedPaste event, so it must neither confirm the
+    # discard prompt nor type; the following "y" does.
+    assert _run(DOWN + " " + CTRL_C + "\x1b[200~yy\x1b[201~y", _request()) is None
