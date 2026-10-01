@@ -6,7 +6,7 @@ consumer never parses table text.
 
 ```text
 untaped github repos list --org acme --format pipe \
-  | untaped workspace repos add acme --stdin
+  | untaped workspace create acme --stdin
 ```
 
 ## Envelope format
@@ -126,23 +126,13 @@ and print their outcome with `action` `planned`.
 | Command | Writes |
 |---|---|
 | `workspace list` | `workspace.workspace` |
-| `workspace repos list` | `workspace.repo`; `workspace.repo.summary` for an empty manifest |
-| `workspace init` | `workspace.init_outcome` |
-| `workspace forget` | `workspace.forget_outcome` |
-| `workspace repos add` | `workspace.add_outcome` (`workspace.sync_outcome` with `--sync`) |
-| `workspace repos remove` | `workspace.remove_outcome` |
-| `workspace branch set`, `workspace branch apply` | `workspace.branch_outcome` |
-| `workspace branch unset` | `workspace.branch_unset_outcome` |
-| `workspace sync` | `workspace.sync_outcome` |
+| `workspace create`, `workspace add` | `workspace.repo_outcome` |
 | `workspace status` | `workspace.status` |
-| `workspace foreach` | `workspace.foreach_outcome` |
+| `workspace archive` | `workspace.archive_outcome` |
 
 | Consumer | Reads | Field used |
 |---|---|---|
-| `workspace repos add --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`, `workspace.repo`; or URL lines | `clone_url`, else `url` |
-| `workspace repos remove --stdin` | `workspace.repo`, `workspace.sync_outcome`; or repo lines | `repo` |
-| `workspace foreach --stdin` | `workspace.repo`, `workspace.status`, `workspace.sync_outcome`; or repo lines | `repo` |
-| `workspace path --stdin` | `workspace.workspace`; or name lines | `name` |
+| `workspace create --stdin`, `workspace add --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`; or URL lines | `clone_url`, else `url` |
 
 ### github
 
@@ -267,10 +257,10 @@ names, or `recipe.pack` records from `recipe packs list --format pipe`.
 
 `recipe apply --stdin` reads target directories: path lines, or records of any
 kind that carry an absolute `target_path` (else `path`), such as
-`workspace.repo`, `workspace.status` or `workspace.sync_outcome`.
+`workspace.status` or `workspace.repo_outcome`.
 
-```text
-untaped workspace repos list prod --format pipe \
+```bash
+untaped workspace status NAME --format pipe \
   | untaped recipe apply acme/ci-baseline --stdin --dry-run
 ```
 

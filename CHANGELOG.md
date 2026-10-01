@@ -8,6 +8,19 @@
     (`PickRequest`, `PickItem`, `PickSetting`, `PickCatalog`, `PickResult`,
     `Picked`; API `3.2`). `ScriptedPromptBackend(picks=...)` scripts it in
     tests.
+- Workspace
+  - **Breaking:** `untaped workspace` manages task workspaces: `create`,
+    `add`, `list`, `status`, `path` and `archive` (experimental). A workspace
+    is one directory of git worktrees on a shared branch, archived when done.
+  - **Breaking:** removed `init`, `adopt`, `import`, `forget`, `sync`,
+    `repos list/add/remove`, `branch set/unset/apply`, `foreach`, `edit`
+    and `shell-init`, the `untaped.yml` manifest, and the registry
+    (`state.yml` key `workspace.workspaces`, now ignored). Old workspace
+    directories are left as they are; existing repo caches are reused.
+  - **Breaking:** record kinds are now `workspace.workspace`,
+    `workspace.repo_outcome`, `workspace.status` and
+    `workspace.archive_outcome`. The others are gone.
+  - **New:** `workspace.branch_template` and `workspace.protocol` settings.
 - GitHub
   - **New:** `github.inventory` settings (`path`, `orgs`, `teams`,
     `max_age_seconds`) for a cached, metadata-only repository list that the

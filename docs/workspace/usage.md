@@ -1,169 +1,66 @@
 # Workspaces
 
-A *workspace* is a directory that holds a collection of git repos
-managed together — typically one per environment, project, or team.
-`untaped workspace` lets you declare what's in a workspace, clone or
-update everything in one shot, run a command across every repo, and
-jump between workspaces from your shell.
+A *workspace* is one directory per task. It holds a git worktree for each
+repo you need, all on the same branch, so you (or an agent) can change several
+repos for one ticket and archive the lot when the work is pushed. Worktrees
+share a bare cache of each repo, so creating a workspace is fast and cheap,
+and parallel tasks get isolated checkouts of the same repos.
 
-The two homes of workspace state:
-
-- **Per-workspace manifest** — `<workspace-dir>/untaped.yml` declares
-  the workspace's name, its default branch, and its repos. This is the
-  source of truth for what belongs in a workspace.
-- **Central registry** — a `workspace.workspaces` list in
-  `~/.untaped/state.yml` mapping `name → path`. Just enough state to
-  power `list`, `path <name>`, and workspace-name lookups.
-
-Manifests are checked into a shared directory or a git repo if you
-want; the registry is local-only.
-
-Commands never discard local work: a repo they cannot update safely is
-skipped with a reason, and deleting a clone always asks first. The
+Commands never discard local work: archiving refuses while a repo has
+uncommitted, stashed or unpushed work. The
 [packaged skill](../../src/untaped/capabilities/workspace/skills/untaped-workspace/SKILL.md)
 and its references hold the per-command detail; `--help` and `--columns ?`
 hold the options and fields.
 
-## Set up
+## Create, work, archive
 
-Create a workspace, or register one that already exists:
-
-```text
-untaped workspace init prod                     # new workspace at ~/.untaped/workspaces/prod
-untaped workspace adopt ~/work/prod --name prod # a directory you already cloned into
-untaped workspace import ~/manifests/prod.yml ~/work/prod --sync  # a colleague's manifest
+```bash
+untaped workspace create PROJ-123 --repo acme/api --repo acme/web
+cd "$(untaped workspace path PROJ-123)"
+# commit and git push in each repo, then:
+untaped workspace status PROJ-123 --check
+untaped workspace archive PROJ-123
 ```
 
-`adopt` registers an existing `untaped.yml` as is; in a directory without
-one, it records each git clone it finds (URL and checked-out branch) in a
-new manifest and leaves the clones in place.
+`create` prints one row per repo: a new branch from the base, or an existing
+branch resumed. `status --check` exits `3` while anything would block
+archiving; `archive` removes the worktrees and keeps a record. The branches
+stay in the repo cache and on the remote, so creating a workspace on the same
+branch later resumes the work.
 
-Settings (`workspace.workspaces_dir`, `workspace.cache_dir`,
-`workspace.parallel`) are in the
-[configuration reference](../reference/config.md#workspace). New clones copy
-their objects from the cache, so deleting the cache never breaks a clone.
+## Add repos later
 
-### The manifest — `untaped.yml`
-
-```yaml
-# <workspace-dir>/untaped.yml
-name: prod                    # registry name (optional; falls back to dirname)
-defaults:
-  branch: main                # branch used when a repo doesn't specify its own
-repos:
-  - url: git@github.com:acme/api.git
-    name: api                 # local directory name (derived from URL if omitted)
-    branch: develop           # per-repo override; otherwise inherits defaults.branch
-  - url: git@github.com:acme/web.git
+```bash
+untaped workspace add PROJ-123 --repo acme/infra
 ```
 
-`repos[].name` is the directory on disk and what you pass to `--repo` and
-`repos remove`. Naming rules and how `adopt` and `import` fill the manifest
-are in the skill's
-manifest reference (removed; being rewritten).
+`add` also reads repos from a pipe, for example a GitHub inventory:
 
-### Choosing the workspace
-
-Every command that acts on one workspace takes it as its first
-positional argument, `WS`: a registered name (`prod`), a path inside a
-workspace (`.`, `~/work/prod`, anything containing `/`), or nothing, for
-the workspace containing the current directory. `sync`, `status` and
-`foreach` take `--all` instead to act on every registered workspace.
-`repos add` and `repos remove` need `WS` before the repos (`.` works), since
-a lone argument is read as the workspace.
-
-## Keep repos up to date
-
-```text
-untaped workspace status --all --dirty --behind   # what needs attention
-untaped workspace sync --all                      # a morning routine
+```bash
+untaped github repos list --team acme/platform --format pipe | untaped workspace add PROJ-123 --stdin
 ```
 
-`sync` clones missing repos, fetches the rest, and fast-forwards only the
-clean ones on their manifest branch. Anything else (dirty, diverged, on
-another branch, no upstream) is `skipped` with a reason, and the run exits
-non-zero only when a row `failed`. It never switches branches, so a stale
-`defaults.branch` can't move a repo you've put on a feature branch.
+## Read-only repos
 
-`status` never fetches, so "behind" is as of the last fetch or sync. As a CI
-gate, `untaped workspace status prod --dirty --check` exits 3 when any repo
-has uncommitted work.
+`--read-only` checks a repo out at its base branch, detached, for reference
+code you will not change. Archiving only checks it for local changes.
 
-Git never waits for credentials; set up an SSH agent or a credential helper
-for private remotes. Row meanings, `--all` behaviour and timeouts are in the
-sync reference (removed; being rewritten).
+## Jump in
 
-## Add repos from elsewhere
-
-`repos add --stdin` reads URLs or pipe records, for example a GitHub
-inventory:
-
-```text
-untaped github repos list --team acme/platform --format pipe \
-  | untaped workspace repos add platform --stdin --sync
+```bash
+cd "$(untaped workspace path PROJ-123)"
 ```
 
-Or pick repos to drop with `fzf`:
+`untaped workspace list` shows active workspaces (`--archived` the rest).
+Inside a workspace directory, the name may be left out.
 
-```text
-untaped workspace status prod --format raw --columns repo \
-  | fzf -m \
-  | untaped workspace repos remove prod --stdin
-```
+## Settings
 
-`repos list` reads only `untaped.yml`; use `status` for live git state.
-
-## Switch branches
-
-```text
-untaped workspace branch set prod develop --repo api
-untaped workspace branch set prod main --apply  # edit the manifest, then check out
-```
-
-`branch set` and `branch unset` only edit `untaped.yml`; `branch apply`
-fetches and checks existing clones out, skipping dirty or diverged repos. A
-branch that exists neither locally nor on `origin` is skipped, so a typo such
-as `branch set mian` can't create a stray branch everywhere; pass `--create`
-to create it from the current HEAD.
-
-## Run a command in every repo
-
-```text
-untaped workspace foreach prod 'git status -s'
-
-# Stash only the dirty repos
-untaped workspace status prod --dirty --format pipe \
-  | untaped workspace foreach prod 'git stash' --stdin
-```
-
-Quote the command. By default `foreach` stops at the first failure;
-`--continue-on-error` runs every repo and still fails, and `--ignore-errors`
-always exits 0. See the
-foreach reference (removed; being rewritten)
-for selection, timeouts and output.
-
-## Destructive commands
-
-`repos remove --prune`, `forget --prune` and `sync --prune` delete clones;
-`forget` alone only unregisters. Each previews its targets with `--dry-run`
-and asks once; `--yes` skips the question. Without a terminal they need
-`--yes` (else exit `2`), and declining exits `1` with nothing deleted
-(`sync --prune` asks after the sync has run).
-
-They never delete a clone with uncommitted, untracked, staged or stashed
-work, or commits not on a remote-tracking branch. The check is offline and
-does not see git-ignored files, so fetch first and mind local `.env` or build
-files. What each prune deletes and how to recover are in the
-prune reference (removed; being rewritten).
-
-## Jump between workspaces
-
-```text
-cd "$(untaped workspace path prod)"
-
-# in ~/.zshrc (or bash, fish): defines `uwcd <workspace>` with completion
-eval "$(untaped workspace shell-init zsh)"
-```
+`workspace.cache_dir`, `workspaces_dir`, `parallel`, `branch_template` and
+`protocol` are in the [configuration reference](../reference/config.md#workspace).
+Do not delete the cache directory while workspaces are active: the worktrees
+point into it. A repo name that is not found is looked up in the GitHub
+inventory, set by `github.inventory` orgs and teams.
 
 ## Output
 

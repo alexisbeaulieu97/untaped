@@ -4,8 +4,8 @@
 gives you six capabilities that share one config file, the same profiles, and
 the same output and piping rules:
 
-- **`workspace`**: declare sets of Git repos, clone and sync them, run a
-  command in each.
+- **`workspace`**: task workspaces: one directory of git worktrees across
+  repos on a shared branch, archived when the work is pushed.
 - **`github`**: repo inventory, GitHub search, and content sweeps across
   hundreds of repos.
 - **`jira`**: search, create, update and transition Jira Data Center issues.
@@ -33,13 +33,13 @@ untaped doctor
 untaped config set github.token --prompt
 untaped github whoami
 
-# List an org's repos and clone them into a workspace
-untaped workspace init acme
+# List an org's repos and check them out into a task workspace
 untaped github repos list --org acme --format pipe \
-  | untaped workspace repos add acme --stdin --sync
+  | untaped workspace create acme --stdin
 
-# Run a command in every repo
-untaped workspace foreach acme 'git status -s'
+# Check what is left to push, then archive
+untaped workspace status acme
+untaped workspace archive acme
 ```
 
 Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
