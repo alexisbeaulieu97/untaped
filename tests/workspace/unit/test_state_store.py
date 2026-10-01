@@ -31,6 +31,7 @@ def test_create_twice_is_a_conflict() -> None:
     with pytest.raises(WorkspaceError) as caught:
         store.create(WorkspaceRecord(name="w", created_at=T0))
     assert caught.value.category == "conflict"
+    assert caught.value.hint == "run `untaped workspace add w --repo REPO`"
 
 
 def test_a_name_can_be_archived_twice() -> None:

@@ -51,6 +51,7 @@ from untaped.capability_api import (
     finish,
     plural,
     q,
+    report_error,
     report_errors,
     ui_context,
 )
@@ -164,7 +165,10 @@ def status_command(
         with progress:
             rows = [row for record in records for row in status(record, fetch=fetch)]
         emit(rows, fmt=fmt, columns=columns, kind="workspace.status", empty="No repos found.")
-    finish(False, predicate_hit=check and any(row.blockers for row in rows))
+        failures = [(row, row.error) for row in rows if row.error is not None]
+        for row, error in failures:
+            report_error(error, item=f"{row.workspace}/{row.dir}")
+    finish(bool(failures), predicate_hit=check and any(row.blockers for row in rows))
 
 
 def path_command(name: NameArg = None, /) -> None:
@@ -209,7 +213,10 @@ def archive_command(
                 return
             raise WorkspaceError(
                 f"{plural(len(blocked), 'repo')} would lose work; nothing archived",
-                hint="commit/push or stash, or pass --force",
+                hint=(
+                    "commit/push or stash, or pass --force to discard the work "
+                    "and delete the directories after confirmation"
+                ),
             )
         if blocked:
             _confirm_discard(record.name, blocked, yes=yes)
