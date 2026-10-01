@@ -23,6 +23,7 @@ from untaped.capabilities.workspace.infrastructure import (
 )
 from untaped.capabilities.workspace.settings import WorkspaceSettings
 from untaped.capability_api import (
+    ConfigError,
     ParallelOption,
     UsageError,
     clamp_parallel,
@@ -219,6 +220,12 @@ def select_run_repos(
             valid = ", ".join(f"{spec.name} ({spec.dir})" for spec in specs)
             raise UsageError(f"unknown repo: {', '.join(unknown)}", hint=f"valid repos: {valid}")
         chosen = {by_name[name] for name in wanted}
+        read_only = sorted(spec.dir for spec in chosen if spec.read_only)
+        if read_only and not include_read_only:
+            raise UsageError(
+                f"read-only repo selected: {', '.join(read_only)}",
+                hint="add --include-read-only to run in read-only repos",
+            )
         specs = [spec for spec in specs if spec in chosen]
     return [spec for spec in specs if include_read_only or not spec.read_only]
 
@@ -245,7 +252,10 @@ def run_argv(command: str) -> Iterator[list[str]]:
     anything else is a ``sh -c`` string.
     """
     if command == "-":
-        script = resolve_text_input(value=None, file=None, what="script")
+        try:
+            script = resolve_text_input(value=None, file=None, what="script")
+        except ConfigError:
+            raise UsageError("`-` reads a script from stdin, but nothing was piped") from None
         with tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False) as handle:
             handle.write(script + "\n")
         try:
@@ -256,6 +266,14 @@ def run_argv(command: str) -> Iterator[list[str]]:
     path = Path(command).expanduser()
     if path.is_file():
         absolute = str(Path.cwd() / path)
-        yield [absolute] if os.access(absolute, os.X_OK) else ["sh", absolute]
+        yield [absolute] if _runs_directly(absolute) else ["sh", absolute]
     else:
-        yield ["sh", "-c", command]
+        yield ["sh", "-c", "--", command]
+
+
+def _runs_directly(path: str) -> bool:
+    """Executable with a shebang; anything else needs ``sh`` (no ``Exec format error``)."""
+    if not os.access(path, os.X_OK):
+        return False
+    with open(path, "rb") as handle:
+        return handle.read(2) == b"#!"
