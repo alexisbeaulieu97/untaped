@@ -28,4 +28,4 @@ Constraints:
 
 ## Related decisions
 
-- Refines: [capability-owned packaged skills](dec_01a0820d443870069dfe37af04c1fcc2-v4-capability-owned-packaged-skills.md)
+- Refines: [capability-owned packaged skills](capability-owned-packaged-skills.md)
