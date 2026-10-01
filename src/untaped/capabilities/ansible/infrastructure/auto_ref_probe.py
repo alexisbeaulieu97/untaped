@@ -11,7 +11,7 @@ from untaped.capabilities.ansible.domain.payloads import (
     ProbeReport,
     ProbeTarget,
 )
-from untaped.capabilities.github.ansible import GithubGraphqlError
+from untaped.capabilities.github.api import GithubGraphqlError
 
 if TYPE_CHECKING:
     from untaped.capabilities.ansible.application.ports import RefProbe

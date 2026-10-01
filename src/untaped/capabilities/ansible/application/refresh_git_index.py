@@ -43,7 +43,7 @@ from untaped.capabilities.ansible.domain.payloads import (
 from untaped.capabilities.ansible.domain.repo_targets import remote_url_for
 from untaped.capabilities.ansible.errors import GitCacheError
 from untaped.capabilities.ansible.settings import SourceDefinition
-from untaped.capabilities.github.ansible import (
+from untaped.capabilities.github.api import (
     RepositoryInventoryScope,
     ResolveRepositoryInventory,
     normalize_team_scopes,
