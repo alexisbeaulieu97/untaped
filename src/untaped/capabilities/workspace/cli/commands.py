@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Annotated
@@ -25,7 +25,6 @@ from untaped.capabilities.workspace.cli.common import (
     locate,
     parallel_workers,
     provisioner,
-    repo_args,
     run_argv,
     select_run_repos,
     status_reader,
@@ -34,6 +33,7 @@ from untaped.capabilities.workspace.cli.common import (
     workspace_settings,
     workspaces_dir,
 )
+from untaped.capabilities.workspace.cli.picker import choose_repos
 from untaped.capabilities.workspace.domain.models import ArchivedRecord, WorkspaceRecord
 from untaped.capabilities.workspace.domain.records import (
     ArchiveOutcome,
@@ -52,6 +52,7 @@ from untaped.capability_api import (
     FormatOption,
     OutputFormat,
     ParallelOption,
+    ProgressHandle,
     StdinOption,
     UsageError,
     YesOption,
@@ -80,7 +81,15 @@ RUN_OUTCOME = "workspace.run_outcome"
 
 
 def create_command(
-    name: Annotated[str, Parameter(help="Name of the workspace to create.")],
+    name: Annotated[
+        str | None,
+        Parameter(
+            help=(
+                "Name of the workspace to create. Optional in a terminal without repo "
+                "options: the repo picker asks for it."
+            )
+        ),
+    ] = None,
     /,
     *,
     repo: RepoOption = None,
@@ -94,15 +103,27 @@ def create_command(
 ) -> None:
     """Create a workspace and check out its repos as git worktrees.
 
+    Without --repo, --read-only or --stdin, a terminal opens the repo picker.
     In table format the workspace path is the last stdout line (the only one
     with -q), so `cd "$(untaped -q workspace create ...)"` works.
     """
     with report_errors():
-        args = repo_args(repo, read_only, branch=branch, base=base, stdin=stdin)
         settings = workspace_settings()
+        ui = ui_context(strict=False)
+        name, args = choose_repos(
+            ui,
+            settings,
+            StateWorkspaceStore(),
+            name=name,
+            repo=repo,
+            read_only=read_only,
+            branch=branch,
+            base=base,
+            stdin=stdin,
+        )
         provision = provisioner(settings, parallel)
-        with ui_context(strict=False).progress(f"Creating workspace {name}…"):
-            rows = provision.create(name, args)
+        with ui.progress(f"Creating workspace {name}…") as progress:
+            rows = provision.create(name, args, on_done=_progress_line(progress, len(args)))
         _show_provisioned(rows, settings, name, fmt=fmt, columns=columns)
 
 
@@ -119,14 +140,29 @@ def add_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Check out more repos into an existing workspace; present ones report unchanged."""
+    """Check out more repos into an existing workspace; present ones report unchanged.
+
+    Without --repo, --read-only or --stdin, a terminal opens the repo picker.
+    """
     with report_errors():
-        args = repo_args(repo, read_only, branch=branch, base=base, stdin=stdin)
         settings = workspace_settings()
         record = locate(settings, name)
+        ui = ui_context(strict=False)
+        _, args = choose_repos(
+            ui,
+            settings,
+            StateWorkspaceStore(),
+            name=record.name,
+            record=record,
+            repo=repo,
+            read_only=read_only,
+            branch=branch,
+            base=base,
+            stdin=stdin,
+        )
         provision = provisioner(settings, parallel)
-        with ui_context(strict=False).progress(f"Adding repos to {record.name}…"):
-            rows = provision.add(record, args)
+        with ui.progress(f"Adding repos to {record.name}…") as progress:
+            rows = provision.add(record, args, on_done=_progress_line(progress, len(args)))
         _show_provisioned(rows, settings, record.name, fmt=fmt, columns=columns)
 
 
@@ -400,6 +436,18 @@ def _show_run_summary(rows: Sequence[RunOutcome]) -> None:
     if actions["skipped"]:
         parts.append(f"{actions['skipped']} skipped")
     ui_context(strict=False).message("error" if failed else "success", " · ".join(parts))
+
+
+def _progress_line(progress: ProgressHandle, total: int) -> Callable[[RepoOutcome], None]:
+    """``on_done`` for provisioning: ``<done>/<total> <repo>`` per finished checkout."""
+    done = 0
+
+    def update(row: RepoOutcome) -> None:
+        nonlocal done
+        done += 1
+        progress.update(f"{done}/{total} {row.repo}", fraction=min(done / total, 1.0))
+
+    return update
 
 
 def _show_provisioned(

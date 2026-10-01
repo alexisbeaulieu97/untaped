@@ -228,3 +228,19 @@ def test_an_unknown_name_without_a_fallback_still_fails(tmp_path: Path) -> None:
         _recording(tmp_path, _RecordingGit(), UrlCatalog()).create(
             "J-1", [RepoArg(ident="acme/gone")]
         )
+
+
+def test_on_done_reports_each_finished_checkout(
+    provision: ProvisionRepos, make_upstream: Callable[..., Path]
+) -> None:
+    api, web = make_upstream("api"), make_upstream("web")
+    done: list[str] = []
+    provision.create("J-1", [RepoArg(ident=str(api))], on_done=lambda row: done.append(row.repo))
+    record = StateWorkspaceStore().get("J-1")
+    assert record is not None
+    provision.add(
+        record,
+        [RepoArg(ident=str(api)), RepoArg(ident=str(web))],
+        on_done=lambda row: done.append(row.repo),
+    )
+    assert done == ["acme/api", "acme/web"]
