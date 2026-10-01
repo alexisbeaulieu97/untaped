@@ -111,7 +111,9 @@ def _add_get(app: App, spec: AwxResourceSpec) -> None:
                 columns=columns,
                 defaults=default_cols if table else (),
             )
-            records = [redact_value(record, spec.secret_paths) for record in records]
+            records = [
+                redact_value(record, spec.secret_paths, skip_empty=True) for record in records
+            ]
             emit(
                 records,
                 fmt=fmt,

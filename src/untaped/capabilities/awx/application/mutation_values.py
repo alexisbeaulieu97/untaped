@@ -10,7 +10,6 @@ from typing import Any
 import yaml
 
 from untaped.capabilities.awx.application.secret_paths import (
-    path_slots,
     replace_at,
     values_at,
 )
@@ -68,13 +67,7 @@ def redact_value(
     """
     result = copy.deepcopy(value)
     for path in paths:
-        if skip_empty:
-            for container, key in list(path_slots(result, path)):
-                # Same mutable-container guard as ``replace_at`` (tuples are skipped).
-                if isinstance(container, dict | list) and container[key] not in (None, ""):
-                    container[key] = replacement
-        else:
-            replace_at(result, path, replacement)
+        replace_at(result, path, replacement, skip_empty=skip_empty)
     return result
 
 
