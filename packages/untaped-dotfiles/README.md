@@ -48,17 +48,13 @@ untaped dotfiles apply fish
 
 `sync` fetches every repo, applies the `sync` items and reports the rest.
 It only ever writes a path that is absent or still exactly what the tool
-wrote, so it never prompts and never loses a local edit. A clone is
-fast-forwarded only when every enabled `link` file reading from it has
-policy `sync` (and the working tree is clean); one `manual` link file
-holds the clone back and `sync` reports those files as `behind`.
-`apply ITEM` pulls the clone when the item has a link file in it, which
-moves every other link file on that clone too; the plan lists them.
+wrote, so it never prompts and never loses a local edit. What each policy
+does to a path in each state, and when a clone is pulled, is in
+[policies](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/skills/untaped-dotfiles/references/policies.md).
 
-`status` reads nothing from the network. Every `sync` and `status` run
-writes `status.json` and a one-line `attention` file under
-`dotfiles.state_dir` (`apply` and `remove` refresh them too), so a prompt
-segment needs only the shell:
+`status` reads nothing from the network. It writes the
+[status files](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#dotfiles),
+so a prompt segment needs only the shell:
 
 ```toml
 # starship.toml
@@ -78,43 +74,17 @@ runs (a launchd agent on macOS, a systemd user timer on Linux).
 version: 1
 items:
   fish:
-    description: fish shell config
     policy: manual            # suggestion; absent means manual
-    os: [macos, linux]        # absent means every OS
     files:
       - source: fish/config.fish
         target: ~/.config/fish/config.fish
-        mode: link
-      - source: fish/conf.d
+        mode: link            # or copy, or merge (JSON/YAML)
+      - source: fish/conf.d   # a directory: each file under it is placed
         target: ~/.config/fish/conf.d
-  claude:
-    policy: sync
-    files:
-      - name: settings
-        source: claude/settings.json
-        target: ~/.claude/settings.json
-        mode: merge
-        unless: [claude-plugin-dev]
-      - source: claude/skills
-        target: ~/.agents/skills/mine
-      - source: claude/skills
-        target: ~/.claude/skills/mine
 ```
 
-- `link` places a symlink into the checkout, so edits there are live;
-  `copy` places a copy and detects local edits; `merge` deep-merges the
-  source document (JSON or YAML, by the target's extension or `format:`)
-  into a target another program also writes, touching only the keys the
-  source names.
-- A directory source is placed per child: the target directory stays a
-  real directory, each file gets its own link or copy, and files other
-  programs write there (a fish plugin manager's own `conf.d` files) are
-  never touched or removed.
-- `os`, `only` and `unless` (tags from the `dotfiles.tags` setting) filter
-  items and files per machine; `enable ITEM --skip FILE` leaves one file
-  out on this machine. The same source in two destinations is two entries.
-- Under `once`, a `link` file is placed as a copy: a snapshot is what
-  `once` means, and a symlink cannot be one.
+Every entry key, the three modes, per-OS and per-tag filters and how a
+directory source is placed are in [the manifest](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/skills/untaped-dotfiles/references/manifest.md).
 
 On Windows, `link` needs symlink permission (Developer Mode or elevation);
 `copy` and `merge` work. Nothing is tested there yet.

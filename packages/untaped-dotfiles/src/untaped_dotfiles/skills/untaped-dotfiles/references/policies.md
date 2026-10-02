@@ -13,6 +13,7 @@
 | `missing` | Applied before, target now gone. |
 | `orphan` | Applied before, the manifest no longer places it (a file left a directory source, or the entry was dropped). |
 | `excluded` | Filtered out by `os`, `only`/`unless` or a machine `--skip`; `status --all` shows it. |
+| `error` | Could not be read (a git or filesystem failure); the row's `error` says why. |
 
 A `link` file is `behind` when the fetched ref changed its source and the
 clone has not been pulled yet; in a registered checkout it is never
@@ -31,9 +32,13 @@ applies this table to every enabled path:
 
 `sync` only writes a target that is absent, foreign (kept aside first) or
 still exactly what the tool wrote, so it never loses a local edit and never
-prompts. It exits 3 when any row is reported, and 1 when an apply or a git
-operation failed. It also rewrites `status.json` and `attention` under
-`dotfiles.state_dir`; `attention` is the one-line count a prompt reads.
+prompts. It exits 3 when a row needs the user: one left in `behind`,
+`modified`, `conflict`, `missing` or `orphan` (under `once`, only `missing`
+and `orphan`), or one carrying an `error`. A `manual` `pending` or `foreign`
+row is reported but does not count. It exits 1 when an apply or a git
+operation failed. `status --check` exits 3 on the same rows. Both rewrite
+`status.json` and `attention` under `dotfiles.state_dir`; `attention` is
+the one-line count a prompt reads.
 
 ## When a clone is pulled
 

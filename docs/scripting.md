@@ -304,9 +304,10 @@ untaped workspace status NAME --format pipe \
 | `dotfiles remove` | `dotfiles.remove_outcome` |
 
 `dotfiles diff` prints a unified diff, not records. `dotfiles status` and
-`dotfiles sync` also write `status.json` (the `dotfiles.status.summary`
-record plus `checked_at`) and `attention` (one line, the count of rows
-that need the user) under `dotfiles.state_dir`.
+`dotfiles sync` (and, after their changes, `dotfiles apply` and `dotfiles
+remove`) write two files under `dotfiles.state_dir`: `status.json`, the
+`dotfiles.status.summary` record, and `attention`, one line holding its
+`attention` count (the rows that need the user), for prompt segments.
 
 ## Exit codes
 
