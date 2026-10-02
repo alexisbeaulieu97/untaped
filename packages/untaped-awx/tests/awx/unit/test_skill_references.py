@@ -5,14 +5,10 @@
   fields AWX's launch endpoint knows.
 - Every field of a workflow node (``spec.nodes``) is named in
   ``references/specs.md``, and its field tables name only node fields.
-- Every property of the suite's generated JSON Schema (what
-  ``untaped awx schema AwxTestSuite`` prints) is named in
-  ``references/test-suites.md``, and the reference's field tables name only
-  such properties.
-- Every field of an ``awx.test_result`` row (its ``failure``, ``evidence``,
-  failed tasks and host summaries included), and of a temporary copy's
-  ``awx.provision_outcome``/``awx.prune_outcome`` row, is named in
-  ``references/test-results.md``, and its field tables name only such fields.
+- ``references/test-results.md``'s field tables name only fields of an
+  ``awx.test_result`` row or a temporary copy's row. The references do not
+  have to name every field: ``untaped awx schema AwxTestSuite`` and
+  ``--columns ?`` list those.
 """
 
 from __future__ import annotations
@@ -86,17 +82,6 @@ def test_example_loads_and_resolves_to_known_launch_fields(path: Path) -> None:
     assert payloads
 
 
-def _schema_keys() -> set[str]:
-    """Every property of the suite document: top level and every ``$defs`` model."""
-    schema = Suite.model_json_schema(by_alias=True)
-    models = [schema, *schema.get("$defs", {}).values()]
-    return {key for model in models for key in model.get("properties", {})}
-
-
-def _reference() -> str:
-    return (SKILL_DIR / "references" / "test-suites.md").read_text(encoding="utf-8")
-
-
 def _table_field_names(text: str) -> set[str]:
     """Backticked names in the first column of every ``| Field | … |`` table."""
     names: set[str] = set()
@@ -109,18 +94,6 @@ def _table_field_names(text: str) -> set[str]:
         elif in_table and not line.startswith("|---"):
             names.update(re.findall(r"`([^`]+)`", line.split("|")[1]))
     return names
-
-
-@pytest.mark.parametrize("key", sorted(_schema_keys()))
-def test_every_suite_field_is_in_the_reference(key: str) -> None:
-    assert f"`{key}`" in _reference(), f"references/test-suites.md does not name {key!r}"
-
-
-def test_the_reference_field_tables_name_only_suite_fields() -> None:
-    documented = _table_field_names(_reference())
-
-    assert documented
-    assert documented - _schema_keys() == set()
 
 
 def _node_schema_keys() -> set[str]:
@@ -162,18 +135,8 @@ def _copy_keys() -> set[str]:
     return {key for model in models for key in model.get("properties", {})}
 
 
-@pytest.mark.parametrize("key", sorted(_copy_keys()))
-def test_every_temporary_copy_field_is_in_the_results_reference(key: str) -> None:
-    assert f"`{key}`" in _results_reference(), f"references/test-results.md does not name {key!r}"
-
-
 def _results_reference() -> str:
     return (SKILL_DIR / "references" / "test-results.md").read_text(encoding="utf-8")
-
-
-@pytest.mark.parametrize("key", sorted(_result_keys()))
-def test_every_result_field_is_in_the_results_reference(key: str) -> None:
-    assert f"`{key}`" in _results_reference(), f"references/test-results.md does not name {key!r}"
 
 
 def test_the_results_reference_field_tables_name_only_result_fields() -> None:

@@ -6,13 +6,13 @@ directory for `workspace.workspace`, the repo directory for the others.
 
 ## Record kinds
 
-| Command | Kind | Key fields |
+| Command | Kind | Read |
 |---|---|---|
-| `list` | `workspace.workspace` | `name`, `repos`, `created_at`, `archived_at` |
-| `create`, `add` | `workspace.repo_outcome` | `repo`, `action` (`created`, `checked_out`, `unchanged`, `failed`), `branch`, `base`, `read_only`, `detail` |
-| `status` | `workspace.status` | `repo`, `branch`, `state` (`ok`, `missing`, `cache_missing`, `error`), `upstream` (null until the branch is on origin), `ahead`, `behind`, `modified`, `untracked`, `stashed`, `unpushed`, `blockers`, `detail` |
-| `archive` | `workspace.archive_outcome` | `repo`, `action` (`removed`, `planned`, `skipped`, `failed`), `detail`; a last row with an empty `repo` is the workspace directory (`skipped` when other files stay in it) |
-| `run` | `workspace.run_outcome` | `repo`, `action` (`ran`, `failed`, `skipped`), `returncode` (null for a timeout or a repo not run; negative for a signal), `stdout`, `stderr`, `duration_s`, `detail` |
+| `list` | `workspace.workspace` | |
+| `create`, `add` | `workspace.repo_outcome` | `action`: `created`, `checked_out`, `unchanged`, `failed` |
+| `status` | `workspace.status` | `state`: `ok`, `missing`, `cache_missing`, `error`; `upstream` is null until the branch is on origin |
+| `archive` | `workspace.archive_outcome` | `action`: `removed`, `planned`, `skipped`, `failed`; a last row with an empty `repo` is the workspace directory (`skipped` when other files stay in it) |
+| `run` | `workspace.run_outcome` | `action`: `ran`, `failed`, `skipped`; `returncode` is null for a timeout or a repo not run, negative for a signal |
 
 `status --fetch` fetches each repo first (status is otherwise offline); a
 repo whose fetch fails keeps its local state, with `detail` "fetch failed:
