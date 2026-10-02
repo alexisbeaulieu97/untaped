@@ -62,9 +62,12 @@ def repo_url_parts(url: str) -> tuple[str | None, list[str]]:
 def cache_key(url: str) -> tuple[str, ...]:
     """``(<host>, <segment>..., <name>.git)``; ``("_unknown", "<sha256[:16]>.git")`` without a host.
 
-    The https and ssh URLs of one repo share a key. Every part is one
-    ``safe_path_segment``, so a hostile URL (``https://evil/../../tmp/pwn.git``)
-    never escapes the cache root.
+    The https and ssh URLs of one repo share a key. The port is not part of
+    it (``repo_url_parts`` drops it): a server's ssh port (often custom, say
+    2222) differs from its https port (443), so keying on it would split one
+    repo into two caches. Every part is one ``safe_path_segment``, so a
+    hostile URL (``https://evil/../../tmp/pwn.git``) never escapes the cache
+    root.
     """
     host, segments = repo_url_parts(url)
     if host is None or not segments:

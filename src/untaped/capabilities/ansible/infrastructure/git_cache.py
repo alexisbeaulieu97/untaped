@@ -38,6 +38,9 @@ class GitRepositoryCache:
         self._timeout = timeout
         self._slow_timeout = slow_timeout
         self._lock_timeout = lock_timeout
+        # The url each ``ensure_bare`` set, so ``fetch_refs`` re-points a cache
+        # that another process (the other url form of a shared cache) changed.
+        self._urls: dict[Path, str] = {}
 
     def _cache(self, path: Path, auth_header: str | None) -> RepoCache:
         # A handle per call: the token may differ, and the origin is re-read.
@@ -63,6 +66,7 @@ class GitRepositoryCache:
         cache = self._cache(cache_path(url, root=cache_dir), auth_header)
         with cache.locked():
             cache.ensure(url)
+        self._urls[cache.path] = url
         return cache.path
 
     def fetch_refs(
@@ -74,11 +78,19 @@ class GitRepositoryCache:
         blob_filter: bool,
         auth_header: str | None,
     ) -> None:
-        """Fetch selected refs into a bare cache."""
+        """Fetch selected refs into a bare cache.
+
+        When ``ensure_bare`` set this cache's url, it is re-applied under the
+        same lock as the fetch: https and ssh share a cache, so a concurrent
+        refresh may have repointed ``origin`` in between.
+        """
         if not refspecs:
             return
         cache = self._cache(bare_path, auth_header)
+        url = self._urls.get(bare_path)
         with cache.locked():
+            if url is not None:
+                cache.ensure(url)
             cache.fetch(refspecs, depth=depth, filter="blob:none" if blob_filter else None)
 
     def ls_remote(

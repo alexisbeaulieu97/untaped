@@ -75,6 +75,9 @@ def origin(tmp_path_factory: pytest.TempPathFactory) -> Path:
         ("git@github.com:acme/app.git", ("github.com", "acme", "app.git")),
         ("git@GitHub.com:acme/app", ("github.com", "acme", "app.git")),
         ("ssh://git@gitlab.example/grp/sub/app", ("gitlab.example", "grp", "sub", "app.git")),
+        # The port is not part of the key: ssh on 2222 and https on 443 share a cache.
+        ("ssh://git@gitlab.example:2222/grp/app.git", ("gitlab.example", "grp", "app.git")),
+        ("https://gitlab.example/grp/app.git", ("gitlab.example", "grp", "app.git")),
         ("https://evil/../../tmp/pwn.git", ("evil", "_", "_", "tmp", "pwn.git")),
         ("git@evil:../../../tmp/pwn.git", ("evil", "_", "_", "_", "tmp", "pwn.git")),
         ("https://evil/org/..", ("evil", "org", "_.git")),
