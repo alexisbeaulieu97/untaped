@@ -32,14 +32,10 @@ of the version you have installed, run `untaped --help` or
 
 - [Configuration reference](./reference/config.md): every setting, its type,
   default and environment variable (generated).
-- [Pipes and record kinds](./reference/pipes.md): the `--format pipe`
-  envelope, and which command writes and reads each record kind.
-- [Exit codes](./reference/exit-codes.md): what 0 to 5 and 130 mean, the
-  failure categories behind them, and which commands exit 3.
-- [Environment variables](./reference/environment.md): every variable
-  `untaped` reads or sets.
-- [Versioning and stability](./stability.md): what a release keeps
-  compatible, what is experimental, and how breaking changes arrive.
+- [Scripting](./scripting.md): the `--format pipe` envelope and record kinds,
+  exit codes and failure categories, and every environment variable.
+- [Versioning](../README.md#versioning): what a release keeps compatible, what
+  is experimental, and how breaking changes arrive.
 - [Glossary](./glossary.md): the terms these docs use.
 
 ## Contributing

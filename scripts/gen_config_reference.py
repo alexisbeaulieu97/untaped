@@ -11,6 +11,7 @@ Usage::
     uv run python scripts/gen_config_reference.py          # rewrite the page
     uv run python scripts/gen_config_reference.py --check  # exit 1 if stale
 
+The page ends by linking ``docs/scripting.md#environment-variables``.
 ``tests/repo/test_docs.py`` fails when the checked-in page is
 stale or a setting has no description.
 """
@@ -160,7 +161,7 @@ _FOOTER = """\
 ## See also
 
 - [Configuration](../configuration.md)
-- [Environment variables](./environment.md)
+- [Environment variables](../scripting.md#environment-variables)
 """
 
 

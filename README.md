@@ -50,9 +50,73 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
 
 Start with [Getting started](./docs/getting-started.md). The
 [documentation index](./docs/README.md) links the capability guides, the
-configuration, pipe, exit-code and environment references, the
-[stability policy](./docs/stability.md), [agent skills](./docs/skills.md) and
+configuration and scripting references (pipes, exit codes, environment
+variables), [agent skills](./docs/skills.md) and
 [provider authoring](./docs/plugins.md).
+
+## Versioning
+
+`untaped` follows [semantic versioning](https://semver.org/), from 9.0.0 on.
+
+### Stable within a major release
+
+A minor or patch release never breaks these. Anything new is added alongside
+them. To run two majors side by side, give each its own config file; see
+`UNTAPED_CONFIG` in [Configuration](./docs/configuration.md).
+
+- Command and flag names, positional arguments, and what each means
+  (`untaped COMMAND --help`).
+- Exit codes, failure categories and systems:
+  [exit codes](./docs/scripting.md#exit-codes).
+- The `--format pipe` envelope, record kinds and their documented fields, and
+  the `--format json` and `yaml` records, which have the same fields:
+  [output and pipes](./docs/scripting.md#output-and-pipes).
+- JSON stderr diagnostics:
+  [stderr diagnostics](./docs/scripting.md#stderr-diagnostics).
+- `config.yml` and `state.yml` settings:
+  [configuration reference](./docs/reference/config.md).
+- Environment variables:
+  [environment variables](./docs/scripting.md#environment-variables).
+- The `untaped.sdk` and `untaped.testing` surface, for
+  [provider authors](./docs/plugins.md).
+
+The pipe envelope is versioned on its own (`"untaped": "1"`) and outlives
+application majors.
+
+### Not covered
+
+These may change in any release:
+
+- Human-readable output: table layout and default columns, tree and diagram
+  text, colors, and the wording of messages, warnings and hints. Scripts read
+  `--format json` or `pipe`, and exit codes, instead.
+- `--format raw` without `--columns`: it prints the first default column,
+  which may change. Name the field, as in `--format raw --columns name`.
+- Commands and file formats marked experimental (below).
+- Anything not documented, including internal modules.
+
+### Experimental
+
+A command or format still being shaped is marked experimental in its `--help`
+and its guide. It may change in a minor release, with a changelog entry that
+says so. Currently experimental:
+
+- `awx test`: its commands, the suite file format, the `awx.test_case` and
+  `awx.test_result` records, and the `awx.test_timeout` and
+  `awx.test_parallel` settings with their environment variables.
+- `workspace`: its commands, record kinds, the `workspace.*` settings, and the
+  `UNTAPED_*` variables `workspace run` sets.
+
+### Breaking changes
+
+- A renamed command or flag keeps working as a hidden, deprecated alias until
+  the next major release, and prints a warning naming the new spelling.
+- Anything else that breaks a stable contract waits for the next major
+  release: a changed default, a removed command or flag, a changed positional
+  argument, and a renamed or removed setting, environment variable, record
+  kind or record field.
+- Breaking changes are collected into the next major release, whose changelog
+  opens with an upgrade section listing them.
 
 ## Security
 

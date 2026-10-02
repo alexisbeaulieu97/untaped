@@ -31,7 +31,7 @@ It touches these and nothing else:
 - `CHANGELOG.md`: rename `## Unreleased` to `## X.Y.Z`.
 
 A major release collects the breaking changes held back since the last one
-(see [Versioning and stability](./stability.md)). Open its changelog section
+(see [Versioning and stability](../README.md#versioning)). Open its changelog section
 with an **Upgrading** list, one item for each Breaking bullet: what a user or
 script must do about it.
 

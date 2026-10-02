@@ -199,8 +199,8 @@ you pass `--force`. Backups hold file content only, not modes or times.
 
 `apply` prints one `recipe.apply_outcome` row per target, with `action`
 `planned`, `applied`, `unchanged`, `skipped`, `cancelled` or `failed`; the
-preview goes to stderr. See [Pipes and record kinds](../reference/pipes.md#recipe)
-and [Exit codes](../reference/exit-codes.md).
+preview goes to stderr. See [Pipes and record kinds](../scripting.md#recipe)
+and [Exit codes](../scripting.md#exit-codes).
 
 ## See also
 

@@ -1,6 +1,6 @@
 # Workspaces
 
-`workspace` is [experimental](../stability.md#experimental) and may change in
+`workspace` is [experimental](../../README.md#experimental) and may change in
 a minor release.
 
 A *workspace* is one directory per task. It holds a git worktree for each
@@ -100,7 +100,7 @@ repos, and exits 1 if any repo failed. Forms, environment variables,
 selection and timeouts are in the
 [run reference](../../packages/untaped-workspace/src/untaped_workspace/skills/untaped-workspace/references/run.md).
 The `UNTAPED_*` variables it sets are in
-[environment](../reference/environment.md).
+[environment](../scripting.md#environment-variables).
 
 ## Settings
 
@@ -112,8 +112,8 @@ inventory, scoped by `github.inventory` orgs and teams.
 ## Output
 
 Every command prints rows you can reshape with `--format` and `--columns`;
-see [Pipes and record kinds](../reference/pipes.md#workspace) and
-[Exit codes](../reference/exit-codes.md).
+see [Pipes and record kinds](../scripting.md#workspace) and
+[Exit codes](../scripting.md#exit-codes).
 
 ## See also
 

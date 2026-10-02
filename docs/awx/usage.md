@@ -43,7 +43,7 @@ export one of the variables the `ansible.controller` collection reads; see
 - **Typed pipes.** `--format pipe` emits records that carry their kind and
   id; a `--stdin` consumer of the same kind uses the ids directly, so a
   `list` feeds a `patch` or a `launch` feeds `jobs wait` without re-resolving
-  names. See [Pipes and record kinds](../reference/pipes.md).
+  names. See [Pipes and record kinds](../scripting.md).
 - **Documents.** `export` writes resources as portable YAML documents that
   reference other resources by name, and `apply` creates or updates every
   kind from them in dependency order. They are how you create resources, copy
@@ -106,7 +106,7 @@ pass `--cancel`. See
 
 ## Test suites
 
-`awx test` is [experimental](../stability.md#experimental) and may change in
+`awx test` is [experimental](../../README.md#experimental) and may change in
 a minor release. A suite under `.untaped/awx/tests/` in the playbook
 repository launches a template once per case and checks each job against what
 the case expects. The loop is: write a suite (`test init`), save a baseline
@@ -142,7 +142,7 @@ rollback: a batch that fails partway keeps what it wrote, so export before a
 large change to have something to apply back. `edit` needs a real terminal
 even with `--yes`. See
 [confirmations and batches](../../packages/untaped-awx/src/untaped_awx/skills/untaped-awx/references/resources.md#confirmations-and-batches)
-and [Exit codes](../reference/exit-codes.md).
+and [Exit codes](../scripting.md#exit-codes).
 
 ## Optional disposable live-AAP smoke
 
@@ -182,6 +182,6 @@ state. These steps are opt-in live writes against a disposable controller.
 ## See also
 
 - [Getting started](../getting-started.md)
-- [Pipes and record kinds](../reference/pipes.md)
+- [Pipes and record kinds](../scripting.md)
 - [Configuration reference](../reference/config.md#awx)
-- [Exit codes](../reference/exit-codes.md)
+- [Exit codes](../scripting.md#exit-codes)
