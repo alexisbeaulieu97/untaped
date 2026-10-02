@@ -1,6 +1,6 @@
 # Command and output conventions
 
-Every `untaped` command, built-in or external, looks and behaves the same
+Every `untaped` command, first-party or third-party, looks and behaves the same
 way. Each rule below names the `untaped.sdk` helper that implements
 it; use the helper rather than your own version.
 

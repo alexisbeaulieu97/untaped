@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from tests.unit.test_conventions.conftest import Install
-from untaped.capabilities.registry import ExternalProvider
+from untaped.capabilities.registry import ProviderCandidate
 from untaped.conventions import capability_violations
 from untaped.testing import check_conventions
 
@@ -53,8 +53,6 @@ _PLUGIN = {
         def provider() -> CapabilitySpec:
             return SPEC
 
-
-        provider.api_requires = ((3, 0), (4, 0))
         ''',
     "demo_plugin/errors.py": '''
         """Demo errors."""
@@ -103,11 +101,11 @@ _TESTS = {
 
 
 @pytest.fixture
-def demo(install: Install) -> list[ExternalProvider]:
-    """The demo plugin installed in ``tmp_path/site`` and discovered as an external."""
+def demo(install: Install) -> list[ProviderCandidate]:
+    """The demo plugin installed in ``tmp_path/site`` and discovered through its entry point."""
     install({**_PLUGIN, **_TESTS})
     return [
-        ExternalProvider(distribution="demo-plugin", name="demo", target="demo_plugin:provider")
+        ProviderCandidate(distribution="demo-plugin", name="demo", target="demo_plugin:provider")
     ]
 
 
@@ -122,47 +120,47 @@ _PRIVATE_IMPORT = "demo_tests/test_demo.py::private-test-import::demo_plugin._in
 
 def test_unknown_capability_raises() -> None:
     with pytest.raises(LookupError) as raised:
-        check_conventions("no-such-capability", externals=[])
+        check_conventions("no-such-capability", candidates=[])
     assert str(raised.value) == "no installed capability named 'no-such-capability'"
 
 
 def test_test_imports_are_checked_only_with_a_tests_dir(
-    demo: list[ExternalProvider], tmp_path: Path
+    demo: list[ProviderCandidate], tmp_path: Path
 ) -> None:
     found = capability_violations(
-        "demo", tests_dir=tmp_path / "site" / "demo_tests", externals=demo
+        "demo", tests_dir=tmp_path / "site" / "demo_tests", candidates=demo
     )
     assert found == sorted([*_FOUND, _PRIVATE_IMPORT])
 
 
-def test_an_external_capability_fails_with_every_violation_in_its_own_files(
-    demo: list[ExternalProvider],
+def test_a_plugin_capability_fails_with_every_violation_in_its_own_files(
+    demo: list[ProviderCandidate],
 ) -> None:
-    """A plugin outside src/untaped, discovered as an external, is checked from its own files."""
+    """A plugin outside src/untaped is checked from its own files."""
     with pytest.raises(AssertionError) as raised:
-        check_conventions("demo", externals=demo)
+        check_conventions("demo", candidates=demo)
     assert str(raised.value) == "convention violations:\n" + "\n".join(
         f"  {line}" for line in _FOUND
     )
 
 
 def test_a_main_module_is_checked_without_running_it(
-    demo: list[ExternalProvider], install: Install
+    demo: list[ProviderCandidate], install: Install
 ) -> None:
     install({"demo_plugin/__main__.py": 'raise SystemExit("ran __main__")\n'})
-    assert capability_violations("demo", externals=demo) == _FOUND
+    assert capability_violations("demo", candidates=demo) == _FOUND
 
 
 def test_a_quarantined_provider_is_warned_about_once(
-    demo: list[ExternalProvider], capsys: pytest.CaptureFixture[str]
+    demo: list[ProviderCandidate], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    broken = ExternalProvider(distribution="broken", name="broken", target="no_such_mod:provider")
-    capability_violations("demo", externals=[*demo, broken])
+    broken = ProviderCandidate(distribution="broken", name="broken", target="no_such_mod:provider")
+    capability_violations("demo", candidates=[*demo, broken])
     assert capsys.readouterr().err.count("quarantined") == 1
 
 
 def test_an_app_factory_outside_any_package_names_the_capability(
-    demo: list[ExternalProvider], tmp_path: Path
+    demo: list[ProviderCandidate], tmp_path: Path
 ) -> None:
     init = tmp_path / "site" / "demo_plugin" / "__init__.py"
     text = init.read_text(encoding="utf-8")
@@ -172,5 +170,5 @@ def test_an_app_factory_outside_any_package_names_the_capability(
         encoding="utf-8",
     )
     with pytest.raises(LookupError) as raised:
-        check_conventions("demo", externals=demo)
+        check_conventions("demo", candidates=demo)
     assert str(raised.value) == "capability 'demo': its app factory is not defined in a package"

@@ -11,7 +11,7 @@ Provider code imports from `untaped.sdk` and nothing else in
 `untaped`; [`src/untaped/sdk.py`](../src/untaped/sdk.py)
 is the authoritative API surface. The internal registry and other modules are
 not an API and may change in any release.
-Built-in capabilities may also use each other's declared `api.py` modules;
+First-party capabilities may also use each other's declared `api.py` modules;
 those are internal to `untaped` and not part of the provider API.
 
 ## 1. Provider package
@@ -39,7 +39,7 @@ description = "Acme capability for untaped."
 requires-python = ">=3.14"
 dependencies = [
     "pydantic>=2.13.3,<3",
-    "untaped>=9.0.0,<10",
+    "untaped>=10,<11",
 ]
 
 [project.entry-points."untaped.capabilities"]
@@ -66,23 +66,22 @@ unzip -l dist/acme_provider-*.whl \
 ```
 
 The entry-point name must equal `CapabilitySpec.name`. The resolved object
-must be callable, expose an `api_requires` range, and return one
-`CapabilitySpec` when called without arguments.
+must be callable and return one `CapabilitySpec` when called without
+arguments.
 
-The API version is a `(major, minor)` tuple of ints, and `api_requires` is a
-`(min_inclusive, max_exclusive)` pair of such tuples, compared as tuples (so
-`(1, 10)` is newer than `(1, 9)`).
-
-- New exports bump the minor version; removing or breaking one bumps the
-  major. So `((3, 0), (4, 0))` stays compatible across 3.x.
-- A provider that relies on an export added in `3.N` declares
-  `((3, N), (4, 0))`.
-- A missing, malformed or non-covering range quarantines the provider with an
-  `api-range` reason naming the running version.
-
-The [changelog](../CHANGELOG.md) says what each version added or broke.
-Built-in capabilities use the same `SPEC` and `build_app()` shape, but are
-listed in the root composition instead of an entry point.
+The provider's `untaped` requirement (`Requires-Dist`) is the only
+compatibility check: declare it (`untaped>=10,<11`); without one, nothing is
+checked. A running `untaped` outside that range quarantines the provider.
+Installers normally enforce the range, so this shows up mainly after
+upgrading `untaped` past it. The [changelog](../CHANGELOG.md) says what each
+version added or broke.
+First-party capabilities register exactly this way. When two providers claim
+the same capability name or config section, all of them are quarantined and a
+warning names every claimant: no provider can take over another's commands or
+settings, and the result does not depend on install order. Uninstall one to
+restore the other. A capability whose settings import another capability's
+`api` (ansible imports github's) is quarantined with it when that import
+fails.
 
 ## 2. Settings and the capability app
 
@@ -157,27 +156,24 @@ SPEC = CapabilitySpec(
 )
 
 
-class AcmeProvider:
+def provider() -> CapabilitySpec:
     """Entry-point provider discovered by the unified shell."""
-
-    api_requires = ((3, 0), (4, 0))
-
-    def __call__(self) -> CapabilitySpec:
-        return SPEC
-
-
-provider = AcmeProvider()
+    return SPEC
 ```
 
 `CapabilitySpec` validates the name, section, Pydantic models and asset
-tuples. Composition calls `build_app()` once, after validating the provider,
-and mounts the app it returns; a factory that raises or returns something
-other than a cyclopts `App` quarantines the provider.
+tuples.
 
 The optional `help` field (one non-empty line) is the summary in the root
-command listing. Built-ins set it so their factory runs only when their
-command is dispatched. An external factory always runs during composition,
-so a bad one is quarantined, and the listing shows the built app's own help.
+command listing. With it, the capability is mounted lazily: `build_app()` runs
+only when its command is dispatched, so `untaped --help` never imports its CLI.
+A factory that raises or returns something other than a cyclopts `App` then
+fails that command, `--help` included, with exit 4, naming the capability;
+other commands and shell completion keep working. `untaped doctor` runs every
+factory and reports a failing one as a `bad-app-factory` quarantine row, so
+you find it without dispatching. Without `help`, composition calls
+`build_app()` once at startup, a bad factory quarantines the provider, and the
+listing shows the built app's own help.
 
 The provider callable must have no side effects (registration, filesystem,
 network, `ContextVar`); the root owns registration and mounting.
@@ -273,7 +269,7 @@ When an empty pipe (a filter that matched nothing) should do nothing, pass
 must treat as "nothing to do", never as "everything". A terminal stdin with
 nothing piped still raises.
 
-The provider joins pipelines with the built-ins:
+The provider joins pipelines with the first-party capabilities:
 
 ```bash
 untaped github search repos --format pipe | untaped acme import --stdin
@@ -342,5 +338,4 @@ Test the provider callable and `SPEC.app_factory()` in isolation, assert that
 the entry-point name matches `SPEC.name`, and exercise root config, profile,
 skill, pipe and error paths. `untaped capabilities`, `untaped acme --help` and
 `untaped doctor` show the composed surface and any quarantine reason: a
-malformed external provider is quarantined so the other capabilities still
-boot, while a built-in violation is fatal.
+malformed provider is quarantined so the other capabilities still boot.

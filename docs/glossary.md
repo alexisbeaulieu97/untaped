@@ -39,9 +39,12 @@ Terms as `untaped` uses them in commands, output and these docs.
 - **provider**: A Python package that adds a capability to `untaped` through
   the `untaped.capabilities` entry point. Only capability authors deal with
   providers.
-- **quarantine**: What composition does with an external provider that fails
-  validation: its capability is left out, the others still load, a warning
-  names it, and `untaped capabilities` and `untaped doctor` show the reason.
+- **quarantine**: What composition does with a provider that fails
+  validation at startup: its capability is left out, the others still load,
+  a warning names it, `untaped capabilities` lists it as quarantined, and
+  `untaped doctor` shows the reason. Doctor also reports a lazily built
+  capability whose commands fail to load as a `bad-app-factory` quarantine
+  row.
 - **read-only repo (workspace)**: A repo checked out detached at its base
   branch for reference, added with `--read-only`. Commits made there are on no
   branch.

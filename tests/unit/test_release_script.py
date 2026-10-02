@@ -16,7 +16,6 @@ from typing import Any
 import pytest
 
 from tests.unit.conftest import SCRIPTS, load_script
-from untaped.bootstrap import BUILTIN_CAPABILITIES
 
 SCRIPT = SCRIPTS / "release.py"
 REPO_ROOT = SCRIPTS.parent
@@ -581,7 +580,32 @@ def test_smoke_errors_refuse_output_that_is_not_a_list_of_rows() -> None:
     ]
 
 
-BUILTINS = [spec.name for spec in BUILTIN_CAPABILITIES]
+def test_capability_names_are_the_packages_entry_points(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "pyproject.toml",
+        '[project]\nname = "untaped"\nversion = "10.0.0"\n'
+        '[project.entry-points."untaped.capabilities"]\n'
+        'zeta = "z:provider"\nalpha = "a:provider"\n',
+    )
+    assert release.capability_names(tmp_path) == ["alpha", "zeta"]
+
+
+def test_capability_names_span_workspace_members(tmp_path: Path) -> None:
+    root = _split_repo(tmp_path)
+    _write(
+        root / "packages" / "untaped-github" / "pyproject.toml",
+        '[project]\nname = "untaped-github"\nversion = "10.0.0"\n'
+        '[project.entry-points."untaped.capabilities"]\ngithub = "g:provider"\n',
+    )
+    _write(
+        root / "packages" / "untaped-awx" / "pyproject.toml",
+        '[project]\nname = "untaped-awx"\nversion = "10.0.0"\n'
+        '[project.entry-points."untaped.capabilities"]\nawx = "a:provider"\n',
+    )
+    assert release.capability_names(root) == ["awx", "github"]
+
+
+FIRST_PARTY = release.capability_names(release.REPO_ROOT)
 FAKE_UNTAPED = """#!/bin/sh
 case "$1" in
   --version) echo "$FAKE_VERSION" ;;
@@ -599,7 +623,7 @@ def _fake_untaped(tmp_path: Path) -> Path:
     return exe
 
 
-READY = [{"name": cap, "status": "ready"} for cap in BUILTINS]
+READY = [{"name": cap, "status": "ready"} for cap in FIRST_PARTY]
 
 
 def _smoke(
@@ -625,7 +649,7 @@ def test_the_smoke_command_passes_a_healthy_install(
 ) -> None:
     assert _smoke(tmp_path, monkeypatch, capsys, READY) == (
         0,
-        f"smoke ok: untaped 10.0.0, {len(BUILTINS)} capabilities\n",
+        f"smoke ok: untaped 10.0.0, {len(FIRST_PARTY)} capabilities\n",
         "",
     )
 
@@ -633,14 +657,14 @@ def test_the_smoke_command_passes_a_healthy_install(
 @pytest.mark.parametrize(
     ("rows", "failing", "rows_exit", "stderr"),
     [
-        (READY, BUILTINS[-1], 0, f"untaped {BUILTINS[-1]} --help exited 2\n"),
+        (READY, FIRST_PARTY[-1], 0, f"untaped {FIRST_PARTY[-1]} --help exited 2\n"),
         (READY, "--help", 0, "untaped --help exited 2\n"),
         (READY, "", 3, "untaped capabilities --format json exited 3\n"),
         (
-            [{"name": BUILTINS[0], "status": "quarantined"}, *READY[1:]],
+            [{"name": FIRST_PARTY[0], "status": "quarantined"}, *READY[1:]],
             "",
             0,
-            f"capability {BUILTINS[0]} is quarantined\n",
+            f"capability {FIRST_PARTY[0]} is quarantined\n",
         ),
     ],
     ids=["capability-help", "root-help", "capabilities-command", "not-ready"],

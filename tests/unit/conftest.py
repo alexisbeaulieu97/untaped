@@ -1,15 +1,19 @@
-"""Shared unit-test fixtures for the untaped SDK, and the `scripts/` loader."""
+"""Shared unit-test fixtures, the `scripts/` loader, and first-party candidate helpers."""
 
 from __future__ import annotations
 
 import importlib.util
 import sys
 from collections.abc import Iterator
+from functools import cache
 from pathlib import Path
+from pkgutil import resolve_name
 from types import ModuleType
 
 import pytest
 
+from tests.conftest import first_party_candidates
+from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 from untaped.settings import (
     get_settings,
     reset_config_registry_for_tests,
@@ -26,6 +30,20 @@ def load_script(name: str) -> ModuleType:
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+@cache
+def first_party_specs() -> tuple[CapabilitySpec, ...]:
+    """Every first-party spec, resolved from its discovered entry point, in name order."""
+    return tuple(resolve_name(str(candidate.target))() for candidate in first_party_candidates())
+
+
+def broken_first_party_candidates() -> tuple[ProviderCandidate, ...]:
+    """First-party-looking ``awx`` and ``jira`` candidates whose entry points do not resolve."""
+    return tuple(
+        ProviderCandidate(distribution="untaped", name=name, target=f"untaped_missing_{name}:p")
+        for name in ("awx", "jira")
+    )
 
 
 @pytest.fixture(autouse=True)

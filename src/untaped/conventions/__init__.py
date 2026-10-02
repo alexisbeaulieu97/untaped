@@ -2,7 +2,7 @@
 
 Each check reads one installed package: its command subtree from the real
 composition and its own source files, wherever they are installed, so a
-third-party provider is checked exactly like a built-in. Provider tests call
+third-party provider is checked exactly like a first-party one. Provider tests call
 :func:`untaped.testing.check_conventions`; this package is internal.
 """
 
@@ -13,7 +13,7 @@ from importlib.util import find_spec
 from pathlib import Path
 
 from untaped.bootstrap import build_root_app, composition
-from untaped.capabilities.registry import CapabilitySpec, ExternalProvider
+from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 from untaped.conventions.help_tree import ROOT_COMMANDS, help_tree_violations
 from untaped.conventions.layering import layering_violations
 from untaped.conventions.messages import message_violations
@@ -25,19 +25,19 @@ def capability_violations(
     name: str,
     *,
     tests_dir: Path | None = None,
-    externals: Sequence[ExternalProvider] | None = None,
+    candidates: Sequence[ProviderCandidate] | None = None,
 ) -> list[str]:
     """Every convention violation of the installed capability ``name``.
 
-    Builds the root once (built-ins and discovered externals), finds the
+    Builds the root once (from discovered candidates), finds the
     registered capability, and runs help_tree, messages, structure and
     layering over its command subtree and package. The private-test-import
-    check runs only when ``tests_dir`` is given. ``externals`` replaces
+    check runs only when ``tests_dir`` is given. ``candidates`` replaces
     entry-point discovery (as in :func:`untaped.bootstrap.compose_root`), so
     a test can check a provider that is not installed. Lines are
     ``<where>::<rule>::<detail>``, sorted.
     """
-    root = build_root_app(externals=externals)
+    root = build_root_app(candidates=candidates)
     spec = next(
         (
             capability.spec
@@ -62,7 +62,7 @@ def capability_violations(
 
 def core_violations() -> list[str]:
     """Violations in the root commands and ``untaped.management`` (repo-internal)."""
-    root = build_root_app(externals=[])
+    root = build_root_app(candidates=[])
     management = _source_dir("untaped.management")
     return sorted(
         [

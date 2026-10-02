@@ -1,7 +1,7 @@
 """Tests for the root ``untaped capabilities`` command (Wave 1.4, spec §7.3).
 
-Reports one record per candidate provider — ``name/origin/status/
-distribution/version/api`` — from the composition outcome. The listing never
+Reports one record per candidate provider — ``name/status/distribution/
+version`` — from the composition outcome, in name order. The listing never
 touches settings, so invalid capability values cannot block it (spec §4
 failure isolation).
 """
@@ -14,106 +14,68 @@ from pathlib import Path
 import pytest
 
 from test_management.support import (
-    ExtProfile,
     GithubProfile,
     JiraProfile,
     compose,
     make_spec,
     write_config,
 )
+from tests.unit.test_capabilities.capharness import make_candidate
 from untaped import bootstrap
 from untaped.capabilities.registry import (
     CompositionResult,
-    ExternalProvider,
+    ProviderCandidate,
     QuarantineRecord,
 )
 from untaped.management.capabilities import build_root_capabilities_app
-from untaped.management.doctor import build_root_doctor_app
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 
-class _Provider:
-    """Nullary external provider double."""
-
-    def __init__(self, spec: object) -> None:
-        self.api_requires = ((3, 0), (4, 0))
-        self._spec = spec
-
-    def __call__(self) -> object:
-        return self._spec
-
-
-def _external(
-    name: str, *, distribution: str = "example-dist", version: str = "1.2.3"
-) -> ExternalProvider:
-    return ExternalProvider(
-        distribution=distribution,
-        name=name,
-        target=_Provider(make_spec(name, profile_model=ExtProfile)),
-        distribution_version=version,
-    )
-
-
 def _rows(stdout: str) -> list[dict[str, object]]:
     return [dict(item) for item in json.loads(stdout)]
 
 
-def test_lists_ready_builtin_and_external() -> None:
-    github = make_spec("github", profile_model=GithubProfile)
-    result = compose(github)
-    external = _external("ext")
-    composed = bootstrap.compose_root(builtins=(), externals=(external,))
-    merged = CompositionResult(
-        capabilities=result.capabilities + composed.capabilities,
-        quarantine=(),
-    )
-    app = build_root_capabilities_app(
-        result=merged,
-        candidates=(external,),
-        shell_distribution="untaped",
-    )
-    invoked = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
+def _listing(candidates: list[ProviderCandidate]) -> list[dict[str, object]]:
+    """The JSON rows ``untaped capabilities`` lists for ``candidates``."""
+    root = bootstrap.build_root_app(candidates=candidates)
+    invoked = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])
     assert invoked.exit_code == 0, invoked.output
-    rows = {row["name"]: row for row in _rows(invoked.stdout)}
-    assert rows["github"]["status"] == "ready"
-    assert rows["github"]["origin"] == "built-in"
-    assert rows["github"]["distribution"] == "untaped"
-    assert rows["ext"]["status"] == "ready"
-    assert rows["ext"]["origin"] == "external"
-    assert rows["ext"]["distribution"] == "example-dist"
-    assert rows["ext"]["version"] == "1.2.3"
-    assert rows["ext"]["api"] == ">=3.0,<4.0"
+    return _rows(invoked.stdout)
 
 
-def test_float_range_external_shows_its_raw_range_and_the_running_sdk() -> None:
-    """A 1.x float ``api_requires`` quarantines; the listing shows what it declared
-    and the doctor row names the running SDK version plus a valid example."""
-    external = _external("legacy")
-    external.target.api_requires = (1.0, 2.0)  # type: ignore[union-attr]
-    result = bootstrap.compose_root(builtins=(), externals=(external,))
-    app = build_root_capabilities_app(
-        result=result, candidates=(external,), shell_distribution="untaped"
+def test_lists_a_ready_provider_with_its_distribution_version() -> None:
+    rows = _listing([make_candidate(make_spec("acme"), "acme-dist", distribution_version="1.2.3")])
+    assert rows == [
+        {"name": "acme", "status": "ready", "distribution": "acme-dist", "version": "1.2.3"}
+    ]
+
+
+def test_a_quarantined_blank_distribution_candidate_lists_its_own_version() -> None:
+    broken = make_candidate(
+        make_spec("acme"), "  ", distribution_version="1.2.3", error=RuntimeError("x")
     )
-    invoked = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
-    (row,) = _rows(invoked.stdout)
-    assert row["status"] == "quarantined"
-    assert row["api"] == "(1.0, 2.0)"
-    doctor = build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=result)
-    invoked = CliInvoker().invoke(doctor, ["--format", "json"])  # type: ignore[arg-type]
-    (quarantined,) = [r for r in _rows(invoked.stdout) if r["check"] == "quarantine"]
-    assert quarantined["title"] == "api-range"
-    assert str(quarantined["detail"]).startswith(
-        "malformed api_requires (1.0, 2.0): expected ((major, minor), (major, minor)) "
-        "int tuples as (min_inclusive, max_exclusive); running SDK 3.2, "
-        "declare e.g. ((3, 0), (4, 0))"
-    )
+    assert _listing([broken]) == [
+        {"name": "acme", "status": "quarantined", "distribution": "unknown", "version": "1.2.3"}
+    ]
+
+
+def test_the_listing_is_in_name_order_across_statuses() -> None:
+    broken = make_candidate(make_spec("beta"), "aaa-dist", error=RuntimeError("x"))
+    alpha = make_candidate(make_spec("alpha"), "zzz-dist")
+    gamma = make_candidate(make_spec("gamma"), "mmm-dist")
+    rows = _listing([gamma, broken, alpha])
+    assert [(row["name"], row["status"]) for row in rows] == [
+        ("alpha", "ready"),
+        ("beta", "quarantined"),
+        ("gamma", "ready"),
+    ]
 
 
 def test_quarantined_provider_lists_with_entry_point_name() -> None:
-    candidate = ExternalProvider(
+    candidate = ProviderCandidate(
         distribution="example-dist",
         name="ghost",
         target="example_mod:provider",
@@ -123,6 +85,7 @@ def test_quarantined_provider_lists_with_entry_point_name() -> None:
         capabilities=(),
         quarantine=(
             QuarantineRecord(
+                name="ghost",
                 distribution="example-dist",
                 entry_point="example_mod:provider",
                 reason="malformed-entry-point",
@@ -130,26 +93,26 @@ def test_quarantined_provider_lists_with_entry_point_name() -> None:
             ),
         ),
     )
-    app = build_root_capabilities_app(
-        result=result, candidates=(candidate,), shell_distribution="untaped"
-    )
+    app = build_root_capabilities_app(result=result, candidates=(candidate,))
     invoked = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
     assert invoked.exit_code == 0, invoked.output
-    (row,) = _rows(invoked.stdout)
-    assert row["name"] == "ghost"
-    assert row["status"] == "quarantined"
-    assert row["origin"] == "external"
-    assert row["distribution"] == "example-dist"
-    assert row["version"] == "0.1.0"
-    assert row["api"] == "unknown"
+    assert _rows(invoked.stdout) == [
+        {
+            "name": "ghost",
+            "status": "quarantined",
+            "distribution": "example-dist",
+            "version": "0.1.0",
+        }
+    ]
 
 
 def test_unresolvable_provider_uses_unknown_sentinels() -> None:
-    candidate = ExternalProvider(distribution="unknown", name="mystery", target="nope:missing")
+    candidate = ProviderCandidate(distribution="unknown", name="mystery", target="nope:missing")
     result = CompositionResult(
         capabilities=(),
         quarantine=(
             QuarantineRecord(
+                name="mystery",
                 distribution="unknown",
                 entry_point="",
                 reason="malformed-entry-point",
@@ -157,27 +120,24 @@ def test_unresolvable_provider_uses_unknown_sentinels() -> None:
             ),
         ),
     )
-    app = build_root_capabilities_app(
-        result=result, candidates=(candidate,), shell_distribution="untaped"
-    )
+    app = build_root_capabilities_app(result=result, candidates=(candidate,))
     invoked = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
     assert invoked.exit_code == 0, invoked.output
     (row,) = _rows(invoked.stdout)
     assert row["name"] == "mystery"
     assert row["version"] == "unknown"
-    assert row["api"] == "unknown"
 
 
 def test_table_headers_name_the_listing_contract() -> None:
     result = compose(make_spec("github", profile_model=GithubProfile))
-    app = build_root_capabilities_app(result=result, candidates=(), shell_distribution="untaped")
+    app = build_root_capabilities_app(result=result, candidates=())
     invoked = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
     assert invoked.exit_code == 0, invoked.output
     header = [cell.strip() for cell in invoked.stdout.splitlines()[1].strip("│").split("│")]
-    assert header == ["name", "origin", "status", "version"]
+    assert header == ["name", "status", "distribution", "version"]
     assert "github" in invoked.stdout
     listed = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
-    assert {"distribution", "api"} <= set(_rows(listed.stdout)[0])
+    assert {"distribution", "version"} <= set(_rows(listed.stdout)[0])
 
 
 def test_listing_is_not_blocked_by_invalid_settings(_isolated_config: Path) -> None:
@@ -191,7 +151,7 @@ def test_listing_is_not_blocked_by_invalid_settings(_isolated_config: Path) -> N
         make_spec("github", profile_model=GithubProfile),
         make_spec("jira", profile_model=JiraProfile),
     )
-    app = build_root_capabilities_app(result=result, candidates=(), shell_distribution="untaped")
+    app = build_root_capabilities_app(result=result, candidates=())
     invoked = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
     assert invoked.exit_code == 0, invoked.output
     assert {row["name"] for row in _rows(invoked.stdout)} == {"github", "jira"}

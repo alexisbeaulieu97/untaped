@@ -17,7 +17,7 @@ from untaped.sdk import CapabilitySpec, SkillAsset
 if TYPE_CHECKING:
     from cyclopts import App
 
-__all__ = ["SPEC", "build_app"]
+__all__ = ["SPEC", "build_app", "provider"]
 
 
 def build_app() -> App:
@@ -51,3 +51,8 @@ SPEC = CapabilitySpec(
     ),
     doctor_checks=DOCTOR_CHECKS,
 )
+
+
+def provider() -> CapabilitySpec:
+    """Entry-point provider: the ``untaped.capabilities`` entry point names this."""
+    return SPEC

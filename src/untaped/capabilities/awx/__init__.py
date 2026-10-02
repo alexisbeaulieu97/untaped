@@ -12,7 +12,7 @@ from untaped.sdk import CapabilitySpec, SkillAsset, connection_check, online_che
 if TYPE_CHECKING:
     from cyclopts import App
 
-__all__ = ["SPEC", "build_app"]
+__all__ = ["SPEC", "build_app", "provider"]
 
 
 def build_app() -> App:
@@ -53,3 +53,8 @@ SPEC = CapabilitySpec(
         online_check("awx.api", section="awx", probe=_probe_api),
     ),
 )
+
+
+def provider() -> CapabilitySpec:
+    """Entry-point provider: the ``untaped.capabilities`` entry point names this."""
+    return SPEC

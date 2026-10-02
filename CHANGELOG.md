@@ -15,12 +15,30 @@
   - **New (SDK):** `UiContext.pick_many` opens an inline two-pane picker: fuzzy
     search with multi-select on the left, per-item settings on the right
     (`PickRequest`, `PickItem`, `PickSetting`, `PickCatalog`, `PickResult`,
-    `Picked`; API `3.2`). `ScriptedPromptBackend(picks=...)` scripts it in
+    `Picked`). `ScriptedPromptBackend(picks=...)` scripts it in
     tests.
   - **New (SDK):** `RepoCache`, `cache_path`, `cache_key`, `list_caches`,
     `cache_origin`, `repo_url_parts` and `scoped_auth_header`: one bare-repo
     cache building block for any capability.
   - **Breaking:** `safe_cache_path` is removed; use `cache_path`.
+  - **Breaking:** providers drop `api_requires`; the capability API version is
+    gone. A provider's `untaped` requirement is the only compatibility check.
+    `untaped capabilities` loses its `api` and `origin` columns and lists
+    capabilities in name order.
+  - **Breaking:** two or more providers claiming the same capability name or
+    config section are now all quarantined, with a warning naming every
+    claimant. Before, the first-party capability won, or the first external
+    in discovery order. A plugin that claims a first-party name or section
+    (say `github`) now disables that capability too; uninstall one to restore
+    the other.
+  - **Behavior change:** first-party capabilities register through
+    `untaped.capabilities` entry points like any plugin. A failing capability
+    is quarantined instead of stopping `untaped`. Each quarantined capability
+    warns once by name, and `untaped doctor` names the capability in its
+    quarantine rows.
+  - **Behavior change:** a capability whose commands fail to load fails only
+    its own command, with exit 4; `untaped doctor` reports it as a
+    `bad-app-factory` quarantine row.
 - Ansible
   - **Breaking:** `graph --upstream/--downstream/--both` are removed; use
     `--direction up|down|both`. Graph sources re-index once.

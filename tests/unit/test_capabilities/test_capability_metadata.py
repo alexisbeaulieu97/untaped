@@ -2,14 +2,13 @@
 
 This module is the CI-mode metadata validator: it runs on every pull
 request as part of the default ``pytest`` run. Compose mode stays lenient
-for externals (quarantine, never raise); built-in violations are fatal
-(an SDK bug).
+for every provider (quarantine, never raise), first-party ones included.
 
-Built-ins (§7.1): ``kind == "built-in"``, ``distribution == "untaped"``,
-``entry_point == ""``, ``api_requires == ((3, 0), (4, 0))``, and the reported
-version is always the unified product version — never per-capability.
+First-party capabilities ship in the ``untaped`` distribution, so their
+reported version is always the unified product version — never
+per-capability.
 
-Externals (§7.2, checked without importing provider code): capabilities
+Every provider (§7.2, checked without importing provider code): capabilities
 declared in the ``untaped.capabilities`` entry-point group, each
 entry-point name equal to its capability ``name``, a non-empty
 distribution name, and ``Requires-Dist`` on ``untaped`` admitting the
@@ -28,33 +27,36 @@ from types import SimpleNamespace
 import pytest
 
 import untaped.capabilities.registry as registry
-from test_capabilities.capharness import Provider, make_external, make_shell, make_spec
+from test_capabilities.capharness import Provider, make_candidate, make_shell, make_spec
+from tests.conftest import first_party_candidates
 from untaped.capabilities.registry import (
-    ExternalProvider,
+    ProviderCandidate,
     ProviderRef,
     compose,
-    discover_external_providers,
+    discover_candidates,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+FIRST_PARTY = {candidate.name: candidate for candidate in first_party_candidates()}
 
 
-def test_builtin_commit_carries_builtin_ref() -> None:
-    result = compose(make_shell(), [make_spec(name="builtin")], [])
+def test_first_party_commit_carries_its_entry_point() -> None:
+    result = compose(make_shell(), [FIRST_PARTY["github"]])
     (registered,) = result.capabilities
     assert registered.provider_ref == ProviderRef(
-        kind="built-in", distribution="untaped", entry_point="", api_requires=((3, 0), (4, 0))
+        distribution="untaped", entry_point="untaped.capabilities.github:provider"
     )
     assert result.quarantine == ()
 
 
-def test_builtin_version_is_the_product_version() -> None:
+def test_first_party_version_is_the_product_version() -> None:
     try:
         installed = importlib_metadata.version("untaped")
     except importlib_metadata.PackageNotFoundError:
         pytest.skip("untaped distribution metadata is not installed")
     declared = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert installed == declared["project"]["version"]
+    assert FIRST_PARTY["jira"].distribution_version == installed
 
 
 @pytest.mark.parametrize(
@@ -68,11 +70,11 @@ def test_builtin_version_is_the_product_version() -> None:
     ],
     ids=["wrong-group", "non-admitting", "malformed-requires", "name-mismatch", "no-distribution"],
 )
-def test_bad_external_metadata_quarantines(
+def test_bad_candidate_metadata_quarantines(
     distribution: str, name: str, kwargs: dict[str, object], named: list[str]
 ) -> None:
-    candidate = make_external(make_spec(name="real"), distribution, name=name, **kwargs)
-    result = compose(make_shell(), [], [candidate])
+    candidate = make_candidate(make_spec(name="real"), distribution, name=name, **kwargs)
+    result = compose(make_shell(), [candidate])
     assert result.capabilities == ()
     (record,) = result.quarantine
     assert record.reason == "bad-metadata"
@@ -98,13 +100,13 @@ def test_metadata_is_checked_before_import(
         return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(registry, "import_module", tracking_import)
-    candidate = ExternalProvider(
+    candidate = ProviderCandidate(
         distribution="example-dist",
         name="pinned",
         target="definitely.missing.row13_module:provider",
         **candidate_kwargs,  # type: ignore[arg-type]
     )
-    result = compose(make_shell(), [], [candidate])
+    result = compose(make_shell(), [candidate])
     assert calls == []
     (record,) = result.quarantine
     assert record.reason == "bad-metadata"
@@ -119,10 +121,10 @@ def _compose_with_sdk_version(
         return sdk_version if name == "untaped" else real_version(name)
 
     monkeypatch.setattr(registry.importlib_metadata, "version", fake_version)
-    candidate = make_external(
+    candidate = make_candidate(
         make_spec(name="pep440"), "example-dist", requires_dist=(requirement,)
     )
-    return compose(make_shell(), [], [candidate])
+    return compose(make_shell(), [candidate])
 
 
 @pytest.mark.parametrize(
@@ -161,15 +163,15 @@ def test_malformed_marker_quarantines(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_multi_entry_point_distribution_passes() -> None:
-    first = make_external(make_spec(name="alpha"), "multi-dist", distribution_version="1.2.3")
-    second = make_external(make_spec(name="beta"), "multi-dist", distribution_version="1.2.3")
-    result = compose(make_shell(), [], [second, first])
+    first = make_candidate(make_spec(name="alpha"), "multi-dist", distribution_version="1.2.3")
+    second = make_candidate(make_spec(name="beta"), "multi-dist", distribution_version="1.2.3")
+    result = compose(make_shell(), [second, first])
     assert [cap.spec.name for cap in result.capabilities] == ["alpha", "beta"]
     assert result.quarantine == ()
 
 
 def test_discover_without_distributions() -> None:
-    assert discover_external_providers(group="untaped.capabilities.no-such-group") == ()
+    assert discover_candidates(group="untaped.capabilities.no-such-group") == ()
 
 
 def test_live_discovery_composes_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -195,10 +197,67 @@ def test_live_discovery_composes_end_to_end(monkeypatch: pytest.MonkeyPatch) -> 
         "entry_points",
         lambda group=None: [fake_entry_point] if group == "untaped.capabilities" else [],
     )
-    providers = registry.discover_external_providers()
+    providers = registry.discover_candidates()
     (candidate,) = providers
     assert candidate.distribution == "live-dist"
     assert candidate.name == "live-cap"
-    result = compose(make_shell(), [], list(providers))
+    result = compose(make_shell(), list(providers))
     assert [cap.spec.name for cap in result.capabilities] == ["live-cap"]
     assert result.quarantine == ()
+
+
+class _CountingDist:
+    """Distribution double counting each metadata read."""
+
+    def __init__(self, reads: list[str]) -> None:
+        self._reads = reads
+
+    @property
+    def metadata(self) -> dict[str, str]:
+        self._reads.append("metadata")
+        return {"Name": "multi-dist"}
+
+    @property
+    def version(self) -> str:
+        self._reads.append("version")
+        return "2.0.0"
+
+    @property
+    def requires(self) -> list[str]:
+        self._reads.append("requires")
+        return ["untaped>=0"]
+
+
+def test_discovery_reads_each_distribution_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    reads: list[str] = []
+    dist = _CountingDist(reads)
+    entry_points = [
+        SimpleNamespace(name=name, value=f"mod:{name}", group="untaped.capabilities", dist=dist)
+        for name in ("alpha", "beta")
+    ]
+    monkeypatch.setattr(registry.importlib_metadata, "entry_points", lambda group: entry_points)
+    candidates = registry.discover_candidates()
+    assert [
+        (c.name, c.distribution, c.distribution_version, c.requires_dist) for c in candidates
+    ] == [
+        ("alpha", "multi-dist", "2.0.0", ("untaped>=0",)),
+        ("beta", "multi-dist", "2.0.0", ("untaped>=0",)),
+    ]
+    assert sorted(reads) == ["metadata", "requires", "version"]
+
+
+def test_compose_resolves_the_running_version_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    looked_up: list[str] = []
+
+    def fake_version(name: str) -> str:
+        looked_up.append(name)
+        return "6.1.0"
+
+    monkeypatch.setattr(registry.importlib_metadata, "version", fake_version)
+    candidates = [
+        make_candidate(make_spec(name=name), "example-dist", requires_dist=("untaped>=6",))
+        for name in ("alpha", "beta")
+    ]
+    result = compose(make_shell(), candidates)
+    assert [cap.spec.name for cap in result.capabilities] == ["alpha", "beta"]
+    assert looked_up == ["untaped"]

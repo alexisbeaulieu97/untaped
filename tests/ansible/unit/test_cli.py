@@ -18,6 +18,7 @@ import pytest
 import respx
 import yaml
 
+from tests.conftest import first_party_candidates
 from untaped.bootstrap import build_root_app
 from untaped.capabilities.ansible.application.refresh_git_index import RefreshResult
 from untaped.capabilities.ansible.cli import app, refresh
@@ -2473,7 +2474,7 @@ def test_old_direction_flags_are_gone(tmp_path: Path, monkeypatch, flag: str) ->
     _seed(tmp_path, "source:platform", _edge())
     _use_config(tmp_path, monkeypatch, _PLATFORM)
     result = invoke_cli(
-        build_root_app(externals=[]),
+        build_root_app(candidates=first_party_candidates()),
         ["ansible", "graph", "acme/site", "--source", "platform", flag],
     )
     assert result.exit_code == 2

@@ -28,6 +28,14 @@ dependencies = [
 [project.scripts]
 untaped = "untaped.__main__:main"
 
+[project.entry-points."untaped.capabilities"]
+ansible = "untaped.capabilities.ansible:provider"
+awx = "untaped.capabilities.awx:provider"
+github = "untaped.capabilities.github:provider"
+jira = "untaped.capabilities.jira:provider"
+recipe = "untaped.capabilities.recipe:provider"
+workspace = "untaped.capabilities.workspace:provider"
+
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
 build-backend = "uv_build"

@@ -11,6 +11,7 @@ import httpx
 import pytest
 import respx
 
+from tests.conftest import first_party_candidates
 from untaped.bootstrap import build_root_app
 from untaped.capabilities.github.cli import app
 from untaped.settings import get_settings
@@ -116,7 +117,9 @@ def _search(
         )
         if root_args:
             argv = [*root_args, "github", "search", *args]
-            result = invoke_cli(build_root_app(externals=[]), argv, input=input)
+            result = invoke_cli(
+                build_root_app(candidates=first_party_candidates()), argv, input=input
+            )
         else:
             result = CliInvoker().invoke(app, ["search", *args], input=input)
         if requests is not None:
@@ -452,7 +455,7 @@ def test_search_stdin_rejects_records_of_another_kind() -> None:
 
 def test_search_repo_stdin_alias_is_gone() -> None:
     result = invoke_cli(
-        build_root_app(externals=[]),
+        build_root_app(candidates=first_party_candidates()),
         ["github", "search", "code", "TODO", "--repo-stdin"],
         input="acme/api\n",
     )

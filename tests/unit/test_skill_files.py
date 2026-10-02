@@ -38,11 +38,12 @@ from cyclopts.exceptions import (
     ValidationError,
 )
 
-from untaped import bootstrap
+from tests.conftest import first_party_candidates
+from tests.unit.conftest import first_party_specs
 from untaped.bootstrap import build_root_app
 from untaped.capabilities.awx.domain.suite_starter import starter_suite
 
-SKILLS = {skill.name: skill for spec in bootstrap.BUILTIN_CAPABILITIES for skill in spec.skills}
+SKILLS = {skill.name: skill for spec in first_party_specs() for skill in spec.skills}
 
 
 def _skill_files() -> list[tuple[str, Path]]:
@@ -175,7 +176,7 @@ def _parse_problem(root: App, command: str, *, inline: bool) -> str | None:
 
 @pytest.fixture(scope="module")
 def root() -> App:
-    return build_root_app(externals=[])
+    return build_root_app(candidates=first_party_candidates())
 
 
 def _problems(root: App, commands: Iterator[tuple[str, bool]]) -> list[str]:

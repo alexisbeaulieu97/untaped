@@ -16,6 +16,7 @@ import pytest
 import respx
 from pydantic import ValidationError
 
+from tests.conftest import first_party_candidates
 from untaped import bootstrap
 from untaped.capabilities.jira.cli import app
 from untaped.capabilities.jira.settings import JiraSettings
@@ -511,7 +512,7 @@ def test_fields_documents_only_come_from_fields_file(
     ],
 )
 def test_old_spellings_are_gone(args: list[str]) -> None:
-    root = bootstrap.build_root_app(externals=[])
+    root = bootstrap.build_root_app(candidates=first_party_candidates())
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         route = mock.route().mock(return_value=httpx.Response(200, json={}))
         result = invoke_cli(root, ["jira", *args])

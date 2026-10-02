@@ -12,7 +12,7 @@ from untaped.sdk import CapabilitySpec, SkillAsset, executable_check
 if TYPE_CHECKING:
     from cyclopts import App
 
-__all__ = ["SPEC", "build_app"]
+__all__ = ["SPEC", "build_app", "provider"]
 
 
 def build_app() -> App:
@@ -49,3 +49,8 @@ SPEC = CapabilitySpec(
     ),
     doctor_checks=(executable_check("workspace.git", "git", purpose="workspace commands"),),
 )
+
+
+def provider() -> CapabilitySpec:
+    """Entry-point provider: the ``untaped.capabilities`` entry point names this."""
+    return SPEC

@@ -14,6 +14,7 @@ EXPECTED_SURFACE = frozenset(
         "assert_destructive_contract",
         "check_conventions",
         "invoke_cli",
+        "provider_candidate",
     }
 )
 
