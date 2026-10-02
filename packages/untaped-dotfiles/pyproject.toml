@@ -1,0 +1,17 @@
+[project]
+name = "untaped-dotfiles"
+version = "10.0.0"
+description = "Dotfiles capability for untaped."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }]
+requires-python = ">=3.14"
+dependencies = ["pydantic>=2.13.3,<3", "pyyaml>=6.0.3", "ruamel.yaml>=0.18.16", "untaped==10.0.0"]
+
+[project.entry-points."untaped.capabilities"]
+dotfiles = "untaped_dotfiles:provider"
+
+[build-system]
+requires = ["uv_build>=0.11.8,<0.12.0"]
+build-backend = "uv_build"

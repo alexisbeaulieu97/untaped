@@ -42,7 +42,8 @@ from untaped.sdk import SkillAsset
 from untaped_awx.domain.suite_starter import starter_suite
 
 SKILL_NAMES = tuple(
-    f"untaped-{name}" for name in ("ansible", "awx", "github", "jira", "recipe", "workspace")
+    f"untaped-{name}"
+    for name in ("ansible", "awx", "dotfiles", "github", "jira", "recipe", "workspace")
 )
 
 

@@ -11,6 +11,7 @@ members = [
     "untaped",
     "untaped-ansible",
     "untaped-awx",
+    "untaped-dotfiles",
     "untaped-github",
     "untaped-jira",
     "untaped-recipe",
@@ -761,6 +762,7 @@ dependencies = [
 all = [
     { name = "untaped-ansible" },
     { name = "untaped-awx" },
+    { name = "untaped-dotfiles" },
     { name = "untaped-github" },
     { name = "untaped-jira" },
     { name = "untaped-recipe" },
@@ -771,6 +773,9 @@ ansible = [
 ]
 awx = [
     { name = "untaped-awx" },
+]
+dotfiles = [
+    { name = "untaped-dotfiles" },
 ]
 github = [
     { name = "untaped-github" },
@@ -802,6 +807,8 @@ requires-dist = [
     { name = "untaped-ansible", marker = "extra == 'ansible'", editable = "packages/untaped-ansible" },
     { name = "untaped-awx", marker = "extra == 'all'", editable = "packages/untaped-awx" },
     { name = "untaped-awx", marker = "extra == 'awx'", editable = "packages/untaped-awx" },
+    { name = "untaped-dotfiles", marker = "extra == 'all'", editable = "packages/untaped-dotfiles" },
+    { name = "untaped-dotfiles", marker = "extra == 'dotfiles'", editable = "packages/untaped-dotfiles" },
     { name = "untaped-github", marker = "extra == 'all'", editable = "packages/untaped-github" },
     { name = "untaped-github", marker = "extra == 'github'", editable = "packages/untaped-github" },
     { name = "untaped-jira", marker = "extra == 'all'", editable = "packages/untaped-jira" },
@@ -811,7 +818,7 @@ requires-dist = [
     { name = "untaped-workspace", marker = "extra == 'all'", editable = "packages/untaped-workspace" },
     { name = "untaped-workspace", marker = "extra == 'workspace'", editable = "packages/untaped-workspace" },
 ]
-provides-extras = ["all", "ansible", "awx", "github", "jira", "recipe", "workspace"]
+provides-extras = ["all", "ansible", "awx", "dotfiles", "github", "jira", "recipe", "workspace"]
 
 [[package]]
 name = "untaped-ansible"
@@ -840,6 +847,25 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6,<4" },
+    { name = "untaped", editable = "packages/untaped" },
+]
+
+[[package]]
+name = "untaped-dotfiles"
+version = "10.0.0"
+source = { editable = "packages/untaped-dotfiles" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "ruamel-yaml" },
+    { name = "untaped" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.13.3,<3" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "ruamel-yaml", specifier = ">=0.18.16" },
     { name = "untaped", editable = "packages/untaped" },
 ]
 
