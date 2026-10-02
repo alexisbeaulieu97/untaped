@@ -5,7 +5,7 @@
 `untaped` needs Python 3.14 and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-uv tool install untaped
+uv tool install 'untaped[all]'   # or 'untaped[<name>]' for one tool, e.g. 'untaped[awx]'
 untaped --version
 untaped --help
 ```

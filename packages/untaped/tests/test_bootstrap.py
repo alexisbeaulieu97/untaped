@@ -23,7 +23,7 @@ import pytest
 from cyclopts import App
 from pydantic import BaseModel
 
-from test_capabilities.capharness import make_candidate
+from test_capabilities.capharness import make_candidate, make_spec
 from untaped import bootstrap
 from untaped.app_context import app_context
 from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
@@ -748,3 +748,24 @@ def test_cyclopts_private_internals_used_by_lazy_mounts_exist() -> None:
         "cyclopts internal API drift: bootstrap._LazyCapabilityCommand relies on "
         f"{', '.join(missing)}; update it (or pin cyclopts) before upgrading"
     )
+
+
+def test_bare_root_help_says_how_to_install_capabilities() -> None:
+    root = bootstrap.build_root_app(candidates=[])
+    result = CliInvoker().invoke(root.meta, ["--help"])
+    assert result.exit_code == 0
+    assert bootstrap.INSTALL_HINT in " ".join(result.stdout.split())
+
+
+def test_root_help_with_a_capability_has_no_install_hint() -> None:
+    root = bootstrap.build_root_app(candidates=[provider_candidate(make_spec("demo"))])
+    assert "untaped[all]" not in CliInvoker().invoke(root.meta, ["--help"]).stdout
+
+
+@pytest.mark.usefixtures("_isolated_config")
+@pytest.mark.parametrize(
+    "argv", [["config", "list"], ["profile", "list"], ["doctor"], ["skills", "list"]]
+)
+def test_bare_management_commands_work(argv: list[str]) -> None:
+    root = bootstrap.build_root_app(candidates=[])
+    assert CliInvoker().invoke(root.meta, argv).exit_code == 0

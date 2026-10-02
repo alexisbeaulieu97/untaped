@@ -23,12 +23,20 @@ from untaped.cli import (
     ColumnsOption,
     FormatOption,
     create_app,
+    echo,
     report_errors,
 )
 from untaped.management._render import emit_isolated
 from untaped.theme import OutputFormat
 
 _UNKNOWN = "unknown"
+
+#: Shown by root ``--help`` and an empty ``capabilities`` listing when a bare
+#: ``untaped`` install has no capability providers.
+INSTALL_HINT = (
+    "No capabilities are installed. Install them all with: pip install 'untaped[all]' "
+    "(or one, e.g. 'untaped[awx]')."
+)
 
 
 def build_root_capabilities_app(
@@ -62,13 +70,17 @@ def _show(
     fmt: OutputFormat,
     columns: list[str] | None,
 ) -> None:
+    rows = _rows(result, candidates)
     emit_isolated(
-        _rows(result, candidates),
+        rows,
         fmt=fmt,
         columns=columns,
         kind="untaped.capability",
         table_columns=["name", "status", "distribution", "version"],
     )
+    if not rows:
+        # ``sdk.hint`` only renders ``hint: run `<command>```, so print the prefix directly.
+        echo(f"hint: {INSTALL_HINT}", err=True)
 
 
 def _rows(
@@ -103,4 +115,4 @@ def _rows(
     ]
 
 
-__all__ = ["build_root_capabilities_app"]
+__all__ = ["INSTALL_HINT", "build_root_capabilities_app"]

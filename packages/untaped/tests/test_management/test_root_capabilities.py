@@ -155,3 +155,25 @@ def test_listing_is_not_blocked_by_invalid_settings(_isolated_config: Path) -> N
     invoked = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
     assert invoked.exit_code == 0, invoked.output
     assert {row["name"] for row in _rows(invoked.stdout)} == {"github", "jira"}
+
+
+def test_bare_capabilities_listing_prints_the_hint_on_stderr() -> None:
+    root = bootstrap.build_root_app(candidates=[])
+    result = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == []
+    # JSON output turns stderr diagnostics into one JSON line, level taken from the prefix.
+    assert json.loads(result.stderr) == {"level": "hint", "message": bootstrap.INSTALL_HINT}
+
+
+def test_bare_capabilities_listing_hint_is_a_plain_hint_line_in_text_mode() -> None:
+    root = bootstrap.build_root_app(candidates=[])
+    result = CliInvoker().invoke(root.meta, ["capabilities"])
+    assert result.exit_code == 0
+    assert result.stderr.strip() == f"hint: {bootstrap.INSTALL_HINT}"
+
+
+def test_listing_with_a_capability_has_no_install_hint() -> None:
+    root = bootstrap.build_root_app(candidates=[make_candidate(make_spec("demo"))])
+    result = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])
+    assert "untaped[all]" not in result.stderr
