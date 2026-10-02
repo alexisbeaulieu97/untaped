@@ -11,15 +11,16 @@ from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, TextIO
 
 import pytest
 from pydantic import BaseModel
 
-from untaped import bootstrap, cli
+from untaped import bootstrap, cli, repo_cache
 from untaped.auth import clear_token_cache
+from untaped.git import GitResult
 from untaped.prompts import reset_terminal_override, set_terminal_override
 from untaped.records import table_columns_of
 from untaped.settings import get_settings
@@ -105,6 +106,38 @@ def fresh_composition() -> Iterator[None]:
     """
     yield
     bootstrap._clear_for_tests()
+
+
+#: One ``RepoCache`` git call seen by ``spy_run_git``: subcommand, auth header, auth URL.
+GitCall = tuple[str, str | None, str | None]
+
+
+@pytest.fixture
+def spy_run_git(monkeypatch: pytest.MonkeyPatch) -> list[GitCall]:
+    """Record each ``RepoCache`` git call's subcommand and auth; git still runs."""
+    seen: list[GitCall] = []
+    real = repo_cache.run_git
+
+    def spy(args: Sequence[str], **kwargs: Any) -> GitResult:
+        seen.append((args[0], kwargs.get("auth_header"), kwargs.get("auth_url")))
+        return real(args, **kwargs)
+
+    monkeypatch.setattr(repo_cache, "run_git", spy)
+    return seen
+
+
+@pytest.fixture
+def rewrite_to(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Callable[..., None]:
+    """``rewrite_to(origin, *urls)`` points ``urls`` at the local ``origin`` (no network)."""
+
+    def rewrite(origin: Path, *urls: str) -> None:
+        config = tmp_path / "gitconfig"
+        config.write_text(
+            f'[url "{origin.as_uri()}"]\n' + "".join(f"\tinsteadOf = {url}\n" for url in urls)
+        )
+        monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+
+    return rewrite
 
 
 #: The rule suffix of a ``table_default_violations`` line.

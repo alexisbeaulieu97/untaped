@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 import pytest
 
+from tests.conftest import GitCall
 from untaped.capabilities.ansible.infrastructure.git_cache import (
     GitCacheError,
     GitRepositoryCache,
@@ -166,29 +167,6 @@ def _origin(tmp_path: Path) -> Path:
     return upstream
 
 
-def _rewrite_to(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, origin: Path, *urls: str) -> None:
-    """Point ``urls`` at the local ``origin`` through a global gitconfig (no network)."""
-    config = tmp_path / "gitconfig"
-    config.write_text(
-        f'[url "file://{origin}"]\n' + "".join(f"\tinsteadOf = {url}\n" for url in urls)
-    )
-    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
-
-
-def _spy_headers(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str | None, str | None]]:
-    import untaped.repo_cache as repo_cache_module
-
-    headers: list[tuple[str, str | None, str | None]] = []
-    real = repo_cache_module.run_git
-
-    def spy(args: Any, **kwargs: Any) -> Any:
-        headers.append((args[0], kwargs.get("auth_header"), kwargs.get("auth_url")))
-        return real(args, **kwargs)
-
-    monkeypatch.setattr(repo_cache_module, "run_git", spy)
-    return headers
-
-
 @pytest.mark.parametrize(
     ("url", "expected"),
     [
@@ -198,12 +176,16 @@ def _spy_headers(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str | None,
     ],
 )
 def test_a_token_goes_only_to_the_github_host(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, url: str, expected: str | None
+    tmp_path: Path,
+    rewrite_to: Callable[..., None],
+    spy_run_git: list[GitCall],
+    url: str,
+    expected: str | None,
 ) -> None:
     """Refresh against an origin on another host or over ssh sends no header (9.x sent it)."""
     origin = _origin(tmp_path)
-    _rewrite_to(monkeypatch, tmp_path, origin, url)
-    headers = _spy_headers(monkeypatch)
+    rewrite_to(origin, url)
+    headers = spy_run_git
     cache = GitRepositoryCache(auth_host="github.com")
 
     bare = cache.ensure_bare(url, cache_dir=tmp_path / "cache", auth_header="AUTH")
@@ -239,16 +221,15 @@ def test_https_and_ssh_urls_share_one_cache_path(tmp_path: Path, url: str) -> No
 
 
 def test_fetch_refs_without_refspecs_runs_no_git(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, spy_run_git: list[GitCall]
 ) -> None:
-    headers = _spy_headers(monkeypatch)
     bare = tmp_path / "cache" / "app.git"
 
     GitRepositoryCache(auth_host=None).fetch_refs(
         bare, refspecs=[], depth=1, blob_filter=True, auth_header=None
     )
 
-    assert headers == []
+    assert spy_run_git == []
     assert not (tmp_path / "cache").exists()
 
 
