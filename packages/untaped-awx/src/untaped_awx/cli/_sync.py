@@ -1,0 +1,74 @@
+"""Shared-selection sync commands for projects, sources and inventories."""
+
+from __future__ import annotations
+
+from typing import Annotated
+
+from cyclopts import App, Parameter
+
+from untaped.sdk import ColumnsOption, FormatOption, report_errors, writes
+from untaped_awx.cli._action_runner import (
+    run_action_selection,
+    validate_wait_flags,
+)
+from untaped_awx.cli._mutation_runner import validate_controls
+from untaped_awx.cli._selection import SELECTION_DEFAULTS, SelectionOptions
+from untaped_awx.cli.context import open_context
+from untaped_awx.cli.options import (
+    CancelOption,
+    ContinueOption,
+    DryRunOption,
+    FollowOption,
+    NamesArgument,
+    ParallelOption,
+    WaitTimeoutOption,
+    YesOption,
+)
+from untaped_awx.infrastructure.spec import AwxResourceSpec
+
+
+def _add_sync(app: App, spec: AwxResourceSpec) -> None:
+    @app.command(name="sync")
+    @writes
+    def sync_command(
+        names: NamesArgument = None,
+        /,
+        *,
+        selection: SelectionOptions = SELECTION_DEFAULTS,
+        dry_run: DryRunOption = False,
+        yes: YesOption = False,
+        continue_on_error: ContinueOption = False,
+        parallel: ParallelOption = 1,
+        wait: Annotated[
+            bool, Parameter(negative="", help="Wait for success; fail on unsuccessful execution.")
+        ] = False,
+        follow: FollowOption = False,
+        timeout: WaitTimeoutOption = None,
+        cancel: CancelOption = False,
+        fmt: FormatOption = "table",
+        columns: ColumnsOption = None,
+    ) -> None:
+        """Sync a fixed selection; inventories expand to their current source IDs."""
+        validate_wait_flags(timeout=timeout, cancel=cancel, wait=wait, follow=follow)
+        with report_errors():
+            parallel = validate_controls(yes=yes, dry_run=dry_run, parallel=parallel)
+            with open_context() as ctx:
+                selected = selection.select(ctx, spec, names)
+                run_action_selection(
+                    ctx,
+                    spec,
+                    selected,
+                    action="sync",
+                    dry_run=dry_run,
+                    yes=yes,
+                    # Mass or multi-target selections preview and confirm first.
+                    confirm=len(selected) > 1 or selection.mass,
+                    parallel=parallel,
+                    continue_on_error=continue_on_error,
+                    wait=wait,
+                    follow=follow,
+                    timeout=timeout,
+                    cancel=cancel,
+                    fmt=fmt,
+                    columns=columns,
+                )

@@ -3,6 +3,7 @@ members = ["packages/*"]
 
 [tool.uv.sources]
 untaped = { workspace = true }
+untaped-awx = { workspace = true }
 untaped-recipe = { workspace = true }
 untaped-jira = { workspace = true }
 
@@ -71,14 +72,15 @@ files = [
     "packages/untaped/src",
     "packages/untaped-jira/src",
     "packages/untaped-recipe/src",
+    "packages/untaped-awx/src",
     "scripts/release.py",
 ]
-mypy_path = ["packages/untaped/src", "packages/untaped-jira/src", "packages/untaped-recipe/src"]
+mypy_path = ["packages/untaped/src", "packages/untaped-jira/src", "packages/untaped-recipe/src", "packages/untaped-awx/src"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-testpaths = ["packages/untaped/tests", "packages/untaped-jira/tests", "packages/untaped-recipe/tests", "tests"]
-pythonpath = ["scripts", "packages/untaped/tests", "packages/untaped-jira/tests", "packages/untaped-recipe/tests"]
+testpaths = ["packages/untaped/tests", "packages/untaped-jira/tests", "packages/untaped-recipe/tests", "tests", "packages/untaped-awx/tests"]
+pythonpath = ["scripts", "packages/untaped/tests", "packages/untaped-jira/tests", "packages/untaped-recipe/tests", "packages/untaped-awx/tests"]
 addopts = [
     "-ra",
     "--strict-markers",
@@ -91,7 +93,7 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["packages/untaped/src", "packages/untaped-jira/src", "packages/untaped-recipe/src"]
+source = ["packages/untaped/src", "packages/untaped-jira/src", "packages/untaped-recipe/src", "packages/untaped-awx/src"]
 omit = ["**/tests/**", "**/__main__.py"]
 
 [tool.coverage.report]

@@ -9,6 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "untaped",
+    "untaped-awx",
     "untaped-jira",
     "untaped-recipe",
 ]
@@ -743,7 +744,6 @@ dependencies = [
     { name = "cyclopts" },
     { name = "filelock" },
     { name = "httpx" },
-    { name = "jinja2" },
     { name = "packaging" },
     { name = "prompt-toolkit" },
     { name = "pydantic" },
@@ -756,8 +756,12 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
+    { name = "untaped-awx" },
     { name = "untaped-jira" },
     { name = "untaped-recipe" },
+]
+awx = [
+    { name = "untaped-awx" },
 ]
 jira = [
     { name = "untaped-jira" },
@@ -771,7 +775,6 @@ requires-dist = [
     { name = "cyclopts", specifier = ">=4.16.0,<5" },
     { name = "filelock", specifier = ">=3.29.7,<4" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "jinja2", specifier = ">=3.1.6,<4" },
     { name = "packaging", specifier = ">=26.2,<27" },
     { name = "prompt-toolkit", specifier = ">=3.0.52" },
     { name = "pydantic", specifier = ">=2.13.3,<3" },
@@ -780,12 +783,29 @@ requires-dist = [
     { name = "rich", specifier = ">=15.0.0" },
     { name = "ruamel-yaml", specifier = ">=0.18.16" },
     { name = "truststore", specifier = ">=0.10.4" },
+    { name = "untaped-awx", marker = "extra == 'all'", editable = "packages/untaped-awx" },
+    { name = "untaped-awx", marker = "extra == 'awx'", editable = "packages/untaped-awx" },
     { name = "untaped-jira", marker = "extra == 'all'", editable = "packages/untaped-jira" },
     { name = "untaped-jira", marker = "extra == 'jira'", editable = "packages/untaped-jira" },
     { name = "untaped-recipe", marker = "extra == 'all'", editable = "packages/untaped-recipe" },
     { name = "untaped-recipe", marker = "extra == 'recipe'", editable = "packages/untaped-recipe" },
 ]
-provides-extras = ["all", "jira", "recipe"]
+provides-extras = ["all", "awx", "jira", "recipe"]
+
+[[package]]
+name = "untaped-awx"
+version = "10.0.0a0"
+source = { editable = "packages/untaped-awx" }
+dependencies = [
+    { name = "jinja2" },
+    { name = "untaped" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jinja2", specifier = ">=3.1.6,<4" },
+    { name = "untaped", editable = "packages/untaped" },
+]
 
 [[package]]
 name = "untaped-jira"

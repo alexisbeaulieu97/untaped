@@ -13,7 +13,8 @@ from repo.support import FIRST_PARTY
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = REPO_ROOT / "packages"
-EXPECTED_MEMBERS = ["untaped", "untaped-jira", "untaped-recipe"]  # Tasks 4 and 5 extend this list
+# Task 5 extends this list
+EXPECTED_MEMBERS = ["untaped", "untaped-awx", "untaped-jira", "untaped-recipe"]
 
 
 def _members() -> list[str]:
