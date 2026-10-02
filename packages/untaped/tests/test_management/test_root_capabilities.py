@@ -27,7 +27,7 @@ from untaped.capabilities.registry import (
     ProviderCandidate,
     QuarantineRecord,
 )
-from untaped.management.capabilities import build_root_capabilities_app
+from untaped.management.capabilities import INSTALL_HINT, build_root_capabilities_app
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker
 
@@ -163,25 +163,25 @@ def test_bare_capabilities_listing_prints_the_hint_on_stderr() -> None:
     assert result.exit_code == 0
     assert json.loads(result.stdout) == []
     # JSON output turns stderr diagnostics into one JSON line, level taken from the prefix.
-    assert json.loads(result.stderr) == {"level": "hint", "message": bootstrap.INSTALL_HINT}
+    assert json.loads(result.stderr) == {"level": "hint", "message": INSTALL_HINT}
 
 
 def test_bare_capabilities_listing_hint_is_a_plain_hint_line_in_text_mode() -> None:
     root = bootstrap.build_root_app(candidates=[])
     result = CliInvoker().invoke(root.meta, ["capabilities"])
     assert result.exit_code == 0
-    assert result.stderr.strip() == f"hint: {bootstrap.INSTALL_HINT}"
+    assert result.stderr.strip() == f"hint: {INSTALL_HINT}"
 
 
 def test_listing_with_a_capability_has_no_install_hint() -> None:
     root = bootstrap.build_root_app(candidates=[make_candidate(make_spec("demo"))])
     result = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])
     assert "hint:" not in result.stderr
-    assert bootstrap.INSTALL_HINT not in result.stderr
+    assert INSTALL_HINT not in result.stderr
 
 
 def test_listing_with_only_quarantined_providers_has_no_install_hint() -> None:
     root = bootstrap.build_root_app(candidates=[make_candidate(make_spec("demo"), name="other")])
     result = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])
     assert _rows(result.stdout)
-    assert bootstrap.INSTALL_HINT not in result.stderr
+    assert INSTALL_HINT not in result.stderr

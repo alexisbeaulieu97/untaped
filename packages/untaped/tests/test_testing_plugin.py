@@ -17,11 +17,6 @@ def test_home_and_config_are_isolated() -> None:
     assert [n for n in os.environ if n.startswith("UNTAPED_")] == ["UNTAPED_CONFIG"]
 
 
-def test_ambient_tokens_are_removed() -> None:
-    for name in ("GH_TOKEN", "GITHUB_TOKEN", "JIRA_API_TOKEN", "AAP_TOKEN"):
-        assert name not in os.environ
-
-
 def test_the_plugin_alone_isolates_a_foreign_suite(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:

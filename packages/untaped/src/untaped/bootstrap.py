@@ -253,7 +253,8 @@ class _LazyCapabilityCommand(CommandSpec):
     root the command was mounted on (not whichever app dispatch passes in,
     which may be the meta app). The private cyclopts internals touched here
     are pinned by ``uv.lock`` and guarded by the internals-presence and
-    lazy-vs-eager rendering tests in ``tests/unit/test_bootstrap.py``.
+    lazy-vs-eager rendering test in ``tests/repo/test_first_party_composition.py``
+    and the internals tests in ``packages/untaped/tests/test_bootstrap.py``.
     """
 
     def __init__(self, capability: RegisteredCapability, mount_parent: App) -> None:

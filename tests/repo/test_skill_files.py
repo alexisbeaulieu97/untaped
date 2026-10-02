@@ -204,7 +204,9 @@ def test_the_starter_suite_comments_name_real_commands(root: App) -> None:
     assert _problems(root, iter(commands)) == []
 
 
-_REPO_ONLY = re.compile(r"(?<![\w.~/-])docs/|untaped repository|\bsrc/untaped\b|CONTRIBUTING\.md")
+_REPO_ONLY = re.compile(
+    r"(?<![\w.~/-])docs/|untaped repository|\bsrc/untaped\b|\bpackages/untaped|CONTRIBUTING\.md"
+)
 
 
 @pytest.mark.parametrize("name", SKILL_NAMES)
