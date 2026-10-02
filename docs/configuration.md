@@ -26,6 +26,24 @@ but the older install reads a renamed key's default. Give the second install
 its own `UNTAPED_CONFIG` (its state follows it); `untaped doctor` reports
 keys the running version ignores.
 
+### File format
+
+A top-level `format_version` in `config.yml` or `state.yml` names the file's
+on-disk format; a file without it is format 1, the current format, and untaped
+never adds or removes the key. A file with a newer format, or a
+`format_version` that is not a positive integer, is refused on read and on
+write (exit 4): upgrade untaped instead of letting an older release misread
+it.
+
+- Within a major, a core-owned key may be added only if an older reader
+  ignoring it is safe.
+- If ignoring it would change behaviour you rely on (TLS verification, a
+  proxy, anything security-relevant), it is a format bump, and waits for a
+  major.
+- A format bump only happens in a major.
+- An older untaped refuses a newer-format file instead of ignoring what it
+  does not know.
+
 `config` and `profile` commands write only `config.yml`; capability state
 writes touch only `state.yml`.
 

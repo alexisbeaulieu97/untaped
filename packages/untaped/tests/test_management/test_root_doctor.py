@@ -425,6 +425,27 @@ def test_non_mapping_config_root_fails_config_row(_isolated_config: Path) -> Non
     assert "root must be a mapping" in _failed(rows)["load config file"]
 
 
+def test_a_newer_format_fails_the_config_rows(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "format_version: 2\nprofiles: {}\n")
+    (_isolated_config.parent / "state.yml").write_text("format_version: 2\n")
+    code, rows = _rows(_doctor_app())
+    assert code == 1
+    failed = _failed(rows)
+    assert "written by a newer untaped (format 2" in failed["load config file"]
+    assert "written by a newer untaped (format 2" in failed["load state file"]
+
+
+def test_an_explicit_format_version_is_not_an_unknown_key(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "format_version: 1\nprofiles:\n  default: {}\n")
+    (_isolated_config.parent / "state.yml").write_text("format_version: 1\n")
+    code, rows = _rows(
+        _doctor_app(make_spec("github", profile_model=GithubProfile, state_model=GithubState))
+    )
+    assert code == 0, _failed(rows)
+    (unknown,) = [row for row in rows if row["check"] == "unknown-keys"]
+    assert unknown["status"] == _PASS
+
+
 def test_active_profile_missing_without_profiles_fails_profile_row(
     _isolated_config: Path,
 ) -> None:

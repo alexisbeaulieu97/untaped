@@ -74,6 +74,7 @@ RESERVED = [
     "ui",
     "profiles",
     "active",
+    "format_version",
     "config",
     "profile",
     "skills",
