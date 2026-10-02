@@ -70,12 +70,19 @@ class AppliedRecord(BaseModel):
     source: str
     """The repo-relative path placed (a directory entry's child, or the entry's source)."""
     mode: Mode
+    fmt: MergeFormat | None = None
+    """``merge`` only: the format the tool wrote, so ``remove`` rewrites the file the same way."""
     source_commit: str | None = None
     source_hash: str
     target_hash: str
     managed: tuple[KeyPath, ...] = ()
     """``merge`` only: the key paths the tool wrote into the target document."""
     applied_at: UtcTimestamp
+
+
+def item_id(repo: str, name: str) -> str:
+    """The id of a manifest item on this machine: ``<repo>/<item>`` (the ``ItemChoice`` key)."""
+    return f"{repo}/{name}"
 
 
 @dataclass(frozen=True)

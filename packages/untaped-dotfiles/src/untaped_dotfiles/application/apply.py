@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 from untaped.sdk import ErrorInfo, UntapedError, note_failure, q
 from untaped_dotfiles.domain.models import AppliedRecord, RepoRecord
 from untaped_dotfiles.domain.records import PlaceAction, PlaceOutcome, RepoOutcome
-from untaped_dotfiles.domain.status import Action, sync_action
+from untaped_dotfiles.domain.status import Action, sync_action, target_modified
 from untaped_dotfiles.errors import DotfilesError, GitError
 
 if TYPE_CHECKING:
@@ -217,8 +217,11 @@ class Applier:
             return self._row(step, action, step.detail)
         try:
             if step.action == "remove":
-                self._remove(step)
-                return self._row(step, "deleted", "removed; the source is gone from the repo")
+                kept = self._remove(step)
+                gone = "removed; the source is gone from the repo"
+                return self._row(
+                    step, "deleted", f"{gone}; kept the edited version at {kept}" if kept else gone
+                )
             kept = self._place(step)
             done: PlaceAction = "created" if step.found.record is None else "updated"
             detail = f"kept the previous version at {kept}" if kept else ""
@@ -254,7 +257,7 @@ class Applier:
         present = target.is_symlink() or target.exists()
         kept: Path | None = None
         if p.mode == "merge":
-            if present and (record is None or not ours):
+            if present and not ours:
                 kept = self._placer.keep_aside(target, repo=p.repo.name, item=p.item, copy=True)
             data = self._evaluator.tree(p.repo).read(p.source)
             assert p.fmt is not None  # validated by the manifest
@@ -280,6 +283,7 @@ class Applier:
                 file=p.file,
                 source=p.source,
                 mode=p.mode,
+                fmt=p.fmt,
                 source_commit=found.commit,
                 source_hash=source_hash,
                 target_hash=target_hash,
@@ -290,17 +294,26 @@ class Applier:
         return kept
 
     def _remove(self, step: Step) -> Path | None:
-        """Remove what the tool placed; a locally edited copy is kept aside instead of deleted."""
+        """Remove what the tool placed.
+
+        A target that is no longer what the tool wrote (whatever its state,
+        an orphan included) is kept aside instead of deleted; a merge target
+        whose managed keys were edited is copied aside before the keys go.
+        """
         p, record = step.placement, step.found.record
         if record is None:
             return None
         target = p.target
         kept: Path | None = None
+        present = target.is_symlink() or target.exists()
         if p.mode == "merge":
-            if p.fmt is not None:
+            if present and p.fmt is not None:
+                observed = self._placer.observe(target, fmt=p.fmt, managed=record.managed)
+                if target_modified(p.mode, record, observed):
+                    kept = self._placer.keep_aside(target, repo=p.repo.name, item=p.item, copy=True)
                 self._placer.unmerge(target, fmt=p.fmt, managed=record.managed)
-        elif target.is_symlink() or target.exists():
-            if step.found.state in ("modified", "conflict"):
+        elif present:
+            if target_modified(p.mode, record, self._placer.observe(target)):
                 kept = self._placer.keep_aside(target, repo=p.repo.name, item=p.item)
             else:
                 self._placer.delete(target)

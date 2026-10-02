@@ -21,6 +21,7 @@ from untaped_dotfiles.domain.models import (
     MergeFormat,
     Mode,
     RepoRecord,
+    item_id,
 )
 from untaped_dotfiles.domain.selection import effective_mode, selected_files
 from untaped_dotfiles.errors import DotfilesError, ManifestError
@@ -129,7 +130,7 @@ class Inventory:
         # an item that failed to resolve is reported, not treated as all orphans
         resolved = {c.id for c in choices} - {item for item, _ in problems}
         for record in self._store.applied():
-            if f"{record.repo}/{record.item}" in resolved and record.target not in placed:
+            if item_id(record.repo, record.item) in resolved and record.target not in placed:
                 found.append(self._orphan(record, choices))
         return Resolved(found, problems)
 
@@ -190,8 +191,8 @@ class Inventory:
         repo = self._store.get_repo(record.repo)
         assert repo is not None  # the item resolved above, so its repo exists
         fmt: MergeFormat | None = None
-        if record.mode == "merge":
-            fmt = "json" if record.target.endswith(".json") else "yaml"
+        if record.mode == "merge":  # records written before ``fmt`` existed go by extension
+            fmt = record.fmt or ("json" if record.target.endswith(".json") else "yaml")
         return Placement(
             repo=repo,
             choice=choice,

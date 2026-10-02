@@ -2,8 +2,8 @@
 
 JSON is rewritten with two-space indentation (programs that own such files,
 editor and agent settings, write it that way too). YAML goes through
-``ruamel.yaml``'s round-trip loader so the target's comments, order and
-quoting survive a merge; ``ruamel.yaml`` is imported lazily.
+``ruamel.yaml``'s round-trip loader so the target's comments, order, quoting
+and list indentation survive a merge; ``ruamel.yaml`` is imported lazily.
 """
 
 from __future__ import annotations
@@ -12,8 +12,6 @@ import io
 import json
 from collections.abc import MutableMapping
 from typing import Any
-
-import yaml
 
 from untaped_dotfiles.domain.models import MergeFormat
 from untaped_dotfiles.errors import DotfilesError
@@ -24,10 +22,8 @@ def load_document(text: str, *, fmt: MergeFormat, where: str) -> MutableMapping[
     if not text.strip():
         return _empty(fmt)
     try:
-        raw: Any = json.loads(text) if fmt == "json" else _yaml().load(text)
-    except (json.JSONDecodeError, yaml.YAMLError) as exc:
-        raise DotfilesError(f"{where} is invalid {fmt.upper()}: {exc}", category="invalid") from exc
-    except Exception as exc:  # ruamel raises its own error classes
+        raw: Any = json.loads(text) if fmt == "json" else _yaml(text).load(text)
+    except Exception as exc:  # json and ruamel each raise their own classes
         raise DotfilesError(f"{where} is invalid {fmt.upper()}: {exc}", category="invalid") from exc
     if raw is None:
         return _empty(fmt)
@@ -36,11 +32,12 @@ def load_document(text: str, *, fmt: MergeFormat, where: str) -> MutableMapping[
     return raw
 
 
-def dump_document(document: MutableMapping[str, Any], *, fmt: MergeFormat) -> str:
+def dump_document(document: MutableMapping[str, Any], *, fmt: MergeFormat, like: str = "") -> str:
+    """Render ``document``; YAML lists are indented the way ``like`` (the original text) was."""
     if fmt == "json":
         return json.dumps(document, indent=2, ensure_ascii=False) + "\n"
     out = io.StringIO()
-    _yaml().dump(document, out)
+    _yaml(like).dump(document, out)
     return out.getvalue()
 
 
@@ -57,11 +54,22 @@ def _empty(fmt: MergeFormat) -> MutableMapping[str, Any]:
     return CommentedMap()
 
 
-def _yaml() -> Any:
+def _yaml(like: str) -> Any:
+    """A round-trip loader/dumper indenting lists like ``like`` (``-`` under the key by default)."""
     from ruamel.yaml import YAML  # noqa: PLC0415
+    from ruamel.yaml.util import load_yaml_guess_indent  # noqa: PLC0415
 
     rt = YAML()
     rt.preserve_quotes = True
     rt.width = 4096
-    rt.indent(mapping=2, sequence=4, offset=2)
+    sequence, offset = 2, 0
+    if like.strip():
+        try:
+            _, guessed_sequence, guessed_offset = load_yaml_guess_indent(like)
+        except Exception:  # unparsable text: the caller reports it when loading
+            pass
+        else:
+            if guessed_sequence is not None and guessed_offset is not None:
+                sequence, offset = guessed_sequence, guessed_offset
+    rt.indent(mapping=2, sequence=sequence, offset=offset)
     return rt
