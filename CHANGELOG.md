@@ -10,6 +10,12 @@
     is gone. `CAPABILITY_API_VERSION` and `get_core_settings` are removed.
   - **Breaking:** `PromptInterruptedError` is no longer a `ConfigError`;
     Ctrl-C at a prompt now always exits 130.
+  - **New:** bare `untaped --help` and `untaped capabilities` print how to
+    install capabilities when none are installed.
+  - **Breaking (plugin authors):** `check_conventions(NAME)` runs an
+    `import-boundary` rule: a plugin may import core only through
+    `untaped.sdk`, and another capability only through its `api` module with
+    a declared dependency on its distribution.
   - **New:** `@writes` declares a command that writes; command names are
     no longer limited to a closed verb list.
   - **New:** `untaped.testing.check_conventions(NAME)` runs the convention
@@ -116,6 +122,12 @@
     under a custom `github.corpus_path` are not listed; sync re-creates them
     in the new layout, and the old directories can be deleted.
 - Recipe
+  - **Breaking:** the hook contract moved from
+    `untaped.capabilities.recipe.hook_api` to `untaped_recipe.hook_api`; packs
+    scaffolded on 9.x import the old path under `TYPE_CHECKING`, so update
+    that import. Scaffolded packs and the resolver's hint now ask for
+    `untaped[recipe]>=X,<X+1` in `dependency-groups.dev` instead of
+    `untaped>=X,<X+1`.
   - **New:** `recipe backups restore` takes `--format` and `--columns`; with
     `json`, `yaml` or `pipe` it prints one `recipe.restore_outcome` row
     (`planned`, `restored` or `failed`). Table output is unchanged.
