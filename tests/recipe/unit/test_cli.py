@@ -3948,7 +3948,7 @@ def test_cli_emit_kinds_are_the_surviving_pack_unification_set() -> None:
         "recipe.check",
         "recipe.test",
     }
-    cli_dir = Path(__file__).parents[3] / "src" / "untaped" / "capabilities" / "recipe" / "cli"
+    cli_dir = Path(__file__).parents[3] / "packages/untaped/src/untaped/capabilities/recipe/cli"
     found: set[str] = set()
     for path in cli_dir.glob("*.py"):
         found.update(re.findall(r'kind="(recipe\.[^"]+)"', path.read_text(encoding="utf-8")))

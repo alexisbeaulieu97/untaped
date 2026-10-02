@@ -8,7 +8,7 @@ owns everything else: there is no second console script, config command or
 profile command.
 
 Provider code imports from `untaped.sdk` and nothing else in
-`untaped`; [`src/untaped/sdk.py`](../src/untaped/sdk.py)
+`untaped`; [`packages/untaped/src/untaped/sdk.py`](../packages/untaped/src/untaped/sdk.py)
 is the authoritative API surface. The internal registry and other modules are
 not an API and may change in any release.
 First-party capabilities may also use each other's declared `api.py` modules;
@@ -206,7 +206,7 @@ exit codes and record shapes.
 
 ## 4. Stable helper surface
 
-[`sdk.py`](../src/untaped/sdk.py) lists every export,
+[`sdk.py`](../packages/untaped/src/untaped/sdk.py) lists every export,
 and each helper's docstring is its reference.
 [Command and output conventions](./conventions.md) says which helper each rule
 uses. Beyond those:

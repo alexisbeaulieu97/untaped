@@ -15,8 +15,8 @@ import ast
 from collections.abc import Sequence
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-SRC_ROOT = REPO_ROOT / "src" / "untaped"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SRC_ROOT = REPO_ROOT / "packages" / "untaped" / "src" / "untaped"
 
 RETIRED = frozenset({"ToolSpec", "register_tool", "build_tool_app", "run_tool"})
 

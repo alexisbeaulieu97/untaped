@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
-from untaped.settings import (
-    get_settings,
-    reset_config_registry_for_tests,
-)
+from untaped.settings import get_settings
 
 
 @pytest.fixture(autouse=True)
@@ -37,15 +33,3 @@ def _neutral_color_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.delenv("FORCE_COLOR", raising=False)
-
-
-@pytest.fixture
-def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
-    """Point the flattened config/profile stack at a temp config file."""
-    cfg = tmp_path / "config.yml"
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    reset_config_registry_for_tests()
-    get_settings.cache_clear()
-    yield cfg
-    reset_config_registry_for_tests()
-    get_settings.cache_clear()

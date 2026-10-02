@@ -4,10 +4,10 @@
 issues, and looks up projects, boards and sprints. It targets Jira Data Center
 and self-hosted Jira (REST API v2 and Agile 1.0), not Jira Cloud.
 
-The [packaged skill](../../src/untaped/capabilities/jira/skills/untaped-jira/SKILL.md)
+The [packaged skill](../../packages/untaped/src/untaped/capabilities/jira/skills/untaped-jira/SKILL.md)
 and its references
-([reading](../../src/untaped/capabilities/jira/skills/untaped-jira/references/reading.md),
-[writes](../../src/untaped/capabilities/jira/skills/untaped-jira/references/writes.md))
+([reading](../../packages/untaped/src/untaped/capabilities/jira/skills/untaped-jira/references/reading.md),
+[writes](../../packages/untaped/src/untaped/capabilities/jira/skills/untaped-jira/references/writes.md))
 hold the per-command detail; `--help` and `--columns ?` hold the options and
 fields.
 

@@ -12,7 +12,10 @@ from pathlib import Path
 from untaped.capabilities.awx.domain.spec import ResourceSpec
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 
-APPLICATION_DIR = Path(__file__).resolve().parents[3] / "src/untaped/capabilities/awx/application"
+APPLICATION_DIR = (
+    Path(__file__).resolve().parents[3]
+    / "packages/untaped/src/untaped/capabilities/awx/application"
+)
 
 
 def test_application_does_not_read_infrastructure_only_spec_fields() -> None:

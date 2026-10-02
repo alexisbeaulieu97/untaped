@@ -1,7 +1,7 @@
 """Validation rules of the Ansible settings and source models.
 
 Defaults are pinned by the generated ``docs/reference/config.md`` (see
-``tests/unit/test_docs.py``), so only the rejection rules live here.
+``tests/repo/test_docs.py``), so only the rejection rules live here.
 """
 
 from __future__ import annotations

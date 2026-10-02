@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-CORE_SRC = Path(__file__).resolve().parents[2] / "src" / "untaped"
+CORE_SRC = Path(__file__).resolve().parents[1] / "src" / "untaped"
 EXTERNAL_TOOL_MODULES = frozenset(
     {
         "untaped_ansible",

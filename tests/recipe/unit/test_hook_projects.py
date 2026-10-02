@@ -718,7 +718,10 @@ def _run_worker_script(
         path = tmp_path / "src" / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(source)
-    worker = Path(__file__).parents[3] / "src/untaped/capabilities/recipe/_worker/hook_worker.py"
+    worker = (
+        Path(__file__).parents[3]
+        / "packages/untaped/src/untaped/capabilities/recipe/_worker/hook_worker.py"
+    )
     proc = subprocess.run(
         [sys.executable, str(worker)],
         cwd=tmp_path,

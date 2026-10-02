@@ -11,7 +11,7 @@ and parallel tasks get isolated checkouts of the same repos.
 
 Commands never discard local work: archiving refuses while a repo has
 uncommitted, stashed or unpushed work. The
-[packaged skill](../../src/untaped/capabilities/workspace/skills/untaped-workspace/SKILL.md)
+[packaged skill](../../packages/untaped/src/untaped/capabilities/workspace/skills/untaped-workspace/SKILL.md)
 and its references hold the per-command detail; `--help` and `--columns ?`
 hold the options and fields.
 
@@ -98,7 +98,7 @@ untaped workspace run PROJ-123 'git push -u origin HEAD'
 `run` also takes a script file or a script on stdin, runs in the writable
 repos, and exits 1 if any repo failed. Forms, environment variables,
 selection and timeouts are in the
-[run reference](../../src/untaped/capabilities/workspace/skills/untaped-workspace/references/run.md).
+[run reference](../../packages/untaped/src/untaped/capabilities/workspace/skills/untaped-workspace/references/run.md).
 The `UNTAPED_*` variables it sets are in
 [environment](../reference/environment.md).
 

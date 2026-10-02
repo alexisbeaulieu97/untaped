@@ -11,7 +11,7 @@ Usage::
     uv run python scripts/gen_config_reference.py          # rewrite the page
     uv run python scripts/gen_config_reference.py --check  # exit 1 if stale
 
-``tests/unit/test_config_reference.py`` fails when the checked-in page is
+``tests/repo/test_docs.py`` fails when the checked-in page is
 stale or a setting has no description.
 """
 

@@ -4,10 +4,6 @@ This module is the CI-mode metadata validator: it runs on every pull
 request as part of the default ``pytest`` run. Compose mode stays lenient
 for every provider (quarantine, never raise), first-party ones included.
 
-First-party capabilities ship in the ``untaped`` distribution, so their
-reported version is always the unified product version — never
-per-capability.
-
 Every provider (§7.2, checked without importing provider code): capabilities
 declared in the ``untaped.capabilities`` entry-point group, each
 entry-point name equal to its capability ``name``, a non-empty
@@ -18,10 +14,7 @@ running SDK version.
 from __future__ import annotations
 
 import sys
-import tomllib
 import types
-from importlib import metadata as importlib_metadata
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -30,43 +23,9 @@ import untaped.capabilities.registry as registry
 from test_capabilities.capharness import Provider, make_candidate, make_shell, make_spec
 from untaped.capabilities.registry import (
     ProviderCandidate,
-    ProviderRef,
     compose,
     discover_candidates,
 )
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-
-
-@pytest.fixture(scope="module")
-def first_party(
-    first_party_candidates: tuple[ProviderCandidate, ...],
-) -> dict[str, ProviderCandidate]:
-    """Every first-party candidate by name."""
-    return {candidate.name: candidate for candidate in first_party_candidates}
-
-
-def test_first_party_commit_carries_its_entry_point(
-    first_party: dict[str, ProviderCandidate],
-) -> None:
-    result = compose(make_shell(), [first_party["github"]])
-    (registered,) = result.capabilities
-    assert registered.provider_ref == ProviderRef(
-        distribution="untaped", entry_point="untaped.capabilities.github:provider"
-    )
-    assert result.quarantine == ()
-
-
-def test_first_party_version_is_the_product_version(
-    first_party: dict[str, ProviderCandidate],
-) -> None:
-    try:
-        installed = importlib_metadata.version("untaped")
-    except importlib_metadata.PackageNotFoundError:
-        pytest.skip("untaped distribution metadata is not installed")
-    declared = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert installed == declared["project"]["version"]
-    assert first_party["jira"].distribution_version == installed
 
 
 @pytest.mark.parametrize(

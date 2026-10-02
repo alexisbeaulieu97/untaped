@@ -12,6 +12,8 @@ from untaped.bootstrap import build_root_app
 from untaped.capabilities.registry import ProviderCandidate
 from untaped.testing import invoke_cli
 
+pytestmark = pytest.mark.usefixtures("fresh_composition")
+
 
 @pytest.mark.parametrize(
     ("args", "kind"),

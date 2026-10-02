@@ -31,7 +31,7 @@ from untaped.cli import create_app, echo
 from untaped.errors import ConfigError
 from untaped.profile_resolver import profile_override, set_profile_override
 from untaped.quiet import is_quiet
-from untaped.settings import get_settings, get_settings_model, reset_config_registry_for_tests
+from untaped.settings import get_settings, reset_config_registry_for_tests
 from untaped.testing import CliInvoker, provider_candidate
 from untaped.verbose import is_verbose
 
@@ -99,69 +99,13 @@ def test_composition_is_the_last_composed_result() -> None:
     assert bootstrap.composition() is composed
 
 
-def test_default_composition_is_the_first_party_capabilities(
-    first_party_candidates: tuple[ProviderCandidate, ...],
-) -> None:
-    expected = tuple(candidate.name for candidate in first_party_candidates)
-
-    composition = bootstrap.compose_root(candidates=first_party_candidates)
-
-    assert tuple(capability.spec.name for capability in composition.capabilities) == expected
-    assert composition.quarantine == ()
-
-    root = bootstrap.build_root_app(candidates=first_party_candidates)
-    for name in expected:
-        result = CliInvoker().invoke(root.meta, [name, "--help"])
-        assert result.exit_code == 0, result.output
-
-
-def test_retired_orchestration_command_is_unknown(
-    first_party_candidates: tuple[ProviderCandidate, ...],
-) -> None:
-    root = bootstrap.build_root_app(candidates=first_party_candidates)
-
-    result = CliInvoker().invoke(root.meta, ["orchestration"])
-
-    assert result.exit_code == 2
-    assert "orchestration" in result.output
-
-
 def test_retired_orchestration_capability_is_absent() -> None:
     capability_path = (
-        Path(__file__).resolve().parents[2] / "src" / "untaped" / "capabilities" / "orchestration"
+        Path(__file__).resolve().parents[1] / "src" / "untaped" / "capabilities" / "orchestration"
     )
 
     assert not capability_path.exists()
     assert importlib.util.find_spec("untaped.capabilities.orchestration") is None
-
-
-def test_retired_orchestration_config_schema_is_absent(
-    first_party_candidates: tuple[ProviderCandidate, ...],
-) -> None:
-    root = bootstrap.build_root_app(candidates=first_party_candidates)
-
-    assert "orchestration" not in get_settings_model().model_fields
-
-    result = CliInvoker().invoke(
-        root.meta,
-        ["config", "list", "--format", "raw", "--columns", "key"],
-    )
-    assert result.exit_code == 0, result.output
-    assert not any(line.startswith("orchestration.") for line in result.stdout.splitlines())
-
-
-def test_retired_orchestration_packaged_skill_is_absent(
-    first_party_candidates: tuple[ProviderCandidate, ...],
-) -> None:
-    root = bootstrap.build_root_app(candidates=first_party_candidates)
-
-    result = CliInvoker().invoke(
-        root.meta,
-        ["skills", "list", "--format", "raw", "--columns", "name"],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert "untaped-orchestration" not in result.stdout
 
 
 def test_version_resolves_unified_distribution_lazily(
@@ -289,19 +233,6 @@ def test_root_options_apply_between_nested_command_names(
     assert result.stdout.strip() == "WT quiet=True"
     assert profile_override() is None
     assert not is_quiet()
-
-
-def test_root_option_after_a_lazy_capability_name_is_not_a_command(
-    first_party_candidates: tuple[ProviderCandidate, ...],
-    _isolated_config: Path,
-) -> None:
-    root = bootstrap.build_root_app(candidates=first_party_candidates)
-
-    result = CliInvoker().invoke(root.meta, ["workspace", "--profile", "nope", "list"])
-
-    assert result.exit_code == 4  # the active profile is not defined: config
-    assert "Unknown command" not in result.stderr
-    assert "'nope'" in result.stderr
 
 
 def test_profile_value_may_equal_a_command_name(_isolated_config: Path) -> None:
@@ -552,12 +483,12 @@ def test_installed_wheel_reports_version_and_help(tmp_path: Path) -> None:
     uv = shutil.which("uv")
     if uv is None:
         pytest.skip("uv is required for the installed-wheel smoke test")
-    repo = Path(__file__).resolve().parents[2]
+    package = Path(__file__).resolve().parents[1]
     dist_dir = tmp_path / "dist"
     dist_dir.mkdir()
     built = subprocess.run(
         [uv, "build", "--wheel", "--out-dir", str(dist_dir)],
-        cwd=repo,
+        cwd=package,
         capture_output=True,
         text=True,
         timeout=300,
@@ -565,7 +496,7 @@ def test_installed_wheel_reports_version_and_help(tmp_path: Path) -> None:
     assert built.returncode == 0, built.stderr
     wheels = sorted(dist_dir.glob("untaped-*-py3-none-any.whl"))
     assert len(wheels) == 1
-    expected_version = tomllib.loads((repo / "pyproject.toml").read_text())["project"]["version"]
+    expected_version = tomllib.loads((package / "pyproject.toml").read_text())["project"]["version"]
     assert wheels[0].name == f"untaped-{expected_version}-py3-none-any.whl"
 
     venv_dir = tmp_path / "smoke-venv"
@@ -817,38 +748,3 @@ def test_cyclopts_private_internals_used_by_lazy_mounts_exist() -> None:
         "cyclopts internal API drift: bootstrap._LazyCapabilityCommand relies on "
         f"{', '.join(missing)}; update it (or pin cyclopts) before upgrading"
     )
-
-
-def test_lazy_first_party_capabilities_render_like_eager_mounts(
-    first_party_candidates: tuple[ProviderCandidate, ...],
-    first_party_specs: tuple[CapabilitySpec, ...],
-) -> None:
-    from dataclasses import replace
-
-    specs = first_party_specs
-    eager_candidates = [
-        provider_candidate(replace(spec, help=None), distribution="untaped") for spec in specs
-    ]
-    argv_cases = [["--help"]] + [
-        [spec.name, flag] for spec in specs for flag in ("--help", "--version")
-    ]
-    for argv in argv_cases:
-        lazy = CliInvoker().invoke(
-            bootstrap.build_root_app(candidates=first_party_candidates).meta, argv
-        )
-        eager = CliInvoker().invoke(
-            bootstrap.build_root_app(candidates=eager_candidates).meta, argv
-        )
-        assert (lazy.exit_code, lazy.output) == (eager.exit_code, eager.output), (
-            f"lazy mount of {argv} renders differently from an eager mount; cyclopts "
-            "internals used by bootstrap._LazyCapabilityCommand may have drifted: "
-            f"{', '.join(_CYCLOPTS_PRIVATE_INTERNALS)}"
-        )
-
-
-def test_first_party_help_matches_app_summary(
-    first_party_specs: tuple[CapabilitySpec, ...],
-) -> None:
-    for spec in first_party_specs:
-        assert spec.help is not None, spec.name
-        assert spec.help == spec.app_factory().help, spec.name

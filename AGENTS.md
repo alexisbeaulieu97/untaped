@@ -12,28 +12,31 @@ capabilities; there is no multi-repo workspace guidance here.
 profiles, themes, consistent output, typed piping, HTTP/TLS, and UI/prompt
 helpers, plus one command subtree per first-party capability
 (`untaped workspace ...`, ...). Composition runs through
-`src/untaped/bootstrap.py` (`main()`), which discovers every capability,
+`packages/untaped/src/untaped/bootstrap.py` (`main()`), which discovers every capability,
 first-party ones included, through the `untaped.capabilities` entry-point
 group, validates them through the registry, then mounts the survivors. The
-implementation in `src/untaped/` is authoritative for composition and command
+implementation in `packages/untaped/src/untaped/` is authoritative for composition and command
 behavior. User workflows live in [`docs/`](docs/README.md); provider authors
 should start with [`docs/plugins.md`](docs/plugins.md).
 
 Inspect `untaped capabilities` for the current first-party capabilities.
 The source tree is the implementation reference:
 
-- `pyproject.toml` and `uv.lock` define the distribution and locked
-  environment.
-- `src/untaped/` contains the shell, shared services, and first-party
-  capabilities. Each `src/untaped/capabilities/<name>/` directory owns one
+- The root `pyproject.toml` is the uv workspace root (tool configuration and
+  the `dev` group, no `[project]`); `uv.lock` locks the whole workspace.
+- `packages/<name>/` holds one distribution each: its `pyproject.toml`,
+  `src/` and `tests/`. Core is `packages/untaped/`: its `src/untaped/`
+  contains the shell, shared services, and first-party capabilities. Each
+  `packages/untaped/src/untaped/capabilities/<name>/` directory owns one
   capability end to end.
 - `docs/` contains user guides and executable policy files.
-- `tests/` verifies public behavior and release contracts.
+- `tests/` verifies public behavior and release contracts: `tests/repo/` holds
+  the cross-package tests, `tests/<name>/` a capability's tests.
 
 A capability owns its directory end to end:
 
 ```
-src/untaped/capabilities/<name>/
+packages/untaped/src/untaped/capabilities/<name>/
 ├── __init__.py        # SPEC: CapabilitySpec (with one-line help) + nullary build_app() (lazy CLI import; never build at import time) + provider()
 ├── settings.py        # profile model + state model (field sets must be disjoint)
 ├── api.py             # optional: declared public module other first-party capabilities may import (Hard Rule 2)
@@ -71,11 +74,11 @@ keeps that attribution when replaced or turned into a row; see
   Every violation becomes a `QuarantineRecord` entry while composition
   continues. Provider authors never import it.
 - Management command names are owned by the root shell; inspect
-  `untaped --help` and `src/untaped/management/` when adding a capability.
+  `untaped --help` and `packages/untaped/src/untaped/management/` when adding a capability.
 - A new first-party capability: add `capabilities/<name>/` per the layout
   above, expose `SPEC`, `build_app` and a nullary `provider()` returning
   `SPEC`, and add `<name> = "untaped.capabilities.<name>:provider"` under
-  `[project.entry-points."untaped.capabilities"]` in `pyproject.toml` (then
+  `[project.entry-points."untaped.capabilities"]` in `packages/untaped/pyproject.toml` (then
   `uv sync`). Start its
   skill from [`docs/templates/SKILL.md`](docs/templates/SKILL.md) (which holds
   the skill rules) and its user guide at `docs/<name>/usage.md`, linked from

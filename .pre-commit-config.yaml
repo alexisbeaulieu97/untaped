@@ -12,7 +12,7 @@ repos:
       - id: check-yaml
         # ``examples/`` and skill examples ship Jinja2-templated YAML (e.g. a
         # suite with a header) that isn't valid plain YAML before rendering.
-        exclude: ^(examples/|src/untaped/capabilities/[^/]+/skills/[^/]+/examples/)
+        exclude: ^(examples/|packages/[^/]+/src/[^/]+/(capabilities/[^/]+/)?skills/[^/]+/examples/)
       - id: check-toml
       - id: check-added-large-files
 
