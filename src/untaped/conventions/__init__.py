@@ -8,10 +8,12 @@ third-party provider is checked exactly like a first-party one. Provider tests c
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from importlib.util import find_spec
 from pathlib import Path
+
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.utils import canonicalize_name
 
 from untaped.bootstrap import build_root_app, composition
 from untaped.capabilities.registry import (
@@ -74,10 +76,15 @@ def capability_violations(
     )
 
 
-def _canonical(requirement: str) -> str:
-    """The canonical distribution name of a ``Requires-Dist`` string (markers ignored)."""
-    match = re.match(r"[A-Za-z0-9][A-Za-z0-9._-]*", requirement.strip())
-    return re.sub(r"[-_.]+", "-", match.group(0) if match else requirement).lower()
+def _required(requirements: Sequence[str]) -> set[str]:
+    """Canonical names of the ``Requires-Dist`` strings (markers ignored, invalid ones skipped)."""
+    names: set[str] = set()
+    for requirement in requirements:
+        try:
+            names.add(canonicalize_name(Requirement(requirement).name))
+        except InvalidRequirement:
+            continue
+    return names
 
 
 def _boundary(
@@ -91,15 +98,15 @@ def _boundary(
     other's ``api``.
     """
     found = list(candidates) if candidates is not None else list(discover_candidates())
-    packages = {
-        candidate.target.partition(":")[0]: _canonical(candidate.distribution)
+    packages: dict[str, str] = {
+        candidate.target.partition(":")[0]: canonicalize_name(candidate.distribution)
         for candidate in found
         if isinstance(candidate.target, str) and ":" in candidate.target
     }
     own = next((candidate for candidate in found if candidate.name == name), None)
     if own is None:
         return packages, frozenset()
-    declared = {_canonical(own.distribution), *map(_canonical, own.requires_dist)}
+    declared = {str(canonicalize_name(own.distribution)), *_required(own.requires_dist)}
     return packages, frozenset(declared)
 
 
