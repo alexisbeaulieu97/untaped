@@ -14,7 +14,7 @@ from untaped import repo_cache
 from untaped.capabilities.workspace.domain import CachedRepo, archive_blockers
 from untaped.capabilities.workspace.errors import GitError, WorkspaceError
 from untaped.capabilities.workspace.infrastructure import LocalGitWorktrees
-from untaped.sdk import cache_key, cache_path
+from untaped.sdk import cache_key, cache_path, list_caches
 from workspace.conftest import add_submodule, commit_in, git, init_submodules
 
 pytestmark = pytest.mark.integration
@@ -203,10 +203,7 @@ def test_a_checkout_puts_the_cache_at_its_key_under_cache_dir(
 ) -> None:
     url = str(make_upstream("api"))
     worktrees.checkout(url, tmp_path / "a" / "api", branch="b", base=None)
-    assert (tmp_path / "cache" / Path(*cache_key(url))).resolve() == cache_path(
-        url, root=tmp_path / "cache"
-    )
-    assert (tmp_path / "cache" / Path(*cache_key(url))).is_dir()
+    assert list_caches(tmp_path / "cache") == [tmp_path / "cache" / Path(*cache_key(url))]
 
 
 def test_an_unmarked_cache_without_heads_is_adopted(

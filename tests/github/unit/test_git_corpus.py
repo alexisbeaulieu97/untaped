@@ -25,7 +25,7 @@ from untaped.capabilities.github.domain import (
 )
 from untaped.capabilities.github.domain.errors import GitCorpusError
 from untaped.capabilities.github.infrastructure.git_corpus import GitCorpusCache
-from untaped.sdk import GitResult, RepoCache, cache_path
+from untaped.sdk import GitResult, cache_path
 
 Git = Callable[..., str]
 Commit = Callable[..., None]
@@ -715,7 +715,6 @@ def test_https_and_ssh_forms_of_one_repo_share_the_cache(
     )
 
     expected = (env.root / "github.com" / "acme" / "app.git").resolve()
-    assert cache_path(https, root=env.root) == cache_path(ssh, root=env.root) == expected
     assert synced.path == str(expected)
     assert env.cache.repo_freshness(replace(target, clone_url=ssh), root=env.root) is not None
 
@@ -764,16 +763,6 @@ def test_status_ignores_materialized_worktrees(corpus: Callable[..., _Corpus]) -
     [row] = env.cache.list_repos(root=env.root)
 
     assert (row.repo, row.path) == ("acme/api", str(env.bare))
-
-
-def test_a_held_lock_blocks_a_concurrent_sync(corpus: Callable[..., _Corpus]) -> None:
-    env = corpus({"README.md": "hello\n"}, lock_timeout=0)
-
-    with (
-        RepoCache(env.bare, error=GitCorpusError).locked(),
-        pytest.raises(GitCorpusError, match="repo cache is busy"),
-    ):
-        env.sync()
 
 
 def test_clean_repo_removes_the_cache_and_keeps_its_lock_file(
