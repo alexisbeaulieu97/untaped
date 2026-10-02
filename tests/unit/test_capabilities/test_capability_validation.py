@@ -14,7 +14,6 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-import untaped.capabilities.registry as registry
 from test_capabilities.capharness import (
     OtherProfile,
     make_check,
@@ -28,7 +27,6 @@ from untaped.capabilities.registry import (
     DoctorCheck,
     ExternalProvider,
     SkillAsset,
-    check_api_range,
     compose,
 )
 from untaped.errors import ConfigError
@@ -308,122 +306,17 @@ def test_duplicate_skill_across_externals_keeps_the_first() -> None:
     assert record.reason == "duplicate-skill"
 
 
-# ---- api_requires ranges ----------------------------------------------------
+def test_a_plain_function_provider_composes() -> None:
+    """The provider contract is a nullary callable; nothing else is declared."""
+    spec = make_spec(name="plain")
 
-
-@pytest.mark.parametrize(
-    ("rng", "expected"),
-    [
-        (((3, 0), (4, 0)), ((3, 0), (4, 0))),
-        (((0, 0), (99, 0)), ((0, 0), (99, 0))),
-        (((3, 0), (3, 5)), ((3, 0), (3, 5))),
-        ([[3, 0], [4, 0]], ((3, 0), (4, 0))),
-    ],
-)
-def test_api_range_accepts_covering_ranges(rng: Any, expected: Any) -> None:
-    # Checked against 3.0: the lower bound is inclusive.
-    assert check_api_range(rng, (3, 0)) == expected
-    spec = make_spec(name="ranged")
-    result = compose(make_shell(), [], [make_external(spec, api_requires=rng)])
-    assert [c.spec.name for c in result.capabilities] == ["ranged"]
-    assert result.quarantine == ()
-
-
-def test_api_versions_compare_as_tuples_not_floats() -> None:
-    """``(1, 10)`` is newer than ``(1, 9)``; as floats 1.10 == 1.1 < 1.9."""
-    assert check_api_range(((1, 9), (2, 0)), (1, 10)) == ((1, 9), (2, 0))
-    with pytest.raises(ConfigError, match=r"does not admit SDK version 1\.10"):
-        check_api_range(((1, 0), (1, 10)), (1, 10))
-
-
-def test_api_3_0_rejects_2_x_providers() -> None:
-    """9.0 broke the SDK: ranges capped below 3.0 no longer compose."""
-    capped = compose(
-        make_shell(), [], [make_external(make_spec(name="old"), api_requires=((2, 0), (3, 0)))]
-    )
-    (record,) = capped.quarantine
-    assert record.reason == "api-range"
-    assert "does not admit SDK version 3.2" in record.detail
-
-
-@pytest.mark.parametrize(
-    ("rng", "detail"),
-    [
-        (
-            (1.0, 2.0),
-            "malformed api_requires (1.0, 2.0): expected ((major, minor), (major, minor)) "
-            "int tuples as (min_inclusive, max_exclusive); running SDK 5.1, "
-            "declare e.g. ((5, 0), (6, 0))",
-        ),
-        (
-            ((6, 0), (5, 0)),
-            "inverted api_requires >=6.0,<5.0: min_inclusive must be below max_exclusive; "
-            "running SDK 5.1, declare e.g. ((5, 0), (6, 0))",
-        ),
-        (
-            None,
-            "missing api_requires: provider declares no SDK range; "
-            "running SDK 5.1, declare e.g. ((5, 0), (6, 0))",
-        ),
-    ],
-)
-def test_bad_range_messages_name_the_running_sdk(rng: Any, detail: str) -> None:
-    """Float (1.x), inverted and missing ranges name the running version and an example."""
-    with pytest.raises(ConfigError) as excinfo:
-        check_api_range(rng, (5, 1))
-    assert str(excinfo.value) == f"api-range: {detail}"
-
-
-@pytest.mark.parametrize(
-    "rng",
-    [
-        ((2, 0), (2, 0)),  # inverted
-        ((3, 0), (2, 0)),
-        (("2", 0), (3, 0)),  # non-int
-        ((True, 0), (3, 0)),
-        ((2.0, 0), (3, 0)),
-        ((2, -1), (3, 0)),  # negative
-        ((2,), (3, 0)),  # bound not a pair
-        ((2, 0, 0), (3, 0)),
-        "2.0",
-        (2, 3),  # bare majors
-        (1.0, 2.0),  # 1.x float bounds
-        ((2, 0),),  # not a pair
-        ((2, 0), (3, 0), (4, 0)),
-        {"lo": (2, 0)},
-        ((1, 0), (2, 0)),  # does not admit the running API
-        ((2, 2), (3, 0)),
-        ((0, 5), (1, 9)),
-        None,  # missing
-    ],
-)
-def test_api_range_rejects_bad_ranges(rng: Any) -> None:
-    with pytest.raises(ConfigError, match="api-range"):
-        check_api_range(rng, (2, 0))
-    spec = make_spec(name="ranged")
-    result = compose(make_shell(), [], [make_external(spec, api_requires=rng)])
-    assert result.capabilities == ()
-    (record,) = result.quarantine
-    assert record.reason == "api-range"
-    assert record.detail
-
-
-def test_api_range_missing_attribute_quarantine() -> None:
-    spec = make_spec(name="bare")
-
-    def _bare() -> CapabilitySpec:
+    def provide() -> CapabilitySpec:
         return spec
 
-    candidate = ExternalProvider(distribution="bare-dist", name="bare", target=_bare)
+    candidate = ExternalProvider(distribution="plain-dist", name="plain", target=provide)
     result = compose(make_shell(), [], [candidate])
-    (record,) = result.quarantine
-    assert record.reason == "api-range"
-
-
-def test_api_range_builtin_fatal(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(registry, "CAPABILITY_API_VERSION", (5, 0))
-    with pytest.raises(ConfigError, match="api-range"):
-        compose(make_shell(), [make_spec(name="built")])
+    assert result.quarantine == ()
+    assert [registered.spec for registered in result.capabilities] == [spec]
 
 
 # ---- entry-point targets ------------------------------------------------------
@@ -431,9 +324,6 @@ def test_api_range_builtin_fatal(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _needs_arg(value: str) -> CapabilitySpec:
     return make_spec(name="argful")
-
-
-_needs_arg.api_requires = ((3, 0), (4, 0))  # type: ignore[attr-defined]
 
 
 @pytest.mark.parametrize(
@@ -458,10 +348,10 @@ _needs_arg.api_requires = ((3, 0), (4, 0))  # type: ignore[attr-defined]
             "json:decoder",
             "",
         ),
-        # A dotted attribute resolves and is then judged on its api range.
+        # A dotted attribute resolves and is then judged on what it returns.
         (
             ExternalProvider(distribution="d", name="jsoncap", target="json.decoder:JSONDecoder"),
-            "api-range",
+            "malformed-entry-point",
             "json.decoder:JSONDecoder",
             "",
         ),

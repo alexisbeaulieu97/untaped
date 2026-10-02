@@ -120,8 +120,6 @@ def test_quarantined_external_lists_and_fails_doctor_only(tmp_path: Path) -> Non
     calls: list[str] = []
 
     class _Provider:
-        api_requires = ((3, 0), (4, 0))
-
         def __call__(self) -> CapabilitySpec:
             calls.append("good")
             return make_spec("good", skills=(asset(tmp_path, "untaped-good"),))
@@ -129,8 +127,6 @@ def test_quarantined_external_lists_and_fails_doctor_only(tmp_path: Path) -> Non
     good = ExternalProvider(distribution="example-dist", name="good", target=_Provider())
 
     class _BadProvider:
-        api_requires = ((3, 0), (4, 0))
-
         def __call__(self) -> CapabilitySpec:
             return make_spec("good")
 

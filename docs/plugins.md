@@ -39,7 +39,7 @@ description = "Acme capability for untaped."
 requires-python = ">=3.14"
 dependencies = [
     "pydantic>=2.13.3,<3",
-    "untaped>=9.0.0,<10",
+    "untaped>=10,<11",
 ]
 
 [project.entry-points."untaped.capabilities"]
@@ -66,21 +66,12 @@ unzip -l dist/acme_provider-*.whl \
 ```
 
 The entry-point name must equal `CapabilitySpec.name`. The resolved object
-must be callable, expose an `api_requires` range, and return one
-`CapabilitySpec` when called without arguments.
+must be callable and return one `CapabilitySpec` when called without
+arguments.
 
-The API version is a `(major, minor)` tuple of ints, and `api_requires` is a
-`(min_inclusive, max_exclusive)` pair of such tuples, compared as tuples (so
-`(1, 10)` is newer than `(1, 9)`).
-
-- New exports bump the minor version; removing or breaking one bumps the
-  major. So `((3, 0), (4, 0))` stays compatible across 3.x.
-- A provider that relies on an export added in `3.N` declares
-  `((3, N), (4, 0))`.
-- A missing, malformed or non-covering range quarantines the provider with an
-  `api-range` reason naming the running version.
-
-The [changelog](../CHANGELOG.md) says what each version added or broke.
+The provider's `untaped` requirement (`Requires-Dist`) is the only
+compatibility check: a running `untaped` outside that range quarantines the
+provider. The [changelog](../CHANGELOG.md) says what each version added or broke.
 Built-in capabilities use the same `SPEC` and `build_app()` shape, but are
 listed in the root composition instead of an entry point.
 
@@ -157,16 +148,9 @@ SPEC = CapabilitySpec(
 )
 
 
-class AcmeProvider:
+def provider() -> CapabilitySpec:
     """Entry-point provider discovered by the unified shell."""
-
-    api_requires = ((3, 0), (4, 0))
-
-    def __call__(self) -> CapabilitySpec:
-        return SPEC
-
-
-provider = AcmeProvider()
+    return SPEC
 ```
 
 `CapabilitySpec` validates the name, section, Pydantic models and asset

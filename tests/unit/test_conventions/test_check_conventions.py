@@ -53,8 +53,6 @@ _PLUGIN = {
         def provider() -> CapabilitySpec:
             return SPEC
 
-
-        provider.api_requires = ((3, 0), (4, 0))
         ''',
     "demo_plugin/errors.py": '''
         """Demo errors."""

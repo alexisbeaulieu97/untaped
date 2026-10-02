@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 import untaped.sdk as sdk
-from untaped.capabilities import registry
 
 SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
     "composition": (
@@ -146,13 +145,9 @@ def test_all_is_the_topic_groups_in_order() -> None:
 
 
 def test_removed_names_are_gone() -> None:
-    for name in ("CAPABILITY_API_VERSION", "get_core_settings"):
+    for name in ("get_core_settings",):
         assert name not in sdk.__all__
         assert not hasattr(sdk, name)
-
-
-def test_registry_keeps_the_internal_api_version() -> None:
-    assert registry.CAPABILITY_API_VERSION == (3, 2)
 
 
 def test_no_extra_module_level_names_leak() -> None:

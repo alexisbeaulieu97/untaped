@@ -114,11 +114,9 @@ class Provider:
         self,
         spec: CapabilitySpec | None = None,
         *,
-        api_requires: Any = ((3, 0), (4, 0)),
         error: Exception | None = None,
         result: Any = None,
     ) -> None:
-        self.api_requires = api_requires
         self._spec = spec
         self._error = error
         self._result = result
@@ -152,11 +150,8 @@ def make_external(
     )
 
 
-def function_provider(
-    spec: CapabilitySpec, *, api_requires: Any = ((3, 0), (4, 0))
-) -> Callable[[], CapabilitySpec]:
+def function_provider(spec: CapabilitySpec) -> Callable[[], CapabilitySpec]:
     def _provide() -> CapabilitySpec:
         return spec
 
-    _provide.api_requires = api_requires  # type: ignore[attr-defined]
     return _provide

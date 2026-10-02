@@ -1,6 +1,6 @@
 """Internal capability composition kernel (spec §§1-5).
 
-Implements the four-phase provider pipeline: discovery/API pre-checks,
+Implements the four-phase provider pipeline: discovery and metadata pre-checks,
 provider resolution, declaration validation plus app-factory staging, and
 commit. Built-in violations raise :class:`ConfigError` (fatal); external
 violations yield :class:`QuarantineRecord` entries while composition
@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from importlib import import_module
 from importlib import metadata as importlib_metadata
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
 from cyclopts import App
 from packaging.markers import UndefinedEnvironmentName
@@ -28,18 +28,6 @@ from pydantic import BaseModel
 
 from untaped.errors import ConfigError
 from untaped.settings import Settings, validate_disjoint_settings_sections
-
-#: A capability-API version: ``(major, minor)``, compared as a tuple.
-type ApiVersion = tuple[int, int]
-
-#: An ``api_requires`` range: ``(min_inclusive, max_exclusive)`` versions.
-type ApiRange = tuple[ApiVersion, ApiVersion]
-
-#: SDK capability-API version providers build against (spec §2).
-CAPABILITY_API_VERSION: ApiVersion = (3, 2)
-
-#: Declared API range for built-in capabilities (spec §7.1).
-_BUILTIN_API_REQUIRES: ApiRange = ((3, 0), (4, 0))
 
 #: Distribution label used for built-in provider references (spec §7.1).
 _BUILTIN_DISTRIBUTION = "untaped"
@@ -64,9 +52,7 @@ _RESERVED_COMMAND_ROOTS = frozenset(
 
 
 class CapabilityProvider(Protocol):
-    """Entry-point contract for external capabilities (spec §2)."""
-
-    api_requires: ApiRange
+    """Entry-point contract: a nullary callable returning a ``CapabilitySpec``."""
 
     def __call__(self) -> CapabilitySpec: ...
 
@@ -212,7 +198,6 @@ class ProviderRef:
     kind: str
     distribution: str
     entry_point: str
-    api_requires: ApiRange
 
     def __post_init__(self) -> None:
         if self.kind not in ("built-in", "external"):
@@ -245,7 +230,6 @@ VALID_REASONS = frozenset(
         "bad-skill-asset",
         "duplicate-doctor-check",
         "doctor-check-failed",
-        "api-range",
         "malformed-entry-point",
         "bad-app-factory",
         "bad-metadata",
@@ -325,74 +309,6 @@ class _Quarantine(ConfigError):
             reason=self.reason,
             detail=self.detail,
         )
-
-
-_MISSING: Any = object()
-
-
-def format_api_version(version: ApiVersion) -> str:
-    """Render ``(major, minor)`` as ``major.minor``."""
-    return f"{version[0]}.{version[1]}"
-
-
-def parse_api_range(requires: object) -> ApiRange:
-    """Normalize an ``api_requires`` declaration's shape (not its bounds' order).
-
-    ``requires`` must be a pair of ``(major, minor)`` pairs of non-negative
-    ints (tuples or lists). Raises an ``api-range`` quarantine otherwise.
-    """
-    malformed = _Quarantine(
-        "api-range",
-        f"malformed api_requires {requires!r}: expected ((major, minor), (major, minor)) "
-        "int tuples as (min_inclusive, max_exclusive)",
-    )
-    if (
-        isinstance(requires, (str, bytes))
-        or not isinstance(requires, (tuple, list))
-        or len(requires) != 2
-    ):
-        raise malformed
-    bounds: list[ApiVersion] = []
-    for bound in requires:
-        if (
-            not isinstance(bound, (tuple, list))
-            or len(bound) != 2
-            or any(isinstance(part, bool) or not isinstance(part, int) for part in bound)
-            or any(part < 0 for part in bound)
-        ):
-            raise malformed
-        bounds.append((bound[0], bound[1]))
-    return (bounds[0], bounds[1])
-
-
-def check_api_range(requires: object, version: ApiVersion) -> ApiRange:
-    """Validate an ``api_requires`` range against ``version`` (spec §5 row 10).
-
-    Missing, malformed and inverted ranges name the running version and a
-    range that admits it.
-    """
-    shown = format_api_version(version)
-    hint = f"running SDK {shown}, declare e.g. (({version[0]}, 0), ({version[0] + 1}, 0))"
-    if requires is None or requires is _MISSING:
-        raise _Quarantine(
-            "api-range", f"missing api_requires: provider declares no SDK range; {hint}"
-        )
-    try:
-        lo, hi = parse_api_range(requires)
-    except _Quarantine as bad:
-        raise _Quarantine("api-range", f"{bad.detail}; {hint}") from None
-    span = f">={format_api_version(lo)},<{format_api_version(hi)}"
-    if not lo < hi:
-        raise _Quarantine(
-            "api-range",
-            f"inverted api_requires {span}: min_inclusive must be below max_exclusive; {hint}",
-        )
-    if not lo <= version < hi:
-        raise _Quarantine(
-            "api-range",
-            f"api_requires {span} does not admit SDK version {shown}",
-        )
-    return (lo, hi)
 
 
 def _parse_requirement(requirement: object) -> Requirement | None:
@@ -682,7 +598,6 @@ def compose(
     for spec in builtins:
         try:
             _check_rows_1_to_8(spec, state)
-            check_api_range(_BUILTIN_API_REQUIRES, CAPABILITY_API_VERSION)
             # A built-in declaring ``help`` is mounted lazily: its factory
             # runs (and is validated) only when its command is dispatched.
             staged = None if spec.help is not None else _check_factory(spec)
@@ -691,7 +606,7 @@ def compose(
                 f"built-in capability {spec.name!r} failed validation "
                 f"[{failed.reason}]: {failed.detail}"
             ) from None
-        builtin_ref = ProviderRef("built-in", _BUILTIN_DISTRIBUTION, "", _BUILTIN_API_REQUIRES)
+        builtin_ref = ProviderRef("built-in", _BUILTIN_DISTRIBUTION, "")
         capabilities.append(_commit(spec, builtin_ref, state, staged))
     ordered = sorted(externals, key=lambda candidate: (candidate.distribution, candidate.name))
     for candidate in ordered:
@@ -716,8 +631,6 @@ def compose(
                     f"entry point {candidate.name!r} of distribution "
                     f"{candidate.distribution!r} is not callable: {provider!r}",
                 )
-            declared = getattr(provider, "api_requires", _MISSING)
-            api_requires = check_api_range(declared, CAPABILITY_API_VERSION)
             try:
                 spec = provider()
             except Exception as exc:
@@ -760,7 +673,6 @@ def compose(
                     entry_point=(
                         candidate.target if isinstance(candidate.target, str) else candidate.name
                     ),
-                    api_requires=api_requires,
                 ),
                 state,
                 staged,

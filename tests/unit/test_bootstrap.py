@@ -50,7 +50,6 @@ class _Provider:
     """Nullary external provider double recording its invocations."""
 
     def __init__(self, spec: CapabilitySpec, calls: list[str]) -> None:
-        self.api_requires = ((3, 0), (4, 0))
         self._spec = spec
         self._calls = calls
 
