@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 from cyclopts import App
 
+from tests.conftest import first_party_candidates
 from tests.unit.conftest import broken_first_party_candidates, load_script
 from untaped.bootstrap import build_root_app
 from untaped.capabilities import registry
@@ -165,7 +166,7 @@ def _unknown_options(root: App, argv: list[str], aliases: set[str]) -> list[str]
 
 def test_command_examples_use_real_commands_and_options() -> None:
     """Every ``untaped`` example in a ``bash`` block names a real command and options."""
-    root = build_root_app()
+    root = build_root_app(candidates=first_party_candidates())
     problems = []
     for path in _markdown_files():
         if "templates" in path.parts:

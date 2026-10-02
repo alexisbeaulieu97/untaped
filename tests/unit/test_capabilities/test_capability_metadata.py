@@ -28,7 +28,7 @@ import pytest
 
 import untaped.capabilities.registry as registry
 from test_capabilities.capharness import Provider, make_candidate, make_shell, make_spec
-from tests.unit.conftest import first_party_candidates
+from tests.conftest import first_party_candidates
 from untaped.capabilities.registry import (
     ProviderCandidate,
     ProviderRef,

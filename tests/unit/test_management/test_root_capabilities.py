@@ -53,6 +53,15 @@ def test_lists_a_ready_provider_with_its_distribution_version() -> None:
     ]
 
 
+def test_a_quarantined_blank_distribution_candidate_lists_its_own_version() -> None:
+    broken = make_candidate(
+        make_spec("acme"), "  ", distribution_version="1.2.3", error=RuntimeError("x")
+    )
+    assert _listing([broken]) == [
+        {"name": "acme", "status": "quarantined", "distribution": "unknown", "version": "1.2.3"}
+    ]
+
+
 def test_the_listing_is_in_name_order_across_statuses() -> None:
     broken = make_candidate(make_spec("beta"), "aaa-dist", error=RuntimeError("x"))
     alpha = make_candidate(make_spec("alpha"), "zzz-dist")

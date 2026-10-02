@@ -7,6 +7,7 @@ import httpx
 import pytest
 import respx
 
+from tests.conftest import first_party_candidates
 from untaped import bootstrap
 from untaped.capabilities.awx.cli import app
 from untaped.settings import get_settings
@@ -99,7 +100,7 @@ def test_ping_ignores_invalid_sibling_section(
                 200, json={"version": "4.5.0", "active_node": "controller-1"}
             )
         )
-        root = bootstrap.build_root_app()
+        root = bootstrap.build_root_app(candidates=first_party_candidates())
         result = CliInvoker().invoke(
             root.meta, ["awx", "ping", "--format", "raw", "--columns", "version"]
         )

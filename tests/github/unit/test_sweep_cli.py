@@ -11,6 +11,7 @@ import httpx
 import pytest
 import respx
 
+from tests.conftest import first_party_candidates
 from untaped.bootstrap import build_root_app
 from untaped.capabilities.github.cli import app
 from untaped.testing import CliInvoker, CliResult, invoke_cli
@@ -241,7 +242,10 @@ def test_exit_code_matrix(
     "old", [["-w"], ["--sync"], ["--no-sync"], ["--archived"], ["--archived", "yes"]]
 )
 def test_sweep_old_flag_spellings_are_gone(old: list[str]) -> None:
-    result = invoke_cli(build_root_app(), ["github", "sweep", "--org", "acme", "--grep", "x", *old])
+    result = invoke_cli(
+        build_root_app(candidates=first_party_candidates()),
+        ["github", "sweep", "--org", "acme", "--grep", "x", *old],
+    )
 
     assert result.exit_code == 2, result.output
     assert "deprecated" not in result.stderr

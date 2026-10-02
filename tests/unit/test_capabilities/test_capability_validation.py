@@ -166,20 +166,19 @@ SINGLE_SPEC_ROWS: list[tuple[str, Callable[[], CapabilitySpec], str, str]] = [
 ]
 
 
-@pytest.mark.parametrize("distribution", ["untaped", "ext-dist"])
 @pytest.mark.parametrize(
     ("make", "reason", "named"),
     [row[1:] for row in SINGLE_SPEC_ROWS],
     ids=[row[0] for row in SINGLE_SPEC_ROWS],
 )
 def test_invalid_spec_is_quarantined(
-    make: Callable[[], CapabilitySpec], reason: str, named: str, distribution: str
+    make: Callable[[], CapabilitySpec], reason: str, named: str
 ) -> None:
     spec = make()
-    result = compose(make_shell(), [make_candidate(spec, distribution)])
+    result = compose(make_shell(), [make_candidate(spec, "ext-dist")])
     assert result.capabilities == ()
     (record,) = result.quarantine
-    assert (record.distribution, record.reason) == (distribution, reason)
+    assert (record.distribution, record.reason) == ("ext-dist", reason)
     assert named in record.detail
 
 

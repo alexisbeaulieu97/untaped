@@ -17,6 +17,7 @@ from cyclopts import App
 from untaped.capabilities.registry import (
     CompositionResult,
     ProviderCandidate,
+    candidate_distribution,
 )
 from untaped.cli import (
     ColumnsOption,
@@ -75,10 +76,12 @@ def _rows(
     candidates: Sequence[ProviderCandidate],
 ) -> list[dict[str, object]]:
     # A distribution declares each entry-point name once, and a provider whose
-    # spec name differs from it is quarantined, so (distribution, name) finds
-    # the candidate of every row, a provider that never resolved included.
+    # spec name differs from it is quarantined, so the reported (distribution,
+    # name) finds the candidate of every row, a provider that never resolved
+    # and a blank distribution (reported as ``unknown``) included.
     versions = {
-        (item.distribution, item.name): item.distribution_version or _UNKNOWN for item in candidates
+        (candidate_distribution(item), item.name): item.distribution_version or _UNKNOWN
+        for item in candidates
     }
     ready = [
         (registered.spec.name, "ready", registered.provider_ref.distribution)
