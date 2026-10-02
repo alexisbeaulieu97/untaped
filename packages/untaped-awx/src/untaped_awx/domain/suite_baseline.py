@@ -4,6 +4,11 @@
 json`` printed (or the records of its ``--format pipe`` output), or the rows
 of a run just made, into each case's :class:`Baseline`. Pure domain — the
 caller reads the file.
+
+A baseline excuses only a failure it already had, failing the same way: the
+base branch may already fail some cases, and a change must still prove it
+broke nothing. So a saved row keeps its failure's ``system``, ``category``
+and node; without them a different failure would pass as ``still_failing``.
 """
 
 from __future__ import annotations

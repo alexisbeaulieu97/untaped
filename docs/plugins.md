@@ -432,10 +432,9 @@ free, but a command that writes declares it with `@writes`, or
 - Use native booleans, `null` and lists in records. Do not use glyphs such as
   `✓` or `—` as data; for a table, annotate the field with `TableGlyph`
   (`Annotated[bool, TableGlyph(true="✓")]`), which every other format ignores.
-- `--format json` and `--format yaml` print one document per invocation: an
-  array for a collection (even when it spans several ids), a mapping for a
-  single record. `pipe` and `raw` print one line per record. Only a live
-  stream (`--follow`) prints json as one object per line (NDJSON).
+- `emit` gives each format the shape [Scripting](./scripting.md#output-and-pipes)
+  describes: pass a sequence for a collection, even of one item, and a single
+  record for a detail view.
 
 ### Enforcement
 

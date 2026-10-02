@@ -268,3 +268,15 @@ def test_links_inside_double_backtick_code_are_ignored(tmp_path: Path) -> None:
     page.write_text("Literal ``[example](missing.md)`` text.\n", encoding="utf-8")
 
     assert _broken_links(page) == []
+
+
+def test_rationale_lives_beside_the_code_it_protects() -> None:
+    assert not (REPO_ROOT / ".planning" / "decisions").exists()
+    awx = REPO_ROOT / "packages/untaped-awx/src/untaped_awx"
+    assert "round-trip" in (awx / "infrastructure/yaml_io.py").read_text().split('"""')[1]
+    workspace = REPO_ROOT / "packages/untaped-workspace/src/untaped_workspace"
+    worktrees = (workspace / "infrastructure/git_worktrees.py").read_text().split('"""')[1]
+    assert "load-bearing" in worktrees
+    provision = (workspace / "application/provision.py").read_text().split('"""')[1]
+    # the documented lock order matches the code
+    assert provision.index("workspace lock") < provision.index("cache lock")

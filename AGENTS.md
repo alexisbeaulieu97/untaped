@@ -139,7 +139,7 @@ rules below.
    edit the relevant docs in the same commit. Each fact has one home, and
    other pages link to it: capability detail in its skill (the package `README.md` is a
    short guide), exit codes/settings/record kinds/env vars in `docs/reference/`,
-   history in `CHANGELOG.md`, rationale in `.planning/decisions/`. Never copy
+   history in `CHANGELOG.md`, rationale in the protected module's docstring. Never copy
    `--help` output, default columns, or API signatures into docs.
 4. **Involved-lines-only diffs.** Touch only the lines your change
    requires; no drive-by refactors, no unrelated file churn.
@@ -171,11 +171,7 @@ Advisory lock files go through `untaped.fs` (`file_lock`, re-exported by
 Releasing: see [`docs/release.md`](docs/release.md) (a release PR, a
 TestPyPI rehearsal, then a `vX.Y.Z` tag on main).
 
-## Planning and decisions
-
-Read relevant constraints in [`.planning/decisions/`](.planning/decisions/)
-before changing architecture. Code and tests define implementation behavior;
-keep decisions short and focused on rationale and constraints.
+## Planning
 
 Tasks, roadmap, priorities, blockers, and handoffs live in private GitHub Issues
 and the private Untaped Project owned by `untaped-private`. Its `AGENTS.md`
