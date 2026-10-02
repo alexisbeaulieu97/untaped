@@ -78,22 +78,23 @@ def cache_path(url: str, *, root: Path) -> Path:
 def list_caches(root: Path, *, skip: Collection[str] = ()) -> list[Path]:
     """Every ``*.git`` directory under ``root``, sorted; never descends into one.
 
-    Skips symlinks, hidden directories (names starting with ``.``), and
-    top-level directories named in ``skip``. A missing or unreadable
-    directory is skipped. No git runs.
+    Skips symlinks and, at the top level only, hidden directories (names
+    starting with ``.``, e.g. scratch dirs) and directories named in ``skip``;
+    below it a repo may be hidden (``github.com/acme/.github.git``). A missing
+    or unreadable directory is skipped. No git runs.
     """
     found: list[Path] = []
-    _collect(root, skip, found)
+    _collect(root, skip, found, top=True)
     return sorted(found)
 
 
-def _collect(directory: Path, skip: Collection[str], found: list[Path]) -> None:
+def _collect(directory: Path, skip: Collection[str], found: list[Path], *, top: bool) -> None:
     try:
         entries = list(directory.iterdir())
     except OSError:
         return
     for entry in entries:
-        if entry.name.startswith(".") or entry.name in skip:
+        if top and (entry.name.startswith(".") or entry.name in skip):
             continue
         try:
             if entry.is_symlink() or not entry.is_dir():
@@ -103,7 +104,7 @@ def _collect(directory: Path, skip: Collection[str], found: list[Path]) -> None:
         if entry.name.endswith(".git"):
             found.append(entry)
         else:
-            _collect(entry, (), found)
+            _collect(entry, skip, found, top=False)
 
 
 def cache_origin(cache: Path) -> str | None:

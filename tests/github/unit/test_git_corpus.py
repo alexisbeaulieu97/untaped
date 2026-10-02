@@ -720,6 +720,22 @@ def test_https_and_ssh_forms_of_one_repo_share_the_cache(
     assert env.cache.repo_freshness(replace(target, clone_url=ssh), root=env.root) is not None
 
 
+def test_a_repo_named_with_a_leading_dot_is_listed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, corpus: Callable[..., _Corpus]
+) -> None:
+    env = corpus({"README.md": "hello\n"})
+    url = "https://github.com/acme/.github.git"
+    _rewrite_to(monkeypatch, tmp_path, env.source, url)
+    target = CorpusRepoTarget(full_name="acme/.github", clone_url=url, default_branch="main")
+    synced = env.cache.sync_repo(
+        target, root=env.root, selector=RefSelector(), depth=1, auth_header=None
+    )
+
+    [row] = env.cache.list_repos(root=env.root)
+
+    assert (row.repo, row.path) == ("acme/.github", synced.path)
+
+
 def test_status_ignores_materialized_worktrees(corpus: Callable[..., _Corpus]) -> None:
     # A checkout holding a cache-like dir with valid metadata must not list it.
     vendored = '{"repo": "acme/vendored", "ref": "main", "fetched_at": "2026-07-06T12:00:00+00:00"}'

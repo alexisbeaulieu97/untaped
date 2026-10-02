@@ -108,6 +108,7 @@ def test_list_caches_finds_leaves_and_skips_the_rest(tmp_path: Path) -> None:
     for rel in (
         "h/acme/app.git/objects",
         "h/grp/sub/lib.git",
+        "h/acme/.github.git",
         "_unknown/abc.git",
         "worktrees/app-main-1/src",
         "worktrees/skipped.git",
@@ -119,6 +120,7 @@ def test_list_caches_finds_leaves_and_skips_the_rest(tmp_path: Path) -> None:
     (tmp_path / "h" / "link.git").symlink_to(tmp_path / "h" / "acme" / "app.git")
     assert list_caches(tmp_path, skip=("worktrees",)) == [
         tmp_path / "_unknown" / "abc.git",
+        tmp_path / "h" / "acme" / ".github.git",
         tmp_path / "h" / "acme" / "app.git",
         tmp_path / "h" / "grp" / "sub" / "lib.git",
     ]
