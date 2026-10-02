@@ -9,7 +9,7 @@ import pytest
 from untaped.testing import CliInvoker, ScriptedPromptBackend
 from untaped_awx.cli.commands import app
 
-GUIDE = Path(__file__).resolve().parents[5] / "docs/awx/usage.md"
+GUIDE = Path(__file__).resolve().parents[3] / "README.md"
 EXAMPLES = [
     shlex.split(line)[2:]
     for line in GUIDE.read_text().replace("\\\n", " ").splitlines()
@@ -17,6 +17,10 @@ EXAMPLES = [
     and "--inventory" in line
     and shlex.split(line)[3] in {"list", "export", "get", "patch"}
 ]
+
+
+def test_the_guide_has_inventory_examples() -> None:
+    assert EXAMPLES, f"no 'untaped awx inventory … --inventory' examples found in {GUIDE}"
 
 
 @pytest.mark.parametrize("args", EXAMPLES)

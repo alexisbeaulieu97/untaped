@@ -5,6 +5,12 @@
 ``hint`` says what to do), extended with the :class:`FailureEvidence` an agent
 reads to fix the cause.
 
+The agent must know whether to fix its playbook, push its branch, fix
+credentials or retry; a flat reason could not say, and a failed project update
+looked like a failed playbook. So an update is blamed before any expectation
+(a negative case whose playbook never ran cannot pass), and the playbook is
+never blamed for events that could not be read.
+
 The rules are pure and the first match wins:
 
 - ``awx.suite``: AWX refused the launch as asked (unknown name, a field the

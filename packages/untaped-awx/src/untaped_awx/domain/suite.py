@@ -9,6 +9,12 @@ approvals; :class:`VariableSpec` declares an input the user
 supplies (CLI / vars file / interactive prompt). A run's results compared
 with a :class:`Baseline` say how each case changed. Pure domain — no I/O,
 no Jinja2, no httpx.
+
+A workflow suite is not a new document kind: it names ``workflowTemplate``
+and keeps the job case's shape, and :class:`NodeExpectation` shares the job's
+checks and checking path, so the two cannot drift. A suite binds its template
+in one place (:meth:`Suite.binding`), so a run that provisions a temporary
+copy rebinds each suite once.
 """
 
 from __future__ import annotations

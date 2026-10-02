@@ -1,4 +1,4 @@
-"""Pin load-bearing AGENTS.md rules by pytest.
+"""Pin load-bearing CONTRIBUTING.md rules by pytest.
 
 - Every credential-named settings leaf is :class:`pydantic.SecretStr` (so
   :func:`redact_secrets` covers it and ``repr(settings)`` won't leak it).

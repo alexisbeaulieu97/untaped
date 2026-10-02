@@ -2,7 +2,7 @@
 
 A collection of records with more than four fields (``error`` aside) must
 have default table columns: the record type's ``table_columns`` or the
-command's ``emit(..., table_columns=…)`` (``docs/conventions.md``). The
+command's ``emit(..., table_columns=…)`` (``docs/plugins.md#output-records``). The
 suite-wide fixture (root ``conftest.py``) fails any test whose command
 emits such a collection without them.
 """

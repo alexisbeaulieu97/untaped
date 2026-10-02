@@ -1,4 +1,4 @@
-"""Help-tree rules: every command follows the command grammar (``docs/conventions.md``).
+"""Help-tree rules: every command follows the command grammar (``docs/plugins.md#options``).
 
 Checks each visible command of a command subtree:
 

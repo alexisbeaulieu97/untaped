@@ -144,7 +144,7 @@ def test_redact_secrets_skips_missing_paths() -> None:
 
 def test_secret_field_paths_matches_known_settings_secrets() -> None:
     # Pin the contract: every SecretStr in Settings is returned. Adding a
-    # new SecretStr to the schema (see AGENTS.md "Config & state model")
+    # new SecretStr to the schema (see CONTRIBUTING.md "Workflow")
     # must make this test fail until the new path lands here.
     paths = secret_field_paths(get_settings_model())
     assert ("demo", "token") in paths
