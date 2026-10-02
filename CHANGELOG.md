@@ -28,6 +28,9 @@
     `untaped.capabilities` entry points like any plugin. A failing capability
     is quarantined instead of stopping `untaped`. Capabilities list in name
     order; `untaped capabilities` loses its `origin` column.
+  - **Changed:** a capability whose commands fail to load fails only its own
+    command, with exit 4; `untaped doctor` reports it as a `bad-app-factory`
+    quarantine row.
 - Ansible
   - **Breaking:** `graph --upstream/--downstream/--both` are removed; use
     `--direction up|down|both`. Graph sources re-index once.

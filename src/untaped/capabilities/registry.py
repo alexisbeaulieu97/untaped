@@ -545,19 +545,33 @@ def _check_factory(spec: CapabilitySpec) -> App:
     return staged
 
 
-def build_deferred_app(spec: CapabilitySpec) -> App:
+def build_deferred_app(capability: RegisteredCapability) -> App:
     """Run and validate a deferred factory at first dispatch.
 
-    Lazy capabilities skip :func:`_check_factory` during composition; a
-    factory that raises or returns a non-``App`` surfaces as a ``ConfigError``.
+    A factory that raises or returns a non-``App`` fails this command with a
+    ``ConfigError`` (exit 4) attributed to the capability; nothing is
+    unregistered and other capabilities are unaffected.
     """
     try:
-        return _check_factory(spec)
+        return _check_factory(capability.spec)
     except _Quarantine as failed:
         raise ConfigError(
-            f"built-in capability {spec.name!r} failed validation "
-            f"[{failed.reason}]: {failed.detail}"
+            f"capability {capability.spec.name!r} from {capability.provider_ref.distribution!r} "
+            f"could not build its commands: {failed.detail}",
+            system=capability.spec.name,
         ) from None
+
+
+def factory_failure(capability: RegisteredCapability) -> QuarantineRecord | None:
+    """Run a deferred factory for ``untaped doctor``; its failure as a quarantine record."""
+    if capability.app is not None:
+        return None
+    try:
+        _check_factory(capability.spec)
+    except _Quarantine as failed:
+        ref = capability.provider_ref
+        return QuarantineRecord(ref.distribution, ref.entry_point, failed.reason, failed.detail)
+    return None
 
 
 def _commit(

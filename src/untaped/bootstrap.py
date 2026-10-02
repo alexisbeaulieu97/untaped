@@ -257,9 +257,10 @@ class _LazyCapabilityCommand(CommandSpec):
     lazy-vs-eager rendering tests in ``tests/unit/test_bootstrap.py``.
     """
 
-    def __init__(self, spec: CapabilitySpec, mount_parent: App) -> None:
+    def __init__(self, capability: RegisteredCapability, mount_parent: App) -> None:
+        spec = capability.spec
         super().__init__(import_path=f"<capability {spec.name}>", name=spec.name, help=spec.help)
-        self._capability = spec
+        self._capability = capability
         self._mount_parent = mount_parent
 
     def resolve(self, parent_app: App) -> App:
@@ -267,8 +268,8 @@ class _LazyCapabilityCommand(CommandSpec):
         resolved = self._resolved
         if resolved is not None:
             return resolved
-        spec = self._capability
-        app = build_deferred_app(spec)
+        with report_errors():
+            app = build_deferred_app(self._capability)
         _apply_parent_defaults_to_app(app, self._mount_parent)
         for flag in chain(app.help_flags, app.version_flags):
             app[flag].show = False
@@ -286,7 +287,7 @@ def _mount_capability(root: App, capability: RegisteredCapability) -> None:
         return
     if spec.name in root:
         del root[spec.name]
-    root._commands[spec.name] = _LazyCapabilityCommand(spec, root)
+    root._commands[spec.name] = _LazyCapabilityCommand(capability, root)
 
 
 #: Root commands that manage or diagnose skills themselves: the per-run
