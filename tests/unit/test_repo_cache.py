@@ -67,6 +67,7 @@ def origin(tmp_path: Path) -> Path:
     [
         ("https://github.com/acme/app.git", ("github.com", "acme", "app.git")),
         ("git@github.com:acme/app.git", ("github.com", "acme", "app.git")),
+        ("git@GitHub.com:acme/app", ("github.com", "acme", "app.git")),
         ("ssh://git@gitlab.example/grp/sub/app", ("gitlab.example", "grp", "sub", "app.git")),
         ("https://evil/../../tmp/pwn.git", ("evil", "_", "_", "tmp", "pwn.git")),
     ],
