@@ -152,6 +152,7 @@ what it owns (re-export stubs exempt). Lazy imports on CLI startup paths
 `pydantic.SecretStr`; HTTP clients resolve TLS via `resolve_verify`. Git
 subprocesses go through `untaped.git` (`run_git`, `git_toplevel`, re-exported by
 `untaped.sdk`); never fork your own `subprocess` git plumbing.
+Bare-repo caches go through `untaped.sdk.RepoCache`; never fork cache plumbing.
 Advisory lock files go through `untaped.fs` (`file_lock`, re-exported by
 `untaped.sdk`).
 

@@ -223,6 +223,10 @@ uses. Beyond those:
   beside `token` on your profile model; see [Tokens](configuration.md#tokens).
 - For a domain-specific HTTP or filesystem adapter the API does not export,
   use your own dependency rather than an `untaped` internal.
+- To keep a bare-repo cache, use `RepoCache` rather than your own git plumbing.
+  Give your section its own root setting, resolve a repo's directory with
+  `cache_path`, and use `locked()`, `ensure`, `fetch` and `run` on the cache.
+  The `untaped.sdk` docstrings are the reference.
 
 A row-producing command uses `FormatOption`, `ColumnsOption` and `emit`, and
 namespaces its kind:
