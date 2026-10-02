@@ -140,6 +140,7 @@ paths = [
     "packages/untaped/src",
     "packages/untaped-ansible/src",
     "packages/untaped-awx/src",
+    "packages/untaped-dotfiles/src",
     "packages/untaped-github/src",
     "packages/untaped-jira/src",
     "packages/untaped-recipe/src",

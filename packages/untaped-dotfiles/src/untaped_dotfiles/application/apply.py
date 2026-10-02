@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 from untaped.sdk import ErrorInfo, UntapedError, note_failure, q
 from untaped_dotfiles.domain.models import AppliedRecord, RepoRecord
 from untaped_dotfiles.domain.records import PlaceAction, PlaceOutcome, RepoOutcome
-from untaped_dotfiles.domain.status import Action, FileState, sync_action
+from untaped_dotfiles.domain.status import Action, sync_action
 from untaped_dotfiles.errors import DotfilesError, GitError
 
 if TYPE_CHECKING:
@@ -337,7 +337,3 @@ class Applier:
             self._row(step, "planned" if step.found.record is not None else "skipped", step.detail)
             for step in steps
         ]
-
-
-def states_of(steps: Sequence[Step]) -> list[FileState]:
-    return [step.found.state for step in steps]
