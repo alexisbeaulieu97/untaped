@@ -482,7 +482,25 @@ def test_quarantine_warning_is_text_without_a_structured_format(
     broken = ProviderCandidate(distribution="broken-dist", name="broken", target=lambda: None)
     with pytest.raises(SystemExit):
         bootstrap.run_root(["config", "list"], candidates=(broken,))
-    assert capsys.readouterr().err.startswith("warning: capability provider 'broken-dist'")
+    assert capsys.readouterr().err.startswith(
+        "warning: capability 'broken' from 'broken-dist' quarantined"
+    )
+
+
+def test_each_quarantined_capability_warns_once_by_name(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    broken = [
+        ProviderCandidate(distribution="untaped", name=name, target=lambda: None)
+        for name in ("awx", "jira")
+    ]
+    bootstrap.compose_root(candidates=broken)
+    assert capsys.readouterr().err.splitlines() == [
+        f"warning: capability {name!r} from 'untaped' quarantined [malformed-entry-point]: "
+        f"provider {name!r} of distribution 'untaped' returned NoneType, "
+        "expected CapabilitySpec"
+        for name in ("awx", "jira")
+    ]
 
 
 def test_reset_restores_composed_state(_isolated_config: Path) -> None:
@@ -697,6 +715,34 @@ def test_a_lazy_factory_returning_a_non_app_exits_4_on_help_too() -> None:
     result = CliInvoker().invoke(root.meta, ["bad", "--help"])
     assert result.exit_code == 4
     assert "returned str, expected cyclopts App" in result.stderr
+
+
+def test_completion_omits_a_capability_whose_lazy_factory_fails(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    bad_calls: list[str] = []
+    root = bootstrap.build_root_app(
+        candidates=[
+            provider_candidate(_raising_spec("brokencap", bad_calls), distribution="bad-dist"),
+            provider_candidate(_counting_spec("goodcap", [], help="Good capability.")),
+        ]
+    )
+    capsys.readouterr()
+
+    script = root.generate_completion(shell="bash")
+
+    assert "goodcap" in script
+    assert "brokencap" not in script
+    warnings = [line for line in capsys.readouterr().err.splitlines() if line]
+    assert warnings == [
+        "warning: capability 'brokencap' from 'bad-dist' could not build its commands: "
+        "app factory of capability 'brokencap' raised: cli import failed "
+        "(left out of shell completion)"
+    ]
+    assert bad_calls == ["brokencap"]
+    dispatched = CliInvoker().invoke(root.meta, ["brokencap", "who"])
+    assert dispatched.exit_code == 4
+    assert "cli import failed" in dispatched.stderr
 
 
 @pytest.mark.parametrize("fmt", ["text", "json"])

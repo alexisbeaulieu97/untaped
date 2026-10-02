@@ -129,7 +129,7 @@ def _orphan_row(record: QuarantineRecord) -> dict[str, object]:
     the kernel ever changes shape.
     """
     return {
-        "name": record.entry_point or record.distribution,
+        "name": record.name,
         "status": "quarantined",
         "distribution": record.distribution,
         "version": _UNKNOWN,

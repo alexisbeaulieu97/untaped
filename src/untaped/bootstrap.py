@@ -13,7 +13,7 @@ import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from importlib import metadata
 from itertools import chain
-from typing import Any
+from typing import Any, Literal
 
 from cyclopts import App
 from cyclopts.command_spec import CommandSpec
@@ -40,7 +40,6 @@ from untaped.capabilities.registry import (
 )
 from untaped.cli import (
     apply_default_format,
-    create_app,
     echo,
     note_requested_format,
     report_errors,
@@ -83,8 +82,33 @@ SHELL_SECTION = "shell"
 SHELL_DISTRIBUTION = "untaped"
 
 
+class _ShellRootApp(App):
+    """Root app whose shell completion skips capabilities that cannot build.
+
+    Completion generation resolves every lazy command; one capability whose
+    factory fails must not fail completion for the others (spec §1).
+    """
+
+    def generate_completion(
+        self,
+        *,
+        prog_name: str | None = None,
+        shell: Literal["zsh", "bash", "fish"] | None = None,
+    ) -> str:
+        """Generate the completion script without unbuildable capabilities."""
+        commands = dict(self._commands)
+        try:
+            for name, command in commands.items():
+                if isinstance(command, _LazyCapabilityCommand) and not command.try_resolve():
+                    del self._commands[name]
+            return super().generate_completion(prog_name=prog_name, shell=shell)
+        finally:
+            self._commands.clear()
+            self._commands.update(commands)
+
+
 def _shell_app() -> App:
-    return create_app(name=SHELL_NAME, help="Unified untaped developer CLI.")
+    return _ShellRootApp(name=SHELL_NAME, help="Unified untaped developer CLI.")
 
 
 #: The unified shell application (spec §1). A singleton so repeated
@@ -114,14 +138,10 @@ def _register_shell_and_capabilities(result: CompositionResult) -> None:
 
 
 def _warn_quarantined(result: CompositionResult) -> None:
-    """Emit one stderr warning per quarantined distribution (spec §5)."""
-    seen: set[str] = set()
+    """Emit one stderr warning per quarantined capability (spec §5)."""
     for record in result.quarantine:
-        if record.distribution in seen:
-            continue
-        seen.add(record.distribution)
         echo(
-            f"warning: capability provider {record.distribution!r} quarantined "
+            f"warning: capability {record.name!r} from {record.distribution!r} quarantined "
             f"[{record.reason}]: {record.detail}",
             err=True,
         )
@@ -270,6 +290,21 @@ class _LazyCapabilityCommand(CommandSpec):
             return resolved
         with report_errors():
             app = build_deferred_app(self._capability)
+        return self._adopt(app)
+
+    def try_resolve(self) -> bool:
+        """Resolve without exiting; warn and return ``False`` when the factory fails."""
+        if self._resolved is not None:
+            return True
+        try:
+            app = build_deferred_app(self._capability)
+        except ConfigError as exc:
+            echo(f"warning: {exc} (left out of shell completion)", err=True)
+            return False
+        self._adopt(app)
+        return True
+
+    def _adopt(self, app: App) -> App:
         _apply_parent_defaults_to_app(app, self._mount_parent)
         for flag in chain(app.help_flags, app.version_flags):
             app[flag].show = False

@@ -162,7 +162,7 @@ command listing. With it, the capability is mounted lazily: `build_app()` runs
 only when its command is dispatched, so `untaped --help` never imports its CLI.
 A factory that raises or returns something other than a cyclopts `App` then
 fails that command with exit 4, naming the capability; other commands keep
-working. `untaped doctor` runs every factory and reports a failing one as a
+working, and shell completion leaves it out with a warning. `untaped doctor` runs every factory and reports a failing one as a
 `bad-app-factory` quarantine row, so you find it without dispatching. Without
 `help`, composition calls `build_app()` once at startup, a bad factory
 quarantines the provider, and the listing shows the built app's own help.
