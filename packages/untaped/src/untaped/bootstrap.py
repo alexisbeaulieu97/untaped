@@ -201,7 +201,7 @@ def build_root_app(
     candidates = list(candidates) if candidates is not None else list(discover_candidates())
     result = compose_root(candidates=candidates)
     root = _shell_app()
-    if not result.capabilities:
+    if not result.capabilities and not result.quarantine:
         root.help = f"{root.help}\n\n{INSTALL_HINT}"
     _mount(root, build_root_config_app(shell=SHELL_SPEC, result=result), name="config")
     _mount(root, build_root_profile_app(command=SHELL_NAME), name="profile")

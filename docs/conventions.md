@@ -77,7 +77,7 @@ the helpers do this for you, so never print a JSON line yourself.
 | Not found | `<noun> not found: 'x'; known: a, b` | `not_found("profile", name, known=names)` |
 | Quoted name | `'name'` | `q(name)` |
 | Count | `3 repos`, never `repo(s)` | `plural(3, "repo")` |
-| Hint | ``hint: run `untaped …` `` | `hint("config set awx.token --prompt")` |
+| Hint | ``hint: run `untaped …` `` (or a short instruction that is not a command, hand-built as `hint: …`, like the bare-install hint) | `hint("config set awx.token --prompt")` |
 | Warning | `warning: …` | `ui.message("warning", text)` |
 | Success | Muted by `-q` | `ui.success(text)` |
 | Summary | `<op>: 2 cloned, 1 failed` | `summary("sync", counts)` |

@@ -759,7 +759,16 @@ def test_bare_root_help_says_how_to_install_capabilities() -> None:
 
 def test_root_help_with_a_capability_has_no_install_hint() -> None:
     root = bootstrap.build_root_app(candidates=[provider_candidate(make_spec("demo"))])
-    assert "untaped[all]" not in CliInvoker().invoke(root.meta, ["--help"]).stdout
+    help_text = " ".join(CliInvoker().invoke(root.meta, ["--help"]).stdout.split())
+    assert bootstrap.INSTALL_HINT not in help_text
+
+
+def test_root_help_with_only_quarantined_providers_has_no_install_hint() -> None:
+    broken = make_candidate(make_spec("demo"), name="other")  # entry-point/spec name mismatch
+    root = bootstrap.build_root_app(candidates=[broken])
+    assert bootstrap.composition().quarantine
+    help_text = " ".join(CliInvoker().invoke(root.meta, ["--help"]).stdout.split())
+    assert bootstrap.INSTALL_HINT not in help_text
 
 
 @pytest.mark.usefixtures("_isolated_config")
