@@ -46,10 +46,10 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          version="$(uv run python scripts/release.py version)"
-          if [ "$PRODUCTION" = true ] && [ "$REF_NAME" != "v$version" ]; then
-            echo "::error::tag $REF_NAME does not match the package version $version"
-            exit 1
+          if [ "$PRODUCTION" = true ]; then
+            version="$(uv run python scripts/release.py version --tag "$REF_NAME")"
+          else
+            version="$(uv run python scripts/release.py version)"
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -187,7 +187,10 @@ jobs:
       - name: Install from the index and smoke
         run: |
           set -euo pipefail
-          # A rehearsal installs untaped from TestPyPI and its dependencies from PyPI.
+          # A rehearsal adds TestPyPI to PyPI. Under unsafe-best-match every
+          # dependency resolves to the highest compatible version across both
+          # indexes; that is accepted for rehearsals only, and production
+          # installs from PyPI alone.
           index_env=()
           if [ "$INDEX" = testpypi ]; then
             index_env=(UV_INDEX=https://test.pypi.org/simple/ UV_INDEX_STRATEGY=unsafe-best-match)
@@ -195,7 +198,7 @@ jobs:
           for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
             rm -rf "$RUNNER_TEMP/published"
             uv venv -q --python 3.14 "$RUNNER_TEMP/published"
-            if env "${index_env[@]}" uv pip install --python "$RUNNER_TEMP/published/bin/python" --refresh-package untaped "untaped==$VERSION"; then
+            if env "${index_env[@]}" uv pip install --python "$RUNNER_TEMP/published/bin/python" --refresh "untaped[all]==$VERSION"; then
               break
             fi
             if [ "$attempt" = 12 ]; then
@@ -214,7 +217,6 @@ jobs:
     permissions:
       contents: write
     env:
-      GH_TOKEN: ${{ github.token }}
       TAG: ${{ github.ref_name }}
       VERSION: ${{ needs.build.outputs.version }}
     steps:
@@ -242,4 +244,6 @@ jobs:
           path: .
 
       - name: Draft, attach, then publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: uv run python scripts/release.py github-release "$VERSION" --tag "$TAG" --repo "$GITHUB_REPOSITORY" --dist dist --notes release-notes.md

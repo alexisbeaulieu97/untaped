@@ -3,8 +3,9 @@
 Usage: ``uv run python scripts/release.py [--root DIR] <command> ...``. Each
 subcommand is one step of the workflow:
 
-- ``version`` prints the ``untaped`` package's version (the version step,
-  before the value reaches ``$GITHUB_ENV``).
+- ``version [--tag TAG]`` prints the ``untaped`` package's version (the
+  version step, before the value reaches ``$GITHUB_ENV``); with ``--tag`` it
+  first checks that TAG is ``v<version>``.
 - ``check VERSION [--dist DIR]`` checks every package version and sibling pin
   against the tag (before the build), and with ``--dist`` the built artifact
   list (after the build).
@@ -33,7 +34,7 @@ import time
 import tomllib
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Collection, Iterator
+from collections.abc import Callable, Collection, Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -113,6 +114,14 @@ def release_version(root: Path) -> str:
     error = _format_error(version)
     if error:
         raise ReleaseError(error)
+    return version
+
+
+def tagged_version(root: Path, tag: str) -> str:
+    """``release_version``, after checking that ``tag`` is ``v<version>``."""
+    version = release_version(root)
+    if tag != f"v{version}":
+        raise ReleaseError(f"tag {tag} does not match the package version {version}")
     return version
 
 
@@ -202,14 +211,28 @@ def fetch_json(url: str) -> dict[str, Any] | None:
     """The index's JSON for ``url``; None on 404. Any other failure raises ``ReleaseError``."""
     try:
         with urllib.request.urlopen(url, timeout=30) as response:
-            data: dict[str, Any] = json.load(response)
-            return data
+            data = json.load(response)
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             return None
         raise ReleaseError(f"could not read {url}: HTTP {exc.code}") from exc
     except (urllib.error.URLError, OSError) as exc:
         raise ReleaseError(f"could not read {url}: {exc}") from exc
+    except ValueError as exc:
+        raise ReleaseError(f"{url} did not return JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ReleaseError(f"{url} did not return a JSON object")
+    return data
+
+
+def _remote_digests(url: str, payload: dict[str, Any] | None) -> dict[str, str]:
+    """``{filename: sha256}`` from an index payload; ``ReleaseError`` if it lacks them."""
+    if payload is None:
+        return {}
+    try:
+        return {row["filename"]: row["digests"]["sha256"] for row in payload["urls"]}
+    except (KeyError, TypeError) as exc:
+        raise ReleaseError(f"{url} has no file list (urls[].filename, digests.sha256)") from exc
 
 
 def index_errors(
@@ -230,9 +253,8 @@ def index_errors(
     present = to_upload = 0
     local_files = _dist_files(dist)
     for name in packages(root):
-        payload = fetch(INDEX_URLS[index].format(name=name, version=version))
-        rows = [] if payload is None else payload["urls"]
-        remote = {row["filename"]: row["digests"]["sha256"] for row in rows}
+        url = INDEX_URLS[index].format(name=name, version=version)
+        remote = _remote_digests(url, fetch(url))
         local = sorted(set(_package_artifacts(name, version)) & local_files)
         for file in local:
             if file not in remote:
@@ -427,7 +449,8 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=REPO_ROOT, help="repository root")
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("version", help="print the untaped package's version")
+    version = commands.add_parser("version", help="print the untaped package's version")
+    version.add_argument("--tag", help="fail unless TAG is v<version>")
     check = commands.add_parser("check", help="check versions, pins and (with --dist) artifacts")
     check.add_argument("version")
     check.add_argument("--dist", type=Path)
@@ -477,7 +500,7 @@ def _dispatch(args: argparse.Namespace) -> list[str]:
     root: Path = args.root
     match args.command:
         case "version":
-            print(release_version(root))
+            print(release_version(root) if args.tag is None else tagged_version(root, args.tag))
         case "check":
             return _check(root, args.version, args.dist)
         case "notes":
@@ -495,7 +518,7 @@ def _dispatch(args: argparse.Namespace) -> list[str]:
     return []
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     """Run one subcommand; print each error on stderr and return 1 on failure."""
     args = _parser().parse_args(argv)
     try:

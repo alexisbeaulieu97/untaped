@@ -89,9 +89,10 @@ disallow_any_generics = true
 disallow_untyped_defs = true
 no_implicit_optional = true
 plugins = ["pydantic.mypy"]
-# Type-check src/ only; tests are validated by running them.
-packages = [
-    "untaped",
+# Type-check src/ and the release script; tests are validated by running them.
+files = [
+    "src/untaped",
+    "scripts/release.py",
 ]
 
 [tool.pytest.ini_options]

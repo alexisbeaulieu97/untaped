@@ -126,6 +126,10 @@ def test_only_publish_mints_tokens_and_only_the_release_job_writes() -> None:
     assert not any("actions/checkout" in str(s.get("uses", "")) for s in jobs["publish"]["steps"])
 
 
+def test_publish_waits_for_the_build() -> None:
+    assert _load("release.yml")["jobs"]["publish"]["needs"] == "build"
+
+
 def test_each_index_publish_skips_existing_with_attestations() -> None:
     steps = [
         s
@@ -181,6 +185,9 @@ def test_build_guards_and_checks_run_before_anything_is_uploaded() -> None:
     assert order == sorted(order)
     assert len(set(order)) == len(order)
     assert steps[0]["with"]["fetch-depth"] == 0
+    assert runs[only("release.py index")] == (
+        'uv run python scripts/release.py index "$VERSION" --dist dist --index "$INDEX"'
+    )
     assert steps[only("merge-base --is-ancestor")]["if"] == "env.PRODUCTION == 'true'"
 
     build = runs[only("uv build --all-packages")].splitlines()
@@ -189,6 +196,20 @@ def test_build_guards_and_checks_run_before_anything_is_uploaded() -> None:
         return next(i for i, text in enumerate(build) if needle in text)
 
     assert line("rm -rf dist") < line("uv build --all-packages") < line("rm -f dist/.gitignore")
+
+
+def test_a_tag_must_name_the_package_version_in_production() -> None:
+    """Only a pushed tag passes ``--tag``; a rehearsal may run on any ref."""
+    [step] = [s for s in _load("release.yml")["jobs"]["build"]["steps"] if s.get("id") == "version"]
+    assert step["env"] == {"REF_NAME": "${{ github.ref_name }}"}
+    assert step["run"].splitlines()[:6] == [
+        "set -euo pipefail",
+        'if [ "$PRODUCTION" = true ]; then',
+        '  version="$(uv run python scripts/release.py version --tag "$REF_NAME")"',
+        "else",
+        '  version="$(uv run python scripts/release.py version)"',
+        "fi",
+    ]
 
 
 def test_verify_requires_the_complete_index_and_smokes_the_install() -> None:
@@ -204,7 +225,18 @@ def test_verify_requires_the_complete_index_and_smokes_the_install() -> None:
         and 'release.py smoke "$RUNNER_TEMP/published/bin/untaped" "$VERSION"' in run
     ]
     assert index < install
-    assert "export UV_INDEX" not in runs[install], "scope the index override to uv pip install"
+    script = runs[install]
+    # The TestPyPI override is scoped to the one install command, not exported.
+    assert (
+        "index_env=(UV_INDEX=https://test.pypi.org/simple/ UV_INDEX_STRATEGY=unsafe-best-match)"
+        in script
+    )
+    install_line = (
+        'if env "${index_env[@]}" uv pip install --python "$RUNNER_TEMP/published/bin/python"'
+        ' --refresh "untaped[all]==$VERSION"; then'
+    )
+    assert install_line in [line.strip() for line in script.splitlines()]
+    assert "export" not in script
 
 
 @pytest.mark.parametrize(
@@ -230,6 +262,13 @@ def test_github_release_runs_the_script_on_the_built_artifacts() -> None:
         s["with"]["name"] for s in job["steps"] if "download-artifact" in str(s.get("uses", ""))
     }
     assert downloads == {"dist", "release-notes"}
+    assert job["env"] == {
+        "TAG": "${{ github.ref_name }}",
+        "VERSION": "${{ needs.build.outputs.version }}",
+    }
+    assert [s.get("env") for s in job["steps"]] == [None] * (len(job["steps"]) - 1) + [
+        {"GH_TOKEN": "${{ github.token }}"}
+    ]
 
 
 def test_ci_runs_the_release_check_and_smoke() -> None:
@@ -243,7 +282,16 @@ def test_ci_runs_the_release_check_and_smoke() -> None:
     gate = "\n".join(str(s.get("run", "")) for s in ci["jobs"]["lint-and-test"]["steps"])
     smoke_steps = ci["jobs"]["unified-app-wheel-smoke"]["steps"]
     smoke = "\n".join(str(s.get("run", "")) for s in smoke_steps)
-    assert "scripts/release.py check" in gate
+    [pins] = [
+        s
+        for s in ci["jobs"]["lint-and-test"]["steps"]
+        if s.get("name") == "Release versions and pins"
+    ]
+    assert pins["run"].splitlines() == [
+        "set -euo pipefail",
+        "uv lock --check",
+        'uv run python scripts/release.py check "$(uv run python scripts/release.py version)"',
+    ]
     assert ".github/release" not in gate + smoke
     assert 'release.py smoke "$RUNNER_TEMP/untaped-wheel/bin/untaped"' in smoke
 
