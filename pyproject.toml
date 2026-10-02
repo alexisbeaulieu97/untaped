@@ -3,9 +3,12 @@ members = ["packages/*"]
 
 [tool.uv.sources]
 untaped = { workspace = true }
+untaped-ansible = { workspace = true }
 untaped-awx = { workspace = true }
+untaped-github = { workspace = true }
 untaped-jira = { workspace = true }
 untaped-recipe = { workspace = true }
+untaped-workspace = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -70,33 +73,45 @@ plugins = ["pydantic.mypy"]
 # Type-check every package's src/ and the release script; tests are validated by running them.
 files = [
     "packages/untaped/src",
+    "packages/untaped-ansible/src",
     "packages/untaped-awx/src",
+    "packages/untaped-github/src",
     "packages/untaped-jira/src",
     "packages/untaped-recipe/src",
+    "packages/untaped-workspace/src",
     "scripts/release.py",
 ]
 mypy_path = [
     "packages/untaped/src",
+    "packages/untaped-ansible/src",
     "packages/untaped-awx/src",
+    "packages/untaped-github/src",
     "packages/untaped-jira/src",
     "packages/untaped-recipe/src",
+    "packages/untaped-workspace/src",
 ]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = [
     "packages/untaped/tests",
+    "packages/untaped-ansible/tests",
     "packages/untaped-awx/tests",
+    "packages/untaped-github/tests",
     "packages/untaped-jira/tests",
     "packages/untaped-recipe/tests",
+    "packages/untaped-workspace/tests",
     "tests",
 ]
 pythonpath = [
     "scripts",
     "packages/untaped/tests",
+    "packages/untaped-ansible/tests",
     "packages/untaped-awx/tests",
+    "packages/untaped-github/tests",
     "packages/untaped-jira/tests",
     "packages/untaped-recipe/tests",
+    "packages/untaped-workspace/tests",
 ]
 addopts = [
     "-ra",
@@ -112,9 +127,12 @@ markers = [
 branch = true
 source = [
     "packages/untaped/src",
+    "packages/untaped-ansible/src",
     "packages/untaped-awx/src",
+    "packages/untaped-github/src",
     "packages/untaped-jira/src",
     "packages/untaped-recipe/src",
+    "packages/untaped-workspace/src",
 ]
 omit = ["**/tests/**", "**/__main__.py"]
 

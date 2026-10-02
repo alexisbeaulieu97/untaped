@@ -1,0 +1,113 @@
+"""Shared CLI scope option aliases, parsers, and the ``github.default_org`` fallback."""
+
+from __future__ import annotations
+
+from typing import Annotated
+
+from cyclopts import Parameter, validators
+
+from untaped.sdk import (
+    ConfigError,
+    ParallelOption,
+    UsageError,
+    app_context,
+    read_stdin_input,
+)
+from untaped_github.application.inventory import RepositoryInventoryItem
+from untaped_github.application.scopes import TeamScope, normalize_team_scopes
+from untaped_github.domain import ArchivedMode
+from untaped_github.settings import GithubSettings
+
+REPO_KINDS = frozenset({"github.repo", "github.repo_hit", "github.sweep_repo"})
+"""Pipe record kinds whose ``repo`` names a repository for ``--stdin``."""
+
+OrgOption = Annotated[
+    list[str] | None,
+    Parameter(
+        name="--org",
+        help="GitHub org scope. Repeatable. Defaults to github.default_org without another scope.",
+        consume_multiple=False,
+        negative="",
+    ),
+]
+TeamOption = Annotated[
+    list[str] | None,
+    Parameter(
+        name="--team",
+        help="Team ORG/SLUG, or SLUG with exactly one --org. Repeatable.",
+        consume_multiple=False,
+        negative="",
+    ),
+]
+
+RepoOption = Annotated[
+    list[str] | None,
+    Parameter(
+        name=["--repo", "-r"],
+        help="Repository OWNER/NAME. Repeatable.",
+        consume_multiple=False,
+        negative="",
+    ),
+]
+ArchivedOption = Annotated[
+    ArchivedMode,
+    Parameter(name="--archived", help="Keep, drop, or keep only archived repositories."),
+]
+DepthOption = Annotated[
+    int,
+    Parameter(
+        name="--depth", validator=validators.Number(gte=0), help="Git fetch depth; 0 is full."
+    ),
+]
+CorpusParallelOption = Annotated[
+    ParallelOption,
+    Parameter(help="Parallel Git workers (capped at 32; default from github.sweep settings)."),
+]
+
+
+def parse_team_scopes(
+    values: list[str] | None, *, orgs: tuple[str, ...] = ()
+) -> tuple[TeamScope, ...]:
+    """Parse repeatable ``--team`` values into explicit org/slug scopes."""
+    try:
+        return normalize_team_scopes(values, orgs=orgs)
+    except ValueError as exc:
+        raise UsageError("--team must be ORG/SLUG unless exactly one --org is provided") from exc
+
+
+def org_scope(org: list[str] | None, *, scoped: bool) -> tuple[str, ...]:
+    """``--org`` values, else ``github.default_org`` when no other scope was given."""
+    if org or scoped:
+        return tuple(org or ())
+    default = app_context().section("github", GithubSettings).default_org
+    return (default,) if default else ()
+
+
+def read_stdin_repos() -> tuple[tuple[str, ...], tuple[RepositoryInventoryItem, ...]]:
+    """Read ``--stdin`` repos as names to look up plus records complete enough to use as-is.
+
+    A piped record that carries ``default_branch`` and a clone or web URL
+    (``repos list`` output) needs no API lookup; other records and bare
+    ``owner/name`` lines return as names.
+    """
+    piped = read_stdin_input(accept_kinds=REPO_KINDS)
+    if piped.records is None:
+        return piped.values, ()
+    names: list[str] = []
+    items: list[RepositoryInventoryItem] = []
+    for env in piped.records:
+        record = env.record
+        repo = record.get("repo")
+        if not isinstance(repo, str) or not repo.strip():
+            raise ConfigError(
+                f"line {env.lineno}: record 'repo' is missing or blank", category="invalid"
+            )
+        if record.get("default_branch") and (record.get("clone_url") or record.get("url")):
+            items.append(
+                RepositoryInventoryItem.model_validate(
+                    {**record, "full_name": repo.strip(), "html_url": record.get("url")}
+                )
+            )
+        else:
+            names.append(repo.strip())
+    return tuple(names), tuple(items)

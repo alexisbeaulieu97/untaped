@@ -26,8 +26,7 @@ The source tree is the implementation reference:
   the `dev` group, no `[project]`); `uv.lock` locks the whole workspace.
 - `packages/<name>/` holds one distribution each: its `pyproject.toml`,
   `src/` and `tests/`. Core is `packages/untaped/`: its `src/untaped/`
-  contains the shell, shared services, and the capabilities not yet extracted.
-  An extracted capability is its own package,
+  contains the shell and shared services. Each capability is its own package,
   `packages/untaped-<name>/src/untaped_<name>/`, and owns one capability end to end.
 - `docs/` contains user guides and executable policy files.
 - `tests/` verifies public behavior and release contracts: `tests/repo/` holds
@@ -118,7 +117,7 @@ rules below.
 2. **Cross-capability code goes through a declared public module.**
    Capability code imports core only from `untaped.sdk`. It may
    import another capability only through that capability's public module,
-   `untaped.capabilities.<other>.api`, never its other internals; the
+   `<package>.api` (for example `untaped_github.api`), never its other internals; the
    importing package declares a dependency on the other package;
    `check_conventions` enforces both.
    Dependencies are one-way (no cycles). Import them lazily on CLI paths;

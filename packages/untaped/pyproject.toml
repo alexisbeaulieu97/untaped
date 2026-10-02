@@ -22,18 +22,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-all = ["untaped-awx==10.0.0a0", "untaped-jira==10.0.0a0", "untaped-recipe==10.0.0a0"]
+all = ["untaped-ansible==10.0.0a0", "untaped-awx==10.0.0a0", "untaped-github==10.0.0a0", "untaped-jira==10.0.0a0", "untaped-recipe==10.0.0a0", "untaped-workspace==10.0.0a0"]
+ansible = ["untaped-ansible==10.0.0a0"]
 awx = ["untaped-awx==10.0.0a0"]
+github = ["untaped-github==10.0.0a0"]
 jira = ["untaped-jira==10.0.0a0"]
 recipe = ["untaped-recipe==10.0.0a0"]
+workspace = ["untaped-workspace==10.0.0a0"]
 
 [project.scripts]
 untaped = "untaped.__main__:main"
-
-[project.entry-points."untaped.capabilities"]
-ansible = "untaped.capabilities.ansible:provider"
-github = "untaped.capabilities.github:provider"
-workspace = "untaped.capabilities.workspace:provider"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
