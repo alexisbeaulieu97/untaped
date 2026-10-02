@@ -1,0 +1,23 @@
+name: Feature or task
+description: New behavior, an improvement, or maintenance work.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is hard or impossible today, and for whom.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Done when
+      description: What is true when this is finished; how to check it.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Ideas, constraints, related issues.

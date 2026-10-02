@@ -16,7 +16,7 @@ import yaml
 from repo.support import REPO_ROOT
 
 WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
-WORKFLOWS = ["ci.yml", "release.yml"]
+WORKFLOWS = ["ci.yml", "pr.yml", "release.yml"]
 EXPECTED_UV_VERSION = "0.11.26"
 # action -> (reviewed release tag, the full commit SHA it must be pinned to)
 EXPECTED_ACTION_REFS = {
@@ -426,3 +426,30 @@ def test_no_run_script_interpolates_expressions() -> None:
             assert "${{" not in str(step.get("run", "")), (
                 f"{name}: {step.get('name')} interpolates into shell"
             )
+
+
+def test_ci_gates_the_coverage_of_a_pull_requests_changed_lines() -> None:
+    gate = _steps("ci.yml", "lint-and-test")
+    assert gate[_find(gate, uses="actions/checkout")]["with"]["fetch-depth"] == 0
+    _find(gate, run="uv sync --frozen --python 3.14 --all-packages --group diff-coverage")
+    tests = next(i for i, step in enumerate(gate) if step.get("name") == "Pytest")
+    assert "--cov-report=xml" in gate[tests]["run"]
+    diff = gate[tests + 1]
+    assert diff["if"] == "github.event_name == 'pull_request'"
+    assert diff["env"] == {"BASE_SHA": "${{ github.event.pull_request.base.sha }}"}
+    assert diff["run"].strip() == (
+        'uv run diff-cover coverage.xml --compare-branch "$BASE_SHA" --fail-under 90'
+    )
+
+
+def test_pr_workflow_checks_the_pull_request_body_and_changelog() -> None:
+    pr = _workflow("pr.yml")
+    assert pr["on"] == {
+        "pull_request": {
+            "types": ["opened", "edited", "synchronize", "reopened", "ready_for_review"]
+        }
+    }
+    assert pr["permissions"] == {"contents": "read"}
+    steps = _steps("pr.yml", "pr-checks")
+    assert steps[_find(steps, uses="actions/checkout")]["with"]["fetch-depth"] == 0
+    _find(steps, run='uv run --no-sync python scripts/check_pr.py "$GITHUB_EVENT_PATH"')
