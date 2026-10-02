@@ -13,7 +13,7 @@ import pytest
 from untaped import repo_cache
 from untaped.capabilities.workspace.domain import CachedRepo, archive_blockers
 from untaped.capabilities.workspace.errors import GitError, WorkspaceError
-from untaped.capabilities.workspace.infrastructure import LocalGitWorktrees
+from untaped.capabilities.workspace.infrastructure import LocalGitWorktrees, git_worktrees
 from untaped.sdk import cache_key, cache_path, list_caches
 from workspace.conftest import add_submodule, commit_in, git, init_submodules
 
@@ -591,6 +591,7 @@ def test_cached_repos_runs_no_git(
         raise AssertionError("git ran")
 
     monkeypatch.setattr(repo_cache, "run_git", no_git)
+    monkeypatch.setattr(git_worktrees, "run_git", no_git)
     assert len(worktrees.cached_repos()) == 3
 
 

@@ -735,11 +735,20 @@ def test_an_old_layout_cache_is_not_listed(corpus: Callable[..., _Corpus]) -> No
 
 
 def test_status_ignores_materialized_worktrees(corpus: Callable[..., _Corpus]) -> None:
-    # A checkout holding a cache-like dir with valid metadata must not list it.
-    vendored = '{"repo": "acme/vendored", "ref": "main", "fetched_at": "2026-07-06T12:00:00+00:00"}'
-    env = corpus({"README.md": "hello\n", "vendor/x.git/untaped-corpus.json": vendored})
+    # A checkout holding a cache-like dir whose metadata is canonical (its path
+    # is ``cache_path`` of its clone_url) must not list it: only the skip hides it.
+    env = corpus({"README.md": "hello\n"})
     env.sync()
-    env.cache.materialize_worktree(env.repo, root=env.root, ref=None)
+    worktree = env.cache.materialize_worktree(env.repo, root=env.root, ref=None)
+    rel = Path(worktree.path).resolve().relative_to(env.root.resolve())
+    clone_url = f"https://{'/'.join(rel.parts)}/vendor/x.git"
+    vendored = cache_path(clone_url, root=env.root)
+    assert vendored == Path(worktree.path).resolve() / "vendor" / "x.git"
+    vendored.mkdir(parents=True)
+    (vendored / "untaped-corpus.json").write_text(
+        f'{{"repo": "acme/vendored", "ref": "main", "clone_url": "{clone_url}", '
+        '"fetched_at": "2026-07-06T12:00:00+00:00"}\n'
+    )
 
     [row] = env.cache.list_repos(root=env.root)
 
