@@ -768,6 +768,13 @@ def test_smoke_skills_need_each_expected_skill_with_its_file(
     assert capsys.readouterr().out == "smoke ok: untaped 10.0.0a0, 1 capabilities\n"
 
 
+def test_skill_errors_refuse_a_skill_listed_twice(tmp_path: Path) -> None:
+    skill = _skill(tmp_path, "untaped-awx")
+    assert release.skill_errors(json.dumps([skill, skill]), ["awx"]) == [
+        "skill untaped-awx is listed twice"
+    ]
+
+
 @pytest.mark.parametrize(
     ("skills", "exit_code", "error"),
     [
