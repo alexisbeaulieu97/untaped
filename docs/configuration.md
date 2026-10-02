@@ -39,12 +39,8 @@ fix it.
 
 - Within a major, a core-owned key may be added only if an older reader
   ignoring it is safe.
-- If ignoring it would change behaviour you rely on (TLS verification, a
-  proxy, anything security-relevant), it is a format bump, and waits for a
-  major.
-- A format bump only happens in a major.
-- An older untaped refuses a newer-format file instead of ignoring what it
-  does not know.
+- Otherwise (TLS verification, a proxy, anything security-relevant) it is a
+  format bump, which only a major makes.
 
 `config` and `profile` commands write only `config.yml`; capability state
 writes touch only `state.yml`.
