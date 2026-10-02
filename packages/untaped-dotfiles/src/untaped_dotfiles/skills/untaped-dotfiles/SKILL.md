@@ -53,14 +53,11 @@ without a terminal and without `--yes`), 3 something needs the user
 - `apply` refuses a path edited on this machine (`modified`, `conflict`);
   `--force` replaces it and keeps the local version aside. Never pass
   `--force` without showing the user the `diff` first.
-- `apply NAME` fast-forwards the item's clone when the item has a link
-  file in it, which moves every other link file on that clone, `manual`
-  ones included; the plan lists those paths as `moves with the clone`.
-- `sync` never prompts and never overwrites a local edit; it reports
-  `modified`, `conflict` and `manual` `behind` paths and exits 3. It is
-  the command for a timer, not `apply`.
-- A `manual` link file holds its whole clone back from `sync`; `copy` and
-  `merge` files read the fetched ref, so they still follow their policy.
+- `apply NAME` can move other items' link files: the plan lists them as
+  `moves with the clone`. `sync` never prompts and never overwrites a
+  local edit; it is the command for a timer, not `apply`. When a clone is
+  pulled, and what each policy does, is in
+  [references/policies.md](references/policies.md).
 - `remove` disables the item too, and keeps an edited copy aside rather
   than deleting it. Merged keys are taken back out of the target document.
 - A registered checkout (`subscribe PATH`) is never pulled; its link files

@@ -103,8 +103,9 @@ _STARTUP_PROBE = (
 #: some, so it only lowers these). Measured 2026-10-02 on Python 3.14.8 with
 #: seven capabilities: 119 ``untaped.*`` for ``--help`` and ``--version``
 #: (the dotfiles capability adds four: its package, settings and state models).
-#: The headroom absorbs dependency and patch-release drift; a new built-in
-#: capability adds a few ``untaped.*`` modules (its SPEC and settings).
+#: The budget sits six above that measurement, the same headroom the
+#: previous one had, to absorb dependency and patch-release drift; a new
+#: built-in capability adds a few ``untaped.*`` modules (its SPEC and settings).
 _TOTAL_BUDGET = 700
 _UNTAPED_BUDGET = 125
 
