@@ -79,7 +79,7 @@ class GitRepositoryCache:
             return
         cache = self._cache(bare_path, auth_header)
         with cache.locked():
-            cache.fetch(refspecs, depth=depth, blob_filter=blob_filter)
+            cache.fetch(refspecs, depth=depth, filter="blob:none" if blob_filter else None)
 
     def ls_remote(
         self,

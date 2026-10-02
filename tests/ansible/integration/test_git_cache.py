@@ -144,6 +144,15 @@ def test_read_files_returns_only_existing_blobs_under_any_locale(
     )
 
     assert files == {_REQS: "- src: acme/two\n", "requirements.yml": "- src: acme/one\n"}
+    # The port's ``blob_filter`` reaches git as ``--filter=blob:none``.
+    partial = subprocess.run(
+        ["git", "config", "--get", "remote.origin.partialclonefilter"],
+        cwd=bare,
+        text=True,
+        capture_output=True,
+        check=False,
+    ).stdout
+    assert partial == ("blob:none\n" if blob_filter else "")
 
 
 _MAIN = ["+refs/heads/main:refs/heads/main"]

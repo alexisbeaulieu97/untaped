@@ -194,11 +194,11 @@ def test_fetch_prunes_refs_gone_from_origin(tmp_path: Path, origin: Path) -> Non
     assert _refs(cache) == ["refs/heads/main"]
 
 
-def test_fetch_blob_filter_makes_the_cache_partial(tmp_path: Path, origin: Path) -> None:
+def test_fetch_filter_makes_the_cache_partial(tmp_path: Path, origin: Path) -> None:
     _git(origin, "config", "uploadpack.allowFilter", "true")
     cache = RepoCache(tmp_path / "app.git", error=_CacheError)
     cache.ensure(f"file://{origin}")
-    cache.fetch(["+refs/heads/main:refs/heads/main"], blob_filter=True)
+    cache.fetch(["+refs/heads/main:refs/heads/main"], filter="blob:none")
     config = cache.run(["config", "--get-regexp", r"^remote\.origin\."], capture=True).text
     assert "remote.origin.promisor true" in config
     assert "remote.origin.partialclonefilter blob:none" in config
