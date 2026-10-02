@@ -823,7 +823,7 @@ def test_the_notes_command_prints_the_section(tmp_path: Path) -> None:
 
 
 def test_this_repository_satisfies_the_release_metadata() -> None:
-    """Kept from the deleted test_release_workflow.py: the package declares what PyPI shows."""
+    """The package declares what PyPI shows."""
     project = release.packages(SCRIPT.parents[1])["untaped"]
     assert project["license"] == "MIT"
     assert project["license-files"] == ["LICENSE"]

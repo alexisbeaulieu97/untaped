@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -178,6 +179,9 @@ def test_build_guards_and_checks_run_before_anything_is_uploaded() -> None:
         min(uploads),
     ]
     assert order == sorted(order)
+    assert len(set(order)) == len(order)
+    assert steps[0]["with"]["fetch-depth"] == 0
+    assert steps[only("merge-base --is-ancestor")]["if"] == "env.PRODUCTION == 'true'"
 
     build = runs[only("uv build --all-packages")].splitlines()
 
@@ -188,11 +192,30 @@ def test_build_guards_and_checks_run_before_anything_is_uploaded() -> None:
 
 
 def test_verify_requires_the_complete_index_and_smokes_the_install() -> None:
-    steps = _load("release.yml")["jobs"]["verify"]["steps"]
-    runs = "\n".join(str(s.get("run", "")) for s in steps)
-    assert 'release.py index "$VERSION" --dist dist --index "$INDEX" --complete' in runs
-    assert 'uv pip install --python "$RUNNER_TEMP/published/bin/python"' in runs
-    assert 'release.py smoke "$RUNNER_TEMP/published/bin/untaped" "$VERSION"' in runs
+    job = _load("release.yml")["jobs"]["verify"]
+    assert job["needs"] == ["build", "publish"]
+    runs = [str(s.get("run", "")) for s in job["steps"]]
+    complete = 'release.py index "$VERSION" --dist dist --index "$INDEX" --complete'
+    [index] = [i for i, run in enumerate(runs) if complete in run]
+    [install] = [
+        i
+        for i, run in enumerate(runs)
+        if 'uv pip install --python "$RUNNER_TEMP/published/bin/python"' in run
+        and 'release.py smoke "$RUNNER_TEMP/published/bin/untaped" "$VERSION"' in run
+    ]
+    assert index < install
+    assert "export UV_INDEX" not in runs[install], "scope the index override to uv pip install"
+
+
+@pytest.mark.parametrize(
+    ("workflow", "job"),
+    [("release.yml", "build"), ("release.yml", "verify"), ("ci.yml", "unified-app-wheel-smoke")],
+)
+def test_every_smoke_runs_under_an_isolated_home(workflow: str, job: str) -> None:
+    runs = [str(s.get("run", "")) for s in _load(workflow)["jobs"][job]["steps"]]
+    home = [i for i, run in enumerate(runs) if 'echo "HOME=$home_dir" >> "$GITHUB_ENV"' in run]
+    smoke = [i for i, run in enumerate(runs) if "release.py smoke" in run]
+    assert len(home) == 1 and len(smoke) == 1 and home[0] < smoke[0]
 
 
 def test_github_release_runs_the_script_on_the_built_artifacts() -> None:

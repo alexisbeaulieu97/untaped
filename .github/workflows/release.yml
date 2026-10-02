@@ -81,6 +81,13 @@ jobs:
       - name: Check artifacts
         run: uv run python scripts/release.py check "$VERSION" --dist dist
 
+      - name: Configure isolated smoke home
+        run: |
+          set -euo pipefail
+          home_dir="$RUNNER_TEMP/untaped-smoke-home"
+          mkdir -p "$home_dir"
+          echo "HOME=$home_dir" >> "$GITHUB_ENV"
+
       - name: Smoke the wheels in a clean venv
         run: |
           set -euo pipefail
@@ -170,16 +177,25 @@ jobs:
       - name: Every file is on the index with the built bytes
         run: uv run python scripts/release.py index "$VERSION" --dist dist --index "$INDEX" --complete
 
+      - name: Configure isolated smoke home
+        run: |
+          set -euo pipefail
+          home_dir="$RUNNER_TEMP/untaped-published-smoke-home"
+          mkdir -p "$home_dir"
+          echo "HOME=$home_dir" >> "$GITHUB_ENV"
+
       - name: Install from the index and smoke
         run: |
           set -euo pipefail
+          # A rehearsal installs untaped from TestPyPI and its dependencies from PyPI.
+          index_env=()
           if [ "$INDEX" = testpypi ]; then
-            export UV_INDEX=https://test.pypi.org/simple/ UV_INDEX_STRATEGY=unsafe-best-match
+            index_env=(UV_INDEX=https://test.pypi.org/simple/ UV_INDEX_STRATEGY=unsafe-best-match)
           fi
           for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
             rm -rf "$RUNNER_TEMP/published"
             uv venv -q --python 3.14 "$RUNNER_TEMP/published"
-            if uv pip install --python "$RUNNER_TEMP/published/bin/python" --refresh-package untaped "untaped==$VERSION"; then
+            if env "${index_env[@]}" uv pip install --python "$RUNNER_TEMP/published/bin/python" --refresh-package untaped "untaped==$VERSION"; then
               break
             fi
             if [ "$attempt" = 12 ]; then
