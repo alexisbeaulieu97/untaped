@@ -103,7 +103,8 @@ untaped profile current
 Each capability's guide has its full workflow:
 [workspace](../packages/untaped-workspace/README.md), [github](../packages/untaped-github/README.md),
 [jira](../packages/untaped-jira/README.md), [awx](../packages/untaped-awx/README.md),
-[ansible](../packages/untaped-ansible/README.md) and [recipe](../packages/untaped-recipe/README.md).
+[ansible](../packages/untaped-ansible/README.md), [recipe](../packages/untaped-recipe/README.md)
+and [dotfiles](../packages/untaped-dotfiles/README.md).
 
 ```bash
 # workspace: a task directory of git worktrees on a shared branch
@@ -127,6 +128,10 @@ untaped ansible deps acme/base-role
 
 # recipe: see installed recipes
 untaped recipe list
+
+# dotfiles: subscribe to a repo, then see the items it offers
+untaped dotfiles subscribe https://github.com/acme/dotfiles
+untaped dotfiles items
 ```
 
 Shorten a command you repeat with an [alias](./configuration.md#command-aliases):

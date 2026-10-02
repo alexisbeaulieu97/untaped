@@ -290,6 +290,24 @@ untaped workspace status NAME --format pipe \
   | untaped recipe apply acme/ci-baseline --stdin --dry-run
 ```
 
+### dotfiles
+
+| Command | Writes |
+|---|---|
+| `dotfiles subscribe`, `dotfiles items` | `dotfiles.item` |
+| `dotfiles enable`, `dotfiles disable` | `dotfiles.item_outcome` |
+| `dotfiles repos` | `dotfiles.repo` |
+| `dotfiles unsubscribe` | `dotfiles.repo_outcome` |
+| `dotfiles status` | `dotfiles.status` (`--summary`: `dotfiles.status.summary`) |
+| `dotfiles apply` | `dotfiles.apply_outcome` |
+| `dotfiles sync` | `dotfiles.sync_outcome` |
+| `dotfiles remove` | `dotfiles.remove_outcome` |
+
+`dotfiles diff` prints a unified diff, not records. `dotfiles status` and
+`dotfiles sync` also write `status.json` (the `dotfiles.status.summary`
+record plus `checked_at`) and `attention` (one line, the count of rows
+that need the user) under `dotfiles.state_dir`.
+
 ## Exit codes
 
 Every `untaped` command uses the same exit codes. Scripts can rely on them.
