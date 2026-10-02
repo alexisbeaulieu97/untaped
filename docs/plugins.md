@@ -251,7 +251,7 @@ def items_command(
 ## 5. Piping
 
 `--format pipe` writes the v1 envelope, one JSON object per line (see
-[Pipes and record kinds](./scripting.md)):
+[Pipes and record kinds](./scripting.md#envelope-format)):
 
 ```json
 {"untaped": "1", "kind": "acme.item", "record": {"repo": "octocat/Hello-World"}}

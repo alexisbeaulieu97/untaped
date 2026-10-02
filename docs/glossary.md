@@ -22,7 +22,7 @@ Terms as `untaped` uses them in commands, output and these docs.
 - **default columns**: The fields a table shows when you pass no `--columns`,
   set by the record type (`table_columns`). `--columns ?` marks them.
 - **envelope**: One `--format pipe` line: `{"untaped": "1", "kind": ...,
-  "record": ...}`. See [Pipes and record kinds](./scripting.md).
+  "record": ...}`. See [Pipes and record kinds](./scripting.md#envelope-format).
 - **hook (recipe)**: A Python function in a recipe pack that validates or
   transforms files.
 - **key**: The dotted name of a setting: `section.field`, for example

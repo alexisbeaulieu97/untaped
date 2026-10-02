@@ -33,6 +33,10 @@ untaped github repos list --org acme --format pipe \
 Because every line stands alone, `head`, `grep` and `cat a b` keep a stream
 valid.
 
+A record that names a concrete filesystem target carries it as an absolute,
+non-empty `record.target_path`. A consumer reads this field rather than
+another capability's domain fields.
+
 ### How `--stdin` reads input
 
 - The first non-blank line decides the mode. If it is an envelope, every line
@@ -47,13 +51,6 @@ valid.
 - `--stdin` and positional arguments cannot be combined (exit 2).
 - When stdin carries data, confirmation prompts read the terminal
   (`/dev/tty`). With no terminal, pass `--yes` (or `--dry-run`).
-
-The envelope is versioned on its own, independently of the application
-version: v1 stays the wire contract across majors. A record that names a
-concrete filesystem target carries it as an absolute, non-empty
-`record.target_path`. Kinds ending in `.summary` are informational and need
-no target. A consumer reads this field rather than another capability's
-domain fields.
 
 ### Failed rows: the `error` field
 
@@ -77,8 +74,7 @@ have no `error` key.
 Tables leave `error` out (the `detail` column says the same); ask for it with
 `--columns error` or use `json`, `yaml` or `pipe`.
 
-Every failed row carries the same attribution as a raised failure. URL
-passwords are masked in every message, detail and record. `error` is a
+URL passwords are masked in every message, detail and record. `error` is a
 reserved record field.
 
 ### stderr diagnostics
@@ -140,7 +136,7 @@ skill names, one per line. With `--dry-run`, `config set/unset`,
 `profile create/delete/rename` and `alias set/remove` validate, write nothing
 and print their outcome with `action` `planned`.
 
-## workspace
+### workspace
 
 | Command | Writes |
 |---|---|
@@ -155,7 +151,7 @@ and print their outcome with `action` `planned`.
 | `workspace run --stdin` | `workspace.status`, `workspace.repo_outcome`, `workspace.run_outcome`; or lines, each a repo name or directory | `repo`, else `dir` |
 | `workspace create --stdin`, `workspace add --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`; or lines, each any repo identifier (`owner/name`, a unique name, a URL) | `full_name`, else `repo`, resolved through the GitHub inventory; `clone_url`, else `url`, when there is no name or the inventory lacks it |
 
-## github
+### github
 
 | Command | Writes |
 |---|---|
@@ -174,7 +170,7 @@ and print their outcome with `action` `planned`.
 |---|---|---|
 | `github search repos/code/issues --stdin`, `github sweep --stdin`, `github cache sync --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`; or `owner/name` lines | `repo` (`sweep` and `cache sync` use a `github.repo` record as-is, without an API call) |
 
-## jira
+### jira
 
 | Command | Writes |
 |---|---|
@@ -191,7 +187,7 @@ and print their outcome with `action` `planned`.
 |---|---|---|
 | `jira issues get --stdin`, `jira issues transition --stdin` | `jira.issue`, `jira.issue_outcome`; or key lines | `key` |
 
-## awx
+### awx
 
 Resource kinds are `awx.<snake_case kind>`: `awx.organization`,
 `awx.credential_type`, `awx.credential`, `awx.project`, `awx.inventory`,
@@ -236,7 +232,7 @@ array covering every job; the `job` field says which job a row belongs to.
 `pipe` and `raw` print one line per row, and `--follow --format json` streams
 NDJSON.
 
-## ansible
+### ansible
 
 | Command | Writes |
 |---|---|
@@ -256,7 +252,7 @@ NDJSON.
 `ansible graph` has its own formats (`tree`, `mermaid`, `json`) and no pipe
 output.
 
-## recipe
+### recipe
 
 | Command | Writes |
 |---|---|
@@ -323,8 +319,7 @@ line), `local` (config, files, the environment), `git`, or a service such as
 The category alone selects the exit code and retryability, so the two never
 disagree. A failure keeps its attribution when code replaces it or turns it
 into a row. `ConfigError` means local setup; an invalid input file or value is
-`invalid` (exit 1). Diagnostics never go to stdout, so the pipe envelope and
-data streams are unchanged.
+`invalid` (exit 1).
 
 Only `unavailable` is retryable. With `--format json`, `yaml` or `pipe` (or
 `UNTAPED_DIAGNOSTICS=json`), stderr reports each failure as a JSON line with
