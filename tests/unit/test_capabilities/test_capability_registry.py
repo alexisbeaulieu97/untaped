@@ -258,14 +258,24 @@ def test_a_claimant_of_a_contested_name_and_section_gets_one_name_record() -> No
     )
 
 
-def test_a_candidate_failing_its_own_checks_is_not_a_claimant() -> None:
-    broken = make_candidate(make_spec(name="github"), "a-dist", error=ImportError("no"))
+@pytest.mark.parametrize(
+    ("broken", "reason"),
+    [
+        (
+            make_candidate(make_spec(name="github"), "a-dist", error=ImportError("no")),
+            "malformed-entry-point",
+        ),
+        (make_candidate(make_spec(name="github", section="shell"), "a-dist"), "duplicate-section"),
+    ],
+    ids=["provider-raises", "declaration-fails"],
+)
+def test_a_candidate_failing_its_own_checks_is_not_a_claimant(
+    broken: ProviderCandidate, reason: str
+) -> None:
     sound = make_candidate(make_spec(name="github"), "b-dist")
     result = compose(make_shell(), [broken, sound])
     assert [c.provider_ref.distribution for c in result.capabilities] == ["b-dist"]
-    assert [(q.distribution, q.reason) for q in result.quarantine] == [
-        ("a-dist", "malformed-entry-point")
-    ]
+    assert [(q.distribution, q.reason) for q in result.quarantine] == [("a-dist", reason)]
 
 
 @pytest.mark.parametrize("bad_help", ["", "   ", "two\nlines", 42])

@@ -25,10 +25,10 @@
     gone. A provider's `untaped` requirement is the only compatibility check.
     `untaped capabilities` loses its `api` and `origin` columns and lists
     capabilities in name order.
-  - **Breaking:** two providers claiming the same capability name or config
-    section are both quarantined, with a warning naming every claimant;
-    before, a clash with a built-in was fatal. Uninstall one to restore the
-    other.
+  - **Breaking:** two or more providers claiming the same capability name or
+    config section are all quarantined, with a warning naming every claimant;
+    before, the first in order won (or, against a built-in, `untaped` failed).
+    Uninstall one to restore the other.
   - **Behavior change:** first-party capabilities register through
     `untaped.capabilities` entry points like any plugin. A failing capability
     is quarantined instead of stopping `untaped`. Each quarantined capability

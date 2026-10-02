@@ -619,6 +619,8 @@ def compose(
     entry point)`` order, where a skill name or doctor-check id already taken
     quarantines the later one. A spec with ``help`` is deferred: its factory
     runs at first dispatch and in ``untaped doctor`` (:func:`run_deferred_factory`).
+    An eager factory runs only after the contest, so a claimant whose factory
+    would fail still counts as a claimant.
     """
     state = _CompositionState(shell)
     ordered = sorted(candidates, key=_candidate_order)
