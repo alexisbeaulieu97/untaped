@@ -126,9 +126,7 @@ def test_capability_packages_declare_their_entry_point_and_pin_core() -> None:
     assert sorted(core["optional-dependencies"]["all"]) == sorted(
         f"untaped-{p.parent.name.removeprefix('untaped-')}=={version}" for p in capabilities
     )
-    assert set(core.get("entry-points", {}).get("untaped.capabilities", {})).isdisjoint(
-        p.parent.name.removeprefix("untaped-") for p in capabilities
-    )
+    assert "entry-points" not in core
 
 
 def test_dependent_capabilities_pin_github() -> None:

@@ -5,7 +5,7 @@ description: Operates SYSTEM through the `untaped CAPABILITY` command (TASKS IN 
 
 <!--
 Template for a capability's packaged agent skill. Copy it to
-packages/untaped/src/untaped/capabilities/CAPABILITY/skills/untaped-CAPABILITY/SKILL.md (an
+packages/untaped-CAPABILITY/src/untaped_CAPABILITY/skills/untaped-CAPABILITY/SKILL.md (an
 external provider ships it inside its own package), declare it in
 CapabilitySpec.skills, replace every UPPER_CASE placeholder, and delete this
 comment.

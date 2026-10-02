@@ -7,7 +7,7 @@ check that the packaged skills parse and link. These cases check what an agent
 
 ## Method
 
-1. Copy the skills under test (`packages/untaped/src/untaped/capabilities/*/skills/untaped-*`)
+1. Copy the skills under test (`packages/untaped-*/src/untaped_*/skills/untaped-*`)
    to a scratch directory. Copy the previous version too when you are testing
    a change.
 2. For each case, start a fresh agent with only that directory and the runner
