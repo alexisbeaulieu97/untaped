@@ -11,7 +11,7 @@ change proven only when a job ran your pushed commit and its row says why it
 passed or failed.
 
 Prefer `untaped awx` to raw API calls: it resolves names, previews writes
-and redacts secrets. `--help` lists options; `--columns ?` lists the columns of a read command.
+and redacts secrets. `--help` lists options; `--columns '?'` lists the columns of a read command.
 
 ## Setup
 

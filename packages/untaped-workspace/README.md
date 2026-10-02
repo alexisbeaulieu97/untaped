@@ -15,8 +15,9 @@ and parallel tasks get isolated checkouts of the same repos.
 Commands never discard local work: archiving refuses while a repo has
 uncommitted, stashed or unpushed work. The
 [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-workspace/src/untaped_workspace/skills/untaped-workspace/SKILL.md)
-and its references hold the per-command detail; `--help` and `--columns ?`
-hold the options and fields.
+and its references hold the per-command detail; `--help` lists the options,
+and [`--columns '?'`](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#output-records) lists a command's fields after it runs (use it on a
+read command, or add `--dry-run` to a write).
 
 ## Create, work, archive
 

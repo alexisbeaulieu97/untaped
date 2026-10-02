@@ -6,8 +6,9 @@ To add it to an existing install, see [Getting started](https://github.com/alexi
 `untaped awx ...` reads and changes Ansible Automation Platform (AAP) or AWX
 resources by name, launches and follows jobs, and tests playbook changes with
 declarative suites. The command surface is generated from the resource
-catalog: `untaped awx --help`, `untaped awx <resource> --help` and
-`--columns ?` list every command, option and column.
+catalog: `untaped awx --help` and `untaped awx <resource> --help` list every
+command and option. [`--columns '?'`](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#output-records) lists a command's columns after it runs,
+so use it on a read command (or add `--dry-run` to a write).
 
 The detailed manual ships with the CLI as the `untaped-awx` skill
 (`untaped skills install awx`). This page covers concepts, workflows that
