@@ -57,6 +57,7 @@ from untaped.management import (
     build_root_setup_app,
     build_root_skills_app,
 )
+from untaped.management.capabilities import INSTALL_HINT
 from untaped.management.skills import check_installed_skills, composed_skills
 from untaped.profile_resolver import set_profile_override
 from untaped.quiet import reset as _reset_quiet
@@ -200,6 +201,8 @@ def build_root_app(
     candidates = list(candidates) if candidates is not None else list(discover_candidates())
     result = compose_root(candidates=candidates)
     root = _shell_app()
+    if not result.capabilities:
+        root.help = f"{root.help}\n\n{INSTALL_HINT}"
     _mount(root, build_root_config_app(shell=SHELL_SPEC, result=result), name="config")
     _mount(root, build_root_profile_app(command=SHELL_NAME), name="profile")
     _mount(root, build_root_skills_app(shell=SHELL_SPEC, result=result), name="skills")

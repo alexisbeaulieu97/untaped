@@ -3,6 +3,9 @@
 ## Unreleased
 
 - Core
+  - **Breaking:** `pip install untaped` installs only the core and SDK; install
+    `untaped[all]` for every first-party capability, or `untaped[<name>]` for
+    one. First-party code moves to top-level packages (`untaped_github.api`, …).
   - **Breaking:** the SDK module is now `untaped.sdk`; `untaped.capability_api`
     is gone. `CAPABILITY_API_VERSION` and `get_core_settings` are removed.
   - **Breaking:** `PromptInterruptedError` is no longer a `ConfigError`;
