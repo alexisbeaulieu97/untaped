@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 import stat
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 import pytest
 
@@ -21,7 +19,6 @@ from untaped.git import (
     git_toplevel,
     is_transient_failure,
     run_git,
-    safe_cache_path,
     safe_path_segment,
     scoped_auth_config,
     stderr_gist,
@@ -468,73 +465,7 @@ def test_a_rejected_credential_is_an_environment_failure(
         assert excinfo.value.hint
 
 
-# ── cache paths ────────────────────────────────────────────────────────────
-
-
-def _legacy_cache_path_for(url: str, *, cache_dir: Path) -> Path:
-    """Verbatim copy of the pre-consolidation github/ansible implementation."""
-
-    def safe(value: str) -> str:
-        return "".join(char if char.isalnum() or char in "._-" else "_" for char in value)
-
-    parsed = urlparse(url)
-    if parsed.scheme and parsed.path:
-        base_name = Path(parsed.path.rstrip("/")).name
-        host = parsed.netloc or "local"
-    elif ":" in url and "@" in url.split(":", maxsplit=1)[0]:
-        host_part, _, path_part = url.partition(":")
-        host = host_part.rsplit("@", maxsplit=1)[-1]
-        base_name = Path(path_part.rstrip("/")).name
-    else:
-        host = "local"
-        base_name = Path(url.rstrip("/")).name
-    if not base_name:
-        base_name = "repository"
-    if not base_name.endswith(".git"):
-        base_name = f"{base_name}.git"
-    digest = hashlib.sha256(url.encode()).hexdigest()[:16]
-    return cache_dir.expanduser() / safe(host) / f"{safe(base_name[:-4])}-{digest}.git"
-
-
-@pytest.mark.parametrize(
-    "url",
-    [
-        "https://github.com/acme/api.git",
-        "https://github.com/acme/api",
-        "https://github.com/acme/api/",
-        "https://ghe.example.com:8443/org/sub/repo.git",
-        "https://user@github.com/acme/api.git",
-        "http://github.com/acme/my repo.git",
-        "git@github.com:acme/api.git",
-        "git@github.com:acme/api",
-        "ssh://git@github.com/acme/api.git",
-        "file:///srv/git/repo.git",
-        "file:///srv/git/",
-        "/srv/git/local-repo",
-        "relative/path",
-        "https://github.com/",
-        "https://github.com/acme/.git",
-    ],
-)
-def test_safe_cache_path_matches_existing_cache_layout(url: str, tmp_path: Path) -> None:
-    assert safe_cache_path(url, root=tmp_path) == _legacy_cache_path_for(url, cache_dir=tmp_path)
-
-
-@pytest.mark.parametrize(
-    "url",
-    ["https://../x.git", "https://./..", "git@..:..", "../../..", "https://h/..%2F..%2Fetc.git"],
-)
-def test_safe_cache_path_is_confined_under_root(url: str, tmp_path: Path) -> None:
-    root = tmp_path / "cache"
-    path = safe_cache_path(url, root=root)
-    assert path.resolve().is_relative_to(root.resolve())
-    assert len(path.relative_to(root).parts) == 2
-    assert path == safe_cache_path(url, root=root)
-
-
-def test_safe_cache_path_expands_user(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
-    assert safe_cache_path("https://h/a.git", root=Path("~/c")).is_relative_to(tmp_path / "c")
+# ── path segments ────────────────────────────────────────────────────────────
 
 
 @pytest.mark.parametrize(

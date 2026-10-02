@@ -41,6 +41,6 @@ class GithubSettings(BaseModel):
     token: SecretStr | None = None
     token_command: TokenCommand = None
     default_org: str | None = None
-    corpus_path: Path = Path("~/.untaped/github-corpus")
+    corpus_path: Path = Path("~/.untaped/github-cache")
     sweep: SweepSettings = Field(default_factory=SweepSettings)
     inventory: InventorySettings = Field(default_factory=InventorySettings)

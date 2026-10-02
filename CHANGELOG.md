@@ -17,6 +17,9 @@
     (`PickRequest`, `PickItem`, `PickSetting`, `PickCatalog`, `PickResult`,
     `Picked`; API `3.2`). `ScriptedPromptBackend(picks=...)` scripts it in
     tests.
+  - **New:** `RepoCache` and `cache_path`/`list_caches` in `untaped.sdk`:
+    one bare-repo cache building block for any capability.
+  - **Breaking:** `safe_cache_path` is removed; use `cache_path`.
 - Ansible
   - **Breaking:** `graph --upstream/--downstream/--both` are removed; use
     `--direction up|down|both`. Graph sources re-index once.
@@ -77,6 +80,9 @@
     `max_age_seconds`) for a cached, metadata-only repository list that
     workspace `create`/`add` resolve names from and the picker searches; it
     falls back to `github.default_org`.
+  - **Breaking:** the sweep cache moves to `~/.untaped/github-cache`, keyed
+    by host and path so https and ssh URLs share it; delete
+    `~/.untaped/github-corpus` (its worktrees included).
 - Recipe
   - **New:** `recipe backups restore` takes `--format` and `--columns`; with
     `json`, `yaml` or `pipe` it prints one `recipe.restore_outcome` row

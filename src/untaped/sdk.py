@@ -72,7 +72,6 @@ from untaped.git import (
     git_auth_header,
     git_toplevel,
     run_git,
-    safe_cache_path,
     safe_path_segment,
 )
 from untaped.http import (
@@ -224,7 +223,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "list_caches",
     "repo_url_parts",
     "run_git",
-    "safe_cache_path",
     "safe_path_segment",
     "same_origin",
     "scoped_auth_header",

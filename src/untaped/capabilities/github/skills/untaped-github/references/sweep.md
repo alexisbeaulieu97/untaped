@@ -2,7 +2,7 @@
 
 `untaped github sweep` answers grep-style questions over local clones kept in
 a managed corpus under `github.corpus_path` (default
-`~/.untaped/github-corpus`). Use `untaped workspace` for checkouts you edit.
+`~/.untaped/github-cache`). Use `untaped workspace` for checkouts you edit.
 
 Contents: predicates, refs, freshness, the footer and failures, rows, piped
 input, cache commands.
