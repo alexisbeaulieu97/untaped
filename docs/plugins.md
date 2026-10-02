@@ -385,8 +385,8 @@ free, but a command that writes declares it with `@writes`, or
   is none.
 - Read stdin only through the helpers in [Piping](#piping)
   (`read_identifiers`, `read_stdin_input`, `read_records`), never
-  `sys.stdin` directly. An empty pipe is an error unless the command passes
-  `allow_empty=True`, where it does nothing, reports like an empty list and
+  `sys.stdin` directly. An empty pipe is an error unless the command reads with
+  `read_stdin_input(allow_empty=True)`, where it does nothing, reports like an empty list and
   exits 0.
 - Before prompting, check `ui.can_prompt` on the `UiContext` that will prompt;
   without a terminal, fail with a hint naming the flag that supplies the value.
