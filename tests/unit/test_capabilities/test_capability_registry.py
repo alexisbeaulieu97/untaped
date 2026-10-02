@@ -45,9 +45,11 @@ from untaped.errors import ConfigError
         lambda: make_spec(section="  "),
         lambda: make_spec(profile=dict),
         lambda: make_spec(state=dict),
-        lambda: QuarantineRecord(distribution="d", entry_point="e", reason="nope", detail="x"),
         lambda: QuarantineRecord(
-            distribution="d", entry_point="e", reason="bad-metadata", detail=" "
+            name="n", distribution="d", entry_point="e", reason="nope", detail="x"
+        ),
+        lambda: QuarantineRecord(
+            name="n", distribution="d", entry_point="e", reason="bad-metadata", detail=" "
         ),
     ],
     ids=[

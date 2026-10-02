@@ -30,7 +30,12 @@ from test_management.support import (
     write_config,
 )
 from untaped import bootstrap
-from untaped.capabilities.registry import CapabilitySpec, CompositionResult, QuarantineRecord
+from untaped.capabilities.registry import (
+    CapabilitySpec,
+    CompositionResult,
+    ProviderCandidate,
+    QuarantineRecord,
+)
 from untaped.management.doctor import build_root_doctor_app, collect_doctor_rows
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, provider_candidate
@@ -49,6 +54,7 @@ def _doctor_app(*specs: object, quarantine: tuple[QuarantineRecord, ...] = ()) -
 
 def _quarantine() -> QuarantineRecord:
     return QuarantineRecord(
+        name="ghost",
         distribution="example-dist",
         entry_point="example_mod:provider",
         reason="duplicate-name",
@@ -278,11 +284,25 @@ def test_doctor_reports_a_failing_lazy_factory_as_a_quarantine_row(
     )
     rows = collect_doctor_rows(bootstrap.SHELL_SPEC, result)
     quarantine = [row for row in rows if row["check"] == "quarantine"]
-    assert [(row["capability"], row["title"]) for row in quarantine] == [
-        ("bad-dist", "bad-app-factory")
-    ]
+    assert [(row["capability"], row["title"]) for row in quarantine] == [("bad", "bad-app-factory")]
     assert quarantine[0]["status"] == "fail"
     assert detail in str(quarantine[0]["detail"])
+    assert str(quarantine[0]["detail"]).endswith(" [distribution bad-dist, entry point bad]")
+
+
+def test_doctor_names_each_quarantined_capability() -> None:
+    broken = [
+        ProviderCandidate(distribution="untaped", name=name, target=f"untaped_missing_{name}:p")
+        for name in ("awx", "jira")
+    ]
+    result = bootstrap.compose_root(candidates=broken)
+    rows = collect_doctor_rows(bootstrap.SHELL_SPEC, result)
+    quarantine = [row for row in rows if row["check"] == "quarantine"]
+    assert [(row["capability"], row["title"]) for row in quarantine] == [
+        ("awx", "malformed-entry-point"),
+        ("jira", "malformed-entry-point"),
+    ]
+    assert str(quarantine[0]["detail"]).endswith(" [distribution untaped]")
 
 
 def test_doctor_limits_factory_rows_to_the_requested_capabilities() -> None:

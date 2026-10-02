@@ -104,6 +104,7 @@ def test_quarantined_provider_lists_with_entry_point_name() -> None:
         capabilities=(),
         quarantine=(
             QuarantineRecord(
+                name="ghost",
                 distribution="example-dist",
                 entry_point="example_mod:provider",
                 reason="malformed-entry-point",
@@ -130,6 +131,7 @@ def test_unresolvable_provider_uses_unknown_sentinels() -> None:
         capabilities=(),
         quarantine=(
             QuarantineRecord(
+                name="mystery",
                 distribution="unknown",
                 entry_point="",
                 reason="malformed-entry-point",

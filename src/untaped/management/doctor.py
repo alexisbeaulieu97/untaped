@@ -472,10 +472,10 @@ def _run_check(
 
 
 def _quarantine_row(record: QuarantineRecord) -> dict[str, object]:
-    detail = record.detail
+    origin = f"distribution {record.distribution}"
     if record.entry_point:
-        detail = f"{detail} [entry point {record.entry_point}]"
-    return _row("quarantine", record.distribution, _FAIL, record.reason, detail)
+        origin = f"{origin}, entry point {record.entry_point}"
+    return _row("quarantine", record.name, _FAIL, record.reason, f"{record.detail} [{origin}]")
 
 
 __all__ = ["build_root_doctor_app", "collect_doctor_rows", "report_check_rows"]

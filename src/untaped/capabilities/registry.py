@@ -233,8 +233,12 @@ VALID_REASONS = frozenset(
 
 @dataclass(frozen=True)
 class QuarantineRecord:
-    """Why a provider was excluded (spec §3)."""
+    """Why a provider was excluded (spec §3).
 
+    ``name`` is the candidate's entry-point (capability) name.
+    """
+
+    name: str
     distribution: str
     entry_point: str
     reason: str
@@ -292,6 +296,7 @@ class _Quarantine(Exception):
         distribution = candidate.distribution.strip() or "unknown"
         entry_point = self.entry_point if self.entry_point is not None else _entry_point(candidate)
         return QuarantineRecord(
+            name=candidate.name,
             distribution=distribution,
             entry_point=entry_point,
             reason=self.reason,
@@ -570,7 +575,9 @@ def factory_failure(capability: RegisteredCapability) -> QuarantineRecord | None
         _check_factory(capability.spec)
     except _Quarantine as failed:
         ref = capability.provider_ref
-        return QuarantineRecord(ref.distribution, ref.entry_point, failed.reason, failed.detail)
+        return QuarantineRecord(
+            capability.spec.name, ref.distribution, ref.entry_point, failed.reason, failed.detail
+        )
     return None
 
 
