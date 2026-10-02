@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from untaped.testing import check_conventions
+
+pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 
 def test_github_follows_the_conventions() -> None:

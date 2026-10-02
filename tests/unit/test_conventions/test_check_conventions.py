@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import sys
-from collections.abc import Iterator
 from pathlib import Path
-from textwrap import dedent
 
 import pytest
 
-from untaped import bootstrap
+from tests.unit.test_conventions.conftest import Install
 from untaped.capabilities.registry import ExternalProvider
 from untaped.conventions import capability_violations
 from untaped.testing import check_conventions
@@ -18,7 +15,7 @@ from untaped.testing import check_conventions
 # an undeclared write (help tree), a print (messages, one allowed), a
 # Protocol outside the ports (structure) and a domain -> cli import (layering).
 _PLUGIN = {
-    "__init__.py": '''
+    "demo_plugin/__init__.py": '''
         """Demo capability provider."""
 
         from __future__ import annotations
@@ -59,10 +56,10 @@ _PLUGIN = {
 
         provider.api_requires = ((3, 0), (4, 0))
         ''',
-    "errors.py": '''
+    "demo_plugin/errors.py": '''
         """Demo errors."""
         ''',
-    "cli.py": '''
+    "demo_plugin/cli.py": '''
         """Demo commands."""
 
         from __future__ import annotations
@@ -83,10 +80,10 @@ _PLUGIN = {
             app.command(nuke, name="nuke")
             return app
         ''',
-    "domain/__init__.py": '''
+    "demo_plugin/domain/__init__.py": '''
         """Demo domain."""
         ''',
-    "domain/model.py": '''
+    "demo_plugin/domain/model.py": '''
         """Demo model."""
 
         from typing import Protocol
@@ -99,29 +96,19 @@ _PLUGIN = {
         ''',
 }
 _TESTS = {
-    "test_demo.py": """
+    "demo_tests/test_demo.py": """
         from demo_plugin._internal import helper
         """,
 }
 
 
-def _write(root: Path, files: dict[str, str]) -> None:
-    for name, body in files.items():
-        path = root / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(dedent(body).lstrip(), encoding="utf-8")
-
-
 @pytest.fixture
-def demo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[list[ExternalProvider]]:
+def demo(install: Install) -> list[ExternalProvider]:
     """The demo plugin installed in ``tmp_path/site`` and discovered as an external."""
-    _write(tmp_path / "site" / "demo_plugin", _PLUGIN)
-    _write(tmp_path / "demo_tests", _TESTS)
-    monkeypatch.syspath_prepend(str(tmp_path / "site"))
-    yield [ExternalProvider(distribution="demo-plugin", name="demo", target="demo_plugin:provider")]
-    for module in [name for name in sys.modules if name.split(".")[0] == "demo_plugin"]:
-        del sys.modules[module]
-    bootstrap._clear_for_tests()  # forget the composition that registered ``demo``
+    install({**_PLUGIN, **_TESTS})
+    return [
+        ExternalProvider(distribution="demo-plugin", name="demo", target="demo_plugin:provider")
+    ]
 
 
 _FOUND = [
@@ -135,14 +122,16 @@ _PRIVATE_IMPORT = "demo_tests/test_demo.py::private-test-import::demo_plugin._in
 
 def test_unknown_capability_raises() -> None:
     with pytest.raises(LookupError) as raised:
-        check_conventions("no-such-capability")
+        check_conventions("no-such-capability", externals=[])
     assert str(raised.value) == "no installed capability named 'no-such-capability'"
 
 
 def test_test_imports_are_checked_only_with_a_tests_dir(
     demo: list[ExternalProvider], tmp_path: Path
 ) -> None:
-    found = capability_violations("demo", tests_dir=tmp_path / "demo_tests", externals=demo)
+    found = capability_violations(
+        "demo", tests_dir=tmp_path / "site" / "demo_tests", externals=demo
+    )
     assert found == sorted([*_FOUND, _PRIVATE_IMPORT])
 
 
@@ -158,10 +147,9 @@ def test_an_external_capability_fails_with_every_violation_in_its_own_files(
 
 
 def test_a_main_module_is_checked_without_running_it(
-    demo: list[ExternalProvider], tmp_path: Path
+    demo: list[ExternalProvider], install: Install
 ) -> None:
-    main = tmp_path / "site" / "demo_plugin" / "__main__.py"
-    main.write_text('"""Demo entry point."""\n\nraise SystemExit("ran __main__")\n')
+    install({"demo_plugin/__main__.py": 'raise SystemExit("ran __main__")\n'})
     assert capability_violations("demo", externals=demo) == _FOUND
 
 
