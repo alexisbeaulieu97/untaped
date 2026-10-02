@@ -37,7 +37,7 @@ from untaped.capabilities.registry import (
     QuarantineRecord,
 )
 from untaped.management.doctor import build_root_doctor_app, collect_doctor_rows
-from untaped.settings import get_settings
+from untaped.settings import FORMAT_VERSION, get_settings
 from untaped.testing import CliInvoker, provider_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -423,6 +423,29 @@ def test_non_mapping_config_root_fails_config_row(_isolated_config: Path) -> Non
     code, rows = _rows(_doctor_app())
     assert code == 1
     assert "root must be a mapping" in _failed(rows)["load config file"]
+
+
+def test_a_newer_format_fails_the_config_rows(_isolated_config: Path) -> None:
+    newer = FORMAT_VERSION + 1
+    write_config(_isolated_config, f"format_version: {newer}\nprofiles: {{}}\n")
+    (_isolated_config.parent / "state.yml").write_text(f"format_version: {newer}\n")
+    code, rows = _rows(_doctor_app())
+    assert code == 1
+    failed = _failed(rows)
+    assert f"written by a newer untaped (format {newer}" in failed["load config file"]
+    assert f"written by a newer untaped (format {newer}" in failed["load state file"]
+
+
+def test_an_explicit_format_version_is_not_an_unknown_key(_isolated_config: Path) -> None:
+    stamp = f"format_version: {FORMAT_VERSION}\n"
+    write_config(_isolated_config, f"{stamp}profiles:\n  default: {{}}\n")
+    (_isolated_config.parent / "state.yml").write_text(stamp)
+    code, rows = _rows(
+        _doctor_app(make_spec("github", profile_model=GithubProfile, state_model=GithubState))
+    )
+    assert code == 0, _failed(rows)
+    (unknown,) = [row for row in rows if row["check"] == "unknown-keys"]
+    assert unknown["status"] == _PASS
 
 
 def test_active_profile_missing_without_profiles_fails_profile_row(

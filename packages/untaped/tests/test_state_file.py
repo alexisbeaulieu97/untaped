@@ -136,7 +136,9 @@ def test_state_path_must_not_be_the_config_file(cfg: Path, monkeypatch: pytest.M
         resolve_state_path()
 
 
-@pytest.mark.parametrize("section", ["profiles", "active", "http", "ui", "skills"])
+@pytest.mark.parametrize(
+    "section", ["profiles", "active", "format_version", "http", "ui", "skills"]
+)
 def test_reserved_sections_are_never_state(cfg: Path, section: str) -> None:
     cfg.write_text("profiles:\n  default: {}\nactive: default\n")
     with pytest.raises(ConfigError, match="reserved"):
@@ -146,7 +148,7 @@ def test_reserved_sections_are_never_state(cfg: Path, section: str) -> None:
     assert yaml.safe_load(cfg.read_text()) == {"profiles": {"default": {}}, "active": "default"}
 
 
-@pytest.mark.parametrize("section", ["profiles", "active"])
+@pytest.mark.parametrize("section", ["profiles", "active", "format_version"])
 def test_reserved_names_cannot_register_state(cfg: Path, section: str) -> None:
     with pytest.raises(ConfigError, match="reserved"):
         register_state_settings(section, DemoState)
