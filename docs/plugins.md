@@ -74,8 +74,7 @@ arguments.
 The provider's `untaped` requirement (`Requires-Dist`) is the only
 compatibility check: declare it (`untaped>=10,<11`); without one, nothing is
 checked. That range excludes pre-releases such as `10.0.0a0`; to run on a
-pre-release core, declare `untaped>=10.0.0a0,<11` (as `examples/untaped-hello`
-does). A running `untaped` outside that range quarantines the provider.
+pre-release core, declare `untaped>=10.0.0a0,<11`. A running `untaped` outside that range quarantines the provider.
 Installers normally enforce the range, so this shows up mainly after
 upgrading `untaped` past it. The [changelog](../CHANGELOG.md) says what each
 version added or broke.
