@@ -209,7 +209,10 @@ free, but a command that writes declares it with `@writes`, or
 ## Enforcement
 
 `untaped.testing.check_conventions(NAME)` runs these checks for one
-capability; each capability's tests call it. `# untaped: allow <rule>` on the
+capability; each capability's tests call it. Its `import-boundary` rule
+allows a capability's code to import core only as `untaped.sdk`, and another
+capability only as its `api` module while the importing distribution depends
+on that capability's. `# untaped: allow <rule>` on the
 flagged node's first line allows that one violation. It does not cover the
 default-table-columns rule (see Output records); this repo's own test suite
 enforces that one, and `# untaped: allow` does not apply to it.

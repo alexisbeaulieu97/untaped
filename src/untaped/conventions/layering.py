@@ -13,8 +13,7 @@ exempt) that crosses a layer the wrong way is flagged as
   does, as the composition root (flagged as ``<file>::settings::<layer> -> <name>``).
 
 ``# untaped: allow layer`` (or ``settings``) on the import line suppresses one.
-Imports between capabilities are a repository rule, checked by
-``tests/unit/test_capabilities/test_capability_imports.py``.
+Imports between capabilities are checked by ``untaped.conventions.imports``.
 """
 
 from __future__ import annotations

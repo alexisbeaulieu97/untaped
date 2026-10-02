@@ -114,9 +114,9 @@ rules below.
 2. **Cross-capability code goes through a declared public module.**
    Capability code imports core only from `untaped.sdk`. It may
    import another capability only through that capability's public module,
-   `untaped.capabilities.<other>.api`, never its other internals; each
-   importing pair is listed in `ALLOWED_CROSS_CAPABILITY_IMPORTS`
-   (`tests/unit/test_capabilities/test_capability_imports.py`).
+   `untaped.capabilities.<other>.api`, never its other internals; the
+   importing package declares a dependency on the other package;
+   `check_conventions` enforces both.
    Dependencies are one-way (no cycles). Import them lazily on CLI paths;
    the one exception is a settings model that validates against the other
    capability, which imports it at module top.
