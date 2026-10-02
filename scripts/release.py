@@ -4,11 +4,12 @@ Usage: ``uv run python scripts/release.py [--root DIR] <command> ...``. Each
 subcommand is one step of the workflow:
 
 - ``version [--tag TAG]`` prints the ``untaped`` package's version (the
-  version step, before the value reaches ``$GITHUB_ENV``); with ``--tag`` it
-  first checks that TAG is ``v<version>``.
-- ``check VERSION [--dist DIR]`` checks every package version and sibling pin
-  against the tag (before the build), and with ``--dist`` the built artifact
-  list (after the build).
+  version step, before the value reaches ``$GITHUB_ENV``); with ``--tag`` (a
+  production release) it first checks that TAG is ``v<version>`` and that
+  HEAD is on ``origin/main``, fetching ``main`` to know.
+- ``check [VERSION] [--dist DIR]`` checks every package version and sibling
+  pin against VERSION (default: the ``untaped`` package's version) before the
+  build, and with ``--dist`` the built artifact list (after the build).
 - ``notes VERSION`` prints the CHANGELOG section for the GitHub release body.
 - ``index VERSION --dist DIR --index pypi|testpypi [--complete]`` compares the
   built files with what the index already holds: before publishing (conflicts
@@ -42,6 +43,8 @@ from typing import Any, NamedTuple
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import Version
+
+from untaped.git import GitCommandError, git_toplevel, run_git
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VERSION_FORMAT = re.compile(r"^\d+\.\d+\.\d+((a|b|rc)\d+)?$")
@@ -123,6 +126,25 @@ def tagged_version(root: Path, tag: str) -> str:
     if tag != f"v{version}":
         raise ReleaseError(f"tag {tag} does not match the package version {version}")
     return version
+
+
+def check_on_main(root: Path) -> None:
+    """Fetch ``origin``'s ``main`` and fail unless HEAD is on it (an ancestor or its tip)."""
+    try:
+        top = git_toplevel(root)
+        if top is None:
+            raise ReleaseError(f"{root} is not a git checkout")
+        run_git(
+            ["fetch", "--no-tags", "origin", "main"], cwd=top, timeout=120, retry_transient=True
+        )
+        head = run_git(["rev-parse", "HEAD"], cwd=top, timeout=30, capture=True).text.strip()
+        ancestor = run_git(
+            ["merge-base", "--is-ancestor", "HEAD", "FETCH_HEAD"], cwd=top, timeout=30, check=False
+        )
+    except GitCommandError as exc:
+        raise ReleaseError(str(exc)) from exc
+    if ancestor.returncode:
+        raise ReleaseError(f"commit {head} is not on main")
 
 
 def _requirements(project: dict[str, Any]) -> Iterator[str]:
@@ -467,9 +489,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--root", type=Path, default=REPO_ROOT, help="repository root")
     commands = parser.add_subparsers(dest="command", required=True)
     version = commands.add_parser("version", help="print the untaped package's version")
-    version.add_argument("--tag", help="fail unless TAG is v<version>")
+    version.add_argument("--tag", help="fail unless TAG is v<version> and HEAD is on main")
     check = commands.add_parser("check", help="check versions, pins and (with --dist) artifacts")
-    check.add_argument("version")
+    check.add_argument("version", nargs="?", help="default: the untaped package's version")
     check.add_argument("--dist", type=Path)
     notes = commands.add_parser("notes", help="print the CHANGELOG section for VERSION")
     notes.add_argument("version")
@@ -513,10 +535,15 @@ def _index(root: Path, args: argparse.Namespace) -> list[str]:
 def _dispatch(args: argparse.Namespace) -> list[str]:
     root: Path = args.root
     match args.command:
+        case "version" if args.tag is None:
+            print(release_version(root))
         case "version":
-            print(release_version(root) if args.tag is None else tagged_version(root, args.tag))
+            version = tagged_version(root, args.tag)
+            check_on_main(root)
+            print(version)
         case "check":
-            return _check(root, args.version, args.dist)
+            version = release_version(root) if args.version is None else args.version
+            return _check(root, version, args.dist)
         case "notes":
             print(release_notes(root / "CHANGELOG.md", args.version))
         case "index":
