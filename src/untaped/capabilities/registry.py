@@ -294,7 +294,9 @@ class _Quarantine(Exception):
 
     def to_record(self, candidate: ProviderCandidate) -> QuarantineRecord:
         distribution = candidate.distribution.strip() or "unknown"
-        entry_point = self.entry_point if self.entry_point is not None else _entry_point(candidate)
+        entry_point = (
+            self.entry_point if self.entry_point is not None else candidate_entry_point(candidate)
+        )
         return QuarantineRecord(
             name=candidate.name,
             distribution=distribution,
@@ -633,16 +635,19 @@ def compose(
         except _Quarantine as failed:
             quarantined.append(failed.to_record(candidate))
             continue
-        ref = ProviderRef(distribution=candidate.distribution, entry_point=_entry_point(candidate))
+        ref = ProviderRef(
+            distribution=candidate.distribution, entry_point=candidate_entry_point(candidate)
+        )
         capabilities.append(_commit(spec, ref, state, staged))
     return CompositionResult(capabilities=tuple(capabilities), quarantine=tuple(quarantined))
 
 
 def _candidate_order(candidate: ProviderCandidate) -> tuple[str, str, str]:
-    return (candidate.name, candidate.distribution, _entry_point(candidate))
+    return (candidate.name, candidate.distribution, candidate_entry_point(candidate))
 
 
-def _entry_point(candidate: ProviderCandidate) -> str:
+def candidate_entry_point(candidate: ProviderCandidate) -> str:
+    """The entry point a candidate's provider records carry: its target, else its name."""
     return candidate.target if isinstance(candidate.target, str) else candidate.name
 
 

@@ -20,6 +20,7 @@ from cyclopts import App
 
 from tests.unit.conftest import load_script
 from untaped.bootstrap import build_root_app
+from untaped.capabilities import registry
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REGENERATE = "uv run python scripts/gen_config_reference.py"
@@ -41,6 +42,23 @@ def test_every_setting_has_a_description() -> None:
         "add Field(description=...) or a DESCRIPTIONS entry in scripts/gen_config_reference.py"
     )
     assert generator.unknown_descriptions() == [], "DESCRIPTIONS names a setting that is gone"
+
+
+def test_config_reference_refuses_a_quarantined_first_party_capability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    broken = [
+        registry.ProviderCandidate(distribution="untaped", name=name, target=lambda: None)
+        for name in ("awx", "jira")
+    ]
+    monkeypatch.setattr(registry, "discover_candidates", lambda: broken)
+    generator = load_script("gen_config_reference")
+    with pytest.raises(RuntimeError) as failed:
+        generator.collect_sections()
+    message = str(failed.value)
+    assert message.startswith("first-party capabilities quarantined; fix them before generating")
+    for name in ("awx", "jira"):
+        assert f"{name!r} [malformed-entry-point]: provider {name!r}" in message
 
 
 def _markdown_files() -> list[Path]:

@@ -246,7 +246,8 @@ def _env_name(key: str) -> str:
 def collect_sections() -> list[tuple[str, str, type[BaseModel], bool]]:
     """``(title, prefix, model, is_state)`` for the shell and every first-party capability.
 
-    Capabilities follow in name order.
+    Capabilities follow in name order. Raises :class:`RuntimeError` naming
+    every quarantined first-party capability rather than drop its section.
     """
     from untaped.bootstrap import SHELL_DISTRIBUTION, SHELL_SPEC  # noqa: PLC0415
     from untaped.capabilities.registry import compose, discover_candidates  # noqa: PLC0415
@@ -262,7 +263,15 @@ def collect_sections() -> list[tuple[str, str, type[BaseModel], bool]]:
         ),
     ]
     first_party = [c for c in discover_candidates() if c.distribution == SHELL_DISTRIBUTION]
-    for registered in compose(SHELL_SPEC, first_party).capabilities:
+    result = compose(SHELL_SPEC, first_party)
+    if result.quarantine:
+        reasons = "; ".join(
+            f"{record.name!r} [{record.reason}]: {record.detail}" for record in result.quarantine
+        )
+        raise RuntimeError(
+            f"first-party capabilities quarantined; fix them before generating: {reasons}"
+        )
+    for registered in result.capabilities:
         spec = registered.spec
         sections.append(
             (f"`{spec.config_section}`", spec.config_section, spec.profile_model, False)
