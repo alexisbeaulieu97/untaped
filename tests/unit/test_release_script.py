@@ -88,7 +88,7 @@ def test_the_split_layout_finds_seven_packages_and_skips_the_example(tmp_path: P
     root = _split_repo(tmp_path)
     assert sorted(release.packages(root)) == sorted(["untaped", *(f"untaped-{c}" for c in CAPS)])
     assert release.release_version(root) == "10.0.0"
-    assert release.version_errors(root, "10.0.0") == []
+    assert release.version_errors(release.packages(root), "10.0.0") == []
 
 
 def test_duplicate_package_names_are_refused(tmp_path: Path) -> None:
@@ -127,7 +127,7 @@ def test_release_versions_accept_finals_and_prereleases(tmp_path: Path, version:
 
 def test_version_errors_report_a_malformed_tag_first(tmp_path: Path) -> None:
     _project(tmp_path, "untaped", "10.0.0")
-    assert release.version_errors(tmp_path, "v10.0.0") == [
+    assert release.version_errors(release.packages(tmp_path), "v10.0.0") == [
         "version v10.0.0 is not X.Y.Z, X.Y.ZaN, X.Y.ZbN or X.Y.ZrcN",
         "untaped is at 10.0.0, not v10.0.0",
     ]
@@ -135,7 +135,7 @@ def test_version_errors_report_a_malformed_tag_first(tmp_path: Path) -> None:
 
 def test_a_trailing_newline_is_not_a_release_version(tmp_path: Path) -> None:
     _project(tmp_path, "untaped", "10.0.0")
-    assert release.version_errors(tmp_path, "10.0.0\n") == [
+    assert release.version_errors(release.packages(tmp_path), "10.0.0\n") == [
         "version 10.0.0\n is not X.Y.Z, X.Y.ZaN, X.Y.ZbN or X.Y.ZrcN",
         "untaped is at 10.0.0, not 10.0.0\n",
     ]
@@ -169,7 +169,7 @@ def test_a_tag_that_differs_names_every_package_and_pin(tmp_path: Path) -> None:
         + '[tool.uv.workspace]\nmembers = ["packages/*"]\n',
     )
     _project(tmp_path / "packages" / "untaped-awx", "untaped-awx", "10.0.0", ("untaped==10.0.0",))
-    assert release.version_errors(tmp_path, "10.0.1") == [
+    assert release.version_errors(release.packages(tmp_path), "10.0.1") == [
         "untaped is at 10.0.0, not 10.0.1",
         "untaped pins untaped-awx==10.0.0, not ==10.0.1",
         "untaped pins untaped-awx==10.0.0, not ==10.0.1",
@@ -193,7 +193,7 @@ def test_only_an_exact_pin_satisfies_a_sibling(tmp_path: Path, requirement: str)
     _project(
         root / "packages" / "untaped-jira", "untaped-jira", "10.0.0", (requirement, "httpx>=0.27")
     )
-    assert release.version_errors(root, "10.0.0") == [
+    assert release.version_errors(release.packages(root), "10.0.0") == [
         f"untaped-jira pins {requirement}, not ==10.0.0"
     ]
 
@@ -206,7 +206,7 @@ def test_markers_and_extras_on_an_exact_pin_are_fine(tmp_path: Path) -> None:
         "10.0.0",
         ('untaped[tui]==10.0.0; python_version >= "3.14"',),
     )
-    assert release.version_errors(root, "10.0.0") == []
+    assert release.version_errors(release.packages(root), "10.0.0") == []
 
 
 # --- artifacts --------------------------------------------------------------
@@ -215,7 +215,7 @@ def test_markers_and_extras_on_an_exact_pin_are_fine(tmp_path: Path) -> None:
 def test_expected_artifacts_normalize_names(tmp_path: Path) -> None:
     root = _split_repo(tmp_path)
     stems = ["untaped", *(f"untaped_{cap}" for cap in CAPS)]
-    assert release.expected_artifacts(root, "10.0.0") == {
+    assert release.expected_artifacts(release.packages(root), "10.0.0") == {
         file
         for stem in stems
         for file in (f"{stem}-10.0.0-py3-none-any.whl", f"{stem}-10.0.0.tar.gz")
@@ -228,7 +228,7 @@ def test_artifact_errors_name_missing_and_stray_files(tmp_path: Path) -> None:
     dist = tmp_path / "dist"
     for name in ("untaped-10.0.0-py3-none-any.whl", "untaped-9.1.0.tar.gz", ".gitignore"):
         _write(dist / name, "")
-    assert release.artifact_errors(root, "10.0.0", dist) == [
+    assert release.artifact_errors(release.packages(root), "10.0.0", release.dist_files(dist)) == [
         "missing: untaped-10.0.0.tar.gz",
         "unexpected: .gitignore",
         "unexpected: untaped-9.1.0.tar.gz",
@@ -307,10 +307,12 @@ def _fetch(files: dict[str, str] | None) -> Callable[[str], dict[str, Any] | Non
 )
 def test_index_errors(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     remote: dict[str, str] | None,
     complete: bool,
     expected: tuple[list[str], int, int],
 ) -> None:
+    monkeypatch.setattr(release, "INDEX_TRIES", 1)
     root, dist = _dist(tmp_path)
     result = release.index_errors(
         root, "10.0.0", dist, index="testpypi", complete=complete, fetch=_fetch(remote)
@@ -344,8 +346,8 @@ def test_a_complete_check_waits_for_the_index_to_catch_up(tmp_path: Path) -> Non
     root, dist = _dist(tmp_path)
     delays: list[float] = []
     fetch = _sequence(None, _payload({WHEEL: "wheel"}), _payload({WHEEL: "wheel", SDIST: "sdist"}))
-    result = release.wait_for_index(
-        root, "10.0.0", dist, index="testpypi", fetch=fetch, sleep=delays.append
+    result = release.index_errors(
+        root, "10.0.0", dist, index="testpypi", complete=True, fetch=fetch, sleep=delays.append
     )
     assert result == ([], 2, 0)
     assert delays == [10, 10]
@@ -355,8 +357,8 @@ def test_a_conflict_fails_the_wait_without_sleeping(tmp_path: Path) -> None:
     root, dist = _dist(tmp_path)
     delays: list[float] = []
     fetch = _sequence(_payload({WHEEL: "other"}))
-    errors, _, _ = release.wait_for_index(
-        root, "10.0.0", dist, index="testpypi", fetch=fetch, sleep=delays.append
+    errors, _, _ = release.index_errors(
+        root, "10.0.0", dist, index="testpypi", complete=True, fetch=fetch, sleep=delays.append
     )
     assert errors == [
         CONFLICT,
@@ -374,8 +376,8 @@ def test_the_wait_gives_up_after_twelve_tries(tmp_path: Path) -> None:
         calls.append(url)
         return None
 
-    errors, present, to_upload = release.wait_for_index(
-        root, "10.0.0", dist, index="testpypi", fetch=fetch, sleep=delays.append
+    errors, present, to_upload = release.index_errors(
+        root, "10.0.0", dist, index="testpypi", complete=True, fetch=fetch, sleep=delays.append
     )
     assert errors == [f"missing on testpypi: {WHEEL}", f"missing on testpypi: {SDIST}"]
     assert (present, to_upload, len(calls), delays) == (0, 2, 12, [10] * 11)
@@ -392,16 +394,41 @@ def test_a_wait_stops_on_a_fetch_error_after_one_sleep(tmp_path: Path) -> None:
         return payloads.pop()
 
     with pytest.raises(release.ReleaseError, match=r"^could not read the index$"):
-        release.wait_for_index(
-            root, "10.0.0", dist, index="testpypi", fetch=fetch, sleep=delays.append
+        release.index_errors(
+            root, "10.0.0", dist, index="testpypi", complete=True, fetch=fetch, sleep=delays.append
         )
     assert delays == [10]
+
+
+def test_a_wait_re_fetches_only_the_packages_still_missing_files(tmp_path: Path) -> None:
+    root = _split_repo(tmp_path)
+    dist = tmp_path / "dist"
+    for file in release.expected_artifacts(release.packages(root), "10.0.0"):
+        _write(dist / file, file)
+    urls: list[str] = []
+
+    def fetch(url: str) -> dict[str, Any] | None:
+        urls.append(url)
+        name = url.split("/")[-3]
+        stem = name.replace("-", "_")
+        files = [f"{stem}-10.0.0-py3-none-any.whl", f"{stem}-10.0.0.tar.gz"]
+        if name == "untaped" and urls.count(url) == 1:
+            files = files[:1]
+        return _payload({file: file for file in files})
+
+    errors, present, to_upload = release.index_errors(
+        root, "10.0.0", dist, index="testpypi", complete=True, fetch=fetch, sleep=lambda _: None
+    )
+    names = sorted(["untaped", *(f"untaped-{cap}" for cap in CAPS)])
+    first = [f"https://test.pypi.org/pypi/{name}/10.0.0/json" for name in names]
+    assert urls == [*first, "https://test.pypi.org/pypi/untaped/10.0.0/json"]
+    assert (errors, present, to_upload) == ([], 2 * len(names), 0)
 
 
 def test_each_package_is_checked_against_its_own_index_entry(tmp_path: Path) -> None:
     root = _split_repo(tmp_path)
     dist = tmp_path / "dist"
-    for file in release.expected_artifacts(root, "10.0.0"):
+    for file in release.expected_artifacts(release.packages(root), "10.0.0"):
         _write(dist / file, file)
     urls: list[str] = []
     awx_url = "https://test.pypi.org/pypi/untaped-awx/10.0.0/json"
@@ -660,7 +687,8 @@ class FakeGh:
         self.list_error = list_error
         self.calls: list[list[str]] = []
 
-    def __call__(self, args: list[str]) -> subprocess.CompletedProcess[str]:
+    def __call__(self, *argv: str) -> subprocess.CompletedProcess[str]:
+        args = list(argv)
         self.calls.append(args)
         if args == LIST:
             if self.list_error:
