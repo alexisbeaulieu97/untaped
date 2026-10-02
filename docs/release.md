@@ -1,14 +1,14 @@
 # Releasing `untaped`
 
-A release is a release PR, an optional TestPyPI rehearsal, and a `vX.Y.Z` tag
-on `main`. `.github/workflows/release.yml` does the rest; the workflow and
+A release is a release PR, a TestPyPI rehearsal whenever the workflow, the
+build or the package set changed, and a `vX.Y.Z` tag on `main`. `.github/workflows/release.yml` does the rest; the workflow and
 `scripts/release.py` are the reference for what each step checks.
 
 Publishing, dispatching a release workflow, creating a tag or release,
 merging a PR and changing repository settings each need explicit approval for
 that exact action, because each changes shared or public state.
 
-## Before the first release
+## One-time setup
 
 - **Trusted publishers** on both PyPI and TestPyPI: owner `alexisbeaulieu97`,
   repository `untaped`, workflow `release.yml`, environment `pypi` (PyPI) or
@@ -35,16 +35,19 @@ script must do about it.
 
 ## Rehearse
 
+Rehearse on the release PR branch:
+
 ```bash
-gh workflow run release.yml --ref <branch>
+gh workflow run release.yml --ref <release-pr-branch>
 ```
 
 This runs the same build and checks, publishes to TestPyPI and installs from
 it. TestPyPI files are immutable, so re-rehearsing the same commit is a
-no-op. Builds are stamped with the commit time, so any new commit under an
-already-rehearsed version fails the index check: rehearse a pre-release
-such as `X.Y.Zrc1` first, or accept that a rehearsal of `X.Y.Z` pins those
-bytes.
+no-op. Builds are stamped with the commit time, so the next TestPyPI
+rehearsal of an already-rehearsed version from a new commit fails the index
+check: rehearse a pre-release such as `X.Y.Zrc1` first, or accept that
+`X.Y.Z` cannot be rehearsed again. The tag run checks PyPI only, so a
+rehearsal never blocks the release.
 
 ## Release
 
@@ -55,7 +58,7 @@ bytes.
 
 The GitHub release is created from the CHANGELOG section once the published
 package installs. Builds use the commit timestamp, so rebuilding a tag gives
-byte-identical files (v9.1.0 matched PyPI).
+byte-identical files.
 
 ## A failed run
 
