@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 from filelock import FileLock
 
+from tests.conftest import GitCall
 from untaped.capabilities.github.domain import (
     CorpusFreshness,
     CorpusRepoResult,
@@ -25,10 +26,11 @@ from untaped.capabilities.github.domain import (
 )
 from untaped.capabilities.github.domain.errors import GitCorpusError
 from untaped.capabilities.github.infrastructure.git_corpus import GitCorpusCache
-from untaped.sdk import GitResult, cache_path
+from untaped.sdk import cache_path
 
 Git = Callable[..., str]
 Commit = Callable[..., None]
+Rewrite = Callable[..., None]
 
 
 @dataclass
@@ -559,39 +561,17 @@ def test_authenticated_sync_requires_an_https_remote(corpus: Callable[..., _Corp
         env.sync(repo=ssh, auth_header="AUTHORIZATION: basic secret")
 
 
-def _rewrite_to(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, origin: Path, *urls: str) -> None:
-    """Point ``urls`` at the local ``origin`` through a global gitconfig (no network)."""
-    config = tmp_path / "gitconfig"
-    config.write_text(
-        f'[url "{origin.as_uri()}"]\n' + "".join(f"\tinsteadOf = {url}\n" for url in urls)
-    )
-    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
-
-
-def _spy_git(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str | None]]:
-    """Record each cache git call's subcommand and auth header; git still runs."""
-    import untaped.repo_cache as repo_cache_module
-
-    seen: list[tuple[str, str | None]] = []
-    real = repo_cache_module.run_git
-
-    def spy(args: list[str], **kwargs: Any) -> GitResult:
-        seen.append((args[0], kwargs.get("auth_header")))
-        return real(args, **kwargs)
-
-    monkeypatch.setattr(repo_cache_module, "run_git", spy)
-    return seen
-
-
 def test_cache_setup_carries_no_token(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, corpus: Callable[..., _Corpus]
+    tmp_path: Path,
+    corpus: Callable[..., _Corpus],
+    rewrite_to: Rewrite,
+    spy_run_git: list[GitCall],
 ) -> None:
     # Security: setting up the cache and its origin never carries the token.
     url = "https://github.example.com/acme/api.git"
     root = tmp_path / "corpus"
-    _rewrite_to(monkeypatch, tmp_path, corpus({"README.md": "hello\n"}).source, url)
+    rewrite_to(corpus({"README.md": "hello\n"}).source, url)
     cache = GitCorpusCache(auth_host="github.example.com")
-    seen = _spy_git(monkeypatch)
 
     cache.sync_repo(
         CorpusRepoTarget(full_name="acme/api", clone_url=url, default_branch="main"),
@@ -601,8 +581,9 @@ def test_cache_setup_carries_no_token(
         auth_header="AUTHORIZATION: basic secret",
     )
 
-    assert [auth for command, auth in seen if command in {"init", "config"}] == [None, None]
-    assert any(auth is not None for command, auth in seen if command == "fetch")
+    seen = spy_run_git
+    assert [auth for command, auth, _ in seen if command in {"init", "config"}] == [None, None]
+    assert any(auth is not None for command, auth, _ in seen if command == "fetch")
 
 
 @pytest.mark.parametrize(
@@ -620,16 +601,16 @@ def test_cache_setup_carries_no_token(
 )
 def test_sync_sends_the_token_only_to_the_github_git_host(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     corpus: Callable[..., _Corpus],
+    rewrite_to: Rewrite,
+    spy_run_git: list[GitCall],
     url: str,
     auth_host: str | None,
     sent: bool,
 ) -> None:
     # Security: a piped clone_url on another host must not receive the token.
-    _rewrite_to(monkeypatch, tmp_path, corpus({"README.md": "hello\n"}).source, url)
+    rewrite_to(corpus({"README.md": "hello\n"}).source, url)
     cache = GitCorpusCache(auth_host=auth_host)
-    seen = _spy_git(monkeypatch)
 
     cache.sync_repo(
         CorpusRepoTarget(full_name="acme/api", clone_url=url, default_branch="main"),
@@ -639,7 +620,7 @@ def test_sync_sends_the_token_only_to_the_github_git_host(
         auth_header="AUTHORIZATION: basic secret",
     )
 
-    network = [auth for command, auth in seen if command in {"fetch", "ls-remote"}]
+    network = [auth for command, auth, _ in spy_run_git if command in {"fetch", "ls-remote"}]
     assert network
     assert all((auth is not None) is sent for auth in network)
 
@@ -702,12 +683,12 @@ def test_an_unlockable_repo_is_a_corpus_error(corpus: Callable[..., _Corpus]) ->
 
 
 def test_https_and_ssh_forms_of_one_repo_share_the_cache(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, corpus: Callable[..., _Corpus]
+    corpus: Callable[..., _Corpus], rewrite_to: Rewrite
 ) -> None:
     """The cache key ignores the URL form: sync over https, look up over ssh."""
     env = corpus({"README.md": "hello\n"})
     https, ssh = "https://github.com/acme/app.git", "git@github.com:acme/app.git"
-    _rewrite_to(monkeypatch, tmp_path, env.source, https)
+    rewrite_to(env.source, https)
     target = CorpusRepoTarget(full_name="acme/app", clone_url=https, default_branch="main")
 
     synced = env.cache.sync_repo(
@@ -720,11 +701,11 @@ def test_https_and_ssh_forms_of_one_repo_share_the_cache(
 
 
 def test_a_repo_named_with_a_leading_dot_is_listed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, corpus: Callable[..., _Corpus]
+    corpus: Callable[..., _Corpus], rewrite_to: Rewrite
 ) -> None:
     env = corpus({"README.md": "hello\n"})
     url = "https://github.com/acme/.github.git"
-    _rewrite_to(monkeypatch, tmp_path, env.source, url)
+    rewrite_to(env.source, url)
     target = CorpusRepoTarget(full_name="acme/.github", clone_url=url, default_branch="main")
     synced = env.cache.sync_repo(
         target, root=env.root, selector=RefSelector(), depth=1, auth_header=None
@@ -820,15 +801,15 @@ def test_a_symlinked_root_lists_the_path_it_synced(
 )
 def test_a_wide_sync_scopes_the_token_on_ls_remote(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     corpus: Callable[..., _Corpus],
+    rewrite_to: Rewrite,
+    spy_run_git: list[GitCall],
     url: str,
     auth_host: str,
     sent: bool,
 ) -> None:
-    _rewrite_to(monkeypatch, tmp_path, corpus({"README.md": "hello\n"}).source, url)
+    rewrite_to(corpus({"README.md": "hello\n"}).source, url)
     cache = GitCorpusCache(auth_host=auth_host)
-    seen = _spy_git(monkeypatch)
 
     cache.sync_repo(
         CorpusRepoTarget(full_name="acme/api", clone_url=url, default_branch="main"),
@@ -838,5 +819,5 @@ def test_a_wide_sync_scopes_the_token_on_ls_remote(
         auth_header="AUTHORIZATION: basic secret",
     )
 
-    listed = [auth for command, auth in seen if command == "ls-remote"]
+    listed = [auth for command, auth, _ in spy_run_git if command == "ls-remote"]
     assert listed == ["AUTHORIZATION: basic secret" if sent else None]
