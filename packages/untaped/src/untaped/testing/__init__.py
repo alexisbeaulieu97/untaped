@@ -1,7 +1,7 @@
 """Testing helpers for driving Cyclopts command apps with captured output.
 
 :func:`check_conventions` checks one installed capability against
-``docs/conventions.md``; its ``candidates`` argument composes a provider
+``docs/plugins.md#conventions``; its ``candidates`` argument composes a provider
 passed in directly instead of one discovered through entry points.
 :func:`invoke_root` runs ``untaped ...`` in-process against the installed
 providers.

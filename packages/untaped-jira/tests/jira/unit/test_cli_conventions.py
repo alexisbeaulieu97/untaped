@@ -1,4 +1,4 @@
-"""CLI tests for the jira command conventions (``docs/conventions.md``).
+"""CLI tests for the jira command conventions (``docs/plugins.md#conventions``).
 
 Covers usage errors (exit 2), the write confirmation contract (``--yes`` /
 ``--dry-run``, under ``jira.confirm: always``), ``--stdin`` identifiers, and

@@ -1,4 +1,10 @@
-"""Provision repos into a workspace: resolve, check out in parallel, record the successes."""
+"""Provision repos into a workspace: resolve, check out in parallel, record the successes.
+
+Lock order: ``create``, ``add`` and ``archive`` take the per-workspace lock
+first, then each checkout or removal takes the per-repo cache lock inside it.
+Never take them the other way: a process holding a cache lock while it waits
+for a workspace lock can deadlock with one doing the opposite.
+"""
 
 from __future__ import annotations
 

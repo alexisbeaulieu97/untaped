@@ -2,7 +2,7 @@
 
 Every capability phrases counts, quoted names, "not found" errors, hints and
 summaries through these helpers instead of hand-rolled f-strings, so the
-conventions in ``docs/conventions.md`` hold in one place:
+conventions in ``docs/plugins.md#messages-stderr`` hold in one place:
 
 - ``plural(3, "repo")`` → ``3 repos`` (never ``repo(s)``);
 - ``q("name")`` → ``'name'``;

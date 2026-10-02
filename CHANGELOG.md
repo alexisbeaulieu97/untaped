@@ -2,138 +2,192 @@
 
 ## Unreleased
 
-- Core
-  - **Breaking:** `pip install untaped` installs only the core and SDK; install
-    `untaped[all]` for every first-party capability, or `untaped[<name>]` for
-    one. First-party code moves to top-level packages (`untaped_github.api`, …).
-    Upgrading keeps the original spec, so reinstall with the extra:
-    `uv tool install --reinstall 'untaped[all]'` or
-    `pip install -U 'untaped[all]'`.
-  - **Breaking:** the SDK module is now `untaped.sdk`; `untaped.capability_api`
-    is gone. `CAPABILITY_API_VERSION` and `get_core_settings` are removed.
-  - **Breaking:** `PromptInterruptedError` is no longer a `ConfigError`;
-    Ctrl-C at a prompt now always exits 130.
-  - **New:** bare `untaped --help` and `untaped capabilities` print how to
-    install capabilities when none are installed.
-  - **Breaking (SDK):** `check_conventions(NAME)` runs an
-    `import-boundary` rule: a plugin may import core only through
-    `untaped.sdk`, and another capability only through its `api` module with
-    a declared dependency on its distribution.
-  - **New:** `@writes` declares a command that writes; command names are
-    no longer limited to a closed verb list.
-  - **New:** `untaped.testing.check_conventions(NAME)` runs the convention
-    checks for any capability, plugins included.
-  - **New (SDK):** `untaped.testing.plugin` gives a plugin's own tests the
-    hermetic environment untaped's tests use.
-  - **New:** `examples/untaped-hello` is a minimal, tested plugin to start
-    from; `untaped.testing.invoke_root(argv)` runs `untaped …` in a plugin's
-    tests.
-  - **New:** `report_row_errors` reports each failed row's error and hint.
-  - **New (SDK):** `UiContext.pick_many` opens an inline two-pane picker: fuzzy
-    search with multi-select on the left, per-item settings on the right
-    (`PickRequest`, `PickItem`, `PickSetting`, `PickCatalog`, `PickResult`,
-    `Picked`). `ScriptedPromptBackend(picks=...)` scripts it in
-    tests.
-  - **New (SDK):** `RepoCache`, `cache_path`, `cache_key`, `list_caches`,
-    `cache_origin`, `repo_url_parts` and `scoped_auth_header`: one bare-repo
-    cache building block for any capability.
-  - **Breaking:** `safe_cache_path` is removed; use `cache_path`.
-  - **Breaking:** providers drop `api_requires`; the capability API version is
-    gone. A provider's `untaped` requirement is the only compatibility check.
-    `untaped capabilities` loses its `api` and `origin` columns and lists
-    capabilities in name order.
-  - **Breaking:** two or more providers claiming the same capability name or
-    config section are now all quarantined, with a warning naming every
-    claimant. Before, the first-party capability won, or the first external
-    in discovery order. A plugin that claims a first-party name or section
-    (say `github`) now disables that capability too; uninstall one to restore
-    the other.
-  - **Behavior change:** first-party capabilities register through
-    `untaped.capabilities` entry points like any plugin. A failing capability
-    is quarantined instead of stopping `untaped`. Each quarantined capability
-    warns once by name, and `untaped doctor` names the capability in its
-    quarantine rows.
-  - **Behavior change:** a capability whose commands fail to load fails only
-    its own command, with exit 4; `untaped doctor` reports it as a
-    `bad-app-factory` quarantine row.
-- Ansible
-  - **Breaking:** `graph --upstream/--downstream/--both` are removed; use
-    `--direction up|down|both`. Graph sources re-index once.
-  - **Breaking:** the git cache moves to `~/.untaped/ansible-cache`, keyed
-    by host and path so https and ssh URLs share it; delete
-    `~/.untaped/ansible-repositories`. The GitHub token is now sent only to
-    the GitHub host, and refreshes of one repo no longer run concurrently.
-    An explicit `ansible.repo_cache_path` keeps its old-layout directories,
-    which are never read again; refresh re-fetches into the new layout, and
-    the old ones can be deleted.
-- Workspace
-  - **Breaking:** workspace caches now live in `~/.untaped/workspace-cache`.
-    The 9.x `~/.untaped/repositories` is left untouched (clones made before
-    7.0 may borrow objects from it); a `workspace.cache_dir` pointing at a
-    9.x cache is refused.
-  - **New:** `workspace create`, `add` and `archive` print failed rows'
-    errors with hints on stderr.
-  - **Breaking:** `untaped workspace` now manages task workspaces of git
-    worktrees (`create`, `add`, `list`, `status`, `path`, `archive`, `run`)
-    and is experimental.
-  - **Breaking:** removed `init`, `adopt`, `import`, `forget`, `sync`,
-    `repos`, `branch`, `edit`, `shell-init` (`uwcd`), the `untaped.yml`
-    manifest, and the `state.yml` key `workspace.workspaces`. That key is now
-    ignored; delete it.
-  - **Breaking:** `foreach` becomes `run`. Failures no longer stop the run;
-    pass `--fail-fast` to stop. `--all`, `--continue-on-error` and
-    `--ignore-errors` are gone.
-  - **Breaking:** workspace arguments are names, not paths. `path` takes one
-    name and no `--stdin`.
-  - **Breaking:** `status` drops `--repo`, `--dirty` and `--behind`, and
-    `--check` now exits 3 on archive blockers.
-  - **Breaking:** kinds `workspace.repo`, `workspace.repo.summary` and the
-    `init_`, `forget_`, `add_`, `remove_`, `sync_`, `branch_`,
-    `branch_unset_` and `foreach_outcome` kinds are gone. `workspace.workspace`
-    and `workspace.status` have new fields. Pipe `workspace status --format
-    pipe` where you piped `repos list`.
-  - **Breaking:** old workspace directories are left in place and no longer
-    listed. A non-empty one under `workspaces_dir` blocks `create` of that
-    name until you move it.
-  - **New:** `workspace.branch_template` and `workspace.protocol` settings.
-  - **New:** `workspace run` runs a command, a script file or a stdin script
-    in each repo, with `UNTAPED_*` context variables (experimental).
-  - **New:** in a terminal, `workspace create` and `add` without repos open
-    a repo picker (search the GitHub inventory, set mode/base/branch per
-    repo).
-- AWX
-  - **Breaking:** `export` writes a job template's `host_config_key` (a
-    secret, previously exported in clear) as `$encrypted$`, and `get`/`list`
-    records mask a set `host_config_key`; empty secrets stay empty instead of
-    becoming placeholders.
-  - **Breaking:** `export` documents no longer carry controller-derived fields
-    (`custom_virtualenv`, `webhook_key`, SCM projects' `local_path`) or a
-    `spec.organization` copy; `apply` ignores them in older files.
-  - **Breaking:** `patch`/`edit` exit 2 when changing `webhook_key`,
-    `custom_virtualenv` or an SCM project's `local_path`; these were
-    previously sent and ignored by the controller.
-  - **Changed:** `export` writes multi-line text as YAML `|` blocks.
-  - **New:** `export --comment TEXT` heads each document with `# TEXT`.
-- GitHub
-  - **New:** `github.inventory` settings (`path`, `orgs`, `teams`,
-    `max_age_seconds`) for a cached, metadata-only repository list that
-    workspace `create`/`add` resolve names from and the picker searches; it
-    falls back to `github.default_org`.
-  - **Breaking:** the sweep cache moves to `~/.untaped/github-cache`, keyed
-    by host and path so https and ssh URLs share it; delete
-    `~/.untaped/github-corpus` (its worktrees included). Old-layout caches
-    under a custom `github.corpus_path` are not listed; sync re-creates them
-    in the new layout, and the old directories can be deleted.
-- Recipe
-  - **Breaking:** the hook contract moved from
-    `untaped.capabilities.recipe.hook_api` to `untaped_recipe.hook_api`; packs
-    scaffolded on 9.x import the old path under `TYPE_CHECKING`, so update
-    that import. Scaffolded packs and the resolver's hint now ask for
-    `untaped[recipe]>=X,<X+1` in `dependency-groups.dev` instead of
-    `untaped>=X,<X+1`.
-  - **New:** `recipe backups restore` takes `--format` and `--columns`; with
-    `json`, `yaml` or `pipe` it prints one `recipe.restore_outcome` row
-    (`planned`, `restored` or `failed`). Table output is unchanged.
+### Upgrading
+
+- 9.x users on `uv tool upgrade untaped` get the core only and every capability
+  disappears; reinstall with `uv tool install --reinstall 'untaped[all]'` (or
+  `pip install -U 'untaped[all]'`), restating any `--with` tools.
+- Two providers claiming one capability name or config section (e.g. a plugin
+  claiming `github`) are both disabled; uninstall one.
+- awx: `export` no longer writes `custom_virtualenv`, `webhook_key`, an SCM
+  project's `local_path` or `spec.organization`, and masks `host_config_key`;
+  `get`/`list` now mask `host_config_key` too. `patch`/`edit` exit 2 for
+  `webhook_key`, `custom_virtualenv` and an SCM project's `local_path`.
+  Re-export stored documents; `apply` ignores the old fields. 9.x exports hold
+  `host_config_key` in clear: scrub them or rotate the key.
+- workspace: recreate task workspaces with `workspace create` (`untaped
+  workspace` is now worktree-based and experimental).
+- workspace: delete the `state.yml` key `workspace.workspaces` and drop
+  `shell-init` (`uwcd`) from your shell; `init`, `adopt`, `import`, `forget`,
+  `sync`, `repos`, `branch` and `edit` are gone.
+- workspace: replace `foreach` with `run`; add `--fail-fast` where a failure
+  should stop the run, and drop `--all`, `--continue-on-error` and
+  `--ignore-errors`.
+- workspace: pass workspace names, not paths; give `path` one name and no
+  `--stdin`.
+- workspace: drop `--repo`, `--dirty` and `--behind` from `status`, and handle
+  exit 3 from `status --check`.
+- workspace: scripts that piped `repos list` pipe `workspace status --format
+  pipe` and read the new `workspace.workspace` and `workspace.status` fields.
+- workspace: move an old workspace directory out of `workspaces_dir` before
+  `create` reuses its name.
+- caches: point `workspace.cache_dir` away from a 9.x cache. Delete
+  `~/.untaped/ansible-repositories` and `~/.untaped/github-corpus` (and
+  old-layout directories under a custom `ansible.repo_cache_path` or
+  `github.corpus_path`); keep `~/.untaped/repositories` while clones made before
+  7.0 borrow from it.
+- sdk: import first-party code from its top-level package (`untaped_github.api`,
+  …) and the SDK from `untaped.sdk` instead of `untaped.capability_api`; stop
+  using `CAPABILITY_API_VERSION` and `get_core_settings`.
+- sdk: replace `safe_cache_path` with `cache_path`.
+- sdk: import core only through `untaped.sdk` and another capability only
+  through its `api` module, declaring a dependency on its distribution;
+  `check_conventions(NAME)` now fails otherwise.
+- registry: drop `api_requires` from providers and keep the `untaped`
+  requirement current; scripts reading `untaped capabilities` lose the `api` and
+  `origin` columns and get rows in name order.
+- core: expect exit 130 when Ctrl-C interrupts a prompt; `PromptInterruptedError` is
+  no longer a `ConfigError`.
+- ansible: replace `graph --upstream/--downstream/--both` with `--direction
+  up|down|both`.
+- recipe: in packs scaffolded on 9.x, import the hook contract from
+  `untaped_recipe.hook_api` and require `untaped[recipe]>=X,<X+1` in
+  `dependency-groups.dev`.
+
+### Added
+
+- **core:** bare `untaped --help` and `untaped capabilities` print how to
+  install capabilities when none are installed.
+- **core:** `@writes` declares a command that writes; command names are no
+  longer limited to a closed verb list.
+- **core:** `untaped.testing.check_conventions(NAME)` runs the convention checks
+  for any capability, plugins included.
+- **sdk:** `untaped.testing.plugin` gives a plugin's own tests the hermetic
+  environment untaped's tests use.
+- **core:** `examples/untaped-hello` is a minimal, tested plugin to start from;
+  `untaped.testing.invoke_root(argv)` runs `untaped …` in a plugin's tests.
+- **core:** `report_row_errors` reports each failed row's error and hint.
+- **sdk:** `UiContext.pick_many` opens an inline two-pane picker: fuzzy search
+  with multi-select on the left, per-item settings on the right (`PickRequest`,
+  `PickItem`, `PickSetting`, `PickCatalog`, `PickResult`, `Picked`).
+  `ScriptedPromptBackend(picks=...)` scripts it in tests.
+- **sdk:** `RepoCache`, `cache_path`, `cache_key`, `list_caches`,
+  `cache_origin`, `repo_url_parts` and `scoped_auth_header`: one bare-repo cache
+  building block for any capability.
+- **workspace:** `workspace create`, `add` and `archive` print failed rows'
+  errors with hints on stderr.
+- **workspace:** `workspace.branch_template` and `workspace.protocol` settings.
+- **workspace:** `workspace run` runs a command, a script file or a stdin script
+  in each repo, with `UNTAPED_*` context variables (experimental).
+- **workspace:** in a terminal, `workspace create` and `add` without repos open
+  a repo picker (search the GitHub inventory, set mode/base/branch per repo).
+- **awx:** `export --comment TEXT` heads each document with `# TEXT`.
+- **github:** `github.inventory` settings (`path`, `orgs`, `teams`,
+  `max_age_seconds`) for a cached, metadata-only repository list that workspace
+  `create`/`add` resolve names from and the picker searches; it falls back to
+  `github.default_org`.
+- **recipe:** `recipe backups restore` takes `--format` and `--columns`; with
+  `json`, `yaml` or `pipe` it prints one `recipe.restore_outcome` row
+  (`planned`, `restored` or `failed`). Table output is unchanged.
+
+### Changed
+
+- **Breaking (core):** `pip install untaped` installs only the core and SDK;
+  install `untaped[all]` for every first-party capability, or `untaped[<name>]`
+  for one. First-party code moves to top-level packages (`untaped_github.api`,
+  …). Upgrading keeps the original spec, so reinstall with the extra: `uv tool
+  install --reinstall 'untaped[all]'` or `pip install -U 'untaped[all]'`.
+- **Breaking (core):** the SDK module is now `untaped.sdk`;
+  `untaped.capability_api` is gone. `CAPABILITY_API_VERSION` and
+  `get_core_settings` are removed.
+- **Breaking (core):** `PromptInterruptedError` is no longer a `ConfigError`;
+  Ctrl-C at a prompt now always exits 130.
+- **Breaking (sdk):** `check_conventions(NAME)` runs an `import-boundary` rule:
+  a plugin may import core only through `untaped.sdk`, and another capability
+  only through its `api` module with a declared dependency on its distribution.
+- **Breaking (core):** two or more providers claiming the same capability name
+  or config section are now all quarantined, with a warning naming every
+  claimant. Before, the first-party capability won, or the first external in
+  discovery order. A plugin that claims a first-party name or section (say
+  `github`) now disables that capability too; uninstall one to restore the
+  other.
+- **core:** first-party capabilities register through `untaped.capabilities`
+  entry points like any plugin. A failing capability is quarantined instead of
+  stopping `untaped`. Each quarantined capability warns once by name, and
+  `untaped doctor` names the capability in its quarantine rows.
+- **core:** a capability whose commands fail to load fails only its own command,
+  with exit 4; `untaped doctor` reports it as a `bad-app-factory` quarantine
+  row.
+- **Breaking (ansible):** the git cache moves to `~/.untaped/ansible-cache`,
+  keyed by host and path so https and ssh URLs share it; delete
+  `~/.untaped/ansible-repositories`. The GitHub token is now sent only to the
+  GitHub host, and refreshes of one repo no longer run concurrently. An explicit
+  `ansible.repo_cache_path` keeps its old-layout directories, which are never
+  read again; refresh re-fetches into the new layout, and the old ones can be
+  deleted.
+- **Breaking (workspace):** workspace caches now live in
+  `~/.untaped/workspace-cache`. The 9.x `~/.untaped/repositories` is left
+  untouched (clones made before 7.0 may borrow objects from it); a
+  `workspace.cache_dir` pointing at a 9.x cache is refused.
+- **Breaking (workspace):** `untaped workspace` now manages task workspaces of
+  git worktrees (`create`, `add`, `list`, `status`, `path`, `archive`, `run`)
+  and is experimental.
+- **Breaking (workspace):** `foreach` becomes `run`. Failures no longer stop the
+  run; pass `--fail-fast` to stop. `--all`, `--continue-on-error` and
+  `--ignore-errors` are gone.
+- **Breaking (workspace):** workspace arguments are names, not paths. `path`
+  takes one name and no `--stdin`.
+- **Breaking (workspace):** `status` drops `--repo`, `--dirty` and `--behind`,
+  and `--check` now exits 3 on archive blockers.
+- **Breaking (workspace):** old workspace directories are left in place and no
+  longer listed. A non-empty one under `workspaces_dir` blocks `create` of that
+  name until you move it.
+- **Breaking (awx):** `export` writes a job template's `host_config_key` (a
+  secret, previously exported in clear) as `$encrypted$`, and `get`/`list`
+  records mask a set `host_config_key`; empty secrets stay empty instead of
+  becoming placeholders.
+- **Breaking (awx):** `export` documents no longer carry controller-derived
+  fields (`custom_virtualenv`, `webhook_key`, SCM projects' `local_path`) or a
+  `spec.organization` copy; `apply` ignores them in older files.
+- **Breaking (awx):** `patch`/`edit` exit 2 when changing `webhook_key`,
+  `custom_virtualenv` or an SCM project's `local_path`; these were previously
+  sent and ignored by the controller.
+- **awx:** `export` writes multi-line text as YAML `|` blocks.
+- **Breaking (github):** the sweep cache moves to `~/.untaped/github-cache`,
+  keyed by host and path so https and ssh URLs share it; delete
+  `~/.untaped/github-corpus` (its worktrees included). Old-layout caches under a
+  custom `github.corpus_path` are not listed; sync re-creates them in the new
+  layout, and the old directories can be deleted.
+- **Breaking (recipe):** the hook contract moved from
+  `untaped.capabilities.recipe.hook_api` to `untaped_recipe.hook_api`; packs
+  scaffolded on 9.x import the old path under `TYPE_CHECKING`, so update that
+  import. Scaffolded packs and the resolver's hint now ask for
+  `untaped[recipe]>=X,<X+1` in `dependency-groups.dev` instead of
+  `untaped>=X,<X+1`.
+- **docs:** `docs/` holds getting-started, configuration, scripting,
+  plugins and the config reference; each capability's guide is its package
+  README.
+- **docs:** the versioning policy now covers every record field `--format
+  json` or `--columns '?'` shows, not only documented ones.
+
+### Removed
+
+- **Breaking (core):** `safe_cache_path` is removed; use `cache_path`.
+- **Breaking (core):** providers drop `api_requires`; the capability API version
+  is gone. A provider's `untaped` requirement is the only compatibility check.
+  `untaped capabilities` loses its `api` and `origin` columns and lists
+  capabilities in name order.
+- **Breaking (ansible):** `graph --upstream/--downstream/--both` are removed;
+  use `--direction up|down|both`. Graph sources re-index once.
+- **Breaking (workspace):** removed `init`, `adopt`, `import`, `forget`, `sync`,
+  `repos`, `branch`, `edit`, `shell-init` (`uwcd`), the `untaped.yml` manifest,
+  and the `state.yml` key `workspace.workspaces`. That key is now ignored;
+  delete it.
+- **Breaking (workspace):** kinds `workspace.repo`, `workspace.repo.summary` and
+  the `init_`, `forget_`, `add_`, `remove_`, `sync_`, `branch_`, `branch_unset_`
+  and `foreach_outcome` kinds are gone. `workspace.workspace` and
+  `workspace.status` have new fields. Pipe `workspace status --format pipe`
+  where you piped `repos list`.
 
 ## 9.1.0
 

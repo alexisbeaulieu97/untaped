@@ -69,6 +69,6 @@ must be deleted in Jira by hand.
 ## The outcome record
 
 Each write emits a `jira.issue_outcome` record with `action` (`created`,
-`updated`, `commented`, `transitioned`, `linked` or `planned`), `key`, `url`,
-and, where relevant, `transition_id`, `comment_id`, `link_type` and
-`linked_key`. Mutating requests are never retried automatically.
+`updated`, `commented`, `transitioned`, `linked` or `planned`); `--columns '?'`
+with `--dry-run` lists the rest. Under `--dry-run` (`planned`) a new issue has no `key` yet.
+Mutating requests are never retried automatically.

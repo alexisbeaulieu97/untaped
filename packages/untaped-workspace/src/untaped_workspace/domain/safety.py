@@ -1,4 +1,9 @@
-"""Whether a worktree can be removed without losing work, and what to do when not."""
+"""Whether a worktree can be removed without losing work, and what to do when not.
+
+Archive never discards uncommitted, stashed or unpushed work without
+``--force``: a worktree is the only copy of what was not pushed, so every
+blocker found here must stop a plain ``archive``.
+"""
 
 from __future__ import annotations
 

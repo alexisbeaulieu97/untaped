@@ -1,6 +1,6 @@
 # untaped
 
-**untaped** is a batteries-included CLI for DevOps workflows. One install
+**untaped** is a batteries-included CLI for DevOps workflows. `untaped[all]`
 gives you six capabilities that share one config file, the same profiles, and
 the same output and piping rules:
 
@@ -48,11 +48,87 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
 
 ## Documentation
 
-Start with [Getting started](./docs/getting-started.md). The
-[documentation index](./docs/README.md) links the capability guides, the
-configuration, pipe, exit-code and environment references, the
-[stability policy](./docs/stability.md), [agent skills](./docs/skills.md) and
-[provider authoring](./docs/plugins.md).
+- [Getting started](./docs/getting-started.md): install, tokens, profiles,
+  a first command in each capability, piping, and agent skills.
+- [Configuration](./docs/configuration.md): the config and state files,
+  profiles, settings, aliases, TLS and tokens.
+- [Scripting](./docs/scripting.md): output formats and the pipe envelope,
+  record kinds, exit codes and environment variables.
+- [Configuration reference](./docs/reference/config.md): every setting, its
+  default and its environment variable.
+- [Building a capability provider](./docs/plugins.md): add a capability from
+  your own package, the command conventions and the skill template.
+
+Each capability's guide: [workspace](./packages/untaped-workspace/README.md),
+[github](./packages/untaped-github/README.md), [jira](./packages/untaped-jira/README.md),
+[awx](./packages/untaped-awx/README.md), [ansible](./packages/untaped-ansible/README.md) and
+[recipe](./packages/untaped-recipe/README.md).
+
+## Versioning
+
+`untaped` follows [semantic versioning](https://semver.org/), from 9.0.0 on.
+
+### Stable within a major release
+
+A minor or patch release never breaks these. Anything new is added alongside
+them. For two installs of different major versions, see
+[Configuration](./docs/configuration.md#file-and-layout).
+
+- Command and flag names, positional arguments, and what each means
+  (`untaped COMMAND --help`).
+- Exit codes, failure categories and systems:
+  [exit codes](./docs/scripting.md#exit-codes).
+- The `--format pipe` envelope, record kinds and their fields (as
+  `--format json` or `--columns '?'` show them), and the `--format json` and
+  `yaml` records, which have the same fields:
+  [output and pipes](./docs/scripting.md#output-and-pipes).
+- JSON stderr diagnostics:
+  [stderr diagnostics](./docs/scripting.md#stderr-diagnostics).
+- `config.yml` and `state.yml` settings:
+  [configuration reference](./docs/reference/config.md).
+- Environment variables:
+  [environment variables](./docs/scripting.md#environment-variables).
+- The `untaped.sdk` and `untaped.testing` surface, for
+  [provider authors](./docs/plugins.md).
+
+The pipe envelope is versioned on its own (`"untaped": "1"`) and outlives
+application majors.
+
+### Not covered
+
+These may change in any release:
+
+- Human-readable output: table layout and default columns, tree and diagram
+  text, colors, and the wording of messages, warnings and hints. Scripts read
+  `--format json` or `pipe`, and exit codes, instead.
+- `--format raw` without `--columns`: it prints the first default column,
+  which may change. Name the field, as in `--format raw --columns name`.
+- Commands and file formats marked experimental (below).
+- Anything not documented, including internal modules, except the record
+  fields covered above.
+
+### Experimental
+
+A command or format still being shaped is marked experimental in its `--help`
+and its guide. It may change in a minor release, with a changelog entry that
+says so. Currently experimental:
+
+- `awx test`: its commands, the suite file format, the `awx.test_case` and
+  `awx.test_result` records, and the `awx.test_timeout` and
+  `awx.test_parallel` settings with their environment variables.
+- `workspace`: its commands, record kinds, the `workspace.*` settings, and the
+  `UNTAPED_*` variables `workspace run` sets.
+
+### Breaking changes
+
+- A renamed command or flag keeps working as a hidden, deprecated alias until
+  the next major release, and prints a warning naming the new spelling.
+- Anything else that breaks a stable contract waits for the next major
+  release: a changed default, a removed command or flag, a changed positional
+  argument, and a renamed or removed setting, environment variable, record
+  kind or record field.
+- Breaking changes are collected into the next major release, whose changelog
+  opens with an upgrade section listing them.
 
 ## Security
 
@@ -61,9 +137,8 @@ Please report suspected vulnerabilities privately. See
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) and [AGENTS.md](./AGENTS.md) for the
-local workflow and architecture rules. Releases follow
-[docs/release.md](./docs/release.md).
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the local workflow, the
+repository layout and releasing.
 
 ## License
 

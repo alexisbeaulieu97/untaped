@@ -24,6 +24,12 @@ so a provisioning failure never reads as a test failure:
   results stand.
 - :func:`preflight_copy` checks a case against a copy's spec (survey
   variables, node ids) before the copy exists, for ``validate``.
+
+A branch that changes a template cannot be tested against what AWX holds,
+and an agent that tests ``main``'s configuration by mistake fixes the wrong
+thing. So the copies are pinned to one commit, anything launched uncopied
+must run that commit too, and teardown always runs, finding copies by name
+plus marker (not labels, which apply never creates) so a killed run's are found.
 """
 
 from __future__ import annotations

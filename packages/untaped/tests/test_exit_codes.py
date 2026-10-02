@@ -1,6 +1,6 @@
 """The exit-code contract: error classes, interrupts, shared options, prompts.
 
-``docs/conventions.md`` fixes one meaning per code (0 ok, 1 failure or
+``docs/scripting.md#exit-codes`` fixes one meaning per code (0 ok, 1 failure or
 decline, 2 usage, 3 predicate hit, 130 interrupted); these tests pin how the
 core helpers select them.
 """

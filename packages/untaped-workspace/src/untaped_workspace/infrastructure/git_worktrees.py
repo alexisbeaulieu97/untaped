@@ -9,6 +9,11 @@ worktree through ``run_git``; failures become :class:`GitError` keeping git's
 attribution, and a branch or directory that is already in use becomes a
 ``conflict``. :meth:`LocalGitWorktrees.cached_repos`
 lists the caches without running git (the repo picker opens on it).
+
+The cache is load-bearing: every worktree references its object store, so
+deleting or re-cloning a cache breaks every workspace checked out from it.
+The per-repo cache lock is always the inner lock (see
+:mod:`untaped_workspace.application.provision`).
 """
 
 from __future__ import annotations

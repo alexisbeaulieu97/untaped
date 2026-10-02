@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import ast
+import functools
 import re
 import shlex
 from collections.abc import Callable
@@ -20,14 +22,16 @@ import gen_config_reference as generator
 import pytest
 from cyclopts import App
 
-from repo.support import REPO_ROOT
+from repo.support import PACKAGES, REPO_ROOT
 from untaped.bootstrap import build_root_app
 from untaped.capabilities import registry
-from untaped.capabilities.registry import ProviderCandidate
+from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 
 REGENERATE = "uv run python scripts/gen_config_reference.py"
 
-_LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)\s]+)\)")
+_LINK_BODY = r"\[[^\]]*\]\(([^)\s]+)\)"
+_LINK = re.compile(r"(?<!!)" + _LINK_BODY)
+_BARE_INSTALL = re.compile(r"\binstall\b.*?['\"]?untaped-[a-z]")
 _FENCE = re.compile(r"^(```|~~~).*?^\1", re.MULTILINE | re.DOTALL)
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*$", re.MULTILINE)
 
@@ -57,11 +61,16 @@ def test_config_reference_refuses_a_quarantined_first_party_capability(
         assert f"{name!r} [malformed-entry-point]: could not resolve entry point" in message
 
 
+def _package_readmes() -> list[Path]:
+    return sorted(PACKAGES.glob("*/README.md"))
+
+
 def _markdown_files() -> list[Path]:
     files = sorted((REPO_ROOT / "docs").rglob("*.md"))
     skills = sorted(REPO_ROOT.glob("packages/*/src/**/skills/**/*.md"))
+    readmes = _package_readmes()
     root = (REPO_ROOT / name for name in ("README.md", "AGENTS.md", "CONTRIBUTING.md"))
-    return [*files, *skills, *root]
+    return [*files, *skills, *readmes, REPO_ROOT / "examples/untaped-hello/README.md", *root]
 
 
 def _slug(heading: str) -> str:
@@ -70,14 +79,19 @@ def _slug(heading: str) -> str:
     return re.sub(r"[^\w\- ]", "", text).replace(" ", "-")
 
 
+@functools.cache
 def _anchors(path: Path) -> set[str]:
     text = _FENCE.sub("", path.read_text(encoding="utf-8"))
     return {_slug(match) for match in _HEADING.findall(text)}
 
 
+def _prose(path: Path) -> str:
+    """The page text without fenced blocks or inline code."""
+    return re.sub(r"(`+)[^\n]*?\1", "", _FENCE.sub("", path.read_text(encoding="utf-8")))
+
+
 def _broken_links(path: Path) -> list[str]:
-    text = _FENCE.sub("", path.read_text(encoding="utf-8"))
-    text = re.sub(r"(`+)[^\n]*?\1", "", text)
+    text = _prose(path)
     broken: list[str] = []
     for target in _LINK.findall(text):
         if re.match(r"^[a-z][a-z0-9+.-]*:", target):
@@ -93,6 +107,74 @@ def _broken_links(path: Path) -> list[str]:
 @pytest.mark.parametrize("path", _markdown_files(), ids=lambda p: str(p.relative_to(REPO_ROOT)))
 def test_relative_links_resolve(path: Path) -> None:
     assert _broken_links(path) == []
+
+
+_REPO_URL = re.compile(
+    r"https://github\.com/alexisbeaulieu97/untaped/(?:blob|tree)/main/([^)\s#]+)(?:#([^)\s]+))?"
+)
+
+
+@pytest.mark.parametrize("path", _markdown_files(), ids=lambda p: str(p.relative_to(REPO_ROOT)))
+def test_repository_urls_resolve(path: Path) -> None:
+    """Absolute links into this repository (package READMEs render on PyPI) point at real files."""
+    broken = []
+    for target, anchor in _REPO_URL.findall(path.read_text(encoding="utf-8")):
+        file = REPO_ROOT / target
+        if not file.exists() or (anchor and file.suffix == ".md" and anchor not in _anchors(file)):
+            broken.append(f"{target}#{anchor}" if anchor else target)
+    assert broken == []
+
+
+_LINK_TARGETS = (
+    # Inline links and images, with an optional title: [x](target "title").
+    re.compile(r"!?\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+[^)]*)?\)"),
+    # Reference-style definitions: [x]: target "title".
+    re.compile(r"^ {0,3}\[[^\]]+\]:\s*<?([^\s>]+)>?", re.MULTILINE),
+    # HTML anchors and images.
+    re.compile(r"<(?:a|img)\b[^>]*?\b(?:href|src)\s*=\s*[\"']([^\"']*)[\"']", re.IGNORECASE),
+)
+
+
+def _relative_targets(text: str) -> list[str]:
+    """Link and image targets in Markdown prose that are not absolute URLs."""
+    targets = [t for pattern in _LINK_TARGETS for t in pattern.findall(text)]
+    return [t for t in targets if "://" not in t]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "[x](docs/a.md)",
+        "![x](logo.png)",
+        "[x](#anchor)",
+        '[x](docs/a.md "title")',
+        "[x]: docs/a.md",
+        '[x]: <docs/a.md> "title"',
+        '<a href="docs/a.md">x</a>',
+        "<img alt='x' src='logo.png'>",
+    ],
+)
+def test_relative_targets_finds_every_link_form(text: str) -> None:
+    assert _relative_targets(text) != []
+
+
+def test_relative_targets_skips_absolute_urls() -> None:
+    text = (
+        '[x](https://e.com/a "t")\n[y]: https://e.com/b\n'
+        '<a href="https://e.com/c">c</a> <img src="https://e.com/d.png">'
+    )
+    assert _relative_targets(text) == []
+
+
+def test_package_readmes_link_absolutely() -> None:
+    """PyPI cannot resolve a relative or in-page link or an image in a package README."""
+    for readme in _package_readmes():
+        assert _relative_targets(_prose(readme)) == [], readme
+
+
+def test_every_workspace_member_has_a_readme() -> None:
+    members = {p.parent for p in PACKAGES.glob("*/pyproject.toml")}
+    assert {r.parent for r in _package_readmes()} == members
 
 
 _ROOT_OPTIONS = {"--profile", "--verbose", "-v", "--quiet", "-q", "--help", "-h"}
@@ -170,8 +252,6 @@ def test_command_examples_use_real_commands_and_options(
     root = build_root_app(candidates=first_party_candidates)
     problems = []
     for path in _markdown_files():
-        if "templates" in path.parts:
-            continue
         for block in _bash_blocks(path):
             commands = _untaped_commands(block)
             # A block may run an alias it defines (``alias set NAME -- …``).
@@ -182,6 +262,86 @@ def test_command_examples_use_real_commands_and_options(
                     for problem in _unknown_options(root, argv, aliases)
                 )
     assert problems == []
+
+
+DOCS_PAGES = [
+    "configuration.md",
+    "getting-started.md",
+    "plugins.md",
+    "reference/config.md",
+    "scripting.md",
+]
+
+
+def test_scripting_keeps_an_anchor_per_capability(
+    first_party_specs: tuple[CapabilitySpec, ...],
+) -> None:
+    anchors = _anchors(REPO_ROOT / "docs" / "scripting.md")
+    for name in (
+        "exit-codes",
+        "categories",
+        "precedence",
+        "stderr-diagnostics",
+        "environment-variables",
+        "output-records",
+    ):
+        assert name in anchors
+    assert {spec.name for spec in first_party_specs} <= anchors
+
+
+def test_install_examples_use_the_extras() -> None:
+    for page in (REPO_ROOT / "README.md", REPO_ROOT / "docs" / "getting-started.md"):
+        installs = [
+            line.strip()
+            for block in _FENCE.finditer(page.read_text(encoding="utf-8"))
+            for line in block.group().splitlines()
+            if re.match(r"\s*(uv tool install|pip install)\b", line)
+        ]
+        assert installs, page
+        assert any("untaped[all]" in line for line in installs), page
+
+
+def _bare_installs(path: Path, *, fenced_only: bool) -> list[str]:
+    """Lines installing ``untaped-<name>`` alone; prose explaining the failure is allowed
+    where ``fenced_only`` (the root README and getting-started)."""
+    text = path.read_text(encoding="utf-8")
+    if fenced_only:
+        lines = [line for block in _FENCE.finditer(text) for line in block.group().splitlines()]
+    else:
+        lines = text.splitlines()
+    return [line.strip() for line in lines if _BARE_INSTALL.search(line)]
+
+
+@pytest.mark.parametrize(
+    ("path", "fenced_only"),
+    [
+        *((REPO_ROOT / "README.md", True), (REPO_ROOT / "docs" / "getting-started.md", True)),
+        *((readme, False) for readme in _package_readmes()),
+    ],
+    ids=lambda v: str(v.relative_to(REPO_ROOT)) if isinstance(v, Path) else "",
+)
+def test_docs_never_install_a_bare_capability_package(path: Path, *, fenced_only: bool) -> None:
+    """Installing `untaped-<name>` alone leaves the core out; docs point at the extras."""
+    assert _bare_installs(path, fenced_only=fenced_only) == []
+
+
+def test_docs_holds_only_the_reader_pages() -> None:
+    docs = REPO_ROOT / "docs"
+    pages = sorted(str(p.relative_to(docs)) for p in docs.rglob("*.md"))
+    assert pages == DOCS_PAGES
+
+
+def test_agents_md_is_short_and_points_to_contributing() -> None:
+    agents = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    assert len(agents.splitlines()) <= 30
+    assert "CONTRIBUTING.md" in agents
+    contributing = (REPO_ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8").splitlines()
+    for heading in (
+        "## Releasing",
+        "## Evaluating a skill change",
+        "## Adding a first-party capability",
+    ):
+        assert heading in contributing
 
 
 @pytest.mark.parametrize(
@@ -197,3 +357,18 @@ def test_links_inside_double_backtick_code_are_ignored(tmp_path: Path) -> None:
     page.write_text("Literal ``[example](missing.md)`` text.\n", encoding="utf-8")
 
     assert _broken_links(page) == []
+
+
+def _docstring(path: Path) -> str:
+    return ast.get_docstring(ast.parse(path.read_text(encoding="utf-8"))) or ""
+
+
+def test_rationale_lives_beside_the_code_it_protects() -> None:
+    assert not (REPO_ROOT / ".planning" / "decisions").exists()
+    awx = PACKAGES / "untaped-awx/src/untaped_awx"
+    assert "round-trip" in _docstring(awx / "infrastructure/yaml_io.py")
+    workspace = PACKAGES / "untaped-workspace/src/untaped_workspace"
+    assert "load-bearing" in _docstring(workspace / "infrastructure/git_worktrees.py")
+    provision = _docstring(workspace / "application/provision.py")
+    # the docstring names the workspace lock before the cache lock
+    assert provision.index("workspace lock") < provision.index("cache lock")

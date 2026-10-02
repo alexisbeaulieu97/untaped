@@ -15,11 +15,9 @@
 
 ## What comes back
 
-- Search rows hold the fields most triage needs (`key`, `summary`, `status`,
-  `assignee`, `issue_type`, `priority`, `updated_at`, `url`, `api_url`).
+- Search rows hold the fields most triage needs; `--columns '?'` lists them.
   `url` opens in a browser; `api_url` is the REST address.
-- `issues get` adds the detail fields, including `description`, `labels`,
-  `resolution`, `links` and `comments`. `comments` is `null` unless
+- `issues get` adds the detail fields. `comments` is `null` unless
   `--comments` fetched them.
 - Timestamps are UTC, as `2026-01-02T03:04:05Z`.
 - One issue renders as a key: value view in a table and as a single JSON
