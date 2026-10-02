@@ -1,5 +1,128 @@
 # untaped-workspace
 
-The workspace capability for [untaped](https://github.com/alexisbeaulieu97/untaped).
-Install it with `pip install 'untaped[workspace]'`.
-See the [usage guide](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/workspace/usage.md).
+Install it as part of `untaped`: `uv tool install 'untaped[workspace]'` or `pip install 'untaped[workspace]'`.
+To add it to an existing install: `uv tool install untaped --with untaped-workspace`.
+(`uv tool install untaped-workspace` alone does not work: only `untaped` ships the command; see
+[Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md).)
+
+`workspace` is [experimental](https://github.com/alexisbeaulieu97/untaped/blob/main/README.md#experimental) and may change in
+a minor release.
+
+A *workspace* is one directory per task. It holds a git worktree for each
+repo you need, all on the same branch, so you (or an agent) can change several
+repos for one ticket and archive the lot when the work is pushed. Worktrees
+share a bare cache of each repo, so creating a workspace is fast and cheap,
+and parallel tasks get isolated checkouts of the same repos.
+
+Commands never discard local work: archiving refuses while a repo has
+uncommitted, stashed or unpushed work. The
+[packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-workspace/src/untaped_workspace/skills/untaped-workspace/SKILL.md)
+and its references hold the per-command detail; `--help` and `--columns ?`
+hold the options and fields.
+
+## Create, work, archive
+
+```bash
+untaped workspace create PROJ-123 --repo acme/api --repo acme/web
+cd "$(untaped workspace path PROJ-123)"
+# commit and git push in each repo, then:
+untaped workspace status PROJ-123 --check
+untaped workspace archive PROJ-123
+```
+
+`create` prints one row per repo: a new branch from the base, or an existing
+branch resumed. `status --check` exits `3` while anything would block
+archiving; `archive` removes the worktrees and keeps a record. The branches
+stay in the repo cache and on the remote, so creating a workspace on the same
+branch later resumes the work.
+
+## Add repos later
+
+```bash
+untaped workspace add PROJ-123 --repo acme/infra
+```
+
+`add` also reads repos from a pipe, for example a GitHub repo listing:
+
+```bash
+untaped github repos list --team acme/platform --format pipe | untaped workspace add PROJ-123 --stdin
+```
+
+## Pick repos interactively
+
+In a terminal, `untaped workspace create [NAME]` and `untaped workspace add
+[NAME]` open a picker when you give no `--repo`, `--read-only` or `--stdin`.
+Without a terminal they exit `2` and name those flags. On `create`, an
+omitted NAME is asked first; the field refuses invalid names, active
+workspace names and directories that exist and are not empty.
+
+The picker lists the [GitHub inventory](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#github)
+(`github.inventory`; it opens from the cache and refreshes when stale),
+repos already in the local repo cache (shown by their cache path,
+`host/[owner/]name`, checked out from their cached URL), and any git URL you type or paste. `add` leaves
+out repos already in the workspace.
+
+Each selected repo has a mode (write or read-only), a base (completes from
+cached branches) and a branch (empty uses `workspace.branch_template`).
+`--branch` and `--base` without repo flags prefill these defaults.
+
+| Key | Action |
+|---|---|
+| `space` | select or unselect |
+| `/` | search |
+| `tab` | switch pane |
+| `enter` | edit a setting |
+| `←` `→` | change a setting |
+| `ctrl-s` | create (or add) the selected repos |
+| `ctrl-r` | refresh the inventory |
+| `esc` | clear the search; never quits |
+| `ctrl-c` | quit, asking first when anything is selected; nothing is created |
+
+## Read-only repos
+
+`--read-only` checks a repo out at its base branch, detached, for reference
+code you will not change. Archiving still refuses while it has local changes
+or commits of its own.
+
+## Jump in
+
+```bash
+cd "$(untaped workspace path PROJ-123)"
+```
+
+`untaped workspace list` shows active workspaces (`--archived` the rest).
+Inside a workspace directory, the name may be left out.
+
+## Run a command in every repo
+
+```bash
+untaped workspace status PROJ-123   # check the selection first
+untaped workspace run PROJ-123 'git push -u origin HEAD'
+```
+
+`run` also takes a script file or a script on stdin, runs in the writable
+repos, and exits 1 if any repo failed. Forms, environment variables,
+selection and timeouts are in the
+[run reference](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-workspace/src/untaped_workspace/skills/untaped-workspace/references/run.md).
+The `UNTAPED_*` variables it sets are in
+[environment](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#environment-variables).
+
+## Settings
+
+`workspace.cache_dir`, `workspaces_dir`, `parallel`, `branch_template` and
+`protocol` are in the [configuration reference](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#workspace).
+`OWNER/NAME` and bare names are looked up in the GitHub
+inventory, scoped by `github.inventory` orgs and teams.
+
+## Output
+
+Every command prints rows you can reshape with `--format` and `--columns`;
+see [Pipes and record kinds](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#workspace) and
+[Exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes).
+
+## See also
+
+- [Configuration](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md) and the
+  [configuration reference](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#workspace).
+- [GitHub](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-github/README.md), to find repos to add, and
+  [Recipes](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-recipe/README.md), to change files across a workspace.

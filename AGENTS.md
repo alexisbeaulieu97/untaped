@@ -89,7 +89,7 @@ keeps that attribution when replaced or turned into a row; see
   `EXPECTED_MEMBERS` in `tests/repo/test_workspace.py` and to `FIRST_PARTY` in
   `tests/repo/support.py`; the tests catch omissions. Start its
   skill from the [skill template](docs/plugins.md#packaged-skills) (which holds
-  the skill rules) and its user guide at `docs/<name>/usage.md`, linked from
+  the skill rules) and its user guide as the package `README.md`, linked from
   the root `README.md` and `docs/getting-started.md`. Set
   `SPEC.help` to the app's one-line help: a capability with `help` is mounted
   lazily (its factory runs on first dispatch, and in `untaped doctor`), so
@@ -137,7 +137,7 @@ rules below.
 3. **Keep `AGENTS.md` and `docs/` up to date.** If you change the
    composition contract, a management workflow, or a cross-cutting helper,
    edit the relevant docs in the same commit. Each fact has one home, and
-   other pages link to it: capability detail in its skill (`usage.md` is a
+   other pages link to it: capability detail in its skill (the package `README.md` is a
    short guide), exit codes/settings/record kinds/env vars in `docs/reference/`,
    history in `CHANGELOG.md`, rationale in `.planning/decisions/`. Never copy
    `--help` output, default columns, or API signatures into docs.
