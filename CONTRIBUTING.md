@@ -17,10 +17,10 @@ capability is available to `uv run untaped`.
 ## Test, lint and type-check
 
 ```bash
-uv run pytest -n auto                           # tests, in parallel (add `--cov` for the 89% coverage gate, as CI does)
+uv run pytest -n auto                           # tests, in parallel (add `--cov` for the 95% coverage gate, as CI does)
 uv run ruff check --fix && uv run ruff format   # lint + format
 uv run mypy                                     # strict types
-uv run pre-commit run --all-files               # pre-commit hooks
+uv run pre-commit run --all-files               # pre-commit hooks (vulture included)
 uv run python scripts/release.py check          # release metadata
 uv lock --check                                 # lock file is current
 ```
@@ -76,8 +76,8 @@ packages/untaped-<name>/src/untaped_<name>/
 3. Add the `untaped[<name>]` extra to core and add the package to core's
    `all` extra, then `uv sync`.
 4. Add the package to the root `pyproject.toml` lists: mypy
-   `files`/`mypy_path`, pytest `testpaths`/`pythonpath`, coverage `source`
-   and `[tool.uv.sources]`.
+   `files`/`mypy_path`, pytest `testpaths`/`pythonpath`, coverage `source`,
+   vulture `paths` and `[tool.uv.sources]`.
 5. Add it to `EXPECTED_MEMBERS` in `tests/repo/test_workspace.py` and to
    `FIRST_PARTY` in `tests/repo/support.py`. The tests catch omissions.
 6. Call `untaped.testing.check_conventions` from its tests. The default
@@ -101,6 +101,11 @@ only when a second provider appears.
 - **Grep before writing.** If a helper exists in the wrong place, move it and
   update its callers; don't fork it.
 - **Absolute imports only**, tests included.
+- **Lazy imports on CLI startup paths** (`tests/repo/test_import_cost.py`
+  budgets them); `# noqa: PLC0415` only where Ruff flags it.
+- **Git through `untaped.git`** (`run_git`, `git_toplevel`) and advisory
+  file locks through `untaped.fs` (`file_lock`), both re-exported by
+  `untaped.sdk`; never hand-rolled `subprocess` git plumbing.
 - **Module docstrings.** Every module opens with a docstring saying what it
   owns (re-export stubs are exempt). Rationale that protects code goes there.
 - **Secrets and TLS.** Secrets are `pydantic.SecretStr`; HTTP clients resolve
@@ -116,6 +121,33 @@ only when a second provider appears.
 - **Config reference.** After changing a settings model, run
   `uv run python scripts/gen_config_reference.py`; a test fails while the
   reference is stale.
+
+## Before you open a PR
+
+Tasks live in this repository's GitHub issues. CI checks what a machine can:
+tests, coverage (95% overall, 90% of the lines a PR changes), types, lint,
+dead code, links, every quoted `untaped` command, and the PR's drift review
+(`scripts/check_pr.py`). Review your own diff against this checklist and
+answer each item, in order, in the PR template's **Drift review** section
+(what you checked, or `n/a`):
+
+- **Docs, skills and READMEs.** Every page that describes what changed still
+  says something true, in the fact's one home (see Workflow), and names any
+  new command, option or setting.
+- **Changelog.** A user-visible change has a line under `## Unreleased`; a
+  change to `packages/*/src` without one answers `none, <why>`.
+- **Duplicated helpers.** Nothing new repeats a helper in `untaped.sdk`,
+  core or another capability; move a misplaced helper instead of forking it.
+- **Repo rules.** The Workflow rules above that no linter checks: lazy
+  imports, git and locks through core, `SecretStr`, module docstrings.
+- **Issues.** `Closes #N` for the issue the PR finishes, and any open issue
+  the diff makes stale or already finishes.
+
+### Dead code
+
+`vulture` (run by pre-commit) fails on code nothing uses. Delete it, or, for
+a false positive such as a command registered by string, add its name to
+`scripts/vulture_allowlist.py` with the reason.
 
 ## Releasing
 
@@ -204,8 +236,43 @@ First-party skills are also checked by `tests/repo/test_skill_files.py`
 (description matches the frontmatter, every quoted command parses, no link
 leaves the skill).
 
+## Live AAP smoke (awx)
+
+Unit tests mock AAP. To try the awx write path against a real controller
+(opt-in), pick a disposable inventory and a harmless source, run a smoke like
+this, and restore the exported files afterward:
+
+```bash
+untaped awx ping
+untaped awx inventories export Disposable --organization Default \
+  --out disposable-inventory.yml
+untaped awx inventory-sources export DisposableSource --inventory Disposable \
+  --inventory-organization Default --out disposable-source.yml
+
+untaped awx inventory-sources patch DisposableSource \
+  --inventory Disposable --inventory-organization Default \
+  --set update_cache_timeout=0 --dry-run
+untaped awx inventory-sources patch DisposableSource \
+  --inventory Disposable --inventory-organization Default \
+  --set update_cache_timeout=0 --yes
+untaped awx inventory-sources get DisposableSource \
+  --inventory Disposable --inventory-organization Default --format yaml
+
+untaped awx inventory-sources edit DisposableSource \
+  --inventory Disposable --inventory-organization Default --dry-run
+untaped awx inventory-sources sync DisposableSource \
+  --inventory Disposable --inventory-organization Default --follow
+
+untaped awx apply disposable-source.yml --yes
+untaped awx apply disposable-inventory.yml --yes
+```
+
+Confirm that the cache timeout changed, `update_on_launch` stayed unchanged,
+the no-op editor made no write, and the sync reached the expected terminal
+state. These steps are opt-in live writes against a disposable controller.
+
 ## Sensitive data
 
 Do not include secrets, real customer configurations, production logs, private
-workspace data, health exports, or other private data in issues, tests, fixtures,
+workspace data, personal data, or other private data in issues, tests, fixtures,
 or examples. Use synthetic data for tests and examples.

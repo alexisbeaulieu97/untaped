@@ -25,6 +25,8 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
+          # Diff coverage compares with the PR's base commit.
+          fetch-depth: 0
 
       - name: Install uv (with cache)
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
@@ -44,7 +46,7 @@ jobs:
         # `--frozen` forbids re-resolving: CI installs exactly what `uv.lock`
         # pins, so a stale lock surfaces as a sync failure instead of a silent
         # in-CI resolve that diverges from local installs.
-        run: uv sync --frozen --python 3.14 --all-packages
+        run: uv sync --frozen --python 3.14 --all-packages --group diff-coverage
 
       - name: Release versions and pins
         # Version or sibling-pin drift fails here, not first at release time.
@@ -60,7 +62,15 @@ jobs:
         run: uv run mypy
 
       - name: Pytest
-        run: uv run pytest -n auto --cov --cov-report=term-missing --durations=25
+        run: uv run pytest -n auto --cov --cov-report=term-missing --cov-report=xml --durations=25
+
+      - name: Diff coverage
+        # The lines a PR changes need 90% coverage, which the total floor
+        # cannot see.
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: uv run diff-cover coverage.xml --compare-branch "$BASE_SHA" --fail-under 90
 
   # Build every package and install the wheels by path into clean venvs, one
   # per install shape, each checked by `scripts/release.py smoke` against the

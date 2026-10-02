@@ -142,8 +142,8 @@ DESCRIPTIONS: dict[str, str] = {
     "recipe.library_root": "Directory holding installed recipe packs.",
     "recipe.hook_timeout_seconds": "Per-hook request timeout; `0` disables it.",
     "recipe.hook_startup_timeout_seconds": "Timeout for preparing a hook environment.",
-    "recipe.backup_keep": "`backup prune` keeps this many newest bundles by default.",
-    "recipe.backup_max_age_days": "`backup prune` deletes bundles older than this by default.",
+    "recipe.backup_keep": "`backups prune` keeps this many newest bundles by default.",
+    "recipe.backup_max_age_days": "`backups prune` deletes bundles older than this by default.",
     "recipe.preview_max_rows": "Preview rows before `apply` collapses per-file rows; `0` is "
     "unlimited.",
 }
