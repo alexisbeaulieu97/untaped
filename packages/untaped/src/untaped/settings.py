@@ -30,6 +30,11 @@ DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
 STATE_FILE_NAME = "state.yml"
 STATE_PATH_ENV = "UNTAPED_STATE"
 
+#: On-disk format of ``config.yml`` and ``state.yml``. A file without
+#: ``format_version`` is format 1. Bump only in a major release, when an older
+#: reader ignoring a new core key would change behaviour (see docs/configuration.md).
+FORMAT_VERSION = 1
+
 
 class HttpSettings(BaseModel):
     """Cross-cutting HTTP behaviour for a tool's HTTP client (per-profile)."""
@@ -223,7 +228,27 @@ def load_config_yaml(yaml_file: Path) -> dict[str, Any]:
             f"invalid config in {yaml_file}: the document root must be a mapping, "
             f"got {type(raw).__name__}"
         )
+    _check_format(raw, yaml_file)
     return raw
+
+
+class FormatVersionError(ConfigError):
+    """A config or state file this release must not read or write."""
+
+
+def _check_format(raw: dict[str, Any], path: Path) -> None:
+    if "format_version" not in raw:
+        return
+    value = raw["format_version"]
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise FormatVersionError(  # invalid stamps get the same write-path protection
+            f"invalid format_version in {path}: expected a positive integer, got {value!r}"
+        )
+    if value > FORMAT_VERSION:
+        raise FormatVersionError(
+            f"{path} was written by a newer untaped (format {value}; "
+            f"this release reads format {FORMAT_VERSION}); upgrade untaped"
+        )
 
 
 def splice_registered_state(
@@ -263,8 +288,10 @@ def splice_registered_state(
             effective[section] = state_data
 
 
-#: ``config.yml``'s own top-level keys, never usable as capability state names.
-RESERVED_STATE_SECTIONS = frozenset({"active", "profiles"})
+#: Top-level keys of ``config.yml`` and ``state.yml`` that core owns (the
+#: profile layout and the on-disk format stamp), never usable as capability
+#: state names.
+RESERVED_STATE_SECTIONS = frozenset({"active", "profiles", "format_version"})
 
 
 def check_state_section_name(section: str) -> None:

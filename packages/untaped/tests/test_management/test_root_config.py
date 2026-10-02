@@ -199,7 +199,12 @@ def _scripted_editor(
 
 
 @pytest.mark.parametrize(
-    "content", ["[invalid", "profiles: {default: {jira: {timeout: not-a-number}}}"]
+    "content",
+    [
+        "[invalid",
+        "profiles: {default: {jira: {timeout: not-a-number}}}",
+        "format_version: 2\nprofiles: {}\n",
+    ],
 )
 def test_config_edit_rejects_an_invalid_edit_and_keeps_the_config(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: str

@@ -68,6 +68,16 @@ def test_list_marks_active_profile(_isolated_config: Path) -> None:
     assert sorted(result.stdout.splitlines()) == ["default", "work"]
 
 
+def test_list_ignores_the_format_version_stamp(_isolated_config: Path) -> None:
+    _isolated_config.write_text(
+        "format_version: 1\nprofiles:\n  default: {}\n  work: {}\n", encoding="utf-8"
+    )
+    app = build_root_profile_app(command="untaped")
+    result = CliInvoker().invoke(app, ["list", "--format", "raw", "--columns", "name"])
+    assert result.exit_code == 0, result.output
+    assert sorted(result.stdout.splitlines()) == ["default", "work"]
+
+
 def test_create_use_and_current_round_trip(_isolated_config: Path) -> None:
     app = build_root_profile_app(command="untaped")
     assert CliInvoker().invoke(app, ["create", "work"]).exit_code == 0

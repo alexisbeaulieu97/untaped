@@ -43,6 +43,7 @@ _RESERVED_COMMAND_ROOTS = frozenset(
     {
         "profiles",
         "active",
+        "format_version",
         "config",
         "profile",
         "skills",

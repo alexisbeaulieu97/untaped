@@ -134,6 +134,18 @@ def test_get_key_of_invalid_section_names_the_problem(_isolated_config: Path) ->
     assert "jira.timeout" in result.stderr
 
 
+@pytest.mark.parametrize("flags", [[], ["--all-profiles"]])
+def test_list_ignores_the_format_version_stamp(_isolated_config: Path, flags: list[str]) -> None:
+    body = "profiles:\n  default:\n    jira:\n      base_url: https://j\n"
+    write_config(_isolated_config, body)
+    unstamped = _invoke(["list", *flags, "--format", "json"])
+    write_config(_isolated_config, f"format_version: 1\n{body}")
+    stamped = _invoke(["list", *flags, "--format", "json"])
+    assert stamped.exit_code == 0, stamped.output
+    assert "format_version" not in stamped.stdout
+    assert json.loads(stamped.stdout) == json.loads(unstamped.stdout)
+
+
 def test_list_shows_raw_values_and_warns_for_invalid_section(_isolated_config: Path) -> None:
     write_config(_isolated_config, _BROKEN_JIRA)
     result = _invoke(["list", "--format", "json"])

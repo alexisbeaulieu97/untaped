@@ -56,6 +56,9 @@
 
 ### Added
 
+- **core:** `config.yml` and `state.yml` carry an on-disk format: untaped
+  refuses a file written by a newer format (exit 4) instead of misreading it.
+  Files without `format_version` are format 1.
 - **core:** bare `untaped --help` and `untaped capabilities` print how to
   install capabilities when none are installed.
 - **core:** `@writes` declares a command that writes; command names are no

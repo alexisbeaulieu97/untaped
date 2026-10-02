@@ -73,6 +73,8 @@ Each capability's guide: [workspace](./packages/untaped-workspace/README.md),
 A minor or patch release never breaks these. Anything new is added alongside
 them. For two installs of different major versions, see
 [Configuration](./docs/configuration.md#file-and-layout).
+`config.yml` and `state.yml` carry an on-disk
+[file format](./docs/configuration.md#file-format) that changes only in a major.
 
 - Command and flag names, positional arguments, and what each means
   (`untaped COMMAND --help`).
