@@ -593,8 +593,10 @@ without `--yes`), 3 predicate hit, 4 fix the environment, 5 retry later.
 ```
 
 Composition requires only a non-empty skill name and description; the rest
-of this section is guidance. The principle: say only what the agent cannot
-learn from the installed CLI, and make the risky paths hard to get wrong.
+of this section is guidance, and no test checks the description's length or
+voice. The content rule: a skill documents behaviour and judgement, not what
+the CLI prints. Say only what the agent cannot learn from the installed CLI,
+and make the risky paths hard to get wrong.
 `--help` and `--columns ?` answer flags and fields; the skill says which
 commands form a workflow, which order is safe, what the output means and what
 to do next.
@@ -603,7 +605,7 @@ Frontmatter:
 
 - `description` equals `SkillAsset.description` exactly. It routes rather
   than instructs: in the third person, what the skill covers, then the
-  intents that should load it. Keep it under 60 words, on this capability's
+  intents that should load it. Aim for under 60 words, on this capability's
   ground only, and without `": "`.
 - `name` is the full ID, `untaped-<capability>`.
 

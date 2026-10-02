@@ -71,16 +71,9 @@ a suite names its file.
 
 ## Header: `variables`
 
-`variables` maps each variable's `name` to its declaration. Every field is
-optional:
-
-| Field | Meaning |
-|---|---|
-| `type` | `string` (default), `int`, `bool`, `choice` or `list`; a supplied value is converted to it. `bool` accepts `true/false`, `yes/no`, `on/off`, `1/0`; `list` a YAML list or a comma-separated string. |
-| `description` | The prompt text when asked interactively (default: the name). |
-| `default` | The value when neither `--var` nor `--vars-file` sets it. A variable without a default is required. |
-| `choices` | The allowed values of a `choice` variable; required for that type, and a `default` must be one of them. |
-| `secret` | `true` prompts without echoing the answer. |
+`variables` maps each variable's `name` to its declaration; `untaped awx schema AwxTestSuite` lists the
+fields. Every field is optional, and a variable without a `default` is
+required.
 
 Values come from, highest precedence first: `--var`, `--vars-file` (a later
 file wins), the `default`, then an interactive prompt for a required variable.
@@ -115,28 +108,18 @@ untaped awx test run --vars-file ~/.secrets/deploy-test.yml --non-interactive
 
 ## Body: the suite
 
-| Field | Meaning |
-|---|---|
-| `kind` | Required, exactly `AwxTestSuite`. |
-| `name` | The suite name used by `--case SUITE/CASE`; default: the file name without its extension. |
-| `jobTemplate` | The job template every case launches. A suite names exactly one of `jobTemplate` and `workflowTemplate`. |
-| `workflowTemplate` | The workflow job template every case launches (see [Workflow suites](#workflow-suites)). |
-| `organization` | The template's organization when its name is not unique (default: `awx.default_organization`). |
-| `defaults` | A case body every case inherits (`launch`, `expect`, `timeout`, `approvals`). |
-| `cases` | Required, at least one. Case name → case body; each case launches the template once. |
-| `variables` | Not written in the body: `untaped awx test list` reports the header's declarations under this key. |
+`untaped awx schema AwxTestSuite` lists the body's fields. A suite names exactly one of `jobTemplate` and
+`workflowTemplate`, and `cases` needs at least one. `variables` is not written
+in the body: `untaped awx test list` reports the header's declarations under
+that key.
 
 Unknown keys are errors everywhere in the body, so a typo such as
 `expected:` fails validation instead of being ignored.
 
 ## Case body
 
-| Field | Meaning |
-|---|---|
-| `launch` | The AWX launch payload for this case (below). |
-| `expect` | What the job must produce (below). |
-| `timeout` | Seconds to wait for the job; then it is cancelled and the case is `timeout`. |
-| `approvals` | A workflow case only: `approve` or `deny` every approval the workflow waits on; replaces `defaults.approvals`. |
+`untaped awx schema AwxTestSuite` lists a case's fields (`launch`, `expect`, `timeout`,
+`approvals`).
 
 ### `launch`: the launch payload
 
@@ -190,18 +173,8 @@ launch:
 
 ### `expect`: what the job must produce
 
-| Field | Meaning |
-|---|---|
-| `status` | The job's final status: `successful` (the default), `failed`, `error` or `canceled`. |
-| `log` | Checks on the job's full stdout, line by line. |
-| `log`: `contains` | Texts that some line must contain. |
-| `log`: `not_contains` | Texts that no line may contain. |
-| `log`: `matches` | Python regular expressions that some line must match (searched anywhere in the line). |
-| `changed` | The most tasks that may change something, summed over every host; `0` means the job changes nothing. |
-| `hosts` | Upper bounds on each host's counters, by host name (below); `"*"` bounds every host. |
-| `idempotent` | `true`: once the case passed, launch it again; the rerun must succeed and change nothing (below). |
-| `failed_tasks` | Failed tasks the job must have (below): proves a negative case failed for the right reason. |
-| `nodes` | A workflow case only: checks on each node's job, by node id (see [Workflow suites](#workflow-suites)). |
+`untaped awx schema AwxTestSuite` lists the checks (`status`, `log`, `changed`, `hosts`, `idempotent`,
+`failed_tasks`, `nodes`).
 
 Every check must hold. Against `defaults.expect`:
 
@@ -217,14 +190,9 @@ a `status: failed` case without them.
 
 #### `hosts`
 
-A `hosts` entry sets upper bounds on one host's PLAY RECAP counters; a
-counter it leaves out is not checked:
-
-| Field | Meaning |
-|---|---|
-| `failed` | The most tasks that may fail on the host. |
-| `unreachable` | The most tasks that may find the host unreachable. |
-| `changed` | The most tasks that may change the host. |
+A `hosts` entry sets upper bounds on one host's PLAY RECAP counters
+(`failed`, `unreachable`, `changed`); a counter it leaves out is not
+checked:
 
 ```yaml
 expect:
@@ -253,13 +221,7 @@ saving is an `awx.controller` error (exit 5, retry later), never a pass.
 #### `failed_tasks`
 
 An entry matches a failed task, as the result's
-`failure.evidence.failed_tasks` lists them:
-
-| Field | Meaning |
-|---|---|
-| `task` | Text the task's name must contain. |
-| `msg` | Text the task's message (the module's `msg`) must contain. |
-| `matches` | A Python regular expression the task's message must match (searched anywhere in it). |
+`failure.evidence.failed_tasks` lists them, by `task`, `msg` or `matches`:
 
 - An entry needs at least one part, and every part must match the same task.
 - Every entry must match some failed task; other failed tasks do not fail
@@ -335,13 +297,9 @@ Approvals:
 - An entry merges over `defaults.expect.nodes` as a case's `expect` does,
   except that `status: never_ran` replaces the default's entry whole.
 
-| Field | Meaning |
-|---|---|
-| `status` | The node's final status: `successful` (the default), `failed`, `error`, `canceled`, or `never_ran` for a node the workflow did not run (no other check goes with it). |
-| `log` | Checks on the node job's stdout (`contains`, `not_contains`, `matches`). |
-| `changed` | The most tasks the node's job may change, over all its hosts. |
-| `hosts` | Upper bounds on each host's counters in the node's job, as for a case. |
-| `failed_tasks` | Failed tasks the node's job must have. |
+An entry takes the checks of a case except `idempotent` (`status`, `log`,
+`changed`, `hosts`, `failed_tasks`); `status: never_ran` is for a node the
+workflow did not run, and no other check goes with it.
 
 - A node that ran an approval or a management job has only a status: an
   approved approval is `successful`, a denied or timed-out one `failed`.

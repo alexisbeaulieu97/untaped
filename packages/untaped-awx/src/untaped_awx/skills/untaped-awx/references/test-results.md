@@ -113,25 +113,22 @@ ran it: `scm_revision` must be the commit you pushed.
 
 ## The record
 
-| Field | Meaning |
-|---|---|
-| `suite`, `case` | Which case this is (`--case suite/case` reruns it). |
-| `result` | The verdict: `pass`, `fail`, `error` or `timeout` ([Verdicts](#verdicts)); `null` only on a `removed` row. |
-| `job_status` | AWX's final status of the job, or its last seen status; `null` when no job was read. |
-| `job_id` | The job's id (`null` when the launch failed before AWX created one). |
-| `rerun_job_id` | The job of an `idempotent` case's rerun; `null` when none was launched. |
-| `job_url` | The job's output page in the controller web UI. |
-| `duration_s` | Seconds from launch to verdict. |
-| `started_at`, `finished_at` | The job's start and finish times in UTC; `null` while AWX has not set them. |
-| `scm_branch` | The ref the job ran, as AWX records it. |
-| `scm_revision` | The commit the job checked out; compare it with `git rev-parse HEAD`. |
-| `failure` | Why the case did not pass (below); `null` for `pass`. |
-| `expectations` | Every check, as `{check, expected, actual, passed}` (below). |
-| `hosts` | Each host's PLAY RECAP counters by host name (below); `null` when they were not or could not be read. |
-| `hosts_truncated` | `true` when the job ran on more than 500 hosts: `hosts` keeps 500, failed and unreachable hosts first. |
-| `nodes` | A workflow case's nodes as they ran (below); `null` for a job case, or when they could not be read. |
-| `baseline` | The same case in the baseline run, when comparing; `null` otherwise, or for a `new` case. |
-| `change` | How the case changed since the baseline; `null` without a baseline. |
+`untaped awx test run --columns '?'` lists the fields; the table shows the
+default ones. What the rest do not say:
+
+- `result` is `null` only on a `removed` row ([Verdicts](#verdicts)).
+- `job_status` is `null` when no job was read, and `job_id` when the launch
+  failed before AWX created a job. `started_at` and `finished_at` are `null`
+  while AWX has not set them.
+- `scm_revision` is the commit the job checked out; compare it with
+  `git rev-parse HEAD`.
+- `hosts` is `null` when the summaries were not or could not be read.
+  `hosts_truncated` is `true` when the job ran on more than 500 hosts:
+  `hosts` keeps 500, failed and unreachable hosts first.
+- `nodes` is `null` for a job case, or when the nodes could not be read.
+- `baseline` and `change` are `null` without a baseline; `baseline` is also
+  `null` for a `new` case.
+- `rerun_job_id` is `null` when no rerun was launched.
 
 ### `failure`
 
@@ -387,24 +384,10 @@ stderr; with `--keep` it is listed as `kept … (id N)`.
 `test validate --source-ref REF` (and `test run --source-ref REF --dry-run`)
 prints one `awx.provision_outcome` row per copy it would create (`planned`);
 `test prune` prints one `awx.prune_outcome` row per leftover copy (`planned`
-with `--dry-run`, then `deleted` or `failed`). Both have these fields:
-
-| Field | Meaning |
-|---|---|
-| `id` | The copy's id; `null` for a planned copy. |
-| `name` | The copy's name, `NAME [untaped-test SHA RUN]`. |
-| `kind` | `JobTemplate` or `WorkflowJobTemplate`. |
-| `template` | The name it copies: the template the suite names. |
-| `organization` | Its organization. |
-| `run_id` | The run that created it (`RUN` in its name). |
-| `ref` | The ref the run was given. |
-| `sha` | The commit's first 7 digits. |
-| `created_at` | When the run started. |
-| `path` | The spec it is copied from, `REF:PATH` (planned copies only). |
-| `prompts` | The `ask_*_on_launch` flags the copy enables for its cases (planned copies only). |
-| `action` | `planned`, `deleted` or `failed`. |
-| `detail` | Why a copy could not be deleted. |
-| `error` | The attributed failure of a `failed` row: `category`, `system`, `retryable`, `message`, `hint`. |
+with `--dry-run`, then `deleted` or `failed`). Both print the fields `--columns '?'` lists. `id` is `null` for a planned
+copy, and `path` and `prompts` are set on planned copies only. A copy is named
+`NAME [untaped-test SHA RUN]`. A `failed` row's `error` carries the
+attributed failure (`category`, `system`, `retryable`, `message`, `hint`).
 
 ## Verdicts
 
