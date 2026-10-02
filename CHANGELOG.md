@@ -26,9 +26,11 @@
     `untaped capabilities` loses its `api` and `origin` columns and lists
     capabilities in name order.
   - **Breaking:** two or more providers claiming the same capability name or
-    config section are all quarantined, with a warning naming every claimant;
-    before, the first in order won (or, against a built-in, `untaped` failed).
-    Uninstall one to restore the other.
+    config section are now all quarantined, with a warning naming every
+    claimant. Before, the first-party capability won, or the first external
+    in discovery order. A plugin that claims a first-party name or section
+    (say `github`) now disables that capability too; uninstall one to restore
+    the other.
   - **Behavior change:** first-party capabilities register through
     `untaped.capabilities` entry points like any plugin. A failing capability
     is quarantined instead of stopping `untaped`. Each quarantined capability
