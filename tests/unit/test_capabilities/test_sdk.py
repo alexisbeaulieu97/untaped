@@ -117,7 +117,6 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "list_caches",
         "repo_url_parts",
         "run_git",
-        "safe_cache_path",
         "safe_path_segment",
         "same_origin",
         "scoped_auth_header",

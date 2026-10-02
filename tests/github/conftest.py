@@ -90,15 +90,18 @@ def source_repo(tmp_path: Path) -> Callable[[str, dict[str, str | bytes]], Path]
 def git_auth(monkeypatch: pytest.MonkeyPatch) -> dict[str, str | None]:
     """Stub the corpus's Git calls; map each fetched remote URL to the auth header it got."""
     seen: dict[str, str | None] = {}
+    origins: dict[Path, str] = {}
 
     def fake_run_git(args: list[str], **kwargs: Any) -> GitResult:
         if args[:2] == ["init", "--bare"]:
-            Path(args[2]).mkdir(parents=True, exist_ok=True)
+            Path(args[-1]).mkdir(parents=True, exist_ok=True)
+        if args[:3] == ["config", "--replace-all", "remote.origin.url"]:
+            # The cache reads its origin from this file to scope the header.
+            origins[kwargs["cwd"]] = args[3]
+            (kwargs["cwd"] / "config").write_text(f'[remote "origin"]\n\turl = {args[3]}\n')
         if args[0] in {"fetch", "ls-remote"}:
-            seen[kwargs["auth_url"]] = kwargs.get("auth_header")
+            seen[origins[kwargs["cwd"]]] = kwargs.get("auth_header")
         return GitResult(returncode=0, stdout=b"", stderr="")
 
-    monkeypatch.setattr(
-        "untaped.capabilities.github.infrastructure.git_corpus.run_git", fake_run_git
-    )
+    monkeypatch.setattr("untaped.repo_cache.run_git", fake_run_git)
     return seen
