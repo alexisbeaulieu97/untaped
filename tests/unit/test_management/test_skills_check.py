@@ -19,7 +19,7 @@ from test_management.support import asset, make_spec, write_config
 from untaped import bootstrap
 from untaped.cli import create_app
 from untaped.sdk import SkillAsset
-from untaped.testing import CliInvoker
+from untaped.testing import CliInvoker, provider_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -27,7 +27,7 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 def _root(tmp_path: Path, *names: str) -> tuple[object, list[SkillAsset]]:
     skills = [asset(tmp_path, name) for name in names]
     root = bootstrap.build_root_app(
-        builtins=(make_spec("demo", skills=tuple(skills)),), candidates=()
+        candidates=(provider_candidate(make_spec("demo", skills=tuple(skills))),)
     )
     return root, skills
 
@@ -160,7 +160,7 @@ def _root_with_commands(tmp_path: Path) -> object:
         return app
 
     spec = replace(make_spec("demo", skills=(skill,)), app_factory=_factory)
-    root = bootstrap.build_root_app(builtins=(spec,), candidates=())
+    root = bootstrap.build_root_app(candidates=(provider_candidate(spec),))
     assert _run(root, "skills", "install", "demo")[0] == 0
     skill.source.joinpath("SKILL.md").write_text("new instructions\n", encoding="utf-8")
     return root

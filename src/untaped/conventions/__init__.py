@@ -2,7 +2,7 @@
 
 Each check reads one installed package: its command subtree from the real
 composition and its own source files, wherever they are installed, so a
-third-party provider is checked exactly like a built-in. Provider tests call
+third-party provider is checked exactly like a first-party one. Provider tests call
 :func:`untaped.testing.check_conventions`; this package is internal.
 """
 
@@ -29,7 +29,7 @@ def capability_violations(
 ) -> list[str]:
     """Every convention violation of the installed capability ``name``.
 
-    Builds the root once (built-ins and discovered candidates), finds the
+    Builds the root once (from discovered candidates), finds the
     registered capability, and runs help_tree, messages, structure and
     layering over its command subtree and package. The private-test-import
     check runs only when ``tests_dir`` is given. ``candidates`` replaces

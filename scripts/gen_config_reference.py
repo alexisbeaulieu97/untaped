@@ -1,7 +1,7 @@
 """Generate ``docs/reference/config.md`` from the composed settings models.
 
 The page lists every setting of the root shell (``http.*``, ``ui.*``,
-``skills.*``) and of each built-in capability's profile model, plus each
+``skills.*``) and of each first-party capability's profile model, plus each
 capability's state model. Types, defaults and environment variables come from
 the Pydantic models; a description comes from ``Field(description=...)`` when
 the model declares one, else from :data:`DESCRIPTIONS` below.
@@ -244,8 +244,12 @@ def _env_name(key: str) -> str:
 
 
 def collect_sections() -> list[tuple[str, str, type[BaseModel], bool]]:
-    """``(title, prefix, model, is_state)`` for the shell and every built-in."""
-    from untaped.bootstrap import BUILTIN_CAPABILITIES, SHELL_SPEC  # noqa: PLC0415
+    """``(title, prefix, model, is_state)`` for the shell and every first-party capability.
+
+    Capabilities follow in name order.
+    """
+    from untaped.bootstrap import SHELL_DISTRIBUTION, SHELL_SPEC  # noqa: PLC0415
+    from untaped.capabilities.registry import compose, discover_candidates  # noqa: PLC0415
     from untaped.settings import Settings  # noqa: PLC0415
 
     sections: list[tuple[str, str, type[BaseModel], bool]] = [
@@ -257,7 +261,9 @@ def collect_sections() -> list[tuple[str, str, type[BaseModel], bool]]:
             False,
         ),
     ]
-    for spec in BUILTIN_CAPABILITIES:
+    first_party = [c for c in discover_candidates() if c.distribution == SHELL_DISTRIBUTION]
+    for registered in compose(SHELL_SPEC, first_party).capabilities:
+        spec = registered.spec
         sections.append(
             (f"`{spec.config_section}`", spec.config_section, spec.profile_model, False)
         )

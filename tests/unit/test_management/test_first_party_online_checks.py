@@ -1,4 +1,4 @@
-"""The built-in AWX, GitHub and Jira capabilities contribute ``doctor --online`` probes."""
+"""The first-party AWX, GitHub and Jira capabilities contribute ``doctor --online`` probes."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ profiles:
 
 
 def _online_rows(*args: str) -> dict[str, dict[str, Any]]:
-    root = bootstrap.build_root_app(candidates=())
+    root = bootstrap.build_root_app()
     result = CliInvoker().invoke(root.meta, ["doctor", "--online", "--format", "json", *args])
     assert result.stdout, result.output
     return {row["check"]: row for row in json.loads(result.stdout)}

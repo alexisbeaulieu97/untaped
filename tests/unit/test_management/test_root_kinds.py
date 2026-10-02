@@ -32,7 +32,7 @@ def test_root_pipe_records_carry_an_untaped_kind(args: list[str], kind: str) -> 
     config = Path(os.environ["UNTAPED_CONFIG"])
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text("profiles:\n  default: {}\n  stage: {}\n", encoding="utf-8")
-    root = build_root_app(candidates=[])
+    root = build_root_app()
     result = invoke_cli(root, [*args, "--format", "pipe"])
 
     lines = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]

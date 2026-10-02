@@ -27,6 +27,7 @@ import re
 import shlex
 from collections.abc import Iterator
 from pathlib import Path
+from pkgutil import resolve_name
 
 import pytest
 import yaml
@@ -38,11 +39,16 @@ from cyclopts.exceptions import (
     ValidationError,
 )
 
-from untaped import bootstrap
 from untaped.bootstrap import build_root_app
 from untaped.capabilities.awx.domain.suite_starter import starter_suite
+from untaped.capabilities.registry import discover_candidates
 
-SKILLS = {skill.name: skill for spec in bootstrap.BUILTIN_CAPABILITIES for skill in spec.skills}
+SKILLS = {
+    skill.name: skill
+    for candidate in discover_candidates()
+    if candidate.distribution == "untaped"
+    for skill in resolve_name(str(candidate.target))().skills
+}
 
 
 def _skill_files() -> list[tuple[str, Path]]:
@@ -175,7 +181,7 @@ def _parse_problem(root: App, command: str, *, inline: bool) -> str | None:
 
 @pytest.fixture(scope="module")
 def root() -> App:
-    return build_root_app(candidates=[])
+    return build_root_app()
 
 
 def _problems(root: App, commands: Iterator[tuple[str, bool]]) -> list[str]:

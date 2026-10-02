@@ -99,7 +99,7 @@ def test_ping_ignores_invalid_sibling_section(
                 200, json={"version": "4.5.0", "active_node": "controller-1"}
             )
         )
-        root = bootstrap.build_root_app(candidates=())
+        root = bootstrap.build_root_app()
         result = CliInvoker().invoke(
             root.meta, ["awx", "ping", "--format", "raw", "--columns", "version"]
         )

@@ -1,8 +1,7 @@
-"""Row-by-row validation tests: fatal built-ins, quarantined candidates (spec §5).
+"""Row-by-row validation tests: every violation quarantines its provider (spec §5).
 
-Each rejection row is exercised through both origins: a built-in violation
-raises ``ConfigError`` naming the reason, an external one becomes a
-``QuarantineRecord`` while composition continues.
+Each rejection row becomes a ``QuarantineRecord`` naming the reason while
+composition continues; first-party and third-party providers are judged alike.
 """
 
 from __future__ import annotations
@@ -29,7 +28,6 @@ from untaped.capabilities.registry import (
     SkillAsset,
     compose,
 )
-from untaped.errors import ConfigError
 
 
 class TokenProfile(BaseModel):
@@ -168,26 +166,20 @@ SINGLE_SPEC_ROWS: list[tuple[str, Callable[[], CapabilitySpec], str, str]] = [
 ]
 
 
-@pytest.mark.parametrize("builtin", [True, False], ids=["builtin-fatal", "external-quarantine"])
+@pytest.mark.parametrize("distribution", ["untaped", "ext-dist"])
 @pytest.mark.parametrize(
     ("make", "reason", "named"),
     [row[1:] for row in SINGLE_SPEC_ROWS],
     ids=[row[0] for row in SINGLE_SPEC_ROWS],
 )
-def test_invalid_spec_is_rejected(
-    make: Callable[[], CapabilitySpec], reason: str, named: str, builtin: bool
+def test_invalid_spec_is_quarantined(
+    make: Callable[[], CapabilitySpec], reason: str, named: str, distribution: str
 ) -> None:
     spec = make()
-    if builtin:
-        with pytest.raises(ConfigError) as exc_info:
-            compose(make_shell(), [spec])
-        assert reason in str(exc_info.value)
-        assert named in str(exc_info.value)
-        return
-    result = compose(make_shell(), [], [make_external(spec, "ext-dist")])
+    result = compose(make_shell(), [make_external(spec, distribution)])
     assert result.capabilities == ()
     (record,) = result.quarantine
-    assert record.reason == reason
+    assert (record.distribution, record.reason) == (distribution, reason)
     assert named in record.detail
 
 
@@ -235,27 +227,23 @@ COLLISION_ROWS: list[tuple[str, Callable[[], tuple[CapabilitySpec, CapabilitySpe
 ]
 
 
-@pytest.mark.parametrize("builtin", [True, False], ids=["builtin-fatal", "external-quarantine"])
 @pytest.mark.parametrize(
     ("make", "reason", "named"),
     [row[1:] for row in COLLISION_ROWS],
     ids=[row[0] for row in COLLISION_ROWS],
 )
-def test_collision_with_an_earlier_capability_is_rejected(
+def test_collision_with_an_earlier_capability_is_quarantined(
     make: Callable[[], tuple[CapabilitySpec, CapabilitySpec]],
     reason: str,
     named: str,
-    builtin: bool,
 ) -> None:
     first, second = make()
-    if builtin:
-        with pytest.raises(ConfigError, match=reason):
-            compose(make_shell(), [first, second])
-        return
-    result = compose(make_shell(), [first], [make_external(second)])
+    result = compose(
+        make_shell(), [make_external(second, "b-dist"), make_external(first, "a-dist")]
+    )
     assert [c.spec.name for c in result.capabilities] == [first.name]
     (record,) = result.quarantine
-    assert record.reason == reason
+    assert (record.distribution, record.reason) == ("b-dist", reason)
     assert named in record.detail
 
 
@@ -282,7 +270,7 @@ def test_collision_with_an_earlier_capability_is_rejected(
 def test_collision_with_the_shell_quarantines(
     shell: Any, spec: CapabilitySpec, reason: str, named: str
 ) -> None:
-    result = compose(shell, [], [make_external(spec)])
+    result = compose(shell, [make_external(spec)])
     assert result.capabilities == ()
     (record,) = result.quarantine
     assert record.reason == reason
@@ -292,7 +280,7 @@ def test_collision_with_the_shell_quarantines(
 def test_state_shadow_scoped_to_same_section() -> None:
     first = make_spec(name="first", section="data", profile=TokenProfile)
     other = make_spec(name="other", section="other", profile=OtherProfile, state=TokenState)
-    result = compose(make_shell(), [first], [make_external(other)])
+    result = compose(make_shell(), [make_external(first), make_external(other)])
     assert [c.spec.name for c in result.capabilities] == ["first", "other"]
     assert result.quarantine == ()
 
@@ -300,7 +288,7 @@ def test_state_shadow_scoped_to_same_section() -> None:
 def test_duplicate_skill_across_candidates_keeps_the_first() -> None:
     first = make_external(make_spec(name="a", skills=(make_skill("s1"),)), "d1")
     second = make_external(make_spec(name="b", skills=(make_skill("s1"),)), "d2")
-    result = compose(make_shell(), [], [first, second])
+    result = compose(make_shell(), [first, second])
     assert [c.spec.name for c in result.capabilities] == ["a"]
     (record,) = result.quarantine
     assert record.reason == "duplicate-skill"
@@ -314,7 +302,7 @@ def test_a_plain_function_provider_composes() -> None:
         return spec
 
     candidate = ProviderCandidate(distribution="plain-dist", name="plain", target=provide)
-    result = compose(make_shell(), [], [candidate])
+    result = compose(make_shell(), [candidate])
     assert result.quarantine == ()
     assert [registered.spec for registered in result.capabilities] == [spec]
 
@@ -394,7 +382,7 @@ def _needs_arg(value: str) -> CapabilitySpec:
 def test_bad_entry_point_target_quarantines(
     candidate: ProviderCandidate, reason: str, entry_point: str | None, named: str
 ) -> None:
-    result = compose(make_shell(), [], [candidate])
+    result = compose(make_shell(), [candidate])
     (record,) = result.quarantine
     assert record.reason == reason
     assert record.distribution == "d"

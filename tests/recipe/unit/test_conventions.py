@@ -12,4 +12,4 @@ pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 
 def test_recipe_follows_the_conventions() -> None:
-    check_conventions("recipe", tests_dir=Path(__file__).resolve().parents[1], candidates=[])
+    check_conventions("recipe", tests_dir=Path(__file__).resolve().parents[1])

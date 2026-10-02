@@ -12,14 +12,14 @@ capabilities; there is no multi-repo workspace guidance here.
 profiles, themes, consistent output, typed piping, HTTP/TLS, and UI/prompt
 helpers, plus one command subtree per built-in capability
 (`untaped workspace ...`, ...). Composition runs through
-`src/untaped/bootstrap.py` (`main()`), which discovers built-in
-capability specs plus external providers via the `untaped.capabilities` entry-point
+`src/untaped/bootstrap.py` (`main()`), which discovers every capability,
+first-party ones included, through the `untaped.capabilities` entry-point
 group, validates them through the registry, then mounts the survivors. The
 implementation in `src/untaped/` is authoritative for composition and command
 behavior. User workflows live in [`docs/`](docs/README.md); provider authors
 should start with [`docs/plugins.md`](docs/plugins.md).
 
-Inspect `untaped capabilities` for the current built-in capability order.
+Inspect `untaped capabilities` for the current first-party capabilities.
 The source tree is the implementation reference:
 
 - `pyproject.toml` and `uv.lock` define the distribution and locked
@@ -34,7 +34,7 @@ A capability owns its directory end to end:
 
 ```
 src/untaped/capabilities/<name>/
-├── __init__.py        # SPEC: CapabilitySpec (with one-line help) + nullary build_app() (lazy CLI import; never build at import time)
+├── __init__.py        # SPEC: CapabilitySpec (with one-line help) + nullary build_app() (lazy CLI import; never build at import time) + provider()
 ├── settings.py        # profile model + state model (field sets must be disjoint)
 ├── api.py             # optional: declared public module other built-ins may import (Hard Rule 2)
 ├── cli/               # cyclopts commands (thin)
@@ -61,28 +61,30 @@ keeps that attribution when replaced or turned into a row; see
 ## Capability registry + the SDK (`untaped.sdk`)
 
 - `sdk.py` is the single public SDK surface and the **only** core
-  module capability code (built-in or external) imports from; built-ins may
-  also use another capability's declared `api.py` (Hard Rule 2). Its
+  module capability code (first-party or third-party) imports from;
+  first-party capabilities may also use another capability's declared
+  `api.py` (Hard Rule 2). Its
   exported types and helpers are the provider API; a provider's `untaped`
   requirement (`Requires-Dist`) is the only compatibility check; the package
   root re-exports nothing.
-- `capabilities/registry.py` is the internal composition kernel: discovery /
-  metadata pre-checks → provider resolution → declaration validation + app-factory
-  staging → commit. Built-in violations raise `ConfigError` (fatal);
-  external violations become `QuarantineRecord` entries while composition
+- `capabilities/registry.py` is the internal composition kernel: discovery and
+  metadata pre-checks → provider resolution → declaration validation → commit.
+  Every violation becomes a `QuarantineRecord` entry while composition
   continues. Provider authors never import it.
 - Management command names are owned by the root shell; inspect
   `untaped --help` and `src/untaped/management/` when adding a capability.
-- A new built-in capability: add `capabilities/<name>/` per the layout
-  above, expose `SPEC` + `build_app`, and append its name to
-  `BUILTIN_CAPABILITIES` in `bootstrap.py` in declaration order. Start its
+- A new first-party capability: add `capabilities/<name>/` per the layout
+  above, expose `SPEC`, `build_app` and a nullary `provider()` returning
+  `SPEC`, and add `<name> = "untaped.capabilities.<name>:provider"` under
+  `[project.entry-points."untaped.capabilities"]` in `pyproject.toml` (then
+  `uv sync`). Start its
   skill from [`docs/templates/SKILL.md`](docs/templates/SKILL.md) (which holds
   the skill rules) and its user guide at `docs/<name>/usage.md`, linked from
   `docs/README.md`. Set
-  `SPEC.help` to the app's one-line help: built-ins with `help` are mounted
-  lazily (factory runs once, on dispatch), so `untaped --help` and other
-  capabilities never import their CLI. Externals are always built once during
-  composition (validation/quarantine) and that staged app is mounted.
+  `SPEC.help` to the app's one-line help: a capability with `help` is mounted
+  lazily (its factory runs on first dispatch, and in `untaped doctor`), so
+  `untaped --help` and other capabilities never import its CLI. Without
+  `help` the factory runs during composition.
 
 ## Management commands
 

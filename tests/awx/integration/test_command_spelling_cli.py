@@ -24,14 +24,14 @@ pytestmark = pytest.mark.integration
     ],
 )
 def test_old_spellings_are_usage_errors(old: list[str]) -> None:
-    result = invoke_cli(build_root_app(candidates=[]), old)
+    result = invoke_cli(build_root_app(), old)
 
     assert result.exit_code == 2, result.output
     assert "deprecated" not in result.stderr
 
 
 def test_help_lists_only_the_current_spellings() -> None:
-    root = build_root_app(candidates=[])
+    root = build_root_app()
 
     awx_help = invoke_cli(root, ["awx", "--help"]).stdout
     inventories_help = invoke_cli(root, ["awx", "inventories", "--help"]).stdout
@@ -46,6 +46,6 @@ def test_help_lists_only_the_current_spellings() -> None:
 
 
 def test_ping_options_are_keyword_only() -> None:
-    result = invoke_cli(build_root_app(candidates=[]), ["awx", "ping", "json"])
+    result = invoke_cli(build_root_app(), ["awx", "ping", "json"])
 
     assert result.exit_code == 2, result.output

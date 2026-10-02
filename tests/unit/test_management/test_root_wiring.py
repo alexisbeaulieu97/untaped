@@ -26,7 +26,7 @@ from untaped import bootstrap
 from untaped.config_file import read_config_dict
 from untaped.profile_resolver import profile_override
 from untaped.settings import get_settings
-from untaped.testing import CliInvoker
+from untaped.testing import CliInvoker, provider_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -34,7 +34,8 @@ _MANAGEMENT = ("config", "profile", "skills", "doctor", "capabilities")
 
 
 def _root(*specs: object, candidates: object = ()) -> object:
-    return bootstrap.build_root_app(builtins=tuple(specs), candidates=tuple(candidates))  # type: ignore[arg-type]
+    composed = [provider_candidate(spec) for spec in specs]  # type: ignore[arg-type]
+    return bootstrap.build_root_app(candidates=[*composed, *candidates])  # type: ignore[misc]
 
 
 def test_default_root_help_lists_only_management() -> None:
@@ -114,7 +115,7 @@ def test_jira_isolation_end_to_end(_isolated_config: Path) -> None:
     assert healed.exit_code == 0, healed.output
 
 
-def test_quarantined_external_lists_and_fails_doctor_only(tmp_path: Path) -> None:
+def test_quarantined_provider_lists_and_fails_doctor_only(tmp_path: Path) -> None:
     from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 
     calls: list[str] = []
@@ -221,7 +222,7 @@ def test_ctrl_c_at_a_config_prompt_exits_130() -> None:
     from untaped.testing import ScriptedPromptBackend, invoke_cli
 
     result = invoke_cli(
-        bootstrap.build_root_app(builtins=(), candidates=()),
+        bootstrap.build_root_app(candidates=()),
         ["config", "set", "ui.theme", "--prompt"],
         interactive=True,
         prompt_backend=ScriptedPromptBackend(interrupt=True),

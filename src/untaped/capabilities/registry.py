@@ -2,9 +2,9 @@
 
 Implements the four-phase provider pipeline: discovery and metadata pre-checks,
 provider resolution, declaration validation plus app-factory staging, and
-commit. Built-in violations raise :class:`ConfigError` (fatal); external
-violations yield :class:`QuarantineRecord` entries while composition
-continues. Doctor-check bodies never run here.
+commit. Every capability, first-party ones included, arrives as an
+entry-point candidate; every violation yields a :class:`QuarantineRecord`
+while composition continues. Doctor-check bodies never run here.
 
 This module is intentionally NOT re-exported: provider authors import the
 stable surface from :mod:`untaped.sdk` instead.
@@ -29,10 +29,10 @@ from pydantic import BaseModel
 from untaped.errors import ConfigError
 from untaped.settings import Settings, validate_disjoint_settings_sections
 
-#: Distribution label used for built-in provider references (spec §7.1).
-_BUILTIN_DISTRIBUTION = "untaped"
+#: Distribution whose version ``Requires-Dist: untaped`` is checked against.
+_CORE_DISTRIBUTION = "untaped"
 
-#: Entry-point group external capabilities are discovered from (spec §7.2).
+#: Entry-point group every capability is discovered from (spec §7.2).
 CAPABILITIES_ENTRY_POINT_GROUP = "untaped.capabilities"
 
 #: Reserved root command/layout names no capability may claim (spec §5 row 1).
@@ -159,9 +159,10 @@ class CapabilitySpec:
     """One composable capability unit (spec §1).
 
     ``help`` is the one-line summary shown in the root command listing. A
-    built-in that declares it is mounted lazily: its ``app_factory`` (and so
-    its CLI import tree) runs only when the command is dispatched. Without
-    it, the listing falls back to the built app's own help.
+    capability that declares it is mounted lazily: its ``app_factory`` (and
+    so its CLI import tree) runs only when the command is dispatched. Without
+    it, the factory runs during composition and the listing falls back to
+    the built app's own help.
     """
 
     name: str
@@ -195,15 +196,8 @@ class CapabilitySpec:
 class ProviderRef:
     """How a composed capability arrived (spec §3)."""
 
-    kind: str
     distribution: str
     entry_point: str
-
-    def __post_init__(self) -> None:
-        if self.kind not in ("built-in", "external"):
-            raise ConfigError(
-                f"provider kind must be exactly 'built-in' or 'external', got {self.kind!r}"
-            )
 
 
 @dataclass(frozen=True)
@@ -214,7 +208,7 @@ class RegisteredCapability:
     provider_ref: ProviderRef
     skills: tuple[SkillAsset, ...]
     #: App staged by the one validating ``app_factory`` call, reused at
-    #: mount time; ``None`` when the factory is deferred (lazy built-in).
+    #: mount time; ``None`` exactly when the spec sets ``help`` (deferred).
     app: App | None = None
 
 
@@ -239,7 +233,7 @@ VALID_REASONS = frozenset(
 
 @dataclass(frozen=True)
 class QuarantineRecord:
-    """Why an external provider was excluded (spec §3)."""
+    """Why a provider was excluded (spec §3)."""
 
     distribution: str
     entry_point: str
@@ -255,7 +249,7 @@ class QuarantineRecord:
 
 @dataclass(frozen=True)
 class ProviderCandidate:
-    """One discovered external candidate awaiting composition.
+    """One discovered candidate awaiting composition.
 
     ``distribution_version``, ``entry_point_group``, and ``requires_dist``
     are captured at discovery via :mod:`importlib.metadata` without importing
@@ -282,11 +276,10 @@ class CompositionResult:
     quarantine: tuple[QuarantineRecord, ...] = ()
 
 
-class _Quarantine(ConfigError):
+class _Quarantine(Exception):
     """Internal control flow: one provider failed validation.
 
-    A ``ConfigError`` subclass so built-in failures are already fatal;
-    external failures are converted to :class:`QuarantineRecord`.
+    :func:`compose` converts it to a :class:`QuarantineRecord`.
     """
 
     def __init__(self, reason: str, detail: str, entry_point: str | None = None) -> None:
@@ -297,12 +290,7 @@ class _Quarantine(ConfigError):
 
     def to_record(self, candidate: ProviderCandidate) -> QuarantineRecord:
         distribution = candidate.distribution.strip() or "unknown"
-        if self.entry_point is not None:
-            entry_point = self.entry_point
-        elif isinstance(candidate.target, str):
-            entry_point = candidate.target
-        else:
-            entry_point = candidate.name
+        entry_point = self.entry_point if self.entry_point is not None else _entry_point(candidate)
         return QuarantineRecord(
             distribution=distribution,
             entry_point=entry_point,
@@ -340,7 +328,7 @@ def _requirement_admits(requirement: Requirement, sdk_version: str) -> bool:
 def _running_sdk_version() -> str | None:
     """Running SDK version via importlib.metadata; None when unresolvable."""
     try:
-        return importlib_metadata.version(_BUILTIN_DISTRIBUTION)
+        return importlib_metadata.version(_CORE_DISTRIBUTION)
     except importlib_metadata.PackageNotFoundError:
         return None
 
@@ -365,7 +353,7 @@ def _check_requires_dist(candidate: ProviderCandidate) -> None:
                 f"malformed Requires-Dist entry {requirement!r} of distribution "
                 f"{candidate.distribution!r}",
             )
-        if canonicalize_name(parsed.name) == _BUILTIN_DISTRIBUTION:
+        if canonicalize_name(parsed.name) == _CORE_DISTRIBUTION:
             untaped_requirements.append((str(requirement), parsed))
     if not untaped_requirements:
         return
@@ -397,7 +385,7 @@ def _check_requires_dist(candidate: ProviderCandidate) -> None:
 def discover_candidates(
     *, group: str = CAPABILITIES_ENTRY_POINT_GROUP
 ) -> tuple[ProviderCandidate, ...]:
-    """Discover external candidates from entry points (spec §7.2).
+    """Discover every capability candidate from entry points (spec §7.2).
 
     Reads distribution version, entry-point group, and Requires-Dist strings
     via :mod:`importlib.metadata` without importing any provider code.
@@ -429,12 +417,20 @@ def discover_candidates(
     return tuple(found)
 
 
+#: Owner label of the shell's own name and config section in collision details.
+_SHELL_OWNER = "the shell"
+
+
 class _CompositionState:
-    """Mutable accumulation of one composition run (shell + committed providers)."""
+    """Mutable accumulation of one composition run (shell + committed providers).
+
+    ``name_owners`` and ``section_owners`` map each claimed name and section
+    to the distribution providing it (the shell's own are :data:`_SHELL_OWNER`).
+    """
 
     def __init__(self, shell: ApplicationSpec) -> None:
-        self.names: set[str] = {shell.name}
-        self.sections: set[str] = {shell.config_section}
+        self.name_owners: dict[str, str] = {shell.name: _SHELL_OWNER}
+        self.section_owners: dict[str, str] = {shell.config_section: _SHELL_OWNER}
         self.profile_fields: dict[str, set[str]] = {
             shell.config_section: set(shell.profile_model.model_fields)
         }
@@ -451,13 +447,24 @@ def _check_reserved_and_names(spec: CapabilitySpec, state: _CompositionState) ->
         raise _Quarantine("reserved-root", f"reserved capability name: {spec.name!r}")
     if _is_reserved(spec.config_section):
         raise _Quarantine("reserved-root", f"reserved config section: {spec.config_section!r}")
-    if spec.name in state.names:
-        raise _Quarantine("duplicate-name", f"duplicate capability name: {spec.name!r}")
+    if spec.name in state.name_owners:
+        owner = _owner_phrase(state.name_owners[spec.name])
+        raise _Quarantine("duplicate-name", f"duplicate capability name: {spec.name!r} ({owner})")
 
 
 def _check_duplicate_section(spec: CapabilitySpec, state: _CompositionState) -> None:
-    if spec.config_section in state.sections:
-        raise _Quarantine("duplicate-section", f"duplicate config section: {spec.config_section!r}")
+    if spec.config_section in state.section_owners:
+        owner = _owner_phrase(state.section_owners[spec.config_section])
+        raise _Quarantine(
+            "duplicate-section",
+            f"duplicate config section: {spec.config_section!r} ({owner})",
+        )
+
+
+def _owner_phrase(owner: str) -> str:
+    if owner == _SHELL_OWNER:
+        return f"already provided by {_SHELL_OWNER}"
+    return f"already provided by {owner!r}"
 
 
 def _check_state_model(spec: CapabilitySpec, state: _CompositionState) -> None:
@@ -539,11 +546,10 @@ def _check_factory(spec: CapabilitySpec) -> App:
 
 
 def build_deferred_app(spec: CapabilitySpec) -> App:
-    """Run and validate a deferred built-in factory at first dispatch.
+    """Run and validate a deferred factory at first dispatch.
 
-    Lazy built-ins skip :func:`_check_factory` during composition; a factory
-    that raises or returns a non-``App`` is still an SDK bug and surfaces as
-    the same fatal ``ConfigError`` composition would have raised.
+    Lazy capabilities skip :func:`_check_factory` during composition; a
+    factory that raises or returns a non-``App`` surfaces as a ``ConfigError``.
     """
     try:
         return _check_factory(spec)
@@ -563,8 +569,8 @@ def _commit(
     registered = RegisteredCapability(
         spec=spec, provider_ref=ref, skills=tuple(spec.skills), app=app
     )
-    state.names.add(spec.name)
-    state.sections.add(spec.config_section)
+    state.name_owners[spec.name] = ref.distribution
+    state.section_owners[spec.config_section] = ref.distribution
     state.profile_fields[spec.config_section] = set(spec.profile_model.model_fields)
     for skill in registered.skills:
         state.skill_names.add(skill.name)
@@ -587,95 +593,86 @@ def _resolve_target(target: object) -> object:
 
 
 def compose(
-    shell: ApplicationSpec,
-    builtins: Sequence[CapabilitySpec] = (),
-    candidates: Sequence[ProviderCandidate] = (),
+    shell: ApplicationSpec, candidates: Sequence[ProviderCandidate] = ()
 ) -> CompositionResult:
-    """Compose the shell, built-ins, then candidates; quarantine failures."""
+    """Compose the shell, then every candidate in name order; quarantine failures.
+
+    Candidates are ordered by ``(name, distribution, entry point)``, so on a
+    name or section collision the first in that order wins and the rest are
+    quarantined. A spec with ``help`` is deferred: its factory runs at first
+    dispatch (:func:`build_deferred_app`) and in ``untaped doctor``.
+    """
     state = _CompositionState(shell)
     capabilities: list[RegisteredCapability] = []
     quarantined: list[QuarantineRecord] = []
-    for spec in builtins:
+    for candidate in sorted(candidates, key=_candidate_order):
         try:
-            _check_rows_1_to_8(spec, state)
-            # A built-in declaring ``help`` is mounted lazily: its factory
-            # runs (and is validated) only when its command is dispatched.
+            spec = _provide(candidate, state)
             staged = None if spec.help is not None else _check_factory(spec)
-        except _Quarantine as failed:
-            raise ConfigError(
-                f"built-in capability {spec.name!r} failed validation "
-                f"[{failed.reason}]: {failed.detail}"
-            ) from None
-        builtin_ref = ProviderRef("built-in", _BUILTIN_DISTRIBUTION, "")
-        capabilities.append(_commit(spec, builtin_ref, state, staged))
-    ordered = sorted(candidates, key=lambda candidate: (candidate.distribution, candidate.name))
-    for candidate in ordered:
-        try:
-            # Metadata-only gates precede any import: group and Requires-Dist
-            # admission are decided from distribution metadata without
-            # executing provider code (spec §5 Phase A).
-            _check_entry_point_group(candidate)
-            _check_requires_dist(candidate)
-            try:
-                provider = _resolve_target(candidate.target)
-            except Exception as exc:
-                raise _Quarantine(
-                    "malformed-entry-point",
-                    f"could not resolve entry point {candidate.target!r} of "
-                    f"distribution {candidate.distribution!r}: {exc}",
-                    entry_point="",
-                ) from None
-            if not callable(provider):
-                raise _Quarantine(
-                    "malformed-entry-point",
-                    f"entry point {candidate.name!r} of distribution "
-                    f"{candidate.distribution!r} is not callable: {provider!r}",
-                )
-            try:
-                spec = provider()
-            except Exception as exc:
-                raise _Quarantine(
-                    "malformed-entry-point",
-                    f"provider {candidate.name!r} of distribution "
-                    f"{candidate.distribution!r} raised: {exc}",
-                ) from None
-            if not isinstance(spec, CapabilitySpec):
-                raise _Quarantine(
-                    "malformed-entry-point",
-                    f"provider {candidate.name!r} of distribution "
-                    f"{candidate.distribution!r} returned {type(spec).__name__}, "
-                    f"expected CapabilitySpec",
-                )
-            _check_rows_1_to_8(spec, state)
-            if candidate.name != spec.name:
-                raise _Quarantine(
-                    "bad-metadata",
-                    f"entry-point name {candidate.name!r} does not match capability "
-                    f"name {spec.name!r}",
-                )
-            if not candidate.distribution.strip():
-                raise _Quarantine(
-                    "bad-metadata",
-                    f"provider {candidate.name!r} declares an empty distribution name",
-                )
-            # Externals always stage eagerly so a bad factory quarantines
-            # the provider instead of failing at dispatch.
-            staged = _check_factory(spec)
         except _Quarantine as failed:
             quarantined.append(failed.to_record(candidate))
             continue
-        capabilities.append(
-            _commit(
-                spec,
-                ProviderRef(
-                    kind="external",
-                    distribution=candidate.distribution,
-                    entry_point=(
-                        candidate.target if isinstance(candidate.target, str) else candidate.name
-                    ),
-                ),
-                state,
-                staged,
-            )
-        )
+        ref = ProviderRef(distribution=candidate.distribution, entry_point=_entry_point(candidate))
+        capabilities.append(_commit(spec, ref, state, staged))
     return CompositionResult(capabilities=tuple(capabilities), quarantine=tuple(quarantined))
+
+
+def _candidate_order(candidate: ProviderCandidate) -> tuple[str, str, str]:
+    return (candidate.name, candidate.distribution, _entry_point(candidate))
+
+
+def _entry_point(candidate: ProviderCandidate) -> str:
+    return candidate.target if isinstance(candidate.target, str) else candidate.name
+
+
+def _provide(candidate: ProviderCandidate, state: _CompositionState) -> CapabilitySpec:
+    """Resolve and run one candidate's provider, then validate its declaration.
+
+    Raises :class:`_Quarantine` on the first failed check.
+    """
+    # Metadata-only gates precede any import: group and Requires-Dist
+    # admission are decided from distribution metadata without executing
+    # provider code (spec §5 Phase A).
+    _check_entry_point_group(candidate)
+    _check_requires_dist(candidate)
+    try:
+        provider = _resolve_target(candidate.target)
+    except Exception as exc:
+        raise _Quarantine(
+            "malformed-entry-point",
+            f"could not resolve entry point {candidate.target!r} of "
+            f"distribution {candidate.distribution!r}: {exc}",
+            entry_point="",
+        ) from None
+    if not callable(provider):
+        raise _Quarantine(
+            "malformed-entry-point",
+            f"entry point {candidate.name!r} of distribution "
+            f"{candidate.distribution!r} is not callable: {provider!r}",
+        )
+    try:
+        spec = provider()
+    except Exception as exc:
+        raise _Quarantine(
+            "malformed-entry-point",
+            f"provider {candidate.name!r} of distribution {candidate.distribution!r} raised: {exc}",
+        ) from None
+    if not isinstance(spec, CapabilitySpec):
+        raise _Quarantine(
+            "malformed-entry-point",
+            f"provider {candidate.name!r} of distribution "
+            f"{candidate.distribution!r} returned {type(spec).__name__}, "
+            f"expected CapabilitySpec",
+        )
+    _check_rows_1_to_8(spec, state)
+    if candidate.name != spec.name:
+        raise _Quarantine(
+            "bad-metadata",
+            f"entry-point name {candidate.name!r} does not match capability name {spec.name!r}",
+        )
+    if not candidate.distribution.strip():
+        raise _Quarantine(
+            "bad-metadata",
+            f"provider {candidate.name!r} declares an empty distribution name",
+        )
+    return spec

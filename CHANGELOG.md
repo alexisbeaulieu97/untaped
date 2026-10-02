@@ -24,6 +24,10 @@
   - **Breaking:** providers drop `api_requires`; the capability API version is
     gone. A provider's `untaped` requirement is the only compatibility check.
     `untaped capabilities` loses its `api` column.
+  - **Changed:** first-party capabilities register through
+    `untaped.capabilities` entry points like any plugin. A failing capability
+    is quarantined instead of stopping `untaped`. Capabilities list in name
+    order; `untaped capabilities` loses its `origin` column.
 - Ansible
   - **Breaking:** `graph --upstream/--downstream/--both` are removed; use
     `--direction up|down|both`. Graph sources re-index once.

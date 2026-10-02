@@ -42,22 +42,44 @@ variable shown.
 |---|---|---|---|---|
 | `shell.aliases` | mapping | empty | `UNTAPED_SHELL__ALIASES` | Command aliases: `untaped NAME [ARGS…]` runs the argv stored under NAME. Managed by `alias` commands. |
 
-## `workspace`
+## `ansible`
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `workspace.cache_dir` | path | `~/.untaped/workspace-cache` | `UNTAPED_WORKSPACE__CACHE_DIR` | Bare-clone cache that workspace worktrees are created from. Worktrees depend on it: don't delete it while workspaces are active. |
-| `workspace.workspaces_dir` | path | `~/.untaped/workspaces` | `UNTAPED_WORKSPACE__WORKSPACES_DIR` | Parent directory of every workspace (`<workspaces_dir>/NAME`). |
-| `workspace.parallel` | integer (optional) | unset | `UNTAPED_WORKSPACE__PARALLEL` | Default workers for `create`/`add`/`run` and for status/archive checks. Unset means `min(8, 2 * CPUs)`; values above `2 * CPUs` are clamped. |
-| `workspace.branch_template` | string | `{name}` | `UNTAPED_WORKSPACE__BRANCH_TEMPLATE` | Branch name for writable repos; `{name}` is the workspace name. |
-| `workspace.protocol` | `https` \| `ssh` | `https` | `UNTAPED_WORKSPACE__PROTOCOL` | Clone URL the GitHub inventory supplies: `https` or `ssh`. |
+| `ansible.index_path` | path | `~/.untaped/ansible-index.sqlite3` | `UNTAPED_ANSIBLE__INDEX_PATH` | SQLite cache of refreshed source data. |
+| `ansible.stale_after` | integer | `86400` | `UNTAPED_ANSIBLE__STALE_AFTER` | Seconds after which `source status` reports a source as `stale`. |
+| `ansible.default_source` | string (optional) | unset | `UNTAPED_ANSIBLE__DEFAULT_SOURCE` | Saved source `deps`, `impact`, `find` and `graph` use when no `--source` or inline selector is given. |
+| `ansible.ref_scan_default` | `all` \| `default_branch` | `all` | `UNTAPED_ANSIBLE__REF_SCAN_DEFAULT` | Refs a source scans: `all` refs or each repo's default branch. |
+| `ansible.source_refresh_backend` | `auto` \| `graphql` \| `git` | `auto` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_BACKEND` | Ref probe backend for source refresh. |
+| `ansible.repo_cache_path` | path | `~/.untaped/ansible-cache` | `UNTAPED_ANSIBLE__REPO_CACHE_PATH` | Git clone cache used by source refresh. |
+| `ansible.git_clone_protocol` | `https` \| `ssh` | `https` | `UNTAPED_ANSIBLE__GIT_CLONE_PROTOCOL` | Protocol for source refresh clones. |
+| `ansible.git_fetch_depth` | integer | `1` | `UNTAPED_ANSIBLE__GIT_FETCH_DEPTH` | Git fetch depth for source refresh; `0` is full history. |
+| `ansible.git_fetch_concurrency` | integer | `8` | `UNTAPED_ANSIBLE__GIT_FETCH_CONCURRENCY` | Default `--parallel` for `source refresh` and `--refresh`. |
+| `ansible.probe_concurrency` | integer | `8` | `UNTAPED_ANSIBLE__PROBE_CONCURRENCY` | Concurrent ref probes during source refresh. |
+| `ansible.source_refresh_repo_batch_size` | integer | `100` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_REPO_BATCH_SIZE` | Repos committed per source refresh batch. |
+| `ansible.source_refresh_rate_limit_floor` | integer | `500` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_RATE_LIMIT_FLOOR` | Stop a refresh (resumable) when the GraphQL budget drops below this. |
+| `ansible.git_blob_filter` | boolean | `true` | `UNTAPED_ANSIBLE__GIT_BLOB_FILTER` | Fetch with a blob filter to download less. |
+| `ansible.dependency_paths` | list | `roles/requirements.yml`; `roles/requirements.yaml`; `requirements.yml`; `requirements.yaml`; `meta/requirements.yml`; `meta/requirements.yaml`; `meta/main.yml`; `meta/main.yaml` | `UNTAPED_ANSIBLE__DEPENDENCY_PATHS` | Dependency files scanned in each repo. |
 
-## `workspace` state
+## `ansible` state
 
 | Key | Type | Description |
 |---|---|---|
-| `workspace.active` | list | Active workspaces. Managed by `workspace` commands. |
-| `workspace.archived` | list | Archived workspaces. Managed by `workspace` commands. |
+| `ansible.sources` | list | Saved sources. Managed by `ansible source` commands. |
+| `ansible.aliases` | mapping | Role or Galaxy name to `owner/repo` aliases. Managed by `ansible source-alias` commands. |
+
+## `awx`
+
+| Key | Type | Default | Environment | Description |
+|---|---|---|---|---|
+| `awx.base_url` | string (optional) | unset | `UNTAPED_AWX__BASE_URL` | AWX/AAP URL, for example `https://aap.example.com`. |
+| `awx.token` | secret (optional) | unset | `UNTAPED_AWX__TOKEN` | AWX/AAP API token. Falls back to `token_command`, then `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN`. |
+| `awx.token_command` | list (optional) | unset | `UNTAPED_AWX__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `awx.token` is unset. |
+| `awx.api_prefix` | string | `/api/controller/v2/` | `UNTAPED_AWX__API_PREFIX` | API prefix. Standalone AWX usually uses `/api/v2/`. |
+| `awx.default_organization` | string (optional) | unset | `UNTAPED_AWX__DEFAULT_ORGANIZATION` | Organization that scopes name lookups and `apply` documents without one. |
+| `awx.page_size` | integer | `200` | `UNTAPED_AWX__PAGE_SIZE` | Results requested per AWX API page. |
+| `awx.test_timeout` | number | `1800` | `UNTAPED_AWX__TEST_TIMEOUT` | Seconds a `test run` case waits before its job is cancelled, unless `--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it. |
+| `awx.test_parallel` | integer | `4` | `UNTAPED_AWX__TEST_PARALLEL` | Default `test run --parallel`. |
 
 ## `github`
 
@@ -90,45 +112,6 @@ variable shown.
 | `jira.page_size` | integer | `50` | `UNTAPED_JIRA__PAGE_SIZE` | Results requested per Jira API page. |
 | `jira.confirm` | `always` \| `destructive` \| `never` | `destructive` | `UNTAPED_JIRA__CONFIRM` | Which writes ask first: `always`, `destructive` (patches that replace or remove values, assignee changes, transitions) or `never`. `--yes` skips the prompt. |
 
-## `awx`
-
-| Key | Type | Default | Environment | Description |
-|---|---|---|---|---|
-| `awx.base_url` | string (optional) | unset | `UNTAPED_AWX__BASE_URL` | AWX/AAP URL, for example `https://aap.example.com`. |
-| `awx.token` | secret (optional) | unset | `UNTAPED_AWX__TOKEN` | AWX/AAP API token. Falls back to `token_command`, then `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN`. |
-| `awx.token_command` | list (optional) | unset | `UNTAPED_AWX__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `awx.token` is unset. |
-| `awx.api_prefix` | string | `/api/controller/v2/` | `UNTAPED_AWX__API_PREFIX` | API prefix. Standalone AWX usually uses `/api/v2/`. |
-| `awx.default_organization` | string (optional) | unset | `UNTAPED_AWX__DEFAULT_ORGANIZATION` | Organization that scopes name lookups and `apply` documents without one. |
-| `awx.page_size` | integer | `200` | `UNTAPED_AWX__PAGE_SIZE` | Results requested per AWX API page. |
-| `awx.test_timeout` | number | `1800` | `UNTAPED_AWX__TEST_TIMEOUT` | Seconds a `test run` case waits before its job is cancelled, unless `--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it. |
-| `awx.test_parallel` | integer | `4` | `UNTAPED_AWX__TEST_PARALLEL` | Default `test run --parallel`. |
-
-## `ansible`
-
-| Key | Type | Default | Environment | Description |
-|---|---|---|---|---|
-| `ansible.index_path` | path | `~/.untaped/ansible-index.sqlite3` | `UNTAPED_ANSIBLE__INDEX_PATH` | SQLite cache of refreshed source data. |
-| `ansible.stale_after` | integer | `86400` | `UNTAPED_ANSIBLE__STALE_AFTER` | Seconds after which `source status` reports a source as `stale`. |
-| `ansible.default_source` | string (optional) | unset | `UNTAPED_ANSIBLE__DEFAULT_SOURCE` | Saved source `deps`, `impact`, `find` and `graph` use when no `--source` or inline selector is given. |
-| `ansible.ref_scan_default` | `all` \| `default_branch` | `all` | `UNTAPED_ANSIBLE__REF_SCAN_DEFAULT` | Refs a source scans: `all` refs or each repo's default branch. |
-| `ansible.source_refresh_backend` | `auto` \| `graphql` \| `git` | `auto` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_BACKEND` | Ref probe backend for source refresh. |
-| `ansible.repo_cache_path` | path | `~/.untaped/ansible-cache` | `UNTAPED_ANSIBLE__REPO_CACHE_PATH` | Git clone cache used by source refresh. |
-| `ansible.git_clone_protocol` | `https` \| `ssh` | `https` | `UNTAPED_ANSIBLE__GIT_CLONE_PROTOCOL` | Protocol for source refresh clones. |
-| `ansible.git_fetch_depth` | integer | `1` | `UNTAPED_ANSIBLE__GIT_FETCH_DEPTH` | Git fetch depth for source refresh; `0` is full history. |
-| `ansible.git_fetch_concurrency` | integer | `8` | `UNTAPED_ANSIBLE__GIT_FETCH_CONCURRENCY` | Default `--parallel` for `source refresh` and `--refresh`. |
-| `ansible.probe_concurrency` | integer | `8` | `UNTAPED_ANSIBLE__PROBE_CONCURRENCY` | Concurrent ref probes during source refresh. |
-| `ansible.source_refresh_repo_batch_size` | integer | `100` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_REPO_BATCH_SIZE` | Repos committed per source refresh batch. |
-| `ansible.source_refresh_rate_limit_floor` | integer | `500` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_RATE_LIMIT_FLOOR` | Stop a refresh (resumable) when the GraphQL budget drops below this. |
-| `ansible.git_blob_filter` | boolean | `true` | `UNTAPED_ANSIBLE__GIT_BLOB_FILTER` | Fetch with a blob filter to download less. |
-| `ansible.dependency_paths` | list | `roles/requirements.yml`; `roles/requirements.yaml`; `requirements.yml`; `requirements.yaml`; `meta/requirements.yml`; `meta/requirements.yaml`; `meta/main.yml`; `meta/main.yaml` | `UNTAPED_ANSIBLE__DEPENDENCY_PATHS` | Dependency files scanned in each repo. |
-
-## `ansible` state
-
-| Key | Type | Description |
-|---|---|---|
-| `ansible.sources` | list | Saved sources. Managed by `ansible source` commands. |
-| `ansible.aliases` | mapping | Role or Galaxy name to `owner/repo` aliases. Managed by `ansible source-alias` commands. |
-
 ## `recipe`
 
 | Key | Type | Default | Environment | Description |
@@ -139,6 +122,23 @@ variable shown.
 | `recipe.backup_keep` | integer (optional) | unset | `UNTAPED_RECIPE__BACKUP_KEEP` | `backup prune` keeps this many newest bundles by default. |
 | `recipe.backup_max_age_days` | integer (optional) | unset | `UNTAPED_RECIPE__BACKUP_MAX_AGE_DAYS` | `backup prune` deletes bundles older than this by default. |
 | `recipe.preview_max_rows` | integer | `50` | `UNTAPED_RECIPE__PREVIEW_MAX_ROWS` | Preview rows before `apply` collapses per-file rows; `0` is unlimited. |
+
+## `workspace`
+
+| Key | Type | Default | Environment | Description |
+|---|---|---|---|---|
+| `workspace.cache_dir` | path | `~/.untaped/workspace-cache` | `UNTAPED_WORKSPACE__CACHE_DIR` | Bare-clone cache that workspace worktrees are created from. Worktrees depend on it: don't delete it while workspaces are active. |
+| `workspace.workspaces_dir` | path | `~/.untaped/workspaces` | `UNTAPED_WORKSPACE__WORKSPACES_DIR` | Parent directory of every workspace (`<workspaces_dir>/NAME`). |
+| `workspace.parallel` | integer (optional) | unset | `UNTAPED_WORKSPACE__PARALLEL` | Default workers for `create`/`add`/`run` and for status/archive checks. Unset means `min(8, 2 * CPUs)`; values above `2 * CPUs` are clamped. |
+| `workspace.branch_template` | string | `{name}` | `UNTAPED_WORKSPACE__BRANCH_TEMPLATE` | Branch name for writable repos; `{name}` is the workspace name. |
+| `workspace.protocol` | `https` \| `ssh` | `https` | `UNTAPED_WORKSPACE__PROTOCOL` | Clone URL the GitHub inventory supplies: `https` or `ssh`. |
+
+## `workspace` state
+
+| Key | Type | Description |
+|---|---|---|
+| `workspace.active` | list | Active workspaces. Managed by `workspace` commands. |
+| `workspace.archived` | list | Archived workspaces. Managed by `workspace` commands. |
 
 ## See also
 
