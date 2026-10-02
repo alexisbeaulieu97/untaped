@@ -286,16 +286,21 @@ class RepoCache:
         prune: bool = True,
         tags: bool = True,
         depth: int = 0,
-        blob_filter: bool = False,
+        filter: str | None = None,
     ) -> None:
-        """Fetch ``origin`` with the slow timeout, retrying transient failures."""
+        """Fetch ``origin`` with the slow timeout, retrying transient failures.
+
+        :meth:`ensure` writes no fetch refspec, so pass ``refspecs``: with
+        none, git fetches only the remote ``HEAD`` into ``FETCH_HEAD``.
+        ``filter`` is a partial-clone filter spec such as ``"blob:none"``.
+        """
         argv = [
             "fetch",
             "--quiet",
             *(["--prune"] if prune else []),
             *(["--no-tags"] if not tags else []),
             *([f"--depth={depth}"] if depth > 0 else []),
-            *(["--filter=blob:none"] if blob_filter else []),
+            *([f"--filter={filter}"] if filter is not None else []),
             "origin",
             *refspecs,
         ]
