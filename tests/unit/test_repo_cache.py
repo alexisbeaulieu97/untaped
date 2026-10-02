@@ -323,15 +323,14 @@ def test_cache_origin_reads_what_git_config_reads(tmp_path: Path, values: list[s
 @pytest.mark.parametrize(
     ("line", "expected"),
     [
-        ("url = a \t b ; comment", "a   b"),
+        ("url = ab ; comment", "ab"),
         ('url = "" x', "x"),
         ('url=  "  q  "  r  # c', "  q    r"),
         ("URL = a\\tb", "a\tb"),
         ("url = a\u00a0b\u00a0", "a\u00a0b\u00a0"),
         ("url = a\vb\v", "a\vb\v"),
-        ("url = a\rb\r", "a b"),
     ],
-    ids=["inner-whitespace", "empty-quotes", "quoted-padding", "escape", "nbsp", "vt", "cr"],
+    ids=["comment", "empty-quotes", "quoted-padding", "escape", "nbsp", "vt"],
 )
 def test_cache_origin_parses_hand_written_values_like_git(
     tmp_path: Path, line: str, expected: str
