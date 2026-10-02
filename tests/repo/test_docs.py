@@ -6,13 +6,15 @@
   ``AGENTS.md``, ``CONTRIBUTING.md`` and the packaged skills must resolve, so
   renaming a heading cannot silently break a pointer to it.
 - Every ``untaped`` example in a ``bash`` block must name a real command and
-  only options that command accepts.
+  only options that command accepts; every ``untaped …`` in inline code, and
+  every command a setting description names, must name a real command.
 """
 
 from __future__ import annotations
 
 import ast
 import functools
+import itertools
 import re
 import shlex
 from collections.abc import Callable
@@ -22,6 +24,7 @@ import gen_config_reference as generator
 import pytest
 from cyclopts import App
 
+from repo import quoted_commands
 from repo.support import PACKAGES, REPO_ROOT
 from untaped.bootstrap import build_root_app
 from untaped.capabilities import registry
@@ -46,6 +49,68 @@ def test_every_setting_has_a_description() -> None:
         "add Field(description=...) or a DESCRIPTIONS entry in scripts/gen_config_reference.py"
     )
     assert generator.unknown_descriptions() == [], "DESCRIPTIONS names a setting that is gone"
+
+
+_SETTING_ROW = re.compile(r"^\| `([a-z_]+)\.[^`]+` \|.*\| (.*) \|$", re.MULTILINE)
+_COMMAND_SPAN = re.compile(r"`([a-z][a-z-]*(?: [a-z][a-z-]*)+)((?: --[a-z-]+)*)`")
+
+
+def _setting_command_problems(root: App, page: str) -> list[str]:
+    """Commands a setting description names (``source refresh --parallel``) that do not exist.
+
+    A span of two or more words is a command, named from the root or from the
+    setting's own capability; its options must exist too. One word is ambiguous
+    with a value (``table``, ``never``) and is not checked.
+    """
+    problems = []
+    for section, description in _SETTING_ROW.findall(page):
+        for span, flags in _COMMAND_SPAN.findall(description):
+            words = span.split()
+            path = next(
+                (
+                    base + words
+                    for base in ([], [section])
+                    if not root.parse_commands(base + words)[2]
+                ),
+                None,
+            )
+            if path is None:
+                problems.append(f"{section}: `{span}` is not a command")
+            elif flags:
+                problems += [
+                    f"{section}: {p}" for p in _unknown_options(root, path + flags.split(), set())
+                ]
+    return problems
+
+
+def test_setting_descriptions_name_real_commands(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
+    root = build_root_app(candidates=first_party_candidates)
+    assert _setting_command_problems(root, generator.render()) == []
+
+
+@pytest.mark.parametrize(
+    ("row", "problem"),
+    [
+        ("| `recipe.keep` | int | `1` | `X` | `backups prune` keeps this many. |", None),
+        (
+            "| `recipe.keep` | int | `1` | `X` | `backup prune` keeps this many. |",
+            "recipe: `backup prune` is not a command",
+        ),
+        ("| `github.n` | int | `4` | `X` | Default `cache sync --parallel`. |", None),
+        (
+            "| `github.n` | int | `4` | `X` | Default `cache sync --jobs`. |",
+            "github: github cache sync: --jobs",
+        ),
+        ("| `awx.n` | int | `4` | `X` | Read by `github sweep`. |", None),
+    ],
+)
+def test_setting_command_detector(
+    first_party_candidates: tuple[ProviderCandidate, ...], row: str, problem: str | None
+) -> None:
+    root = build_root_app(candidates=first_party_candidates)
+    assert _setting_command_problems(root, row) == ([problem] if problem else [])
 
 
 def test_config_reference_refuses_a_quarantined_first_party_capability(
@@ -262,6 +327,63 @@ def test_command_examples_use_real_commands_and_options(
                     for problem in _unknown_options(root, argv, aliases)
                 )
     assert problems == []
+
+
+def _prose_command_problem(root: App, command: str, aliases: set[str]) -> str | None:
+    """Why the inline ``command`` names no real command (``None`` when it does).
+
+    A placeholder in command position (``untaped awx <resource> edit``) ends
+    the check: only the words before it must resolve.
+    """
+    words = list(itertools.takewhile(lambda t: not t.startswith("-"), shlex.split(command)[1:]))
+    if words[:1] and words[0] in aliases | {_EXAMPLE_PROVIDER, "hello"}:
+        return None
+    for index, word in enumerate(words):
+        if re.fullmatch(r"<[^>]+>", word) or quoted_commands.PLACEHOLDER.match(word):
+            _, _, unused = root.parse_commands(words[:index])
+            return f"not a command: {' '.join(unused)}" if unused else None
+    return quoted_commands.parse_problem(root, command, inline=True)
+
+
+def test_inline_commands_name_real_commands(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
+    """Every ``untaped …`` in inline code names a real command (skills are checked on their own)."""
+    root = build_root_app(candidates=first_party_candidates)
+    pages = [path for path in _markdown_files() if "skills" not in path.parts]
+    aliases = {
+        argv[2]
+        for path in pages
+        for block in _bash_blocks(path)
+        for argv in _untaped_commands(block)
+        if argv[:2] == ["alias", "set"] and argv[2:]
+    }
+    problems = [
+        f"{path.relative_to(REPO_ROOT)}: {command}: {problem}"
+        for path in pages
+        for command, inline in quoted_commands.commands(path.read_text(encoding="utf-8"))
+        if inline and (problem := _prose_command_problem(root, command, aliases)) is not None
+    ]
+    assert problems == []
+
+
+@pytest.mark.parametrize(
+    ("command", "fails"),
+    [
+        ("untaped recipe backups prune", False),
+        ("untaped recipe backup prune", True),
+        ("untaped awx <resource> edit", False),
+        ("untaped awxx <resource> edit", True),
+        ("untaped COMMAND --help", False),
+        ("untaped failed --limit 5", False),
+        ("untaped github repos list --nope", True),
+    ],
+)
+def test_inline_command_detector(
+    first_party_candidates: tuple[ProviderCandidate, ...], command: str, fails: bool
+) -> None:
+    root = build_root_app(candidates=first_party_candidates)
+    assert (_prose_command_problem(root, command, {"failed"}) is not None) is fails
 
 
 DOCS_PAGES = [

@@ -119,8 +119,8 @@ variable shown.
 | `recipe.library_root` | path | `~/.untaped/untaped-recipes` | `UNTAPED_RECIPE__LIBRARY_ROOT` | Directory holding installed recipe packs. |
 | `recipe.hook_timeout_seconds` | number | `60` | `UNTAPED_RECIPE__HOOK_TIMEOUT_SECONDS` | Per-hook request timeout; `0` disables it. |
 | `recipe.hook_startup_timeout_seconds` | number | `300` | `UNTAPED_RECIPE__HOOK_STARTUP_TIMEOUT_SECONDS` | Timeout for preparing a hook environment. |
-| `recipe.backup_keep` | integer (optional) | unset | `UNTAPED_RECIPE__BACKUP_KEEP` | `backup prune` keeps this many newest bundles by default. |
-| `recipe.backup_max_age_days` | integer (optional) | unset | `UNTAPED_RECIPE__BACKUP_MAX_AGE_DAYS` | `backup prune` deletes bundles older than this by default. |
+| `recipe.backup_keep` | integer (optional) | unset | `UNTAPED_RECIPE__BACKUP_KEEP` | `backups prune` keeps this many newest bundles by default. |
+| `recipe.backup_max_age_days` | integer (optional) | unset | `UNTAPED_RECIPE__BACKUP_MAX_AGE_DAYS` | `backups prune` deletes bundles older than this by default. |
 | `recipe.preview_max_rows` | integer | `50` | `UNTAPED_RECIPE__PREVIEW_MAX_ROWS` | Preview rows before `apply` collapses per-file rows; `0` is unlimited. |
 
 ## `workspace`

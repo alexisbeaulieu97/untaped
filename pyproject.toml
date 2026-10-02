@@ -21,6 +21,10 @@ dev = [
     "ruff>=0.15.12",
     "types-pyyaml>=6.0.12.20260518",
     "untaped[all]",
+    "vulture>=2.16",
+]
+diff-coverage = [
+    "diff-cover>=10.6.0",
 ]
 
 [tool.ruff]
@@ -79,6 +83,7 @@ files = [
     "packages/untaped-jira/src",
     "packages/untaped-recipe/src",
     "packages/untaped-workspace/src",
+    "scripts/check_pr.py",
     "scripts/release.py",
 ]
 mypy_path = [
@@ -123,6 +128,21 @@ markers = [
     "integration: cross-package or external-service tests",
 ]
 
+[tool.vulture]
+# Dead-code scan of shipped code (tests are left out: code only tests use is
+# dead too). New findings fail pre-commit; see CONTRIBUTING.md#dead-code.
+paths = [
+    "packages/untaped/src",
+    "packages/untaped-ansible/src",
+    "packages/untaped-awx/src",
+    "packages/untaped-github/src",
+    "packages/untaped-jira/src",
+    "packages/untaped-recipe/src",
+    "packages/untaped-workspace/src",
+    "scripts/vulture_allowlist.py",
+]
+min_confidence = 60
+
 [tool.coverage.run]
 branch = true
 source = [
@@ -137,7 +157,7 @@ source = [
 omit = ["**/tests/**", "**/__main__.py"]
 
 [tool.coverage.report]
-fail_under = 89
+fail_under = 95
 show_missing = true
 skip_covered = false
 exclude_also = [

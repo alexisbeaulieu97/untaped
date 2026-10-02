@@ -42,3 +42,11 @@ repos:
         pass_filenames: false
         files: '\.py$|^pyproject\.toml$'
         stages: [pre-push]
+
+      # Dead code in shipped packages ([tool.vulture] in pyproject.toml).
+      - id: vulture
+        name: vulture
+        entry: uv run vulture
+        language: system
+        pass_filenames: false
+        files: '\.py$|^pyproject\.toml$'
