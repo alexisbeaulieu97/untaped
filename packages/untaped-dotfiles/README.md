@@ -3,9 +3,6 @@
 Install it as part of `untaped`: `uv tool install 'untaped[dotfiles]'` or `pip install 'untaped[dotfiles]'`.
 To add it to an existing install, see [Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install).
 
-`dotfiles` is [experimental](https://github.com/alexisbeaulieu97/untaped/blob/main/README.md#experimental) and may change in
-a minor release.
-
 `untaped dotfiles` places config files from one or more git repos on a
 machine, with a policy per item per machine. A repo carries a manifest,
 `dotfiles.yml`, of named *items*; each item lists *files* with a `mode`
@@ -14,9 +11,33 @@ decides when it enables the item: `sync` (new versions apply as they
 arrive), `once` (apply, then leave alone) or `manual` (report that a new
 version exists; apply when asked). Items not enabled are ignored.
 
-The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/skills/untaped-dotfiles/SKILL.md)
-and its references hold the per-command detail; `--help` lists the options,
-and [`--columns '?'`](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#output-records) lists a command's fields.
+`dotfiles` is [experimental](https://github.com/alexisbeaulieu97/untaped/blob/main/README.md#experimental) and may change in
+a minor release.
+
+## Set up
+
+A repo needs a `dotfiles.yml` at its root:
+
+```yaml
+version: 1
+items:
+  fish:
+    policy: manual            # suggestion; absent means manual
+    files:
+      - source: fish/config.fish
+        target: ~/.config/fish/config.fish
+        mode: link            # or copy, or merge (JSON/YAML)
+      - source: fish/conf.d   # a directory: each file under it is placed
+        target: ~/.config/fish/conf.d
+```
+
+Every entry key, the three modes, per-OS and per-tag filters and how a
+directory source is placed are in [the manifest](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/skills/untaped-dotfiles/references/manifest.md).
+Where clones, kept files and state live, and the machine's tags and OS,
+are in the
+[configuration reference](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#dotfiles).
+On Windows, `link` needs symlink permission (Developer Mode or elevation);
+`copy` and `merge` work. Nothing is tested there yet.
 
 ## Subscribe, enable, apply
 
@@ -51,6 +72,10 @@ It only ever writes a path that is absent or still exactly what the tool
 wrote, so it never prompts and never loses a local edit. What each policy
 does to a path in each state, and when a clone is pulled, is in
 [policies](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/skills/untaped-dotfiles/references/policies.md).
+A timer is the machine's business (a launchd agent on macOS, a systemd
+user timer on Linux); `untaped dotfiles sync` is what it runs.
+
+## Show it in the prompt
 
 `status` reads nothing from the network. It writes the
 [status files](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#dotfiles),
@@ -64,45 +89,9 @@ when = 'test "$(cat ~/.untaped/dotfiles/attention 2>/dev/null)" != 0'
 format = "[⇣ $output dotfiles]($style) "
 ```
 
-A timer is the machine's business; `untaped dotfiles sync` is what it
-runs (a launchd agent on macOS, a systemd user timer on Linux).
+## Reference
 
-## The manifest
+The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/skills/untaped-dotfiles/SKILL.md) is the full reference: every command, the manifest, the policy table and the pitfalls. Install it for your agent with `untaped skills install dotfiles --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install-skills)); `untaped dotfiles COMMAND --help` lists each command's options.
 
-```yaml
-# dotfiles.yml, at the repo root
-version: 1
-items:
-  fish:
-    policy: manual            # suggestion; absent means manual
-    files:
-      - source: fish/config.fish
-        target: ~/.config/fish/config.fish
-        mode: link            # or copy, or merge (JSON/YAML)
-      - source: fish/conf.d   # a directory: each file under it is placed
-        target: ~/.config/fish/conf.d
-```
-
-Every entry key, the three modes, per-OS and per-tag filters and how a
-directory source is placed are in [the manifest](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/skills/untaped-dotfiles/references/manifest.md).
-
-On Windows, `link` needs symlink permission (Developer Mode or elevation);
-`copy` and `merge` work. Nothing is tested there yet.
-
-## Settings
-
-`dotfiles.repos_dir`, `kept_dir`, `state_dir`, `tags` and `os` are in the
-[configuration reference](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#dotfiles).
-The machine's choices (which items, which policy, which files skipped)
-and what was placed live in the state file, never in a profile.
-
-## Output
-
-Every command prints rows you can reshape with `--format` and `--columns`;
-see [Scripting](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#dotfiles) and
-[Exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes).
-
-## See also
-
-- [Configuration](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md) and the
-  [configuration reference](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#dotfiles).
+- [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#dotfiles) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes)
+- [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#dotfiles)
