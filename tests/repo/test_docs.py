@@ -216,7 +216,7 @@ DOCS_PAGES = [
     "plugins.md",
     "reference/config.md",
     "scripting.md",
-]  # Tasks 2-5 shrink docs/ to exactly this
+]
 
 
 def test_scripting_keeps_an_anchor_per_capability(
@@ -252,7 +252,20 @@ def test_install_examples_use_the_extras() -> None:
 def test_docs_holds_only_the_reader_pages() -> None:
     docs = REPO_ROOT / "docs"
     pages = sorted(str(p.relative_to(docs)) for p in docs.rglob("*.md"))
-    assert set(pages) >= set(DOCS_PAGES)
+    assert pages == DOCS_PAGES
+
+
+def test_agents_md_is_short_and_points_to_contributing() -> None:
+    agents = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    assert len(agents.splitlines()) <= 30
+    assert "CONTRIBUTING.md" in agents
+    contributing = (REPO_ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    for heading in (
+        "## Releasing",
+        "## Evaluating a skill change",
+        "## Adding a first-party capability",
+    ):
+        assert heading in contributing
 
 
 @pytest.mark.parametrize(

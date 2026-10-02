@@ -2,7 +2,7 @@
 
 End-to-end flag dispatch (every flag's payload-field translation) is
 covered through the public CLI in ``tests/integration/test_resource_launch_cli.py`` —
-that's the right home for those assertions per AGENTS.md ("Test through public APIs").
+that's the right home for those assertions per CONTRIBUTING.md ("Test through public APIs").
 
 What an integration suite *cannot* observe is a collision: if a future
 edit makes two ``LaunchFlag`` rows share the same ``accepts_key``,
