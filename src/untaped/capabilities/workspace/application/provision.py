@@ -25,7 +25,7 @@ from untaped.capabilities.workspace.domain.naming import (
 )
 from untaped.capabilities.workspace.domain.records import RepoOutcome
 from untaped.capabilities.workspace.errors import WorkspaceError
-from untaped.capability_api import UntapedError, UsageError, bounded_map, note_failure, q
+from untaped.sdk import UntapedError, UsageError, bounded_map, note_failure, q
 
 if TYPE_CHECKING:
     from untaped.capabilities.workspace.application.ports import (

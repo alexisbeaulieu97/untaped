@@ -20,7 +20,7 @@ from untaped.capabilities.awx.application.suites.ports import (
     VarsResolver,
 )
 from untaped.capabilities.awx.domain.suite import Suite, VariableSpec
-from untaped.capability_api import ConfigError, UsageError, attribution
+from untaped.sdk import ConfigError, UsageError, attribution
 
 
 class LoadTestSuite:

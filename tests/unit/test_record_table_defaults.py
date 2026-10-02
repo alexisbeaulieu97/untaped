@@ -9,7 +9,7 @@ from typing import Annotated, ClassVar
 import pytest
 from pydantic import BaseModel
 
-from untaped.capability_api import OutcomeRecord, TableGlyph, emit
+from untaped.sdk import OutcomeRecord, TableGlyph, emit
 
 
 class _Repo(OutcomeRecord):

@@ -11,7 +11,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from functools import cache
 from pathlib import Path
-from typing import Annotated, Any, NoReturn, get_args
+from typing import Annotated, Any, Literal, NoReturn, Protocol, get_args, overload
 
 from cyclopts import App, ArgumentCollection, Parameter, ResultAction, Token
 from cyclopts.exceptions import CycloptsError
@@ -206,6 +206,38 @@ def deprecated_aliases(app: App) -> Mapping[str, str]:
     return _DEPRECATED_ALIASES.get(id(app), {})
 
 
+_WRITES_ATTR = "__untaped_writes__"
+WriteKind = Literal["write", "destructive"]
+
+
+@overload
+def writes[F: Callable[..., Any]](func: F, /) -> F: ...
+@overload
+def writes[F: Callable[..., Any]](*, destructive: bool = False) -> Callable[[F], F]: ...
+def writes[F: Callable[..., Any]](
+    func: F | None = None, /, *, destructive: bool = False
+) -> F | Callable[[F], F]:
+    """Declare that a command writes; ``destructive=True`` for deletes and cancels.
+
+    A declared write must take ``--format``; a destructive one must also take
+    ``--yes`` and ``--dry-run``. A command exposing ``--yes`` or ``--dry-run``
+    must be declared. ``untaped.testing.check_conventions`` enforces all three.
+    Apply it under ``@app.command`` so the registered function carries the mark.
+    """
+    kind: WriteKind = "destructive" if destructive else "write"
+
+    def mark(target: F) -> F:
+        setattr(target, _WRITES_ATTR, kind)
+        return target
+
+    return mark(func) if func is not None else mark
+
+
+def write_kind(func: object) -> WriteKind | None:
+    """The ``writes`` declaration on a command function, if any."""
+    return getattr(func, _WRITES_ATTR, None)
+
+
 def create_app(*, name: str, help: str = "") -> App:
     """Create a Cyclopts app with the suite's default command-group settings."""
     return App(name=name, help=help)
@@ -257,6 +289,22 @@ def _error_text(failure: UntapedError | ErrorInfo) -> str:
     if isinstance(failure, UntapedError):
         return format_error(failure)
     return failure.message if failure.hint is None else f"{failure.message}\nhint: {failure.hint}"
+
+
+class _FailableRow(Protocol):
+    """A row that may carry the :class:`ErrorInfo` of its failure."""
+
+    @property
+    def error(self) -> ErrorInfo | None: ...
+
+
+def report_row_errors[RowT: _FailableRow](
+    rows: Iterable[RowT], *, item: Callable[[RowT], str]
+) -> None:
+    """:func:`report_error` each row that carries an ``error``, labelled ``item(row)``."""
+    for row in rows:
+        if row.error is not None:
+            report_error(row.error, item=item(row))
 
 
 def note_requested_format(tokens: Sequence[str]) -> None:

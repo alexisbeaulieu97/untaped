@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from untaped.capabilities.ansible.doctor import DOCTOR_CHECKS
 from untaped.capabilities.ansible.settings import AnsibleSettings, AnsibleState
-from untaped.capability_api import CapabilitySpec, SkillAsset
+from untaped.sdk import CapabilitySpec, SkillAsset
 
 if TYPE_CHECKING:
     from cyclopts import App

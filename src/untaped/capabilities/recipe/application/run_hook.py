@@ -12,7 +12,7 @@ from untaped.capabilities.recipe.domain.hook_project import HookKind
 from untaped.capabilities.recipe.domain.paths import confined_path
 from untaped.capabilities.recipe.domain.plan import Verdict
 from untaped.capabilities.recipe.errors import PathNotFoundError, RecipeError
-from untaped.capability_api import UsageError
+from untaped.sdk import UsageError
 
 
 @dataclass(frozen=True)

@@ -26,7 +26,7 @@ from untaped.capabilities.ansible.settings import (
     normalize_team_refs,
 )
 from untaped.capabilities.github.api import github_settings
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     DryRunOption,
     FormatOption,
@@ -45,6 +45,7 @@ from untaped.capability_api import (
     q,
     report_error,
     report_errors,
+    writes,
 )
 
 _FINGERPRINT_HEX_CHARS = 16
@@ -82,6 +83,7 @@ app = create_app(
 
 
 @app.command(name="set")
+@writes
 def source_set_command(
     name: NameArgument,
     /,
@@ -138,6 +140,7 @@ def source_set_command(
 
 
 @app.command(name="patch")
+@writes
 def source_patch_command(
     name: NameArgument,
     /,
@@ -275,6 +278,7 @@ def source_get_command(
 
 
 @app.command(name="remove")
+@writes(destructive=True)
 def source_remove_command(
     name: NameArgument,
     /,

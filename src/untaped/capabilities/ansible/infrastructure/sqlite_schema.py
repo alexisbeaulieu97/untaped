@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 
 from untaped.capabilities.ansible.errors import DependencyIndexError
-from untaped.capability_api import ui_context
+from untaped.sdk import ui_context
 
 # Version 4 added lowercase ``*_repo_key`` columns: GitHub repo ids are
 # case-insensitive, and repo joins compare these keys with BINARY collation so

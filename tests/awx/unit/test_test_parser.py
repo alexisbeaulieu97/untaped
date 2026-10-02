@@ -12,7 +12,7 @@ from untaped.capabilities.awx.infrastructure.suites.parser import (
     load_yaml_with_refs,
     split_frontmatter,
 )
-from untaped.capability_api import ConfigError
+from untaped.sdk import ConfigError
 
 # ---- frontmatter splitter ------------------------------------------------
 

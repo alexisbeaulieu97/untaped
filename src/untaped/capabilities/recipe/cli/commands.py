@@ -26,7 +26,7 @@ from untaped.capabilities.recipe.cli.new_commands import (
     init_recipe_command,
 )
 from untaped.capabilities.recipe.cli.test_commands import test_command
-from untaped.capability_api import create_app
+from untaped.sdk import create_app
 
 packs_app = create_app(name="packs", help="Install, sync, inspect, and scaffold recipe packs.")
 packs_app.command(list_packs_command, name="list")

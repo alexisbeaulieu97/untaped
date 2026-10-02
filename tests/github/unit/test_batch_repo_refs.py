@@ -15,7 +15,7 @@ from untaped.capabilities.github.domain.errors import GithubGraphqlError
 from untaped.capabilities.github.domain.models import BatchRepoRefsResult
 from untaped.capabilities.github.infrastructure import GithubClient
 from untaped.capabilities.github.settings import GithubSettings
-from untaped.capability_api import UntapedError
+from untaped.sdk import UntapedError
 
 Reply = httpx.Response | Callable[[httpx.Request], httpx.Response] | Exception
 

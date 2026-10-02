@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Literal
 
 from untaped.capabilities.workspace.domain.models import ResolvedRepo
 from untaped.capabilities.workspace.domain.naming import looks_like_url, repo_identity
-from untaped.capability_api import UntapedError, UsageError, not_found, q
+from untaped.sdk import UntapedError, UsageError, not_found, q
 
 if TYPE_CHECKING:
     from untaped.capabilities.github.api import RepositoryInventoryItem

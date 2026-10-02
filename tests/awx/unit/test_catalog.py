@@ -6,7 +6,7 @@ import pytest
 
 from untaped.capabilities.awx.infrastructure import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS, UNIVERSAL_READ_ONLY
-from untaped.capability_api import ConfigError
+from untaped.sdk import ConfigError
 
 
 def test_catalog_resolves_kinds_and_cli_names() -> None:

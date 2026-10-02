@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from untaped.capability_api import OutcomeRecord, UtcTimestamp
+from untaped.sdk import OutcomeRecord, UtcTimestamp
 
 RefKind = Literal["heads", "tags"]
 """Ref namespace probed by ``GithubClient.batch_repo_refs``."""

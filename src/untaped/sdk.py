@@ -1,13 +1,11 @@
-"""The single public SDK surface for capability code (spec §2).
+"""The untaped SDK: the one module capability code (first- or third-party) imports from core.
 
 Every capability — built-in or external provider — imports untaped helpers
-from this module only. It carries the composition set, the provider
-``CAPABILITY_API_VERSION``, and the supported runtime helpers (output,
+from this module only. It carries the composition set and the supported runtime helpers (output,
 errors and exit codes, settings, HTTP, git, stdin/pipe, files and locks, state, UI, batch,
 concurrency, shared options, message wording, record bases, token sources
 and doctor-check factories).
-Additions are backwards compatible; removals or signature breaks require a
-major ``CAPABILITY_API_VERSION`` bump.
+Additions are backwards compatible; removals or signature breaks are a major release.
 """
 
 from __future__ import annotations
@@ -16,7 +14,6 @@ from untaped.app_context import AppContext, app_context
 from untaped.auth import TokenCommand, TokenSources
 from untaped.batch import BatchOutcome, batch_apply, finish
 from untaped.capabilities.registry import (
-    CAPABILITY_API_VERSION,
     ApplicationSpec,
     CapabilityContext,
     CapabilityProvider,
@@ -45,7 +42,9 @@ from untaped.cli import (
     render_rows,
     report_error,
     report_errors,
+    report_row_errors,
     resolve_each,
+    writes,
 )
 from untaped.concurrency import bounded_map
 from untaped.diagnostics import ErrorInfo, note_failure
@@ -100,7 +99,7 @@ from untaped.records import (
     TargetRecord,
     UtcTimestamp,
 )
-from untaped.settings import HttpSettings, get_config_section, get_core_settings
+from untaped.settings import HttpSettings, get_config_section
 from untaped.state import StateCollection, StateMap
 from untaped.stdin import (
     StdinInput,
@@ -113,122 +112,126 @@ from untaped.stdin import (
 from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context
 
-__all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by test_all_contains_exact_surface
+__all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_the_topic_groups_in_order
+    # composition
     "ApplicationSpec",
-    "CapabilitySpec",
+    "CapabilityContext",
     "CapabilityProvider",
-    "CAPABILITY_API_VERSION",
-    "SkillAsset",
+    "CapabilitySpec",
     "DoctorCheck",
     "DoctorResult",
-    "CapabilityContext",
-    "ColumnsOption",
-    "ConfigError",
-    "FormatOption",
-    "PipeEnvelope",
-    "StateCollection",
-    "UiContext",
-    "UntapedError",
-    "app_context",
+    "SkillAsset",
     "create_app",
+    # settings and state
+    "AppContext",
+    "StateCollection",
+    "StateMap",
+    "app_context",
+    "get_config_section",
+    # output and records
+    "CheckRecord",
+    "ColumnsOption",
+    "FormatOption",
+    "OutcomeRecord",
+    "OutputFormat",
+    "PipeEnvelope",
+    "TableGlyph",
+    "TargetRecord",
+    "UtcTimestamp",
     "echo",
     "emit",
     "finish",
-    "first_validation_error",
-    "get_config_section",
+    "is_envelope_line",
     "parse_envelope_line",
+    "read_records",
+    "render_rows",
+    "summary",
+    "unified_diff_text",
+    # errors
+    "ConfigError",
+    "ErrorCategory",
+    "ErrorInfo",
+    "OperationCancelledError",
+    "UntapedError",
+    "UsageError",
+    "attribution",
+    "first_validation_error",
+    "hint",
+    "most_severe",
+    "not_found",
+    "note_failure",
     "raise_usage",
-    "read_identifiers",
+    "rejected_token_error",
+    "report_error",
     "report_errors",
-    "run_editor",
-    "GitCommandError",
-    "GitResult",
-    "git_auth_header",
-    "run_git",
-    "safe_cache_path",
-    "safe_path_segment",
-    # Additive helpers folded in from the retired ``untaped.api`` module.
-    "AppContext",
+    "report_row_errors",
+    # input
+    "AbsolutePath",
+    "StdinInput",
+    "StdinOption",
+    "existing_file",
+    "parse_json_pairs",
+    "parse_kv_pairs",
+    "read_identifiers",
+    "read_stdin",
+    "read_stdin_input",
+    "read_structured_file",
+    "resolve_each",
+    "resolve_text_input",
+    # batch and concurrency
     "BatchOutcome",
+    "DryRunOption",
+    "LimitOption",
+    "ParallelOption",
+    "YesOption",
+    "batch_apply",
+    "bounded_map",
+    "clamp_parallel",
+    # http
     "HttpClient",
     "HttpError",
     "HttpSettings",
     "HttpStatusError",
     "HttpTransportError",
-    "OutputFormat",
-    "ProgressHandle",
-    "PromptChoice",
     "RetryPolicy",
-    "StateMap",
-    "atomic_write",
-    "batch_apply",
-    "bounded_map",
-    "clamp_parallel",
+    "TokenCommand",
+    "TokenSources",
     "connected_client",
-    "existing_file",
-    "get_core_settings",
-    "is_envelope_line",
     "paginate_link",
     "paginate_offset",
     "paginate_pages",
-    "parse_json_pairs",
-    "parse_kv_pairs",
-    "read_stdin",
-    "read_structured_file",
-    "render_rows",
-    "resolve_each",
-    "resolve_text_input",
     "resolve_verify",
-    "ui_context",
-    "unified_diff_text",
-    # 1.1 UX-convention helpers (docs/conventions.md).
-    "AbsolutePath",
-    "CheckRecord",
-    "DryRunOption",
-    "ExitCode",
-    "LimitOption",
-    "OperationCancelledError",
-    "OutcomeRecord",
-    "ParallelOption",
-    "StdinInput",
-    "StdinOption",
-    "TargetRecord",
-    "UsageError",
-    "UtcTimestamp",
-    "YesOption",
-    "deprecated_alias",
-    "hint",
-    "not_found",
-    "plural",
-    "q",
-    "read_records",
-    "read_stdin_input",
-    "summary",
-    # Auth and doctor helpers.
-    "TokenCommand",
-    "TokenSources",
-    "connection_check",
-    "executable_check",
-    "online_check",
-    # 2.1 shared helpers.
+    # git and filesystem
+    "GitCommandError",
+    "GitResult",
+    "atomic_write",
     "file_lock",
+    "git_auth_header",
     "git_toplevel",
+    "run_git",
+    "safe_cache_path",
+    "safe_path_segment",
     "same_origin",
-    # 3.0 failure attribution (category, system, exit codes 4/5).
-    "ErrorCategory",
-    "ErrorInfo",
-    "attribution",
-    "note_failure",
-    "report_error",
-    "most_severe",
-    "rejected_token_error",
-    # 3.1 table defaults.
-    "TableGlyph",
-    # 3.2 picker.
+    # prompts and ui
     "PickCatalog",
     "PickItem",
     "PickRequest",
     "PickResult",
     "PickSetting",
     "Picked",
+    "ProgressHandle",
+    "PromptChoice",
+    "UiContext",
+    "run_editor",
+    "ui_context",
+    # doctor checks
+    "connection_check",
+    "executable_check",
+    "online_check",
+    # conventions
+    "ExitCode",
+    "deprecated_alias",
+    "plural",
+    "q",
+    "writes",
 ]

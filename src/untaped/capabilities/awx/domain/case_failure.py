@@ -48,7 +48,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.capabilities.awx.domain.job import HostSummary, Job, JobEvent
 from untaped.capabilities.awx.domain.workflow_run import APPROVAL, RunNode
-from untaped.capability_api import ErrorCategory, ErrorInfo, UntapedError, q
+from untaped.sdk import ErrorCategory, ErrorInfo, UntapedError, q
 
 SUITE = "awx.suite"
 CREDENTIALS = "awx.credentials"

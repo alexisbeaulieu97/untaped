@@ -17,8 +17,8 @@ from cyclopts import App, Parameter
 
 from test_management.support import asset, make_spec, write_config
 from untaped import bootstrap
-from untaped.capability_api import SkillAsset
 from untaped.cli import create_app
+from untaped.sdk import SkillAsset
 from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")

@@ -21,7 +21,7 @@ from untaped.capabilities.github.cli.scopes import (
 )
 from untaped.capabilities.github.domain import github_web_host
 from untaped.capabilities.github.settings import GithubSettings
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     FormatOption,
     OutputFormat,

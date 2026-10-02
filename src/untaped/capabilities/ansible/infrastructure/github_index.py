@@ -14,7 +14,7 @@ from untaped.capabilities.ansible.domain.payloads import (
 )
 from untaped.capabilities.ansible.errors import AnsibleError
 from untaped.capabilities.github.api import is_global_github_failure
-from untaped.capability_api import UntapedError, bounded_map
+from untaped.sdk import UntapedError, bounded_map
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

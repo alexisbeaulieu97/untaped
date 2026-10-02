@@ -12,11 +12,12 @@ from untaped.capabilities.awx.cli._selection import SELECTION_DEFAULTS, Selectio
 from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.options import NamesArgument
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
-from untaped.capability_api import report_errors
+from untaped.sdk import report_errors, writes
 
 
 def _add_edit(app: App, spec: AwxResourceSpec) -> None:
     @app.command(name="edit")
+    @writes
     def edit_command(
         names: NamesArgument = None,
         /,

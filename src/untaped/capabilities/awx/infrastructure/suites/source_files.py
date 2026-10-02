@@ -24,7 +24,7 @@ from untaped.capabilities.awx.infrastructure.suites.filesystem import (
     kind_marker,
 )
 from untaped.capabilities.awx.infrastructure.yaml_io import read_resource_files_at
-from untaped.capability_api import ConfigError, ErrorCategory
+from untaped.sdk import ConfigError, ErrorCategory
 
 SPEC_ROOT = Path(".untaped/awx")
 """Where a repository keeps its specs and suites, at its root."""

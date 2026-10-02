@@ -238,13 +238,8 @@ class OperationCancelledError(UntapedError):
         super().__init__(message)
 
 
-class PromptInterruptedError(ConfigError):
-    """Raised when a prompt is interrupted with Ctrl-C; exits ``130``.
-
-    It stays a :class:`ConfigError` (its historical type) so callers that
-    already handle prompt cancellation keep working; its category says
-    "interrupted".
-    """
+class PromptInterruptedError(UntapedError):
+    """Raised when a prompt is interrupted with Ctrl-C; exits ``130``."""
 
     category = ErrorCategory.INTERRUPTED
     system = "untaped"

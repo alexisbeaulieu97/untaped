@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from untaped.capabilities.awx.infrastructure.git_source import GitSource
-from untaped.capability_api import ConfigError
+from untaped.sdk import ConfigError
 
 
 def _git(repo: Path, *args: str) -> str:

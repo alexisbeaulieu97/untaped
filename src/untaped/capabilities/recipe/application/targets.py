@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from operator import attrgetter
 from pathlib import Path
 
-from untaped.capability_api import is_envelope_line, parse_envelope_line
+from untaped.sdk import is_envelope_line, parse_envelope_line
 
 
 @dataclass(frozen=True)

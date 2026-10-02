@@ -64,7 +64,7 @@ from untaped.capabilities.ansible.infrastructure import (
 from untaped.capabilities.ansible.settings import AnsibleSettings, SourceDefinition
 from untaped.capabilities.github.api import GithubClient, GithubSettings, github_web_host
 from untaped.capabilities.github.api import github_settings as load_github_settings
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     FormatOption,
     HttpSettings,
@@ -73,7 +73,6 @@ from untaped.capability_api import (
     UsageError,
     app_context,
     clamp_parallel,
-    deprecated_alias,
     echo,
     emit,
     get_config_section,
@@ -253,8 +252,6 @@ def register_graph_commands(app: App) -> None:
     app.command(impact_command, name="impact")
     app.command(find_command, name="find")
     app.command(graph_command, name="graph")
-    for old, direction in (("--upstream", "up"), ("--downstream", "down"), ("--both", "both")):
-        deprecated_alias(app["graph"], old, f"--direction={direction}")
 
 
 def deps_command(

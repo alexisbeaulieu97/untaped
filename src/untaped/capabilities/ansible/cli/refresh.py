@@ -26,7 +26,7 @@ from untaped.capabilities.ansible.infrastructure import (
 )
 from untaped.capabilities.ansible.settings import AnsibleSettings, SourceDefinition
 from untaped.capabilities.github.api import GithubClient, GithubSettings, github_web_host
-from untaped.capability_api import HttpSettings, ProgressHandle, UiContext, git_auth_header, plural
+from untaped.sdk import HttpSettings, ProgressHandle, UiContext, git_auth_header, plural
 
 GIT_PARALLEL_CAP = 32
 """Upper bound for ``--parallel`` Git fetches (matches ``ansible.git_fetch_concurrency``)."""

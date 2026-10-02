@@ -12,7 +12,7 @@ from untaped.capabilities.awx.infrastructure.suites.source_files import (
     GitSuiteFiles,
     template_specs,
 )
-from untaped.capability_api import ConfigError
+from untaped.sdk import ConfigError
 
 pytestmark = pytest.mark.integration
 

@@ -11,7 +11,8 @@ import yaml
 from cyclopts import App
 from pydantic import BaseModel
 
-from untaped.capability_api import (
+from untaped.cli import run_cyclopts_app
+from untaped.sdk import (
     HttpError,
     HttpTransportError,
     OutcomeRecord,
@@ -25,7 +26,6 @@ from untaped.capability_api import (
     report_errors,
     resolve_each,
 )
-from untaped.cli import run_cyclopts_app
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker
 

@@ -64,7 +64,7 @@ from untaped.capabilities.awx.errors import (
     LaunchPromptError,
     ResourceNotFoundError,
 )
-from untaped.capability_api import (
+from untaped.sdk import (
     ConfigError,
     ErrorCategory,
     ErrorInfo,

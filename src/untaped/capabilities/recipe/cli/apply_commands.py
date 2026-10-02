@@ -39,7 +39,7 @@ from untaped.capabilities.recipe.infrastructure.backup import BackupDraft
 from untaped.capabilities.recipe.infrastructure.file_writer import ApplyWriteError, flush_changes
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
-from untaped.capability_api import (
+from untaped.sdk import (
     AbsolutePath,
     BatchOutcome,
     ColumnsOption,
@@ -60,6 +60,7 @@ from untaped.capability_api import (
     parse_kv_pairs,
     read_stdin,
     render_rows,
+    writes,
 )
 
 MessageKind = Literal["success", "warning", "error", "info"]
@@ -111,6 +112,7 @@ class TargetInput:
     stdin_records: bool = False
 
 
+@writes
 def apply_command(
     recipe_ref: Annotated[str, Parameter(help="Recipe id, pack/recipe ref, or path.")],
     dirs: Annotated[list[Path] | None, Parameter(help="Target directories.")] = None,

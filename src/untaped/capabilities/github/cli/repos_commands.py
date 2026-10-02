@@ -16,7 +16,7 @@ from untaped.capabilities.github.cli.scopes import (
     org_scope,
     parse_team_scopes,
 )
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     FormatOption,
     LimitOption,

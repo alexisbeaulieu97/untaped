@@ -26,7 +26,7 @@ from untaped.capabilities.awx.cli.options import (
 )
 from untaped.capabilities.awx.cli.pipe import selection_pipe_kinds
 from untaped.capabilities.awx.domain import ResourceSpec
-from untaped.capability_api import (
+from untaped.sdk import (
     PipeEnvelope,
     UsageError,
     echo,

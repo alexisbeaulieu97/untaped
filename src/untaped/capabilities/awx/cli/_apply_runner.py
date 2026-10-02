@@ -21,7 +21,7 @@ from untaped.capabilities.awx.infrastructure.yaml_io import (
     read_resource_files_at,
     read_resource_text,
 )
-from untaped.capability_api import ConfigError, resolve_text_input
+from untaped.sdk import ConfigError, resolve_text_input
 
 
 def build_mutation_engine(

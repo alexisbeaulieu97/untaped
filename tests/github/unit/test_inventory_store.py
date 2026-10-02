@@ -11,7 +11,7 @@ import pytest
 from untaped.capabilities.github.application.inventory import RepositoryInventoryItem
 from untaped.capabilities.github.domain.inventory import RepoInventory
 from untaped.capabilities.github.infrastructure.inventory_store import JsonInventoryStore
-from untaped.capability_api import UntapedError
+from untaped.sdk import UntapedError
 
 INVENTORY = RepoInventory(
     repos=(

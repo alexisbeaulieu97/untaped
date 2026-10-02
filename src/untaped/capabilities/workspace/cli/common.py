@@ -22,7 +22,7 @@ from untaped.capabilities.workspace.infrastructure import (
     StateWorkspaceStore,
 )
 from untaped.capabilities.workspace.settings import WorkspaceSettings
-from untaped.capability_api import (
+from untaped.sdk import (
     ConfigError,
     ParallelOption,
     UsageError,

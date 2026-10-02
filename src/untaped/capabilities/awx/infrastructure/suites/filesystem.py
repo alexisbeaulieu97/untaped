@@ -12,7 +12,7 @@ import re
 from collections.abc import Iterable
 from pathlib import Path, PurePath
 
-from untaped.capability_api import ConfigError
+from untaped.sdk import ConfigError
 
 DEFAULT_SUITE_DIR = Path(".untaped/awx/tests")
 """Where suites live when no path is given, relative to the git checkout root."""

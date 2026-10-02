@@ -26,7 +26,7 @@ from untaped.capabilities.awx.domain.workflow_run import (
     approval_labels,
 )
 from untaped.capabilities.awx.errors import ResourceNotFoundError
-from untaped.capability_api import ConfigError, UntapedError, attribution, most_severe
+from untaped.sdk import ConfigError, UntapedError, attribution, most_severe
 
 
 class PreflightLaunch:

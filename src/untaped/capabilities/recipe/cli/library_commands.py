@@ -56,7 +56,7 @@ from untaped.capabilities.recipe.infrastructure.pack_store import (
     pack_content_hash,
     validate_pack,
 )
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     DryRunOption,
     ErrorInfo,
@@ -79,6 +79,7 @@ from untaped.capability_api import (
     render_rows,
     report_error,
     run_editor,
+    writes,
 )
 
 _EMPTY_LIBRARY_HINT = (
@@ -125,6 +126,7 @@ class _ResolvedHook:
     hook: HookEntry | None = None
 
 
+@writes
 def add_command(
     source: Annotated[str, Parameter(help="Pack project path or git URL.")],
     /,
@@ -196,6 +198,7 @@ def add_command(
         emit(record.model_dump(), fmt=fmt, columns=columns, kind="recipe.add_outcome")
 
 
+@writes
 def sync_command(
     names: Annotated[
         list[str] | None,
@@ -577,6 +580,7 @@ def validate_command(
         finish(any(row.status == "fail" for row in rows))
 
 
+@writes(destructive=True)
 def remove_command(
     names: Annotated[
         list[str] | None, Parameter(help="Installed pack identities.", negative="")

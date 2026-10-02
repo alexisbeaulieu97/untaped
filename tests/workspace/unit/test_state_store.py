@@ -10,7 +10,7 @@ import pytest
 from untaped.capabilities.workspace.domain import RepoSpec, WorkspaceRecord
 from untaped.capabilities.workspace.errors import WorkspaceError, WorkspaceNotFoundError
 from untaped.capabilities.workspace.infrastructure import StateWorkspaceStore
-from untaped.capability_api import StateCollection
+from untaped.sdk import StateCollection
 
 T0 = datetime(2026, 10, 1, tzinfo=UTC)
 SPEC = RepoSpec(url="u", name="acme/api", dir="api", branch="b", base="main")

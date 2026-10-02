@@ -16,7 +16,7 @@ from untaped.capabilities.ansible.domain.renderers import (
     TreeLine,
     TreeRole,
 )
-from untaped.capability_api import UiContext
+from untaped.sdk import UiContext
 
 _ROLE_STYLES: dict[TreeRole, tuple[str | None, str | None]] = {
     "target": (None, "bold"),

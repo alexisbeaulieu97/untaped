@@ -12,6 +12,7 @@ EXPECTED_SURFACE = frozenset(
         "ScriptedPromptBackend",
         "TtyStringIO",
         "assert_destructive_contract",
+        "check_conventions",
         "invoke_cli",
     }
 )

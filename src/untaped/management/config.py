@@ -29,6 +29,7 @@ from untaped.cli import (
     create_app,
     emit,
     report_errors,
+    writes,
 )
 from untaped.config.editor import run_config_editor
 from untaped.config.models import SettingOutcome, setting_entry_row
@@ -165,6 +166,7 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
         _get(ctx, key, fmt=fmt, show_secrets=show_secrets)
 
     @app.command(name="set")
+    @writes
     def set_command(
         key: Annotated[str, Parameter(help="Fully qualified setting key (section.key).")],
         value: Annotated[str | None, Parameter(help="New value (validated for its type).")] = None,
@@ -196,6 +198,7 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
         )
 
     @app.command(name="unset")
+    @writes
     def unset_command(
         key: Annotated[str, Parameter(help="Fully qualified setting key (section.key).")],
         /,

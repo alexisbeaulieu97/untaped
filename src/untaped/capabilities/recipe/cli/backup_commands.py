@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from cyclopts import Parameter
 from pydantic import BaseModel, ConfigDict
@@ -23,13 +23,14 @@ from untaped.capabilities.recipe.infrastructure.backup import (
     prune_selection,
     read_metadata,
 )
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     ConfigError,
     DryRunOption,
     ErrorInfo,
     FormatOption,
     OutcomeRecord,
+    UntapedError,
     UsageError,
     UtcTimestamp,
     YesOption,
@@ -39,6 +40,7 @@ from untaped.capability_api import (
     finish,
     plural,
     render_rows,
+    writes,
 )
 
 
@@ -51,6 +53,18 @@ class BackupPruneRecord(OutcomeRecord):
 
     id: str
     size_bytes: int
+    detail: str | None = None
+
+
+class BackupRestoreRecord(OutcomeRecord):
+    """The ``backups restore`` row (kind ``recipe.restore_outcome``).
+
+    ``files`` counts the bundle's files. ``action`` is ``planned``
+    (``--dry-run``), ``restored`` or ``failed`` (with ``detail`` and ``error``).
+    """
+
+    id: str
+    files: int
     detail: str | None = None
 
 
@@ -127,6 +141,7 @@ def get_command(
                     echo(f"  - {entry}")
 
 
+@writes
 def restore_command(
     backup_id: Annotated[str, Parameter(help="Backup id, prefix, or latest.")],
     /,
@@ -137,11 +152,14 @@ def restore_command(
     ] = False,
     yes: YesOption = False,
     dry_run: DryRunOption = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
     """Restore a backup bundle."""
     with report_config_errors():
         store = BackupStore(library_root() / "backups")
-        items = store.plan_restore(backup_id, force=force)
+        resolved_id = store.resolve(backup_id).id
+        items = store.plan_restore(resolved_id, force=force)
         ui = recipe_ui()
         file_rows = [{"path": str(item.path), "action": item.action} for item in items]
 
@@ -158,7 +176,7 @@ def restore_command(
             return bundle_id
 
         outcome = batch_apply(
-            [backup_id],
+            [resolved_id],
             _restore,
             verb="restore",
             noun="backup",
@@ -172,11 +190,22 @@ def restore_command(
         )
         if dry_run:
             _preview(outcome.planned_rows)
+        if outcome.cancelled:
+            finish(outcome)
+        if fmt != "table":
+            failed = {bundle_id: exc for bundle_id, exc in outcome.failures}
+            row = BackupRestoreRecord(
+                id=resolved_id,
+                files=len(items),
+                **_outcome_fields(failed.get(resolved_id), dry_run=dry_run, done="restored"),
+            )
+            emit(row, fmt=fmt, columns=columns, kind="recipe.restore_outcome")
         if not outcome.any_failed and outcome.results:
-            ui.message("success", f"restored {backup_id}")
+            ui.message("success", f"restored {resolved_id}")
         finish(outcome)
 
 
+@writes(destructive=True)
 def prune_command(
     *,
     keep: Annotated[
@@ -235,14 +264,12 @@ def prune_command(
         )
         if outcome.cancelled:
             finish(outcome)
-        failed = {bundle.id: ErrorInfo.from_exception(exc) for bundle, exc in outcome.failures}
+        failed = {bundle.id: exc for bundle, exc in outcome.failures}
         rows = [
             BackupPruneRecord(
                 id=bundle.id,
                 size_bytes=sizes[bundle.id],
-                action="planned" if dry_run else "failed" if bundle.id in failed else "deleted",
-                detail=failed[bundle.id].message if bundle.id in failed else None,
-                error=failed.get(bundle.id),
+                **_outcome_fields(failed.get(bundle.id), dry_run=dry_run, done="deleted"),
             ).model_dump()
             for bundle in pruned
         ]
@@ -265,3 +292,13 @@ def prune_command(
                 f"kept {kept}, reclaimed {reclaimed} bytes",
             )
         finish(outcome)
+
+
+def _outcome_fields(failure: UntapedError | None, *, dry_run: bool, done: str) -> dict[str, Any]:
+    """A backup row's ``action``, ``detail`` and ``error``: planned, ``done`` or failed."""
+    if dry_run:
+        return {"action": "planned"}
+    if failure is None:
+        return {"action": done}
+    error = ErrorInfo.from_exception(failure)
+    return {"action": "failed", "detail": error.message, "error": error}

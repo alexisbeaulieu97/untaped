@@ -21,7 +21,7 @@ from untaped.capabilities.ansible.domain.payloads import (
 )
 from untaped.capabilities.ansible.domain.repo_targets import remote_url_for
 from untaped.capabilities.ansible.errors import GitCacheError
-from untaped.capability_api import bounded_map
+from untaped.sdk import bounded_map
 
 if TYPE_CHECKING:
     from untaped.capabilities.ansible.application.ports import LsRemoteGit

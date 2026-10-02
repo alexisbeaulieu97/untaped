@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
@@ -113,3 +114,34 @@ class PackInspectorPort(Protocol):
 
     def hook_exports(self, hook: str, local_hook_project: Path | None) -> frozenset[str]:
         """Resolve ``hook`` and return the entry points it exports."""
+
+
+class HookHelpers(Protocol):
+    """Helper methods available to external hook projects."""
+
+    def pass_(self, message: str = "") -> dict[str, str]:
+        """Return a passing validation verdict."""
+
+    def fail(self, message: str) -> dict[str, str]:
+        """Return a failing validation verdict."""
+
+    def skip(self, message: str = "") -> dict[str, str]:
+        """Return a skip verdict marking the target not applicable."""
+
+    def warn(self, message: str) -> None:
+        """Accumulate a non-fatal warning for the current target."""
+
+    def render_template(
+        self,
+        template: str,
+        inputs: dict[str, object],
+        *,
+        unknown_tokens: str = "error",
+    ) -> str:
+        """Render simple recipe placeholders."""
+
+    def load_yaml(self, content: str) -> object:
+        """Round-trip-load YAML content."""
+
+    def dump_yaml(self, data: object, *, options: Mapping[str, object] | None = None) -> str:
+        """Round-trip-dump YAML data with optional formatting controls."""

@@ -4,7 +4,7 @@ Each repo URL maps to a bare cache (:func:`cache_path_for`) whose
 ``origin`` remote fetches into ``refs/remotes/origin/*``; workspaces get
 ``git worktree`` checkouts from it. Every cache write runs under the cache's
 advisory lock, so parallel provisioning of one repo serializes safely. All
-git runs go through :func:`untaped.capability_api.run_git`; failures become
+git runs go through :func:`untaped.sdk.run_git`; failures become
 :class:`GitError` keeping git's attribution, and a branch or directory that
 is already in use becomes a ``conflict``. :meth:`LocalGitWorktrees.cached_repos`
 lists the caches without running git (the repo picker opens on it).
@@ -24,15 +24,15 @@ from untaped.capabilities.workspace.domain.models import CachedRepo, Checkout, W
 from untaped.capabilities.workspace.domain.naming import repo_key
 from untaped.capabilities.workspace.domain.safety import archive_blockers
 from untaped.capabilities.workspace.errors import GitError, WorkspaceError
-from untaped.capability_api import GitCommandError, attribution, file_lock, run_git
+from untaped.sdk import GitCommandError, attribution, file_lock, run_git
 
 if TYPE_CHECKING:
-    from untaped.capability_api import GitResult
+    from untaped.sdk import GitResult
 
 _FETCH_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
 _LAYOUT_KEY = "untaped.layout"
 _LAYOUT = "2"
-"""Marks a cache already on the remote-tracking layout (legacy heads dropped)."""
+"""Marks a cache on the 10.x remote-tracking layout; unmarked caches are refused."""
 _CACHE_CONFIG = r"^(remote\.origin\.(url|fetch)|untaped\.layout)$"
 _STASH_MARKERS = ("refs/stash", "logs/refs/stash", "reftable")
 """Paths under a common git dir whose absence means no stash (reftable: cannot tell)."""
@@ -229,23 +229,38 @@ class LocalGitWorktrees:
     # -- checkout steps ----------------------------------------------------
 
     def _ensure_cache(self, cache: Path, url: str) -> None:
-        """Create or repair the cache; one config read when it is already set up.
-
-        A cache not yet marked ``untaped.layout = 2`` is migrated once (legacy
-        heads dropped, refspec set), then marked.
-        """
+        """Create the cache, or repair a 10.x one (origin URL, refspec); one config read."""
         config: dict[str, list[str]] = {}
         if _cache_ready(cache):
             config = self._cache_config(cache)
-            if config.get(_LAYOUT_KEY) != [_LAYOUT]:
-                self._drop_legacy_heads(cache, config.get("remote.origin.fetch", []))
+            if config.get(_LAYOUT_KEY) != [_LAYOUT] and (
+                config.get("remote.origin.url") or self._has_heads(cache)
+            ):
+                raise WorkspaceError(
+                    f"{cache} is a cache from untaped 9.x",
+                    hint=(
+                        "set workspace.cache_dir to a new directory; keep this one"
+                        " while clones made before untaped 7.0 borrow objects from it"
+                    ),
+                )
         else:
             self._run(["init", "--bare", "--quiet", str(cache)], cwd=cache.parent)
+            self._run(["config", _LAYOUT_KEY, _LAYOUT], cwd=cache)
+            config[_LAYOUT_KEY] = [_LAYOUT]
         self._ensure_remote(cache, url, (config.get("remote.origin.url") or [""])[0])
         if config.get("remote.origin.fetch") != [_FETCH_REFSPEC]:
             self._run(["config", "--replace-all", "remote.origin.fetch", _FETCH_REFSPEC], cwd=cache)
         if config.get(_LAYOUT_KEY) != [_LAYOUT]:
             self._run(["config", "--replace-all", _LAYOUT_KEY, _LAYOUT], cwd=cache)
+
+    def _has_heads(self, cache: Path) -> bool:
+        """Whether the cache holds any ``refs/heads/*`` (mirrored heads of a 9.x cache)."""
+        heads = self._run(
+            ["for-each-ref", "--count=1", "--format=%(refname)", "refs/heads"],
+            cwd=cache,
+            capture=True,
+        ).text
+        return bool(heads.strip())
 
     def _cache_config(self, cache: Path) -> dict[str, list[str]]:
         """The cache's origin URL and fetch refspecs, and its layout mark, by key."""
@@ -264,23 +279,6 @@ class LocalGitWorktrees:
             self._run(["remote", "add", "origin", url], cwd=cache)
         elif current != url:
             self._run(["remote", "set-url", "origin", url], cwd=cache)
-
-    def _drop_legacy_heads(self, cache: Path, refspecs: list[str]) -> None:
-        """Delete the mirrored ``refs/heads/*`` of an old-style ``clone --bare`` cache.
-
-        Such caches fetched origin's heads straight into ``refs/heads``, so
-        those heads are mirrors, never user work; kept, they would be resumed
-        in place of origin (reviving deleted or force-pushed branches). Only
-        done before the refspec is swapped and while no worktree is registered.
-        """
-        if refspecs == [_FETCH_REFSPEC] or self._worktree_branches(cache) is not None:
-            return
-        heads = self._run(
-            ["for-each-ref", "--format=%(refname)", "refs/heads"], cwd=cache, capture=True
-        ).text.split()
-        if heads:
-            script = "".join(f"delete {ref}\n" for ref in heads)
-            self._run(["update-ref", "--stdin"], cwd=cache, stdin=script)
 
     def _worktree_branches(self, cache: Path) -> set[str] | None:
         """Branches checked out in registered worktrees; ``None`` when there are none."""

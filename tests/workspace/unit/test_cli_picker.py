@@ -12,7 +12,7 @@ from untaped.capabilities.workspace.cli.picker import build_request, name_valida
 from untaped.capabilities.workspace.domain import CachedRepo, RepoArg, WorkspaceRecord
 from untaped.capabilities.workspace.infrastructure import StateWorkspaceStore
 from untaped.capabilities.workspace.infrastructure.pick_source import RepoPickSource
-from untaped.capability_api import Picked, PickItem, PickResult, UntapedError
+from untaped.sdk import Picked, PickItem, PickResult, UntapedError
 
 
 def test_repo_args_map_settings() -> None:

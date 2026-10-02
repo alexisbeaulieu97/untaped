@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from urllib.parse import urlparse
 
 from untaped.capabilities.workspace.domain.models import RepoSpec
-from untaped.capability_api import UsageError, q, safe_path_segment
+from untaped.sdk import UsageError, q, safe_path_segment
 
 _SCP = re.compile(r"^(?P<user>[^@]+)@(?P<host>[^:]+):(?P<path>.+)$")
 

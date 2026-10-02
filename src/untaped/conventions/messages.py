@@ -1,7 +1,6 @@
 """Message lint: stderr wording follows ``docs/conventions.md``.
 
-An AST scan over ``src/untaped/capabilities/**`` and
-``src/untaped/management/**`` flags:
+An AST scan over a package's source flags:
 
 - ``echo-error`` / ``echo-warning`` — ``echo("error: …")`` or
   ``echo("warning: …")``: raise an ``UntapedError`` (``report_errors``
@@ -18,22 +17,18 @@ An AST scan over ``src/untaped/capabilities/**`` and
 - ``print`` / ``rich-console`` — ``print(…)`` or a direct
   ``rich.console.Console``: use ``echo`` / ``UiContext``.
 
-Entries are ``<path>::<rule>::<message snippet>``; existing ones live in
-``baselines/messages/<owner>.txt``.
+Lines are ``<path>::<rule>::<message snippet>``; ``# untaped: allow <rule>``
+on the flagged line suppresses one.
 """
 
 from __future__ import annotations
 
 import ast
-from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path
-from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SRC = REPO_ROOT / "src" / "untaped"
-SCANNED = (SRC / "capabilities", SRC / "management")
-SKIPPED = frozenset({SRC / "capabilities" / "registry.py", SRC / "capabilities" / "__init__.py"})
+from untaped.conventions.allow import allowed
+from untaped.conventions.source import SourceFile, callee
 
 USAGE_PHRASES = ("mutually exclusive", "must be >=", "not both", "cannot be combined")
 USAGE_RAISERS = frozenset({"UsageError", "raise_usage"})
@@ -61,15 +56,6 @@ def _text(node: ast.expr) -> str | None:
     return None
 
 
-def _callee(node: ast.Call) -> str:
-    func = node.func
-    if isinstance(func, ast.Name):
-        return func.id
-    if isinstance(func, ast.Attribute):
-        return func.attr
-    return ""
-
-
 def _snippet(text: str) -> str:
     flat = " ".join(text.split())
     return flat[:_SNIPPET]
@@ -93,7 +79,8 @@ def _error_case(text: str) -> bool:
     return capitalized or (stripped.endswith(".") and not stripped.endswith("..."))
 
 
-def _violations(tree: ast.Module) -> Iterator[tuple[str, str]]:
+def tree_violations(tree: ast.Module) -> Iterator[tuple[int, str, str]]:
+    """Yield ``(lineno, rule, detail)`` for one module."""
     docstrings = {
         id(node.body[0].value)
         for node in ast.walk(tree)
@@ -104,29 +91,30 @@ def _violations(tree: ast.Module) -> Iterator[tuple[str, str]]:
     }
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name in PLURAL_HELPERS:
-            yield "local-plural", node.name
+            yield node.lineno, "local-plural", node.name
         elif (
             isinstance(node, ast.Attribute)
             and node.attr == "stdin"
             and isinstance(node.value, ast.Name)
             and node.value.id == "sys"
         ):
-            yield "sys-stdin", "sys.stdin"
+            yield node.lineno, "sys-stdin", "sys.stdin"
         elif isinstance(node, ast.Call):
-            yield from _call_violations(node)
+            for rule, detail in _call_violations(node):
+                yield node.lineno, rule, detail
         elif (
             isinstance(node, ast.Constant)
             and isinstance(node.value, str)
             and id(node) not in docstrings
         ):
             if node.value.lstrip().startswith("Warning:"):
-                yield "capital-warning", _snippet(node.value)
+                yield node.lineno, "capital-warning", _snippet(node.value)
             if "(s)" in node.value:
-                yield "paren-s", _snippet(node.value)
+                yield node.lineno, "paren-s", _snippet(node.value)
 
 
 def _call_violations(node: ast.Call) -> Iterator[tuple[str, str]]:
-    name = _callee(node)
+    name = callee(node)
     if name == "print":
         yield "print", "print()"
     if name == "Console" and not any(kw.arg == "file" for kw in node.keywords):
@@ -149,53 +137,12 @@ def _call_violations(node: ast.Call) -> Iterator[tuple[str, str]]:
             yield "usage-phrase", _snippet(text)
 
 
-def _owner(path: Path) -> str:
-    rel = path.relative_to(SRC)
-    return rel.parts[1] if rel.parts[0] == "capabilities" else "root"
-
-
-def collect_violations() -> dict[str, list[str]]:
-    found: dict[str, list[str]] = defaultdict(list)
-    for base in SCANNED:
-        for path in sorted(base.rglob("*.py")):
-            if path in SKIPPED:
-                continue
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            rel = path.relative_to(REPO_ROOT).as_posix()
-            for rule, detail in _violations(tree):
-                found[_owner(path)].append(f"{rel}::{rule}::{detail}")
+def message_violations(source_dir: Path, files: Sequence[SourceFile]) -> list[str]:
+    """Violations in ``files`` (under ``source_dir``), with paths relative to its parent."""
+    found: list[str] = []
+    for source in files:
+        rel = source.path.relative_to(source_dir.parent).as_posix()
+        for lineno, rule, detail in tree_violations(source.tree):
+            if not allowed(source.lines, lineno, rule):
+                found.append(f"{rel}::{rule}::{detail}")
     return found
-
-
-def test_messages_follow_the_wording_conventions(baseline: Any) -> None:
-    baseline("messages", collect_violations())
-
-
-def test_lint_rules_catch_each_banned_shape() -> None:
-    source = """
-import sys
-def pluralize(n, noun): ...
-echo(f"error: {x} failed", err=True)
-echo("warning: stale", err=True)
-raise ConfigError("Something broke.")
-raise ConfigError("--a and --b are mutually exclusive")
-raise UsageError("--a and --b are mutually exclusive")
-label = "Deleted 3 repo(s)"
-note = "Warning: careful"
-sys.stdin.read()
-print("x")
-"""
-    rules = sorted(rule for rule, _ in _violations(ast.parse(source)))
-    assert rules == sorted(
-        [
-            "local-plural",
-            "echo-error",
-            "echo-warning",
-            "error-case",
-            "usage-phrase",
-            "paren-s",
-            "capital-warning",
-            "sys-stdin",
-            "print",
-        ]
-    )

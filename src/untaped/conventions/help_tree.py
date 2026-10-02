@@ -1,7 +1,6 @@
-"""Help-tree lint: every command follows the command-grammar conventions.
+"""Help-tree rules: every command follows the command grammar (``docs/conventions.md``).
 
-Walks the fully composed built-in tree (``build_root_app(externals=[])``)
-and checks each visible command against ``docs/conventions.md``:
+Checks each visible command of a command subtree:
 
 - ``missing-help`` — a parameter (positional or option) has no help text;
 - ``duplicate-option`` — two parameters of one command answer to one name;
@@ -11,13 +10,16 @@ and checks each visible command against ``docs/conventions.md``:
 - ``positional-or-keyword`` — a parameter can be passed both ways (options
   must never be positional);
 - ``command-name`` — a command or group name is not kebab-case;
-- ``verb`` — a leaf verb is outside the closed verb set;
 - ``reserved-short`` — a reserved short flag means something else;
-- ``ambiguous-short`` — a non-reserved short flag has two meanings;
-- ``mutation-format`` — a mutation verb has no ``--format``;
-- ``destructive-controls`` — a destructive verb lacks ``--yes``/``--dry-run``.
+- ``ambiguous-short`` — a non-reserved short flag has two meanings within
+  the checked subtrees;
+- ``undeclared-write`` — a command exposes ``--yes``/``--dry-run`` without
+  declaring ``@writes``;
+- ``mutation-format`` — a declared write has no ``--format``;
+- ``destructive-controls`` — a destructive command lacks ``--yes``/``--dry-run``.
 
-Existing violations live in ``baselines/help_tree/<owner>.txt``.
+Lines are ``<command path>::<rule>::<detail>``; they carry no source line, so
+no inline marker can suppress them.
 """
 
 from __future__ import annotations
@@ -25,78 +27,18 @@ from __future__ import annotations
 import inspect
 import re
 from collections import Counter, defaultdict
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 from cyclopts import App
 
-from untaped.bootstrap import build_root_app
+from untaped.cli import write_kind
 
+#: Management commands the root shell mounts beside the capabilities.
 ROOT_COMMANDS = frozenset(
     {"config", "profile", "skills", "doctor", "capabilities", "setup", "alias"}
 )
 
-VERBS = frozenset(
-    {
-        # read
-        "list",
-        "get",
-        "status",
-        "whoami",
-        "ping",
-        "path",
-        # write
-        "create",
-        "set",
-        "unset",
-        "add",
-        "remove",
-        "delete",
-        "prune",
-        "edit",
-        "patch",
-        "apply",
-        "copy",
-        "rename",
-        "archive",
-        # update
-        "sync",
-        "refresh",
-        # query
-        "find",
-        "deps",
-        "impact",
-        "graph",
-        # other
-        "export",
-        "init",
-        "run",
-        "launch",
-        "wait",
-        "validate",
-        "test",
-        "cancel",
-        "relaunch",
-        "schema",
-    }
-)
-MUTATION_VERBS = frozenset(
-    {
-        "create",
-        "set",
-        "unset",
-        "add",
-        "remove",
-        "delete",
-        "prune",
-        "patch",
-        "apply",
-        "copy",
-        "rename",
-        "archive",
-    }
-)
-DESTRUCTIVE_VERBS = frozenset({"delete", "remove", "prune", "cancel", "archive"})
 RESERVED_SHORTS = {
     "-f": "--format",
     "-c": "--columns",
@@ -128,24 +70,17 @@ def _walk(app: App, path: tuple[str, ...]) -> Iterator[tuple[tuple[str, ...], Ap
         yield from _walk(sub, (*path, name))
 
 
-def _owner(path: tuple[str, ...]) -> str:
-    return "root" if path[0] in ROOT_COMMANDS else path[0]
-
-
 def _long_name(names: tuple[str, ...]) -> str:
     return next((name for name in names if name.startswith("--")), names[0])
 
 
-def _command_violations(path: tuple[str, ...], app: App) -> Iterator[tuple[str, str]]:
+def command_violations(path: tuple[str, ...], app: App) -> Iterator[tuple[str, str]]:
     """Yield ``(rule, detail)`` for one command (group names and leaves)."""
     name = path[-1]
     if not _KEBAB.match(name):
         yield "command-name", name
     if app.default_command is None:
         return
-    has_subcommands = any(True for _ in _subcommands(app))
-    if not has_subcommands and name not in VERBS and path[0] not in ROOT_COMMANDS:
-        yield "verb", name
     arguments = [
         argument
         for argument in app.assemble_argument_collection(parse_docstring=True)
@@ -153,9 +88,12 @@ def _command_violations(path: tuple[str, ...], app: App) -> Iterator[tuple[str, 
     ]
     yield from _argument_violations(arguments)
     options = {flag for argument in arguments for flag in argument.names}
-    if name in MUTATION_VERBS and "--format" not in options:
+    kind = write_kind(app.default_command)
+    if kind is None and options & {"--yes", "--dry-run"}:
+        yield "undeclared-write", " ".join(sorted(options & {"--yes", "--dry-run"}))
+    if kind is not None and "--format" not in options:
         yield "mutation-format", name
-    if name in DESTRUCTIVE_VERBS:
+    if kind == "destructive":
         for flag in ("--yes", "--dry-run"):
             if flag not in options:
                 yield "destructive-controls", flag
@@ -192,18 +130,19 @@ def _shorts(app: App) -> Iterator[tuple[str, str]]:
                 yield flag, long_name
 
 
-def collect_violations() -> dict[str, list[str]]:
-    """``{owner: ["<command path>::<rule>::<detail>", ...]}`` for the built-in tree."""
-    root = build_root_app(externals=[])
-    found: dict[str, list[str]] = defaultdict(list)
+def help_tree_violations(root: App, names: Iterable[str]) -> list[str]:
+    """``["<command path>::<rule>::<detail>", ...]`` for the subtrees ``root[name]``."""
+    found: list[str] = []
     shorts: dict[str, dict[str, list[tuple[str, ...]]]] = defaultdict(lambda: defaultdict(list))
-    for path, app in _walk(root, ()):
-        command = " ".join(path)
-        for rule, detail in _command_violations(path, app):
-            found[_owner(path)].append(f"{command}::{rule}::{detail}")
-        if app.default_command is not None:
-            for flag, long_name in _shorts(app):
-                shorts[flag][long_name].append(path)
+    for top in names:
+        subtree = root[top]
+        for path, app in [((top,), subtree), *_walk(subtree, (top,))]:
+            command = " ".join(path)
+            for rule, detail in command_violations(path, app):
+                found.append(f"{command}::{rule}::{detail}")
+            if app.default_command is not None:
+                for flag, long_name in _shorts(app):
+                    shorts[flag][long_name].append(path)
     for flag, meanings in sorted(shorts.items()):
         reserved = RESERVED_SHORTS.get(flag)
         for long_name, paths in sorted(meanings.items()):
@@ -214,9 +153,5 @@ def collect_violations() -> dict[str, list[str]]:
             else:
                 continue
             for path in paths:
-                found[_owner(path)].append(f"{' '.join(path)}::{rule}::{flag} {long_name}")
+                found.append(f"{' '.join(path)}::{rule}::{flag} {long_name}")
     return found
-
-
-def test_help_tree_follows_the_command_grammar(baseline: Any) -> None:
-    baseline("help_tree", collect_violations())

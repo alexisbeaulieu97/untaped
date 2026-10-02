@@ -34,7 +34,7 @@ from untaped.capabilities.awx.infrastructure.suites.source_files import (
     GitSuiteFiles,
     template_specs,
 )
-from untaped.capability_api import echo, hint, q
+from untaped.sdk import echo, hint, q
 
 _RUN_ID_ALPHABET = string.ascii_lowercase + string.digits
 _RUN_ID_LENGTH = 4

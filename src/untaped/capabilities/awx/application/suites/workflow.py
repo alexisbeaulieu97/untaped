@@ -48,7 +48,7 @@ from untaped.capabilities.awx.domain.workflow_run import (
     summed_host_records,
 )
 from untaped.capabilities.awx.errors import PendingApprovalError
-from untaped.capability_api import ErrorCategory, ErrorInfo, q
+from untaped.sdk import ErrorCategory, ErrorInfo, q
 
 _PLAYBOOK_KINDS = frozenset({"job"})
 """Execution types that run a playbook: they have host summaries, changed tasks, a commit."""

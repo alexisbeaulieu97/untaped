@@ -28,8 +28,8 @@ from untaped.capabilities.awx.domain.suite import (
 from untaped.capabilities.awx.errors import ActionResponseError, LaunchPromptError
 from untaped.capabilities.awx.infrastructure import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
-from untaped.capability_api import ConfigError, HttpTransportError, note_failure
 from untaped.diagnostics import diagnostics_scope, failure_exit_code
+from untaped.sdk import ConfigError, HttpTransportError, note_failure
 
 
 class StubFk:
@@ -374,7 +374,7 @@ class RecordingLauncher:
 
 def test_case_filter_with_unmatched_names_raises() -> None:
     """Typos like ``--case smokee`` hard-fail before any launch, naming only the misses."""
-    from untaped.capability_api import ConfigError
+    from untaped.sdk import ConfigError
 
     launcher = StubLauncher({})
     runner = _make_runner(fk=StubFk(), launcher=launcher, watcher=StubWatcher())

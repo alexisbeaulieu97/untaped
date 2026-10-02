@@ -20,7 +20,7 @@ from untaped.capabilities.awx.application.selection import (
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.domain.launch_prompts import PROMPT_FLAGS
 from untaped.capabilities.awx.errors import LaunchPromptError
-from untaped.capability_api import ConfigError, UntapedError, UsageError, q
+from untaped.sdk import ConfigError, UntapedError, UsageError, q
 
 _CLI_FLAGS: dict[str, str] = {
     "extra_vars": "--extra-vars",

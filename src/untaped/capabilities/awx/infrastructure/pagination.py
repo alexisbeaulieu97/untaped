@@ -13,7 +13,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from untaped.capabilities.awx.infrastructure.awx_client import AwxClient
-from untaped.capability_api import paginate_pages
+from untaped.sdk import paginate_pages
 
 # `paginate_pages`'s default `max_pages=100` is sized for short cursor
 # walks; AWX collections (job events especially) legitimately span far
@@ -39,7 +39,7 @@ def paginate(
     bakes them into the ``next`` URL it returns. ``limit`` caps the
     total number of items yielded.
 
-    The cursor loop is core's :func:`untaped.capability_api.paginate_pages`; the
+    The cursor loop is core's :func:`untaped.sdk.paginate_pages`; the
     AWX shape maps onto it with the ``next`` URL as the cursor (``None``
     selects the params-carrying first request).
     """

@@ -1,4 +1,9 @@
-"""Testing helpers for driving Cyclopts command apps with captured output."""
+"""Testing helpers for driving Cyclopts command apps with captured output.
+
+:func:`check_conventions` checks one installed capability against
+``docs/conventions.md``; its ``externals`` argument composes a provider
+passed in directly instead of one discovered through entry points.
+"""
 
 from __future__ import annotations
 
@@ -8,13 +13,14 @@ from collections import deque
 from collections.abc import Callable, Iterable, Sequence
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO, cast
 
 from cyclopts import App
 from rich.console import Console
 
 from untaped.cli import run_cyclopts_app
-from untaped.errors import ConfigError
+from untaped.errors import ConfigError, PromptInterruptedError
 from untaped.prompts import (
     PromptBackend,
     PromptChoice,
@@ -25,6 +31,7 @@ from untaped.prompts import (
 )
 
 if TYPE_CHECKING:
+    from untaped.capabilities.registry import ExternalProvider
     from untaped.picker import PickRequest, PickResult
 
 __all__ = [
@@ -34,6 +41,7 @@ __all__ = [
     "ScriptedPromptBackend",
     "TtyStringIO",
     "assert_destructive_contract",
+    "check_conventions",
     "invoke_cli",
 ]
 
@@ -185,6 +193,27 @@ def assert_destructive_contract(
         assert_unchanged()
 
 
+def check_conventions(
+    capability: str,
+    *,
+    tests_dir: Path | None = None,
+    externals: Sequence[ExternalProvider] | None = None,
+) -> None:
+    """Fail with every convention violation of ``capability`` (docs/plugins.md).
+
+    Checks the installed capability's command subtree and its own source
+    files: command grammar, stderr wording, package structure and layering.
+    ``tests_dir`` adds the private-test-import check over those tests.
+    ``externals`` replaces entry-point discovery, so a test can compose a
+    provider that is not installed. ``# untaped: allow <rule>`` on the flagged
+    node's first line allows that one violation.
+    """
+    from untaped.conventions import capability_violations  # noqa: PLC0415
+
+    found = capability_violations(capability, tests_dir=tests_dir, externals=externals)
+    assert not found, "convention violations:\n" + "\n".join(f"  {line}" for line in found)
+
+
 class TtyStringIO(io.StringIO):
     """A ``StringIO`` that claims to be a terminal.
 
@@ -202,7 +231,9 @@ class ScriptedPromptBackend:
 
     Each prompt method pops its next scripted answer and records
     ``(method, message)`` in ``calls``; an exhausted queue raises
-    :class:`ConfigError` so a test fails cleanly instead of hanging.
+    :class:`ConfigError` so a test fails cleanly instead of hanging. With
+    ``interrupt=True`` every prompt raises :class:`PromptInterruptedError`,
+    simulating Ctrl-C.
     """
 
     def __init__(
@@ -214,7 +245,9 @@ class ScriptedPromptBackend:
         selections: Sequence[Any] = (),
         multiselects: Sequence[list[Any]] = (),
         picks: Sequence[PickResult | None] = (),
+        interrupt: bool = False,
     ) -> None:
+        self._interrupt = interrupt
         self._confirms = deque(confirms)
         self._texts = deque(texts)
         self._secrets = deque(secrets)
@@ -225,6 +258,8 @@ class ScriptedPromptBackend:
 
     def _next(self, queue: deque[Any], method: str, message: str) -> Any:
         self.calls.append((method, message))
+        if self._interrupt:
+            raise PromptInterruptedError("prompt cancelled")
         if not queue:
             raise ConfigError(f"no scripted {method} answer for prompt {message!r}")
         return queue.popleft()
