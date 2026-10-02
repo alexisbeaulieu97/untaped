@@ -1,8 +1,8 @@
 """Capability composition root for the unified ``untaped`` shell.
 
-Built-in capabilities and providers discovered through the
-``untaped.capabilities`` entry-point group are validated before settings
-registration or app mounting. Only providers that survive validation
+Every capability is discovered through the ``untaped.capabilities``
+entry-point group and validated before settings registration or app
+mounting. Only providers that survive validation
 contribute command trees, settings sections, skills, or doctor checks.
 """
 
@@ -11,7 +11,7 @@ from __future__ import annotations
 import inspect
 import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from importlib import import_module, metadata
+from importlib import metadata
 from itertools import chain
 from typing import Any
 
@@ -83,14 +83,6 @@ SHELL_SECTION = "shell"
 SHELL_DISTRIBUTION = "untaped"
 
 
-#: Built-in capabilities composed ahead of external providers, in declaration
-#: order. Importing a capability package loads only its ``SPEC``, never its CLI.
-BUILTIN_CAPABILITIES: tuple[CapabilitySpec, ...] = tuple(
-    import_module(f"untaped.capabilities.{name}").SPEC
-    for name in ("workspace", "github", "jira", "awx", "ansible", "recipe")
-)
-
-
 def _shell_app() -> App:
     return create_app(name=SHELL_NAME, help="Unified untaped developer CLI.")
 
@@ -137,18 +129,17 @@ def _warn_quarantined(result: CompositionResult) -> None:
 
 def compose_root(
     *,
-    builtins: Sequence[CapabilitySpec] = BUILTIN_CAPABILITIES,
     candidates: Sequence[ProviderCandidate] | None = None,
 ) -> CompositionResult:
     """Discover, validate, and register one composition.
 
-    Discovery (built-ins plus entry-point candidates) runs BEFORE any
+    Discovery (entry-point candidates, or ``candidates`` when given) runs BEFORE any
     settings registration or resolution; registration happens only after every
     surviving provider validates. Remembers the composition for :func:`reset`.
     """
     global _COMPOSED_RESULT
     candidates = discover_candidates() if candidates is None else candidates
-    result = compose(SHELL_SPEC, builtins, candidates)
+    result = compose(SHELL_SPEC, candidates)
     _register_shell_and_capabilities(result)
     _COMPOSED_RESULT = result
     _warn_quarantined(result)
@@ -200,7 +191,6 @@ def _resolve_version() -> str:
 
 def build_root_app(
     *,
-    builtins: Sequence[CapabilitySpec] = BUILTIN_CAPABILITIES,
     candidates: Sequence[ProviderCandidate] | None = None,
 ) -> App:
     """Compose the shell plus capabilities and return the root app.
@@ -212,7 +202,7 @@ def build_root_app(
     :func:`run_root` in production.
     """
     candidates = list(candidates) if candidates is not None else list(discover_candidates())
-    result = compose_root(builtins=builtins, candidates=candidates)
+    result = compose_root(candidates=candidates)
     root = _shell_app()
     _mount(root, build_root_config_app(shell=SHELL_SPEC, result=result), name="config")
     _mount(root, build_root_profile_app(command=SHELL_NAME), name="profile")
@@ -226,11 +216,7 @@ def build_root_app(
     )
     _mount(
         root,
-        build_root_capabilities_app(
-            result=result,
-            candidates=candidates,
-            shell_distribution=SHELL_DISTRIBUTION,
-        ),
+        build_root_capabilities_app(result=result, candidates=candidates),
         name="capabilities",
     )
     for capability in result.capabilities:
@@ -297,9 +283,6 @@ def _mount_capability(root: App, capability: RegisteredCapability) -> None:
     spec = capability.spec
     if capability.app is not None:
         _mount(root, capability.app, name=spec.name)
-        return
-    if spec.help is None:
-        _mount(root, build_deferred_app(spec), name=spec.name)
         return
     if spec.name in root:
         del root[spec.name]
@@ -402,7 +385,6 @@ def _install_root_callback(
 def run_root(
     tokens: Iterable[str] | None = None,
     *,
-    builtins: Sequence[CapabilitySpec] = BUILTIN_CAPABILITIES,
     candidates: Sequence[ProviderCandidate] | None = None,
     console: Any | None = None,
     error_console: Any | None = None,
@@ -416,7 +398,7 @@ def run_root(
     argv = list(tokens) if tokens is not None else sys.argv[1:]
     with diagnostics_scope():
         note_requested_format(argv)
-        root = build_root_app(builtins=builtins, candidates=candidates)
+        root = build_root_app(candidates=candidates)
         return run_cyclopts_app(root.meta, argv, console=console, error_console=error_console)
 
 
@@ -426,7 +408,6 @@ def main(argv: Sequence[str] | None = None) -> None:
 
 
 __all__ = [
-    "BUILTIN_CAPABILITIES",
     "SHELL_DISTRIBUTION",
     "SHELL_NAME",
     "SHELL_SECTION",

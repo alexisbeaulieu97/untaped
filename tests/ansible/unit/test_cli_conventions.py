@@ -101,7 +101,7 @@ def test_removed_spellings_are_usage_errors(
 ) -> None:
     _config(tmp_path, monkeypatch, state={**_ALIASES, **_SOURCES})
 
-    result = invoke_cli(build_root_app(candidates=[]), ["ansible", *args], input="acme/site\n")
+    result = invoke_cli(build_root_app(), ["ansible", *args], input="acme/site\n")
 
     assert result.exit_code == 2, result.output
     assert "deprecated" not in result.stderr

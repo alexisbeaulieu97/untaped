@@ -11,7 +11,7 @@ Provider code imports from `untaped.sdk` and nothing else in
 `untaped`; [`src/untaped/sdk.py`](../src/untaped/sdk.py)
 is the authoritative API surface. The internal registry and other modules are
 not an API and may change in any release.
-Built-in capabilities may also use each other's declared `api.py` modules;
+First-party capabilities may also use each other's declared `api.py` modules;
 those are internal to `untaped` and not part of the provider API.
 
 ## 1. Provider package
@@ -72,8 +72,9 @@ arguments.
 The provider's `untaped` requirement (`Requires-Dist`) is the only
 compatibility check: a running `untaped` outside that range quarantines the
 provider. The [changelog](../CHANGELOG.md) says what each version added or broke.
-Built-in capabilities use the same `SPEC` and `build_app()` shape, but are
-listed in the root composition instead of an entry point.
+First-party capabilities register exactly this way. A capability whose
+settings import another capability's `api` (ansible imports github's) is
+quarantined with it when that import fails.
 
 ## 2. Settings and the capability app
 
@@ -159,9 +160,9 @@ and mounts the app it returns; a factory that raises or returns something
 other than a cyclopts `App` quarantines the provider.
 
 The optional `help` field (one non-empty line) is the summary in the root
-command listing. Built-ins set it so their factory runs only when their
-command is dispatched. An external factory always runs during composition,
-so a bad one is quarantined, and the listing shows the built app's own help.
+command listing. With it, the factory runs only when the command is
+dispatched. Without it, the factory runs during composition, so a bad one is
+quarantined, and the listing shows the built app's own help.
 
 The provider callable must have no side effects (registration, filesystem,
 network, `ContextVar`); the root owns registration and mounting.
@@ -257,7 +258,7 @@ When an empty pipe (a filter that matched nothing) should do nothing, pass
 must treat as "nothing to do", never as "everything". A terminal stdin with
 nothing piped still raises.
 
-The provider joins pipelines with the built-ins:
+The provider joins pipelines with the first-party capabilities:
 
 ```bash
 untaped github search repos --format pipe | untaped acme import --stdin
@@ -326,5 +327,4 @@ Test the provider callable and `SPEC.app_factory()` in isolation, assert that
 the entry-point name matches `SPEC.name`, and exercise root config, profile,
 skill, pipe and error paths. `untaped capabilities`, `untaped acme --help` and
 `untaped doctor` show the composed surface and any quarantine reason: a
-malformed external provider is quarantined so the other capabilities still
-boot, while a built-in violation is fatal.
+malformed provider is quarantined so the other capabilities still boot.

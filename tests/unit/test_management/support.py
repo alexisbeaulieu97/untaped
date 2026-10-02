@@ -14,12 +14,11 @@ from untaped.capabilities.registry import (
     CompositionResult,
     DoctorCheck,
     DoctorResult,
-    ProviderRef,
-    RegisteredCapability,
     SkillAsset,
 )
 from untaped.cli import create_app
 from untaped.settings import get_settings
+from untaped.testing import provider_candidate
 
 # NOTE: section models are module-level on purpose. The settings registry
 # rejects re-registration of a section under a *different* model object, so
@@ -61,13 +60,6 @@ class ExtProfile(BaseModel):
     token: str = "default-token"
 
 
-BUILTIN_REF = ProviderRef(
-    kind="built-in",
-    distribution="untaped",
-    entry_point="",
-)
-
-
 def make_spec(
     name: str,
     *,
@@ -93,18 +85,9 @@ def make_spec(
     )
 
 
-def registered(
-    spec: CapabilitySpec,
-    *,
-    ref: ProviderRef = BUILTIN_REF,
-) -> RegisteredCapability:
-    """Wrap ``spec`` as a committed capability."""
-    return RegisteredCapability(spec=spec, provider_ref=ref, skills=tuple(spec.skills))
-
-
 def compose(*specs: CapabilitySpec) -> CompositionResult:
-    """Compose ``specs`` as built-ins (registers settings sections)."""
-    return bootstrap.compose_root(builtins=specs, candidates=())
+    """Compose ``specs`` as providers (registers settings sections)."""
+    return bootstrap.compose_root(candidates=[provider_candidate(spec) for spec in specs])
 
 
 def write_config(path: Path, text: str) -> None:
@@ -150,7 +133,6 @@ def check(
 
 
 __all__ = [
-    "BUILTIN_REF",
     "ExtProfile",
     "GithubProfile",
     "GithubState",
@@ -160,7 +142,6 @@ __all__ = [
     "check",
     "compose",
     "make_spec",
-    "registered",
     "skill_dir",
     "write_config",
 ]

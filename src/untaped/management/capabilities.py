@@ -1,7 +1,7 @@
 """Root ``untaped capabilities`` command (Wave 1.4, spec §7.3).
 
 A terminal command (not a group) reporting one record per candidate
-provider — ``name/origin/status/distribution/version`` — from the
+provider — ``name/status/distribution/version``, in name order — from the
 composition outcome: ready rows for committed capabilities plus quarantined
 rows carrying the entry-point name (or the ``unknown`` sentinels when the
 provider never resolved). The listing never touches settings, so invalid
@@ -11,7 +11,6 @@ capability values cannot block it (spec §4 failure isolation).
 from __future__ import annotations
 
 from collections.abc import Sequence
-from importlib import metadata
 
 from cyclopts import App
 
@@ -36,7 +35,6 @@ def build_root_capabilities_app(
     *,
     result: CompositionResult,
     candidates: Sequence[ProviderCandidate],
-    shell_distribution: str,
 ) -> App:
     """Return the root ``capabilities`` terminal command for one composition."""
     app = create_app(
@@ -52,7 +50,7 @@ def build_root_capabilities_app(
     ) -> None:
         """List one record per candidate provider (spec §7.3)."""
         with report_errors():
-            _show(result, candidates, shell_distribution, fmt=fmt, columns=columns)
+            _show(result, candidates, fmt=fmt, columns=columns)
 
     return app
 
@@ -60,41 +58,36 @@ def build_root_capabilities_app(
 def _show(
     result: CompositionResult,
     candidates: Sequence[ProviderCandidate],
-    shell_distribution: str,
     *,
     fmt: OutputFormat,
     columns: list[str] | None,
 ) -> None:
     emit_isolated(
-        _rows(result, candidates, shell_distribution),
+        _rows(result, candidates),
         fmt=fmt,
         columns=columns,
         kind="untaped.capability",
-        table_columns=["name", "origin", "status", "version"],
+        table_columns=["name", "status", "distribution", "version"],
     )
 
 
 def _rows(
     result: CompositionResult,
     candidates: Sequence[ProviderCandidate],
-    shell_distribution: str,
 ) -> list[dict[str, object]]:
     ordered = sorted(candidates, key=lambda item: (item.distribution, item.name))
     by_key = {(item.distribution, _candidate_key(item)): item for item in ordered}
-    product_version = _product_version(shell_distribution)
     rows: list[dict[str, object]] = []
     succeeded: set[tuple[str, str]] = set()
     for registered in result.capabilities:
         ref = registered.provider_ref
         candidate = by_key.get((ref.distribution, ref.entry_point))
-        version = product_version if ref.kind == "built-in" else _candidate_version(candidate)
         rows.append(
             {
                 "name": registered.spec.name,
-                "origin": ref.kind,
                 "status": "ready",
                 "distribution": ref.distribution,
-                "version": version,
+                "version": _candidate_version(candidate),
             }
         )
         succeeded.add((ref.distribution, ref.entry_point))
@@ -106,7 +99,6 @@ def _rows(
         rows.append(
             {
                 "name": candidate.name,
-                "origin": "external",
                 "status": "quarantined",
                 "distribution": candidate.distribution,
                 "version": _candidate_version(candidate),
@@ -114,25 +106,13 @@ def _rows(
         )
     for record in records[len(failed) :]:
         rows.append(_orphan_row(record))
-    return rows
+    return sorted(rows, key=lambda row: (str(row["name"]), str(row["distribution"])))
 
 
 def _candidate_key(candidate: ProviderCandidate) -> str:
     if isinstance(candidate.target, str):
         return candidate.target
     return candidate.name
-
-
-def _product_version(shell_distribution: str) -> str:
-    """Product version for built-ins; ``unknown`` when metadata is missing.
-
-    The listing must never block (spec §4), so an unresolvable distribution
-    degrades instead of raising like ``--version`` does.
-    """
-    try:
-        return metadata.version(shell_distribution)
-    except metadata.PackageNotFoundError:
-        return _UNKNOWN
 
 
 def _candidate_version(candidate: ProviderCandidate | None) -> str:
@@ -150,7 +130,6 @@ def _orphan_row(record: QuarantineRecord) -> dict[str, object]:
     """
     return {
         "name": record.entry_point or record.distribution,
-        "origin": _UNKNOWN,
         "status": "quarantined",
         "distribution": record.distribution,
         "version": _UNKNOWN,

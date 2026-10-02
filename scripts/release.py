@@ -16,7 +16,7 @@ subcommand is one step of the workflow:
   fail, so a re-run uploads only what is missing) and, with ``--complete``,
   after publishing (waits until every file is there).
 - ``smoke UNTAPED_EXE VERSION`` runs an installed ``untaped`` and checks its
-  version, its built-in capabilities and every ``--help``.
+  version, its first-party capabilities and every ``--help``.
 - ``github-release VERSION --tag TAG --repo OWNER/REPO --dist DIR --notes FILE``
   creates, completes or verifies the GitHub release (the last job).
 
@@ -372,14 +372,13 @@ def smoke_errors(
     return errors
 
 
-def _builtin_capabilities() -> list[str]:
-    """Built-in names from the source tree this script runs in.
-
-    Step 4 replaces this with the capability registry.
-    """
-    from untaped.bootstrap import BUILTIN_CAPABILITIES  # noqa: PLC0415
-
-    return [spec.name for spec in BUILTIN_CAPABILITIES]
+def capability_names(root: Path) -> list[str]:
+    """Every capability the packages under ``root`` declare as an entry point."""
+    return sorted(
+        name
+        for project in packages(root).values()
+        for name in project.get("entry-points", {}).get("untaped.capabilities", {})
+    )
 
 
 def _run(exe: str, *args: str) -> subprocess.CompletedProcess[str]:
@@ -387,8 +386,8 @@ def _run(exe: str, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def run_smoke(exe: str, version: str) -> tuple[list[str], int]:
-    """Run the installed ``untaped``: (every smoke failure, built-in capability count)."""
-    expected = _builtin_capabilities()
+    """Run the installed ``untaped``: (every smoke failure, first-party capability count)."""
+    expected = capability_names(REPO_ROOT)
     rows = _run(exe, "capabilities", "--format", "json")
     errors = smoke_errors(_run(exe, "--version").stdout, rows.stdout, version, expected)
     if rows.returncode:

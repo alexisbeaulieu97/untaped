@@ -511,7 +511,7 @@ def test_fields_documents_only_come_from_fields_file(
     ],
 )
 def test_old_spellings_are_gone(args: list[str]) -> None:
-    root = bootstrap.build_root_app(candidates=[])
+    root = bootstrap.build_root_app()
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         route = mock.route().mock(return_value=httpx.Response(200, json={}))
         result = invoke_cli(root, ["jira", *args])
