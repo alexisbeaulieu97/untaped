@@ -1,9 +1,7 @@
 # untaped-jira
 
 Install it as part of `untaped`: `uv tool install 'untaped[jira]'` or `pip install 'untaped[jira]'`.
-To add it to an existing install: `uv tool install untaped --with untaped-jira`.
-(`uv tool install untaped-jira` alone does not work: only `untaped` ships the command; see
-[Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md).)
+To add it to an existing install, see [Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install).
 
 `untaped jira` searches, creates, updates, comments on and transitions Jira
 issues, and looks up projects, boards and sprints. It targets Jira Data Center

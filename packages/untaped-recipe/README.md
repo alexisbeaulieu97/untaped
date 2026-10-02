@@ -1,9 +1,7 @@
 # untaped-recipe
 
 Install it as part of `untaped`: `uv tool install 'untaped[recipe]'` or `pip install 'untaped[recipe]'`.
-To add it to an existing install: `uv tool install untaped --with untaped-recipe`.
-(`uv tool install untaped-recipe` alone does not work: only `untaped` ships the command; see
-[Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md).)
+To add it to an existing install, see [Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install).
 
 `untaped recipe` applies the same file changes to many directories: add a
 config file, bump a version in YAML, remove a stale workflow. A *recipe* is a
@@ -14,7 +12,7 @@ backup of every file it touches.
 Recipes work on plain directories and never commit, push or open pull
 requests. No recipe step runs a shell command, but pack hooks are Python
 code that runs on your machine (see [Install and manage
-packs](#install-and-manage-packs)).
+packs](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-recipe/README.md#install-and-manage-packs)).
 
 Recipe verbs sit directly under `untaped recipe`; packs, hooks and backups
 have their own nouns (`recipe packs …`, `recipe hooks …`, `recipe backups …`).

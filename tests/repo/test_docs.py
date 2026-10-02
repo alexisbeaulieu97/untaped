@@ -28,6 +28,7 @@ from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 REGENERATE = "uv run python scripts/gen_config_reference.py"
 
 _LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)\s]+)\)")
+_ANY_LINK = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)\)")
 _FENCE = re.compile(r"^(```|~~~).*?^\1", re.MULTILINE | re.DOTALL)
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*$", re.MULTILINE)
 
@@ -113,10 +114,12 @@ def test_repository_urls_resolve(path: Path) -> None:
 
 
 def test_package_readmes_link_absolutely() -> None:
-    """PyPI cannot resolve a relative link in a package README."""
-    for readme in REPO_ROOT.glob("packages/*/README.md"):
+    """PyPI cannot resolve a relative or in-page link or an image in a package README."""
+    readmes = sorted(REPO_ROOT.glob("packages/*/README.md"))
+    assert len(readmes) == 7
+    for readme in readmes:
         text = re.sub(r"(`+)[^\n]*?\1", "", _FENCE.sub("", readme.read_text(encoding="utf-8")))
-        relative = [t for t in _LINK.findall(text) if "://" not in t and not t.startswith("#")]
+        relative = [t for t in _ANY_LINK.findall(text) if "://" not in t]
         assert relative == [], readme
 
 
