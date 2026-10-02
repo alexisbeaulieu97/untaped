@@ -131,21 +131,32 @@ def cache_origin(cache: Path) -> str | None:
 
 
 def _config_value(raw: str) -> str:
-    """A git config value: quotes removed, escapes decoded, a trailing comment dropped."""
-    out: list[str] = []
+    """A git config value, parsed as git's ``parse_value`` does.
+
+    Quotes are removed and escapes decoded; a comment ends the value. Outside
+    quotes, leading and trailing whitespace is dropped and each inner
+    whitespace character becomes a space.
+    """
+    value = ""
     quoted = False
-    chars = iter(raw.strip())
+    spaces = 0
+    chars = iter(raw)
     for char in chars:
+        if not quoted and char.isspace():
+            spaces += 1 if value else 0
+            continue
+        if not quoted and char in "#;":
+            break
+        value += " " * spaces
+        spaces = 0
         if char == "\\":
             escaped = next(chars, "")
-            out.append(_ESCAPES.get(escaped, escaped))
+            value += _ESCAPES.get(escaped, escaped)
         elif char == '"':
             quoted = not quoted
-        elif char in "#;" and not quoted:
-            break
         else:
-            out.append(char)
-    return "".join(out).strip()
+            value += char
+    return value
 
 
 def scoped_auth_header(url: str, auth_header: str | None, *, host: str | None) -> str | None:

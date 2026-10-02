@@ -279,3 +279,64 @@ def test_the_token_reaches_https_origins_on_the_host_only(
         ("config", None, None),
         ("rev-parse", *(("AUTH", url) if sent else (None, None))),
     ]
+
+
+def _git_origin(bare: Path) -> str:
+    return subprocess.run(
+        ["git", "config", "--get", "remote.origin.url"],
+        cwd=bare,
+        text=True,
+        capture_output=True,
+        check=True,
+    ).stdout.removesuffix("\n")
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        ["https://github.com/acme/app.git"],
+        ["https://h/a#b;c.git"],
+        ['https://h/"quoted".git'],
+        ["C:\\repos\\app.git"],
+        ["  padded\ttab  "],
+        ["https://first/a.git", "https://last/b.git"],
+    ],
+    ids=["plain", "comment-chars", "quotes", "backslashes", "whitespace", "last-wins"],
+)
+def test_cache_origin_reads_what_git_config_reads(tmp_path: Path, values: list[str]) -> None:
+    bare = tmp_path / "app.git"
+    _git(tmp_path, "init", "--bare", "-q", str(bare))
+    for value in values:
+        _git(bare, "config", "--add", "remote.origin.url", value)
+
+    assert cache_origin(bare) == _git_origin(bare) == values[-1]
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("url = a \t b ; comment", "a   b"),
+        ('url = "" x', "x"),
+        ('url=  "  q  "  r  # c', "  q    r"),
+        ("URL = a\\tb", "a\tb"),
+    ],
+    ids=["inner-whitespace", "empty-quotes", "quoted-padding", "escape"],
+)
+def test_cache_origin_parses_hand_written_values_like_git(
+    tmp_path: Path, line: str, expected: str
+) -> None:
+    bare = tmp_path / "app.git"
+    _git(tmp_path, "init", "--bare", "-q", str(bare))
+    with (bare / "config").open("a") as config:
+        config.write(f'[remote "origin"]\n\t{line}\n')
+
+    assert cache_origin(bare) == _git_origin(bare) == expected
+
+
+def test_cache_origin_is_none_without_an_origin_or_a_config(tmp_path: Path) -> None:
+    bare = tmp_path / "app.git"
+    _git(tmp_path, "init", "--bare", "-q", str(bare))
+    _git(bare, "config", "remote.upstream.url", "https://h/a.git")
+
+    assert cache_origin(bare) is None
+    assert cache_origin(tmp_path / "missing.git") is None
