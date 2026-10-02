@@ -19,6 +19,7 @@ from untaped.sdk import (
     UntapedError,
     cache_key,
     cache_origin,
+    cache_path,
     list_caches,
     scoped_auth_header,
 )
@@ -79,6 +80,12 @@ def test_cache_key(url: str, key: tuple[str, ...]) -> None:
 )
 def test_a_url_without_host_or_path_keys_on_a_hash(url: str) -> None:
     assert cache_key(url) == ("_unknown", hashlib.sha256(url.encode()).hexdigest()[:16] + ".git")
+
+
+def test_https_and_ssh_share_one_path(tmp_path: Path) -> None:
+    https = cache_path("https://github.com/acme/app.git", root=tmp_path)
+    ssh = cache_path("git@github.com:acme/app.git", root=tmp_path)
+    assert https == ssh == tmp_path.resolve() / "github.com" / "acme" / "app.git"
 
 
 @pytest.mark.parametrize(
