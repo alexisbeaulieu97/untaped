@@ -75,13 +75,12 @@ checked. A running `untaped` outside that range quarantines the provider.
 Installers normally enforce the range, so this shows up mainly after
 upgrading `untaped` past it. The [changelog](../CHANGELOG.md) says what each
 version added or broke.
-First-party capabilities register exactly this way and get no precedence. On
-a section collision the capability whose name sorts first wins; on a name
-collision the one whose distribution sorts first wins, so a third-party
-provider named `github` from any distribution sorting before `untaped`
-replaces `untaped github`. The other is quarantined with a warning. A
-capability whose settings import another capability's `api` (ansible imports
-github's) is quarantined with it when that import fails.
+First-party capabilities register exactly this way. When two providers claim the
+same capability name or config section, all of them are quarantined and a
+warning names every claimant: no provider can take over another's commands or
+settings, and the result does not depend on install order. Uninstall one to
+restore the other. A capability whose settings import another capability's `api`
+(ansible imports github's) is quarantined with it when that import fails.
 
 ## 2. Settings and the capability app
 

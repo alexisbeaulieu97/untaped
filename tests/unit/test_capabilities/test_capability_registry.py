@@ -158,7 +158,7 @@ def test_failed_provider_registers_nothing() -> None:
     good = make_spec(
         name="good", skills=(make_skill("good-skill"),), checks=(make_check("good.ok"),)
     )
-    bad = make_spec(name="worse", section="good")
+    bad = make_spec(name="worse", section="shell")
     before_profiles = dict(_CONFIG_REGISTRY.profile_sections)
     result = compose(
         make_shell(),
@@ -188,23 +188,84 @@ def test_capabilities_compose_in_name_order_whatever_the_distribution() -> None:
     assert result.quarantine == ()
 
 
-def test_a_duplicate_name_quarantines_the_later_distribution() -> None:
-    first = make_candidate(make_spec(name="github", section="github"), "acme-dist")
-    second = make_candidate(make_spec(name="github", section="github2"), "untaped")
-    result = compose(make_shell(), [second, first])
-    assert [c.provider_ref.distribution for c in result.capabilities] == ["acme-dist"]
-    [record] = result.quarantine
-    assert (record.distribution, record.reason) == ("untaped", "duplicate-name")
-    assert record.detail == "duplicate capability name: 'github' (already provided by 'acme-dist')"
+def _github_rivals() -> list[ProviderCandidate]:
+    return [
+        make_candidate(make_spec(name="github", section="github"), "acme-dist"),
+        make_candidate(make_spec(name="github", section="github2"), "untaped"),
+        make_candidate(make_spec(name="jira", section="jira"), "jira-dist"),
+    ]
 
 
-def test_a_duplicate_section_names_the_distribution_that_owns_it() -> None:
+def test_a_contested_name_quarantines_every_claimant() -> None:
+    result = compose(make_shell(), _github_rivals())
+    assert [c.spec.name for c in result.capabilities] == ["jira"]
+    detail = "duplicate capability name: 'github' (claimed by 'acme-dist', 'untaped')"
+    assert [(q.distribution, q.reason, q.detail) for q in result.quarantine] == [
+        ("acme-dist", "duplicate-name", detail),
+        ("untaped", "duplicate-name", detail),
+    ]
+
+
+def test_a_contested_name_does_not_depend_on_candidate_order() -> None:
+    forward = compose(make_shell(), _github_rivals())
+    backward = compose(make_shell(), list(reversed(_github_rivals())))
+    assert [c.spec.name for c in backward.capabilities] == ["jira"]
+    assert backward.quarantine == forward.quarantine
+
+
+def test_a_contested_section_quarantines_every_claimant() -> None:
     owner = make_candidate(make_spec(name="alpha", section="shared"), "owner-dist")
     late = make_candidate(make_spec(name="beta", section="shared"), "late-dist")
     result = compose(make_shell(), [late, owner])
-    [record] = result.quarantine
-    assert (record.distribution, record.reason) == ("late-dist", "duplicate-section")
-    assert record.detail == "duplicate config section: 'shared' (already provided by 'owner-dist')"
+    assert result.capabilities == ()
+    detail = "duplicate config section: 'shared' (claimed by 'late-dist', 'owner-dist')"
+    assert [(q.name, q.distribution, q.reason, q.detail) for q in result.quarantine] == [
+        ("alpha", "owner-dist", "duplicate-section", detail),
+        ("beta", "late-dist", "duplicate-section", detail),
+    ]
+
+
+def test_three_claimants_are_all_quarantined() -> None:
+    claimants = [
+        make_candidate(make_spec(name="github", section=f"gh{index}"), dist)
+        for index, dist in enumerate(("c-dist", "a-dist", "b-dist"))
+    ]
+    result = compose(make_shell(), claimants)
+    assert result.capabilities == ()
+    assert [(q.distribution, q.reason) for q in result.quarantine] == [
+        ("a-dist", "duplicate-name"),
+        ("b-dist", "duplicate-name"),
+        ("c-dist", "duplicate-name"),
+    ]
+    assert {q.detail for q in result.quarantine} == {
+        "duplicate capability name: 'github' (claimed by 'a-dist', 'b-dist', 'c-dist')"
+    }
+
+
+def test_a_claimant_of_a_contested_name_and_section_gets_one_name_record() -> None:
+    first = make_candidate(make_spec(name="github", section="shared"), "a-dist")
+    second = make_candidate(make_spec(name="github", section="github"), "b-dist")
+    third = make_candidate(make_spec(name="other", section="shared"), "c-dist")
+    result = compose(make_shell(), [third, second, first])
+    assert result.capabilities == ()
+    assert [(q.name, q.distribution, q.reason) for q in result.quarantine] == [
+        ("github", "a-dist", "duplicate-name"),
+        ("github", "b-dist", "duplicate-name"),
+        ("other", "c-dist", "duplicate-section"),
+    ]
+    assert result.quarantine[2].detail == (
+        "duplicate config section: 'shared' (claimed by 'a-dist', 'c-dist')"
+    )
+
+
+def test_a_candidate_failing_its_own_checks_is_not_a_claimant() -> None:
+    broken = make_candidate(make_spec(name="github"), "a-dist", error=ImportError("no"))
+    sound = make_candidate(make_spec(name="github"), "b-dist")
+    result = compose(make_shell(), [broken, sound])
+    assert [c.provider_ref.distribution for c in result.capabilities] == ["b-dist"]
+    assert [(q.distribution, q.reason) for q in result.quarantine] == [
+        ("a-dist", "malformed-entry-point")
+    ]
 
 
 @pytest.mark.parametrize("bad_help", ["", "   ", "two\nlines", 42])

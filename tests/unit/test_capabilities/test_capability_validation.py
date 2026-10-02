@@ -39,6 +39,10 @@ class TokenState(BaseModel):
     token: str = ""
 
 
+class EndpointState(BaseModel):
+    endpoint: str = ""
+
+
 def broken_asset(name: str = "", description: str = "d") -> SkillAsset:
     asset = object.__new__(SkillAsset)
     object.__setattr__(asset, "name", name)
@@ -185,27 +189,6 @@ def test_invalid_spec_is_quarantined(
 # (first spec, colliding spec, reason, text the error/detail must name)
 COLLISION_ROWS: list[tuple[str, Callable[[], tuple[CapabilitySpec, CapabilitySpec]], str, str]] = [
     (
-        "name",
-        lambda: (make_spec(name="taken"), make_spec(name="taken", profile=OtherProfile)),
-        "duplicate-name",
-        "'taken'",
-    ),
-    (
-        "section",
-        lambda: (make_spec(name="a", section="shared"), make_spec(name="b", section="shared")),
-        "duplicate-section",
-        "'shared'",
-    ),
-    (
-        "state-shadow",
-        lambda: (
-            make_spec(name="first", section="data", profile=TokenProfile),
-            make_spec(name="second", section="data", profile=OtherProfile, state=TokenState),
-        ),
-        "state-shadow",
-        "'data'",
-    ),
-    (
         "skill",
         lambda: (
             make_spec(name="a", skills=(make_skill("shared"),)),
@@ -262,6 +245,12 @@ def test_collision_with_an_earlier_capability_is_quarantined(
             "duplicate config section: 'shell' (already provided by the shell)",
         ),
         (
+            make_shell(),
+            make_spec(name="shadow", section="shell", state=EndpointState),
+            "state-shadow",
+            "state fields shadow profile fields of section 'shell': endpoint",
+        ),
+        (
             make_shell(skills=(make_skill("shell-skill"),)),
             make_spec(name="s", skills=(make_skill("shell-skill"),)),
             "duplicate-skill",
@@ -274,7 +263,7 @@ def test_collision_with_an_earlier_capability_is_quarantined(
             "duplicate doctor id: 'shell.health'",
         ),
     ],
-    ids=["name", "section", "skill", "doctor-id"],
+    ids=["name", "section", "state-shadow", "skill", "doctor-id"],
 )
 def test_collision_with_the_shell_quarantines(
     shell: Any, spec: CapabilitySpec, reason: str, detail: str
