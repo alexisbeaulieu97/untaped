@@ -1,9 +1,7 @@
 # untaped-awx
 
 Install it as part of `untaped`: `uv tool install 'untaped[awx]'` or `pip install 'untaped[awx]'`.
-To add it to an existing install: `uv tool install untaped --with untaped-awx`.
-(`uv tool install untaped-awx` alone does not work: only `untaped` ships the command; see
-[Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md).)
+To add it to an existing install, see [Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install).
 
 `untaped awx ...` reads and changes Ansible Automation Platform (AAP) or AWX
 resources by name, launches and follows jobs, and tests playbook changes with

@@ -10,10 +10,15 @@ untaped --version
 untaped --help
 ```
 
-Extras combine (`'untaped[awx,github]'`). Only the `untaped` package ships
-the command, so `uv tool install untaped-<name>` does not work: uv finds no
-executable in a capability package. In an environment you manage,
-`pip install 'untaped[<name>]'` works the same way.
+Extras combine (`'untaped[awx,github]'`). Add a third-party tool with
+`uv tool install untaped --with <tool>`. Re-running `uv tool install`
+restates the whole set and replaces the old one, so list every extra and
+`--with` you want, for example
+`uv tool install 'untaped[github,awx]' --with acme-untaped`. Only the
+`untaped` package ships the command, so `uv tool install untaped-<name>` does
+not work: uv finds no executable in a capability package. In an environment
+you manage, `pip install 'untaped[<name>]'` or `pip install <tool>` adds to
+the same environment.
 
 `untaped --install-completion` adds shell completion.
 

@@ -1,9 +1,7 @@
 # untaped-github
 
 Install it as part of `untaped`: `uv tool install 'untaped[github]'` or `pip install 'untaped[github]'`.
-To add it to an existing install: `uv tool install untaped --with untaped-github`.
-(`uv tool install untaped-github` alone does not work: only `untaped` ships the command; see
-[Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md).)
+To add it to an existing install, see [Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install).
 
 `untaped github` lists repository inventory, searches GitHub, and sweeps
 many repositories for content with local `git grep`. Sweeps run over a local

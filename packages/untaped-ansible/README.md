@@ -1,9 +1,7 @@
 # untaped-ansible
 
 Install it as part of `untaped`: `uv tool install 'untaped[ansible]'` or `pip install 'untaped[ansible]'`.
-To add it to an existing install: `uv tool install untaped --with untaped-ansible`.
-(`uv tool install untaped-ansible` alone does not work: only `untaped` ships the command; see
-[Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md).)
+To add it to an existing install, see [Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install).
 
 `untaped ansible` answers questions about how Ansible roles and projects
 depend on each other through their requirements files:
