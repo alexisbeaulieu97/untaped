@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 from filelock import FileLock
 
+from tests.conftest import GitCall
 from untaped.capabilities.github.domain import (
     CorpusFreshness,
     CorpusRepoResult,
@@ -25,10 +26,11 @@ from untaped.capabilities.github.domain import (
 )
 from untaped.capabilities.github.domain.errors import GitCorpusError
 from untaped.capabilities.github.infrastructure.git_corpus import GitCorpusCache
-from untaped.sdk import GitResult, safe_cache_path
+from untaped.sdk import cache_path
 
 Git = Callable[..., str]
 Commit = Callable[..., None]
+Rewrite = Callable[..., None]
 
 
 @dataclass
@@ -47,7 +49,7 @@ class _Corpus:
 
     @property
     def bare(self) -> Path:
-        return safe_cache_path(self.source.as_uri(), root=self.root)
+        return cache_path(self.source.as_uri(), root=self.root)
 
     def sync(self, selector: RefSelector | None = None, **kwargs: Any) -> CorpusRepoResult:
         return self.cache.sync_repo(
@@ -559,21 +561,17 @@ def test_authenticated_sync_requires_an_https_remote(corpus: Callable[..., _Corp
         env.sync(repo=ssh, auth_header="AUTHORIZATION: basic secret")
 
 
-def test_ensure_origin_does_not_send_auth_header_to_local_commands(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_cache_setup_carries_no_token(
+    tmp_path: Path,
+    corpus: Callable[..., _Corpus],
+    rewrite_to: Rewrite,
+    spy_run_git: list[GitCall],
 ) -> None:
-    # Security: only network commands (fetch, ls-remote) may carry the token.
+    # Security: setting up the cache and its origin never carries the token.
     url = "https://github.example.com/acme/api.git"
     root = tmp_path / "corpus"
-    safe_cache_path(url, root=root).mkdir(parents=True)
+    rewrite_to(corpus({"README.md": "hello\n"}).source, url)
     cache = GitCorpusCache(auth_host="github.example.com")
-    seen: list[tuple[str, str | None]] = []
-
-    def fake_run(args: list[str], **kwargs: Any) -> GitResult:
-        seen.append((" ".join(args[:2]), kwargs.get("auth_header")))
-        return GitResult(returncode=0, stdout=b"", stderr="")
-
-    monkeypatch.setattr(cache, "_run", fake_run)
 
     cache.sync_repo(
         CorpusRepoTarget(full_name="acme/api", clone_url=url, default_branch="main"),
@@ -583,8 +581,9 @@ def test_ensure_origin_does_not_send_auth_header_to_local_commands(
         auth_header="AUTHORIZATION: basic secret",
     )
 
-    assert [auth for command, auth in seen if command.startswith("remote ")] == [None, None]
-    assert any(auth is not None for command, auth in seen if command.startswith("fetch"))
+    seen = spy_run_git
+    assert [auth for command, auth, _ in seen if command in {"init", "config"}] == [None, None]
+    assert any(auth is not None for command, auth, _ in seen if command == "fetch")
 
 
 @pytest.mark.parametrize(
@@ -601,18 +600,17 @@ def test_ensure_origin_does_not_send_auth_header_to_local_commands(
     ids=["github", "port-and-case", "enterprise", "other", "suffix", "userinfo", "no-host"],
 )
 def test_sync_sends_the_token_only_to_the_github_git_host(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, url: str, auth_host: str | None, sent: bool
+    tmp_path: Path,
+    corpus: Callable[..., _Corpus],
+    rewrite_to: Rewrite,
+    spy_run_git: list[GitCall],
+    url: str,
+    auth_host: str | None,
+    sent: bool,
 ) -> None:
     # Security: a piped clone_url on another host must not receive the token.
+    rewrite_to(corpus({"README.md": "hello\n"}).source, url)
     cache = GitCorpusCache(auth_host=auth_host)
-    network: list[str | None] = []
-
-    def fake_run(args: list[str], **kwargs: Any) -> GitResult:
-        if args[0] in {"fetch", "ls-remote"}:
-            network.append(kwargs.get("auth_header"))
-        return GitResult(returncode=0, stdout=b"", stderr="")
-
-    monkeypatch.setattr(cache, "_run", fake_run)
 
     cache.sync_repo(
         CorpusRepoTarget(full_name="acme/api", clone_url=url, default_branch="main"),
@@ -622,6 +620,7 @@ def test_sync_sends_the_token_only_to_the_github_git_host(
         auth_header="AUTHORIZATION: basic secret",
     )
 
+    network = [auth for command, auth, _ in spy_run_git if command in {"fetch", "ls-remote"}]
     assert network
     assert all((auth is not None) is sent for auth in network)
 
@@ -659,10 +658,10 @@ def test_writers_wait_for_the_repo_lock_and_time_out(corpus: Callable[..., _Corp
     env = corpus({"README.md": "hello\n"}, lock_timeout=0.05)
     env.sync()
 
-    with FileLock(str(env.bare / "untaped.lock")):
-        with pytest.raises(GitCorpusError, match="locked by another untaped process"):
+    with FileLock(f"{env.bare}.lock"):
+        with pytest.raises(GitCorpusError, match="repo cache is busy"):
             env.sync()
-        with pytest.raises(GitCorpusError, match="locked by another untaped process"):
+        with pytest.raises(GitCorpusError, match="repo cache is busy"):
             env.cache.touch_repo(env.repo, root=env.root)
 
     assert env.sync().status == "synced"
@@ -672,12 +671,162 @@ def test_writers_wait_for_the_repo_lock_and_time_out(corpus: Callable[..., _Corp
 def test_an_unlockable_repo_is_a_corpus_error(corpus: Callable[..., _Corpus]) -> None:
     env = corpus({"README.md": "hello\n"})
     env.sync()
-    (env.bare / "untaped.lock").unlink(missing_ok=True)
-    env.bare.chmod(0o555)  # a read-only shared corpus: no lock file can be created
+    Path(f"{env.bare}.lock").unlink(missing_ok=True)
+    env.bare.parent.chmod(0o555)  # a read-only shared corpus: no lock file can be created
     try:
         with pytest.raises(
-            GitCorpusError, match=r"^could not lock corpus repo .+: Permission denied$"
+            GitCorpusError, match=r"^could not lock repo cache .+: Permission denied$"
         ):
             env.sync()
     finally:
-        env.bare.chmod(0o755)
+        env.bare.parent.chmod(0o755)
+
+
+def test_https_and_ssh_forms_of_one_repo_share_the_cache(
+    corpus: Callable[..., _Corpus], rewrite_to: Rewrite
+) -> None:
+    """The cache key ignores the URL form: sync over https, look up over ssh."""
+    env = corpus({"README.md": "hello\n"})
+    https, ssh = "https://github.com/acme/app.git", "git@github.com:acme/app.git"
+    rewrite_to(env.source, https)
+    target = CorpusRepoTarget(full_name="acme/app", clone_url=https, default_branch="main")
+
+    synced = env.cache.sync_repo(
+        target, root=env.root, selector=RefSelector(), depth=1, auth_header=None
+    )
+
+    expected = (env.root / "github.com" / "acme" / "app.git").resolve()
+    assert synced.path == str(expected)
+    assert env.cache.repo_freshness(replace(target, clone_url=ssh), root=env.root) is not None
+
+
+def test_a_repo_named_with_a_leading_dot_is_listed(
+    corpus: Callable[..., _Corpus], rewrite_to: Rewrite
+) -> None:
+    env = corpus({"README.md": "hello\n"})
+    url = "https://github.com/acme/.github.git"
+    rewrite_to(env.source, url)
+    target = CorpusRepoTarget(full_name="acme/.github", clone_url=url, default_branch="main")
+    synced = env.cache.sync_repo(
+        target, root=env.root, selector=RefSelector(), depth=1, auth_header=None
+    )
+
+    [row] = env.cache.list_repos(root=env.root)
+
+    assert (row.repo, row.path) == ("acme/.github", synced.path)
+
+
+def test_an_old_layout_cache_is_not_listed(corpus: Callable[..., _Corpus]) -> None:
+    # 9.x keyed caches as <host>/<name>-<hash>.git; its metadata is still valid.
+    env = corpus({"README.md": "hello\n"})
+    synced = env.sync()
+    old = env.root / "github.com" / "app-0123abcd.git"
+    old.mkdir(parents=True)
+    (old / "untaped-corpus.json").write_text(
+        '{"repo": "acme/app", "ref": "main", '
+        '"clone_url": "https://github.com/acme/app.git", '
+        '"fetched_at": "2026-07-06T12:00:00+00:00"}\n'
+    )
+
+    [row] = env.cache.list_repos(root=env.root)
+
+    assert (row.repo, row.path) == ("acme/api", synced.path)
+    assert env.cache.get_repo(root=env.root, repo="acme/app") is None
+
+
+def test_status_ignores_materialized_worktrees(corpus: Callable[..., _Corpus]) -> None:
+    # A checkout holding a cache-like dir whose metadata is canonical (its path
+    # is ``cache_path`` of its clone_url) must not list it: only the skip hides it.
+    env = corpus({"README.md": "hello\n"})
+    env.sync()
+    worktree = env.cache.materialize_worktree(env.repo, root=env.root, ref=None)
+    rel = Path(worktree.path).resolve().relative_to(env.root.resolve())
+    clone_url = f"https://{'/'.join(rel.parts)}/vendor/x.git"
+    vendored = cache_path(clone_url, root=env.root)
+    assert vendored == Path(worktree.path).resolve() / "vendor" / "x.git"
+    vendored.mkdir(parents=True)
+    (vendored / "untaped-corpus.json").write_text(
+        f'{{"repo": "acme/vendored", "ref": "main", "clone_url": "{clone_url}", '
+        '"fetched_at": "2026-07-06T12:00:00+00:00"}\n'
+    )
+
+    [row] = env.cache.list_repos(root=env.root)
+
+    assert (row.repo, row.path) == ("acme/api", str(env.bare))
+
+
+def test_clean_repo_removes_the_cache_and_keeps_its_lock_file(
+    corpus: Callable[..., _Corpus],
+) -> None:
+    """The empty lock file stays: unlinking it could let two lockers run at once."""
+    env = corpus({"README.md": "hello\n"})
+    env.sync()
+    [listed] = env.cache.list_repos(root=env.root)
+
+    env.cache.clean_repo(root=env.root, repo=listed)
+
+    assert not env.bare.exists()
+    assert Path(f"{env.bare}.lock").is_file()
+    assert env.cache.list_repos(root=env.root) == ()
+
+
+def test_clean_repo_of_an_already_removed_cache_succeeds(
+    corpus: Callable[..., _Corpus],
+) -> None:
+    """A concurrent delete or a stale piped row: the second clean still reports removed."""
+    env = corpus({"README.md": "hello\n"})
+    env.sync()
+    [listed] = env.cache.list_repos(root=env.root)
+
+    first = env.cache.clean_repo(root=env.root, repo=listed)
+    second = env.cache.clean_repo(root=env.root, repo=listed)
+
+    assert first == second == listed.model_copy(update={"status": "removed"})
+    assert not env.bare.exists()
+
+
+def test_a_symlinked_root_lists_the_path_it_synced(
+    tmp_path: Path, corpus: Callable[..., _Corpus]
+) -> None:
+    env = corpus({"README.md": "hello\n"})
+    link = tmp_path / "linked-corpus"
+    env.root.mkdir()
+    link.symlink_to(env.root)
+    env = replace(env, root=link)
+
+    synced = env.sync()
+    [row] = env.cache.list_repos(root=link)
+
+    assert row.path == synced.path == str(env.bare)
+
+
+@pytest.mark.parametrize(
+    ("url", "auth_host", "sent"),
+    [
+        ("https://github.com/acme/api.git", "github.com", True),
+        ("https://evil.example/acme/api.git", "github.com", False),
+    ],
+    ids=["github", "other"],
+)
+def test_a_wide_sync_scopes_the_token_on_ls_remote(
+    tmp_path: Path,
+    corpus: Callable[..., _Corpus],
+    rewrite_to: Rewrite,
+    spy_run_git: list[GitCall],
+    url: str,
+    auth_host: str,
+    sent: bool,
+) -> None:
+    rewrite_to(corpus({"README.md": "hello\n"}).source, url)
+    cache = GitCorpusCache(auth_host=auth_host)
+
+    cache.sync_repo(
+        CorpusRepoTarget(full_name="acme/api", clone_url=url, default_branch="main"),
+        root=tmp_path / "corpus",
+        selector=RefSelector(profile="all"),
+        depth=1,
+        auth_header="AUTHORIZATION: basic secret",
+    )
+
+    listed = [auth for command, auth, _ in spy_run_git if command == "ls-remote"]
+    assert listed == ["AUTHORIZATION: basic secret" if sent else None]

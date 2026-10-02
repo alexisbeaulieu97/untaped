@@ -99,7 +99,7 @@ def refresh_source(
             if github_settings.token is not None
             else ""
         )
-        git = GitRepositoryCache()
+        git = GitRepositoryCache(auth_host=github_web_host(github_settings.base_url))
         selected_backend = backend or settings.source_refresh_backend
         auth_header = git_auth_header(token) if token else None
         graphql_probe = GithubRefProbe(github, concurrency=settings.probe_concurrency)

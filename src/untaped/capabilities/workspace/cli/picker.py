@@ -24,7 +24,6 @@ from untaped.capabilities.workspace.domain.models import RepoArg, WorkspaceRecor
 from untaped.capabilities.workspace.domain.naming import (
     branch_for,
     looks_like_url,
-    repo_key,
     validate_workspace_name,
 )
 from untaped.capabilities.workspace.infrastructure.pick_source import RepoPickSource
@@ -38,6 +37,7 @@ from untaped.sdk import (
     UiContext,
     UntapedError,
     UsageError,
+    cache_key,
     q,
 )
 
@@ -187,7 +187,7 @@ def _pick(
         heading = f"Add to {record.name}"
         template = branch_for(settings.branch_template, record.name)
         title, title_label, fixed_name = "", "", record.name
-        exclude = {repo_key(spec.url) for spec in record.repos}
+        exclude = {cache_key(spec.url) for spec in record.repos}
     source = RepoPickSource(git=git_worktrees(settings), exclude=exclude)
     request = build_request(
         heading=heading,

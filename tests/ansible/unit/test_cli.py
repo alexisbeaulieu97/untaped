@@ -350,6 +350,9 @@ class _SeedGitCache:
 
     files: ClassVar[dict[str, str]] = {}
 
+    def __init__(self, *, auth_host: str | None) -> None:
+        assert auth_host == "github.com"
+
     def ensure_bare(self, url: str, *, cache_dir: Path, auth_header: str | None) -> Path:
         return cache_dir / url.removesuffix(".git").rsplit("/", maxsplit=1)[-1]
 

@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from urllib.parse import urlparse
 
 from untaped.capabilities.ansible.errors import GitCacheError as GitCacheError
 from untaped.sdk import (
     GitCommandError,
-    GitResult,
+    RepoCache,
     attribution,
+    cache_path,
     git_toplevel,
     run_git,
-    safe_cache_path,
+    scoped_auth_header,
 )
 
 DEFAULT_TIMEOUT = 60.0
@@ -27,14 +27,33 @@ class GitRepositoryCache:
     def __init__(
         self,
         *,
+        auth_host: str | None,
         git: str = "git",
         timeout: float = DEFAULT_TIMEOUT,
         slow_timeout: float = DEFAULT_SLOW_TIMEOUT,
+        lock_timeout: float = 600.0,
     ) -> None:
+        self._auth_host = auth_host
         self._git = git
         self._timeout = timeout
         self._slow_timeout = slow_timeout
-        self._origins: dict[Path, str] = {}
+        self._lock_timeout = lock_timeout
+        # The url each ``ensure_bare`` set, so ``fetch_refs`` re-points a cache
+        # that another process (the other url form of a shared cache) changed.
+        self._urls: dict[Path, str] = {}
+
+    def _cache(self, path: Path, auth_header: str | None) -> RepoCache:
+        # A handle per call: the token may differ, and the origin is re-read.
+        return RepoCache(
+            path,
+            error=GitCacheError,
+            auth_header=auth_header,
+            auth_host=self._auth_host,
+            git=self._git,
+            timeout=self._timeout,
+            slow_timeout=self._slow_timeout,
+            lock_timeout=self._lock_timeout,
+        )
 
     def ensure_bare(
         self,
@@ -44,35 +63,11 @@ class GitRepositoryCache:
         auth_header: str | None,
     ) -> Path:
         """Ensure a bare repository cache exists for ``url``."""
-        bare = safe_cache_path(url, root=cache_dir)
-        if not (bare / "HEAD").is_file():
-            bare.parent.mkdir(parents=True, exist_ok=True)
-            self._run(["init", "--bare", str(bare)], timeout=self._slow_timeout)
-        self._ensure_origin(bare, url)
-        return bare
-
-    def _ensure_origin(self, bare: Path, url: str) -> None:
-        # Purely local commands: the auth header is never needed here.
-        current_url = self._run(
-            ["remote", "get-url", "origin"], cwd=bare, capture=True, check=False
-        ).strip()
-        if not current_url:
-            self._run(["remote", "add", "origin", url], cwd=bare)
-        elif current_url != url:
-            self._run(["remote", "set-url", "origin", url], cwd=bare)
-        self._origins[bare] = url
-
-    def _origin_auth(self, bare: Path, auth_header: str | None) -> tuple[str | None, str | None]:
-        if auth_header is None:
-            return None, None
-        return _scoped_auth(auth_header, self._origin_url(bare))
-
-    def _origin_url(self, bare: Path) -> str:
-        if bare not in self._origins:
-            self._origins[bare] = self._run(
-                ["remote", "get-url", "origin"], cwd=bare, capture=True, check=False
-            ).strip()
-        return self._origins[bare]
+        cache = self._cache(cache_path(url, root=cache_dir), auth_header)
+        with cache.locked():
+            cache.ensure(url)
+        self._urls[cache.path] = url
+        return cache.path
 
     def fetch_refs(
         self,
@@ -83,23 +78,20 @@ class GitRepositoryCache:
         blob_filter: bool,
         auth_header: str | None,
     ) -> None:
-        """Fetch selected refs into a bare cache."""
+        """Fetch selected refs into a bare cache.
+
+        When ``ensure_bare`` set this cache's url, it is re-applied under the
+        same lock as the fetch: https and ssh share a cache, so a concurrent
+        refresh may have repointed ``origin`` in between.
+        """
         if not refspecs:
             return
-        args = ["fetch", "--prune", "origin"]
-        if depth > 0:
-            args.append(f"--depth={depth}")
-        if blob_filter:
-            args.append("--filter=blob:none")
-        args.extend(refspecs)
-        header, auth_url = self._origin_auth(bare_path, auth_header)
-        self._run(
-            args,
-            cwd=bare_path,
-            timeout=self._slow_timeout,
-            auth_header=header,
-            auth_url=auth_url,
-        )
+        cache = self._cache(bare_path, auth_header)
+        url = self._urls.get(bare_path)
+        with cache.locked():
+            if url is not None:
+                cache.ensure(url)
+            cache.fetch(refspecs, depth=depth, filter="blob:none" if blob_filter else None)
 
     def ls_remote(
         self,
@@ -109,13 +101,19 @@ class GitRepositoryCache:
         auth_header: str | None,
     ) -> str:
         """Run ``git ls-remote --symref`` without requiring a local repository."""
-        header, auth_url = _scoped_auth(auth_header, url)
-        return self._run(
-            ["ls-remote", "--symref", url, *patterns],
-            capture=True,
-            auth_header=header,
-            auth_url=auth_url,
-        )
+        header = scoped_auth_header(url, auth_header, host=self._auth_host)
+        try:
+            result = run_git(
+                ["ls-remote", "--symref", url, *patterns],
+                git=self._git,
+                timeout=self._timeout,
+                capture=True,
+                auth_header=header,
+                auth_url=url if header is not None else None,
+            )
+        except GitCommandError as exc:
+            raise GitCacheError(str(exc), **attribution(exc)) from exc
+        return result.text
 
     def read_files(
         self,
@@ -135,11 +133,8 @@ class GitRepositoryCache:
         wanted = list(dict.fromkeys(paths))
         if not wanted:
             return {}
-        listing = self._run(
-            ["ls-tree", "-z", sha, "--", *wanted],
-            cwd=bare_path,
-            capture=True,
-        )
+        cache = self._cache(bare_path, auth_header)
+        listing = cache.run(["ls-tree", "-z", sha, "--", *wanted], capture=True).text
         blob_by_path: dict[str, str] = {}
         for entry in listing.split("\0"):
             meta, separator, entry_path = entry.partition("\t")
@@ -150,91 +145,14 @@ class GitRepositoryCache:
             return {}
         blob_ids = list(dict.fromkeys(blob_by_path.values()))
         # Blob-filtered caches fetch missing blobs lazily from origin.
-        header, auth_url = self._origin_auth(bare_path, auth_header)
-        output = self._run_bytes(
+        result = cache.run(
             ["cat-file", "--batch"],
-            cwd=bare_path,
-            stdin_data="".join(f"{blob}\n" for blob in blob_ids).encode(),
-            auth_header=header,
-            auth_url=auth_url,
+            capture=True,
+            stdin="".join(f"{blob}\n" for blob in blob_ids).encode(),
             timeout=self._timeout + PER_FILE_READ_TIMEOUT * len(blob_ids),
         )
-        contents = _parse_cat_file_batch(output, blob_ids)
+        contents = _parse_cat_file_batch(result.stdout, blob_ids)
         return {path: contents[blob] for path, blob in blob_by_path.items()}
-
-    def _run(
-        self,
-        args: list[str],
-        *,
-        cwd: Path | None = None,
-        capture: bool = False,
-        check: bool = True,
-        timeout: float | None = None,
-        auth_header: str | None = None,
-        auth_url: str | None = None,
-    ) -> str:
-        result = self._exec(
-            args,
-            cwd=cwd,
-            timeout=timeout,
-            auth_header=auth_header,
-            auth_url=auth_url,
-            check=check,
-        )
-        return result.text if capture else ""
-
-    def _run_bytes(
-        self,
-        args: list[str],
-        *,
-        cwd: Path,
-        stdin_data: bytes,
-        auth_header: str | None = None,
-        auth_url: str | None = None,
-        timeout: float | None = None,
-    ) -> bytes:
-        return self._exec(
-            args,
-            cwd=cwd,
-            timeout=timeout,
-            auth_header=auth_header,
-            auth_url=auth_url,
-            stdin_data=stdin_data,
-        ).stdout
-
-    def _exec(
-        self,
-        args: list[str],
-        *,
-        cwd: Path | None,
-        timeout: float | None,
-        auth_header: str | None,
-        auth_url: str | None = None,
-        stdin_data: bytes | None = None,
-        check: bool = True,
-    ) -> GitResult:
-        try:
-            return run_git(
-                args,
-                cwd=cwd,
-                git=self._git,
-                timeout=self._timeout if timeout is None else timeout,
-                capture=True,
-                stdin=stdin_data,
-                check=check,
-                auth_header=auth_header,
-                auth_url=auth_url,
-            )
-        except GitCommandError as exc:
-            raise GitCacheError(str(exc), **attribution(exc)) from exc
-
-
-def _scoped_auth(auth_header: str | None, url: str) -> tuple[str | None, str | None]:
-    """Send the token only to the repository's own HTTPS origin, never elsewhere."""
-    parsed = urlparse(url)
-    if auth_header is None or parsed.scheme != "https" or not parsed.netloc:
-        return None, None
-    return auth_header, url
 
 
 def local_remote_url(
