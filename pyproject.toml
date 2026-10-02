@@ -20,8 +20,8 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py314"
-# Each package's src/ holds first-party code (import sorting).
-src = [".", "packages/*/src"]
+# First-party code for import sorting: each package's src/ and the test packages.
+src = [".", "packages/*/src", "packages/*/tests", "tests"]
 
 [tool.ruff.lint]
 select = [

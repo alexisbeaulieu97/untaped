@@ -17,15 +17,15 @@ from pathlib import Path
 
 import pytest
 from cyclopts import App
-from test_capabilities.capharness import make_shell
 
+from repo.support import FIRST_PARTY
+from test_capabilities.capharness import make_shell
 from untaped import bootstrap
 from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate, ProviderRef, compose
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, provider_candidate
 
 CORE = Path(__file__).resolve().parents[2] / "packages" / "untaped"
-FIRST_PARTY = ("ansible", "awx", "github", "jira", "recipe", "workspace")
 
 
 @pytest.fixture(scope="module")

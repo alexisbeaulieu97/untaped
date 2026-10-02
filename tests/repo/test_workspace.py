@@ -7,6 +7,9 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
+from typing import Any
+
+from repo.support import FIRST_PARTY
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = REPO_ROOT / "packages"
@@ -17,6 +20,10 @@ def _members() -> list[str]:
     return sorted(p.parent.name for p in PACKAGES.glob("*/pyproject.toml"))
 
 
+def _root_config() -> dict[str, Any]:
+    return tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
+
+
 def test_members_are_the_expected_packages_each_with_tests() -> None:
     assert _members() == EXPECTED_MEMBERS
     for name in EXPECTED_MEMBERS:
@@ -24,12 +31,20 @@ def test_members_are_the_expected_packages_each_with_tests() -> None:
 
 
 def test_root_config_lists_every_package() -> None:
-    config = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
+    config = _root_config()
     src = sorted(f"packages/{name}/src" for name in _members())
     tests = sorted(f"packages/{name}/tests" for name in _members())
+    distributions = {
+        tomllib.loads((PACKAGES / name / "pyproject.toml").read_text())["project"]["name"]
+        for name in _members()
+    }
+    assert set(config["tool"]["uv"]["sources"]) == distributions
     assert sorted(config["tool"]["coverage"]["run"]["source"]) == src
     assert sorted(config["tool"]["mypy"]["files"]) == sorted([*src, "scripts/release.py"])
-    assert sorted(config["tool"]["pytest"]["ini_options"]["testpaths"]) == sorted([*tests, "tests"])
+    assert sorted(config["tool"]["mypy"]["mypy_path"]) == src
+    pytest_options = config["tool"]["pytest"]["ini_options"]
+    assert sorted(pytest_options["testpaths"]) == sorted([*tests, "tests"])
+    assert {*tests, "scripts"} <= set(pytest_options["pythonpath"])
 
 
 def test_test_package_names_are_unique_and_never_tests() -> None:
@@ -45,6 +60,7 @@ def test_test_package_names_are_unique_and_never_tests() -> None:
 
 def test_two_packages_tests_with_one_basename_both_run(tmp_path: Path) -> None:
     """Importlib mode keeps same-named test modules of different packages apart."""
+    assert "--import-mode=importlib" in _root_config()["tool"]["pytest"]["ini_options"]["addopts"]
     for pkg, value in (("alpha", 1), ("beta", 2)):
         unit = tmp_path / f"packages/{pkg}/tests/{pkg}/unit"
         unit.mkdir(parents=True)
@@ -85,4 +101,4 @@ def test_the_installed_untaped_lists_every_first_party_capability() -> None:
     )
     assert listed.returncode == 0, listed.stderr
     names = [row["name"] for row in json.loads(listed.stdout)]
-    assert names == ["ansible", "awx", "github", "jira", "recipe", "workspace"]
+    assert names == list(FIRST_PARTY)
