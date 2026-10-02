@@ -248,26 +248,34 @@ def test_a_held_lock_makes_a_second_holder_fail_busy(tmp_path: Path) -> None:
     assert (tmp_path / "app.git.lock").exists()
 
 
+@pytest.mark.parametrize(
+    ("url", "sent"),
+    [
+        ("https://github.com/acme/app.git", True),
+        ("https://gitlab.example/acme/app.git", False),
+        ("git@github.com:acme/app.git", False),
+    ],
+    ids=["on-host", "off-host", "ssh"],
+)
 def test_the_token_reaches_https_origins_on_the_host_only(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, url: str, sent: bool
 ) -> None:
-    seen: list[tuple[str | None, str | None]] = []
+    seen: list[tuple[str, str | None, str | None]] = []
     real: Callable[..., GitResult] = repo_cache_module.run_git
 
     def spy(args: Any, **kwargs: Any) -> GitResult:
-        seen.append((kwargs.get("auth_header"), kwargs.get("auth_url")))
+        seen.append((args[0], kwargs.get("auth_header"), kwargs.get("auth_url")))
         return real(args, **kwargs)
 
     monkeypatch.setattr(repo_cache_module, "run_git", spy)
-    on_host = RepoCache(
+    cache = RepoCache(
         tmp_path / "a.git", error=_CacheError, auth_header="AUTH", auth_host="github.com"
     )
-    on_host.ensure("https://github.com/acme/app.git")
-    on_host.run(["rev-parse", "--git-dir"])
-    off_host = RepoCache(
-        tmp_path / "b.git", error=_CacheError, auth_header="AUTH", auth_host="github.com"
-    )
-    off_host.ensure("https://gitlab.example/acme/app.git")
-    off_host.run(["rev-parse", "--git-dir"])
-    assert seen[-1] == (None, None)
-    assert ("AUTH", "https://github.com/acme/app.git") in seen
+    cache.ensure(url)
+    cache.run(["rev-parse", "--git-dir"])
+    # Setting up the cache never carries the token; later calls do, on the host only.
+    assert seen == [
+        ("init", None, None),
+        ("config", None, None),
+        ("rev-parse", *(("AUTH", url) if sent else (None, None))),
+    ]
