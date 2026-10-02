@@ -18,9 +18,9 @@ if TYPE_CHECKING:
 HOOK_API_VERSION = "0.10.0"
 
 _DOTTED_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$")
-# ``untaped-recipe`` is the distribution name the recipe engine shipped under
-# before it became a built-in capability; a hook project that still lists it
-# (or ``untaped``) as a runtime dependency would pull the CLI into the pack env.
+# ``untaped-recipe`` is the recipe engine's distribution (``untaped[recipe]``
+# pulls it in); a hook project that lists it, or ``untaped``, as a runtime
+# dependency would pull the CLI into the pack env. Both belong in the dev group.
 _FORBIDDEN_RUNTIME_DEPENDENCIES = frozenset({"untaped", "untaped-recipe"})
 HookKind = Literal["transform", "validate"]
 
@@ -50,13 +50,14 @@ def ensure_hook_supports(exports: frozenset[str], hook: str, *, verb: str) -> No
 
 
 def untaped_dev_requirement(untaped_version: str) -> str:
-    """Return the dev-only ``untaped`` requirement for an installed ``untaped`` version.
+    """Return the dev-only ``untaped[recipe]`` requirement for an installed ``untaped`` version.
 
-    Packs depend on the CLI only for editor/type discovery, so the range
+    Packs depend on the CLI only for editor/type discovery (stubs import
+    ``untaped_recipe``, hence the extra), so the range
     starts at the running release and stays within its major version.
     """
     version = Version(untaped_version)
-    return f"untaped>={version.public},<{version.major + 1}"
+    return f"untaped[recipe]>={version.public},<{version.major + 1}"
 
 
 def validate_hook_project_contract(

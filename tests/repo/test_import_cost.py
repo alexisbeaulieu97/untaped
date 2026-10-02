@@ -86,7 +86,9 @@ def test_capability_help_imports_only_its_own_cli() -> None:
     loaded = _capability_cli_modules(["workspace", "--help"])
     assert loaded
     owners = {
-        module.split(".")[2] if module.startswith("untaped.") else module.partition(".")[0][8:]
+        module.split(".")[2]
+        if module.startswith("untaped.")
+        else module.split(".")[0].removeprefix("untaped_")
         for module in loaded
     }
     assert owners == {"workspace"}

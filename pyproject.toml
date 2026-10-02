@@ -4,8 +4,8 @@ members = ["packages/*"]
 [tool.uv.sources]
 untaped = { workspace = true }
 untaped-awx = { workspace = true }
-untaped-recipe = { workspace = true }
 untaped-jira = { workspace = true }
+untaped-recipe = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -70,17 +70,34 @@ plugins = ["pydantic.mypy"]
 # Type-check every package's src/ and the release script; tests are validated by running them.
 files = [
     "packages/untaped/src",
+    "packages/untaped-awx/src",
     "packages/untaped-jira/src",
     "packages/untaped-recipe/src",
-    "packages/untaped-awx/src",
     "scripts/release.py",
 ]
-mypy_path = ["packages/untaped/src", "packages/untaped-jira/src", "packages/untaped-recipe/src", "packages/untaped-awx/src"]
+mypy_path = [
+    "packages/untaped/src",
+    "packages/untaped-awx/src",
+    "packages/untaped-jira/src",
+    "packages/untaped-recipe/src",
+]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-testpaths = ["packages/untaped/tests", "packages/untaped-jira/tests", "packages/untaped-recipe/tests", "tests", "packages/untaped-awx/tests"]
-pythonpath = ["scripts", "packages/untaped/tests", "packages/untaped-jira/tests", "packages/untaped-recipe/tests", "packages/untaped-awx/tests"]
+testpaths = [
+    "packages/untaped/tests",
+    "packages/untaped-awx/tests",
+    "packages/untaped-jira/tests",
+    "packages/untaped-recipe/tests",
+    "tests",
+]
+pythonpath = [
+    "scripts",
+    "packages/untaped/tests",
+    "packages/untaped-awx/tests",
+    "packages/untaped-jira/tests",
+    "packages/untaped-recipe/tests",
+]
 addopts = [
     "-ra",
     "--strict-markers",
@@ -93,7 +110,12 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["packages/untaped/src", "packages/untaped-jira/src", "packages/untaped-recipe/src", "packages/untaped-awx/src"]
+source = [
+    "packages/untaped/src",
+    "packages/untaped-awx/src",
+    "packages/untaped-jira/src",
+    "packages/untaped-recipe/src",
+]
 omit = ["**/tests/**", "**/__main__.py"]
 
 [tool.coverage.report]

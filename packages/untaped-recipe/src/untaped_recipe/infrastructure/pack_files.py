@@ -26,7 +26,7 @@ from untaped_recipe.infrastructure.uv_project import check_lock
 
 @cache
 def installed_dev_requirement() -> str:
-    """The dev-only ``untaped`` requirement matching the running installation."""
+    """The dev-only ``untaped[recipe]`` requirement matching the running installation."""
     return untaped_dev_requirement(version("untaped"))
 
 
