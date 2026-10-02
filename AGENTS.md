@@ -1,22 +1,17 @@
 # AGENTS.md
 
 `untaped` is one CLI that composes capability packages from this uv workspace.
-Read [CONTRIBUTING.md](CONTRIBUTING.md) (developer guide) and
+Read [CONTRIBUTING.md](CONTRIBUTING.md) (developer guide, including the
+[checklist before you open a PR](CONTRIBUTING.md#before-you-open-a-pr)) and
 [docs/plugins.md](docs/plugins.md) (plugin rules) before changing code.
 
 Agent-only notes:
 
-- Keep imports lazy on CLI startup paths (`# noqa: PLC0415` only where Ruff
-  flags it).
-- Run git through `untaped.git` (`run_git`, `git_toplevel`, re-exported by
-  `untaped.sdk`); never write your own `subprocess` git plumbing.
-- Take advisory file locks through `untaped.fs` (`file_lock`, re-exported by
-  `untaped.sdk`).
-- Tasks, roadmap, priorities and handoffs live in private GitHub Issues and the
-  private Untaped Project owned by `untaped-private`; its `AGENTS.md` describes
-  the workflow. Do not copy private task bodies or planning exports into this
-  public repository, and do not keep a second backlog here.
-- Use Superpowers for design, implementation, and review; put public
-  behavioral changes and their validation in the implementation PR.
-- Existing user authorization persists only for its concrete scope. A backlog
-  item alone does not authorize remote publication or unrelated work.
+- Tasks, roadmap and priorities live in this repository's GitHub issues. Do
+  not keep a second backlog in the repository.
+- A feature starts with a design (problem, approach, rejected alternatives,
+  impact, test plan) that the maintainer approves; a bug starts with a
+  failing test. Put public behavioral changes and their validation in the
+  implementation PR, and fill in the PR template's drift review.
+- Existing user authorization persists only for its concrete scope. An issue
+  alone does not authorize remote publication or unrelated work.

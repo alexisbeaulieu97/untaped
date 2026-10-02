@@ -1,0 +1,40 @@
+name: PR
+
+# Checks on the pull request itself (scripts/check_pr.py): its drift review
+# and its changelog line. A separate workflow so that editing the PR body
+# re-runs only this.
+"on":
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr-checks:
+    # Dependabot's update PRs carry no drift review.
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
+        with:
+          version: "0.11.26"
+          enable-cache: true
+
+      - name: Sync the locked environment
+        run: uv sync --frozen --python 3.14
+
+      - name: Drift review and changelog
+        run: uv run --no-sync python scripts/check_pr.py "$GITHUB_EVENT_PATH"
