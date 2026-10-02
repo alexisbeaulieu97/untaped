@@ -13,7 +13,7 @@ profiles, themes, consistent output, typed piping, HTTP/TLS, and UI/prompt
 helpers, plus one command subtree per built-in capability
 (`untaped workspace ...`, ...). Composition runs through
 `src/untaped/bootstrap.py` (`main()`), which discovers built-in
-capability specs plus externals via the `untaped.capabilities` entry-point
+capability specs plus external providers via the `untaped.capabilities` entry-point
 group, validates them through the registry, then mounts the survivors. The
 implementation in `src/untaped/` is authoritative for composition and command
 behavior. User workflows live in [`docs/`](docs/README.md); provider authors

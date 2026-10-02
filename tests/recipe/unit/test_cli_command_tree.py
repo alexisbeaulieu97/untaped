@@ -98,7 +98,7 @@ def test_recipe_verbs_stay_at_the_top_and_nouns_group_the_rest() -> None:
     ],
 )
 def test_old_spellings_are_usage_errors_without_aliases(argv: list[str]) -> None:
-    root = bootstrap.build_root_app(externals=[])
+    root = bootstrap.build_root_app(candidates=[])
 
     result = CliInvoker().invoke(root, ["recipe", *argv])
 

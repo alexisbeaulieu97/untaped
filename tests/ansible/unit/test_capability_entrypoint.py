@@ -31,7 +31,7 @@ _ANSIBLE_PROFILE = "profiles:\n  default:\n    ansible:\n      {}\n"
 
 
 def _root() -> App:
-    return bootstrap.build_root_app(builtins=(SPEC,), externals=())  # type: ignore[return-value]
+    return bootstrap.build_root_app(builtins=(SPEC,), candidates=())  # type: ignore[return-value]
 
 
 def _doctor_rows(cfg: Path, body: str) -> dict[str, dict[str, object]]:

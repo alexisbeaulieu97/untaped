@@ -58,7 +58,7 @@ def _setup(backend: ScriptedPromptBackend | None, *args: str) -> CliResult:
         doctor_checks=(online_check("wiz.api", section="wiz", probe=_probe),),
     )
     plain = make_spec("plain", profile_model=ExtProfile)
-    root = bootstrap.build_root_app(builtins=(wiz, plain), externals=())
+    root = bootstrap.build_root_app(builtins=(wiz, plain), candidates=())
     return invoke_cli(
         root.meta,
         ["setup", "--format", "json", *args],

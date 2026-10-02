@@ -15,7 +15,7 @@ from untaped.capabilities.registry import (
     CapabilitySpec,
     DoctorCheck,
     DoctorResult,
-    ExternalProvider,
+    ProviderCandidate,
     SkillAsset,
 )
 from untaped.cli import create_app
@@ -139,8 +139,8 @@ def make_external(
     entry_point_group: str = CAPABILITIES_ENTRY_POINT_GROUP,
     requires_dist: tuple[str, ...] | list[str] = (),
     **kwargs: Any,
-) -> ExternalProvider:
-    return ExternalProvider(
+) -> ProviderCandidate:
+    return ProviderCandidate(
         distribution=distribution,
         name=name or spec.name,
         target=Provider(spec, **kwargs),

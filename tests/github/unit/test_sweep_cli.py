@@ -242,7 +242,7 @@ def test_exit_code_matrix(
 )
 def test_sweep_old_flag_spellings_are_gone(old: list[str]) -> None:
     result = invoke_cli(
-        build_root_app(externals=[]), ["github", "sweep", "--org", "acme", "--grep", "x", *old]
+        build_root_app(candidates=[]), ["github", "sweep", "--org", "acme", "--grep", "x", *old]
     )
 
     assert result.exit_code == 2, result.output

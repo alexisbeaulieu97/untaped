@@ -24,7 +24,7 @@ from test_management.support import (
 from untaped import bootstrap
 from untaped.capabilities.registry import (
     CompositionResult,
-    ExternalProvider,
+    ProviderCandidate,
     QuarantineRecord,
 )
 from untaped.management.capabilities import build_root_capabilities_app
@@ -46,8 +46,8 @@ class _Provider:
 
 def _external(
     name: str, *, distribution: str = "example-dist", version: str = "1.2.3"
-) -> ExternalProvider:
-    return ExternalProvider(
+) -> ProviderCandidate:
+    return ProviderCandidate(
         distribution=distribution,
         name=name,
         target=_Provider(make_spec(name, profile_model=ExtProfile)),
@@ -63,7 +63,7 @@ def test_lists_ready_builtin_and_external() -> None:
     github = make_spec("github", profile_model=GithubProfile)
     result = compose(github)
     external = _external("ext")
-    composed = bootstrap.compose_root(builtins=(), externals=(external,))
+    composed = bootstrap.compose_root(builtins=(), candidates=(external,))
     merged = CompositionResult(
         capabilities=result.capabilities + composed.capabilities,
         quarantine=(),
@@ -95,7 +95,7 @@ def test_lists_ready_builtin_and_external() -> None:
 
 
 def test_quarantined_provider_lists_with_entry_point_name() -> None:
-    candidate = ExternalProvider(
+    candidate = ProviderCandidate(
         distribution="example-dist",
         name="ghost",
         target="example_mod:provider",
@@ -126,7 +126,7 @@ def test_quarantined_provider_lists_with_entry_point_name() -> None:
 
 
 def test_unresolvable_provider_uses_unknown_sentinels() -> None:
-    candidate = ExternalProvider(distribution="unknown", name="mystery", target="nope:missing")
+    candidate = ProviderCandidate(distribution="unknown", name="mystery", target="nope:missing")
     result = CompositionResult(
         capabilities=(),
         quarantine=(

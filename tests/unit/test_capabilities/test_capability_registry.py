@@ -23,7 +23,7 @@ from test_capabilities.capharness import (
 from untaped.capabilities.registry import (
     CapabilitySpec,
     CompositionResult,
-    ExternalProvider,
+    ProviderCandidate,
     ProviderRef,
     QuarantineRecord,
     RegisteredCapability,
@@ -106,7 +106,7 @@ def test_compose_shell_only() -> None:
 
 def test_compose_accepts_function_provider() -> None:
     spec = make_spec(name="func")
-    candidate = ExternalProvider(
+    candidate = ProviderCandidate(
         distribution="fn-dist", name="func", target=function_provider(spec)
     )
     result = compose(make_shell(), [], [candidate])
@@ -181,18 +181,18 @@ def test_builtin_precedence_over_external_collision() -> None:
 
 def test_deterministic_external_ordering() -> None:
     specs = [make_spec(name=n) for n in ("zeta", "alpha", "mid")]
-    externals = [
+    candidates = [
         make_external(specs[0], "b-dist"),
         make_external(specs[1], "a-dist"),
         make_external(specs[2], "a-dist"),
     ]
-    result = compose(make_shell(), [], externals)
+    result = compose(make_shell(), [], candidates)
     ordered = [cap.spec.name for cap in result.capabilities]
     assert ordered == ["alpha", "mid", "zeta"]
     assert result.quarantine == ()
 
 
-def test_builtins_keep_declaration_order_before_externals() -> None:
+def test_builtins_keep_declaration_order_before_candidates() -> None:
     first = make_spec(name="first")
     second = make_spec(name="second")
     ext = make_external(make_spec(name="aaa"), "z-dist")

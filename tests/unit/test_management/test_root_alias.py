@@ -31,7 +31,7 @@ _CONFIG = (
 
 def _invoke(*argv: str, interactive: bool = False) -> CliResult:
     root = bootstrap.build_root_app(
-        builtins=(make_spec("github", profile_model=GithubProfile),), externals=()
+        builtins=(make_spec("github", profile_model=GithubProfile),), candidates=()
     )
     return CliInvoker().invoke(root.meta, list(argv), interactive=interactive)
 

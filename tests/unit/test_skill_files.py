@@ -175,7 +175,7 @@ def _parse_problem(root: App, command: str, *, inline: bool) -> str | None:
 
 @pytest.fixture(scope="module")
 def root() -> App:
-    return build_root_app(externals=[])
+    return build_root_app(candidates=[])
 
 
 def _problems(root: App, commands: Iterator[tuple[str, bool]]) -> list[str]:

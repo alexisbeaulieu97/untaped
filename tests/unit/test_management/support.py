@@ -104,7 +104,7 @@ def registered(
 
 def compose(*specs: CapabilitySpec) -> CompositionResult:
     """Compose ``specs`` as built-ins (registers settings sections)."""
-    return bootstrap.compose_root(builtins=specs, externals=())
+    return bootstrap.compose_root(builtins=specs, candidates=())
 
 
 def write_config(path: Path, text: str) -> None:

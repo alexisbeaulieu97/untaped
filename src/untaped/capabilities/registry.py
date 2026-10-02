@@ -254,13 +254,13 @@ class QuarantineRecord:
 
 
 @dataclass(frozen=True)
-class ExternalProvider:
+class ProviderCandidate:
     """One discovered external candidate awaiting composition.
 
     ``distribution_version``, ``entry_point_group``, and ``requires_dist``
     are captured at discovery via :mod:`importlib.metadata` without importing
     provider code (spec §7.2); the §7.3 listing reports
-    ``distribution_version`` for externals.
+    ``distribution_version`` for candidates.
     """
 
     distribution: str
@@ -295,7 +295,7 @@ class _Quarantine(ConfigError):
         self.detail = detail
         self.entry_point = entry_point
 
-    def to_record(self, candidate: ExternalProvider) -> QuarantineRecord:
+    def to_record(self, candidate: ProviderCandidate) -> QuarantineRecord:
         distribution = candidate.distribution.strip() or "unknown"
         if self.entry_point is not None:
             entry_point = self.entry_point
@@ -345,7 +345,7 @@ def _running_sdk_version() -> str | None:
         return None
 
 
-def _check_entry_point_group(candidate: ExternalProvider) -> None:
+def _check_entry_point_group(candidate: ProviderCandidate) -> None:
     if candidate.entry_point_group != CAPABILITIES_ENTRY_POINT_GROUP:
         raise _Quarantine(
             "bad-metadata",
@@ -355,7 +355,7 @@ def _check_entry_point_group(candidate: ExternalProvider) -> None:
         )
 
 
-def _check_requires_dist(candidate: ExternalProvider) -> None:
+def _check_requires_dist(candidate: ProviderCandidate) -> None:
     untaped_requirements: list[tuple[str, Requirement]] = []
     for requirement in candidate.requires_dist:
         parsed = _parse_requirement(requirement)
@@ -394,20 +394,20 @@ def _check_requires_dist(candidate: ExternalProvider) -> None:
             )
 
 
-def discover_external_providers(
+def discover_candidates(
     *, group: str = CAPABILITIES_ENTRY_POINT_GROUP
-) -> tuple[ExternalProvider, ...]:
+) -> tuple[ProviderCandidate, ...]:
     """Discover external candidates from entry points (spec §7.2).
 
     Reads distribution version, entry-point group, and Requires-Dist strings
     via :mod:`importlib.metadata` without importing any provider code.
     """
-    found: list[ExternalProvider] = []
+    found: list[ProviderCandidate] = []
     for entry_point in importlib_metadata.entry_points(group=group):
         dist = entry_point.dist
         if dist is None:
             found.append(
-                ExternalProvider(
+                ProviderCandidate(
                     distribution="unknown",
                     name=entry_point.name,
                     target=entry_point.value,
@@ -417,7 +417,7 @@ def discover_external_providers(
             continue
         dist_name = dist.metadata.get("Name") or "unknown"
         found.append(
-            ExternalProvider(
+            ProviderCandidate(
                 distribution=str(dist_name),
                 name=entry_point.name,
                 target=entry_point.value,
@@ -589,9 +589,9 @@ def _resolve_target(target: object) -> object:
 def compose(
     shell: ApplicationSpec,
     builtins: Sequence[CapabilitySpec] = (),
-    externals: Sequence[ExternalProvider] = (),
+    candidates: Sequence[ProviderCandidate] = (),
 ) -> CompositionResult:
-    """Compose the shell, built-ins, then externals; quarantine failures."""
+    """Compose the shell, built-ins, then candidates; quarantine failures."""
     state = _CompositionState(shell)
     capabilities: list[RegisteredCapability] = []
     quarantined: list[QuarantineRecord] = []
@@ -608,7 +608,7 @@ def compose(
             ) from None
         builtin_ref = ProviderRef("built-in", _BUILTIN_DISTRIBUTION, "")
         capabilities.append(_commit(spec, builtin_ref, state, staged))
-    ordered = sorted(externals, key=lambda candidate: (candidate.distribution, candidate.name))
+    ordered = sorted(candidates, key=lambda candidate: (candidate.distribution, candidate.name))
     for candidate in ordered:
         try:
             # Metadata-only gates precede any import: group and Requires-Dist

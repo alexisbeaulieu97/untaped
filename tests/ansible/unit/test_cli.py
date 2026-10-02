@@ -2473,7 +2473,7 @@ def test_old_direction_flags_are_gone(tmp_path: Path, monkeypatch, flag: str) ->
     _seed(tmp_path, "source:platform", _edge())
     _use_config(tmp_path, monkeypatch, _PLATFORM)
     result = invoke_cli(
-        build_root_app(externals=[]),
+        build_root_app(candidates=[]),
         ["ansible", "graph", "acme/site", "--source", "platform", flag],
     )
     assert result.exit_code == 2
