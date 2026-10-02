@@ -213,6 +213,23 @@ def test_the_cache_is_locked_while_fetching(tmp_path: Path) -> None:
             busy.fetch_refs(bare, refspecs=_MAIN, depth=0, blob_filter=False, auth_header=None)
 
 
+def test_fetch_refs_fetches_the_url_ensure_bare_set(
+    tmp_path: Path, rewrite_to: Callable[..., None]
+) -> None:
+    """Another process repoints the shared cache between ensure and fetch; ours still wins."""
+    origin = _origin(tmp_path)
+    https = "https://github.com/acme/app.git"
+    rewrite_to(origin, https)
+    cache = GitRepositoryCache(auth_host=None)
+    bare = cache.ensure_bare(https, cache_dir=tmp_path / "cache", auth_header=None)
+    _git(bare, "config", "--replace-all", "remote.origin.url", "git@github.com:acme/app.git")
+
+    cache.fetch_refs(bare, refspecs=_MAIN, depth=1, blob_filter=False, auth_header=None)
+
+    assert _git(bare, "config", "--get", "remote.origin.url") == https
+    assert _git(bare, "rev-parse", "refs/heads/main") == _git(origin, "rev-parse", "main")
+
+
 @pytest.mark.parametrize("url", ["https://github.com/acme/app.git", "git@github.com:acme/app.git"])
 def test_https_and_ssh_urls_share_one_cache_path(tmp_path: Path, url: str) -> None:
     bare = GitRepositoryCache(auth_host=None).ensure_bare(url, cache_dir=tmp_path, auth_header=None)
