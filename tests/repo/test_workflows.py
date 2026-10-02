@@ -378,6 +378,23 @@ def test_ci_wheel_matrix_smokes_each_install_shape_from_the_built_wheels() -> No
     assert _find(steps, run=breaks) == broken
 
 
+def test_ci_bare_install_runs_the_root_commands_and_shows_the_install_hint() -> None:
+    steps = _steps("ci.yml", "wheel-matrix")
+    smoke_line = f'{SCRIPT} smoke "$RUNNER_TEMP/bare/bin/untaped" "$VERSION" --expect ""'
+    lines = [line.strip() for line in steps[_find(steps, run=smoke_line)]["run"].splitlines()]
+    smoke = lines.index(smoke_line)
+    exe = '"$RUNNER_TEMP/bare/bin/untaped"'
+    commands = [
+        f"{exe} doctor",
+        f"{exe} skills list",
+        f"{exe} config list",
+        f"{exe} profile list",
+        f'{exe} capabilities 2>&1 >/dev/null | grep -F "untaped[all]"',
+    ]
+    assert [line for line in lines[smoke + 1 :] if not line.startswith("#")] == commands
+    assert lines[0] == "set -euo pipefail"
+
+
 def test_ci_runs_core_tests_with_only_the_core_wheel() -> None:
     steps = _steps("ci.yml", "core-only-tests")
     step = steps[_find(steps, run="uv build --package untaped --no-sources --out-dir dist")]
@@ -388,9 +405,9 @@ def test_ci_runs_core_tests_with_only_the_core_wheel() -> None:
         # --no-emit-workspace leaves out every first-party package (the dev
         # group's untaped[all] included), so no untaped_* package is installed.
         "uv export --frozen --only-group dev --no-hashes --no-emit-workspace"
-        " > dev-requirements.txt",
+        ' > "$RUNNER_TEMP/dev-requirements.txt"',
         'uv pip install --python "$RUNNER_TEMP/core/bin/python"'
-        " dist/untaped-*-py3-none-any.whl -r dev-requirements.txt",
+        ' dist/untaped-*-py3-none-any.whl -r "$RUNNER_TEMP/dev-requirements.txt"',
         '"$RUNNER_TEMP/core/bin/python" -m pytest -q -n auto -p no:cacheprovider'
         " --rootdir . -c pyproject.toml packages/untaped/tests",
     ]

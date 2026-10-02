@@ -120,7 +120,7 @@ if TYPE_CHECKING:
 class AcmeSettings(BaseModel):
     """Profile-scoped Acme settings."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(frozen=True)
 
     greeting: str = "hello from acme"
 

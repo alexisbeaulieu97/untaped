@@ -107,6 +107,13 @@ jobs:
           uv venv -q --python 3.14 "$RUNNER_TEMP/bare"
           uv pip install --python "$RUNNER_TEMP/bare/bin/python" "$CORE"
           uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/bare/bin/untaped" "$VERSION" --expect ""
+          # The root's own commands work with no capability installed.
+          "$RUNNER_TEMP/bare/bin/untaped" doctor
+          "$RUNNER_TEMP/bare/bin/untaped" skills list
+          "$RUNNER_TEMP/bare/bin/untaped" config list
+          "$RUNNER_TEMP/bare/bin/untaped" profile list
+          # ...and `capabilities` says how to install some (a stderr hint).
+          "$RUNNER_TEMP/bare/bin/untaped" capabilities 2>&1 >/dev/null | grep -F "untaped[all]"
 
       - name: untaped[awx] alone
         run: |
@@ -166,6 +173,6 @@ jobs:
           set -euo pipefail
           uv build --package untaped --no-sources --out-dir dist
           uv venv -q --python 3.14 "$RUNNER_TEMP/core"
-          uv export --frozen --only-group dev --no-hashes --no-emit-workspace > dev-requirements.txt
-          uv pip install --python "$RUNNER_TEMP/core/bin/python" dist/untaped-*-py3-none-any.whl -r dev-requirements.txt
+          uv export --frozen --only-group dev --no-hashes --no-emit-workspace > "$RUNNER_TEMP/dev-requirements.txt"
+          uv pip install --python "$RUNNER_TEMP/core/bin/python" dist/untaped-*-py3-none-any.whl -r "$RUNNER_TEMP/dev-requirements.txt"
           "$RUNNER_TEMP/core/bin/python" -m pytest -q -n auto -p no:cacheprovider --rootdir . -c pyproject.toml packages/untaped/tests

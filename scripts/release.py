@@ -398,13 +398,16 @@ def _unless(status: str) -> str:
 
 
 def skill_errors(skills_json: str, expected: Collection[str]) -> list[str]:
-    """``untaped-<name>`` listed for each expected capability; every listed skill has a SKILL.md."""
+    """``untaped-<name>`` listed once for each expected capability; each has a SKILL.md."""
     try:
         rows = json.loads(skills_json)
+        names = [row["name"] for row in rows]
         sources = {row["name"]: Path(row["source"]) for row in rows}
     except ValueError, TypeError, KeyError:
         return ["untaped skills list --format json did not print a list of rows"]
-    errors = [
+    twice = {name for name in names if names.count(name) > 1}
+    errors = [f"skill {name} is listed twice" for name in sorted(twice)]
+    errors += [
         f"skill untaped-{name} is missing"
         for name in sorted(expected)
         if f"untaped-{name}" not in sources
