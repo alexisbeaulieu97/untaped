@@ -15,7 +15,7 @@ from pydantic import BaseModel, SecretStr
 from untaped.config_file import read_config_dict
 from untaped.management.profile import build_root_profile_app
 from untaped.profile_resolver import reset_profile_override, set_profile_override
-from untaped.settings import get_settings, register_profile_settings
+from untaped.settings import FORMAT_VERSION, get_settings, register_profile_settings
 from untaped.testing import CliInvoker, ScriptedPromptBackend, TtyStringIO, invoke_cli
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -70,7 +70,8 @@ def test_list_marks_active_profile(_isolated_config: Path) -> None:
 
 def test_list_ignores_the_format_version_stamp(_isolated_config: Path) -> None:
     _isolated_config.write_text(
-        "format_version: 1\nprofiles:\n  default: {}\n  work: {}\n", encoding="utf-8"
+        f"format_version: {FORMAT_VERSION}\nprofiles:\n  default: {{}}\n  work: {{}}\n",
+        encoding="utf-8",
     )
     app = build_root_profile_app(command="untaped")
     result = CliInvoker().invoke(app, ["list", "--format", "raw", "--columns", "name"])

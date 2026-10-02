@@ -23,6 +23,7 @@ from test_management.support import (
 from untaped import bootstrap
 from untaped.config_file import read_config_dict
 from untaped.management.config import build_root_config_app
+from untaped.settings import FORMAT_VERSION
 from untaped.testing import CliInvoker, CliResult, ScriptedPromptBackend, invoke_cli
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -139,7 +140,7 @@ def test_list_ignores_the_format_version_stamp(_isolated_config: Path, flags: li
     body = "profiles:\n  default:\n    jira:\n      base_url: https://j\n"
     write_config(_isolated_config, body)
     unstamped = _invoke(["list", *flags, "--format", "json"])
-    write_config(_isolated_config, f"format_version: 1\n{body}")
+    write_config(_isolated_config, f"format_version: {FORMAT_VERSION}\n{body}")
     stamped = _invoke(["list", *flags, "--format", "json"])
     assert stamped.exit_code == 0, stamped.output
     assert "format_version" not in stamped.stdout

@@ -27,7 +27,7 @@ from untaped.config_file import read_config_dict
 from untaped.management.config import (
     build_root_config_app,
 )
-from untaped.settings import get_settings
+from untaped.settings import FORMAT_VERSION, get_settings
 from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -199,11 +199,7 @@ def _scripted_editor(
 
 
 @pytest.mark.parametrize(
-    "content",
-    [
-        "[invalid",
-        "profiles: {default: {jira: {timeout: not-a-number}}}",
-    ],
+    "content", ["[invalid", "profiles: {default: {jira: {timeout: not-a-number}}}"]
 )
 def test_config_edit_rejects_an_invalid_edit_and_keeps_the_config(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: str
@@ -222,7 +218,7 @@ def test_config_edit_rejects_an_invalid_edit_and_keeps_the_config(
 def test_config_edit_never_opens_a_newer_config(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    original = "format_version: 2\nprofiles: {}\n"
+    original = f"format_version: {FORMAT_VERSION + 1}\nprofiles: {{}}\n"
     write_config(_isolated_config, original)
     marker = tmp_path / "editor-ran"
     _scripted_editor(
@@ -230,33 +226,62 @@ def test_config_edit_never_opens_a_newer_config(
     )
     result = CliInvoker().invoke(_config_app(), ["edit"])
     assert result.exit_code == 4, result.output
-    assert "written by a newer untaped (format 2" in result.stderr
+    assert f"written by a newer untaped (format {FORMAT_VERSION + 1}" in result.stderr
     assert _isolated_config.read_text() == original
     assert not marker.exists()
+
+
+def test_config_edit_never_opens_with_a_newer_state_file(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = "profiles: {}\n"
+    write_config(_isolated_config, config)
+    state = _isolated_config.with_name("state.yml")
+    state_text = f"format_version: {FORMAT_VERSION + 1}\n"
+    state.write_text(state_text)
+    marker = tmp_path / "editor-ran"
+    _scripted_editor(
+        tmp_path,
+        monkeypatch,
+        "profiles: {default: {}}\n",
+        code=f"pathlib.Path({str(marker)!r}).touch()",
+    )
+    result = CliInvoker().invoke(_config_app(), ["edit"])
+    assert result.exit_code == 4, result.output
+    assert f"{state} was written by a newer untaped" in " ".join(result.stderr.split())
+    assert "newer than this release supports" not in result.stderr
+    assert not marker.exists()
+    assert _isolated_config.read_text() == config
+    assert state.read_text() == state_text
 
 
 def test_config_edit_repairs_an_invalid_stamp(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     write_config(_isolated_config, "format_version: true\nprofiles: {}\n")
-    _scripted_editor(tmp_path, monkeypatch, "format_version: 1\nprofiles: {}\n")
+    repaired = f"format_version: {FORMAT_VERSION}\nprofiles: {{}}\n"
+    _scripted_editor(tmp_path, monkeypatch, repaired)
     result = CliInvoker().invoke(_config_app(), ["edit"])
     assert result.exit_code == 0, result.output
-    assert _isolated_config.read_text() == "format_version: 1\nprofiles: {}\n"
+    assert _isolated_config.read_text() == repaired
 
 
 def test_config_edit_names_a_newer_draft_format(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     write_config(_isolated_config, "profiles: {}\n")
-    _scripted_editor(tmp_path, monkeypatch, "format_version: 2\nprofiles: {}\n")
+    draft = f"format_version: {FORMAT_VERSION + 1}\nprofiles: {{}}\n"
+    _scripted_editor(tmp_path, monkeypatch, draft)
     result = CliInvoker().invoke(_config_app(), ["edit"])
     assert result.exit_code == 1, result.output
-    assert "format_version 2 is newer than this release supports (format 1)" in result.stderr
+    assert (
+        f"format_version {FORMAT_VERSION + 1} is newer than this release supports "
+        f"(format {FORMAT_VERSION})"
+    ) in result.stderr
     assert "upgrade untaped" not in result.stderr
     assert _isolated_config.read_text() == "profiles: {}\n"
     kept = Path(result.stderr.split("your edits are in ")[1].split()[0])
-    assert kept.read_text() == "format_version: 2\nprofiles: {}\n"
+    assert kept.read_text() == draft
 
 
 def test_config_edit_saves_verbatim_owner_only_and_through_a_symlink(
