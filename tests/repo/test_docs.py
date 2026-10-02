@@ -259,7 +259,7 @@ def test_agents_md_is_short_and_points_to_contributing() -> None:
     agents = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
     assert len(agents.splitlines()) <= 30
     assert "CONTRIBUTING.md" in agents
-    contributing = (REPO_ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    contributing = (REPO_ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8").splitlines()
     for heading in (
         "## Releasing",
         "## Evaluating a skill change",

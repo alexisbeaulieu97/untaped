@@ -16,5 +16,7 @@ Agent-only notes:
   private Untaped Project owned by `untaped-private`; its `AGENTS.md` describes
   the workflow. Do not copy private task bodies or planning exports into this
   public repository, and do not keep a second backlog here.
+- Use Superpowers for design, implementation, and review; put public
+  behavioral changes and their validation in the implementation PR.
 - Existing user authorization persists only for its concrete scope. A backlog
   item alone does not authorize remote publication or unrelated work.
