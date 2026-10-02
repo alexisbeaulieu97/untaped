@@ -20,11 +20,11 @@ import gen_config_reference as generator
 import pytest
 from cyclopts import App
 
+from repo.support import REPO_ROOT
 from untaped.bootstrap import build_root_app
 from untaped.capabilities import registry
 from untaped.capabilities.registry import ProviderCandidate
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 REGENERATE = "uv run python scripts/gen_config_reference.py"
 
 _LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)\s]+)\)")

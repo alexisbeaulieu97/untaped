@@ -750,25 +750,26 @@ def test_cyclopts_private_internals_used_by_lazy_mounts_exist() -> None:
     )
 
 
-def test_bare_root_help_says_how_to_install_capabilities() -> None:
-    root = bootstrap.build_root_app(candidates=[])
+@pytest.mark.parametrize(
+    ("candidates", "expect_hint", "expect_quarantine"),
+    [
+        pytest.param([], True, False, id="bare"),
+        pytest.param([provider_candidate(make_spec("demo"))], False, False, id="capability"),
+        # entry-point/spec name mismatch
+        pytest.param(
+            [make_candidate(make_spec("demo"), name="other")], False, True, id="quarantined"
+        ),
+    ],
+)
+def test_root_help_install_hint(
+    candidates: list[ProviderCandidate], expect_hint: bool, expect_quarantine: bool
+) -> None:
+    root = bootstrap.build_root_app(candidates=candidates)
+    assert bool(bootstrap.composition().quarantine) is expect_quarantine
     result = CliInvoker().invoke(root.meta, ["--help"])
     assert result.exit_code == 0
-    assert bootstrap.INSTALL_HINT in " ".join(result.stdout.split())
-
-
-def test_root_help_with_a_capability_has_no_install_hint() -> None:
-    root = bootstrap.build_root_app(candidates=[provider_candidate(make_spec("demo"))])
-    help_text = " ".join(CliInvoker().invoke(root.meta, ["--help"]).stdout.split())
-    assert bootstrap.INSTALL_HINT not in help_text
-
-
-def test_root_help_with_only_quarantined_providers_has_no_install_hint() -> None:
-    broken = make_candidate(make_spec("demo"), name="other")  # entry-point/spec name mismatch
-    root = bootstrap.build_root_app(candidates=[broken])
-    assert bootstrap.composition().quarantine
-    help_text = " ".join(CliInvoker().invoke(root.meta, ["--help"]).stdout.split())
-    assert bootstrap.INSTALL_HINT not in help_text
+    help_text = " ".join(result.stdout.split())
+    assert (bootstrap.INSTALL_HINT in help_text) is expect_hint
 
 
 @pytest.mark.usefixtures("_isolated_config")

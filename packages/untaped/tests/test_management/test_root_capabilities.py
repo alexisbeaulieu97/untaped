@@ -157,13 +157,27 @@ def test_listing_is_not_blocked_by_invalid_settings(_isolated_config: Path) -> N
     assert {row["name"] for row in _rows(invoked.stdout)} == {"github", "jira"}
 
 
-def test_bare_capabilities_listing_prints_the_hint_on_stderr() -> None:
-    root = bootstrap.build_root_app(candidates=[])
+@pytest.mark.parametrize(
+    ("candidates", "expect_hint"),
+    [
+        pytest.param([], True, id="bare"),
+        pytest.param([make_candidate(make_spec("demo"))], False, id="capability"),
+        pytest.param([make_candidate(make_spec("demo"), name="other")], False, id="quarantined"),
+    ],
+)
+def test_capabilities_listing_install_hint_on_stderr(
+    candidates: list[ProviderCandidate], expect_hint: bool
+) -> None:
+    root = bootstrap.build_root_app(candidates=candidates)
     result = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])
     assert result.exit_code == 0
-    assert json.loads(result.stdout) == []
-    # JSON output turns stderr diagnostics into one JSON line, level taken from the prefix.
-    assert json.loads(result.stderr) == {"level": "hint", "message": INSTALL_HINT}
+    assert bool(_rows(result.stdout)) is not expect_hint
+    if expect_hint:
+        # JSON output turns stderr diagnostics into one JSON line, level taken from the prefix.
+        assert json.loads(result.stderr) == {"level": "hint", "message": INSTALL_HINT}
+    else:
+        assert "hint:" not in result.stderr
+        assert INSTALL_HINT not in result.stderr
 
 
 def test_bare_capabilities_listing_hint_is_a_plain_hint_line_in_text_mode() -> None:
@@ -171,17 +185,3 @@ def test_bare_capabilities_listing_hint_is_a_plain_hint_line_in_text_mode() -> N
     result = CliInvoker().invoke(root.meta, ["capabilities"])
     assert result.exit_code == 0
     assert result.stderr.strip() == f"hint: {INSTALL_HINT}"
-
-
-def test_listing_with_a_capability_has_no_install_hint() -> None:
-    root = bootstrap.build_root_app(candidates=[make_candidate(make_spec("demo"))])
-    result = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])
-    assert "hint:" not in result.stderr
-    assert INSTALL_HINT not in result.stderr
-
-
-def test_listing_with_only_quarantined_providers_has_no_install_hint() -> None:
-    root = bootstrap.build_root_app(candidates=[make_candidate(make_spec("demo"), name="other")])
-    result = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])
-    assert _rows(result.stdout)
-    assert INSTALL_HINT not in result.stderr

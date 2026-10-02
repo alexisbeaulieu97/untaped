@@ -8,13 +8,13 @@ and the supply-chain hygiene of every workflow.
 from __future__ import annotations
 
 import functools
-from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from repo.support import REPO_ROOT
+
 WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
 WORKFLOWS = ["ci.yml", "release.yml"]
 EXPECTED_UV_VERSION = "0.11.26"

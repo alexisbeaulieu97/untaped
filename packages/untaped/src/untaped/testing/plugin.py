@@ -14,13 +14,13 @@ import os
 import sys
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TextIO
 
 import pytest
 
 from untaped.auth import clear_token_cache
 from untaped.prompts import reset_terminal_override, set_terminal_override
 from untaped.settings import get_settings, reset_config_registry_for_tests
+from untaped.testing import no_terminal
 
 _TERMINAL_ENV = {"TERM": "dumb", "NO_COLOR": "1", "COLUMNS": "200"}
 # Ambient token fallbacks (``GH_TOKEN``) would otherwise leak a real token in.
@@ -55,7 +55,6 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
         patch.setenv("UNTAPED_CONFIG", str(home / ".untaped" / "config.yml"))
         # ``UNTAPED_STATE`` was cleared above, so state.yml resolves next to
         # whichever temp config a test points ``UNTAPED_CONFIG`` at.
-        assert "UNTAPED_STATE" not in os.environ
         patch.setenv("GIT_CONFIG_NOSYSTEM", "1")
         for key, value in _TERMINAL_ENV.items():
             patch.setenv(key, value)
@@ -63,16 +62,12 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
         clear_token_cache()
         # No test may prompt on the developer's real terminal: the controlling
         # terminal is absent unless a test installs one (``invoke_cli(terminal=True)``).
-        terminal_token = set_terminal_override(_no_controlling_terminal)
+        terminal_token = set_terminal_override(no_terminal)
         try:
             yield
         finally:
             reset_terminal_override(terminal_token)
     get_settings.cache_clear()
-
-
-def _no_controlling_terminal() -> TextIO:
-    raise OSError("no controlling terminal in tests")
 
 
 @pytest.fixture(autouse=True)

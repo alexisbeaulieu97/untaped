@@ -9,10 +9,10 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from repo.support import FIRST_PARTY
+import release
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-PACKAGES = REPO_ROOT / "packages"
+from repo.support import FIRST_PARTY, PACKAGES, REPO_ROOT
+
 EXPECTED_MEMBERS = [
     "untaped",
     "untaped-ansible",
@@ -42,10 +42,7 @@ def test_root_config_lists_every_package() -> None:
     config = _root_config()
     src = sorted(f"packages/{name}/src" for name in _members())
     tests = sorted(f"packages/{name}/tests" for name in _members())
-    distributions = {
-        tomllib.loads((PACKAGES / name / "pyproject.toml").read_text())["project"]["name"]
-        for name in _members()
-    }
+    distributions = set(release.packages(REPO_ROOT))
     assert set(config["tool"]["uv"]["sources"]) == distributions
     assert sorted(config["tool"]["coverage"]["run"]["source"]) == src
     assert sorted(config["tool"]["mypy"]["files"]) == sorted([*src, "scripts/release.py"])
@@ -113,28 +110,26 @@ def test_the_installed_untaped_lists_every_first_party_capability() -> None:
 
 
 def test_capability_packages_declare_their_entry_point_and_pin_core() -> None:
-    core = tomllib.loads((PACKAGES / "untaped/pyproject.toml").read_text())["project"]
+    projects = release.packages(REPO_ROOT)
+    core = projects.pop("untaped")
     version = core["version"]
-    capabilities = sorted(PACKAGES.glob("untaped-*/pyproject.toml"))
-    for path in capabilities:
-        project = tomllib.loads(path.read_text())["project"]
+    for project in projects.values():
         name = project["name"].removeprefix("untaped-")
         assert project["version"] == version
         assert project["entry-points"]["untaped.capabilities"] == {name: f"untaped_{name}:provider"}
         assert f"untaped=={version}" in project["dependencies"]
         assert core["optional-dependencies"][name] == [f"untaped-{name}=={version}"]
     assert sorted(core["optional-dependencies"]["all"]) == sorted(
-        f"untaped-{p.parent.name.removeprefix('untaped-')}=={version}" for p in capabilities
+        f"{project['name']}=={version}" for project in projects.values()
     )
     assert "entry-points" not in core
 
 
 def test_dependent_capabilities_pin_github() -> None:
-    version = tomllib.loads((PACKAGES / "untaped/pyproject.toml").read_text())["project"]["version"]
+    projects = release.packages(REPO_ROOT)
+    version = projects["untaped"]["version"]
     for name in ("ansible", "workspace"):
-        project = tomllib.loads((PACKAGES / f"untaped-{name}/pyproject.toml").read_text())[
-            "project"
-        ]
+        project = projects[f"untaped-{name}"]
         assert project["dependencies"] == [f"untaped=={version}", f"untaped-github=={version}"]
 
 

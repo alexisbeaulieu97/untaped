@@ -15,15 +15,14 @@ from __future__ import annotations
 
 import ast
 import re
-from pathlib import Path
 
 import pytest
 from pydantic import BaseModel, SecretStr
 
+from repo.support import REPO_ROOT
 from untaped.config_schema import walk_settings
 from untaped.settings import get_settings_model
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_DIRS = sorted(REPO_ROOT.glob("packages/*/src"))
 
 

@@ -47,10 +47,6 @@ def test_testing_reexports_prompt_backend() -> None:
     assert testing.PromptBackend is prompts.PromptBackend
 
 
-def test_the_hermetic_plugin_is_importable() -> None:
-    importlib.import_module("untaped.testing.plugin")
-
-
 @pytest.mark.usefixtures("fresh_composition")
 def test_invoke_root_runs_the_composed_root(monkeypatch: pytest.MonkeyPatch) -> None:
     """It composes the installed providers (here: none) and runs ``argv`` on the root."""

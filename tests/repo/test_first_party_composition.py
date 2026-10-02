@@ -6,6 +6,7 @@ first-party capabilities, so they need every workspace package (Decision 5).
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -91,8 +92,6 @@ def test_lazy_first_party_capabilities_render_like_eager_mounts(
     first_party_candidates: tuple[ProviderCandidate, ...],
     first_party_specs: tuple[CapabilitySpec, ...],
 ) -> None:
-    from dataclasses import replace
-
     specs = first_party_specs
     eager_candidates = [
         provider_candidate(replace(spec, help=None), distribution="untaped") for spec in specs
