@@ -61,8 +61,9 @@ variables), [agent skills](./docs/skills.md) and
 ### Stable within a major release
 
 A minor or patch release never breaks these. Anything new is added alongside
-them. To run two majors side by side, give each its own config file; see
-`UNTAPED_CONFIG` in [Configuration](./docs/configuration.md).
+them. Two installs of different major versions sharing one config can
+disagree about a renamed setting; give the second its own config file (see
+`UNTAPED_CONFIG` in [Configuration](./docs/configuration.md)).
 
 - Command and flag names, positional arguments, and what each means
   (`untaped COMMAND --help`).
