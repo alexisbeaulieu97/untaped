@@ -62,7 +62,7 @@ _DISPATCH_PROBE = (
     "    main({argv!r})\n"
     "cli = sorted(\n"
     "    m for m in sys.modules\n"
-    "    if m.startswith('untaped_') and '.cli' in m\n"
+    "    if m.startswith('untaped_') and 'cli' in m.split('.')\n"
     ")\n"
     "print(' '.join(cli))\n"
 )
