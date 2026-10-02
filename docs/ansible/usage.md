@@ -138,7 +138,9 @@ The first line names the target, where the data came from and the depth.
 After each repo comes the file that declares that dependency, plus
 `unpinned` when it names no version, or `pins X` when the declared version
 differs from the ref it resolved to. A repo marked `…` with a `not read:`
-note is [stopped](../glossary.md): the graph beyond it was not read. The
+note is stopped: its own dependencies (or dependents) were not read, because
+`--depth` ran out (`depth`) or its ref is not in the source's cache
+(`not_cached`), so the graph beyond it may be incomplete. The
 [graph reference](../../packages/untaped-ansible/src/untaped_ansible/skills/untaped-ansible/references/graphs.md#tree-output) lists every marker.
 
 ## Flags

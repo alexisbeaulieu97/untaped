@@ -1,4 +1,4 @@
-"""Message lint: stderr wording follows ``docs/conventions.md``.
+"""Message lint: stderr wording follows ``docs/plugins.md#messages-stderr``.
 
 An AST scan over a package's source flags:
 

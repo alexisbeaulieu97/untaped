@@ -170,8 +170,6 @@ def test_command_examples_use_real_commands_and_options(
     root = build_root_app(candidates=first_party_candidates)
     problems = []
     for path in _markdown_files():
-        if "templates" in path.parts:
-            continue
         for block in _bash_blocks(path):
             commands = _untaped_commands(block)
             # A block may run an alias it defines (``alias set NAME -- …``).
@@ -207,6 +205,25 @@ def test_scripting_keeps_an_anchor_per_capability(
     ):
         assert name in anchors
     assert {spec.name for spec in first_party_specs} <= anchors
+
+
+def test_install_examples_use_the_extras() -> None:
+    for page in (REPO_ROOT / "README.md", REPO_ROOT / "docs" / "getting-started.md"):
+        installs = [
+            line.strip()
+            for block in _FENCE.finditer(page.read_text(encoding="utf-8"))
+            for line in block.group().splitlines()
+            if re.match(r"\s*(uv tool install|pip install)\b", line)
+        ]
+        assert installs, page
+        assert any("untaped[all]" in line for line in installs), page
+        assert not [line for line in installs if re.search(r"install\s+'?untaped-", line)], page
+
+
+def test_docs_holds_only_the_reader_pages() -> None:
+    docs = REPO_ROOT / "docs"
+    pages = sorted(str(p.relative_to(docs)) for p in docs.rglob("*.md"))
+    assert set(pages) >= set(DOCS_PAGES)
 
 
 @pytest.mark.parametrize(
