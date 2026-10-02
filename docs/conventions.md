@@ -210,4 +210,6 @@ free, but a command that writes declares it with `@writes`, or
 
 `untaped.testing.check_conventions(NAME)` runs these checks for one
 capability; each capability's tests call it. `# untaped: allow <rule>` on the
-flagged node's first line allows that one violation.
+flagged node's first line allows that one violation. It does not cover the
+default-table-columns rule (see Output records); this repo's own test suite
+enforces that one, and `# untaped: allow` does not apply to it.

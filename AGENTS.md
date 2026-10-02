@@ -156,6 +156,9 @@ Bare-repo caches go through `untaped.sdk.RepoCache`; never fork cache plumbing.
 Advisory lock files go through `untaped.fs` (`file_lock`, re-exported by
 `untaped.sdk`).
 
+Releasing: see docs/release.md (a release PR, a TestPyPI rehearsal, then a
+`vX.Y.Z` tag on main).
+
 ## Planning and decisions
 
 Read relevant constraints in [`.planning/decisions/`](.planning/decisions/)
