@@ -40,10 +40,11 @@ gh workflow run release.yml --ref <branch>
 ```
 
 This runs the same build and checks, publishes to TestPyPI and installs from
-it. TestPyPI files are immutable, so re-rehearsing an unchanged build is a
-no-op. A changed build under an already-rehearsed version fails the index
-check: rehearse a pre-release such as `X.Y.Zrc1` first, or accept that a
-rehearsal of `X.Y.Z` pins those bytes.
+it. TestPyPI files are immutable, so re-rehearsing the same commit is a
+no-op. Builds are stamped with the commit time, so any new commit under an
+already-rehearsed version fails the index check: rehearse a pre-release
+such as `X.Y.Zrc1` first, or accept that a rehearsal of `X.Y.Z` pins those
+bytes.
 
 ## Release
 
