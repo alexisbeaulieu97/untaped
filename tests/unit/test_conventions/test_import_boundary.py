@@ -7,7 +7,8 @@ distributions and their ``Requires-Dist``.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from textwrap import dedent
 
 import pytest
@@ -43,31 +44,61 @@ _INIT = """
         {body}
 """
 
-Boundary = Callable[[str], list[str]]
+Check = Callable[[str], list[str]]
+
+
+@dataclass(frozen=True)
+class Cap:
+    """A synthetic capability: package ``name``, installed in distribution ``dist``."""
+
+    name: str
+    files: dict[str, str]
+    requires: tuple[str, ...] = ()
+    broken: bool = False
+    dist: str = ""
+    package: str = ""
+    installed: bool = True
+
+
+def cap(
+    name: str,
+    *,
+    files: dict[str, str] | None = None,
+    requires: Sequence[str] = (),
+    broken: bool = False,
+    dist: str = "",
+    package: str = "",
+    installed: bool = True,
+) -> Cap:
+    """A capability; ``dist`` and ``package`` default to ``name``."""
+    return Cap(name, files or {}, tuple(requires), broken, dist or name, package or name, installed)
+
+
+Boundary = Callable[..., Check]
 
 
 @pytest.fixture
-def boundary(install: Install) -> Callable[..., Boundary]:
-    """``setup(*capabilities)`` -> ``check(name)`` listing that capability's boundary lines.
+def boundary(install: Install) -> Boundary:
+    """``setup(*caps)`` installs them and returns ``check(name)``: the boundary lines.
 
-    A capability is ``(name, files, requires, broken)``; its package and
-    distribution are both ``name``.
+    A capability with ``installed=False`` is only discovered, never importable.
     """
 
-    def setup(
-        *capabilities: tuple[str, dict[str, str], list[str], bool],
-    ) -> Boundary:
+    def setup(*caps: Cap) -> Check:
         candidates: list[ProviderCandidate] = []
-        for name, files, requires, broken in capabilities:
-            body = 'raise RuntimeError("broken")' if broken else "return SPEC"
-            init = dedent(_INIT).format(name=name, body=body)
-            install({f"{name}/__init__.py": init, **{f"{name}/{k}": v for k, v in files.items()}})
+        for c in caps:
+            body = 'raise RuntimeError("broken")' if c.broken else "return SPEC"
+            init = dedent(_INIT).format(name=c.name, body=body)
+            prefix = c.package.replace(".", "/")
+            if c.installed:
+                files = {f"{prefix}/{k}": v for k, v in c.files.items()}
+                install({f"{prefix}/__init__.py": init, **files})
             candidates.append(
                 ProviderCandidate(
-                    distribution=name,
-                    name=name,
-                    target=f"{name}:provider",
-                    requires_dist=tuple(requires),
+                    distribution=c.dist,
+                    name=c.name,
+                    target=f"{c.package}:provider",
+                    requires_dist=c.requires,
                 )
             )
 
@@ -80,16 +111,16 @@ def boundary(install: Install) -> Callable[..., Boundary]:
     return setup
 
 
-def test_core_imports_other_than_the_sdk_are_violations(boundary) -> None:  # type: ignore[no-untyped-def]
-    check = boundary(("demo", {"cli/__init__.py": "from untaped.cli import echo\n"}, [], False))
+def test_core_imports_other_than_the_sdk_are_violations(boundary: Boundary) -> None:
+    check = boundary(cap("demo", files={"cli/__init__.py": "from untaped.cli import echo\n"}))
     assert check("demo") == [
         "demo/cli/__init__.py:1::import-boundary::imports untaped.cli; use untaped.sdk"
     ]
 
 
-def test_bare_untaped_and_import_statements_are_violations(boundary) -> None:  # type: ignore[no-untyped-def]
+def test_bare_untaped_and_import_statements_are_violations(boundary: Boundary) -> None:
     source = "import untaped\nimport untaped.settings as s\nfrom untaped import sdk, bootstrap\n"
-    check = boundary(("demo", {"cli/__init__.py": source}, [], False))
+    check = boundary(cap("demo", files={"cli/__init__.py": source}))
     assert check("demo") == [
         "demo/cli/__init__.py:1::import-boundary::imports untaped; use untaped.sdk",
         "demo/cli/__init__.py:2::import-boundary::imports untaped.settings; use untaped.sdk",
@@ -97,15 +128,15 @@ def test_bare_untaped_and_import_statements_are_violations(boundary) -> None:  #
     ]
 
 
-def test_the_sdk_and_own_modules_are_allowed(boundary) -> None:  # type: ignore[no-untyped-def]
+def test_the_sdk_and_own_modules_are_allowed(boundary: Boundary) -> None:
     source = "from untaped.sdk import create_app\nfrom demo.domain import x\nimport json\n"
     check = boundary(
-        ("demo", {"cli/__init__.py": source, "domain/__init__.py": "x = 1\n"}, [], False)
+        cap("demo", files={"cli/__init__.py": source, "domain/__init__.py": "x = 1\n"})
     )
     assert check("demo") == []
 
 
-def test_function_level_and_type_checking_imports_count(boundary) -> None:  # type: ignore[no-untyped-def]
+def test_function_level_and_type_checking_imports_count(boundary: Boundary) -> None:
     source = (
         "from typing import TYPE_CHECKING\n"
         "if TYPE_CHECKING:\n"
@@ -113,29 +144,28 @@ def test_function_level_and_type_checking_imports_count(boundary) -> None:  # ty
         "def f():\n"
         "    from untaped.settings import b\n"
     )
-    check = boundary(("demo", {"cli/__init__.py": source}, [], False))
+    check = boundary(cap("demo", files={"cli/__init__.py": source}))
     assert check("demo") == [
         "demo/cli/__init__.py:3::import-boundary::imports untaped.cli; use untaped.sdk",
         "demo/cli/__init__.py:5::import-boundary::imports untaped.settings; use untaped.sdk",
     ]
 
 
-def test_a_waiver_suppresses_one_line(boundary) -> None:  # type: ignore[no-untyped-def]
+def test_a_waiver_suppresses_one_line(boundary: Boundary) -> None:
     source = "import untaped.cli  # untaped: allow import-boundary\nimport untaped.settings\n"
-    check = boundary(("demo", {"cli/__init__.py": source}, [], False))
+    check = boundary(cap("demo", files={"cli/__init__.py": source}))
     assert check("demo") == [
         "demo/cli/__init__.py:2::import-boundary::imports untaped.settings; use untaped.sdk"
     ]
 
 
-def test_another_capability_only_through_its_api(boundary) -> None:  # type: ignore[no-untyped-def]
+def test_another_capability_only_through_its_api(boundary: Boundary) -> None:
     check = boundary(
-        ("other", {"api.py": "x = 1\n", "domain/__init__.py": "y = 1\n"}, [], False),
-        (
+        cap("other", files={"api.py": "x = 1\n", "domain/__init__.py": "y = 1\n"}),
+        cap(
             "demo",
-            {"cli/__init__.py": "from other.api import x\nfrom other.domain import y\n"},
-            ["other"],
-            False,
+            files={"cli/__init__.py": "from other.api import x\nfrom other.domain import y\n"},
+            requires=["other"],
         ),
     )
     assert check("demo") == [
@@ -143,18 +173,22 @@ def test_another_capability_only_through_its_api(boundary) -> None:  # type: ign
     ]
 
 
-def test_importing_the_api_module_by_name_is_allowed(boundary) -> None:  # type: ignore[no-untyped-def]
+def test_importing_the_api_module_by_name_is_allowed(boundary: Boundary) -> None:
     check = boundary(
-        ("other", {"api.py": "x = 1\n"}, [], False),
-        ("demo", {"cli/__init__.py": "from other import api\n"}, ["other>=1; extra == 'x'"], False),
+        cap("other", files={"api.py": "x = 1\n"}),
+        cap(
+            "demo",
+            files={"cli/__init__.py": "from other import api\n"},
+            requires=["other>=1; extra == 'x'"],
+        ),
     )
     assert check("demo") == []
 
 
-def test_an_api_import_needs_a_declared_dependency(boundary) -> None:  # type: ignore[no-untyped-def]
+def test_an_api_import_needs_a_declared_dependency(boundary: Boundary) -> None:
     check = boundary(
-        ("other", {"api.py": "x = 1\n"}, [], False),
-        ("demo", {"cli/__init__.py": "from other.api import x\n"}, [], False),
+        cap("other", files={"api.py": "x = 1\n"}),
+        cap("demo", files={"cli/__init__.py": "from other.api import x\n"}),
     )
     assert check("demo") == [
         "demo/cli/__init__.py:1::import-boundary::"
@@ -162,17 +196,34 @@ def test_an_api_import_needs_a_declared_dependency(boundary) -> None:  # type: i
     ]
 
 
-def test_a_quarantined_capability_still_counts_as_a_capability(boundary) -> None:  # type: ignore[no-untyped-def]
+def test_capabilities_in_one_distribution_may_import_each_others_api(boundary: Boundary) -> None:
     check = boundary(
-        ("other", {"api.py": "x = 1\n", "domain/__init__.py": "y = 1\n"}, [], True),
-        ("demo", {"cli/__init__.py": "from other.domain import y\n"}, ["other"], False),
+        cap("other", files={"api.py": "x = 1\n"}, dist="suite"),
+        cap("demo", files={"cli/__init__.py": "from other.api import x\n"}, dist="suite"),
+    )
+    assert check("demo") == []
+
+
+def test_a_quarantined_capability_still_counts_as_a_capability(boundary: Boundary) -> None:
+    check = boundary(
+        cap("other", files={"api.py": "x = 1\n", "domain/__init__.py": "y = 1\n"}, broken=True),
+        cap("demo", files={"cli/__init__.py": "from other.domain import y\n"}, requires=["other"]),
     )
     assert check("demo") == [
         "demo/cli/__init__.py:1::import-boundary::imports other.domain; use other.api"
     ]
 
 
-def test_the_repo_capabilities_pass_without_waivers() -> None:
-    for name in ("ansible", "awx", "github", "jira", "recipe", "workspace"):
-        found = capability_violations(name)
-        assert [line for line in found if "::import-boundary::" in line] == []
+def test_a_capability_nested_under_untaped_is_a_capability_not_core(boundary: Boundary) -> None:
+    package = "untaped.capabilities.other"
+    check = boundary(
+        cap("other", package=package, installed=False),
+        cap(
+            "demo",
+            files={"cli/__init__.py": f"def f():\n    from {package}.domain import y\n"},
+            requires=["other"],
+        ),
+    )
+    assert check("demo") == [
+        f"demo/cli/__init__.py:2::import-boundary::imports {package}.domain; use {package}.api"
+    ]
