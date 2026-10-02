@@ -71,9 +71,9 @@ a suite names its file.
 
 ## Header: `variables`
 
-`variables` maps each variable's `name` to its declaration; `untaped awx schema AwxTestSuite` lists the
-fields. Every field is optional, and a variable without a `default` is
-required.
+`variables` maps each variable's `name` to its declaration;
+`untaped awx schema AwxTestSuite` lists the fields. Every field is optional,
+and a variable without a `default` is required.
 
 Values come from, highest precedence first: `--var`, `--vars-file` (a later
 file wins), the `default`, then an interactive prompt for a required variable.
@@ -108,8 +108,9 @@ untaped awx test run --vars-file ~/.secrets/deploy-test.yml --non-interactive
 
 ## Body: the suite
 
-`untaped awx schema AwxTestSuite` lists the body's fields. A suite names exactly one of `jobTemplate` and
-`workflowTemplate`, and `cases` needs at least one. `variables` is not written
+`untaped awx schema AwxTestSuite` lists the body's fields. A suite names
+exactly one of `jobTemplate` and `workflowTemplate`, and `cases` needs at
+least one. `variables` is not written
 in the body: `untaped awx test list` reports the header's declarations under
 that key.
 
@@ -118,8 +119,7 @@ Unknown keys are errors everywhere in the body, so a typo such as
 
 ## Case body
 
-`untaped awx schema AwxTestSuite` lists a case's fields (`launch`, `expect`, `timeout`,
-`approvals`).
+`untaped awx schema AwxTestSuite` lists a case's fields.
 
 ### `launch`: the launch payload
 
@@ -173,8 +173,7 @@ launch:
 
 ### `expect`: what the job must produce
 
-`untaped awx schema AwxTestSuite` lists the checks (`status`, `log`, `changed`, `hosts`, `idempotent`,
-`failed_tasks`, `nodes`).
+`untaped awx schema AwxTestSuite` lists the checks.
 
 Every check must hold. Against `defaults.expect`:
 
@@ -190,9 +189,8 @@ a `status: failed` case without them.
 
 #### `hosts`
 
-A `hosts` entry sets upper bounds on one host's PLAY RECAP counters
-(`failed`, `unreachable`, `changed`); a counter it leaves out is not
-checked:
+A `hosts` entry sets upper bounds on one host's PLAY RECAP counters; a
+counter it leaves out is not checked:
 
 ```yaml
 expect:
@@ -297,9 +295,9 @@ Approvals:
 - An entry merges over `defaults.expect.nodes` as a case's `expect` does,
   except that `status: never_ran` replaces the default's entry whole.
 
-An entry takes the checks of a case except `idempotent` (`status`, `log`,
-`changed`, `hosts`, `failed_tasks`); `status: never_ran` is for a node the
-workflow did not run, and no other check goes with it.
+An entry takes the checks of a case except `idempotent`; `status:
+never_ran` is for a node the workflow did not run, and no other check goes
+with it.
 
 - A node that ran an approval or a management job has only a status: an
   approved approval is `successful`, a denied or timed-out one `failed`.
