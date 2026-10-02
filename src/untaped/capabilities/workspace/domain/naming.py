@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 
 from untaped.capabilities.workspace.domain.models import RepoSpec
 from untaped.sdk import UsageError, q, repo_url_parts, safe_path_segment
-
-_SCP = re.compile(r"^(?P<user>[^@]+)@(?P<host>[^:]+):(?P<path>.+)$")
 
 
 def validate_workspace_name(name: str) -> str:
@@ -24,7 +21,7 @@ def looks_like_url(ident: str) -> bool:
         "://" in ident
         or ident.startswith(("/", "~"))
         or ident.endswith(".git")
-        or bool(_SCP.match(ident))
+        or repo_url_parts(ident)[0] is not None
     )
 
 

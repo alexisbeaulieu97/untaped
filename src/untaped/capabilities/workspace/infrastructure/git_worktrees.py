@@ -3,16 +3,18 @@
 Each repo URL maps to a bare cache (:func:`untaped.sdk.cache_path`) whose
 ``origin`` remote fetches into ``refs/remotes/origin/*``; workspaces get
 ``git worktree`` checkouts from it. Every cache write runs under the cache's
-advisory lock, so parallel provisioning of one repo serializes safely. All
-git runs go through :class:`untaped.sdk.RepoCache`; failures become
-:class:`GitError` keeping git's attribution, and a branch or directory that
-is already in use becomes a ``conflict``. :meth:`LocalGitWorktrees.cached_repos`
+advisory lock, so parallel provisioning of one repo serializes safely. Git
+runs on a cache go through :class:`untaped.sdk.RepoCache`, and runs in a
+worktree through ``run_git``; failures become :class:`GitError` keeping git's
+attribution, and a branch or directory that is already in use becomes a
+``conflict``. :meth:`LocalGitWorktrees.cached_repos`
 lists the caches without running git (the repo picker opens on it).
 """
 
 from __future__ import annotations
 
 import shutil
+from collections.abc import Sequence
 from pathlib import Path
 
 from untaped.capabilities.workspace.domain.models import CachedRepo, Checkout, WorktreeStatus
@@ -20,11 +22,13 @@ from untaped.capabilities.workspace.domain.safety import archive_blockers
 from untaped.capabilities.workspace.errors import GitError, WorkspaceError
 from untaped.sdk import (
     GitCommandError,
+    GitResult,
     RepoCache,
     attribution,
     cache_origin,
     cache_path,
     list_caches,
+    run_git,
 )
 
 _FETCH_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
@@ -87,11 +91,10 @@ class LocalGitWorktrees:
         """Git state of the worktree at ``dest``; ``None`` when it is missing."""
         if not dest.exists():
             return None
-        wt = self._at(dest)
-        common = self._check_registered(wt)
-        out = wt.run(["status", "--porcelain=v2", "--branch"], capture=True).text
+        common = self._check_registered(dest)
+        out = self._in(dest, ["status", "--porcelain=v2", "--branch"], capture=True).text
         head, upstream, ahead, behind, modified, untracked = _parse_status(out)
-        if upstream is not None and not self._has_ref(wt, f"refs/remotes/{upstream}"):
+        if upstream is not None and not self._has_ref(dest, f"refs/remotes/{upstream}"):
             upstream = None  # configured for the first push, but not on origin yet
         return WorktreeStatus(
             branch=head,
@@ -100,9 +103,9 @@ class LocalGitWorktrees:
             behind=behind,
             modified=modified,
             untracked=untracked,
-            stashed=self._stashed(wt, branch, common=common),
-            unpushed=self._unpushed(wt),
-            submodules=(dest / ".gitmodules").exists() and self._has_submodules(wt),
+            stashed=self._stashed(dest, branch, common=common),
+            unpushed=self._unpushed(dest),
+            submodules=(dest / ".gitmodules").exists() and self._has_submodules(dest),
         )
 
     def fetch(self, url: str) -> None:
@@ -166,8 +169,7 @@ class LocalGitWorktrees:
         Run under the cache lock right before ``worktree remove``: changes,
         stashes on the checked-out branch, or unpushed commits block it.
         """
-        wt = self._at(dest)
-        out = wt.run(["status", "--porcelain=v2", "--branch"], capture=True).text
+        out = self._in(dest, ["status", "--porcelain=v2", "--branch"], capture=True).text
         head, _, _, _, modified, untracked = _parse_status(out)
         status = WorktreeStatus(
             branch=head,
@@ -176,8 +178,8 @@ class LocalGitWorktrees:
             behind=0,
             modified=modified,
             untracked=untracked,
-            stashed=self._stashed(wt, head, common=cache.path),
-            unpushed=self._unpushed(wt),
+            stashed=self._stashed(dest, head, common=cache.path),
+            unpushed=self._unpushed(dest),
         )
         blockers = archive_blockers(status)
         if blockers:
@@ -337,27 +339,27 @@ class LocalGitWorktrees:
 
     # -- status helpers ----------------------------------------------------
 
-    def _stashed(self, wt: RepoCache, branch: str | None, *, common: Path) -> int:
+    def _stashed(self, wt: Path, branch: str | None, *, common: Path) -> int:
         """Stash entries made on ``branch``; no git run when ``common`` has no stash."""
         if not any((common / marker).exists() for marker in _STASH_MARKERS):
             return 0
         label = branch if branch is not None else "(no branch)"
-        out = wt.run(["stash", "list", "--format=%gs"], capture=True).text
+        out = self._in(wt, ["stash", "list", "--format=%gs"], capture=True).text
         prefixes = (f"WIP on {label}:", f"On {label}:")
         return sum(1 for line in out.splitlines() if line.startswith(prefixes))
 
-    def _unpushed(self, wt: RepoCache) -> int:
+    def _unpushed(self, wt: Path) -> int:
         """Commits on ``HEAD`` that no remote-tracking branch has (detached or not)."""
         args = ["rev-list", "--count", "HEAD", "--not", "--remotes"]
-        out = wt.run(args, capture=True).text
+        out = self._in(wt, args, capture=True).text
         return int(out.strip() or 0)
 
-    def _has_submodules(self, wt: RepoCache) -> bool:
+    def _has_submodules(self, wt: Path) -> bool:
         """Whether any submodule is initialised (``-`` marks an uninitialised one)."""
-        out = wt.run(["submodule", "status", "--recursive"], capture=True).text
+        out = self._in(wt, ["submodule", "status", "--recursive"], capture=True).text
         return any(line and not line.startswith("-") for line in out.splitlines())
 
-    def _check_registered(self, wt: RepoCache) -> Path:
+    def _check_registered(self, dest: Path) -> Path:
         """Raise unless ``dest`` is the worktree its git admin directory points back to.
 
         Returns the worktree's common git directory (its repo cache).
@@ -366,8 +368,7 @@ class LocalGitWorktrees:
         directory that now belongs to another worktree with the same name;
         reading it would report that other worktree's state.
         """
-        dest = wt.path
-        out = wt.run(["rev-parse", "--absolute-git-dir"], capture=True).text
+        out = self._in(dest, ["rev-parse", "--absolute-git-dir"], capture=True).text
         admin = Path(out.strip())
         try:
             back = (admin / (admin / "gitdir").read_text().strip()).resolve()
@@ -390,12 +391,8 @@ class LocalGitWorktrees:
     # -- plumbing ----------------------------------------------------------
 
     def _cache(self, url: str) -> RepoCache:
-        return self._at(cache_path(url, root=self._cache_dir))
-
-    def _at(self, path: Path) -> RepoCache:
-        """A :class:`RepoCache` on ``path`` (a cache, or a worktree to run git in)."""
         return RepoCache(
-            path,
+            cache_path(url, root=self._cache_dir),
             error=GitError,
             map_error=_git_error,
             git=self._git,
@@ -404,9 +401,26 @@ class LocalGitWorktrees:
             lock_timeout=self._lock_timeout,
         )
 
-    def _has_ref(self, wt: RepoCache, ref: str) -> bool:
+    def _in(
+        self, worktree: Path, args: Sequence[str], *, capture: bool = False, check: bool = True
+    ) -> GitResult:
+        """Run ``git <args>`` in ``worktree`` (no auth: these commands never fetch)."""
+        try:
+            return run_git(
+                args,
+                cwd=worktree,
+                git=self._git,
+                timeout=self._timeout,
+                capture=capture,
+                check=check,
+                ceiling=True,
+            )
+        except GitCommandError as exc:
+            raise _git_error(exc) from exc
+
+    def _has_ref(self, wt: Path, ref: str) -> bool:
         args = ["show-ref", "--verify", "--quiet", ref]
-        return wt.run(args, check=False).returncode == 0
+        return self._in(wt, args, check=False).returncode == 0
 
     def _is_ancestor(self, cache: RepoCache, ancestor: str, descendant: str) -> bool:
         args = ["merge-base", "--is-ancestor", ancestor, descendant]

@@ -161,6 +161,7 @@ def test_cached_repo_with_a_rewritten_origin_is_skipped() -> None:
     ("ident", "expected"),
     [
         ("git@host:o/r.git", True),
+        ("git@host:o/r", True),
         ("https://h/o/r", True),
         ("/srv/r.git", True),
         ("~/r", True),
