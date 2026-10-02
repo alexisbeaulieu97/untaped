@@ -86,6 +86,18 @@ def test_link_copy_and_delete(placer: FilesystemPlacer, tmp_path: Path) -> None:
     placer.delete(target)  # idempotent
 
 
+def test_copy_honours_the_umask(placer: FilesystemPlacer, tmp_path: Path) -> None:
+    target = tmp_path / "home" / "private"
+    before = os.umask(0o077)
+    try:
+        placer.copy(b"token=1\n", target, executable=False)
+        assert target.stat().st_mode & 0o777 == 0o600
+        placer.copy(b"#!/bin/sh\n", target, executable=True)
+        assert target.stat().st_mode & 0o777 == 0o700
+    finally:
+        os.umask(before)
+
+
 def test_render_reads_text_and_marks_binary(placer: FilesystemPlacer, tmp_path: Path) -> None:
     target = tmp_path / "home" / "t"
     target.parent.mkdir()

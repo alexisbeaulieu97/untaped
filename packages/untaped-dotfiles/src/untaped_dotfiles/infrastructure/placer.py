@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import tempfile
 from collections.abc import Callable, MutableMapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -84,14 +83,15 @@ class FilesystemPlacer:
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.is_symlink():
             target.unlink()
-        fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
-        tmp = Path(tmp_name)
+        tmp = target.parent / f".{target.name}.{os.getpid()}.tmp"
+        tmp.unlink(missing_ok=True)  # left by an interrupted run
+        mode = 0o777 if executable else 0o666  # the kernel applies the umask
         try:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
             with os.fdopen(fd, "wb") as handle:
                 handle.write(data)
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.chmod(tmp, 0o755 if executable else 0o644)
             os.replace(tmp, target)
         finally:
             tmp.unlink(missing_ok=True)
