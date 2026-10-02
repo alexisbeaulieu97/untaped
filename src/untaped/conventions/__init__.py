@@ -8,13 +8,19 @@ third-party provider is checked exactly like a first-party one. Provider tests c
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from importlib.util import find_spec
 from pathlib import Path
 
 from untaped.bootstrap import build_root_app, composition
-from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
+from untaped.capabilities.registry import (
+    CapabilitySpec,
+    ProviderCandidate,
+    discover_candidates,
+)
 from untaped.conventions.help_tree import ROOT_COMMANDS, help_tree_violations
+from untaped.conventions.imports import import_boundary_violations
 from untaped.conventions.layering import layering_violations
 from untaped.conventions.messages import message_violations
 from untaped.conventions.source import source_files
@@ -30,8 +36,8 @@ def capability_violations(
     """Every convention violation of the installed capability ``name``.
 
     Builds the root once (from discovered candidates), finds the
-    registered capability, and runs help_tree, messages, structure and
-    layering over its command subtree and package. The private-test-import
+    registered capability, and runs help_tree, messages, structure, layering
+    and import-boundary over its command subtree and package. The private-test-import
     check runs only when ``tests_dir`` is given. ``candidates`` replaces
     entry-point discovery (as in :func:`untaped.bootstrap.compose_root`), so
     a test can check a provider that is not installed. Lines are
@@ -50,14 +56,51 @@ def capability_violations(
         raise LookupError(f"no installed capability named {name!r}")
     package, source_dir = _package_of(spec)
     files = list(source_files(source_dir))
+    capability_packages, declared = _boundary(name, candidates)
     return sorted(
         [
             *help_tree_violations(root, [name]),
             *message_violations(source_dir, files),
             *structure_violations(spec, package, source_dir, files, tests_dir=tests_dir),
             *layering_violations(package, source_dir, files),
+            *import_boundary_violations(
+                package,
+                source_dir,
+                files,
+                capability_packages=capability_packages,
+                declared=declared,
+            ),
         ]
     )
+
+
+def _canonical(requirement: str) -> str:
+    """The canonical distribution name of a ``Requires-Dist`` string (markers ignored)."""
+    match = re.match(r"[A-Za-z0-9][A-Za-z0-9._-]*", requirement.strip())
+    return re.sub(r"[-_.]+", "-", match.group(0) if match else requirement).lower()
+
+
+def _boundary(
+    name: str, candidates: Sequence[ProviderCandidate] | None
+) -> tuple[dict[str, str], frozenset[str]]:
+    """Capability packages (to distributions) and what capability ``name`` may import from.
+
+    Every candidate with a ``module:attr`` target counts as a capability,
+    composed or quarantined. The checked capability's own distribution is
+    always declared, so capabilities sharing a distribution may import each
+    other's ``api``.
+    """
+    found = list(candidates) if candidates is not None else list(discover_candidates())
+    packages = {
+        candidate.target.partition(":")[0]: _canonical(candidate.distribution)
+        for candidate in found
+        if isinstance(candidate.target, str) and ":" in candidate.target
+    }
+    own = next((candidate for candidate in found if candidate.name == name), None)
+    if own is None:
+        return packages, frozenset()
+    declared = {_canonical(own.distribution), *map(_canonical, own.requires_dist)}
+    return packages, frozenset(declared)
 
 
 def core_violations() -> list[str]:
