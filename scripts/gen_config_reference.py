@@ -11,7 +11,7 @@ Usage::
     uv run python scripts/gen_config_reference.py          # rewrite the page
     uv run python scripts/gen_config_reference.py --check  # exit 1 if stale
 
-``tests/unit/test_config_reference.py`` fails when the checked-in page is
+``tests/repo/test_docs.py`` fails when the checked-in page is
 stale or a setting has no description.
 """
 
@@ -24,8 +24,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, get_args, get_origin
 
+from packaging.utils import canonicalize_name
 from pydantic import BaseModel, SecretStr
 from pydantic_core import PydanticUndefined
+from release import packages
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = REPO_ROOT / "docs" / "reference" / "config.md"
@@ -249,7 +251,7 @@ def collect_sections() -> list[tuple[str, str, type[BaseModel], bool]]:
     Capabilities follow in name order. Raises :class:`RuntimeError` naming
     every quarantined first-party capability rather than drop its section.
     """
-    from untaped.bootstrap import SHELL_DISTRIBUTION, SHELL_SPEC  # noqa: PLC0415
+    from untaped.bootstrap import SHELL_SPEC  # noqa: PLC0415
     from untaped.capabilities.registry import compose, discover_candidates  # noqa: PLC0415
     from untaped.settings import Settings  # noqa: PLC0415
 
@@ -262,7 +264,8 @@ def collect_sections() -> list[tuple[str, str, type[BaseModel], bool]]:
             False,
         ),
     ]
-    first_party = [c for c in discover_candidates() if c.distribution == SHELL_DISTRIBUTION]
+    own = packages(REPO_ROOT)
+    first_party = [c for c in discover_candidates() if canonicalize_name(c.distribution) in own]
     result = compose(SHELL_SPEC, first_party)
     if result.quarantine:
         reasons = "; ".join(

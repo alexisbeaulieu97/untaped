@@ -24,8 +24,9 @@ that exact action, because each changes shared or public state.
 
 It touches these and nothing else:
 
-- every package version: today the root `pyproject.toml`; after the split,
-  each `packages/*/pyproject.toml` together with its exact sibling pins;
+- versions: every package version and sibling pin in each
+  `packages/*/pyproject.toml`, and on a major `examples/untaped-hello`'s
+  `untaped` range (`>=X,<X+1`);
 - `uv.lock` (`uv lock`);
 - `CHANGELOG.md`: rename `## Unreleased` to `## X.Y.Z`.
 

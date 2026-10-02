@@ -24,7 +24,7 @@ of the version you have installed, run `untaped --help` or
 
 - [Agent skills](./skills.md): install and update the skills that teach AI
   coding agents to use each capability.
-- [AWX agent profile](../src/untaped/capabilities/awx/skills/untaped-awx/references/agent-profile.md):
+- [AWX agent profile](../packages/untaped-awx/src/untaped_awx/skills/untaped-awx/references/agent-profile.md):
   a dedicated AWX user, token and profile for an agent that tests its changes
   with `awx test`.
 

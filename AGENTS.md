@@ -12,28 +12,34 @@ capabilities; there is no multi-repo workspace guidance here.
 profiles, themes, consistent output, typed piping, HTTP/TLS, and UI/prompt
 helpers, plus one command subtree per first-party capability
 (`untaped workspace ...`, ...). Composition runs through
-`src/untaped/bootstrap.py` (`main()`), which discovers every capability,
+`packages/untaped/src/untaped/bootstrap.py` (`main()`), which discovers every capability,
 first-party ones included, through the `untaped.capabilities` entry-point
 group, validates them through the registry, then mounts the survivors. The
-implementation in `src/untaped/` is authoritative for composition and command
+implementation in `packages/untaped/src/untaped/` is authoritative for composition and command
 behavior. User workflows live in [`docs/`](docs/README.md); provider authors
 should start with [`docs/plugins.md`](docs/plugins.md).
 
 Inspect `untaped capabilities` for the current first-party capabilities.
 The source tree is the implementation reference:
 
-- `pyproject.toml` and `uv.lock` define the distribution and locked
-  environment.
-- `src/untaped/` contains the shell, shared services, and first-party
-  capabilities. Each `src/untaped/capabilities/<name>/` directory owns one
-  capability end to end.
+- The root `pyproject.toml` is the uv workspace root (tool configuration and
+  the `dev` group, no `[project]`); `uv.lock` locks the whole workspace.
+- `packages/<name>/` holds one distribution each: its `pyproject.toml`,
+  `src/` and `tests/`. Core is `packages/untaped/`: its `src/untaped/`
+  contains the shell and shared services. Each capability is its own package,
+  `packages/untaped-<name>/src/untaped_<name>/`, and owns one capability end to end.
+- `examples/untaped-hello/` is a minimal third-party plugin with its own
+  tests; it is not a workspace member and is never published. CI installs it
+  beside the core wheel and runs its tests outside the repository.
 - `docs/` contains user guides and executable policy files.
-- `tests/` verifies public behavior and release contracts.
+- `tests/` verifies public behavior and release contracts: `tests/repo/` holds
+  the cross-package tests and `tests/skills/` the skill checks; a capability's
+  tests live in `packages/untaped-<name>/tests/<name>/`.
 
 A capability owns its directory end to end:
 
 ```
-src/untaped/capabilities/<name>/
+packages/untaped-<name>/src/untaped_<name>/
 ├── __init__.py        # SPEC: CapabilitySpec (with one-line help) + nullary build_app() (lazy CLI import; never build at import time) + provider()
 ├── settings.py        # profile model + state model (field sets must be disjoint)
 ├── api.py             # optional: declared public module other first-party capabilities may import (Hard Rule 2)
@@ -71,12 +77,17 @@ keeps that attribution when replaced or turned into a row; see
   Every violation becomes a `QuarantineRecord` entry while composition
   continues. Provider authors never import it.
 - Management command names are owned by the root shell; inspect
-  `untaped --help` and `src/untaped/management/` when adding a capability.
-- A new first-party capability: add `capabilities/<name>/` per the layout
+  `untaped --help` and `packages/untaped/src/untaped/management/` when adding a capability.
+- A new first-party capability: add `packages/untaped-<name>/` per the layout
   above, expose `SPEC`, `build_app` and a nullary `provider()` returning
-  `SPEC`, and add `<name> = "untaped.capabilities.<name>:provider"` under
-  `[project.entry-points."untaped.capabilities"]` in `pyproject.toml` (then
-  `uv sync`). Start its
+  `SPEC`, and add `<name> = "untaped_<name>:provider"` under
+  `[project.entry-points."untaped.capabilities"]` in its `pyproject.toml`
+  (copy a sibling package's; add the `untaped[<name>]` extra to core and a
+  `[tool.uv.sources]` entry, then `uv sync`). Also add the package to the
+  root `pyproject.toml` lists (mypy `files`/`mypy_path`, pytest
+  `testpaths`/`pythonpath`, coverage `source`, `[tool.uv.sources]`), to
+  `EXPECTED_MEMBERS` in `tests/repo/test_workspace.py` and to `FIRST_PARTY` in
+  `tests/repo/support.py`; the tests catch omissions. Start its
   skill from [`docs/templates/SKILL.md`](docs/templates/SKILL.md) (which holds
   the skill rules) and its user guide at `docs/<name>/usage.md`, linked from
   `docs/README.md`. Set
@@ -114,9 +125,9 @@ rules below.
 2. **Cross-capability code goes through a declared public module.**
    Capability code imports core only from `untaped.sdk`. It may
    import another capability only through that capability's public module,
-   `untaped.capabilities.<other>.api`, never its other internals; each
-   importing pair is listed in `ALLOWED_CROSS_CAPABILITY_IMPORTS`
-   (`tests/unit/test_capabilities/test_capability_imports.py`).
+   `<package>.api` (for example `untaped_github.api`), never its other internals; the
+   importing package declares a dependency on the other package;
+   `check_conventions` enforces both.
    Dependencies are one-way (no cycles). Import them lazily on CLI paths;
    the one exception is a settings model that validates against the other
    capability, which imports it at module top.
