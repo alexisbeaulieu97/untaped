@@ -194,7 +194,7 @@ def test_hook_resolver_rejects_runtime_cli_dependency(tmp_path: Path, dependency
         HookResolver().resolve("check", tmp_path)
     installed = Version(version("untaped"))
     assert "dependency-groups.dev" in str(exc_info.value)
-    assert f"untaped>={installed.public},<{installed.major + 1}" in str(exc_info.value)
+    assert f"untaped[recipe]>={installed.public},<{installed.major + 1}" in str(exc_info.value)
 
 
 @pytest.mark.parametrize(

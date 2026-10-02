@@ -19,7 +19,7 @@ hook, the built-in `yaml_edit` hook.
   workers run with `uv run --locked --no-dev`.
 - A pack's `pyproject.toml` lists recipes under
   `[tool.untaped_recipe.recipes]` and hooks under
-  `[tool.untaped_recipe.hooks]`. Keep `untaped` a dev-only dependency; put
+  `[tool.untaped_recipe.hooks]`. Keep `untaped[recipe]` a dev-only dependency; put
   hook runtime dependencies in `[project].dependencies`.
 
 ## Recipe files

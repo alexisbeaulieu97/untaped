@@ -46,7 +46,7 @@ def test_scaffold_pack_writes_parseable_manifest_with_hook_api_floors(pack: Path
     assert pyproject["project"]["name"] == "untaped-recipe-ansible"
     assert pyproject["tool"]["untaped_recipe"]["requires_hook_api"] == ">=0.10,<1"
     assert pyproject["dependency-groups"]["dev"] == [
-        f"untaped>={installed.public},<{installed.major + 1}",
+        f"untaped[recipe]>={installed.public},<{installed.major + 1}",
         "pytest",
     ]
     assert pyproject["tool"]["pytest"]["ini_options"]["pythonpath"] == ["src"]
