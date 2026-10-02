@@ -153,6 +153,7 @@ def _origin(tmp_path: Path) -> Path:
     upstream = _upstream(tmp_path)
     _commit(upstream, _REQS, "- src: acme/base\n", "1")
     _git(upstream, "branch", "-M", "main")
+    _git(upstream, "config", "uploadpack.allowFilter", "true")
     return upstream
 
 
@@ -165,14 +166,14 @@ def _rewrite_to(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, origin: Path, *
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
 
 
-def _spy_headers(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str | None]]:
+def _spy_headers(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str | None, str | None]]:
     import untaped.repo_cache as repo_cache_module
 
-    headers: list[tuple[str, str | None]] = []
+    headers: list[tuple[str, str | None, str | None]] = []
     real = repo_cache_module.run_git
 
     def spy(args: Any, **kwargs: Any) -> Any:
-        headers.append((args[0], kwargs.get("auth_header")))
+        headers.append((args[0], kwargs.get("auth_header"), kwargs.get("auth_url")))
         return real(args, **kwargs)
 
     monkeypatch.setattr(repo_cache_module, "run_git", spy)
@@ -197,13 +198,18 @@ def test_a_token_goes_only_to_the_github_host(
     cache = GitRepositoryCache(auth_host="github.com")
 
     bare = cache.ensure_bare(url, cache_dir=tmp_path / "cache", auth_header="AUTH")
-    cache.fetch_refs(bare, refspecs=_MAIN, depth=1, blob_filter=False, auth_header="AUTH")
-    cache.read_files(bare, "refs/heads/main", [_REQS], auth_header="AUTH")
+    cache.fetch_refs(bare, refspecs=_MAIN, depth=1, blob_filter=True, auth_header="AUTH")
+    # The blob was filtered out: ``cat-file --batch`` fetches it lazily from origin.
+    files = cache.read_files(bare, "refs/heads/main", [_REQS], auth_header="AUTH")
 
-    assert _git(bare, "rev-parse", "refs/heads/main")
-    sent = {name for name, header in headers if header is not None}
+    assert _git(bare, "rev-parse", "refs/heads/main") == _git(origin, "rev-parse", "main")
+    assert files == {_REQS: "- src: acme/base\n"}
+    sent = {name for name, header, _ in headers if header is not None}
     assert sent == (set() if expected is None else {"fetch", "ls-tree", "cat-file"})
-    assert {header for _, header in headers if header is not None} <= {expected}
+    assert {header for _, header, _ in headers if header is not None} <= {expected}
+    # ``auth_url`` rides with the header and is absent without it.
+    allowed = {(None, None)} | ({("AUTH", url)} if expected else set())
+    assert {(header, auth_url) for _, header, auth_url in headers} <= allowed
 
 
 def test_the_cache_is_locked_while_fetching(tmp_path: Path) -> None:
