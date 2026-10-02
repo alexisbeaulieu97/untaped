@@ -15,8 +15,11 @@ subcommand is one step of the workflow:
   built files with what the index already holds: before publishing (conflicts
   fail, so a re-run uploads only what is missing) and, with ``--complete``,
   after publishing (waits until every file is there).
-- ``smoke UNTAPED_EXE VERSION`` runs an installed ``untaped`` and checks its
-  version, its first-party capabilities and every ``--help``.
+- ``smoke UNTAPED_EXE VERSION [--expect A,B] [--quarantined C] [--skills]``
+  runs an installed ``untaped`` and checks its version, that its capabilities
+  are exactly the expected ones ready (default: every first-party entry point)
+  and the quarantined ones quarantined, every ``--help``, and with
+  ``--skills`` each expected capability's packaged ``SKILL.md``.
 - ``github-release VERSION --tag TAG --repo OWNER/REPO --dist DIR --notes FILE``
   creates, completes or verifies the GitHub release (the last job).
 
@@ -353,22 +356,64 @@ def release_notes(changelog: Path, version: str) -> str:
 
 
 def smoke_errors(
-    version_out: str, capabilities_json: str, version: str, expected: Collection[str]
+    version_out: str,
+    capabilities_json: str,
+    version: str,
+    expected: Collection[str],
+    quarantined: Collection[str] = (),
 ) -> list[str]:
-    """The installed version and every expected capability ``ready``; extra rows are fine."""
+    """The installed version, and exactly ``expected`` ready plus ``quarantined`` quarantined.
+
+    A row for any other capability, a capability listed twice and a name in
+    both sets are errors too.
+    """
     errors = []
     if version_out.strip() != version:
         errors.append(f"untaped --version printed {version_out.strip()}, not {version}")
     try:
         rows = json.loads(capabilities_json)
+        names = [row["name"] for row in rows]
         statuses = {row["name"]: row["status"] for row in rows}
     except ValueError, TypeError, KeyError:
         return [*errors, "untaped capabilities --format json did not print a list of rows"]
-    for name in sorted(expected):
+    both = set(expected) & set(quarantined)
+    errors += [f"capability {name} is both expected and quarantined" for name in sorted(both)]
+    twice = {name for name in names if names.count(name) > 1}
+    errors += [f"capability {name} is listed twice" for name in sorted(twice)]
+    for name, status in [
+        *((name, "ready") for name in sorted(set(expected) - both)),
+        *((name, "quarantined") for name in sorted(set(quarantined) - both)),
+    ]:
         if name not in statuses:
             errors.append(f"capability {name} is missing")
-        elif statuses[name] != "ready":
-            errors.append(f"capability {name} is {statuses[name]}")
+        elif statuses[name] != status:
+            errors.append(f"capability {name} is {statuses[name]}" + _unless(status))
+    unexpected = set(statuses) - set(expected) - set(quarantined)
+    errors += [f"capability {name} is installed but not expected" for name in sorted(unexpected)]
+    return errors
+
+
+def _unless(status: str) -> str:
+    return "" if status == "ready" else f", not {status}"
+
+
+def skill_errors(skills_json: str, expected: Collection[str]) -> list[str]:
+    """``untaped-<name>`` listed for each expected capability; every listed skill has a SKILL.md."""
+    try:
+        rows = json.loads(skills_json)
+        sources = {row["name"]: Path(row["source"]) for row in rows}
+    except ValueError, TypeError, KeyError:
+        return ["untaped skills list --format json did not print a list of rows"]
+    errors = [
+        f"skill untaped-{name} is missing"
+        for name in sorted(expected)
+        if f"untaped-{name}" not in sources
+    ]
+    errors += [
+        f"skill {name} has no SKILL.md in {source}"
+        for name, source in sorted(sources.items())
+        if not (source / "SKILL.md").is_file()
+    ]
     return errors
 
 
@@ -385,18 +430,35 @@ def _run(exe: str, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run([exe, *args], capture_output=True, text=True, check=False)
 
 
-def run_smoke(exe: str, version: str) -> tuple[list[str], int]:
-    """Run the installed ``untaped``: (every smoke failure, first-party capability count)."""
-    expected = capability_names(REPO_ROOT)
+def run_smoke(
+    exe: str,
+    version: str,
+    *,
+    expect: Collection[str],
+    quarantined: Collection[str] = (),
+    skills: bool = False,
+) -> tuple[list[str], int]:
+    """Run the installed ``untaped``: (every smoke failure, expected capability count)."""
     rows = _run(exe, "capabilities", "--format", "json")
-    errors = smoke_errors(_run(exe, "--version").stdout, rows.stdout, version, expected)
+    version_out = _run(exe, "--version").stdout
+    errors = smoke_errors(version_out, rows.stdout, version, expect, quarantined)
     if rows.returncode:
         errors.append(f"untaped capabilities --format json exited {rows.returncode}")
-    for command in [[], *([name] for name in expected)]:
+    for command in [[], *([name] for name in sorted(expect))]:
         code = _run(exe, *command, "--help").returncode
         if code:
             errors.append(f"untaped {' '.join([*command, '--help'])} exited {code}")
-    return errors, len(expected)
+    if skills:
+        listing = _run(exe, "skills", "list", "--format", "json")
+        errors += skill_errors(listing.stdout, expect)
+        if listing.returncode:
+            errors.append(f"untaped skills list --format json exited {listing.returncode}")
+    return errors, len(expect)
+
+
+def _names(value: str) -> list[str]:
+    """A comma-separated name list; ``""`` is none."""
+    return [name.strip() for name in value.split(",") if name.strip()]
 
 
 # --- GitHub release ---------------------------------------------------------
@@ -502,6 +564,17 @@ def _parser() -> argparse.ArgumentParser:
     smoke = commands.add_parser("smoke", help="smoke-test an installed untaped")
     smoke.add_argument("exe")
     smoke.add_argument("version")
+    smoke.add_argument(
+        "--expect",
+        type=_names,
+        help="comma-separated ready capabilities (default: every first-party one; '' for none)",
+    )
+    smoke.add_argument(
+        "--quarantined", type=_names, default=[], help="comma-separated quarantined capabilities"
+    )
+    smoke.add_argument(
+        "--skills", action="store_true", help="check each expected capability's packaged skill"
+    )
     github = commands.add_parser("github-release", help="create or verify the GitHub release")
     github.add_argument("version")
     github.add_argument("--tag", required=True)
@@ -531,6 +604,16 @@ def _index(root: Path, args: argparse.Namespace) -> list[str]:
     return errors
 
 
+def _smoke(root: Path, args: argparse.Namespace) -> list[str]:
+    expect = capability_names(root) if args.expect is None else args.expect
+    errors, count = run_smoke(
+        args.exe, args.version, expect=expect, quarantined=args.quarantined, skills=args.skills
+    )
+    if not errors:
+        print(f"smoke ok: untaped {args.version}, {count} capabilities")
+    return errors
+
+
 def _dispatch(args: argparse.Namespace) -> list[str]:
     root: Path = args.root
     match args.command:
@@ -548,10 +631,7 @@ def _dispatch(args: argparse.Namespace) -> list[str]:
         case "index":
             return _index(root, args)
         case "smoke":
-            errors, count = run_smoke(args.exe, args.version)
-            if not errors:
-                print(f"smoke ok: untaped {args.version}, {count} capabilities")
-            return errors
+            return _smoke(root, args)
         case "github-release":
             gh = functools.partial(_run, "gh")
             publish_github_release(args.version, args.tag, args.repo, args.dist, args.notes, gh=gh)
