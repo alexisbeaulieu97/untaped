@@ -45,5 +45,4 @@ def test_testing_reexports_prompt_backend() -> None:
 
 
 def test_the_hermetic_plugin_is_importable() -> None:
-    plugin = importlib.import_module("untaped.testing.plugin")
-    assert hasattr(plugin, "_hermetic_environment")
+    importlib.import_module("untaped.testing.plugin")

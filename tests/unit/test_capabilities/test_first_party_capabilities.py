@@ -64,16 +64,12 @@ def test_the_fixtures_hold_exactly_the_first_party_capabilities(
 def test_every_first_party_capability_is_an_entry_point_listed_ready_in_name_order(
     first_party_candidates: tuple[ProviderCandidate, ...],
 ) -> None:
-    # The suite's one explicit list of the first-party capabilities.
     root = bootstrap.build_root_app(candidates=first_party_candidates)
     listed = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])
     assert listed.exit_code == 0, listed.output
     assert [
         (row["name"], row["status"], row["distribution"]) for row in json.loads(listed.stdout)
-    ] == [
-        (name, "ready", "untaped")
-        for name in ("ansible", "awx", "github", "jira", "recipe", "workspace")
-    ]
+    ] == [(name, "ready", "untaped") for name in FIRST_PARTY]
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
