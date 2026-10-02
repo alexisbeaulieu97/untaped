@@ -176,4 +176,12 @@ def test_bare_capabilities_listing_hint_is_a_plain_hint_line_in_text_mode() -> N
 def test_listing_with_a_capability_has_no_install_hint() -> None:
     root = bootstrap.build_root_app(candidates=[make_candidate(make_spec("demo"))])
     result = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])
-    assert "untaped[all]" not in result.stderr
+    assert "hint:" not in result.stderr
+    assert bootstrap.INSTALL_HINT not in result.stderr
+
+
+def test_listing_with_only_quarantined_providers_has_no_install_hint() -> None:
+    root = bootstrap.build_root_app(candidates=[make_candidate(make_spec("demo"), name="other")])
+    result = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])
+    assert _rows(result.stdout)
+    assert bootstrap.INSTALL_HINT not in result.stderr

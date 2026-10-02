@@ -34,8 +34,8 @@ _UNKNOWN = "unknown"
 #: Shown by root ``--help`` and an empty ``capabilities`` listing when a bare
 #: ``untaped`` install has no capability providers.
 INSTALL_HINT = (
-    "No capabilities are installed. Install them all with: pip install 'untaped[all]' "
-    "(or one, e.g. 'untaped[awx]')."
+    "No capabilities are installed. Reinstall untaped with an extra: 'untaped[all]' "
+    "for all of them, or one, e.g. 'untaped[awx]'."
 )
 
 
