@@ -34,10 +34,10 @@
     which are never read again; refresh re-fetches into the new layout, and
     the old ones can be deleted.
 - Workspace
-  - **Breaking:** workspace caches now live in `~/.untaped/workspace-cache`. The 9.x
-    `~/.untaped/repositories` is left untouched (clones made before 7.0 may
-    borrow objects from it); a `workspace.cache_dir` pointing at a 9.x cache
-    is refused.
+  - **Breaking:** workspace caches now live in `~/.untaped/workspace-cache`.
+    The 9.x `~/.untaped/repositories` is left untouched (clones made before
+    7.0 may borrow objects from it); a `workspace.cache_dir` pointing at a
+    9.x cache is refused.
   - **New:** `workspace create`, `add` and `archive` print failed rows'
     errors with hints on stderr.
   - **Breaking:** `untaped workspace` now manages task workspaces of git
