@@ -875,10 +875,10 @@ def _main(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, str, str
 
 
 def test_the_script_checks_this_repository() -> None:
-    """The one subprocess test: it covers the ``__main__`` guard."""
+    """The one subprocess test: it covers the ``__main__`` guard, as CI calls it."""
     version = release.release_version(REPO_ROOT)
     result = subprocess.run(
-        [sys.executable, str(SCRIPT), "check", version], capture_output=True, text=True, check=False
+        [sys.executable, str(SCRIPT), "check"], capture_output=True, text=True, check=False
     )
     count = len(release.packages(REPO_ROOT))
     assert (result.returncode, result.stdout, result.stderr) == (
@@ -906,10 +906,9 @@ def test_check_with_dist_fails_on_a_stray_file(
     ("args", "expected"),
     [
         ([], (0, "10.0.0\n", "")),
-        (["--tag", "v10.0.0"], (0, "10.0.0\n", "")),
         (["--tag", "v10.0.1"], (1, "", "tag v10.0.1 does not match the package version 10.0.0\n")),
     ],
-    ids=["no-tag", "matching-tag", "other-tag"],
+    ids=["no-tag", "other-tag"],
 )
 def test_the_version_command_checks_a_tag(
     tmp_path: Path,
@@ -950,6 +949,65 @@ def test_the_index_command_waits_for_every_file_only_with_complete(
     code = release.main([*argv, *flags])
     out, err = capsys.readouterr()
     assert (code, out, err, len(calls)) == expected
+
+
+def _git(cwd: Path, *args: str) -> str:
+    config = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+    result = subprocess.run(
+        ["git", *config, *args], cwd=cwd, capture_output=True, text=True, check=True
+    )
+    return result.stdout.strip()
+
+
+def _clone_of_main(tmp_path: Path) -> Path:
+    """A clone of an origin whose ``main`` holds an untaped 10.0.0 project."""
+    origin = tmp_path / "origin"
+    _project(origin, "untaped", "10.0.0")
+    _git(origin, "init", "-q", "--initial-branch=main")
+    _git(origin, "add", ".")
+    _git(origin, "commit", "-q", "-m", "release")
+    _git(tmp_path, "clone", "-q", str(origin), "work")
+    return tmp_path / "work"
+
+
+def test_a_tag_on_main_passes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    work = _clone_of_main(tmp_path)
+    assert _main(capsys, "--root", str(work), "version", "--tag", "v10.0.0") == (0, "10.0.0\n", "")
+
+
+def test_a_tag_on_a_commit_off_main_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    work = _clone_of_main(tmp_path)
+    _git(work, "commit", "-q", "--allow-empty", "-m", "not on main")
+    head = _git(work, "rev-parse", "HEAD")
+    assert _main(capsys, "--root", str(work), "version", "--tag", "v10.0.0") == (
+        1,
+        "",
+        f"commit {head} is not on main\n",
+    )
+
+
+def test_a_tag_outside_a_git_checkout_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _project(tmp_path, "untaped", "10.0.0")
+    assert _main(capsys, "--root", str(tmp_path), "version", "--tag", "v10.0.0") == (
+        1,
+        "",
+        f"{tmp_path} is not a git checkout\n",
+    )
+
+
+def test_check_defaults_to_the_package_version(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _project(tmp_path, "untaped", "10.0.0rc1")
+    assert _main(capsys, "--root", str(tmp_path), "check") == (
+        0,
+        "ok: 1 package(s), 0 artifact(s) for 10.0.0rc1\n",
+        "",
+    )
 
 
 def test_the_notes_command_prints_the_section(
