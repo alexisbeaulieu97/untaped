@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import subprocess
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-import untaped.repo_cache as repo_cache_module
+from tests.conftest import GitCall
 from untaped.sdk import (
     ErrorCategory,
     GitCommandError,
-    GitResult,
     RepoCache,
     UntapedError,
     cache_key,
@@ -30,6 +28,9 @@ class _CacheError(UntapedError):
 
 
 def _git(cwd: Path, *args: str) -> None:
+    # No developer config: the module-scoped origin is built before the
+    # suite's per-test hermetic environment applies.
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
     subprocess.run(
         [
             "git",
@@ -44,15 +45,14 @@ def _git(cwd: Path, *args: str) -> None:
             *args,
         ],
         cwd=cwd,
+        env=env,
         check=True,
         capture_output=True,
     )
 
 
-@pytest.fixture
-def origin(tmp_path: Path) -> Path:
-    """A non-bare repo with one commit on ``main`` and the tag ``v1``."""
-    repo = tmp_path / "origin"
+def _make_origin(repo: Path) -> Path:
+    """A non-bare repo at ``repo`` with one commit on ``main`` and the tag ``v1``."""
     repo.mkdir()
     _git(repo, "init", "-q", "--initial-branch=main")
     (repo / "README.md").write_text("hi")
@@ -60,6 +60,12 @@ def origin(tmp_path: Path) -> Path:
     _git(repo, "commit", "-q", "-m", "init")
     _git(repo, "tag", "v1")
     return repo
+
+
+@pytest.fixture(scope="module")
+def origin(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """One shared :func:`_make_origin` repo; tests that change their origin build their own."""
+    return _make_origin(tmp_path_factory.mktemp("shared") / "origin")
 
 
 @pytest.mark.parametrize(
@@ -76,24 +82,10 @@ def origin(tmp_path: Path) -> Path:
         ("a@evil/../..:x/y.git", ("evil_.._..", "x", "y.git")),
     ],
 )
-def test_cache_key(url: str, key: tuple[str, ...]) -> None:
+def test_cache_key(tmp_path: Path, url: str, key: tuple[str, ...]) -> None:
     assert cache_key(url) == key
-
-
-_HOSTILE = [
-    "https://evil/../../tmp/pwn.git",
-    "git@evil:../../../tmp/pwn.git",
-    "https://evil/org/..",
-    "https://evil/..\\..\\tmp\\pwn.git",
-    "a@evil/../..:x/y.git",
-    "../../tmp/pwn.git",
-]
-
-
-@pytest.mark.parametrize("url", _HOSTILE)
-def test_a_hostile_url_stays_under_the_root(tmp_path: Path, url: str) -> None:
-    assert ".." not in cache_key(url)
-    assert cache_path(url, root=tmp_path).is_relative_to(tmp_path.resolve())
+    # A hostile URL never leaves the root.
+    assert cache_path(url, root=tmp_path) == tmp_path.resolve().joinpath(*key)
 
 
 def test_different_repos_get_different_keys() -> None:
@@ -108,7 +100,8 @@ def test_different_repos_get_different_keys() -> None:
 
 
 @pytest.mark.parametrize(
-    "url", ["/srv/git/app.git", "file:///srv/git/app.git", "https://github.com/"]
+    "url",
+    ["/srv/git/app.git", "file:///srv/git/app.git", "https://github.com/", "../../tmp/pwn.git"],
 )
 def test_a_url_without_host_or_path_keys_on_a_hash(url: str) -> None:
     assert cache_key(url) == ("_unknown", hashlib.sha256(url.encode()).hexdigest()[:16] + ".git")
@@ -165,7 +158,7 @@ def test_ensure_creates_once_and_repoints_origin(tmp_path: Path, origin: Path) -
     assert cache.exists() and cache_origin(cache.path) == str(origin)
     assert cache.ensure(str(origin)) is False
     cache.ensure("https://example.invalid/app.git")
-    assert cache.origin() == "https://example.invalid/app.git"
+    assert cache_origin(cache.path) == "https://example.invalid/app.git"
 
 
 def test_fetch_honours_refspecs_tags_and_depth(tmp_path: Path, origin: Path) -> None:
@@ -181,7 +174,8 @@ def _refs(cache: RepoCache) -> list[str]:
     return cache.run(["for-each-ref", "--format=%(refname)"], capture=True).text.split()
 
 
-def test_fetch_prunes_refs_gone_from_origin(tmp_path: Path, origin: Path) -> None:
+def test_fetch_prunes_refs_gone_from_origin(tmp_path: Path) -> None:
+    origin = _make_origin(tmp_path / "origin")
     _git(origin, "branch", "gone")
     cache = RepoCache(tmp_path / "app.git", error=_CacheError)
     cache.ensure(f"file://{origin}")
@@ -194,7 +188,8 @@ def test_fetch_prunes_refs_gone_from_origin(tmp_path: Path, origin: Path) -> Non
     assert _refs(cache) == ["refs/heads/main"]
 
 
-def test_fetch_filter_makes_the_cache_partial(tmp_path: Path, origin: Path) -> None:
+def test_fetch_filter_makes_the_cache_partial(tmp_path: Path) -> None:
+    origin = _make_origin(tmp_path / "origin")
     _git(origin, "config", "uploadpack.allowFilter", "true")
     cache = RepoCache(tmp_path / "app.git", error=_CacheError)
     cache.ensure(f"file://{origin}")
@@ -258,33 +253,44 @@ def test_a_held_lock_makes_a_second_holder_fail_busy(tmp_path: Path) -> None:
     ids=["on-host", "off-host", "ssh"],
 )
 def test_the_token_reaches_https_origins_on_the_host_only(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, url: str, sent: bool
+    tmp_path: Path, spy_run_git: list[GitCall], url: str, sent: bool
 ) -> None:
-    seen: list[tuple[str, str | None, str | None]] = []
-    real: Callable[..., GitResult] = repo_cache_module.run_git
-
-    def spy(args: Any, **kwargs: Any) -> GitResult:
-        seen.append((args[0], kwargs.get("auth_header"), kwargs.get("auth_url")))
-        return real(args, **kwargs)
-
-    monkeypatch.setattr(repo_cache_module, "run_git", spy)
     cache = RepoCache(
         tmp_path / "a.git", error=_CacheError, auth_header="AUTH", auth_host="github.com"
     )
     cache.ensure(url)
     cache.run(["rev-parse", "--git-dir"])
     # Setting up the cache never carries the token; later calls do, on the host only.
-    assert seen == [
+    assert spy_run_git == [
         ("init", None, None),
         ("config", None, None),
         ("rev-parse", *(("AUTH", url) if sent else (None, None))),
     ]
 
 
-def _git_origin(bare: Path) -> str:
+def test_an_origin_repointed_outside_the_handle_gets_no_stale_token(
+    tmp_path: Path, spy_run_git: list[GitCall]
+) -> None:
+    cache = RepoCache(
+        tmp_path / "a.git", error=_CacheError, auth_header="AUTH", auth_host="github.com"
+    )
+    cache.ensure("https://github.com/acme/app.git")
+    cache.run(["rev-parse", "--git-dir"])
+    _git(cache.path, "config", "remote.origin.url", "https://evil.example/app.git")
+    cache.run(["rev-parse", "--git-dir"])
+    assert [call[1] for call in spy_run_git if call[0] == "rev-parse"] == ["AUTH", None]
+
+
+def _config_file(tmp_path: Path) -> Path:
+    """``<cache>/config`` with no repository around it: ``cache_origin`` reads only the file."""
+    (tmp_path / "app.git").mkdir()
+    return tmp_path / "app.git" / "config"
+
+
+def _git_origin(config: Path) -> str:
+    """``remote.origin.url`` as ``git config --get`` reads ``config``."""
     return subprocess.run(
-        ["git", "config", "--get", "remote.origin.url"],
-        cwd=bare,
+        ["git", "config", "--file", str(config), "--get", "remote.origin.url"],
         text=True,
         capture_output=True,
         check=True,
@@ -304,12 +310,11 @@ def _git_origin(bare: Path) -> str:
     ids=["plain", "comment-chars", "quotes", "backslashes", "whitespace", "last-wins"],
 )
 def test_cache_origin_reads_what_git_config_reads(tmp_path: Path, values: list[str]) -> None:
-    bare = tmp_path / "app.git"
-    _git(tmp_path, "init", "--bare", "-q", str(bare))
+    config = _config_file(tmp_path)
     for value in values:
-        _git(bare, "config", "--add", "remote.origin.url", value)
+        _git(tmp_path, "config", "--file", str(config), "--add", "remote.origin.url", value)
 
-    assert cache_origin(bare) == _git_origin(bare) == values[-1]
+    assert cache_origin(config.parent) == _git_origin(config) == values[-1]
 
 
 @pytest.mark.parametrize(
@@ -319,24 +324,24 @@ def test_cache_origin_reads_what_git_config_reads(tmp_path: Path, values: list[s
         ('url = "" x', "x"),
         ('url=  "  q  "  r  # c', "  q    r"),
         ("URL = a\\tb", "a\tb"),
+        ("url = a\u00a0b\u00a0", "a\u00a0b\u00a0"),
+        ("url = a\vb\v", "a\vb\v"),
+        ("url = a\rb\r", "a b"),
     ],
-    ids=["inner-whitespace", "empty-quotes", "quoted-padding", "escape"],
+    ids=["inner-whitespace", "empty-quotes", "quoted-padding", "escape", "nbsp", "vt", "cr"],
 )
 def test_cache_origin_parses_hand_written_values_like_git(
     tmp_path: Path, line: str, expected: str
 ) -> None:
-    bare = tmp_path / "app.git"
-    _git(tmp_path, "init", "--bare", "-q", str(bare))
-    with (bare / "config").open("a") as config:
-        config.write(f'[remote "origin"]\n\t{line}\n')
+    config = _config_file(tmp_path)
+    config.write_bytes(f'[remote "origin"]\n\t{line}\n'.encode())
 
-    assert cache_origin(bare) == _git_origin(bare) == expected
+    assert cache_origin(config.parent) == _git_origin(config) == expected
 
 
 def test_cache_origin_is_none_without_an_origin_or_a_config(tmp_path: Path) -> None:
-    bare = tmp_path / "app.git"
-    _git(tmp_path, "init", "--bare", "-q", str(bare))
-    _git(bare, "config", "remote.upstream.url", "https://h/a.git")
+    config = _config_file(tmp_path)
+    config.write_text('[remote "upstream"]\n\turl = https://h/a.git\n')
 
-    assert cache_origin(bare) is None
+    assert cache_origin(config.parent) is None
     assert cache_origin(tmp_path / "missing.git") is None
