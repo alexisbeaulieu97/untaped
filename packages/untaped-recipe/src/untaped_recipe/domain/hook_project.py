@@ -53,8 +53,8 @@ def untaped_dev_requirement(untaped_version: str) -> str:
     """Return the dev-only ``untaped[recipe]`` requirement for an installed ``untaped`` version.
 
     Packs depend on the CLI only for editor/type discovery (stubs import
-    ``untaped_recipe``, hence the extra), so the range
-    starts at the running release and stays within its major version.
+    ``untaped_recipe``, hence the extra), so the
+    range starts at the running release and stays within its major version.
     """
     version = Version(untaped_version)
     return f"untaped[recipe]>={version.public},<{version.major + 1}"

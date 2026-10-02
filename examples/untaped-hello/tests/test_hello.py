@@ -33,3 +33,10 @@ def test_hello_greets_with_its_setting() -> None:
     result = invoke_root(["hello", "greet"])
     assert result.exit_code == 0
     assert result.stdout.strip() == "hello from untaped-hello"
+
+
+def test_hello_greets_with_a_configured_greeting() -> None:
+    assert invoke_root(["config", "set", "hello.greeting", "hi"]).exit_code == 0
+    result = invoke_root(["hello", "greet"])
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "hi"
