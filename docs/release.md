@@ -24,9 +24,9 @@ that exact action, because each changes shared or public state.
 
 It touches these and nothing else:
 
-- every package version: set every package version and sibling pin in each
-  `packages/*/pyproject.toml`, and on a major move `examples/untaped-hello`'s
-  `untaped` range to `>=X,<X+1`;
+- versions: every package version and sibling pin in each
+  `packages/*/pyproject.toml`, and on a major `examples/untaped-hello`'s
+  `untaped` range (`>=X,<X+1`);
 - `uv.lock` (`uv lock`);
 - `CHANGELOG.md`: rename `## Unreleased` to `## X.Y.Z`.
 
