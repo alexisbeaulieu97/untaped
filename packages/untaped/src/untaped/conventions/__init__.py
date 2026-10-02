@@ -8,6 +8,7 @@ third-party provider is checked exactly like a first-party one. Provider tests c
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from importlib.util import find_spec
 from pathlib import Path
@@ -78,14 +79,25 @@ def capability_violations(
 
 
 def _required(requirements: Sequence[str]) -> set[str]:
-    """Canonical names of the ``Requires-Dist`` strings (markers ignored, invalid ones skipped)."""
+    """Canonical names of the ``Requires-Dist`` strings a default install pulls in.
+
+    A requirement guarded by an ``extra`` marker is left out; other markers
+    (``python_version``, ``sys_platform``…) are ignored; invalid strings are skipped.
+    """
     names: set[str] = set()
     for requirement in requirements:
         try:
-            names.add(canonicalize_name(Requirement(requirement).name))
+            parsed = Requirement(requirement)
         except InvalidRequirement:
             continue
+        if parsed.marker is None or not _mentions_extra(str(parsed.marker)):
+            names.add(canonicalize_name(parsed.name))
     return names
+
+
+def _mentions_extra(marker: str) -> bool:
+    """Whether ``marker`` tests the ``extra`` variable (quoted values aside)."""
+    return re.search(r"\bextra\b", re.sub(r"\"[^\"]*\"|'[^']*'", "", marker)) is not None
 
 
 def _boundary(
@@ -93,22 +105,37 @@ def _boundary(
 ) -> tuple[dict[str, str], frozenset[str]]:
     """Capability packages (to distributions) and what capability ``name`` may import from.
 
-    Every candidate with a ``module:attr`` target counts as a capability,
-    composed or quarantined. The checked capability's own distribution is
-    always declared, so capabilities sharing a distribution may import each
-    other's ``api``.
+    Every candidate counts as a capability, composed or quarantined: a
+    ``module:attr`` target names its package; a callable target (as from
+    :func:`untaped.testing.provider_candidate`) gives it through the spec it
+    provides, and is skipped when that cannot be resolved. The checked
+    capability's own distribution is always declared, so capabilities sharing
+    a distribution may import each other's ``api``.
     """
     found = list(candidates)
-    packages: dict[str, str] = {
-        candidate.target.partition(":")[0]: canonicalize_name(candidate.distribution)
-        for candidate in found
-        if isinstance(candidate.target, str) and ":" in candidate.target
-    }
+    packages: dict[str, str] = {}
+    for candidate in found:
+        package = _candidate_package(candidate.target)
+        if package is not None:
+            packages[package] = canonicalize_name(candidate.distribution)
     own = next((candidate for candidate in found if candidate.name == name), None)
     if own is None:
         return packages, frozenset()
     declared = {str(canonicalize_name(own.distribution)), *_required(own.requires_dist)}
     return packages, frozenset(declared)
+
+
+def _candidate_package(target: object) -> str | None:
+    """The capability package of a candidate ``target``, or ``None`` when unresolvable."""
+    if isinstance(target, str):
+        return target.partition(":")[0] if ":" in target else None
+    if not callable(target):
+        return None
+    try:
+        spec = target()
+        return _package_of(spec)[0] if isinstance(spec, CapabilitySpec) else None
+    except Exception:
+        return None
 
 
 def core_violations() -> list[str]:

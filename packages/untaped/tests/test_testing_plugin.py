@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import pwd
 from pathlib import Path
 
 import pytest
@@ -10,9 +11,10 @@ import pytest
 pytest_plugins = ["pytester"]
 
 
-def test_home_and_config_are_isolated() -> None:
+def test_home_and_config_are_isolated(tmp_path_factory: pytest.TempPathFactory) -> None:
     home = Path(os.environ["HOME"])
-    assert "pytest-of-" in str(home)  # a pytest tmp dir, never the real home
+    assert home != Path(pwd.getpwuid(os.getuid()).pw_dir)
+    assert home.is_relative_to(tmp_path_factory.getbasetemp())
     assert os.environ["UNTAPED_CONFIG"] == str(home / ".untaped" / "config.yml")
     assert [n for n in os.environ if n.startswith("UNTAPED_")] == ["UNTAPED_CONFIG"]
 
