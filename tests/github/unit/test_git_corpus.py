@@ -736,6 +736,24 @@ def test_a_repo_named_with_a_leading_dot_is_listed(
     assert (row.repo, row.path) == ("acme/.github", synced.path)
 
 
+def test_an_old_layout_cache_is_not_listed(corpus: Callable[..., _Corpus]) -> None:
+    # 9.x keyed caches as <host>/<name>-<hash>.git; its metadata is still valid.
+    env = corpus({"README.md": "hello\n"})
+    synced = env.sync()
+    old = env.root / "github.com" / "app-0123abcd.git"
+    old.mkdir(parents=True)
+    (old / "untaped-corpus.json").write_text(
+        '{"repo": "acme/app", "ref": "main", '
+        '"clone_url": "https://github.com/acme/app.git", '
+        '"fetched_at": "2026-07-06T12:00:00+00:00"}\n'
+    )
+
+    [row] = env.cache.list_repos(root=env.root)
+
+    assert (row.repo, row.path) == ("acme/api", synced.path)
+    assert env.cache.get_repo(root=env.root, repo="acme/app") is None
+
+
 def test_status_ignores_materialized_worktrees(corpus: Callable[..., _Corpus]) -> None:
     # A checkout holding a cache-like dir with valid metadata must not list it.
     vendored = '{"repo": "acme/vendored", "ref": "main", "fetched_at": "2026-07-06T12:00:00+00:00"}'

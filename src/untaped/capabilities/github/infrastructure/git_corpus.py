@@ -357,17 +357,26 @@ class GitCorpusCache:
         return None
 
     def _metadata_entries(self, managed_root: Path) -> list[tuple[Path, dict[str, object]]]:
-        """Read every managed bare repo's metadata, warning on and skipping corrupt files."""
+        """Read every managed bare repo's metadata, warning on and skipping corrupt files.
+
+        A cache not at ``cache_path`` of its recorded ``clone_url`` (an old
+        layout, or a hand-moved dir) is not listed: no command could use it.
+        """
         entries: list[tuple[Path, dict[str, object]]] = []
         # Resolved like ``cache_path``, so listed paths match synced ones.
-        for bare in list_caches(managed_root.resolve(), skip=("worktrees",)):
+        root = managed_root.resolve()
+        for bare in list_caches(root, skip=("worktrees",)):
             metadata_path = bare / METADATA_FILE
             if not metadata_path.is_file():
                 continue
             try:
-                entries.append((metadata_path, _read_metadata(metadata_path)))
+                data = _read_metadata(metadata_path)
             except GitCorpusError as exc:
                 self._warn(str(exc))
+                continue
+            clone_url = _optional_str(data.get("clone_url"))
+            if clone_url is not None and cache_path(clone_url, root=root) == bare:
+                entries.append((metadata_path, data))
         return entries
 
     def clean_repo(self, *, root: Path, repo: CorpusRepoResult) -> CorpusRepoResult:
