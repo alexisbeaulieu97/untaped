@@ -124,8 +124,8 @@ inspect); the table shows the default ones. What the rest do not say:
   last status seen before untaped cancelled the job (`running`, say), not a
   final one, unless the job ended before the cancel.
 - `job_url` is the job's page in the controller web UI; open it to inspect
-  the job. `started_at` and `finished_at` are `null`
-  while AWX has not set them.
+  the job.
+- `started_at` and `finished_at` are `null` while AWX has not set them.
 - `scm_revision` is the commit the job checked out; compare it with
   `git rev-parse HEAD`.
 - `hosts` is `null` when the summaries were not or could not be read.
