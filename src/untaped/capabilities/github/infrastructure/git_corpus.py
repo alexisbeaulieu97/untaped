@@ -33,6 +33,7 @@ from untaped.sdk import (
     RepoCache,
     atomic_write,
     attribution,
+    cache_key,
     cache_path,
     list_caches,
     run_git,
@@ -91,7 +92,8 @@ class GitCorpusCache:
     ) -> CorpusRepoResult:
         """Fetch the requested ref profile into the managed bare corpus."""
         url = _remote_url(repo)
-        cache = self._cache(repo, root=root, auth_header=auth_header)
+        _check_auth_url(url, auth_header)
+        cache = self._open(cache_path(url, root=root), auth_header=auth_header)
         with cache.locked():
             branch = _default_branch(repo)
             cache.ensure(url)
@@ -108,12 +110,7 @@ class GitCorpusCache:
                     cache, depth=depth, selector=effective, default_branch=branch
                 )
             else:
-                cache.fetch(
-                    (f"+refs/heads/{branch}:refs/heads/{branch}",),
-                    prune=True,
-                    tags=False,
-                    depth=depth,
-                )
+                cache.fetch((f"+refs/heads/{branch}:refs/heads/{branch}",), tags=False, depth=depth)
                 self._prune_uncovered_refs(cache, selector=effective, default_branch=branch)
 
             fetched_at = datetime.now(UTC).isoformat()
@@ -193,7 +190,7 @@ class GitCorpusCache:
         cannot be read that way keeps its own name as the tree-ish.
         """
         branch = _default_branch(repo)
-        cache = self._cache(repo, root=root)
+        cache = self._open(cache_path(_remote_url(repo), root=root))
         if not cache.exists():
             return ()
         result = cache.run(
@@ -375,7 +372,7 @@ class GitCorpusCache:
                 self._warn(str(exc))
                 continue
             clone_url = _optional_str(data.get("clone_url"))
-            if clone_url is not None and cache_path(clone_url, root=root) == bare:
+            if clone_url is not None and root.joinpath(*cache_key(clone_url)) == bare:
                 entries.append((metadata_path, data))
         return entries
 
@@ -425,21 +422,15 @@ class GitCorpusCache:
             )
         return WorktreeResult(repo=repo.full_name, ref=selected_ref, path=str(worktree))
 
-    def _cache(
-        self, repo: CorpusRepoTarget, *, root: Path, auth_header: str | None = None
-    ) -> RepoCache:
-        """The cache of ``repo``'s remote; ``RepoCache`` scopes the token to ``auth_host``."""
-        url = _remote_url(repo)
-        return self._open(cache_path(url, root=root), _check_auth_url(url, auth_header))
-
     def _cached(self, repo: CorpusRepoTarget, *, root: Path) -> RepoCache:
         """The cache of ``repo``; ``not_found`` when it has never been synced."""
-        cache = self._cache(repo, root=root)
+        cache = self._open(cache_path(_remote_url(repo), root=root))
         if not cache.exists():
             raise GitCorpusError("repository is not in the local corpus", category="not_found")
         return cache
 
-    def _open(self, path: Path, auth_header: str | None = None) -> RepoCache:
+    def _open(self, path: Path, *, auth_header: str | None = None) -> RepoCache:
+        """The cache at ``path``; ``RepoCache`` scopes the token to ``auth_host``."""
         # A sweep runs unattended across many repos: git never prompts, and
         # uncaptured stdout is discarded so stray git chatter cannot corrupt
         # piped output.
@@ -608,16 +599,18 @@ def _first_blob(payload: bytes) -> str | None:
     return None
 
 
-def _check_auth_url(url: str, auth_header: str | None) -> str | None:
-    """Refuse a token with an ssh/scp ``url``; ``RepoCache`` scopes it to the host otherwise."""
+def _check_auth_url(url: str, auth_header: str | None) -> None:
+    """Refuse a token with a non-https remote (ssh, scp, http, ...).
+
+    ``file://`` and plain paths pass: ``RepoCache`` never sends them the token.
+    """
     if auth_header is None:
-        return None
+        return
     parsed = urlparse(url)
     if (parsed.scheme == "https" and parsed.netloc) or parsed.scheme == "file":
-        return auth_header
+        return
     if parsed.scheme or url.startswith("git@"):
         raise GitCorpusError("authenticated Git corpus sync requires an HTTPS clone_url")
-    return auth_header
 
 
 def _parse_grep_output(
