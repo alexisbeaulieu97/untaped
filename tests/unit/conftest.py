@@ -1,10 +1,11 @@
-"""Shared unit-test fixtures, the `scripts/` loader, and first-party candidate lookups."""
+"""Shared unit-test fixtures, the `scripts/` loader, and first-party candidate helpers."""
 
 from __future__ import annotations
 
 import importlib.util
 import sys
 from collections.abc import Iterator
+from functools import cache
 from pathlib import Path
 from pkgutil import resolve_name
 from types import ModuleType
@@ -30,17 +31,29 @@ def load_script(name: str) -> ModuleType:
     return module
 
 
-def first_party_candidates() -> dict[str, ProviderCandidate]:
-    """Every discovered first-party (distribution ``untaped``) candidate, by name."""
-    return {c.name: c for c in discover_candidates() if c.distribution == "untaped"}
+@cache
+def first_party_candidates() -> tuple[ProviderCandidate, ...]:
+    """Every discovered first-party (distribution ``untaped``) candidate, in name order."""
+    return tuple(
+        sorted(
+            (c for c in discover_candidates() if c.distribution == "untaped"),
+            key=lambda c: c.name,
+        )
+    )
 
 
-def first_party_specs() -> dict[str, CapabilitySpec]:
-    """Every first-party spec, resolved from its discovered entry point, by name."""
-    return {
-        name: resolve_name(str(candidate.target))()
-        for name, candidate in first_party_candidates().items()
-    }
+@cache
+def first_party_specs() -> tuple[CapabilitySpec, ...]:
+    """Every first-party spec, resolved from its discovered entry point, in name order."""
+    return tuple(resolve_name(str(candidate.target))() for candidate in first_party_candidates())
+
+
+def broken_first_party_candidates() -> tuple[ProviderCandidate, ...]:
+    """First-party-looking ``awx`` and ``jira`` candidates whose entry points do not resolve."""
+    return tuple(
+        ProviderCandidate(distribution="untaped", name=name, target=f"untaped_missing_{name}:p")
+        for name in ("awx", "jira")
+    )
 
 
 @pytest.fixture(autouse=True)

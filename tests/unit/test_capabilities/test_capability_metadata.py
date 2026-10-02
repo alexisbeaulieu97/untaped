@@ -37,10 +37,11 @@ from untaped.capabilities.registry import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+FIRST_PARTY = {candidate.name: candidate for candidate in first_party_candidates()}
 
 
 def test_first_party_commit_carries_its_entry_point() -> None:
-    result = compose(make_shell(), [first_party_candidates()["github"]])
+    result = compose(make_shell(), [FIRST_PARTY["github"]])
     (registered,) = result.capabilities
     assert registered.provider_ref == ProviderRef(
         distribution="untaped", entry_point="untaped.capabilities.github:provider"
@@ -55,7 +56,7 @@ def test_first_party_version_is_the_product_version() -> None:
         pytest.skip("untaped distribution metadata is not installed")
     declared = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert installed == declared["project"]["version"]
-    assert first_party_candidates()["jira"].distribution_version == installed
+    assert FIRST_PARTY["jira"].distribution_version == installed
 
 
 @pytest.mark.parametrize(

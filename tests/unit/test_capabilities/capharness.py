@@ -108,7 +108,7 @@ def make_shell(
 
 
 class Provider:
-    """Configurable provider double."""
+    """Configurable provider double; appends its spec's name to ``calls`` per call."""
 
     def __init__(
         self,
@@ -116,12 +116,16 @@ class Provider:
         *,
         error: Exception | None = None,
         result: Any = None,
+        calls: list[str] | None = None,
     ) -> None:
         self._spec = spec
         self._error = error
         self._result = result
+        self._calls = calls
 
     def __call__(self) -> Any:
+        if self._calls is not None and self._spec is not None:
+            self._calls.append(self._spec.name)
         if self._error is not None:
             raise self._error
         if self._result is not None:

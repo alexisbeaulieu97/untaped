@@ -14,13 +14,13 @@ from pathlib import Path
 import pytest
 
 from test_management.support import (
-    ExtProfile,
     GithubProfile,
     JiraProfile,
     compose,
     make_spec,
     write_config,
 )
+from tests.unit.test_capabilities.capharness import make_candidate
 from untaped import bootstrap
 from untaped.capabilities.registry import (
     CompositionResult,
@@ -32,34 +32,6 @@ from untaped.settings import get_settings
 from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
-
-
-class _Provider:
-    """Nullary provider double; raises ``error`` instead when given one."""
-
-    def __init__(self, spec: object, error: Exception | None = None) -> None:
-        self._spec = spec
-        self._error = error
-
-    def __call__(self) -> object:
-        if self._error is not None:
-            raise self._error
-        return self._spec
-
-
-def _candidate(
-    name: str,
-    *,
-    distribution: str = "example-dist",
-    version: str = "1.2.3",
-    error: Exception | None = None,
-) -> ProviderCandidate:
-    return ProviderCandidate(
-        distribution=distribution,
-        name=name,
-        target=_Provider(make_spec(name, profile_model=ExtProfile), error),
-        distribution_version=version,
-    )
 
 
 def _rows(stdout: str) -> list[dict[str, object]]:
@@ -75,16 +47,16 @@ def _listing(candidates: list[ProviderCandidate]) -> list[dict[str, object]]:
 
 
 def test_lists_a_ready_provider_with_its_distribution_version() -> None:
-    rows = _listing([_candidate("acme", distribution="acme-dist")])
+    rows = _listing([make_candidate(make_spec("acme"), "acme-dist", distribution_version="1.2.3")])
     assert rows == [
         {"name": "acme", "status": "ready", "distribution": "acme-dist", "version": "1.2.3"}
     ]
 
 
 def test_the_listing_is_in_name_order_across_statuses() -> None:
-    broken = _candidate("beta", distribution="aaa-dist", error=RuntimeError("x"))
-    alpha = _candidate("alpha", distribution="zzz-dist")
-    gamma = _candidate("gamma", distribution="mmm-dist")
+    broken = make_candidate(make_spec("beta"), "aaa-dist", error=RuntimeError("x"))
+    alpha = make_candidate(make_spec("alpha"), "zzz-dist")
+    gamma = make_candidate(make_spec("gamma"), "mmm-dist")
     rows = _listing([gamma, broken, alpha])
     assert [(row["name"], row["status"]) for row in rows] == [
         ("alpha", "ready"),
