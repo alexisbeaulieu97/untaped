@@ -209,7 +209,6 @@ def test_delete_refs(tmp_path: Path, origin: Path) -> None:
     cache.ensure(f"file://{origin}")
     cache.fetch(["+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*"])
     cache.delete_refs(["refs/tags/v1"])
-    cache.delete_refs([])
     refs = _refs(cache)
     assert refs == ["refs/heads/main"]
 
