@@ -25,6 +25,7 @@ Every failure prints one line per error on stderr and exits 1.
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import re
@@ -36,7 +37,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable, Collection, Iterator, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
@@ -53,7 +54,7 @@ INDEX_TRIES = 12
 INDEX_DELAY = 10
 
 Fetch = Callable[[str], dict[str, Any] | None]
-Gh = Callable[[list[str]], subprocess.CompletedProcess[str]]
+Gh = Callable[..., subprocess.CompletedProcess[str]]
 
 
 class ReleaseError(Exception):
@@ -99,10 +100,10 @@ def packages(root: Path) -> dict[str, dict[str, Any]]:
     return {name: found[name][1] for name in sorted(found)}
 
 
-def _format_error(version: str) -> str | None:
+def _format_errors(version: str) -> list[str]:
     if VERSION_FORMAT.fullmatch(version):
-        return None
-    return f"version {version} is not X.Y.Z, X.Y.ZaN, X.Y.ZbN or X.Y.ZrcN"
+        return []
+    return [f"version {version} is not X.Y.Z, X.Y.ZaN, X.Y.ZbN or X.Y.ZrcN"]
 
 
 def release_version(root: Path) -> str:
@@ -111,9 +112,8 @@ def release_version(root: Path) -> str:
     if project is None:
         raise ReleaseError(f"no package named untaped under {root}")
     version = str(project.get("version"))
-    error = _format_error(version)
-    if error:
-        raise ReleaseError(error)
+    if errors := _format_errors(version):
+        raise ReleaseError(errors[0])
     return version
 
 
@@ -156,10 +156,9 @@ def _pin_errors(name: str, project: dict[str, Any], siblings: set[str], version:
     return errors
 
 
-def version_errors(root: Path, version: str) -> list[str]:
-    """Every package at ``version`` and every sibling pin exactly ``==version``."""
-    errors = [error] if (error := _format_error(version)) else []
-    found = packages(root)
+def version_errors(found: dict[str, dict[str, Any]], version: str) -> list[str]:
+    """Every package in ``found`` (``packages``) at ``version``; every sibling pin ``==version``."""
+    errors = _format_errors(version)
     for name, project in found.items():
         if project.get("version") != version:
             errors.append(f"{name} is at {project.get('version')}, not {version}")
@@ -175,26 +174,26 @@ def _package_artifacts(name: str, version: str) -> tuple[str, str]:
     return f"{stem}-py3-none-any.whl", f"{stem}.tar.gz"
 
 
-def expected_artifacts(root: Path, version: str) -> set[str]:
-    """One wheel and one sdist per package.
+def expected_artifacts(names: Collection[str], version: str) -> set[str]:
+    """One wheel and one sdist per package name.
 
     Names use the canonical name with ``-`` as ``_`` (wheel and PEP 625 sdist
     naming). The wheel tag is always ``py3-none-any``: every package is pure
     Python.
     """
-    return {file for name in packages(root) for file in _package_artifacts(name, version)}
+    return {file for name in names for file in _package_artifacts(name, version)}
 
 
-def _dist_files(dist: Path) -> set[str]:
+def dist_files(dist: Path) -> set[str]:
+    """The names of the files directly in ``dist``, dotfiles included."""
     if not dist.is_dir():
         raise ReleaseError(f"{dist} is not a directory")
     return {path.name for path in dist.iterdir() if path.is_file()}
 
 
-def artifact_errors(root: Path, version: str, dist: Path) -> list[str]:
-    """``missing:`` and ``unexpected:`` files in ``dist``, dotfiles included."""
-    expected = expected_artifacts(root, version)
-    found = _dist_files(dist)
+def artifact_errors(names: Collection[str], version: str, found: set[str]) -> list[str]:
+    """``missing:`` and ``unexpected:`` files among ``found`` (from ``dist_files``)."""
+    expected = expected_artifacts(names, version)
     return [f"missing: {file}" for file in sorted(expected - found)] + [
         f"unexpected: {file}" for file in sorted(found - expected)
     ]
@@ -235,6 +234,42 @@ def _remote_digests(url: str, payload: dict[str, Any] | None) -> dict[str, str]:
         raise ReleaseError(f"{url} has no file list (urls[].filename, digests.sha256)") from exc
 
 
+def _local_digests(root: Path, version: str, dist: Path) -> dict[str, dict[str, str]]:
+    """``{package: {built file: sha256}}`` for every package, each file hashed once."""
+    files = dist_files(dist)
+    return {
+        name: {
+            file: _sha256(dist / file)
+            for file in sorted(set(_package_artifacts(name, version)) & files)
+        }
+        for name in packages(root)
+    }
+
+
+def _package_index_errors(
+    url: str, local: dict[str, str], *, index: str, complete: bool, fetch: Fetch
+) -> tuple[list[str], int, int]:
+    """``index_errors`` for one package's index entry at ``url``."""
+    errors: list[str] = []
+    present = to_upload = 0
+    remote = _remote_digests(url, fetch(url))
+    for file, digest in local.items():
+        if file not in remote:
+            to_upload += 1
+            if complete:
+                errors.append(f"missing on {index}: {file}")
+            continue
+        present += 1
+        if remote[file] != digest:
+            errors.append(f"conflict: {file} on {index} has sha256 {remote[file]}, local {digest}")
+    errors += [f"unexpected on {index}: {file}" for file in sorted(set(remote) - set(local))]
+    return errors, present, to_upload
+
+
+def _only_missing(errors: list[str]) -> bool:
+    return all(error.startswith("missing on ") for error in errors)
+
+
 def index_errors(
     root: Path,
     version: str,
@@ -243,56 +278,35 @@ def index_errors(
     index: str,
     complete: bool,
     fetch: Fetch,
+    sleep: Callable[[float], object] = time.sleep,
 ) -> tuple[list[str], int, int]:
     """(errors, present, to_upload). ``fetch(url)`` returns the parsed JSON, or None on 404.
 
     ``present`` counts local files the index holds (a conflicting one too, and
     it is reported); ``to_upload`` counts local files it does not hold yet.
+    With ``complete`` a missing file is an error, and the check is retried
+    (re-fetching only the packages still missing files) while files are only
+    missing. A conflict, an unexpected file or a non-404 fetch failure ends it
+    at once.
     """
-    errors: list[str] = []
-    present = to_upload = 0
-    local_files = _dist_files(dist)
-    for name in packages(root):
-        url = INDEX_URLS[index].format(name=name, version=version)
-        remote = _remote_digests(url, fetch(url))
-        local = sorted(set(_package_artifacts(name, version)) & local_files)
-        for file in local:
-            if file not in remote:
-                to_upload += 1
-                if complete:
-                    errors.append(f"missing on {index}: {file}")
-                continue
-            present += 1
-            if remote[file] != (digest := _sha256(dist / file)):
-                errors.append(
-                    f"conflict: {file} on {index} has sha256 {remote[file]}, local {digest}"
-                )
-        errors += [f"unexpected on {index}: {file}" for file in sorted(set(remote) - set(local))]
-    return errors, present, to_upload
-
-
-def wait_for_index(
-    root: Path,
-    version: str,
-    dist: Path,
-    *,
-    index: str,
-    fetch: Fetch,
-    sleep: Callable[[float], object] = time.sleep,
-) -> tuple[list[str], int, int]:
-    """``index_errors(complete=True)``, retried while files are only missing.
-
-    A conflict, an unexpected file or a non-404 fetch failure ends it at once.
-    """
+    local = _local_digests(root, version, dist)
+    results: dict[str, tuple[list[str], int, int]] = {}
+    pending = list(local)
     for attempt in range(INDEX_TRIES):
         if attempt:
             sleep(INDEX_DELAY)
-        errors, present, to_upload = index_errors(
-            root, version, dist, index=index, complete=True, fetch=fetch
-        )
-        if not errors or not all(error.startswith("missing on ") for error in errors):
+        for name in pending:
+            url = INDEX_URLS[index].format(name=name, version=version)
+            results[name] = _package_index_errors(
+                url, local[name], index=index, complete=complete, fetch=fetch
+            )
+        failed = [name for name in pending if results[name][0]]
+        if not failed or not all(_only_missing(results[name][0]) for name in failed):
             break
-    return errors, present, to_upload
+        pending = failed
+    rows = [results[name] for name in local]
+    errors = [error for row in rows for error in row[0]]
+    return errors, sum(row[1] for row in rows), sum(row[2] for row in rows)
 
 
 # --- notes ------------------------------------------------------------------
@@ -350,8 +364,8 @@ def _run(exe: str, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run([exe, *args], capture_output=True, text=True, check=False)
 
 
-def run_smoke(exe: str, version: str) -> list[str]:
-    """Run the installed ``untaped`` and collect every smoke failure."""
+def run_smoke(exe: str, version: str) -> tuple[list[str], int]:
+    """Run the installed ``untaped``: (every smoke failure, built-in capability count)."""
     expected = _builtin_capabilities()
     rows = _run(exe, "capabilities", "--format", "json")
     errors = smoke_errors(_run(exe, "--version").stdout, rows.stdout, version, expected)
@@ -361,14 +375,10 @@ def run_smoke(exe: str, version: str) -> list[str]:
         code = _run(exe, *command, "--help").returncode
         if code:
             errors.append(f"untaped {' '.join([*command, '--help'])} exited {code}")
-    return errors
+    return errors, len(expected)
 
 
 # --- GitHub release ---------------------------------------------------------
-
-
-def _gh(args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
 
 
 def _read_release(tag: str, repo: str, gh: Gh) -> dict[str, Any] | None:
@@ -377,7 +387,7 @@ def _read_release(tag: str, repo: str, gh: Gh) -> dict[str, Any] | None:
     It lists releases because ``releases/tags/<tag>`` hides drafts. ``--jq '.[]'``
     prints one release per line on every page (``--slurp`` needs gh 2.48+).
     """
-    result = gh(["api", "--paginate", "--jq", ".[]", f"repos/{repo}/releases"])
+    result = gh("api", "--paginate", "--jq", ".[]", f"repos/{repo}/releases")
     if result.returncode:
         raise ReleaseError(f"could not list releases: {(result.stdout + result.stderr).strip()}")
     releases = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
@@ -387,20 +397,30 @@ def _read_release(tag: str, repo: str, gh: Gh) -> dict[str, Any] | None:
     return matches[0] if matches else None
 
 
-def _checked(gh: Gh, args: list[str]) -> None:
-    result = gh(args)
+def _checked(gh: Gh, *args: str) -> None:
+    result = gh(*args)
     if result.returncode:
         output = (result.stdout + result.stderr).strip()
         raise ReleaseError(f"gh {' '.join(args[:2])} failed: {output}")
 
 
-def _asset_diff(release: dict[str, Any], digests: dict[str, str]) -> tuple[list[str], ...]:
-    """(missing, different, unexpected) asset names against the local digests."""
+class AssetDiff(NamedTuple):
+    """Release asset names against the local digests, in message order."""
+
+    different: list[str]
+    missing: list[str]
+    unexpected: list[str]
+
+
+def _asset_diff(release: dict[str, Any], digests: dict[str, str]) -> AssetDiff:
     remote = {asset["name"]: asset.get("digest") for asset in release.get("assets", [])}
-    missing = sorted(set(digests) - set(remote))
-    different = sorted(name for name in digests if name in remote and remote[name] != digests[name])
-    unexpected = sorted(set(remote) - set(digests))
-    return missing, different, unexpected
+    return AssetDiff(
+        different=sorted(
+            name for name in digests if name in remote and remote[name] != digests[name]
+        ),
+        missing=sorted(set(digests) - set(remote)),
+        unexpected=sorted(set(remote) - set(digests)),
+    )
 
 
 def publish_github_release(
@@ -413,33 +433,30 @@ def publish_github_release(
     yet), publish. Published: a no-op when every asset matches, else an error;
     a published release is never written to.
     """
-    digests = {name: f"sha256:{_sha256(dist / name)}" for name in sorted(_dist_files(dist))}
+    digests = {name: f"sha256:{_sha256(dist / name)}" for name in sorted(dist_files(dist))}
     repo_args = ["--repo", repo]
     existing = _read_release(tag, repo, gh)
+    diff = _asset_diff(existing or {}, digests)
+    if existing is not None and not existing["draft"]:
+        if any(diff):
+            listed = "; ".join(f"{k}: {', '.join(v)}" for k, v in diff._asdict().items() if v)
+            raise ReleaseError(f"release {tag} is already published with other assets: {listed}")
+        print(f"release {tag} already published with these assets")
+        return
+    if diff.unexpected:
+        raise ReleaseError(
+            f"draft release {tag} has unexpected assets: {', '.join(diff.unexpected)}"
+        )
     if existing is None:
         prerelease = ["--prerelease"] if Version(version).is_prerelease else []
         create = ["release", "create", tag, *repo_args, "--draft", "--verify-tag"]
-        _checked(gh, [*create, "--title", tag, "--notes-file", str(notes), *prerelease])
-        missing, different, unexpected = list(digests), [], []
-    else:
-        missing, different, unexpected = _asset_diff(existing, digests)
-        if not existing["draft"]:
-            if missing or different or unexpected:
-                problems = {"different": different, "missing": missing, "unexpected": unexpected}
-                listed = "; ".join(f"{k}: {', '.join(v)}" for k, v in problems.items() if v)
-                raise ReleaseError(
-                    f"release {tag} is already published with other assets: {listed}"
-                )
-            print(f"release {tag} already published with these assets")
-            return
-    if unexpected:
-        raise ReleaseError(f"draft release {tag} has unexpected assets: {', '.join(unexpected)}")
+        _checked(gh, *create, "--title", tag, "--notes-file", str(notes), *prerelease)
     upload = ["release", "upload", tag, *repo_args]
-    if missing:
-        _checked(gh, [*upload, *(str(dist / name) for name in missing)])
-    if different:
-        _checked(gh, [*upload, "--clobber", *(str(dist / name) for name in different)])
-    _checked(gh, ["release", "edit", tag, *repo_args, "--draft=false"])
+    if diff.missing:
+        _checked(gh, *upload, *(str(dist / name) for name in diff.missing))
+    if diff.different:
+        _checked(gh, *upload, "--clobber", *(str(dist / name) for name in diff.different))
+    _checked(gh, "release", "edit", tag, *repo_args, "--draft=false")
 
 
 # --- CLI --------------------------------------------------------------------
@@ -474,23 +491,20 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _check(root: Path, version: str, dist: Path | None) -> list[str]:
-    errors = version_errors(root, version)
+    found = packages(root)
+    files = dist_files(dist) if dist is not None else set()
+    errors = version_errors(found, version)
     if dist is not None:
-        errors += artifact_errors(root, version, dist)
+        errors += artifact_errors(found, version, files)
     if not errors:
-        artifacts = len(_dist_files(dist)) if dist is not None else 0
-        print(f"ok: {len(packages(root))} package(s), {artifacts} artifact(s) for {version}")
+        print(f"ok: {len(found)} package(s), {len(files)} artifact(s) for {version}")
     return errors
 
 
 def _index(root: Path, args: argparse.Namespace) -> list[str]:
-    if args.complete:
-        result = wait_for_index(root, args.version, args.dist, index=args.index, fetch=fetch_json)
-    else:
-        result = index_errors(
-            root, args.version, args.dist, index=args.index, complete=False, fetch=fetch_json
-        )
-    errors, present, to_upload = result
+    errors, present, to_upload = index_errors(
+        root, args.version, args.dist, index=args.index, complete=args.complete, fetch=fetch_json
+    )
     if not errors:
         print(f"index ok: {present} present, {to_upload} to upload")
     return errors
@@ -508,13 +522,13 @@ def _dispatch(args: argparse.Namespace) -> list[str]:
         case "index":
             return _index(root, args)
         case "smoke":
-            errors = run_smoke(args.exe, args.version)
+            errors, count = run_smoke(args.exe, args.version)
             if not errors:
-                count = len(_builtin_capabilities())
                 print(f"smoke ok: untaped {args.version}, {count} capabilities")
             return errors
         case "github-release":
-            publish_github_release(args.version, args.tag, args.repo, args.dist, args.notes, gh=_gh)
+            gh = functools.partial(_run, "gh")
+            publish_github_release(args.version, args.tag, args.repo, args.dist, args.notes, gh=gh)
     return []
 
 
