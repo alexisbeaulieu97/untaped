@@ -230,8 +230,9 @@ def index_errors(
     present = to_upload = 0
     local_files = _dist_files(dist)
     for name in packages(root):
-        payload = fetch(INDEX_URLS[index].format(name=name, version=version)) or {"urls": []}
-        remote = {row["filename"]: row["digests"]["sha256"] for row in payload["urls"]}
+        payload = fetch(INDEX_URLS[index].format(name=name, version=version))
+        rows = [] if payload is None else payload["urls"]
+        remote = {row["filename"]: row["digests"]["sha256"] for row in rows}
         local = sorted(set(_package_artifacts(name, version)) & local_files)
         for file in local:
             if file not in remote:
@@ -349,15 +350,19 @@ def _gh(args: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def _read_release(tag: str, repo: str, gh: Gh) -> dict[str, Any] | None:
-    """The release JSON, or None when ``gh`` reports HTTP 404."""
-    result = gh(["api", f"repos/{repo}/releases/tags/{tag}"])
-    if result.returncode == 0:
-        data: dict[str, Any] = json.loads(result.stdout)
-        return data
-    output = (result.stdout + result.stderr).strip()
-    if "HTTP 404" in output:
-        return None
-    raise ReleaseError(f"could not read release {tag}: {output}")
+    """The release for ``tag``, drafts included, or None when there is none.
+
+    It lists releases because ``releases/tags/<tag>`` hides drafts. ``--jq '.[]'``
+    prints one release per line on every page (``--slurp`` needs gh 2.48+).
+    """
+    result = gh(["api", "--paginate", "--jq", ".[]", f"repos/{repo}/releases"])
+    if result.returncode:
+        raise ReleaseError(f"could not list releases: {(result.stdout + result.stderr).strip()}")
+    releases = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+    matches = [release for release in releases if release.get("tag_name") == tag]
+    if len(matches) > 1:
+        raise ReleaseError(f"{len(matches)} releases are tagged {tag}")
+    return matches[0] if matches else None
 
 
 def _checked(gh: Gh, args: list[str]) -> None:
