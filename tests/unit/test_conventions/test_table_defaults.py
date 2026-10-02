@@ -3,7 +3,7 @@
 A collection of records with more than four fields (``error`` aside) must
 have default table columns: the record type's ``table_columns`` or the
 command's ``emit(..., table_columns=…)`` (``docs/conventions.md``). The
-suite-wide fixture (``tests/conftest.py``) fails any test whose command
+suite-wide fixture (root ``conftest.py``) fails any test whose command
 emits such a collection without them.
 """
 
@@ -59,3 +59,25 @@ def test_default_columns_or_a_single_record_pass(
 ) -> None:
     emit(records, fmt="json", table_columns=table_columns)
     assert table_default_violations == []
+
+
+@pytest.mark.parametrize(
+    ("module", "flagged"),
+    [
+        ("untaped_acme.domain", True),
+        ("untaped.capabilities.x", True),
+        ("untapedish.x", False),
+        ("acme.x", False),
+    ],
+)
+def test_only_untaped_and_untaped_underscore_modules_own_their_records(
+    table_default_violations: list[str],
+    capsys: pytest.CaptureFixture[str],
+    module: str,
+    flagged: bool,
+) -> None:
+    record = type("_Foreign", (_Wide,), {"__module__": module})
+    emit([record(a="x", action="created")], fmt="json")
+    found = list(table_default_violations)
+    table_default_violations.clear()  # handled here: do not fail this test
+    assert found == ([f"{module}._Foreign::no-default-columns"] if flagged else [])

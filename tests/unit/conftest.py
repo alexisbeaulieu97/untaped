@@ -15,12 +15,11 @@ from untaped.settings import (
 
 @pytest.fixture(autouse=True)
 def _isolated_install_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep tests blind to the developer machine's real install state.
+    """Keep tests blind to the developer machine's shared data dir.
 
-    Without this, anything touching the config file or the shared data dir
-    reads the real ``~/.untaped/config.yml`` and ``~/.local/share/untaped``.
-    Tests that need a config file still set ``UNTAPED_CONFIG`` themselves;
-    this only provides a hermetic baseline.
+    Without this, anything touching the data dir reads the real
+    ``~/.local/share/untaped``. The config file is isolated by the hermetic
+    plugin.
     """
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg-data"))
     get_settings.cache_clear()
