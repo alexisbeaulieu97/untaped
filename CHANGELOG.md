@@ -20,6 +20,10 @@
 - Ansible
   - **Breaking:** `graph --upstream/--downstream/--both` are removed; use
     `--direction up|down|both`. Graph sources re-index once.
+  - **Breaking:** the git cache moves to `~/.untaped/ansible-cache`, keyed
+    by host and path so https and ssh URLs share it; delete
+    `~/.untaped/ansible-repositories`. The GitHub token is now sent only to
+    the GitHub host, and refreshes of one repo no longer run concurrently.
 - Workspace
   - **Breaking:** 10.0 caches live in `~/.untaped/workspace-cache`. The 9.x
     `~/.untaped/repositories` is left untouched (clones made before 7.0 may

@@ -202,7 +202,7 @@ def test_git_probe_uses_real_local_ls_remote_subprocess(tmp_path: Path) -> None:
     target = ProbeTarget(full_name="acme/site", default_branch=branch, clone_url=str(bare))
 
     report = GitRemoteRefProbe(
-        GitRepositoryCache(),
+        GitRepositoryCache(auth_host=None),
         clone_protocol="https",
         auth_header=None,
         concurrency=1,
