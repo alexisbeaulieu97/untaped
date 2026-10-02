@@ -87,9 +87,8 @@ untaped jira issues search --project OPS --status 'In Review' --format pipe \
   `jira.assigned_jql`, not every issue.
 - Transition names differ between workflows and statuses; take them from
   `issues transitions`, not from memory.
-- A link reads "KEY outward-phrase OTHER": `links create OPS-123 Blocks
-  OPS-124` makes OPS-123 block OPS-124. Check one pair's preview before
-  linking in bulk.
+- Link direction is easy to reverse: read
+  [references/writes.md#links](references/writes.md#links) before linking.
 - Patch and transition previews read the issue, so a dry run needs working
   credentials; create, comment and link previews do not.
 - Writes are never retried automatically. After exit 5 on a write, run

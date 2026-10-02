@@ -37,11 +37,6 @@ it. `config edit` refuses to open while `config.yml` or `state.yml` has a
 newer format, but opens a config with an invalid `format_version` so you can
 fix it.
 
-- Within a major, a core-owned key may be added only if an older reader
-  ignoring it is safe.
-- Otherwise (TLS verification, a proxy, anything security-relevant) it is a
-  format bump, which only a major makes.
-
 `config` and `profile` commands write only `config.yml`; capability state
 writes touch only `state.yml`.
 
