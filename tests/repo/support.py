@@ -2,10 +2,23 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = REPO_ROOT / "packages"
 
+#: A fenced code block, indented or not.
+FENCE = re.compile(r"^[ \t]*(```|~~~).*?^[ \t]*\1", re.MULTILINE | re.DOTALL)
+
 #: Every first-party capability, in name order.
 FIRST_PARTY = ("ansible", "awx", "github", "jira", "recipe", "workspace")
+
+
+def markdown_files() -> list[Path]:
+    """Every hand-written or generated Markdown page users and agents read."""
+    files = sorted((REPO_ROOT / "docs").rglob("*.md"))
+    skills = sorted(REPO_ROOT.glob("packages/*/src/**/skills/**/*.md"))
+    readmes = sorted(PACKAGES.glob("*/README.md"))
+    root = (REPO_ROOT / name for name in ("README.md", "AGENTS.md", "CONTRIBUTING.md"))
+    return [*files, *skills, *readmes, REPO_ROOT / "examples/untaped-hello/README.md", *root]

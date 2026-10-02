@@ -25,7 +25,7 @@ import pytest
 from cyclopts import App
 
 from repo import quoted_commands
-from repo.support import PACKAGES, REPO_ROOT
+from repo.support import FENCE, PACKAGES, REPO_ROOT, markdown_files
 from untaped.bootstrap import build_root_app
 from untaped.capabilities import registry
 from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
@@ -35,7 +35,6 @@ REGENERATE = "uv run python scripts/gen_config_reference.py"
 _LINK_BODY = r"\[[^\]]*\]\(([^)\s]+)\)"
 _LINK = re.compile(r"(?<!!)" + _LINK_BODY)
 _BARE_INSTALL = re.compile(r"\binstall\b.*?['\"]?untaped-[a-z]")
-_FENCE = re.compile(r"^(```|~~~).*?^\1", re.MULTILINE | re.DOTALL)
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*$", re.MULTILINE)
 
 
@@ -130,14 +129,6 @@ def _package_readmes() -> list[Path]:
     return sorted(PACKAGES.glob("*/README.md"))
 
 
-def _markdown_files() -> list[Path]:
-    files = sorted((REPO_ROOT / "docs").rglob("*.md"))
-    skills = sorted(REPO_ROOT.glob("packages/*/src/**/skills/**/*.md"))
-    readmes = _package_readmes()
-    root = (REPO_ROOT / name for name in ("README.md", "AGENTS.md", "CONTRIBUTING.md"))
-    return [*files, *skills, *readmes, REPO_ROOT / "examples/untaped-hello/README.md", *root]
-
-
 def _slug(heading: str) -> str:
     # GitHub keeps underscores and hyphens and drops other punctuation.
     text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", heading).strip().lower()
@@ -146,13 +137,13 @@ def _slug(heading: str) -> str:
 
 @functools.cache
 def _anchors(path: Path) -> set[str]:
-    text = _FENCE.sub("", path.read_text(encoding="utf-8"))
+    text = FENCE.sub("", path.read_text(encoding="utf-8"))
     return {_slug(match) for match in _HEADING.findall(text)}
 
 
 def _prose(path: Path) -> str:
     """The page text without fenced blocks or inline code."""
-    return re.sub(r"(`+)[^\n]*?\1", "", _FENCE.sub("", path.read_text(encoding="utf-8")))
+    return re.sub(r"(`+)[^\n]*?\1", "", FENCE.sub("", path.read_text(encoding="utf-8")))
 
 
 def _broken_links(path: Path) -> list[str]:
@@ -169,7 +160,7 @@ def _broken_links(path: Path) -> list[str]:
     return broken
 
 
-@pytest.mark.parametrize("path", _markdown_files(), ids=lambda p: str(p.relative_to(REPO_ROOT)))
+@pytest.mark.parametrize("path", markdown_files(), ids=lambda p: str(p.relative_to(REPO_ROOT)))
 def test_relative_links_resolve(path: Path) -> None:
     assert _broken_links(path) == []
 
@@ -179,7 +170,7 @@ _REPO_URL = re.compile(
 )
 
 
-@pytest.mark.parametrize("path", _markdown_files(), ids=lambda p: str(p.relative_to(REPO_ROOT)))
+@pytest.mark.parametrize("path", markdown_files(), ids=lambda p: str(p.relative_to(REPO_ROOT)))
 def test_repository_urls_resolve(path: Path) -> None:
     """Absolute links into this repository (package READMEs render on PyPI) point at real files."""
     broken = []
@@ -316,7 +307,7 @@ def test_command_examples_use_real_commands_and_options(
     """Every ``untaped`` example in a ``bash`` block names a real command and options."""
     root = build_root_app(candidates=first_party_candidates)
     problems = []
-    for path in _markdown_files():
+    for path in markdown_files():
         for block in _bash_blocks(path):
             commands = _untaped_commands(block)
             # A block may run an alias it defines (``alias set NAME -- …``).
@@ -350,7 +341,7 @@ def test_inline_commands_name_real_commands(
 ) -> None:
     """Every ``untaped …`` in inline code names a real command (skills are checked on their own)."""
     root = build_root_app(candidates=first_party_candidates)
-    pages = [path for path in _markdown_files() if "skills" not in path.parts]
+    pages = [path for path in markdown_files() if "skills" not in path.parts]
     aliases = {
         argv[2]
         for path in pages
@@ -415,7 +406,7 @@ def test_install_examples_use_the_extras() -> None:
     for page in (REPO_ROOT / "README.md", REPO_ROOT / "docs" / "getting-started.md"):
         installs = [
             line.strip()
-            for block in _FENCE.finditer(page.read_text(encoding="utf-8"))
+            for block in FENCE.finditer(page.read_text(encoding="utf-8"))
             for line in block.group().splitlines()
             if re.match(r"\s*(uv tool install|pip install)\b", line)
         ]
@@ -428,7 +419,7 @@ def _bare_installs(path: Path, *, fenced_only: bool) -> list[str]:
     where ``fenced_only`` (the root README and getting-started)."""
     text = path.read_text(encoding="utf-8")
     if fenced_only:
-        lines = [line for block in _FENCE.finditer(text) for line in block.group().splitlines()]
+        lines = [line for block in FENCE.finditer(text) for line in block.group().splitlines()]
     else:
         lines = text.splitlines()
     return [line.strip() for line in lines if _BARE_INSTALL.search(line)]

@@ -12,12 +12,17 @@ limits.
 
 ```bash
 untaped config set github.token --prompt
-untaped config set github.base_url https://github.example.com/api/v3
 untaped config set github.default_org acme
 untaped github whoami
 ```
 
-Set `base_url` only for GitHub Enterprise Server. With a default org,
+For GitHub Enterprise Server, also point the profile at its API:
+
+```bash
+untaped config set github.base_url https://github.example.com/api/v3
+```
+
+With a default org,
 commands given no `--org`, `--team` or `--repo` use it. The token can also
 come from the GitHub CLI or `GH_TOKEN`; see
 [Tokens](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md#tokens).
@@ -78,7 +83,7 @@ skill. For clones you work in, use
 
 ## Reference
 
-The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-github/src/untaped_github/skills/untaped-github/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install github`; `untaped github COMMAND --help` lists each command's options.
+The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-github/src/untaped_github/skills/untaped-github/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install github --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install-skills)); `untaped github COMMAND --help` lists each command's options.
 
-- [Records and exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#github)
+- [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#github) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#github)

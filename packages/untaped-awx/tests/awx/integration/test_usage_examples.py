@@ -1,4 +1,4 @@
-"""Run the README and skill inventory examples through scope policy and the HTTP adapter."""
+"""Run the skill and live-smoke inventory examples through scope policy and the HTTP adapter."""
 
 import shlex
 from pathlib import Path
@@ -10,7 +10,10 @@ from untaped.testing import CliInvoker, ScriptedPromptBackend
 from untaped_awx.cli.commands import app
 
 PACKAGE = Path(__file__).resolve().parents[3]
-GUIDES = [PACKAGE / "README.md", *sorted((PACKAGE / "src/untaped_awx/skills").rglob("*.md"))]
+GUIDES = [
+    PACKAGE.parents[1] / "CONTRIBUTING.md",
+    *sorted((PACKAGE / "src/untaped_awx/skills").rglob("*.md")),
+]
 EXAMPLES = [
     shlex.split(line)[2:]
     for guide in GUIDES
@@ -22,7 +25,7 @@ EXAMPLES = [
 
 
 def test_the_guide_has_inventory_examples() -> None:
-    assert EXAMPLES, "no 'untaped awx inventory … --inventory' examples in the README or skill"
+    assert EXAMPLES, "no 'untaped awx inventory … --inventory' examples found"
 
 
 @pytest.mark.parametrize("args", EXAMPLES)

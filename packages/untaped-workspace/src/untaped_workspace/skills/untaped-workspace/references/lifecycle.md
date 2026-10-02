@@ -46,7 +46,7 @@ name those flags. Agents never rely on it.
 - Each selected repo has a mode (write or read-only), a base (completes from
   cached branches) and a branch (empty uses `workspace.branch_template`).
   `--branch` and `--base` without repo flags prefill these.
-- Keys: `space` selects, `/` searches, `tab` switches pane, `enter` edits a
+- Keys: `space` toggles a repo, `/` searches, `tab` switches pane, `enter` edits a
   setting and `←`/`→` change it, `ctrl-s` creates or adds the selection,
   `ctrl-r` refreshes the inventory, `esc` clears the search (never quits),
   `ctrl-c` quits (asking first when anything is selected) and creates

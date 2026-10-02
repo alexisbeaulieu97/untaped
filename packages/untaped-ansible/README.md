@@ -48,8 +48,8 @@ untaped ansible impact acme/base-role --refresh
 untaped ansible impact acme/base-role --org acme --refresh
 ```
 
-`impact` lists every repo that depends on the role, at any ref, from cached
-source data. Refresh first when the source is stale; inline selectors such as
+`impact` lists the repos in the source that depend on the role, at any ref,
+from cached data, and marks where the walk stopped. Refresh first when the source is stale; inline selectors such as
 `--org` answer a one-off question without saving a source.
 
 ## Find which roots contain a repository
@@ -60,7 +60,8 @@ untaped awx job-templates list --organization Default --with-scm --format pipe \
   | untaped ansible find acme/base-role --stdin --format pipe
 ```
 
-One row per root that reaches the repository, with the shortest path. Rows
+One row per ref of the repository that each root reaches, with the shortest
+path. Rows
 carry the input record's id and name, so the results join back to AWX job
 templates or any other piped records.
 
@@ -85,13 +86,14 @@ untaped ansible source remove platform --dry-run
 ```
 
 Patch a source rather than replacing it, and map Galaxy role names to their
-repos with source aliases. The cached data reflects either change only after
-the next refresh. Removals preview and ask first; see the skill.
+repos with source aliases. A patch drops the source's cached data, and an
+alias applies only at the next scan, so run `source refresh` after either.
+`source remove` and `source-alias remove` preview and ask first.
 
 ## Reference
 
-The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-ansible/src/untaped_ansible/skills/untaped-ansible/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install ansible`; `untaped ansible COMMAND --help` lists each command's options.
+The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-ansible/src/untaped_ansible/skills/untaped-ansible/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install ansible --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install-skills)); `untaped ansible COMMAND --help` lists each command's options.
 
-- [Records and exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#ansible)
+- [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#ansible) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#ansible)
 - [GitHub](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-github/README.md)

@@ -25,8 +25,9 @@ untaped config set github.token --prompt
 untaped config set github.inventory.orgs '["acme"]'
 ```
 
-Git itself never prompts, so cloning private repos needs an SSH agent or a
-credential helper; full git URLs skip the inventory. Directories, branch
+Cloning private repos needs Git credentials set up in advance; see the
+skill's [pitfalls](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-workspace/src/untaped_workspace/skills/untaped-workspace/SKILL.md#pitfalls).
+Full git URLs skip the inventory. Directories, branch
 naming and parallelism are in the
 [configuration reference](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#workspace).
 
@@ -80,8 +81,8 @@ every writable repo and exits 1 if any repo failed.
 
 ## Reference
 
-The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-workspace/src/untaped_workspace/skills/untaped-workspace/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install workspace`; `untaped workspace COMMAND --help` lists each command's options.
+The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-workspace/src/untaped_workspace/skills/untaped-workspace/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install workspace --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install-skills)); `untaped workspace COMMAND --help` lists each command's options.
 
-- [Records and exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#workspace)
+- [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#workspace) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#workspace)
 - [GitHub](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-github/README.md), which supplies the repo inventory

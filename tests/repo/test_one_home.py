@@ -1,15 +1,19 @@
-"""Each fact has one home: no paragraph is copied, nearly word for word, into a second file.
+"""Each fact has one home: no paragraph is copied, nearly word for word, into a second place.
 
-Prose paragraphs (outside code fences, tables and headings, at least
-:data:`MIN_WORDS` words) of the docs, the root guides, the package READMEs
-and the packaged skills are compared by their 5-word shingles. Two paragraphs
-in different files fail when :data:`THRESHOLD` of the shorter one's shingles
-appear in the other.
+Prose paragraphs and list items (outside code fences, tables and headings, at
+least :data:`MIN_WORDS` words) of the docs, the root guides, the package
+READMEs and the packaged skills are compared by their 5-word shingles, within
+a page and across pages. Two fail when :data:`THRESHOLD` of the shorter one's
+shingles appear in the other.
+
+This catches near-verbatim copies only: a copied sentence inside otherwise
+different paragraphs, a fact under :data:`MIN_WORDS` words, or a paraphrase
+is still the reviewer's to catch.
 
 A skill must stand alone for an agent that has only the installed CLI, so it
 may restate docs; skill files are compared only with the same capability's
-other skill files and README. Intentional repeats go in :data:`ALLOWED`, each
-with its reason.
+other skill files and README. Intentional README repeats go in
+:data:`ALLOWED`, each with its reason.
 """
 
 from __future__ import annotations
@@ -20,17 +24,16 @@ from pathlib import Path
 
 import pytest
 
-from repo.support import REPO_ROOT
+from repo.support import FENCE, REPO_ROOT, markdown_files
 
 MIN_WORDS = 20
 THRESHOLD = 0.5
 ALLOWED: dict[str, str] = {
-    # Opening words of the paragraph -> why the repeat is intentional.
+    # Opening words of a package README paragraph -> why the repeat is intentional.
     "Install it as part of `untaped`": "each package README is a standalone PyPI page",
     "The [packaged skill]": "the standard Reference section of every package README",
 }
 
-_FENCE = re.compile(r"^[ \t]*(```|~~~).*?^[ \t]*\1", re.MULTILINE | re.DOTALL)
 _ITEM = re.compile(r"\n(?=\s*(?:[-*]|\d+\.) )")
 _LINK_TARGET = re.compile(r"\]\([^)]*\)")
 _WORD = re.compile(r"[a-z0-9_./-]+")
@@ -38,27 +41,27 @@ _WORD = re.compile(r"[a-z0-9_./-]+")
 
 def _pages() -> list[Path]:
     generated = REPO_ROOT / "docs/reference/config.md"
-    docs = [p for p in sorted((REPO_ROOT / "docs").rglob("*.md")) if p != generated]
-    root = [REPO_ROOT / name for name in ("README.md", "CONTRIBUTING.md", "AGENTS.md")]
-    readmes = sorted(REPO_ROOT.glob("packages/*/README.md"))
-    skills = sorted(REPO_ROOT.glob("packages/*/src/*/skills/**/*.md"))
-    return [*docs, *root, *readmes, *skills]
+    return [page for page in markdown_files() if page != generated]
 
 
-def paragraphs(text: str) -> list[str]:
-    """The prose paragraphs, and list items, of a Markdown page worth comparing."""
+def _blocks(text: str) -> list[str]:
+    """The prose paragraphs and list items of a Markdown page, headings dropped."""
     found = []
-    for block in re.split(r"\n\s*\n", _FENCE.sub("", text)):
+    for block in re.split(r"\n\s*\n", FENCE.sub("", text)):
         lines = block.strip().splitlines()
         while lines and lines[0].startswith("#"):
             lines.pop(0)
-        for item in _ITEM.split("\n".join(lines)):
-            item = item.strip()
-            if item.startswith(("|", "<!--")) or item.startswith(tuple(ALLOWED)):
-                continue
-            if len(_words(item)) >= MIN_WORDS:
-                found.append(item)
+        found.extend(item.strip() for item in _ITEM.split("\n".join(lines)))
     return found
+
+
+def paragraphs(text: str, *, allowed: tuple[str, ...] = ()) -> list[str]:
+    """The blocks of a page worth comparing, skipping those opening with ``allowed``."""
+    return [
+        block
+        for block in _blocks(text)
+        if not block.startswith(("|", "<!--", *allowed)) and len(_words(block)) >= MIN_WORDS
+    ]
 
 
 def _words(block: str) -> list[str]:
@@ -94,10 +97,24 @@ def comparable(first: Path, second: Path) -> bool:
     return cap_a == cap_b and {kind_a, kind_b} <= {"skill", "readme"}
 
 
+def _comparable_paragraphs(page: Path) -> list[str]:
+    allowed = tuple(ALLOWED) if _owner(page)[0] == "readme" else ()
+    return paragraphs(page.read_text(encoding="utf-8"), allowed=allowed)
+
+
+def repeats(blocks: list[str]) -> list[str]:
+    """Every block of one page that a later block nearly copies."""
+    return [a for a, b in itertools.combinations(blocks, 2) if overlap(a, b) >= THRESHOLD]
+
+
 def copies(pages: list[Path]) -> list[str]:
-    """Every pair of near-identical paragraphs in two different pages."""
-    texts = {page: paragraphs(page.read_text(encoding="utf-8")) for page in pages}
-    found = []
+    """Every pair of near-identical paragraphs, in one page or two."""
+    texts = {page: _comparable_paragraphs(page) for page in pages}
+    found = [
+        f"{page.relative_to(REPO_ROOT)} (twice): {block[:70]!r}…"
+        for page in pages
+        for block in repeats(texts[page])
+    ]
     for first, second in itertools.combinations(pages, 2):
         if not comparable(first, second):
             continue
@@ -108,13 +125,23 @@ def copies(pages: list[Path]) -> list[str]:
     return found
 
 
-def test_no_paragraph_is_copied_into_a_second_file() -> None:
+def test_no_paragraph_is_copied() -> None:
     assert copies(_pages()) == [], "keep the fact in one home and link to it"
+
+
+def test_every_allowed_repeat_still_occurs() -> None:
+    readmes = [page.read_text(encoding="utf-8") for page in _pages() if _owner(page)[0] == "readme"]
+    for opening in ALLOWED:
+        assert any(f"\n{opening}" in text for text in readmes), f"stale ALLOWED entry: {opening}"
 
 
 SENTENCE = (
     "A write is destructive when it can replace or remove what an issue holds now, "
     "such as a transition or a patch that sets a field, and it previews before it asks."
+)
+SAME_TOPIC = (
+    "A write is safe when it only adds to what an issue holds, such as a comment or a "
+    "link, so it runs without a preview and never asks before it changes the issue."
 )
 
 
@@ -122,19 +149,11 @@ SENTENCE = (
     ("a", "b", "copied"),
     [
         (SENTENCE, SENTENCE.replace("now, such", "today, such"), True),
-        (SENTENCE, "Search issues with JQL and get one row per issue, " * 3, False),
+        (SENTENCE, SAME_TOPIC, False),
     ],
 )
 def test_overlap_detector(a: str, b: str, copied: bool) -> None:
     assert (overlap(a, b) >= THRESHOLD) is copied
-
-
-def test_skills_meet_only_their_own_capability() -> None:
-    skill = REPO_ROOT / "packages/untaped-awx/src/untaped_awx/skills/untaped-awx/SKILL.md"
-    assert comparable(skill, REPO_ROOT / "packages/untaped-awx/README.md")
-    assert not comparable(skill, REPO_ROOT / "packages/untaped-jira/README.md")
-    assert not comparable(skill, REPO_ROOT / "docs/scripting.md")
-    assert comparable(REPO_ROOT / "docs/scripting.md", REPO_ROOT / "README.md")
 
 
 def test_paragraphs_skip_code_tables_and_allowed_repeats() -> None:
@@ -147,9 +166,14 @@ def test_paragraphs_skip_code_tables_and_allowed_repeats() -> None:
         + "indented code " * 20
         + "\n  ```"
     )
-    assert paragraphs(text) == []
+    assert paragraphs(text, allowed=tuple(ALLOWED)) == []
+    assert len(paragraphs(text)) == 1
 
 
 def test_paragraphs_split_lists_and_drop_headings() -> None:
     item = "- " + "word " * 25
     assert paragraphs(f"## Title\n{item}\n{item}\n- short") == [item.strip(), item.strip()]
+
+
+def test_repeats_within_one_page() -> None:
+    assert repeats(paragraphs(f"{SENTENCE}\n\n{SAME_TOPIC}\n\n{SENTENCE}\n")) == [SENTENCE]
