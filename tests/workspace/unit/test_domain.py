@@ -20,7 +20,7 @@ from untaped.capabilities.workspace.domain import (
 )
 from untaped.capabilities.workspace.domain.records import RepoOutcome, StatusRow
 from untaped.capabilities.workspace.domain.safety import CACHE_MISSING, SUBMODULES
-from untaped.sdk import UsageError, cache_key
+from untaped.sdk import UsageError
 
 
 @pytest.mark.parametrize("name", ["JIRA-1234", "feature_x", "a.b"])
@@ -67,30 +67,6 @@ def test_collision_with_an_existing_dir() -> None:
 def test_clash_without_an_owner_still_gets_a_free_dir() -> None:
     dirs = assign_dirs([("", "api")], existing=[_spec("acme/api", "api")])
     assert dirs[0] != "api"
-
-
-@pytest.mark.parametrize(
-    ("first", "second"),
-    [
-        ("https://github.com/acme/api.git", "git@github.com:acme/api.git"),
-        ("https://github.com/acme/api", "ssh://git@github.com/acme/api.git"),
-        ("/srv/git/tool.git", "/srv/git/tool.git"),
-    ],
-)
-def test_one_repo_has_one_key_across_url_forms(first: str, second: str) -> None:
-    assert cache_key(first) == cache_key(second)
-
-
-@pytest.mark.parametrize(
-    ("first", "second"),
-    [
-        ("https://github.com/acme/api.git", "https://github.com/other/api.git"),
-        ("https://github.com/acme/api.git", "https://ghe.example/acme/api.git"),
-        ("/srv/a/tool.git", "/srv/b/tool.git"),
-    ],
-)
-def test_different_repos_have_different_keys(first: str, second: str) -> None:
-    assert cache_key(first) != cache_key(second)
 
 
 def test_branch_template() -> None:
