@@ -13,7 +13,7 @@ from untaped.capabilities.ansible.infrastructure.git_cache import (
     GitCacheError,
     GitRepositoryCache,
 )
-from untaped.sdk import RepoCache
+from untaped.sdk import ErrorCategory, GitCommandError, RepoCache
 
 pytestmark = [
     pytest.mark.integration,
@@ -236,3 +236,28 @@ def test_https_and_ssh_urls_share_one_cache_path(tmp_path: Path, url: str) -> No
     bare = GitRepositoryCache(auth_host=None).ensure_bare(url, cache_dir=tmp_path, auth_header=None)
 
     assert bare == tmp_path.resolve() / "github.com" / "acme" / "app.git"
+
+
+def test_fetch_refs_without_refspecs_runs_no_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    headers = _spy_headers(monkeypatch)
+    bare = tmp_path / "cache" / "app.git"
+
+    GitRepositoryCache(auth_host=None).fetch_refs(
+        bare, refspecs=[], depth=1, blob_filter=True, auth_header=None
+    )
+
+    assert headers == []
+    assert not (tmp_path / "cache").exists()
+
+
+def test_a_failed_ls_remote_keeps_the_git_errors_attribution(tmp_path: Path) -> None:
+    # A missing git binary is ``config``/``local``, unlike GitCacheError's own defaults.
+    with pytest.raises(GitCacheError) as caught:
+        GitRepositoryCache(auth_host=None, git=str(tmp_path / "no-git")).ls_remote(
+            (tmp_path / "missing").as_uri(), patterns=[], auth_header=None
+        )
+
+    assert (caught.value.system, caught.value.category) == ("local", ErrorCategory.CONFIG)
+    assert isinstance(caught.value.__cause__, GitCommandError)
