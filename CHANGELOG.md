@@ -23,18 +23,21 @@
   - **Breaking:** `safe_cache_path` is removed; use `cache_path`.
   - **Breaking:** providers drop `api_requires`; the capability API version is
     gone. A provider's `untaped` requirement is the only compatibility check.
-    `untaped capabilities` loses its `api` column.
-  - **Changed:** first-party capabilities register through
+    `untaped capabilities` loses its `api` and `origin` columns and lists
+    capabilities in name order.
+  - **Breaking:** first-party capabilities get no precedence. A third-party
+    provider with the same name as a first-party capability (say `github`)
+    from a distribution that sorts before `untaped` replaces it, and the
+    first-party one is quarantined with a warning. Before, such a collision
+    was a fatal error.
+  - **Behavior change:** first-party capabilities register through
     `untaped.capabilities` entry points like any plugin. A failing capability
-    is quarantined instead of stopping `untaped`. Capabilities list in name
-    order; `untaped capabilities` loses its `origin` column. On a name or
-    section collision the capability that sorts first by name, then by
-    distribution, wins; the other is quarantined. Each quarantined
-    capability warns once by name, and `untaped doctor` names the capability
-    in its quarantine rows.
-  - **Changed:** a capability whose commands fail to load fails only its own
-    command, with exit 4; `untaped doctor` reports it as a `bad-app-factory`
-    quarantine row.
+    is quarantined instead of stopping `untaped`. Each quarantined capability
+    warns once by name, and `untaped doctor` names the capability in its
+    quarantine rows.
+  - **Behavior change:** a capability whose commands fail to load fails only
+    its own command, with exit 4; `untaped doctor` reports it as a
+    `bad-app-factory` quarantine row.
 - Ansible
   - **Breaking:** `graph --upstream/--downstream/--both` are removed; use
     `--direction up|down|both`. Graph sources re-index once.

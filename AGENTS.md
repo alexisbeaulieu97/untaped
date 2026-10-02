@@ -60,13 +60,12 @@ keeps that attribution when replaced or turned into a row; see
 
 ## Capability registry + the SDK (`untaped.sdk`)
 
-- `sdk.py` is the single public SDK surface and the **only** core
-  module capability code (first-party or third-party) imports from;
-  first-party capabilities may also use another capability's declared
-  `api.py` (Hard Rule 2). Its
-  exported types and helpers are the provider API; a provider's `untaped`
-  requirement (`Requires-Dist`) is the only compatibility check; the package
-  root re-exports nothing.
+- `sdk.py` is the single public SDK surface and the **only** core module
+  capability code (first-party or third-party) imports from; first-party
+  capabilities may also use another capability's declared `api.py` (Hard
+  Rule 2). Its exported types and helpers are the provider API; a provider's
+  `untaped` requirement (`Requires-Dist`) is the only compatibility check;
+  the package root re-exports nothing.
 - `capabilities/registry.py` is the internal composition kernel: discovery and
   metadata pre-checks → provider resolution → declaration validation → commit.
   Every violation becomes a `QuarantineRecord` entry while composition

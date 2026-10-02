@@ -70,12 +70,16 @@ must be callable and return one `CapabilitySpec` when called without
 arguments.
 
 The provider's `untaped` requirement (`Requires-Dist`) is the only
-compatibility check: a running `untaped` outside that range quarantines the
-provider. The [changelog](../CHANGELOG.md) says what each version added or
-broke.
-First-party capabilities register exactly this way and get no precedence: on
-a name or section collision the capability that sorts first by name, then by
-distribution, wins, and the other is quarantined. A capability whose
+compatibility check: declare it (`untaped>=10,<11`); without one, nothing is
+checked. A running `untaped` outside that range quarantines the provider.
+Installers normally enforce the range, so this shows up mainly after
+upgrading `untaped` past it. The [changelog](../CHANGELOG.md) says what each
+version added or broke.
+First-party capabilities register exactly this way and get no precedence. On
+a section collision the capability whose name sorts first wins; on a name
+collision the one whose distribution sorts first wins, so a third-party
+provider named `github` from any distribution sorting before `untaped`
+replaces `untaped github`. The other is quarantined with a warning. A capability whose
 settings import another capability's `api` (ansible imports github's) is
 quarantined with it when that import fails.
 
