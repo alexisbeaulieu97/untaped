@@ -14,7 +14,7 @@ from untaped.fs import atomic_write
 from untaped.settings import (
     FORMAT_VERSION,
     NewerFormatError,
-    load_config_yaml,
+    check_config_text,
     resolve_config_path,
     validate_config_file,
 )
@@ -35,7 +35,7 @@ def run_config_editor() -> None:
         path = resolve_config_path()
         original = read_config_text(path)
         if original is not None:
-            _refuse_a_newer_format(path)
+            _refuse_a_newer_format(original, path)
         workdir = Path(tempfile.mkdtemp(prefix="untaped-config-edit-"))
         draft = workdir / path.name
         edited_by_user = False
@@ -83,10 +83,10 @@ def run_config_editor() -> None:
         ui_context(strict=False).message("success", f"config saved and validated (config: {path})")
 
 
-def _refuse_a_newer_format(path: Path) -> None:
+def _refuse_a_newer_format(text: str, path: Path) -> None:
     """Never open a config file a newer untaped wrote; leave any other error to repair."""
     try:
-        load_config_yaml(path)
+        check_config_text(text, path)
     except NewerFormatError:
         raise
     except ConfigError:

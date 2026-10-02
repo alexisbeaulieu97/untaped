@@ -221,14 +221,31 @@ def load_config_yaml(yaml_file: Path) -> dict[str, Any]:
         raise ConfigError(f"could not parse {yaml_file}: {exc}") from exc
     except OSError as exc:
         raise ConfigError(f"could not read {yaml_file}: {exc.strerror or exc}") from exc
+    return _checked_root(raw, yaml_file)
+
+
+def check_config_text(text: str, path: Path) -> None:
+    """Raise :class:`ConfigError` when ``text`` is not a readable config document.
+
+    Applies the same root and ``format_version`` checks as :func:`load_config_yaml`
+    to text already read from ``path``.
+    """
+    try:
+        raw = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"could not parse {path}: {exc}") from exc
+    _checked_root(raw, path)
+
+
+def _checked_root(raw: Any, path: Path) -> dict[str, Any]:
     if raw is None:
         return {}
     if not isinstance(raw, dict):
         raise ConfigError(
-            f"invalid config in {yaml_file}: the document root must be a mapping, "
+            f"invalid config in {path}: the document root must be a mapping, "
             f"got {type(raw).__name__}"
         )
-    _check_format(raw, yaml_file)
+    _check_format(raw, path)
     return raw
 
 

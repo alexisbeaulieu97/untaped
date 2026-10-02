@@ -203,7 +203,6 @@ def _scripted_editor(
     [
         "[invalid",
         "profiles: {default: {jira: {timeout: not-a-number}}}",
-        "format_version: 2\nprofiles: {}\n",
     ],
 )
 def test_config_edit_rejects_an_invalid_edit_and_keeps_the_config(
@@ -256,6 +255,8 @@ def test_config_edit_names_a_newer_draft_format(
     assert "format_version 2 is newer than this release supports (format 1)" in result.stderr
     assert "upgrade untaped" not in result.stderr
     assert _isolated_config.read_text() == "profiles: {}\n"
+    kept = Path(result.stderr.split("your edits are in ")[1].split()[0])
+    assert kept.read_text() == "format_version: 2\nprofiles: {}\n"
 
 
 def test_config_edit_saves_verbatim_owner_only_and_through_a_symlink(

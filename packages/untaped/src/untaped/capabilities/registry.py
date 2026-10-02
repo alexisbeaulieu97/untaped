@@ -30,7 +30,11 @@ from packaging.version import InvalidVersion
 from pydantic import BaseModel
 
 from untaped.errors import ConfigError
-from untaped.settings import Settings, validate_disjoint_settings_sections
+from untaped.settings import (
+    RESERVED_STATE_SECTIONS,
+    Settings,
+    validate_disjoint_settings_sections,
+)
 
 #: Distribution whose version ``Requires-Dist: untaped`` is checked against.
 _CORE_DISTRIBUTION = "untaped"
@@ -39,20 +43,15 @@ _CORE_DISTRIBUTION = "untaped"
 CAPABILITIES_ENTRY_POINT_GROUP = "untaped.capabilities"
 
 #: Reserved root command/layout names no capability may claim (spec §5 row 1).
-_RESERVED_COMMAND_ROOTS = frozenset(
-    {
-        "profiles",
-        "active",
-        "format_version",
-        "config",
-        "profile",
-        "skills",
-        "doctor",
-        "capabilities",
-        "setup",
-        "alias",
-    }
-)
+_RESERVED_COMMAND_ROOTS = RESERVED_STATE_SECTIONS | {
+    "config",
+    "profile",
+    "skills",
+    "doctor",
+    "capabilities",
+    "setup",
+    "alias",
+}
 
 
 class CapabilityProvider(Protocol):
