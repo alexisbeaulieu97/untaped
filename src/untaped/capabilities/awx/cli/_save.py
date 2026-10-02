@@ -12,7 +12,7 @@ from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.options import NamesArgument
 from untaped.capabilities.awx.cli.save_runner import run_save_selection
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
-from untaped.capability_api import ColumnsOption, FormatOption, report_errors
+from untaped.capability_api import ColumnsOption, FormatOption, UsageError, report_errors
 
 
 def _add_save(app: App, spec: AwxResourceSpec) -> None:
@@ -28,9 +28,20 @@ def _add_save(app: App, spec: AwxResourceSpec) -> None:
         ] = None,
         fmt: FormatOption = "yaml",
         columns: ColumnsOption = None,
+        comment: Annotated[
+            str | None,
+            Parameter(
+                name="--comment", help="Add TEXT as a '#' comment at the top of each document."
+            ),
+        ] = None,
     ) -> None:
         """Export a fixed selection as one portable YAML document batch."""
         selection.require_source(names)
-        with report_errors(), open_context() as ctx:
-            selected = selection.select(ctx, spec, names)
-            run_save_selection(ctx, spec, selected, output=output, fmt=fmt, columns=columns)
+        with report_errors():
+            if comment and output is None and fmt != "yaml":
+                raise UsageError("--comment needs YAML output; drop --format or pass --out FILE")
+            with open_context() as ctx:
+                selected = selection.select(ctx, spec, names)
+                run_save_selection(
+                    ctx, spec, selected, output=output, fmt=fmt, columns=columns, comment=comment
+                )

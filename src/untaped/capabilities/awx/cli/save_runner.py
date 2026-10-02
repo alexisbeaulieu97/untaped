@@ -23,14 +23,18 @@ def run_save_selection(
     output: Path | None,
     fmt: OutputFormat,
     columns: list[str] | None,
+    comment: str | None = None,
 ) -> None:
     """Export selected records without resolving their names again."""
     saver = SaveResource(ctx.repo, ctx.fk, nodes=ctx.workflow_nodes, warn=_warner(ctx))
     resources = [saver.from_record(spec, item.record) for item in selected]
-    comment = spec.fidelity_note if spec.fidelity != "full" else None
-    if comment:
-        echo(f"{spec.fidelity} save: {comment}", err=True)
-    text = "---\n".join(dump_resource(resource, header_comment=comment) for resource in resources)
+    fidelity_comment = spec.fidelity_note if spec.fidelity != "full" else None
+    if fidelity_comment:
+        echo(f"{spec.fidelity} save: {fidelity_comment}", err=True)
+    text = "---\n".join(
+        dump_resource(resource, header_comment=fidelity_comment, comment=comment)
+        for resource in resources
+    )
     if output and str(output) != "-":
         write_output(output, text)
     elif output or fmt == "yaml":
@@ -55,6 +59,7 @@ def run_save_batch(
     filters: dict[str, str],
     organization: str | None,
     print_paths: bool,
+    comment: str | None = None,
 ) -> None:
     """Bulk-save resources to disk and write the requested stdout shape."""
     outcomes = SaveResources(
@@ -78,7 +83,9 @@ def run_save_batch(
             raise AwxApiError(f"invalid save outcome for {outcome.kind}: missing resource")
         target = out_dir / outcome.filename
         _assert_inside(out_dir, target)
-        text = dump_resource(outcome.resource, header_comment=outcome.header_comment)
+        text = dump_resource(
+            outcome.resource, header_comment=outcome.header_comment, comment=comment
+        )
         write_output(target, text)
         if print_paths:
             echo(str(target))

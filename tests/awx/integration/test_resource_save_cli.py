@@ -47,7 +47,6 @@ def _seed_basic(fake: Any) -> None:
         playbook="deploy.yml",
         description="deploy the app",
         last_job_status="successful",
-        webhook_key="$encrypted$",
     )
 
 
@@ -284,3 +283,33 @@ def test_export_kind_accepts_cli_and_domain_names(
     assert [p.name for p in out_dir.iterdir()] == ["JobTemplate__Default__deploy.yml"]
     docs = [d for d in yaml.safe_load_all(result.stdout) if d is not None]
     assert [Resource.model_validate(d).metadata.name for d in docs] == ["deploy"]
+
+
+def test_export_comment_heads_the_document(fake_aap: Any) -> None:
+    _seed_basic(fake_aap)
+    result = _save_to(None, "--comment", "Recreate by hand from the UI")
+    assert result.exit_code == 0, result.output
+    assert result.stdout.startswith("# Recreate by hand from the UI\nkind: JobTemplate")
+
+
+@pytest.mark.parametrize("fmt", ["json", "pipe"])
+def test_export_comment_rejects_non_yaml_stdout(fake_aap: Any, fmt: str) -> None:
+    _seed_basic(fake_aap)
+    result = _save_to(None, "--comment", "x", "--format", fmt)
+    assert result.exit_code == 2
+    assert "--comment needs YAML output" in result.stderr
+
+
+def test_export_comment_allowed_with_out_dash_and_json(fake_aap: Any) -> None:
+    _seed_basic(fake_aap)
+    result = _save_to("-", "--comment", "x", "--format", "json")
+    assert result.exit_code == 0, result.output
+    assert result.stdout.startswith("# x\n")
+
+
+def test_export_comment_allowed_with_out_file(fake_aap: Any, tmp_path: Path) -> None:
+    _seed_basic(fake_aap)
+    out = tmp_path / "jt.yml"
+    result = _save_to(str(out), "--comment", "x", "--format", "json")
+    assert result.exit_code == 0, result.output
+    assert out.read_text().startswith("# x\n")

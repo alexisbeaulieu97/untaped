@@ -158,7 +158,9 @@ class SaveResource:
             resource=Resource(
                 kind=spec.kind,
                 metadata=metadata,
-                spec=redact_value(spec_data, spec.secret_paths, replacement="$encrypted$"),
+                spec=redact_value(
+                    spec_data, spec.secret_paths, replacement="$encrypted$", skip_empty=True
+                ),
             ),
             record=copy.deepcopy(record),
             read_only_fields=(
@@ -175,6 +177,8 @@ class SaveResource:
             if field not in record:
                 continue
             body[field] = record[field]
+        for field in spec.derived_in(record):
+            body.pop(field, None)
         for fk in spec.fk_refs:
             if fk.polymorphic or fk.field not in body or body[fk.field] is None:
                 continue

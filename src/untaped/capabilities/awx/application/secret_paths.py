@@ -7,7 +7,7 @@ only the elements that equal ``value``; :func:`path_slots` is the
 single walker every read, redact, strip, and remove of a secret path goes
 through:
 
-- ``webhook_key``                — exact top-level key
+- ``host_config_key``             — exact top-level key
 - ``inputs.*``                   — any direct child of ``inputs``
 - ``survey_spec.spec.*[type=password].default`` — ``default`` key on the
                                    password questions under ``survey_spec.spec``
@@ -81,10 +81,13 @@ def values_at(value: Any, pattern: str) -> Iterator[Any]:
         yield container[key]
 
 
-def replace_at(value: Any, pattern: str, replacement: Any) -> None:
-    """In place: overwrite every mutable slot ``pattern`` names."""
+def replace_at(value: Any, pattern: str, replacement: Any, *, skip_empty: bool = False) -> None:
+    """In place: overwrite every mutable slot ``pattern`` names.
+
+    ``skip_empty`` leaves slots holding ``None`` or ``""`` untouched.
+    """
     for container, key in path_slots(value, pattern):
-        if isinstance(container, dict | list):
+        if isinstance(container, dict | list) and not (skip_empty and container[key] in (None, "")):
             container[key] = replacement
 
 

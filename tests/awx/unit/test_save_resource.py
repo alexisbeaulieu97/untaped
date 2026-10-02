@@ -9,8 +9,10 @@ from untaped.capabilities.awx.application import SaveResource
 from untaped.capabilities.awx.application.ports import FkResolver, ResourceClient
 from untaped.capabilities.awx.domain import ResourceSpec, ServerRecord
 from untaped.capabilities.awx.infrastructure.specs import (
+    JOB_TEMPLATE_SPEC,
     PROJECT_SPEC,
     SCHEDULE_SPEC,
+    WORKFLOW_JOB_TEMPLATE_SPEC,
 )
 
 
@@ -96,3 +98,103 @@ def test_save_schedule_extracts_polymorphic_parent() -> None:
     assert saved.metadata.parent.kind == "JobTemplate"
     assert saved.metadata.parent.name == "deploy"
     assert saved.metadata.parent.organization == "Default"
+
+
+def _jt_record(**fields: Any) -> dict[str, Any]:
+    return {
+        "id": 30,
+        "name": "deploy",
+        "organization": 1,
+        "summary_fields": {"organization": {"name": "Default"}},
+        "playbook": "deploy.yml",
+        # Present so SaveResource does not re-GET the record for sub-documents.
+        "survey_spec": {"spec": []},
+        **fields,
+    }
+
+
+def _save_jt(**fields: Any) -> dict[str, Any]:
+    client = _StubClient(find_result=_jt_record(**fields))
+    fk = _StubFk({("Organization", 1): "Default"})
+    use = SaveResource(cast(ResourceClient, client), cast(FkResolver, fk))
+    return use.from_record(JOB_TEMPLATE_SPEC, client.record).spec
+
+
+def test_save_job_template_redacts_host_config_key() -> None:
+    assert _save_jt(host_config_key="s3cr3t")["host_config_key"] == "$encrypted$"
+
+
+def test_save_job_template_keeps_empty_host_config_key() -> None:
+    assert _save_jt(host_config_key="")["host_config_key"] == ""
+
+
+def test_save_keeps_empty_survey_password_default() -> None:
+    survey = {"spec": [{"variable": "pw", "type": "password", "default": ""}]}
+    assert _save_jt(survey_spec=survey)["survey_spec"]["spec"][0]["default"] == ""
+
+
+def test_save_job_template_omits_server_owned_and_duplicate_fields() -> None:
+    spec = _save_jt(custom_virtualenv="/venv/x", webhook_key="k", webhook_service="")
+    assert "custom_virtualenv" not in spec
+    assert "webhook_key" not in spec
+    assert "organization" not in spec
+
+
+def test_save_project_has_no_spec_organization() -> None:
+    client = _StubClient(
+        find_result={
+            "id": 1,
+            "name": "playbooks",
+            "organization": 1,
+            "scm_type": "git",
+            "summary_fields": {"organization": {"name": "Default"}},
+        }
+    )
+    fk = _StubFk({("Organization", 1): "Default"})
+    saved = SaveResource(cast(ResourceClient, client), cast(FkResolver, fk)).from_record(
+        PROJECT_SPEC, client.record
+    )
+    assert saved.metadata.organization == "Default"
+    assert "organization" not in saved.spec
+
+
+def test_save_workflow_template_omits_webhook_key_and_spec_organization() -> None:
+    client = _StubClient(
+        find_result={
+            "id": 40,
+            "name": "pipeline",
+            "organization": 1,
+            "summary_fields": {"organization": {"name": "Default"}},
+            "survey_spec": {"spec": []},
+            "webhook_key": "k",
+        }
+    )
+    fk = _StubFk({("Organization", 1): "Default"})
+    saved = SaveResource(cast(ResourceClient, client), cast(FkResolver, fk)).from_record(
+        WORKFLOW_JOB_TEMPLATE_SPEC, client.record
+    )
+    assert "webhook_key" not in saved.spec
+    assert "organization" not in saved.spec
+
+
+def _save_project(**fields: Any) -> dict[str, Any]:
+    client = _StubClient(
+        find_result={
+            "id": 1,
+            "name": "playbooks",
+            "organization": 1,
+            "summary_fields": {"organization": {"name": "Default"}},
+            **fields,
+        }
+    )
+    fk = _StubFk({("Organization", 1): "Default"})
+    use = SaveResource(cast(ResourceClient, client), cast(FkResolver, fk))
+    return use.from_record(PROJECT_SPEC, client.record).spec
+
+
+def test_save_scm_project_omits_derived_local_path() -> None:
+    assert "local_path" not in _save_project(scm_type="git", local_path="_2146__prj")
+
+
+def test_save_manual_project_keeps_local_path() -> None:
+    assert _save_project(scm_type="", local_path="my_playbooks")["local_path"] == "my_playbooks"

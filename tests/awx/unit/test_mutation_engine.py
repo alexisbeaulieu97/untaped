@@ -64,7 +64,7 @@ def test_prepare_rejects_create_for_patch_mode() -> None:
 def test_secret_values_are_redacted_in_plan_presentation() -> None:
     from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
 
-    client = _Client([{"id": 7, "name": "one", "organization": 1, "webhook_key": "old"}])
+    client = _Client([{"id": 7, "name": "one", "organization": 1, "host_config_key": "old"}])
     engine = BatchMutationEngine(
         client=cast(RawHttpResourceClient, client),
         catalog=cast(Catalog, _Catalog(JOB_TEMPLATE_SPEC)),
@@ -76,14 +76,14 @@ def test_secret_values_are_redacted_in_plan_presentation() -> None:
             Resource(
                 kind="JobTemplate",
                 metadata=Metadata(name="one", organization="Default"),
-                spec={"webhook_key": "new-secret"},
+                spec={"host_config_key": "new-secret"},
             )
         ]
     )
     assert "new-secret" not in repr(plan)
     preview = plan.operations[0].preview
     assert "new-secret" not in repr(preview)
-    assert [change.field for change in preview.changes] == ["webhook_key"]
+    assert [change.field for change in preview.changes] == ["host_config_key"]
 
 
 def test_planned_fk_reference_does_not_confuse_negative_literal_values() -> None:

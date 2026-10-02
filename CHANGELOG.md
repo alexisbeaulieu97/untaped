@@ -37,6 +37,19 @@
   - **New:** in a terminal, `workspace create` and `add` without repos open
     a repo picker (search the GitHub inventory, set mode/base/branch per
     repo).
+- AWX
+  - **Breaking:** `export` writes a job template's `host_config_key` (a
+    secret, previously exported in clear) as `$encrypted$`, and `get`/`list`
+    records mask a set `host_config_key`; empty secrets stay empty instead of
+    becoming placeholders.
+  - **Breaking:** `export` documents no longer carry controller-derived fields
+    (`custom_virtualenv`, `webhook_key`, SCM projects' `local_path`) or a
+    `spec.organization` copy; `apply` ignores them in older files.
+  - **Breaking:** `patch`/`edit` exit 2 when changing `webhook_key`,
+    `custom_virtualenv` or an SCM project's `local_path`; these were
+    previously sent and ignored by the controller.
+  - **Changed:** `export` writes multi-line text as YAML `|` blocks.
+  - **New:** `export --comment TEXT` heads each document with `# TEXT`.
 - GitHub
   - **New:** `github.inventory` settings (`path`, `orgs`, `teams`,
     `max_age_seconds`) for a cached, metadata-only repository list that

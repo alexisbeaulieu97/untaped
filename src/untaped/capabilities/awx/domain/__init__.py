@@ -12,7 +12,13 @@ from untaped.capabilities.awx.domain.outcomes import (
 )
 from untaped.capabilities.awx.domain.payloads import ActionPayload, ServerRecord, WritePayload
 from untaped.capabilities.awx.domain.ping import PingStatus
-from untaped.capabilities.awx.domain.spec import ActionSpec, CommandName, FkRef, ResourceSpec
+from untaped.capabilities.awx.domain.spec import (
+    ActionSpec,
+    CommandName,
+    DerivedField,
+    FkRef,
+    ResourceSpec,
+)
 from untaped.capabilities.awx.domain.workflow_node import (
     WorkflowNode,
     WorkflowNodeType,
@@ -28,6 +34,7 @@ __all__ = [
     "BatchResult",
     "CommandName",
     "CopyOutcome",
+    "DerivedField",
     "FieldChange",
     "FkRef",
     "IdentityRef",
