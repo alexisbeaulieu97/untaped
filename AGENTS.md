@@ -26,9 +26,9 @@ The source tree is the implementation reference:
   the `dev` group, no `[project]`); `uv.lock` locks the whole workspace.
 - `packages/<name>/` holds one distribution each: its `pyproject.toml`,
   `src/` and `tests/`. Core is `packages/untaped/`: its `src/untaped/`
-  contains the shell, shared services, and first-party capabilities. Each
-  `packages/untaped/src/untaped/capabilities/<name>/` directory owns one
-  capability end to end.
+  contains the shell, shared services, and the capabilities not yet extracted.
+  An extracted capability is its own package,
+  `packages/untaped-<name>/src/untaped_<name>/`, and owns one capability end to end.
 - `docs/` contains user guides and executable policy files.
 - `tests/` verifies public behavior and release contracts: `tests/repo/` holds
   the cross-package tests, `tests/<name>/` a capability's tests.
@@ -36,7 +36,7 @@ The source tree is the implementation reference:
 A capability owns its directory end to end:
 
 ```
-packages/untaped/src/untaped/capabilities/<name>/
+packages/untaped-<name>/src/untaped_<name>/
 ├── __init__.py        # SPEC: CapabilitySpec (with one-line help) + nullary build_app() (lazy CLI import; never build at import time) + provider()
 ├── settings.py        # profile model + state model (field sets must be disjoint)
 ├── api.py             # optional: declared public module other first-party capabilities may import (Hard Rule 2)
@@ -75,11 +75,12 @@ keeps that attribution when replaced or turned into a row; see
   continues. Provider authors never import it.
 - Management command names are owned by the root shell; inspect
   `untaped --help` and `packages/untaped/src/untaped/management/` when adding a capability.
-- A new first-party capability: add `capabilities/<name>/` per the layout
+- A new first-party capability: add `packages/untaped-<name>/` per the layout
   above, expose `SPEC`, `build_app` and a nullary `provider()` returning
-  `SPEC`, and add `<name> = "untaped.capabilities.<name>:provider"` under
-  `[project.entry-points."untaped.capabilities"]` in `packages/untaped/pyproject.toml` (then
-  `uv sync`). Start its
+  `SPEC`, and add `<name> = "untaped_<name>:provider"` under
+  `[project.entry-points."untaped.capabilities"]` in its `pyproject.toml`
+  (copy a sibling package's; add the `untaped[<name>]` extra to core and a
+  `[tool.uv.sources]` entry, then `uv sync`). Start its
   skill from [`docs/templates/SKILL.md`](docs/templates/SKILL.md) (which holds
   the skill rules) and its user guide at `docs/<name>/usage.md`, linked from
   `docs/README.md`. Set

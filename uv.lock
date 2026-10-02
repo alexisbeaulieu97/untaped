@@ -9,6 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "untaped",
+    "untaped-jira",
 ]
 
 [manifest.dependency-groups]
@@ -753,6 +754,14 @@ dependencies = [
     { name = "truststore" },
 ]
 
+[package.optional-dependencies]
+all = [
+    { name = "untaped-jira" },
+]
+jira = [
+    { name = "untaped-jira" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "cyclopts", specifier = ">=4.16.0,<5" },
@@ -768,8 +777,21 @@ requires-dist = [
     { name = "ruamel-yaml", specifier = ">=0.18.16" },
     { name = "tomlkit", specifier = ">=0.13,<1" },
     { name = "truststore", specifier = ">=0.10.4" },
+    { name = "untaped-jira", marker = "extra == 'all'", editable = "packages/untaped-jira" },
+    { name = "untaped-jira", marker = "extra == 'jira'", editable = "packages/untaped-jira" },
 ]
-provides-extras = ["all"]
+provides-extras = ["all", "jira"]
+
+[[package]]
+name = "untaped-jira"
+version = "10.0.0a0"
+source = { editable = "packages/untaped-jira" }
+dependencies = [
+    { name = "untaped" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "untaped", editable = "packages/untaped" }]
 
 [[package]]
 name = "virtualenv"

@@ -62,7 +62,7 @@ _DISPATCH_PROBE = (
     "    main({argv!r})\n"
     "cli = sorted(\n"
     "    m for m in sys.modules\n"
-    "    if m.startswith('untaped.capabilities.') and '.cli' in m\n"
+    "    if m.startswith(('untaped.capabilities.', 'untaped_')) and '.cli' in m\n"
     ")\n"
     "print(' '.join(cli))\n"
 )
@@ -85,7 +85,11 @@ def test_root_help_imports_no_capability_cli() -> None:
 def test_capability_help_imports_only_its_own_cli() -> None:
     loaded = _capability_cli_modules(["workspace", "--help"])
     assert loaded
-    assert {module.split(".")[2] for module in loaded} == {"workspace"}
+    owners = {
+        module.split(".")[2] if module.startswith("untaped.") else module.partition(".")[0][8:]
+        for module in loaded
+    }
+    assert owners == {"workspace"}
 
 
 _STARTUP_PROBE = (
@@ -95,7 +99,7 @@ _STARTUP_PROBE = (
     "with contextlib.redirect_stdout(io.StringIO()), contextlib.suppress(SystemExit):\n"
     "    main({argv!r})\n"
     "new = set(sys.modules) - baseline\n"
-    "print(len(new), sum(1 for m in new if m.partition('.')[0] == 'untaped'))\n"
+    "print(len(new), sum(1 for m in new if m.partition('.')[0].startswith('untaped')))\n"
 )
 
 #: Modules imported on top of interpreter startup (a coverage run preloads

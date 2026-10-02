@@ -24,7 +24,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-all = []
+all = ["untaped-jira==10.0.0a0"]
+jira = ["untaped-jira==10.0.0a0"]
 
 [project.scripts]
 untaped = "untaped.__main__:main"
@@ -33,7 +34,6 @@ untaped = "untaped.__main__:main"
 ansible = "untaped.capabilities.ansible:provider"
 awx = "untaped.capabilities.awx:provider"
 github = "untaped.capabilities.github:provider"
-jira = "untaped.capabilities.jira:provider"
 recipe = "untaped.capabilities.recipe:provider"
 workspace = "untaped.capabilities.workspace:provider"
 

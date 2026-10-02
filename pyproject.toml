@@ -3,6 +3,7 @@ members = ["packages/*"]
 
 [tool.uv.sources]
 untaped = { workspace = true }
+untaped-jira = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -67,14 +68,15 @@ plugins = ["pydantic.mypy"]
 # Type-check every package's src/ and the release script; tests are validated by running them.
 files = [
     "packages/untaped/src",
+    "packages/untaped-jira/src",
     "scripts/release.py",
 ]
-mypy_path = ["packages/untaped/src"]
+mypy_path = ["packages/untaped/src", "packages/untaped-jira/src"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-testpaths = ["packages/untaped/tests", "tests"]
-pythonpath = ["scripts", "packages/untaped/tests"]
+testpaths = ["packages/untaped/tests", "packages/untaped-jira/tests", "tests"]
+pythonpath = ["scripts", "packages/untaped/tests", "packages/untaped-jira/tests"]
 addopts = [
     "-ra",
     "--strict-markers",
@@ -87,7 +89,7 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["packages/untaped/src"]
+source = ["packages/untaped/src", "packages/untaped-jira/src"]
 omit = ["**/tests/**", "**/__main__.py"]
 
 [tool.coverage.report]
