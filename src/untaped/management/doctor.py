@@ -33,6 +33,7 @@ from untaped.capabilities.registry import (
     DoctorCheck,
     DoctorResult,
     QuarantineRecord,
+    factory_failure,
 )
 from untaped.cli import (
     ColumnsOption,
@@ -226,6 +227,12 @@ def collect_doctor_rows(
     rows.append(_skills_row(shell, result))
     for record in result.quarantine:
         rows.append(_quarantine_row(record))
+    for registered in result.capabilities:
+        if capabilities is not None and registered.spec.name not in capabilities:
+            continue
+        failure = factory_failure(registered)
+        if failure is not None:
+            rows.append(_quarantine_row(failure))
     return rows
 
 

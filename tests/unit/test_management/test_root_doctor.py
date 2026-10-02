@@ -11,9 +11,12 @@ from __future__ import annotations
 
 import json
 import socket
+from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from cyclopts import App
 
 from test_management.support import (
     ExtProfile,
@@ -27,10 +30,10 @@ from test_management.support import (
     write_config,
 )
 from untaped import bootstrap
-from untaped.capabilities.registry import CompositionResult, QuarantineRecord
-from untaped.management.doctor import build_root_doctor_app
+from untaped.capabilities.registry import CapabilitySpec, CompositionResult, QuarantineRecord
+from untaped.management.doctor import build_root_doctor_app, collect_doctor_rows
 from untaped.settings import get_settings
-from untaped.testing import CliInvoker
+from untaped.testing import CliInvoker, provider_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -242,6 +245,64 @@ def test_quarantine_row_fails_exit(_isolated_config: Path) -> None:
     raw = CliInvoker().invoke(app, ["--format", "raw", "--columns", "detail"])  # type: ignore[arg-type]
     assert raw.exit_code == 1
     assert "duplicate capability name: 'ghost'" in raw.stdout
+
+
+def _raises_cli_import_failed() -> App:
+    raise RuntimeError("cli import failed")
+
+
+def _returns_a_string() -> object:
+    return "not-an-app"
+
+
+def _deferred(name: str, factory: Callable[[], object]) -> CapabilitySpec:
+    return replace(make_spec(name), help=f"{name} capability.", app_factory=factory)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("factory", "detail"),
+    [
+        (_raises_cli_import_failed, "cli import failed"),
+        (_returns_a_string, "returned str, expected cyclopts App"),
+    ],
+    ids=["raises", "non-app"],
+)
+def test_doctor_reports_a_failing_lazy_factory_as_a_quarantine_row(
+    factory: Callable[[], object], detail: str
+) -> None:
+    result = bootstrap.compose_root(
+        candidates=[
+            provider_candidate(_deferred("bad", factory), distribution="bad-dist"),
+            provider_candidate(_deferred("good", lambda: App(name="good"))),
+        ]
+    )
+    rows = collect_doctor_rows(bootstrap.SHELL_SPEC, result)
+    quarantine = [row for row in rows if row["check"] == "quarantine"]
+    assert [(row["capability"], row["title"]) for row in quarantine] == [
+        ("bad-dist", "bad-app-factory")
+    ]
+    assert quarantine[0]["status"] == "fail"
+    assert detail in str(quarantine[0]["detail"])
+
+
+def test_doctor_limits_factory_rows_to_the_requested_capabilities() -> None:
+    result = bootstrap.compose_root(
+        candidates=[provider_candidate(_deferred("bad", _returns_a_string))]
+    )
+    rows = collect_doctor_rows(bootstrap.SHELL_SPEC, result, capabilities=frozenset({"other"}))
+    assert [row for row in rows if row["check"] == "quarantine"] == []
+
+
+def test_doctor_cli_exits_1_on_a_failing_lazy_factory() -> None:
+    root = bootstrap.build_root_app(
+        candidates=[provider_candidate(_deferred("bad", _returns_a_string))]
+    )
+    result = CliInvoker().invoke(root.meta, ["doctor", "--format", "json"])
+    assert result.exit_code == 1
+    assert any(
+        row["check"] == "quarantine" and row["title"] == "bad-app-factory"
+        for row in json.loads(result.stdout)
+    )
 
 
 def test_undefined_active_profile_fails_section_rows(_isolated_config: Path) -> None:

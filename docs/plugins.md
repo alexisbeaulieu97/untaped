@@ -155,14 +155,17 @@ def provider() -> CapabilitySpec:
 ```
 
 `CapabilitySpec` validates the name, section, Pydantic models and asset
-tuples. Composition calls `build_app()` once, after validating the provider,
-and mounts the app it returns; a factory that raises or returns something
-other than a cyclopts `App` quarantines the provider.
+tuples.
 
 The optional `help` field (one non-empty line) is the summary in the root
-command listing. With it, the factory runs only when the command is
-dispatched. Without it, the factory runs during composition, so a bad one is
-quarantined, and the listing shows the built app's own help.
+command listing. With it, the capability is mounted lazily: `build_app()` runs
+only when its command is dispatched, so `untaped --help` never imports its CLI.
+A factory that raises or returns something other than a cyclopts `App` then
+fails that command with exit 4, naming the capability; other commands keep
+working. `untaped doctor` runs every factory and reports a failing one as a
+`bad-app-factory` quarantine row, so you find it without dispatching. Without
+`help`, composition calls `build_app()` once at startup, a bad factory
+quarantines the provider, and the listing shows the built app's own help.
 
 The provider callable must have no side effects (registration, filesystem,
 network, `ContextVar`); the root owns registration and mounting.

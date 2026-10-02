@@ -644,38 +644,82 @@ def test_eager_factories_are_called_once_per_composition() -> None:
     assert second_calls == ["ext"]
 
 
-def test_lazy_bad_factory_composes_and_fails_at_dispatch() -> None:
-    calls: list[str] = []
-    bad = _counting_spec("bad", calls, help="Bad capability.", result="not-an-app")
-    root = bootstrap.build_root_app(candidates=(provider_candidate(bad),))
-    assert calls == []
-    assert [c.spec.name for c in bootstrap.composition().capabilities] == ["bad"]
+def _raising_spec(name: str, calls: list[str]) -> CapabilitySpec:
+    def _boom() -> App:
+        calls.append(name)
+        raise RuntimeError("cli import failed")
+
+    return CapabilitySpec(
+        name=name,
+        app_factory=_boom,
+        config_section=name,
+        profile_model=_ExtProfile,
+        help=f"{name} capability.",
+    )
+
+
+def test_a_failing_lazy_factory_fails_only_its_command_in_one_root() -> None:
+    bad_calls: list[str] = []
+    good_calls: list[str] = []
+    root = bootstrap.build_root_app(
+        candidates=[
+            provider_candidate(_raising_spec("bad", bad_calls), distribution="bad-dist"),
+            provider_candidate(_counting_spec("good", good_calls, help="Good capability.")),
+        ]
+    )
+    assert bad_calls == [] and good_calls == []  # nothing built at startup
     assert bootstrap.composition().quarantine == ()
 
-    result = CliInvoker().invoke(root.meta, ["bad", "who"])
-    assert result.exit_code != 0
-    assert isinstance(result.exception, ConfigError)
-    assert "bad-app-factory" in str(result.exception)
+    bad = CliInvoker().invoke(root.meta, ["bad", "who"])
+    assert bad.exit_code == 4
+    assert "capability 'bad' from 'bad-dist' could not build its commands" in bad.stderr
+    assert "cli import failed" in bad.stderr
+
+    good = CliInvoker().invoke(root.meta, ["good", "who"])
+    assert good.exit_code == 0, good.stderr
+    assert good_calls == ["good"]
 
 
-def test_lazy_raising_factory_fails_at_dispatch() -> None:
-    def _boom() -> App:
-        raise RuntimeError("factory-boom")
+def test_a_failed_lazy_command_is_not_cached_and_fails_again() -> None:
+    calls: list[str] = []
+    root = bootstrap.build_root_app(candidates=[provider_candidate(_raising_spec("bad", calls))])
+    for _ in range(2):
+        result = CliInvoker().invoke(root.meta, ["bad", "who"])
+        assert result.exit_code == 4
+        assert "cli import failed" in result.stderr
+    assert calls == ["bad", "bad"]
 
-    spec = CapabilitySpec(
-        name="boom",
-        app_factory=_boom,
-        config_section="boom",
-        profile_model=_ExtProfile,
-        help="Boom capability.",
-    )
-    root = bootstrap.build_root_app(candidates=(provider_candidate(spec),))
 
-    result = CliInvoker().invoke(root.meta, ["boom", "--help"])
-    assert result.exit_code != 0
-    assert isinstance(result.exception, ConfigError)
-    assert "bad-app-factory" in str(result.exception)
-    assert "factory-boom" in str(result.exception)
+def test_a_lazy_factory_returning_a_non_app_exits_4_on_help_too() -> None:
+    calls: list[str] = []
+    bad = _counting_spec("bad", calls, help="Bad capability.", result="not-an-app")
+    root = bootstrap.build_root_app(candidates=[provider_candidate(bad)])
+    result = CliInvoker().invoke(root.meta, ["bad", "--help"])
+    assert result.exit_code == 4
+    assert "returned str, expected cyclopts App" in result.stderr
+
+
+@pytest.mark.parametrize("fmt", ["text", "json"])
+def test_run_root_reports_a_failing_lazy_factory_with_exit_4(
+    fmt: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    argv = ["bad", "who"] if fmt == "text" else ["--format", "json", "bad", "who"]
+    with pytest.raises(SystemExit) as failed:
+        bootstrap.run_root(argv, candidates=[provider_candidate(_raising_spec("bad", []))])
+    assert failed.value.code == 4
+    err = capsys.readouterr().err
+    if fmt == "json":
+        error = json.loads(err.strip().splitlines()[-1])
+        assert (error["level"], error["category"], error["system"], error["exit_code"]) == (
+            "error",
+            "config",
+            "bad",
+            4,
+        )
+        assert "cli import failed" in error["message"]
+    else:
+        assert err.startswith("error: capability 'bad'")
+        assert "cli import failed" in err
 
 
 #: Private cyclopts internals ``_LazyCapabilityCommand`` relies on. Drift here
