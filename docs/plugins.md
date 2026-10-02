@@ -8,11 +8,10 @@ owns everything else: there is no second console script, config command or
 profile command.
 
 Provider code imports from `untaped.sdk` and nothing else in
-`untaped`; [`packages/untaped/src/untaped/sdk.py`](../packages/untaped/src/untaped/sdk.py)
-is the authoritative API surface. The internal registry and other modules are
-not an API and may change in any release.
-First-party capabilities may also use each other's declared `api.py` modules;
-those are internal to `untaped` and not part of the provider API.
+`untaped`; see [SDK stability](#sdk-stability). First-party capabilities also
+use each other's declared `api.py` modules (see
+[Depending on another capability](#depending-on-another-capability)); those
+are internal to `untaped` and not part of the provider API.
 
 [`examples/untaped-hello`](../examples/untaped-hello) in the repository is a
 complete, tested plugin; copy it to start.
@@ -260,11 +259,10 @@ configuration or remote state are another `UntapedError`.
 
 #### Raise with a category, or inherit one
 
-Every `UntapedError` has a `category` (`ErrorCategory`: `usage`, `config`,
-`auth`, `permission`, `not_found`, `invalid`, `conflict`, `unavailable`,
-`failed`, `interrupted`) that selects the exit code, and a `system` that says
-who is responsible (`untaped`, `local`, `git`, or the service section, such as
-`awx`). A capability's error classes declare them as class defaults
+Every `UntapedError` has a `category` (`ErrorCategory`) that selects the exit
+code, and a `system` that says who is responsible (`untaped`, `local`, `git`,
+or the service section, such as `awx`); [Scripting](./scripting.md#categories)
+lists the categories. A capability's error classes declare them as class defaults
 (`category = ErrorCategory.NOT_FOUND`, `system = "awx"`); pass
 `category=`, `system=`, `hint=` or `details=` to override one instance.
 
@@ -422,8 +420,8 @@ free, but a command that writes declares it with `@writes`, or
 - Base records about files or directories on `TargetRecord`, which requires an
   absolute `target_path`.
 - `error` is reserved: both bases give a failed row an optional `error`
-  (`ErrorInfo`: `category`, `system`, `retryable`, `message`, `hint`), left out
-  of rows that did not fail and of tables. Put the human text in `detail`;
+  (`ErrorInfo`, whose fields [Scripting](./scripting.md#failed-rows-the-error-field)
+  lists), left out of rows that did not fail and of tables. Put the human text in `detail`;
   never declare your own `error` field.
 - Base check results on `CheckRecord`, with `status` set to `pass`, `warn`,
   `fail` or `error`.
@@ -440,13 +438,11 @@ free, but a command that writes declares it with `@writes`, or
 
 `untaped.testing.check_conventions(NAME)` runs these checks for one
 capability; each capability's tests call it. Its `import-boundary` rule
-allows a capability's code to import core only as `untaped.sdk`, and another
-capability only as described in
+enforces the import limits in the introduction and in
 [Depending on another capability](#depending-on-another-capability).
 `# untaped: allow <rule>` on the flagged node's first line allows that one
-violation. It does not cover the
-default-table-columns rule (see Output records); this repo's own test suite
-enforces that one, and `# untaped: allow` does not apply to it.
+violation. It does not apply to the default-table-columns rule (see Output
+records).
 
 ## Stable helper surface
 
@@ -639,10 +635,6 @@ Shape:
   `skills install` copies the whole folder. Rerun them when a change could
   alter what an agent does.
 
-The first-party capabilities' tests (`tests/repo/test_skill_files.py`) check
-that the description matches the frontmatter, that every quoted command
-parses, and that no link leaves the skill.
-
 ## Managed state
 
 A capability that writes structured state declares a disjoint `state_model`
@@ -675,8 +667,8 @@ startup the root composes the capabilities in this order:
 3. **Validation.** The declaration is checked: reserved root names, the
    entry-point name, duplicate names, sections, skills and doctor checks,
    and overlapping profile and state fields.
-4. **Commit.** The survivors are mounted under their names: lazily when the
-   spec has `help`, otherwise by calling the app factory now.
+4. **Commit.** The survivors are mounted under their names, lazily or not
+   as [the capability app](#settings-and-the-capability-app) describes.
 
 Every violation quarantines that provider and composition continues: a
 warning names it, `untaped capabilities` lists it as quarantined, and
@@ -688,8 +680,7 @@ When two providers claim the same capability name or config section, all of
 them are quarantined and a warning names every claimant: no provider can take
 over another's commands or settings, and the result does not depend on install
 order. Uninstall one to restore the other. A capability whose settings import
-another capability's `api` (ansible imports github's) is quarantined with it
-when that import fails.
+another capability's `api` is quarantined with it when that import fails.
 
 ### Depending on another capability
 

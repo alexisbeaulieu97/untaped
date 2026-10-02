@@ -187,9 +187,8 @@ checked: copy the file over `config.yml` yourself and run `untaped doctor`.
 files, the selected profile, every section, unknown keys, installed skills
 and each capability's own checks. `--online` also authenticates against each
 configured service. A failed check makes it exit nonzero; a `warn` row does
-not. `untaped setup` writes a profile's service settings interactively,
-checks the answers before writing any of them, then runs the same online
-checks; see [Getting started](./getting-started.md#set-up-your-services).
+not. To write a profile's service settings interactively, see
+[Getting started](./getting-started.md#set-up-your-services).
 
 ## Command aliases
 
@@ -235,12 +234,6 @@ controlled network. `ui.theme` picks a built-in theme and `ui.format` the
 default `--format`; the [configuration reference](./reference/config.md#root)
 lists every `http.*` and `ui.*` setting.
 
-A table fits the terminal by narrowing its widest columns (a cell that does
-not fit ends in `…`), and table output that does not go to a terminal is not
-wrapped. `--columns ?` lists every column and marks the defaults with `*`;
-`--columns +url` adds a column, `--columns=-url` removes one, and
-`--columns name,url` shows exactly those.
-
 ## Tokens
 
 `github`, `jira` and `awx` read their API token from the first of these that
@@ -249,11 +242,8 @@ is set:
 1. `<section>.token`, from the active profile or its
    `UNTAPED_<SECTION>__TOKEN` override;
 2. `<section>.token_command`, a command whose standard output is the token;
-3. the service's conventional environment variables, in this order:
-   - `github`: `GH_TOKEN`, then `GITHUB_TOKEN` (as the GitHub CLI reads them);
-   - `jira`: `JIRA_API_TOKEN` (as `jira-cli` reads it);
-   - `awx`: `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN`
-     (as the `ansible.controller` and `awx.awx` collections read them).
+3. the service's conventional environment variables, tried in the order the
+   [environment table](./scripting.md#untaped) lists them.
 
 These variables are not tied to a profile: one applies to every profile that
 sets neither `token` nor `token_command`, whatever its `base_url`. For the

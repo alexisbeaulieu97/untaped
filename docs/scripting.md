@@ -411,20 +411,19 @@ Every environment variable `untaped` reads or sets.
 
 | Variable | Effect |
 |---|---|
-| `UNTAPED_CONFIG` | Path of the config file. Default: `~/.untaped/config.yml`. |
-| `UNTAPED_STATE` | Path of the state file. Default: `state.yml` next to `config.yml`, or `NAME.state.yml` next to any other config file `NAME.EXT`. It must not name the config file. |
+| `UNTAPED_CONFIG` | Path of the config file. Default: `~/.untaped/config.yml`. See [File and layout](./configuration.md#file-and-layout). |
+| `UNTAPED_STATE` | Path of the state file. Default: derived from the config file; see [File and layout](./configuration.md#file-and-layout). |
 | `UNTAPED_PROFILE` | Active profile for this process. It must name an existing profile. The root `--profile` option takes precedence over it. |
 | `UNTAPED_FORMAT` | Default `--format` (`json`, `yaml`, `table`, `raw` or `pipe`) for commands whose default is `table`. Wins over the `ui.format` setting; an explicit `--format` wins over it. Any other value exits 2, except under `doctor` and `setup`, which ignore it. |
 | `UNTAPED_DIAGNOSTICS` | `json` makes stderr diagnostics (errors, warnings, hints, notes) JSON Lines for every format; `text` keeps text lines even with `--format json`, `yaml` or `pipe` (from the flag, `UNTAPED_FORMAT` or `ui.format`), which otherwise switch to JSON. Other values are ignored. See [stderr diagnostics](#stderr-diagnostics). |
 | `UNTAPED_CONFIG_LOCK_TIMEOUT` | Seconds to wait for the config or state file lock before a write fails. A non-negative number; default `5`. |
 | `UNTAPED_<SECTION>__<FIELD>` | Overrides one profile setting for this process, for example `UNTAPED_GITHUB__TOKEN` or `UNTAPED_HTTP__VERIFY_SSL`. Nested fields add another `__`: `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS`. |
-| `GH_TOKEN`, then `GITHUB_TOKEN` | GitHub token used when neither `github.token` nor `github.token_command` is set. See [Tokens](./configuration.md#tokens). |
-| `JIRA_API_TOKEN` | Jira token used when neither `jira.token` nor `jira.token_command` is set. |
-| `CONTROLLER_OAUTH_TOKEN`, then `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN` | AWX/AAP token used when neither `awx.token` nor `awx.token_command` is set. |
+| `GH_TOKEN`, then `GITHUB_TOKEN` | GitHub token used when neither `github.token` nor `github.token_command` is set (read as the GitHub CLI reads them). See [Tokens](./configuration.md#tokens). |
+| `JIRA_API_TOKEN` | Jira token used when neither `jira.token` nor `jira.token_command` is set (read as `jira-cli` reads it). |
+| `CONTROLLER_OAUTH_TOKEN`, then `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN` | AWX/AAP token used when neither `awx.token` nor `awx.token_command` is set (read as the `ansible.controller` and `awx.awx` collections read them). |
 
-A setting's value comes from the first of these that has it: its
-`UNTAPED_*` variable, the active profile, `profiles.default`, the built-in
-default. The [configuration reference](./reference/config.md) lists the variable for
+A setting's source order is in
+[File and layout](./configuration.md#file-and-layout). The [configuration reference](./reference/config.md) lists the variable for
 every setting. `untaped doctor` names the variable when an override holds an
 invalid value.
 

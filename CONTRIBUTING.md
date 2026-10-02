@@ -17,7 +17,6 @@ capability is available to `uv run untaped`.
 ## Test, lint and type-check
 
 ```bash
-uv sync                                         # install / sync the app
 uv run pytest -n auto                           # tests, in parallel (add `--cov` for the 89% coverage gate, as CI does)
 uv run ruff check --fix && uv run ruff format   # lint + format
 uv run mypy                                     # strict types
@@ -80,12 +79,15 @@ packages/untaped-<name>/src/untaped_<name>/
    and `[tool.uv.sources]`.
 5. Add it to `EXPECTED_MEMBERS` in `tests/repo/test_workspace.py` and to
    `FIRST_PARTY` in `tests/repo/support.py`. The tests catch omissions.
-6. Call `untaped.testing.check_conventions` from its tests.
+6. Call `untaped.testing.check_conventions` from its tests. The default
+   table columns rule is enforced by this repository's own test suite, not by
+   `check_conventions`, and `# untaped: allow` does not apply to it.
 7. Start its skill from the [skill template](docs/plugins.md#packaged-skills)
    and its user guide as the package `README.md`, linked from the root
    `README.md` and `docs/getting-started.md`.
 
-Shared logic follows
+A capability whose settings import another's `api` (ansible imports
+github's) is quarantined with it when that import fails. Shared logic follows
 [Depending on another capability](docs/plugins.md#depending-on-another-capability);
 in this repository it may also live in core. Extract a protocol into core
 only when a second provider appears.
@@ -196,6 +198,10 @@ The structure tests check that packaged skills parse and link, not what an
 agent does with them. When a change to a skill could change an agent's
 behavior, run the cases in [`tests/skills/cases.md`](tests/skills/cases.md)
 against the old and new versions, following its method.
+
+First-party skills are also checked by `tests/repo/test_skill_files.py`
+(description matches the frontmatter, every quoted command parses, no link
+leaves the skill).
 
 ## Sensitive data
 

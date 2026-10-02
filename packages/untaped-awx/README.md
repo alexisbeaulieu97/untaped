@@ -139,8 +139,8 @@ AWX user, token and profile: see [AWX agent profile](https://github.com/alexisbe
 
 Writes (`patch`, `edit`, `apply`, `delete`, `copy`, `rename`, membership
 `add`/`remove`, `jobs cancel`, `jobs relaunch`, `test prune`) preview once and
-ask with No as the default. `--dry-run` never writes, even with `--yes`;
-`--yes` skips the prompt, which a write without a terminal needs. There is no
+ask with No as the default (see
+[Commands that change things](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#commands-that-change-things)). There is no
 rollback: a batch that fails partway keeps what it wrote, so export before a
 large change to have something to apply back. `edit` needs a real terminal
 even with `--yes`. See
