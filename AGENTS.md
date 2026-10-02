@@ -63,11 +63,11 @@ keeps that attribution when replaced or turned into a row; see
 - `sdk.py` is the single public SDK surface and the **only** core
   module capability code (built-in or external) imports from; built-ins may
   also use another capability's declared `api.py` (Hard Rule 2). Its
-  exported types, helpers, and `(major, minor)` API version tuple are the
-  source of truth for provider compatibility; the package root re-exports
-  nothing.
+  exported types and helpers are the provider API; a provider's `untaped`
+  requirement (`Requires-Dist`) is the only compatibility check; the package
+  root re-exports nothing.
 - `capabilities/registry.py` is the internal composition kernel: discovery /
-  API pre-checks → provider resolution → declaration validation + app-factory
+  metadata pre-checks → provider resolution → declaration validation + app-factory
   staging → commit. Built-in violations raise `ConfigError` (fatal);
   external violations become `QuarantineRecord` entries while composition
   continues. Provider authors never import it.

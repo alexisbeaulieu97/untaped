@@ -15,12 +15,15 @@
   - **New (SDK):** `UiContext.pick_many` opens an inline two-pane picker: fuzzy
     search with multi-select on the left, per-item settings on the right
     (`PickRequest`, `PickItem`, `PickSetting`, `PickCatalog`, `PickResult`,
-    `Picked`; API `3.2`). `ScriptedPromptBackend(picks=...)` scripts it in
+    `Picked`). `ScriptedPromptBackend(picks=...)` scripts it in
     tests.
   - **New (SDK):** `RepoCache`, `cache_path`, `cache_key`, `list_caches`,
     `cache_origin`, `repo_url_parts` and `scoped_auth_header`: one bare-repo
     cache building block for any capability.
   - **Breaking:** `safe_cache_path` is removed; use `cache_path`.
+  - **Breaking:** providers drop `api_requires`; the capability API version is
+    gone. A provider's `untaped` requirement is the only compatibility check.
+    `untaped capabilities` loses its `api` column.
 - Ansible
   - **Breaking:** `graph --upstream/--downstream/--both` are removed; use
     `--direction up|down|both`. Graph sources re-index once.

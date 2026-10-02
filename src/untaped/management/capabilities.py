@@ -1,7 +1,7 @@
 """Root ``untaped capabilities`` command (Wave 1.4, spec §7.3).
 
 A terminal command (not a group) reporting one record per candidate
-provider — ``name/origin/status/distribution/version/api`` — from the
+provider — ``name/origin/status/distribution/version`` — from the
 composition outcome: ready rows for committed capabilities plus quarantined
 rows carrying the entry-point name (or the ``unknown`` sentinels when the
 provider never resolved). The listing never touches settings, so invalid
@@ -19,8 +19,6 @@ from untaped.capabilities.registry import (
     CompositionResult,
     ExternalProvider,
     QuarantineRecord,
-    format_api_version,
-    parse_api_range,
 )
 from untaped.cli import (
     ColumnsOption,
@@ -28,7 +26,6 @@ from untaped.cli import (
     create_app,
     report_errors,
 )
-from untaped.errors import ConfigError
 from untaped.management._render import emit_isolated
 from untaped.theme import OutputFormat
 
@@ -98,7 +95,6 @@ def _rows(
                 "status": "ready",
                 "distribution": ref.distribution,
                 "version": version,
-                "api": _api_text(ref.api_requires),
             }
         )
         succeeded.add((ref.distribution, ref.entry_point))
@@ -114,7 +110,6 @@ def _rows(
                 "status": "quarantined",
                 "distribution": candidate.distribution,
                 "version": _candidate_version(candidate),
-                "api": _declared_api(candidate),
             }
         )
     for record in records[len(failed) :]:
@@ -146,27 +141,6 @@ def _candidate_version(candidate: ExternalProvider | None) -> str:
     return candidate.distribution_version
 
 
-def _api_text(requires: object) -> str:
-    """Render an ``(min_inclusive, max_exclusive)`` range.
-
-    ``unknown`` when absent; a malformed declaration is shown as declared.
-    """
-    if requires is None:
-        return _UNKNOWN
-    try:
-        low, high = parse_api_range(requires)
-    except ConfigError:
-        return repr(requires)
-    return f">={format_api_version(low)},<{format_api_version(high)}"
-
-
-def _declared_api(candidate: ExternalProvider) -> str:
-    try:
-        return _api_text(getattr(candidate.target, "api_requires", None))
-    except Exception:
-        return _UNKNOWN
-
-
 def _orphan_row(record: QuarantineRecord) -> dict[str, object]:
     """Row for a quarantine record with no matching candidate (defensive).
 
@@ -180,7 +154,6 @@ def _orphan_row(record: QuarantineRecord) -> dict[str, object]:
         "status": "quarantined",
         "distribution": record.distribution,
         "version": _UNKNOWN,
-        "api": _UNKNOWN,
     }
 
 

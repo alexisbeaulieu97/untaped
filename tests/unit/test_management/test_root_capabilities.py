@@ -1,7 +1,7 @@
 """Tests for the root ``untaped capabilities`` command (Wave 1.4, spec §7.3).
 
 Reports one record per candidate provider — ``name/origin/status/
-distribution/version/api`` — from the composition outcome. The listing never
+distribution/version`` — from the composition outcome. The listing never
 touches settings, so invalid capability values cannot block it (spec §4
 failure isolation).
 """
@@ -28,7 +28,6 @@ from untaped.capabilities.registry import (
     QuarantineRecord,
 )
 from untaped.management.capabilities import build_root_capabilities_app
-from untaped.management.doctor import build_root_doctor_app
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker
 
@@ -39,7 +38,6 @@ class _Provider:
     """Nullary external provider double."""
 
     def __init__(self, spec: object) -> None:
-        self.api_requires = ((3, 0), (4, 0))
         self._spec = spec
 
     def __call__(self) -> object:
@@ -77,39 +75,23 @@ def test_lists_ready_builtin_and_external() -> None:
     )
     invoked = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
     assert invoked.exit_code == 0, invoked.output
-    rows = {row["name"]: row for row in _rows(invoked.stdout)}
-    assert rows["github"]["status"] == "ready"
-    assert rows["github"]["origin"] == "built-in"
-    assert rows["github"]["distribution"] == "untaped"
-    assert rows["ext"]["status"] == "ready"
-    assert rows["ext"]["origin"] == "external"
-    assert rows["ext"]["distribution"] == "example-dist"
-    assert rows["ext"]["version"] == "1.2.3"
-    assert rows["ext"]["api"] == ">=3.0,<4.0"
-
-
-def test_float_range_external_shows_its_raw_range_and_the_running_sdk() -> None:
-    """A 1.x float ``api_requires`` quarantines; the listing shows what it declared
-    and the doctor row names the running SDK version plus a valid example."""
-    external = _external("legacy")
-    external.target.api_requires = (1.0, 2.0)  # type: ignore[union-attr]
-    result = bootstrap.compose_root(builtins=(), externals=(external,))
-    app = build_root_capabilities_app(
-        result=result, candidates=(external,), shell_distribution="untaped"
-    )
-    invoked = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
-    (row,) = _rows(invoked.stdout)
-    assert row["status"] == "quarantined"
-    assert row["api"] == "(1.0, 2.0)"
-    doctor = build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=result)
-    invoked = CliInvoker().invoke(doctor, ["--format", "json"])  # type: ignore[arg-type]
-    (quarantined,) = [r for r in _rows(invoked.stdout) if r["check"] == "quarantine"]
-    assert quarantined["title"] == "api-range"
-    assert str(quarantined["detail"]).startswith(
-        "malformed api_requires (1.0, 2.0): expected ((major, minor), (major, minor)) "
-        "int tuples as (min_inclusive, max_exclusive); running SDK 3.2, "
-        "declare e.g. ((3, 0), (4, 0))"
-    )
+    rows = _rows(invoked.stdout)
+    assert rows == [
+        {
+            "name": "github",
+            "origin": "built-in",
+            "status": "ready",
+            "distribution": "untaped",
+            "version": rows[0]["version"],
+        },
+        {
+            "name": "ext",
+            "origin": "external",
+            "status": "ready",
+            "distribution": "example-dist",
+            "version": "1.2.3",
+        },
+    ]
 
 
 def test_quarantined_provider_lists_with_entry_point_name() -> None:
@@ -141,7 +123,6 @@ def test_quarantined_provider_lists_with_entry_point_name() -> None:
     assert row["origin"] == "external"
     assert row["distribution"] == "example-dist"
     assert row["version"] == "0.1.0"
-    assert row["api"] == "unknown"
 
 
 def test_unresolvable_provider_uses_unknown_sentinels() -> None:
@@ -165,7 +146,6 @@ def test_unresolvable_provider_uses_unknown_sentinels() -> None:
     (row,) = _rows(invoked.stdout)
     assert row["name"] == "mystery"
     assert row["version"] == "unknown"
-    assert row["api"] == "unknown"
 
 
 def test_table_headers_name_the_listing_contract() -> None:
@@ -177,7 +157,7 @@ def test_table_headers_name_the_listing_contract() -> None:
     assert header == ["name", "origin", "status", "version"]
     assert "github" in invoked.stdout
     listed = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
-    assert {"distribution", "api"} <= set(_rows(listed.stdout)[0])
+    assert {"distribution", "version"} <= set(_rows(listed.stdout)[0])
 
 
 def test_listing_is_not_blocked_by_invalid_settings(_isolated_config: Path) -> None:
