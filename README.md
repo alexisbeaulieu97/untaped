@@ -59,10 +59,10 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
 - [Building a capability provider](./docs/plugins.md): add a capability from
   your own package, the command conventions and the skill template.
 
-Each capability's guide: [workspace](./docs/workspace/usage.md),
-[github](./docs/github/usage.md), [jira](./docs/jira/usage.md),
-[awx](./docs/awx/usage.md), [ansible](./docs/ansible/usage.md) and
-[recipe](./docs/recipe/usage.md).
+Each capability's guide: [workspace](./packages/untaped-workspace/README.md),
+[github](./packages/untaped-github/README.md), [jira](./packages/untaped-jira/README.md),
+[awx](./packages/untaped-awx/README.md), [ansible](./packages/untaped-ansible/README.md) and
+[recipe](./packages/untaped-recipe/README.md).
 
 ## Versioning
 

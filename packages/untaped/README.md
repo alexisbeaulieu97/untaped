@@ -1,4 +1,19 @@
 # untaped
 
-The `untaped` core: the CLI shell, the provider SDK (`untaped.sdk`) and the management commands.
-See the [project README](https://github.com/alexisbeaulieu97/untaped#readme) for install and usage.
+`untaped` is one CLI for config, profiles, themes, consistent output, typed
+piping and HTTP/TLS, with one command subtree per capability. This package is
+the core: the CLI shell, the provider SDK (`untaped.sdk`) and the management
+commands. It is the only package that ships the `untaped` command.
+
+Capabilities are extras of this package:
+
+```bash
+uv tool install 'untaped[all]'   # or 'untaped[github]', 'untaped[awx]', ...
+pip install 'untaped[all]'
+```
+
+The extras are `workspace`, `github`, `jira`, `awx`, `ansible` and `recipe`.
+See the [project README](https://github.com/alexisbeaulieu97/untaped#readme)
+for install and usage, and
+[Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md)
+for the first commands.

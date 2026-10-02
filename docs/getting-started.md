@@ -98,9 +98,9 @@ untaped profile current
 ## First command in each capability
 
 Each capability's guide has its full workflow:
-[workspace](./workspace/usage.md), [github](./github/usage.md),
-[jira](./jira/usage.md), [awx](./awx/usage.md),
-[ansible](./ansible/usage.md) and [recipe](./recipe/usage.md).
+[workspace](../packages/untaped-workspace/README.md), [github](../packages/untaped-github/README.md),
+[jira](../packages/untaped-jira/README.md), [awx](../packages/untaped-awx/README.md),
+[ansible](../packages/untaped-ansible/README.md) and [recipe](../packages/untaped-recipe/README.md).
 
 ```bash
 # workspace: a task directory of git worktrees on a shared branch
@@ -173,7 +173,7 @@ which records.
 
 Commands that write, delete or launch show a preview and ask before they act.
 Jira asks only before destructive writes by default (see
-[`jira.confirm`](./jira/usage.md#change-issues)).
+[`jira.confirm`](../packages/untaped-jira/README.md#change-issues)).
 
 - `--dry-run` shows the preview and changes nothing.
 - `--yes` (`-y`) skips the question. Without a terminal, such commands exit 2

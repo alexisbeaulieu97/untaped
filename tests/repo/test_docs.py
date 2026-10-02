@@ -60,8 +60,9 @@ def test_config_reference_refuses_a_quarantined_first_party_capability(
 def _markdown_files() -> list[Path]:
     files = sorted((REPO_ROOT / "docs").rglob("*.md"))
     skills = sorted(REPO_ROOT.glob("packages/*/src/**/skills/**/*.md"))
+    readmes = sorted(REPO_ROOT.glob("packages/*/README.md"))
     root = (REPO_ROOT / name for name in ("README.md", "AGENTS.md", "CONTRIBUTING.md"))
-    return [*files, *skills, *root]
+    return [*files, *skills, *readmes, REPO_ROOT / "examples/untaped-hello/README.md", *root]
 
 
 def _slug(heading: str) -> str:
@@ -93,6 +94,30 @@ def _broken_links(path: Path) -> list[str]:
 @pytest.mark.parametrize("path", _markdown_files(), ids=lambda p: str(p.relative_to(REPO_ROOT)))
 def test_relative_links_resolve(path: Path) -> None:
     assert _broken_links(path) == []
+
+
+_REPO_URL = re.compile(
+    r"https://github\.com/alexisbeaulieu97/untaped/(?:blob|tree)/main/([^)\s#]+)(?:#([^)\s]+))?"
+)
+
+
+@pytest.mark.parametrize("path", _markdown_files(), ids=lambda p: str(p.relative_to(REPO_ROOT)))
+def test_repository_urls_resolve(path: Path) -> None:
+    """Absolute links into this repository (package READMEs render on PyPI) point at real files."""
+    broken = []
+    for target, anchor in _REPO_URL.findall(path.read_text(encoding="utf-8")):
+        file = REPO_ROOT / target
+        if not file.exists() or (anchor and file.suffix == ".md" and anchor not in _anchors(file)):
+            broken.append(f"{target}#{anchor}" if anchor else target)
+    assert broken == []
+
+
+def test_package_readmes_link_absolutely() -> None:
+    """PyPI cannot resolve a relative link in a package README."""
+    for readme in REPO_ROOT.glob("packages/*/README.md"):
+        text = re.sub(r"(`+)[^\n]*?\1", "", _FENCE.sub("", readme.read_text(encoding="utf-8")))
+        relative = [t for t in _LINK.findall(text) if "://" not in t and not t.startswith("#")]
+        assert relative == [], readme
 
 
 _ROOT_OPTIONS = {"--profile", "--verbose", "-v", "--quiet", "-q", "--help", "-h"}
