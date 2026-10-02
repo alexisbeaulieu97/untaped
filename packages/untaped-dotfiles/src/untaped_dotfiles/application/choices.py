@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from untaped.sdk import UsageError, not_found, q
 from untaped_dotfiles.domain.manifest import Item
-from untaped_dotfiles.domain.models import ItemChoice, Machine, Policy, RepoRecord
+from untaped_dotfiles.domain.models import ItemChoice, Machine, Policy, RepoRecord, item_id
 from untaped_dotfiles.domain.records import ItemRow
 from untaped_dotfiles.domain.selection import item_exclusion
 from untaped_dotfiles.errors import ItemNotFoundError, RepoNotFoundError
@@ -126,7 +126,7 @@ class EnableItems:
             skipped = tuple(key for key in skip if any(e.key == key for e in item.files))
             existing = self._store.get_item(record.name, name)
             choice = ItemChoice(
-                id=f"{record.name}/{name}",
+                id=item_id(record.name, name),
                 repo=record.name,
                 name=name,
                 policy=policy or (existing.policy if existing else item.policy),
@@ -138,6 +138,34 @@ class EnableItems:
         return rows
 
 
+def pick_enabled(
+    store: DotfilesStore, names: Sequence[str] | None, *, repo: str | None
+) -> list[ItemChoice]:
+    """The enabled items named (every enabled item without names), in state order.
+
+    A name enabled from several repos needs ``repo``.
+    """
+    choices = [c for c in store.items() if repo is None or c.repo == repo]
+    if not names:
+        return choices
+    picked: list[ItemChoice] = []
+    for name in names:
+        matches = [c for c in choices if c.name == name]
+        if not matches:
+            raise ItemNotFoundError(
+                not_found("enabled item", name, known=sorted({c.name for c in choices})),
+                hint=f"run `untaped dotfiles enable {name}`",
+            )
+        if len(matches) > 1:
+            raise UsageError(
+                f"item {q(name)} is enabled from several repos: "
+                + ", ".join(c.repo for c in matches),
+                hint="pass --repo NAME to pick one",
+            )
+        picked.extend(matches)
+    return picked
+
+
 class DisableItems:
     """Forget the machine's choice; placed files stay where they are."""
 
@@ -145,24 +173,7 @@ class DisableItems:
         self._store = store
 
     def __call__(self, names: Sequence[str], *, repo: str | None, every: bool) -> list[ItemChoice]:
-        choices = [c for c in self._store.items() if repo is None or c.repo == repo]
-        if every:
-            picked = choices
-        else:
-            picked = []
-            for name in names:
-                matches = [c for c in choices if c.name == name]
-                if not matches:
-                    raise ItemNotFoundError(
-                        not_found("enabled item", name, known=sorted({c.name for c in choices}))
-                    )
-                if len(matches) > 1:
-                    raise UsageError(
-                        f"item {q(name)} is enabled from several repos: "
-                        + ", ".join(c.repo for c in matches),
-                        hint="pass --repo NAME to pick one",
-                    )
-                picked.extend(matches)
+        picked = pick_enabled(self._store, None if every else names, repo=repo)
         for choice in picked:
             self._store.remove_item(choice.repo, choice.name)
         return picked

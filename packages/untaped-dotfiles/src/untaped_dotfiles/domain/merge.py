@@ -41,7 +41,7 @@ _ABSENT = object()
 
 
 def lookup(document: Mapping[str, Any], path: KeyPath) -> Any:
-    """The value at ``path``, or :data:`ABSENT` when any key is missing."""
+    """The value at ``path``, or :data:`_ABSENT` when any key is missing."""
     node: Any = document
     for key in path:
         if not isinstance(node, Mapping) or key not in node:

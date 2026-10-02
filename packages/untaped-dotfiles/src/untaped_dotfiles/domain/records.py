@@ -92,6 +92,7 @@ class StatusSummary(BaseModel):
     conflict: int = 0
     missing: int = 0
     orphan: int = 0
+    error: int = 0
     repos_behind: int = 0
 
 
@@ -134,7 +135,7 @@ class ItemOutcome(OutcomeRecord):
     detail: str = ""
 
 
-RepoAction = Literal["planned", "created", "updated", "deleted", "unchanged", "failed", "skipped"]
+RepoAction = Literal["planned", "updated", "deleted", "unchanged", "failed", "skipped"]
 
 
 class RepoOutcome(OutcomeRecord):

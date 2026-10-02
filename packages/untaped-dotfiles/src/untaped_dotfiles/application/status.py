@@ -44,12 +44,16 @@ class Evaluator:
         self._placer = placer
         self._inventory = inventory
         self._changed: dict[str, set[str]] = {}
+        self._change_errors: dict[str, UntapedError] = {}
+        self._heads: dict[str, str | None] = {}
         self._trees: dict[str, SourceTree] = {}
         self._records: dict[str, AppliedRecord] | None = None
 
     def reset(self) -> None:
         """Forget cached git reads and records (after a pull or an apply)."""
         self._changed.clear()
+        self._change_errors.clear()
+        self._heads.clear()
         self._trees.clear()
         self._records = None
 
@@ -79,8 +83,9 @@ class Evaluator:
                 self._changed[name] = self._git.changed_paths(
                     Path(repo.path), repo.ref, sorted(sources)
                 )
-            except UntapedError:
+            except UntapedError as exc:  # reported on each link row of the repo, below
                 self._changed[name] = set()
+                self._change_errors[name] = exc
 
     def source(self, placement: Placement) -> SourceInfo:
         repo = placement.repo
@@ -112,7 +117,10 @@ class Evaluator:
         if placement.excluded is not None:
             return Evaluation("excluded", placement.excluded, None, None, None)
         record = self.record(placement)
+        failed = self._change_errors.get(placement.repo.name) if placement.mode == "link" else None
         try:
+            if failed is not None:
+                raise failed
             source = self.source(placement)
             target = self._placer.observe(
                 placement.target,
@@ -121,23 +129,28 @@ class Evaluator:
             )
         except UntapedError as exc:
             return Evaluation(
-                "orphan", str(exc), record, None, None, error=note_failure(exc, message=str(exc))
+                "error", str(exc), record, None, None, error=note_failure(exc, message=str(exc))
             )
         state, detail = file_state(placement.mode, record, source, target)
         error = None
         if state == "orphan" and record is None:
             failure = DotfilesError(f"{placement.source}: {detail}", category="not_found")
             error = note_failure(failure, message=detail)
-        commit = None if placement.mode == "link" else self.tree(placement.repo).commit
-        if placement.mode == "link" and placement.repo.managed:
+        if placement.mode != "link":
+            commit = self.tree(placement.repo).commit
+        elif placement.repo.managed:
             commit = self._head(placement.repo)
+        else:
+            commit = None
         return Evaluation(state, detail, record, source.hash, commit, error=error)
 
     def _head(self, repo: RepoRecord) -> str | None:
-        try:
-            return self._git.head(Path(repo.path))
-        except UntapedError:
-            return None
+        if repo.name not in self._heads:
+            try:
+                self._heads[repo.name] = self._git.head(Path(repo.path))
+            except UntapedError:
+                self._heads[repo.name] = None
+        return self._heads[repo.name]
 
 
 class StatusReader:
@@ -203,6 +216,10 @@ class StatusReader:
             )
         return rows
 
+    def repos_behind(self) -> int:
+        """How many subscribed repos have fetched commits their checkout lacks."""
+        return sum(1 for row in self.repo_rows() if (row.behind or 0) > 0)
+
     def summary(self, rows: Sequence[StatusRow], *, repos_behind: int = 0) -> StatusSummary:
         counted = Counter(row.state for row in rows if row.state != "excluded")
         attention = sum(
@@ -220,5 +237,6 @@ class StatusReader:
             conflict=counted["conflict"],
             missing=counted["missing"],
             orphan=counted["orphan"],
+            error=counted["error"],
             repos_behind=repos_behind,
         )

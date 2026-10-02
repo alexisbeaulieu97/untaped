@@ -36,23 +36,23 @@ from untaped_dotfiles.application import (
     Step,
     SubscribeRepo,
     UnsubscribeRepo,
+    pick_enabled,
 )
 from untaped_dotfiles.cli.common import (
     AllOption,
     ItemsArg,
     RepoOption,
     Services,
-    enabled_choices,
     services,
     utc_now,
 )
-from untaped_dotfiles.domain.models import Policy, RepoRecord
+from untaped_dotfiles.domain.models import Policy, item_id
 from untaped_dotfiles.domain.records import (
     ItemOutcome,
     PlaceOutcome,
     RepoOutcome,
-    StatusRow,
 )
+from untaped_dotfiles.domain.status import needs_attention
 
 app = create_app(
     name="dotfiles",
@@ -235,7 +235,7 @@ def enable_command(
             ItemOutcome(
                 repo=row.repo,
                 name=row.name,
-                action="updated" if f"{row.repo}/{row.name}" in before else "created",
+                action="updated" if item_id(row.repo, row.name) in before else "created",
                 policy=row.policy,
                 detail=f"skips {', '.join(row.skip)}" if row.skip else "",
             )
@@ -285,7 +285,8 @@ def status_command(
         Parameter(
             name="--check",
             negative="",
-            help="Exit 3 when any path needs the user (behind, modified, conflict, missing).",
+            help="Exit 3 when any path needs the user (behind, modified, conflict, missing, "
+            "orphan, or one that could not be read).",
         ),
     ] = False,
     all_paths: Annotated[
@@ -306,12 +307,11 @@ def status_command(
     """Show the state of every placed path, offline. Also writes status.json and attention."""
     with report_errors():
         svc = services()
-        choices = enabled_choices(svc.store, items, repo=repo)
+        choices = pick_enabled(svc.store, items, repo=repo)
         resolved = svc.inventory.placements(choices, include_excluded=all_paths)
         _report_problems(resolved.problems)
         rows = svc.reader.rows(resolved.placements)
-        repos_behind = sum(1 for r in svc.reader.repo_rows() if (r.behind or 0) > 0)
-        summary = svc.reader.summary(rows, repos_behind=repos_behind)
+        summary = svc.reader.summary(rows, repos_behind=svc.reader.repos_behind())
         if not items and repo is None:
             svc.store.write_status(summary)
         if summary_only:
@@ -332,7 +332,7 @@ def diff_command(
     """Show what `apply` would change in copy and merge files (a unified diff on stdout)."""
     with report_errors():
         svc = services()
-        choices = enabled_choices(svc.store, items, repo=repo)
+        choices = pick_enabled(svc.store, items, repo=repo)
         resolved = svc.inventory.placements(choices)
         _report_problems(resolved.problems)
         for text in _diffs(svc, resolved.placements):
@@ -349,7 +349,7 @@ def _diffs(svc: Services, placements: Sequence[Placement]) -> list[str]:
         found = svc.evaluator.evaluate(p)
         if found.state not in ("pending", "foreign", "behind", "modified", "conflict"):
             continue
-        before = svc.placer.render(p.target, fmt=p.fmt)
+        before = svc.placer.render(p.target)
         data = svc.evaluator.tree(p.repo).read(p.source)
         if p.mode == "merge" and p.fmt is not None:
             after = svc.placer.preview_merge(data, p.target, fmt=p.fmt)
@@ -406,13 +406,12 @@ def apply_command(
     with report_errors():
         svc = services()
         with svc.store.locked():
-            choices = enabled_choices(svc.store, items, repo=repo)
+            choices = pick_enabled(svc.store, items, repo=repo)
             resolved = svc.inventory.placements(choices)
             _report_problems(resolved.problems)
             placements = resolved.placements
-            pulled = _pull_repos(svc, placements, dry_run=dry_run)
-            every = svc.inventory.placements(svc.store.items()).placements
-            moved = _moving_with(svc, pulled, every, placements)
+            pulled = _pull_repos(svc, placements)
+            moved = _moving_with(svc, pulled, placements) if pulled else []
             if any(row.error is not None for row in pulled.values()):
                 report_row_errors(list(pulled.values()), item=lambda row: row.name)
             steps = svc.applier.plan_apply(placements, force=force)
@@ -431,7 +430,7 @@ def apply_command(
                     yes=yes,
                     diff=(show_diff and _diffs(svc, [s.placement for s in todo])) or [],
                 )
-                _fast_forward(svc, pulled, placements, held_back=False)
+                _fast_forward(svc, pulled, placements)
                 steps = svc.applier.replan(steps, force=force)
             rows = svc.applier.execute(steps) + moved
             _refresh_status(svc)
@@ -474,15 +473,14 @@ def sync_command(
             svc.evaluator.reset()
             steps = svc.applier.plan_sync(placements)
             rows = svc.applier.planned(steps) if dry_run else svc.applier.execute(steps)
-            # removed orphans no longer have a placement, so resolve again for the status
-            status_rows = (
-                svc.reader.rows(svc.inventory.placements(choices).placements) if not dry_run else []
-            )
-            summary = svc.reader.summary(
-                status_rows, repos_behind=sum(1 for r in svc.reader.repo_rows() if r.behind)
-            )
-            if not dry_run:
+            if dry_run:
+                attention = _planned_attention(steps)
+            else:
+                # removed orphans no longer have a placement, so resolve again for the status
+                status_rows = svc.reader.rows(svc.inventory.placements(choices).placements)
+                summary = svc.reader.summary(status_rows, repos_behind=svc.reader.repos_behind())
                 svc.store.write_status(summary)
+                attention = summary.attention
         emit(rows, fmt=fmt, columns=columns, kind=SYNC_OUTCOME, empty="Nothing enabled.")
         _note_repos(list(repo_rows.values()))
         report_row_errors(list(repo_rows.values()), item=lambda row: row.name)
@@ -492,7 +490,6 @@ def sync_command(
             or any(row.action == "failed" for row in rows)
             or any(row.error is not None for row in repo_rows.values())
         )
-        attention = summary.attention if not dry_run else _planned_attention(steps)
     finish(failed, predicate_hit=attention > 0)
 
 
@@ -520,7 +517,7 @@ def remove_command(
             raise UsageError("pass ITEM names or --all, not both or neither")
         svc = services()
         with svc.store.locked():
-            choices = enabled_choices(svc.store, items, repo=repo)
+            choices = pick_enabled(svc.store, items, repo=repo)
             resolved = svc.inventory.placements(choices)
             _report_problems(resolved.problems)
             steps = svc.applier.plan_apply(resolved.placements, force=True)
@@ -555,8 +552,7 @@ def _refresh_status(svc: Services) -> None:
     """Rewrite status.json and attention after a change, so the prompt segment is current."""
     svc.evaluator.reset()
     rows = svc.reader.rows(svc.inventory.placements(svc.store.items()).placements)
-    repos_behind = sum(1 for r in svc.reader.repo_rows() if (r.behind or 0) > 0)
-    svc.store.write_status(svc.reader.summary(rows, repos_behind=repos_behind))
+    svc.store.write_status(svc.reader.summary(rows, repos_behind=svc.reader.repos_behind()))
 
 
 def _report_problems(problems: Sequence[tuple[str, UntapedError]]) -> None:
@@ -564,45 +560,34 @@ def _report_problems(problems: Sequence[tuple[str, UntapedError]]) -> None:
         report_error(exc, item=item)
 
 
-def _pull_repos(
-    svc: Services, placements: Sequence[Placement], *, dry_run: bool
-) -> dict[str, RepoOutcome]:
+def _pull_repos(svc: Services, placements: Sequence[Placement]) -> dict[str, RepoOutcome]:
     """Fetch the managed repos the selected link files read from; the clone moves later."""
-    repos: dict[str, RepoRecord] = {
-        p.repo.name: p.repo for p in placements if p.mode == "link" and p.repo.managed
-    }
+    repos = {p.repo.name: p.repo for p in placements if p.mode == "link" and p.repo.managed}
     rows = {row.name: row for row in svc.applier.fetch_all(list(repos.values()))}
-    for name, repo in repos.items():
+    for name in repos:
         rows.setdefault(name, RepoOutcome(name=name, action="planned", detail="fast-forward"))
-        _ = repo
     svc.evaluator.reset()
     return rows
 
 
 def _fast_forward(
-    svc: Services,
-    pulled: dict[str, RepoOutcome],
-    placements: Sequence[Placement],
-    *,
-    held_back: bool,
+    svc: Services, pulled: dict[str, RepoOutcome], placements: Sequence[Placement]
 ) -> None:
+    """Fast-forward every clone ``_pull_repos`` planned; ``apply`` never holds one back."""
     for name, row in list(pulled.items()):
         if row.action != "planned":
             continue
         repo = next(p.repo for p in placements if p.repo.name == name)
-        held = svc.applier.held_back_by(repo, placements) if held_back else []
-        pulled[name] = svc.applier.fast_forward(repo, held=held)
+        pulled[name] = svc.applier.fast_forward(repo)
     svc.evaluator.reset()
 
 
 def _moving_with(
-    svc: Services,
-    pulled: dict[str, RepoOutcome],
-    every: Sequence[Placement],
-    selected: Sequence[Placement],
+    svc: Services, pulled: dict[str, RepoOutcome], selected: Sequence[Placement]
 ) -> list[PlaceOutcome]:
     """Link paths of other items that move when the selected items' clones are pulled."""
     chosen = {p.key for p in selected}
+    every = svc.inventory.placements(svc.store.items()).placements
     others = [
         p
         for p in every
@@ -664,16 +649,12 @@ def _note_repos(rows: Sequence[RepoOutcome]) -> None:
 
 
 def _planned_attention(steps: Sequence[Step]) -> int:
-    from untaped_dotfiles.domain.status import needs_attention  # noqa: PLC0415
-
     return sum(
         1
         for s in steps
         if s.action == "report" and needs_attention(s.placement.choice.policy, s.found.state)
     )
 
-
-_: object = StatusRow  # the status kind's schema, for readers of this module
 
 app.command(subscribe_command, name="subscribe")
 app.command(unsubscribe_command, name="unsubscribe")
