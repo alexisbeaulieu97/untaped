@@ -89,7 +89,7 @@ def test_writes_never_touch_a_refused_config(stamp: str) -> None:
     assert path.read_text(encoding="utf-8") == text
 
 
-@pytest.mark.parametrize("stamp", [str(FORMAT_VERSION + 1), "'2'"])
+@pytest.mark.parametrize("stamp", [str(FORMAT_VERSION + 1), "'2'", "true"])
 def test_state_writes_never_touch_a_refused_state_file(stamp: str) -> None:
     state = _config().with_name("state.yml")
     text = f"format_version: {stamp}\ndemo:\n  items: []\n"
