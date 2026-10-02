@@ -231,9 +231,8 @@ A provider also follows these rules:
 - `errors-module`, `exception-base` and `error-system`: no `errors.py`, an
   exception that is not an `UntapedError`, or a capability's base error
   class without a `system`;
-- `undeclared-write`, `mutation-format` and `destructive-controls`: `--yes`
-  or `--dry-run` without `@writes`, a declared write without `--format`, or
-  a destructive command without both `--yes` and `--dry-run`.
+- `undeclared-write`, `mutation-format` and `destructive-controls`: the
+  write rules under [Options](#options).
 
 It does not check state writes or an error's category. Composition, not
 `check_conventions`, quarantines a provider whose skill name or doctor-check
@@ -384,17 +383,11 @@ free, but a command that writes declares it with `@writes`, or
   `--yes`. In tests, `untaped.testing.invoke_cli(..., terminal=True,
   prompt_backend=...)` simulates that terminal; without `terminal=True` there
   is none.
-- Read identifiers with `read_identifiers(names, stdin=stdin,
-  id_field="…", accept_kinds={"<cap>.<noun>"})`. A pipe record of another
-  kind exits 2. Empty stdin is an error. A command that acts on a filtered
-  selection, where an empty selection is normal, may read it with
-  `read_stdin_input(allow_empty=True)`: an empty pipe then does nothing,
-  reports like an empty list, and exits 0.
+- Read stdin only through the helpers in [Piping](#piping)
+  (`read_identifiers`, `read_stdin_input`, `read_records`), never
+  `sys.stdin` directly; that section also covers empty pipes.
 - Before prompting, check `ui.can_prompt` on the `UiContext` that will prompt;
   without a terminal, fail with a hint naming the flag that supplies the value.
-- Commands that need whole records or a mixed input use
-  `read_stdin_input(accept_kinds=…)` or `read_records(accept_kinds=…)`.
-  Never read `sys.stdin` directly.
 
 ### Output records
 
@@ -508,7 +501,8 @@ identifiers = read_identifiers(
 ```
 
 For whole records, `read_stdin_input(accept_kinds=...)` returns the bare
-values or the parsed envelopes (a `StdinInput`). Both raise on empty stdin.
+values or the parsed envelopes (a `StdinInput`); `read_records(accept_kinds=...)`
+returns only envelopes. All raise on empty stdin.
 When an empty pipe (a filter that matched nothing) should do nothing, pass
 `read_stdin_input(allow_empty=True)`: it returns no values, which the command
 must treat as "nothing to do", never as "everything". A terminal stdin with

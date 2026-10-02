@@ -31,8 +31,35 @@ hook, the built-in `yaml_edit` hook.
   `target`) and `from` (derivation templates).
 - A `default` must coerce to the input's `type` (`validate` reports it) and
   cannot be combined with `required: true`.
-- Step types: `validate`, `transform`, `template`, `copy`, `remove`. Use YAML
-  anchors to reuse structure.
+- Step types and their required fields: `validate` (`hook`), `transform`
+  (`hook` and one of `file`/`files`/`globs`), `template` (`template`, `dest`),
+  `copy` (`source`, `dest`), `remove` (one of `file`/`files`/`globs`). Hook
+  steps pass `args`. Use YAML anchors to reuse structure.
+
+```yaml
+version: 1
+description: Add a standard .editorconfig and pin the Python version
+inputs:
+  python_version:
+    type: str
+    default: "3.14"
+steps:
+  - type: template
+    template: templates/editorconfig
+    dest: .editorconfig
+    if_absent: true
+  - type: transform
+    hook: yaml_edit
+    file: .pre-commit-config.yaml
+    optional: true
+    args:
+      edits:
+        - op: set
+          path: [default_language_version, python]
+          value: "python{{ python_version }}"
+  - type: remove
+    file: .travis.yml
+```
 
 | Field | Steps | Meaning |
 |---|---|---|

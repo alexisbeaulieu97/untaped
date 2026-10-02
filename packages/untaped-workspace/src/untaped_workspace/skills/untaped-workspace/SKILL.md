@@ -12,7 +12,7 @@ archive it.
 
 | File | Read it when |
 |---|---|
-| [references/lifecycle.md](references/lifecycle.md) | creating or extending a workspace, choosing branches and bases, read-only repos, how existing branches are reused, archiving and what blocks it |
+| [references/lifecycle.md](references/lifecycle.md) | creating or extending a workspace, the interactive picker, choosing branches and bases, read-only repos, how existing branches are reused, archiving and what blocks it |
 | [references/run.md](references/run.md) | running a command or script in each repo, the `UNTAPED_*` variables, selecting repos, failures and timeouts |
 | [references/output.md](references/output.md) | reading rows, piping records, or exit codes |
 
@@ -32,7 +32,7 @@ archive it.
 | List workspaces | `untaped workspace list`, `untaped workspace list --archived` |
 
 In a terminal, `untaped workspace create` or `add` with no repos opens a
-picker; agents pass `--repo` or `--stdin`.
+[picker](references/lifecycle.md#the-picker); agents pass `--repo` or `--stdin`.
 
 Inside a workspace directory, NAME defaults to the current workspace (except
 on `create`); agents always pass it.
@@ -59,7 +59,8 @@ on `create`); agents always pass it.
 - Repos are named `OWNER/NAME`, a unique bare `NAME`, or a full git URL. An
   unknown name exits 2 and suggests close matches from the inventory; an
   ambiguous one exits 2 and lists the candidates.
-- Git never prompts for credentials. Use an SSH agent or a credential helper.
+- Git never prompts for credentials. Use a credential helper, or an SSH agent
+  with `workspace.protocol` set to `ssh`.
 - A branch can be checked out in one workspace at a time; a second workspace
   on the same branch gets a `conflict` row.
 - `archive` refuses while any repo has uncommitted changes, stashes made on
