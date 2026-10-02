@@ -10,7 +10,7 @@ import pytest
 
 from untaped_dotfiles.domain.hashing import content_hash
 from untaped_dotfiles.domain.status import TargetInfo
-from untaped_dotfiles.infrastructure import FilesystemPlacer, link_hash
+from untaped_dotfiles.infrastructure import FilesystemPlacer
 
 pytestmark = pytest.mark.integration
 T0 = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
@@ -74,7 +74,7 @@ def test_link_copy_and_delete(placer: FilesystemPlacer, tmp_path: Path) -> None:
     source.parent.mkdir()
     source.write_text("content")
     target = tmp_path / "home" / "deep" / "a"
-    assert placer.link(source, target) == link_hash(source)
+    assert placer.link(source, target) == str(source)
     assert os.readlink(target) == str(source)
     placer.link(source, target)  # relinking replaces the link in place
     assert placer.copy(b"#!/bin/sh\n", target, executable=True) == content_hash(b"#!/bin/sh\n")
@@ -89,8 +89,8 @@ def test_link_copy_and_delete(placer: FilesystemPlacer, tmp_path: Path) -> None:
 def test_render_reads_text_and_marks_binary(placer: FilesystemPlacer, tmp_path: Path) -> None:
     target = tmp_path / "home" / "t"
     target.parent.mkdir()
-    assert placer.render(target, fmt=None) is None
+    assert placer.render(target) is None
     target.write_text("hi\n")
-    assert placer.render(target, fmt=None) == "hi\n"
+    assert placer.render(target) == "hi\n"
     target.write_bytes(b"\xff\xfe\x00")
-    assert placer.render(target, fmt=None) == "<binary>\n"
+    assert placer.render(target) == "<binary>\n"

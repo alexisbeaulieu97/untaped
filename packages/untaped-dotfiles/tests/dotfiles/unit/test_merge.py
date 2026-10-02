@@ -90,3 +90,11 @@ def test_dump_document_formats() -> None:
     assert dump_document(load_document("a: 1\n", fmt="yaml", where="t"), fmt="yaml") == "a: 1\n"
     assert load_document("", fmt="json", where="t") == {}
     assert load_document("   \n", fmt="yaml", where="t") == {}
+
+
+def test_yaml_merge_keeps_the_target_list_indentation(tmp_path: Path) -> None:
+    target = tmp_path / "t.yaml"
+    target.write_text("items:\n- a\n- b\nkeep: 1\n")
+    placer = FilesystemPlacer(home=tmp_path, kept_dir=tmp_path / "kept")
+    placer.merge(b"new: [x, y]\n", target, fmt="yaml")
+    assert target.read_text() == "items:\n- a\n- b\nkeep: 1\nnew:\n- x\n- y\n"

@@ -26,11 +26,6 @@ from untaped_dotfiles.errors import DotfilesError
 from untaped_dotfiles.infrastructure.documents import dump_document, load_document, plain
 
 
-def link_hash(destination: Path) -> str:
-    """What an applied ``link`` record stores as ``target_hash``: the link's destination."""
-    return str(destination)
-
-
 class FilesystemPlacer:
     """:class:`Placer` over the real filesystem."""
 
@@ -83,7 +78,7 @@ class FilesystemPlacer:
         if target.is_symlink():
             target.unlink()
         os.symlink(destination, target)
-        return link_hash(destination)
+        return str(destination)  # what the ``link`` record stores as target_hash
 
     def copy(self, data: bytes, target: Path, *, executable: bool) -> str:
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -96,8 +91,7 @@ class FilesystemPlacer:
                 handle.write(data)
                 handle.flush()
                 os.fsync(handle.fileno())
-            mode = 0o755 if executable else 0o644
-            os.chmod(tmp, mode & ~_umask())
+            os.chmod(tmp, 0o755 if executable else 0o644)
             os.replace(tmp, target)
         finally:
             tmp.unlink(missing_ok=True)
@@ -110,46 +104,42 @@ class FilesystemPlacer:
 
     def _merged(
         self, source: bytes, target: Path, *, fmt: MergeFormat
-    ) -> tuple[MutableMapping[str, Any], dict[str, Any]]:
+    ) -> tuple[str, MutableMapping[str, Any], dict[str, Any]]:
+        """``(original text, merged document, incoming document)``."""
         incoming = self.parse(source, fmt=fmt)
         text = target.read_text(encoding="utf-8") if target.is_file() else ""
         existing = load_document(text, fmt=fmt, where=str(target))
         merge_into(existing, incoming)
-        return existing, incoming
+        return text, existing, incoming
 
     def preview_merge(self, source: bytes, target: Path, *, fmt: MergeFormat) -> str:
-        existing, _ = self._merged(source, target, fmt=fmt)
-        return dump_document(existing, fmt=fmt)
+        text, existing, _ = self._merged(source, target, fmt=fmt)
+        return dump_document(existing, fmt=fmt, like=text)
 
     def merge(
         self, source: bytes, target: Path, *, fmt: MergeFormat
     ) -> tuple[str, tuple[KeyPath, ...]]:
-        existing, incoming = self._merged(source, target, fmt=fmt)
-        atomic_write(target, dump_document(existing, fmt=fmt))
+        text, existing, incoming = self._merged(source, target, fmt=fmt)
+        atomic_write(target, dump_document(existing, fmt=fmt, like=text))
         managed = tuple(leaf_paths(incoming))
         return value_hash(project(plain(existing), managed)), managed
 
     def unmerge(self, target: Path, *, fmt: MergeFormat, managed: tuple[KeyPath, ...]) -> None:
         if not target.is_file():
             return
-        existing = load_document(target.read_text(encoding="utf-8"), fmt=fmt, where=str(target))
+        text = target.read_text(encoding="utf-8")
+        existing = load_document(text, fmt=fmt, where=str(target))
         remove_paths(existing, managed)
-        atomic_write(target, dump_document(existing, fmt=fmt))
+        atomic_write(target, dump_document(existing, fmt=fmt, like=text))
 
     def delete(self, target: Path) -> None:
         if target.is_symlink() or target.is_file():
             target.unlink()
 
-    def render(self, target: Path, *, fmt: MergeFormat | None) -> str | None:
+    def render(self, target: Path) -> str | None:
         if target.is_symlink() or not target.is_file():
             return None
         try:
             return target.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             return "<binary>\n"
-
-
-def _umask() -> int:
-    current = os.umask(0)
-    os.umask(current)
-    return current

@@ -359,6 +359,71 @@ def test_sync_removes_an_orphaned_child_and_leaves_foreign_files(
     assert "fish/conf.d/path.fish" not in _states()
 
 
+def test_sync_keeps_an_edited_orphan_aside(
+    make_upstream: Upstream, home: Path, tmp_path: Path
+) -> None:
+    bare, author = make_upstream()
+    _subscribe(bare)
+    run(app, ["enable", "starship"])  # sync policy, a copy
+    run(app, ["apply", "--yes"])
+    target = home / ".config/starship.toml"
+    target.write_text("edited\n")
+    git(author, "rm", "-q", "starship.toml")
+    commit_all(author, "drop starship.toml")
+    push(author)
+    result = run(app, ["sync", "--format", "json"])
+    assert result.exit_code == 3, result.output  # the manifest still names the gone file
+    [row] = _rows(result)
+    assert (row["action"], row["state"]) == ("deleted", "orphan")
+    assert "kept the edited version" in str(row["detail"])
+    assert not target.exists()
+    assert [p.read_text() for p in (tmp_path / "kept").rglob("starship.toml")] == ["edited\n"]
+
+
+def test_remove_keeps_edited_orphans_and_edited_merged_keys_aside(
+    make_upstream: Upstream, home: Path, tmp_path: Path
+) -> None:
+    bare, author = make_upstream()
+    _subscribe(bare)
+    run(app, ["enable", "starship", "--policy", "manual"])  # so sync reports, never removes
+    run(app, ["enable", "claude"])
+    run(app, ["apply", "--yes"])
+    (home / ".config/starship.toml").write_text("edited\n")
+    settings = home / ".claude/settings.json"
+    settings.write_text('{"enabledPlugins": {"mine": false}, "theme": "dark", "model": "x"}')
+    git(author, "rm", "-q", "starship.toml")
+    commit_all(author, "drop starship.toml")
+    push(author)
+    run(app, ["sync"])  # fetches, so starship.toml is now an orphan
+    rows = _json(["remove", "--all", "--yes"])
+    assert {r["action"] for r in rows} == {"deleted"}
+    assert [p.read_text() for p in (tmp_path / "kept").rglob("starship.toml")] == ["edited\n"]
+    assert json.loads(settings.read_text()) == {"model": "x"}
+    kept = [p.read_text() for p in (tmp_path / "kept").rglob("settings.json")]
+    assert kept == ['{"enabledPlugins": {"mine": false}, "theme": "dark", "model": "x"}']
+
+
+def test_an_orphaned_merge_file_keeps_its_format(make_upstream: Upstream, home: Path) -> None:
+    manifest = (
+        "items:\n  claude:\n    policy: sync\n    files:\n"
+        "      - {source: claude/settings.json, target: ~/.claude/settings, "
+        "mode: merge, format: json}\n"
+    )
+    bare, author = make_upstream(manifest=manifest)
+    _subscribe(bare)
+    run(app, ["enable", "claude"])
+    target = home / ".claude/settings"
+    target.parent.mkdir()
+    target.write_text('{"model": "x"}')
+    run(app, ["apply", "--yes"])
+    assert json.loads(target.read_text())["theme"] == "dark"
+    dropped = "items:\n  claude:\n    files: [{source: mac.txt, target: ~/m}]\n"
+    _bump(author, {"dotfiles.yml": dropped})
+    result = run(app, ["sync", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    assert target.read_text() == '{\n  "model": "x"\n}\n'  # JSON, not a YAML rendering
+
+
 def test_sync_dry_run_neither_pulls_nor_writes(
     make_upstream: Upstream, home: Path, tmp_path: Path, dotfiles_env: Path
 ) -> None:

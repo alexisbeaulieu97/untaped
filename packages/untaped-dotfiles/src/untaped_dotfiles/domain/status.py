@@ -24,7 +24,9 @@ FileState = Literal[
     "missing",
     "orphan",
     "excluded",
+    "error",
 ]
+"""``error``: the path could not be read (a git or filesystem failure); the row's error says why."""
 
 Action = Literal["apply", "skip", "report", "remove"]
 
@@ -65,7 +67,7 @@ def file_state(
     if target.kind == "missing":
         return "missing", "the target is gone"
     behind = source.changed if mode == "link" else source.hash != record.source_hash
-    modified = _modified(mode, record, target)
+    modified = target_modified(mode, record, target)
     if behind and modified:
         return "conflict", "changed in the repo and on this machine"
     if behind:
@@ -87,7 +89,8 @@ def _unrecorded_state(mode: Mode, source: SourceInfo, target: TargetInfo) -> tup
     return "foreign", "a file the tool did not place is in the way; apply keeps it aside"
 
 
-def _modified(mode: Mode, record: AppliedRecord, target: TargetInfo) -> bool:
+def target_modified(mode: Mode, record: AppliedRecord, target: TargetInfo) -> bool:
+    """Whether the target is no longer what the tool wrote (``remove`` keeps such a file)."""
     if mode == "link":
         return target.kind != "symlink" or target.link_to != record.target_hash
     if target.kind != "file":
