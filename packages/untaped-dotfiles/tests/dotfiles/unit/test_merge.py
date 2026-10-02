@@ -98,3 +98,11 @@ def test_yaml_merge_keeps_the_target_list_indentation(tmp_path: Path) -> None:
     placer = FilesystemPlacer(home=tmp_path, kept_dir=tmp_path / "kept")
     placer.merge(b"new: [x, y]\n", target, fmt="yaml")
     assert target.read_text() == "items:\n- a\n- b\nkeep: 1\nnew:\n- x\n- y\n"
+
+
+def test_yaml_merge_keeps_the_target_mapping_indentation(tmp_path: Path) -> None:
+    target = tmp_path / "t.yaml"
+    target.write_text("outer:\n    inner: 1\n")
+    placer = FilesystemPlacer(home=tmp_path, kept_dir=tmp_path / "kept")
+    placer.merge(b"added: {deep: 2}\n", target, fmt="yaml")
+    assert target.read_text() == "outer:\n    inner: 1\nadded:\n    deep: 2\n"

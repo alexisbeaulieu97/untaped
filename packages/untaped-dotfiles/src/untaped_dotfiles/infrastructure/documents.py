@@ -3,7 +3,7 @@
 JSON is rewritten with two-space indentation (programs that own such files,
 editor and agent settings, write it that way too). YAML goes through
 ``ruamel.yaml``'s round-trip loader so the target's comments, order, quoting
-and list indentation survive a merge; ``ruamel.yaml`` is imported lazily.
+and indentation survive a merge; ``ruamel.yaml`` is imported lazily.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ def load_document(text: str, *, fmt: MergeFormat, where: str) -> MutableMapping[
 
 
 def dump_document(document: MutableMapping[str, Any], *, fmt: MergeFormat, like: str = "") -> str:
-    """Render ``document``; YAML lists are indented the way ``like`` (the original text) was."""
+    """Render ``document``; YAML is indented the way ``like`` (the original text) was."""
     if fmt == "json":
         return json.dumps(document, indent=2, ensure_ascii=False) + "\n"
     out = io.StringIO()
@@ -55,7 +55,7 @@ def _empty(fmt: MergeFormat) -> MutableMapping[str, Any]:
 
 
 def _yaml(like: str) -> Any:
-    """A round-trip loader/dumper indenting lists like ``like`` (``-`` under the key by default)."""
+    """A round-trip loader/dumper indented like ``like`` (default: 2 spaces, ``-`` under key)."""
     from ruamel.yaml import YAML  # noqa: PLC0415
     from ruamel.yaml.util import load_yaml_guess_indent  # noqa: PLC0415
 
@@ -71,5 +71,16 @@ def _yaml(like: str) -> Any:
         else:
             if guessed_sequence is not None and guessed_offset is not None:
                 sequence, offset = guessed_sequence, guessed_offset
-    rt.indent(mapping=2, sequence=sequence, offset=offset)
+    rt.indent(mapping=_mapping_indent(like), sequence=sequence, offset=offset)
     return rt
+
+
+def _mapping_indent(text: str) -> int:
+    """The mapping indent of ``text``: its shallowest indented line that is not a list item."""
+    widths = [
+        len(line) - len(line.lstrip(" "))
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith(("#", "-"))
+    ]
+    positive = [width for width in widths if width > 0]
+    return min(positive) if positive else 2
