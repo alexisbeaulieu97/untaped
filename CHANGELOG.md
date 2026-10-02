@@ -6,13 +6,13 @@
 
 - 9.x users on `uv tool upgrade untaped` get the core only and every capability
   disappears; reinstall with `uv tool install --reinstall 'untaped[all]'` (or
-  `pip install -U 'untaped[all]'`).
+  `pip install -U 'untaped[all]'`), restating any `--with` tools.
 - A plugin claiming a first-party name or section (e.g. `github`) now disables
   that first-party capability as well; uninstall one to restore the other.
-- awx `export` no longer writes controller-derived fields (`custom_virtualenv`,
-  `webhook_key`, `local_path`) or `spec.organization` and masks
-  `host_config_key`; `patch`/`edit` of those fields exit 2. Re-export stored
-  documents; `apply` ignores the old fields.
+- awx: `export` no longer writes an SCM project's `local_path` (or
+  `spec.organization`) and masks `host_config_key`; `patch`/`edit` exit 2 for
+  `webhook_key`, `custom_virtualenv` and an SCM project's `local_path`.
+  Re-export stored documents; `apply` ignores the old fields.
 - workspace: recreate task workspaces with `workspace create` (`untaped
   workspace` is now worktree-based and experimental).
 - workspace: delete the `state.yml` key `workspace.workspaces` and drop
@@ -29,22 +29,22 @@
   pipe` and read the new `workspace.workspace` and `workspace.status` fields.
 - workspace: move an old workspace directory out of `workspaces_dir` before
   `create` reuses its name.
-- Caches: point `workspace.cache_dir` away from a 9.x cache. Delete
+- caches: point `workspace.cache_dir` away from a 9.x cache. Delete
   `~/.untaped/ansible-repositories` and `~/.untaped/github-corpus` (and
   old-layout directories under a custom `ansible.repo_cache_path` or
   `github.corpus_path`); keep `~/.untaped/repositories` while clones made before
   7.0 borrow from it.
-- SDK: import first-party code from its top-level package (`untaped_github.api`,
+- sdk: import first-party code from its top-level package (`untaped_github.api`,
   …) and the SDK from `untaped.sdk` instead of `untaped.capability_api`; stop
   using `CAPABILITY_API_VERSION` and `get_core_settings`.
-- SDK: replace `safe_cache_path` with `cache_path`.
-- SDK: import core only through `untaped.sdk` and another capability only
+- sdk: replace `safe_cache_path` with `cache_path`.
+- sdk: import core only through `untaped.sdk` and another capability only
   through its `api` module, declaring a dependency on its distribution;
   `check_conventions(NAME)` now fails otherwise.
-- Registry: drop `api_requires` from providers and keep the `untaped`
+- registry: drop `api_requires` from providers and keep the `untaped`
   requirement current; scripts reading `untaped capabilities` lose the `api` and
   `origin` columns.
-- Expect exit 130 when Ctrl-C interrupts a prompt; `PromptInterruptedError` is
+- core: expect exit 130 when Ctrl-C interrupts a prompt; `PromptInterruptedError` is
   no longer a `ConfigError`.
 - ansible: replace `graph --upstream/--downstream/--both` with `--direction
   up|down|both`.
@@ -60,16 +60,16 @@
   longer limited to a closed verb list.
 - **core:** `untaped.testing.check_conventions(NAME)` runs the convention checks
   for any capability, plugins included.
-- **SDK:** `untaped.testing.plugin` gives a plugin's own tests the hermetic
+- **sdk:** `untaped.testing.plugin` gives a plugin's own tests the hermetic
   environment untaped's tests use.
 - **core:** `examples/untaped-hello` is a minimal, tested plugin to start from;
   `untaped.testing.invoke_root(argv)` runs `untaped …` in a plugin's tests.
 - **core:** `report_row_errors` reports each failed row's error and hint.
-- **SDK:** `UiContext.pick_many` opens an inline two-pane picker: fuzzy search
+- **sdk:** `UiContext.pick_many` opens an inline two-pane picker: fuzzy search
   with multi-select on the left, per-item settings on the right (`PickRequest`,
   `PickItem`, `PickSetting`, `PickCatalog`, `PickResult`, `Picked`).
   `ScriptedPromptBackend(picks=...)` scripts it in tests.
-- **SDK:** `RepoCache`, `cache_path`, `cache_key`, `list_caches`,
+- **sdk:** `RepoCache`, `cache_path`, `cache_key`, `list_caches`,
   `cache_origin`, `repo_url_parts` and `scoped_auth_header`: one bare-repo cache
   building block for any capability.
 - **workspace:** `workspace create`, `add` and `archive` print failed rows'
@@ -100,7 +100,7 @@
   `get_core_settings` are removed.
 - **Breaking (core):** `PromptInterruptedError` is no longer a `ConfigError`;
   Ctrl-C at a prompt now always exits 130.
-- **Breaking (SDK):** `check_conventions(NAME)` runs an `import-boundary` rule:
+- **Breaking (sdk):** `check_conventions(NAME)` runs an `import-boundary` rule:
   a plugin may import core only through `untaped.sdk`, and another capability
   only through its `api` module with a declared dependency on its distribution.
 - **Breaking (core):** two or more providers claiming the same capability name
@@ -162,7 +162,7 @@
   import. Scaffolded packs and the resolver's hint now ask for
   `untaped[recipe]>=X,<X+1` in `dependency-groups.dev` instead of
   `untaped>=X,<X+1`.
-- Documentation: `docs/` holds getting-started, configuration, scripting,
+- **docs:** `docs/` holds getting-started, configuration, scripting,
   plugins and the config reference; each capability's guide is its package
   README; the developer guide is CONTRIBUTING.md.
 

@@ -70,5 +70,5 @@ must be deleted in Jira by hand.
 
 Each write emits a `jira.issue_outcome` record with `action` (`created`,
 `updated`, `commented`, `transitioned`, `linked` or `planned`); `--columns '?'`
-lists the rest. Under `--dry-run` (`planned`) a new issue has no `key` yet.
+with `--dry-run` lists the rest. Under `--dry-run` (`planned`) a new issue has no `key` yet.
 Mutating requests are never retried automatically.

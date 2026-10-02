@@ -118,7 +118,9 @@ still follows the rules in [exit codes](#precedence).
 ## Output records
 
 What each command writes, and which kinds each `--stdin` reads. Commands not
-listed write no records. `--columns ?` on a command lists its record's fields.
+listed write no records. `--columns ?` on a command lists its record's fields; it acts after the
+command runs and needs at least one row, so use it on a read command or add
+`--dry-run` to a write.
 
 ### Root
 

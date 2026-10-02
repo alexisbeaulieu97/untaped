@@ -109,7 +109,7 @@ check the direction on one pair with `--dry-run` before linking in bulk.
 ## Output
 
 Searches are retried on HTTP 429 and 503; writes are never retried. See
-[Pipes and record kinds](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#jira) and
+[Scripting](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#jira) and
 [Exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes).
 
 ## See also

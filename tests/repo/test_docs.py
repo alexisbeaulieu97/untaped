@@ -20,7 +20,7 @@ import gen_config_reference as generator
 import pytest
 from cyclopts import App
 
-from repo.support import REPO_ROOT
+from repo.support import FIRST_PARTY, REPO_ROOT
 from untaped.bootstrap import build_root_app
 from untaped.capabilities import registry
 from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
@@ -116,7 +116,7 @@ def test_repository_urls_resolve(path: Path) -> None:
 def test_package_readmes_link_absolutely() -> None:
     """PyPI cannot resolve a relative or in-page link or an image in a package README."""
     readmes = sorted(REPO_ROOT.glob("packages/*/README.md"))
-    assert len(readmes) == 7
+    assert len(readmes) == len(FIRST_PARTY) + 1
     for readme in readmes:
         text = re.sub(r"(`+)[^\n]*?\1", "", _FENCE.sub("", readme.read_text(encoding="utf-8")))
         relative = [t for t in _ANY_LINK.findall(text) if "://" not in t]
@@ -249,6 +249,17 @@ def test_install_examples_use_the_extras() -> None:
         assert not bare, page
 
 
+def test_package_readmes_never_install_a_bare_capability_package() -> None:
+    """Installing `untaped-<name>` alone leaves the core out; READMEs point at the extras."""
+    bare = [
+        f"{readme}: {line.strip()}"
+        for readme in sorted(REPO_ROOT.glob("packages/*/README.md"))
+        for line in readme.read_text(encoding="utf-8").splitlines()
+        if re.search(r"\binstall\b.*?['\"]?untaped-[a-z]", line)
+    ]
+    assert bare == []
+
+
 def test_docs_holds_only_the_reader_pages() -> None:
     docs = REPO_ROOT / "docs"
     pages = sorted(str(p.relative_to(docs)) for p in docs.rglob("*.md"))
@@ -291,5 +302,5 @@ def test_rationale_lives_beside_the_code_it_protects() -> None:
     worktrees = (workspace / "infrastructure/git_worktrees.py").read_text().split('"""')[1]
     assert "load-bearing" in worktrees
     provision = (workspace / "application/provision.py").read_text().split('"""')[1]
-    # the documented lock order matches the code
+    # the docstring names the workspace lock before the cache lock
     assert provision.index("workspace lock") < provision.index("cache lock")
