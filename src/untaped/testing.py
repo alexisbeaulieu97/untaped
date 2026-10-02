@@ -1,7 +1,7 @@
 """Testing helpers for driving Cyclopts command apps with captured output.
 
 :func:`check_conventions` checks one installed capability against
-``docs/conventions.md``; its ``externals`` argument composes a provider
+``docs/conventions.md``; its ``candidates`` argument composes a provider
 passed in directly instead of one discovered through entry points.
 """
 
@@ -31,7 +31,7 @@ from untaped.prompts import (
 )
 
 if TYPE_CHECKING:
-    from untaped.capabilities.registry import ExternalProvider
+    from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
     from untaped.picker import PickRequest, PickResult
 
 __all__ = [
@@ -43,6 +43,7 @@ __all__ = [
     "assert_destructive_contract",
     "check_conventions",
     "invoke_cli",
+    "provider_candidate",
 ]
 
 
@@ -193,24 +194,37 @@ def assert_destructive_contract(
         assert_unchanged()
 
 
+def provider_candidate(
+    spec: CapabilitySpec, *, distribution: str = "test-provider"
+) -> ProviderCandidate:
+    """``spec`` as a discovered candidate, for composing it without installing it.
+
+    Pass the result to ``check_conventions(..., candidates=[...])`` or
+    ``untaped.bootstrap.build_root_app(candidates=[...])``.
+    """
+    from untaped.capabilities.registry import ProviderCandidate  # noqa: PLC0415
+
+    return ProviderCandidate(distribution=distribution, name=spec.name, target=lambda: spec)
+
+
 def check_conventions(
     capability: str,
     *,
     tests_dir: Path | None = None,
-    externals: Sequence[ExternalProvider] | None = None,
+    candidates: Sequence[ProviderCandidate] | None = None,
 ) -> None:
     """Fail with every convention violation of ``capability`` (docs/plugins.md).
 
     Checks the installed capability's command subtree and its own source
     files: command grammar, stderr wording, package structure and layering.
     ``tests_dir`` adds the private-test-import check over those tests.
-    ``externals`` replaces entry-point discovery, so a test can compose a
+    ``candidates`` replaces entry-point discovery, so a test can compose a
     provider that is not installed. ``# untaped: allow <rule>`` on the flagged
     node's first line allows that one violation.
     """
     from untaped.conventions import capability_violations  # noqa: PLC0415
 
-    found = capability_violations(capability, tests_dir=tests_dir, externals=externals)
+    found = capability_violations(capability, tests_dir=tests_dir, candidates=candidates)
     assert not found, "convention violations:\n" + "\n".join(f"  {line}" for line in found)
 
 

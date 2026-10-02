@@ -1,8 +1,7 @@
-"""Row-by-row validation tests: fatal built-ins, quarantined externals (spec §5).
+"""Row-by-row validation tests: every violation quarantines its provider (spec §5).
 
-Each rejection row is exercised through both origins: a built-in violation
-raises ``ConfigError`` naming the reason, an external one becomes a
-``QuarantineRecord`` while composition continues.
+Each rejection row becomes a ``QuarantineRecord`` naming the reason while
+composition continues; first-party and third-party providers are judged alike.
 """
 
 from __future__ import annotations
@@ -14,11 +13,10 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-import untaped.capabilities.registry as registry
 from test_capabilities.capharness import (
     OtherProfile,
+    make_candidate,
     make_check,
-    make_external,
     make_shell,
     make_skill,
     make_spec,
@@ -26,12 +24,10 @@ from test_capabilities.capharness import (
 from untaped.capabilities.registry import (
     CapabilitySpec,
     DoctorCheck,
-    ExternalProvider,
+    ProviderCandidate,
     SkillAsset,
-    check_api_range,
     compose,
 )
-from untaped.errors import ConfigError
 
 
 class TokenProfile(BaseModel):
@@ -41,6 +37,10 @@ class TokenProfile(BaseModel):
 
 class TokenState(BaseModel):
     token: str = ""
+
+
+class EndpointState(BaseModel):
+    endpoint: str = ""
 
 
 def broken_asset(name: str = "", description: str = "d") -> SkillAsset:
@@ -170,52 +170,24 @@ SINGLE_SPEC_ROWS: list[tuple[str, Callable[[], CapabilitySpec], str, str]] = [
 ]
 
 
-@pytest.mark.parametrize("builtin", [True, False], ids=["builtin-fatal", "external-quarantine"])
 @pytest.mark.parametrize(
     ("make", "reason", "named"),
     [row[1:] for row in SINGLE_SPEC_ROWS],
     ids=[row[0] for row in SINGLE_SPEC_ROWS],
 )
-def test_invalid_spec_is_rejected(
-    make: Callable[[], CapabilitySpec], reason: str, named: str, builtin: bool
+def test_invalid_spec_is_quarantined(
+    make: Callable[[], CapabilitySpec], reason: str, named: str
 ) -> None:
     spec = make()
-    if builtin:
-        with pytest.raises(ConfigError) as exc_info:
-            compose(make_shell(), [spec])
-        assert reason in str(exc_info.value)
-        assert named in str(exc_info.value)
-        return
-    result = compose(make_shell(), [], [make_external(spec, "ext-dist")])
+    result = compose(make_shell(), [make_candidate(spec, "ext-dist")])
     assert result.capabilities == ()
     (record,) = result.quarantine
-    assert record.reason == reason
+    assert (record.distribution, record.reason) == ("ext-dist", reason)
     assert named in record.detail
 
 
 # (first spec, colliding spec, reason, text the error/detail must name)
 COLLISION_ROWS: list[tuple[str, Callable[[], tuple[CapabilitySpec, CapabilitySpec]], str, str]] = [
-    (
-        "name",
-        lambda: (make_spec(name="taken"), make_spec(name="taken", profile=OtherProfile)),
-        "duplicate-name",
-        "'taken'",
-    ),
-    (
-        "section",
-        lambda: (make_spec(name="a", section="shared"), make_spec(name="b", section="shared")),
-        "duplicate-section",
-        "'shared'",
-    ),
-    (
-        "state-shadow",
-        lambda: (
-            make_spec(name="first", section="data", profile=TokenProfile),
-            make_spec(name="second", section="data", profile=OtherProfile, state=TokenState),
-        ),
-        "state-shadow",
-        "'data'",
-    ),
     (
         "skill",
         lambda: (
@@ -237,193 +209,99 @@ COLLISION_ROWS: list[tuple[str, Callable[[], tuple[CapabilitySpec, CapabilitySpe
 ]
 
 
-@pytest.mark.parametrize("builtin", [True, False], ids=["builtin-fatal", "external-quarantine"])
 @pytest.mark.parametrize(
     ("make", "reason", "named"),
     [row[1:] for row in COLLISION_ROWS],
     ids=[row[0] for row in COLLISION_ROWS],
 )
-def test_collision_with_an_earlier_capability_is_rejected(
+def test_collision_with_an_earlier_capability_is_quarantined(
     make: Callable[[], tuple[CapabilitySpec, CapabilitySpec]],
     reason: str,
     named: str,
-    builtin: bool,
 ) -> None:
     first, second = make()
-    if builtin:
-        with pytest.raises(ConfigError, match=reason):
-            compose(make_shell(), [first, second])
-        return
-    result = compose(make_shell(), [first], [make_external(second)])
+    result = compose(
+        make_shell(), [make_candidate(second, "b-dist"), make_candidate(first, "a-dist")]
+    )
     assert [c.spec.name for c in result.capabilities] == [first.name]
     (record,) = result.quarantine
-    assert record.reason == reason
+    assert (record.distribution, record.reason) == ("b-dist", reason)
     assert named in record.detail
 
 
 @pytest.mark.parametrize(
-    ("shell", "spec", "reason", "named"),
+    ("shell", "spec", "reason", "detail"),
     [
-        (make_shell(), make_spec(name="untaped"), "duplicate-name", "'untaped'"),
-        (make_shell(), make_spec(name="intruder", section="shell"), "duplicate-section", "'shell'"),
+        (
+            make_shell(),
+            make_spec(name="untaped"),
+            "duplicate-name",
+            "duplicate capability name: 'untaped' (already provided by the shell)",
+        ),
+        (
+            make_shell(),
+            make_spec(name="intruder", section="shell"),
+            "duplicate-section",
+            "duplicate config section: 'shell' (already provided by the shell)",
+        ),
+        (
+            make_shell(),
+            make_spec(name="shadow", section="shell", state=EndpointState),
+            "state-shadow",
+            "state fields shadow profile fields of section 'shell': endpoint",
+        ),
         (
             make_shell(skills=(make_skill("shell-skill"),)),
             make_spec(name="s", skills=(make_skill("shell-skill"),)),
             "duplicate-skill",
-            "'shell-skill'",
+            "duplicate skill name: 'shell-skill'",
         ),
         (
             make_shell(checks=(make_check("shell.health"),)),
             make_spec(name="d", checks=(make_check("shell.health"),)),
             "duplicate-doctor-check",
-            "'shell.health'",
+            "duplicate doctor id: 'shell.health'",
         ),
     ],
-    ids=["name", "section", "skill", "doctor-id"],
+    ids=["name", "section", "state-shadow", "skill", "doctor-id"],
 )
 def test_collision_with_the_shell_quarantines(
-    shell: Any, spec: CapabilitySpec, reason: str, named: str
+    shell: Any, spec: CapabilitySpec, reason: str, detail: str
 ) -> None:
-    result = compose(shell, [], [make_external(spec)])
+    result = compose(shell, [make_candidate(spec)])
     assert result.capabilities == ()
     (record,) = result.quarantine
-    assert record.reason == reason
-    assert named in record.detail
+    assert (record.reason, record.detail) == (reason, detail)
 
 
 def test_state_shadow_scoped_to_same_section() -> None:
     first = make_spec(name="first", section="data", profile=TokenProfile)
     other = make_spec(name="other", section="other", profile=OtherProfile, state=TokenState)
-    result = compose(make_shell(), [first], [make_external(other)])
+    result = compose(make_shell(), [make_candidate(first), make_candidate(other)])
     assert [c.spec.name for c in result.capabilities] == ["first", "other"]
     assert result.quarantine == ()
 
 
-def test_duplicate_skill_across_externals_keeps_the_first() -> None:
-    first = make_external(make_spec(name="a", skills=(make_skill("s1"),)), "d1")
-    second = make_external(make_spec(name="b", skills=(make_skill("s1"),)), "d2")
-    result = compose(make_shell(), [], [first, second])
+def test_duplicate_skill_across_candidates_keeps_the_first() -> None:
+    first = make_candidate(make_spec(name="a", skills=(make_skill("s1"),)), "d1")
+    second = make_candidate(make_spec(name="b", skills=(make_skill("s1"),)), "d2")
+    result = compose(make_shell(), [first, second])
     assert [c.spec.name for c in result.capabilities] == ["a"]
     (record,) = result.quarantine
     assert record.reason == "duplicate-skill"
 
 
-# ---- api_requires ranges ----------------------------------------------------
+def test_a_plain_function_provider_composes() -> None:
+    """The provider contract is a nullary callable; nothing else is declared."""
+    spec = make_spec(name="plain")
 
-
-@pytest.mark.parametrize(
-    ("rng", "expected"),
-    [
-        (((3, 0), (4, 0)), ((3, 0), (4, 0))),
-        (((0, 0), (99, 0)), ((0, 0), (99, 0))),
-        (((3, 0), (3, 5)), ((3, 0), (3, 5))),
-        ([[3, 0], [4, 0]], ((3, 0), (4, 0))),
-    ],
-)
-def test_api_range_accepts_covering_ranges(rng: Any, expected: Any) -> None:
-    # Checked against 3.0: the lower bound is inclusive.
-    assert check_api_range(rng, (3, 0)) == expected
-    spec = make_spec(name="ranged")
-    result = compose(make_shell(), [], [make_external(spec, api_requires=rng)])
-    assert [c.spec.name for c in result.capabilities] == ["ranged"]
-    assert result.quarantine == ()
-
-
-def test_api_versions_compare_as_tuples_not_floats() -> None:
-    """``(1, 10)`` is newer than ``(1, 9)``; as floats 1.10 == 1.1 < 1.9."""
-    assert check_api_range(((1, 9), (2, 0)), (1, 10)) == ((1, 9), (2, 0))
-    with pytest.raises(ConfigError, match=r"does not admit SDK version 1\.10"):
-        check_api_range(((1, 0), (1, 10)), (1, 10))
-
-
-def test_api_3_0_rejects_2_x_providers() -> None:
-    """9.0 broke the SDK: ranges capped below 3.0 no longer compose."""
-    capped = compose(
-        make_shell(), [], [make_external(make_spec(name="old"), api_requires=((2, 0), (3, 0)))]
-    )
-    (record,) = capped.quarantine
-    assert record.reason == "api-range"
-    assert "does not admit SDK version 3.2" in record.detail
-
-
-@pytest.mark.parametrize(
-    ("rng", "detail"),
-    [
-        (
-            (1.0, 2.0),
-            "malformed api_requires (1.0, 2.0): expected ((major, minor), (major, minor)) "
-            "int tuples as (min_inclusive, max_exclusive); running SDK 5.1, "
-            "declare e.g. ((5, 0), (6, 0))",
-        ),
-        (
-            ((6, 0), (5, 0)),
-            "inverted api_requires >=6.0,<5.0: min_inclusive must be below max_exclusive; "
-            "running SDK 5.1, declare e.g. ((5, 0), (6, 0))",
-        ),
-        (
-            None,
-            "missing api_requires: provider declares no SDK range; "
-            "running SDK 5.1, declare e.g. ((5, 0), (6, 0))",
-        ),
-    ],
-)
-def test_bad_range_messages_name_the_running_sdk(rng: Any, detail: str) -> None:
-    """Float (1.x), inverted and missing ranges name the running version and an example."""
-    with pytest.raises(ConfigError) as excinfo:
-        check_api_range(rng, (5, 1))
-    assert str(excinfo.value) == f"api-range: {detail}"
-
-
-@pytest.mark.parametrize(
-    "rng",
-    [
-        ((2, 0), (2, 0)),  # inverted
-        ((3, 0), (2, 0)),
-        (("2", 0), (3, 0)),  # non-int
-        ((True, 0), (3, 0)),
-        ((2.0, 0), (3, 0)),
-        ((2, -1), (3, 0)),  # negative
-        ((2,), (3, 0)),  # bound not a pair
-        ((2, 0, 0), (3, 0)),
-        "2.0",
-        (2, 3),  # bare majors
-        (1.0, 2.0),  # 1.x float bounds
-        ((2, 0),),  # not a pair
-        ((2, 0), (3, 0), (4, 0)),
-        {"lo": (2, 0)},
-        ((1, 0), (2, 0)),  # does not admit the running API
-        ((2, 2), (3, 0)),
-        ((0, 5), (1, 9)),
-        None,  # missing
-    ],
-)
-def test_api_range_rejects_bad_ranges(rng: Any) -> None:
-    with pytest.raises(ConfigError, match="api-range"):
-        check_api_range(rng, (2, 0))
-    spec = make_spec(name="ranged")
-    result = compose(make_shell(), [], [make_external(spec, api_requires=rng)])
-    assert result.capabilities == ()
-    (record,) = result.quarantine
-    assert record.reason == "api-range"
-    assert record.detail
-
-
-def test_api_range_missing_attribute_quarantine() -> None:
-    spec = make_spec(name="bare")
-
-    def _bare() -> CapabilitySpec:
+    def provide() -> CapabilitySpec:
         return spec
 
-    candidate = ExternalProvider(distribution="bare-dist", name="bare", target=_bare)
-    result = compose(make_shell(), [], [candidate])
-    (record,) = result.quarantine
-    assert record.reason == "api-range"
-
-
-def test_api_range_builtin_fatal(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(registry, "CAPABILITY_API_VERSION", (5, 0))
-    with pytest.raises(ConfigError, match="api-range"):
-        compose(make_shell(), [make_spec(name="built")])
+    candidate = ProviderCandidate(distribution="plain-dist", name="plain", target=provide)
+    result = compose(make_shell(), [candidate])
+    assert result.quarantine == ()
+    assert [registered.spec for registered in result.capabilities] == [spec]
 
 
 # ---- entry-point targets ------------------------------------------------------
@@ -433,58 +311,55 @@ def _needs_arg(value: str) -> CapabilitySpec:
     return make_spec(name="argful")
 
 
-_needs_arg.api_requires = ((3, 0), (4, 0))  # type: ignore[attr-defined]
-
-
 @pytest.mark.parametrize(
     ("candidate", "reason", "entry_point", "named"),
     [
         # An unimportable target has no resolved label; the detail names it.
         (
-            ExternalProvider(distribution="d", name="ghost", target="missing_mod_xyz:provider"),
+            ProviderCandidate(distribution="d", name="ghost", target="missing_mod_xyz:provider"),
             "malformed-entry-point",
             "",
             "missing_mod_xyz:provider",
         ),
         (
-            ExternalProvider(distribution="d", name="ghost", target="not-a-module-ref"),
+            ProviderCandidate(distribution="d", name="ghost", target="not-a-module-ref"),
             "malformed-entry-point",
             "",
             "",
         ),
         (
-            ExternalProvider(distribution="d", name="mod", target="json:decoder"),
+            ProviderCandidate(distribution="d", name="mod", target="json:decoder"),
             "malformed-entry-point",
             "json:decoder",
             "",
         ),
-        # A dotted attribute resolves and is then judged on its api range.
+        # A dotted attribute resolves and is then judged on what it returns.
         (
-            ExternalProvider(distribution="d", name="jsoncap", target="json.decoder:JSONDecoder"),
-            "api-range",
+            ProviderCandidate(distribution="d", name="jsoncap", target="json.decoder:JSONDecoder"),
+            "malformed-entry-point",
             "json.decoder:JSONDecoder",
             "",
         ),
         (
-            ExternalProvider(distribution="d", name="thing", target=object()),
+            ProviderCandidate(distribution="d", name="thing", target=object()),
             "malformed-entry-point",
             "thing",
             "",
         ),
         (
-            ExternalProvider(distribution="d", name="argful", target=_needs_arg),
+            ProviderCandidate(distribution="d", name="argful", target=_needs_arg),
             "malformed-entry-point",
             "argful",
             "",
         ),
         (
-            make_external(make_spec(name="raiser"), "d", error=RuntimeError("boom-text")),
+            make_candidate(make_spec(name="raiser"), "d", error=RuntimeError("boom-text")),
             "malformed-entry-point",
             None,
             "boom-text",
         ),
         (
-            make_external(make_spec(name="wrong"), "d", result={"not": "a-spec"}),
+            make_candidate(make_spec(name="wrong"), "d", result={"not": "a-spec"}),
             "malformed-entry-point",
             None,
             "dict",
@@ -502,9 +377,9 @@ _needs_arg.api_requires = ((3, 0), (4, 0))  # type: ignore[attr-defined]
     ],
 )
 def test_bad_entry_point_target_quarantines(
-    candidate: ExternalProvider, reason: str, entry_point: str | None, named: str
+    candidate: ProviderCandidate, reason: str, entry_point: str | None, named: str
 ) -> None:
-    result = compose(make_shell(), [], [candidate])
+    result = compose(make_shell(), [candidate])
     (record,) = result.quarantine
     assert record.reason == reason
     assert record.distribution == "d"

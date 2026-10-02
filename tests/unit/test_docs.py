@@ -18,8 +18,10 @@ from pathlib import Path
 import pytest
 from cyclopts import App
 
-from tests.unit.conftest import load_script
+from tests.conftest import first_party_candidates
+from tests.unit.conftest import broken_first_party_candidates, load_script
 from untaped.bootstrap import build_root_app
+from untaped.capabilities import registry
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REGENERATE = "uv run python scripts/gen_config_reference.py"
@@ -41,6 +43,19 @@ def test_every_setting_has_a_description() -> None:
         "add Field(description=...) or a DESCRIPTIONS entry in scripts/gen_config_reference.py"
     )
     assert generator.unknown_descriptions() == [], "DESCRIPTIONS names a setting that is gone"
+
+
+def test_config_reference_refuses_a_quarantined_first_party_capability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(registry, "discover_candidates", broken_first_party_candidates)
+    generator = load_script("gen_config_reference")
+    with pytest.raises(RuntimeError) as failed:
+        generator.collect_sections()
+    message = str(failed.value)
+    assert message.startswith("first-party capabilities quarantined; fix them before generating")
+    for name in ("awx", "jira"):
+        assert f"{name!r} [malformed-entry-point]: could not resolve entry point" in message
 
 
 def _markdown_files() -> list[Path]:
@@ -151,7 +166,7 @@ def _unknown_options(root: App, argv: list[str], aliases: set[str]) -> list[str]
 
 def test_command_examples_use_real_commands_and_options() -> None:
     """Every ``untaped`` example in a ``bash`` block names a real command and options."""
-    root = build_root_app(externals=[])
+    root = build_root_app(candidates=first_party_candidates())
     problems = []
     for path in _markdown_files():
         if "templates" in path.parts:

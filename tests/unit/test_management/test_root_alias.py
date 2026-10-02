@@ -17,7 +17,7 @@ import pytest
 from test_management.support import GithubProfile, make_spec, write_config
 from untaped import bootstrap, config_file
 from untaped.config_file import read_config_dict, write_config_dict
-from untaped.testing import CliInvoker, CliResult
+from untaped.testing import CliInvoker, CliResult, provider_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -31,7 +31,7 @@ _CONFIG = (
 
 def _invoke(*argv: str, interactive: bool = False) -> CliResult:
     root = bootstrap.build_root_app(
-        builtins=(make_spec("github", profile_model=GithubProfile),), externals=()
+        candidates=(provider_candidate(make_spec("github", profile_model=GithubProfile)),)
     )
     return CliInvoker().invoke(root.meta, list(argv), interactive=interactive)
 

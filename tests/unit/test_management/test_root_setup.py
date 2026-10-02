@@ -23,7 +23,7 @@ from untaped.sdk import (
     TokenSources,
     online_check,
 )
-from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli
+from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli, provider_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -58,7 +58,7 @@ def _setup(backend: ScriptedPromptBackend | None, *args: str) -> CliResult:
         doctor_checks=(online_check("wiz.api", section="wiz", probe=_probe),),
     )
     plain = make_spec("plain", profile_model=ExtProfile)
-    root = bootstrap.build_root_app(builtins=(wiz, plain), externals=())
+    root = bootstrap.build_root_app(candidates=(provider_candidate(wiz), provider_candidate(plain)))
     return invoke_cli(
         root.meta,
         ["setup", "--format", "json", *args],

@@ -15,7 +15,7 @@ from untaped.capabilities.registry import (
     CapabilitySpec,
     DoctorCheck,
     DoctorResult,
-    ExternalProvider,
+    ProviderCandidate,
     SkillAsset,
 )
 from untaped.cli import create_app
@@ -108,22 +108,24 @@ def make_shell(
 
 
 class Provider:
-    """Configurable external provider double."""
+    """Configurable provider double; appends its spec's name to ``calls`` per call."""
 
     def __init__(
         self,
         spec: CapabilitySpec | None = None,
         *,
-        api_requires: Any = ((3, 0), (4, 0)),
         error: Exception | None = None,
         result: Any = None,
+        calls: list[str] | None = None,
     ) -> None:
-        self.api_requires = api_requires
         self._spec = spec
         self._error = error
         self._result = result
+        self._calls = calls
 
     def __call__(self) -> Any:
+        if self._calls is not None and self._spec is not None:
+            self._calls.append(self._spec.name)
         if self._error is not None:
             raise self._error
         if self._result is not None:
@@ -132,7 +134,7 @@ class Provider:
         return self._spec
 
 
-def make_external(
+def make_candidate(
     spec: CapabilitySpec,
     distribution: str = "example-dist",
     name: str | None = None,
@@ -141,8 +143,8 @@ def make_external(
     entry_point_group: str = CAPABILITIES_ENTRY_POINT_GROUP,
     requires_dist: tuple[str, ...] | list[str] = (),
     **kwargs: Any,
-) -> ExternalProvider:
-    return ExternalProvider(
+) -> ProviderCandidate:
+    return ProviderCandidate(
         distribution=distribution,
         name=name or spec.name,
         target=Provider(spec, **kwargs),
@@ -152,11 +154,8 @@ def make_external(
     )
 
 
-def function_provider(
-    spec: CapabilitySpec, *, api_requires: Any = ((3, 0), (4, 0))
-) -> Callable[[], CapabilitySpec]:
+def function_provider(spec: CapabilitySpec) -> Callable[[], CapabilitySpec]:
     def _provide() -> CapabilitySpec:
         return spec
 
-    _provide.api_requires = api_requires  # type: ignore[attr-defined]
     return _provide

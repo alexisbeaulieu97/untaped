@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from tests.conftest import first_party_candidates
 from untaped.bootstrap import build_root_app
 from untaped.testing import invoke_cli
 
@@ -24,14 +25,14 @@ pytestmark = pytest.mark.integration
     ],
 )
 def test_old_spellings_are_usage_errors(old: list[str]) -> None:
-    result = invoke_cli(build_root_app(externals=[]), old)
+    result = invoke_cli(build_root_app(candidates=first_party_candidates()), old)
 
     assert result.exit_code == 2, result.output
     assert "deprecated" not in result.stderr
 
 
 def test_help_lists_only_the_current_spellings() -> None:
-    root = build_root_app(externals=[])
+    root = build_root_app(candidates=first_party_candidates())
 
     awx_help = invoke_cli(root, ["awx", "--help"]).stdout
     inventories_help = invoke_cli(root, ["awx", "inventories", "--help"]).stdout
@@ -46,6 +47,8 @@ def test_help_lists_only_the_current_spellings() -> None:
 
 
 def test_ping_options_are_keyword_only() -> None:
-    result = invoke_cli(build_root_app(externals=[]), ["awx", "ping", "json"])
+    result = invoke_cli(
+        build_root_app(candidates=first_party_candidates()), ["awx", "ping", "json"]
+    )
 
     assert result.exit_code == 2, result.output

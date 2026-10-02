@@ -24,7 +24,12 @@ from untaped.capabilities.recipe.domain.plan import FileChange
 from untaped.capabilities.recipe.infrastructure.backup import BackupDraft, BackupStore
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
 from untaped.settings import get_settings
-from untaped.testing import CliInvoker, ScriptedPromptBackend, assert_destructive_contract
+from untaped.testing import (
+    CliInvoker,
+    ScriptedPromptBackend,
+    assert_destructive_contract,
+    provider_candidate,
+)
 
 pytestmark = pytest.mark.usefixtures("isolate_config")
 
@@ -625,7 +630,7 @@ def test_apply_preview_none_keeps_summary_and_stdout_format_independent(tmp_path
 
 def test_apply_quiet_mutes_preview_summary_and_post_run_info(tmp_path: Path) -> None:
     recipe, target = _out_recipe(tmp_path)
-    root = bootstrap.build_root_app(builtins=(SPEC,), externals=())
+    root = bootstrap.build_root_app(candidates=(provider_candidate(SPEC),))
 
     result = CliInvoker().invoke(
         root.meta,
@@ -2906,7 +2911,7 @@ def test_hook_run_quiet_suppresses_context_but_not_hook_diagnostics(tmp_path: Pa
     target.mkdir()
     (target / "local.txt").write_text("start")
 
-    root = bootstrap.build_root_app(builtins=(SPEC,), externals=())
+    root = bootstrap.build_root_app(candidates=(provider_candidate(SPEC),))
     result = CliInvoker().invoke(
         root.meta,
         [

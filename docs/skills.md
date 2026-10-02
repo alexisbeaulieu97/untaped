@@ -3,7 +3,7 @@
 Each capability ships an agent skill: a directory with `SKILL.md` and its
 reference files that teaches an AI coding agent to use that capability.
 `untaped skills` lists and installs the skills of every composed capability,
-built-in or external.
+first-party or third-party.
 
 ## Install skills
 

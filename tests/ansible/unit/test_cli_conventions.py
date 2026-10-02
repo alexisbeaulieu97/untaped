@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 import yaml
 
+from tests.conftest import first_party_candidates
 from untaped.bootstrap import build_root_app
 from untaped.capabilities.ansible.cli import app
 from untaped.testing import ScriptedPromptBackend, invoke_cli
@@ -101,7 +102,9 @@ def test_removed_spellings_are_usage_errors(
 ) -> None:
     _config(tmp_path, monkeypatch, state={**_ALIASES, **_SOURCES})
 
-    result = invoke_cli(build_root_app(externals=[]), ["ansible", *args], input="acme/site\n")
+    result = invoke_cli(
+        build_root_app(candidates=first_party_candidates()), ["ansible", *args], input="acme/site\n"
+    )
 
     assert result.exit_code == 2, result.output
     assert "deprecated" not in result.stderr

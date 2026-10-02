@@ -1,8 +1,8 @@
 """Capability composition root for the unified ``untaped`` shell.
 
-Built-in capabilities and providers discovered through the
-``untaped.capabilities`` entry-point group are validated before settings
-registration or app mounting. Only providers that survive validation
+Every capability is discovered through the ``untaped.capabilities``
+entry-point group and validated before settings registration or app
+mounting. Only providers that survive validation
 contribute command trees, settings sections, skills, or doctor checks.
 """
 
@@ -11,11 +11,11 @@ from __future__ import annotations
 import inspect
 import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from importlib import import_module, metadata
+from importlib import metadata
 from itertools import chain
-from typing import Any
+from typing import Annotated, Any
 
-from cyclopts import App
+from cyclopts import App, Parameter
 from cyclopts.command_spec import CommandSpec
 from cyclopts.core import _apply_parent_defaults_to_app
 
@@ -32,15 +32,15 @@ from untaped.capabilities.registry import (
     ApplicationSpec,
     CapabilitySpec,
     CompositionResult,
-    ExternalProvider,
+    ProviderCandidate,
+    QuarantineRecord,
     RegisteredCapability,
-    build_deferred_app,
     compose,
-    discover_external_providers,
+    discover_candidates,
+    run_deferred_factory,
 )
 from untaped.cli import (
     apply_default_format,
-    create_app,
     echo,
     note_requested_format,
     report_errors,
@@ -83,16 +83,8 @@ SHELL_SECTION = "shell"
 SHELL_DISTRIBUTION = "untaped"
 
 
-#: Built-in capabilities composed ahead of external providers, in declaration
-#: order. Importing a capability package loads only its ``SPEC``, never its CLI.
-BUILTIN_CAPABILITIES: tuple[CapabilitySpec, ...] = tuple(
-    import_module(f"untaped.capabilities.{name}").SPEC
-    for name in ("workspace", "github", "jira", "awx", "ansible", "recipe")
-)
-
-
 def _shell_app() -> App:
-    return create_app(name=SHELL_NAME, help="Unified untaped developer CLI.")
+    return App(name=SHELL_NAME, help="Unified untaped developer CLI.")
 
 
 #: The unified shell application (spec §1). A singleton so repeated
@@ -122,14 +114,10 @@ def _register_shell_and_capabilities(result: CompositionResult) -> None:
 
 
 def _warn_quarantined(result: CompositionResult) -> None:
-    """Emit one stderr warning per quarantined distribution (spec §5)."""
-    seen: set[str] = set()
+    """Emit one stderr warning per quarantined capability (spec §5)."""
     for record in result.quarantine:
-        if record.distribution in seen:
-            continue
-        seen.add(record.distribution)
         echo(
-            f"warning: capability provider {record.distribution!r} quarantined "
+            f"warning: capability {record.name!r} from {record.distribution!r} quarantined "
             f"[{record.reason}]: {record.detail}",
             err=True,
         )
@@ -137,18 +125,17 @@ def _warn_quarantined(result: CompositionResult) -> None:
 
 def compose_root(
     *,
-    builtins: Sequence[CapabilitySpec] = BUILTIN_CAPABILITIES,
-    externals: Sequence[ExternalProvider] | None = None,
+    candidates: Sequence[ProviderCandidate] | None = None,
 ) -> CompositionResult:
     """Discover, validate, and register one composition.
 
-    Discovery (built-ins plus externals via entry points) runs BEFORE any
+    Discovery (entry-point candidates, or ``candidates`` when given) runs BEFORE any
     settings registration or resolution; registration happens only after every
     surviving provider validates. Remembers the composition for :func:`reset`.
     """
     global _COMPOSED_RESULT
-    candidates = discover_external_providers() if externals is None else externals
-    result = compose(SHELL_SPEC, builtins, candidates)
+    candidates = discover_candidates() if candidates is None else candidates
+    result = compose(SHELL_SPEC, candidates)
     _register_shell_and_capabilities(result)
     _COMPOSED_RESULT = result
     _warn_quarantined(result)
@@ -200,8 +187,7 @@ def _resolve_version() -> str:
 
 def build_root_app(
     *,
-    builtins: Sequence[CapabilitySpec] = BUILTIN_CAPABILITIES,
-    externals: Sequence[ExternalProvider] | None = None,
+    candidates: Sequence[ProviderCandidate] | None = None,
 ) -> App:
     """Compose the shell plus capabilities and return the root app.
 
@@ -211,8 +197,8 @@ def build_root_app(
     completion. Drive ``app.meta`` directly in tests; run via
     :func:`run_root` in production.
     """
-    candidates = list(externals) if externals is not None else list(discover_external_providers())
-    result = compose_root(builtins=builtins, externals=candidates)
+    candidates = list(candidates) if candidates is not None else list(discover_candidates())
+    result = compose_root(candidates=candidates)
     root = _shell_app()
     _mount(root, build_root_config_app(shell=SHELL_SPEC, result=result), name="config")
     _mount(root, build_root_profile_app(command=SHELL_NAME), name="profile")
@@ -226,11 +212,7 @@ def build_root_app(
     )
     _mount(
         root,
-        build_root_capabilities_app(
-            result=result,
-            candidates=candidates,
-            shell_distribution=SHELL_DISTRIBUTION,
-        ),
+        build_root_capabilities_app(result=result, candidates=candidates),
         name="capabilities",
     )
     for capability in result.capabilities:
@@ -271,18 +253,19 @@ class _LazyCapabilityCommand(CommandSpec):
     lazy-vs-eager rendering tests in ``tests/unit/test_bootstrap.py``.
     """
 
-    def __init__(self, spec: CapabilitySpec, mount_parent: App) -> None:
+    def __init__(self, capability: RegisteredCapability, mount_parent: App) -> None:
+        spec = capability.spec
         super().__init__(import_path=f"<capability {spec.name}>", name=spec.name, help=spec.help)
-        self._capability = spec
+        self._capability = capability
         self._mount_parent = mount_parent
 
     def resolve(self, parent_app: App) -> App:
-        """Build, validate, and cache the capability app on first access."""
+        """Build and cache the capability app (or its failing stand-in) on first access."""
         resolved = self._resolved
         if resolved is not None:
             return resolved
-        spec = self._capability
-        app = build_deferred_app(spec)
+        built = run_deferred_factory(self._capability)
+        app = _unbuildable_app(built) if isinstance(built, QuarantineRecord) else built
         _apply_parent_defaults_to_app(app, self._mount_parent)
         for flag in chain(app.help_flags, app.version_flags):
             app[flag].show = False
@@ -292,18 +275,41 @@ class _LazyCapabilityCommand(CommandSpec):
         return app
 
 
+def _unbuildable_app(failure: QuarantineRecord) -> App:
+    """Stand-in for a capability whose deferred factory failed.
+
+    Every invocation, ``--help`` included (it declares no help or version
+    flags), fails with a ``ConfigError`` (exit 4) attributed to the
+    capability; nothing is unregistered and other capabilities are unaffected.
+    """
+    message = (
+        f"capability {failure.name!r} from {failure.distribution!r} "
+        f"could not build its commands: {failure.detail}"
+    )
+    stub = App(
+        name=failure.name,
+        help="Unavailable: its commands could not be built.",
+        help_flags=(),
+        version_flags=(),
+    )
+
+    @stub.default
+    def _fail(*tokens: Annotated[str, Parameter(allow_leading_hyphen=True)]) -> None:
+        note_requested_format(tokens)
+        raise ConfigError(message, system=failure.name)
+
+    return stub
+
+
 def _mount_capability(root: App, capability: RegisteredCapability) -> None:
     """Mount one composed capability, lazily when its factory was deferred."""
     spec = capability.spec
     if capability.app is not None:
         _mount(root, capability.app, name=spec.name)
         return
-    if spec.help is None:
-        _mount(root, build_deferred_app(spec), name=spec.name)
-        return
     if spec.name in root:
         del root[spec.name]
-    root._commands[spec.name] = _LazyCapabilityCommand(spec, root)
+    root._commands[spec.name] = _LazyCapabilityCommand(capability, root)
 
 
 #: Root commands that manage or diagnose skills themselves: the per-run
@@ -402,8 +408,7 @@ def _install_root_callback(
 def run_root(
     tokens: Iterable[str] | None = None,
     *,
-    builtins: Sequence[CapabilitySpec] = BUILTIN_CAPABILITIES,
-    externals: Sequence[ExternalProvider] | None = None,
+    candidates: Sequence[ProviderCandidate] | None = None,
     console: Any | None = None,
     error_console: Any | None = None,
 ) -> object:
@@ -416,7 +421,7 @@ def run_root(
     argv = list(tokens) if tokens is not None else sys.argv[1:]
     with diagnostics_scope():
         note_requested_format(argv)
-        root = build_root_app(builtins=builtins, externals=externals)
+        root = build_root_app(candidates=candidates)
         return run_cyclopts_app(root.meta, argv, console=console, error_console=error_console)
 
 
@@ -426,7 +431,6 @@ def main(argv: Sequence[str] | None = None) -> None:
 
 
 __all__ = [
-    "BUILTIN_CAPABILITIES",
     "SHELL_DISTRIBUTION",
     "SHELL_NAME",
     "SHELL_SECTION",

@@ -33,6 +33,7 @@ from untaped.capabilities.registry import (
     DoctorCheck,
     DoctorResult,
     QuarantineRecord,
+    run_deferred_factory,
 )
 from untaped.cli import (
     ColumnsOption,
@@ -226,6 +227,12 @@ def collect_doctor_rows(
     rows.append(_skills_row(shell, result))
     for record in result.quarantine:
         rows.append(_quarantine_row(record))
+    for registered in result.capabilities:
+        if capabilities is not None and registered.spec.name not in capabilities:
+            continue
+        built = run_deferred_factory(registered)
+        if isinstance(built, QuarantineRecord):
+            rows.append(_quarantine_row(built))
     return rows
 
 
@@ -465,10 +472,10 @@ def _run_check(
 
 
 def _quarantine_row(record: QuarantineRecord) -> dict[str, object]:
-    detail = record.detail
+    origin = f"distribution {record.distribution}"
     if record.entry_point:
-        detail = f"{detail} [entry point {record.entry_point}]"
-    return _row("quarantine", record.distribution, _FAIL, record.reason, detail)
+        origin = f"{origin}, entry point {record.entry_point}"
+    return _row("quarantine", record.name, _FAIL, record.reason, f"{record.detail} [{origin}]")
 
 
 __all__ = ["build_root_doctor_app", "collect_doctor_rows", "report_check_rows"]

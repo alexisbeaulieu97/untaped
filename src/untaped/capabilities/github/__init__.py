@@ -23,7 +23,7 @@ from untaped.sdk import (
 if TYPE_CHECKING:
     from cyclopts import App
 
-__all__ = ["SPEC", "build_app"]
+__all__ = ["SPEC", "build_app", "provider"]
 
 
 def build_app() -> App:
@@ -67,3 +67,8 @@ SPEC = CapabilitySpec(
         executable_check("github.git", "git", purpose="`untaped github sweep`"),
     ),
 )
+
+
+def provider() -> CapabilitySpec:
+    """Entry-point provider: the ``untaped.capabilities`` entry point names this."""
+    return SPEC

@@ -1,6 +1,6 @@
 """The untaped SDK: the one module capability code (first- or third-party) imports from core.
 
-Every capability — built-in or external provider — imports untaped helpers
+Every capability — first-party or third-party — imports untaped helpers
 from this module only. It carries the composition set and the supported runtime helpers (output,
 errors and exit codes, settings, HTTP, git, stdin/pipe, files and locks, state, UI, batch,
 concurrency, shared options, message wording, record bases, token sources
