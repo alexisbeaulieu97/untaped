@@ -3,35 +3,24 @@
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import io
 import json
-import os
 import re
 import subprocess
 import sys
 import urllib.error
 from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
 
+from tests.unit.conftest import SCRIPTS, load_script
 from untaped.bootstrap import BUILTIN_CAPABILITIES
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "release.py"
-
-
-def _load() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("release_script", SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-release = _load()
+SCRIPT = SCRIPTS / "release.py"
+REPO_ROOT = SCRIPTS.parent
+release = load_script("release")
 
 
 def _write(path: Path, text: str) -> None:
@@ -583,59 +572,62 @@ def _fake_untaped(tmp_path: Path) -> Path:
     return exe
 
 
+READY = [{"name": cap, "status": "ready"} for cap in BUILTINS]
+
+
 def _smoke(
-    tmp_path: Path, rows: list[dict[str, str]], failing: str = "", rows_exit: int = 0
-) -> subprocess.CompletedProcess[str]:
-    env = {
-        **os.environ,
-        "FAKE_VERSION": "10.0.0",
-        "FAKE_ROWS": json.dumps(rows),
-        "FAKE_ROWS_EXIT": str(rows_exit),
-        "FAKE_FAILING": failing,
-    }
-    return subprocess.run(
-        [sys.executable, str(SCRIPT), "smoke", str(_fake_untaped(tmp_path)), "10.0.0"],
-        capture_output=True,
-        text=True,
-        env=env,
-        check=False,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    rows: list[dict[str, str]],
+    failing: str = "",
+    rows_exit: int = 0,
+) -> tuple[int, str, str]:
+    """(exit code, stdout, stderr) of ``smoke`` against the fake untaped."""
+    monkeypatch.setenv("FAKE_VERSION", "10.0.0")
+    monkeypatch.setenv("FAKE_ROWS", json.dumps(rows))
+    monkeypatch.setenv("FAKE_ROWS_EXIT", str(rows_exit))
+    monkeypatch.setenv("FAKE_FAILING", failing)
+    code = release.main(["smoke", str(_fake_untaped(tmp_path)), "10.0.0"])
+    out, err = capsys.readouterr()
+    return code, out, err
+
+
+def test_the_smoke_command_passes_a_healthy_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _smoke(tmp_path, monkeypatch, capsys, READY) == (
+        0,
+        f"smoke ok: untaped 10.0.0, {len(BUILTINS)} capabilities\n",
+        "",
     )
 
 
-def test_the_smoke_command_passes_a_healthy_install(tmp_path: Path) -> None:
-    result = _smoke(tmp_path, [{"name": cap, "status": "ready"} for cap in BUILTINS])
-    assert (result.returncode, result.stderr) == (0, "")
-    assert result.stdout.strip() == f"smoke ok: untaped 10.0.0, {len(BUILTINS)} capabilities"
-
-
-def test_the_smoke_command_reports_a_failing_help(tmp_path: Path) -> None:
-    failing = BUILTINS[-1]
-    result = _smoke(tmp_path, [{"name": cap, "status": "ready"} for cap in BUILTINS], failing)
-    assert (result.returncode, result.stderr.strip()) == (1, f"untaped {failing} --help exited 2")
-
-
-def test_the_smoke_command_reports_a_failing_root_help(tmp_path: Path) -> None:
-    result = _smoke(tmp_path, [{"name": cap, "status": "ready"} for cap in BUILTINS], "--help")
-    assert (result.returncode, result.stderr) == (1, "untaped --help exited 2\n")
-
-
-def test_the_smoke_command_reports_a_failing_capabilities_command(tmp_path: Path) -> None:
-    rows = [{"name": cap, "status": "ready"} for cap in BUILTINS]
-    result = _smoke(tmp_path, rows, rows_exit=3)
-    assert (result.returncode, result.stderr) == (
-        1,
-        "untaped capabilities --format json exited 3\n",
-    )
-
-
-def test_the_smoke_command_reports_a_capability_that_is_not_ready(tmp_path: Path) -> None:
-    rows = [{"name": cap, "status": "ready"} for cap in BUILTINS]
-    rows[0]["status"] = "quarantined"
-    result = _smoke(tmp_path, rows)
-    assert (result.returncode, result.stderr.strip()) == (
-        1,
-        f"capability {BUILTINS[0]} is quarantined",
-    )
+@pytest.mark.parametrize(
+    ("rows", "failing", "rows_exit", "stderr"),
+    [
+        (READY, BUILTINS[-1], 0, f"untaped {BUILTINS[-1]} --help exited 2\n"),
+        (READY, "--help", 0, "untaped --help exited 2\n"),
+        (READY, "", 3, "untaped capabilities --format json exited 3\n"),
+        (
+            [{"name": BUILTINS[0], "status": "quarantined"}, *READY[1:]],
+            "",
+            0,
+            f"capability {BUILTINS[0]} is quarantined\n",
+        ),
+    ],
+    ids=["capability-help", "root-help", "capabilities-command", "not-ready"],
+)
+def test_the_smoke_command_reports_each_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    rows: list[dict[str, str]],
+    failing: str,
+    rows_exit: int,
+    stderr: str,
+) -> None:
+    assert _smoke(tmp_path, monkeypatch, capsys, rows, failing, rows_exit) == (1, "", stderr)
 
 
 # --- GitHub release ---------------------------------------------------------
@@ -765,28 +757,27 @@ def test_a_rerun_after_a_failed_upload_completes_the_same_draft(tmp_path: Path) 
     assert [row["draft"] for row in gh.releases] == [False]
 
 
-def test_a_draft_missing_an_asset_uploads_only_that_asset(tmp_path: Path) -> None:
-    gh = _existing(True, {WHEEL: "wheel"})
+@pytest.mark.parametrize(
+    ("assets", "uploaded", "clobbered"),
+    [
+        ({WHEEL: "wheel"}, [SDIST], []),
+        ({WHEEL: "other", SDIST: "sdist"}, [], [WHEEL]),
+        ({WHEEL: None, SDIST: "sdist"}, [], [WHEEL]),
+        ({WHEEL: "wheel", SDIST: "sdist"}, [], []),
+    ],
+    ids=["missing", "different", "no-digest", "matching"],
+)
+def test_a_draft_uploads_missing_and_clobbers_different_assets_then_publishes(
+    tmp_path: Path,
+    assets: dict[str, str | None],
+    uploaded: list[str],
+    clobbered: list[str],
+) -> None:
+    gh = _existing(True, assets)
     _publish(tmp_path, gh)
-    assert gh.writes == [_upload(tmp_path, SDIST), PUBLISH]
-
-
-def test_a_draft_with_a_different_asset_clobbers_it(tmp_path: Path) -> None:
-    gh = _existing(True, {WHEEL: "other", SDIST: "sdist"})
-    _publish(tmp_path, gh)
-    assert gh.writes == [_upload(tmp_path, WHEEL, clobber=True), PUBLISH]
-
-
-def test_a_draft_asset_without_a_digest_is_clobbered(tmp_path: Path) -> None:
-    gh = _existing(True, {WHEEL: None, SDIST: "sdist"})
-    _publish(tmp_path, gh)
-    assert gh.writes == [_upload(tmp_path, WHEEL, clobber=True), PUBLISH]
-
-
-def test_a_draft_that_already_matches_is_only_published(tmp_path: Path) -> None:
-    gh = _existing(True, {WHEEL: "wheel", SDIST: "sdist"})
-    _publish(tmp_path, gh)
-    assert gh.writes == [PUBLISH]
+    uploads = [_upload(tmp_path, *uploaded)] if uploaded else []
+    clobbers = [_upload(tmp_path, *clobbered, clobber=True)] if clobbered else []
+    assert gh.writes == [*uploads, *clobbers, PUBLISH]
 
 
 def test_a_draft_with_an_unexpected_asset_is_refused(tmp_path: Path) -> None:
@@ -807,32 +798,26 @@ def test_a_published_release_with_the_same_assets_is_a_no_op(
 
 
 @pytest.mark.parametrize(
-    ("assets", "problem"),
+    ("assets", "problems"),
     [
         ({WHEEL: "other", SDIST: "sdist"}, f"different: {WHEEL}"),
         ({WHEEL: "wheel"}, f"missing: {SDIST}"),
         ({WHEEL: "wheel", SDIST: "sdist", "stray.txt": "x"}, "unexpected: stray.txt"),
+        (
+            {WHEEL: "other", "stray.txt": "x"},
+            f"different: {WHEEL}; missing: {SDIST}; unexpected: stray.txt",
+        ),
     ],
-    ids=["different", "missing", "unexpected"],
+    ids=["different", "missing", "unexpected", "every-kind"],
 )
 def test_a_published_release_with_other_assets_is_refused(
-    tmp_path: Path, assets: dict[str, str | None], problem: str
+    tmp_path: Path, assets: dict[str, str | None], problems: str
 ) -> None:
     gh = _existing(False, assets)
     with pytest.raises(release.ReleaseError) as caught:
         _publish(tmp_path, gh)
-    assert str(caught.value) == f"release {TAG} is already published with other assets: {problem}"
+    assert str(caught.value) == f"release {TAG} is already published with other assets: {problems}"
     assert gh.writes == []
-
-
-def test_a_published_release_lists_every_kind_of_problem(tmp_path: Path) -> None:
-    gh = _existing(False, {WHEEL: "other", "stray.txt": "x"})
-    with pytest.raises(release.ReleaseError) as caught:
-        _publish(tmp_path, gh)
-    assert str(caught.value) == (
-        f"release {TAG} is already published with other assets: "
-        f"different: {WHEEL}; missing: {SDIST}; unexpected: stray.txt"
-    )
 
 
 def test_two_releases_with_the_tag_are_refused(tmp_path: Path) -> None:
@@ -851,44 +836,42 @@ def test_a_failed_release_list_is_refused(tmp_path: Path, stderr: str) -> None:
     assert gh.writes == []
 
 
-# --- CLI against this repository --------------------------------------------
+# --- CLI --------------------------------------------------------------------
 
 
-def _cli(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(SCRIPT), *args], capture_output=True, text=True, check=False
+def _main(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, str, str]:
+    """(exit code, stdout, stderr) of ``release.main(argv)``."""
+    code = release.main(list(argv))
+    out, err = capsys.readouterr()
+    return code, out, err
+
+
+def test_the_script_checks_this_repository() -> None:
+    """The one subprocess test: it covers the ``__main__`` guard."""
+    version = release.release_version(REPO_ROOT)
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "check", version], capture_output=True, text=True, check=False
     )
-
-
-def test_the_cli_checks_this_repository() -> None:
-    root = SCRIPT.parents[1]
-    version = _cli("version").stdout.strip()
-    assert version == release.release_version(root)
-    count = len(release.packages(root))
-    good = _cli("check", version)
-    assert (good.returncode, good.stdout.strip()) == (
+    count = len(release.packages(REPO_ROOT))
+    assert (result.returncode, result.stdout, result.stderr) == (
         0,
-        f"ok: {count} package(s), 0 artifact(s) for {version}",
+        f"ok: {count} package(s), 0 artifact(s) for {version}\n",
+        "",
     )
-    bad = _cli("check", "0.0.0")
-    assert bad.returncode == 1
-    assert bad.stderr.splitlines()[0] == f"untaped is at {version}, not 0.0.0"
 
 
-def test_check_with_dist_fails_on_a_stray_file(tmp_path: Path) -> None:
+def test_check_with_dist_fails_on_a_stray_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     root = tmp_path / "repo"
     _project(root, "untaped", "10.0.0")
     dist = tmp_path / "dist"
     for name in ("untaped-10.0.0-py3-none-any.whl", "untaped-10.0.0.tar.gz", ".gitignore"):
         _write(dist / name, "")
-    result = _cli("--root", str(root), "check", "10.0.0", "--dist", str(dist))
-    assert (result.returncode, result.stderr.strip()) == (1, "unexpected: .gitignore")
+    argv = ["--root", str(root), "check", "10.0.0", "--dist", str(dist)]
+    assert _main(capsys, *argv) == (1, "", "unexpected: .gitignore\n")
     (dist / ".gitignore").unlink()
-    result = _cli("--root", str(root), "check", "10.0.0", "--dist", str(dist))
-    assert (result.returncode, result.stdout.strip()) == (
-        0,
-        "ok: 1 package(s), 2 artifact(s) for 10.0.0",
-    )
+    assert _main(capsys, *argv) == (0, "ok: 1 package(s), 2 artifact(s) for 10.0.0\n", "")
 
 
 @pytest.mark.parametrize(
@@ -901,11 +884,13 @@ def test_check_with_dist_fails_on_a_stray_file(tmp_path: Path) -> None:
     ids=["no-tag", "matching-tag", "other-tag"],
 )
 def test_the_version_command_checks_a_tag(
-    tmp_path: Path, args: list[str], expected: tuple[int, str, str]
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    args: list[str],
+    expected: tuple[int, str, str],
 ) -> None:
     _project(tmp_path, "untaped", "10.0.0")
-    result = _cli("--root", str(tmp_path), "version", *args)
-    assert (result.returncode, result.stdout, result.stderr) == expected
+    assert _main(capsys, "--root", str(tmp_path), "version", *args) == expected
 
 
 @pytest.mark.parametrize(
@@ -939,15 +924,20 @@ def test_the_index_command_waits_for_every_file_only_with_complete(
     assert (code, out, err, len(calls)) == expected
 
 
-def test_the_notes_command_prints_the_section(tmp_path: Path) -> None:
+def test_the_notes_command_prints_the_section(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     _write(tmp_path / "CHANGELOG.md", CHANGELOG)
-    result = _cli("--root", str(tmp_path), "notes", "10.0.0")
-    assert (result.returncode, result.stdout) == (0, "- Core\n  - **New:** x\n")
+    assert _main(capsys, "--root", str(tmp_path), "notes", "10.0.0") == (
+        0,
+        "- Core\n  - **New:** x\n",
+        "",
+    )
 
 
 def test_this_repository_satisfies_the_release_metadata() -> None:
     """The package declares what PyPI shows."""
-    project = release.packages(SCRIPT.parents[1])["untaped"]
+    project = release.packages(REPO_ROOT)["untaped"]
     assert project["license"] == "MIT"
     assert project["license-files"] == ["LICENSE"]
     assert project.get("readme") == "README.md"
