@@ -18,6 +18,7 @@ from untaped.capabilities.registry import (
     CompositionResult,
     ProviderCandidate,
     QuarantineRecord,
+    candidate_entry_point,
 )
 from untaped.cli import (
     ColumnsOption,
@@ -76,7 +77,7 @@ def _rows(
     candidates: Sequence[ProviderCandidate],
 ) -> list[dict[str, object]]:
     ordered = sorted(candidates, key=lambda item: (item.distribution, item.name))
-    by_key = {(item.distribution, _candidate_key(item)): item for item in ordered}
+    by_key = {(item.distribution, candidate_entry_point(item)): item for item in ordered}
     rows: list[dict[str, object]] = []
     succeeded: set[tuple[str, str]] = set()
     for registered in result.capabilities:
@@ -92,7 +93,9 @@ def _rows(
         )
         succeeded.add((ref.distribution, ref.entry_point))
     failed = [
-        item for item in ordered if (item.distribution, _candidate_key(item)) not in succeeded
+        item
+        for item in ordered
+        if (item.distribution, candidate_entry_point(item)) not in succeeded
     ]
     records = list(result.quarantine)
     for candidate in failed:
@@ -107,12 +110,6 @@ def _rows(
     for record in records[len(failed) :]:
         rows.append(_orphan_row(record))
     return sorted(rows, key=lambda row: (str(row["name"]), str(row["distribution"])))
-
-
-def _candidate_key(candidate: ProviderCandidate) -> str:
-    if isinstance(candidate.target, str):
-        return candidate.target
-    return candidate.name
 
 
 def _candidate_version(candidate: ProviderCandidate | None) -> str:
