@@ -51,7 +51,7 @@ jobs:
         run: |
           set -euo pipefail
           uv lock --check
-          uv run python scripts/release.py check "$(uv run python scripts/release.py version)"
+          uv run python scripts/release.py check
 
       - name: Pre-commit hooks
         run: uv run pre-commit run --all-files --show-diff-on-failure
