@@ -71,7 +71,8 @@ arguments.
 
 The provider's `untaped` requirement (`Requires-Dist`) is the only
 compatibility check: a running `untaped` outside that range quarantines the
-provider. The [changelog](../CHANGELOG.md) says what each version added or broke.
+provider. The [changelog](../CHANGELOG.md) says what each version added or
+broke.
 First-party capabilities register exactly this way and get no precedence: on
 a name or section collision the capability that sorts first by name, then by
 distribution, wins, and the other is quarantined. A capability whose
@@ -163,11 +164,12 @@ The optional `help` field (one non-empty line) is the summary in the root
 command listing. With it, the capability is mounted lazily: `build_app()` runs
 only when its command is dispatched, so `untaped --help` never imports its CLI.
 A factory that raises or returns something other than a cyclopts `App` then
-fails that command with exit 4, naming the capability; other commands keep
-working, and shell completion leaves it out with a warning. `untaped doctor` runs every factory and reports a failing one as a
-`bad-app-factory` quarantine row, so you find it without dispatching. Without
-`help`, composition calls `build_app()` once at startup, a bad factory
-quarantines the provider, and the listing shows the built app's own help.
+fails that command, `--help` included, with exit 4, naming the capability;
+other commands and shell completion keep working. `untaped doctor` runs every
+factory and reports a failing one as a `bad-app-factory` quarantine row, so
+you find it without dispatching. Without `help`, composition calls
+`build_app()` once at startup, a bad factory quarantines the provider, and the
+listing shows the built app's own help.
 
 The provider callable must have no side effects (registration, filesystem,
 network, `ContextVar`); the root owns registration and mounting.

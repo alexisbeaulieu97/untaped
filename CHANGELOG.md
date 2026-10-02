@@ -34,7 +34,7 @@
     in its quarantine rows.
   - **Changed:** a capability whose commands fail to load fails only its own
     command, with exit 4; `untaped doctor` reports it as a `bad-app-factory`
-    quarantine row, and shell completion leaves it out with a warning.
+    quarantine row.
 - Ansible
   - **Breaking:** `graph --upstream/--downstream/--both` are removed; use
     `--direction up|down|both`. Graph sources re-index once.

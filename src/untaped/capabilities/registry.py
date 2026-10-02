@@ -552,35 +552,22 @@ def _check_factory(spec: CapabilitySpec) -> App:
     return staged
 
 
-def build_deferred_app(capability: RegisteredCapability) -> App:
-    """Run and validate a deferred factory at first dispatch.
+def run_deferred_factory(capability: RegisteredCapability) -> App | QuarantineRecord:
+    """The capability's app, running a deferred factory; a failure as a quarantine record.
 
-    A factory that raises or returns a non-``App`` fails this command with a
-    ``ConfigError`` (exit 4) attributed to the capability; nothing is
-    unregistered and other capabilities are unaffected.
+    The one place a deferred factory runs, for first dispatch and
+    ``untaped doctor`` alike. An eager
+    capability returns its staged app without running anything.
     """
+    if capability.app is not None:
+        return capability.app
     try:
         return _check_factory(capability.spec)
-    except _Quarantine as failed:
-        raise ConfigError(
-            f"capability {capability.spec.name!r} from {capability.provider_ref.distribution!r} "
-            f"could not build its commands: {failed.detail}",
-            system=capability.spec.name,
-        ) from None
-
-
-def factory_failure(capability: RegisteredCapability) -> QuarantineRecord | None:
-    """Run a deferred factory for ``untaped doctor``; its failure as a quarantine record."""
-    if capability.app is not None:
-        return None
-    try:
-        _check_factory(capability.spec)
     except _Quarantine as failed:
         ref = capability.provider_ref
         return QuarantineRecord(
             capability.spec.name, ref.distribution, ref.entry_point, failed.reason, failed.detail
         )
-    return None
 
 
 def _commit(
@@ -623,7 +610,7 @@ def compose(
     Candidates are ordered by ``(name, distribution, entry point)``, so on a
     name or section collision the first in that order wins and the rest are
     quarantined. A spec with ``help`` is deferred: its factory runs at first
-    dispatch (:func:`build_deferred_app`) and in ``untaped doctor``.
+    dispatch and in ``untaped doctor`` (:func:`run_deferred_factory`).
     """
     state = _CompositionState(shell)
     capabilities: list[RegisteredCapability] = []
