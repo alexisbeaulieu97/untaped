@@ -160,7 +160,12 @@ _UNREAD = object()
 
 
 class RepoCache:
-    """One bare repository cache at ``path``; see the module docstring."""
+    """One bare repository cache at ``path``; see the module docstring.
+
+    It does not lock itself: callers hold :meth:`locked` around ``ensure`` and
+    ``fetch``. The origin is cached for auth scoping, so repoint it only
+    through :meth:`ensure`.
+    """
 
     def __init__(
         self,
@@ -227,7 +232,7 @@ class RepoCache:
         # ``config`` (not ``remote add``) so no default fetch refspec is written:
         # each capability's ref policy passes its own refspecs.
         if cache_origin(self._path) != url:
-            self.run(["config", "remote.origin.url", url])
+            self.run(["config", "--replace-all", "remote.origin.url", url])
         self._origin = _UNREAD
         return created
 

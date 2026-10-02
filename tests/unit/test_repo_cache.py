@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -10,15 +11,15 @@ from typing import Any
 import pytest
 
 import untaped.repo_cache as repo_cache_module
-from untaped.git import GitResult
 from untaped.sdk import (
+    ErrorCategory,
+    GitCommandError,
+    GitResult,
     RepoCache,
     UntapedError,
     cache_key,
     cache_origin,
-    cache_path,
     list_caches,
-    safe_path_segment,
     scoped_auth_header,
 )
 
@@ -60,10 +61,6 @@ def origin(tmp_path: Path) -> Path:
     return repo
 
 
-def test_the_hostile_segment_maps_to_an_underscore() -> None:
-    assert safe_path_segment("..") == "_"
-
-
 @pytest.mark.parametrize(
     ("url", "key"),
     [
@@ -77,15 +74,11 @@ def test_cache_key(url: str, key: tuple[str, ...]) -> None:
     assert cache_key(url) == key
 
 
-def test_a_hostless_url_keys_on_a_hash() -> None:
-    first, leaf = cache_key("/srv/git/app.git")
-    assert first == "_unknown" and leaf.endswith(".git") and len(leaf) == 16 + len(".git")
-
-
-def test_https_and_ssh_share_one_path(tmp_path: Path) -> None:
-    assert cache_path("https://github.com/acme/app.git", root=tmp_path) == cache_path(
-        "git@github.com:acme/app.git", root=tmp_path
-    )
+@pytest.mark.parametrize(
+    "url", ["/srv/git/app.git", "file:///srv/git/app.git", "https://github.com/"]
+)
+def test_a_url_without_host_or_path_keys_on_a_hash(url: str) -> None:
+    assert cache_key(url) == ("_unknown", hashlib.sha256(url.encode()).hexdigest()[:16] + ".git")
 
 
 @pytest.mark.parametrize(
@@ -138,9 +131,36 @@ def test_fetch_honours_refspecs_tags_and_depth(tmp_path: Path, origin: Path) -> 
     cache = RepoCache(tmp_path / "app.git", error=_CacheError)
     cache.ensure(f"file://{origin}")
     cache.fetch(["+refs/heads/main:refs/heads/main"], tags=False, depth=1)
-    refs = cache.run(["for-each-ref", "--format=%(refname)"], capture=True).text.split()
+    refs = _refs(cache)
     assert refs == ["refs/heads/main"]
     assert (cache.path / "shallow").is_file()
+
+
+def _refs(cache: RepoCache) -> list[str]:
+    return cache.run(["for-each-ref", "--format=%(refname)"], capture=True).text.split()
+
+
+def test_fetch_prunes_refs_gone_from_origin(tmp_path: Path, origin: Path) -> None:
+    _git(origin, "branch", "gone")
+    cache = RepoCache(tmp_path / "app.git", error=_CacheError)
+    cache.ensure(f"file://{origin}")
+    spec = ["+refs/heads/*:refs/heads/*"]
+    cache.fetch(spec, tags=False)
+    _git(origin, "branch", "-D", "gone")
+    cache.fetch(spec, prune=False, tags=False)
+    assert _refs(cache) == ["refs/heads/gone", "refs/heads/main"]
+    cache.fetch(spec, tags=False)
+    assert _refs(cache) == ["refs/heads/main"]
+
+
+def test_fetch_blob_filter_makes_the_cache_partial(tmp_path: Path, origin: Path) -> None:
+    _git(origin, "config", "uploadpack.allowFilter", "true")
+    cache = RepoCache(tmp_path / "app.git", error=_CacheError)
+    cache.ensure(f"file://{origin}")
+    cache.fetch(["+refs/heads/main:refs/heads/main"], blob_filter=True)
+    config = cache.run(["config", "--get-regexp", r"^remote\.origin\."], capture=True).text
+    assert "remote.origin.promisor true" in config
+    assert "remote.origin.partialclonefilter blob:none" in config
 
 
 def test_delete_refs(tmp_path: Path, origin: Path) -> None:
@@ -149,7 +169,7 @@ def test_delete_refs(tmp_path: Path, origin: Path) -> None:
     cache.fetch(["+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*"])
     cache.delete_refs(["refs/tags/v1"])
     cache.delete_refs([])
-    refs = cache.run(["for-each-ref", "--format=%(refname)"], capture=True).text.split()
+    refs = _refs(cache)
     assert refs == ["refs/heads/main"]
 
 
@@ -159,6 +179,8 @@ def test_a_failed_git_run_raises_the_callers_error(tmp_path: Path, origin: Path)
     with pytest.raises(_CacheError) as caught:
         cache.run(["rev-parse", "--verify", "refs/heads/nope"])
     assert caught.value.system == "git"
+    assert caught.value.category == ErrorCategory.FAILED
+    assert isinstance(caught.value.__cause__, GitCommandError)
 
 
 def test_map_error_overrides_the_mapping(tmp_path: Path, origin: Path) -> None:
@@ -169,8 +191,9 @@ def test_map_error_overrides_the_mapping(tmp_path: Path, origin: Path) -> None:
         tmp_path / "app.git", error=_CacheError, map_error=lambda exc: Special(str(exc))
     )
     cache.ensure(f"file://{origin}")
-    with pytest.raises(Special):
+    with pytest.raises(Special) as caught:
         cache.run(["rev-parse", "--verify", "refs/heads/nope"])
+    assert isinstance(caught.value.__cause__, GitCommandError)
 
 
 def test_a_held_lock_makes_a_second_holder_fail_busy(tmp_path: Path) -> None:
