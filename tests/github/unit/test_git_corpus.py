@@ -583,7 +583,7 @@ def _spy_git(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str | None]]:
     return seen
 
 
-def test_ensure_origin_does_not_send_auth_header_to_local_commands(
+def test_cache_setup_carries_no_token(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, corpus: Callable[..., _Corpus]
 ) -> None:
     # Security: setting up the cache and its origin never carries the token.
@@ -721,7 +721,9 @@ def test_https_and_ssh_forms_of_one_repo_share_the_cache(
 
 
 def test_status_ignores_materialized_worktrees(corpus: Callable[..., _Corpus]) -> None:
-    env = corpus({"README.md": "hello\n"})
+    # A checkout holding a cache-like dir with valid metadata must not list it.
+    vendored = '{"repo": "acme/vendored", "ref": "main", "fetched_at": "2026-07-06T12:00:00+00:00"}'
+    env = corpus({"README.md": "hello\n", "vendor/x.git/untaped-corpus.json": vendored})
     env.sync()
     env.cache.materialize_worktree(env.repo, root=env.root, ref=None)
 
@@ -740,13 +742,78 @@ def test_a_held_lock_blocks_a_concurrent_sync(corpus: Callable[..., _Corpus]) ->
         env.sync()
 
 
-def test_clean_repo_removes_the_cache_and_its_lock(corpus: Callable[..., _Corpus]) -> None:
+def test_clean_repo_removes_the_cache_and_keeps_its_lock_file(
+    corpus: Callable[..., _Corpus],
+) -> None:
+    """The empty lock file stays: unlinking it could let two lockers run at once."""
     env = corpus({"README.md": "hello\n"})
     env.sync()
     [listed] = env.cache.list_repos(root=env.root)
-    assert Path(f"{env.bare}.lock").is_file()
 
     env.cache.clean_repo(root=env.root, repo=listed)
 
     assert not env.bare.exists()
-    assert not Path(f"{env.bare}.lock").exists()
+    assert Path(f"{env.bare}.lock").is_file()
+    assert env.cache.list_repos(root=env.root) == ()
+
+
+def test_clean_repo_of_an_already_removed_cache_succeeds(
+    corpus: Callable[..., _Corpus],
+) -> None:
+    """A concurrent delete or a stale piped row: the second clean still reports removed."""
+    env = corpus({"README.md": "hello\n"})
+    env.sync()
+    [listed] = env.cache.list_repos(root=env.root)
+
+    first = env.cache.clean_repo(root=env.root, repo=listed)
+    second = env.cache.clean_repo(root=env.root, repo=listed)
+
+    assert first == second == listed.model_copy(update={"status": "removed"})
+    assert not env.bare.exists()
+
+
+def test_a_symlinked_root_lists_the_path_it_synced(
+    tmp_path: Path, corpus: Callable[..., _Corpus]
+) -> None:
+    env = corpus({"README.md": "hello\n"})
+    link = tmp_path / "linked-corpus"
+    env.root.mkdir()
+    link.symlink_to(env.root)
+    env = replace(env, root=link)
+
+    synced = env.sync()
+    [row] = env.cache.list_repos(root=link)
+
+    assert row.path == synced.path == str(env.bare)
+
+
+@pytest.mark.parametrize(
+    ("url", "auth_host", "sent"),
+    [
+        ("https://github.com/acme/api.git", "github.com", True),
+        ("https://evil.example/acme/api.git", "github.com", False),
+    ],
+    ids=["github", "other"],
+)
+def test_a_wide_sync_scopes_the_token_on_ls_remote(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    corpus: Callable[..., _Corpus],
+    url: str,
+    auth_host: str,
+    sent: bool,
+) -> None:
+    _rewrite_to(monkeypatch, tmp_path, corpus({"README.md": "hello\n"}).source, url)
+    cache = GitCorpusCache(auth_host=auth_host)
+    seen = _spy_git(monkeypatch)
+
+    cache.sync_repo(
+        CorpusRepoTarget(full_name="acme/api", clone_url=url, default_branch="main"),
+        root=tmp_path / "corpus",
+        selector=RefSelector(profile="all"),
+        depth=1,
+        auth_header="AUTHORIZATION: basic secret",
+    )
+
+    listed = [auth for command, auth in seen if command == "ls-remote"]
+    assert listed == ["AUTHORIZATION: basic secret" if sent else None]

@@ -145,7 +145,7 @@ class GitCorpusCache:
 
     def repo_freshness(self, repo: CorpusRepoTarget, *, root: Path) -> CorpusFreshness | None:
         """Return cached fetch metadata for ``repo`` if present."""
-        metadata_path = _bare_path(repo, root=root) / METADATA_FILE
+        metadata_path = cache_path(_remote_url(repo), root=root) / METADATA_FILE
         if not metadata_path.is_file():
             return None
         data = _read_metadata(metadata_path)
@@ -359,7 +359,8 @@ class GitCorpusCache:
     def _metadata_entries(self, managed_root: Path) -> list[tuple[Path, dict[str, object]]]:
         """Read every managed bare repo's metadata, warning on and skipping corrupt files."""
         entries: list[tuple[Path, dict[str, object]]] = []
-        for bare in list_caches(managed_root, skip=("worktrees",)):
+        # Resolved like ``cache_path``, so listed paths match synced ones.
+        for bare in list_caches(managed_root.resolve(), skip=("worktrees",)):
             metadata_path = bare / METADATA_FILE
             if not metadata_path.is_file():
                 continue
@@ -376,10 +377,12 @@ class GitCorpusCache:
         if not bare.is_relative_to(managed_root):
             raise GitCorpusError(f"refusing to remove path outside managed root: {bare}")
         cache = self._open(bare)
+        # The empty ``<bare>.lock`` stays: unlinking a held lock file would let a
+        # waiter on the old inode run beside a new locker on a fresh file.
         with cache.locked():
-            self._remove_managed_worktrees(cache, managed_root=managed_root)
-            shutil.rmtree(bare)
-        Path(f"{bare}.lock").unlink(missing_ok=True)
+            if bare.exists():  # a concurrent delete or a stale row already removed it
+                self._remove_managed_worktrees(cache, managed_root=managed_root)
+                shutil.rmtree(bare)
         return repo.model_copy(update={"status": "removed"})
 
     def materialize_worktree(
@@ -544,11 +547,6 @@ class GitCorpusCache:
 
 def _ui_warning(message: str) -> None:
     ui_context(strict=False).message("warning", message)
-
-
-def _bare_path(repo: CorpusRepoTarget, *, root: Path) -> Path:
-    """Return the bare-cache path for ``repo``'s remote URL (see ``cache_path``)."""
-    return cache_path(_remote_url(repo), root=root)
 
 
 def _default_branch(repo: CorpusRepoTarget) -> str:
