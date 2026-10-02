@@ -3,6 +3,7 @@ settings the same way."""
 
 from __future__ import annotations
 
+import json
 import tomllib
 from collections.abc import Iterator
 from importlib import import_module
@@ -11,16 +12,16 @@ from pathlib import Path
 import pytest
 from cyclopts import App
 
-from tests.unit.conftest import first_party_candidates
+from tests.unit.conftest import first_party_candidates, first_party_specs
 from untaped import bootstrap
 from untaped.capabilities.registry import CapabilitySpec
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, provider_candidate
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-FIRST_PARTY = ("ansible", "awx", "github", "jira", "recipe", "workspace")
-CANDIDATES = first_party_candidates()
-SPECS = {name: import_module(f"untaped.capabilities.{name}").SPEC for name in FIRST_PARTY}
+CANDIDATES = {candidate.name: candidate for candidate in first_party_candidates()}
+SPECS = {spec.name: spec for spec in first_party_specs()}
+FIRST_PARTY = tuple(SPECS)
 
 
 @pytest.fixture(autouse=True)
@@ -45,8 +46,17 @@ def test_the_only_console_script_is_the_unified_shell() -> None:
     assert data["project"]["scripts"] == {"untaped": "untaped.__main__:main"}
 
 
-def test_every_first_party_capability_is_an_entry_point() -> None:
-    assert sorted(CANDIDATES) == list(FIRST_PARTY)
+def test_every_first_party_capability_is_an_entry_point_listed_ready_in_name_order() -> None:
+    # The suite's one explicit list of the first-party capabilities.
+    root = bootstrap.build_root_app(candidates=first_party_candidates())
+    listed = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])
+    assert listed.exit_code == 0, listed.output
+    assert [
+        (row["name"], row["status"], row["distribution"]) for row in json.loads(listed.stdout)
+    ] == [
+        (name, "ready", "untaped")
+        for name in ("ansible", "awx", "github", "jira", "recipe", "workspace")
+    ]
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)

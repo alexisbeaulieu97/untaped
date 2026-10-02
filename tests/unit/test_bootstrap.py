@@ -23,7 +23,12 @@ import pytest
 from cyclopts import App
 from pydantic import BaseModel
 
-from tests.unit.conftest import first_party_candidates, first_party_specs
+from tests.unit.conftest import (
+    broken_first_party_candidates,
+    first_party_candidates,
+    first_party_specs,
+)
+from tests.unit.test_capabilities.capharness import make_candidate
 from untaped import bootstrap
 from untaped.app_context import app_context
 from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
@@ -45,26 +50,6 @@ def _bootstrap_isolation() -> None:
     bootstrap._clear_for_tests()
     yield
     bootstrap._clear_for_tests()
-
-
-class _Provider:
-    """Nullary provider double recording its invocations."""
-
-    def __init__(self, spec: CapabilitySpec, calls: list[str]) -> None:
-        self._spec = spec
-        self._calls = calls
-
-    def __call__(self) -> CapabilitySpec:
-        self._calls.append(self._spec.name)
-        return self._spec
-
-
-def _candidate(
-    spec: CapabilitySpec, calls: list[str], *, distribution: str = "example-dist"
-) -> ProviderCandidate:
-    return ProviderCandidate(
-        distribution=distribution, name=spec.name, target=_Provider(spec, calls)
-    )
 
 
 def _spec(name: str, app: App) -> CapabilitySpec:
@@ -93,7 +78,7 @@ def _who_app(name: str, body: Callable[[], None]) -> App:
 
 
 def _ext_candidate(calls: list[str]) -> ProviderCandidate:
-    return _candidate(_spec("ext", _who_app("ext", _token_body_for("ext"))), calls)
+    return make_candidate(_spec("ext", _who_app("ext", _token_body_for("ext"))), calls=calls)
 
 
 def _write_config(path: Path, text: str) -> None:
@@ -119,8 +104,8 @@ def test_composition_is_the_last_composed_result() -> None:
     assert bootstrap.composition() is composed
 
 
-def test_default_composition_retains_the_six_public_capabilities() -> None:
-    expected = ("ansible", "awx", "github", "jira", "recipe", "workspace")
+def test_default_composition_is_the_first_party_capabilities() -> None:
+    expected = tuple(candidate.name for candidate in first_party_candidates())
 
     composition = bootstrap.compose_root()
 
@@ -217,7 +202,7 @@ def test_missing_version_metadata_is_config_error(monkeypatch: pytest.MonkeyPatc
 def test_discovery_runs_before_settings_registration(monkeypatch: pytest.MonkeyPatch) -> None:
     events: list[str] = []
     calls: list[str] = []
-    candidate = _candidate(_spec("ext", _who_app("ext", _token_body_for("ext"))), calls)
+    candidate = make_candidate(_spec("ext", _who_app("ext", _token_body_for("ext"))), calls=calls)
 
     def fake_discover(**kwargs: object) -> tuple[ProviderCandidate, ...]:
         events.append("discover")
@@ -293,7 +278,7 @@ def test_root_options_apply_between_nested_command_names(
     grp = create_app(name="grp", help="A nested group.")
     grp.command(body, name="who")
     ext.command(grp, name="grp")
-    root = bootstrap.build_root_app(candidates=[_candidate(_spec("ext", ext), [])])
+    root = bootstrap.build_root_app(candidates=[make_candidate(_spec("ext", ext))])
 
     result = CliInvoker().invoke(root.meta, argv)
 
@@ -336,7 +321,7 @@ def test_root_options_after_end_of_options_reach_the_command(
 
     ext = create_app(name="ext", help="ext capability.")
     ext.command(run, name="run")
-    root = bootstrap.build_root_app(candidates=[_candidate(_spec("ext", ext), [])])
+    root = bootstrap.build_root_app(candidates=[make_candidate(_spec("ext", ext))])
 
     result = CliInvoker().invoke(root.meta, ["ext", "run", "--", "--profile"])
     assert result.exit_code == 0, result.output
@@ -422,29 +407,37 @@ def test_bootstrap_has_no_standalone_composition_imports() -> None:
                 }, filename
 
 
-def test_quarantined_provider_warns_and_boots(capsys: pytest.CaptureFixture[str]) -> None:
-    good_calls: list[str] = []
-    bad_calls: list[str] = []
-    good = _candidate(_spec("good", _who_app("good", _token_body_for("good"))), good_calls)
-    bad_spec = CapabilitySpec(
+def test_quarantined_providers_warn_and_the_root_boots(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    good = make_candidate(_spec("good", _who_app("good", _token_body_for("good"))))
+    duplicate_spec = CapabilitySpec(
         name="good",
         app_factory=lambda: create_app(name="bad", help="bad capability."),
         config_section="other",
         profile_model=_ExtProfile,
     )
-    bad = _candidate(bad_spec, bad_calls)
+    duplicate = make_candidate(duplicate_spec)
+    # A first-party-style provider gets no special treatment when it raises.
+    raising = make_candidate(
+        _spec("awx", App(name="awx")), "untaped", error=ImportError("settings module is broken")
+    )
+    candidates = [good, duplicate, raising]
 
-    composition = bootstrap.compose_root(candidates=[good, bad])
+    composition = bootstrap.compose_root(candidates=candidates)
     assert [cap.spec.name for cap in composition.capabilities] == ["good"]
-    assert len(composition.quarantine) == 1
-    assert composition.quarantine[0].reason == "duplicate-name"
+    assert [(r.name, r.distribution, r.reason) for r in composition.quarantine] == [
+        ("awx", "untaped", "malformed-entry-point"),
+        ("good", "example-dist", "duplicate-name"),
+    ]
     err = capsys.readouterr().err
-    assert "quarantined" in err
-    assert "example-dist" in err
+    assert "'awx' from 'untaped' quarantined [malformed-entry-point]" in err
+    assert "'good' from 'example-dist' quarantined [duplicate-name]" in err
 
-    root = bootstrap.build_root_app(candidates=[good, bad])
+    root = bootstrap.build_root_app(candidates=candidates)
     capsys.readouterr()
     assert "good" in root
+    assert "awx" not in root
     result = CliInvoker().invoke(root.meta, ["good", "who"])
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "default-token"
@@ -490,15 +483,11 @@ def test_quarantine_warning_is_text_without_a_structured_format(
 def test_each_quarantined_capability_warns_once_by_name(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    broken = [
-        ProviderCandidate(distribution="untaped", name=name, target=lambda: None)
-        for name in ("awx", "jira")
-    ]
-    bootstrap.compose_root(candidates=broken)
+    bootstrap.compose_root(candidates=broken_first_party_candidates())
     assert capsys.readouterr().err.splitlines() == [
         f"warning: capability {name!r} from 'untaped' quarantined [malformed-entry-point]: "
-        f"provider {name!r} of distribution 'untaped' returned NoneType, "
-        "expected CapabilitySpec"
+        f"could not resolve entry point 'untaped_missing_{name}:p' of distribution 'untaped': "
+        f"No module named 'untaped_missing_{name}'"
         for name in ("awx", "jira")
     ]
 
@@ -650,8 +639,8 @@ def test_lazy_factory_runs_only_on_dispatch_and_once() -> None:
 def test_eager_factories_are_called_once_per_composition() -> None:
     first_calls: list[str] = []
     second_calls: list[str] = []
-    first = _candidate(_counting_spec("eager", first_calls), [])
-    second = _candidate(_counting_spec("ext", second_calls), [])
+    first = make_candidate(_counting_spec("eager", first_calls))
+    second = make_candidate(_counting_spec("ext", second_calls))
 
     root = bootstrap.build_root_app(candidates=[first, second])
     for name in ("eager", "ext"):
@@ -806,7 +795,7 @@ def test_cyclopts_private_internals_used_by_lazy_mounts_exist() -> None:
 def test_lazy_first_party_capabilities_render_like_eager_mounts() -> None:
     from dataclasses import replace
 
-    specs = list(first_party_specs().values())
+    specs = first_party_specs()
     eager_candidates = [
         provider_candidate(replace(spec, help=None), distribution="untaped") for spec in specs
     ]
@@ -826,23 +815,9 @@ def test_lazy_first_party_capabilities_render_like_eager_mounts() -> None:
 
 
 def test_first_party_help_matches_app_summary() -> None:
-    for spec in first_party_specs().values():
+    for spec in first_party_specs():
         assert spec.help is not None, spec.name
         assert spec.help == spec.app_factory().help, spec.name
-
-
-def test_a_first_party_style_provider_that_raises_is_quarantined_not_fatal(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    def broken() -> CapabilitySpec:
-        raise ImportError("settings module is broken")
-
-    bad = ProviderCandidate(distribution="untaped", name="awx", target=broken)
-    good = provider_candidate(_counting_spec("ok", []))
-    root = bootstrap.build_root_app(candidates=[bad, good])
-    assert "ok" in root
-    assert "awx" not in root
-    assert "'untaped' quarantined [malformed-entry-point]" in capsys.readouterr().err
 
 
 def test_root_help_lists_capabilities_in_name_order() -> None:
@@ -854,15 +829,3 @@ def test_root_help_lists_capabilities_in_name_order() -> None:
     root = bootstrap.build_root_app(candidates=candidates)
     out = CliInvoker().invoke(root.meta, ["--help"]).stdout
     assert out.index("alpha help.") < out.index("mid help.") < out.index("zeta help.")
-
-
-def test_first_party_capabilities_list_ready_in_name_order() -> None:
-    root = bootstrap.build_root_app(candidates=list(first_party_candidates().values()))
-    listed = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])
-    assert listed.exit_code == 0, listed.output
-    assert [
-        (row["name"], row["status"], row["distribution"]) for row in json.loads(listed.stdout)
-    ] == [
-        (name, "ready", "untaped")
-        for name in ("ansible", "awx", "github", "jira", "recipe", "workspace")
-    ]

@@ -22,6 +22,7 @@ from test_management.support import (
     make_spec,
     write_config,
 )
+from tests.unit.test_capabilities.capharness import make_candidate
 from untaped import bootstrap
 from untaped.config_file import read_config_dict
 from untaped.profile_resolver import profile_override
@@ -116,22 +117,8 @@ def test_jira_isolation_end_to_end(_isolated_config: Path) -> None:
 
 
 def test_quarantined_provider_lists_and_fails_doctor_only(tmp_path: Path) -> None:
-    from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
-
-    calls: list[str] = []
-
-    class _Provider:
-        def __call__(self) -> CapabilitySpec:
-            calls.append("good")
-            return make_spec("good", skills=(asset(tmp_path, "untaped-good"),))
-
-    good = ProviderCandidate(distribution="example-dist", name="good", target=_Provider())
-
-    class _BadProvider:
-        def __call__(self) -> CapabilitySpec:
-            return make_spec("good")
-
-    bad = ProviderCandidate(distribution="example-dist", name="bad", target=_BadProvider())
+    good = make_candidate(make_spec("good", skills=(asset(tmp_path, "untaped-good"),)))
+    bad = make_candidate(make_spec("good"), name="bad")
     root = _root(candidates=(good, bad))
 
     capabilities = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])  # type: ignore[union-attr]

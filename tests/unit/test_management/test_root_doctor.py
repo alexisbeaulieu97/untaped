@@ -29,11 +29,11 @@ from test_management.support import (
     make_spec,
     write_config,
 )
+from tests.unit.conftest import broken_first_party_candidates
 from untaped import bootstrap
 from untaped.capabilities.registry import (
     CapabilitySpec,
     CompositionResult,
-    ProviderCandidate,
     QuarantineRecord,
 )
 from untaped.management.doctor import build_root_doctor_app, collect_doctor_rows
@@ -291,11 +291,7 @@ def test_doctor_reports_a_failing_lazy_factory_as_a_quarantine_row(
 
 
 def test_doctor_names_each_quarantined_capability() -> None:
-    broken = [
-        ProviderCandidate(distribution="untaped", name=name, target=f"untaped_missing_{name}:p")
-        for name in ("awx", "jira")
-    ]
-    result = bootstrap.compose_root(candidates=broken)
+    result = bootstrap.compose_root(candidates=broken_first_party_candidates())
     rows = collect_doctor_rows(bootstrap.SHELL_SPEC, result)
     quarantine = [row for row in rows if row["check"] == "quarantine"]
     assert [(row["capability"], row["title"]) for row in quarantine] == [

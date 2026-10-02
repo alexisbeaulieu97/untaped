@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 from cyclopts import App
 
-from tests.unit.conftest import load_script
+from tests.unit.conftest import broken_first_party_candidates, load_script
 from untaped.bootstrap import build_root_app
 from untaped.capabilities import registry
 
@@ -47,18 +47,14 @@ def test_every_setting_has_a_description() -> None:
 def test_config_reference_refuses_a_quarantined_first_party_capability(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    broken = [
-        registry.ProviderCandidate(distribution="untaped", name=name, target=lambda: None)
-        for name in ("awx", "jira")
-    ]
-    monkeypatch.setattr(registry, "discover_candidates", lambda: broken)
+    monkeypatch.setattr(registry, "discover_candidates", broken_first_party_candidates)
     generator = load_script("gen_config_reference")
     with pytest.raises(RuntimeError) as failed:
         generator.collect_sections()
     message = str(failed.value)
     assert message.startswith("first-party capabilities quarantined; fix them before generating")
     for name in ("awx", "jira"):
-        assert f"{name!r} [malformed-entry-point]: provider {name!r}" in message
+        assert f"{name!r} [malformed-entry-point]: could not resolve entry point" in message
 
 
 def _markdown_files() -> list[Path]:
