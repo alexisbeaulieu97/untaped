@@ -15,15 +15,14 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-env:
-  PRODUCTION: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
-
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
       version: ${{ steps.version.outputs.version }}
+      production: ${{ steps.route.outputs.production }}
+      index: ${{ steps.route.outputs.index }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -37,8 +36,27 @@ jobs:
           version: "0.11.26"
           enable-cache: true
 
+      - name: Sync the locked environment
+        run: uv sync --locked
+
       - name: Reproducible build timestamp
         run: echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
+
+      # The one routing decision: only a pushed tag is production (PyPI and
+      # the GitHub release); a dispatch, even on a tag, is a TestPyPI
+      # rehearsal. Later steps read PRODUCTION and INDEX, later jobs the
+      # build outputs.
+      - name: Route
+        id: route
+        env:
+          PRODUCTION: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
+        run: |
+          set -euo pipefail
+          if [ "$PRODUCTION" = true ]; then index=pypi; else index=testpypi; fi
+          echo "PRODUCTION=$PRODUCTION" >> "$GITHUB_ENV"
+          echo "INDEX=$index" >> "$GITHUB_ENV"
+          echo "production=$PRODUCTION" >> "$GITHUB_OUTPUT"
+          echo "index=$index" >> "$GITHUB_OUTPUT"
 
       - name: Release version
         id: version
@@ -47,28 +65,19 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$PRODUCTION" = true ]; then
-            version="$(uv run python scripts/release.py version --tag "$REF_NAME")"
+            # --tag also fails unless the tagged commit is on main.
+            version="$(uv run --no-sync python scripts/release.py version --tag "$REF_NAME")"
           else
-            version="$(uv run python scripts/release.py version)"
+            version="$(uv run --no-sync python scripts/release.py version)"
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: The tagged commit is on main
-        if: env.PRODUCTION == 'true'
-        run: |
-          set -euo pipefail
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor HEAD FETCH_HEAD || {
-            echo "::error::$GITHUB_SHA is not on main"
-            exit 1
-          }
-
       - name: Check versions and pins
-        run: uv run python scripts/release.py check "$VERSION"
+        run: uv run --no-sync python scripts/release.py check "$VERSION"
 
       - name: Release notes
-        run: uv run python scripts/release.py notes "$VERSION" > release-notes.md
+        run: uv run --no-sync python scripts/release.py notes "$VERSION" > release-notes.md
 
       - name: Build
         run: |
@@ -79,7 +88,7 @@ jobs:
           rm -f dist/.gitignore
 
       - name: Check artifacts
-        run: uv run python scripts/release.py check "$VERSION" --dist dist
+        run: uv run --no-sync python scripts/release.py check "$VERSION" --dist dist
 
       - name: Configure isolated smoke home
         run: |
@@ -93,12 +102,10 @@ jobs:
           set -euo pipefail
           uv venv --python 3.14 "$RUNNER_TEMP/smoke"
           uv pip install --python "$RUNNER_TEMP/smoke/bin/python" dist/*.whl
-          uv run python scripts/release.py smoke "$RUNNER_TEMP/smoke/bin/untaped" "$VERSION"
+          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/smoke/bin/untaped" "$VERSION"
 
       - name: Compare with the index
-        env:
-          INDEX: ${{ env.PRODUCTION == 'true' && 'pypi' || 'testpypi' }}
-        run: uv run python scripts/release.py index "$VERSION" --dist dist --index "$INDEX"
+        run: uv run --no-sync python scripts/release.py index "$VERSION" --dist dist --index "$INDEX"
 
       - name: Upload package artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -118,7 +125,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: ${{ github.event_name == 'push' && github.ref_type == 'tag' && 'pypi' || 'testpypi' }}
+    environment: ${{ needs.build.outputs.index }}
     permissions:
       id-token: write
     steps:
@@ -129,7 +136,7 @@ jobs:
           path: dist/
 
       - name: Publish to PyPI
-        if: env.PRODUCTION == 'true'
+        if: needs.build.outputs.production == 'true'
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
         with:
           packages-dir: dist/
@@ -138,7 +145,7 @@ jobs:
           attestations: true
 
       - name: Publish to TestPyPI
-        if: env.PRODUCTION != 'true'
+        if: needs.build.outputs.production != 'true'
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
         with:
           packages-dir: dist/
@@ -151,11 +158,9 @@ jobs:
     needs: [build, publish]
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # The env context is not available in job-level env, so INDEX repeats the
-    # production expression instead of reading env.PRODUCTION.
     env:
       VERSION: ${{ needs.build.outputs.version }}
-      INDEX: ${{ github.event_name == 'push' && github.ref_type == 'tag' && 'pypi' || 'testpypi' }}
+      INDEX: ${{ needs.build.outputs.index }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -168,6 +173,9 @@ jobs:
           version: "0.11.26"
           enable-cache: true
 
+      - name: Sync the locked environment
+        run: uv sync --locked
+
       - name: Download package artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -175,7 +183,7 @@ jobs:
           path: dist/
 
       - name: Every file is on the index with the built bytes
-        run: uv run python scripts/release.py index "$VERSION" --dist dist --index "$INDEX" --complete
+        run: uv run --no-sync python scripts/release.py index "$VERSION" --dist dist --index "$INDEX" --complete
 
       - name: Configure isolated smoke home
         run: |
@@ -195,23 +203,25 @@ jobs:
           if [ "$INDEX" = testpypi ]; then
             index_env=(UV_INDEX=https://test.pypi.org/simple/ UV_INDEX_STRATEGY=unsafe-best-match)
           fi
-          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+          # index --complete already waited for the files; this only absorbs
+          # a lagging installer view of the index.
+          for attempt in 1 2 3; do
             rm -rf "$RUNNER_TEMP/published"
             uv venv -q --python 3.14 "$RUNNER_TEMP/published"
             if env "${index_env[@]}" uv pip install --python "$RUNNER_TEMP/published/bin/python" --refresh "untaped[all]==$VERSION"; then
               break
             fi
-            if [ "$attempt" = 12 ]; then
-              echo "::error::untaped==$VERSION is not installable from $INDEX"
+            if [ "$attempt" = 3 ]; then
+              echo "::error::untaped[all]==$VERSION is not installable from $INDEX"
               exit 1
             fi
             sleep 10
           done
-          uv run python scripts/release.py smoke "$RUNNER_TEMP/published/bin/untaped" "$VERSION"
+          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/published/bin/untaped" "$VERSION"
 
   github-release:
     needs: [build, verify]
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    if: needs.build.outputs.production == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -231,6 +241,9 @@ jobs:
           version: "0.11.26"
           enable-cache: true
 
+      - name: Sync the locked environment
+        run: uv sync --locked
+
       - name: Download package artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -246,4 +259,4 @@ jobs:
       - name: Draft, attach, then publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: uv run python scripts/release.py github-release "$VERSION" --tag "$TAG" --repo "$GITHUB_REPOSITORY" --dist dist --notes release-notes.md
+        run: uv run --no-sync python scripts/release.py github-release "$VERSION" --tag "$TAG" --repo "$GITHUB_REPOSITORY" --dist dist --notes release-notes.md
