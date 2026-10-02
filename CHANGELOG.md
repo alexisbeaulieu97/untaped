@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 10.0.0rc1
+
+untaped is now an SDK with first-party tools as plugins: `untaped` installs the
+core and SDK, and each tool is an extra (`untaped[all]`, `untaped[awx]`, …).
+Read Upgrading first.
 
 ### Upgrading
 
