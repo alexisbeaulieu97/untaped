@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import re
@@ -113,7 +114,9 @@ def test_duplicate_package_names_are_refused(tmp_path: Path) -> None:
 
 def test_a_repo_without_the_untaped_package_has_no_release_version(tmp_path: Path) -> None:
     _project(tmp_path, "other", "1.0.0")
-    with pytest.raises(release.ReleaseError, match="no package named untaped"):
+    with pytest.raises(
+        release.ReleaseError, match=f"^no package named untaped under {re.escape(str(tmp_path))}$"
+    ):
         release.release_version(tmp_path)
 
 
@@ -122,7 +125,8 @@ def test_a_repo_without_the_untaped_package_has_no_release_version(tmp_path: Pat
 )
 def test_a_malformed_release_version_is_refused(tmp_path: Path, version: str) -> None:
     _project(tmp_path, "untaped", version)
-    with pytest.raises(release.ReleaseError, match=re.escape(f"version {version} is not X.Y.Z")):
+    message = f"version {version} is not X.Y.Z, X.Y.ZaN, X.Y.ZbN or X.Y.ZrcN"
+    with pytest.raises(release.ReleaseError, match=f"^{re.escape(message)}$"):
         release.release_version(tmp_path)
 
 
@@ -142,7 +146,24 @@ def test_version_errors_report_a_malformed_tag_first(tmp_path: Path) -> None:
 
 def test_a_trailing_newline_is_not_a_release_version(tmp_path: Path) -> None:
     _project(tmp_path, "untaped", "10.0.0")
-    assert release.version_errors(tmp_path, "10.0.0\n")[0].startswith("version 10.0.0\n is not")
+    assert release.version_errors(tmp_path, "10.0.0\n") == [
+        "version 10.0.0\n is not X.Y.Z, X.Y.ZaN, X.Y.ZbN or X.Y.ZrcN",
+        "untaped is at 10.0.0, not 10.0.0\n",
+    ]
+
+
+@pytest.mark.parametrize("version", ["10.0.0", "10.0.0rc1"])
+def test_a_tag_naming_the_version_is_accepted(tmp_path: Path, version: str) -> None:
+    _project(tmp_path, "untaped", version)
+    assert release.tagged_version(tmp_path, f"v{version}") == version
+
+
+@pytest.mark.parametrize("tag", ["v10.0.1", "10.0.0", "v10.0.0rc1", "v10.0.0\n"])
+def test_a_tag_that_is_not_v_and_the_version_is_refused(tmp_path: Path, tag: str) -> None:
+    _project(tmp_path, "untaped", "10.0.0")
+    with pytest.raises(release.ReleaseError) as caught:
+        release.tagged_version(tmp_path, tag)
+    assert str(caught.value) == f"tag {tag} does not match the package version 10.0.0"
 
 
 def test_a_tag_that_differs_names_every_package_and_pin(tmp_path: Path) -> None:
@@ -449,6 +470,45 @@ def test_fetch_json_returns_none_on_a_404(monkeypatch: pytest.MonkeyPatch) -> No
     assert release.fetch_json(TESTPYPI_URL) is None
 
 
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        (
+            b"<html>",
+            f"{TESTPYPI_URL} did not return JSON: Expecting value: line 1 column 1 (char 0)",
+        ),
+        (b"[]", f"{TESTPYPI_URL} did not return a JSON object"),
+    ],
+    ids=["not-json", "not-an-object"],
+)
+def test_fetch_json_refuses_a_body_that_is_not_a_json_object(
+    monkeypatch: pytest.MonkeyPatch, body: bytes, expected: str
+) -> None:
+    def urlopen(url: str, timeout: float) -> io.BytesIO:
+        return io.BytesIO(body)
+
+    monkeypatch.setattr(release.urllib.request, "urlopen", urlopen)
+    with pytest.raises(release.ReleaseError) as caught:
+        release.fetch_json(TESTPYPI_URL)
+    assert str(caught.value) == expected
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [{}, {"urls": [{"filename": WHEEL}]}, {"urls": None}],
+    ids=["no-urls", "no-digests", "urls-null"],
+)
+def test_an_index_payload_without_a_file_list_is_refused(
+    tmp_path: Path, payload: dict[str, Any]
+) -> None:
+    root, dist = _dist(tmp_path)
+    with pytest.raises(release.ReleaseError) as caught:
+        release.index_errors(
+            root, "10.0.0", dist, index="testpypi", complete=False, fetch=lambda url: payload
+        )
+    assert str(caught.value) == f"{TESTPYPI_URL} has no file list (urls[].filename, digests.sha256)"
+
+
 # --- notes ------------------------------------------------------------------
 
 CHANGELOG = (
@@ -509,7 +569,7 @@ BUILTINS = [spec.name for spec in BUILTIN_CAPABILITIES]
 FAKE_UNTAPED = """#!/bin/sh
 case "$1" in
   --version) echo "$FAKE_VERSION" ;;
-  capabilities) echo "$FAKE_ROWS" ;;
+  capabilities) echo "$FAKE_ROWS"; exit "${FAKE_ROWS_EXIT:-0}" ;;
   "$FAKE_FAILING") exit 2 ;;
 esac
 exit 0
@@ -524,12 +584,13 @@ def _fake_untaped(tmp_path: Path) -> Path:
 
 
 def _smoke(
-    tmp_path: Path, rows: list[dict[str, str]], failing: str = ""
+    tmp_path: Path, rows: list[dict[str, str]], failing: str = "", rows_exit: int = 0
 ) -> subprocess.CompletedProcess[str]:
     env = {
         **os.environ,
         "FAKE_VERSION": "10.0.0",
         "FAKE_ROWS": json.dumps(rows),
+        "FAKE_ROWS_EXIT": str(rows_exit),
         "FAKE_FAILING": failing,
     }
     return subprocess.run(
@@ -551,6 +612,20 @@ def test_the_smoke_command_reports_a_failing_help(tmp_path: Path) -> None:
     failing = BUILTINS[-1]
     result = _smoke(tmp_path, [{"name": cap, "status": "ready"} for cap in BUILTINS], failing)
     assert (result.returncode, result.stderr.strip()) == (1, f"untaped {failing} --help exited 2")
+
+
+def test_the_smoke_command_reports_a_failing_root_help(tmp_path: Path) -> None:
+    result = _smoke(tmp_path, [{"name": cap, "status": "ready"} for cap in BUILTINS], "--help")
+    assert (result.returncode, result.stderr) == (1, "untaped --help exited 2\n")
+
+
+def test_the_smoke_command_reports_a_failing_capabilities_command(tmp_path: Path) -> None:
+    rows = [{"name": cap, "status": "ready"} for cap in BUILTINS]
+    result = _smoke(tmp_path, rows, rows_exit=3)
+    assert (result.returncode, result.stderr) == (
+        1,
+        "untaped capabilities --format json exited 3\n",
+    )
 
 
 def test_the_smoke_command_reports_a_capability_that_is_not_ready(tmp_path: Path) -> None:
@@ -814,6 +889,54 @@ def test_check_with_dist_fails_on_a_stray_file(tmp_path: Path) -> None:
         0,
         "ok: 1 package(s), 2 artifact(s) for 10.0.0",
     )
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        ([], (0, "10.0.0\n", "")),
+        (["--tag", "v10.0.0"], (0, "10.0.0\n", "")),
+        (["--tag", "v10.0.1"], (1, "", "tag v10.0.1 does not match the package version 10.0.0\n")),
+    ],
+    ids=["no-tag", "matching-tag", "other-tag"],
+)
+def test_the_version_command_checks_a_tag(
+    tmp_path: Path, args: list[str], expected: tuple[int, str, str]
+) -> None:
+    _project(tmp_path, "untaped", "10.0.0")
+    result = _cli("--root", str(tmp_path), "version", *args)
+    assert (result.returncode, result.stdout, result.stderr) == expected
+
+
+@pytest.mark.parametrize(
+    ("flags", "expected"),
+    [
+        ([], (0, "index ok: 1 present, 1 to upload\n", "", 1)),
+        (["--complete"], (1, "", f"missing on testpypi: {SDIST}\n", 2)),
+    ],
+    ids=["before-publish", "complete"],
+)
+def test_the_index_command_waits_for_every_file_only_with_complete(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    flags: list[str],
+    expected: tuple[int, str, str, int],
+) -> None:
+    root, dist = _dist(tmp_path)
+    calls: list[str] = []
+
+    def fetch_json(url: str) -> dict[str, Any] | None:
+        calls.append(url)
+        return _fetch({WHEEL: "wheel"})(url)
+
+    monkeypatch.setattr(release, "fetch_json", fetch_json)
+    monkeypatch.setattr(release, "INDEX_TRIES", 2)
+    monkeypatch.setattr(release, "INDEX_DELAY", 0)
+    argv = ["--root", str(root), "index", "10.0.0", "--dist", str(dist), "--index", "testpypi"]
+    code = release.main([*argv, *flags])
+    out, err = capsys.readouterr()
+    assert (code, out, err, len(calls)) == expected
 
 
 def test_the_notes_command_prints_the_section(tmp_path: Path) -> None:
