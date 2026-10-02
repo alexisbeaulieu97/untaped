@@ -13,8 +13,15 @@ from repo.support import FIRST_PARTY
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = REPO_ROOT / "packages"
-# Task 5 extends this list
-EXPECTED_MEMBERS = ["untaped", "untaped-awx", "untaped-jira", "untaped-recipe"]
+EXPECTED_MEMBERS = [
+    "untaped",
+    "untaped-ansible",
+    "untaped-awx",
+    "untaped-github",
+    "untaped-jira",
+    "untaped-recipe",
+    "untaped-workspace",
+]
 
 
 def _members() -> list[str]:
@@ -119,6 +126,23 @@ def test_capability_packages_declare_their_entry_point_and_pin_core() -> None:
     assert sorted(core["optional-dependencies"]["all"]) == sorted(
         f"untaped-{p.parent.name.removeprefix('untaped-')}=={version}" for p in capabilities
     )
-    assert set(core["entry-points"]["untaped.capabilities"]).isdisjoint(
+    assert set(core.get("entry-points", {}).get("untaped.capabilities", {})).isdisjoint(
         p.parent.name.removeprefix("untaped-") for p in capabilities
     )
+
+
+def test_dependent_capabilities_pin_github() -> None:
+    version = tomllib.loads((PACKAGES / "untaped/pyproject.toml").read_text())["project"]["version"]
+    for name in ("ansible", "workspace"):
+        project = tomllib.loads((PACKAGES / f"untaped-{name}/pyproject.toml").read_text())[
+            "project"
+        ]
+        assert project["dependencies"] == [f"untaped=={version}", f"untaped-github=={version}"]
+
+
+def test_core_holds_only_the_registry_under_capabilities() -> None:
+    root = PACKAGES / "untaped/src/untaped/capabilities"
+    assert sorted(p.name for p in root.iterdir() if p.name != "__pycache__") == [
+        "__init__.py",
+        "registry.py",
+    ]

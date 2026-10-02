@@ -9,9 +9,12 @@ resolution-markers = [
 [manifest]
 members = [
     "untaped",
+    "untaped-ansible",
     "untaped-awx",
+    "untaped-github",
     "untaped-jira",
     "untaped-recipe",
+    "untaped-workspace",
 ]
 
 [manifest.dependency-groups]
@@ -756,18 +759,30 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
+    { name = "untaped-ansible" },
     { name = "untaped-awx" },
+    { name = "untaped-github" },
     { name = "untaped-jira" },
     { name = "untaped-recipe" },
+    { name = "untaped-workspace" },
+]
+ansible = [
+    { name = "untaped-ansible" },
 ]
 awx = [
     { name = "untaped-awx" },
+]
+github = [
+    { name = "untaped-github" },
 ]
 jira = [
     { name = "untaped-jira" },
 ]
 recipe = [
     { name = "untaped-recipe" },
+]
+workspace = [
+    { name = "untaped-workspace" },
 ]
 
 [package.metadata]
@@ -783,14 +798,35 @@ requires-dist = [
     { name = "rich", specifier = ">=15.0.0" },
     { name = "ruamel-yaml", specifier = ">=0.18.16" },
     { name = "truststore", specifier = ">=0.10.4" },
+    { name = "untaped-ansible", marker = "extra == 'all'", editable = "packages/untaped-ansible" },
+    { name = "untaped-ansible", marker = "extra == 'ansible'", editable = "packages/untaped-ansible" },
     { name = "untaped-awx", marker = "extra == 'all'", editable = "packages/untaped-awx" },
     { name = "untaped-awx", marker = "extra == 'awx'", editable = "packages/untaped-awx" },
+    { name = "untaped-github", marker = "extra == 'all'", editable = "packages/untaped-github" },
+    { name = "untaped-github", marker = "extra == 'github'", editable = "packages/untaped-github" },
     { name = "untaped-jira", marker = "extra == 'all'", editable = "packages/untaped-jira" },
     { name = "untaped-jira", marker = "extra == 'jira'", editable = "packages/untaped-jira" },
     { name = "untaped-recipe", marker = "extra == 'all'", editable = "packages/untaped-recipe" },
     { name = "untaped-recipe", marker = "extra == 'recipe'", editable = "packages/untaped-recipe" },
+    { name = "untaped-workspace", marker = "extra == 'all'", editable = "packages/untaped-workspace" },
+    { name = "untaped-workspace", marker = "extra == 'workspace'", editable = "packages/untaped-workspace" },
 ]
-provides-extras = ["all", "awx", "jira", "recipe"]
+provides-extras = ["all", "ansible", "awx", "github", "jira", "recipe", "workspace"]
+
+[[package]]
+name = "untaped-ansible"
+version = "10.0.0a0"
+source = { editable = "packages/untaped-ansible" }
+dependencies = [
+    { name = "untaped" },
+    { name = "untaped-github" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "untaped", editable = "packages/untaped" },
+    { name = "untaped-github", editable = "packages/untaped-github" },
+]
 
 [[package]]
 name = "untaped-awx"
@@ -806,6 +842,17 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6,<4" },
     { name = "untaped", editable = "packages/untaped" },
 ]
+
+[[package]]
+name = "untaped-github"
+version = "10.0.0a0"
+source = { editable = "packages/untaped-github" }
+dependencies = [
+    { name = "untaped" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "untaped", editable = "packages/untaped" }]
 
 [[package]]
 name = "untaped-jira"
@@ -833,6 +880,21 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6,<4" },
     { name = "tomlkit", specifier = ">=0.13,<1" },
     { name = "untaped", editable = "packages/untaped" },
+]
+
+[[package]]
+name = "untaped-workspace"
+version = "10.0.0a0"
+source = { editable = "packages/untaped-workspace" }
+dependencies = [
+    { name = "untaped" },
+    { name = "untaped-github" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "untaped", editable = "packages/untaped" },
+    { name = "untaped-github", editable = "packages/untaped-github" },
 ]
 
 [[package]]

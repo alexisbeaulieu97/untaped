@@ -1,9 +1,9 @@
 """Every first-party capability is an entry point and composes, mounts and exposes its
 settings the same way.
 
-First-party capabilities ship in the ``untaped`` distribution, so their
-reported version is always the unified product version — never
-per-capability.
+First-party capabilities ship as ``untaped-<name>`` distributions pinned to the
+unified product version, so their reported version is always that version —
+never per-capability.
 """
 
 from __future__ import annotations
@@ -26,13 +26,6 @@ from untaped.settings import get_settings
 from untaped.testing import CliInvoker, provider_candidate
 
 CORE = Path(__file__).resolve().parents[2] / "packages" / "untaped"
-
-
-def _home(name: str) -> tuple[str, str]:
-    """Return a capability's (module, distribution): its own package once extracted."""
-    if (CORE.parent / f"untaped-{name}").is_dir():
-        return f"untaped_{name}", f"untaped-{name}"
-    return f"untaped.capabilities.{name}", "untaped"
 
 
 @pytest.fixture(scope="module")
@@ -83,14 +76,14 @@ def test_every_first_party_capability_is_an_entry_point_listed_ready_in_name_ord
     assert listed.exit_code == 0, listed.output
     assert [
         (row["name"], row["status"], row["distribution"]) for row in json.loads(listed.stdout)
-    ] == [(name, "ready", _home(name)[1]) for name in FIRST_PARTY]
+    ] == [(name, "ready", f"untaped-{name}") for name in FIRST_PARTY]
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
 def test_the_entry_point_provider_returns_the_package_spec(
     candidates: dict[str, ProviderCandidate], name: str
 ) -> None:
-    module = _home(name)[0]
+    module = f"untaped_{name}"
     package = import_module(module)
     assert candidates[name].target == f"{module}:provider"
     assert package.provider() is package.SPEC
@@ -102,7 +95,7 @@ def test_first_party_commit_carries_its_entry_point(
     result = compose(make_shell(), [candidates["github"]])
     (registered,) = result.capabilities
     assert registered.provider_ref == ProviderRef(
-        distribution="untaped", entry_point="untaped.capabilities.github:provider"
+        distribution="untaped-github", entry_point="untaped_github:provider"
     )
     assert result.quarantine == ()
 

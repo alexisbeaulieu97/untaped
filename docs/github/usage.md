@@ -6,8 +6,8 @@ Git corpus, so repeated questions over hundreds of repos avoid GitHub's search
 limits.
 
 The packaged skill is the full reference:
-[listing and searching](../../packages/untaped/src/untaped/capabilities/github/skills/untaped-github/references/search.md)
-and [sweeps and the corpus](../../packages/untaped/src/untaped/capabilities/github/skills/untaped-github/references/sweep.md).
+[listing and searching](../../packages/untaped-github/src/untaped_github/skills/untaped-github/references/search.md)
+and [sweeps and the corpus](../../packages/untaped-github/src/untaped_github/skills/untaped-github/references/sweep.md).
 
 ## Set up
 
@@ -50,7 +50,7 @@ same scope flags: repeatable `--org` and `--team ORG/SLUG`. All but
   (the default), or keeps only them.
 - `--limit N` caps the rows, and a notice on stderr says when it cut results
   off. No notice means the result is complete; for search, the
-  [search reference](../../packages/untaped/src/untaped/capabilities/github/skills/untaped-github/references/search.md#knowing-a-result-is-complete)
+  [search reference](../../packages/untaped-github/src/untaped_github/skills/untaped-github/references/search.md#knowing-a-result-is-complete)
   explains the one exception and how large team scopes are split into
   batches.
 

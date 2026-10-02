@@ -1,0 +1,673 @@
+"""Use case for building dependency and reverse-impact graphs."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Literal, NamedTuple, assert_never
+
+from pydantic import BaseModel, ConfigDict
+
+from untaped_ansible.application.ports import DependencyIndex, EdgeBatchRead
+from untaped_ansible.domain.cycles import detect_cycles
+from untaped_ansible.domain.graph import DependencyGraph, GraphEdge, GraphNode
+from untaped_ansible.domain.identity import repo_key
+from untaped_ansible.domain.payloads import CachedRef, IndexedDependency
+from untaped_ansible.domain.ref_display import RefDisplay, sort_ref_displays
+
+GraphDirection = Literal["deps", "impact", "both"]
+
+
+class GraphRequest(BaseModel):
+    """Parameters for a graph query."""
+
+    model_config = ConfigDict(frozen=True)
+
+    repo: str
+    ref: str | None = None
+    source_key: str | None = None
+    direction: GraphDirection = "both"
+    depth: int | None = 3
+    stale_after: int = 86_400
+    refresh_hint: str | None = None
+    """Caller-composed fix instruction appended to stale/missing-ref warnings.
+
+    The application layer stays free of CLI strings; the CLI passes the exact
+    refresh command (or flag guidance) to surface in actionable warnings.
+    """
+    all_refs: bool = False
+    """Whether a ref-less target's dependencies are read at every cached ref.
+
+    Otherwise they are read at its cached default branch only (at every ref,
+    with a warning, when that branch is unknown or not cached). Its dependents are always those of
+    every ref: a repo pinning an older tag still uses the target.
+    """
+    live: bool = False
+    """Whether the index reads dependencies live rather than from cached source data.
+
+    Cached default branches may be stale then, so an unpinned hop is pinned
+    only to the default branch its live ref-less read resolved.
+    """
+
+
+class BuildGraph:
+    """Build a dependency graph from a cached dependency read port."""
+
+    def __init__(self, index: DependencyIndex) -> None:
+        self._index = index
+
+    def __call__(self, request: GraphRequest) -> DependencyGraph:
+        builder = _GraphBuilder(self._index, request)
+        return builder.build()
+
+
+class _AddNodeItem(NamedTuple):
+    repo: str
+    ref: str | None
+    ref_kind: str | None
+
+
+class _AddTargetItem(NamedTuple):
+    indexed: IndexedDependency
+    ref: str | None
+
+
+class _AddEdgeItem(NamedTuple):
+    source_id: str
+    target_id: str
+    relation: Literal["requires", "impacts"]
+    indexed: IndexedDependency
+
+
+class _MissingRefItem(NamedTuple):
+    repo: str
+    ref: str | None
+
+
+_ReplayItem = _AddNodeItem | _AddTargetItem | _AddEdgeItem | _MissingRefItem
+
+
+class _Walk:
+    """One frontier entry: a node to expand and the emissions it recorded."""
+
+    __slots__ = ("items", "ref", "remaining", "repo")
+
+    def __init__(self, repo: str, ref: str | None, remaining: int | None) -> None:
+        self.repo = repo
+        self.ref = ref
+        self.remaining = remaining
+        self.items: list[_ReplayItem | _Walk] = []
+
+
+class _GraphBuilder:
+    def __init__(self, index: DependencyIndex, request: GraphRequest) -> None:
+        self._index = index
+        self._request = request
+        self._nodes: dict[str, GraphNode] = {}
+        self._edges: list[GraphEdge] = []
+        self._seen_edges: set[tuple[str, str, str]] = set()
+        self._warnings: list[str] = []
+        self._seen_warnings: set[str] = set()
+        self._dependencies: dict[tuple[str, str | None, str | None], list[IndexedDependency]] = {}
+        self._dependents: dict[tuple[str, str | None, str | None], list[IndexedDependency]] = {}
+        self._cached_refs: dict[tuple[str, str | None], set[str]] = {}
+        self._cached_ref_metadata: dict[tuple[str, str | None], tuple[CachedRef, ...]] = {}
+        # Best remaining depth each node id was scheduled with in the current
+        # walk; a node is expanded again only when reached with more depth
+        # left, so shared dependencies cost one expansion, not one per path.
+        self._scheduled: dict[str, int | None] = {}
+        # Node ids whose edges were read, and those the depth limit left unread.
+        self._read: set[str] = set()
+        self._depth_cut: set[str] = set()
+        self._not_cached: set[str] = set()
+
+    def build(self) -> DependencyGraph:
+        target_id = _node_id(self._request.repo, self._request.ref)
+        self._add_node(self._request.repo, self._request.ref)
+        depth = self._request.depth
+        if self._request.direction in {"deps", "both"}:
+            self._walk(
+                _Walk(self._request.repo, self._dependencies_ref(), depth),
+                expand=self._expand_deps,
+                prefetch=self._prefetch_deps_level,
+            )
+        if self._request.direction in {"impact", "both"}:
+            self._walk(
+                _Walk(self._request.repo, self._request.ref, depth),
+                expand=self._expand_impact,
+                prefetch=self._prefetch_impact_level,
+            )
+            if self._request.ref is not None:
+                self._warn_unplaced_unpinned_dependents(self._request.repo, self._request.ref)
+        warnings: list[str] = []
+        if self._request.direction in {"impact", "both"} and self._index.is_stale(
+            self._request.source_key,
+            max_age_seconds=self._request.stale_after,
+        ):
+            warnings.append(
+                self._with_refresh_hint(
+                    "source data is stale; refresh it before relying on upstream impact"
+                )
+            )
+        warnings.extend(self._warnings)
+        cycles, cycle_warnings = detect_cycles(self._edges)
+        warnings.extend(cycle_warnings)
+        return DependencyGraph(
+            target_id=target_id,
+            nodes=tuple(self._with_stops(node) for node in self._nodes.values()),
+            edges=tuple(self._edges),
+            cycles=cycles,
+            warnings=tuple(warnings),
+        )
+
+    def _dependencies_ref(self) -> str | None:
+        """The target ref whose dependencies are read; ``None`` reads every ref's."""
+        request = self._request
+        # A live ref-less read already resolves the repo's current default branch.
+        if request.ref is not None or request.all_refs or request.live:
+            return request.ref
+        default_branch = _first_default_branch(self._cached_ref_metadata_for(request.repo))
+        cached_refs = self._cached_refs_for(request.repo)
+        if default_branch in cached_refs:
+            return default_branch
+        # Unknown, or known but not scanned (a tags-only source): read every ref.
+        if cached_refs:
+            self._add_warning(
+                self._with_refresh_hint(
+                    f"{request.repo}'s default branch is not in the cached source data; "
+                    "showing the dependencies of every cached ref."
+                )
+            )
+        return None
+
+    def _walk(
+        self,
+        root: _Walk,
+        *,
+        expand: Callable[[_Walk], list[_Walk]],
+        prefetch: Callable[[list[_Walk]], None],
+    ) -> None:
+        """Expand the graph level by level, then replay emissions in DFS order.
+
+        Each depth level's uncached index reads are bulk-loaded before any
+        entry in that level is expanded, so expansion reads only from the
+        per-run caches. Emissions are recorded per entry and replayed
+        depth-first afterwards, so node/edge/warning ordering stays
+        depth-first. Each node is expanded once (see :meth:`_claim`).
+        """
+        self._scheduled = {_node_id(root.repo, root.ref): root.remaining}
+        level = [root]
+        while level:
+            prefetch(level)
+            level = [child for entry in level for child in expand(entry)]
+        self._replay(root)
+
+    def _expand_deps(self, entry: _Walk) -> list[_Walk]:
+        if not self._reads(entry):
+            return []
+        next_remaining = None if entry.remaining is None else entry.remaining - 1
+        dependencies = self._dependencies_for(entry.repo, entry.ref)
+        if not dependencies:
+            entry.items.append(_MissingRefItem(entry.repo, entry.ref))
+            return []
+        children: list[_Walk] = []
+        for indexed in dependencies:
+            source_ref = entry.ref if entry.ref is not None else indexed.source_ref
+            source_id = _node_id(entry.repo, source_ref)
+            entry.items.append(_AddNodeItem(entry.repo, source_ref, indexed.source_ref_kind))
+            if entry.ref is None:
+                # A ref-less read expands (and reads) every concrete ref of the repo.
+                self._claim(source_id, entry.remaining)
+                self._read.add(source_id)
+            target_ref = self._dependency_ref(indexed)
+            target_id = _dependency_target_id(indexed, target_ref)
+            entry.items.append(_AddTargetItem(indexed, target_ref))
+            entry.items.append(_AddEdgeItem(source_id, target_id, "requires", indexed))
+            if indexed.dependency_repo is None:
+                continue
+            if not self._claim(target_id, next_remaining):
+                continue
+            child = _Walk(indexed.dependency_repo, target_ref, next_remaining)
+            entry.items.append(child)
+            children.append(child)
+        return children
+
+    def _expand_impact(self, entry: _Walk) -> list[_Walk]:
+        if not self._reads(entry):
+            return []
+        next_remaining = None if entry.remaining is None else entry.remaining - 1
+        children: list[_Walk] = []
+        for indexed in self._dependents_for(entry.repo, entry.ref):
+            target_ref = entry.ref if entry.ref is not None else indexed.dependency_version
+            target_id = _node_id(entry.repo, target_ref)
+            entry.items.append(_AddNodeItem(entry.repo, target_ref, None))
+            if entry.ref is None:
+                self._claim(target_id, entry.remaining)
+                self._read.add(target_id)
+            source_id = _node_id(indexed.source_repo, indexed.source_ref)
+            entry.items.append(
+                _AddNodeItem(indexed.source_repo, indexed.source_ref, indexed.source_ref_kind)
+            )
+            entry.items.append(_AddEdgeItem(source_id, target_id, "impacts", indexed))
+            if not self._claim(source_id, next_remaining):
+                continue
+            child = _Walk(indexed.source_repo, indexed.source_ref, next_remaining)
+            entry.items.append(child)
+            children.append(child)
+        return children
+
+    def _reads(self, entry: _Walk) -> bool:
+        """Whether ``entry``'s edges are read, recording a depth cut when not."""
+        node_id = _node_id(entry.repo, entry.ref)
+        if entry.remaining == 0:
+            self._depth_cut.add(node_id)
+            return False
+        self._read.add(node_id)
+        return True
+
+    def _with_stops(self, node: GraphNode) -> GraphNode:
+        if node.id in self._not_cached:
+            return node.model_copy(update={"stopped": "not_cached"})
+        if node.id in self._depth_cut and node.id not in self._read:
+            return node.model_copy(update={"stopped": "depth"})
+        return node
+
+    def _warn_unplaced_unpinned_dependents(self, repo: str, ref: str) -> None:
+        """Warn when unpinned dependents cannot be matched to ``ref``.
+
+        Unpinned declarations install the dependency's default branch; the
+        index matches them when that branch is cached. When it is unknown
+        they are omitted from a ref-specific impact query, so say how many.
+        Checked for the requested target only, with one extra batch read.
+        """
+        source_key = self._request.source_key
+        if source_key is None:
+            return
+        if _first_default_branch(self._cached_ref_metadata_for(repo)) is not None:
+            return
+        included = {
+            (indexed.source_repo, indexed.source_ref) for indexed in self._dependents_for(repo, ref)
+        }
+        omitted = {
+            (indexed.source_repo, indexed.source_ref)
+            for indexed in self._index.dependents_batch([(repo, None)], source_key=source_key)[
+                (repo, None)
+            ]
+            if indexed.dependency_version is None
+        } - included
+        if not omitted:
+            return
+        count = len(omitted)
+        noun = "dependent" if count == 1 else "dependents"
+        self._add_warning(
+            f"{count} unpinned {noun} of {_label(repo, ref)} omitted: unpinned "
+            f"declarations install {repo}'s default branch, which is not in cached "
+            "source data. Add the repo to the source to place them."
+        )
+
+    def _claim(self, node_id: str, remaining: int | None) -> bool:
+        """Schedule ``node_id`` unless it was already scheduled with as much depth.
+
+        Ancestors (including the target) are always scheduled with more depth
+        than their descendants, so back-edges never re-expand: cycles are
+        still emitted as edges and labelled by cycle detection.
+        """
+        if node_id in self._scheduled and not _deeper(remaining, self._scheduled[node_id]):
+            return False
+        self._scheduled[node_id] = remaining
+        return True
+
+    def _replay(self, entry: _Walk) -> None:
+        stack = [iter(entry.items)]
+        while stack:
+            try:
+                item = next(stack[-1])
+            except StopIteration:
+                stack.pop()
+                continue
+            if isinstance(item, _Walk):
+                stack.append(iter(item.items))
+            elif isinstance(item, _AddNodeItem):
+                self._add_node(item.repo, item.ref, ref_kind=item.ref_kind)
+            elif isinstance(item, _AddTargetItem):
+                self._emit_target_node(item.indexed, item.ref)
+            elif isinstance(item, _AddEdgeItem):
+                self._add_edge(item.source_id, item.target_id, item.relation, item.indexed)
+            elif isinstance(item, _MissingRefItem):
+                # Intentionally unbatched: missing-ref warnings are a rare path,
+                # so the prefetch sets are not extended to cover its reads.
+                self._warn_if_missing_cached_ref(item.repo, item.ref)
+            else:
+                assert_never(item)
+
+    def _prefetch_deps_level(self, level: list[_Walk]) -> None:
+        # Must mirror the read conditions of _expand_deps + _node_metadata.
+        self._prefetch_edges(level, cache=self._dependencies, batch=self._index.dependencies_batch)
+        repos: set[str] = set()
+        unpinned: set[str] = set()
+        for entry in level:
+            if entry.remaining == 0:
+                continue
+            for indexed in self._dependencies_for(entry.repo, entry.ref):
+                source_ref = entry.ref if entry.ref is not None else indexed.source_ref
+                if source_ref is not None:
+                    repos.add(entry.repo)
+                if indexed.dependency_repo is not None:
+                    repos.add(indexed.dependency_repo)
+                    if indexed.dependency_version is None and entry.remaining != 1:
+                        unpinned.add(indexed.dependency_repo)
+        self._prefetch_ref_metadata(repos)
+        self._prefetch_unpinned_default_branches(unpinned)
+
+    def _prefetch_unpinned_default_branches(self, repos: set[str]) -> None:
+        """Read unpinned dependencies with no known default branch ref-less, early.
+
+        An unbridged child walk makes exactly this read one level later; doing
+        it now lets a live index record the default branch it resolved, so
+        the metadata re-read below can bridge the hop (see :meth:`_dependency_ref`).
+        A live run reads every unpinned dependency: a cached default branch
+        may be stale (the repo renamed it).
+        """
+        source_key = self._request.source_key
+        unknown = sorted(
+            repo
+            for repo in repos
+            if self._request.live
+            or _first_default_branch(self._cached_ref_metadata[(repo, source_key)]) is None
+        )
+        pairs = [
+            (repo, None) for repo in unknown if (repo, None, source_key) not in self._dependencies
+        ]
+        if not pairs:
+            return
+        loaded = self._index.dependencies_batch(pairs, source_key=source_key)
+        for repo, ref in pairs:
+            self._dependencies[(repo, ref, source_key)] = loaded[(repo, ref)]
+            del self._cached_ref_metadata[(repo, source_key)]
+        self._prefetch_ref_metadata({repo for repo, _ in pairs})
+
+    def _prefetch_impact_level(self, level: list[_Walk]) -> None:
+        # Must mirror the read conditions of _expand_impact + _node_metadata.
+        self._prefetch_edges(level, cache=self._dependents, batch=self._index.dependents_batch)
+        repos: set[str] = set()
+        for entry in level:
+            if entry.remaining == 0:
+                continue
+            for indexed in self._dependents_for(entry.repo, entry.ref):
+                target_ref = entry.ref if entry.ref is not None else indexed.dependency_version
+                if target_ref is not None:
+                    repos.add(entry.repo)
+                if indexed.source_ref is not None:
+                    repos.add(indexed.source_repo)
+        self._prefetch_ref_metadata(repos)
+
+    def _prefetch_edges(
+        self,
+        level: list[_Walk],
+        *,
+        cache: dict[tuple[str, str | None, str | None], list[IndexedDependency]],
+        batch: EdgeBatchRead,
+    ) -> None:
+        source_key = self._request.source_key
+        pairs = list(
+            dict.fromkeys(
+                (entry.repo, entry.ref)
+                for entry in level
+                if entry.remaining != 0 and (entry.repo, entry.ref, source_key) not in cache
+            )
+        )
+        if not pairs:
+            return
+        loaded = batch(pairs, source_key=source_key)
+        for repo, ref in pairs:
+            cache[(repo, ref, source_key)] = loaded[(repo, ref)]
+
+    def _prefetch_ref_metadata(self, repos: set[str]) -> None:
+        source_key = self._request.source_key
+        missing = sorted(
+            repo for repo in repos if (repo, source_key) not in self._cached_ref_metadata
+        )
+        if not missing:
+            return
+        loaded = self._index.cached_ref_metadata_batch(missing, source_key=source_key)
+        for repo in missing:
+            self._cached_ref_metadata[(repo, source_key)] = loaded[repo]
+
+    def _dependency_ref(self, indexed: IndexedDependency) -> str | None:
+        """The ref a dependency installs: its pin, else its cached default branch.
+
+        Unpinned declarations install the dependency's default branch, so they
+        bridge to that indexed node and downstream walks stay connected. When
+        no default branch is recorded -- or, in a live run, none was read live
+        (depth limit) -- the target stays ref-less.
+        """
+        if indexed.dependency_version is not None or indexed.dependency_repo is None:
+            return indexed.dependency_version
+        repo = indexed.dependency_repo
+        if self._request.live and (repo, None, self._request.source_key) not in self._dependencies:
+            return None
+        return _first_default_branch(self._cached_ref_metadata_for(repo))
+
+    def _emit_target_node(self, indexed: IndexedDependency, ref: str | None) -> None:
+        """Emit the node (and any warning) for a dependency's target at ``ref``.
+
+        The target node id itself comes from :func:`_dependency_target_id`.
+        """
+        if indexed.dependency_repo is not None:
+            self._add_node(indexed.dependency_repo, ref)
+            return
+        node_id = _unresolved_id(indexed)
+        unresolved = indexed.unresolved or indexed.dependency_name
+        self._nodes.setdefault(
+            node_id,
+            GraphNode(id=node_id, label=f"unresolved: {unresolved}", unresolved=unresolved),
+        )
+        self._add_warning(
+            f"unresolved dependency {unresolved} from "
+            f"{_label(indexed.source_repo, indexed.source_ref)} in {indexed.source_path}"
+        )
+
+    def _add_node(self, repo: str, ref: str | None, *, ref_kind: str | None = None) -> str:
+        node_id = _node_id(repo, ref)
+        metadata = self._node_metadata(repo, ref, explicit_ref_kind=ref_kind)
+        node = self._nodes.setdefault(
+            node_id,
+            GraphNode(
+                id=node_id,
+                label=_label(repo, ref),
+                repo=repo,
+                ref=ref,
+                ref_kind=metadata.ref_kind,
+                default_branch=metadata.default_branch,
+            ),
+        )
+        updates: dict[str, str] = {}
+        if node.ref_kind is None and metadata.ref_kind is not None:
+            updates["ref_kind"] = metadata.ref_kind
+        if node.default_branch is None and metadata.default_branch is not None:
+            updates["default_branch"] = metadata.default_branch
+        if updates:
+            self._nodes[node_id] = node.model_copy(update=updates)
+        return node_id
+
+    def _add_edge(
+        self,
+        source_id: str,
+        target_id: str,
+        relation: Literal["requires", "impacts"],
+        indexed: IndexedDependency,
+    ) -> None:
+        key = (source_id, target_id, relation)
+        if key in self._seen_edges:
+            return
+        self._seen_edges.add(key)
+        self._edges.append(
+            GraphEdge(
+                source_id=source_id,
+                target_id=target_id,
+                relation=relation,
+                source_path=indexed.source_path,
+                version=indexed.dependency_version,
+            )
+        )
+
+    def _add_warning(self, warning: str) -> None:
+        if warning in self._seen_warnings:
+            return
+        self._seen_warnings.add(warning)
+        self._warnings.append(warning)
+
+    def _warn_if_missing_cached_ref(self, repo: str, ref: str | None) -> None:
+        if self._request.source_key is None:
+            return
+        if ref is None:
+            # A ref-less read of a repo the source never scanned (no warning, as before).
+            if not self._request.live and not self._cached_refs_for(repo):
+                self._not_cached.add(_node_id(repo, ref))
+            return
+        cached_refs = self._cached_refs_for(repo)
+        node = _label(repo, ref)
+        if ref in cached_refs:
+            return
+        self._not_cached.add(_node_id(repo, ref))
+        if cached_refs:
+            available = ", ".join(self._sorted_cached_ref_names(repo, cached_refs))
+            self._add_warning(
+                self._with_refresh_hint(
+                    f"not expanding {node} from cached source data: ref is not cached "
+                    f"(available refs: {available}). Scan the matching ref/tag or use --live "
+                    "for downstream."
+                )
+            )
+            return
+        self._add_warning(
+            self._with_refresh_hint(
+                f"not expanding {node} from cached source data: repo/ref is not cached. "
+                "Add it to the source, scan the matching ref/tag, or use --live for downstream."
+            )
+        )
+
+    def _with_refresh_hint(self, message: str) -> str:
+        hint = self._request.refresh_hint
+        if hint is None:
+            return message
+        separator = " " if message.endswith(".") else ". "
+        return f"{message}{separator}{hint}"
+
+    def _dependencies_for(self, repo: str, ref: str | None) -> list[IndexedDependency]:
+        key = (repo, ref, self._request.source_key)
+        if key not in self._dependencies:
+            self._dependencies[key] = self._index.dependencies(
+                repo,
+                ref,
+                source_key=self._request.source_key,
+            )
+        return self._dependencies[key]
+
+    def _dependents_for(self, repo: str, ref: str | None) -> list[IndexedDependency]:
+        key = (repo, ref, self._request.source_key)
+        if key not in self._dependents:
+            self._dependents[key] = self._index.dependents(
+                repo,
+                ref,
+                source_key=self._request.source_key,
+            )
+        return self._dependents[key]
+
+    def _cached_refs_for(self, repo: str) -> set[str]:
+        key = (repo, self._request.source_key)
+        if key not in self._cached_refs:
+            self._cached_refs[key] = self._index.cached_refs(
+                repo,
+                source_key=self._request.source_key,
+            )
+        return self._cached_refs[key]
+
+    def _cached_ref_metadata_for(self, repo: str) -> tuple[CachedRef, ...]:
+        key = (repo, self._request.source_key)
+        if key not in self._cached_ref_metadata:
+            self._cached_ref_metadata[key] = self._index.cached_ref_metadata(
+                repo,
+                source_key=self._request.source_key,
+            )
+        return self._cached_ref_metadata[key]
+
+    def _node_metadata(
+        self,
+        repo: str,
+        ref: str | None,
+        *,
+        explicit_ref_kind: str | None,
+    ) -> _NodeMetadata:
+        if ref is None:
+            return _NodeMetadata(ref_kind=explicit_ref_kind, default_branch=None)
+        metadata = self._cached_ref_metadata_for(repo)
+        matches = [cached_ref for cached_ref in metadata if cached_ref.name == ref]
+        default_branch = _first_default_branch(matches) or _first_default_branch(metadata)
+        if explicit_ref_kind is not None:
+            return _NodeMetadata(ref_kind=explicit_ref_kind, default_branch=default_branch)
+        kinds = {cached_ref.kind for cached_ref in matches if cached_ref.kind is not None}
+        ref_kind = next(iter(kinds)) if len(kinds) == 1 else None
+        return _NodeMetadata(ref_kind=ref_kind, default_branch=default_branch)
+
+    def _sorted_cached_ref_names(self, repo: str, cached_refs: set[str]) -> list[str]:
+        metadata = list(self._cached_ref_metadata_for(repo))
+        names_with_metadata = {cached_ref.name for cached_ref in metadata}
+        metadata.extend(CachedRef(name=name) for name in sorted(cached_refs - names_with_metadata))
+        sorted_refs = sort_ref_displays(
+            RefDisplay(
+                name=cached_ref.name,
+                kind=cached_ref.kind,
+                default_branch=cached_ref.default_branch,
+            )
+            for cached_ref in metadata
+        )
+        names: list[str] = []
+        seen: set[str] = set()
+        for ref in sorted_refs:
+            if ref.name in seen:
+                continue
+            seen.add(ref.name)
+            names.append(ref.name)
+        return names
+
+
+class _NodeMetadata(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    ref_kind: str | None
+    default_branch: str | None
+
+
+def _deeper(remaining: int | None, best: int | None) -> bool:
+    """Whether ``remaining`` depth (``None`` = unlimited) exceeds ``best``."""
+    if best is None:
+        return False
+    return remaining is None or remaining > best
+
+
+def _node_id(repo: str, ref: str | None) -> str:
+    """Node id: GitHub repo ids are case-insensitive, so the repo part is folded."""
+    key = repo_key(repo)
+    return f"{key}@{ref}" if ref else key
+
+
+def _dependency_target_id(indexed: IndexedDependency, ref: str | None) -> str:
+    """Compute a dependency's target node id at ``ref`` without emitting the node."""
+    if indexed.dependency_repo is not None:
+        return _node_id(indexed.dependency_repo, ref)
+    return _unresolved_id(indexed)
+
+
+def _unresolved_id(indexed: IndexedDependency) -> str:
+    return f"unresolved:{indexed.unresolved or indexed.dependency_name}"
+
+
+def _label(repo: str, ref: str | None) -> str:
+    return f"{repo}@{ref}" if ref else repo
+
+
+def _first_default_branch(refs: list[CachedRef] | tuple[CachedRef, ...]) -> str | None:
+    for ref in refs:
+        if ref.default_branch is not None:
+            return ref.default_branch
+    return None

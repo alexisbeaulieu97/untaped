@@ -62,7 +62,7 @@ _DISPATCH_PROBE = (
     "    main({argv!r})\n"
     "cli = sorted(\n"
     "    m for m in sys.modules\n"
-    "    if m.startswith(('untaped.capabilities.', 'untaped_')) and '.cli' in m\n"
+    "    if m.startswith('untaped_') and '.cli' in m\n"
     ")\n"
     "print(' '.join(cli))\n"
 )
@@ -85,12 +85,7 @@ def test_root_help_imports_no_capability_cli() -> None:
 def test_capability_help_imports_only_its_own_cli() -> None:
     loaded = _capability_cli_modules(["workspace", "--help"])
     assert loaded
-    owners = {
-        module.split(".")[2]
-        if module.startswith("untaped.")
-        else module.split(".")[0].removeprefix("untaped_")
-        for module in loaded
-    }
+    owners = {module.split(".")[0].removeprefix("untaped_") for module in loaded}
     assert owners == {"workspace"}
 
 
