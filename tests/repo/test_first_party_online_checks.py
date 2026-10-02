@@ -9,8 +9,8 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from test_management.support import write_config
 
+from test_management.support import write_config
 from untaped import bootstrap
 from untaped.capabilities.registry import ProviderCandidate
 from untaped.testing import CliInvoker

@@ -12,8 +12,8 @@ import json
 from pathlib import Path
 
 import pytest
-from test_capabilities.capharness import make_candidate
 
+from test_capabilities.capharness import make_candidate
 from test_management.support import (
     GithubProfile,
     JiraProfile,

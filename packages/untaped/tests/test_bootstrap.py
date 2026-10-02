@@ -22,8 +22,8 @@ from pathlib import Path
 import pytest
 from cyclopts import App
 from pydantic import BaseModel
-from test_capabilities.capharness import make_candidate
 
+from test_capabilities.capharness import make_candidate
 from untaped import bootstrap
 from untaped.app_context import app_context
 from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
