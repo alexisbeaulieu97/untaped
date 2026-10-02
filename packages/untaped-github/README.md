@@ -27,8 +27,7 @@ untaped config set github.base_url https://github.example.com/api/v3
 
 To keep the token out of `config.yml`, reuse the GitHub CLI's login instead
 (`untaped config set github.token_command '["gh", "auth", "token"]'`), or
-export `GH_TOKEN` or `GITHUB_TOKEN`. `github.token` wins over
-`github.token_command`, which wins over the variables; see
+export `GH_TOKEN` or `GITHUB_TOKEN`; the order they apply in is under
 [Tokens](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md#tokens).
 
 Git fetches send the token only to the Git host of `github.base_url`, so a
@@ -158,8 +157,8 @@ untaped github cache delete --all --org acme --dry-run
 - `cache worktree` checks out a cached ref and prints its path.
 - `cache prune --org ORG` removes cached repos that left the org or were
   archived.
-- `delete` and `prune` preview and ask first; `--yes` skips the question and
-  `--dry-run` only previews.
+- `delete` and `prune` preview and ask first, as in
+  [Commands that change things](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#commands-that-change-things).
 
 The corpus is for sweeps. For clones you work in, use
 [workspaces](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-workspace/README.md).

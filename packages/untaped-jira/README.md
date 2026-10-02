@@ -74,9 +74,8 @@ Assignment goes through its own request, so it works even when the assignee
 field is not on the issue's edit screen.
 
 `--dry-run` shows the same preview, prints a `planned` outcome and sends
-nothing, whatever `jira.confirm` says. `--yes` skips the question. Without a
-terminal, a write that must ask exits 2 unless you pass `--yes` or
-`--dry-run`.
+nothing, whatever `jira.confirm` says. `--yes` and the no-terminal rule work
+as in [Commands that change things](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#commands-that-change-things).
 
 ```bash
 untaped jira issues patch OPS-123 --set-json 'labels=["infra","tls"]' --dry-run

@@ -36,8 +36,8 @@ untaped doctor --online
 `untaped setup` walks you through one profile in a terminal. For each service
 you pick (`awx`, `github`, `jira`) it asks for the base URL and how to get
 the token: type it, give a command that prints it (`token_command`), or keep
-the current one. It then checks each service online and exits 1 if one
-fails. Naming a new profile creates it.
+the current one. It checks the answers before writing any of them, then
+checks each service online and exits 1 if one fails. Naming a new profile creates it.
 
 ```bash
 untaped setup
@@ -65,10 +65,8 @@ In scripts, pipe the token in instead:
 printf '%s\n' "$GITHUB_TOKEN" | untaped config set github.token --stdin
 ```
 
-A token set this way is stored in plain text in `config.yml`, and
-`untaped doctor` warns about it. To keep it out of the file, give each
-service a `token_command` or export its token variable instead; see
-[Tokens](./configuration.md#tokens).
+A token set this way is stored in plain text; to keep it out of
+`config.yml`, see [Tokens](./configuration.md#tokens).
 
 Check what is set. Secrets show as `***`:
 
@@ -150,6 +148,12 @@ untaped github repos list --org acme --format raw --columns repo
   `--columns` you name separated by tabs. It suits `fzf`, `awk` and `xargs`.
 - `pipe` prints records that another `untaped` command reads with `--stdin`.
 
+A table fits the terminal by narrowing its widest columns (a cell that does
+not fit ends in `…`), and table output that does not go to a terminal is not
+wrapped. `--columns ?` lists every column and marks the defaults with `*`;
+`--columns +url` adds a column, `--columns=-url` removes one, and
+`--columns name,url` shows exactly those.
+
 To change the `table` default, set `ui.format` or export `UNTAPED_FORMAT`:
 
 ```bash
@@ -180,7 +184,7 @@ Commands that write, delete or launch show a preview and ask before they act.
 Jira asks only before destructive writes by default (see
 [`jira.confirm`](../packages/untaped-jira/README.md#change-issues)).
 
-- `--dry-run` shows the preview and changes nothing.
+- `--dry-run` shows the preview and changes nothing, even with `--yes`.
 - `--yes` (`-y`) skips the question. Without a terminal, such commands exit 2
   unless you pass `--yes` or `--dry-run`.
 - Answering no exits 1 with `cancelled; no changes made`.
@@ -248,13 +252,11 @@ directory outside a repository). Only directories with the marker count, so
 skills you wrote yourself are never touched. Installs made with
 `--target-dir` are not checked.
 
-The `skills.updates` setting picks what the check does:
-
-| Value | Behavior |
-|---|---|
-| `warn` (default) | Print the warning above. |
-| `auto` | Update outdated skills in place, then print `updated N outdated skills`. After a failed command or a preview (`--dry-run`, `--check`), only warn. |
-| `off` | Do nothing. |
+The `skills.updates` setting picks what the check does: `warn` (the
+default) prints the warning above, `auto` updates outdated skills in place and
+prints `updated N outdated skills` (after a failed command or a preview such as
+`--dry-run` or `--check` it only warns), and `off` does nothing; see the
+[configuration reference](./reference/config.md).
 
 ```bash
 untaped config set skills.updates auto
