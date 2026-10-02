@@ -1,10 +1,11 @@
 """Internal capability composition kernel (spec §§1-5).
 
-Implements the four-phase provider pipeline: discovery and metadata pre-checks,
-provider resolution, declaration validation plus app-factory staging, and
-commit. Every capability, first-party ones included, arrives as an
-entry-point candidate; every violation yields a :class:`QuarantineRecord`
-while composition continues. Doctor-check bodies never run here.
+Implements the provider pipeline: discovery and metadata pre-checks, provider
+resolution, declaration validation, quarantine of every claimant of a contested
+name or section, then app-factory staging and commit. Every capability,
+first-party ones included, arrives as an entry-point candidate; every violation
+yields a :class:`QuarantineRecord` while composition continues. Doctor-check
+bodies never run here.
 
 This module is intentionally NOT re-exported: provider authors import the
 stable surface from :mod:`untaped.sdk` instead.
@@ -12,6 +13,7 @@ stable surface from :mod:`untaped.sdk` instead.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import cached_property
@@ -436,19 +438,10 @@ def discover_candidates(
 
 
 class _CompositionState:
-    """Mutable accumulation of one composition run (shell + committed providers).
-
-    ``name_owners`` and ``section_owners`` map each claimed name and section
-    to its owner's label in collision details: ``the shell`` or the quoted
-    distribution providing it.
-    """
+    """Mutable accumulation of one composition run (shell + committed providers)."""
 
     def __init__(self, shell: ApplicationSpec) -> None:
-        self.name_owners: dict[str, str] = {shell.name: "the shell"}
-        self.section_owners: dict[str, str] = {shell.config_section: "the shell"}
-        self.profile_fields: dict[str, set[str]] = {
-            shell.config_section: set(shell.profile_model.model_fields)
-        }
+        self.shell = shell
         self.skill_names: set[str] = {skill.name for skill in shell.skills}
         self.doctor_ids: set[str] = {check.id for check in shell.doctor_checks}
 
@@ -467,20 +460,18 @@ def _check_reserved_and_names(spec: CapabilitySpec, state: _CompositionState) ->
         raise _Quarantine("reserved-root", f"reserved capability name: {spec.name!r}")
     if _is_reserved(spec.config_section):
         raise _Quarantine("reserved-root", f"reserved config section: {spec.config_section!r}")
-    if spec.name in state.name_owners:
-        owner = state.name_owners[spec.name]
+    if spec.name == state.shell.name:
         raise _Quarantine(
             "duplicate-name",
-            f"duplicate capability name: {spec.name!r} (already provided by {owner})",
+            f"duplicate capability name: {spec.name!r} (already provided by the shell)",
         )
 
 
 def _check_duplicate_section(spec: CapabilitySpec, state: _CompositionState) -> None:
-    if spec.config_section in state.section_owners:
-        owner = state.section_owners[spec.config_section]
+    if spec.config_section == state.shell.config_section:
         raise _Quarantine(
             "duplicate-section",
-            f"duplicate config section: {spec.config_section!r} (already provided by {owner})",
+            f"duplicate config section: {spec.config_section!r} (already provided by the shell)",
         )
 
 
@@ -493,9 +484,12 @@ def _check_state_model(spec: CapabilitySpec, state: _CompositionState) -> None:
         )
     except ConfigError as exc:
         raise _Quarantine("profile-state-overlap", str(exc)) from None
-    # Before duplicate-section so a same-section state collision reports
-    # the specific diagnosis rather than the generic duplicate.
-    claimed = state.profile_fields.get(spec.config_section, set())
+    # Before duplicate-section so a state collision with the shell's section
+    # reports the specific diagnosis rather than the generic duplicate; only
+    # the shell can share a section, since candidates sharing one are contested.
+    if spec.config_section != state.shell.config_section:
+        return
+    claimed = set(state.shell.profile_model.model_fields)
     shadowed = sorted(set(spec.state_model.model_fields) & claimed)
     if shadowed:
         joined = ", ".join(shadowed)
@@ -523,11 +517,7 @@ def _check_skills(spec: CapabilitySpec, state: _CompositionState) -> None:
         seen_skills.add(skill.name)
 
 
-def _check_rows_1_to_8(spec: CapabilitySpec, state: _CompositionState) -> None:
-    _check_reserved_and_names(spec, state)
-    _check_state_model(spec, state)
-    _check_duplicate_section(spec, state)
-    _check_skills(spec, state)
+def _check_doctor_checks(spec: CapabilitySpec, state: _CompositionState) -> None:
     seen_checks: set[str] = set()
     for check in spec.doctor_checks:
         if (
@@ -543,6 +533,14 @@ def _check_rows_1_to_8(spec: CapabilitySpec, state: _CompositionState) -> None:
         if check.id in state.doctor_ids or check.id in seen_checks:
             raise _Quarantine("duplicate-doctor-check", f"duplicate doctor id: {check.id!r}")
         seen_checks.add(check.id)
+
+
+def _check_rows_1_to_8(spec: CapabilitySpec, state: _CompositionState) -> None:
+    _check_reserved_and_names(spec, state)
+    _check_state_model(spec, state)
+    _check_duplicate_section(spec, state)
+    _check_skills(spec, state)
+    _check_doctor_checks(spec, state)
 
 
 def _check_factory(spec: CapabilitySpec) -> App:
@@ -589,9 +587,6 @@ def _commit(
     registered = RegisteredCapability(
         spec=spec, provider_ref=ref, skills=tuple(spec.skills), app=app
     )
-    state.name_owners[spec.name] = repr(ref.distribution)
-    state.section_owners[spec.config_section] = repr(ref.distribution)
-    state.profile_fields[spec.config_section] = set(spec.profile_model.model_fields)
     for skill in registered.skills:
         state.skill_names.add(skill.name)
     for check in spec.doctor_checks:
@@ -617,26 +612,77 @@ def compose(
 ) -> CompositionResult:
     """Compose the shell, then every candidate in name order; quarantine failures.
 
-    Candidates are ordered by ``(name, distribution, entry point)``, so on a
-    name or section collision the first in that order wins and the rest are
-    quarantined. A spec with ``help`` is deferred: its factory runs at first
-    dispatch and in ``untaped doctor`` (:func:`run_deferred_factory`).
+    Each candidate is first provided and validated against the shell alone.
+    A capability name or config section that two or more of the survivors
+    claim is contested: every claimant is quarantined, so the result never
+    depends on candidate order. The rest commit in ``(name, distribution,
+    entry point)`` order, where a skill name or doctor-check id already taken
+    quarantines the later one. A spec with ``help`` is deferred: its factory
+    runs at first dispatch and in ``untaped doctor`` (:func:`run_deferred_factory`).
     """
     state = _CompositionState(shell)
-    capabilities: list[RegisteredCapability] = []
-    quarantined: list[QuarantineRecord] = []
-    for candidate in sorted(candidates, key=_candidate_order):
+    ordered = sorted(candidates, key=_candidate_order)
+    quarantined: dict[int, QuarantineRecord] = {}
+    claims: dict[int, CapabilitySpec] = {}
+    for index, candidate in enumerate(ordered):
         try:
-            spec = _provide(candidate, state)
+            claims[index] = _provide(candidate, state)
+        except _Quarantine as failed:
+            quarantined[index] = failed.to_record(candidate)
+    for index, contest in _contested(ordered, claims).items():
+        quarantined[index] = contest.to_record(ordered[index])
+        del claims[index]
+    capabilities: list[RegisteredCapability] = []
+    for index, spec in claims.items():
+        candidate = ordered[index]
+        try:
+            _check_skills(spec, state)
+            _check_doctor_checks(spec, state)
             staged = None if spec.help is not None else _check_factory(spec)
         except _Quarantine as failed:
-            quarantined.append(failed.to_record(candidate))
+            quarantined[index] = failed.to_record(candidate)
             continue
         ref = ProviderRef(
             distribution=candidate.distribution, entry_point=candidate_entry_point(candidate)
         )
         capabilities.append(_commit(spec, ref, state, staged))
-    return CompositionResult(capabilities=tuple(capabilities), quarantine=tuple(quarantined))
+    return CompositionResult(
+        capabilities=tuple(capabilities),
+        quarantine=tuple(quarantined[index] for index in sorted(quarantined)),
+    )
+
+
+def _contested(
+    ordered: Sequence[ProviderCandidate], claims: dict[int, CapabilitySpec]
+) -> dict[int, _Quarantine]:
+    """A quarantine per claimant of a name or section shared by two or more claims.
+
+    A claimant contesting both a name and a section gets the name's record.
+    """
+    contested: dict[int, _Quarantine] = {}
+    for reason, kind, values in (
+        ("duplicate-name", "capability name", {i: spec.name for i, spec in claims.items()}),
+        (
+            "duplicate-section",
+            "config section",
+            {i: spec.config_section for i, spec in claims.items()},
+        ),
+    ):
+        claimants: defaultdict[str, list[int]] = defaultdict(list)
+        for index, value in values.items():
+            claimants[value].append(index)
+        for value, indexes in claimants.items():
+            if len(indexes) < 2:
+                continue
+            claimed_by = ", ".join(
+                repr(dist) for dist in sorted(ordered[index].distribution for index in indexes)
+            )
+            for index in indexes:
+                contested.setdefault(
+                    index,
+                    _Quarantine(reason, f"duplicate {kind}: {value!r} (claimed by {claimed_by})"),
+                )
+    return contested
 
 
 def _candidate_order(candidate: ProviderCandidate) -> tuple[str, str, str]:

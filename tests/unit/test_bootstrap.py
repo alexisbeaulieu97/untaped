@@ -408,33 +408,55 @@ def test_quarantined_providers_warn_and_the_root_boots(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     good = make_candidate(_spec("good", _who_app("good", _token_body_for("good"))))
-    duplicate_spec = CapabilitySpec(
-        name="good",
-        app_factory=lambda: create_app(name="bad", help="bad capability."),
-        config_section="other",
-        profile_model=_ExtProfile,
-    )
-    duplicate = make_candidate(duplicate_spec)
+    built: list[str] = []
+
+    def rival_factory() -> App:
+        built.append("rival")
+        return create_app(name="rival", help="rival capability.")
+
+    # Two providers claiming one name are both quarantined; neither is built.
+    rivals = [
+        make_candidate(
+            CapabilitySpec(
+                name="rival",
+                app_factory=rival_factory,
+                config_section=section,
+                profile_model=_ExtProfile,
+            ),
+            distribution,
+        )
+        for section, distribution in (("rival", "example-dist"), ("rival2", "acme-dist"))
+    ]
     # A first-party-style provider gets no special treatment when it raises.
     raising = make_candidate(
         _spec("awx", App(name="awx")), "untaped", error=ImportError("settings module is broken")
     )
-    candidates = [good, duplicate, raising]
+    candidates = [good, *rivals, raising]
 
     composition = bootstrap.compose_root(candidates=candidates)
     assert [cap.spec.name for cap in composition.capabilities] == ["good"]
     assert [(r.name, r.distribution, r.reason) for r in composition.quarantine] == [
         ("awx", "untaped", "malformed-entry-point"),
-        ("good", "example-dist", "duplicate-name"),
+        ("rival", "acme-dist", "duplicate-name"),
+        ("rival", "example-dist", "duplicate-name"),
     ]
+    assert built == []
+    for section in ("rival", "rival2"):
+        with pytest.raises(ConfigError):
+            app_context().section(section, _ExtProfile)
     err = capsys.readouterr().err
     assert "'awx' from 'untaped' quarantined [malformed-entry-point]" in err
-    assert "'good' from 'example-dist' quarantined [duplicate-name]" in err
+    assert (
+        "'rival' from 'acme-dist' quarantined [duplicate-name]: duplicate capability "
+        "name: 'rival' (claimed by 'acme-dist', 'example-dist')"
+    ) in err
 
     root = bootstrap.build_root_app(candidates=candidates)
     capsys.readouterr()
     assert "good" in root
     assert "awx" not in root
+    assert "rival" not in root
+    assert built == []
     result = CliInvoker().invoke(root.meta, ["good", "who"])
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "default-token"
