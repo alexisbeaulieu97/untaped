@@ -40,18 +40,18 @@ jobs:
           restore-keys: |
             pre-commit-${{ runner.os }}-
 
-      - name: Shared release helper tests
-        run: |
-          python3 .github/release/release.py verify-version --help
-          python3 .github/release/release.py verify-candidate --help
-          python3 .github/release/release.py smoke-unified --help
-          uv run --no-project --with pytest python -m pytest .github/release/tests -q --confcutdir=.github/release -o addopts=
-
       - name: Sync workspace
         # `--frozen` forbids re-resolving: CI installs exactly what `uv.lock`
         # pins, so a stale lock surfaces as a sync failure instead of a silent
         # in-CI resolve that diverges from local installs.
         run: uv sync --frozen --python 3.14 --all-packages
+
+      - name: Release versions and pins
+        # Version or sibling-pin drift fails here, not first at release time.
+        run: |
+          set -euo pipefail
+          uv lock --check
+          uv run python scripts/release.py check
 
       - name: Pre-commit hooks
         run: uv run pre-commit run --all-files --show-diff-on-failure
@@ -62,8 +62,9 @@ jobs:
       - name: Pytest
         run: uv run pytest -n auto --cov --cov-report=term-missing --durations=25
 
-  # Build the wheel, install it into a clean venv, and run the same smoke the
-  # release workflow runs on its candidate and published package.
+  # Build the wheel, install it into a clean venv, and run the same
+  # `scripts/release.py smoke` the release workflow runs on its built wheels
+  # and on the published package.
   unified-app-wheel-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -96,10 +97,4 @@ jobs:
           uv pip install --python "$RUNNER_TEMP/untaped-wheel/bin/python" dist/*.whl
 
       - name: Run the unified app smoke
-        run: |
-          set -euo pipefail
-          python3 .github/release/release.py smoke-unified \
-            --package untaped \
-            --version "$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')" \
-            --venv "$RUNNER_TEMP/untaped-wheel" \
-            --console-script untaped
+        run: uv run python scripts/release.py smoke "$RUNNER_TEMP/untaped-wheel/bin/untaped" "$(uv run python scripts/release.py version)"

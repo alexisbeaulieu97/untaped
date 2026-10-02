@@ -50,6 +50,6 @@ of the version you have installed, run `untaped --help` or
   exit codes and record shapes every command follows.
 - [Skill template](./templates/SKILL.md): the starting point for a
   capability's agent skill.
-- [Releasing](./release.md): the PyPI release workflow.
+- [Releasing](./release.md): the release PR, TestPyPI rehearsal and tag.
 - [AGENTS.md](../AGENTS.md) and [CONTRIBUTING.md](../CONTRIBUTING.md): repo
   rules and local setup.
