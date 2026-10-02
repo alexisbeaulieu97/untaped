@@ -11,16 +11,14 @@
 
 from __future__ import annotations
 
-import importlib.util
 import re
 import shlex
-import sys
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 from cyclopts import App
 
+from tests.unit.conftest import load_script
 from untaped.bootstrap import build_root_app
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -31,24 +29,14 @@ _FENCE = re.compile(r"^(```|~~~).*?^\1", re.MULTILINE | re.DOTALL)
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*$", re.MULTILINE)
 
 
-def _generator() -> ModuleType:
-    path = REPO_ROOT / "scripts" / "gen_config_reference.py"
-    spec = importlib.util.spec_from_file_location("gen_config_reference", path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
 def test_config_reference_is_current() -> None:
-    generator = _generator()
+    generator = load_script("gen_config_reference")
     page = (REPO_ROOT / "docs" / "reference" / "config.md").read_text(encoding="utf-8")
     assert page == generator.render(), f"docs/reference/config.md is stale; run: {REGENERATE}"
 
 
 def test_every_setting_has_a_description() -> None:
-    generator = _generator()
+    generator = load_script("gen_config_reference")
     assert generator.missing_descriptions() == [], (
         "add Field(description=...) or a DESCRIPTIONS entry in scripts/gen_config_reference.py"
     )

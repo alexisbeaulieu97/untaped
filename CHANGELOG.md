@@ -28,11 +28,14 @@
     by host and path so https and ssh URLs share it; delete
     `~/.untaped/ansible-repositories`. The GitHub token is now sent only to
     the GitHub host, and refreshes of one repo no longer run concurrently.
+    An explicit `ansible.repo_cache_path` keeps its old-layout directories,
+    which are never read again; refresh re-fetches into the new layout, and
+    the old ones can be deleted.
 - Workspace
-  - **Breaking:** 10.0 caches live in `~/.untaped/workspace-cache`. The 9.x
-    `~/.untaped/repositories` is left untouched (clones made before 7.0 may
-    borrow objects from it); a `workspace.cache_dir` pointing at a 9.x cache
-    is refused.
+  - **Breaking:** workspace caches now live in `~/.untaped/workspace-cache`.
+    The 9.x `~/.untaped/repositories` is left untouched (clones made before
+    7.0 may borrow objects from it); a `workspace.cache_dir` pointing at a
+    9.x cache is refused.
   - **New:** `workspace create`, `add` and `archive` print failed rows'
     errors with hints on stderr.
   - **Breaking:** `untaped workspace` now manages task workspaces of git
@@ -83,7 +86,9 @@
     falls back to `github.default_org`.
   - **Breaking:** the sweep cache moves to `~/.untaped/github-cache`, keyed
     by host and path so https and ssh URLs share it; delete
-    `~/.untaped/github-corpus` (its worktrees included).
+    `~/.untaped/github-corpus` (its worktrees included). Old-layout caches
+    under a custom `github.corpus_path` are not listed; sync re-creates them
+    in the new layout, and the old directories can be deleted.
 - Recipe
   - **New:** `recipe backups restore` takes `--format` and `--columns`; with
     `json`, `yaml` or `pipe` it prints one `recipe.restore_outcome` row
