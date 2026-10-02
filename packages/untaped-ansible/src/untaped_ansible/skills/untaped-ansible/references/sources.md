@@ -28,6 +28,9 @@ failed and paused refreshes, the cache.
 
 - `source set NAME` creates or replaces a source. `source patch NAME` edits
   it with `--add-*`, `--remove-*` and `--clear-*`.
+- A changed `set` or `patch` drops the source's cached data at once:
+  `deps`, `impact`, `find` and `graph` on it fail with "no cached source data
+  found" until the next `source refresh NAME`.
 - `source-alias set NAME OWNER/REPO` maps a Galaxy or role name in
   requirements files to its repo. Aliases apply at refresh, so run
   `source refresh NAME` after changing one.
@@ -35,9 +38,8 @@ failed and paused refreshes, the cache.
   `name`, `changes`) or `ansible.source_alias_outcome` (`action`, `alias`,
   `repo`). `action` is `created`, `updated`, `unchanged`, `deleted` or
   `planned` (with `--dry-run`).
-- `source remove` and `source-alias remove` confirm. Without a terminal they
-  need `--yes` or `--dry-run` (exit 2 otherwise); declining exits 1 with
-  `cancelled; no changes made`.
+- `source remove` and `source-alias remove` confirm first; see
+  [Changing sources](../SKILL.md#changing-sources).
 - `source status` reports `state` (`fresh`, `stale` or `not_refreshed`) and
   `scanned_at` in UTC.
 

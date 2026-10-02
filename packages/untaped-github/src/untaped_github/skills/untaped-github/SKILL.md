@@ -58,7 +58,8 @@ unscanned before reporting "none" or "all".
    answer, `sweep` for anything exact or repeated.
 2. Name the scope explicitly (`--org`, `--team` or `--repo`) rather than
    relying on the default org, so the answer states what it covered.
-   Archived repos are left out unless you pass `--archived include`.
+   Archived repos are left out unless you pass `--archived include` (or
+   `--archived only`).
 3. Run it with `--format json`. For `repos list` and `search`, check stderr
    for a `showing N of M` or `raise --limit` notice; without one you have
    every match.
@@ -100,8 +101,8 @@ deleted. A deleted repo is fetched again by the next sweep that covers it.
 
 ## Pitfalls
 
-- Sweep patterns are POSIX extended regexes: `\(` is a literal parenthesis,
-  and `\d` does not work (use `[0-9]`).
+- Sweep patterns are POSIX extended regexes: `a|b` alternates, `\(` is a
+  literal parenthesis, and `\d` does not work (use `[0-9]`).
 - `--any` ORs the positive predicates only; `--not-grep` and `--lacks-file`
   still apply.
 - A sweep scans each repo's default branch unless `--refs` or `--ref` says
