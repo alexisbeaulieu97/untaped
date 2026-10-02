@@ -1,7 +1,8 @@
 # Releasing `untaped`
 
 A release is a release PR, a TestPyPI rehearsal whenever the workflow, the
-build or the package set changed, and a `vX.Y.Z` tag on `main`. `.github/workflows/release.yml` does the rest; the workflow and
+build or the package set changed, and a `vX.Y.Z` tag on `main`.
+`.github/workflows/release.yml` does the rest; the workflow and
 `scripts/release.py` are the reference for what each step checks.
 
 Publishing, dispatching a release workflow, creating a tag or release,
