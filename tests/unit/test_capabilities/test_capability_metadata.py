@@ -203,3 +203,60 @@ def test_live_discovery_composes_end_to_end(monkeypatch: pytest.MonkeyPatch) -> 
     result = compose(make_shell(), list(providers))
     assert [cap.spec.name for cap in result.capabilities] == ["live-cap"]
     assert result.quarantine == ()
+
+
+class _CountingDist:
+    """Distribution double counting each metadata read."""
+
+    def __init__(self, reads: list[str]) -> None:
+        self._reads = reads
+
+    @property
+    def metadata(self) -> dict[str, str]:
+        self._reads.append("metadata")
+        return {"Name": "multi-dist"}
+
+    @property
+    def version(self) -> str:
+        self._reads.append("version")
+        return "2.0.0"
+
+    @property
+    def requires(self) -> list[str]:
+        self._reads.append("requires")
+        return ["untaped>=0"]
+
+
+def test_discovery_reads_each_distribution_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    reads: list[str] = []
+    dist = _CountingDist(reads)
+    entry_points = [
+        SimpleNamespace(name=name, value=f"mod:{name}", group="untaped.capabilities", dist=dist)
+        for name in ("alpha", "beta")
+    ]
+    monkeypatch.setattr(registry.importlib_metadata, "entry_points", lambda group: entry_points)
+    candidates = registry.discover_candidates()
+    assert [
+        (c.name, c.distribution, c.distribution_version, c.requires_dist) for c in candidates
+    ] == [
+        ("alpha", "multi-dist", "2.0.0", ("untaped>=0",)),
+        ("beta", "multi-dist", "2.0.0", ("untaped>=0",)),
+    ]
+    assert sorted(reads) == ["metadata", "requires", "version"]
+
+
+def test_compose_resolves_the_running_version_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    looked_up: list[str] = []
+
+    def fake_version(name: str) -> str:
+        looked_up.append(name)
+        return "6.1.0"
+
+    monkeypatch.setattr(registry.importlib_metadata, "version", fake_version)
+    candidates = [
+        make_candidate(make_spec(name=name), "example-dist", requires_dist=("untaped>=6",))
+        for name in ("alpha", "beta")
+    ]
+    result = compose(make_shell(), candidates)
+    assert [cap.spec.name for cap in result.capabilities] == ["alpha", "beta"]
+    assert looked_up == ["untaped"]

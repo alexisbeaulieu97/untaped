@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from functools import cached_property
 from importlib import import_module
 from importlib import metadata as importlib_metadata
 from pathlib import Path
@@ -350,7 +351,7 @@ def _check_entry_point_group(candidate: ProviderCandidate) -> None:
         )
 
 
-def _check_requires_dist(candidate: ProviderCandidate) -> None:
+def _check_requires_dist(candidate: ProviderCandidate, state: _CompositionState) -> None:
     untaped_requirements: list[tuple[str, Requirement]] = []
     for requirement in candidate.requires_dist:
         parsed = _parse_requirement(requirement)
@@ -364,7 +365,7 @@ def _check_requires_dist(candidate: ProviderCandidate) -> None:
             untaped_requirements.append((str(requirement), parsed))
     if not untaped_requirements:
         return
-    sdk_version = _running_sdk_version()
+    sdk_version = state.sdk_version
     if sdk_version is None:
         raise _Quarantine(
             "bad-metadata",
@@ -398,6 +399,8 @@ def discover_candidates(
     via :mod:`importlib.metadata` without importing any provider code.
     """
     found: list[ProviderCandidate] = []
+    # Entry points of one distribution share its object; read its metadata once.
+    read: dict[int, tuple[str, str, tuple[str, ...]]] = {}
     for entry_point in importlib_metadata.entry_points(group=group):
         dist = entry_point.dist
         if dist is None:
@@ -410,39 +413,44 @@ def discover_candidates(
                 )
             )
             continue
-        dist_name = dist.metadata.get("Name") or "unknown"
+        if id(dist) not in read:
+            name = dist.metadata.get("Name") or "unknown"
+            read[id(dist)] = (str(name), dist.version, tuple(dist.requires or ()))
+        dist_name, dist_version, requires = read[id(dist)]
         found.append(
             ProviderCandidate(
-                distribution=str(dist_name),
+                distribution=dist_name,
                 name=entry_point.name,
                 target=entry_point.value,
-                distribution_version=dist.version,
+                distribution_version=dist_version,
                 entry_point_group=entry_point.group,
-                requires_dist=tuple(dist.requires or ()),
+                requires_dist=requires,
             )
         )
     return tuple(found)
-
-
-#: Owner label of the shell's own name and config section in collision details.
-_SHELL_OWNER = "the shell"
 
 
 class _CompositionState:
     """Mutable accumulation of one composition run (shell + committed providers).
 
     ``name_owners`` and ``section_owners`` map each claimed name and section
-    to the distribution providing it (the shell's own are :data:`_SHELL_OWNER`).
+    to its owner's label in collision details: ``the shell`` or the quoted
+    distribution providing it.
     """
 
     def __init__(self, shell: ApplicationSpec) -> None:
-        self.name_owners: dict[str, str] = {shell.name: _SHELL_OWNER}
-        self.section_owners: dict[str, str] = {shell.config_section: _SHELL_OWNER}
+        self.name_owners: dict[str, str] = {shell.name: "the shell"}
+        self.section_owners: dict[str, str] = {shell.config_section: "the shell"}
         self.profile_fields: dict[str, set[str]] = {
             shell.config_section: set(shell.profile_model.model_fields)
         }
         self.skill_names: set[str] = {skill.name for skill in shell.skills}
         self.doctor_ids: set[str] = {check.id for check in shell.doctor_checks}
+
+    @cached_property
+    def sdk_version(self) -> str | None:
+        """The running SDK version, resolved once per composition when first needed."""
+        return _running_sdk_version()
 
 
 def _is_reserved(value: str) -> bool:
@@ -455,23 +463,20 @@ def _check_reserved_and_names(spec: CapabilitySpec, state: _CompositionState) ->
     if _is_reserved(spec.config_section):
         raise _Quarantine("reserved-root", f"reserved config section: {spec.config_section!r}")
     if spec.name in state.name_owners:
-        owner = _owner_phrase(state.name_owners[spec.name])
-        raise _Quarantine("duplicate-name", f"duplicate capability name: {spec.name!r} ({owner})")
+        owner = state.name_owners[spec.name]
+        raise _Quarantine(
+            "duplicate-name",
+            f"duplicate capability name: {spec.name!r} (already provided by {owner})",
+        )
 
 
 def _check_duplicate_section(spec: CapabilitySpec, state: _CompositionState) -> None:
     if spec.config_section in state.section_owners:
-        owner = _owner_phrase(state.section_owners[spec.config_section])
+        owner = state.section_owners[spec.config_section]
         raise _Quarantine(
             "duplicate-section",
-            f"duplicate config section: {spec.config_section!r} ({owner})",
+            f"duplicate config section: {spec.config_section!r} (already provided by {owner})",
         )
-
-
-def _owner_phrase(owner: str) -> str:
-    if owner == _SHELL_OWNER:
-        return f"already provided by {_SHELL_OWNER}"
-    return f"already provided by {owner!r}"
 
 
 def _check_state_model(spec: CapabilitySpec, state: _CompositionState) -> None:
@@ -579,8 +584,8 @@ def _commit(
     registered = RegisteredCapability(
         spec=spec, provider_ref=ref, skills=tuple(spec.skills), app=app
     )
-    state.name_owners[spec.name] = ref.distribution
-    state.section_owners[spec.config_section] = ref.distribution
+    state.name_owners[spec.name] = repr(ref.distribution)
+    state.section_owners[spec.config_section] = repr(ref.distribution)
     state.profile_fields[spec.config_section] = set(spec.profile_model.model_fields)
     for skill in registered.skills:
         state.skill_names.add(skill.name)
@@ -647,7 +652,7 @@ def _provide(candidate: ProviderCandidate, state: _CompositionState) -> Capabili
     # admission are decided from distribution metadata without executing
     # provider code (spec §5 Phase A).
     _check_entry_point_group(candidate)
-    _check_requires_dist(candidate)
+    _check_requires_dist(candidate, state)
     try:
         provider = _resolve_target(candidate.target)
     except Exception as exc:

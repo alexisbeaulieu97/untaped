@@ -17,8 +17,6 @@ from cyclopts import App
 from untaped.capabilities.registry import (
     CompositionResult,
     ProviderCandidate,
-    QuarantineRecord,
-    candidate_entry_point,
 )
 from untaped.cli import (
     ColumnsOption,
@@ -76,61 +74,30 @@ def _rows(
     result: CompositionResult,
     candidates: Sequence[ProviderCandidate],
 ) -> list[dict[str, object]]:
-    ordered = sorted(candidates, key=lambda item: (item.distribution, item.name))
-    by_key = {(item.distribution, candidate_entry_point(item)): item for item in ordered}
-    rows: list[dict[str, object]] = []
-    succeeded: set[tuple[str, str]] = set()
-    for registered in result.capabilities:
-        ref = registered.provider_ref
-        candidate = by_key.get((ref.distribution, ref.entry_point))
-        rows.append(
-            {
-                "name": registered.spec.name,
-                "status": "ready",
-                "distribution": ref.distribution,
-                "version": _candidate_version(candidate),
-            }
-        )
-        succeeded.add((ref.distribution, ref.entry_point))
-    failed = [
-        item
-        for item in ordered
-        if (item.distribution, candidate_entry_point(item)) not in succeeded
-    ]
-    records = list(result.quarantine)
-    for candidate in failed:
-        rows.append(
-            {
-                "name": candidate.name,
-                "status": "quarantined",
-                "distribution": candidate.distribution,
-                "version": _candidate_version(candidate),
-            }
-        )
-    for record in records[len(failed) :]:
-        rows.append(_orphan_row(record))
-    return sorted(rows, key=lambda row: (str(row["name"]), str(row["distribution"])))
-
-
-def _candidate_version(candidate: ProviderCandidate | None) -> str:
-    if candidate is None or not candidate.distribution_version:
-        return _UNKNOWN
-    return candidate.distribution_version
-
-
-def _orphan_row(record: QuarantineRecord) -> dict[str, object]:
-    """Row for a quarantine record with no matching candidate (defensive).
-
-    ``compose`` emits exactly one record per failed candidate, so this path
-    is unreachable today; it keeps the listing total instead of crashing if
-    the kernel ever changes shape.
-    """
-    return {
-        "name": record.name,
-        "status": "quarantined",
-        "distribution": record.distribution,
-        "version": _UNKNOWN,
+    # A distribution declares each entry-point name once, and a provider whose
+    # spec name differs from it is quarantined, so (distribution, name) finds
+    # the candidate of every row, a provider that never resolved included.
+    versions = {
+        (item.distribution, item.name): item.distribution_version or _UNKNOWN for item in candidates
     }
+    ready = [
+        (registered.spec.name, "ready", registered.provider_ref.distribution)
+        for registered in result.capabilities
+    ]
+    quarantined = [
+        (record.name, "quarantined", record.distribution) for record in result.quarantine
+    ]
+    return [
+        {
+            "name": name,
+            "status": status,
+            "distribution": distribution,
+            "version": versions.get((distribution, name), _UNKNOWN),
+        }
+        for name, status, distribution in sorted(
+            ready + quarantined, key=lambda row: (row[0], row[2])
+        )
+    ]
 
 
 __all__ = ["build_root_capabilities_app"]
