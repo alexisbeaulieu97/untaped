@@ -18,7 +18,7 @@ from typing import Any, TextIO
 import pytest
 from pydantic import BaseModel
 
-from untaped import cli
+from untaped import bootstrap, cli
 from untaped.auth import clear_token_cache
 from untaped.prompts import reset_terminal_override, set_terminal_override
 from untaped.records import table_columns_of
@@ -94,6 +94,17 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
 
 def _no_controlling_terminal() -> TextIO:
     raise OSError("no controlling terminal in tests")
+
+
+@pytest.fixture
+def fresh_composition() -> Iterator[None]:
+    """Forget the root composition (and its registered settings) after the test.
+
+    For tests that compose the root, such as convention checks, so the
+    capabilities they register do not leak into later tests.
+    """
+    yield
+    bootstrap._clear_for_tests()
 
 
 #: The rule suffix of a ``table_default_violations`` line.
