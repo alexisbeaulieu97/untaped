@@ -220,6 +220,44 @@ def test_config_edit_rejects_an_invalid_edit_and_keeps_the_config(
     assert kept.read_text() == content
 
 
+def test_config_edit_never_opens_a_newer_config(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = "format_version: 2\nprofiles: {}\n"
+    write_config(_isolated_config, original)
+    marker = tmp_path / "editor-ran"
+    _scripted_editor(
+        tmp_path, monkeypatch, "profiles: {}\n", code=f"pathlib.Path({str(marker)!r}).touch()"
+    )
+    result = CliInvoker().invoke(_config_app(), ["edit"])
+    assert result.exit_code == 4, result.output
+    assert "written by a newer untaped (format 2" in result.stderr
+    assert _isolated_config.read_text() == original
+    assert not marker.exists()
+
+
+def test_config_edit_repairs_an_invalid_stamp(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, "format_version: true\nprofiles: {}\n")
+    _scripted_editor(tmp_path, monkeypatch, "format_version: 1\nprofiles: {}\n")
+    result = CliInvoker().invoke(_config_app(), ["edit"])
+    assert result.exit_code == 0, result.output
+    assert _isolated_config.read_text() == "format_version: 1\nprofiles: {}\n"
+
+
+def test_config_edit_names_a_newer_draft_format(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, "profiles: {}\n")
+    _scripted_editor(tmp_path, monkeypatch, "format_version: 2\nprofiles: {}\n")
+    result = CliInvoker().invoke(_config_app(), ["edit"])
+    assert result.exit_code == 1, result.output
+    assert "format_version 2 is newer than this release supports (format 1)" in result.stderr
+    assert "upgrade untaped" not in result.stderr
+    assert _isolated_config.read_text() == "profiles: {}\n"
+
+
 def test_config_edit_saves_verbatim_owner_only_and_through_a_symlink(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

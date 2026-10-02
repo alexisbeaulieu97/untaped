@@ -11,7 +11,13 @@ from untaped.config_file import read_config_text, replace_config_text
 from untaped.editor import run_editor
 from untaped.errors import ConfigError, attribution
 from untaped.fs import atomic_write
-from untaped.settings import resolve_config_path, validate_config_file
+from untaped.settings import (
+    FORMAT_VERSION,
+    NewerFormatError,
+    load_config_yaml,
+    resolve_config_path,
+    validate_config_file,
+)
 from untaped.ui import ui_context
 
 
@@ -28,6 +34,8 @@ def run_config_editor() -> None:
     with report_errors():
         path = resolve_config_path()
         original = read_config_text(path)
+        if original is not None:
+            _refuse_a_newer_format(path)
         workdir = Path(tempfile.mkdtemp(prefix="untaped-config-edit-"))
         draft = workdir / path.name
         edited_by_user = False
@@ -43,6 +51,12 @@ def run_config_editor() -> None:
                 return
             try:
                 validate_config_file(draft)
+            except NewerFormatError as exc:
+                raise ConfigError(
+                    f"format_version {exc.version} is newer than this release supports "
+                    f"(format {FORMAT_VERSION})",
+                    category="invalid",
+                ) from exc
             except ConfigError as exc:
                 # The edit is the invalid input here, not the setup.
                 raise ConfigError(str(exc), category="invalid") from exc
@@ -67,6 +81,16 @@ def run_config_editor() -> None:
             ) from exc
         shutil.rmtree(workdir, ignore_errors=True)
         ui_context(strict=False).message("success", f"config saved and validated (config: {path})")
+
+
+def _refuse_a_newer_format(path: Path) -> None:
+    """Never open a config file a newer untaped wrote; leave any other error to repair."""
+    try:
+        load_config_yaml(path)
+    except NewerFormatError:
+        raise
+    except ConfigError:
+        pass
 
 
 def _saved_changes(draft: Path, original: str) -> bool:

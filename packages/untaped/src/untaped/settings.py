@@ -236,6 +236,14 @@ class FormatVersionError(ConfigError):
     """A config or state file this release must not read or write."""
 
 
+class NewerFormatError(FormatVersionError):
+    """A file stamped with a ``format_version`` newer than :data:`FORMAT_VERSION`."""
+
+    def __init__(self, message: str, *, version: int) -> None:
+        super().__init__(message)
+        self.version = version
+
+
 def _check_format(raw: dict[str, Any], path: Path) -> None:
     if "format_version" not in raw:
         return
@@ -245,9 +253,10 @@ def _check_format(raw: dict[str, Any], path: Path) -> None:
             f"invalid format_version in {path}: expected a positive integer, got {value!r}"
         )
     if value > FORMAT_VERSION:
-        raise FormatVersionError(
+        raise NewerFormatError(
             f"{path} was written by a newer untaped (format {value}; "
-            f"this release reads format {FORMAT_VERSION}); upgrade untaped"
+            f"this release reads format {FORMAT_VERSION}); upgrade untaped",
+            version=value,
         )
 
 
