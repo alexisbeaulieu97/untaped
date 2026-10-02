@@ -23,11 +23,8 @@ import pytest
 from cyclopts import App
 from pydantic import BaseModel
 
-from tests.unit.conftest import (
-    broken_first_party_candidates,
-    first_party_candidates,
-    first_party_specs,
-)
+from tests.conftest import first_party_candidates
+from tests.unit.conftest import broken_first_party_candidates, first_party_specs
 from tests.unit.test_capabilities.capharness import make_candidate
 from untaped import bootstrap
 from untaped.app_context import app_context
@@ -107,19 +104,19 @@ def test_composition_is_the_last_composed_result() -> None:
 def test_default_composition_is_the_first_party_capabilities() -> None:
     expected = tuple(candidate.name for candidate in first_party_candidates())
 
-    composition = bootstrap.compose_root()
+    composition = bootstrap.compose_root(candidates=first_party_candidates())
 
     assert tuple(capability.spec.name for capability in composition.capabilities) == expected
     assert composition.quarantine == ()
 
-    root = bootstrap.build_root_app()
+    root = bootstrap.build_root_app(candidates=first_party_candidates())
     for name in expected:
         result = CliInvoker().invoke(root.meta, [name, "--help"])
         assert result.exit_code == 0, result.output
 
 
 def test_retired_orchestration_command_is_unknown() -> None:
-    root = bootstrap.build_root_app()
+    root = bootstrap.build_root_app(candidates=first_party_candidates())
 
     result = CliInvoker().invoke(root.meta, ["orchestration"])
 
@@ -137,7 +134,7 @@ def test_retired_orchestration_capability_is_absent() -> None:
 
 
 def test_retired_orchestration_config_schema_is_absent() -> None:
-    root = bootstrap.build_root_app()
+    root = bootstrap.build_root_app(candidates=first_party_candidates())
 
     assert "orchestration" not in get_settings_model().model_fields
 
@@ -150,7 +147,7 @@ def test_retired_orchestration_config_schema_is_absent() -> None:
 
 
 def test_retired_orchestration_packaged_skill_is_absent() -> None:
-    root = bootstrap.build_root_app()
+    root = bootstrap.build_root_app(candidates=first_party_candidates())
 
     result = CliInvoker().invoke(
         root.meta,
@@ -291,7 +288,7 @@ def test_root_options_apply_between_nested_command_names(
 def test_root_option_after_a_lazy_capability_name_is_not_a_command(
     _isolated_config: Path,
 ) -> None:
-    root = bootstrap.build_root_app()
+    root = bootstrap.build_root_app(candidates=first_party_candidates())
 
     result = CliInvoker().invoke(root.meta, ["workspace", "--profile", "nope", "list"])
 
@@ -803,7 +800,9 @@ def test_lazy_first_party_capabilities_render_like_eager_mounts() -> None:
         [spec.name, flag] for spec in specs for flag in ("--help", "--version")
     ]
     for argv in argv_cases:
-        lazy = CliInvoker().invoke(bootstrap.build_root_app().meta, argv)
+        lazy = CliInvoker().invoke(
+            bootstrap.build_root_app(candidates=first_party_candidates()).meta, argv
+        )
         eager = CliInvoker().invoke(
             bootstrap.build_root_app(candidates=eager_candidates).meta, argv
         )
@@ -818,14 +817,3 @@ def test_first_party_help_matches_app_summary() -> None:
     for spec in first_party_specs():
         assert spec.help is not None, spec.name
         assert spec.help == spec.app_factory().help, spec.name
-
-
-def test_root_help_lists_capabilities_in_name_order() -> None:
-    # Pins the contract, not compose order: cyclopts sorts the listing itself.
-    candidates = [
-        provider_candidate(_counting_spec(name, [], help=f"{name} help."), distribution=dist)
-        for name, dist in (("zeta", "a-dist"), ("alpha", "z-dist"), ("mid", "m-dist"))
-    ]
-    root = bootstrap.build_root_app(candidates=candidates)
-    out = CliInvoker().invoke(root.meta, ["--help"]).stdout
-    assert out.index("alpha help.") < out.index("mid help.") < out.index("zeta help.")

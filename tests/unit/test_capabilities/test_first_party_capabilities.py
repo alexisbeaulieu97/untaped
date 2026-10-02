@@ -12,7 +12,8 @@ from pathlib import Path
 import pytest
 from cyclopts import App
 
-from tests.unit.conftest import first_party_candidates, first_party_specs
+from tests.conftest import first_party_candidates
+from tests.unit.conftest import first_party_specs
 from untaped import bootstrap
 from untaped.capabilities.registry import CapabilitySpec
 from untaped.settings import get_settings

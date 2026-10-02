@@ -12,7 +12,8 @@ from types import ModuleType
 
 import pytest
 
-from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate, discover_candidates
+from tests.conftest import first_party_candidates
+from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 from untaped.settings import (
     get_settings,
     reset_config_registry_for_tests,
@@ -29,17 +30,6 @@ def load_script(name: str) -> ModuleType:
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
-
-
-@cache
-def first_party_candidates() -> tuple[ProviderCandidate, ...]:
-    """Every discovered first-party (distribution ``untaped``) candidate, in name order."""
-    return tuple(
-        sorted(
-            (c for c in discover_candidates() if c.distribution == "untaped"),
-            key=lambda c: c.name,
-        )
-    )
 
 
 @cache

@@ -281,6 +281,11 @@ class CompositionResult:
     quarantine: tuple[QuarantineRecord, ...] = ()
 
 
+def candidate_distribution(candidate: ProviderCandidate) -> str:
+    """The distribution a candidate is reported under; a blank one is ``unknown``."""
+    return candidate.distribution.strip() or "unknown"
+
+
 class _Quarantine(Exception):
     """Internal control flow: one provider failed validation.
 
@@ -294,7 +299,7 @@ class _Quarantine(Exception):
         self.entry_point = entry_point
 
     def to_record(self, candidate: ProviderCandidate) -> QuarantineRecord:
-        distribution = candidate.distribution.strip() or "unknown"
+        distribution = candidate_distribution(candidate)
         entry_point = (
             self.entry_point if self.entry_point is not None else candidate_entry_point(candidate)
         )

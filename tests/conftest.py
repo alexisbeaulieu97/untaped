@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Callable, Iterator, Mapping, Sequence
+from functools import cache
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -20,6 +21,7 @@ from pydantic import BaseModel
 
 from untaped import bootstrap, cli, repo_cache
 from untaped.auth import clear_token_cache
+from untaped.capabilities.registry import ProviderCandidate, discover_candidates
 from untaped.git import GitResult
 from untaped.prompts import reset_terminal_override, set_terminal_override
 from untaped.records import table_columns_of
@@ -39,6 +41,17 @@ _AMBIENT_ENV = frozenset(
     }
 )
 _REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+@cache
+def first_party_candidates() -> tuple[ProviderCandidate, ...]:
+    """Every discovered first-party (distribution ``untaped``) candidate, in name order."""
+    return tuple(
+        sorted(
+            (c for c in discover_candidates() if c.distribution == "untaped"),
+            key=lambda c: c.name,
+        )
+    )
 
 
 @pytest.fixture(autouse=True)

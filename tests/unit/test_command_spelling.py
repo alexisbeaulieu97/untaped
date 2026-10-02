@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from cyclopts import App
 
+from tests.conftest import first_party_candidates
 from untaped._root_options import canonical_command_tokens
 from untaped.bootstrap import build_root_app
 from untaped.cli import deprecated_alias
@@ -12,7 +13,7 @@ from untaped.testing import invoke_cli
 
 
 def test_underscore_command_spelling_renders_help_instead_of_crashing() -> None:
-    root = build_root_app()
+    root = build_root_app(candidates=first_party_candidates())
     result = invoke_cli(root, ["awx", "job_templates", "--help"])
 
     assert result.exit_code == 0, result.output
@@ -20,7 +21,7 @@ def test_underscore_command_spelling_renders_help_instead_of_crashing() -> None:
 
 
 def test_canonical_spelling_leaves_arguments_and_options_alone() -> None:
-    root = build_root_app()
+    root = build_root_app(candidates=first_party_candidates())
     result = invoke_cli(root, ["awx", "JobTemplates", "list", "--help"])
 
     assert result.exit_code == 0, result.output
