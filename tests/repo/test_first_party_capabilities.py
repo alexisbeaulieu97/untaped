@@ -1,5 +1,10 @@
 """Every first-party capability is an entry point and composes, mounts and exposes its
-settings the same way."""
+settings the same way.
+
+First-party capabilities ship in the ``untaped`` distribution, so their
+reported version is always the unified product version — never
+per-capability.
+"""
 
 from __future__ import annotations
 
@@ -7,17 +12,19 @@ import json
 import tomllib
 from collections.abc import Iterator
 from importlib import import_module
+from importlib import metadata as importlib_metadata
 from pathlib import Path
 
 import pytest
 from cyclopts import App
+from test_capabilities.capharness import make_shell
 
 from untaped import bootstrap
-from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
+from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate, ProviderRef, compose
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, provider_candidate
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+CORE = Path(__file__).resolve().parents[2] / "packages" / "untaped"
 FIRST_PARTY = ("ansible", "awx", "github", "jira", "recipe", "workspace")
 
 
@@ -51,7 +58,7 @@ def _invoke(spec: CapabilitySpec, *args: str) -> str:
 
 
 def test_the_only_console_script_is_the_unified_shell() -> None:
-    data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
+    data = tomllib.loads((CORE / "pyproject.toml").read_text())
     assert data["project"]["scripts"] == {"untaped": "untaped.__main__:main"}
 
 
@@ -79,6 +86,29 @@ def test_the_entry_point_provider_returns_the_package_spec(
     package = import_module(f"untaped.capabilities.{name}")
     assert candidates[name].target == f"untaped.capabilities.{name}:provider"
     assert package.provider() is package.SPEC
+
+
+def test_first_party_commit_carries_its_entry_point(
+    candidates: dict[str, ProviderCandidate],
+) -> None:
+    result = compose(make_shell(), [candidates["github"]])
+    (registered,) = result.capabilities
+    assert registered.provider_ref == ProviderRef(
+        distribution="untaped", entry_point="untaped.capabilities.github:provider"
+    )
+    assert result.quarantine == ()
+
+
+def test_first_party_version_is_the_product_version(
+    candidates: dict[str, ProviderCandidate],
+) -> None:
+    try:
+        installed = importlib_metadata.version("untaped")
+    except importlib_metadata.PackageNotFoundError:
+        pytest.skip("untaped distribution metadata is not installed")
+    declared = tomllib.loads((CORE / "pyproject.toml").read_text(encoding="utf-8"))
+    assert installed == declared["project"]["version"]
+    assert candidates["jira"].distribution_version == installed
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)

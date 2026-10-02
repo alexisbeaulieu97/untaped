@@ -5,7 +5,7 @@ description: Operates SYSTEM through the `untaped CAPABILITY` command (TASKS IN 
 
 <!--
 Template for a capability's packaged agent skill. Copy it to
-src/untaped/capabilities/CAPABILITY/skills/untaped-CAPABILITY/SKILL.md (an
+packages/untaped/src/untaped/capabilities/CAPABILITY/skills/untaped-CAPABILITY/SKILL.md (an
 external provider ships it inside its own package), declare it in
 CapabilitySpec.skills, replace every UPPER_CASE placeholder, and delete this
 comment.
@@ -18,7 +18,7 @@ below are untaped's, on top of general skill-writing practice.
 
 Frontmatter
 - description equals SkillAsset.description (SPEC.description) exactly;
-  tests/unit/test_skill_files.py compares them. It routes, it does not
+  tests/repo/test_skill_files.py compares them. It routes, it does not
   instruct: third person, what the skill covers, then the intents that
   should load it. Under 60 words, only this capability's ground, no ": ";
   the same test checks the length and the third person.

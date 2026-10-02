@@ -59,7 +59,7 @@ def test_config_reference_refuses_a_quarantined_first_party_capability(
 
 def _markdown_files() -> list[Path]:
     files = sorted((REPO_ROOT / "docs").rglob("*.md"))
-    skills = sorted((REPO_ROOT / "src" / "untaped" / "capabilities").glob("*/skills/**/*.md"))
+    skills = sorted(REPO_ROOT.glob("packages/*/src/**/skills/**/*.md"))
     root = (REPO_ROOT / name for name in ("README.md", "AGENTS.md", "CONTRIBUTING.md"))
     return [*files, *skills, *root]
 

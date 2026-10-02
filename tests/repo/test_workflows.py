@@ -329,6 +329,22 @@ def test_ci_runs_the_release_check_and_smoke() -> None:
     assert ".github/release" not in runs
 
 
+def test_ci_smoke_builds_every_package_and_installs_the_core_wheel() -> None:
+    steps = _steps("ci.yml", "unified-app-wheel-smoke")
+    build = _find(steps, run="uv build --all-packages --no-sources --out-dir dist")
+    install = _find(
+        steps,
+        run='uv pip install --python "$RUNNER_TEMP/untaped-wheel/bin/python"'
+        " dist/untaped-*-py3-none-any.whl",
+    )
+    smoke = _find(
+        steps,
+        run='uv run python scripts/release.py smoke "$RUNNER_TEMP/untaped-wheel/bin/untaped"'
+        ' "$(uv run python scripts/release.py version)"',
+    )
+    assert build < install < smoke
+
+
 def test_no_run_script_interpolates_expressions() -> None:
     for name in WORKFLOWS:
         for step in _all_steps(name):

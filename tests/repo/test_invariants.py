@@ -24,7 +24,7 @@ from untaped.config_schema import walk_settings
 from untaped.settings import get_settings_model
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SRC_DIR = REPO_ROOT / "src"
+SRC_DIRS = sorted(REPO_ROOT.glob("packages/*/src"))
 
 
 # ---- (a) every credential-named field is SecretStr -----------------------
@@ -121,7 +121,7 @@ def _verify_offenders(tree: ast.Module, rel: str) -> list[str]:
 def test_httpclient_construction_passes_verify() -> None:
     """AST walk, so reformatting and ``# verify=`` comments can't fool it."""
     offenders: list[str] = []
-    for py_file in sorted(SRC_DIR.rglob("*.py")):
+    for py_file in sorted(path for src in SRC_DIRS for path in src.rglob("*.py")):
         text = py_file.read_text(encoding="utf-8")
         if "HttpClient" in text:
             offenders.extend(
