@@ -1,6 +1,6 @@
 # Changelog
 
-## 10.0.0rc1
+## 10.0.0
 
 untaped is now an SDK whose first-party capabilities are plugins: `untaped`
 installs the core and SDK, and each capability is an extra (`untaped[all]`,

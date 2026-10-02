@@ -4,7 +4,7 @@ A minimal, tested plugin for [untaped](https://github.com/alexisbeaulieu97/untap
 one command (`untaped hello greet`), one setting (`hello.greeting`) and one
 packaged skill. Copy this directory to start a plugin of your own.
 
-It is not published. In a copy of this directory,
+It is not published. In a virtualenv in a copy of this directory,
 `uv pip install untaped . pytest` installs `untaped` from PyPI. To test
 against an unreleased core, build its wheel from the repository root and
 install it by path (the copy outside the repository keeps uv from treating

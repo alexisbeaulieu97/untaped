@@ -1,6 +1,6 @@
 [project]
 name = "untaped"
-version = "10.0.0rc1"
+version = "10.0.0"
 description = "A batteries-included CLI for DevOps workflows."
 readme = "README.md"
 license = "MIT"
@@ -22,13 +22,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-all = ["untaped-ansible==10.0.0rc1", "untaped-awx==10.0.0rc1", "untaped-github==10.0.0rc1", "untaped-jira==10.0.0rc1", "untaped-recipe==10.0.0rc1", "untaped-workspace==10.0.0rc1"]
-ansible = ["untaped-ansible==10.0.0rc1"]
-awx = ["untaped-awx==10.0.0rc1"]
-github = ["untaped-github==10.0.0rc1"]
-jira = ["untaped-jira==10.0.0rc1"]
-recipe = ["untaped-recipe==10.0.0rc1"]
-workspace = ["untaped-workspace==10.0.0rc1"]
+all = ["untaped-ansible==10.0.0", "untaped-awx==10.0.0", "untaped-github==10.0.0", "untaped-jira==10.0.0", "untaped-recipe==10.0.0", "untaped-workspace==10.0.0"]
+ansible = ["untaped-ansible==10.0.0"]
+awx = ["untaped-awx==10.0.0"]
+github = ["untaped-github==10.0.0"]
+jira = ["untaped-jira==10.0.0"]
+recipe = ["untaped-recipe==10.0.0"]
+workspace = ["untaped-workspace==10.0.0"]
 
 [project.scripts]
 untaped = "untaped.__main__:main"
