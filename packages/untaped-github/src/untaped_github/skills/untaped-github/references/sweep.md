@@ -66,13 +66,15 @@ counts, the oldest fetch, and a warning per unscanned repo.
 
 ## Rows
 
-| `--show` | Kind | Fields |
-|---|---|---|
-| `repos` (default) | `github.sweep_repo` | `repo`, `clone_url`, `refs_matched`, `hits`, `owners`, `fetched_at` |
-| `files` | `github.sweep_file` | `repo`, `path`, `refs`, `hits` (matching lines) |
-| `matches` | `github.sweep_match` | `repo`, `refs`, `path`, `line`, `text`; deduped across refs |
+`--show` picks the kind: `repos` (default, `github.sweep_repo`), `files`
+(`github.sweep_file`) or `matches` (`github.sweep_match`). `--columns '?'`
+lists each kind's fields.
 
-`owners` comes from CODEOWNERS; `--no-owners` skips that lookup.
+- `hits` counts matching lines: per predicate on a repo row, per file on a
+  file row.
+- `matches` are deduped across refs: one row lists every ref (`refs`) that
+  has the line.
+- `owners` comes from CODEOWNERS; `--no-owners` skips that lookup.
 
 ## Piped input
 

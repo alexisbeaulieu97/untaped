@@ -117,6 +117,7 @@ ran it: `scm_revision` must be the commit you pushed.
 default ones. What the rest do not say:
 
 - `result` is `null` only on a `removed` row ([Verdicts](#verdicts)).
+- `duration_s` runs from launch to verdict.
 - `job_status` is `null` when no job was read, and `job_id` when the launch
   failed before AWX created a job. `started_at` and `finished_at` are `null`
   while AWX has not set them.
@@ -384,8 +385,10 @@ stderr; with `--keep` it is listed as `kept … (id N)`.
 `test validate --source-ref REF` (and `test run --source-ref REF --dry-run`)
 prints one `awx.provision_outcome` row per copy it would create (`planned`);
 `test prune` prints one `awx.prune_outcome` row per leftover copy (`planned`
-with `--dry-run`, then `deleted` or `failed`). Both print the fields `--columns '?'` lists. `id` is `null` for a planned
-copy, and `path` and `prompts` are set on planned copies only. A copy is named
+with `--dry-run`, then `deleted` or `failed`). Both print the fields
+`--columns '?'` lists. `id` is `null` for a planned copy; `path` (`REF:PATH`
+of its spec) and `prompts` are set on planned copies only. `created_at` is
+when the run started, not when the copy was created. A copy is named
 `NAME [untaped-test SHA RUN]`. A `failed` row's `error` carries the
 attributed failure (`category`, `system`, `retryable`, `message`, `hint`).
 
