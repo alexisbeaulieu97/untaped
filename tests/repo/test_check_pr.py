@@ -63,10 +63,14 @@ def test_a_commented_out_answer_is_empty() -> None:
         (SRC, BASE_LOG, "added", True),
         (SRC, BASE_LOG, "none, internal refactor", False),
         (SRC, BASE_LOG, "None: tests only", False),
+        (SRC, BASE_LOG, "none", True),
+        (SRC, BASE_LOG, "nonetheless added", True),
         (SRC, HEAD_LOG, "added", False),
         (["docs/scripting.md", "packages/untaped-awx/tests/x.py"], BASE_LOG, "n/a", False),
         # A line outside ``## Unreleased`` does not count.
         (SRC, BASE_LOG.replace("- old", "- old\n- new"), "added", True),
+        # Deleting an entry adds none.
+        (SRC, HEAD_LOG.replace("- new\n", ""), "added", True),
     ],
 )
 def test_shipped_code_needs_a_changelog_line_or_a_reason(
@@ -105,9 +109,7 @@ def test_main_reads_the_event_and_the_checkout(
     (repo / "CHANGELOG.md").write_text(BASE_LOG)
     _git(repo, "add", ".")
     _git(repo, "commit", "-qm", "base")
-    base = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
-    ).stdout.strip()
+    base = _rev(repo, "HEAD")
     (repo / "packages/untaped-x/src/m.py").write_text("x = 1\n")
     _git(repo, "add", ".")
     _git(repo, "commit", "-qm", "change")
@@ -120,3 +122,37 @@ def test_main_reads_the_event_and_the_checkout(
 
     (repo / "CHANGELOG.md").write_text(HEAD_LOG)
     assert check_pr.main([str(event)]) == 0
+
+
+def test_main_measures_a_merge_commit_against_its_first_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """main moved after the event's base.sha: its changelog line is not this PR's."""
+    repo = tmp_path / "repo"
+    (repo / "packages/untaped-x/src").mkdir(parents=True)
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "t")
+    (repo / "CHANGELOG.md").write_text(BASE_LOG)
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "base")
+    stale = _rev(repo, "HEAD")
+    _git(repo, "checkout", "-qb", "pr")
+    (repo / "packages/untaped-x/src/m.py").write_text("x = 1\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "change")
+    _git(repo, "checkout", "-q", "main")
+    (repo / "CHANGELOG.md").write_text(HEAD_LOG)  # another PR's line lands on main
+    _git(repo, "commit", "-qam", "other")
+    _git(repo, "merge", "-q", "--no-edit", "pr")  # the merge ref Actions checks out
+    event = tmp_path / "event.json"
+    event.write_text(json.dumps({"pull_request": {"base": {"sha": stale}, "body": FILLED}}))
+    monkeypatch.chdir(repo)
+
+    assert check_pr.main([str(event)]) == 1
+
+
+def _rev(repo: Path, ref: str) -> str:
+    return subprocess.run(
+        ["git", "rev-parse", ref], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()

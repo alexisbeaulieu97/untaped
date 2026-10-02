@@ -2,15 +2,17 @@
 
 Usage: ``uv run python scripts/check_pr.py EVENT_JSON``, where EVENT_JSON is
 the ``pull_request`` event (``$GITHUB_EVENT_PATH`` in Actions). The PR's
-changes are ``git diff BASE...HEAD`` in the current checkout, so CI checks it
-out with full history.
+changes are measured against the base it will merge into: the first parent of
+the merge commit Actions checks out (current ``main``, not the possibly stale
+``base.sha`` of the event), or the merge base with ``base.sha`` when HEAD is
+not a merge. CI checks out with full history.
 
 - The body has a ``## Drift review`` section with a non-empty line for each of
   :data:`DRIFT_ITEMS` (the PR template's lines; the checklist itself lives in
   CONTRIBUTING.md, "Before you open a PR").
 - A PR that changes shipped code (``packages/*/src/``) changes the
-  ``## Unreleased`` section of CHANGELOG.md, or its ``Changelog:`` line opens
-  with ``none`` and says why.
+  ``## Unreleased`` section of CHANGELOG.md by adding a bullet, or its
+  ``Changelog:`` line reads ``none, <why>``.
 
 Every failure prints one line on stderr and exits 1.
 """
@@ -36,6 +38,7 @@ DRIFT_ITEMS = (
 _SHIPPED = re.compile(r"^packages/[^/]+/src/")
 _UNRELEASED = re.compile(r"^## Unreleased[ \t]*\n(.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+_WAIVER = re.compile(r"none\b\W+\w", re.IGNORECASE)
 
 
 def drift_review(body: str) -> dict[str, str] | None:
@@ -58,6 +61,14 @@ def unreleased(changelog: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+def _bullets(changelog: str) -> set[str]:
+    return {
+        line.strip()
+        for line in unreleased(changelog).splitlines()
+        if line.lstrip().startswith("- ")
+    }
+
+
 def problems(
     body: str, changed: Sequence[str], base_changelog: str, head_changelog: str
 ) -> list[str]:
@@ -71,8 +82,8 @@ def problems(
         if not answers.get(item)
     ]
     ships = any(_SHIPPED.match(path) for path in changed)
-    logged = unreleased(base_changelog) != unreleased(head_changelog)
-    waived = answers.get("Changelog", "").lower().startswith("none")
+    logged = bool(_bullets(head_changelog) - _bullets(base_changelog))
+    waived = _WAIVER.match(answers.get("Changelog", "")) is not None
     if ships and not logged and not waived:
         found.append(
             "packages/*/src changed: add a CHANGELOG.md line under '## Unreleased', "
@@ -90,9 +101,10 @@ def main(argv: Sequence[str]) -> int:
         print("usage: check_pr.py EVENT_JSON", file=sys.stderr)
         return 2
     pull = json.loads(Path(argv[0]).read_text(encoding="utf-8"))["pull_request"]
-    base = pull["base"]["sha"]
     try:
-        changed = _git("diff", "--name-only", f"{base}...HEAD").split()
+        merge = len(_git("rev-list", "--parents", "-n", "1", "HEAD").split()) == 3
+        base = "HEAD^1" if merge else _git("merge-base", pull["base"]["sha"], "HEAD").strip()
+        changed = _git("diff", "--name-only", base, "HEAD").split()
         base_changelog = _git("show", f"{base}:CHANGELOG.md")
     except GitCommandError as exc:
         print(f"check_pr: {exc}", file=sys.stderr)
