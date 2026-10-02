@@ -46,7 +46,7 @@ export one of the variables the `ansible.controller` collection reads; see
 - **Typed pipes.** `--format pipe` emits records that carry their kind and
   id; a `--stdin` consumer of the same kind uses the ids directly, so a
   `list` feeds a `patch` or a `launch` feeds `jobs wait` without re-resolving
-  names. See [Pipes and record kinds](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md).
+  names. See [Scripting](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#awx).
 - **Documents.** `export` writes resources as portable YAML documents that
   reference other resources by name, and `apply` creates or updates every
   kind from them in dependency order. They are how you create resources, copy
@@ -185,6 +185,6 @@ state. These steps are opt-in live writes against a disposable controller.
 ## See also
 
 - [Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md)
-- [Pipes and record kinds](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md)
+- [Scripting](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#awx)
 - [Configuration reference](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#awx)
 - [Exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes)

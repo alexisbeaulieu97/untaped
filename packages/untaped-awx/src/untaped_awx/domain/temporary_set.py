@@ -10,7 +10,8 @@ decides the set and each copy's document:
 - the name ``NAME [untaped-test SHA7 RUN]`` (:func:`temporary_name`), unique to
   the run;
 - the description :class:`Marker` (``untaped-test run=… ref=… sha=…
-  created=…``), which ``awx test prune`` finds leftovers by;
+  created=…``), which ``awx test prune`` finds leftovers by, so copies left by a killed run
+  are found too;
 - ``scm_branch`` set to the commit, so the copy runs exactly that commit;
 - ``ask_<field>_on_launch`` enabled for every field a case sets at launch;
 - webhook settings left out, and workflow nodes pointed at the copies.

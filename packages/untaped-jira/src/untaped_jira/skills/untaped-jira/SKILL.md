@@ -44,8 +44,8 @@ This page is the map; the details ship next to it:
 | Link two issues | `untaped jira issues links create OPS-123 Blocks OPS-124 --dry-run` |
 | Find a board or sprint | `untaped jira boards list --project OPS`, then `untaped jira sprints list --board-id 42` |
 
-`--help` on any command lists its options; `--columns ?` lists a table's
-fields.
+`--help` on any command lists its options; `--columns ?` lists a read
+command's fields.
 
 ## Work a ticket
 

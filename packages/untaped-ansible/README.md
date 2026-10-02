@@ -223,7 +223,7 @@ Every row field, the tree markers and the JSON graph shape are in the
 
 ## Output
 
-See [Pipes and record kinds](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#ansible) and
+See [Scripting](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#ansible) and
 [Exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes).
 
 ## See also

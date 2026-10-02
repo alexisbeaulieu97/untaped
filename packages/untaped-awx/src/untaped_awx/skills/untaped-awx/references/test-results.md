@@ -113,8 +113,9 @@ ran it: `scm_revision` must be the commit you pushed.
 
 ## The record
 
-`untaped awx test run --columns '?'` lists the fields; the table shows the
-default ones. What the rest do not say:
+The keys of a `--format json` row of the run you are already making list the
+fields (`--columns '?'` would run every suite first, and needs a row to
+inspect); the table shows the default ones. What the rest do not say:
 
 - `result` is `null` only on a `removed` row ([Verdicts](#verdicts)).
 - `duration_s` runs from launch to verdict.
@@ -386,7 +387,8 @@ stderr; with `--keep` it is listed as `kept … (id N)`.
 prints one `awx.provision_outcome` row per copy it would create (`planned`);
 `test prune` prints one `awx.prune_outcome` row per leftover copy (`planned`
 with `--dry-run`, then `deleted` or `failed`). Both print the fields
-`--columns '?'` lists. `id` is `null` for a planned copy; `path` (`REF:PATH`
+of a `--format json` row (`--columns '?'` lists them under `--dry-run`).
+`id` is `null` for a planned copy; `path` (`REF:PATH`
 of its spec) and `prompts` are set on planned copies only. `created_at` is
 when the run started, not when the copy was created. A copy is named
 `NAME [untaped-test SHA RUN]`. A `failed` row's `error` carries the

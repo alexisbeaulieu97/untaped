@@ -2,13 +2,13 @@
 
 Every row is a record with an absolute `target_path`: the workspace
 directory for `workspace.workspace`, the repo directory for the others.
-`--columns ?` lists the fields of a table.
+`--columns ?` on `list` or `status` lists the fields of a table.
 
 ## Record kinds
 
 | Command | Kind | Read |
 |---|---|---|
-| `list` | `workspace.workspace` | |
+| `list` | `workspace.workspace` | `repos` counts the repos; `archived_at` is null while active |
 | `create`, `add` | `workspace.repo_outcome` | `action`: `created`, `checked_out`, `unchanged`, `failed` |
 | `status` | `workspace.status` | `state`: `ok`, `missing`, `cache_missing`, `error`; `upstream` is null until the branch is on origin |
 | `archive` | `workspace.archive_outcome` | `action`: `removed`, `planned`, `skipped`, `failed`; a last row with an empty `repo` is the workspace directory (`skipped` when other files stay in it) |

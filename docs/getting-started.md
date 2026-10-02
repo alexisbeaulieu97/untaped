@@ -171,7 +171,7 @@ untaped awx job-templates list --format raw --columns name \
   | untaped awx job-templates get --stdin --format yaml
 ```
 
-[Pipes and record kinds](./scripting.md) says which commands read
+[Scripting](./scripting.md#output-records) says which commands read
 which records.
 
 ## Commands that change things

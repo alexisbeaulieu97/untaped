@@ -202,7 +202,7 @@ you pass `--force`. Backups hold file content only, not modes or times.
 
 `apply` prints one `recipe.apply_outcome` row per target, with `action`
 `planned`, `applied`, `unchanged`, `skipped`, `cancelled` or `failed`; the
-preview goes to stderr. See [Pipes and record kinds](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#recipe)
+preview goes to stderr. See [Scripting](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#recipe)
 and [Exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes).
 
 ## See also

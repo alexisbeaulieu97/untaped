@@ -103,7 +103,7 @@ repos, and exits 1 if any repo failed. Forms, environment variables,
 selection and timeouts are in the
 [run reference](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-workspace/src/untaped_workspace/skills/untaped-workspace/references/run.md).
 The `UNTAPED_*` variables it sets are in
-[environment](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#environment-variables).
+[environment](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#workspace-run).
 
 ## Settings
 
@@ -115,7 +115,7 @@ inventory, scoped by `github.inventory` orgs and teams.
 ## Output
 
 Every command prints rows you can reshape with `--format` and `--columns`;
-see [Pipes and record kinds](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#workspace) and
+see [Scripting](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#workspace) and
 [Exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes).
 
 ## See also
