@@ -16,12 +16,11 @@ from untaped.capabilities.workspace.domain import (
     assign_dirs,
     branch_for,
     repo_identity,
-    repo_key,
     validate_workspace_name,
 )
 from untaped.capabilities.workspace.domain.records import RepoOutcome, StatusRow
 from untaped.capabilities.workspace.domain.safety import CACHE_MISSING, SUBMODULES
-from untaped.sdk import UsageError
+from untaped.sdk import UsageError, cache_key
 
 
 @pytest.mark.parametrize("name", ["JIRA-1234", "feature_x", "a.b"])
@@ -79,7 +78,7 @@ def test_clash_without_an_owner_still_gets_a_free_dir() -> None:
     ],
 )
 def test_one_repo_has_one_key_across_url_forms(first: str, second: str) -> None:
-    assert repo_key(first) == repo_key(second)
+    assert cache_key(first) == cache_key(second)
 
 
 @pytest.mark.parametrize(
@@ -91,7 +90,7 @@ def test_one_repo_has_one_key_across_url_forms(first: str, second: str) -> None:
     ],
 )
 def test_different_repos_have_different_keys(first: str, second: str) -> None:
-    assert repo_key(first) != repo_key(second)
+    assert cache_key(first) != cache_key(second)
 
 
 def test_branch_template() -> None:

@@ -13,9 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from untaped.capabilities.workspace.domain.models import ArchivedRecord, RepoSpec, WorkspaceRecord
-from untaped.capabilities.workspace.domain.naming import repo_key
 from untaped.capabilities.workspace.errors import WorkspaceError, WorkspaceNotFoundError
-from untaped.sdk import StateCollection, file_lock, not_found, q
+from untaped.sdk import StateCollection, cache_key, file_lock, not_found, q
 
 _BUSY_HINT = "wait for the other untaped command on this workspace to finish, then retry"
 
@@ -83,8 +82,8 @@ class StateWorkspaceStore:
             for row in rows:
                 if row.get("name") == name:
                     current = WorkspaceRecord.model_validate(row)
-                    have = {repo_key(spec.url) for spec in current.repos}
-                    new = [spec for spec in repos if repo_key(spec.url) not in have]
+                    have = {cache_key(spec.url) for spec in current.repos}
+                    new = [spec for spec in repos if cache_key(spec.url) not in have]
                     updated = current.model_copy(update={"repos": (*current.repos, *new)})
                     row = _dump(updated)
                 out.append(row)

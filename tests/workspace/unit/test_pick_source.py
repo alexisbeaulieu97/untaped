@@ -9,9 +9,9 @@ from typing import Any
 import pytest
 
 from untaped.capabilities.github.api import RepoInventory, RepositoryInventoryItem
-from untaped.capabilities.workspace.domain import CachedRepo, RepoArg, looks_like_url, repo_key
+from untaped.capabilities.workspace.domain import CachedRepo, RepoArg, looks_like_url
 from untaped.capabilities.workspace.infrastructure.pick_source import RepoPickSource
-from untaped.sdk import UntapedError
+from untaped.sdk import UntapedError, cache_key
 
 NOW = datetime.now(UTC)
 ITEMS = (
@@ -112,8 +112,8 @@ def test_excluded_repos_are_not_offered() -> None:
         FakeGit(_cached("github.com/team/tool")),
         inventory=_inventory(),
         exclude={
-            repo_key("git@github.com:acme/api.git"),
-            repo_key("https://github.com/team/tool"),
+            cache_key("git@github.com:acme/api.git"),
+            cache_key("https://github.com/team/tool"),
         },
     )
     assert [i.id for i in source.catalog(refresh=False).items] == ["acme/old"]
@@ -138,7 +138,7 @@ def test_cached_only_url_is_the_cache_origin() -> None:
     source.catalog(refresh=False)
     assert source.url_for("github.com/team/tool") == "git@github.com:team/tool.git"
     # No readable origin: a URL with the same cache identity.
-    assert repo_key(source.url_for("github.com/team/other") or "") == (
+    assert cache_key(source.url_for("github.com/team/other") or "") == (
         "github.com",
         "team",
         "other.git",
@@ -228,7 +228,7 @@ def test_an_owner_less_hosted_cache_is_offered() -> None:
     git = FakeGit(_cached("git.example/project", "https://git.example/project.git"))
     items = _source(git, inventory=_no_inventory).catalog(refresh=False).items
     assert [i.id for i in items] == ["git.example/project"]
-    assert repo_key("https://git.example/project.git") == ("git.example", "project.git")
+    assert cache_key("https://git.example/project.git") == ("git.example", "project.git")
 
 
 def test_a_cached_id_never_shadows_an_inventory_id() -> None:
