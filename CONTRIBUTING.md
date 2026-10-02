@@ -158,11 +158,13 @@ a false positive such as a command registered by string, add its name to
 
 ## Releasing
 
-Plan releases with GitHub milestones (`10.1`, `11.0`, …): each issue sits in
-the milestone it should ship in. Features merge to `main` when ready, each
-with its changelog line, so `main` stays releasable. A breaking change waits
-in the next major's milestone and, where it can, first ships a deprecation
-warning in a minor. A release is cut when its milestone's issues are closed.
+Plan releases with GitHub milestones, one for the next minor and one for the
+next major; each issue sits in the milestone it should ship in. Features
+merge to `main` when ready, each with its changelog line, so `main` stays
+releasable as a minor. A breaking change waits in the next major's milestone,
+and its PR merges only once that major is the next release; where it can, a
+deprecation warning ships in a minor first. A release is cut when its
+milestone's issues are closed.
 
 A release is a release PR, a TestPyPI rehearsal whenever the workflow, the
 build or the package set changed, and a `vX.Y.Z` tag on `main`.
@@ -194,9 +196,8 @@ It touches these and nothing else:
 - `uv.lock` (`uv lock`);
 - `CHANGELOG.md`: rename `## Unreleased` to `## X.Y.Z`.
 
-A major release collects the breaking changes held back since the last one
-(see [Versioning](README.md#versioning)), and its changelog section opens
-with `### Upgrading`: one item for each Breaking bullet, saying what a user
+A major release's changelog section (see
+[Versioning](README.md#versioning)) opens with `### Upgrading`: one item for each Breaking bullet, saying what a user
 or script must do about it. Changes add those items under `## Unreleased` as
 they land; the release PR checks the list is current before renaming the
 section.

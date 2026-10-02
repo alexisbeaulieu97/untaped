@@ -52,8 +52,8 @@ untaped workspace status PROJ-123 --format pipe \
 ```
 
 `--stdin` takes target paths, or records that carry a `target_path`, so a
-[workspace](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-workspace/README.md)
-or any other untaped listing chooses the targets.
+[workspace](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-workspace/README.md)'s
+records choose the targets.
 
 ## Install and manage packs
 
@@ -65,7 +65,8 @@ untaped recipe packs sync --all --dry-run
 ```
 
 Installing a pack installs code: its hooks run as you, with no sandbox.
-Inspect a pack with `validate` and its golden tests before you trust it, and
+Inspect a pack with `packs get` and `validate` (which never imports hooks)
+before you trust it; its golden tests run hooks, so run them after. Also
 review what `packs sync` lists as you would a dependency upgrade.
 
 ## Write a pack
@@ -93,7 +94,7 @@ after a preview.
 
 ## Reference
 
-The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-recipe/src/untaped_recipe/skills/untaped-recipe/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install recipe`; `untaped recipe COMMAND --help` lists each command's options.
+The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-recipe/src/untaped_recipe/skills/untaped-recipe/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install recipe --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install-skills)); `untaped recipe COMMAND --help` lists each command's options.
 
-- [Records and exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#recipe)
+- [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#recipe) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#recipe)

@@ -19,7 +19,8 @@ untaped jira whoami
 ```
 
 To keep the token out of `config.yml`, use `jira.token_command` or
-`JIRA_API_TOKEN`. Defaults such as `jira.default_project` and the
+`JIRA_API_TOKEN`; see
+[Tokens](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md#tokens). Defaults such as `jira.default_project` and the
 `jira.assigned_jql` base query are in the
 [settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#jira).
 
@@ -59,7 +60,7 @@ them first. A piped batch continues past a failing key.
 
 ## Reference
 
-The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-jira/src/untaped_jira/skills/untaped-jira/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install jira`; `untaped jira COMMAND --help` lists each command's options.
+The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-jira/src/untaped_jira/skills/untaped-jira/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install jira --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install-skills)); `untaped jira COMMAND --help` lists each command's options.
 
-- [Records and exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#jira)
+- [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#jira) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#jira)

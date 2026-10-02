@@ -38,8 +38,8 @@ what hooks can reach, validation, golden tests, backups.
 
 Installing a pack is installing code: the same trust model as
 `pip install`, with no sandbox. Before trusting one, read the `packs add`
-summary and `packs get`, run `validate` (it never imports hook code), and run
-the pack's golden tests.
+summary and `packs get`, and run `validate` (it never imports hook code).
+Golden tests run hooks, so run them only once you trust the pack.
 
 Each noun reads its own kind: `get`/`edit` for recipes, `packs get`/`packs
 edit` for packs (`edit` opens `pyproject.toml`), and `hooks get`/`hooks edit`

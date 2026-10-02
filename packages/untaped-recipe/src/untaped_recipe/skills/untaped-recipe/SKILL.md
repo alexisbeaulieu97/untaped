@@ -15,9 +15,10 @@ access, whenever a plan is computed.
 
 ## Setup
 
-`uv` must be on `PATH`: hooks run in each pack's own environment through
-`uv run`, and scaffolding locks packs with `uv lock`. Without it, a run that
-needs a hook exits 4. Recipes come from installed packs, so `untaped recipe
+`uv` must be on `PATH`: pack hooks run in the pack's own environment through
+`uv run` (built-in hooks such as `yaml_edit` run in-process), and
+scaffolding locks packs ([authoring.md](references/authoring.md#scaffolding)).
+Without it, a run that needs a pack hook exits 4. Recipes come from installed packs, so `untaped recipe
 list` is empty until the user installs one.
 
 ## Commands
@@ -101,7 +102,8 @@ Each `apply` row has the target's absolute `target_path` and an `action`:
 ## Pitfalls
 
 - `--dry-run` is not a way to inspect an untrusted pack: hooks run to compute
-  the plan. Inspect with `packs get`, `validate` and `test` instead.
+  the plan, and so do golden tests (`test`). Inspect with `packs get` and
+  `validate`.
 - `--vars-file` values are YAML: `3.10` becomes `3.1`. Quote version-like
   strings.
 

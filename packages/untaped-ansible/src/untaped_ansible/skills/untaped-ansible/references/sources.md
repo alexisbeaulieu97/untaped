@@ -28,6 +28,9 @@ failed and paused refreshes, the cache.
 
 - `source set NAME` creates or replaces a source. `source patch NAME` edits
   it with `--add-*`, `--remove-*` and `--clear-*`.
+- A changed `set` or `patch` drops the source's cached data at once:
+  `deps`, `impact`, `find` and `graph` on it fail with "no cached source data
+  found" until the next `source refresh NAME`.
 - `source-alias set NAME OWNER/REPO` maps a Galaxy or role name in
   requirements files to its repo. Aliases apply at refresh, so run
   `source refresh NAME` after changing one.
