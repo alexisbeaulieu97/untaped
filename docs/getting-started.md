@@ -11,7 +11,7 @@ untaped --help
 ```
 
 Extras combine (`'untaped[awx,github]'`). Add a third-party tool with
-`uv tool install untaped --with <tool>`. Re-running `uv tool install`
+`uv tool install 'untaped[all]' --with <tool>`. Re-running `uv tool install`
 restates the whole set and replaces the old one, so list every extra and
 `--with` you want, for example
 `uv tool install 'untaped[github,awx]' --with acme-untaped`. Only the

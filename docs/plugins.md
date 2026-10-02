@@ -73,7 +73,9 @@ arguments.
 
 The provider's `untaped` requirement (`Requires-Dist`) is the only
 compatibility check: declare it (`untaped>=10,<11`); without one, nothing is
-checked. A running `untaped` outside that range quarantines the provider.
+checked. That range excludes pre-releases such as `10.0.0a0`; to run on a
+pre-release core, declare `untaped>=10.0.0a0,<11` (as `examples/untaped-hello`
+does). A running `untaped` outside that range quarantines the provider.
 Installers normally enforce the range, so this shows up mainly after
 upgrading `untaped` past it. The [changelog](../CHANGELOG.md) says what each
 version added or broke.
@@ -356,7 +358,7 @@ deprecated alias until the next major release:
 root shell rewrites the old token and prints
 ``warning: `me` is deprecated and will be removed in the next major release; use `whoami` ``.
 The old spelling never appears in `--help`. Aliases apply through the
-`untaped` root, so test them with `build_root_app()`.
+`untaped` root, so test them with `untaped.testing.invoke_root([...])`.
 
 Command names are kebab-case; use plural nouns for collections. Names are
 free, but a command that writes declares it with `@writes`, or
@@ -528,8 +530,7 @@ re-declare it as `target_path: AbsolutePath` so it leads the output.
 ## Packaged skills
 
 A capability ships its agent skill as a directory holding `SKILL.md`. Declare
-it on
-`CapabilitySpec.skills`; the root lists and installs every composed
+it on `CapabilitySpec.skills`; the root lists and installs every composed
 capability's skills (see [Agent skills](./getting-started.md#agent-skills)):
 
 ```bash
@@ -734,6 +735,7 @@ malformed provider is quarantined so the other capabilities still boot.
 
 `untaped.sdk` and `untaped.testing` are stable within a major release: a
 minor or patch release adds to them and never breaks them.
-Providers import only `untaped.sdk`; other `untaped` modules are internal.
+Providers import only `untaped.sdk`, plus `untaped.testing` in tests; other
+`untaped` modules are internal.
 For what users can rely on, see the README's
 [Versioning](../README.md#versioning) section.

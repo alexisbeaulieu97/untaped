@@ -10,7 +10,7 @@ directory for `workspace.workspace`, the repo directory for the others.
 |---|---|---|
 | `list` | `workspace.workspace` | `repos` counts the repos; `archived_at` is null while active |
 | `create`, `add` | `workspace.repo_outcome` | `action`: `created`, `checked_out`, `unchanged`, `failed` |
-| `status` | `workspace.status` | `state`: `ok`, `missing`, `cache_missing`, `error`; `upstream` is null until the branch is on origin |
+| `status` | `workspace.status` | `state`: `ok`, `missing`, `cache_missing`, `error`; `upstream` is null until the branch is on origin; `blockers` lists why the repo blocks archive (empty when it does not) |
 | `archive` | `workspace.archive_outcome` | `action`: `removed`, `planned`, `skipped`, `failed`; a last row with an empty `repo` is the workspace directory (`skipped` when other files stay in it) |
 | `run` | `workspace.run_outcome` | `action`: `ran`, `failed`, `skipped`; `returncode` is null for a timeout or a repo not run, negative for a signal |
 

@@ -30,7 +30,7 @@ uv lock --check                                 # lock file is current
 - The root `pyproject.toml` is the uv workspace root (tool configuration and
   the `dev` group, no `[project]`); `uv.lock` locks the whole workspace.
 - `packages/<name>/` holds one distribution each: its `pyproject.toml`,
-  `README.md`, `src/` and `tests/`. Core is `packages/untaped/`: its
+  `README.md`, `LICENSE`, `src/` and `tests/`. Core is `packages/untaped/`: its
   `src/untaped/` holds the root shell and shared services. `sdk.py` is the
   public SDK surface; `capabilities/registry.py` is the internal composition
   kernel (see [How composition works](docs/plugins.md#how-composition-works));
@@ -66,14 +66,15 @@ packages/untaped-<name>/src/untaped_<name>/
 └── skills/            # packaged agent skills shipped via SPEC.skills
 ```
 
-1. Add `packages/untaped-<name>/`, exposing `SPEC`, `build_app` and a nullary
-   `provider()` returning `SPEC`. Set `SPEC.help` to the app's one-line help
-   (see [Settings and the capability app](docs/plugins.md#settings-and-the-capability-app)).
+1. Add `packages/untaped-<name>/` with a copy of the root `LICENSE`, exposing
+   `SPEC`, `build_app` and a nullary `provider()` returning `SPEC`. Set
+   `SPEC.help` to the app's one-line help (see
+   [Settings and the capability app](docs/plugins.md#settings-and-the-capability-app)).
 2. In its `pyproject.toml` (copy a sibling package's), add
    `<name> = "untaped_<name>:provider"` under
    `[project.entry-points."untaped.capabilities"]`.
-3. Add the `untaped[<name>]` extra to core and a `[tool.uv.sources]` entry,
-   then `uv sync`.
+3. Add the `untaped[<name>]` extra to core and add the package to core's
+   `all` extra, then `uv sync`.
 4. Add the package to the root `pyproject.toml` lists: mypy
    `files`/`mypy_path`, pytest `testpaths`/`pythonpath`, coverage `source`
    and `[tool.uv.sources]`.

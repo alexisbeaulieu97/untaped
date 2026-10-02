@@ -48,11 +48,12 @@ another capability's domain fields.
   must be one. Otherwise every line is a bare value (a name, an ID, a path).
   Mixing the two is an error.
 - A consumer lists the kinds it accepts. A record of another kind exits 2
-  (`record kind 'awx.host' is not accepted here`). A record whose `kind` is
-  `null` is accepted.
+  (`line N: record kind 'awx.host' is not accepted here; expected …`). A
+  record whose `kind` is `null` is accepted.
 - Kinds ending in `.summary` (`<capability>.<noun>.summary`) are summary
   rows, not items. `recipe apply --stdin` skips them.
-- Empty stdin is an error (`no identifiers received on stdin`).
+- Empty stdin is an error (`no identifiers received on stdin`), except for
+  `workspace run --stdin`, where it selects no repos.
 - `--stdin` and positional arguments cannot be combined (exit 2).
 - When stdin carries data, confirmation prompts read the terminal
   (`/dev/tty`). With no terminal, pass `--yes` (or `--dry-run`).
@@ -71,7 +72,7 @@ have no `error` key.
 | Field | Meaning |
 |---|---|
 | `category` | What kind of failure it is; it selects the exit code. See [categories](#categories). |
-| `system` | Who is responsible: `untaped`, `local`, `git`, or a service such as `awx`. |
+| `system` | Who is responsible: `untaped`, `local`, `git`, `http` (an HTTP request no service owns), or a service such as `awx`. |
 | `retryable` | `true` only for `unavailable` failures. |
 | `message` | The failure, as `detail` shows it. |
 | `hint` | A follow-up such as ``run `untaped config set awx.token --prompt` ``, or `null`. |
@@ -307,8 +308,9 @@ Every `untaped` command uses the same exit codes. Scripts can rely on them.
 
 Every failure has a **category**, which selects its exit code, and a
 **system**, which says who is responsible: `untaped` (a bug or the command
-line), `local` (config, files, the environment), `git`, or a service such as
-`awx`, `jira` or `github` (a capability may refine it, such as `awx.scm`).
+line), `local` (config, files, the environment), `git`, `http` (an HTTP
+request no service owns), or a service such as `awx`, `jira` or `github` (a
+capability may refine it, such as `awx.scm`).
 
 | Category | Meaning | Exit |
 |---|---|---|

@@ -8,9 +8,13 @@
 - ``references/test-results.md``'s field tables name only fields of an
   ``awx.test_result`` row or a temporary copy's row, and every backticked
   identifier in its prose is such a field, a suite field, a value the code
-  defines, or a listed AWX or Ansible word. The references do not have to
-  name every field: ``untaped awx schema AwxTestSuite`` and
-  ``--columns '?'`` list those.
+  defines, or a listed AWX or Ansible word.
+- Every backticked identifier in ``references/test-suites.md``'s prose is a
+  suite field, a launch field, an ``untaped awx`` command, a value the code
+  defines, or a listed word.
+
+The references do not have to name every field: ``untaped awx schema
+AwxTestSuite`` and ``--columns '?'`` list those.
 """
 
 from __future__ import annotations
@@ -23,11 +27,22 @@ from typing import get_args
 import pytest
 
 from untaped.sdk import ErrorCategory, OutputFormat
-from untaped_awx import SPEC
+from untaped_awx import SPEC, build_app
 from untaped_awx.application.suites.loader import LoadTestSuite
-from untaped_awx.application.suites.resolver import ResolveCasePayload
+from untaped_awx.application.suites.resolver import (
+    KNOWN_LAUNCH_FIELDS,
+    WORKFLOW_LAUNCH_FIELDS,
+    ResolveCasePayload,
+)
 from untaped_awx.domain.outcomes import TemporaryCopyOutcome
-from untaped_awx.domain.suite import CaseResult, CaseStatus, Change, NodeStatus, Suite
+from untaped_awx.domain.suite import (
+    Approvals,
+    CaseResult,
+    CaseStatus,
+    Change,
+    NodeStatus,
+    Suite,
+)
 from untaped_awx.domain.workflow_graph import WorkflowNodeSpec
 from untaped_awx.infrastructure.catalog import AwxResourceCatalog
 from untaped_awx.infrastructure.specs import (
@@ -161,7 +176,7 @@ _PROSE_WORDS = frozenset({
     "exit_code", "unknown", "null", "true",
     # AWX API and Ansible words the reference explains rows with.
     "allow_override", "ask_scm_branch_on_launch", "identifier", "dark",
-    "pending", "waiting", "project_update", "inventory_update",
+    "pending", "waiting", "running", "project_update", "inventory_update",
     "ignore_errors", "rescue",
 })  # fmt: skip
 """Backticked words in the results reference that name no row field or code value."""
@@ -175,15 +190,49 @@ def _suite_keys() -> set[str]:
 
 def _code_values() -> set[str]:
     """Values the code defines that the reference names: categories, formats, statuses."""
-    literals = (OutputFormat, CaseStatus, Change, NodeStatus)
+    literals = (OutputFormat, CaseStatus, Change, NodeStatus, Approvals)
     return {c.value for c in ErrorCategory} | {v for t in literals for v in get_args(t)}
+
+
+def _prose_identifiers(text: str) -> set[str]:
+    """Backticked lower-case identifiers outside fenced code blocks."""
+    prose = re.sub(r"^```.*?^```", "", text, flags=re.MULTILINE | re.DOTALL)
+    return set(re.findall(r"`([a-z][a-z0-9_]*)`", prose))
 
 
 def test_the_results_reference_prose_names_only_known_fields() -> None:
     """A renamed or removed field cannot linger in the prose: every identifier is known."""
-    prose = re.sub(r"^```.*?^```", "", _results_reference(), flags=re.MULTILINE | re.DOTALL)
-    named = set(re.findall(r"`([a-z][a-z0-9_]*)`", prose))
+    named = _prose_identifiers(_results_reference())
     known = _all_result_keys() | _copy_keys() | _suite_keys() | _code_values() | _PROSE_WORDS
+
+    assert named
+    assert named - known == set()
+
+
+_SUITES_WORDS = frozenset({"smoke", "web1"})
+"""Backticked words in the suites reference that are example names, not identifiers."""
+
+
+def _awx_commands() -> set[str]:
+    """``untaped awx`` command names and its ``test`` subcommands."""
+    app = build_app()
+    return {name for name in [*app, *app["test"]] if not name.startswith("-")}
+
+
+def test_the_suites_reference_prose_names_only_known_fields() -> None:
+    """A renamed suite field cannot linger in the prose: every identifier is known."""
+    text = (SKILL_DIR / "references" / "test-suites.md").read_text(encoding="utf-8")
+    named = _prose_identifiers(text)
+    known = (
+        _suite_keys()
+        | _all_result_keys()
+        | KNOWN_LAUNCH_FIELDS
+        | WORKFLOW_LAUNCH_FIELDS
+        | _awx_commands()
+        | _code_values()
+        | _PROSE_WORDS
+        | _SUITES_WORDS
+    )
 
     assert named
     assert named - known == set()

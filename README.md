@@ -1,6 +1,6 @@
 # untaped
 
-**untaped** is a batteries-included CLI for DevOps workflows. One install
+**untaped** is a batteries-included CLI for DevOps workflows. `untaped[all]`
 gives you six capabilities that share one config file, the same profiles, and
 the same output and piping rules:
 
@@ -104,7 +104,8 @@ These may change in any release:
 - `--format raw` without `--columns`: it prints the first default column,
   which may change. Name the field, as in `--format raw --columns name`.
 - Commands and file formats marked experimental (below).
-- Anything not documented, including internal modules.
+- Anything not documented, including internal modules, except the record
+  fields covered above.
 
 ### Experimental
 
