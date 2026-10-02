@@ -33,7 +33,7 @@ from untaped.capabilities.registry import (
     DoctorCheck,
     DoctorResult,
     QuarantineRecord,
-    factory_failure,
+    run_deferred_factory,
 )
 from untaped.cli import (
     ColumnsOption,
@@ -230,9 +230,9 @@ def collect_doctor_rows(
     for registered in result.capabilities:
         if capabilities is not None and registered.spec.name not in capabilities:
             continue
-        failure = factory_failure(registered)
-        if failure is not None:
-            rows.append(_quarantine_row(failure))
+        built = run_deferred_factory(registered)
+        if isinstance(built, QuarantineRecord):
+            rows.append(_quarantine_row(built))
     return rows
 
 

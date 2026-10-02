@@ -13,9 +13,9 @@ import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from importlib import metadata
 from itertools import chain
-from typing import Any, Literal
+from typing import Annotated, Any
 
-from cyclopts import App
+from cyclopts import App, Parameter
 from cyclopts.command_spec import CommandSpec
 from cyclopts.core import _apply_parent_defaults_to_app
 
@@ -33,10 +33,11 @@ from untaped.capabilities.registry import (
     CapabilitySpec,
     CompositionResult,
     ProviderCandidate,
+    QuarantineRecord,
     RegisteredCapability,
-    build_deferred_app,
     compose,
     discover_candidates,
+    run_deferred_factory,
 )
 from untaped.cli import (
     apply_default_format,
@@ -82,33 +83,8 @@ SHELL_SECTION = "shell"
 SHELL_DISTRIBUTION = "untaped"
 
 
-class _ShellRootApp(App):
-    """Root app whose shell completion skips capabilities that cannot build.
-
-    Completion generation resolves every lazy command; one capability whose
-    factory fails must not fail completion for the others (spec §1).
-    """
-
-    def generate_completion(
-        self,
-        *,
-        prog_name: str | None = None,
-        shell: Literal["zsh", "bash", "fish"] | None = None,
-    ) -> str:
-        """Generate the completion script without unbuildable capabilities."""
-        commands = dict(self._commands)
-        try:
-            for name, command in commands.items():
-                if isinstance(command, _LazyCapabilityCommand) and not command.try_resolve():
-                    del self._commands[name]
-            return super().generate_completion(prog_name=prog_name, shell=shell)
-        finally:
-            self._commands.clear()
-            self._commands.update(commands)
-
-
 def _shell_app() -> App:
-    return _ShellRootApp(name=SHELL_NAME, help="Unified untaped developer CLI.")
+    return App(name=SHELL_NAME, help="Unified untaped developer CLI.")
 
 
 #: The unified shell application (spec §1). A singleton so repeated
@@ -284,27 +260,12 @@ class _LazyCapabilityCommand(CommandSpec):
         self._mount_parent = mount_parent
 
     def resolve(self, parent_app: App) -> App:
-        """Build, validate, and cache the capability app on first access."""
+        """Build and cache the capability app (or its failing stand-in) on first access."""
         resolved = self._resolved
         if resolved is not None:
             return resolved
-        with report_errors():
-            app = build_deferred_app(self._capability)
-        return self._adopt(app)
-
-    def try_resolve(self) -> bool:
-        """Resolve without exiting; warn and return ``False`` when the factory fails."""
-        if self._resolved is not None:
-            return True
-        try:
-            app = build_deferred_app(self._capability)
-        except ConfigError as exc:
-            echo(f"warning: {exc} (left out of shell completion)", err=True)
-            return False
-        self._adopt(app)
-        return True
-
-    def _adopt(self, app: App) -> App:
+        built = run_deferred_factory(self._capability)
+        app = _unbuildable_app(built) if isinstance(built, QuarantineRecord) else built
         _apply_parent_defaults_to_app(app, self._mount_parent)
         for flag in chain(app.help_flags, app.version_flags):
             app[flag].show = False
@@ -312,6 +273,32 @@ class _LazyCapabilityCommand(CommandSpec):
             app.name_transform = self._mount_parent.name_transform
         self._resolved = app
         return app
+
+
+def _unbuildable_app(failure: QuarantineRecord) -> App:
+    """Stand-in for a capability whose deferred factory failed.
+
+    Every invocation, ``--help`` included (it declares no help or version
+    flags), fails with a ``ConfigError`` (exit 4) attributed to the
+    capability; nothing is unregistered and other capabilities are unaffected.
+    """
+    message = (
+        f"capability {failure.name!r} from {failure.distribution!r} "
+        f"could not build its commands: {failure.detail}"
+    )
+    stub = App(
+        name=failure.name,
+        help="Unavailable: its commands could not be built.",
+        help_flags=(),
+        version_flags=(),
+    )
+
+    @stub.default
+    def _fail(*tokens: Annotated[str, Parameter(allow_leading_hyphen=True)]) -> None:
+        note_requested_format(tokens)
+        raise ConfigError(message, system=failure.name)
+
+    return stub
 
 
 def _mount_capability(root: App, capability: RegisteredCapability) -> None:
