@@ -1,4 +1,4 @@
-"""Row-by-row validation tests: fatal built-ins, quarantined externals (spec §5).
+"""Row-by-row validation tests: fatal built-ins, quarantined candidates (spec §5).
 
 Each rejection row is exercised through both origins: a built-in violation
 raises ``ConfigError`` naming the reason, an external one becomes a
@@ -25,7 +25,7 @@ from test_capabilities.capharness import (
 from untaped.capabilities.registry import (
     CapabilitySpec,
     DoctorCheck,
-    ExternalProvider,
+    ProviderCandidate,
     SkillAsset,
     compose,
 )
@@ -297,7 +297,7 @@ def test_state_shadow_scoped_to_same_section() -> None:
     assert result.quarantine == ()
 
 
-def test_duplicate_skill_across_externals_keeps_the_first() -> None:
+def test_duplicate_skill_across_candidates_keeps_the_first() -> None:
     first = make_external(make_spec(name="a", skills=(make_skill("s1"),)), "d1")
     second = make_external(make_spec(name="b", skills=(make_skill("s1"),)), "d2")
     result = compose(make_shell(), [], [first, second])
@@ -313,7 +313,7 @@ def test_a_plain_function_provider_composes() -> None:
     def provide() -> CapabilitySpec:
         return spec
 
-    candidate = ExternalProvider(distribution="plain-dist", name="plain", target=provide)
+    candidate = ProviderCandidate(distribution="plain-dist", name="plain", target=provide)
     result = compose(make_shell(), [], [candidate])
     assert result.quarantine == ()
     assert [registered.spec for registered in result.capabilities] == [spec]
@@ -331,38 +331,38 @@ def _needs_arg(value: str) -> CapabilitySpec:
     [
         # An unimportable target has no resolved label; the detail names it.
         (
-            ExternalProvider(distribution="d", name="ghost", target="missing_mod_xyz:provider"),
+            ProviderCandidate(distribution="d", name="ghost", target="missing_mod_xyz:provider"),
             "malformed-entry-point",
             "",
             "missing_mod_xyz:provider",
         ),
         (
-            ExternalProvider(distribution="d", name="ghost", target="not-a-module-ref"),
+            ProviderCandidate(distribution="d", name="ghost", target="not-a-module-ref"),
             "malformed-entry-point",
             "",
             "",
         ),
         (
-            ExternalProvider(distribution="d", name="mod", target="json:decoder"),
+            ProviderCandidate(distribution="d", name="mod", target="json:decoder"),
             "malformed-entry-point",
             "json:decoder",
             "",
         ),
         # A dotted attribute resolves and is then judged on what it returns.
         (
-            ExternalProvider(distribution="d", name="jsoncap", target="json.decoder:JSONDecoder"),
+            ProviderCandidate(distribution="d", name="jsoncap", target="json.decoder:JSONDecoder"),
             "malformed-entry-point",
             "json.decoder:JSONDecoder",
             "",
         ),
         (
-            ExternalProvider(distribution="d", name="thing", target=object()),
+            ProviderCandidate(distribution="d", name="thing", target=object()),
             "malformed-entry-point",
             "thing",
             "",
         ),
         (
-            ExternalProvider(distribution="d", name="argful", target=_needs_arg),
+            ProviderCandidate(distribution="d", name="argful", target=_needs_arg),
             "malformed-entry-point",
             "argful",
             "",
@@ -392,7 +392,7 @@ def _needs_arg(value: str) -> CapabilitySpec:
     ],
 )
 def test_bad_entry_point_target_quarantines(
-    candidate: ExternalProvider, reason: str, entry_point: str | None, named: str
+    candidate: ProviderCandidate, reason: str, entry_point: str | None, named: str
 ) -> None:
     result = compose(make_shell(), [], [candidate])
     (record,) = result.quarantine

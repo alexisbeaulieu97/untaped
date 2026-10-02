@@ -17,7 +17,7 @@ from cyclopts import App
 
 from untaped.capabilities.registry import (
     CompositionResult,
-    ExternalProvider,
+    ProviderCandidate,
     QuarantineRecord,
 )
 from untaped.cli import (
@@ -35,7 +35,7 @@ _UNKNOWN = "unknown"
 def build_root_capabilities_app(
     *,
     result: CompositionResult,
-    candidates: Sequence[ExternalProvider],
+    candidates: Sequence[ProviderCandidate],
     shell_distribution: str,
 ) -> App:
     """Return the root ``capabilities`` terminal command for one composition."""
@@ -59,7 +59,7 @@ def build_root_capabilities_app(
 
 def _show(
     result: CompositionResult,
-    candidates: Sequence[ExternalProvider],
+    candidates: Sequence[ProviderCandidate],
     shell_distribution: str,
     *,
     fmt: OutputFormat,
@@ -76,7 +76,7 @@ def _show(
 
 def _rows(
     result: CompositionResult,
-    candidates: Sequence[ExternalProvider],
+    candidates: Sequence[ProviderCandidate],
     shell_distribution: str,
 ) -> list[dict[str, object]]:
     ordered = sorted(candidates, key=lambda item: (item.distribution, item.name))
@@ -117,7 +117,7 @@ def _rows(
     return rows
 
 
-def _candidate_key(candidate: ExternalProvider) -> str:
+def _candidate_key(candidate: ProviderCandidate) -> str:
     if isinstance(candidate.target, str):
         return candidate.target
     return candidate.name
@@ -135,7 +135,7 @@ def _product_version(shell_distribution: str) -> str:
         return _UNKNOWN
 
 
-def _candidate_version(candidate: ExternalProvider | None) -> str:
+def _candidate_version(candidate: ProviderCandidate | None) -> str:
     if candidate is None or not candidate.distribution_version:
         return _UNKNOWN
     return candidate.distribution_version

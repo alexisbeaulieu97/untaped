@@ -32,11 +32,11 @@ from untaped.capabilities.registry import (
     ApplicationSpec,
     CapabilitySpec,
     CompositionResult,
-    ExternalProvider,
+    ProviderCandidate,
     RegisteredCapability,
     build_deferred_app,
     compose,
-    discover_external_providers,
+    discover_candidates,
 )
 from untaped.cli import (
     apply_default_format,
@@ -138,16 +138,16 @@ def _warn_quarantined(result: CompositionResult) -> None:
 def compose_root(
     *,
     builtins: Sequence[CapabilitySpec] = BUILTIN_CAPABILITIES,
-    externals: Sequence[ExternalProvider] | None = None,
+    candidates: Sequence[ProviderCandidate] | None = None,
 ) -> CompositionResult:
     """Discover, validate, and register one composition.
 
-    Discovery (built-ins plus externals via entry points) runs BEFORE any
+    Discovery (built-ins plus entry-point candidates) runs BEFORE any
     settings registration or resolution; registration happens only after every
     surviving provider validates. Remembers the composition for :func:`reset`.
     """
     global _COMPOSED_RESULT
-    candidates = discover_external_providers() if externals is None else externals
+    candidates = discover_candidates() if candidates is None else candidates
     result = compose(SHELL_SPEC, builtins, candidates)
     _register_shell_and_capabilities(result)
     _COMPOSED_RESULT = result
@@ -201,7 +201,7 @@ def _resolve_version() -> str:
 def build_root_app(
     *,
     builtins: Sequence[CapabilitySpec] = BUILTIN_CAPABILITIES,
-    externals: Sequence[ExternalProvider] | None = None,
+    candidates: Sequence[ProviderCandidate] | None = None,
 ) -> App:
     """Compose the shell plus capabilities and return the root app.
 
@@ -211,8 +211,8 @@ def build_root_app(
     completion. Drive ``app.meta`` directly in tests; run via
     :func:`run_root` in production.
     """
-    candidates = list(externals) if externals is not None else list(discover_external_providers())
-    result = compose_root(builtins=builtins, externals=candidates)
+    candidates = list(candidates) if candidates is not None else list(discover_candidates())
+    result = compose_root(builtins=builtins, candidates=candidates)
     root = _shell_app()
     _mount(root, build_root_config_app(shell=SHELL_SPEC, result=result), name="config")
     _mount(root, build_root_profile_app(command=SHELL_NAME), name="profile")
@@ -403,7 +403,7 @@ def run_root(
     tokens: Iterable[str] | None = None,
     *,
     builtins: Sequence[CapabilitySpec] = BUILTIN_CAPABILITIES,
-    externals: Sequence[ExternalProvider] | None = None,
+    candidates: Sequence[ProviderCandidate] | None = None,
     console: Any | None = None,
     error_console: Any | None = None,
 ) -> object:
@@ -416,7 +416,7 @@ def run_root(
     argv = list(tokens) if tokens is not None else sys.argv[1:]
     with diagnostics_scope():
         note_requested_format(argv)
-        root = build_root_app(builtins=builtins, externals=externals)
+        root = build_root_app(builtins=builtins, candidates=candidates)
         return run_cyclopts_app(root.meta, argv, console=console, error_console=error_console)
 
 

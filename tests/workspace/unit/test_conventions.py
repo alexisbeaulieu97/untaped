@@ -12,4 +12,4 @@ pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 
 def test_workspace_follows_the_conventions() -> None:
-    check_conventions("workspace", tests_dir=Path(__file__).resolve().parents[1], externals=[])
+    check_conventions("workspace", tests_dir=Path(__file__).resolve().parents[1], candidates=[])

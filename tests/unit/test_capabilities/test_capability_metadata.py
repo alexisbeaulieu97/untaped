@@ -2,7 +2,7 @@
 
 This module is the CI-mode metadata validator: it runs on every pull
 request as part of the default ``pytest`` run. Compose mode stays lenient
-for externals (quarantine, never raise); built-in violations are fatal
+for candidates (quarantine, never raise); built-in violations are fatal
 (an SDK bug).
 
 Built-ins (§7.1): ``kind == "built-in"``, ``distribution == "untaped"``,
@@ -30,10 +30,10 @@ import pytest
 import untaped.capabilities.registry as registry
 from test_capabilities.capharness import Provider, make_external, make_shell, make_spec
 from untaped.capabilities.registry import (
-    ExternalProvider,
+    ProviderCandidate,
     ProviderRef,
     compose,
-    discover_external_providers,
+    discover_candidates,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -98,7 +98,7 @@ def test_metadata_is_checked_before_import(
         return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(registry, "import_module", tracking_import)
-    candidate = ExternalProvider(
+    candidate = ProviderCandidate(
         distribution="example-dist",
         name="pinned",
         target="definitely.missing.row13_module:provider",
@@ -169,7 +169,7 @@ def test_multi_entry_point_distribution_passes() -> None:
 
 
 def test_discover_without_distributions() -> None:
-    assert discover_external_providers(group="untaped.capabilities.no-such-group") == ()
+    assert discover_candidates(group="untaped.capabilities.no-such-group") == ()
 
 
 def test_live_discovery_composes_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -195,7 +195,7 @@ def test_live_discovery_composes_end_to_end(monkeypatch: pytest.MonkeyPatch) -> 
         "entry_points",
         lambda group=None: [fake_entry_point] if group == "untaped.capabilities" else [],
     )
-    providers = registry.discover_external_providers()
+    providers = registry.discover_candidates()
     (candidate,) = providers
     assert candidate.distribution == "live-dist"
     assert candidate.name == "live-cap"

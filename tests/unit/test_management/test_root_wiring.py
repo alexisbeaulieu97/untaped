@@ -33,8 +33,8 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 _MANAGEMENT = ("config", "profile", "skills", "doctor", "capabilities")
 
 
-def _root(*specs: object, externals: object = ()) -> object:
-    return bootstrap.build_root_app(builtins=tuple(specs), externals=tuple(externals))  # type: ignore[arg-type]
+def _root(*specs: object, candidates: object = ()) -> object:
+    return bootstrap.build_root_app(builtins=tuple(specs), candidates=tuple(candidates))  # type: ignore[arg-type]
 
 
 def test_default_root_help_lists_only_management() -> None:
@@ -115,7 +115,7 @@ def test_jira_isolation_end_to_end(_isolated_config: Path) -> None:
 
 
 def test_quarantined_external_lists_and_fails_doctor_only(tmp_path: Path) -> None:
-    from untaped.capabilities.registry import CapabilitySpec, ExternalProvider
+    from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 
     calls: list[str] = []
 
@@ -124,14 +124,14 @@ def test_quarantined_external_lists_and_fails_doctor_only(tmp_path: Path) -> Non
             calls.append("good")
             return make_spec("good", skills=(asset(tmp_path, "untaped-good"),))
 
-    good = ExternalProvider(distribution="example-dist", name="good", target=_Provider())
+    good = ProviderCandidate(distribution="example-dist", name="good", target=_Provider())
 
     class _BadProvider:
         def __call__(self) -> CapabilitySpec:
             return make_spec("good")
 
-    bad = ExternalProvider(distribution="example-dist", name="bad", target=_BadProvider())
-    root = _root(externals=(good, bad))
+    bad = ProviderCandidate(distribution="example-dist", name="bad", target=_BadProvider())
+    root = _root(candidates=(good, bad))
 
     capabilities = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])  # type: ignore[union-attr]
     assert capabilities.exit_code == 0, capabilities.output
@@ -221,7 +221,7 @@ def test_ctrl_c_at_a_config_prompt_exits_130() -> None:
     from untaped.testing import ScriptedPromptBackend, invoke_cli
 
     result = invoke_cli(
-        bootstrap.build_root_app(builtins=(), externals=()),
+        bootstrap.build_root_app(builtins=(), candidates=()),
         ["config", "set", "ui.theme", "--prompt"],
         interactive=True,
         prompt_backend=ScriptedPromptBackend(interrupt=True),

@@ -151,7 +151,7 @@ def _unknown_options(root: App, argv: list[str], aliases: set[str]) -> list[str]
 
 def test_command_examples_use_real_commands_and_options() -> None:
     """Every ``untaped`` example in a ``bash`` block names a real command and options."""
-    root = build_root_app(externals=[])
+    root = build_root_app(candidates=[])
     problems = []
     for path in _markdown_files():
         if "templates" in path.parts:

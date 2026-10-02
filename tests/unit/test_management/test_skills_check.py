@@ -27,7 +27,7 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 def _root(tmp_path: Path, *names: str) -> tuple[object, list[SkillAsset]]:
     skills = [asset(tmp_path, name) for name in names]
     root = bootstrap.build_root_app(
-        builtins=(make_spec("demo", skills=tuple(skills)),), externals=()
+        builtins=(make_spec("demo", skills=tuple(skills)),), candidates=()
     )
     return root, skills
 
@@ -160,7 +160,7 @@ def _root_with_commands(tmp_path: Path) -> object:
         return app
 
     spec = replace(make_spec("demo", skills=(skill,)), app_factory=_factory)
-    root = bootstrap.build_root_app(builtins=(spec,), externals=())
+    root = bootstrap.build_root_app(builtins=(spec,), candidates=())
     assert _run(root, "skills", "install", "demo")[0] == 0
     skill.source.joinpath("SKILL.md").write_text("new instructions\n", encoding="utf-8")
     return root

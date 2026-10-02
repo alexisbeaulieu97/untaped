@@ -26,7 +26,7 @@ _CONFIG = "profiles:\n  default:\n    github:\n      base_url: https://g\n"
 
 def _invoke(argv: list[str]) -> CliResult:
     root = bootstrap.build_root_app(
-        builtins=(make_spec("github", profile_model=GithubProfile),), externals=()
+        builtins=(make_spec("github", profile_model=GithubProfile),), candidates=()
     )
     return CliInvoker().invoke(root.meta, argv)
 
@@ -121,7 +121,7 @@ def _lazy_spec() -> CapabilitySpec:
 
 def test_ui_format_reaches_a_lazily_mounted_capability(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      format: json\n")
-    root = bootstrap.build_root_app(builtins=(_lazy_spec(),), externals=())
+    root = bootstrap.build_root_app(builtins=(_lazy_spec(),), candidates=())
     result = CliInvoker().invoke(root.meta, ["lazy", "list"])
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [{"name": "row"}]

@@ -29,7 +29,7 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
 
 
 def _invoke(spec: CapabilitySpec, *args: str) -> str:
-    root = bootstrap.build_root_app(builtins=(spec,), externals=())
+    root = bootstrap.build_root_app(builtins=(spec,), candidates=())
     result = CliInvoker().invoke(root.meta, list(args))
     assert result.exit_code == 0, result.output
     return result.stdout

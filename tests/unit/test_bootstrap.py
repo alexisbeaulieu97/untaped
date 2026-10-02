@@ -25,7 +25,7 @@ from pydantic import BaseModel
 
 from untaped import bootstrap
 from untaped.app_context import app_context
-from untaped.capabilities.registry import CapabilitySpec, ExternalProvider
+from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 from untaped.cli import create_app, echo
 from untaped.errors import ConfigError
 from untaped.profile_resolver import profile_override, set_profile_override
@@ -60,8 +60,8 @@ class _Provider:
 
 def _external(
     spec: CapabilitySpec, calls: list[str], *, distribution: str = "example-dist"
-) -> ExternalProvider:
-    return ExternalProvider(
+) -> ProviderCandidate:
+    return ProviderCandidate(
         distribution=distribution, name=spec.name, target=_Provider(spec, calls)
     )
 
@@ -91,7 +91,7 @@ def _who_app(name: str, body: Callable[[], None]) -> App:
     return app
 
 
-def _ext_external(calls: list[str]) -> ExternalProvider:
+def _ext_external(calls: list[str]) -> ProviderCandidate:
     return _external(_spec("ext", _who_app("ext", _token_body_for("ext"))), calls)
 
 
@@ -101,11 +101,11 @@ def _write_config(path: Path, text: str) -> None:
 
 
 def test_zero_capability_root_lists_no_capabilities() -> None:
-    composition = bootstrap.compose_root(builtins=(), externals=())
+    composition = bootstrap.compose_root(builtins=(), candidates=())
     assert composition.capabilities == ()
     assert composition.quarantine == ()
 
-    root = bootstrap.build_root_app(builtins=(), externals=())
+    root = bootstrap.build_root_app(builtins=(), candidates=())
     result = CliInvoker().invoke(root.meta, ["--help"])
     assert result.exit_code == 0, result.output
     assert "untaped" in result.stdout
@@ -114,7 +114,7 @@ def test_zero_capability_root_lists_no_capabilities() -> None:
 def test_composition_is_the_last_composed_result() -> None:
     with pytest.raises(RuntimeError):
         bootstrap.composition()
-    composed = bootstrap.compose_root(builtins=(), externals=())
+    composed = bootstrap.compose_root(builtins=(), candidates=())
     assert bootstrap.composition() is composed
 
 
@@ -186,7 +186,7 @@ def test_version_resolves_unified_distribution_lazily(
 
     monkeypatch.setattr(metadata, "version", fake_version)
     calls: list[str] = []
-    root = bootstrap.build_root_app(builtins=(), externals=[_ext_external(calls)])
+    root = bootstrap.build_root_app(builtins=(), candidates=[_ext_external(calls)])
     assert looked_up == []
 
     result = CliInvoker().invoke(root.meta, ["ext", "who"])
@@ -206,7 +206,7 @@ def test_missing_version_metadata_is_config_error(monkeypatch: pytest.MonkeyPatc
         raise metadata.PackageNotFoundError(distribution)
 
     monkeypatch.setattr(metadata, "version", missing)
-    root = bootstrap.build_root_app(builtins=(), externals=())
+    root = bootstrap.build_root_app(builtins=(), candidates=())
     result = CliInvoker().invoke(root.meta, ["--version"])
     assert result.exit_code == 4, result.output  # config: the environment needs fixing
     assert "untaped" in result.stderr
@@ -218,7 +218,7 @@ def test_discovery_runs_before_settings_registration(monkeypatch: pytest.MonkeyP
     calls: list[str] = []
     candidate = _external(_spec("ext", _who_app("ext", _token_body_for("ext"))), calls)
 
-    def fake_discover(**kwargs: object) -> tuple[ExternalProvider, ...]:
+    def fake_discover(**kwargs: object) -> tuple[ProviderCandidate, ...]:
         events.append("discover")
         return (candidate,)
 
@@ -228,9 +228,9 @@ def test_discovery_runs_before_settings_registration(monkeypatch: pytest.MonkeyP
         events.append(f"register:{section}")
         real_register(section, model)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(bootstrap, "discover_external_providers", fake_discover)
+    monkeypatch.setattr(bootstrap, "discover_candidates", fake_discover)
     monkeypatch.setattr(bootstrap, "register_profile_settings", spy_register)
-    root = bootstrap.build_root_app(builtins=(), externals=None)
+    root = bootstrap.build_root_app(builtins=(), candidates=None)
 
     assert "ext" in root
     assert events[0] == "discover"
@@ -243,7 +243,7 @@ def test_external_settings_register_before_config_resolution(_isolated_config: P
         app_context().section("ext", _ExtProfile)
 
     calls: list[str] = []
-    root = bootstrap.build_root_app(builtins=(), externals=[_ext_external(calls)])
+    root = bootstrap.build_root_app(builtins=(), candidates=[_ext_external(calls)])
     assert calls == ["ext"]
     assert "ext" in root
     assert app_context().section("ext", _ExtProfile).token == "SECRET"
@@ -257,7 +257,7 @@ def test_external_settings_register_before_config_resolution(_isolated_config: P
 def test_profile_option_resolves_in_any_position(_isolated_config: Path) -> None:
     _write_config(_isolated_config, "profiles:\n  work:\n    ext:\n      token: WT\n")
     calls: list[str] = []
-    root = bootstrap.build_root_app(builtins=(), externals=[_ext_external(calls)])
+    root = bootstrap.build_root_app(builtins=(), candidates=[_ext_external(calls)])
     for argv in (
         ["--profile", "work", "ext", "who"],
         ["ext", "--profile", "work", "who"],
@@ -292,7 +292,7 @@ def test_root_options_apply_between_nested_command_names(
     grp = create_app(name="grp", help="A nested group.")
     grp.command(body, name="who")
     ext.command(grp, name="grp")
-    root = bootstrap.build_root_app(builtins=(), externals=[_external(_spec("ext", ext), [])])
+    root = bootstrap.build_root_app(builtins=(), candidates=[_external(_spec("ext", ext), [])])
 
     result = CliInvoker().invoke(root.meta, argv)
 
@@ -316,7 +316,7 @@ def test_root_option_after_a_lazy_builtin_name_is_not_a_command(
 
 def test_profile_value_may_equal_a_command_name(_isolated_config: Path) -> None:
     _write_config(_isolated_config, "profiles:\n  ext:\n    ext:\n      token: EXT\n")
-    root = bootstrap.build_root_app(builtins=(), externals=[_ext_external([])])
+    root = bootstrap.build_root_app(builtins=(), candidates=[_ext_external([])])
     for argv in (
         ["--profile", "ext", "ext", "who"],
         ["ext", "--profile", "ext", "who"],
@@ -335,7 +335,7 @@ def test_root_options_after_end_of_options_reach_the_command(
 
     ext = create_app(name="ext", help="ext capability.")
     ext.command(run, name="run")
-    root = bootstrap.build_root_app(builtins=(), externals=[_external(_spec("ext", ext), [])])
+    root = bootstrap.build_root_app(builtins=(), candidates=[_external(_spec("ext", ext), [])])
 
     result = CliInvoker().invoke(root.meta, ["ext", "run", "--", "--profile"])
     assert result.exit_code == 0, result.output
@@ -352,7 +352,7 @@ def test_root_options_reset_after_invocation(_isolated_config: Path) -> None:
     _write_config(_isolated_config, "profiles:\n  work:\n    ext:\n      token: WT\n")
     env_before = os.environ.get("UNTAPED_PROFILE")
     calls: list[str] = []
-    root = bootstrap.build_root_app(builtins=(), externals=[_ext_external(calls)])
+    root = bootstrap.build_root_app(builtins=(), candidates=[_ext_external(calls)])
 
     result = CliInvoker().invoke(root.meta, ["--verbose", "ext", "who"])
     assert result.exit_code == 0, result.output
@@ -383,7 +383,7 @@ def test_verbose_and_quiet_together_is_a_usage_error(
     _isolated_config: Path, argv: list[str]
 ) -> None:
     calls: list[str] = []
-    root = bootstrap.build_root_app(builtins=(), externals=[_ext_external(calls)])
+    root = bootstrap.build_root_app(builtins=(), candidates=[_ext_external(calls)])
 
     result = CliInvoker().invoke(root.meta, argv)
 
@@ -395,7 +395,7 @@ def test_verbose_and_quiet_together_is_a_usage_error(
 
 
 def test_root_help_lists_root_options_and_completion() -> None:
-    root = bootstrap.build_root_app(builtins=(), externals=())
+    root = bootstrap.build_root_app(builtins=(), candidates=())
     result = CliInvoker().invoke(root.meta, ["--help"])
     assert result.exit_code == 0, result.output
     for flag in ("--profile", "--verbose", "--quiet", "--install-completion"):
@@ -433,7 +433,7 @@ def test_quarantined_external_warns_and_boots(capsys: pytest.CaptureFixture[str]
     )
     bad = _external(bad_spec, bad_calls)
 
-    composition = bootstrap.compose_root(builtins=(), externals=[good, bad])
+    composition = bootstrap.compose_root(builtins=(), candidates=[good, bad])
     assert [cap.spec.name for cap in composition.capabilities] == ["good"]
     assert len(composition.quarantine) == 1
     assert composition.quarantine[0].reason == "duplicate-name"
@@ -441,7 +441,7 @@ def test_quarantined_external_warns_and_boots(capsys: pytest.CaptureFixture[str]
     assert "quarantined" in err
     assert "example-dist" in err
 
-    root = bootstrap.build_root_app(builtins=(), externals=[good, bad])
+    root = bootstrap.build_root_app(builtins=(), candidates=[good, bad])
     capsys.readouterr()
     assert "good" in root
     result = CliInvoker().invoke(root.meta, ["good", "who"])
@@ -466,9 +466,9 @@ def test_quarantine_warning_follows_the_requested_format(
 ) -> None:
     for name, value in env.items():
         monkeypatch.setenv(name, value)
-    broken = ExternalProvider(distribution="broken-dist", name="broken", target=lambda: None)
+    broken = ProviderCandidate(distribution="broken-dist", name="broken", target=lambda: None)
     with pytest.raises(SystemExit) as exit_info:
-        bootstrap.run_root(argv, builtins=(), externals=(broken,))
+        bootstrap.run_root(argv, builtins=(), candidates=(broken,))
     assert exit_info.value.code in (0, None)
     lines = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
     assert [line["level"] for line in lines] == ["warning"]
@@ -478,15 +478,15 @@ def test_quarantine_warning_follows_the_requested_format(
 def test_quarantine_warning_is_text_without_a_structured_format(
     _isolated_config: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    broken = ExternalProvider(distribution="broken-dist", name="broken", target=lambda: None)
+    broken = ProviderCandidate(distribution="broken-dist", name="broken", target=lambda: None)
     with pytest.raises(SystemExit):
-        bootstrap.run_root(["config", "list"], builtins=(), externals=(broken,))
+        bootstrap.run_root(["config", "list"], builtins=(), candidates=(broken,))
     assert capsys.readouterr().err.startswith("warning: capability provider 'broken-dist'")
 
 
 def test_reset_restores_composed_state(_isolated_config: Path) -> None:
     calls: list[str] = []
-    bootstrap.build_root_app(builtins=(), externals=[_ext_external(calls)])
+    bootstrap.build_root_app(builtins=(), candidates=[_ext_external(calls)])
     assert app_context().section("ext", _ExtProfile).token == "default-token"
 
     set_profile_override("work")
@@ -613,7 +613,7 @@ def _counting_spec(
 def test_lazy_builtin_factory_runs_only_on_dispatch_and_once() -> None:
     calls: list[str] = []
     spec = _counting_spec("lazy", calls, help="Lazy capability.")
-    root = bootstrap.build_root_app(builtins=(spec,), externals=())
+    root = bootstrap.build_root_app(builtins=(spec,), candidates=())
     assert calls == []
 
     listed = CliInvoker().invoke(root.meta, ["--help"])
@@ -634,7 +634,7 @@ def test_eager_factories_are_called_once_per_composition() -> None:
     builtin = _counting_spec("eager", builtin_calls)
     external = _external(_counting_spec("ext", external_calls), [])
 
-    root = bootstrap.build_root_app(builtins=(builtin,), externals=[external])
+    root = bootstrap.build_root_app(builtins=(builtin,), candidates=[external])
     for name in ("eager", "ext"):
         result = CliInvoker().invoke(root.meta, [name, "who"])
         assert result.exit_code == 0, result.output
@@ -646,7 +646,7 @@ def test_eager_factories_are_called_once_per_composition() -> None:
 def test_external_help_does_not_defer_factory_validation() -> None:
     calls: list[str] = []
     bad = _counting_spec("bad", calls, help="Bad capability.", result="not-an-app")
-    composition = bootstrap.compose_root(builtins=(), externals=[_external(bad, [])])
+    composition = bootstrap.compose_root(builtins=(), candidates=[_external(bad, [])])
     assert composition.capabilities == ()
     assert [record.reason for record in composition.quarantine] == ["bad-app-factory"]
     assert calls == ["bad"]
@@ -655,7 +655,7 @@ def test_external_help_does_not_defer_factory_validation() -> None:
 def test_lazy_builtin_bad_factory_is_fatal_at_dispatch() -> None:
     calls: list[str] = []
     bad = _counting_spec("bad", calls, help="Bad capability.", result="not-an-app")
-    root = bootstrap.build_root_app(builtins=(bad,), externals=())
+    root = bootstrap.build_root_app(builtins=(bad,), candidates=())
     assert calls == []
 
     result = CliInvoker().invoke(root.meta, ["bad", "who"])
@@ -675,7 +675,7 @@ def test_lazy_builtin_raising_factory_is_fatal_at_dispatch() -> None:
         profile_model=_ExtProfile,
         help="Boom capability.",
     )
-    root = bootstrap.build_root_app(builtins=(spec,), externals=())
+    root = bootstrap.build_root_app(builtins=(spec,), candidates=())
 
     result = CliInvoker().invoke(root.meta, ["boom", "--help"])
     assert result.exit_code != 0
@@ -730,9 +730,9 @@ def test_lazy_builtins_render_like_eager_mounts() -> None:
         for flag in ("--help", "--version")
     ]
     for argv in argv_cases:
-        lazy = CliInvoker().invoke(bootstrap.build_root_app(externals=()).meta, argv)
+        lazy = CliInvoker().invoke(bootstrap.build_root_app(candidates=()).meta, argv)
         eager = CliInvoker().invoke(
-            bootstrap.build_root_app(builtins=eager_specs, externals=()).meta, argv
+            bootstrap.build_root_app(builtins=eager_specs, candidates=()).meta, argv
         )
         assert (lazy.exit_code, lazy.output) == (eager.exit_code, eager.output), (
             f"lazy mount of {argv} renders differently from an eager mount; cyclopts "

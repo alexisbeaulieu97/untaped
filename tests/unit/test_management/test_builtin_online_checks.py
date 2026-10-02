@@ -31,7 +31,7 @@ profiles:
 
 
 def _online_rows(*args: str) -> dict[str, dict[str, Any]]:
-    root = bootstrap.build_root_app(externals=())
+    root = bootstrap.build_root_app(candidates=())
     result = CliInvoker().invoke(root.meta, ["doctor", "--online", "--format", "json", *args])
     assert result.stdout, result.output
     return {row["check"]: row for row in json.loads(result.stdout)}
