@@ -8,11 +8,14 @@ owns everything else: there is no second console script, config command or
 profile command.
 
 Provider code imports from `untaped.sdk` and nothing else in
-`untaped`; [`src/untaped/sdk.py`](../src/untaped/sdk.py)
+`untaped`; [`packages/untaped/src/untaped/sdk.py`](../packages/untaped/src/untaped/sdk.py)
 is the authoritative API surface. The internal registry and other modules are
 not an API and may change in any release.
 First-party capabilities may also use each other's declared `api.py` modules;
 those are internal to `untaped` and not part of the provider API.
+
+[`examples/untaped-hello`](../examples/untaped-hello) in the repository is a
+complete, tested plugin; copy it to start.
 
 ## 1. Provider package
 
@@ -117,7 +120,7 @@ if TYPE_CHECKING:
 class AcmeSettings(BaseModel):
     """Profile-scoped Acme settings."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(frozen=True)
 
     greeting: str = "hello from acme"
 
@@ -206,7 +209,7 @@ exit codes and record shapes.
 
 ## 4. Stable helper surface
 
-[`sdk.py`](../src/untaped/sdk.py) lists every export,
+[`sdk.py`](../packages/untaped/src/untaped/sdk.py) lists every export,
 and each helper's docstring is its reference.
 [Command and output conventions](./conventions.md) says which helper each rule
 uses. Beyond those:
@@ -328,7 +331,12 @@ uv run mypy
 uv run ruff check
 ```
 
-Call `untaped.testing.check_conventions(NAME)` from the plugin's own tests.
+Add `pytest_plugins = ["untaped.testing.plugin"]` to your top-level
+`conftest.py` for an isolated `HOME`, config and environment in every test.
+Call `untaped.testing.check_conventions(NAME)` from the plugin's own tests,
+and `untaped.testing.invoke_root(["acme", "hello"])` to run `untaped acme
+hello` in-process against the installed providers; it returns the exit code
+and captured output.
 Define `build_app` (the `app_factory`) in the capability package's
 `__init__.py`, because the checks scan that package. Declare writing commands
 with `@writes` (or `@writes(destructive=True)`). To waive a rule on one line,

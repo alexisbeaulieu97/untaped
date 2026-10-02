@@ -62,20 +62,14 @@ jobs:
       - name: Pytest
         run: uv run pytest -n auto --cov --cov-report=term-missing --durations=25
 
-  # Build the wheel, install it into a clean venv, and run the same
-  # `scripts/release.py smoke` the release workflow runs on its built wheels
-  # and on the published package.
-  unified-app-wheel-smoke:
+  # Build every package and install the wheels by path into clean venvs, one
+  # per install shape, each checked by `scripts/release.py smoke` against the
+  # exact capabilities it should hold. A fresh uv cache means no wheel from an
+  # earlier build is reused, and nothing first party comes from PyPI.
+  wheel-matrix:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - name: Configure isolated smoke home
-        run: |
-          set -euo pipefail
-          home_dir="$RUNNER_TEMP/untaped-smoke-home"
-          mkdir -p "$home_dir"
-          echo "HOME=$home_dir" >> "$GITHUB_ENV"
-
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
@@ -85,16 +79,102 @@ jobs:
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
         with:
           version: "0.11.26"
-          enable-cache: true
+          enable-cache: false
 
-      - name: Build the unified app wheel
-        run: uv build --wheel --no-sources
-
-      - name: Install the built wheel into an isolated venv
+      - name: Configure isolated smoke home and a fresh uv cache
+        # After setup-uv, so its own UV_CACHE_DIR does not win.
         run: |
           set -euo pipefail
-          uv venv --python 3.14 "$RUNNER_TEMP/untaped-wheel"
-          uv pip install --python "$RUNNER_TEMP/untaped-wheel/bin/python" dist/*.whl
+          home_dir="$RUNNER_TEMP/untaped-smoke-home"
+          mkdir -p "$home_dir"
+          echo "HOME=$home_dir" >> "$GITHUB_ENV"
+          echo "UV_CACHE_DIR=$RUNNER_TEMP/uv-cache" >> "$GITHUB_ENV"
 
-      - name: Run the unified app smoke
-        run: uv run python scripts/release.py smoke "$RUNNER_TEMP/untaped-wheel/bin/untaped" "$(uv run python scripts/release.py version)"
+      - name: Sync workspace
+        # Only for running scripts/release.py; the smokes use the built wheels.
+        run: uv sync --frozen --python 3.14
+
+      - name: Build every package
+        run: |
+          set -euo pipefail
+          uv build --all-packages --no-sources --out-dir dist
+          echo "VERSION=$(uv run --no-sync python scripts/release.py version)" >> "$GITHUB_ENV"
+          echo "CORE=$(ls dist/untaped-*-py3-none-any.whl)" >> "$GITHUB_ENV"
+
+      - name: Bare untaped
+        run: |
+          set -euo pipefail
+          uv venv -q --python 3.14 "$RUNNER_TEMP/bare"
+          uv pip install --python "$RUNNER_TEMP/bare/bin/python" "$CORE"
+          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/bare/bin/untaped" "$VERSION" --expect ""
+          # The root's own commands work with no capability installed.
+          "$RUNNER_TEMP/bare/bin/untaped" doctor
+          "$RUNNER_TEMP/bare/bin/untaped" skills list
+          "$RUNNER_TEMP/bare/bin/untaped" config list
+          "$RUNNER_TEMP/bare/bin/untaped" profile list
+          # ...and `capabilities` says how to install some (a stderr hint).
+          "$RUNNER_TEMP/bare/bin/untaped" capabilities 2>&1 >/dev/null | grep -F "untaped[all]"
+
+      - name: untaped[awx] alone
+        run: |
+          set -euo pipefail
+          uv venv -q --python 3.14 "$RUNNER_TEMP/awx"
+          uv pip install --python "$RUNNER_TEMP/awx/bin/python" --find-links dist "untaped[awx] @ file://$PWD/$CORE"
+          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/awx/bin/untaped" "$VERSION" --expect awx --skills
+
+      - name: untaped[all]
+        run: |
+          set -euo pipefail
+          uv venv -q --python 3.14 "$RUNNER_TEMP/all"
+          uv pip install --python "$RUNNER_TEMP/all/bin/python" --find-links dist "untaped[all] @ file://$PWD/$CORE"
+          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/all/bin/untaped" "$VERSION" --skills
+
+      - name: Bare untaped plus the example plugin, tested outside the repo
+        run: |
+          set -euo pipefail
+          cp -r examples/untaped-hello "$RUNNER_TEMP/hello-src"
+          uv venv -q --python 3.14 "$RUNNER_TEMP/hello"
+          uv pip install --python "$RUNNER_TEMP/hello/bin/python" "$CORE" "$RUNNER_TEMP/hello-src" pytest
+          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/hello/bin/untaped" "$VERSION" --expect hello --skills
+          (cd "$RUNNER_TEMP/hello-src" && "$RUNNER_TEMP/hello/bin/python" -m pytest -q tests)
+
+      - name: A broken example plugin is quarantined
+        run: |
+          set -euo pipefail
+          cp -r examples/untaped-hello "$RUNNER_TEMP/hello-broken"
+          sed -i 's/untaped_hello:provider/untaped_hello:missing/' "$RUNNER_TEMP/hello-broken/pyproject.toml"
+          uv venv -q --python 3.14 "$RUNNER_TEMP/broken"
+          uv pip install --python "$RUNNER_TEMP/broken/bin/python" "$CORE" "$RUNNER_TEMP/hello-broken"
+          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/broken/bin/untaped" "$VERSION" --expect "" --quarantined hello
+
+  # Core's tests must pass with no capability package installed: a venv
+  # holding only the core wheel and the dev tools (the workspace members
+  # and the capability packages' own dependencies left out of the export).
+  core-only-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
+        with:
+          version: "0.11.26"
+          enable-cache: false
+
+      - name: Configure a fresh uv cache
+        run: echo "UV_CACHE_DIR=$RUNNER_TEMP/uv-cache" >> "$GITHUB_ENV"
+
+      - name: Core's tests with only the core wheel installed
+        run: |
+          set -euo pipefail
+          uv build --package untaped --no-sources --out-dir dist
+          uv venv -q --python 3.14 "$RUNNER_TEMP/core"
+          prune=(); for pkg in packages/untaped-*/; do prune+=(--prune "$(basename "$pkg")"); done
+          uv export --frozen --only-group dev --no-hashes --no-emit-workspace "${prune[@]}" > "$RUNNER_TEMP/dev-requirements.txt"
+          uv pip install --python "$RUNNER_TEMP/core/bin/python" dist/untaped-*-py3-none-any.whl -r "$RUNNER_TEMP/dev-requirements.txt"
+          "$RUNNER_TEMP/core/bin/python" -c 'import importlib.util, sys; leaked = [m for m in ("jinja2", "tomlkit") if importlib.util.find_spec(m)]; sys.exit(f"capability dependencies installed: {leaked}" if leaked else 0)'
+          "$RUNNER_TEMP/core/bin/python" -m pytest -q -n auto -p no:cacheprovider --rootdir . -c pyproject.toml packages/untaped/tests

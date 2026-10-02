@@ -14,8 +14,8 @@ Downstream works from live GitHub reads. Upstream needs a *source*: a saved
 set of orgs, teams or repos whose dependency files `untaped` scans and caches.
 
 The packaged skill is the full reference:
-[sources and refreshes](../../src/untaped/capabilities/ansible/skills/untaped-ansible/references/sources.md)
-and [graph resolution and output](../../src/untaped/capabilities/ansible/skills/untaped-ansible/references/graphs.md).
+[sources and refreshes](../../packages/untaped-ansible/src/untaped_ansible/skills/untaped-ansible/references/sources.md)
+and [graph resolution and output](../../packages/untaped-ansible/src/untaped_ansible/skills/untaped-ansible/references/graphs.md).
 
 ## Set up
 
@@ -139,7 +139,7 @@ After each repo comes the file that declares that dependency, plus
 `unpinned` when it names no version, or `pins X` when the declared version
 differs from the ref it resolved to. A repo marked `…` with a `not read:`
 note is [stopped](../glossary.md): the graph beyond it was not read. The
-[graph reference](../../src/untaped/capabilities/ansible/skills/untaped-ansible/references/graphs.md#tree-output) lists every marker.
+[graph reference](../../packages/untaped-ansible/src/untaped_ansible/skills/untaped-ansible/references/graphs.md#tree-output) lists every marker.
 
 ## Flags
 
@@ -177,7 +177,7 @@ lists them and exits non-zero; run it again to retry only those. A large
 refresh that runs low on GitHub API budget stops early, exits 5 and resumes
 where it left off when you run it again. Backends, rate-limit fallbacks and
 tuning are in the
-[sources reference](../../src/untaped/capabilities/ansible/skills/untaped-ansible/references/sources.md#refreshing).
+[sources reference](../../packages/untaped-ansible/src/untaped_ansible/skills/untaped-ansible/references/sources.md#refreshing).
 
 ## Source aliases
 
@@ -206,7 +206,7 @@ follows.
   never fails the command.
 
 Every row field, the tree markers and the JSON graph shape are in the
-[graph reference](../../src/untaped/capabilities/ansible/skills/untaped-ansible/references/graphs.md).
+[graph reference](../../packages/untaped-ansible/src/untaped_ansible/skills/untaped-ansible/references/graphs.md).
 
 ## Troubleshooting
 

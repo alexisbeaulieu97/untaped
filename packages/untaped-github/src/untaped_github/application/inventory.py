@@ -1,0 +1,80 @@
+"""Use case: expand GitHub repository inventory scopes into metadata rows."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+from untaped.sdk import HttpError, UntapedError, attribution
+from untaped_github.application.ports import GithubRepositoryInventoryService
+from untaped_github.application.scopes import TeamScope
+from untaped_github.domain.inventory import RepositoryInventoryItem
+
+__all__ = [
+    "RepositoryInventoryItem",
+    "RepositoryInventoryScope",
+    "ResolveRepositoryInventory",
+    "split_full_name",
+]
+
+
+@dataclass(frozen=True)
+class RepositoryInventoryScope:
+    """GitHub inventory selectors for orgs, teams, and explicit repositories."""
+
+    orgs: tuple[str, ...] = ()
+    teams: tuple[TeamScope, ...] = ()
+    repos: tuple[str, ...] = ()
+
+
+class ResolveRepositoryInventory:
+    """Expand org/team/repo scopes into deduped, sorted repository metadata."""
+
+    def __init__(self, service: GithubRepositoryInventoryService) -> None:
+        self._service = service
+
+    def __call__(self, scope: RepositoryInventoryScope) -> tuple[RepositoryInventoryItem, ...]:
+        explicit: dict[str, RepositoryInventoryItem] = {}
+        for full_name in scope.repos:
+            owner, repo = split_full_name(full_name)
+            try:
+                item = _inventory_item(
+                    self._service.get_repository(owner, repo),
+                    fallback=full_name,
+                )
+            except (HttpError, UntapedError) as exc:
+                raise UntapedError(
+                    f"failed to expand repository {full_name}: {str(exc) or type(exc).__name__}",
+                    **attribution(exc),
+                ) from exc
+            explicit[item.full_name] = item
+
+        rows: dict[str, RepositoryInventoryItem] = {}
+        for org in scope.orgs:
+            for row in self._service.list_org_repos(org):
+                item = _inventory_item(row, fallback=None)
+                rows.setdefault(item.full_name, item)
+        for team in scope.teams:
+            for row in self._service.list_team_repos(team.org, team.slug):
+                item = _inventory_item(row, fallback=None)
+                rows.setdefault(item.full_name, item)
+        rows.update(explicit)
+        return tuple(rows[name] for name in sorted(rows))
+
+
+def split_full_name(value: str) -> tuple[str, str]:
+    """Split ``owner/name``; anything else is an :class:`UntapedError`."""
+    owner, sep, repo = value.partition("/")
+    if not sep or not owner or not repo or "/" in repo:
+        raise UntapedError(f"repository must be owner/name: {value!r}", category="invalid")
+    return owner, repo
+
+
+def _inventory_item(row: dict[str, Any], *, fallback: str | None) -> RepositoryInventoryItem:
+    data = dict(row)
+    full_name = data.get("full_name") or fallback
+    if isinstance(full_name, str) and full_name:
+        data["full_name"] = full_name
+        if not data.get("name"):
+            data["name"] = full_name.rsplit("/", 1)[1]
+    return RepositoryInventoryItem.model_validate(data)

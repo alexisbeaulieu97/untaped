@@ -1,0 +1,587 @@
+"""Unified installed pack storage and resolution."""
+
+from __future__ import annotations
+
+import fnmatch
+import hashlib
+import shutil
+import tomllib
+import uuid
+from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass, replace
+from pathlib import Path
+
+import tomlkit
+
+from untaped.sdk import (
+    ErrorCategory,
+    GitCommandError,
+    UsageError,
+    atomic_write,
+    attribution,
+    not_found,
+    run_git,
+)
+from untaped_recipe.domain.hook_project import hook_module_file
+from untaped_recipe.domain.pack import (
+    HookEntry,
+    InstalledPack,
+    PackManifest,
+    PackRef,
+    RecipeEntry,
+)
+from untaped_recipe.domain.paths import safe_library_name
+from untaped_recipe.domain.recipe import parse_recipe
+from untaped_recipe.errors import (
+    AmbiguousRefError,
+    HookNotFoundError,
+    LocalChangesError,
+    PackFetchError,
+    PackNotFoundError,
+    PartialRemovalError,
+    PathNotFoundError,
+    RecipeError,
+    RecipeNotFoundError,
+)
+from untaped_recipe.infrastructure.pack_files import (
+    check_hook_project,
+    hook_exports,
+    read_pack_manifest,
+)
+
+_GIT_URL_PREFIXES = ("https://", "git@", "ssh://")
+_GIT_CLONE_TIMEOUT = 600.0
+_GIT_REV_PARSE_TIMEOUT = 30.0
+_HOOK_ENVIRONMENT_FILES = frozenset(
+    {"pyproject.toml", "uv.lock", "uv.toml", ".python-version", "setup.cfg"}
+)
+
+# Dev/build junk excluded from library installs; pack_content_hash prunes the
+# same names so the recorded install hash and the copied tree always agree.
+PACK_COPY_IGNORE = (
+    ".git",
+    ".venv",
+    "__pycache__",
+    "dist",
+    "build",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".uv-cache",
+    "*.egg-info",
+)
+
+
+@dataclass(frozen=True)
+class _IndexEntry:
+    source: str = ""
+    rev: str = ""
+    commit: str = ""
+    version: str = ""
+    content_hash: str = ""
+
+
+def _is_ignored(name: str) -> bool:
+    return any(fnmatch.fnmatch(name, pattern) for pattern in PACK_COPY_IGNORE)
+
+
+def _pack_files(root: Path) -> Iterator[tuple[str, bytes]]:
+    """Yield ``(relative posix path, content)`` for a pack tree's install-relevant files."""
+    for path in sorted(root.rglob("*"), key=lambda p: p.relative_to(root).as_posix()):
+        relative = path.relative_to(root)
+        if any(_is_ignored(part) for part in relative.parts):
+            continue
+        if not path.is_file():
+            continue
+        try:
+            yield relative.as_posix(), path.read_bytes()
+        except OSError as exc:
+            raise ValueError(f"cannot hash pack file {relative.as_posix()}: {exc}") from exc
+
+
+def pack_content_hash(root: Path) -> str:
+    """Digest a pack tree's install-relevant content (ignore set pruned)."""
+    digest = hashlib.sha256()
+    for relative, content in _pack_files(root):
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\x00")
+        digest.update(content)
+        digest.update(b"\x00")
+    return digest.hexdigest()
+
+
+def changed_hook_files(installed_root: Path, source_root: Path) -> list[str]:
+    """Hook-code files added, removed, or modified between two pack trees.
+
+    Hook code is what uv builds and the hook worker executes: everything
+    under ``src/``, any ``*.py`` at the pack root (build-backend scripts such
+    as ``setup.py``), and the files that define the environment
+    (``pyproject.toml``, ``uv.lock``, ``uv.toml``, ``.python-version``,
+    ``setup.cfg``). Recipe files and golden tests are data, not hook code.
+    """
+    installed = _hook_code_digests(installed_root)
+    source = _hook_code_digests(source_root)
+    return sorted(
+        relative
+        for relative in installed.keys() | source.keys()
+        if installed.get(relative) != source.get(relative)
+    )
+
+
+def _hook_code_digests(root: Path) -> dict[str, bytes]:
+    return {
+        relative: hashlib.sha256(content).digest()
+        for relative, content in _pack_files(root)
+        if _is_hook_code(relative)
+    }
+
+
+def _is_hook_code(relative: str) -> bool:
+    if relative.startswith("src/") or relative in _HOOK_ENVIRONMENT_FILES:
+        return True
+    return "/" not in relative and relative.endswith(".py")
+
+
+class PackLibrary:
+    """Manage installed recipe packs under one library root."""
+
+    def __init__(self, *, library_root: Path) -> None:
+        self._library_root = library_root
+        self._packs_cache: list[InstalledPack] | None = None
+        self._load_errors: dict[str, str] = {}
+
+    @property
+    def packs_dir(self) -> Path:
+        """Directory containing installed pack copies."""
+        return self._library_root / "packs"
+
+    @property
+    def index_path(self) -> Path:
+        """Path to the library pack source index."""
+        return self._library_root / "packs.toml"
+
+    def add(
+        self,
+        source_dir: Path,
+        *,
+        source: str,
+        rev: str | None,
+        name: str | None,
+        force: bool,
+        discard_edits: bool = False,
+        commit: str | None = None,
+    ) -> PackManifest:
+        """Install a validated pack directory into the library.
+
+        ``rev`` is the revision the user asked for (a branch keeps tracking on
+        ``sync``); ``commit`` is the resolved commit that was installed.
+        """
+        source_dir = source_dir.expanduser()
+        manifest = read_pack_manifest(source_dir)
+        validate_pack(source_dir, manifest)
+        index = self._read_index()
+        installed_name = safe_library_name(name or manifest.name, field="pack")
+        dest = self.packs_dir / installed_name
+        if dest.exists() and not force:
+            raise RecipeError(
+                f"pack already installed: {installed_name}; use --force to replace "
+                "or --name to install under another name",
+                category=ErrorCategory.CONFLICT,
+            )
+        if force and not discard_edits and self.local_edits(installed_name):
+            raise LocalChangesError(local_edits_message(installed_name))
+
+        self.packs_dir.mkdir(parents=True, exist_ok=True)
+        content_hash = self._install_tree(source_dir, dest)
+        index[installed_name] = _IndexEntry(
+            source=source,
+            rev=rev or "",
+            commit=commit or "",
+            version=manifest.version,
+            content_hash=content_hash,
+        )
+        self._write_index(index)
+        self._packs_cache = None
+        self._load_errors = {}
+        return manifest
+
+    def _install_tree(self, source_dir: Path, dest: Path) -> str:
+        """Copy ``source_dir`` into place at ``dest`` without a window of loss.
+
+        The copy lands in a staging directory beside ``packs/`` first; only a
+        complete copy is renamed over the destination, and a replaced pack is
+        moved aside (not deleted) until the swap succeeds. Symlinks are
+        copied as links and the staged copy is re-checked, so one appearing
+        after validation is refused rather than followed.
+        """
+        token = uuid.uuid4().hex
+        staging = self._library_root / f".pack-staging-{token}"
+        retired = self._library_root / f".pack-retired-{token}"
+        try:
+            shutil.copytree(
+                source_dir,
+                staging,
+                symlinks=True,
+                ignore=shutil.ignore_patterns(*PACK_COPY_IGNORE),
+            )
+            _reject_symlinks(staging)
+            content_hash = pack_content_hash(staging)
+            if dest.exists():
+                dest.rename(retired)
+                try:
+                    staging.rename(dest)
+                except OSError as swap_error:
+                    try:
+                        retired.rename(dest)
+                    except OSError as rollback_error:
+                        # The retired copy is now the only copy: never delete it.
+                        raise OSError(
+                            f"could not install pack at {dest} ({swap_error}) nor restore "
+                            f"the previous pack ({rollback_error}); the previous pack is "
+                            f"preserved at {retired}"
+                        ) from swap_error
+                    raise
+                shutil.rmtree(retired, ignore_errors=True)
+            else:
+                staging.rename(dest)
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+        return content_hash
+
+    def record_commit(self, name: str, commit: str) -> None:
+        """Record the resolved ``commit`` of an installed pack whose files did not change."""
+        installed_name = safe_library_name(name, field="pack")
+        index = self._read_index()
+        entry = index.get(installed_name)
+        if entry is None:
+            raise PackNotFoundError(f"pack not found: {name}")
+        index[installed_name] = replace(entry, commit=commit)
+        self._write_index(index)
+        self._packs_cache = None
+
+    def local_edits(self, name: str) -> bool:
+        """Return true when the installed copy diverged from its install hash.
+
+        Absent packs and unindexed directories report false. Every persisted
+        index row must contain a content hash before it can be read.
+        """
+        installed_name = safe_library_name(name, field="pack")
+        dest = self.packs_dir / installed_name
+        if not dest.is_dir():
+            return False
+        recorded = self._read_index().get(installed_name, _IndexEntry()).content_hash
+        if not recorded:
+            return False
+        return pack_content_hash(dest) != recorded
+
+    def remove(self, name: str) -> None:
+        """Remove an installed pack's directory and its index row.
+
+        Either one alone is enough to name the pack, so a removal that
+        stopped partway (:class:`PartialRemovalError`) can be run again.
+        """
+        installed_name = safe_library_name(name, field="pack")
+        dest = self.packs_dir / installed_name
+        index = self._read_index()
+        if not dest.is_dir() and installed_name not in index:
+            raise PackNotFoundError(f"pack not found: {name}")
+        self._packs_cache = None
+        self._load_errors = {}
+        if dest.is_dir():
+            entries = _entry_count(dest)
+            try:
+                shutil.rmtree(dest)
+            except OSError as exc:
+                if dest.is_dir() and _entry_count(dest) == entries:
+                    raise
+                raise PartialRemovalError(
+                    f"deleted part of the pack's files; could not delete the rest: {exc}"
+                ) from exc
+        if index.pop(installed_name, None) is None:
+            return
+        try:
+            self._write_index(index)
+        except OSError as exc:
+            raise PartialRemovalError(
+                f"deleted the pack's files; could not update packs.toml: {exc}"
+            ) from exc
+
+    def packs(self) -> list[InstalledPack]:
+        """Return installed packs keyed by their library identity.
+
+        The parsed list is cached for the library's lifetime (one CLI command);
+        ``add``/``remove`` invalidate it. Packs whose manifest cannot be parsed
+        are left out so one broken pack never hides the rest; their errors are
+        available from :meth:`load_errors`.
+        """
+        if self._packs_cache is not None:
+            return self._packs_cache
+        if not self.packs_dir.is_dir():
+            return []
+        index = self._read_index()
+        installed: list[InstalledPack] = []
+        load_errors: dict[str, str] = {}
+        for root in sorted(self.packs_dir.iterdir(), key=lambda path: path.name):
+            if not root.is_dir() or not (root / "pyproject.toml").is_file():
+                continue
+            try:
+                manifest = read_pack_manifest(root)
+            except (ValueError, OSError) as exc:
+                load_errors[root.name] = str(exc)
+                continue
+            index_entry = index.get(root.name, _IndexEntry(version=manifest.version))
+            installed.append(
+                InstalledPack(
+                    name=root.name,
+                    root=root,
+                    manifest=manifest,
+                    source=index_entry.source,
+                    rev=index_entry.rev,
+                    commit=index_entry.commit,
+                    installed_version=index_entry.version or manifest.version,
+                )
+            )
+        self._packs_cache = installed
+        self._load_errors = load_errors
+        return installed
+
+    def load_errors(self) -> dict[str, str]:
+        """Return ``{pack name: error}`` for installed packs that failed to load."""
+        self.packs()
+        return dict(self._load_errors)
+
+    def _raise_if_broken(self, installed_name: str) -> None:
+        error = self.load_errors().get(installed_name)
+        if error is not None:
+            raise ValueError(f"pack '{installed_name}' cannot be loaded: {error}")
+
+    def reconcile(self) -> dict[str, str]:
+        """Return ``{pack name: problem}`` for index/directory consistency problems."""
+        index = self._read_index()
+        problems: dict[str, str] = {}
+        for name in sorted(index):
+            if not (self.packs_dir / name).is_dir():
+                problems[name] = f"pack '{name}' is in packs.toml but missing from packs/"
+        if not self.packs_dir.is_dir():
+            return problems
+        for root in sorted(self.packs_dir.iterdir(), key=lambda path: path.name):
+            if not root.is_dir():
+                continue
+            if root.name not in index:
+                problems[root.name] = f"pack directory '{root.name}' is not recorded in packs.toml"
+            elif not (root / "pyproject.toml").is_file():
+                problems[root.name] = f"pack directory '{root.name}' has no pyproject.toml"
+        return problems
+
+    def find_pack(self, name: str) -> InstalledPack | None:
+        """Return the installed pack whose library identity is ``name``, if any."""
+        if "/" in name:
+            return None
+        try:
+            installed_name = safe_library_name(name, field="pack")
+        except ValueError:
+            # A name no pack could be installed under simply isn't a pack;
+            # callers fall through to recipe/hook resolution and its error.
+            return None
+        for pack in self.packs():
+            if pack.name == installed_name:
+                return pack
+        self._raise_if_broken(installed_name)
+        return None
+
+    def local_pack(self, path: Path) -> InstalledPack:
+        """Read an explicit-path pack that is not tracked by the library index."""
+        return InstalledPack.local(path, read_pack_manifest(path))
+
+    def find_recipe(self, ref: PackRef) -> tuple[InstalledPack, RecipeEntry]:
+        """Resolve a bare or qualified recipe reference.
+
+        A miss raises :class:`RecipeNotFoundError`; a bare ref several packs
+        export raises :class:`AmbiguousRefError` (both are ``ValueError``).
+        """
+        return self._find_entry(
+            ref, table=lambda manifest: manifest.recipes, noun="recipe", missing=RecipeNotFoundError
+        )
+
+    def find_hook(self, ref: PackRef) -> tuple[InstalledPack, HookEntry]:
+        """Resolve a bare or qualified hook reference.
+
+        A miss raises :class:`HookNotFoundError`; a bare ref several packs
+        export raises :class:`AmbiguousRefError` (both are ``ValueError``).
+        """
+        return self._find_entry(
+            ref, table=lambda manifest: manifest.hooks, noun="hook", missing=HookNotFoundError
+        )
+
+    def _find_entry[EntryT](
+        self,
+        ref: PackRef,
+        *,
+        table: Callable[[PackManifest], Mapping[str, EntryT]],
+        noun: str,
+        missing: type[RecipeNotFoundError] | type[HookNotFoundError],
+    ) -> tuple[InstalledPack, EntryT]:
+        matches = [
+            (pack, entry)
+            for pack in self._candidate_packs(ref.pack)
+            if (entry := table(pack.manifest).get(ref.name)) is not None
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            candidates = ", ".join(f"{pack.name}/{ref.name}" for pack, _ in matches)
+            raise AmbiguousRefError(f"ambiguous {noun} ref {ref.name!r}; candidates: {candidates}")
+        raise missing(not_found(noun, _ref_text(ref)))
+
+    def _candidate_packs(self, pack: str | None) -> list[InstalledPack]:
+        installed = self.packs()
+        if pack is None:
+            return installed
+        installed_name = safe_library_name(pack, field="pack")
+        self._raise_if_broken(installed_name)
+        return [candidate for candidate in installed if candidate.name == installed_name]
+
+    def _read_index(self) -> dict[str, _IndexEntry]:
+        if not self.index_path.is_file():
+            return {}
+        data = tomllib.loads(self.index_path.read_text(encoding="utf-8"))
+        index: dict[str, _IndexEntry] = {}
+        for name, raw_entry in data.items():
+            if not isinstance(raw_entry, dict):
+                raise ValueError(f"pack index row {name!r} must be a table")
+            raw_hash = raw_entry.get("content_hash")
+            if not isinstance(raw_hash, str) or not raw_hash.strip():
+                raise ValueError(f"pack index row {name!r} requires content_hash")
+            index[name] = _IndexEntry(
+                source=str(raw_entry.get("source", "")),
+                rev=str(raw_entry.get("rev", "")),
+                commit=str(raw_entry.get("commit", "")),
+                version=str(raw_entry.get("version", "")),
+                content_hash=raw_hash,
+            )
+        return index
+
+    def _write_index(self, index: dict[str, _IndexEntry]) -> None:
+        self._library_root.mkdir(parents=True, exist_ok=True)
+        doc = tomlkit.document()
+        for name, entry in sorted(index.items()):
+            table = tomlkit.table()
+            table.add("source", entry.source)
+            table.add("rev", entry.rev)
+            if entry.commit:
+                table.add("commit", entry.commit)
+            table.add("version", entry.version)
+            table.add("content_hash", entry.content_hash)
+            doc.add(name, table)
+        atomic_write(self.index_path, tomlkit.dumps(doc))
+
+
+def _entry_count(root: Path) -> int:
+    return sum(1 for _ in root.rglob("*"))
+
+
+def validate_pack(source_dir: Path, manifest: PackManifest) -> None:
+    """Validate a pack source before install (or before its summary is shown)."""
+    _reject_symlinks(source_dir)
+    check_hook_project(source_dir, manifest)
+    for recipe_name, recipe_entry in manifest.recipes.items():
+        recipe_file = source_dir / recipe_entry.path
+        if not recipe_file.is_file():
+            raise PathNotFoundError(f"pack recipe file not found: {recipe_name}")
+        try:
+            parse_recipe(recipe_file.read_text(encoding="utf-8"), source=recipe_file)
+        except ValueError as exc:
+            raise ValueError(f"invalid pack recipe: {recipe_name}: {exc}") from exc
+    for hook_name, hook_entry in manifest.hooks.items():
+        if not hook_exports(hook_module_file(source_dir, hook_entry.module)):
+            raise ValueError(
+                f"hook module for {hook_name!r} exports neither transform() nor validate()"
+            )
+
+
+def _reject_symlinks(source_dir: Path) -> None:
+    """Refuse a pack containing symlinks: installing would copy their targets.
+
+    Directories in the install ignore set (``.venv`` and friends) are never
+    copied, so their symlinks are left alone.
+    """
+    for directory, dirnames, filenames in source_dir.walk():
+        dirnames[:] = [name for name in dirnames if not _is_ignored(name)]
+        for name in sorted([*dirnames, *filenames]):
+            path = directory / name
+            if not _is_ignored(name) and path.is_symlink():
+                relative = path.relative_to(source_dir).as_posix()
+                raise ValueError(f"pack must not contain symlinks: {relative}")
+
+
+def local_edits_message(installed_name: str) -> str:
+    """Pinned guard message shared by the store and the CLI fail-fast."""
+    return (
+        f"pack '{installed_name}' has local edits in the library (via an edit "
+        "or init command); re-run with --discard-edits to overwrite them"
+    )
+
+
+def _ref_text(ref: PackRef) -> str:
+    return f"{ref.pack}/{ref.name}" if ref.pack is not None else ref.name
+
+
+def is_git_url(value: str) -> bool:
+    """Return true when the CLI should treat ``value`` as a git URL."""
+    return value.startswith(_GIT_URL_PREFIXES)
+
+
+def fetch_pack_source(url: str, *, rev: str | None, dest: Path) -> Path:
+    """Clone a pack source URL into ``dest`` and return the checkout path.
+
+    A ``rev`` is tried as a branch/tag with a shallow clone first; only when
+    git reports that no such branch exists (e.g. a commit sha) does it fall
+    back to a full clone plus ``checkout``. Other failures (auth, network)
+    surface immediately.
+    """
+    if rev is not None and (not rev.strip() or rev.startswith("-")):
+        raise UsageError(f"invalid --rev: {rev!r}")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    clone_args = ["clone", "--depth", "1"]
+    if rev is not None:
+        clone_args.extend(["--branch", rev])
+    clone_args.extend(["--", url, str(dest)])
+    try:
+        _run_git(clone_args)
+    except ValueError as exc:
+        if rev is None or not _is_missing_branch_error(str(exc)):
+            raise
+        if dest.exists():
+            shutil.rmtree(dest)
+        _run_git(["clone", "--", url, str(dest)])
+        _run_git(["checkout", "--detach", rev, "--"], cwd=dest)
+    return dest
+
+
+def checkout_commit(checkout: Path) -> str:
+    """Return the full commit SHA checked out at ``checkout``."""
+    try:
+        result = run_git(
+            ["rev-parse", "--verify", "HEAD^{commit}"],
+            cwd=checkout,
+            timeout=_GIT_REV_PARSE_TIMEOUT,
+            capture=True,
+            ceiling=True,
+        )
+    except GitCommandError as exc:
+        raise PackFetchError(str(exc), **attribution(exc)) from exc
+    return result.text.strip()
+
+
+def _is_missing_branch_error(message: str) -> bool:
+    """Whether ``git clone --branch`` failed only because the ref is not a branch/tag."""
+    lowered = message.lower()
+    return "not found in upstream" in lowered or "could not find remote branch" in lowered
+
+
+def _run_git(args: list[str], *, cwd: Path | None = None) -> None:
+    """Run git non-interactively in the C locale (see :func:`_is_missing_branch_error`)."""
+    try:
+        run_git(args, cwd=cwd, timeout=_GIT_CLONE_TIMEOUT)
+    except GitCommandError as exc:
+        raise PackFetchError(str(exc), **attribution(exc)) from exc

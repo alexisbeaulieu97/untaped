@@ -6,6 +6,30 @@ resolution-markers = [
     "python_full_version < '3.15'",
 ]
 
+[manifest]
+members = [
+    "untaped",
+    "untaped-ansible",
+    "untaped-awx",
+    "untaped-github",
+    "untaped-jira",
+    "untaped-recipe",
+    "untaped-workspace",
+]
+
+[manifest.dependency-groups]
+dev = [
+    { name = "mypy", specifier = ">=1.20.2" },
+    { name = "pre-commit", specifier = ">=4.6.0" },
+    { name = "pytest", specifier = ">=9.0.3" },
+    { name = "pytest-cov", specifier = ">=7.1.0" },
+    { name = "pytest-xdist", specifier = ">=3.8.0" },
+    { name = "respx", specifier = ">=0.23.1" },
+    { name = "ruff", specifier = ">=0.15.12" },
+    { name = "types-pyyaml", specifier = ">=6.0.12.20260518" },
+    { name = "untaped", extras = ["all"], editable = "packages/untaped" },
+]
+
 [[package]]
 name = "annotated-types"
 version = "0.7.0"
@@ -717,13 +741,12 @@ wheels = [
 
 [[package]]
 name = "untaped"
-version = "9.1.0"
-source = { editable = "." }
+version = "10.0.0a0"
+source = { editable = "packages/untaped" }
 dependencies = [
     { name = "cyclopts" },
     { name = "filelock" },
     { name = "httpx" },
-    { name = "jinja2" },
     { name = "packaging" },
     { name = "prompt-toolkit" },
     { name = "pydantic" },
@@ -731,20 +754,35 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rich" },
     { name = "ruamel-yaml" },
-    { name = "tomlkit" },
     { name = "truststore" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "mypy" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-xdist" },
-    { name = "respx" },
-    { name = "ruff" },
-    { name = "types-pyyaml" },
+[package.optional-dependencies]
+all = [
+    { name = "untaped-ansible" },
+    { name = "untaped-awx" },
+    { name = "untaped-github" },
+    { name = "untaped-jira" },
+    { name = "untaped-recipe" },
+    { name = "untaped-workspace" },
+]
+ansible = [
+    { name = "untaped-ansible" },
+]
+awx = [
+    { name = "untaped-awx" },
+]
+github = [
+    { name = "untaped-github" },
+]
+jira = [
+    { name = "untaped-jira" },
+]
+recipe = [
+    { name = "untaped-recipe" },
+]
+workspace = [
+    { name = "untaped-workspace" },
 ]
 
 [package.metadata]
@@ -752,7 +790,6 @@ requires-dist = [
     { name = "cyclopts", specifier = ">=4.16.0,<5" },
     { name = "filelock", specifier = ">=3.29.7,<4" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "jinja2", specifier = ">=3.1.6,<4" },
     { name = "packaging", specifier = ">=26.2,<27" },
     { name = "prompt-toolkit", specifier = ">=3.0.52" },
     { name = "pydantic", specifier = ">=2.13.3,<3" },
@@ -760,20 +797,104 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "ruamel-yaml", specifier = ">=0.18.16" },
-    { name = "tomlkit", specifier = ">=0.13,<1" },
     { name = "truststore", specifier = ">=0.10.4" },
+    { name = "untaped-ansible", marker = "extra == 'all'", editable = "packages/untaped-ansible" },
+    { name = "untaped-ansible", marker = "extra == 'ansible'", editable = "packages/untaped-ansible" },
+    { name = "untaped-awx", marker = "extra == 'all'", editable = "packages/untaped-awx" },
+    { name = "untaped-awx", marker = "extra == 'awx'", editable = "packages/untaped-awx" },
+    { name = "untaped-github", marker = "extra == 'all'", editable = "packages/untaped-github" },
+    { name = "untaped-github", marker = "extra == 'github'", editable = "packages/untaped-github" },
+    { name = "untaped-jira", marker = "extra == 'all'", editable = "packages/untaped-jira" },
+    { name = "untaped-jira", marker = "extra == 'jira'", editable = "packages/untaped-jira" },
+    { name = "untaped-recipe", marker = "extra == 'all'", editable = "packages/untaped-recipe" },
+    { name = "untaped-recipe", marker = "extra == 'recipe'", editable = "packages/untaped-recipe" },
+    { name = "untaped-workspace", marker = "extra == 'all'", editable = "packages/untaped-workspace" },
+    { name = "untaped-workspace", marker = "extra == 'workspace'", editable = "packages/untaped-workspace" },
+]
+provides-extras = ["all", "ansible", "awx", "github", "jira", "recipe", "workspace"]
+
+[[package]]
+name = "untaped-ansible"
+version = "10.0.0a0"
+source = { editable = "packages/untaped-ansible" }
+dependencies = [
+    { name = "untaped" },
+    { name = "untaped-github" },
 ]
 
-[package.metadata.requires-dev]
-dev = [
-    { name = "mypy", specifier = ">=1.20.2" },
-    { name = "pre-commit", specifier = ">=4.6.0" },
-    { name = "pytest", specifier = ">=9.0.3" },
-    { name = "pytest-cov", specifier = ">=7.1.0" },
-    { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "respx", specifier = ">=0.23.1" },
-    { name = "ruff", specifier = ">=0.15.12" },
-    { name = "types-pyyaml", specifier = ">=6.0.12.20260518" },
+[package.metadata]
+requires-dist = [
+    { name = "untaped", editable = "packages/untaped" },
+    { name = "untaped-github", editable = "packages/untaped-github" },
+]
+
+[[package]]
+name = "untaped-awx"
+version = "10.0.0a0"
+source = { editable = "packages/untaped-awx" }
+dependencies = [
+    { name = "jinja2" },
+    { name = "untaped" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jinja2", specifier = ">=3.1.6,<4" },
+    { name = "untaped", editable = "packages/untaped" },
+]
+
+[[package]]
+name = "untaped-github"
+version = "10.0.0a0"
+source = { editable = "packages/untaped-github" }
+dependencies = [
+    { name = "untaped" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "untaped", editable = "packages/untaped" }]
+
+[[package]]
+name = "untaped-jira"
+version = "10.0.0a0"
+source = { editable = "packages/untaped-jira" }
+dependencies = [
+    { name = "untaped" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "untaped", editable = "packages/untaped" }]
+
+[[package]]
+name = "untaped-recipe"
+version = "10.0.0a0"
+source = { editable = "packages/untaped-recipe" }
+dependencies = [
+    { name = "jinja2" },
+    { name = "tomlkit" },
+    { name = "untaped" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jinja2", specifier = ">=3.1.6,<4" },
+    { name = "tomlkit", specifier = ">=0.13,<1" },
+    { name = "untaped", editable = "packages/untaped" },
+]
+
+[[package]]
+name = "untaped-workspace"
+version = "10.0.0a0"
+source = { editable = "packages/untaped-workspace" }
+dependencies = [
+    { name = "untaped" },
+    { name = "untaped-github" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "untaped", editable = "packages/untaped" },
+    { name = "untaped-github", editable = "packages/untaped-github" },
 ]
 
 [[package]]

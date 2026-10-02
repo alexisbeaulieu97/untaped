@@ -70,7 +70,7 @@ replaces the whole top-level field (nested maps are not merged), and a field
 AWX stores as a string stays a string (`scm_branch=1.10` is `"1.10"`).
 Memberships (credentials, labels, hosts in groups) have their own idempotent
 `add`/`remove` commands. See
-[changing resources](../../src/untaped/capabilities/awx/skills/untaped-awx/references/resources.md).
+[changing resources](../../packages/untaped-awx/src/untaped_awx/skills/untaped-awx/references/resources.md).
 
 ## Export and apply documents
 
@@ -86,7 +86,7 @@ kept in git; `--source-ref REF` applies the files as they are at a git ref.
 A document cannot carry secrets, access or history: password survey defaults
 and callback keys (`host_config_key`) export as `$encrypted$`, which keeps the
 stored value when applied back to the same resource. See
-[resource documents](../../src/untaped/capabilities/awx/skills/untaped-awx/references/specs.md).
+[resource documents](../../packages/untaped-awx/src/untaped_awx/skills/untaped-awx/references/specs.md).
 
 ## Launch, sync and follow jobs
 
@@ -102,7 +102,7 @@ refused before anything runs, because AWX would silently ignore it. A single
 named launch or sync submits at once; several targets are listed and
 confirmed once. A job the command stops watching keeps running unless you
 pass `--cancel`. See
-[jobs](../../src/untaped/capabilities/awx/skills/untaped-awx/references/jobs.md).
+[jobs](../../packages/untaped-awx/src/untaped_awx/skills/untaped-awx/references/jobs.md).
 
 ## Test suites
 
@@ -126,11 +126,11 @@ not blamed on the change. When the change also edits template specs under
 `.untaped/awx/`, `--source-ref HEAD` runs the suites against temporary copies
 of those specs.
 
-See the [suite format](../../src/untaped/capabilities/awx/skills/untaped-awx/references/test-suites.md),
-[reading results](../../src/untaped/capabilities/awx/skills/untaped-awx/references/test-results.md)
-and the [example suites](../../src/untaped/capabilities/awx/skills/untaped-awx/examples/).
+See the [suite format](../../packages/untaped-awx/src/untaped_awx/skills/untaped-awx/references/test-suites.md),
+[reading results](../../packages/untaped-awx/src/untaped_awx/skills/untaped-awx/references/test-results.md)
+and the [example suites](../../packages/untaped-awx/src/untaped_awx/skills/untaped-awx/examples/).
 To let an AI agent run suites against its own changes, give it a dedicated
-AWX user, token and profile: see [AWX agent profile](../../src/untaped/capabilities/awx/skills/untaped-awx/references/agent-profile.md).
+AWX user, token and profile: see [AWX agent profile](../../packages/untaped-awx/src/untaped_awx/skills/untaped-awx/references/agent-profile.md).
 
 ## Confirmations and failures
 
@@ -141,7 +141,7 @@ ask with No as the default. `--dry-run` never writes, even with `--yes`;
 rollback: a batch that fails partway keeps what it wrote, so export before a
 large change to have something to apply back. `edit` needs a real terminal
 even with `--yes`. See
-[confirmations and batches](../../src/untaped/capabilities/awx/skills/untaped-awx/references/resources.md#confirmations-and-batches)
+[confirmations and batches](../../packages/untaped-awx/src/untaped_awx/skills/untaped-awx/references/resources.md#confirmations-and-batches)
 and [Exit codes](../reference/exit-codes.md).
 
 ## Optional disposable live-AAP smoke

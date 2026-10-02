@@ -3,14 +3,31 @@
 ## Unreleased
 
 - Core
+  - **Breaking:** `pip install untaped` installs only the core and SDK; install
+    `untaped[all]` for every first-party capability, or `untaped[<name>]` for
+    one. First-party code moves to top-level packages (`untaped_github.api`, …).
+    Upgrading keeps the original spec, so reinstall with the extra:
+    `uv tool install --reinstall 'untaped[all]'` or
+    `pip install -U 'untaped[all]'`.
   - **Breaking:** the SDK module is now `untaped.sdk`; `untaped.capability_api`
     is gone. `CAPABILITY_API_VERSION` and `get_core_settings` are removed.
   - **Breaking:** `PromptInterruptedError` is no longer a `ConfigError`;
     Ctrl-C at a prompt now always exits 130.
+  - **New:** bare `untaped --help` and `untaped capabilities` print how to
+    install capabilities when none are installed.
+  - **Breaking (SDK):** `check_conventions(NAME)` runs an
+    `import-boundary` rule: a plugin may import core only through
+    `untaped.sdk`, and another capability only through its `api` module with
+    a declared dependency on its distribution.
   - **New:** `@writes` declares a command that writes; command names are
     no longer limited to a closed verb list.
   - **New:** `untaped.testing.check_conventions(NAME)` runs the convention
     checks for any capability, plugins included.
+  - **New (SDK):** `untaped.testing.plugin` gives a plugin's own tests the
+    hermetic environment untaped's tests use.
+  - **New:** `examples/untaped-hello` is a minimal, tested plugin to start
+    from; `untaped.testing.invoke_root(argv)` runs `untaped …` in a plugin's
+    tests.
   - **New:** `report_row_errors` reports each failed row's error and hint.
   - **New (SDK):** `UiContext.pick_many` opens an inline two-pane picker: fuzzy
     search with multi-select on the left, per-item settings on the right
@@ -108,6 +125,12 @@
     under a custom `github.corpus_path` are not listed; sync re-creates them
     in the new layout, and the old directories can be deleted.
 - Recipe
+  - **Breaking:** the hook contract moved from
+    `untaped.capabilities.recipe.hook_api` to `untaped_recipe.hook_api`; packs
+    scaffolded on 9.x import the old path under `TYPE_CHECKING`, so update
+    that import. Scaffolded packs and the resolver's hint now ask for
+    `untaped[recipe]>=X,<X+1` in `dependency-groups.dev` instead of
+    `untaped>=X,<X+1`.
   - **New:** `recipe backups restore` takes `--format` and `--columns`; with
     `json`, `yaml` or `pipe` it prints one `recipe.restore_outcome` row
     (`planned`, `restored` or `failed`). Table output is unchanged.

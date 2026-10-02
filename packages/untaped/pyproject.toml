@@ -1,0 +1,38 @@
+[project]
+name = "untaped"
+version = "10.0.0a0"
+description = "A batteries-included CLI for DevOps workflows."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }]
+requires-python = ">=3.14"
+dependencies = [
+    "cyclopts>=4.16.0,<5",
+    "filelock>=3.29.7,<4",
+    "httpx>=0.28.1",
+    "packaging>=26.2,<27",
+    "prompt-toolkit>=3.0.52",
+    "pydantic>=2.13.3,<3",
+    "pydantic-settings>=2.14.0",
+    "pyyaml>=6.0.3",
+    "rich>=15.0.0",
+    "ruamel.yaml>=0.18.16",
+    "truststore>=0.10.4",
+]
+
+[project.optional-dependencies]
+all = ["untaped-ansible==10.0.0a0", "untaped-awx==10.0.0a0", "untaped-github==10.0.0a0", "untaped-jira==10.0.0a0", "untaped-recipe==10.0.0a0", "untaped-workspace==10.0.0a0"]
+ansible = ["untaped-ansible==10.0.0a0"]
+awx = ["untaped-awx==10.0.0a0"]
+github = ["untaped-github==10.0.0a0"]
+jira = ["untaped-jira==10.0.0a0"]
+recipe = ["untaped-recipe==10.0.0a0"]
+workspace = ["untaped-workspace==10.0.0a0"]
+
+[project.scripts]
+untaped = "untaped.__main__:main"
+
+[build-system]
+requires = ["uv_build>=0.11.8,<0.12.0"]
+build-backend = "uv_build"
