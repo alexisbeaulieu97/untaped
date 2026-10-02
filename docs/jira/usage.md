@@ -106,8 +106,8 @@ check the direction on one pair with `--dry-run` before linking in bulk.
 ## Output
 
 Searches are retried on HTTP 429 and 503; writes are never retried. See
-[Pipes and record kinds](../reference/pipes.md#jira) and
-[Exit codes](../reference/exit-codes.md).
+[Pipes and record kinds](../scripting.md#jira) and
+[Exit codes](../scripting.md#exit-codes).
 
 ## See also
 

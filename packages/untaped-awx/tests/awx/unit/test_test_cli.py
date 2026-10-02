@@ -63,7 +63,7 @@ def test_test_help_lists_subcommands(cli: CliInvoker) -> None:
 
 @pytest.mark.parametrize("path", [[], ["run"], ["list"], ["validate"], ["init"], ["prune"]])
 def test_experimental_commands_say_so_in_help(cli: CliInvoker, path: list[str]) -> None:
-    # docs/stability.md promises every experimental command says so in --help.
+    # the README's Versioning section promises every experimental command says so in --help.
     result = cli.invoke(app, ["test", *path, "--help"])
     assert result.exit_code == 0, result.output
     assert "Experimental: may change in a minor release." in result.stdout

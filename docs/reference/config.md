@@ -143,4 +143,4 @@ variable shown.
 ## See also
 
 - [Configuration](../configuration.md)
-- [Environment variables](./environment.md)
+- [Environment variables](../scripting.md#environment-variables)

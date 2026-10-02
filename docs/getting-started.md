@@ -159,7 +159,7 @@ untaped awx job-templates list --format raw --columns name \
   | untaped awx job-templates get --stdin --format yaml
 ```
 
-[Pipes and record kinds](./reference/pipes.md) says which commands read
+[Pipes and record kinds](./scripting.md) says which commands read
 which records.
 
 ## Commands that change things
@@ -173,7 +173,7 @@ Jira asks only before destructive writes by default (see
   unless you pass `--yes` or `--dry-run`.
 - Answering no exits 1 with `cancelled; no changes made`.
 
-Every command uses the same [exit codes](./reference/exit-codes.md).
+Every command uses the same [exit codes](./scripting.md#exit-codes).
 
 ## Agent skills
 

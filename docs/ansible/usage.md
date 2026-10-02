@@ -218,8 +218,8 @@ Every row field, the tree markers and the JSON graph shape are in the
 
 ## Output
 
-See [Pipes and record kinds](../reference/pipes.md#ansible) and
-[Exit codes](../reference/exit-codes.md).
+See [Pipes and record kinds](../scripting.md#ansible) and
+[Exit codes](../scripting.md#exit-codes).
 
 ## See also
 

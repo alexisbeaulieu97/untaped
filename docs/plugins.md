@@ -201,13 +201,19 @@ writes only its own section; `http.*` and `ui.*` are shared root settings, and
 
 The root supplies `--profile`, `--verbose` and `--quiet`. Raise errors inside
 `report_errors()` so the root prints its standard diagnostics and
-[exit codes](./reference/exit-codes.md). Give your error classes a `category`
+[exit codes](./scripting.md#exit-codes). Give your error classes a `category`
 and `system` (your section name) as class defaults; see
 [Raise with a category](./conventions.md#raise-with-a-category-or-inherit-one).
 [Command and output conventions](./conventions.md) covers flags, messages,
 exit codes and record shapes.
 
 ## 4. Stable helper surface
+
+**SDK stability.** `untaped.sdk` and `untaped.testing` are stable within a
+major release: a minor or patch release adds to them and never breaks them.
+Providers import only `untaped.sdk`; other `untaped` modules are internal.
+For what users can rely on, see the README's
+[Versioning](../README.md#versioning) section.
 
 [`sdk.py`](../packages/untaped/src/untaped/sdk.py) lists every export,
 and each helper's docstring is its reference.
@@ -245,7 +251,7 @@ def items_command(
 ## 5. Piping
 
 `--format pipe` writes the v1 envelope, one JSON object per line (see
-[Pipes and record kinds](./reference/pipes.md)):
+[Pipes and record kinds](./scripting.md)):
 
 ```json
 {"untaped": "1", "kind": "acme.item", "record": {"repo": "octocat/Hello-World"}}

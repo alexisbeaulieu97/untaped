@@ -6,7 +6,7 @@ it; use the helper rather than your own version.
 
 ## Exit codes
 
-[Exit codes](./reference/exit-codes.md) defines what each code means. To
+[Exit codes](./scripting.md#exit-codes) defines what each code means. To
 produce one:
 
 - 0: return normally.
@@ -49,7 +49,7 @@ who is responsible (`untaped`, `local`, `git`, or the service section, such as
 - When a new error replaces a caught one, pass `**attribution(exc)` so the
   category, system, hint and details survive.
 - A run exits with the most severe failure it saw (see
-  [precedence](./reference/exit-codes.md#precedence)).
+  [precedence](./scripting.md#precedence)).
   `report_errors()`, `resolve_each`, `batch_apply` and `report_error` note
   each failure they print, and `finish(any_failed)` exits with the most
   severe one. A failure that becomes a row instead is noted with
@@ -61,13 +61,13 @@ who is responsible (`untaped`, `local`, `git`, or the service section, such as
   builds one without counting it. Keep the exception until the row is built;
   never flatten it into a string first.
 
-See [exit codes](./reference/exit-codes.md) for the category table.
+See [exit codes](./scripting.md#exit-codes) for the category table.
 
 ## Messages (stderr)
 
 stdout carries data only. Everything else goes to stderr. With `--format
 json|yaml|pipe` (or `UNTAPED_DIAGNOSTICS=json`) every stderr line below is a
-JSON object instead (see [stderr diagnostics](./reference/pipes.md#stderr-diagnostics));
+JSON object instead (see [stderr diagnostics](./scripting.md#stderr-diagnostics));
 the helpers do this for you, so never print a JSON line yourself.
 
 | Message | Shape | Helper |

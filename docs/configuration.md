@@ -90,7 +90,7 @@ Things that surprise people:
 
 Both files are written atomically, owner-only (`0600`) and under a lock (see
 `UNTAPED_CONFIG_LOCK_TIMEOUT` in
-[Environment variables](./reference/environment.md)). A symlinked file stays a
+[Environment variables](./scripting.md#environment-variables)). A symlinked file stays a
 symlink. Writes rewrite only the keys they change and keep your comments, key
 order, quoting and indentation.
 

@@ -23,7 +23,7 @@ from cyclopts import App
 from repo.support import REPO_ROOT
 from untaped.bootstrap import build_root_app
 from untaped.capabilities import registry
-from untaped.capabilities.registry import ProviderCandidate
+from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 
 REGENERATE = "uv run python scripts/gen_config_reference.py"
 
@@ -182,6 +182,31 @@ def test_command_examples_use_real_commands_and_options(
                     for problem in _unknown_options(root, argv, aliases)
                 )
     assert problems == []
+
+
+DOCS_PAGES = [
+    "configuration.md",
+    "getting-started.md",
+    "plugins.md",
+    "reference/config.md",
+    "scripting.md",
+]  # Tasks 2-5 shrink docs/ to exactly this
+
+
+def test_scripting_keeps_an_anchor_per_capability(
+    first_party_specs: tuple[CapabilitySpec, ...],
+) -> None:
+    anchors = _anchors(REPO_ROOT / "docs" / "scripting.md")
+    for name in (
+        "exit-codes",
+        "categories",
+        "precedence",
+        "stderr-diagnostics",
+        "environment-variables",
+        "output-records",
+    ):
+        assert name in anchors
+    assert {spec.name for spec in first_party_specs} <= anchors
 
 
 @pytest.mark.parametrize(

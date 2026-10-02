@@ -165,8 +165,8 @@ The corpus is for sweeps. For clones you work in, use
 
 Records name the repository `owner/name` in `repo`; `--stdin` reads such
 names or the repo records of another `github` command. See
-[Pipes and record kinds](../reference/pipes.md#github) and
-[Exit codes](../reference/exit-codes.md): a rejected token exits 4 and a
+[Pipes and record kinds](../scripting.md#github) and
+[Exit codes](../scripting.md#exit-codes): a rejected token exits 4 and a
 rate limit exits 5 (retry later).
 
 ## See also
