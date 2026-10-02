@@ -10,6 +10,7 @@ resolution-markers = [
 members = [
     "untaped",
     "untaped-jira",
+    "untaped-recipe",
 ]
 
 [manifest.dependency-groups]
@@ -750,16 +751,19 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rich" },
     { name = "ruamel-yaml" },
-    { name = "tomlkit" },
     { name = "truststore" },
 ]
 
 [package.optional-dependencies]
 all = [
     { name = "untaped-jira" },
+    { name = "untaped-recipe" },
 ]
 jira = [
     { name = "untaped-jira" },
+]
+recipe = [
+    { name = "untaped-recipe" },
 ]
 
 [package.metadata]
@@ -775,12 +779,13 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "ruamel-yaml", specifier = ">=0.18.16" },
-    { name = "tomlkit", specifier = ">=0.13,<1" },
     { name = "truststore", specifier = ">=0.10.4" },
     { name = "untaped-jira", marker = "extra == 'all'", editable = "packages/untaped-jira" },
     { name = "untaped-jira", marker = "extra == 'jira'", editable = "packages/untaped-jira" },
+    { name = "untaped-recipe", marker = "extra == 'all'", editable = "packages/untaped-recipe" },
+    { name = "untaped-recipe", marker = "extra == 'recipe'", editable = "packages/untaped-recipe" },
 ]
-provides-extras = ["all", "jira"]
+provides-extras = ["all", "jira", "recipe"]
 
 [[package]]
 name = "untaped-jira"
@@ -792,6 +797,23 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "untaped", editable = "packages/untaped" }]
+
+[[package]]
+name = "untaped-recipe"
+version = "10.0.0a0"
+source = { editable = "packages/untaped-recipe" }
+dependencies = [
+    { name = "jinja2" },
+    { name = "tomlkit" },
+    { name = "untaped" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jinja2", specifier = ">=3.1.6,<4" },
+    { name = "tomlkit", specifier = ">=0.13,<1" },
+    { name = "untaped", editable = "packages/untaped" },
+]
 
 [[package]]
 name = "virtualenv"
