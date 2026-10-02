@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import ast
+import functools
 import re
 import shlex
 from collections.abc import Callable
@@ -20,15 +22,17 @@ import gen_config_reference as generator
 import pytest
 from cyclopts import App
 
-from repo.support import FIRST_PARTY, REPO_ROOT
+from repo.support import PACKAGES, REPO_ROOT
 from untaped.bootstrap import build_root_app
 from untaped.capabilities import registry
 from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 
 REGENERATE = "uv run python scripts/gen_config_reference.py"
 
-_LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)\s]+)\)")
-_ANY_LINK = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)\)")
+_LINK_BODY = r"\[[^\]]*\]\(([^)\s]+)\)"
+_LINK = re.compile(r"(?<!!)" + _LINK_BODY)
+_ANY_LINK = re.compile(r"!?" + _LINK_BODY)
+_BARE_INSTALL = re.compile(r"\binstall\b.*?['\"]?untaped-[a-z]")
 _FENCE = re.compile(r"^(```|~~~).*?^\1", re.MULTILINE | re.DOTALL)
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*$", re.MULTILINE)
 
@@ -58,10 +62,14 @@ def test_config_reference_refuses_a_quarantined_first_party_capability(
         assert f"{name!r} [malformed-entry-point]: could not resolve entry point" in message
 
 
+def _package_readmes() -> list[Path]:
+    return sorted(PACKAGES.glob("*/README.md"))
+
+
 def _markdown_files() -> list[Path]:
     files = sorted((REPO_ROOT / "docs").rglob("*.md"))
     skills = sorted(REPO_ROOT.glob("packages/*/src/**/skills/**/*.md"))
-    readmes = sorted(REPO_ROOT.glob("packages/*/README.md"))
+    readmes = _package_readmes()
     root = (REPO_ROOT / name for name in ("README.md", "AGENTS.md", "CONTRIBUTING.md"))
     return [*files, *skills, *readmes, REPO_ROOT / "examples/untaped-hello/README.md", *root]
 
@@ -72,14 +80,19 @@ def _slug(heading: str) -> str:
     return re.sub(r"[^\w\- ]", "", text).replace(" ", "-")
 
 
+@functools.cache
 def _anchors(path: Path) -> set[str]:
     text = _FENCE.sub("", path.read_text(encoding="utf-8"))
     return {_slug(match) for match in _HEADING.findall(text)}
 
 
+def _prose(path: Path) -> str:
+    """The page text without fenced blocks or inline code."""
+    return re.sub(r"(`+)[^\n]*?\1", "", _FENCE.sub("", path.read_text(encoding="utf-8")))
+
+
 def _broken_links(path: Path) -> list[str]:
-    text = _FENCE.sub("", path.read_text(encoding="utf-8"))
-    text = re.sub(r"(`+)[^\n]*?\1", "", text)
+    text = _prose(path)
     broken: list[str] = []
     for target in _LINK.findall(text):
         if re.match(r"^[a-z][a-z0-9+.-]*:", target):
@@ -115,12 +128,14 @@ def test_repository_urls_resolve(path: Path) -> None:
 
 def test_package_readmes_link_absolutely() -> None:
     """PyPI cannot resolve a relative or in-page link or an image in a package README."""
-    readmes = sorted(REPO_ROOT.glob("packages/*/README.md"))
-    assert len(readmes) == len(FIRST_PARTY) + 1
-    for readme in readmes:
-        text = re.sub(r"(`+)[^\n]*?\1", "", _FENCE.sub("", readme.read_text(encoding="utf-8")))
-        relative = [t for t in _ANY_LINK.findall(text) if "://" not in t]
+    for readme in _package_readmes():
+        relative = [t for t in _ANY_LINK.findall(_prose(readme)) if "://" not in t]
         assert relative == [], readme
+
+
+def test_every_workspace_member_has_a_readme() -> None:
+    members = {p.parent for p in PACKAGES.glob("*/pyproject.toml")}
+    assert {r.parent for r in _package_readmes()} == members
 
 
 _ROOT_OPTIONS = {"--profile", "--verbose", "-v", "--quiet", "-q", "--help", "-h"}
@@ -245,19 +260,30 @@ def test_install_examples_use_the_extras() -> None:
         ]
         assert installs, page
         assert any("untaped[all]" in line for line in installs), page
-        bare = [line for line in installs if re.search(r"install\b.*?['\"]?untaped-[a-z]", line)]
-        assert not bare, page
 
 
-def test_package_readmes_never_install_a_bare_capability_package() -> None:
-    """Installing `untaped-<name>` alone leaves the core out; READMEs point at the extras."""
-    bare = [
-        f"{readme}: {line.strip()}"
-        for readme in sorted(REPO_ROOT.glob("packages/*/README.md"))
-        for line in readme.read_text(encoding="utf-8").splitlines()
-        if re.search(r"\binstall\b.*?['\"]?untaped-[a-z]", line)
-    ]
-    assert bare == []
+def _bare_installs(path: Path, *, fenced_only: bool) -> list[str]:
+    """Lines installing ``untaped-<name>`` alone; prose explaining the failure is allowed
+    where ``fenced_only`` (the root README and getting-started)."""
+    text = path.read_text(encoding="utf-8")
+    if fenced_only:
+        lines = [line for block in _FENCE.finditer(text) for line in block.group().splitlines()]
+    else:
+        lines = text.splitlines()
+    return [line.strip() for line in lines if _BARE_INSTALL.search(line)]
+
+
+@pytest.mark.parametrize(
+    ("path", "fenced_only"),
+    [
+        *((REPO_ROOT / "README.md", True), (REPO_ROOT / "docs" / "getting-started.md", True)),
+        *((readme, False) for readme in _package_readmes()),
+    ],
+    ids=lambda v: str(v.relative_to(REPO_ROOT)) if isinstance(v, Path) else "",
+)
+def test_docs_never_install_a_bare_capability_package(path: Path, *, fenced_only: bool) -> None:
+    """Installing `untaped-<name>` alone leaves the core out; docs point at the extras."""
+    assert _bare_installs(path, fenced_only=fenced_only) == []
 
 
 def test_docs_holds_only_the_reader_pages() -> None:
@@ -294,13 +320,16 @@ def test_links_inside_double_backtick_code_are_ignored(tmp_path: Path) -> None:
     assert _broken_links(page) == []
 
 
+def _docstring(path: Path) -> str:
+    return ast.get_docstring(ast.parse(path.read_text(encoding="utf-8"))) or ""
+
+
 def test_rationale_lives_beside_the_code_it_protects() -> None:
     assert not (REPO_ROOT / ".planning" / "decisions").exists()
-    awx = REPO_ROOT / "packages/untaped-awx/src/untaped_awx"
-    assert "round-trip" in (awx / "infrastructure/yaml_io.py").read_text().split('"""')[1]
-    workspace = REPO_ROOT / "packages/untaped-workspace/src/untaped_workspace"
-    worktrees = (workspace / "infrastructure/git_worktrees.py").read_text().split('"""')[1]
-    assert "load-bearing" in worktrees
-    provision = (workspace / "application/provision.py").read_text().split('"""')[1]
+    awx = PACKAGES / "untaped-awx/src/untaped_awx"
+    assert "round-trip" in _docstring(awx / "infrastructure/yaml_io.py")
+    workspace = PACKAGES / "untaped-workspace/src/untaped_workspace"
+    assert "load-bearing" in _docstring(workspace / "infrastructure/git_worktrees.py")
+    provision = _docstring(workspace / "application/provision.py")
     # the docstring names the workspace lock before the cache lock
     assert provision.index("workspace lock") < provision.index("cache lock")
