@@ -79,9 +79,9 @@ First-party capabilities register exactly this way and get no precedence. On
 a section collision the capability whose name sorts first wins; on a name
 collision the one whose distribution sorts first wins, so a third-party
 provider named `github` from any distribution sorting before `untaped`
-replaces `untaped github`. The other is quarantined with a warning. A capability whose
-settings import another capability's `api` (ansible imports github's) is
-quarantined with it when that import fails.
+replaces `untaped github`. The other is quarantined with a warning. A
+capability whose settings import another capability's `api` (ansible imports
+github's) is quarantined with it when that import fails.
 
 ## 2. Settings and the capability app
 
