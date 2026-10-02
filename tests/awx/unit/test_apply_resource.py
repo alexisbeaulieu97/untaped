@@ -389,13 +389,13 @@ def test_unchanged_when_existing_matches() -> None:
 
 
 def test_encrypted_at_declared_path_is_preserved() -> None:
-    """JT's `webhook_key` is a declared secret; PATCH must skip it."""
+    """JT's `host_config_key` is a declared secret; PATCH must skip it."""
     existing = {
         "id": 42,
         "name": "deploy",
         "organization": 1,
         "playbook": "deploy.yml",
-        "webhook_key": "$encrypted$",
+        "host_config_key": "$encrypted$",
         "description": "old",
     }
     strategy = _StubStrategy(existing=existing)
@@ -410,16 +410,16 @@ def test_encrypted_at_declared_path_is_preserved() -> None:
         spec={
             "playbook": "deploy.yml",
             "description": "new",
-            "webhook_key": "$encrypted$",
+            "host_config_key": "$encrypted$",
         },
     )
     outcome = apply(resource, write=True)
     assert outcome.action == "updated"
-    assert "webhook_key" in outcome.preserved_secrets
+    assert "host_config_key" in outcome.preserved_secrets
     assert strategy.updated is not None
     _, patch_payload = strategy.updated
-    # webhook_key is NOT in the PATCH (preserved)
-    assert "webhook_key" not in patch_payload
+    # host_config_key is NOT in the PATCH (preserved)
+    assert "host_config_key" not in patch_payload
     assert patch_payload == {"description": "new"}
 
 
@@ -503,21 +503,44 @@ def test_undeclared_encrypted_warns_and_drops() -> None:
     assert any("undeclared" in w and "scm_url" in w for w in warnings)
 
 
-def test_create_with_placeholder_secret_errors() -> None:
-    """A new credential/JT can't have $encrypted$ at a declared secret path."""
+def test_create_with_optional_placeholder_secret_drops_it() -> None:
+    """A new JT's optional `host_config_key` placeholder is dropped, not an error."""
     strategy = _StubStrategy(existing=None)
+    warnings: list[str] = []
     apply = _make_apply(
         catalog_specs={"JobTemplate": JOB_TEMPLATE_SPEC},
+        fk_names={("Organization", "Default"): 1},
+        strategy=strategy,
+        warn=warnings,
+    )
+    resource = Resource(
+        kind="JobTemplate",
+        metadata=Metadata(name="deploy", organization="Default"),
+        spec={"playbook": "deploy.yml", "host_config_key": "$encrypted$"},
+    )
+    apply(resource, write=True)
+    assert strategy.created is not None
+    assert "host_config_key" not in strategy.created
+    assert any("host_config_key placeholders dropped" in w for w in warnings)
+
+
+def test_create_with_required_placeholder_secret_errors() -> None:
+    """A declared, non-optional secret holding `$encrypted$` refuses the create."""
+    strategy = _StubStrategy(existing=None)
+    required = JOB_TEMPLATE_SPEC.model_copy(update={"optional_secret_paths": ()})
+    apply = _make_apply(
+        catalog_specs={"JobTemplate": required},
         fk_names={("Organization", "Default"): 1},
         strategy=strategy,
     )
     resource = Resource(
         kind="JobTemplate",
         metadata=Metadata(name="deploy", organization="Default"),
-        spec={"playbook": "deploy.yml", "webhook_key": "$encrypted$"},
+        spec={"playbook": "deploy.yml", "host_config_key": "$encrypted$"},
     )
-    with pytest.raises(BadRequestError):
+    with pytest.raises(BadRequestError, match="placeholder secrets"):
         apply(resource, write=True)
+    assert strategy.created is None
 
 
 def test_fks_resolved_for_create() -> None:

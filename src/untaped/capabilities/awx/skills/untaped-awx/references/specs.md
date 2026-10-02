@@ -49,7 +49,11 @@ spec:
   workflow template, project or inventory source).
 - `spec` holds the settings with AWX's field names (`untaped awx
   job-templates get NAME --format yaml` shows them); ids, timestamps,
-  `status` and `last_job_*` are left out.
+  `status` and `last_job_*` are left out; so are fields the controller
+  derives (`custom_virtualenv`, `webhook_key`, and `local_path` unless the
+  project is manual) and `organization`, which lives in `metadata`.
+  Multi-line text such as `extra_vars` is written as a `|` block, as the UI
+  shows it.
 - References (organization, project, inventory, credentials, labels,
   instance groups, execution environment) travel by name. They must exist
   where the document is applied, or be created by the same `apply`.
@@ -68,22 +72,41 @@ untaped awx export --all-kinds --organization Default --out-dir backup
 - A group's `export` writes its selection as one multi-document YAML stream
   to stdout or `--out FILE`. `untaped awx export --out-dir DIR` writes one
   file per resource and prints the same stream, which pipes into `apply -`.
+- `--comment TEXT` writes `# TEXT` at the top of each document (YAML only).
 - Credentials are never exported.
 - An export of an org-less record writes `metadata.organization: null`, so
   applying it never lands in the default organization.
 
 What a document cannot carry:
 
-- **Secrets.** `webhook_key` and the default of every `password` survey
-  question are written as `$encrypted$`, which keeps the stored values when
-  applied to the resource they came from. A new template drops the password
-  defaults with a warning, and a `webhook_key` placeholder refuses the
-  create. Other survey defaults are exported as they are.
+- **Secrets.** A job template's non-empty `host_config_key` and the
+  non-empty default of every `password` survey question are written as
+  `$encrypted$`, which keeps the stored values when applied to the resource
+  they came from; empty ones stay empty. A new template drops these
+  placeholders with a warning: set a new callback key afterwards. Other survey
+  defaults are exported as they are.
 - **Access and history.** Roles, permissions, notification attachments,
   schedules of a template (a separate `Schedule` document) and past jobs.
 - **Nodes whose template was deleted.** Such a workflow node runs nothing
   untaped can name: the export leaves it out with a warning, and apply leaves
   it alone.
+
+### Export a project's footprint
+
+There is no "with dependents" export; select each kind instead. `apply` orders
+documents itself, so the files can go in one directory.
+
+```bash
+untaped awx export --kind projects --filter name=playbooks --out-dir rec
+untaped awx export --kind job-templates --filter project__name=playbooks --out-dir rec
+untaped awx schedules export --parent Deploy --all --out rec/schedules.yml
+untaped awx job-templates usage Deploy
+untaped awx workflow-templates export Release --out rec/workflows.yml
+```
+
+`usage` lists the workflows that run a template; export the ones you want
+kept. Inventories and credentials stay references (see the References bullet
+above): they must exist where the documents are applied.
 
 ## Apply
 

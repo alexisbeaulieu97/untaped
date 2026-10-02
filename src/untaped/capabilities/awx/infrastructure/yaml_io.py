@@ -80,8 +80,33 @@ def read_resource_text(text: str, *, source: str) -> Iterator[Resource]:
             raise ConfigError(f"{source}: {exc}", category="invalid") from exc
 
 
-def dump_resource(resource: Resource, *, header_comment: str | None = None) -> str:
-    """Return the YAML representation of ``resource`` (``header_comment`` as a ``#`` line)."""
+class _DocumentDumper(yaml.SafeDumper):
+    """Safe dumper that writes multi-line strings as ``|`` literal blocks.
+
+    PyYAML falls back to a quoted scalar when a block cannot hold the value
+    exactly (trailing spaces, some control characters), so output stays lossless.
+    """
+
+
+def _represent_str(dumper: yaml.SafeDumper, value: str) -> yaml.ScalarNode:
+    # The loader folds NEL and the Unicode line/paragraph separators into "\n";
+    # only double quotes escape them, so force that style for such strings.
+    folds = any(c in value for c in "\x85\u2028\u2029")
+    style = '"' if folds else ("|" if "\n" in value else None)
+    return dumper.represent_scalar("tag:yaml.org,2002:str", value, style=style)
+
+
+_DocumentDumper.add_representer(str, _represent_str)
+
+
+def dump_resource(
+    resource: Resource, *, header_comment: str | None = None, comment: str | None = None
+) -> str:
+    """Return the YAML representation of ``resource``.
+
+    ``header_comment`` is one ``#`` line; ``comment`` follows it, one ``#``
+    line per line of text.
+    """
     payload = resource.model_dump(exclude_none=True)
     if resource.metadata.organization is None and "organization" in (
         resource.metadata.model_fields_set
@@ -90,7 +115,13 @@ def dump_resource(resource: Resource, *, header_comment: str | None = None) -> s
         payload["metadata"] = {"name": resource.metadata.name, "organization": None} | payload[
             "metadata"
         ]
-    body = yaml.safe_dump(payload, sort_keys=False, default_flow_style=False, allow_unicode=True)
-    if header_comment:
-        return f"# {header_comment}\n{body}"
-    return body
+    body = yaml.dump(
+        payload,
+        Dumper=_DocumentDumper,
+        sort_keys=False,
+        default_flow_style=False,
+        allow_unicode=True,
+    )
+    lines = ([header_comment] if header_comment else []) + (comment.splitlines() if comment else [])
+    prefix = "".join(f"# {line}\n" if line else "#\n" for line in lines)
+    return prefix + body

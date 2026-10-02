@@ -141,7 +141,7 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
             columns=columns,
             defaults=shown,
         )
-        records = [redact_value(record, spec.secret_paths) for record in records]
+        records = [redact_value(record, spec.secret_paths, skip_empty=True) for record in records]
         emit(
             records,
             fmt=fmt,

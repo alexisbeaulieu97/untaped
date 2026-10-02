@@ -226,7 +226,7 @@ def test_noop_batch_with_secret_and_existing_membership_never_prompts(
     fake_aap: Any, editor: Any, tmp_path: Path, command: str
 ) -> None:
     seed(fake_aap, "job_templates")
-    fake_aap.store["job_templates"][10]["webhook_key"] = "existing-secret"
+    fake_aap.store["job_templates"][10]["host_config_key"] = "existing-secret"
     fake_aap.seed("credentials", id=30, name="machine", organization=1)
     fake_aap.memberships[("job_templates", 10, "credentials")] = {30}
     paths = editor(lambda docs: docs)
@@ -234,7 +234,7 @@ def test_noop_batch_with_secret_and_existing_membership_never_prompts(
         file = tmp_path / "job.yml"
         file.write_text(
             "kind: JobTemplate\nmetadata: {name: target, organization: Default}\n"
-            "spec: {description: old, webhook_key: '$encrypted$', credentials: [machine]}\n"
+            "spec: {description: old, host_config_key: '$encrypted$', credentials: [machine]}\n"
         )
         args = [str(file)]
     elif command == "patch":
@@ -243,7 +243,7 @@ def test_noop_batch_with_secret_and_existing_membership_never_prompts(
             "--set",
             "description=old",
             "--set",
-            "webhook_key=$encrypted$",
+            "host_config_key=$encrypted$",
             "--set",
             'credentials=["machine"]',
         ]
@@ -263,6 +263,27 @@ def test_noop_batch_with_secret_and_existing_membership_never_prompts(
     assert "existing-secret" not in result.output
     if paths:
         assert not paths[0].parent.exists()
+
+
+def test_edit_manual_project_to_scm_keeps_unchanged_local_path(fake_aap: Any, editor: Any) -> None:
+    seed(fake_aap, "projects")
+    fake_aap.store["projects"][10].update(scm_type="", local_path="_10__target")
+
+    def to_scm(docs: list[Any]) -> list[Any]:
+        docs[0]["spec"]["scm_type"] = "git"
+        docs[0]["spec"]["local_path"] = "_10__target"  # the old value stays in the document
+        return docs
+
+    editor(to_scm)
+    result = CliInvoker().invoke(
+        app,
+        ["projects", "edit", "target", "--yes", "--format", "json"],
+        prompt_backend=ScriptedPromptBackend(confirms=[True]),
+        terminal=True,
+    )
+    assert result.exit_code == 0, result.output
+    patches = [c for c in fake_aap.router.calls if c.request.method == "PATCH"]
+    assert [json.loads(c.request.content) for c in patches] == [{"scm_type": "git"}]
 
 
 def test_retarget_to_same_named_selected_id_is_invalid(fake_aap: Any, editor: Any) -> None:
@@ -380,17 +401,17 @@ def test_changed_fk_value_uses_shared_resolution(fake_aap: Any, editor: Any, val
 @pytest.mark.parametrize("fmt", ["json", "yaml", "pipe", "table", "raw"])
 def test_new_editor_secret_never_leaks(fake_aap: Any, editor: Any, fmt: str) -> None:
     seed(fake_aap, "job_templates")
-    fake_aap.store["job_templates"][10]["webhook_key"] = "old-secret"
+    fake_aap.store["job_templates"][10]["host_config_key"] = "old-secret"
 
     def update(docs: list[Any]) -> list[Any]:
-        assert docs[0]["spec"]["webhook_key"] == "$encrypted$"
-        docs[0]["spec"]["webhook_key"] = "new-editor-secret"
+        assert docs[0]["spec"]["host_config_key"] == "$encrypted$"
+        docs[0]["spec"]["host_config_key"] = "new-editor-secret"
         return docs
 
     editor(update)
     result = CliInvoker().invoke(app, ["job-templates", "edit", "target", "--yes", "--format", fmt])
     assert result.exit_code == 0, result.output
-    assert fake_aap.get_record("job_templates", 10)["webhook_key"] == "new-editor-secret"
+    assert fake_aap.get_record("job_templates", 10)["host_config_key"] == "new-editor-secret"
     assert "new-editor-secret" not in result.output and "old-secret" not in result.output
 
 

@@ -45,7 +45,7 @@ def _seed_basic(fake: Any) -> None:
         playbook="deploy.yml",
         description="deploy the app",
         last_job_status="successful",
-        webhook_key="$encrypted$",
+        host_config_key="$encrypted$",
     )
 
 
@@ -130,7 +130,7 @@ def test_apply_real_secret_masking_and_survey_enrichment_do_not_false_fail(
         "  playbook: deploy.yml\n"
         "  project: playbooks\n"
         "  inventory: prod\n"
-        "  webhook_key: actual-secret\n"
+        "  host_config_key: actual-secret\n"
         "  survey_spec:\n"
         "    name: deploy survey\n"
         "    spec:\n"
@@ -143,7 +143,8 @@ def test_apply_real_secret_masking_and_survey_enrichment_do_not_false_fail(
 
     assert result.exit_code == 0, result.output + (result.stderr or "")
     jt = fake_aap.get_record("job_templates", 30)
-    assert jt["webhook_key"] == "$encrypted$"
+    # host_config_key is not masked by AWX; only the survey default is.
+    assert jt["host_config_key"] == "actual-secret"
     assert jt["survey_spec"]["spec"][0]["required"] is False
 
 
@@ -363,12 +364,12 @@ def test_apply_preserves_encrypted_secret(fake_aap: Any, tmp_path: Path) -> None
         "  playbook: deploy.yml\n"
         "  project: playbooks\n"
         "  inventory: prod\n"
-        "  webhook_key: $encrypted$\n"
+        "  host_config_key: $encrypted$\n"
     )
     result = CliInvoker().invoke(app, ["apply", str(f), "--yes"])
     assert result.exit_code == 0, result.output
     jt = fake_aap.get_record("job_templates", 30)
-    assert jt["webhook_key"] == "$encrypted$"  # untouched
+    assert jt["host_config_key"] == "$encrypted$"  # untouched
     assert jt["description"] == "still-deploy"
 
 

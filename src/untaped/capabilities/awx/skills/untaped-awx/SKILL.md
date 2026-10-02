@@ -92,9 +92,9 @@ previews once and asks once, No by default.
   failed row (read its `error`); 2 means nothing ran.
 - **Recover**: there is no rollback, and a failed batch keeps what it wrote.
   Reapply a prior export; a deleted resource returns with a new id and
-  without its secrets, access or history, and a job template exported with a
-  `webhook_key` refuses to be recreated until its `$encrypted$` placeholder is
-  removed (see [references/specs.md#export](references/specs.md#export)).
+  without its secrets, access or history (a recreated template needs a new
+  callback key if it used one; see
+  [references/specs.md#export](references/specs.md#export)).
 - A single named `launch` or `sync` submits at once; several targets or a
   query selection are listed and confirmed once.
 

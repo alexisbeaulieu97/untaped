@@ -302,3 +302,33 @@ def test_save_all_print_paths_expands_tilde_in_out_dir(
     assert expanded.exists()
     assert result.stdout.splitlines() == [str(expanded)]
     assert not Path("~/backup").exists()
+
+
+def test_bulk_export_comment_in_every_file(seeded_default_org: Any, tmp_path: Path) -> None:
+    fake_aap = seeded_default_org
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    for jt_id, name in ((30, "deploy"), (31, "rollback")):
+        fake_aap.seed(
+            "job_templates",
+            id=jt_id,
+            name=name,
+            organization=1,
+            organization_name="Default",
+            project=10,
+            project_name="playbooks",
+            playbook=f"{name}.yml",
+        )
+    out_dir = tmp_path / "out"
+    result = CliInvoker().invoke(
+        app, ["export", "--kind", "job-templates", "--out-dir", str(out_dir), "--comment", "x"]
+    )
+    assert result.exit_code == 0, result.output
+    files = list(out_dir.glob("*.yml"))
+    assert len(files) == 2 and all(f.read_text().startswith("# x\n") for f in files)

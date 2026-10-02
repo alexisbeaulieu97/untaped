@@ -116,3 +116,45 @@ def test_missing_file_raises() -> None:
 def test_empty_directory_raises(tmp_path: Path) -> None:
     with pytest.raises(ConfigError):
         list(read_resources(tmp_path))
+
+
+def test_multiline_strings_dump_as_literal_blocks(tmp_path: Path) -> None:
+    extra_vars = "---\nregion: eu\nhosts:\n  - a\n"
+    r = _resource("JobTemplate", "deploy", extra_vars=extra_vars, description="one line")
+    text = dump_resource(r)
+    assert "extra_vars: |\n    ---\n    region: eu\n" in text
+    assert "description: one line" in text
+    out = tmp_path / "jt.yml"
+    write_resource(out, r)
+    [back] = read_resources(out)
+    assert back.spec["extra_vars"] == extra_vars
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "trailing space \nx",
+        "tab\there\nx",
+        "cr\r\nx",
+        "no newline at end\nx",
+        "\n",
+        "a\x85b\nc",
+        "a\u2028b\nc",
+    ],
+)
+def test_awkward_multiline_strings_round_trip(tmp_path: Path, value: str) -> None:
+    r = _resource("JobTemplate", "deploy", extra_vars=value)
+    out = tmp_path / "jt.yml"
+    write_resource(out, r)
+    [back] = read_resources(out)
+    assert back.spec["extra_vars"] == value
+
+
+def test_comment_lines_follow_fidelity_note(tmp_path: Path) -> None:
+    r = _resource("JobTemplate", "deploy")
+    text = dump_resource(r, header_comment="partial", comment="Owner: team\n\nTicket 42")
+    assert text.startswith("# partial\n# Owner: team\n#\n# Ticket 42\nkind: JobTemplate\n")
+    out = tmp_path / "jt.yml"
+    out.write_text(text)
+    [back] = read_resources(out)
+    assert back == r
