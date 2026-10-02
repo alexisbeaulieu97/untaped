@@ -58,7 +58,8 @@ unscanned before reporting "none" or "all".
    answer, `sweep` for anything exact or repeated.
 2. Name the scope explicitly (`--org`, `--team` or `--repo`) rather than
    relying on the default org, so the answer states what it covered.
-   Archived repos are left out unless you pass `--archived include`.
+   Archived repos are left out unless you pass `--archived include` (or
+   `--archived only`).
 3. Run it with `--format json`. For `repos list` and `search`, check stderr
    for a `showing N of M` or `raise --limit` notice; without one you have
    every match.

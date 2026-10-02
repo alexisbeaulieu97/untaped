@@ -30,13 +30,15 @@ ALLOWED: dict[str, str] = {
     "The [packaged skill]": "the standard Reference section of every package README",
 }
 
-_FENCE = re.compile(r"^(```|~~~).*?^\1", re.MULTILINE | re.DOTALL)
+_FENCE = re.compile(r"^[ \t]*(```|~~~).*?^[ \t]*\1", re.MULTILINE | re.DOTALL)
+_ITEM = re.compile(r"\n(?=\s*(?:[-*]|\d+\.) )")
 _LINK_TARGET = re.compile(r"\]\([^)]*\)")
 _WORD = re.compile(r"[a-z0-9_./-]+")
 
 
 def _pages() -> list[Path]:
-    docs = [p for p in sorted((REPO_ROOT / "docs").rglob("*.md")) if p.name != "config.md"]
+    generated = REPO_ROOT / "docs/reference/config.md"
+    docs = [p for p in sorted((REPO_ROOT / "docs").rglob("*.md")) if p != generated]
     root = [REPO_ROOT / name for name in ("README.md", "CONTRIBUTING.md", "AGENTS.md")]
     readmes = sorted(REPO_ROOT.glob("packages/*/README.md"))
     skills = sorted(REPO_ROOT.glob("packages/*/src/*/skills/**/*.md"))
@@ -44,14 +46,18 @@ def _pages() -> list[Path]:
 
 
 def paragraphs(text: str) -> list[str]:
-    """The prose paragraphs of a Markdown page worth comparing."""
+    """The prose paragraphs, and list items, of a Markdown page worth comparing."""
     found = []
     for block in re.split(r"\n\s*\n", _FENCE.sub("", text)):
-        block = block.strip()
-        if block.startswith(("#", "|", "<!--")) or block.startswith(tuple(ALLOWED)):
-            continue
-        if len(_words(block)) >= MIN_WORDS:
-            found.append(block)
+        lines = block.strip().splitlines()
+        while lines and lines[0].startswith("#"):
+            lines.pop(0)
+        for item in _ITEM.split("\n".join(lines)):
+            item = item.strip()
+            if item.startswith(("|", "<!--")) or item.startswith(tuple(ALLOWED)):
+                continue
+            if len(_words(item)) >= MIN_WORDS:
+                found.append(item)
     return found
 
 
@@ -137,5 +143,13 @@ def test_paragraphs_skip_code_tables_and_allowed_repeats() -> None:
         + "untaped x " * 30
         + "\n```\n\n| a | b |\n\nInstall it as part of `untaped`: "
         + "w " * 30
+        + "\n\n  ```\n"
+        + "indented code " * 20
+        + "\n  ```"
     )
     assert paragraphs(text) == []
+
+
+def test_paragraphs_split_lists_and_drop_headings() -> None:
+    item = "- " + "word " * 25
+    assert paragraphs(f"## Title\n{item}\n{item}\n- short") == [item.strip(), item.strip()]

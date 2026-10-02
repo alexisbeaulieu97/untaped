@@ -182,7 +182,7 @@ which records.
 
 Commands that write, delete or launch show a preview and ask before they act.
 Jira asks only before destructive writes by default (see
-[`jira.confirm`](../packages/untaped-jira/README.md#change-issues)).
+[`jira.confirm`](../packages/untaped-jira/src/untaped_jira/skills/untaped-jira/references/writes.md#which-writes-ask-first)).
 
 - `--dry-run` shows the preview and changes nothing, even with `--yes`.
 - `--yes` (`-y`) skips the question. Without a terminal, such commands exit 2
