@@ -104,7 +104,11 @@ class SubscribeRepo:
                 category="conflict",
                 hint=f"move it away, or run `untaped dotfiles subscribe {dest} --name {name}`",
             )
-        branch = self._git.clone(url, dest, ref=ref)
+        try:
+            branch = self._git.clone(url, dest, ref=ref)
+        except GitError:
+            shutil.rmtree(dest, ignore_errors=True)  # a tag as --ref clones, then is refused
+            raise
         return RepoRecord(
             name=name,
             url=url,

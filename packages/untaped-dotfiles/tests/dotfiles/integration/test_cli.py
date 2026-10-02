@@ -101,6 +101,19 @@ def test_subscribe_refuses_a_bad_manifest_and_leaves_no_clone(
     assert run(app, ["repos", "--format", "json"]).stdout.strip() in ("", "[]")
 
 
+def test_subscribe_with_a_tag_as_ref_is_refused_and_leaves_no_clone(
+    make_upstream: Upstream, tmp_path: Path
+) -> None:
+    bare, author = make_upstream()
+    git(author, "tag", "v1")
+    git(author, "push", "-q", "origin", "v1")
+    result = run(app, ["subscribe", str(bare), "--ref", "v1"])
+    assert result.exit_code == 1, result.output
+    assert "checked out no branch" in result.stderr
+    assert not (tmp_path / "repos" / "dotfiles").exists()
+    assert _subscribe(bare).exit_code == 0  # nothing is left in the way
+
+
 def test_subscribe_a_path_that_is_not_a_repo_root(make_upstream: Upstream, tmp_path: Path) -> None:
     _, author = make_upstream()
     result = run(app, ["subscribe", str(author / "fish")])
