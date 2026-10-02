@@ -63,7 +63,7 @@ class AnsibleSettings(BaseModel):
     default_source: str | None = None
     ref_scan_default: Literal["all", "default_branch"] = "all"
     source_refresh_backend: Literal["auto", "graphql", "git"] = "auto"
-    repo_cache_path: Path = Path("~/.untaped/ansible-repositories")
+    repo_cache_path: Path = Path("~/.untaped/ansible-cache")
     git_clone_protocol: Literal["https", "ssh"] = "https"
     git_fetch_depth: int = Field(default=1, ge=0)
     git_fetch_concurrency: int = Field(default=8, ge=1, le=32)

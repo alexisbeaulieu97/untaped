@@ -17,9 +17,17 @@
     (`PickRequest`, `PickItem`, `PickSetting`, `PickCatalog`, `PickResult`,
     `Picked`; API `3.2`). `ScriptedPromptBackend(picks=...)` scripts it in
     tests.
+  - **New (SDK):** `RepoCache`, `cache_path`, `cache_key`, `list_caches`,
+    `cache_origin`, `repo_url_parts` and `scoped_auth_header`: one bare-repo
+    cache building block for any capability.
+  - **Breaking:** `safe_cache_path` is removed; use `cache_path`.
 - Ansible
   - **Breaking:** `graph --upstream/--downstream/--both` are removed; use
     `--direction up|down|both`. Graph sources re-index once.
+  - **Breaking:** the git cache moves to `~/.untaped/ansible-cache`, keyed
+    by host and path so https and ssh URLs share it; delete
+    `~/.untaped/ansible-repositories`. The GitHub token is now sent only to
+    the GitHub host, and refreshes of one repo no longer run concurrently.
 - Workspace
   - **Breaking:** 10.0 caches live in `~/.untaped/workspace-cache`. The 9.x
     `~/.untaped/repositories` is left untouched (clones made before 7.0 may
@@ -73,6 +81,9 @@
     `max_age_seconds`) for a cached, metadata-only repository list that
     workspace `create`/`add` resolve names from and the picker searches; it
     falls back to `github.default_org`.
+  - **Breaking:** the sweep cache moves to `~/.untaped/github-cache`, keyed
+    by host and path so https and ssh URLs share it; delete
+    `~/.untaped/github-corpus` (its worktrees included).
 - Recipe
   - **New:** `recipe backups restore` takes `--format` and `--columns`; with
     `json`, `yaml` or `pipe` it prints one `recipe.restore_outcome` row

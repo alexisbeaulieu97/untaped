@@ -8,8 +8,7 @@ import json
 import shutil
 import tempfile
 import time
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -31,11 +30,13 @@ from untaped.capabilities.github.errors import GitCorpusError
 from untaped.sdk import (
     GitCommandError,
     GitResult,
+    RepoCache,
     atomic_write,
     attribution,
-    file_lock,
+    cache_key,
+    cache_path,
+    list_caches,
     run_git,
-    safe_cache_path,
     safe_path_segment,
     ui_context,
 )
@@ -46,11 +47,6 @@ DEFAULT_FETCH_ATTEMPTS = 3
 DEFAULT_FETCH_BATCH_SIZE = 50
 DEFAULT_LOCK_TIMEOUT = 600.0
 METADATA_FILE = "untaped-corpus.json"
-# Serializes writers (sync, touch, delete) of one bare repo across processes.
-LOCK_FILE = "untaped.lock"
-# Bare repos live at <root>/<host>/<name>-<digest>.git (see _bare_path);
-# a fixed-depth glob avoids walking objects/ and managed worktrees.
-METADATA_GLOB = f"*/*.git/{METADATA_FILE}"
 
 
 class GitCorpusCache:
@@ -95,15 +91,12 @@ class GitCorpusCache:
         auth_header: str | None,
     ) -> CorpusRepoResult:
         """Fetch the requested ref profile into the managed bare corpus."""
-        bare = _bare_path(repo, root=root)
-        with self._repo_lock(bare):
+        url = _remote_url(repo)
+        _check_auth_url(url, auth_header)
+        cache = self._open(cache_path(url, root=root), auth_header=auth_header)
+        with cache.locked():
             branch = _default_branch(repo)
-            url = _remote_url(repo)
-            scoped_auth_header = _auth_header_for_url(url, auth_header, host=self._auth_host)
-            if not (bare / "HEAD").is_file():
-                bare.parent.mkdir(parents=True, exist_ok=True)
-                self._run(["init", "--bare", str(bare)], timeout=self._slow_timeout)
-            self._ensure_origin(bare, url)
+            cache.ensure(url)
 
             stored = self.repo_freshness(repo, root=root)
             profile = profile_join(stored.profile, selector.profile) if stored else selector.profile
@@ -114,26 +107,15 @@ class GitCorpusCache:
 
             if effective.beyond_default():
                 self._sync_selected_refs(
-                    bare,
-                    url=url,
-                    depth=depth,
-                    auth_header=scoped_auth_header,
-                    selector=effective,
-                    default_branch=branch,
+                    cache, depth=depth, selector=effective, default_branch=branch
                 )
             else:
-                self._fetch_refspecs(
-                    bare,
-                    url=url,
-                    depth=depth,
-                    auth_header=scoped_auth_header,
-                    refspecs=(f"+refs/heads/{branch}:refs/heads/{branch}",),
-                )
-                self._prune_uncovered_refs(bare, selector=effective, default_branch=branch)
+                cache.fetch((f"+refs/heads/{branch}:refs/heads/{branch}",), tags=False, depth=depth)
+                self._prune_uncovered_refs(cache, selector=effective, default_branch=branch)
 
             fetched_at = datetime.now(UTC).isoformat()
             _write_metadata(
-                bare,
+                cache.path,
                 {
                     "repo": repo.full_name,
                     "ref": branch,
@@ -149,7 +131,7 @@ class GitCorpusCache:
             return CorpusRepoResult(
                 repo=repo.full_name,
                 ref=branch,
-                path=str(bare),
+                path=str(cache.path),
                 clone_url=url,
                 status="synced",
                 fetched_at=fetched_at,
@@ -160,7 +142,7 @@ class GitCorpusCache:
 
     def repo_freshness(self, repo: CorpusRepoTarget, *, root: Path) -> CorpusFreshness | None:
         """Return cached fetch metadata for ``repo`` if present."""
-        metadata_path = _bare_path(repo, root=root) / METADATA_FILE
+        metadata_path = cache_path(_remote_url(repo), root=root) / METADATA_FILE
         if not metadata_path.is_file():
             return None
         data = _read_metadata(metadata_path)
@@ -184,14 +166,14 @@ class GitCorpusCache:
 
     def touch_repo(self, repo: CorpusRepoTarget, *, root: Path) -> datetime:
         """Mark a cached copy current without fetching (GitHub reports no new push)."""
-        bare = _cached_bare(repo, root=root)
-        with self._repo_lock(bare):
-            data = _read_metadata(bare / METADATA_FILE)
+        cache = self._cached(repo, root=root)
+        with cache.locked():
+            data = _read_metadata(cache.path / METADATA_FILE)
             fetched = datetime.now(UTC)
             data.update(
                 fetched_at=fetched.isoformat(), archived=repo.archived, pushed_at=repo.pushed_at
             )
-            _write_metadata(bare, data)
+            _write_metadata(cache.path, data)
         return fetched
 
     def local_refs(
@@ -208,12 +190,11 @@ class GitCorpusCache:
         cannot be read that way keeps its own name as the tree-ish.
         """
         branch = _default_branch(repo)
-        bare = _bare_path(repo, root=root)
-        if not (bare / "HEAD").is_file():
+        cache = self._open(cache_path(_remote_url(repo), root=root))
+        if not cache.exists():
             return ()
-        result = self._run(
+        result = cache.run(
             ["for-each-ref", "--format=%(refname) %(tree) %(*tree)", "refs/heads", "refs/tags"],
-            cwd=bare,
             capture=True,
         )
         trees: dict[str, str] = {}
@@ -235,8 +216,8 @@ class GitCorpusCache:
         """Run one ``git grep`` over several cached trees; trees without hits are absent."""
         if not trees:
             return {}
-        bare = _cached_bare(repo, root=root)
-        result = self._grep(bare, ["-n", "--column", "-z"], spec, trees)
+        cache = self._cached(repo, root=root)
+        result = self._grep(cache, ["-n", "--column", "-z"], spec, trees)
         if result.returncode == 1:
             return {}
         hits: dict[str, list[GrepHit]] = {}
@@ -253,11 +234,11 @@ class GitCorpusCache:
         spec: GrepSpec,
     ) -> bool:
         """Return whether ``spec`` matches in ``tree``; ``git grep -q`` stops at the first hit."""
-        bare = _cached_bare(repo, root=root)
-        return self._grep(bare, ["-q"], spec, (tree,)).returncode == 0
+        cache = self._cached(repo, root=root)
+        return self._grep(cache, ["-q"], spec, (tree,)).returncode == 0
 
     def _grep(
-        self, bare: Path, mode: list[str], spec: GrepSpec, trees: tuple[str, ...]
+        self, cache: RepoCache, mode: list[str], spec: GrepSpec, trees: tuple[str, ...]
     ) -> GitResult:
         """Run ``git grep`` with the sweep's pinned flags; exit 1 (no match) is not an error."""
         args = ["grep", *mode, "-I"]
@@ -269,7 +250,7 @@ class GitCorpusCache:
             args.append("--word-regexp")
         args.extend(["-e", spec.pattern, *trees, "--", *spec.paths])
         # Keep the user's locale: it decides how the regex treats non-ASCII text.
-        result = self._run(args, cwd=bare, capture=True, check=False, locale_c=False)
+        result = cache.run(args, capture=True, check=False, locale_c=False)
         if result.returncode not in {0, 1}:
             stderr = result.stderr.strip()
             raise GitCorpusError(stderr or f"git grep failed with status {result.returncode}")
@@ -277,8 +258,8 @@ class GitCorpusCache:
 
     def tree_paths(self, repo: CorpusRepoTarget, *, root: Path, ref: str) -> tuple[str, ...]:
         """List paths in one cached ref tree."""
-        bare = _cached_bare(repo, root=root)
-        result = self._run(["ls-tree", "-r", "--name-only", "-z", ref], cwd=bare, capture=True)
+        cache = self._cached(repo, root=root)
+        result = cache.run(["ls-tree", "-r", "--name-only", "-z", ref], capture=True)
         return tuple(part.decode(errors="replace") for part in result.stdout.split(b"\0") if part)
 
     def read_first_blob(
@@ -290,10 +271,9 @@ class GitCorpusCache:
         paths: tuple[str, ...],
     ) -> str | None:
         """Read the first of ``paths`` that is a blob in one cached ref, in one git call."""
-        bare = _cached_bare(repo, root=root)
-        result = self._run(
+        cache = self._cached(repo, root=root)
+        result = cache.run(
             ["cat-file", "--batch"],
-            cwd=bare,
             capture=True,
             stdin="".join(f"{ref}:{path}\n" for path in paths),
         )
@@ -317,13 +297,24 @@ class GitCorpusCache:
             args.append("--fixed-strings" if fixed_strings else "--extended-regexp")
             args.extend(["-e", pattern, "--"])
             args.extend(paths)
-            result = self._run(args, cwd=scratch_path, check=False, locale_c=False)
+            # No cache here, so no auth either: the one direct ``run_git`` call.
+            try:
+                result = run_git(
+                    args,
+                    cwd=scratch_path,
+                    git=self._git,
+                    timeout=self._timeout,
+                    check=False,
+                    locale_c=False,
+                )
+            except GitCommandError as exc:
+                raise GitCorpusError(str(exc), **attribution(exc)) from exc
         if result.returncode in {0, 1}:
             return None
         return result.stderr.strip()
 
     def list_repos(self, *, root: Path) -> tuple[CorpusRepoResult, ...]:
-        """List repositories with corpus metadata under ``root``."""
+        """List repositories with corpus metadata under ``root``, sorted by name."""
         managed_root = root.expanduser()
         if not managed_root.exists():
             return ()
@@ -343,7 +334,8 @@ class GitCorpusCache:
                     archived=_metadata_archived(data),
                 )
             )
-        return tuple(row for row in rows if row.repo and row.ref)
+        # By name: host-less caches (`file://`, local paths) are keyed by a hash.
+        return tuple(sorted((row for row in rows if row.repo and row.ref), key=_by_name))
 
     def get_repo(self, *, root: Path, repo: str) -> CorpusRepoTarget | None:
         """Return cached repository metadata for ``repo`` if present."""
@@ -362,13 +354,26 @@ class GitCorpusCache:
         return None
 
     def _metadata_entries(self, managed_root: Path) -> list[tuple[Path, dict[str, object]]]:
-        """Read every managed bare repo's metadata, warning on and skipping corrupt files."""
+        """Read every managed bare repo's metadata, warning on and skipping corrupt files.
+
+        A cache not at ``cache_path`` of its recorded ``clone_url`` (an old
+        layout, or a hand-moved dir) is not listed: no command could use it.
+        """
         entries: list[tuple[Path, dict[str, object]]] = []
-        for metadata_path in sorted(managed_root.glob(METADATA_GLOB)):
+        # Resolved like ``cache_path``, so listed paths match synced ones.
+        root = managed_root.resolve()
+        for bare in list_caches(root, skip=("worktrees",)):
+            metadata_path = bare / METADATA_FILE
+            if not metadata_path.is_file():
+                continue
             try:
-                entries.append((metadata_path, _read_metadata(metadata_path)))
+                data = _read_metadata(metadata_path)
             except GitCorpusError as exc:
                 self._warn(str(exc))
+                continue
+            clone_url = _optional_str(data.get("clone_url"))
+            if clone_url is not None and root.joinpath(*cache_key(clone_url)) == bare:
+                entries.append((metadata_path, data))
         return entries
 
     def clean_repo(self, *, root: Path, repo: CorpusRepoResult) -> CorpusRepoResult:
@@ -377,9 +382,13 @@ class GitCorpusCache:
         bare = Path(repo.path).expanduser().resolve()
         if not bare.is_relative_to(managed_root):
             raise GitCorpusError(f"refusing to remove path outside managed root: {bare}")
-        with self._repo_lock(bare):
-            self._remove_managed_worktrees(bare, managed_root=managed_root)
-            shutil.rmtree(bare)
+        cache = self._open(bare)
+        # The empty ``<bare>.lock`` stays: unlinking a held lock file would let a
+        # waiter on the old inode run beside a new locker on a fresh file.
+        with cache.locked():
+            if bare.exists():  # a concurrent delete or a stale row already removed it
+                self._remove_managed_worktrees(cache, managed_root=managed_root)
+                shutil.rmtree(bare)
         return repo.model_copy(update={"status": "removed"})
 
     def materialize_worktree(
@@ -392,10 +401,8 @@ class GitCorpusCache:
         """Materialize one cached repository ref into a managed worktree."""
         branch = _default_branch(repo)
         selected_ref = ref or branch
-        bare = _bare_path(repo, root=root)
-        if not (bare / "HEAD").is_file():
-            raise GitCorpusError("repository is not in the local corpus", category="not_found")
-        if not self._ref_exists(bare, selected_ref):
+        cache = self._cached(repo, root=root)
+        if not self._ref_exists(cache, selected_ref):
             raise GitCorpusError(
                 f"ref is not cached: {selected_ref}; run a sweep that fetches it",
                 category="not_found",
@@ -404,47 +411,47 @@ class GitCorpusCache:
         if worktree.exists() and not (worktree / ".git").exists():
             raise GitCorpusError(f"worktree path exists and is not a git worktree: {worktree}")
         if worktree.exists():
-            self._run(
+            cache.run(
                 ["checkout", "--detach", selected_ref], cwd=worktree, timeout=self._slow_timeout
             )
         else:
             worktree.parent.mkdir(parents=True, exist_ok=True)
-            self._run(
+            cache.run(
                 ["worktree", "add", "--detach", str(worktree), selected_ref],
-                cwd=bare,
                 timeout=self._slow_timeout,
             )
         return WorktreeResult(repo=repo.full_name, ref=selected_ref, path=str(worktree))
 
-    @contextmanager
-    def _repo_lock(self, bare: Path) -> Iterator[None]:
-        """Hold one bare repo's lock so concurrent sweeps never write it at once."""
-        bare.mkdir(parents=True, exist_ok=True)
-        with file_lock(
-            bare / LOCK_FILE,
-            timeout=self._lock_timeout,
-            error=GitCorpusError,
-            busy=f"corpus repo is locked by another untaped process: {bare}",
-            failed=f"could not lock corpus repo {bare}",
-        ):
-            yield
+    def _cached(self, repo: CorpusRepoTarget, *, root: Path) -> RepoCache:
+        """The cache of ``repo``; ``not_found`` when it has never been synced."""
+        cache = self._open(cache_path(_remote_url(repo), root=root))
+        if not cache.exists():
+            raise GitCorpusError("repository is not in the local corpus", category="not_found")
+        return cache
 
-    def _ensure_origin(self, bare: Path, url: str) -> None:
-        # Purely local config commands: never hand them the auth header.
-        current = self._run(["remote", "get-url", "origin"], cwd=bare, capture=True, check=False)
-        current_url = current.text.strip()
-        if not current_url:
-            self._run(["remote", "add", "origin", url], cwd=bare)
-        elif current_url != url:
-            self._run(["remote", "set-url", "origin", url], cwd=bare)
+    def _open(self, path: Path, *, auth_header: str | None = None) -> RepoCache:
+        """The cache at ``path``; ``RepoCache`` scopes the token to ``auth_host``."""
+        # A sweep runs unattended across many repos: git never prompts, and
+        # uncaptured stdout is discarded so stray git chatter cannot corrupt
+        # piped output.
+        return RepoCache(
+            path,
+            error=GitCorpusError,
+            auth_header=auth_header,
+            auth_host=self._auth_host,
+            git=self._git,
+            timeout=self._timeout,
+            slow_timeout=self._slow_timeout,
+            lock_timeout=self._lock_timeout,
+            attempts=self._fetch_attempts,
+            sleep=self._sleep,
+        )
 
     def _sync_selected_refs(
         self,
-        bare: Path,
+        cache: RepoCache,
         *,
-        url: str,
         depth: int,
-        auth_header: str | None,
         selector: RefSelector,
         default_branch: str,
     ) -> None:
@@ -458,36 +465,22 @@ class GitCorpusCache:
         """
         remote = {
             ref: oid
-            for ref, oid in self._remote_refs(bare, url=url, auth_header=auth_header).items()
+            for ref, oid in self._remote_refs(cache).items()
             if _selector_covers_ref(selector, ref, default_branch=default_branch)
         }
-        local = self._local_ref_oids(bare)
-        stale = [ref for ref in local if ref not in remote]
-        if stale:
-            self._run(
-                ["update-ref", "--stdin"],
-                cwd=bare,
-                stdin="".join(f"delete {ref}\n" for ref in stale),
-            )
+        local = self._local_ref_oids(cache)
+        cache.delete_refs(ref for ref in local if ref not in remote)
         wanted = sorted(ref for ref, oid in remote.items() if local.get(ref) != oid)
         for start in range(0, len(wanted), self._fetch_batch_size):
             batch = wanted[start : start + self._fetch_batch_size]
-            self._fetch_refspecs(
-                bare,
-                url=url,
-                depth=depth,
-                auth_header=auth_header,
-                refspecs=tuple(f"+{ref}:{ref}" for ref in batch),
-                prune=False,
+            cache.fetch(
+                tuple(f"+{ref}:{ref}" for ref in batch), prune=False, tags=False, depth=depth
             )
 
-    def _remote_refs(self, bare: Path, *, url: str, auth_header: str | None) -> dict[str, str]:
-        result = self._run(
+    def _remote_refs(self, cache: RepoCache) -> dict[str, str]:
+        result = cache.run(
             ["ls-remote", "--heads", "--tags", "--refs", "origin"],
-            cwd=bare,
             capture=True,
-            auth_header=auth_header,
-            auth_url=url,
             timeout=self._slow_timeout,
             retry=True,
         )
@@ -498,10 +491,9 @@ class GitCorpusCache:
                 refs[ref] = oid
         return refs
 
-    def _local_ref_oids(self, bare: Path) -> dict[str, str]:
-        result = self._run(
+    def _local_ref_oids(self, cache: RepoCache) -> dict[str, str]:
+        result = cache.run(
             ["for-each-ref", "--format=%(objectname) %(refname)", "refs/heads", "refs/tags"],
-            cwd=bare,
             capture=True,
         )
         refs: dict[str, str] = {}
@@ -511,53 +503,30 @@ class GitCorpusCache:
                 refs[ref] = oid
         return refs
 
-    def _fetch_refspecs(
-        self,
-        bare: Path,
-        *,
-        url: str,
-        depth: int,
-        auth_header: str | None,
-        refspecs: tuple[str, ...],
-        prune: bool = True,
-    ) -> None:
-        args = ["fetch", *(["--prune"] if prune else []), "--no-tags", "origin"]
-        if depth > 0:
-            args.append(f"--depth={depth}")
-        args.extend(refspecs)
-        self._run(
-            args,
-            cwd=bare,
-            timeout=self._slow_timeout,
-            auth_header=auth_header,
-            auth_url=url,
-            retry=True,
-        )
-
     def _prune_uncovered_refs(
         self,
-        bare: Path,
+        cache: RepoCache,
         *,
         selector: RefSelector,
         default_branch: str,
     ) -> None:
-        result = self._run(
+        result = cache.run(
             ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/tags"],
-            cwd=bare,
             capture=True,
         )
-        for ref in result.text.splitlines():
-            if not _selector_covers_ref(selector, ref, default_branch=default_branch):
-                self._run(["update-ref", "-d", ref], cwd=bare)
-
-    def _ref_exists(self, bare: Path, ref: str) -> bool:
-        result = self._run(
-            ["rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"], cwd=bare, check=False
+        cache.delete_refs(
+            ref
+            for ref in result.text.splitlines()
+            if not _selector_covers_ref(selector, ref, default_branch=default_branch)
         )
+
+    def _ref_exists(self, cache: RepoCache, ref: str) -> bool:
+        result = cache.run(["rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"], check=False)
         return result.returncode == 0
 
-    def _remove_managed_worktrees(self, bare: Path, *, managed_root: Path) -> None:
-        result = self._run(["worktree", "list", "--porcelain"], cwd=bare, capture=True, check=False)
+    def _remove_managed_worktrees(self, cache: RepoCache, *, managed_root: Path) -> None:
+        bare = cache.path
+        result = cache.run(["worktree", "list", "--porcelain"], capture=True, check=False)
         if result.returncode != 0:
             return
         for line in result.text.splitlines():
@@ -566,65 +535,18 @@ class GitCorpusCache:
             worktree = Path(line.removeprefix("worktree ")).expanduser().resolve()
             if worktree == bare or not worktree.is_relative_to(managed_root / "worktrees"):
                 continue
-            removed = self._run(
+            removed = cache.run(
                 ["worktree", "remove", "--force", str(worktree)],
-                cwd=bare,
                 check=False,
                 timeout=self._slow_timeout,
             )
             if removed.returncode != 0 and worktree.exists():
                 shutil.rmtree(worktree)
-        self._run(["worktree", "prune"], cwd=bare, check=False)
-
-    def _run(
-        self,
-        args: list[str],
-        *,
-        cwd: Path | None = None,
-        capture: bool = False,
-        check: bool = True,
-        timeout: float | None = None,
-        auth_header: str | None = None,
-        auth_url: str | None = None,
-        stdin: str | None = None,
-        locale_c: bool = True,
-        retry: bool = False,
-    ) -> GitResult:
-        """Run one git command; ``retry`` marks an idempotent network command.
-
-        A sweep runs unattended across many repos, so ``run_git`` never lets
-        git prompt, and uncaptured stdout is discarded so stray git chatter
-        cannot corrupt piped output.
-        """
-        if auth_header is not None:
-            _require_https_remote(auth_url)
-        try:
-            return run_git(
-                args,
-                cwd=cwd,
-                git=self._git,
-                timeout=self._timeout if timeout is None else timeout,
-                capture=capture,
-                stdin=stdin,
-                check=check,
-                auth_header=auth_header,
-                auth_url=auth_url,
-                locale_c=locale_c,
-                retry_transient=retry,
-                attempts=self._fetch_attempts,
-                sleep=self._sleep,
-            )
-        except GitCommandError as exc:
-            raise GitCorpusError(str(exc), **attribution(exc)) from exc
+        cache.run(["worktree", "prune"], check=False)
 
 
 def _ui_warning(message: str) -> None:
     ui_context(strict=False).message("warning", message)
-
-
-def _bare_path(repo: CorpusRepoTarget, *, root: Path) -> Path:
-    """Return the deterministic bare-cache path for ``repo``'s remote URL."""
-    return safe_cache_path(_remote_url(repo), root=root)
 
 
 def _default_branch(repo: CorpusRepoTarget) -> str:
@@ -662,13 +584,6 @@ def _order_refs(refs: tuple[str, ...], *, default_branch: str) -> tuple[str, ...
     return tuple(ordered)
 
 
-def _cached_bare(repo: CorpusRepoTarget, *, root: Path) -> Path:
-    bare = _bare_path(repo, root=root)
-    if not (bare / "HEAD").is_file():
-        raise GitCorpusError("repository is not in the local corpus", category="not_found")
-    return bare
-
-
 def _first_blob(payload: bytes) -> str | None:
     """Return the first blob in ``git cat-file --batch`` output; missing objects are skipped."""
     cursor = 0
@@ -684,17 +599,18 @@ def _first_blob(payload: bytes) -> str | None:
     return None
 
 
-def _auth_header_for_url(url: str, auth_header: str | None, *, host: str | None) -> str | None:
+def _check_auth_url(url: str, auth_header: str | None) -> None:
+    """Refuse a token with a non-https remote (ssh, scp, http, ...).
+
+    ``file://`` and plain paths pass: ``RepoCache`` never sends them the token.
+    """
     if auth_header is None:
-        return None
+        return
     parsed = urlparse(url)
-    if parsed.scheme == "https" and parsed.netloc:
-        return auth_header if host is not None and parsed.hostname == host.lower() else None
-    if parsed.scheme == "file":
-        return None
+    if (parsed.scheme == "https" and parsed.netloc) or parsed.scheme == "file":
+        return
     if parsed.scheme or url.startswith("git@"):
         raise GitCorpusError("authenticated Git corpus sync requires an HTTPS clone_url")
-    return None
 
 
 def _parse_grep_output(
@@ -771,9 +687,5 @@ def _metadata_archived(data: dict[str, object]) -> bool:
     return bool(data.get("archived", False))
 
 
-def _require_https_remote(auth_url: str | None) -> None:
-    if auth_url is None:
-        raise GitCorpusError("authenticated Git operation missing HTTPS remote URL")
-    parsed = urlparse(auth_url)
-    if parsed.scheme != "https" or not parsed.netloc:
-        raise GitCorpusError("authenticated Git corpus sync requires an HTTPS clone_url")
+def _by_name(row: CorpusRepoResult) -> tuple[str, str]:
+    return (row.repo, row.path)

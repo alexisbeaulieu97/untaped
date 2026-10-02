@@ -20,12 +20,11 @@ from untaped.capabilities.workspace.domain.naming import (
     assign_dirs,
     branch_for,
     repo_identity,
-    repo_key,
     validate_workspace_name,
 )
 from untaped.capabilities.workspace.domain.records import RepoOutcome
 from untaped.capabilities.workspace.errors import WorkspaceError
-from untaped.sdk import UntapedError, UsageError, bounded_map, note_failure, q
+from untaped.sdk import UntapedError, UsageError, bounded_map, cache_key, note_failure, q
 
 if TYPE_CHECKING:
     from untaped.capabilities.workspace.application.ports import (
@@ -241,11 +240,11 @@ def _partition(
     Both are keyed by request position; a repo requested twice counts once.
     """
     rows: dict[int, RepoOutcome] = {}
-    present = {repo_key(spec.url): spec for spec in record.repos}
+    present = {cache_key(spec.url): spec for spec in record.repos}
     fresh: list[tuple[int, RepoArg, ResolvedRepo]] = []
     seen: set[tuple[str, ...]] = set()
     for index, (arg, repo) in enumerate(zip(repos, resolved, strict=True)):
-        key = repo_key(repo.url)
+        key = cache_key(repo.url)
         if key in seen:
             continue
         seen.add(key)

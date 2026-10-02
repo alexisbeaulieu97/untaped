@@ -6,16 +6,14 @@ stdin closed, ssh ``BatchMode`` unless the user configured ssh, C locale so
 stderr parsing is locale-independent, inherited repository-redirecting
 variables dropped), transient scoped HTTP auth via a private include file,
 timeout and exit-status mapping to :class:`GitCommandError` with the auth
-header redacted, a bounded retry for transient transport failures, the
-work-tree root lookup, and deterministic cache paths confined under a
-managed root.
+header redacted, a bounded retry for transient transport failures, and the
+work-tree root lookup.
 """
 
 from __future__ import annotations
 
 import base64
 import functools
-import hashlib
 import logging
 import os
 import re
@@ -172,30 +170,6 @@ def safe_path_segment(value: str) -> str:
     """Map ``value`` to one filesystem-safe path segment (never ``.``/``..``)."""
     safe = _sanitize(value)
     return "_" if safe in {"", ".", ".."} else safe
-
-
-def safe_cache_path(url: str, *, root: Path) -> Path:
-    """Return the deterministic bare-cache path for ``url`` under ``root``.
-
-    The layout is ``<root>/<host>/<name>-<sha256(url)[:16]>.git``; each
-    component is a single sanitized segment, so the path never leaves
-    ``root``. Changing this function relocates existing caches.
-    """
-    parsed = urlparse(url)
-    if parsed.scheme and parsed.path:
-        base_name = Path(parsed.path.rstrip("/")).name
-        host = parsed.netloc or "local"
-    elif ":" in url and "@" in url.split(":", maxsplit=1)[0]:
-        host_part, _, path_part = url.partition(":")
-        host = host_part.rsplit("@", maxsplit=1)[-1]
-        base_name = Path(path_part.rstrip("/")).name
-    else:
-        host = "local"
-        base_name = Path(url.rstrip("/")).name
-    name = base_name.removesuffix(".git") if base_name else "repository"
-    digest = hashlib.sha256(url.encode()).hexdigest()[:16]
-    # The digest suffix already keeps the leaf a single safe segment.
-    return root.expanduser() / safe_path_segment(host) / f"{_sanitize(name)}-{digest}.git"
 
 
 @contextmanager

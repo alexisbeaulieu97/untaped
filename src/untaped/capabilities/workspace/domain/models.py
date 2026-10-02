@@ -102,7 +102,7 @@ class CachedRepo:
     """A bare repo cache found under the cache dir."""
 
     key: tuple[str, ...]
-    """Its path under the cache dir, a :func:`repo_key`: ``(host, [owner, ...] name.git)``."""
+    """Its path under the cache dir, a ``cache_key``: ``(host, [owner, ...] name.git)``."""
     origin: str | None
     """Its ``remote.origin.url``; ``None`` when unreadable."""
 
