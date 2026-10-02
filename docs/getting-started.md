@@ -100,7 +100,7 @@ untaped profile current
 
 ## First command in each capability
 
-Each capability's guide has its full workflow:
+Each capability's guide shows its main workflows and links its full reference:
 [workspace](../packages/untaped-workspace/README.md), [github](../packages/untaped-github/README.md),
 [jira](../packages/untaped-jira/README.md), [awx](../packages/untaped-awx/README.md),
 [ansible](../packages/untaped-ansible/README.md) and [recipe](../packages/untaped-recipe/README.md).

@@ -326,15 +326,8 @@ capability may refine it, such as `awx.scm`).
 | `interrupted` | Ctrl-C | 130 |
 
 The category alone selects the exit code and retryability, so the two never
-disagree. A failure keeps its attribution when code replaces it or turns it
-into a row. `ConfigError` means local setup; an invalid input file or value is
-`invalid` (exit 1).
-
-Only `unavailable` is retryable. With `--format json`, `yaml` or `pipe` (or
-`UNTAPED_DIAGNOSTICS=json`), stderr reports each failure as a JSON line with
-its `category`, `system`, `retryable`, `hint` and `exit_code`; failed rows of
-outcome records carry the same fields in their `error`. See
-[stderr diagnostics](#stderr-diagnostics).
+disagree; only `unavailable` is retryable. Machine-readable failures carry
+both: see [stderr diagnostics](#stderr-diagnostics).
 
 ### Precedence
 

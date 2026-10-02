@@ -13,6 +13,13 @@ up, then writes. Recipes edit plain directories; they never commit, push or
 run shell steps. Pack hooks are Python that runs as the user, with full file
 access, whenever a plan is computed.
 
+## Setup
+
+`uv` must be on `PATH`: hooks run in each pack's own environment through
+`uv run`, and scaffolding locks packs with `uv lock`. Without it, a run that
+needs a hook exits 4. Recipes come from installed packs, so `untaped recipe
+list` is empty until the user installs one.
+
 ## Commands
 
 | Task | Command | Use when |

@@ -65,8 +65,8 @@ warns on stderr and exits 0.
 
 ## Before you run
 
-`run` has no preview. List the selection with `untaped workspace status NAME`
-and get the user's approval before a command that rewrites history or pushes.
+`run` has no preview; follow [Pitfalls](../SKILL.md#pitfalls) before a
+command that rewrites history or pushes.
 
 ## Failures
 
