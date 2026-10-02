@@ -150,7 +150,7 @@ untaped github repos list --org acme --format raw --columns repo
 
 A table fits the terminal by narrowing its widest columns (a cell that does
 not fit ends in `…`), and table output that does not go to a terminal is not
-wrapped. `--columns ?` lists every column and marks the defaults with `*`;
+wrapped. `--columns '?'` lists every column and marks the defaults with `*`;
 `--columns +url` adds a column, `--columns=-url` removes one, and
 `--columns name,url` shows exactly those.
 

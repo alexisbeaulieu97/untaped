@@ -145,7 +145,12 @@ SPEC = CapabilitySpec(
         SkillAsset(
             name="untaped-acme",
             source=Path(__file__).parent / "skills" / "untaped-acme",
-            description="Use the Acme capability from the unified untaped CLI.",
+            # SKILL.md's frontmatter `description` repeats this string exactly.
+            description=(
+                "Operates Acme through the `untaped acme` command (greeting, identifier"
+                " import). Use when the user wants the Acme greeting or to import"
+                " identifiers, or mentions Acme."
+            ),
         ),
     ),
 )
@@ -593,7 +598,7 @@ of this section is guidance, and no test checks the description's length or
 voice. The content rule: a skill documents behaviour and judgement, not what
 the CLI prints. Say only what the agent cannot learn from the installed CLI,
 and make the risky paths hard to get wrong.
-`--help` and `--columns ?` answer flags and fields; the skill says which
+`--help` and `--columns '?'` answer flags and fields; the skill says which
 commands form a workflow, which order is safe, what the output means and what
 to do next.
 

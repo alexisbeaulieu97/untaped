@@ -78,8 +78,9 @@ them. For two installs of different major versions, see
   (`untaped COMMAND --help`).
 - Exit codes, failure categories and systems:
   [exit codes](./docs/scripting.md#exit-codes).
-- The `--format pipe` envelope, record kinds and their documented fields, and
-  the `--format json` and `yaml` records, which have the same fields:
+- The `--format pipe` envelope, record kinds and their fields (as
+  `--format json` or `--columns '?'` show them), and the `--format json` and
+  `yaml` records, which have the same fields:
   [output and pipes](./docs/scripting.md#output-and-pipes).
 - JSON stderr diagnostics:
   [stderr diagnostics](./docs/scripting.md#stderr-diagnostics).

@@ -2,7 +2,7 @@
 
 Every row is a record with an absolute `target_path`: the workspace
 directory for `workspace.workspace`, the repo directory for the others.
-`--columns ?` on `list` or `status` lists the fields of a table.
+`--columns '?'` on `list` or `status` lists the fields of a table.
 
 ## Record kinds
 

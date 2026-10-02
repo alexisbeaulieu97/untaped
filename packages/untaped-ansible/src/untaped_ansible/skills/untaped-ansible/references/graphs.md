@@ -7,7 +7,7 @@ input, tree output, graph JSON, skipped files.
 
 `deps` rows (`ansible.dependency`) and `impact` rows (`ansible.dependent`):
 
-`--columns ?` lists the fields. What they do not say:
+`--columns '?'` lists the fields. What they do not say:
 
 - `declared_ref` and `declared_in` are verbatim from the edge that reached the
   repo; `unresolved` is the declared name of a dependency that names no

@@ -31,7 +31,6 @@ REGENERATE = "uv run python scripts/gen_config_reference.py"
 
 _LINK_BODY = r"\[[^\]]*\]\(([^)\s]+)\)"
 _LINK = re.compile(r"(?<!!)" + _LINK_BODY)
-_ANY_LINK = re.compile(r"!?" + _LINK_BODY)
 _BARE_INSTALL = re.compile(r"\binstall\b.*?['\"]?untaped-[a-z]")
 _FENCE = re.compile(r"^(```|~~~).*?^\1", re.MULTILINE | re.DOTALL)
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*$", re.MULTILINE)
@@ -126,11 +125,51 @@ def test_repository_urls_resolve(path: Path) -> None:
     assert broken == []
 
 
+_LINK_TARGETS = (
+    # Inline links and images, with an optional title: [x](target "title").
+    re.compile(r"!?\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+[^)]*)?\)"),
+    # Reference-style definitions: [x]: target "title".
+    re.compile(r"^ {0,3}\[[^\]]+\]:\s*<?([^\s>]+)>?", re.MULTILINE),
+    # HTML anchors and images.
+    re.compile(r"<(?:a|img)\b[^>]*?\b(?:href|src)\s*=\s*[\"']([^\"']*)[\"']", re.IGNORECASE),
+)
+
+
+def _relative_targets(text: str) -> list[str]:
+    """Link and image targets in Markdown prose that are not absolute URLs."""
+    targets = [t for pattern in _LINK_TARGETS for t in pattern.findall(text)]
+    return [t for t in targets if "://" not in t]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "[x](docs/a.md)",
+        "![x](logo.png)",
+        "[x](#anchor)",
+        '[x](docs/a.md "title")',
+        "[x]: docs/a.md",
+        '[x]: <docs/a.md> "title"',
+        '<a href="docs/a.md">x</a>',
+        "<img alt='x' src='logo.png'>",
+    ],
+)
+def test_relative_targets_finds_every_link_form(text: str) -> None:
+    assert _relative_targets(text) != []
+
+
+def test_relative_targets_skips_absolute_urls() -> None:
+    text = (
+        '[x](https://e.com/a "t")\n[y]: https://e.com/b\n'
+        '<a href="https://e.com/c">c</a> <img src="https://e.com/d.png">'
+    )
+    assert _relative_targets(text) == []
+
+
 def test_package_readmes_link_absolutely() -> None:
     """PyPI cannot resolve a relative or in-page link or an image in a package README."""
     for readme in _package_readmes():
-        relative = [t for t in _ANY_LINK.findall(_prose(readme)) if "://" not in t]
-        assert relative == [], readme
+        assert _relative_targets(_prose(readme)) == [], readme
 
 
 def test_every_workspace_member_has_a_readme() -> None:

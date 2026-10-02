@@ -11,8 +11,9 @@ The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packa
 and its references
 ([reading](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-jira/src/untaped_jira/skills/untaped-jira/references/reading.md),
 [writes](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-jira/src/untaped_jira/skills/untaped-jira/references/writes.md))
-hold the per-command detail; `--help` and `--columns ?` hold the options and
-fields.
+hold the per-command detail; `--help` lists the options, and
+[`--columns '?'`](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#output-records) lists a command's fields after it runs (use it on a read
+command, or add `--dry-run` to a write).
 
 ## Set up
 

@@ -6,9 +6,11 @@
 - Every field of a workflow node (``spec.nodes``) is named in
   ``references/specs.md``, and its field tables name only node fields.
 - ``references/test-results.md``'s field tables name only fields of an
-  ``awx.test_result`` row or a temporary copy's row. The references do not
-  have to name every field: ``untaped awx schema AwxTestSuite`` and
-  ``--columns ?`` list those.
+  ``awx.test_result`` row or a temporary copy's row, and every backticked
+  identifier in its prose is such a field, a suite field, a value the code
+  defines, or a listed AWX or Ansible word. The references do not have to
+  name every field: ``untaped awx schema AwxTestSuite`` and
+  ``--columns '?'`` list those.
 """
 
 from __future__ import annotations
@@ -16,14 +18,16 @@ from __future__ import annotations
 import re
 import warnings
 from pathlib import Path
+from typing import get_args
 
 import pytest
 
+from untaped.sdk import ErrorCategory, OutputFormat
 from untaped_awx import SPEC
 from untaped_awx.application.suites.loader import LoadTestSuite
 from untaped_awx.application.suites.resolver import ResolveCasePayload
 from untaped_awx.domain.outcomes import TemporaryCopyOutcome
-from untaped_awx.domain.suite import CaseResult, Suite
+from untaped_awx.domain.suite import CaseResult, CaseStatus, Change, NodeStatus, Suite
 from untaped_awx.domain.workflow_graph import WorkflowNodeSpec
 from untaped_awx.infrastructure.catalog import AwxResourceCatalog
 from untaped_awx.infrastructure.specs import (
@@ -119,13 +123,17 @@ def test_the_specs_reference_field_tables_name_only_node_fields() -> None:
     assert documented - _node_schema_keys() == set()
 
 
-def _result_keys() -> set[str]:
+def _all_result_keys() -> set[str]:
     """Every field of a test result row, as serialized (``failure.summary``, not ``message``)."""
     schema = CaseResult.model_json_schema(mode="serialization", by_alias=True)
     models = [schema, *schema.get("$defs", {}).values()]
-    keys = {key for model in models for key in model.get("properties", {})}
+    return {key for model in models for key in model.get("properties", {})}
+
+
+def _result_keys() -> set[str]:
+    """The result row fields a field table may name."""
     # ``expectations`` entries are documented as a list, not a field table.
-    return keys - {"check", "expected", "actual", "passed"}
+    return _all_result_keys() - {"check", "expected", "actual", "passed"}
 
 
 def _copy_keys() -> set[str]:
@@ -144,3 +152,38 @@ def test_the_results_reference_field_tables_name_only_result_fields() -> None:
 
     assert documented
     assert documented - _result_keys() - _copy_keys() == set()
+
+
+_PROSE_WORDS = frozenset({
+    # Values the code holds as plain strings: error systems and copy actions.
+    "awx", "git", "local", "untaped", "planned", "deleted",
+    # A stderr diagnostic field, a check's unread ``actual``, and JSON literals.
+    "exit_code", "unknown", "null", "true",
+    # AWX API and Ansible words the reference explains rows with.
+    "allow_override", "ask_scm_branch_on_launch", "identifier", "dark",
+    "pending", "waiting", "project_update", "inventory_update",
+    "ignore_errors", "rescue",
+})  # fmt: skip
+"""Backticked words in the results reference that name no row field or code value."""
+
+
+def _suite_keys() -> set[str]:
+    schema = Suite.model_json_schema()
+    models = [schema, *schema.get("$defs", {}).values()]
+    return {key for model in models for key in model.get("properties", {})}
+
+
+def _code_values() -> set[str]:
+    """Values the code defines that the reference names: categories, formats, statuses."""
+    literals = (OutputFormat, CaseStatus, Change, NodeStatus)
+    return {c.value for c in ErrorCategory} | {v for t in literals for v in get_args(t)}
+
+
+def test_the_results_reference_prose_names_only_known_fields() -> None:
+    """A renamed or removed field cannot linger in the prose: every identifier is known."""
+    prose = re.sub(r"^```.*?^```", "", _results_reference(), flags=re.MULTILINE | re.DOTALL)
+    named = set(re.findall(r"`([a-z][a-z0-9_]*)`", prose))
+    known = _all_result_keys() | _copy_keys() | _suite_keys() | _code_values() | _PROSE_WORDS
+
+    assert named
+    assert named - known == set()
