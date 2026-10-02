@@ -17,7 +17,7 @@ from untaped.capabilities.awx.cli.context import AwxContext
 from untaped.testing import CliInvoker
 
 if TYPE_CHECKING:  # pragma: no cover — pytest --import-mode=importlib hides 'tests'
-    from tests.conftest import FakeAap
+    from awx.conftest import FakeAap
 else:
     FakeAap = object  # type: ignore[assignment,misc]
 

@@ -11,9 +11,9 @@ import httpx
 import pytest
 import respx
 
-from tests.conftest import first_party_candidates
 from untaped.bootstrap import build_root_app
 from untaped.capabilities.github.cli import app
+from untaped.capabilities.registry import ProviderCandidate
 from untaped.testing import CliInvoker, CliResult, invoke_cli
 
 SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
@@ -241,9 +241,11 @@ def test_exit_code_matrix(
 @pytest.mark.parametrize(
     "old", [["-w"], ["--sync"], ["--no-sync"], ["--archived"], ["--archived", "yes"]]
 )
-def test_sweep_old_flag_spellings_are_gone(old: list[str]) -> None:
+def test_sweep_old_flag_spellings_are_gone(
+    first_party_candidates: tuple[ProviderCandidate, ...], old: list[str]
+) -> None:
     result = invoke_cli(
-        build_root_app(candidates=first_party_candidates()),
+        build_root_app(candidates=first_party_candidates),
         ["github", "sweep", "--org", "acme", "--grep", "x", *old],
     )
 

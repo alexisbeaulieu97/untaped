@@ -13,7 +13,6 @@ from typing import Any, ClassVar
 
 import pytest
 
-from tests.conftest import NO_DEFAULT_COLUMNS
 from untaped.sdk import OutcomeRecord, emit
 
 
@@ -40,7 +39,7 @@ def test_a_wide_collection_without_default_columns_is_flagged(
     emit([_Wide(a="x", action="created")], fmt="json")
     flagged = list(table_default_violations)
     table_default_violations.clear()  # handled here: do not fail this test
-    assert flagged == [f"untaped.capabilities.example.domain._Wide{NO_DEFAULT_COLUMNS}"]
+    assert flagged == ["untaped.capabilities.example.domain._Wide::no-default-columns"]
 
 
 @pytest.mark.parametrize(

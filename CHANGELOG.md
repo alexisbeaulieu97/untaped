@@ -11,6 +11,8 @@
     no longer limited to a closed verb list.
   - **New:** `untaped.testing.check_conventions(NAME)` runs the convention
     checks for any capability, plugins included.
+  - **New (SDK):** `untaped.testing.plugin` gives a plugin's own tests the
+    hermetic environment untaped's tests use.
   - **New:** `report_row_errors` reports each failed row's error and hint.
   - **New (SDK):** `UiContext.pick_many` opens an inline two-pane picker: fuzzy
     search with multi-select on the left, per-item settings on the right

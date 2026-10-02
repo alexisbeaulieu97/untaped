@@ -42,3 +42,8 @@ def test_testing_reexports_prompt_backend() -> None:
     prompts = importlib.import_module("untaped.prompts")
 
     assert testing.PromptBackend is prompts.PromptBackend
+
+
+def test_the_hermetic_plugin_is_importable() -> None:
+    plugin = importlib.import_module("untaped.testing.plugin")
+    assert hasattr(plugin, "_hermetic_environment")

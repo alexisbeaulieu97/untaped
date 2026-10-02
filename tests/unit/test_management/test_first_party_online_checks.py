@@ -11,8 +11,8 @@ import pytest
 import respx
 
 from test_management.support import write_config
-from tests.conftest import first_party_candidates
 from untaped import bootstrap
+from untaped.capabilities.registry import ProviderCandidate
 from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -31,8 +31,10 @@ profiles:
 """
 
 
-def _online_rows(*args: str) -> dict[str, dict[str, Any]]:
-    root = bootstrap.build_root_app(candidates=first_party_candidates())
+def _online_rows(
+    candidates: tuple[ProviderCandidate, ...], *args: str
+) -> dict[str, dict[str, Any]]:
+    root = bootstrap.build_root_app(candidates=candidates)
     result = CliInvoker().invoke(root.meta, ["doctor", "--online", "--format", "json", *args])
     assert result.stdout, result.output
     return {row["check"]: row for row in json.loads(result.stdout)}
@@ -53,22 +55,26 @@ def _mock_services(mock: respx.MockRouter, *, github_status: int = 200) -> None:
     )
 
 
-def test_each_configured_service_is_contacted(_isolated_config: Path) -> None:
+def test_each_configured_service_is_contacted(
+    _isolated_config: Path, first_party_candidates: tuple[ProviderCandidate, ...]
+) -> None:
     write_config(_isolated_config, _CONFIG)
     with respx.mock(assert_all_called=True) as mock:
         _mock_services(mock)
-        rows = _online_rows()
+        rows = _online_rows(first_party_candidates)
     assert rows["awx.api"]["status"] == "pass"
     assert rows["awx.api"]["detail"] == "authenticated as admin"
     assert rows["github.api"]["detail"] == "authenticated as octocat"
     assert rows["jira.api"]["detail"] == "authenticated as alexis"
 
 
-def test_a_rejected_token_names_the_fix(_isolated_config: Path) -> None:
+def test_a_rejected_token_names_the_fix(
+    _isolated_config: Path, first_party_candidates: tuple[ProviderCandidate, ...]
+) -> None:
     write_config(_isolated_config, _CONFIG)
     with respx.mock(assert_all_called=False) as mock:
         _mock_services(mock, github_status=401)
-        rows = _online_rows()
+        rows = _online_rows(first_party_candidates)
     row = rows["github.api"]
     assert row["status"] == "fail"
     assert row["detail"].endswith("; run `untaped config set github.token --prompt`")

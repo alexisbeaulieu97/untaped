@@ -28,7 +28,6 @@ import pytest
 
 import untaped.capabilities.registry as registry
 from test_capabilities.capharness import Provider, make_candidate, make_shell, make_spec
-from tests.conftest import first_party_candidates
 from untaped.capabilities.registry import (
     ProviderCandidate,
     ProviderRef,
@@ -37,11 +36,20 @@ from untaped.capabilities.registry import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-FIRST_PARTY = {candidate.name: candidate for candidate in first_party_candidates()}
 
 
-def test_first_party_commit_carries_its_entry_point() -> None:
-    result = compose(make_shell(), [FIRST_PARTY["github"]])
+@pytest.fixture(scope="module")
+def first_party(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> dict[str, ProviderCandidate]:
+    """Every first-party candidate by name."""
+    return {candidate.name: candidate for candidate in first_party_candidates}
+
+
+def test_first_party_commit_carries_its_entry_point(
+    first_party: dict[str, ProviderCandidate],
+) -> None:
+    result = compose(make_shell(), [first_party["github"]])
     (registered,) = result.capabilities
     assert registered.provider_ref == ProviderRef(
         distribution="untaped", entry_point="untaped.capabilities.github:provider"
@@ -49,14 +57,16 @@ def test_first_party_commit_carries_its_entry_point() -> None:
     assert result.quarantine == ()
 
 
-def test_first_party_version_is_the_product_version() -> None:
+def test_first_party_version_is_the_product_version(
+    first_party: dict[str, ProviderCandidate],
+) -> None:
     try:
         installed = importlib_metadata.version("untaped")
     except importlib_metadata.PackageNotFoundError:
         pytest.skip("untaped distribution metadata is not installed")
     declared = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert installed == declared["project"]["version"]
-    assert FIRST_PARTY["jira"].distribution_version == installed
+    assert first_party["jira"].distribution_version == installed
 
 
 @pytest.mark.parametrize(

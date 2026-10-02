@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from tests.conftest import first_party_candidates
 from untaped.bootstrap import build_root_app
+from untaped.capabilities.registry import ProviderCandidate
 from untaped.testing import invoke_cli
 
 pytestmark = pytest.mark.integration
@@ -24,15 +24,19 @@ pytestmark = pytest.mark.integration
         ["awx", "job-templates", "apply", "deploy.yml"],
     ],
 )
-def test_old_spellings_are_usage_errors(old: list[str]) -> None:
-    result = invoke_cli(build_root_app(candidates=first_party_candidates()), old)
+def test_old_spellings_are_usage_errors(
+    first_party_candidates: tuple[ProviderCandidate, ...], old: list[str]
+) -> None:
+    result = invoke_cli(build_root_app(candidates=first_party_candidates), old)
 
     assert result.exit_code == 2, result.output
     assert "deprecated" not in result.stderr
 
 
-def test_help_lists_only_the_current_spellings() -> None:
-    root = build_root_app(candidates=first_party_candidates())
+def test_help_lists_only_the_current_spellings(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
+    root = build_root_app(candidates=first_party_candidates)
 
     awx_help = invoke_cli(root, ["awx", "--help"]).stdout
     inventories_help = invoke_cli(root, ["awx", "inventories", "--help"]).stdout
@@ -46,9 +50,9 @@ def test_help_lists_only_the_current_spellings() -> None:
     assert " export " in templates_help
 
 
-def test_ping_options_are_keyword_only() -> None:
-    result = invoke_cli(
-        build_root_app(candidates=first_party_candidates()), ["awx", "ping", "json"]
-    )
+def test_ping_options_are_keyword_only(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
+    result = invoke_cli(build_root_app(candidates=first_party_candidates), ["awx", "ping", "json"])
 
     assert result.exit_code == 2, result.output

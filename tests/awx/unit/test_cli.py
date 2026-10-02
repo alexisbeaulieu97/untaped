@@ -7,9 +7,9 @@ import httpx
 import pytest
 import respx
 
-from tests.conftest import first_party_candidates
 from untaped import bootstrap
 from untaped.capabilities.awx.cli import app
+from untaped.capabilities.registry import ProviderCandidate
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, CliResult
 
@@ -72,6 +72,7 @@ def test_ping_uses_configured_api_prefix(
 
 
 def test_ping_ignores_invalid_sibling_section(
+    first_party_candidates: tuple[ProviderCandidate, ...],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -100,7 +101,7 @@ def test_ping_ignores_invalid_sibling_section(
                 200, json={"version": "4.5.0", "active_node": "controller-1"}
             )
         )
-        root = bootstrap.build_root_app(candidates=first_party_candidates())
+        root = bootstrap.build_root_app(candidates=first_party_candidates)
         result = CliInvoker().invoke(
             root.meta, ["awx", "ping", "--format", "raw", "--columns", "version"]
         )

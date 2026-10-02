@@ -18,7 +18,6 @@ import pytest
 import respx
 import yaml
 
-from tests.conftest import first_party_candidates
 from untaped.bootstrap import build_root_app
 from untaped.capabilities.ansible.application.refresh_git_index import RefreshResult
 from untaped.capabilities.ansible.cli import app, refresh
@@ -31,6 +30,7 @@ from untaped.capabilities.ansible.domain.payloads import (
     SourceRepoMetadata,
 )
 from untaped.capabilities.ansible.infrastructure import SqliteDependencyIndex
+from untaped.capabilities.registry import ProviderCandidate
 from untaped.sdk import ui_context
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, CliResult, invoke_cli
@@ -2470,11 +2470,13 @@ def test_local_checkout_keeps_its_own_declarations_over_the_cached_default_branc
 
 
 @pytest.mark.parametrize("flag", ["--upstream", "--downstream", "--both"])
-def test_old_direction_flags_are_gone(tmp_path: Path, monkeypatch, flag: str) -> None:
+def test_old_direction_flags_are_gone(
+    first_party_candidates: tuple[ProviderCandidate, ...], tmp_path: Path, monkeypatch, flag: str
+) -> None:
     _seed(tmp_path, "source:platform", _edge())
     _use_config(tmp_path, monkeypatch, _PLATFORM)
     result = invoke_cli(
-        build_root_app(candidates=first_party_candidates()),
+        build_root_app(candidates=first_party_candidates),
         ["ansible", "graph", "acme/site", "--source", "platform", flag],
     )
     assert result.exit_code == 2

@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 from cyclopts import App
 
-from tests.conftest import first_party_candidates
 from untaped import bootstrap
 from untaped.capabilities.recipe.cli import app
 from untaped.capabilities.recipe.cli.common import library_root
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
+from untaped.capabilities.registry import ProviderCandidate
 from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("isolate_config")
@@ -98,8 +98,10 @@ def test_recipe_verbs_stay_at_the_top_and_nouns_group_the_rest() -> None:
         pytest.param(["apply", "r.yml", ".", "--interactive"], id="apply-interactive"),
     ],
 )
-def test_old_spellings_are_usage_errors_without_aliases(argv: list[str]) -> None:
-    root = bootstrap.build_root_app(candidates=first_party_candidates())
+def test_old_spellings_are_usage_errors_without_aliases(
+    first_party_candidates: tuple[ProviderCandidate, ...], argv: list[str]
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
 
     result = CliInvoker().invoke(root, ["recipe", *argv])
 

@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import GitCall
 from untaped.sdk import (
     ErrorCategory,
     GitCommandError,
@@ -21,6 +20,9 @@ from untaped.sdk import (
     list_caches,
     scoped_auth_header,
 )
+
+#: One ``RepoCache`` git call seen by ``spy_run_git``: subcommand, auth header, auth URL.
+type GitCall = tuple[str, str | None, str | None]
 
 
 class _CacheError(UntapedError):

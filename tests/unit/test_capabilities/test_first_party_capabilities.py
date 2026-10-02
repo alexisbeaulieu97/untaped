@@ -12,17 +12,25 @@ from pathlib import Path
 import pytest
 from cyclopts import App
 
-from tests.conftest import first_party_candidates
-from tests.unit.conftest import first_party_specs
 from untaped import bootstrap
-from untaped.capabilities.registry import CapabilitySpec
+from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, provider_candidate
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-CANDIDATES = {candidate.name: candidate for candidate in first_party_candidates()}
-SPECS = {spec.name: spec for spec in first_party_specs()}
-FIRST_PARTY = tuple(SPECS)
+FIRST_PARTY = ("ansible", "awx", "github", "jira", "recipe", "workspace")
+
+
+@pytest.fixture(scope="module")
+def candidates(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> dict[str, ProviderCandidate]:
+    return {candidate.name: candidate for candidate in first_party_candidates}
+
+
+@pytest.fixture(scope="module")
+def specs(first_party_specs: tuple[CapabilitySpec, ...]) -> dict[str, CapabilitySpec]:
+    return {spec.name: spec for spec in first_party_specs}
 
 
 @pytest.fixture(autouse=True)
@@ -47,9 +55,17 @@ def test_the_only_console_script_is_the_unified_shell() -> None:
     assert data["project"]["scripts"] == {"untaped": "untaped.__main__:main"}
 
 
-def test_every_first_party_capability_is_an_entry_point_listed_ready_in_name_order() -> None:
+def test_the_fixtures_hold_exactly_the_first_party_capabilities(
+    candidates: dict[str, ProviderCandidate], specs: dict[str, CapabilitySpec]
+) -> None:
+    assert tuple(candidates) == tuple(specs) == FIRST_PARTY
+
+
+def test_every_first_party_capability_is_an_entry_point_listed_ready_in_name_order(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
     # The suite's one explicit list of the first-party capabilities.
-    root = bootstrap.build_root_app(candidates=first_party_candidates())
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
     listed = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])
     assert listed.exit_code == 0, listed.output
     assert [
@@ -61,15 +77,19 @@ def test_every_first_party_capability_is_an_entry_point_listed_ready_in_name_ord
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
-def test_the_entry_point_provider_returns_the_package_spec(name: str) -> None:
+def test_the_entry_point_provider_returns_the_package_spec(
+    candidates: dict[str, ProviderCandidate], name: str
+) -> None:
     package = import_module(f"untaped.capabilities.{name}")
-    assert CANDIDATES[name].target == f"untaped.capabilities.{name}:provider"
+    assert candidates[name].target == f"untaped.capabilities.{name}:provider"
     assert package.provider() is package.SPEC
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
-def test_first_party_spec_ships_a_lazy_app_and_one_skill(name: str) -> None:
-    spec = SPECS[name]
+def test_first_party_spec_ships_a_lazy_app_and_one_skill(
+    specs: dict[str, CapabilitySpec], name: str
+) -> None:
+    spec = specs[name]
     assert spec.config_section == name
     assert spec.help
     assert isinstance(spec.app_factory(), App)
@@ -79,16 +99,20 @@ def test_first_party_spec_ships_a_lazy_app_and_one_skill(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
-def test_first_party_mounts_under_the_unified_root(name: str) -> None:
-    top = _invoke(SPECS[name], "--help")
+def test_first_party_mounts_under_the_unified_root(
+    specs: dict[str, CapabilitySpec], name: str
+) -> None:
+    top = _invoke(specs[name], "--help")
     assert name in top
-    own = _invoke(SPECS[name], name, "--help")
+    own = _invoke(specs[name], name, "--help")
     assert f"untaped-{name}" not in own
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
-def test_first_party_profile_fields_are_configurable_and_state_is_not(name: str) -> None:
-    spec = SPECS[name]
+def test_first_party_profile_fields_are_configurable_and_state_is_not(
+    specs: dict[str, CapabilitySpec], name: str
+) -> None:
+    spec = specs[name]
     stdout = _invoke(spec, "config", "list", "--format", "raw", "--columns", "key")
     keys = set(stdout.splitlines())
     for field in spec.profile_model.model_fields:
@@ -97,11 +121,13 @@ def test_first_party_profile_fields_are_configurable_and_state_is_not(name: str)
         assert f"{name}.{field}" not in keys
 
 
-def test_profile_scoped_capability_setting_resolves(_isolate: Path) -> None:
+def test_profile_scoped_capability_setting_resolves(
+    _isolate: Path, specs: dict[str, CapabilitySpec]
+) -> None:
     _isolate.write_text(
         "profiles:\n  default:\n    jira:\n      base_url: https://jira.example.com\n",
         encoding="utf-8",
     )
     get_settings.cache_clear()
-    stdout = _invoke(SPECS["jira"], "config", "get", "jira.base_url")
+    stdout = _invoke(specs["jira"], "config", "get", "jira.base_url")
     assert stdout.strip() == "https://jira.example.com"

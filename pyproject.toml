@@ -106,6 +106,7 @@ files = [
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
+pythonpath = ["scripts", "tests/unit"]
 addopts = [
     "-ra",
     "--strict-markers",
