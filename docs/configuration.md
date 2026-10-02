@@ -33,8 +33,9 @@ on-disk format; a file without it is format 1, the current format, and untaped
 never adds or removes the key. A file with a newer format, or a
 `format_version` that is not a positive integer, is refused on read and on
 write (exit 4): upgrade untaped instead of letting an older release misread
-it. `config edit` refuses to open a newer-format file, but opens one with an
-invalid `format_version` so you can fix it.
+it. `config edit` refuses to open while `config.yml` or `state.yml` has a
+newer format, but opens a config with an invalid `format_version` so you can
+fix it.
 
 - Within a major, a core-owned key may be added only if an older reader
   ignoring it is safe.

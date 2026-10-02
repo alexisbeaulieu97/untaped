@@ -256,9 +256,10 @@ class FormatVersionError(ConfigError):
 class NewerFormatError(FormatVersionError):
     """A file stamped with a ``format_version`` newer than :data:`FORMAT_VERSION`."""
 
-    def __init__(self, message: str, *, version: int) -> None:
+    def __init__(self, message: str, *, version: int, path: Path) -> None:
         super().__init__(message)
         self.version = version
+        self.path = path
 
 
 def _check_format(raw: dict[str, Any], path: Path) -> None:
@@ -274,6 +275,7 @@ def _check_format(raw: dict[str, Any], path: Path) -> None:
             f"{path} was written by a newer untaped (format {value}; "
             f"this release reads format {FORMAT_VERSION}); upgrade untaped",
             version=value,
+            path=path,
         )
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from untaped.cli import report_errors
@@ -15,7 +16,9 @@ from untaped.settings import (
     FORMAT_VERSION,
     NewerFormatError,
     check_config_text,
+    load_config_yaml,
     resolve_config_path,
+    resolve_state_path,
     validate_config_file,
 )
 from untaped.ui import ui_context
@@ -35,7 +38,8 @@ def run_config_editor() -> None:
         path = resolve_config_path()
         original = read_config_text(path)
         if original is not None:
-            _refuse_a_newer_format(original, path)
+            _refuse_a_newer_format(lambda: check_config_text(original, path))
+        _refuse_a_newer_format(lambda: load_config_yaml(resolve_state_path()))
         workdir = Path(tempfile.mkdtemp(prefix="untaped-config-edit-"))
         draft = workdir / path.name
         edited_by_user = False
@@ -52,6 +56,8 @@ def run_config_editor() -> None:
             try:
                 validate_config_file(draft)
             except NewerFormatError as exc:
+                if exc.path != draft:
+                    raise  # state.yml, not the edit: keep its own message and path
                 raise ConfigError(
                     f"format_version {exc.version} is newer than this release supports "
                     f"(format {FORMAT_VERSION})",
@@ -83,10 +89,10 @@ def run_config_editor() -> None:
         ui_context(strict=False).message("success", f"config saved and validated (config: {path})")
 
 
-def _refuse_a_newer_format(text: str, path: Path) -> None:
-    """Never open a config file a newer untaped wrote; leave any other error to repair."""
+def _refuse_a_newer_format(check: Callable[[], object]) -> None:
+    """Never edit beside a file a newer untaped wrote; leave any other error to repair."""
     try:
-        check_config_text(text, path)
+        check()
     except NewerFormatError:
         raise
     except ConfigError:
