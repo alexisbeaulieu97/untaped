@@ -33,7 +33,8 @@ The source tree is the implementation reference:
   beside the core wheel and runs its tests outside the repository.
 - `docs/` contains user guides and executable policy files.
 - `tests/` verifies public behavior and release contracts: `tests/repo/` holds
-  the cross-package tests, `tests/<name>/` a capability's tests.
+  the cross-package tests and `tests/skills/` the skill checks; a capability's
+  tests live in `packages/untaped-<name>/tests/<name>/`.
 
 A capability owns its directory end to end:
 
@@ -82,7 +83,11 @@ keeps that attribution when replaced or turned into a row; see
   `SPEC`, and add `<name> = "untaped_<name>:provider"` under
   `[project.entry-points."untaped.capabilities"]` in its `pyproject.toml`
   (copy a sibling package's; add the `untaped[<name>]` extra to core and a
-  `[tool.uv.sources]` entry, then `uv sync`). Start its
+  `[tool.uv.sources]` entry, then `uv sync`). Also add the package to the
+  root `pyproject.toml` lists (mypy `files`/`mypy_path`, pytest
+  `testpaths`/`pythonpath`, coverage `source`, `[tool.uv.sources]`), to
+  `EXPECTED_MEMBERS` in `tests/repo/test_workspace.py` and to `FIRST_PARTY` in
+  `tests/repo/support.py`; the tests catch omissions. Start its
   skill from [`docs/templates/SKILL.md`](docs/templates/SKILL.md) (which holds
   the skill rules) and its user guide at `docs/<name>/usage.md`, linked from
   `docs/README.md`. Set
