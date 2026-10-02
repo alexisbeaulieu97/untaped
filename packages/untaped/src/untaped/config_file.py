@@ -25,6 +25,7 @@ from pydantic import SecretStr
 from untaped.errors import ConfigError
 from untaped.fs import atomic_write, file_lock
 from untaped.settings import (
+    FormatVersionError,
     check_state_section_name,
     get_settings,
     load_config_yaml,
@@ -66,6 +67,8 @@ def _render(data: dict[str, Any], target: Path) -> str:
     try:
         original = target.read_text(encoding="utf-8")
         before = load_config_yaml(target)
+    except FormatVersionError:
+        raise
     except OSError, UnicodeDecodeError, ConfigError:
         return plain_dump(data)
     return render_preserving(original, before, data)

@@ -268,8 +268,9 @@ def _permissions_row(shell: ApplicationSpec) -> dict[str, object]:
 def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[str, object]:
     """Warn about keys no settings model reads: typos in profiles, stray top-level keys.
 
-    Only ``active`` and ``profiles`` are read at the top level, so anything
-    else there (a pre-8.0 state section, ``log_level``) is flagged, not moved.
+    Only ``active``, ``profiles`` and ``format_version`` are read at the top
+    level, so anything else there (a pre-8.0 state section, ``log_level``) is
+    flagged, not moved.
     """
     title = "unknown config keys"
     model = get_profile_settings_model()

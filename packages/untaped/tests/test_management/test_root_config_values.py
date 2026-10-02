@@ -23,6 +23,7 @@ from test_management.support import (
 from untaped import bootstrap
 from untaped.config_file import read_config_dict
 from untaped.management.config import build_root_config_app
+from untaped.settings import FORMAT_VERSION
 from untaped.testing import CliInvoker, CliResult, ScriptedPromptBackend, invoke_cli
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -132,6 +133,18 @@ def test_get_key_of_invalid_section_names_the_problem(_isolated_config: Path) ->
     result = _invoke(["get", "jira.timeout"])
     assert result.exit_code == 4  # the stored config is invalid
     assert "jira.timeout" in result.stderr
+
+
+@pytest.mark.parametrize("flags", [[], ["--all-profiles"]])
+def test_list_ignores_the_format_version_stamp(_isolated_config: Path, flags: list[str]) -> None:
+    body = "profiles:\n  default:\n    jira:\n      base_url: https://j\n"
+    write_config(_isolated_config, body)
+    unstamped = _invoke(["list", *flags, "--format", "json"])
+    write_config(_isolated_config, f"format_version: {FORMAT_VERSION}\n{body}")
+    stamped = _invoke(["list", *flags, "--format", "json"])
+    assert stamped.exit_code == 0, stamped.output
+    assert "format_version" not in stamped.stdout
+    assert json.loads(stamped.stdout) == json.loads(unstamped.stdout)
 
 
 def test_list_shows_raw_values_and_warns_for_invalid_section(_isolated_config: Path) -> None:

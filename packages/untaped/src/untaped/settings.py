@@ -30,6 +30,11 @@ DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
 STATE_FILE_NAME = "state.yml"
 STATE_PATH_ENV = "UNTAPED_STATE"
 
+#: On-disk format of ``config.yml`` and ``state.yml``. A file without
+#: ``format_version`` is format 1. Bump only in a major release, when an older
+#: reader ignoring a new core key would change behaviour (see docs/configuration.md).
+FORMAT_VERSION = 1
+
 
 class HttpSettings(BaseModel):
     """Cross-cutting HTTP behaviour for a tool's HTTP client (per-profile)."""
@@ -216,14 +221,62 @@ def load_config_yaml(yaml_file: Path) -> dict[str, Any]:
         raise ConfigError(f"could not parse {yaml_file}: {exc}") from exc
     except OSError as exc:
         raise ConfigError(f"could not read {yaml_file}: {exc.strerror or exc}") from exc
+    return _checked_root(raw, yaml_file)
+
+
+def check_config_text(text: str, path: Path) -> None:
+    """Raise :class:`ConfigError` when ``text`` is not a readable config document.
+
+    Applies the same root and ``format_version`` checks as :func:`load_config_yaml`
+    to text already read from ``path``.
+    """
+    try:
+        raw = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"could not parse {path}: {exc}") from exc
+    _checked_root(raw, path)
+
+
+def _checked_root(raw: Any, path: Path) -> dict[str, Any]:
     if raw is None:
         return {}
     if not isinstance(raw, dict):
         raise ConfigError(
-            f"invalid config in {yaml_file}: the document root must be a mapping, "
+            f"invalid config in {path}: the document root must be a mapping, "
             f"got {type(raw).__name__}"
         )
+    _check_format(raw, path)
     return raw
+
+
+class FormatVersionError(ConfigError):
+    """A config or state file this release must not read or write."""
+
+
+class NewerFormatError(FormatVersionError):
+    """A file stamped with a ``format_version`` newer than :data:`FORMAT_VERSION`."""
+
+    def __init__(self, message: str, *, version: int, path: Path) -> None:
+        super().__init__(message)
+        self.version = version
+        self.path = path
+
+
+def _check_format(raw: dict[str, Any], path: Path) -> None:
+    if "format_version" not in raw:
+        return
+    value = raw["format_version"]
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise FormatVersionError(  # invalid stamps get the same write-path protection
+            f"invalid format_version in {path}: expected a positive integer, got {value!r}"
+        )
+    if value > FORMAT_VERSION:
+        raise NewerFormatError(
+            f"{path} was written by a newer untaped (format {value}; "
+            f"this release reads format {FORMAT_VERSION}); upgrade untaped",
+            version=value,
+            path=path,
+        )
 
 
 def splice_registered_state(
@@ -263,8 +316,10 @@ def splice_registered_state(
             effective[section] = state_data
 
 
-#: ``config.yml``'s own top-level keys, never usable as capability state names.
-RESERVED_STATE_SECTIONS = frozenset({"active", "profiles"})
+#: Top-level keys of ``config.yml`` and ``state.yml`` that core owns (the
+#: profile layout and the on-disk format stamp), never usable as capability
+#: state names.
+RESERVED_STATE_SECTIONS = frozenset({"active", "profiles", "format_version"})
 
 
 def check_state_section_name(section: str) -> None:
