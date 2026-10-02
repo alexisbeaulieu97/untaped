@@ -6,13 +6,16 @@
   - **Breaking:** `pip install untaped` installs only the core and SDK; install
     `untaped[all]` for every first-party capability, or `untaped[<name>]` for
     one. First-party code moves to top-level packages (`untaped_github.api`, …).
+    Upgrading keeps the original spec, so reinstall with the extra:
+    `uv tool install --reinstall 'untaped[all]'` or
+    `pip install -U 'untaped[all]'`.
   - **Breaking:** the SDK module is now `untaped.sdk`; `untaped.capability_api`
     is gone. `CAPABILITY_API_VERSION` and `get_core_settings` are removed.
   - **Breaking:** `PromptInterruptedError` is no longer a `ConfigError`;
     Ctrl-C at a prompt now always exits 130.
   - **New:** bare `untaped --help` and `untaped capabilities` print how to
     install capabilities when none are installed.
-  - **Breaking (plugin authors):** `check_conventions(NAME)` runs an
+  - **Breaking (SDK):** `check_conventions(NAME)` runs an
     `import-boundary` rule: a plugin may import core only through
     `untaped.sdk`, and another capability only through its `api` module with
     a declared dependency on its distribution.
