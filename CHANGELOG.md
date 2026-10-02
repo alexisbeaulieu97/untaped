@@ -21,8 +21,6 @@
     `cache_origin`, `repo_url_parts` and `scoped_auth_header`: one bare-repo
     cache building block for any capability.
   - **Breaking:** `safe_cache_path` is removed; use `cache_path`.
-  - **Changed:** pushing a `vX.Y.Z` tag releases to PyPI; a manual run of the
-    Release workflow rehearses on TestPyPI. See docs/release.md.
 - Ansible
   - **Breaking:** `graph --upstream/--downstream/--both` are removed; use
     `--direction up|down|both`. Graph sources re-index once.
