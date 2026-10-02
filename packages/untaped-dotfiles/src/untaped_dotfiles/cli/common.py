@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import platform
-from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,7 +10,7 @@ from typing import Annotated
 
 from cyclopts import Parameter
 
-from untaped.sdk import ConfigError, UsageError, get_config_section, not_found, q
+from untaped.sdk import ConfigError, get_config_section
 from untaped_dotfiles.application import (
     Applier,
     Catalog,
@@ -19,8 +18,7 @@ from untaped_dotfiles.application import (
     Inventory,
     StatusReader,
 )
-from untaped_dotfiles.domain.models import ItemChoice, Machine, OsName
-from untaped_dotfiles.errors import ItemNotFoundError
+from untaped_dotfiles.domain.models import Machine, OsName
 from untaped_dotfiles.infrastructure import FilesystemPlacer, LocalGitRepos, StateDotfilesStore
 from untaped_dotfiles.settings import DotfilesSettings
 
@@ -66,7 +64,7 @@ def detect_os(settings: DotfilesSettings) -> OsName:
 class Services:
     """Every use case, wired to the real adapters for the active profile."""
 
-    settings: DotfilesSettings
+    repos_dir: Path
     home: Path
     store: StateDotfilesStore
     git: LocalGitRepos
@@ -76,10 +74,6 @@ class Services:
     reader: StatusReader
     applier: Applier
     catalog: Catalog
-
-    @property
-    def repos_dir(self) -> Path:
-        return self.settings.repos_dir.expanduser().resolve()
 
 
 def services() -> Services:
@@ -95,7 +89,7 @@ def services() -> Services:
     inventory = Inventory(store, git, home=home, machine=machine)
     evaluator = Evaluator(store, git, placer, inventory)
     return Services(
-        settings=settings,
+        repos_dir=settings.repos_dir.expanduser().resolve(),
         home=home,
         store=store,
         git=git,
@@ -106,28 +100,3 @@ def services() -> Services:
         applier=Applier(store, git, placer, inventory, evaluator, now=utc_now),
         catalog=Catalog(store, inventory),
     )
-
-
-def enabled_choices(
-    store: StateDotfilesStore, names: Sequence[str] | None, *, repo: str | None
-) -> list[ItemChoice]:
-    """The enabled items named (every enabled item without names), in state order."""
-    choices = [c for c in store.items() if repo is None or c.repo == repo]
-    if not names:
-        return choices
-    picked: list[ItemChoice] = []
-    for name in names:
-        matches = [c for c in choices if c.name == name]
-        if not matches:
-            raise ItemNotFoundError(
-                not_found("enabled item", name, known=sorted({c.name for c in choices})),
-                hint=f"run `untaped dotfiles enable {name}`",
-            )
-        if len(matches) > 1:
-            raise UsageError(
-                f"item {q(name)} is enabled from several repos: "
-                + ", ".join(c.repo for c in matches),
-                hint="pass --repo NAME to pick one",
-            )
-        picked.extend(matches)
-    return picked

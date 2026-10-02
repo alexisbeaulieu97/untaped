@@ -9,15 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import (
-    GitCommandError,
-    UsageError,
-    attribution,
-    git_toplevel,
-    not_found,
-    q,
-    run_git,
-)
+from untaped.sdk import UsageError, git_toplevel, not_found, q
 from untaped_dotfiles.domain.manifest import DEFAULT_MANIFEST
 from untaped_dotfiles.domain.models import RepoRecord
 from untaped_dotfiles.domain.records import RepoOutcome
@@ -91,13 +83,16 @@ class SubscribeRepo:
             raise DotfilesError(
                 f"{local} is not the root of its git work tree ({root})", category="invalid"
             )
+        branch = ref or self._git.branch(root)
+        if branch is None:
+            raise GitError(f"{root} has no branch checked out; pass --ref")
         return RepoRecord(
             name=name,
-            url=self._origin(root) or str(root),
+            url=self._git.origin_url(root) or str(root),
             path=str(root),
             managed=False,
             manifest=manifest or DEFAULT_MANIFEST,
-            ref=ref or self._branch(root),
+            ref=branch,
             subscribed_at=self._now(),
         )
 
@@ -119,28 +114,6 @@ class SubscribeRepo:
             ref=branch,
             subscribed_at=self._now(),
         )
-
-    @staticmethod
-    def _branch(root: Path) -> str:
-        try:
-            result = run_git(
-                ["symbolic-ref", "--short", "HEAD"], cwd=root, timeout=30, capture=True
-            )
-        except GitCommandError as exc:
-            raise GitError(
-                f"{root} has no branch checked out; pass --ref", **attribution(exc)
-            ) from exc
-        return result.text.strip()
-
-    @staticmethod
-    def _origin(root: Path) -> str | None:
-        try:
-            result = run_git(
-                ["remote", "get-url", "origin"], cwd=root, timeout=30, capture=True, check=False
-            )
-        except GitCommandError:
-            return None
-        return result.text.strip() or None if result.returncode == 0 else None
 
 
 class UnsubscribeRepo:

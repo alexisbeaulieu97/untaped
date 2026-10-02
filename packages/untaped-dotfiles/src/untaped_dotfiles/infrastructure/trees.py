@@ -12,13 +12,17 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from untaped.sdk import GitCommandError, attribution, run_git
+from untaped.sdk import GitCommandError, GitResult, attribution, run_git
 from untaped_dotfiles.domain.models import TreeFile
 from untaped_dotfiles.errors import DotfilesError, GitError
 
 
 class GitRefTree:
-    """The files of ``ref`` in the repo at ``path``, read with ``git ls-tree`` and ``git show``."""
+    """The files of ``ref`` in the repo at ``path``.
+
+    One ``git ls-tree`` lists the whole tree on first use; ``git show`` reads
+    a file.
+    """
 
     def __init__(self, path: Path, ref: str, *, git: str = "git", timeout: float = 60.0) -> None:
         self._path = path
@@ -26,77 +30,59 @@ class GitRefTree:
         self._git = git
         self._timeout = timeout
         self._commit: str | None = None
+        self._entries: dict[str, TreeFile | None] | None = None
+        """Every path in the tree: a :class:`TreeFile` for a blob, ``None`` for a directory."""
 
     @property
     def commit(self) -> str | None:
         if self._commit is None:
-            self._commit = self._run(["rev-parse", "--verify", f"{self._ref}^{{commit}}"]).strip()
+            self._commit = self._run(
+                ["rev-parse", "--verify", f"{self._ref}^{{commit}}"]
+            ).text.strip()
         return self._commit
 
-    def _run(self, args: list[str], *, check: bool = True) -> str:
+    def _run(self, args: list[str], *, what: str | None = None) -> GitResult:
         try:
-            result = run_git(
-                args,
-                cwd=self._path,
-                git=self._git,
-                timeout=self._timeout,
-                capture=True,
-                check=check,
-            )
+            return run_git(args, cwd=self._path, git=self._git, timeout=self._timeout, capture=True)
         except GitCommandError as exc:
             raise GitError(
-                f"git {args[0]} failed in {self._path}: {exc}", **attribution(exc)
+                f"{what or f'git {args[0]}'} failed in {self._path}: {exc}", **attribution(exc)
             ) from exc
-        return result.text
 
-    def _type(self, path: str) -> str | None:
-        try:
-            result = run_git(
-                ["cat-file", "-t", f"{self._ref}:{path}"],
-                cwd=self._path,
-                git=self._git,
-                timeout=self._timeout,
-                capture=True,
-                check=False,
-            )
-        except GitCommandError as exc:
-            raise GitError(
-                f"git cat-file failed in {self._path}: {exc}", **attribution(exc)
-            ) from exc
-        return result.text.strip() if result.returncode == 0 else None
+    def _tree(self) -> dict[str, TreeFile | None]:
+        if self._entries is None:
+            out = self._run(["ls-tree", "-r", "-t", "-z", self._ref]).text
+            entries: dict[str, TreeFile | None] = {}
+            for entry in out.split("\0"):
+                if not entry:
+                    continue
+                meta, _, name = entry.partition("\t")
+                mode, kind, _sha = meta.split()
+                if kind == "blob":
+                    entries[name] = TreeFile(path=name, executable=mode == "100755")
+                elif kind == "tree":
+                    entries[name] = None
+            self._entries = entries
+        return self._entries
 
     def exists(self, path: str) -> bool:
-        return self._type(path) in ("blob", "tree")
+        return path in self._tree()
 
     def is_dir(self, path: str) -> bool:
-        return self._type(path) == "tree"
+        entries = self._tree()
+        return path in entries and entries[path] is None
 
     def files(self, path: str) -> list[TreeFile]:
-        out = self._run(["ls-tree", "-r", "-z", self._ref, "--", path])
-        found: list[TreeFile] = []
-        for entry in out.split("\0"):
-            if not entry:
-                continue
-            meta, _, name = entry.partition("\t")
-            mode, kind, _sha = meta.split()
-            if kind == "blob":
-                found.append(TreeFile(path=name, executable=mode == "100755"))
-        return sorted(found, key=lambda f: f.path)
+        prefix = path.rstrip("/") + "/"
+        return sorted(
+            (entry for name, entry in self._tree().items() if entry and name.startswith(prefix)),
+            key=lambda f: f.path,
+        )
 
     def read(self, path: str) -> bytes:
-        try:
-            result = run_git(
-                ["show", f"{self._ref}:{path}"],
-                cwd=self._path,
-                git=self._git,
-                timeout=self._timeout,
-                capture=True,
-            )
-        except GitCommandError as exc:
-            raise GitError(
-                f"could not read {path} at {self._ref} in {self._path}: {exc}", **attribution(exc)
-            ) from exc
-        return result.stdout
+        return self._run(
+            ["show", f"{self._ref}:{path}"], what=f"reading {path} at {self._ref}"
+        ).stdout
 
 
 class WorkingTree:

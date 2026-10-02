@@ -13,17 +13,13 @@ from pathlib import Path
 from typing import Any
 
 from untaped.sdk import StateCollection, atomic_write, file_lock
-from untaped_dotfiles.domain.models import AppliedRecord, ItemChoice, RepoRecord
+from untaped_dotfiles.domain.models import AppliedRecord, ItemChoice, RepoRecord, item_id
 from untaped_dotfiles.domain.records import StatusSummary
 from untaped_dotfiles.errors import DotfilesError
 
 _BUSY_HINT = "wait for the other untaped dotfiles command to finish, then retry"
 STATUS_FILE = "status.json"
 ATTENTION_FILE = "attention"
-
-
-def item_id(repo: str, name: str) -> str:
-    return f"{repo}/{name}"
 
 
 class StateDotfilesStore:

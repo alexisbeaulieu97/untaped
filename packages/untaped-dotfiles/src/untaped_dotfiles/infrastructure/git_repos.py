@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from untaped.sdk import GitCommandError, attribution, run_git
+from untaped.sdk import GitCommandError, GitResult, attribution, run_git
 from untaped_dotfiles.errors import GitError
 from untaped_dotfiles.infrastructure.trees import GitRefTree, WorkingTree
 
@@ -50,11 +50,31 @@ class LocalGitRepos:
             ) from exc
         return result.text
 
+    def _result(self, path: Path, args: list[str]) -> GitResult:
+        """Run git without failing on a non-zero exit (the caller reads the code)."""
+        try:
+            return run_git(
+                args, cwd=path, git=self._git, timeout=self._timeout, capture=True, check=False
+            )
+        except GitCommandError as exc:
+            raise GitError(f"git {args[0]} failed in {path}: {exc}", **attribution(exc)) from exc
+
     def clone(self, url: str, dest: Path, *, ref: str | None) -> str:
         dest.parent.mkdir(parents=True, exist_ok=True)
         args = ["clone", "--quiet", *(["--branch", ref] if ref else []), "--", url, str(dest)]
         self._run(None, args, timeout=self._slow_timeout, retry=True, what=f"clone of {url}")
-        return self._run(dest, ["symbolic-ref", "--short", "HEAD"]).strip()
+        branch = self.branch(dest)
+        if branch is None:  # ``--branch`` took a tag or a commit
+            raise GitError(f"{url} checked out no branch; pass a branch as --ref")
+        return branch
+
+    def branch(self, path: Path) -> str | None:
+        result = self._result(path, ["symbolic-ref", "--short", "HEAD"])
+        return result.text.strip() if result.returncode == 0 else None
+
+    def origin_url(self, path: Path) -> str | None:
+        result = self._result(path, ["remote", "get-url", "origin"])
+        return (result.text.strip() or None) if result.returncode == 0 else None
 
     def fetch(self, path: Path) -> None:
         self._run(
