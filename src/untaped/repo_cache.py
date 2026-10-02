@@ -40,14 +40,15 @@ _UNKNOWN = "_unknown"
 def repo_url_parts(url: str) -> tuple[str | None, list[str]]:
     """``(host, path segments with the last .git removed)`` of a URL, ``user@host:path`` or path.
 
-    A plain path or ``file://`` URL has no host.
+    The host is lowercased, as ``urlparse`` does. A plain path or ``file://``
+    URL has no host.
     """
     match = _SCP.match(url)
     if "://" in url:
         parsed = urlparse(url)
         host, path = parsed.hostname, parsed.path or ""
     elif match:
-        host, path = match.group("host"), match.group("path")
+        host, path = match.group("host").lower(), match.group("path")
     else:
         host, path = None, url
     segments = [s for s in path.replace("\\", "/").split("/") if s]
