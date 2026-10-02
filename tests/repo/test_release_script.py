@@ -536,6 +536,16 @@ def test_release_notes_are_the_versions_section(tmp_path: Path) -> None:
     assert release.release_notes(tmp_path / "CHANGELOG.md", "10.0.0") == "- Core\n  - **New:** x"
 
 
+def test_release_notes_keep_subsections(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "CHANGELOG.md",
+        "# Changelog\n\n## 1.2.3\n\n### Added\n\n- a\n\n### Changed\n\n- b\n\n## 1.2.2\n\n- old\n",
+    )
+    assert release.release_notes(tmp_path / "CHANGELOG.md", "1.2.3") == (
+        "### Added\n\n- a\n\n### Changed\n\n- b"
+    )
+
+
 @pytest.mark.parametrize(
     ("text", "message"),
     [
