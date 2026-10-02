@@ -112,7 +112,7 @@ variable shown.
 | `ansible.default_source` | string (optional) | unset | `UNTAPED_ANSIBLE__DEFAULT_SOURCE` | Saved source `deps`, `impact`, `find` and `graph` use when no `--source` or inline selector is given. |
 | `ansible.ref_scan_default` | `all` \| `default_branch` | `all` | `UNTAPED_ANSIBLE__REF_SCAN_DEFAULT` | Refs a source scans: `all` refs or each repo's default branch. |
 | `ansible.source_refresh_backend` | `auto` \| `graphql` \| `git` | `auto` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_BACKEND` | Ref probe backend for source refresh. |
-| `ansible.repo_cache_path` | path | `~/.untaped/ansible-repositories` | `UNTAPED_ANSIBLE__REPO_CACHE_PATH` | Git clone cache used by source refresh. |
+| `ansible.repo_cache_path` | path | `~/.untaped/ansible-cache` | `UNTAPED_ANSIBLE__REPO_CACHE_PATH` | Git clone cache used by source refresh. |
 | `ansible.git_clone_protocol` | `https` \| `ssh` | `https` | `UNTAPED_ANSIBLE__GIT_CLONE_PROTOCOL` | Protocol for source refresh clones. |
 | `ansible.git_fetch_depth` | integer | `1` | `UNTAPED_ANSIBLE__GIT_FETCH_DEPTH` | Git fetch depth for source refresh; `0` is full history. |
 | `ansible.git_fetch_concurrency` | integer | `8` | `UNTAPED_ANSIBLE__GIT_FETCH_CONCURRENCY` | Default `--parallel` for `source refresh` and `--refresh`. |

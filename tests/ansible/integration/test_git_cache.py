@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -12,6 +13,7 @@ from untaped.capabilities.ansible.infrastructure.git_cache import (
     GitCacheError,
     GitRepositoryCache,
 )
+from untaped.sdk import RepoCache
 
 pytestmark = [
     pytest.mark.integration,
@@ -74,7 +76,7 @@ def test_bare_git_cache_fetches_branch_updates_and_reads_files_without_checkout(
     _git(upstream, "branch", "-M", "main")
     url = f"file://{upstream}"
 
-    cache = GitRepositoryCache()
+    cache = GitRepositoryCache(auth_host=None)
     bare = cache.ensure_bare(url, cache_dir=tmp_path / "cache", auth_header=None)
     _fetch(cache, bare, "+refs/heads/main:refs/heads/main")
 
@@ -103,7 +105,7 @@ def test_bare_git_cache_peels_annotated_tags_for_file_reads(tmp_path: Path) -> N
     tag_object_sha = _git(upstream, "rev-parse", "refs/tags/v1")
     peeled_sha = _git(upstream, "rev-parse", "refs/tags/v1^{commit}")
 
-    cache = GitRepositoryCache()
+    cache = GitRepositoryCache(auth_host=None)
     bare = cache.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache", auth_header=None)
     _fetch(cache, bare, "+refs/tags/*:refs/tags/*")
 
@@ -130,7 +132,7 @@ def test_read_files_returns_only_existing_blobs_under_any_locale(
     _commit(upstream, "requirements.yml", "- src: acme/one\n", "one")
     sha = _commit(upstream, _REQS, "- src: acme/two\n", "two")
 
-    cache = GitRepositoryCache()
+    cache = GitRepositoryCache(auth_host=None)
     bare = cache.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache", auth_header=None)
     _fetch(cache, bare, "+refs/heads/*:refs/heads/*", blob_filter=blob_filter)
 
@@ -142,3 +144,80 @@ def test_read_files_returns_only_existing_blobs_under_any_locale(
     )
 
     assert files == {_REQS: "- src: acme/two\n", "requirements.yml": "- src: acme/one\n"}
+
+
+_MAIN = ["+refs/heads/main:refs/heads/main"]
+
+
+def _origin(tmp_path: Path) -> Path:
+    upstream = _upstream(tmp_path)
+    _commit(upstream, _REQS, "- src: acme/base\n", "1")
+    _git(upstream, "branch", "-M", "main")
+    return upstream
+
+
+def _rewrite_to(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, origin: Path, *urls: str) -> None:
+    """Point ``urls`` at the local ``origin`` through a global gitconfig (no network)."""
+    config = tmp_path / "gitconfig"
+    config.write_text(
+        f'[url "file://{origin}"]\n' + "".join(f"\tinsteadOf = {url}\n" for url in urls)
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+
+
+def _spy_headers(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str | None]]:
+    import untaped.repo_cache as repo_cache_module
+
+    headers: list[tuple[str, str | None]] = []
+    real = repo_cache_module.run_git
+
+    def spy(args: Any, **kwargs: Any) -> Any:
+        headers.append((args[0], kwargs.get("auth_header")))
+        return real(args, **kwargs)
+
+    monkeypatch.setattr(repo_cache_module, "run_git", spy)
+    return headers
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://gitlab.example/acme/app.git", None),
+        ("git@github.com:acme/app.git", None),
+        ("https://github.com/acme/app.git", "AUTH"),
+    ],
+)
+def test_a_token_goes_only_to_the_github_host(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, url: str, expected: str | None
+) -> None:
+    """Refresh against an origin on another host or over ssh sends no header (9.x sent it)."""
+    origin = _origin(tmp_path)
+    _rewrite_to(monkeypatch, tmp_path, origin, url)
+    headers = _spy_headers(monkeypatch)
+    cache = GitRepositoryCache(auth_host="github.com")
+
+    bare = cache.ensure_bare(url, cache_dir=tmp_path / "cache", auth_header="AUTH")
+    cache.fetch_refs(bare, refspecs=_MAIN, depth=1, blob_filter=False, auth_header="AUTH")
+    cache.read_files(bare, "refs/heads/main", [_REQS], auth_header="AUTH")
+
+    assert _git(bare, "rev-parse", "refs/heads/main")
+    sent = {name for name, header in headers if header is not None}
+    assert sent == (set() if expected is None else {"fetch", "ls-tree", "cat-file"})
+    assert {header for _, header in headers if header is not None} <= {expected}
+
+
+def test_the_cache_is_locked_while_fetching(tmp_path: Path) -> None:
+    origin = _origin(tmp_path)
+    git = GitRepositoryCache(auth_host=None)
+    bare = git.ensure_bare(f"file://{origin}", cache_dir=tmp_path / "cache", auth_header=None)
+    with RepoCache(bare, error=GitCacheError).locked():
+        busy = GitRepositoryCache(auth_host=None, lock_timeout=0)
+        with pytest.raises(GitCacheError, match="repo cache is busy"):
+            busy.fetch_refs(bare, refspecs=_MAIN, depth=0, blob_filter=False, auth_header=None)
+
+
+@pytest.mark.parametrize("url", ["https://github.com/acme/app.git", "git@github.com:acme/app.git"])
+def test_https_and_ssh_urls_share_one_cache_path(tmp_path: Path, url: str) -> None:
+    bare = GitRepositoryCache(auth_host=None).ensure_bare(url, cache_dir=tmp_path, auth_header=None)
+
+    assert bare == tmp_path.resolve() / "github.com" / "acme" / "app.git"
