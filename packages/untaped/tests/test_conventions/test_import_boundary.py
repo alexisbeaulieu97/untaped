@@ -7,6 +7,7 @@ distributions and their ``Requires-Dist``.
 
 from __future__ import annotations
 
+import importlib
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from textwrap import dedent
@@ -16,6 +17,7 @@ import pytest
 from test_conventions.support import Install
 from untaped.capabilities.registry import ProviderCandidate
 from untaped.conventions import capability_violations
+from untaped.testing import provider_candidate
 
 _INIT = """
     from __future__ import annotations
@@ -58,6 +60,7 @@ class Cap:
     dist: str = ""
     package: str = ""
     installed: bool = True
+    callable_target: bool = False
 
 
 def cap(
@@ -69,9 +72,23 @@ def cap(
     dist: str = "",
     package: str = "",
     installed: bool = True,
+    callable_target: bool = False,
 ) -> Cap:
-    """A capability; ``dist`` and ``package`` default to ``name``."""
-    return Cap(name, files or {}, tuple(requires), broken, dist or name, package or name, installed)
+    """A capability; ``dist`` and ``package`` default to ``name``.
+
+    ``callable_target`` discovers it through :func:`untaped.testing.provider_candidate`
+    (a callable target) instead of a ``module:provider`` string.
+    """
+    return Cap(
+        name,
+        files or {},
+        tuple(requires),
+        broken,
+        dist or name,
+        package or name,
+        installed,
+        callable_target,
+    )
 
 
 Boundary = Callable[..., Check]
@@ -93,6 +110,10 @@ def boundary(install: Install) -> Boundary:
             if c.installed:
                 files = {f"{prefix}/{k}": v for k, v in c.files.items()}
                 install({f"{prefix}/__init__.py": init, **files})
+            if c.callable_target:
+                spec = importlib.import_module(c.package).SPEC
+                candidates.append(provider_candidate(spec, distribution=c.dist))
+                continue
             candidates.append(
                 ProviderCandidate(
                     distribution=c.dist,
@@ -176,13 +197,36 @@ def test_another_capability_only_through_its_api(boundary: Boundary) -> None:
 def test_importing_the_api_module_by_name_is_allowed(boundary: Boundary) -> None:
     check = boundary(
         cap("other", files={"api.py": "x = 1\n"}),
+        cap("demo", files={"cli/__init__.py": "from other import api\n"}, requires=["other"]),
+    )
+    assert check("demo") == []
+
+
+def test_a_requirement_under_a_platform_marker_is_declared(boundary: Boundary) -> None:
+    check = boundary(
+        cap("other", files={"api.py": "x = 1\n"}),
         cap(
             "demo",
-            files={"cli/__init__.py": "from other import api\n"},
-            requires=["other>=1; extra == 'x'"],
+            files={"cli/__init__.py": "from other.api import x\n"},
+            requires=["other>=1; python_version >= '3' and sys_platform != 'nowhere'"],
         ),
     )
     assert check("demo") == []
+
+
+def test_a_requirement_guarded_by_an_extra_is_not_declared(boundary: Boundary) -> None:
+    check = boundary(
+        cap("other", files={"api.py": "x = 1\n"}),
+        cap(
+            "demo",
+            files={"cli/__init__.py": "from other.api import x\n"},
+            requires=["other; extra == 'x'"],
+        ),
+    )
+    assert check("demo") == [
+        "demo/cli/__init__.py:1::import-boundary::"
+        "imports other.api but its distribution does not depend on other's"
+    ]
 
 
 def test_an_api_import_needs_a_declared_dependency(boundary: Boundary) -> None:
@@ -226,4 +270,47 @@ def test_a_capability_nested_under_untaped_is_a_capability_not_core(boundary: Bo
     )
     assert check("demo") == [
         f"demo/cli/__init__.py:2::import-boundary::imports {package}.domain; use {package}.api"
+    ]
+
+
+def test_a_capability_given_as_a_callable_candidate_is_a_capability(boundary: Boundary) -> None:
+    check = boundary(
+        cap("other", files={"domain/__init__.py": "y = 1\n"}, callable_target=True),
+        cap("demo", files={"cli/__init__.py": "from other.domain import y\n"}, requires=["other"]),
+    )
+    assert check("demo") == [
+        "demo/cli/__init__.py:1::import-boundary::imports other.domain; use other.api"
+    ]
+
+
+def test_relative_imports_within_the_own_package_are_allowed(boundary: Boundary) -> None:
+    check = boundary(
+        cap(
+            "demo",
+            files={
+                "cli/__init__.py": "from . import helpers\nfrom ..domain import x\n",
+                "cli/helpers.py": "",
+                "domain/__init__.py": "x = 1\n",
+                "application/__init__.py": "from .ports import p\n",
+                "application/ports.py": "p = 1\n",
+            },
+        )
+    )
+    assert check("demo") == []
+
+
+def test_a_relative_import_into_a_sibling_capability_is_a_violation(boundary: Boundary) -> None:
+    parent = "suite"
+    check = boundary(
+        cap("other", package=f"{parent}.other", files={"domain/__init__.py": "y = 1\n"}),
+        cap(
+            "demo",
+            package=f"{parent}.demo",
+            files={"cli/__init__.py": "from ...other.domain import y\n"},
+            requires=["other"],
+        ),
+    )
+    assert check("demo") == [
+        f"demo/cli/__init__.py:1::import-boundary::imports {parent}.other.domain;"
+        f" use {parent}.other.api"
     ]
