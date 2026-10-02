@@ -148,41 +148,6 @@ even with `--yes`. See
 [confirmations and batches](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-awx/src/untaped_awx/skills/untaped-awx/references/resources.md#confirmations-and-batches)
 and [Exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes).
 
-## Optional disposable live-AAP smoke
-
-To try the write path safely, pick a disposable inventory and a harmless
-source on a configured controller, run a smoke test like this, and restore the
-exported files afterward:
-
-```bash
-untaped awx ping
-untaped awx inventories export Disposable --organization Default \
-  --out disposable-inventory.yml
-untaped awx inventory-sources export DisposableSource --inventory Disposable \
-  --inventory-organization Default --out disposable-source.yml
-
-untaped awx inventory-sources patch DisposableSource \
-  --inventory Disposable --inventory-organization Default \
-  --set update_cache_timeout=0 --dry-run
-untaped awx inventory-sources patch DisposableSource \
-  --inventory Disposable --inventory-organization Default \
-  --set update_cache_timeout=0 --yes
-untaped awx inventory-sources get DisposableSource \
-  --inventory Disposable --inventory-organization Default --format yaml
-
-untaped awx inventory-sources edit DisposableSource \
-  --inventory Disposable --inventory-organization Default --dry-run
-untaped awx inventory-sources sync DisposableSource \
-  --inventory Disposable --inventory-organization Default --follow
-
-untaped awx apply disposable-source.yml --yes
-untaped awx apply disposable-inventory.yml --yes
-```
-
-Confirm that the cache timeout changed, `update_on_launch` stayed unchanged,
-the no-op editor made no write, and the sync reached the expected terminal
-state. These steps are opt-in live writes against a disposable controller.
-
 ## See also
 
 - [Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md)

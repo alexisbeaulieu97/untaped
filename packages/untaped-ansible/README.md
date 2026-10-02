@@ -43,8 +43,9 @@ untaped config set ansible.default_source platform
 
 `ansible.default_source` is used by `deps`, `impact`, `find` and `graph`
 whenever you give neither `--source` nor an inline selector. With a source
-selected, every command reads the cached data and never touches GitHub; pass
-`--live` to read downstream dependencies from GitHub anyway.
+selected, every command reads the cached data and touches GitHub only with
+`--refresh`; `deps`, `find` and `graph` also take `--live` to read downstream
+dependencies from GitHub anyway.
 
 Scanned files, clone protocol, cache locations and refresh tuning are in the
 [configuration reference](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#ansible).
