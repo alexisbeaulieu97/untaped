@@ -13,7 +13,7 @@ from repo.support import FIRST_PARTY
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = REPO_ROOT / "packages"
-EXPECTED_MEMBERS = ["untaped"]  # Tasks 4 and 5 extend this list
+EXPECTED_MEMBERS = ["untaped", "untaped-jira"]  # Tasks 4 and 5 extend this list
 
 
 def _members() -> list[str]:
@@ -102,3 +102,22 @@ def test_the_installed_untaped_lists_every_first_party_capability() -> None:
     assert listed.returncode == 0, listed.stderr
     names = [row["name"] for row in json.loads(listed.stdout)]
     assert names == list(FIRST_PARTY)
+
+
+def test_capability_packages_declare_their_entry_point_and_pin_core() -> None:
+    core = tomllib.loads((PACKAGES / "untaped/pyproject.toml").read_text())["project"]
+    version = core["version"]
+    capabilities = sorted(PACKAGES.glob("untaped-*/pyproject.toml"))
+    for path in capabilities:
+        project = tomllib.loads(path.read_text())["project"]
+        name = project["name"].removeprefix("untaped-")
+        assert project["version"] == version
+        assert project["entry-points"]["untaped.capabilities"] == {name: f"untaped_{name}:provider"}
+        assert f"untaped=={version}" in project["dependencies"]
+        assert core["optional-dependencies"][name] == [f"untaped-{name}=={version}"]
+    assert sorted(core["optional-dependencies"]["all"]) == sorted(
+        f"untaped-{p.parent.name.removeprefix('untaped-')}=={version}" for p in capabilities
+    )
+    assert set(core["entry-points"]["untaped.capabilities"]).isdisjoint(
+        p.parent.name.removeprefix("untaped-") for p in capabilities
+    )
