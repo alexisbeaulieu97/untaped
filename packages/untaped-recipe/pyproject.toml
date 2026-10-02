@@ -1,13 +1,13 @@
 [project]
 name = "untaped-recipe"
-version = "10.0.0rc1"
+version = "10.0.0"
 description = "Recipe capability for untaped."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }]
 requires-python = ">=3.14"
-dependencies = ["jinja2>=3.1.6,<4", "tomlkit>=0.13,<1", "untaped==10.0.0rc1"]
+dependencies = ["jinja2>=3.1.6,<4", "tomlkit>=0.13,<1", "untaped==10.0.0"]
 
 [project.entry-points."untaped.capabilities"]
 recipe = "untaped_recipe:provider"

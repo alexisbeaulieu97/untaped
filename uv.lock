@@ -741,7 +741,7 @@ wheels = [
 
 [[package]]
 name = "untaped"
-version = "10.0.0rc1"
+version = "10.0.0"
 source = { editable = "packages/untaped" }
 dependencies = [
     { name = "cyclopts" },
@@ -815,7 +815,7 @@ provides-extras = ["all", "ansible", "awx", "github", "jira", "recipe", "workspa
 
 [[package]]
 name = "untaped-ansible"
-version = "10.0.0rc1"
+version = "10.0.0"
 source = { editable = "packages/untaped-ansible" }
 dependencies = [
     { name = "untaped" },
@@ -830,7 +830,7 @@ requires-dist = [
 
 [[package]]
 name = "untaped-awx"
-version = "10.0.0rc1"
+version = "10.0.0"
 source = { editable = "packages/untaped-awx" }
 dependencies = [
     { name = "jinja2" },
@@ -845,7 +845,7 @@ requires-dist = [
 
 [[package]]
 name = "untaped-github"
-version = "10.0.0rc1"
+version = "10.0.0"
 source = { editable = "packages/untaped-github" }
 dependencies = [
     { name = "untaped" },
@@ -856,7 +856,7 @@ requires-dist = [{ name = "untaped", editable = "packages/untaped" }]
 
 [[package]]
 name = "untaped-jira"
-version = "10.0.0rc1"
+version = "10.0.0"
 source = { editable = "packages/untaped-jira" }
 dependencies = [
     { name = "untaped" },
@@ -867,7 +867,7 @@ requires-dist = [{ name = "untaped", editable = "packages/untaped" }]
 
 [[package]]
 name = "untaped-recipe"
-version = "10.0.0rc1"
+version = "10.0.0"
 source = { editable = "packages/untaped-recipe" }
 dependencies = [
     { name = "jinja2" },
@@ -884,7 +884,7 @@ requires-dist = [
 
 [[package]]
 name = "untaped-workspace"
-version = "10.0.0rc1"
+version = "10.0.0"
 source = { editable = "packages/untaped-workspace" }
 dependencies = [
     { name = "untaped" },
