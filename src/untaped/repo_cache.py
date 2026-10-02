@@ -20,6 +20,7 @@ policy (what to fetch, what to prune) and its error mapping.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import time
 from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
@@ -34,6 +35,7 @@ from untaped.git import GitCommandError, GitResult, run_git, safe_path_segment
 _SCP = re.compile(r"^(?P<user>[^@]+)@(?P<host>[^:]+):(?P<path>.+)$")
 _ORIGIN_SECTION = re.compile(r'\[\s*(?i:remote)\s+"origin"\s*\]')
 _ESCAPES = {"n": "\n", "t": "\t", "b": "\b"}
+_SPACE = " \t\n\r"
 _UNKNOWN = "_unknown"
 
 
@@ -91,21 +93,23 @@ def list_caches(root: Path, *, skip: Collection[str] = ()) -> list[Path]:
 
 def _collect(directory: Path, skip: Collection[str], found: list[Path], *, top: bool) -> None:
     try:
-        entries = list(directory.iterdir())
+        with os.scandir(directory) as scan:
+            entries = list(scan)
     except OSError:
         return
     for entry in entries:
         if top and (entry.name.startswith(".") or entry.name in skip):
             continue
         try:
-            if entry.is_symlink() or not entry.is_dir():
+            if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
                 continue
         except OSError:
             continue
+        path = directory / entry.name
         if entry.name.endswith(".git"):
-            found.append(entry)
+            found.append(path)
         else:
-            _collect(entry, skip, found, top=False)
+            _collect(path, skip, found, top=False)
 
 
 def cache_origin(cache: Path) -> str | None:
@@ -115,12 +119,12 @@ def cache_origin(cache: Path) -> str | None:
     wins. ``None`` when the file is unreadable or has no origin URL.
     """
     try:
-        lines = (cache / "config").read_text(encoding="utf-8", errors="replace").splitlines()
+        text = (cache / "config").read_text(encoding="utf-8", errors="replace", newline="")
     except OSError:
         return None
     origin, in_origin = None, False
-    for line in lines:
-        stripped = line.strip()
+    for line in text.split("\n"):
+        stripped = line.strip(_SPACE)
         if stripped.startswith("["):
             in_origin = _ORIGIN_SECTION.match(stripped) is not None
             continue
@@ -135,14 +139,15 @@ def _config_value(raw: str) -> str:
 
     Quotes are removed and escapes decoded; a comment ends the value. Outside
     quotes, leading and trailing whitespace is dropped and each inner
-    whitespace character becomes a space.
+    whitespace character becomes a space. Whitespace is ASCII ``" \\t\\n\\r"``
+    only, as git's ``isspace``.
     """
     value = ""
     quoted = False
     spaces = 0
     chars = iter(raw)
     for char in chars:
-        if not quoted and char.isspace():
+        if not quoted and char in _SPACE:
             spaces += 1 if value else 0
             continue
         if not quoted and char in "#;":
@@ -169,15 +174,11 @@ def scoped_auth_header(url: str, auth_header: str | None, *, host: str | None) -
     return auth_header if parsed.hostname == host.lower() else None
 
 
-_UNREAD = object()
-
-
 class RepoCache:
     """One bare repository cache at ``path``; see the module docstring.
 
     It does not lock itself: callers hold :meth:`locked` around ``ensure`` and
-    ``fetch``. The origin is cached for auth scoping, so repoint it only
-    through :meth:`ensure`.
+    ``fetch``.
     """
 
     def __init__(
@@ -206,7 +207,6 @@ class RepoCache:
         self._lock_timeout = lock_timeout
         self._attempts = attempts
         self._sleep = sleep
-        self._origin: object = _UNREAD
 
     @property
     def path(self) -> Path:
@@ -244,14 +244,9 @@ class RepoCache:
             self.run(["init", "--bare", "--quiet", str(self._path)], cwd=self._path.parent)
         # ``config`` (not ``remote add``) so no default fetch refspec is written:
         # each capability's ref policy passes its own refspecs.
-        if cache_origin(self._path) != url:
+        if created or cache_origin(self._path) != url:
             self.run(["config", "--replace-all", "remote.origin.url", url])
-        self._origin = _UNREAD
         return created
-
-    def origin(self) -> str | None:
-        """The configured ``origin`` URL, or ``None``."""
-        return cache_origin(self._path)
 
     def run(
         self,
@@ -266,8 +261,12 @@ class RepoCache:
         locale_c: bool = True,
     ) -> GitResult:
         """Run ``git <args>`` in the cache (or ``cwd``) with host-scoped auth."""
-        origin = self._cached_origin()
-        header = scoped_auth_header(origin or "", self._auth_header, host=self._auth_host)
+        origin: str | None = None
+        header: str | None = None
+        if self._auth_header is not None and self._auth_host is not None:
+            # Read per call, so a repointed origin is never sent a stale header.
+            origin = cache_origin(self._path)
+            header = scoped_auth_header(origin or "", self._auth_header, host=self._auth_host)
         try:
             return run_git(
                 args,
@@ -322,8 +321,3 @@ class RepoCache:
         lines = [f"delete {ref}\n" for ref in refs]
         if lines:
             self.run(["update-ref", "--stdin"], stdin="".join(lines))
-
-    def _cached_origin(self) -> str | None:
-        if self._origin is _UNREAD:
-            self._origin = self.origin()
-        return self._origin if isinstance(self._origin, str) else None
