@@ -9,10 +9,9 @@ input, cache commands.
 
 ## Predicates
 
-- Content predicates run `git grep -I --extended-regexp`: POSIX extended
-  regexes whatever the user's `grep.patternType`. `a|b` alternates, `\(`
-  is a literal parenthesis, and Perl classes such as `\d` are unsupported
-  (use `[0-9]`). Binary files are skipped.
+- Content predicates run `git grep -I --extended-regexp` whatever the
+  user's `grep.patternType`; for the regex syntax see
+  [Pitfalls](../SKILL.md#pitfalls). Binary files are skipped.
 - `-i`, `-F` and `--word-regexp` apply to every `--grep` and `--not-grep`.
 - `--has-file GLOB` and `--lacks-file GLOB` test that a file exists or not.
   `--path SPEC` limits content predicates to a Git pathspec.
@@ -85,6 +84,8 @@ lists each kind's fields.
 - `github.repo` records from `repos list` are used as they are, with no
   per-repo API call, and their `pushed_at` enables the unchanged-repo skip.
   Other records and bare names are looked up.
+- Git fetches send the token only to the Git host of `github.base_url`; a
+  piped `clone_url` on another host is fetched without credentials.
 - Sweeps can chain: a `--format pipe` sweep feeds the next sweep's
   `--stdin`, narrowing the set at each step.
 
