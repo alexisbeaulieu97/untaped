@@ -8,11 +8,9 @@ options. Capabilities declare their own skill assets and doctor checks; the
 root aggregates them for the skills and doctor commands. Capabilities
 mount under `untaped <capability> ...`.
 
-External providers are discovered through the `untaped.capabilities` entry
-point group and validated against `untaped.capability_api` before they mount.
-Every capability, first-party ones included, registers through that
-entry-point group; a provider that fails validation is quarantined so the
-root can continue. Standalone per-capability executables and the retired
+Every capability, first-party ones included, registers through the
+`untaped.capabilities` entry-point group; a provider that fails validation is
+quarantined so the root can continue. Standalone per-capability executables and the retired
 standalone composition helpers are not part of the application contract.
 
 ## Related decisions

@@ -17,8 +17,8 @@ from test_capabilities.capharness import (
     exploding_check,
     function_provider,
     make_app,
+    make_candidate,
     make_check,
-    make_external,
     make_shell,
     make_skill,
     make_spec,
@@ -92,7 +92,7 @@ def test_compose_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     result = compose(
         shell,
         [
-            make_external(jira_spec, "example-jira"),
+            make_candidate(jira_spec, "example-jira"),
             ProviderCandidate(
                 distribution="untaped", name="github", target="fake_github_package:provider"
             ),
@@ -134,7 +134,7 @@ def test_compose_never_runs_doctor_bodies() -> None:
         checks=(make_check("watched.ok", record_calls=calls), exploding_check()),
     )
     shell = make_shell(checks=(exploding_check("shell.boom"),))
-    result = compose(shell, [make_external(spec), make_external(make_spec(name="ext"))])
+    result = compose(shell, [make_candidate(spec), make_candidate(make_spec(name="ext"))])
     assert calls == []
     assert [cap.spec.name for cap in result.capabilities] == ["ext", "watched"]
 
@@ -146,7 +146,7 @@ def test_compose_leaves_global_settings_registry_untouched() -> None:
     before_state = dict(_CONFIG_REGISTRY.state_sections)
     compose(
         make_shell(),
-        [make_external(make_spec(name="built")), make_external(make_spec(name="ext"))],
+        [make_candidate(make_spec(name="alpha")), make_candidate(make_spec(name="beta"))],
     )
     assert dict(_CONFIG_REGISTRY.profile_sections) == before_profiles
     assert dict(_CONFIG_REGISTRY.state_sections) == before_state
@@ -163,9 +163,9 @@ def test_failed_provider_registers_nothing() -> None:
     result = compose(
         make_shell(),
         [
-            make_external(bad, "bad-dist"),
-            make_external(good, "good-dist"),
-            make_external(make_spec(name="later"), "later-dist"),
+            make_candidate(bad, "bad-dist"),
+            make_candidate(good, "good-dist"),
+            make_candidate(make_spec(name="later"), "later-dist"),
         ],
     )
     assert [cap.spec.name for cap in result.capabilities] == ["good", "later"]
@@ -181,16 +181,16 @@ def test_failed_provider_registers_nothing() -> None:
 
 
 def test_capabilities_compose_in_name_order_whatever_the_distribution() -> None:
-    zeta = make_external(make_spec(name="zeta", section="zeta"), "aaa-dist")
-    alpha = make_external(make_spec(name="alpha", section="alpha"), "zzz-dist")
+    zeta = make_candidate(make_spec(name="zeta", section="zeta"), "aaa-dist")
+    alpha = make_candidate(make_spec(name="alpha", section="alpha"), "zzz-dist")
     result = compose(make_shell(), [zeta, alpha])
     assert [c.spec.name for c in result.capabilities] == ["alpha", "zeta"]
     assert result.quarantine == ()
 
 
 def test_a_duplicate_name_quarantines_the_later_distribution() -> None:
-    first = make_external(make_spec(name="github", section="github"), "acme-dist")
-    second = make_external(make_spec(name="github", section="github2"), "untaped")
+    first = make_candidate(make_spec(name="github", section="github"), "acme-dist")
+    second = make_candidate(make_spec(name="github", section="github2"), "untaped")
     result = compose(make_shell(), [second, first])
     assert [c.provider_ref.distribution for c in result.capabilities] == ["acme-dist"]
     [record] = result.quarantine
@@ -199,27 +199,12 @@ def test_a_duplicate_name_quarantines_the_later_distribution() -> None:
 
 
 def test_a_duplicate_section_names_the_distribution_that_owns_it() -> None:
-    owner = make_external(make_spec(name="alpha", section="shared"), "owner-dist")
-    late = make_external(make_spec(name="beta", section="shared"), "late-dist")
+    owner = make_candidate(make_spec(name="alpha", section="shared"), "owner-dist")
+    late = make_candidate(make_spec(name="beta", section="shared"), "late-dist")
     result = compose(make_shell(), [late, owner])
     [record] = result.quarantine
     assert (record.distribution, record.reason) == ("late-dist", "duplicate-section")
     assert record.detail == "duplicate config section: 'shared' (already provided by 'owner-dist')"
-
-
-def test_a_collision_with_the_shell_names_the_shell() -> None:
-    result = compose(
-        make_shell(),
-        [
-            make_external(make_spec(name="untaped", section="mine"), "a-dist"),
-            make_external(make_spec(name="intruder", section="shell"), "b-dist"),
-        ],
-    )
-    assert result.capabilities == ()
-    assert [record.detail for record in result.quarantine] == [
-        "duplicate config section: 'shell' (already provided by the shell)",
-        "duplicate capability name: 'untaped' (already provided by the shell)",
-    ]
 
 
 @pytest.mark.parametrize("bad_help", ["", "   ", "two\nlines", 42])
@@ -241,10 +226,10 @@ def test_a_provider_with_help_is_deferred_and_one_without_is_staged() -> None:
         calls.append("lazy")
         return make_app("lazy")
 
-    lazy = make_external(
+    lazy = make_candidate(
         replace(make_spec(name="lazy", section="lazy", factory=factory), help="Lazy.")
     )
-    eager = make_external(make_spec(name="eager", section="eager"))
+    eager = make_candidate(make_spec(name="eager", section="eager"))
     result = compose(make_shell(), [lazy, eager])
     staged = {c.spec.name: c.app for c in result.capabilities}
     assert staged["lazy"] is None

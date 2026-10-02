@@ -108,7 +108,7 @@ def make_shell(
 
 
 class Provider:
-    """Configurable external provider double."""
+    """Configurable provider double."""
 
     def __init__(
         self,
@@ -130,7 +130,7 @@ class Provider:
         return self._spec
 
 
-def make_external(
+def make_candidate(
     spec: CapabilitySpec,
     distribution: str = "example-dist",
     name: str | None = None,
