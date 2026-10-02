@@ -70,10 +70,41 @@ def origin(tmp_path: Path) -> Path:
         ("git@GitHub.com:acme/app", ("github.com", "acme", "app.git")),
         ("ssh://git@gitlab.example/grp/sub/app", ("gitlab.example", "grp", "sub", "app.git")),
         ("https://evil/../../tmp/pwn.git", ("evil", "_", "_", "tmp", "pwn.git")),
+        ("git@evil:../../../tmp/pwn.git", ("evil", "_", "_", "_", "tmp", "pwn.git")),
+        ("https://evil/org/..", ("evil", "org", "_.git")),
+        ("https://evil/..\\..\\tmp\\pwn.git", ("evil", "_", "_", "tmp", "pwn.git")),
+        ("a@evil/../..:x/y.git", ("evil_.._..", "x", "y.git")),
     ],
 )
 def test_cache_key(url: str, key: tuple[str, ...]) -> None:
     assert cache_key(url) == key
+
+
+_HOSTILE = [
+    "https://evil/../../tmp/pwn.git",
+    "git@evil:../../../tmp/pwn.git",
+    "https://evil/org/..",
+    "https://evil/..\\..\\tmp\\pwn.git",
+    "a@evil/../..:x/y.git",
+    "../../tmp/pwn.git",
+]
+
+
+@pytest.mark.parametrize("url", _HOSTILE)
+def test_a_hostile_url_stays_under_the_root(tmp_path: Path, url: str) -> None:
+    assert ".." not in cache_key(url)
+    assert cache_path(url, root=tmp_path).is_relative_to(tmp_path.resolve())
+
+
+def test_different_repos_get_different_keys() -> None:
+    urls = [
+        "https://github.com/acme/app.git",
+        "https://gitlab.example/acme/app.git",
+        "https://github.com/other/app.git",
+        "https://github.com/acme/lib.git",
+        "https://github.com/acme/sub/app.git",
+    ]
+    assert len({cache_key(url) for url in urls}) == len(urls)
 
 
 @pytest.mark.parametrize(
