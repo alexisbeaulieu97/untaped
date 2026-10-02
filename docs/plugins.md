@@ -7,8 +7,8 @@ discovers providers through the `untaped.capabilities` entry-point group and
 owns everything else: there is no second console script, config command or
 profile command.
 
-Provider code imports from `untaped.capability_api` and nothing else in
-`untaped`; [`src/untaped/capability_api.py`](../src/untaped/capability_api.py)
+Provider code imports from `untaped.sdk` and nothing else in
+`untaped`; [`src/untaped/sdk.py`](../src/untaped/sdk.py)
 is the authoritative API surface. The internal registry and other modules are
 not an API and may change in any release.
 Built-in capabilities may also use each other's declared `api.py` modules;
@@ -69,9 +69,9 @@ The entry-point name must equal `CapabilitySpec.name`. The resolved object
 must be callable, expose an `api_requires` range, and return one
 `CapabilitySpec` when called without arguments.
 
-`CAPABILITY_API_VERSION` is a `(major, minor)` tuple of ints, and
-`api_requires` is a `(min_inclusive, max_exclusive)` pair of such tuples,
-compared as tuples (so `(1, 10)` is newer than `(1, 9)`).
+The API version is a `(major, minor)` tuple of ints, and `api_requires` is a
+`(min_inclusive, max_exclusive)` pair of such tuples, compared as tuples (so
+`(1, 10)` is newer than `(1, 9)`).
 
 - New exports bump the minor version; removing or breaking one bumps the
   major. So `((3, 0), (4, 0))` stays compatible across 3.x.
@@ -102,7 +102,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict
 
-from untaped.capability_api import (
+from untaped.sdk import (
     CapabilitySpec,
     SkillAsset,
     create_app,
@@ -210,7 +210,7 @@ exit codes and record shapes.
 
 ## 4. Stable helper surface
 
-[`capability_api.py`](../src/untaped/capability_api.py) lists every export,
+[`sdk.py`](../src/untaped/sdk.py) lists every export,
 and each helper's docstring is its reference.
 [Command and output conventions](./conventions.md) says which helper each rule
 uses. Beyond those:
@@ -228,7 +228,7 @@ A row-producing command uses `FormatOption`, `ColumnsOption` and `emit`, and
 namespaces its kind:
 
 ```python
-from untaped.capability_api import ColumnsOption, FormatOption, emit
+from untaped.sdk import ColumnsOption, FormatOption, emit
 
 
 @app.command(name="items")
@@ -255,7 +255,7 @@ kinds you understand with `accept_kinds`, so a record of any other kind exits
 2 instead of being misread:
 
 ```python
-from untaped.capability_api import read_identifiers
+from untaped.sdk import read_identifiers
 
 identifiers = read_identifiers(
     [], stdin=True, id_field="repo", accept_kinds={"github.repo"}
@@ -302,7 +302,7 @@ A capability that writes structured state declares a disjoint `state_model`
 and writes through the state helpers:
 
 ```python
-from untaped.capability_api import StateCollection
+from untaped.sdk import StateCollection
 
 _items = StateCollection("acme", "items", id_field="id")
 _items.upsert({"id": "one", "label": "Example"})
@@ -327,6 +327,12 @@ uv run pytest
 uv run mypy
 uv run ruff check
 ```
+
+Call `untaped.testing.check_conventions(NAME)` from the plugin's own tests.
+Define `build_app` (the `app_factory`) in the capability package's
+`__init__.py`, because the checks scan that package. Declare writing commands
+with `@writes` (or `@writes(destructive=True)`). To waive a rule on one line,
+see [Enforcement](conventions.md#enforcement).
 
 Test the provider callable and `SPEC.app_factory()` in isolation, assert that
 the entry-point name matches `SPEC.name`, and exercise root config, profile,

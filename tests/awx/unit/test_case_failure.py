@@ -31,7 +31,7 @@ from untaped.capabilities.awx.errors import (
     PendingApprovalError,
     ResourceNotFoundError,
 )
-from untaped.capability_api import ConfigError, ErrorCategory, ErrorInfo, HttpTransportError
+from untaped.sdk import ConfigError, ErrorCategory, ErrorInfo, HttpTransportError
 
 _PROJECT_FAILED = (
     'Previous Task Failed: {"job_type": "project_update", "job_name": "acme", "job_id": "812"}'

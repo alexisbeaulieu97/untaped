@@ -44,7 +44,7 @@ from untaped.capabilities.awx.domain.workflow_graph import (
     rename_references,
 )
 from untaped.capabilities.awx.domain.workflow_run import MAX_NESTING
-from untaped.capability_api import ConfigError, q
+from untaped.sdk import ConfigError, q
 
 TAG = "untaped-test"
 """What names and marks every temporary copy."""

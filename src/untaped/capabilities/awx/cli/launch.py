@@ -42,12 +42,13 @@ from untaped.capabilities.awx.cli.options import (
 )
 from untaped.capabilities.awx.errors import ResourceNotFoundError, default_organization_note
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     FormatOption,
     raise_usage,
     read_structured_file,
     report_errors,
+    writes,
 )
 
 
@@ -61,6 +62,7 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
     hidden_by_flag = {f.flag: f.accepts_key not in accepts for f in LAUNCH_FLAGS}
 
     @app.command(name="launch")
+    @writes
     def launch_command(
         names: NamesArgument = None,
         /,

@@ -8,7 +8,7 @@ import pytest
 
 from untaped.capabilities.awx.domain.suite import VariableSpec
 from untaped.capabilities.awx.infrastructure.suites.prompt import UiPrompt
-from untaped.capability_api import PromptChoice
+from untaped.sdk import PromptChoice
 
 
 @pytest.mark.parametrize(

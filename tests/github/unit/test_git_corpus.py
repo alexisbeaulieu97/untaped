@@ -25,7 +25,7 @@ from untaped.capabilities.github.domain import (
 )
 from untaped.capabilities.github.domain.errors import GitCorpusError
 from untaped.capabilities.github.infrastructure.git_corpus import GitCorpusCache
-from untaped.capability_api import GitResult, safe_cache_path
+from untaped.sdk import GitResult, safe_cache_path
 
 Git = Callable[..., str]
 Commit = Callable[..., None]

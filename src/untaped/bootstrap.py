@@ -155,6 +155,13 @@ def compose_root(
     return result
 
 
+def composition() -> CompositionResult:
+    """The composition the last :func:`compose_root` (or :func:`build_root_app`) remembered."""
+    if _COMPOSED_RESULT is None:
+        raise RuntimeError("nothing composed yet; call compose_root() or build_root_app() first")
+    return _COMPOSED_RESULT
+
+
 def reset() -> None:
     """Clear invocation-scoped state back to the just-composed composition.
 

@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from untaped.capabilities.awx.cli.patch_values import build_patch, parse_set_pairs
-from untaped.capability_api import ConfigError
+from untaped.sdk import ConfigError
 
 _RECORD = {"scm_branch": "main", "verbosity": 0, "extra_vars": "", "limit": None}
 

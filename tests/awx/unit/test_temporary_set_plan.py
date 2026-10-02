@@ -17,7 +17,7 @@ from untaped.capabilities.awx.domain.temporary_set import (
     temporary_name,
 )
 from untaped.capabilities.awx.infrastructure import AwxResourceCatalog
-from untaped.capability_api import ConfigError
+from untaped.sdk import ConfigError
 
 SHA = "1a2b3c4d5e6f7a8b9c0d1a2b3c4d5e6f7a8b9c0d"
 CREATED = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)

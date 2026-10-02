@@ -48,7 +48,7 @@ from untaped.capabilities.github.api import (
     ResolveRepositoryInventory,
     normalize_team_scopes,
 )
-from untaped.capability_api import UntapedError, bounded_map
+from untaped.sdk import UntapedError, bounded_map
 
 ProgressCallback = Callable[[RefreshProgressEvent], None]
 ProbeMode = Literal["all", "default_branch"]
@@ -142,9 +142,9 @@ class RefreshGitSourceIndex:
         if concurrency < 1 or concurrency > 32:
             raise ValueError("concurrency must be between 1 and 32")
         if repo_batch_size < 1:
-            raise ValueError("repo_batch_size must be >= 1")
+            raise ValueError("repo_batch_size must be at least 1")
         if rate_limit_floor < 0:
-            raise ValueError("rate_limit_floor must be >= 0")
+            raise ValueError("rate_limit_floor cannot be negative")
         self._github = github
         self._git = git
         self._probe = probe
@@ -709,14 +709,8 @@ def _dependency_paths_fingerprint(paths: list[str]) -> str:
 
 
 def _aliases_fingerprint(aliases: dict[str, str], github_host: str | None = None) -> str:
-    """Fingerprint of everything identity resolution depends on.
-
-    The default ``github.com`` host keeps the historical aliases-only payload
-    so existing snapshots stay reusable; an Enterprise host is folded in.
-    """
-    resolution: object = aliases
-    if github_host and github_host.lower() != DEFAULT_GITHUB_HOST:
-        resolution = {"aliases": aliases, "github_host": github_host.lower()}
+    """Fingerprint of everything identity resolution depends on: aliases and GitHub host."""
+    resolution = {"aliases": aliases, "github_host": (github_host or DEFAULT_GITHUB_HOST).lower()}
     payload = json.dumps(resolution, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(payload).hexdigest()
 

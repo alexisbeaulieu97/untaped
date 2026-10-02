@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped.capability_api import ConfigError, GitCommandError, attribution, q, run_git
+from untaped.sdk import ConfigError, GitCommandError, attribution, q, run_git
 
 _TIMEOUT = 30.0
 

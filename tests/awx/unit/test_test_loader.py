@@ -11,7 +11,7 @@ from untaped.capabilities.awx.application.suites.loader import LoadTestSuite
 from untaped.capabilities.awx.application.suites.ports import Filesystem, Prompt
 from untaped.capabilities.awx.domain.suite import RefSentinel, VariableSpec
 from untaped.capabilities.awx.infrastructure.suites import DefaultParser, resolve_variables
-from untaped.capability_api import ConfigError, UsageError
+from untaped.sdk import ConfigError, UsageError
 
 
 class FakeFilesystem(Filesystem):

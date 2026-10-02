@@ -20,7 +20,7 @@ from typing import Any
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
-from untaped.capability_api import UtcTimestamp
+from untaped.sdk import UtcTimestamp
 
 TERMINAL_STATUSES = frozenset({"successful", "failed", "error", "canceled"})
 

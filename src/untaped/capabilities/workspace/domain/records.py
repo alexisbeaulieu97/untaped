@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import ClassVar, Literal
 
-from untaped.capability_api import OutcomeRecord, TargetRecord, UtcTimestamp
+from untaped.sdk import OutcomeRecord, TargetRecord, UtcTimestamp
 
 
 class WorkspaceRow(TargetRecord):

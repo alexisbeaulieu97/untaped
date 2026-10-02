@@ -11,10 +11,11 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 
-from untaped.capabilities.recipe.hook_api import HOOK_API_VERSION
-
 if TYPE_CHECKING:
     from untaped.capabilities.recipe.domain.pack import PackManifest
+
+#: The hook authoring contract version (re-exported by ``recipe.hook_api``).
+HOOK_API_VERSION = "0.10.0"
 
 _DOTTED_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$")
 # ``untaped-recipe`` is the distribution name the recipe engine shipped under

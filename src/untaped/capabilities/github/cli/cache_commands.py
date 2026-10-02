@@ -27,7 +27,7 @@ from untaped.capabilities.github.cli.scopes import (
 from untaped.capabilities.github.domain import CorpusRepoResult, github_web_host
 from untaped.capabilities.github.errors import GithubError
 from untaped.capabilities.github.settings import GithubSettings
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     DryRunOption,
     FormatOption,
@@ -44,9 +44,10 @@ from untaped.capability_api import (
     finish,
     not_found,
     plural,
-    report_error,
     report_errors,
+    report_row_errors,
     summary,
+    writes,
 )
 
 AllOption = Annotated[
@@ -177,14 +178,13 @@ def sync_command(
             kind="github.sync_outcome",
             empty="No repositories in scope.",
         )
-        for outcome in outcomes:
-            if outcome.error is not None:
-                report_error(outcome.error, item=outcome.repo)
+        report_row_errors(outcomes, item=lambda outcome: outcome.repo)
         echo(summary("sync", Counter(outcome.action for outcome in outcomes)), err=True)
         finish(any(outcome.failed for outcome in outcomes))
 
 
 @app.command(name="delete")
+@writes(destructive=True)
 def delete_command(
     repos: Annotated[
         list[str] | None,
@@ -216,6 +216,7 @@ def delete_command(
 
 
 @app.command(name="prune")
+@writes(destructive=True)
 def prune_command(
     *,
     org: Annotated[

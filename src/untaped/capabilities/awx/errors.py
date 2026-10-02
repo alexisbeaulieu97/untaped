@@ -14,7 +14,7 @@ import difflib
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from untaped.capability_api import (
+from untaped.sdk import (
     ErrorCategory,
     HttpError,
     UntapedError,

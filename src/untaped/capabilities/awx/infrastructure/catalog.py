@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS
-from untaped.capability_api import ConfigError
+from untaped.sdk import ConfigError
 
 
 class AwxResourceCatalog:

@@ -2,12 +2,12 @@
 
 Files under ``src/untaped/capabilities/<name>/`` are provider-side code:
 every ``untaped``-rooted import in them must resolve to the kernel-only
-surface — ``untaped.capability_api`` (the single public SDK surface) — or
+surface — ``untaped.sdk`` (the single public SDK surface) — or
 the capability's own subtree. Anything else (kernel internals by module
 path, the removed ``untaped.api`` shim, the composition kernel
 ``untaped.capabilities.registry``, sibling capabilities, or the bare
 ``untaped`` root) fails this suite. The surface itself is pinned in
-``test_capability_api.py``.
+``test_sdk.py``.
 """
 
 from __future__ import annotations
@@ -15,10 +15,12 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from untaped.conventions.source import import_targets
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CAPABILITIES_SRC = REPO_ROOT / "src" / "untaped" / "capabilities"
 
-_KERNEL_SURFACE_MODULES = frozenset({"untaped.capability_api"})
+_KERNEL_SURFACE_MODULES = frozenset({"untaped.sdk"})
 
 #: ``(importing capability, imported module)`` pairs exempt from the
 #: own-subtree rule. ansible reads GitHub only through github's closed
@@ -53,34 +55,6 @@ def _package_of(py_file: Path, own_prefix: str, capability_dir: Path) -> str:
     return own_prefix + "." + ".".join(parts)
 
 
-def _resolve_import_from(
-    package: str, level: int, module: str | None, names: list[ast.alias]
-) -> list[str]:
-    """Resolve an ``ImportFrom`` to absolute dotted paths.
-
-    Level 0 returns ``[module]``; level > 0 resolves from the containing
-    package. ``from . import name`` binds the submodule ``base.name``.
-    Unresolvable levels (beyond top-level) return ``[]``.
-    """
-    if level == 0:
-        return [module] if module else []
-    base = package
-    for _ in range(level - 1):
-        if "." in base:
-            base = base.rpartition(".")[0]
-        else:
-            return []
-    if module:
-        return [f"{base}.{module}"]
-    resolved: list[str] = []
-    for alias in names:
-        if alias.name == "*":
-            resolved.append(base)
-        else:
-            resolved.append(f"{base}.{alias.name}")
-    return resolved
-
-
 def surface_violations(src: Path = CAPABILITIES_SRC) -> list[str]:
     """Flag capability files importing outside the kernel-only surface."""
     violations: list[str] = []
@@ -98,7 +72,7 @@ def _file_violations(py_file: Path, own_prefix: str, package: str) -> list[str]:
     tree = ast.parse(py_file.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
-            for absolute in _resolve_import_from(package, node.level, node.module, node.names):
+            for absolute in import_targets(node, package):
                 problem = _from_violation(absolute, own_prefix)
                 if problem is not None:
                     where = f"{_rel(py_file)}:{node.lineno}"
@@ -122,7 +96,7 @@ def _from_violation(module: str, own_prefix: str) -> str | None:
         return None
     return (
         "capability code must import kernel helpers only via "
-        "untaped.capability_api "
+        "untaped.sdk "
         f"and sibling code only from its own {own_prefix} subtree"
     )
 
@@ -138,7 +112,7 @@ def _import_violation(name: str, own_prefix: str) -> str | None:
         return None
     return (
         "capability code must import kernel helpers only via "
-        "untaped.capability_api "
+        "untaped.sdk "
         f"and sibling code only from its own {own_prefix} subtree"
     )
 
@@ -149,10 +123,8 @@ def imported_modules(capability_dir: Path, own_prefix: str) -> set[str]:
     for py_file in capability_dir.rglob("*.py"):
         package = _package_of(py_file, own_prefix, capability_dir)
         for node in ast.walk(ast.parse(py_file.read_text(encoding="utf-8"))):
-            if isinstance(node, ast.ImportFrom):
-                modules.update(_resolve_import_from(package, node.level, node.module, node.names))
-            elif isinstance(node, ast.Import):
-                modules.update(alias.name for alias in node.names)
+            if isinstance(node, ast.Import | ast.ImportFrom):
+                modules.update(import_targets(node, package))
     return modules
 
 
@@ -203,7 +175,7 @@ def test_kernel_internal_import_fails(tmp_path: Path) -> None:
     violations = surface_violations(src)
     assert len(violations) == 1
     assert "untaped.settings" in violations[0]
-    assert "capability_api" in violations[0]
+    assert "untaped.sdk" in violations[0]
 
 
 def test_sibling_capability_import_fails(tmp_path: Path) -> None:
@@ -262,12 +234,12 @@ def test_stable_surface_and_own_subtree_pass(tmp_path: Path) -> None:
     src = _probe_tree(
         tmp_path,
         {
-            "atlas/__init__.py": "from untaped.capability_api import CapabilitySpec\n",
+            "atlas/__init__.py": "from untaped.sdk import CapabilitySpec\n",
             "atlas/mod.py": (
-                "from untaped.capability_api import echo, report_errors\n"
+                "from untaped.sdk import echo, report_errors\n"
                 "from untaped.capabilities.atlas.inner import thing\n"
                 "from . import sibling\n"
-                "import untaped.capability_api\n"
+                "import untaped.sdk\n"
             ),
         },
     )

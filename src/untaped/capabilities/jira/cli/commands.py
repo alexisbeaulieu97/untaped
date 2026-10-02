@@ -24,7 +24,7 @@ from untaped.capabilities.jira.domain import (
     validate_project_key,
 )
 from untaped.capabilities.jira.errors import JiraError
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     DryRunOption,
     FormatOption,
@@ -47,12 +47,13 @@ from untaped.capability_api import (
     report_errors,
     resolve_each,
     resolve_text_input,
+    writes,
 )
 
 if TYPE_CHECKING:
     from untaped.capabilities.jira.domain import IssueDetailResult
     from untaped.capabilities.jira.infrastructure import JiraClient
-    from untaped.capability_api import OutputFormat, UiContext
+    from untaped.sdk import OutputFormat, UiContext
 
 # One write request as previewed: method, path and its readable change lines.
 PreviewRequest = tuple[str, str, list[str]]
@@ -434,6 +435,7 @@ def _send(
 
 
 @issues_app.command(name="create")
+@writes
 def issue_create_command(
     *,
     fields_file: FieldsFileOption = None,
@@ -486,6 +488,7 @@ def issue_create_command(
 
 
 @issues_app.command(name="patch")
+@writes
 def issue_patch_command(
     key: IssueKeyArgument,
     /,
@@ -569,6 +572,7 @@ def issue_patch_command(
 
 
 @issues_app.command(name="comment")
+@writes
 def issue_comment_command(
     key: IssueKeyArgument,
     /,
@@ -642,6 +646,7 @@ def issue_transitions_command(
 
 
 @issues_app.command(name="transition")
+@writes
 def issue_transition_command(
     keys: IssueKeysArgument = None,
     /,
@@ -744,6 +749,7 @@ def issue_transition_command(
 
 
 @links_app.command(name="create")
+@writes
 def link_create_command(
     key: IssueKeyArgument,
     link_type: Annotated[str, Parameter(help="Link type name (e.g. Blocks, Relates).")],

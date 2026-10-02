@@ -1,7 +1,7 @@
 """AWX-specific layering rule: application code reads only domain ``ResourceSpec`` fields.
 
 The generic one-way layer and settings rules live in
-``tests/conventions/test_layering.py``.
+``untaped.conventions.layering``.
 """
 
 from __future__ import annotations

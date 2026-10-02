@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.capabilities.workspace.errors import WorkspaceNotFoundError
-from untaped.capability_api import not_found
+from untaped.sdk import not_found
 
 if TYPE_CHECKING:
     from untaped.capabilities.workspace.application.ports import WorkspaceStore

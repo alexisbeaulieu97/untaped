@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from untaped.capabilities.awx.infrastructure.git_head import pushed_branch
-from untaped.capability_api import (
+from untaped.sdk import (
     ConfigError,
     GitCommandError,
     GitResult,

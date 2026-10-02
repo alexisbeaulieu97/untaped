@@ -15,10 +15,18 @@ import pytest
 from cyclopts import App
 
 from untaped.batch import finish
-from untaped.cli import FormatOption, apply_default_format, echo, emit, report_errors, resolve_each
+from untaped.cli import (
+    FormatOption,
+    apply_default_format,
+    echo,
+    emit,
+    report_errors,
+    report_row_errors,
+    resolve_each,
+)
 from untaped.errors import ConfigError, HttpStatusError, HttpTransportError, UntapedError
 from untaped.messages import hint
-from untaped.records import ErrorInfo
+from untaped.records import ErrorInfo, OutcomeRecord
 from untaped.testing import invoke_cli
 from untaped.ui import UiContext
 
@@ -144,6 +152,25 @@ def test_per_item_errors_name_their_item() -> None:
     (line,) = _lines(result.stderr)
     assert (line["item"], line["category"], line["system"]) == ("ABC-1", "not_found", "jira")
     assert result.exit_code == 1
+
+
+class _Row(OutcomeRecord):
+    name: str
+
+
+def test_report_row_errors_reports_only_failed_rows_under_their_item_with_the_hint() -> None:
+    error = ErrorInfo(
+        category="not_found", system="git", retryable=False, message="gone", hint="re-clone it"
+    )
+    rows = [
+        _Row(name="a", action="updated"),
+        _Row(name="b", action="failed", error=error),
+    ]
+
+    def body() -> None:
+        report_row_errors(rows, item=lambda row: f"ws/{row.name}")
+
+    assert invoke_cli(_app(body), []).stderr == "error: ws/b: gone\nhint: re-clone it\n"
 
 
 def test_the_most_severe_failure_in_the_run_selects_the_exit_code() -> None:

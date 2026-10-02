@@ -22,7 +22,7 @@ from untaped.capabilities.awx.errors import (
     ConflictError,
     PermissionDeniedError,
 )
-from untaped.capability_api import (
+from untaped.sdk import (
     HttpError,
     UntapedError,
     attribution,

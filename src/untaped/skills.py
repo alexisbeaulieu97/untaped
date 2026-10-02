@@ -24,7 +24,7 @@ from untaped.stdin import read_identifiers
 class InstallableSkill(Protocol):
     """A packaged agent skill the install machinery can list and copy.
 
-    Structural type implemented by :class:`~untaped.capability_api.SkillAsset` (a frozen
+    Structural type implemented by :class:`~untaped.sdk.SkillAsset` (a frozen
     dataclass). The members are read-only properties because the concrete type
     is frozen; a plain attribute Protocol would (wrongly) demand settability.
     """

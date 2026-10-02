@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from untaped.capabilities.awx.application.scheduling import Schedule, ScheduleInterruptedError
 from untaped.capabilities.awx.application.selection import SelectedResource
-from untaped.capability_api import ErrorInfo, note_failure
+from untaped.sdk import ErrorInfo, note_failure
 
 
 @dataclass(frozen=True)

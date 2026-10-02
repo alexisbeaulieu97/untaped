@@ -1,6 +1,6 @@
 """Structure lint: every capability has the same shape (``docs/conventions.md``).
 
-One parametrized check per built-in capability flags:
+For one capability package this flags:
 
 - ``errors-module`` — no ``errors.py`` with the capability's error classes;
 - ``exception-base`` — an ``Exception`` subclass that is not an
@@ -14,9 +14,12 @@ One parametrized check per built-in capability flags:
 - ``port-adapter-clash`` — a port and an infrastructure class share a name;
 - ``foreign-section`` — code reads another capability's config section;
 - ``settings-not-frozen`` — the profile or state model is mutable;
-- ``private-test-import`` — a test imports an ``_``-prefixed module or name.
+- ``private-test-import`` — a test imports an ``_``-prefixed module or name
+  of ``untaped`` or of the capability package.
 
-Existing violations live in ``baselines/structure/<owner>.txt``.
+The class checks import the package and report ``<module>.<class>::<rule>``;
+they have no source line, so no inline marker can suppress them. The source
+checks report ``<path>::<rule>::<detail>`` and honour ``# untaped: allow``.
 """
 
 from __future__ import annotations
@@ -25,24 +28,28 @@ import ast
 import importlib
 import inspect
 import pkgutil
-from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
-from untaped.bootstrap import BUILTIN_CAPABILITIES
+from untaped.capabilities.registry import CapabilitySpec
+from untaped.conventions.allow import allowed
+from untaped.conventions.source import SourceFile, callee, source_files
 from untaped.errors import UntapedError
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-CAPABILITIES_SRC = REPO_ROOT / "src" / "untaped" / "capabilities"
 SECTION_READERS = frozenset({"get_config_section", "section"})
 
 
 def _modules(package: str) -> Iterator[Any]:
+    """``package`` and its modules, imported; ``__main__`` modules are skipped.
+
+    A ``__main__`` module runs the program when imported (it may exit).
+    """
     root = importlib.import_module(package)
     yield root
     for info in pkgutil.walk_packages(root.__path__, prefix=f"{package}."):
-        yield importlib.import_module(info.name)
+        if info.name.rpartition(".")[2] != "__main__":
+            yield importlib.import_module(info.name)
 
 
 def _own_classes(module: Any) -> Iterator[type]:
@@ -51,8 +58,7 @@ def _own_classes(module: Any) -> Iterator[type]:
             yield value
 
 
-def _runtime_violations(name: str) -> Iterator[str]:
-    package = f"untaped.capabilities.{name}"
+def _runtime_violations(package: str) -> Iterator[str]:
     ports: dict[str, str] = {}
     adapters: set[str] = set()
     for module in _modules(package):
@@ -87,39 +93,43 @@ def _unattributed_base(cls: type, package: str) -> bool:
     return not own_parents and "system" not in vars(cls)
 
 
-def _source_violations(name: str, section: str) -> Iterator[str]:
-    base = CAPABILITIES_SRC / name
-    if not (base / "errors.py").is_file():
-        yield f"src/untaped/capabilities/{name}/errors.py::errors-module"
-    for path in sorted(base.rglob("*.py")):
-        rel = path.relative_to(REPO_ROOT).as_posix()
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+def _source_violations(
+    source_dir: Path, files: Sequence[SourceFile], section: str
+) -> Iterator[str]:
+    if not (source_dir / "errors.py").is_file():
+        yield f"{source_dir.name}/errors.py::errors-module"
+    for source in files:
+        rel = source.path.relative_to(source_dir.parent).as_posix()
+        for node in ast.walk(source.tree):
             if not (isinstance(node, ast.Call) and node.args):
                 continue
-            func = node.func
-            callee = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
             first = node.args[0]
             if (
-                callee in SECTION_READERS
+                callee(node) in SECTION_READERS
                 and isinstance(first, ast.Constant)
                 and isinstance(first.value, str)
                 and first.value != section
+                and not allowed(source.lines, node.lineno, "foreign-section")
             ):
                 yield f"{rel}::foreign-section::{first.value}"
 
 
-def _settings_violations(spec: Any) -> Iterator[str]:
+def _settings_violations(spec: CapabilitySpec) -> Iterator[str]:
     for label, model in (("profile", spec.profile_model), ("state", spec.state_model)):
         if model is not None and not model.model_config.get("frozen", False):
             yield f"{model.__module__}.{model.__qualname__}::settings-not-frozen::{label}"
 
 
-def _private_import_violations(name: str) -> Iterator[str]:
-    tests = REPO_ROOT / "tests" / name
-    for path in sorted(tests.rglob("*.py")):
-        rel = path.relative_to(REPO_ROOT).as_posix()
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("untaped"):
+def _private_import_violations(tests_dir: Path, package: str) -> Iterator[str]:
+    checked = ("untaped", package)
+    for source in source_files(tests_dir):
+        rel = source.path.relative_to(tests_dir.parent).as_posix()
+        for node in ast.walk(source.tree):
+            if not isinstance(node, ast.Import | ast.ImportFrom) or allowed(
+                source.lines, node.lineno, "private-test-import"
+            ):
+                continue
+            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith(checked):
                 module = node.module or ""
                 private = [part for part in module.split(".") if _private(part)]
                 private += [alias.name for alias in node.names if _private(alias.name)]
@@ -127,7 +137,7 @@ def _private_import_violations(name: str) -> Iterator[str]:
                     yield f"{rel}::private-test-import::{module}:{item}"
             elif isinstance(node, ast.Import):
                 for alias in node.names:
-                    if alias.name.startswith("untaped") and any(
+                    if alias.name.startswith(checked) and any(
                         _private(part) for part in alias.name.split(".")
                     ):
                         yield f"{rel}::private-test-import::{alias.name}"
@@ -137,15 +147,25 @@ def _private(name: str) -> bool:
     return name.startswith("_") and not name.startswith("__")
 
 
-def collect_violations() -> dict[str, list[str]]:
-    found: dict[str, list[str]] = defaultdict(list)
-    for spec in BUILTIN_CAPABILITIES:
-        found[spec.name].extend(_runtime_violations(spec.name))
-        found[spec.name].extend(_source_violations(spec.name, spec.config_section))
-        found[spec.name].extend(_settings_violations(spec))
-        found[spec.name].extend(_private_import_violations(spec.name))
+def structure_violations(
+    spec: CapabilitySpec,
+    package: str,
+    source_dir: Path,
+    files: Sequence[SourceFile],
+    *,
+    tests_dir: Path | None = None,
+) -> list[str]:
+    """Violations of the capability ``spec`` whose code is ``package`` in ``source_dir``.
+
+    ``files`` are the parsed sources under ``source_dir``.
+    ``tests_dir``, when given, is scanned for private imports of ``untaped``
+    or ``package``.
+    """
+    found = [
+        *_runtime_violations(package),
+        *_source_violations(source_dir, files, spec.config_section),
+        *_settings_violations(spec),
+    ]
+    if tests_dir is not None:
+        found.extend(_private_import_violations(tests_dir, package))
     return found
-
-
-def test_capabilities_share_one_structure(baseline: Any) -> None:
-    baseline("structure", collect_violations())

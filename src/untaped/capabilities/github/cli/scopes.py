@@ -10,7 +10,7 @@ from untaped.capabilities.github.application.inventory import RepositoryInventor
 from untaped.capabilities.github.application.scopes import TeamScope, normalize_team_scopes
 from untaped.capabilities.github.domain import ArchivedMode
 from untaped.capabilities.github.settings import GithubSettings
-from untaped.capability_api import (
+from untaped.sdk import (
     ConfigError,
     ParallelOption,
     UsageError,

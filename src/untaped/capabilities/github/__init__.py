@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.capabilities.github.settings import GithubSettings
-from untaped.capability_api import (
+from untaped.sdk import (
     CapabilitySpec,
     SkillAsset,
     connection_check,

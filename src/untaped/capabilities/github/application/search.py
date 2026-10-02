@@ -21,7 +21,7 @@ from untaped.capabilities.github.domain import (
 )
 from untaped.capabilities.github.domain.errors import is_rate_limited
 from untaped.capabilities.github.domain.queries import ScopedQueryBase, tokenize_search_query
-from untaped.capability_api import HttpStatusError, UntapedError, attribution
+from untaped.sdk import HttpStatusError, UntapedError, attribution
 
 WarnFn = Callable[[str], None]
 

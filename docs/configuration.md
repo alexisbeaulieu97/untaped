@@ -49,7 +49,7 @@ profiles:
       default_project: OPS
       default_board_id: 42
     workspace:
-      cache_dir: ~/.untaped/repositories
+      cache_dir: ~/.untaped/workspace-cache
       workspaces_dir: ~/.untaped/workspaces
       branch_template: "{name}"
 

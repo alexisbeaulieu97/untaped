@@ -28,7 +28,7 @@ from untaped.capabilities.github.domain import (
     profile_join,
 )
 from untaped.capabilities.github.errors import GitCorpusError
-from untaped.capability_api import (
+from untaped.sdk import (
     GitCommandError,
     GitResult,
     atomic_write,

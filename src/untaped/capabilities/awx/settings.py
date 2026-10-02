@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-from untaped.capability_api import TokenCommand, TokenSources
+from untaped.sdk import TokenCommand, TokenSources
 
 
 class AwxSettings(BaseModel):

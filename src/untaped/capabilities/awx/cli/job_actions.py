@@ -25,7 +25,7 @@ from untaped.capabilities.awx.cli.job_targets import (
 from untaped.capabilities.awx.cli.options import DryRunOption, YesOption
 from untaped.capabilities.awx.domain.job import JOB_ROUTES, TERMINAL_STATUSES
 from untaped.capabilities.awx.domain.outcomes import JobCancelOutcome, JobRelaunchOutcome
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     FormatOption,
     UntapedError,
@@ -38,6 +38,7 @@ from untaped.capability_api import (
     raise_usage,
     report_errors,
     resolve_each,
+    writes,
 )
 
 _CANCEL_COLUMNS = ("id", "name", "action", "detail")
@@ -49,6 +50,7 @@ def register_job_actions(jobs_app: App) -> None:
     """Attach ``cancel`` and ``relaunch`` to the ``awx jobs`` group."""
 
     @jobs_app.command(name="cancel")
+    @writes(destructive=True)
     def jobs_cancel(
         job_ids: JobIdsArgument = None,
         /,
@@ -91,6 +93,7 @@ def register_job_actions(jobs_app: App) -> None:
         finish(any(row.failed for row in rows))
 
     @jobs_app.command(name="relaunch")
+    @writes
     def jobs_relaunch(
         job_ids: JobIdsArgument = None,
         /,

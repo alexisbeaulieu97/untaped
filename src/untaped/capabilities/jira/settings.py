@@ -7,7 +7,7 @@ from typing import ClassVar
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from untaped.capabilities.jira.domain.changes import ConfirmPolicy
-from untaped.capability_api import TokenCommand, TokenSources
+from untaped.sdk import TokenCommand, TokenSources
 
 DEFAULT_ASSIGNED_JQL = "assignee = currentUser() AND resolution = Unresolved"
 

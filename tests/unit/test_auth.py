@@ -13,8 +13,8 @@ from pydantic import BaseModel, SecretStr, ValidationError
 
 from untaped.app_context import app_context
 from untaped.auth import describe_token_source, resolve_token
-from untaped.capability_api import TokenCommand, TokenSources, connected_client
 from untaped.errors import ConfigError
+from untaped.sdk import TokenCommand, TokenSources, connected_client
 from untaped.settings import (
     HttpSettings,
     get_config_section,

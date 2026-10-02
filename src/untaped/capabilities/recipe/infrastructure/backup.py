@@ -18,7 +18,7 @@ from untaped.capabilities.recipe.domain.paths import confined_path
 from untaped.capabilities.recipe.domain.plan import CONTENT_ERRORS, FileChange
 from untaped.capabilities.recipe.errors import BackupNotFoundError, LocalChangesError
 from untaped.capabilities.recipe.infrastructure.file_writer import flush_changes
-from untaped.capability_api import atomic_write
+from untaped.sdk import atomic_write
 
 _PRIVATE_DIR_MODE = 0o700
 _PRIVATE_FILE_MODE = 0o600
@@ -175,7 +175,7 @@ class BackupStore:
         *,
         force: bool,
     ) -> builtins.list[_PlannedRestore]:
-        bundle = self._resolve(backup_id)
+        bundle = self.resolve(backup_id)
         bundle_dir = bundle.path
         metadata = read_metadata(bundle)
         planned: builtins.list[_PlannedRestore] = []
@@ -225,9 +225,10 @@ class BackupStore:
 
     def metadata(self, backup_id: str) -> dict[str, object]:
         """Read raw metadata for a backup bundle."""
-        return read_metadata(self._resolve(backup_id))
+        return read_metadata(self.resolve(backup_id))
 
-    def _resolve(self, backup_id: str) -> BackupBundle:
+    def resolve(self, backup_id: str) -> BackupBundle:
+        """Resolve an exact id, unique prefix or ``latest`` to its bundle."""
         bundles = self.list()
         if backup_id == "latest":
             if not bundles:

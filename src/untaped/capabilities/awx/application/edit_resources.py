@@ -14,7 +14,7 @@ from untaped.capabilities.awx.application.apply_membership import MembershipSnap
 from untaped.capabilities.awx.application.save_resource import ResourceSnapshot, SaveResource
 from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.domain import Resource, ResourceSpec
-from untaped.capability_api import ConfigError, UsageError
+from untaped.sdk import ConfigError, UsageError
 
 
 class EditResources:

@@ -22,7 +22,7 @@ from untaped.capabilities.ansible.domain.payloads import (
     ProbeTarget,
 )
 from untaped.capabilities.github.api import GithubGraphqlError
-from untaped.capability_api import ErrorCategory, HttpError, UntapedError, bounded_map
+from untaped.sdk import ErrorCategory, HttpError, UntapedError, bounded_map
 
 if TYPE_CHECKING:
     from untaped.capabilities.ansible.application.ports import BatchRepoRefsClient
@@ -54,9 +54,9 @@ class GithubRefProbe:
         if concurrency < 1 or concurrency > 32:
             raise ValueError("concurrency must be between 1 and 32")
         if chunk_size < 1:
-            raise ValueError("chunk_size must be >= 1")
+            raise ValueError("chunk_size must be at least 1")
         if default_branch_chunk_size < 1:
-            raise ValueError("default_branch_chunk_size must be >= 1")
+            raise ValueError("default_branch_chunk_size must be at least 1")
         self._github = github
         self._concurrency = concurrency
         self._chunk_size = chunk_size

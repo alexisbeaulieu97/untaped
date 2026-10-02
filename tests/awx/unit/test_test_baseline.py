@@ -10,7 +10,7 @@ import pytest
 from untaped.capabilities.awx.domain.case_failure import CaseFailure, failure, in_node
 from untaped.capabilities.awx.domain.suite import Baseline, CaseResult, SuiteRunOutcome
 from untaped.capabilities.awx.domain.suite_baseline import saved_baselines
-from untaped.capability_api import ErrorCategory
+from untaped.sdk import ErrorCategory
 
 _SYSTEMS = {
     ErrorCategory.FAILED: "awx.playbook",

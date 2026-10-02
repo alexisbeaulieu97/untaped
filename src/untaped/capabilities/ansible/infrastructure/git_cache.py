@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from untaped.capabilities.ansible.errors import GitCacheError as GitCacheError
-from untaped.capability_api import (
+from untaped.sdk import (
     GitCommandError,
     GitResult,
     attribution,

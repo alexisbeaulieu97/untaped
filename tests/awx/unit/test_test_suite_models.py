@@ -21,7 +21,7 @@ from untaped.capabilities.awx.domain.suite import (
     TemplateBinding,
     VariableSpec,
 )
-from untaped.capability_api import ErrorCategory
+from untaped.sdk import ErrorCategory
 
 
 def test_variable_spec_is_required_unless_it_has_a_default() -> None:

@@ -23,7 +23,7 @@ RETIRED = frozenset({"ToolSpec", "register_tool", "build_tool_app", "run_tool"})
 V4_PATHS = (
     SRC_ROOT / "capabilities",
     SRC_ROOT / "management",
-    SRC_ROOT / "capability_api.py",
+    SRC_ROOT / "sdk.py",
     SRC_ROOT / "bootstrap.py",
     SRC_ROOT / "__main__.py",
 )

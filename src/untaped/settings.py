@@ -464,11 +464,6 @@ def _env_culprit(exc: ValidationError) -> str | None:
     return None
 
 
-def get_core_settings() -> Settings:
-    """Alias for callers that want to emphasize core-only settings access."""
-    return get_settings()
-
-
 def get_config_section[T: BaseModel](section: str, model_cls: type[T]) -> T:
     """Return one typed settings section, building a one-off model if needed.
 

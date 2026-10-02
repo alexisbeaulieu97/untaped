@@ -52,7 +52,7 @@ from untaped.capabilities.awx.domain.workflow_graph import (
     parse_workflow_nodes,
 )
 from untaped.capabilities.awx.errors import AwxApiError, BadRequestError
-from untaped.capability_api import attribution
+from untaped.sdk import attribution
 
 _EDGE_KEYS = {relation: key for key, relation in EDGE_RELATIONS.items()}
 # Node record field → its key in the document (``nodes[x].prompts.limit``).

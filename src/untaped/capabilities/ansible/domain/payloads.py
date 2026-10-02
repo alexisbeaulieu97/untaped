@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.capability_api import ErrorCategory, OutcomeRecord, UtcTimestamp
+from untaped.sdk import ErrorCategory, OutcomeRecord, UtcTimestamp
 
 ProbeFallbackReason = Literal["graphql_rate_limited", "graphql_transient"]
 GRAPHQL_RATE_LIMIT_FALLBACK: ProbeFallbackReason = "graphql_rate_limited"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from untaped.capability_api import ErrorCategory, UntapedError
+from untaped.sdk import ErrorCategory, UntapedError
 
 
 class WorkspaceError(UntapedError):

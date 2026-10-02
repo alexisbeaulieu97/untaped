@@ -9,7 +9,7 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, TextIO, TypeVar
 
-from untaped.errors import ConfigError, PromptInterruptedError
+from untaped.errors import ConfigError, PromptInterruptedError, UntapedError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -311,8 +311,8 @@ def prompt_style_from_roles(color_roles: dict[str, str]) -> Style:
     )
 
 
-def handle_prompt_exception(exc: BaseException) -> ConfigError:
-    """Convert terminal prompt cancellation into a user-facing config error.
+def handle_prompt_exception(exc: BaseException) -> UntapedError:
+    """Convert terminal prompt cancellation into a user-facing error.
 
     Ctrl-D (``EOFError``) cancels with exit ``1``; Ctrl-C becomes a
     :class:`PromptInterruptedError`, which exits ``130`` like any interrupt.

@@ -19,18 +19,20 @@ from untaped.capabilities.awx.cli.options import (
 )
 from untaped.capabilities.awx.domain import CopyOutcome
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
-from untaped.capability_api import (
+from untaped.sdk import (
     ColumnsOption,
     FormatOption,
     echo,
     emit,
     q,
     report_errors,
+    writes,
 )
 
 
 def _add_copy(app: App, spec: AwxResourceSpec) -> None:
     @app.command(name="copy")
+    @writes
     def copy_command(
         source: Annotated[
             str, Parameter(help="Name of the resource to copy, or its AWX id with --by-id.")

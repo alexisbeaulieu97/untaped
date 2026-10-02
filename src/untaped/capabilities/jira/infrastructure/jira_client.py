@@ -10,7 +10,7 @@ from urllib.parse import quote
 from untaped.capabilities.jira.domain.models import ISSUE_DETAIL_FIELDS, ISSUE_ROW_FIELDS
 from untaped.capabilities.jira.infrastructure.errors import map_jira_errors
 from untaped.capabilities.jira.settings import JiraSettings
-from untaped.capability_api import HttpSettings, RetryPolicy, connected_client, paginate_offset
+from untaped.sdk import HttpSettings, RetryPolicy, connected_client, paginate_offset
 
 # Jira's JQL search is a POST to an idempotent ``/search`` endpoint. Opt just
 # that call into retry by widening the retryable methods to include POST — the

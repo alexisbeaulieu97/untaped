@@ -23,7 +23,7 @@ from untaped.capabilities.awx.application.mutation_refs import PlannedId
 from untaped.capabilities.awx.application.ports import FkResolver
 from untaped.capabilities.awx.domain import FkRef, IdentityRef, Resource, ResourceSpec
 from untaped.capabilities.awx.errors import BadRequestError
-from untaped.capability_api import plural
+from untaped.sdk import plural
 
 
 def unrecognized_fields(spec: ResourceSpec, names: Iterable[str]) -> list[str]:

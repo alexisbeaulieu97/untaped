@@ -15,7 +15,8 @@ from untaped.capabilities.github import api as github_api
 from untaped.capabilities.github.api import RepositoryInventoryItem
 from untaped.capabilities.workspace.cli import app
 from untaped.capabilities.workspace.errors import WorkspaceError
-from untaped.capabilities.workspace.infrastructure import StateWorkspaceStore
+from untaped.capabilities.workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
+from untaped.capabilities.workspace.infrastructure.git_worktrees import cache_path_for
 from untaped.testing import CliInvoker, CliResult, ScriptedPromptBackend
 from workspace.conftest import add_submodule, commit_in, git, init_submodules
 
@@ -227,6 +228,26 @@ def test_archive_refuses_dirty_then_forces(
     ]
 
 
+def test_archive_reports_a_repo_that_changed_after_the_check_with_its_hint(
+    make_upstream: Callable[..., Path], workspace_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+    remove = LocalGitWorktrees.remove
+
+    def edit_then_remove(self: LocalGitWorktrees, url: str, dest: Path, *, force: bool) -> None:
+        (dest / "scratch.txt").write_text("late work")  # lands after archive's status check
+        remove(self, url, dest, force=force)
+
+    monkeypatch.setattr(LocalGitWorktrees, "remove", edit_then_remove)
+    result = run(app, ["archive", "J-1", "--format", "json"])
+    repo = workspace_env / "J-1" / "api"
+    assert result.exit_code == 1
+    assert result.stderr == (
+        f"error: J-1/acme/api: {repo}: uncommitted changes; nothing removed\n"
+        "hint: the repo changed since the check; run status and archive again\n"
+    )
+
+
 def test_archive_clean_workspace(make_upstream: Callable[..., Path], workspace_env: Path) -> None:
     run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
     dry = run(app, ["archive", "J-1", "--dry-run", "--format", "json"])
@@ -262,6 +283,22 @@ def test_same_branch_in_two_workspaces_conflicts(make_upstream: Callable[..., Pa
     error = row["error"]
     assert isinstance(error, dict)
     assert error["category"] == "conflict"
+
+
+def test_a_9x_cache_failure_shows_its_hint_on_stderr(
+    make_upstream: Callable[..., Path], workspace_env: Path
+) -> None:
+    url = str(make_upstream("api"))
+    cache = cache_path_for(url, cache_dir=workspace_env.parent / "cache")
+    cache.parent.mkdir(parents=True)
+    git(workspace_env.parent, "clone", "-q", "--bare", url, str(cache))
+    result = run(app, ["create", "J-1", "--repo", url])
+    assert result.exit_code == 1
+    assert f"error: J-1/api: {cache} is a cache from untaped 9.x" in result.stderr
+    assert (
+        "set workspace.cache_dir to a new directory; keep this one while clones"
+        " made before untaped 7.0 borrow objects from it"
+    ) in result.stderr
 
 
 def test_read_only_commit_blocks_archive(

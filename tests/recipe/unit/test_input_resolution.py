@@ -18,7 +18,7 @@ from untaped.capabilities.recipe.application.inputs import (
 from untaped.capabilities.recipe.application.targets import Target
 from untaped.capabilities.recipe.domain.recipe import Recipe
 from untaped.capabilities.recipe.errors import RecipeError
-from untaped.capability_api import UsageError
+from untaped.sdk import UsageError
 
 
 class PromptRecorder:

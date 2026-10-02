@@ -10,6 +10,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+import yaml
 
 import untaped.capabilities.recipe.infrastructure.file_writer as file_writer_module
 import untaped.capabilities.recipe.infrastructure.pack_store as pack_store_module
@@ -3312,6 +3313,75 @@ def test_backup_restore_dry_run_and_decline_change_nothing(tmp_path: Path) -> No
     assert config.read_text() == "after\n"
 
 
+def test_backup_restore_emits_an_outcome_record(tmp_path: Path) -> None:
+    bundle, config = _config_backup(tmp_path)
+    restore = ["backups", "restore", bundle.id]
+
+    planned = CliInvoker().invoke(app, [*restore, "--dry-run", "--format", "json"])
+    assert config.read_text() == "after\n"
+    restored = CliInvoker().invoke(app, [*restore, "--yes", "--format", "json"])
+
+    assert planned.exit_code == 0, planned.output
+    assert json.loads(planned.stdout) == {
+        "id": bundle.id,
+        "files": 1,
+        "detail": None,
+        "action": "planned",
+    }
+    assert restored.exit_code == 0, restored.output
+    assert json.loads(restored.stdout) == {
+        "id": bundle.id,
+        "files": 1,
+        "detail": None,
+        "action": "restored",
+    }
+    assert config.read_text() == "before\n"
+
+
+@pytest.mark.parametrize("selector", ["latest", "prefix"])
+def test_backup_restore_record_carries_the_resolved_bundle_id(
+    tmp_path: Path, selector: str
+) -> None:
+    bundle, _config = _config_backup(tmp_path)
+    backup_id = "latest" if selector == "latest" else bundle.id[:15]
+
+    result = CliInvoker().invoke(app, ["backups", "restore", backup_id, "--yes", "-f", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {
+        "id": bundle.id,
+        "files": 1,
+        "detail": None,
+        "action": "restored",
+    }
+
+
+def test_backup_restore_yaml_is_one_mapping(tmp_path: Path) -> None:
+    bundle, _config = _config_backup(tmp_path)
+
+    result = CliInvoker().invoke(
+        app, ["backups", "restore", bundle.id, "--dry-run", "--format", "yaml"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert yaml.safe_load(result.stdout) == {
+        "id": bundle.id,
+        "files": 1,
+        "detail": None,
+        "action": "planned",
+    }
+
+
+def test_backup_restore_table_output_is_the_success_line(tmp_path: Path) -> None:
+    bundle, _config = _config_backup(tmp_path)
+
+    result = CliInvoker().invoke(app, ["backups", "restore", bundle.id, "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+    assert f"restored {bundle.id}" in result.stderr
+
+
 def test_backup_restore_failing_item_exits_nonzero(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3353,10 +3423,14 @@ def test_backup_restore_failing_item_exits_nonzero(
 
     monkeypatch.setattr(file_writer_module.os, "replace", fail_second_replace)
 
-    result = CliInvoker().invoke(app, ["backups", "restore", bundle.id, "--yes"])
+    result = CliInvoker().invoke(app, ["backups", "restore", bundle.id, "--yes", "-f", "json"])
 
     assert result.exit_code == 1, result.output
     assert "disk full" in result.output
+    row = json.loads(result.stdout)
+    assert (row["id"], row["files"], row["action"]) == (bundle.id, 2, "failed")
+    assert "disk full" in row["detail"]
+    assert row["error"]["message"] == row["detail"]
     # The restore is one staged transaction: a mid-write failure rolls back
     # already-restored files, so both keep their pre-restore content.
     assert first.read_text() == "one-after\n"
@@ -3860,6 +3934,7 @@ def test_cli_emit_kinds_are_the_surviving_pack_unification_set() -> None:
         "recipe.apply_outcome",
         "recipe.remove_outcome",
         "recipe.prune_outcome",
+        "recipe.restore_outcome",
         "recipe.backup",
         "recipe.hook_run",
         "recipe.recipe",

@@ -12,7 +12,7 @@ from untaped.capabilities.workspace.domain.safety import (
     UNREADABLE,
     archive_blockers,
 )
-from untaped.capability_api import ErrorInfo, UntapedError, bounded_map, note_failure
+from untaped.sdk import ErrorInfo, UntapedError, bounded_map, note_failure
 
 if TYPE_CHECKING:
     from untaped.capabilities.workspace.application.ports import GitWorktrees

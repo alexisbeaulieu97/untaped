@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from untaped.capabilities.ansible.infrastructure import AliasRepository, SourceRepository
-from untaped.capability_api import ConfigError
+from untaped.sdk import ConfigError
 
 
 @pytest.mark.parametrize(

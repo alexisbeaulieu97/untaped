@@ -19,7 +19,7 @@ from untaped.capabilities.awx.cli._mutation_runner import (
 )
 from untaped.capabilities.awx.cli.context import AwxContext
 from untaped.capabilities.awx.domain import ResourceSpec
-from untaped.capability_api import (
+from untaped.sdk import (
     ConfigError,
     ErrorCategory,
     OperationCancelledError,

@@ -8,7 +8,7 @@ from typing import Any
 from untaped.capabilities.github.application.ports import GithubRepositoryInventoryService
 from untaped.capabilities.github.application.scopes import TeamScope
 from untaped.capabilities.github.domain.inventory import RepositoryInventoryItem
-from untaped.capability_api import HttpError, UntapedError, attribution
+from untaped.sdk import HttpError, UntapedError, attribution
 
 __all__ = [
     "RepositoryInventoryItem",

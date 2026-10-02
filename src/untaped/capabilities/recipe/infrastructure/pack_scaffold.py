@@ -11,17 +11,20 @@ import tomlkit
 from packaging.version import Version
 from tomlkit import TOMLDocument
 
-from untaped.capabilities.recipe.domain.hook_project import HookKind, normalize_hook_name
+from untaped.capabilities.recipe.domain.hook_project import (
+    HOOK_API_VERSION,
+    HookKind,
+    normalize_hook_name,
+)
 from untaped.capabilities.recipe.domain.paths import safe_library_name
 from untaped.capabilities.recipe.errors import RecipeError
-from untaped.capabilities.recipe.hook_api import HOOK_API_VERSION
 from untaped.capabilities.recipe.infrastructure.pack_files import (
     installed_dev_requirement,
     read_pack_manifest,
 )
 from untaped.capabilities.recipe.infrastructure.project_toml import read_toml_document, toml_table
 from untaped.capabilities.recipe.infrastructure.uv_project import lock_project
-from untaped.capability_api import ErrorCategory, attribution
+from untaped.sdk import ErrorCategory, attribution
 
 
 def hook_api_requirements(

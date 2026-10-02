@@ -133,10 +133,7 @@ def test_httpclient_construction_passes_verify() -> None:
     )
 
 
-_HEADER = (
-    "from untaped.capability_api import HttpClient, resolve_verify\n"
-    "import untaped.capability_api as capi\n"
-)
+_HEADER = "from untaped.sdk import HttpClient, resolve_verify\nimport untaped.sdk as capi\n"
 
 
 @pytest.mark.parametrize(

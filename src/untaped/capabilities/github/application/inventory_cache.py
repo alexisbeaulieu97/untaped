@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 
 from untaped.capabilities.github.application.ports import InventoryStore
 from untaped.capabilities.github.domain.inventory import RepoInventory, RepositoryInventoryItem
-from untaped.capability_api import UntapedError
+from untaped.sdk import UntapedError
 
 __all__ = ["CachedRepoInventory"]
 

@@ -23,8 +23,6 @@ failed and paused refreshes, the cache.
 - `--live` works before the source's first refresh; `graph --direction both`
   then omits upstream with a warning.
 - `graph --cached` states the default explicitly.
-- `graph` still accepts `--upstream`, `--downstream` and `--both`, with a
-  deprecation warning; write `--direction up|down|both`.
 
 ## Managing sources and aliases
 
