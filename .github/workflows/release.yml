@@ -1,46 +1,35 @@
 name: Release
 
+# A pushed v* tag publishes to PyPI and creates the GitHub release; a manual
+# dispatch (on any ref, a tag included) runs the same build as a TestPyPI
+# rehearsal. The checks live in scripts/release.py.
 "on":
-  workflow_dispatch:
-    inputs:
-      version:
-        description: Version to publish, without leading v.
-        required: true
-        type: string
-      candidate_oid:
-        description: Full reviewed commit SHA checked out by this dispatch.
-        required: true
-        type: string
-      index:
-        description: Package index to publish to.
-        required: true
-        type: choice
-        options:
-          - testpypi
-          - pypi
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.index }}-${{ inputs.version }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
+
+env:
+  PRODUCTION: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    env:
-      RELEASE_INDEX: ${{ inputs.index }}
-      RELEASE_VERSION: ${{ inputs.version }}
-      RELEASE_CANDIDATE_OID: ${{ inputs.candidate_oid }}
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
@@ -48,209 +37,123 @@ jobs:
           version: "0.11.26"
           enable-cache: true
 
-      - name: Bind reproducible build timestamp
+      - name: Reproducible build timestamp
+        run: echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
+
+      - name: Release version
+        id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$GITHUB_SHA")" >> "$GITHUB_ENV"
-
-      - name: Cache pre-commit hook envs
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        with:
-          path: ~/.cache/pre-commit
-          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
-          restore-keys: |
-            pre-commit-${{ runner.os }}-
-
-      - name: Guard production publish
-        if: inputs.index == 'pypi'
-        run: |
-          set -euo pipefail
-          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
-            echo "::error::Production PyPI publishes must run from refs/heads/main; got $GITHUB_REF."
+          version="$(uv run python scripts/release.py version)"
+          if [ "$PRODUCTION" = true ] && [ "$REF_NAME" != "v$version" ]; then
+            echo "::error::tag $REF_NAME does not match the package version $version"
             exit 1
           fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Sync workspace
-        run: uv sync --locked --all-packages
-
-      - name: Verify release version
+      - name: The tagged commit is on main
+        if: env.PRODUCTION == 'true'
         run: |
           set -euo pipefail
-          python3 .github/release/release.py verify-version "$RELEASE_VERSION"
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor HEAD FETCH_HEAD || {
+            echo "::error::$GITHUB_SHA is not on main"
+            exit 1
+          }
 
-      - name: Pre-commit hooks
-        run: uv run pre-commit run --all-files --show-diff-on-failure
+      - name: Check versions and pins
+        run: uv run python scripts/release.py check "$VERSION"
 
-      - name: mypy
-        run: uv run mypy
+      - name: Release notes
+        run: uv run python scripts/release.py notes "$VERSION" > release-notes.md
 
-      - name: Pytest
-        env:
-          TERM: dumb
-          NO_COLOR: "1"
-          COLUMNS: "200"
-        run: uv run pytest -n auto --durations=25
-
-      - name: Build package
+      - name: Build
         run: |
           set -euo pipefail
-          uv build --no-sources
+          rm -rf dist
+          uv build --all-packages --no-sources --out-dir dist
+          # uv writes dist/.gitignore; drop it so the artifact check stays strict.
           rm -f dist/.gitignore
 
-      - name: Smoke local wheel
-        run: |
-          set -euo pipefail
-          uv venv --python 3.14 "$RUNNER_TEMP/local-wheel"
-          uv pip install --python "$RUNNER_TEMP/local-wheel/bin/python" dist/*.whl
-          python3 .github/release/release.py smoke-unified \
-            --package untaped \
-            --version "$RELEASE_VERSION" \
-            --venv "$RUNNER_TEMP/local-wheel" \
-            --console-script untaped
+      - name: Check artifacts
+        run: uv run python scripts/release.py check "$VERSION" --dist dist
 
-      - name: Validate candidate identity and artifacts
+      - name: Smoke the wheels in a clean venv
         run: |
           set -euo pipefail
-          python3 .github/release/release.py verify-candidate \
-            --version "$RELEASE_VERSION" \
-            --candidate-oid "$RELEASE_CANDIDATE_OID" \
-            --current-oid "$GITHUB_SHA" \
-            --dist dist
+          uv venv --python 3.14 "$RUNNER_TEMP/smoke"
+          uv pip install --python "$RUNNER_TEMP/smoke/bin/python" dist/*.whl
+          uv run python scripts/release.py smoke "$RUNNER_TEMP/smoke/bin/untaped" "$VERSION"
+
+      - name: Compare with the index
+        env:
+          INDEX: ${{ env.PRODUCTION == 'true' && 'pypi' || 'testpypi' }}
+        run: uv run python scripts/release.py index "$VERSION" --dist dist --index "$INDEX"
 
       - name: Upload package artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: python-package-distributions
+          name: dist
           path: dist/*
           if-no-files-found: error
-          retention-days: 7
 
-  github-draft:
-    needs: build
-    if: inputs.index == 'pypi'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    env:
-      RELEASE_VERSION: ${{ inputs.version }}
-      RELEASE_CANDIDATE_OID: ${{ inputs.candidate_oid }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - name: Upload release notes
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          persist-credentials: false
-
-      - name: Download package artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: python-package-distributions
-          path: dist/
-
-      - name: Create or resume exact GitHub draft
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          python3 .github/release/release.py ensure-github-draft \
-            --version "$RELEASE_VERSION" \
-            --candidate-oid "$RELEASE_CANDIDATE_OID" \
-            --current-oid "$GITHUB_SHA" \
-            --dist dist \
-            --repo "$GITHUB_REPOSITORY"
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
 
   publish:
-    needs: [build, github-draft]
-    if: >-
-      always() && needs.build.result == 'success' &&
-      (inputs.index == 'testpypi' || needs.github-draft.result == 'success')
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: ${{ inputs.index }}
+    environment: ${{ github.event_name == 'push' && github.ref_type == 'tag' && 'pypi' || 'testpypi' }}
     permissions:
-      contents: read
       id-token: write
-    env:
-      RELEASE_INDEX: ${{ inputs.index }}
-      RELEASE_VERSION: ${{ inputs.version }}
-      RELEASE_CANDIDATE_OID: ${{ inputs.candidate_oid }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
-        with:
-          persist-credentials: false
-
       - name: Download package artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: python-package-distributions
+          name: dist
           path: dist/
 
-      - name: Prepare only missing index artifacts
-        id: index-prefix
-        run: |
-          set -euo pipefail
-          output="$(python3 .github/release/release.py prepare-index-upload \
-            --index "$RELEASE_INDEX" \
-            --version "$RELEASE_VERSION" \
-            --candidate-oid "$RELEASE_CANDIDATE_OID" \
-            --current-oid "$GITHUB_SHA" \
-            --dist dist \
-            --output-dist dist-upload)"
-          printf '%s\n' "$output"
-          exact="$(printf '%s\n' "$output" | awk -F= '$1 == "index-prefix-exact" { print $2 }')"
-          if [ "$exact" != "true" ] && [ "$exact" != "false" ]; then
-            echo "::error::Index prefix check did not return an exact boolean."
-            exit 1
-          fi
-          echo "present=$exact" >> "$GITHUB_OUTPUT"
-
-      - name: Publish package to TestPyPI
-        if: inputs.index == 'testpypi' && steps.index-prefix.outputs.present != 'true'
+      - name: Publish to PyPI
+        if: env.PRODUCTION == 'true'
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
         with:
-          packages-dir: dist-upload/
+          packages-dir: dist/
+          skip-existing: true
+          print-hash: true
+          attestations: true
+
+      - name: Publish to TestPyPI
+        if: env.PRODUCTION != 'true'
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
+        with:
+          packages-dir: dist/
           repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
           print-hash: true
           attestations: true
 
-      - name: Publish package to PyPI
-        if: inputs.index == 'pypi' && steps.index-prefix.outputs.present != 'true'
-        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
-        with:
-          packages-dir: dist-upload/
-          print-hash: true
-          attestations: true
-
-  smoke-published:
-    needs: publish
-    if: always() && needs.publish.result == 'success'
+  verify:
+    needs: [build, publish]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
+    timeout-minutes: 15
+    # The env context is not available in job-level env, so INDEX repeats the
+    # production expression instead of reading env.PRODUCTION.
     env:
-      RELEASE_INDEX: ${{ inputs.index }}
-      RELEASE_VERSION: ${{ inputs.version }}
-      RELEASE_CANDIDATE_OID: ${{ inputs.candidate_oid }}
+      VERSION: ${{ needs.build.outputs.version }}
+      INDEX: ${{ github.event_name == 'push' && github.ref_type == 'tag' && 'pypi' || 'testpypi' }}
     steps:
-      - name: Configure isolated published smoke home
-        run: |
-          set -euo pipefail
-          home_dir="$RUNNER_TEMP/untaped-published-smoke-home"
-          mkdir -p "$home_dir"
-          echo "HOME=$home_dir" >> "$GITHUB_ENV"
-
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
-
-      - name: Download package artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: python-package-distributions
-          path: dist/
 
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
@@ -258,78 +161,69 @@ jobs:
           version: "0.11.26"
           enable-cache: true
 
-      - name: Smoke published package
+      - name: Download package artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: dist
+          path: dist/
+
+      - name: Every file is on the index with the built bytes
+        run: uv run python scripts/release.py index "$VERSION" --dist dist --index "$INDEX" --complete
+
+      - name: Install from the index and smoke
         run: |
           set -euo pipefail
-          if [ "$RELEASE_INDEX" = "testpypi" ]; then
-            export UV_INDEX=https://test.pypi.org/simple/
-            export UV_INDEX_STRATEGY=unsafe-best-match
+          if [ "$INDEX" = testpypi ]; then
+            export UV_INDEX=https://test.pypi.org/simple/ UV_INDEX_STRATEGY=unsafe-best-match
           fi
-
-          published_venv="$RUNNER_TEMP/published-wheel"
-          installed=0
           for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-            rm -rf "$published_venv"
-            uv venv --python 3.14 "$published_venv"
-            if uv pip install --python "$published_venv/bin/python" --refresh-package untaped "untaped==$RELEASE_VERSION"; then
-              installed=1
+            rm -rf "$RUNNER_TEMP/published"
+            uv venv -q --python 3.14 "$RUNNER_TEMP/published"
+            if uv pip install --python "$RUNNER_TEMP/published/bin/python" --refresh-package untaped "untaped==$VERSION"; then
               break
             fi
-            echo "Package not visible on $RELEASE_INDEX yet; retry $attempt/12."
+            if [ "$attempt" = 12 ]; then
+              echo "::error::untaped==$VERSION is not installable from $INDEX"
+              exit 1
+            fi
             sleep 10
           done
-
-          if [ "$installed" != "1" ]; then
-            echo "::error::Published package smoke failed. Reconcile the exact published index and GitHub state before resuming or choosing a new approved version."
-            exit 1
-          fi
-
-          python3 .github/release/release.py verify-index-artifacts \
-            --index "$RELEASE_INDEX" \
-            --version "$RELEASE_VERSION" \
-            --candidate-oid "$RELEASE_CANDIDATE_OID" \
-            --current-oid "$GITHUB_SHA" \
-            --dist dist
-
-          python3 .github/release/release.py smoke-unified \
-            --package untaped \
-            --version "$RELEASE_VERSION" \
-            --venv "$published_venv" \
-            --console-script untaped
+          uv run python scripts/release.py smoke "$RUNNER_TEMP/published/bin/untaped" "$VERSION"
 
   github-release:
-    needs: [smoke-published, github-draft]
-    if: >-
-      always() && inputs.index == 'pypi' &&
-      needs.smoke-published.result == 'success' &&
-      needs.github-draft.result == 'success'
+    needs: [build, verify]
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write
     env:
-      RELEASE_VERSION: ${{ inputs.version }}
-      RELEASE_CANDIDATE_OID: ${{ inputs.candidate_oid }}
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+      VERSION: ${{ needs.build.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
+        with:
+          version: "0.11.26"
+          enable-cache: true
+
       - name: Download package artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: python-package-distributions
+          name: dist
           path: dist/
 
-      - name: Publish the matching GitHub draft
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          python3 .github/release/release.py publish-github-draft \
-            --version "$RELEASE_VERSION" \
-            --candidate-oid "$RELEASE_CANDIDATE_OID" \
-            --current-oid "$GITHUB_SHA" \
-            --dist dist \
-            --repo "$GITHUB_REPOSITORY"
+      - name: Download release notes
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: release-notes
+          path: .
+
+      - name: Draft, attach, then publish the GitHub release
+        run: uv run python scripts/release.py github-release "$VERSION" --tag "$TAG" --repo "$GITHUB_REPOSITORY" --dist dist --notes release-notes.md
