@@ -16,7 +16,7 @@ from untaped.capabilities.github.api import RepositoryInventoryItem
 from untaped.capabilities.workspace.cli import app
 from untaped.capabilities.workspace.errors import WorkspaceError
 from untaped.capabilities.workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
-from untaped.capabilities.workspace.infrastructure.git_worktrees import cache_path_for
+from untaped.sdk import cache_path
 from untaped.testing import CliInvoker, CliResult, ScriptedPromptBackend
 from workspace.conftest import add_submodule, commit_in, git, init_submodules
 
@@ -289,7 +289,7 @@ def test_a_9x_cache_failure_shows_its_hint_on_stderr(
     make_upstream: Callable[..., Path], workspace_env: Path
 ) -> None:
     url = str(make_upstream("api"))
-    cache = cache_path_for(url, cache_dir=workspace_env.parent / "cache")
+    cache = cache_path(url, root=workspace_env.parent / "cache")
     cache.parent.mkdir(parents=True)
     git(workspace_env.parent, "clone", "-q", "--bare", url, str(cache))
     result = run(app, ["create", "J-1", "--repo", url])

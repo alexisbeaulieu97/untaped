@@ -14,8 +14,8 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from untaped.capabilities.workspace.domain.models import CachedRepo, RepoArg
-from untaped.capabilities.workspace.domain.naming import looks_like_url, repo_key
-from untaped.sdk import PickCatalog, PickItem, UntapedError
+from untaped.capabilities.workspace.domain.naming import looks_like_url
+from untaped.sdk import PickCatalog, PickItem, UntapedError, cache_key
 
 if TYPE_CHECKING:
     from untaped.capabilities.github.api import RepoInventory
@@ -46,7 +46,7 @@ def _age(delta: timedelta) -> str:
 class RepoPickSource:
     """Picker items from the inventory and the local repo cache, plus branch completion.
 
-    ``exclude`` holds the cache identities (:func:`repo_key`) of repos the
+    ``exclude`` holds the cache identities (:func:`cache_key`) of repos the
     workspace already has; they are not offered.
     """
 
@@ -123,7 +123,7 @@ class RepoPickSource:
         items: list[tuple[PickItem, str | None]] = []
         known: set[_Key] = set()
         for repo in inventory.repos:
-            keys = {repo_key(url) for url in (repo.clone_url, repo.ssh_url) if url}
+            keys = {cache_key(url) for url in (repo.clone_url, repo.ssh_url) if url}
             known |= keys
             if keys & self._exclude:
                 continue
@@ -149,7 +149,7 @@ class RepoPickSource:
         for cached in self._git.cached_repos():
             if cached.key in known or cached.key in self._exclude or cached.ident in taken:
                 continue
-            if cached.origin and repo_key(cached.origin) != cached.key:
+            if cached.origin and cache_key(cached.origin) != cached.key:
                 continue  # rewritten origin: would fill another cache
             items.append(
                 (PickItem(id=cached.ident, label=cached.ident, description="cached"), cached)

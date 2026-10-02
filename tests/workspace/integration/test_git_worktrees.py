@@ -11,11 +11,11 @@ from pathlib import Path
 
 import pytest
 
+from untaped import repo_cache
 from untaped.capabilities.workspace.domain import CachedRepo, archive_blockers
 from untaped.capabilities.workspace.errors import GitError, WorkspaceError
 from untaped.capabilities.workspace.infrastructure import LocalGitWorktrees
-from untaped.capabilities.workspace.infrastructure import git_worktrees as git_worktrees_module
-from untaped.capabilities.workspace.infrastructure.git_worktrees import cache_path_for
+from untaped.sdk import cache_path
 from workspace.conftest import add_submodule, commit_in, git, init_submodules
 
 pytestmark = pytest.mark.integration
@@ -38,7 +38,7 @@ def _unknown(url: str) -> str:
     ],
 )
 def test_cache_layout(tmp_path: Path, url: str, relative: str) -> None:
-    assert cache_path_for(url, cache_dir=tmp_path) == (tmp_path / relative).resolve()
+    assert cache_path(url, root=tmp_path) == (tmp_path / relative).resolve()
 
 
 @pytest.mark.parametrize(
@@ -53,7 +53,7 @@ def test_cache_layout(tmp_path: Path, url: str, relative: str) -> None:
 )
 def test_dot_dot_segments_stay_inside_cache_root(tmp_path: Path, url: str) -> None:
     root = tmp_path.resolve()
-    p = cache_path_for(url, cache_dir=tmp_path)
+    p = cache_path(url, root=tmp_path)
     assert p.resolve().is_relative_to(root)
     assert ".." not in p.parts
     assert "\\" not in str(p.relative_to(root))
@@ -198,7 +198,7 @@ def test_a_9x_cache_is_refused_with_a_hint(
     worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
 ) -> None:
     url = str(make_upstream("api"))
-    cache = cache_path_for(url, cache_dir=tmp_path / "cache")
+    cache = cache_path(url, root=tmp_path / "cache")
     cache.parent.mkdir(parents=True)
     git(tmp_path, "clone", "-q", "--bare", url, str(cache))  # an unmarked, 9.x-style cache
     with pytest.raises(WorkspaceError) as caught:
@@ -214,7 +214,7 @@ def test_a_9x_cache_without_its_remote_is_refused(
     worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
 ) -> None:
     url = str(make_upstream("api"))
-    cache = cache_path_for(url, cache_dir=tmp_path / "cache")
+    cache = cache_path(url, root=tmp_path / "cache")
     cache.parent.mkdir(parents=True)
     git(tmp_path, "clone", "-q", "--bare", url, str(cache))
     git(cache, "remote", "remove", "origin")
@@ -227,7 +227,7 @@ def test_a_marked_cache_with_a_wrong_refspec_is_repaired(
     worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
 ) -> None:
     url = str(make_upstream("api"))
-    cache = cache_path_for(url, cache_dir=tmp_path / "cache")
+    cache = cache_path(url, root=tmp_path / "cache")
     worktrees.checkout(url, tmp_path / "a" / "api", branch="b", base=None)
     worktrees.remove(url, tmp_path / "a" / "api", force=False)
     git(cache, "config", "--replace-all", "remote.origin.fetch", "+refs/heads/*:refs/heads/*")
@@ -241,7 +241,7 @@ def test_a_new_cache_is_marked_with_the_layout(
     worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
 ) -> None:
     url = str(make_upstream("api"))
-    cache = cache_path_for(url, cache_dir=tmp_path / "cache")
+    cache = cache_path(url, root=tmp_path / "cache")
     worktrees.checkout(url, tmp_path / "a" / "api", branch="b", base=None)
     assert git(cache, "config", "untaped.layout") == "2"
 
@@ -328,7 +328,7 @@ def test_half_initialised_cache_is_repaired(
     worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
 ) -> None:
     url = str(make_upstream("api"))
-    cache = cache_path_for(url, cache_dir=tmp_path / "cache")
+    cache = cache_path(url, root=tmp_path / "cache")
     cache.parent.mkdir(parents=True)
     git(tmp_path, "init", "-q", "--bare", str(cache))  # crashed before `remote add`
     checkout = worktrees.checkout(url, tmp_path / "ws" / "api", branch="x", base=None)
@@ -413,7 +413,7 @@ def test_status_of_an_unregistered_worktree_raises_git_error(
     url = str(make_upstream("api"))
     dest = tmp_path / "a" / "api"
     worktrees.checkout(url, dest, branch="a", base=None)
-    cache = cache_path_for(url, cache_dir=tmp_path / "cache")
+    cache = cache_path(url, root=tmp_path / "cache")
     cache.rename(cache.with_name("moved.git"))
     worktrees.checkout(url, tmp_path / "b" / other, branch="b", base=None)  # a fresh cache
     with pytest.raises(GitError) as caught:
@@ -453,7 +453,7 @@ def test_force_remove_reports_a_directory_it_cannot_delete(
     url = str(make_upstream("api"))
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch="b", base=None)
-    shutil.rmtree(cache_path_for(url, cache_dir=tmp_path / "cache"))
+    shutil.rmtree(cache_path(url, root=tmp_path / "cache"))
 
     def refuse(path: object, *args: object, **kwargs: object) -> None:
         raise PermissionError(13, "Permission denied", str(path))
@@ -598,7 +598,7 @@ def test_cached_repos_runs_no_git(
     def no_git(*args: object, **kwargs: object) -> None:
         raise AssertionError("git ran")
 
-    monkeypatch.setattr(git_worktrees_module, "run_git", no_git)
+    monkeypatch.setattr(repo_cache, "run_git", no_git)
     assert len(worktrees.cached_repos()) == 3
 
 
