@@ -6,6 +6,12 @@ also accepts a directory and walks every ``*.yml`` / ``*.yaml`` it finds;
 ``read_resource_text`` parses documents already read (piped on stdin).
 A missing or invalid input file is a :class:`ConfigError` whose category
 (``not_found`` / ``invalid``) exits ``1``: the input, not the setup, is wrong.
+
+Documents are read as plain export documents, with no templating, because
+export → commit → apply must round-trip: the file ``export`` writes is the
+file ``apply`` reads. A render step here would break that; what belongs to one
+test run (a copy's name, the pinned commit) is set by the harness, never
+written in the file.
 """
 
 from __future__ import annotations

@@ -16,6 +16,11 @@ untaped github repos list --org acme --format pipe \
   | untaped workspace create acme --stdin
 ```
 
+`--format json` and `--format yaml` print one document per invocation: an
+array for a collection (even when it spans several ids), a mapping for a
+single record. `pipe` and `raw` print one line per record. Only a live
+stream (`--follow`) prints json as one object per line (NDJSON).
+
 ### Envelope format
 
 `--format pipe` writes NDJSON: one JSON object per line.
