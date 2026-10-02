@@ -1,176 +1,67 @@
-# Releasing `untaped` to PyPI/TestPyPI
+# Releasing `untaped`
 
-`untaped` releases through `.github/workflows/release.yml`. The workflow is
-manual-only: it builds one wheel and one source archive, publishes through
-PyPI Trusted Publishing, smoke-installs the published package from the
-selected index, and publishes the matching GitHub draft only after the
-production smoke passes.
+A release is a release PR, an optional TestPyPI rehearsal, and a `vX.Y.Z` tag
+on `main`. `.github/workflows/release.yml` does the rest; the workflow and
+`scripts/release.py` are the reference for what each step checks.
 
 Publishing, dispatching a release workflow, creating a tag or release,
 merging a PR and changing repository settings each need explicit approval for
 that exact action, because each changes shared or public state.
 
-## Package metadata
+## Before the first release
 
-- Package name: `untaped`; build command: `uv build --no-sources`
-- Package identity, version, Python floor, and dependencies come from
-  `pyproject.toml`; the release helper checks the dispatch version and the
-  built filenames against it.
-- Unified smoke: install the wheel, invoke the executable `untaped`, require
-  exact metadata and `untaped --version`, check the management and built-in
-  capability roots in root help, then resolve every capability's `--help`
-  command offline. The expected roots are constants in
-  `.github/release/_release_core.py`; `tests/unit/test_release_workflow.py`
-  pins the built-in list to the real CLI. CI's `unified-app-wheel-smoke` job
-  and the release's local and published jobs call the same
-  `.github/release/release.py smoke-unified` implementation.
+- **Trusted publishers** on both PyPI and TestPyPI: owner `alexisbeaulieu97`,
+  repository `untaped`, workflow `release.yml`, environment `pypi` (PyPI) or
+  `testpypi` (TestPyPI). Each new PyPI project needs a pending publisher on
+  both indexes before its first rehearsal.
+- **The `pypi` environment** requires reviewer approval, and its deployment
+  rules must allow `v*` tags (not only `main`).
+- **A tag ruleset** blocks updating and deleting `v*` tags. It is a
+  repository setting, made by hand.
 
-## Major releases
+## The release PR
+
+It touches these and nothing else:
+
+- every package version: today the root `pyproject.toml`; after the split,
+  each `packages/*/pyproject.toml` together with its exact sibling pins;
+- `uv.lock` (`uv lock`);
+- `CHANGELOG.md`: rename `## Unreleased` to `## X.Y.Z`.
 
 A major release collects the breaking changes held back since the last one
-(see [Versioning and stability](./stability.md)). Before cutting it, open
-its changelog section with an **Upgrading** list: each breaking change and
-what a user or script must do about it.
+(see [Versioning and stability](./stability.md)). Open its changelog section
+with an **Upgrading** list, one item for each Breaking bullet: what a user or
+script must do about it.
 
-## Trusted publishers
-
-Create pending publishers on both TestPyPI and PyPI before dispatching the
-workflow:
-
-- Owner: `alexisbeaulieu97`
-- Repository: `untaped`
-- Workflow: `.github/workflows/release.yml`
-- Package: `untaped`
-- Environment: `testpypi` for TestPyPI, `pypi` for PyPI
-
-Create matching GitHub environments:
-
-- `testpypi`: exists before the TestPyPI dispatch.
-- `pypi`: requires reviewer approval.
-
-Repository settings and environment changes are out-of-band operations. Make
-them deliberately, and record what changed in the release PR or release notes.
-
-## Workflow dispatch
-
-Inputs:
-
-- `version`: release version without a leading `v`, matching `X.Y.Z` with an
-  optional `aN`, `bN`, or `rcN` suffix. Bare `X.Y.Z` creates a stable GitHub
-  draft; the suffixed forms create prerelease drafts.
-- `candidate_oid`: full 40-character reviewed commit SHA. It must equal the
-  checkout's `GITHUB_SHA`.
-- `index`: `testpypi` or `pypi`.
-
-Rules:
-
-- For the first release-workflow introduction, merge the reviewed PR before
-  dispatching TestPyPI because GitHub only accepts `workflow_dispatch` events
-  when the workflow file exists on the default branch.
-- After `release.yml` exists on `main`, later TestPyPI rehearsals may target a
-  reviewed release branch via the dispatch `ref`.
-- Production PyPI must run from `refs/heads/main`; the workflow fails otherwise.
-- Visibility checks right after a write (the new GitHub draft, the uploaded
-  index files) poll with backoff for about a minute, because GitHub's release
-  list and PyPI's CDN-cached simple index lag writes by a few seconds.
-- Candidate identity and package metadata are checked before any remote
-  mutation. Build/test/local smoke run in a read-only job.
-- A production run creates or resumes a GitHub draft targeted at the exact
-  candidate and containing exactly the wheel and source archive. Existing
-  drafts and assets are accepted only after their tag, target, and SHA-256
-  values match.
-- The publish job only downloads the built distributions and calls
-  `pypa/gh-action-pypi-publish`; it has `id-token: write` but no write access
-  to repository contents.
-- The published-package job verifies the exact index filename-to-SHA-256 set
-  and runs the shared unified smoke in a read-only job.
-- The final GitHub job runs only for `index = pypi` after the published smoke
-  passes, and publishes the already validated draft. It never creates a
-  replacement release or overwrites an asset.
-- Action refs are pinned to full commit SHAs.
-- `pypa/gh-action-pypi-publish` performs the upload; do not use `uv publish`
-  for this workflow because the PyPA action emits provenance attestations under
-  Trusted Publishing.
-
-## Restartable state machine
-
-Production publication is an ordered prefix:
-
-1. validate the reviewed candidate, package metadata, wheel, source archive,
-   and local smoke;
-2. create or inspect the exact GitHub draft and upload only missing exact
-   assets;
-3. inspect the selected index for the exact immutable filename/hash set and
-   upload through Trusted Publishing when absent;
-4. install and smoke the published package;
-5. publish the matching GitHub draft.
-
-Retries inspect every completed prefix before continuing. Missing, conflicting,
-ambiguous, or unverifiable remote state fails closed. A fully matching
-published release is a verified no-op after the published smoke. TestPyPI
-rehearsals omit the GitHub draft/publish states but retain immutable-file and
-smoke verification.
-
-## TestPyPI caveat
-
-TestPyPI validates the release process and OIDC path, not reusable bytes.
-Versions are immutable there too. If a TestPyPI upload burns a version, bump the
-patch version and restart that package's release cycle.
-
-For TestPyPI smokes, the workflow uses TestPyPI for the package under test and
-PyPI for third-party dependencies via `UV_INDEX_STRATEGY=unsafe-best-match`.
-
-## Burn recovery
-
-Use the following procedure when a release run needs to be resumed. Replace
-the placeholders with the externally recorded checkpoint bundle and reviewed
-candidate; do not use a working checkout as the recovery source.
+## Rehearse
 
 ```bash
-CHECKPOINT_BUNDLE=/secure/path/to/untaped-checkpoint.bundle
-CHECKPOINT_OID=<40-character-reviewed-checkpoint-oid>
-RESTORE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/untaped-release-restore.XXXXXX")"
-
-git clone --no-hardlinks "$CHECKPOINT_BUNDLE" "$RESTORE_DIR"
-git -C "$RESTORE_DIR" checkout --detach "$CHECKPOINT_OID"
-test "$(git -C "$RESTORE_DIR" rev-parse HEAD)" = "$CHECKPOINT_OID"
-test -z "$(git -C "$RESTORE_DIR" status --porcelain)"
-git -C "$RESTORE_DIR" fsck --full --strict
+gh workflow run release.yml --ref <branch>
 ```
 
-Before an authorized run, run the focused release tests from that clean
-checkout. The fake transport covers draft creation, partial asset/index
-prefixes, smoke failure, publication failure, exact completed no-op, and
-conflicts; it performs no network or publish operation:
+This runs the same build and checks, publishes to TestPyPI and installs from
+it. TestPyPI files are immutable, so re-rehearsing an unchanged build is a
+no-op. A changed build under an already-rehearsed version fails the index
+check: rehearse a pre-release such as `X.Y.Zrc1` first, or accept that a
+rehearsal of `X.Y.Z` pins those bytes.
 
-```bash
-cd "$RESTORE_DIR"
-UV_CACHE_DIR=/path/to/writable/uv-cache \
-  uv run --locked pytest -o addopts='' \
-  .github/release/tests/test_release_helper.py \
-  tests/unit/test_release_workflow.py \
-  tests/unit/test_release_smoke_workflow.py
-```
+## Release
 
-After an interrupted run, inspect the exact public prefix before choosing the
-next transition. Resume only when every observed identity is provable:
+1. Merge the release PR.
+2. Tag the merge commit on `main` `vX.Y.Z` and push the tag.
+3. Check that CI is green for that commit, then approve the `pypi`
+   environment.
 
-- an existing release has tag `v<version>`, its target and resolved tag point
-  to the reviewed candidate, and every visible asset has the expected SHA-256;
-- an index contains only the candidate's exact wheel and source archive for
-  that version, with matching SHA-256 values; and
-- a draft may be missing a tag until publication, while a published release
-  must have a resolved matching tag.
+The GitHub release is created from the CHANGELOG section once the published
+package installs. Builds use the commit timestamp, so rebuilding a tag gives
+byte-identical files (v9.1.0 matched PyPI).
 
-An exact draft receives only its missing assets. An exact partial index
-receives only its missing files. An exact published release is a verified
-no-op after the published smoke. A timeout, non-404 response, conflicting
-hash, unexpected file, target mismatch, or unresolved published tag stops the
-run until the state is reconciled; never retry an ambiguous upload.
+## A failed run
 
-Use a new approved version only after reconciliation proves that an immutable
-public filename or tag contains bytes or identity for another candidate, or
-when the original candidate can no longer be proven. Never overwrite a
-filename, delete/reuse a tag, or silently switch candidate OIDs. Restore
-required operational paths from accepted source bundles without destroying live
-checkouts, and preserve restricted config, state, and expected skill manifests.
+- Use **Re-run failed jobs**: it reuses the built artifacts.
+- Publishing skips files already on the index, and the index check refuses
+  different bytes. When it does, bump the patch version.
+- A partial multi-package publish is completed by the same re-run.
+- The GitHub release step finds a leftover draft by listing releases and
+  finishes it. It never changes a published release: one whose assets match
+  is a no-op, and one with a mismatch fails.
