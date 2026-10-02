@@ -39,9 +39,9 @@ from cyclopts.exceptions import (
 )
 
 from untaped.bootstrap import build_root_app
-from untaped.capabilities.awx.domain.suite_starter import starter_suite
 from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 from untaped.sdk import SkillAsset
+from untaped_awx.domain.suite_starter import starter_suite
 
 SKILL_NAMES = tuple(
     f"untaped-{name}" for name in ("ansible", "awx", "github", "jira", "recipe", "workspace")

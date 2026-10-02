@@ -1,0 +1,272 @@
+"""LoadTestSuite use case: file → rendered → validated Suite."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import cast
+
+import pytest
+
+from untaped.sdk import ConfigError, UsageError
+from untaped_awx.application.suites.loader import LoadTestSuite
+from untaped_awx.application.suites.ports import Filesystem, Prompt
+from untaped_awx.domain.suite import RefSentinel, VariableSpec
+from untaped_awx.infrastructure.suites import DefaultParser, resolve_variables
+
+
+class FakeFilesystem(Filesystem):
+    def __init__(self, files: dict[Path, str]) -> None:
+        self._files = files
+
+    def read_text(self, path: Path) -> str:
+        return self._files[path]
+
+
+class StubPrompt:
+    """Always non-interactive — no test reaches it without explicit values."""
+
+    def is_interactive(self) -> bool:
+        return False
+
+    def ask(self, spec: VariableSpec) -> str:  # pragma: no cover — never called
+        raise AssertionError("StubPrompt.ask called unexpectedly")
+
+
+def _load(text: str, **kwargs: object) -> object:
+    path = Path("/virtual/test.yml")
+    fs = FakeFilesystem({path: text})
+    loader = LoadTestSuite(
+        fs,
+        parser=DefaultParser(),
+        vars_resolver=resolve_variables,
+        prompt=cast(Prompt, StubPrompt()),
+    )
+    return loader(path, **kwargs)  # type: ignore[arg-type]
+
+
+def test_loads_minimal_suite_with_no_frontmatter() -> None:
+    text = (
+        "kind: AwxTestSuite\n"
+        "name: deploy-app\n"
+        "jobTemplate: Deploy app\n"
+        "cases:\n"
+        "  one:\n"
+        "    launch:\n"
+        "      limit: app-prod-*\n"
+    )
+    suite = _load(text)
+    assert suite.name == "deploy-app"  # type: ignore[attr-defined]
+    assert "one" in suite.cases  # type: ignore[attr-defined]
+
+
+def test_jinja2_rendering_with_cli_var() -> None:
+    text = (
+        "---\n"
+        "variables:\n"
+        "  env: { type: string }\n"
+        "---\n"
+        "kind: AwxTestSuite\n"
+        "name: deploy-app\n"
+        "jobTemplate: Deploy app\n"
+        "cases:\n"
+        "  c:\n"
+        "    launch:\n"
+        "      limit: {{ env | to_yaml }}\n"
+    )
+    suite = _load(text, cli_vars={"env": "prod"})
+    assert suite.cases["c"].launch["limit"] == "prod"  # type: ignore[attr-defined]
+
+
+def test_invalid_jinja2_syntax_raises_awx_api_error() -> None:
+    text = (
+        "kind: AwxTestSuite\n"
+        "name: x\n"
+        "jobTemplate: y\n"
+        "cases:\n  c:\n    launch:\n      limit: '{{ unclosed }'\n"
+    )
+    with pytest.raises(ConfigError, match=r"template error"):
+        _load(text)
+
+
+def test_invalid_yaml_body_raises_awx_api_error() -> None:
+    text = (
+        "kind: AwxTestSuite\n"
+        "name: x\n"
+        "jobTemplate: y\n"
+        "cases:\n  c:\n    launch:\n      limit: 'closing-quote-missing\n"
+    )
+    with pytest.raises(ConfigError, match="YAML"):
+        _load(text)
+
+
+def test_duplicate_case_names_in_rendered_yaml_are_rejected() -> None:
+    """A Jinja2 matrix that produces duplicate case names must hard-fail."""
+    text = (
+        "---\n"
+        "variables:\n"
+        "  regions:\n"
+        "    type: list\n"
+        "    default: [us, us]\n"
+        "---\n"
+        "kind: AwxTestSuite\n"
+        "name: x\n"
+        "jobTemplate: y\n"
+        "cases:\n"
+        "{% for r in regions %}"
+        "  shared:\n"
+        "    launch:\n"
+        "      extra_vars: { region: {{ r | to_yaml }} }\n"
+        "{% endfor %}"
+    )
+    with pytest.raises(ConfigError, match=r"duplicate"):
+        _load(text)
+
+
+def test_variable_metadata_with_name_key_is_rejected_cleanly() -> None:
+    """A user including ``name:`` inside a variable body should not crash with TypeError."""
+    text = (
+        "---\nvariables:\n"
+        "  env:\n"
+        "    type: string\n"
+        "    default: dev\n"
+        "    name: shadowing\n"  # collides with the inferred VariableSpec.name
+        "---\n"
+        "kind: AwxTestSuite\nname: x\njobTemplate: y\ncases: {c: {launch: {}}}\n"
+    )
+    # The dropped ``name`` field doesn't break the load (it's the same
+    # value the loader would set anyway, just dropped defensively).
+    suite = _load(text)
+    assert "env" in suite.variables  # type: ignore[attr-defined]
+
+
+def test_invalid_yaml_frontmatter_raises_awx_api_error() -> None:
+    text = (
+        "---\nvariables: : invalid\n---\n"
+        "kind: AwxTestSuite\njobTemplate: y\ncases: {c: {launch: {}}}\n"
+    )
+    with pytest.raises(ConfigError, match=r"YAML|frontmatter"):
+        _load(text)
+
+
+def test_strict_undefined_on_missing_var() -> None:
+    text = (
+        "---\n"
+        "variables:\n"
+        "  env: { type: string }\n"
+        "---\n"
+        "kind: AwxTestSuite\n"
+        "name: x\n"
+        "jobTemplate: y\n"
+        "cases:\n"
+        "  c:\n"
+        "    launch:\n"
+        "      limit: {{ unknown_var }}\n"
+    )
+    with pytest.raises(ConfigError, match="undefined"):
+        _load(text, cli_vars={"env": "prod"})
+
+
+def test_expect_block_is_parsed_and_rendered() -> None:
+    text = (
+        "---\nvariables:\n  word: {default: boom}\n---\n"
+        "kind: AwxTestSuite\n"
+        "name: x\n"
+        "jobTemplate: y\n"
+        "defaults:\n"
+        "  expect: {status: failed}\n"
+        "cases:\n"
+        "  c:\n"
+        "    timeout: 90\n"
+        "    expect:\n"
+        "      log: {contains: ['{{ word }}']}\n"
+    )
+    suite = _load(text)
+    case = suite.cases["c"]
+    assert case.timeout == 90
+    assert case.expect is not None
+    assert case.expect.over(suite.defaults.expect if suite.defaults else None).model_dump() == {
+        "status": "failed",
+        "log": {"contains": ("boom",), "not_contains": (), "matches": ()},
+        "changed": None,
+        "hosts": {},
+        "idempotent": False,
+        "failed_tasks": (),
+        "nodes": {},
+    }
+
+
+def test_the_removed_assert_block_is_rejected() -> None:
+    text = "kind: AwxTestSuite\nname: x\njobTemplate: y\ncases:\n  c:\n    assert: {}\n"
+    with pytest.raises(ConfigError, match="assert"):
+        _load(text)
+
+
+def test_launch_field_outside_launch_is_rejected() -> None:
+    text = "kind: AwxTestSuite\nname: x\njobTemplate: y\ncases:\n  c:\n    extra_vars: {x: 1}\n"
+    with pytest.raises(ConfigError, match="extra_vars"):
+        _load(text)
+
+
+def test_missing_kind_is_rejected() -> None:
+    text = "name: x\njobTemplate: y\ncases: {c: {launch: {}}}\n"
+    with pytest.raises(ConfigError):
+        _load(text)
+
+
+def test_filename_stem_used_as_default_name() -> None:
+    text = "kind: AwxTestSuite\njobTemplate: y\ncases:\n  c:\n    launch: {}\n"
+    path = Path("/virtual/deploy-tests.yml")
+    fs = FakeFilesystem({path: text})
+    loader = LoadTestSuite(
+        fs,
+        parser=DefaultParser(),
+        vars_resolver=resolve_variables,
+        prompt=cast(Prompt, StubPrompt()),
+    )
+    suite = loader(path)
+    assert suite.name == "deploy-tests"
+
+
+def test_ref_tag_survives_through_load() -> None:
+    text = (
+        "kind: AwxTestSuite\n"
+        "name: x\n"
+        "jobTemplate: y\n"
+        "cases:\n"
+        "  c:\n"
+        "    launch:\n"
+        '      inventory: !ref { kind: Inventory, name: "Web Inventory" }\n'
+    )
+    suite = _load(text)
+    inv = suite.cases["c"].launch["inventory"]  # type: ignore[attr-defined]
+    assert isinstance(inv, RefSentinel)
+    assert inv.kind == "Inventory"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "---\nvariables: [not, a, mapping]\n---\nkind: AwxTestSuite\n",  # header shape
+        "---\nvariables:\n  env: {type: string}\n---\nkind: AwxTestSuite\n",  # missing var
+        "kind: AwxTestSuite\nname: {{ oops\n",  # Jinja2 syntax
+        "kind: AwxTestSuite\ncases: [unclosed\n",  # YAML
+        "kind: AwxTestSuite\nname: x\njobTemplate: J\ncases: {}\n",  # validation
+    ],
+    ids=["header", "variable", "jinja", "yaml", "model"],
+)
+def test_every_load_error_names_the_file(text: str) -> None:
+    with pytest.raises((ConfigError, UsageError)) as caught:
+        _load(text)
+    assert str(caught.value).startswith("/virtual/test.yml: ")
+    assert not str(caught.value).startswith("/virtual/test.yml: /virtual/test.yml")
+
+
+def test_variables_in_the_body_are_rejected() -> None:
+    text = (
+        "kind: AwxTestSuite\njobTemplate: J\ncases: {one: {}}\nvariables:\n  env: {type: string}\n"
+    )
+    with pytest.raises(ConfigError) as caught:
+        _load(text)
+    assert str(caught.value) == (
+        "/virtual/test.yml: declare variables in the '---' header, not the body"
+    )

@@ -1,0 +1,130 @@
+"""Own the private external-editor session and reuse the common AWX mutation gate."""
+
+from __future__ import annotations
+
+import shutil
+import tempfile
+from collections.abc import Sequence
+from contextlib import ExitStack
+from pathlib import Path
+
+from untaped.sdk import (
+    ConfigError,
+    ErrorCategory,
+    OperationCancelledError,
+    UntapedError,
+    UsageError,
+    atomic_write,
+    echo,
+    run_editor,
+)
+from untaped_awx.application.edit_resources import EditResources
+from untaped_awx.application.save_resource import SaveResource
+from untaped_awx.application.selection import SelectedResource
+from untaped_awx.cli._apply_runner import build_mutation_engine
+from untaped_awx.cli._mutation_runner import (
+    WriteControls,
+    emit_outcomes,
+    preview_and_execute,
+)
+from untaped_awx.cli.context import AwxContext
+from untaped_awx.domain import ResourceSpec
+
+#: Failures while preparing an edited batch that the edit cannot fix.
+_NOT_THE_EDIT = frozenset(
+    {
+        ErrorCategory.AUTH,
+        ErrorCategory.PERMISSION,
+        ErrorCategory.CONFIG,
+        ErrorCategory.UNAVAILABLE,
+    }
+)
+
+
+def run_edit(
+    ctx: AwxContext,
+    spec: ResourceSpec,
+    selected: Sequence[SelectedResource],
+    controls: WriteControls,
+    *,
+    fields: Sequence[str] | None = None,
+) -> None:
+    """Edit one bounded batch; retain the private session on any failure."""
+    batch = EditResources(spec, selected, SaveResource(ctx.repo, ctx.fk), fields=fields)
+    if not selected:
+        emit_outcomes([], fmt=controls.fmt, columns=controls.columns, per_kind=True)
+        return
+    # A controlling terminal is required even under --yes and even if stdin is
+    # a TTY-like wrapper. All subprocess I/O goes there, never to machine stdout.
+    with ExitStack() as stack:
+        try:
+            # Buffered update mode (r+) requires seekability; terminals are
+            # nonseekable. Separate read/write streams work for real TTYs.
+            terminal_input = stack.enter_context(open("/dev/tty", encoding="utf-8"))
+            terminal_output = stack.enter_context(open("/dev/tty", "w", encoding="utf-8"))
+        except OSError as exc:
+            raise UsageError("edit requires a terminal for the external editor") from exc
+        directory = Path(tempfile.mkdtemp(prefix="untaped-awx-edit-"))
+        path = directory / "resources.yml"
+        clean = False
+        try:
+            atomic_write(path, batch.render())
+            path.chmod(0o600)
+            engine = build_mutation_engine(ctx, allow_unverified=controls.allow_unverified)
+            while True:
+                try:
+                    run_editor(
+                        path, stdin=terminal_input, stdout=terminal_output, stderr=terminal_output
+                    )
+                finally:
+                    # Atomic-save editors can replace the inode with a looser mode.
+                    # The private parent directory protects it throughout the edit.
+                    if path.exists():
+                        path.chmod(0o600)
+                try:
+                    resources, retained = batch.parse(path.read_text(encoding="utf-8"))
+                    plan = engine.prepare(
+                        resources,
+                        mode="edit",
+                        existing=retained,
+                        membership_snapshots=batch.membership_snapshots,
+                    )
+                except (UntapedError, ValueError) as exc:
+                    if isinstance(exc, UntapedError) and exc.category in _NOT_THE_EDIT:
+                        raise  # the controller or setup failed, not the edited YAML
+                    # Engine errors can include user-supplied field values; do not
+                    # echo them before the secret policy has prepared the batch.
+                    echo(
+                        "Invalid edited batch; no changes written. Fix the YAML or field values.",
+                        err=True,
+                    )
+                    ui = ctx.progress_ui()
+                    with ui.terminal(refusal="edit requires a terminal to reopen the editor"):
+                        reopen = ui.confirm("Reopen editor?", default=False)
+                    if reopen:
+                        continue
+                    raise OperationCancelledError from None
+                try:
+                    outcomes = preview_and_execute(ctx, engine, plan, controls)
+                except OperationCancelledError:
+                    clean = True  # declined: nothing was written, so nothing to keep
+                    raise
+                clean = not any(
+                    item.action in {"failed", "partial", "conflict", "skipped"} or item.unverified
+                    for item in outcomes
+                )
+                break
+        except OSError as exc:
+            raise ConfigError("could not read or maintain the private editor file") from exc
+        finally:
+            if clean:
+                shutil.rmtree(directory)
+            else:
+                echo(f"Edited batch retained at {path}", err=True)
+    emit_outcomes(
+        outcomes,
+        fmt=controls.fmt,
+        columns=controls.columns,
+        allow_unverified=controls.allow_unverified,
+        per_kind=True,
+    )
