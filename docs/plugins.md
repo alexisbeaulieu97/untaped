@@ -206,8 +206,7 @@ Every `untaped` command, first-party or third-party, looks and behaves the same
 way. Each rule below names the `untaped.sdk` helper that implements it; use
 the helper rather than your own version.
 
-A provider also follows these rules, which
-[`check_conventions`](#enforcement) checks:
+A provider also follows these rules:
 
 - A capability reads and writes only its own config section, state, skills
   and doctor checks.
@@ -217,6 +216,24 @@ A provider also follows these rules, which
   [Raise with a category](#raise-with-a-category-or-inherit-one)).
 - Commands that write declare it with `@writes`, and a destructive one takes
   both `--yes` and `--dry-run` (see [Options](#options)).
+
+[`check_conventions`](#enforcement) flags part of this:
+
+- `foreign-section`: a `get_config_section(...)` or `.section(...)` call
+  naming another capability's section as a string literal;
+- `layer`: an import against the layer direction, and `settings`: settings
+  resolved outside `cli`;
+- `errors-module`, `exception-base` and `error-system`: no `errors.py`, an
+  exception that is not an `UntapedError`, or a capability's base error
+  class without a `system`;
+- `undeclared-write`, `mutation-format` and `destructive-controls`: `--yes`
+  or `--dry-run` without `@writes`, a declared write without `--format`, or
+  a destructive command without both `--yes` and `--dry-run`.
+
+It does not check state writes or an error's category. Composition, not
+`check_conventions`, quarantines a provider whose skill name or doctor-check
+ID duplicates another's. The message and option rules below have their own
+checks, named in each violation line.
 
 ### Exit codes
 
@@ -510,8 +527,8 @@ re-declare it as `target_path: AbsolutePath` so it leads the output.
 
 ## Packaged skills
 
-A capability ships its agent skill: a directory with `SKILL.md`, optional
-`references/*.md` and sample inputs in `examples/`. Declare it on
+A capability ships its agent skill as a directory holding `SKILL.md`. Declare
+it on
 `CapabilitySpec.skills`; the root lists and installs every composed
 capability's skills (see [Agent skills](./getting-started.md#agent-skills)):
 
@@ -521,9 +538,8 @@ untaped skills install acme --target codex
 untaped skills install --all --target all
 ```
 
-The full ID (`untaped-acme`) is the `SkillAsset.name` and stays stable:
-installs keep it in their directory and marker even when chosen by the short
-selector (`acme`). There is no core skill; capability-specific guidance
+`SkillAsset.name` is the skill's full ID (`untaped-acme`; see
+[Install skills](./getting-started.md#install-skills)). There is no core skill; capability-specific guidance
 belongs in the capability's skill.
 
 Start from this template. Copy it to

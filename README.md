@@ -71,9 +71,8 @@ Each capability's guide: [workspace](./docs/workspace/usage.md),
 ### Stable within a major release
 
 A minor or patch release never breaks these. Anything new is added alongside
-them. Two installs of different major versions sharing one config can
-disagree about a renamed setting; give the second its own config file (see
-`UNTAPED_CONFIG` in [Configuration](./docs/configuration.md#file-and-layout)).
+them. For two installs of different major versions, see
+[Configuration](./docs/configuration.md#file-and-layout).
 
 - Command and flag names, positional arguments, and what each means
   (`untaped COMMAND --help`).

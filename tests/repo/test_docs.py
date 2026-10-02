@@ -217,7 +217,8 @@ def test_install_examples_use_the_extras() -> None:
         ]
         assert installs, page
         assert any("untaped[all]" in line for line in installs), page
-        assert not [line for line in installs if re.search(r"install\s+'?untaped-", line)], page
+        bare = [line for line in installs if re.search(r"install\b.*?['\"]?untaped-[a-z]", line)]
+        assert not bare, page
 
 
 def test_docs_holds_only_the_reader_pages() -> None:
