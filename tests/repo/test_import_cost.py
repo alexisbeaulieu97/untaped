@@ -100,12 +100,13 @@ _STARTUP_PROBE = (
 )
 
 #: Modules imported on top of interpreter startup (a coverage run preloads
-#: some, so it only lowers these). Measured 2026-09-27 on Python 3.14: 639
-#: total / 103 ``untaped.*`` for ``--help``, 642 / 103 for ``--version``.
+#: some, so it only lowers these). Measured 2026-10-02 on Python 3.14.8 with
+#: seven capabilities: 119 ``untaped.*`` for ``--help`` and ``--version``
+#: (the dotfiles capability adds four: its package, settings and state models).
 #: The headroom absorbs dependency and patch-release drift; a new built-in
 #: capability adds a few ``untaped.*`` modules (its SPEC and settings).
 _TOTAL_BUDGET = 700
-_UNTAPED_BUDGET = 115
+_UNTAPED_BUDGET = 125
 
 
 @pytest.mark.parametrize("flag", ["--help", "--version"])

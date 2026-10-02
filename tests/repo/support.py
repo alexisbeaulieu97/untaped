@@ -8,4 +8,4 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = REPO_ROOT / "packages"
 
 #: Every first-party capability, in name order.
-FIRST_PARTY = ("ansible", "awx", "github", "jira", "recipe", "workspace")
+FIRST_PARTY = ("ansible", "awx", "dotfiles", "github", "jira", "recipe", "workspace")
