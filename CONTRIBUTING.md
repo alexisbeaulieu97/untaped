@@ -15,7 +15,7 @@ HTTP/TLS helpers, or agent workflows. Keep capability-specific command and
 settings guidance with the capability that owns it, and link to the core pages
 for shared mechanics.
 
-Capability skills follow the [skill template](docs/templates/SKILL.md).
+Capability skills follow the [skill template](docs/plugins.md#packaged-skills).
 
 ## Sensitive data
 

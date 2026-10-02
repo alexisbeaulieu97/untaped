@@ -1,4 +1,4 @@
-"""Record-level default table columns and ``TableGlyph`` (``docs/conventions.md``)."""
+"""Record-level default table columns and ``TableGlyph`` (``docs/plugins.md#output-records``)."""
 
 from __future__ import annotations
 

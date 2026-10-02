@@ -16,7 +16,7 @@ helpers, plus one command subtree per first-party capability
 first-party ones included, through the `untaped.capabilities` entry-point
 group, validates them through the registry, then mounts the survivors. The
 implementation in `packages/untaped/src/untaped/` is authoritative for composition and command
-behavior. User workflows live in [`docs/`](docs/README.md); provider authors
+behavior. User workflows live in [`docs/`](docs/getting-started.md); provider authors
 should start with [`docs/plugins.md`](docs/plugins.md).
 
 Inspect `untaped capabilities` for the current first-party capabilities.
@@ -54,7 +54,7 @@ packages/untaped-<name>/src/untaped_<name>/
 Import direction inside a capability: `cli → application → domain` and
 `infrastructure → domain`; `domain/` imports nothing from the other layers.
 
-Commands follow [`docs/conventions.md`](docs/conventions.md) (flags,
+Commands follow [the conventions](docs/plugins.md#conventions) (flags,
 messages, exit codes, record shapes) through the `untaped.sdk` helpers it
 lists: `UsageError`, shared option aliases, `plural`/`q`/`not_found`/`hint`,
 `ui.success`, `batch_apply`/`ui.confirm_action`, `read_identifiers(accept_kinds=…)`,
@@ -62,7 +62,7 @@ and the `OutcomeRecord`/`TargetRecord` bases. Each capability's tests run
 `untaped.testing.check_conventions`. Every error raises with
 a `category` and `system` (class defaults in the capability's `errors.py`) and
 keeps that attribution when replaced or turned into a row; see
-[Raise with a category](docs/conventions.md#raise-with-a-category-or-inherit-one).
+[Raise with a category](docs/plugins.md#raise-with-a-category-or-inherit-one).
 
 ## Capability registry + the SDK (`untaped.sdk`)
 
@@ -88,9 +88,9 @@ keeps that attribution when replaced or turned into a row; see
   `testpaths`/`pythonpath`, coverage `source`, `[tool.uv.sources]`), to
   `EXPECTED_MEMBERS` in `tests/repo/test_workspace.py` and to `FIRST_PARTY` in
   `tests/repo/support.py`; the tests catch omissions. Start its
-  skill from [`docs/templates/SKILL.md`](docs/templates/SKILL.md) (which holds
+  skill from the [skill template](docs/plugins.md#packaged-skills) (which holds
   the skill rules) and its user guide at `docs/<name>/usage.md`, linked from
-  `docs/README.md`. Set
+  the root `README.md` and `docs/getting-started.md`. Set
   `SPEC.help` to the app's one-line help: a capability with `help` is mounted
   lazily (its factory runs on first dispatch, and in `untaped doctor`), so
   `untaped --help` and other capabilities never import its CLI. Without
@@ -190,4 +190,4 @@ alone does not authorize remote publication or unrelated work.
 ## See also
 
 - **Provider authoring:** [`docs/plugins.md`](docs/plugins.md)
-- **User-facing docs:** [`docs/`](docs/README.md)
+- **User-facing docs:** [`docs/`](docs/getting-started.md)

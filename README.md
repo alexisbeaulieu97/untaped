@@ -48,11 +48,21 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
 
 ## Documentation
 
-Start with [Getting started](./docs/getting-started.md). The
-[documentation index](./docs/README.md) links the capability guides, the
-configuration and scripting references (pipes, exit codes, environment
-variables), [agent skills](./docs/skills.md) and
-[provider authoring](./docs/plugins.md).
+- [Getting started](./docs/getting-started.md): install, tokens, profiles,
+  a first command in each capability, piping, and agent skills.
+- [Configuration](./docs/configuration.md): the config and state files,
+  profiles, settings, aliases, TLS and tokens.
+- [Scripting](./docs/scripting.md): output formats and the pipe envelope,
+  record kinds, exit codes and environment variables.
+- [Configuration reference](./docs/reference/config.md): every setting, its
+  default and its environment variable.
+- [Building a capability provider](./docs/plugins.md): add a capability from
+  your own package, the command conventions and the skill template.
+
+Each capability's guide: [workspace](./docs/workspace/usage.md),
+[github](./docs/github/usage.md), [jira](./docs/jira/usage.md),
+[awx](./docs/awx/usage.md), [ansible](./docs/ansible/usage.md) and
+[recipe](./docs/recipe/usage.md).
 
 ## Versioning
 
@@ -63,7 +73,7 @@ variables), [agent skills](./docs/skills.md) and
 A minor or patch release never breaks these. Anything new is added alongside
 them. Two installs of different major versions sharing one config can
 disagree about a renamed setting; give the second its own config file (see
-`UNTAPED_CONFIG` in [Configuration](./docs/configuration.md)).
+`UNTAPED_CONFIG` in [Configuration](./docs/configuration.md#file-and-layout)).
 
 - Command and flag names, positional arguments, and what each means
   (`untaped COMMAND --help`).

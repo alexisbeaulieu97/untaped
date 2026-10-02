@@ -491,7 +491,7 @@ the pack's `src/` only. The full list is in the recipe skill's
 
 ## See also
 
-- [Command and output conventions](./conventions.md#output-records): record
-  field rules.
-- [Building a capability provider](./plugins.md#5-piping): emitting and
+- [Output records](./plugins.md#output-records): record field rules for
+  capability authors.
+- [Building a capability provider](./plugins.md#piping): emitting and
   reading records from capability code.

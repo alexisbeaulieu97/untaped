@@ -20,6 +20,12 @@ The state file sits in the config file's directory and is named after it:
 `~/work.state.yml`, and sibling config files never share state.
 `UNTAPED_STATE` puts it elsewhere, but must not name the config file itself.
 
+Two installs of different major versions that share one config file can
+disagree about a renamed setting: writes keep keys a version does not know,
+but the older install reads a renamed key's default. Give the second install
+its own `UNTAPED_CONFIG` (its state follows it); `untaped doctor` reports
+keys the running version ignores.
+
 `config` and `profile` commands write only `config.yml`; capability state
 writes touch only `state.yml`.
 
