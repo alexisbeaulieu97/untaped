@@ -135,9 +135,8 @@ Please report suspected vulnerabilities privately. See
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) and [AGENTS.md](./AGENTS.md) for the
-local workflow and architecture rules. Releases follow
-[docs/release.md](./docs/release.md).
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the local workflow, the
+repository layout and releasing.
 
 ## License
 

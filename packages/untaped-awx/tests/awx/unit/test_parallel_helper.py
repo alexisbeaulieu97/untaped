@@ -3,7 +3,7 @@
 Most of the helper's behaviour (launch-order collection, ``UntapedError``
 capture, ``"<ClassName>: <message>"`` wrap format) is covered through the
 public CLI in ``tests/integration/test_jobs_cli.py`` — that's the right
-home for those assertions per AGENTS.md ("Test through public APIs").
+home for those assertions per CONTRIBUTING.md ("Test through public APIs").
 
 What integration tests *cannot* observe is the timing seam: that
 ``while_running`` runs on the main thread *after* submission and
