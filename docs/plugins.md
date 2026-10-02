@@ -14,6 +14,9 @@ not an API and may change in any release.
 First-party capabilities may also use each other's declared `api.py` modules;
 those are internal to `untaped` and not part of the provider API.
 
+[`examples/untaped-hello`](../examples/untaped-hello) in the repository is a
+complete, tested plugin; copy it to start.
+
 ## 1. Provider package
 
 An external provider is an ordinary Python distribution with one entry point
@@ -330,7 +333,10 @@ uv run ruff check
 
 Add `pytest_plugins = ["untaped.testing.plugin"]` to your top-level
 `conftest.py` for an isolated `HOME`, config and environment in every test.
-Call `untaped.testing.check_conventions(NAME)` from the plugin's own tests.
+Call `untaped.testing.check_conventions(NAME)` from the plugin's own tests,
+and `untaped.testing.invoke_root(["acme", "hello"])` to run `untaped acme
+hello` in-process against the installed providers; it returns the exit code
+and captured output.
 Define `build_app` (the `app_factory`) in the capability package's
 `__init__.py`, because the checks scan that package. Declare writing commands
 with `@writes` (or `@writes(destructive=True)`). To waive a rule on one line,

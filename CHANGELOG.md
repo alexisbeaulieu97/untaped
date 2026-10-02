@@ -16,6 +16,9 @@
     checks for any capability, plugins included.
   - **New (SDK):** `untaped.testing.plugin` gives a plugin's own tests the
     hermetic environment untaped's tests use.
+  - **New:** `examples/untaped-hello` is a minimal, tested plugin to start
+    from; `untaped.testing.invoke_root(argv)` runs `untaped …` in a plugin's
+    tests.
   - **New:** `report_row_errors` reports each failed row's error and hint.
   - **New (SDK):** `UiContext.pick_many` opens an inline two-pane picker: fuzzy
     search with multi-select on the left, per-item settings on the right

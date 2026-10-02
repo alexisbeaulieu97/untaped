@@ -568,6 +568,7 @@ def test_smoke_errors_report_version_missing_and_unready() -> None:
         "untaped --version printed 9.9.9, not 10.0.0",
         "capability github is missing",
         "capability jira is quarantined",
+        "capability extra is installed but not expected",
     ]
     assert release.smoke_errors("10.0.0\n", json.dumps(ROWS[:1]), "10.0.0", ["awx"]) == []
 
@@ -575,6 +576,38 @@ def test_smoke_errors_report_version_missing_and_unready() -> None:
 def test_smoke_errors_refuse_output_that_is_not_a_list_of_rows() -> None:
     assert release.smoke_errors("10.0.0", "not json", "10.0.0", ["awx"]) == [
         "untaped capabilities --format json did not print a list of rows"
+    ]
+
+
+def test_smoke_errors_refuse_an_unexpected_capability() -> None:
+    rows = [{"name": "awx", "status": "ready"}, {"name": "github", "status": "ready"}]
+    assert release.smoke_errors("10.0.0a0", json.dumps(rows), "10.0.0a0", ["awx"]) == [
+        "capability github is installed but not expected"
+    ]
+
+
+def test_smoke_errors_check_quarantined_names() -> None:
+    rows = [{"name": "hello", "status": "ready"}]
+    assert release.smoke_errors(
+        "10.0.0a0", json.dumps(rows), "10.0.0a0", [], quarantined=["hello"]
+    ) == ["capability hello is ready, not quarantined"]
+    rows = [{"name": "hello", "status": "quarantined"}]
+    assert (
+        release.smoke_errors("10.0.0a0", json.dumps(rows), "10.0.0a0", [], quarantined=["hello"])
+        == []
+    )
+    assert release.smoke_errors("10.0.0a0", "[]", "10.0.0a0", [], quarantined=["hello"]) == [
+        "capability hello is missing"
+    ]
+
+
+def test_smoke_errors_refuse_duplicates_and_overlap() -> None:
+    rows = [{"name": "awx", "status": "ready"}, {"name": "awx", "status": "ready"}]
+    assert release.smoke_errors(
+        "1.0.0", json.dumps(rows), "1.0.0", ["awx"], quarantined=["awx"]
+    ) == [
+        "capability awx is both expected and quarantined",
+        "capability awx is listed twice",
     ]
 
 
@@ -608,6 +641,7 @@ FAKE_UNTAPED = """#!/bin/sh
 case "$1" in
   --version) echo "$FAKE_VERSION" ;;
   capabilities) echo "$FAKE_ROWS"; exit "${FAKE_ROWS_EXIT:-0}" ;;
+  skills) echo "$FAKE_SKILLS"; exit "${FAKE_SKILLS_EXIT:-0}" ;;
   "$FAKE_FAILING") exit 2 ;;
 esac
 exit 0
@@ -677,6 +711,85 @@ def test_the_smoke_command_reports_each_failure(
     stderr: str,
 ) -> None:
     assert _smoke(tmp_path, monkeypatch, capsys, rows, failing, rows_exit) == (1, "", stderr)
+
+
+def test_smoke_cli_expects_nothing_for_a_bare_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exe = _fake_untaped(tmp_path)
+    monkeypatch.setenv("FAKE_VERSION", "10.0.0a0")
+    monkeypatch.setenv("FAKE_ROWS", "[]")
+    assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", ""]) == 0
+    assert "smoke ok: untaped 10.0.0a0, 0 capabilities" in capsys.readouterr().out
+
+
+def test_smoke_cli_checks_expected_and_quarantined_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exe = _fake_untaped(tmp_path)
+    rows = [{"name": "awx", "status": "ready"}, {"name": "hello", "status": "quarantined"}]
+    monkeypatch.setenv("FAKE_VERSION", "10.0.0a0")
+    monkeypatch.setenv("FAKE_ROWS", json.dumps(rows))
+    argv = ["smoke", str(exe), "10.0.0a0", "--expect", "awx", "--quarantined", "hello"]
+    assert release.main(argv) == 0
+    assert capsys.readouterr().out == "smoke ok: untaped 10.0.0a0, 1 capabilities\n"
+    assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", "awx,jira"]) == 1
+    assert capsys.readouterr().err == (
+        "capability jira is missing\ncapability hello is installed but not expected\n"
+    )
+
+
+def _skill(tmp_path: Path, name: str, *, with_file: bool = True) -> dict[str, str]:
+    source = tmp_path / "skills" / name
+    source.mkdir(parents=True)
+    if with_file:
+        (source / "SKILL.md").write_text("---\nname: x\n---\n")
+    return {"name": name, "description": "d", "source": str(source)}
+
+
+def test_smoke_skills_need_each_expected_skill_with_its_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exe = _fake_untaped(tmp_path)
+    rows = [{"name": "awx", "status": "ready"}, {"name": "jira", "status": "ready"}]
+    skills = [_skill(tmp_path, "untaped-awx"), _skill(tmp_path, "untaped-x", with_file=False)]
+    monkeypatch.setenv("FAKE_VERSION", "10.0.0a0")
+    monkeypatch.setenv("FAKE_ROWS", json.dumps(rows))
+    monkeypatch.setenv("FAKE_SKILLS", json.dumps(skills))
+    argv = ["smoke", str(exe), "10.0.0a0", "--expect", "awx,jira", "--skills"]
+    assert release.main(argv) == 1
+    assert capsys.readouterr().err == (
+        "skill untaped-jira is missing\n"
+        f"skill untaped-x has no SKILL.md in {tmp_path / 'skills' / 'untaped-x'}\n"
+    )
+    monkeypatch.setenv("FAKE_ROWS", json.dumps(rows[:1]))
+    monkeypatch.setenv("FAKE_SKILLS", json.dumps(skills[:1]))
+    assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", "awx", "--skills"]) == 0
+    assert capsys.readouterr().out == "smoke ok: untaped 10.0.0a0, 1 capabilities\n"
+
+
+@pytest.mark.parametrize(
+    ("skills", "exit_code", "error"),
+    [
+        ("not json", "0", "untaped skills list --format json did not print a list of rows"),
+        ("[]", "4", "untaped skills list --format json exited 4"),
+    ],
+)
+def test_smoke_skills_report_a_broken_listing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    skills: str,
+    exit_code: str,
+    error: str,
+) -> None:
+    exe = _fake_untaped(tmp_path)
+    monkeypatch.setenv("FAKE_VERSION", "10.0.0a0")
+    monkeypatch.setenv("FAKE_ROWS", "[]")
+    monkeypatch.setenv("FAKE_SKILLS", skills)
+    monkeypatch.setenv("FAKE_SKILLS_EXIT", exit_code)
+    assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", "", "--skills"]) == 1
+    assert capsys.readouterr().err == f"{error}\n"
 
 
 # --- GitHub release ---------------------------------------------------------

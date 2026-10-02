@@ -278,9 +278,8 @@ def test_verify_requires_the_complete_index_and_smokes_the_install() -> None:
         ),
         (
             "ci.yml",
-            "unified-app-wheel-smoke",
-            'uv run python scripts/release.py smoke "$RUNNER_TEMP/untaped-wheel/bin/untaped"'
-            ' "$(uv run python scripts/release.py version)"',
+            "wheel-matrix",
+            f'{SCRIPT} smoke "$RUNNER_TEMP/bare/bin/untaped" "$VERSION" --expect ""',
         ),
     ],
 )
@@ -329,20 +328,72 @@ def test_ci_runs_the_release_check_and_smoke() -> None:
     assert ".github/release" not in runs
 
 
-def test_ci_smoke_builds_every_package_and_installs_the_core_wheel() -> None:
-    steps = _steps("ci.yml", "unified-app-wheel-smoke")
+FRESH_CACHE = 'echo "UV_CACHE_DIR=$RUNNER_TEMP/uv-cache" >> "$GITHUB_ENV"'
+# venv -> (what is installed into it, the smoke's exact expectations)
+WHEEL_MATRIX = {
+    "bare": ('"$CORE"', '--expect ""'),
+    "awx": ('--find-links dist "untaped[awx] @ file://$PWD/$CORE"', "--expect awx --skills"),
+    "all": ('--find-links dist "untaped[all] @ file://$PWD/$CORE"', "--skills"),
+    "hello": ('"$CORE" "$RUNNER_TEMP/hello-src" pytest', "--expect hello --skills"),
+    "broken": ('"$CORE" "$RUNNER_TEMP/hello-broken"', '--expect "" --quarantined hello'),
+}
+
+
+@pytest.mark.parametrize("job", ["wheel-matrix", "core-only-tests"])
+def test_ci_wheel_jobs_start_from_a_fresh_uv_cache(job: str) -> None:
+    """No wheel from an earlier build is reused: setup-uv caches nothing, the
+    job points uv at an empty cache after setup-uv, before any uv command."""
+    steps = _steps("ci.yml", job)
+    setup = _find(steps, uses="astral-sh/setup-uv")
+    assert steps[setup]["with"]["enable-cache"] is False
+    fresh = _find(steps, run=FRESH_CACHE)
+    uv_runs = [i for i, s in enumerate(steps) if "uv " in str(s.get("run", ""))]
+    assert setup < fresh <= min(uv_runs)
+
+
+def test_ci_wheel_matrix_smokes_each_install_shape_from_the_built_wheels() -> None:
+    steps = _steps("ci.yml", "wheel-matrix")
     build = _find(steps, run="uv build --all-packages --no-sources --out-dir dist")
-    install = _find(
-        steps,
-        run='uv pip install --python "$RUNNER_TEMP/untaped-wheel/bin/python"'
-        " dist/untaped-*-py3-none-any.whl",
+    assert steps[build]["run"].splitlines() == [
+        "set -euo pipefail",
+        "uv build --all-packages --no-sources --out-dir dist",
+        f'echo "VERSION=$({SCRIPT} version)" >> "$GITHUB_ENV"',
+        'echo "CORE=$(ls dist/untaped-*-py3-none-any.whl)" >> "$GITHUB_ENV"',
+    ]
+    for venv, (installs, expect) in WHEEL_MATRIX.items():
+        python = f'"$RUNNER_TEMP/{venv}/bin/python"'
+        install = _find(steps, run=f"uv pip install --python {python} {installs}")
+        smoke = _find(
+            steps, run=f'{SCRIPT} smoke "$RUNNER_TEMP/{venv}/bin/untaped" "$VERSION" {expect}'
+        )
+        assert build < install == smoke, venv
+    hello = _find(steps, run='cp -r examples/untaped-hello "$RUNNER_TEMP/hello-src"')
+    tests = '(cd "$RUNNER_TEMP/hello-src" && "$RUNNER_TEMP/hello/bin/python" -m pytest -q tests)'
+    assert _find(steps, run=tests) == hello
+    broken = _find(steps, run='cp -r examples/untaped-hello "$RUNNER_TEMP/hello-broken"')
+    breaks = (
+        "sed -i 's/untaped_hello:provider/untaped_hello:missing/'"
+        ' "$RUNNER_TEMP/hello-broken/pyproject.toml"'
     )
-    smoke = _find(
-        steps,
-        run='uv run python scripts/release.py smoke "$RUNNER_TEMP/untaped-wheel/bin/untaped"'
-        ' "$(uv run python scripts/release.py version)"',
-    )
-    assert build < install < smoke
+    assert _find(steps, run=breaks) == broken
+
+
+def test_ci_runs_core_tests_with_only_the_core_wheel() -> None:
+    steps = _steps("ci.yml", "core-only-tests")
+    step = steps[_find(steps, run="uv build --package untaped --no-sources --out-dir dist")]
+    assert step["run"].splitlines() == [
+        "set -euo pipefail",
+        "uv build --package untaped --no-sources --out-dir dist",
+        'uv venv -q --python 3.14 "$RUNNER_TEMP/core"',
+        # --no-emit-workspace leaves out every first-party package (the dev
+        # group's untaped[all] included), so no untaped_* package is installed.
+        "uv export --frozen --only-group dev --no-hashes --no-emit-workspace"
+        " > dev-requirements.txt",
+        'uv pip install --python "$RUNNER_TEMP/core/bin/python"'
+        " dist/untaped-*-py3-none-any.whl -r dev-requirements.txt",
+        '"$RUNNER_TEMP/core/bin/python" -m pytest -q -n auto -p no:cacheprovider'
+        " --rootdir . -c pyproject.toml packages/untaped/tests",
+    ]
 
 
 def test_no_run_script_interpolates_expressions() -> None:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib
 
+import pytest
+
 EXPECTED_SURFACE = frozenset(
     {
         "CliInvoker",
@@ -14,6 +16,7 @@ EXPECTED_SURFACE = frozenset(
         "assert_destructive_contract",
         "check_conventions",
         "invoke_cli",
+        "invoke_root",
         "provider_candidate",
     }
 )
@@ -46,3 +49,14 @@ def test_testing_reexports_prompt_backend() -> None:
 
 def test_the_hermetic_plugin_is_importable() -> None:
     importlib.import_module("untaped.testing.plugin")
+
+
+@pytest.mark.usefixtures("fresh_composition")
+def test_invoke_root_runs_the_composed_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    """It composes the installed providers (here: none) and runs ``argv`` on the root."""
+    from untaped import bootstrap
+    from untaped.testing import invoke_root
+
+    monkeypatch.setattr(bootstrap, "discover_candidates", lambda: [])
+    result = invoke_root(["capabilities", "--format", "json"])
+    assert (result.exit_code, result.stdout.strip()) == (0, "[]")

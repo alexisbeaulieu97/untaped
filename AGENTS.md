@@ -28,6 +28,9 @@ The source tree is the implementation reference:
   `src/` and `tests/`. Core is `packages/untaped/`: its `src/untaped/`
   contains the shell and shared services. Each capability is its own package,
   `packages/untaped-<name>/src/untaped_<name>/`, and owns one capability end to end.
+- `examples/untaped-hello/` is a minimal third-party plugin with its own
+  tests; it is not a workspace member and is never published. CI installs it
+  beside the core wheel and runs its tests outside the repository.
 - `docs/` contains user guides and executable policy files.
 - `tests/` verifies public behavior and release contracts: `tests/repo/` holds
   the cross-package tests, `tests/<name>/` a capability's tests.

@@ -3,6 +3,8 @@
 :func:`check_conventions` checks one installed capability against
 ``docs/conventions.md``; its ``candidates`` argument composes a provider
 passed in directly instead of one discovered through entry points.
+:func:`invoke_root` runs ``untaped ...`` in-process against the installed
+providers.
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ __all__ = [
     "assert_destructive_contract",
     "check_conventions",
     "invoke_cli",
+    "invoke_root",
     "provider_candidate",
 ]
 
@@ -139,6 +142,18 @@ def invoke_cli(
         if token is not None:
             reset_prompt_backend_override(token)
     return CliResult(exit_code=0, stdout=stdout.getvalue(), stderr=stderr.getvalue())
+
+
+def invoke_root(argv: Sequence[str]) -> CliResult:
+    """Run ``untaped *argv`` in-process, composed from the installed providers.
+
+    The supported way for a plugin's tests to drive the real root: the root
+    is composed through entry-point discovery, as the ``untaped`` script does,
+    and ``argv`` is invoked on it with captured output.
+    """
+    from untaped.bootstrap import build_root_app  # noqa: PLC0415
+
+    return CliInvoker().invoke(build_root_app().meta, list(argv))
 
 
 def _no_terminal() -> TextIO:
