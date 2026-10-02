@@ -7,12 +7,14 @@
 - 9.x users on `uv tool upgrade untaped` get the core only and every capability
   disappears; reinstall with `uv tool install --reinstall 'untaped[all]'` (or
   `pip install -U 'untaped[all]'`), restating any `--with` tools.
-- A plugin claiming a first-party name or section (e.g. `github`) now disables
-  that first-party capability as well; uninstall one to restore the other.
-- awx: `export` no longer writes an SCM project's `local_path` (or
-  `spec.organization`) and masks `host_config_key`; `patch`/`edit` exit 2 for
+- Two providers claiming one capability name or config section (e.g. a plugin
+  claiming `github`) are both disabled; uninstall one.
+- awx: `export` no longer writes `custom_virtualenv`, `webhook_key`, an SCM
+  project's `local_path` or `spec.organization`, and masks `host_config_key`;
+  `get`/`list` now mask `host_config_key` too. `patch`/`edit` exit 2 for
   `webhook_key`, `custom_virtualenv` and an SCM project's `local_path`.
-  Re-export stored documents; `apply` ignores the old fields.
+  Re-export stored documents; `apply` ignores the old fields. 9.x exports hold
+  `host_config_key` in clear: scrub them or rotate the key.
 - workspace: recreate task workspaces with `workspace create` (`untaped
   workspace` is now worktree-based and experimental).
 - workspace: delete the `state.yml` key `workspace.workspaces` and drop
@@ -43,7 +45,7 @@
   `check_conventions(NAME)` now fails otherwise.
 - registry: drop `api_requires` from providers and keep the `untaped`
   requirement current; scripts reading `untaped capabilities` lose the `api` and
-  `origin` columns.
+  `origin` columns and get rows in name order.
 - core: expect exit 130 when Ctrl-C interrupts a prompt; `PromptInterruptedError` is
   no longer a `ConfigError`.
 - ansible: replace `graph --upstream/--downstream/--both` with `--direction
@@ -164,7 +166,9 @@
   `untaped>=X,<X+1`.
 - **docs:** `docs/` holds getting-started, configuration, scripting,
   plugins and the config reference; each capability's guide is its package
-  README; the developer guide is CONTRIBUTING.md.
+  README.
+- **docs:** the versioning policy now covers every record field `--format
+  json` or `--columns '?'` shows, not only documented ones.
 
 ### Removed
 

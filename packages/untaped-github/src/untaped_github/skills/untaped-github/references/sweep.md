@@ -70,8 +70,9 @@ counts, the oldest fetch, and a warning per unscanned repo.
 (`github.sweep_file`) or `matches` (`github.sweep_match`). `--columns '?'`
 lists each kind's fields.
 
-- `hits` counts matching lines: per predicate on a repo row, per file on a
-  file row.
+- `hits` counts per predicate on a repo row (matching lines for `grep`, 1 or
+  0 for file and `not-grep` predicates), and matching lines per file on a file
+  row.
 - `matches` are deduped across refs: one row lists every ref (`refs`) that
   has the line.
 - `owners` comes from CODEOWNERS; `--no-owners` skips that lookup.

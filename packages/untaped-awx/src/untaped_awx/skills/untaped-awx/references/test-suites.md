@@ -2,8 +2,8 @@
 
 A test suite launches one job template (or one workflow) once per case, each
 with its own launch payload, and checks each job against what the case
-expects. This is the complete file format. `untaped awx schema AwxTestSuite`
-prints the body's JSON Schema for editors and validators, and the
+expects. `untaped awx schema AwxTestSuite` lists every field (as JSON Schema,
+for editors and validators); this page covers the rules it does not. The
 [examples](../examples/) are working starting points.
 
 - [Where suites live](#where-suites-live)
@@ -110,7 +110,8 @@ untaped awx test run --vars-file ~/.secrets/deploy-test.yml --non-interactive
 
 `untaped awx schema AwxTestSuite` lists the body's fields. A suite names
 exactly one of `jobTemplate` and `workflowTemplate`, and `cases` needs at
-least one. `variables` is not written
+least one. Set `organization` when the template's name is not unique (default:
+`awx.default_organization`). `variables` is not written
 in the body: `untaped awx test list` reports the header's declarations under
 that key.
 

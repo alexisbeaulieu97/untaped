@@ -120,7 +120,11 @@ inspect); the table shows the default ones. What the rest do not say:
 - `result` is `null` only on a `removed` row ([Verdicts](#verdicts)).
 - `duration_s` runs from launch to verdict.
 - `job_status` is `null` when no job was read, and `job_id` when the launch
-  failed before AWX created a job. `started_at` and `finished_at` are `null`
+  failed before AWX created a job. On a `timeout` row `job_status` is the
+  last status seen before untaped cancelled the job (`running`, say), not a
+  final one, unless the job ended before the cancel.
+- `job_url` is the job's page in the controller web UI; open it to inspect
+  the job. `started_at` and `finished_at` are `null`
   while AWX has not set them.
 - `scm_revision` is the commit the job checked out; compare it with
   `git rev-parse HEAD`.
