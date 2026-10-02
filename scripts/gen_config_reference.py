@@ -149,12 +149,9 @@ capability's commands. See [Configuration](../configuration.md) for the file
 layout, profiles and precedence.
 
 Set a profile setting with `untaped config set KEY VALUE` (secrets:
-`untaped config set KEY --prompt`). A `mapping` or `list` setting takes its
-whole value as JSON or YAML (`untaped config set ui.symbols '{"ok": "+"}'`),
-and `config unset` removes the whole key. `config set` and `config unset`
-print an `untaped.setting_outcome` record and accept `--dry-run`. Each
-profile setting can be overridden for one process with the environment
-variable shown.
+`untaped config set KEY --prompt`; how values are parsed is in
+[Settings](../configuration.md#settings)). Each profile setting can be
+overridden for one process with the environment variable shown.
 """
 
 _FOOTER = """\

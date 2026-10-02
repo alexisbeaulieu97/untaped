@@ -35,9 +35,8 @@ failed and paused refreshes, the cache.
   `name`, `changes`) or `ansible.source_alias_outcome` (`action`, `alias`,
   `repo`). `action` is `created`, `updated`, `unchanged`, `deleted` or
   `planned` (with `--dry-run`).
-- `source remove` and `source-alias remove` confirm. Without a terminal they
-  need `--yes` or `--dry-run` (exit 2 otherwise); declining exits 1 with
-  `cancelled; no changes made`.
+- `source remove` and `source-alias remove` confirm first; see
+  [Changing sources](../SKILL.md#changing-sources).
 - `source status` reports `state` (`fresh`, `stale` or `not_refreshed`) and
   `scanned_at` in UTC.
 

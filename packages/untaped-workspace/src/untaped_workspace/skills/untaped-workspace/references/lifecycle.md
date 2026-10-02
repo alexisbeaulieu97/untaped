@@ -3,8 +3,8 @@
 Create, extend and archive a task workspace. Options are in
 `untaped workspace <command> --help`.
 
-Contents: names, naming repos, branches and bases, read-only repos, partial
-failure, archiving and force, after archiving, the cache.
+Contents: names, naming repos, the picker, branches and bases, read-only
+repos, partial failure, archiving and force, after archiving, the cache.
 
 ## Names
 
@@ -21,7 +21,8 @@ failure, archiving and force, after archiving, the cache.
 `--repo` and `--read-only` take, and `--stdin` reads:
 
 - `OWNER/NAME`, or a bare `NAME` that is unique, both looked up in the GitHub
-  inventory (`github.inventory` orgs and teams);
+  inventory (`github.inventory` orgs and teams; refreshing it needs the
+  GitHub token);
 - a git URL or path: it contains `://`, starts with `/` or `~`, is
   `user@host:path`, or ends with `.git`. These skip the inventory.
 
@@ -29,6 +30,27 @@ An unknown or ambiguous name exits 2 and lists candidates. If a repo you
 expect is not found, check the `github.inventory` orgs and teams settings.
 `workspace.protocol` (`https` or `ssh`, default `https`) picks which clone
 URL the inventory supplies.
+
+## The picker
+
+In a terminal, `create` and `add` with no `--repo`, `--read-only` or
+`--stdin` open an interactive picker; without a terminal they exit 2 and
+name those flags. Agents never rely on it.
+
+- `create` with no NAME asks for one first, refusing invalid names, active
+  workspace names and non-empty existing directories.
+- It lists the GitHub inventory (opened from the cache, refreshed when
+  stale), repos in the local cache (as `host/[owner/]name`, checked out from
+  their cached URL) and any git URL typed in. `add` leaves out repos already
+  in the workspace.
+- Each selected repo has a mode (write or read-only), a base (completes from
+  cached branches) and a branch (empty uses `workspace.branch_template`).
+  `--branch` and `--base` without repo flags prefill these.
+- Keys: `space` selects, `/` searches, `tab` switches pane, `enter` edits a
+  setting and `←`/`→` change it, `ctrl-s` creates or adds the selection,
+  `ctrl-r` refreshes the inventory, `esc` clears the search (never quits),
+  `ctrl-c` quits (asking first when anything is selected) and creates
+  nothing.
 
 ## Branches and bases
 
@@ -89,20 +111,14 @@ and always exits 0.
 `--force` archives anyway after a confirmation; without a terminal it needs
 `--yes` (else exit 2). It discards uncommitted work and removes the
 directories, deleting a worktree git refuses to remove. Branch commits and
-stashes stay in the repo cache. Uncommitted work and commits made in a
-read-only repo cannot be recovered after `--force`. Follow these steps:
-
-1. Preview with `untaped workspace status NAME --check` or
-   `untaped workspace archive NAME --dry-run`.
-2. Show the user which repos and what work would be lost.
-3. Wait for explicit approval.
-4. Only then run `untaped workspace archive NAME --force --yes`.
+stashes stay in the repo cache. Never run it without the four steps in
+[Pitfalls](../SKILL.md#pitfalls).
 
 If removing a repo fails, the workspace stays active so archive can be retried.
 Without `--force`, each repo is checked again just before it is removed:
 work made after the first check fails that repo (a `conflict`), and it stays.
-Stashes are shared by every workspace of a repo: never drop one you did not
-make.
+For stashes, which every workspace of a repo shares, see
+[Pitfalls](../SKILL.md#pitfalls).
 
 ## After archiving
 

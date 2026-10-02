@@ -38,7 +38,8 @@ uv lock --check                                 # lock file is current
   the reference for composition and command behavior.
 - Each capability is its own package,
   `packages/untaped-<name>/src/untaped_<name>/`, and owns one capability end
-  to end. Its `README.md` is its user guide and its PyPI page.
+  to end. Its packaged skill is the reference; its `README.md` (also its PyPI
+  page) is a one-screen guide that links to it.
 - `examples/untaped-hello/` is a minimal third-party plugin with its own
   tests; it is not a workspace member and is never published. CI installs it
   beside the core wheel and runs its tests outside the repository.
@@ -84,8 +85,9 @@ packages/untaped-<name>/src/untaped_<name>/
    table columns rule is enforced by this repository's own test suite, not by
    `check_conventions`, and `# untaped: allow` does not apply to it.
 7. Start its skill from the [skill template](docs/plugins.md#packaged-skills)
-   and its user guide as the package `README.md`, linked from the root
-   `README.md` and `docs/getting-started.md`.
+   and its package `README.md` from a sibling's (the same section order,
+   ending in `## Reference`), linked from the root `README.md` and
+   `docs/getting-started.md`.
 
 A capability whose settings import another's `api` (ansible imports
 github's) is quarantined with it when that import fails. Shared logic follows
@@ -113,11 +115,16 @@ only when a second provider appears.
 - **Docs in the same change.** A change to behavior, settings, composition or
   a shared helper updates its docs in the same commit. Each fact has one home
   and other pages link to it: capability detail in its skill (the package
-  `README.md` is a short guide), exit codes, record kinds and environment
+  `README.md` is a one-screen guide: set up, one example per workflow, and a
+  `## Reference` section linking the skill), exit codes, record kinds and environment
   variables in [`docs/scripting.md`](docs/scripting.md), settings in the
   generated [config reference](docs/reference/config.md), history in
   [`CHANGELOG.md`](CHANGELOG.md). Never copy `--help` output, default columns
   or API signatures into docs.
+- **Config and state format.** Within a major, a core-owned key may be added
+  to `config.yml` or `state.yml` only if an older reader ignoring it is safe;
+  anything else (TLS verification, a proxy, anything security-relevant) is a
+  `format_version` bump, which only a major makes.
 - **Config reference.** After changing a settings model, run
   `uv run python scripts/gen_config_reference.py`; a test fails while the
   reference is stale.
@@ -150,6 +157,12 @@ a false positive such as a command registered by string, add its name to
 `scripts/vulture_allowlist.py` with the reason.
 
 ## Releasing
+
+Plan releases with GitHub milestones (`10.1`, `11.0`, …): each issue sits in
+the milestone it should ship in. Features merge to `main` when ready, each
+with its changelog line, so `main` stays releasable. A breaking change waits
+in the next major's milestone and, where it can, first ships a deprecation
+warning in a minor. A release is cut when its milestone's issues are closed.
 
 A release is a release PR, a TestPyPI rehearsal whenever the workflow, the
 build or the package set changed, and a `vX.Y.Z` tag on `main`.

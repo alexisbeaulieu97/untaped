@@ -100,8 +100,8 @@ deleted. A deleted repo is fetched again by the next sweep that covers it.
 
 ## Pitfalls
 
-- Sweep patterns are POSIX extended regexes: `\(` is a literal parenthesis,
-  and `\d` does not work (use `[0-9]`).
+- Sweep patterns are POSIX extended regexes: `a|b` alternates, `\(` is a
+  literal parenthesis, and `\d` does not work (use `[0-9]`).
 - `--any` ORs the positive predicates only; `--not-grep` and `--lacks-file`
   still apply.
 - A sweep scans each repo's default branch unless `--refs` or `--ref` says

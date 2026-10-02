@@ -12,7 +12,7 @@ archive it.
 
 | File | Read it when |
 |---|---|
-| [references/lifecycle.md](references/lifecycle.md) | creating or extending a workspace, choosing branches and bases, read-only repos, how existing branches are reused, archiving and what blocks it |
+| [references/lifecycle.md](references/lifecycle.md) | creating or extending a workspace, the interactive picker, choosing branches and bases, read-only repos, how existing branches are reused, archiving and what blocks it |
 | [references/run.md](references/run.md) | running a command or script in each repo, the `UNTAPED_*` variables, selecting repos, failures and timeouts |
 | [references/output.md](references/output.md) | reading rows, piping records, or exit codes |
 

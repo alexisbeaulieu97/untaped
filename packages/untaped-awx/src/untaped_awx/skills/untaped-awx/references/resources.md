@@ -19,6 +19,12 @@ Selection modes are exclusive: names, names with `--by-id`, `--stdin`,
 `--filter`/`--search`, or `--all`. Commands that change things need an
 explicit selection or `--all`.
 
+```bash
+untaped awx inventory-sources list --inventory Production --inventory-organization Default
+untaped awx inventory-sources patch Cloud --inventory Production \
+  --inventory-organization Default --set update_cache_timeout=3600
+```
+
 - Scope options (`--organization`, `--inventory`, `--inventory-organization`,
   `--parent`) constrain both the name lookup and filters. A group offers only
   the scopes its kind has; any other is a usage error (exit 2).
