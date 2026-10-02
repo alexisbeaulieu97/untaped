@@ -1,5 +1,11 @@
 # Security Policy
 
+## Supported versions
+
+Only the latest major release gets security fixes.
+
+## Reporting
+
 Please report suspected vulnerabilities privately to
 alexisbeaulieu97@gmail.com. Do not open a public GitHub issue for a
 vulnerability report.
