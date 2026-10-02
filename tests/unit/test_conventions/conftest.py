@@ -10,9 +10,6 @@ from textwrap import dedent
 
 import pytest
 
-#: Writes ``{relative path: source}`` under an importable directory and returns it.
-Install = Callable[[dict[str, str]], Path]
-
 
 @pytest.fixture(autouse=True)
 def _composition_is_forgotten(fresh_composition: None) -> None:
@@ -20,7 +17,9 @@ def _composition_is_forgotten(fresh_composition: None) -> None:
 
 
 @pytest.fixture
-def install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Install]:
+def install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Callable[[dict[str, str]], Path]]:
     """Write files under ``tmp_path/site`` (on ``sys.path``); unload their modules after."""
     site = tmp_path / "site"
     site.mkdir()

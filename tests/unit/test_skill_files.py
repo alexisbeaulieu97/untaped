@@ -38,38 +38,33 @@ from cyclopts.exceptions import (
     ValidationError,
 )
 
-from tests.conftest import first_party_candidates
-from tests.unit.conftest import first_party_specs
 from untaped.bootstrap import build_root_app
 from untaped.capabilities.awx.domain.suite_starter import starter_suite
+from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
+from untaped.sdk import SkillAsset
 
-SKILLS = {skill.name: skill for spec in first_party_specs() for skill in spec.skills}
-
-
-def _skill_files() -> list[tuple[str, Path]]:
-    return [
-        (name, path)
-        for name, skill in sorted(SKILLS.items())
-        for path in sorted(skill.source.rglob("*.md"))
-    ]
+SKILL_NAMES = tuple(
+    f"untaped-{name}" for name in ("ansible", "awx", "github", "jira", "recipe", "workspace")
+)
 
 
-def _example_files() -> list[tuple[str, Path]]:
-    return [
-        (name, path)
-        for name, skill in sorted(SKILLS.items())
-        for path in sorted(skill.source.rglob("*.yml"))
-    ]
+@pytest.fixture(scope="module")
+def skills(first_party_specs: tuple[CapabilitySpec, ...]) -> dict[str, SkillAsset]:
+    """Every first-party skill by name."""
+    return {skill.name: skill for spec in first_party_specs for skill in spec.skills}
 
 
-def _ids(files: list[tuple[str, Path]]) -> list[str]:
-    return [f"{name}/{path.relative_to(SKILLS[name].source)}" for name, path in files]
+def _skill_files(skill: SkillAsset) -> list[Path]:
+    return sorted(skill.source.rglob("*.md"))
 
 
-_FILES = _skill_files()
-_IDS = _ids(_FILES)
-_ALL_FILES = [*_FILES, *_example_files()]
-_ALL_IDS = _ids(_ALL_FILES)
+def _example_files(skill: SkillAsset) -> list[Path]:
+    return sorted(skill.source.rglob("*.yml"))
+
+
+def test_the_skills_are_the_first_party_capabilities_skills(skills: dict[str, SkillAsset]) -> None:
+    assert tuple(sorted(skills)) == SKILL_NAMES
+
 
 _FENCE = re.compile(r"^```(\w*)\n(.*?)^```", re.MULTILINE | re.DOTALL)
 _INLINE = re.compile(r"`(untaped(?: [^`]*)?)`")
@@ -175,8 +170,8 @@ def _parse_problem(root: App, command: str, *, inline: bool) -> str | None:
 
 
 @pytest.fixture(scope="module")
-def root() -> App:
-    return build_root_app(candidates=first_party_candidates())
+def root(first_party_candidates: tuple[ProviderCandidate, ...]) -> App:
+    return build_root_app(candidates=first_party_candidates)
 
 
 def _problems(root: App, commands: Iterator[tuple[str, bool]]) -> list[str]:
@@ -187,12 +182,18 @@ def _problems(root: App, commands: Iterator[tuple[str, bool]]) -> list[str]:
     ]
 
 
-@pytest.mark.parametrize(("name", "path"), _ALL_FILES, ids=_ALL_IDS)
-def test_every_quoted_command_parses_against_the_cli(root: App, name: str, path: Path) -> None:
-    text = path.read_text(encoding="utf-8")
-    commands = _commands(text) if path.suffix == ".md" else _comment_commands(text)
+@pytest.mark.parametrize("name", SKILL_NAMES)
+def test_every_quoted_command_parses_against_the_cli(
+    root: App, skills: dict[str, SkillAsset], name: str
+) -> None:
+    skill = skills[name]
+    problems: list[str] = []
+    for path in [*_skill_files(skill), *_example_files(skill)]:
+        text = path.read_text(encoding="utf-8")
+        commands = _commands(text) if path.suffix == ".md" else _comment_commands(text)
+        problems += [f"{path.relative_to(skill.source)}: {p}" for p in _problems(root, commands)]
 
-    assert _problems(root, commands) == []
+    assert problems == []
 
 
 def test_the_starter_suite_comments_name_real_commands(root: App) -> None:
@@ -206,23 +207,28 @@ def test_the_starter_suite_comments_name_real_commands(root: App) -> None:
 _REPO_ONLY = re.compile(r"(?<![\w.~/-])docs/|untaped repository|\bsrc/untaped\b|CONTRIBUTING\.md")
 
 
-@pytest.mark.parametrize(("name", "path"), _ALL_FILES, ids=_ALL_IDS)
-def test_skill_files_do_not_point_into_the_source_repository(name: str, path: Path) -> None:
-    lines = path.read_text(encoding="utf-8").splitlines()
-
-    offending = [line for line in lines if _REPO_ONLY.search(line)]
+@pytest.mark.parametrize("name", SKILL_NAMES)
+def test_skill_files_do_not_point_into_the_source_repository(
+    skills: dict[str, SkillAsset], name: str
+) -> None:
+    skill = skills[name]
+    offending = [
+        f"{path.relative_to(skill.source)}: {line}"
+        for path in [*_skill_files(skill), *_example_files(skill)]
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if _REPO_ONLY.search(line)
+    ]
 
     assert offending == []
 
 
-@pytest.mark.parametrize(("name", "path"), _FILES, ids=_IDS)
-def test_relative_links_stay_inside_the_skill(name: str, path: Path) -> None:
-    source = SKILLS[name].source.resolve()
-    targets = re.findall(r"\]\(([^)#\s]+)(?:#[^)]*)?\)", path.read_text(encoding="utf-8"))
-
+@pytest.mark.parametrize("name", SKILL_NAMES)
+def test_relative_links_stay_inside_the_skill(skills: dict[str, SkillAsset], name: str) -> None:
+    source = skills[name].source.resolve()
     broken = [
-        target
-        for target in targets
+        f"{path.relative_to(source)}: {target}"
+        for path in _skill_files(skills[name])
+        for target in re.findall(r"\]\(([^)#\s]+)(?:#[^)]*)?\)", path.read_text(encoding="utf-8"))
         if not re.match(r"^[a-z][a-z0-9+.-]*:", target)
         and not (
             (path.parent / target).resolve().is_relative_to(source)
@@ -233,18 +239,22 @@ def test_relative_links_stay_inside_the_skill(name: str, path: Path) -> None:
     assert broken == []
 
 
-@pytest.mark.parametrize("name", sorted(SKILLS))
-def test_spec_description_matches_the_skill_frontmatter(name: str) -> None:
-    text = SKILLS[name].source.joinpath("SKILL.md").read_text(encoding="utf-8")
+@pytest.mark.parametrize("name", SKILL_NAMES)
+def test_spec_description_matches_the_skill_frontmatter(
+    skills: dict[str, SkillAsset], name: str
+) -> None:
+    text = skills[name].source.joinpath("SKILL.md").read_text(encoding="utf-8")
     frontmatter = yaml.safe_load(text.split("---", 2)[1])
 
     assert frontmatter["name"] == name
-    assert frontmatter["description"] == SKILLS[name].description
+    assert frontmatter["description"] == skills[name].description
 
 
-@pytest.mark.parametrize("name", sorted(SKILLS))
-def test_description_is_a_short_third_person_router(name: str) -> None:
-    description = SKILLS[name].description
+@pytest.mark.parametrize("name", SKILL_NAMES)
+def test_description_is_a_short_third_person_router(
+    skills: dict[str, SkillAsset], name: str
+) -> None:
+    description = skills[name].description
 
     assert len(description.split()) < 60, "keep the description under 60 words"
     assert re.match(r"[A-Z][a-z]+s\b", description), (

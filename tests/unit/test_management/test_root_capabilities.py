@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 
 import pytest
+from test_capabilities.capharness import make_candidate
 
 from test_management.support import (
     GithubProfile,
@@ -20,7 +21,6 @@ from test_management.support import (
     make_spec,
     write_config,
 )
-from tests.unit.test_capabilities.capharness import make_candidate
 from untaped import bootstrap
 from untaped.capabilities.registry import (
     CompositionResult,

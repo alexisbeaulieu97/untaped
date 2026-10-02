@@ -14,9 +14,9 @@ from typing import Any
 import pytest
 import yaml
 
-from tests.conftest import first_party_candidates
 from untaped.bootstrap import build_root_app
 from untaped.capabilities.ansible.cli import app
+from untaped.capabilities.registry import ProviderCandidate
 from untaped.testing import ScriptedPromptBackend, invoke_cli
 
 _SOURCES = {"sources": [{"name": "prod", "repos": ["acme/site"]}]}
@@ -98,12 +98,15 @@ def test_source_alias_set_rejects_non_repo_target_as_usage_error(
     ],
 )
 def test_removed_spellings_are_usage_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, args: list[str]
+    first_party_candidates: tuple[ProviderCandidate, ...],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    args: list[str],
 ) -> None:
     _config(tmp_path, monkeypatch, state={**_ALIASES, **_SOURCES})
 
     result = invoke_cli(
-        build_root_app(candidates=first_party_candidates()), ["ansible", *args], input="acme/site\n"
+        build_root_app(candidates=first_party_candidates), ["ansible", *args], input="acme/site\n"
     )
 
     assert result.exit_code == 2, result.output

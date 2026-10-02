@@ -13,15 +13,16 @@ from __future__ import annotations
 
 import re
 import shlex
+from collections.abc import Callable
 from pathlib import Path
 
+import gen_config_reference as generator
 import pytest
 from cyclopts import App
 
-from tests.conftest import first_party_candidates
-from tests.unit.conftest import broken_first_party_candidates, load_script
 from untaped.bootstrap import build_root_app
 from untaped.capabilities import registry
+from untaped.capabilities.registry import ProviderCandidate
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REGENERATE = "uv run python scripts/gen_config_reference.py"
@@ -32,13 +33,11 @@ _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*$", re.MULTILINE)
 
 
 def test_config_reference_is_current() -> None:
-    generator = load_script("gen_config_reference")
     page = (REPO_ROOT / "docs" / "reference" / "config.md").read_text(encoding="utf-8")
     assert page == generator.render(), f"docs/reference/config.md is stale; run: {REGENERATE}"
 
 
 def test_every_setting_has_a_description() -> None:
-    generator = load_script("gen_config_reference")
     assert generator.missing_descriptions() == [], (
         "add Field(description=...) or a DESCRIPTIONS entry in scripts/gen_config_reference.py"
     )
@@ -47,9 +46,9 @@ def test_every_setting_has_a_description() -> None:
 
 def test_config_reference_refuses_a_quarantined_first_party_capability(
     monkeypatch: pytest.MonkeyPatch,
+    broken_first_party_candidates: Callable[[], tuple[ProviderCandidate, ...]],
 ) -> None:
     monkeypatch.setattr(registry, "discover_candidates", broken_first_party_candidates)
-    generator = load_script("gen_config_reference")
     with pytest.raises(RuntimeError) as failed:
         generator.collect_sections()
     message = str(failed.value)
@@ -164,9 +163,11 @@ def _unknown_options(root: App, argv: list[str], aliases: set[str]) -> list[str]
     return [f"{' '.join(path)}: {flag}" for flag in flags if flag not in names]
 
 
-def test_command_examples_use_real_commands_and_options() -> None:
+def test_command_examples_use_real_commands_and_options(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
     """Every ``untaped`` example in a ``bash`` block names a real command and options."""
-    root = build_root_app(candidates=first_party_candidates())
+    root = build_root_app(candidates=first_party_candidates)
     problems = []
     for path in _markdown_files():
         if "templates" in path.parts:

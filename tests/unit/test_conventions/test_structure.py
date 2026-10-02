@@ -8,7 +8,7 @@ from textwrap import dedent
 import pytest
 from cyclopts import App
 
-from tests.unit.test_conventions.conftest import Install
+from test_conventions.support import Install
 from untaped.capabilities.registry import CapabilitySpec
 from untaped.conventions.source import source_files
 from untaped.conventions.structure import structure_violations

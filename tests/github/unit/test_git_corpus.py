@@ -14,7 +14,6 @@ from typing import Any
 import pytest
 from filelock import FileLock
 
-from tests.conftest import GitCall
 from untaped.capabilities.github.domain import (
     CorpusFreshness,
     CorpusRepoResult,
@@ -27,6 +26,9 @@ from untaped.capabilities.github.domain import (
 from untaped.capabilities.github.domain.errors import GitCorpusError
 from untaped.capabilities.github.infrastructure.git_corpus import GitCorpusCache
 from untaped.sdk import cache_path
+
+#: One ``RepoCache`` git call seen by ``spy_run_git``: subcommand, auth header, auth URL.
+type GitCall = tuple[str, str | None, str | None]
 
 Git = Callable[..., str]
 Commit = Callable[..., None]

@@ -22,10 +22,8 @@ from pathlib import Path
 import pytest
 from cyclopts import App
 from pydantic import BaseModel
+from test_capabilities.capharness import make_candidate
 
-from tests.conftest import first_party_candidates
-from tests.unit.conftest import broken_first_party_candidates, first_party_specs
-from tests.unit.test_capabilities.capharness import make_candidate
 from untaped import bootstrap
 from untaped.app_context import app_context
 from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
@@ -101,22 +99,26 @@ def test_composition_is_the_last_composed_result() -> None:
     assert bootstrap.composition() is composed
 
 
-def test_default_composition_is_the_first_party_capabilities() -> None:
-    expected = tuple(candidate.name for candidate in first_party_candidates())
+def test_default_composition_is_the_first_party_capabilities(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
+    expected = tuple(candidate.name for candidate in first_party_candidates)
 
-    composition = bootstrap.compose_root(candidates=first_party_candidates())
+    composition = bootstrap.compose_root(candidates=first_party_candidates)
 
     assert tuple(capability.spec.name for capability in composition.capabilities) == expected
     assert composition.quarantine == ()
 
-    root = bootstrap.build_root_app(candidates=first_party_candidates())
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
     for name in expected:
         result = CliInvoker().invoke(root.meta, [name, "--help"])
         assert result.exit_code == 0, result.output
 
 
-def test_retired_orchestration_command_is_unknown() -> None:
-    root = bootstrap.build_root_app(candidates=first_party_candidates())
+def test_retired_orchestration_command_is_unknown(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
 
     result = CliInvoker().invoke(root.meta, ["orchestration"])
 
@@ -133,8 +135,10 @@ def test_retired_orchestration_capability_is_absent() -> None:
     assert importlib.util.find_spec("untaped.capabilities.orchestration") is None
 
 
-def test_retired_orchestration_config_schema_is_absent() -> None:
-    root = bootstrap.build_root_app(candidates=first_party_candidates())
+def test_retired_orchestration_config_schema_is_absent(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
 
     assert "orchestration" not in get_settings_model().model_fields
 
@@ -146,8 +150,10 @@ def test_retired_orchestration_config_schema_is_absent() -> None:
     assert not any(line.startswith("orchestration.") for line in result.stdout.splitlines())
 
 
-def test_retired_orchestration_packaged_skill_is_absent() -> None:
-    root = bootstrap.build_root_app(candidates=first_party_candidates())
+def test_retired_orchestration_packaged_skill_is_absent(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
 
     result = CliInvoker().invoke(
         root.meta,
@@ -286,9 +292,10 @@ def test_root_options_apply_between_nested_command_names(
 
 
 def test_root_option_after_a_lazy_capability_name_is_not_a_command(
+    first_party_candidates: tuple[ProviderCandidate, ...],
     _isolated_config: Path,
 ) -> None:
-    root = bootstrap.build_root_app(candidates=first_party_candidates())
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
 
     result = CliInvoker().invoke(root.meta, ["workspace", "--profile", "nope", "list"])
 
@@ -500,6 +507,7 @@ def test_quarantine_warning_is_text_without_a_structured_format(
 
 
 def test_each_quarantined_capability_warns_once_by_name(
+    broken_first_party_candidates: Callable[[], tuple[ProviderCandidate, ...]],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     bootstrap.compose_root(candidates=broken_first_party_candidates())
@@ -811,10 +819,13 @@ def test_cyclopts_private_internals_used_by_lazy_mounts_exist() -> None:
     )
 
 
-def test_lazy_first_party_capabilities_render_like_eager_mounts() -> None:
+def test_lazy_first_party_capabilities_render_like_eager_mounts(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_specs: tuple[CapabilitySpec, ...],
+) -> None:
     from dataclasses import replace
 
-    specs = first_party_specs()
+    specs = first_party_specs
     eager_candidates = [
         provider_candidate(replace(spec, help=None), distribution="untaped") for spec in specs
     ]
@@ -823,7 +834,7 @@ def test_lazy_first_party_capabilities_render_like_eager_mounts() -> None:
     ]
     for argv in argv_cases:
         lazy = CliInvoker().invoke(
-            bootstrap.build_root_app(candidates=first_party_candidates()).meta, argv
+            bootstrap.build_root_app(candidates=first_party_candidates).meta, argv
         )
         eager = CliInvoker().invoke(
             bootstrap.build_root_app(candidates=eager_candidates).meta, argv
@@ -835,7 +846,9 @@ def test_lazy_first_party_capabilities_render_like_eager_mounts() -> None:
         )
 
 
-def test_first_party_help_matches_app_summary() -> None:
-    for spec in first_party_specs():
+def test_first_party_help_matches_app_summary(
+    first_party_specs: tuple[CapabilitySpec, ...],
+) -> None:
+    for spec in first_party_specs:
         assert spec.help is not None, spec.name
         assert spec.help == spec.app_factory().help, spec.name

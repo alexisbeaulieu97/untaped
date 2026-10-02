@@ -14,12 +14,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import release
 
-from tests.unit.conftest import SCRIPTS, load_script
-
-SCRIPT = SCRIPTS / "release.py"
-REPO_ROOT = SCRIPTS.parent
-release = load_script("release")
+REPO_ROOT = release.REPO_ROOT
+SCRIPT = REPO_ROOT / "scripts" / "release.py"
 
 
 def _write(path: Path, text: str) -> None:

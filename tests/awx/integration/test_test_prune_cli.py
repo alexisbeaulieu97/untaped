@@ -13,7 +13,7 @@ from untaped.capabilities.awx.domain.temporary_set import Marker
 from untaped.testing import CliInvoker, ScriptedPromptBackend
 
 if TYPE_CHECKING:  # pragma: no cover — pytest --import-mode=importlib hides 'tests'
-    from tests.conftest import FakeAap
+    from awx.conftest import FakeAap
 else:
     FakeAap = object  # type: ignore[assignment,misc]
 

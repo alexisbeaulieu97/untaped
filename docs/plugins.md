@@ -328,6 +328,8 @@ uv run mypy
 uv run ruff check
 ```
 
+Add `pytest_plugins = ["untaped.testing.plugin"]` to your top-level
+`conftest.py` for an isolated `HOME`, config and environment in every test.
 Call `untaped.testing.check_conventions(NAME)` from the plugin's own tests.
 Define `build_app` (the `app_factory`) in the capability package's
 `__init__.py`, because the checks scan that package. Declare writing commands

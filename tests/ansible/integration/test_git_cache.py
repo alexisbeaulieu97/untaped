@@ -9,12 +9,14 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import GitCall
 from untaped.capabilities.ansible.infrastructure.git_cache import (
     GitCacheError,
     GitRepositoryCache,
 )
 from untaped.sdk import ErrorCategory, GitCommandError, RepoCache
+
+#: One ``RepoCache`` git call seen by ``spy_run_git``: subcommand, auth header, auth URL.
+type GitCall = tuple[str, str | None, str | None]
 
 pytestmark = [
     pytest.mark.integration,

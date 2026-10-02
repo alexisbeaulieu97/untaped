@@ -11,9 +11,9 @@ import httpx
 import pytest
 import respx
 
-from tests.conftest import first_party_candidates
 from untaped.bootstrap import build_root_app
 from untaped.capabilities.github.cli import app
+from untaped.capabilities.registry import ProviderCandidate
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, CliResult, invoke_cli
 
@@ -92,11 +92,13 @@ def _search(
     input: str | None = None,
     requests: list[str] | None = None,
     root_args: Sequence[str] = (),
+    candidates: tuple[ProviderCandidate, ...] = (),
 ) -> tuple[CliResult, respx.Route]:
     """Run ``search <args>`` against a mocked API; ``pages`` chain via ``Link`` headers.
 
     ``requests`` collects every requested URL; ``root_args`` (such as ``-q``) run
-    the search through the ``untaped`` root instead of the github app.
+    the search through the ``untaped`` root (composed from ``candidates``) instead of
+    the github app.
     """
     endpoint = ENDPOINTS[args[0]]
     with respx.mock(base_url=API, assert_all_called=False) as mock:
@@ -117,9 +119,7 @@ def _search(
         )
         if root_args:
             argv = [*root_args, "github", "search", *args]
-            result = invoke_cli(
-                build_root_app(candidates=first_party_candidates()), argv, input=input
-            )
+            result = invoke_cli(build_root_app(candidates=candidates), argv, input=input)
         else:
             result = CliInvoker().invoke(app, ["search", *args], input=input)
         if requests is not None:
@@ -246,11 +246,18 @@ def test_search_notes_the_user_me_fallback(kind: str, scope: list[str]) -> None:
     assert "user:@me" not in scoped.stderr
 
 
-def test_quiet_mutes_the_fallback_and_truncation_notices() -> None:
+def test_quiet_mutes_the_fallback_and_truncation_notices(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
     items = [_repo(i) for i in range(5)]
 
     loud, _ = _search(["repos", "--limit", "2", "--format", "json"], items=items)
-    quiet, _ = _search(["repos", "--limit", "2", "--format", "json"], items=items, root_args=["-q"])
+    quiet, _ = _search(
+        ["repos", "--limit", "2", "--format", "json"],
+        items=items,
+        root_args=["-q"],
+        candidates=first_party_candidates,
+    )
 
     assert "user:@me" in loud.stderr
     assert "showing the first 2 results" in loud.stderr
@@ -453,9 +460,11 @@ def test_search_stdin_rejects_records_of_another_kind() -> None:
     assert "github.user" in result.stderr
 
 
-def test_search_repo_stdin_alias_is_gone() -> None:
+def test_search_repo_stdin_alias_is_gone(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
     result = invoke_cli(
-        build_root_app(candidates=first_party_candidates()),
+        build_root_app(candidates=first_party_candidates),
         ["github", "search", "code", "TODO", "--repo-stdin"],
         input="acme/api\n",
     )

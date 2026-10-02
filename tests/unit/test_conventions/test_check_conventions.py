@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.unit.test_conventions.conftest import Install
+from test_conventions.support import Install
 from untaped.capabilities.registry import ProviderCandidate
 from untaped.conventions import capability_violations
 from untaped.testing import check_conventions
