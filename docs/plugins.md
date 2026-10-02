@@ -72,7 +72,9 @@ arguments.
 The provider's `untaped` requirement (`Requires-Dist`) is the only
 compatibility check: a running `untaped` outside that range quarantines the
 provider. The [changelog](../CHANGELOG.md) says what each version added or broke.
-First-party capabilities register exactly this way. A capability whose
+First-party capabilities register exactly this way and get no precedence: on
+a name or section collision the capability that sorts first by name, then by
+distribution, wins, and the other is quarantined. A capability whose
 settings import another capability's `api` (ansible imports github's) is
 quarantined with it when that import fails.
 

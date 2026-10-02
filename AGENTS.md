@@ -2,15 +2,15 @@
 
 Contribution rules for the unified `untaped` application.
 AI agents and humans both read this file. This repo is **one modular
-application**: a single `untaped` console script composing built-in
-capabilities. This repository contains the application and its built-in
+application**: a single `untaped` console script composing first-party
+capabilities. This repository contains the application and its first-party
 capabilities; there is no multi-repo workspace guidance here.
 
 ## Mission
 
 `untaped` is a single batteries-included CLI built on cyclopts: config,
 profiles, themes, consistent output, typed piping, HTTP/TLS, and UI/prompt
-helpers, plus one command subtree per built-in capability
+helpers, plus one command subtree per first-party capability
 (`untaped workspace ...`, ...). Composition runs through
 `src/untaped/bootstrap.py` (`main()`), which discovers every capability,
 first-party ones included, through the `untaped.capabilities` entry-point
@@ -24,7 +24,7 @@ The source tree is the implementation reference:
 
 - `pyproject.toml` and `uv.lock` define the distribution and locked
   environment.
-- `src/untaped/` contains the shell, shared services, and built-in
+- `src/untaped/` contains the shell, shared services, and first-party
   capabilities. Each `src/untaped/capabilities/<name>/` directory owns one
   capability end to end.
 - `docs/` contains user guides and executable policy files.
@@ -36,7 +36,7 @@ A capability owns its directory end to end:
 src/untaped/capabilities/<name>/
 ├── __init__.py        # SPEC: CapabilitySpec (with one-line help) + nullary build_app() (lazy CLI import; never build at import time) + provider()
 ├── settings.py        # profile model + state model (field sets must be disjoint)
-├── api.py             # optional: declared public module other built-ins may import (Hard Rule 2)
+├── api.py             # optional: declared public module other first-party capabilities may import (Hard Rule 2)
 ├── cli/               # cyclopts commands (thin)
 ├── application/       # use cases (orchestration); ports in application/ports.py
 ├── domain/            # entities, value objects (pure, no I/O)

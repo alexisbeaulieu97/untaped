@@ -145,7 +145,7 @@ def test_all_is_the_topic_groups_in_order() -> None:
 
 
 def test_removed_names_are_gone() -> None:
-    for name in ("get_core_settings",):
+    for name in ("CAPABILITY_API_VERSION", "get_core_settings"):
         assert name not in sdk.__all__
         assert not hasattr(sdk, name)
 

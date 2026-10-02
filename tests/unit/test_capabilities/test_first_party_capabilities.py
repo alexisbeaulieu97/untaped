@@ -11,14 +11,15 @@ from pathlib import Path
 import pytest
 from cyclopts import App
 
+from tests.unit.conftest import first_party_candidates
 from untaped import bootstrap
-from untaped.capabilities.registry import CapabilitySpec, discover_candidates
+from untaped.capabilities.registry import CapabilitySpec
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, provider_candidate
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIRST_PARTY = ("ansible", "awx", "github", "jira", "recipe", "workspace")
-CANDIDATES = {c.name: c for c in discover_candidates() if c.distribution == "untaped"}
+CANDIDATES = first_party_candidates()
 SPECS = {name: import_module(f"untaped.capabilities.{name}").SPEC for name in FIRST_PARTY}
 
 

@@ -27,7 +27,9 @@
   - **Changed:** first-party capabilities register through
     `untaped.capabilities` entry points like any plugin. A failing capability
     is quarantined instead of stopping `untaped`. Capabilities list in name
-    order; `untaped capabilities` loses its `origin` column. Each quarantined
+    order; `untaped capabilities` loses its `origin` column. On a name or
+    section collision the capability that sorts first by name, then by
+    distribution, wins; the other is quarantined. Each quarantined
     capability warns once by name, and `untaped doctor` names the capability
     in its quarantine rows.
   - **Changed:** a capability whose commands fail to load fails only its own

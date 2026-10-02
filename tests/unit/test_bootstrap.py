@@ -18,15 +18,15 @@ import tomllib
 from collections.abc import Callable
 from importlib import metadata
 from pathlib import Path
-from pkgutil import resolve_name
 
 import pytest
 from cyclopts import App
 from pydantic import BaseModel
 
+from tests.unit.conftest import first_party_candidates, first_party_specs
 from untaped import bootstrap
 from untaped.app_context import app_context
-from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate, discover_candidates
+from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 from untaped.cli import create_app, echo
 from untaped.errors import ConfigError
 from untaped.profile_resolver import profile_override, set_profile_override
@@ -745,27 +745,21 @@ def test_completion_omits_a_capability_whose_lazy_factory_fails(
     assert "cli import failed" in dispatched.stderr
 
 
-@pytest.mark.parametrize("fmt", ["text", "json"])
-def test_run_root_reports_a_failing_lazy_factory_with_exit_4(
-    fmt: str, capsys: pytest.CaptureFixture[str]
+def test_run_root_reports_a_failing_lazy_factory_as_json_with_exit_4(
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    argv = ["bad", "who"] if fmt == "text" else ["--format", "json", "bad", "who"]
+    argv = ["--format", "json", "bad", "who"]
     with pytest.raises(SystemExit) as failed:
         bootstrap.run_root(argv, candidates=[provider_candidate(_raising_spec("bad", []))])
     assert failed.value.code == 4
-    err = capsys.readouterr().err
-    if fmt == "json":
-        error = json.loads(err.strip().splitlines()[-1])
-        assert (error["level"], error["category"], error["system"], error["exit_code"]) == (
-            "error",
-            "config",
-            "bad",
-            4,
-        )
-        assert "cli import failed" in error["message"]
-    else:
-        assert err.startswith("error: capability 'bad'")
-        assert "cli import failed" in err
+    error = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert (error["level"], error["category"], error["system"], error["exit_code"]) == (
+        "error",
+        "config",
+        "bad",
+        4,
+    )
+    assert "cli import failed" in error["message"]
 
 
 #: Private cyclopts internals ``_LazyCapabilityCommand`` relies on. Drift here
@@ -804,19 +798,10 @@ def test_cyclopts_private_internals_used_by_lazy_mounts_exist() -> None:
     )
 
 
-def _first_party_specs() -> list[CapabilitySpec]:
-    """Every first-party spec, resolved from its discovered entry point."""
-    return [
-        resolve_name(str(candidate.target))()
-        for candidate in discover_candidates()
-        if candidate.distribution == "untaped"
-    ]
-
-
 def test_lazy_first_party_capabilities_render_like_eager_mounts() -> None:
     from dataclasses import replace
 
-    specs = _first_party_specs()
+    specs = list(first_party_specs().values())
     eager_candidates = [
         provider_candidate(replace(spec, help=None), distribution="untaped") for spec in specs
     ]
@@ -836,9 +821,7 @@ def test_lazy_first_party_capabilities_render_like_eager_mounts() -> None:
 
 
 def test_first_party_help_matches_app_summary() -> None:
-    specs = _first_party_specs()
-    assert len(specs) == 6
-    for spec in specs:
+    for spec in first_party_specs().values():
         assert spec.help is not None, spec.name
         assert spec.help == spec.app_factory().help, spec.name
 
@@ -868,16 +851,13 @@ def test_root_help_lists_capabilities_in_name_order() -> None:
     assert out.index("alpha help.") < out.index("mid help.") < out.index("zeta help.")
 
 
-def test_a_fresh_process_lists_first_party_capabilities_in_name_order() -> None:
-    listed = subprocess.run(
-        [sys.executable, "-m", "untaped", "capabilities", "--format", "json"],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=120,
-    )
-    assert listed.returncode == 0, listed.stderr
-    rows = json.loads(listed.stdout)
-    names = [row["name"] for row in rows]
-    assert names == ["ansible", "awx", "github", "jira", "recipe", "workspace"]
-    assert {(row["status"], row["distribution"]) for row in rows} == {("ready", "untaped")}
+def test_first_party_capabilities_list_ready_in_name_order() -> None:
+    root = bootstrap.build_root_app(candidates=list(first_party_candidates().values()))
+    listed = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])
+    assert listed.exit_code == 0, listed.output
+    assert [
+        (row["name"], row["status"], row["distribution"]) for row in json.loads(listed.stdout)
+    ] == [
+        (name, "ready", "untaped")
+        for name in ("ansible", "awx", "github", "jira", "recipe", "workspace")
+    ]

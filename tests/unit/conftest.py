@@ -1,4 +1,4 @@
-"""Shared unit-test fixtures for the untaped SDK, and the `scripts/` loader."""
+"""Shared unit-test fixtures, the `scripts/` loader, and first-party candidate lookups."""
 
 from __future__ import annotations
 
@@ -6,10 +6,12 @@ import importlib.util
 import sys
 from collections.abc import Iterator
 from pathlib import Path
+from pkgutil import resolve_name
 from types import ModuleType
 
 import pytest
 
+from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate, discover_candidates
 from untaped.settings import (
     get_settings,
     reset_config_registry_for_tests,
@@ -26,6 +28,19 @@ def load_script(name: str) -> ModuleType:
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def first_party_candidates() -> dict[str, ProviderCandidate]:
+    """Every discovered first-party (distribution ``untaped``) candidate, by name."""
+    return {c.name: c for c in discover_candidates() if c.distribution == "untaped"}
+
+
+def first_party_specs() -> dict[str, CapabilitySpec]:
+    """Every first-party spec, resolved from its discovered entry point, by name."""
+    return {
+        name: resolve_name(str(candidate.target))()
+        for name, candidate in first_party_candidates().items()
+    }
 
 
 @pytest.fixture(autouse=True)

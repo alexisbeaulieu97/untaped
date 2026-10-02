@@ -15,8 +15,8 @@ from pydantic import BaseModel
 
 from test_capabilities.capharness import (
     OtherProfile,
+    make_candidate,
     make_check,
-    make_external,
     make_shell,
     make_skill,
     make_spec,
@@ -176,7 +176,7 @@ def test_invalid_spec_is_quarantined(
     make: Callable[[], CapabilitySpec], reason: str, named: str, distribution: str
 ) -> None:
     spec = make()
-    result = compose(make_shell(), [make_external(spec, distribution)])
+    result = compose(make_shell(), [make_candidate(spec, distribution)])
     assert result.capabilities == ()
     (record,) = result.quarantine
     assert (record.distribution, record.reason) == (distribution, reason)
@@ -239,7 +239,7 @@ def test_collision_with_an_earlier_capability_is_quarantined(
 ) -> None:
     first, second = make()
     result = compose(
-        make_shell(), [make_external(second, "b-dist"), make_external(first, "a-dist")]
+        make_shell(), [make_candidate(second, "b-dist"), make_candidate(first, "a-dist")]
     )
     assert [c.spec.name for c in result.capabilities] == [first.name]
     (record,) = result.quarantine
@@ -248,46 +248,55 @@ def test_collision_with_an_earlier_capability_is_quarantined(
 
 
 @pytest.mark.parametrize(
-    ("shell", "spec", "reason", "named"),
+    ("shell", "spec", "reason", "detail"),
     [
-        (make_shell(), make_spec(name="untaped"), "duplicate-name", "'untaped'"),
-        (make_shell(), make_spec(name="intruder", section="shell"), "duplicate-section", "'shell'"),
+        (
+            make_shell(),
+            make_spec(name="untaped"),
+            "duplicate-name",
+            "duplicate capability name: 'untaped' (already provided by the shell)",
+        ),
+        (
+            make_shell(),
+            make_spec(name="intruder", section="shell"),
+            "duplicate-section",
+            "duplicate config section: 'shell' (already provided by the shell)",
+        ),
         (
             make_shell(skills=(make_skill("shell-skill"),)),
             make_spec(name="s", skills=(make_skill("shell-skill"),)),
             "duplicate-skill",
-            "'shell-skill'",
+            "duplicate skill name: 'shell-skill'",
         ),
         (
             make_shell(checks=(make_check("shell.health"),)),
             make_spec(name="d", checks=(make_check("shell.health"),)),
             "duplicate-doctor-check",
-            "'shell.health'",
+            "duplicate doctor id: 'shell.health'",
         ),
     ],
     ids=["name", "section", "skill", "doctor-id"],
 )
 def test_collision_with_the_shell_quarantines(
-    shell: Any, spec: CapabilitySpec, reason: str, named: str
+    shell: Any, spec: CapabilitySpec, reason: str, detail: str
 ) -> None:
-    result = compose(shell, [make_external(spec)])
+    result = compose(shell, [make_candidate(spec)])
     assert result.capabilities == ()
     (record,) = result.quarantine
-    assert record.reason == reason
-    assert named in record.detail
+    assert (record.reason, record.detail) == (reason, detail)
 
 
 def test_state_shadow_scoped_to_same_section() -> None:
     first = make_spec(name="first", section="data", profile=TokenProfile)
     other = make_spec(name="other", section="other", profile=OtherProfile, state=TokenState)
-    result = compose(make_shell(), [make_external(first), make_external(other)])
+    result = compose(make_shell(), [make_candidate(first), make_candidate(other)])
     assert [c.spec.name for c in result.capabilities] == ["first", "other"]
     assert result.quarantine == ()
 
 
 def test_duplicate_skill_across_candidates_keeps_the_first() -> None:
-    first = make_external(make_spec(name="a", skills=(make_skill("s1"),)), "d1")
-    second = make_external(make_spec(name="b", skills=(make_skill("s1"),)), "d2")
+    first = make_candidate(make_spec(name="a", skills=(make_skill("s1"),)), "d1")
+    second = make_candidate(make_spec(name="b", skills=(make_skill("s1"),)), "d2")
     result = compose(make_shell(), [first, second])
     assert [c.spec.name for c in result.capabilities] == ["a"]
     (record,) = result.quarantine
@@ -356,13 +365,13 @@ def _needs_arg(value: str) -> CapabilitySpec:
             "",
         ),
         (
-            make_external(make_spec(name="raiser"), "d", error=RuntimeError("boom-text")),
+            make_candidate(make_spec(name="raiser"), "d", error=RuntimeError("boom-text")),
             "malformed-entry-point",
             None,
             "boom-text",
         ),
         (
-            make_external(make_spec(name="wrong"), "d", result={"not": "a-spec"}),
+            make_candidate(make_spec(name="wrong"), "d", result={"not": "a-spec"}),
             "malformed-entry-point",
             None,
             "dict",

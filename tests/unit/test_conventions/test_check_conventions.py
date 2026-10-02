@@ -102,7 +102,7 @@ _TESTS = {
 
 @pytest.fixture
 def demo(install: Install) -> list[ProviderCandidate]:
-    """The demo plugin installed in ``tmp_path/site`` and discovered as an external."""
+    """The demo plugin installed in ``tmp_path/site`` and discovered through its entry point."""
     install({**_PLUGIN, **_TESTS})
     return [
         ProviderCandidate(distribution="demo-plugin", name="demo", target="demo_plugin:provider")
@@ -133,10 +133,10 @@ def test_test_imports_are_checked_only_with_a_tests_dir(
     assert found == sorted([*_FOUND, _PRIVATE_IMPORT])
 
 
-def test_an_external_capability_fails_with_every_violation_in_its_own_files(
+def test_a_plugin_capability_fails_with_every_violation_in_its_own_files(
     demo: list[ProviderCandidate],
 ) -> None:
-    """A plugin outside src/untaped, discovered as an external, is checked from its own files."""
+    """A plugin outside src/untaped is checked from its own files."""
     with pytest.raises(AssertionError) as raised:
         check_conventions("demo", candidates=demo)
     assert str(raised.value) == "convention violations:\n" + "\n".join(

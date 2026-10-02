@@ -27,7 +27,6 @@ import re
 import shlex
 from collections.abc import Iterator
 from pathlib import Path
-from pkgutil import resolve_name
 
 import pytest
 import yaml
@@ -39,16 +38,11 @@ from cyclopts.exceptions import (
     ValidationError,
 )
 
+from tests.unit.conftest import first_party_specs
 from untaped.bootstrap import build_root_app
 from untaped.capabilities.awx.domain.suite_starter import starter_suite
-from untaped.capabilities.registry import discover_candidates
 
-SKILLS = {
-    skill.name: skill
-    for candidate in discover_candidates()
-    if candidate.distribution == "untaped"
-    for skill in resolve_name(str(candidate.target))().skills
-}
+SKILLS = {skill.name: skill for spec in first_party_specs().values() for skill in spec.skills}
 
 
 def _skill_files() -> list[tuple[str, Path]]:

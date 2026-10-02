@@ -27,7 +27,8 @@ from types import SimpleNamespace
 import pytest
 
 import untaped.capabilities.registry as registry
-from test_capabilities.capharness import Provider, make_external, make_shell, make_spec
+from test_capabilities.capharness import Provider, make_candidate, make_shell, make_spec
+from tests.unit.conftest import first_party_candidates
 from untaped.capabilities.registry import (
     ProviderCandidate,
     ProviderRef,
@@ -38,15 +39,8 @@ from untaped.capabilities.registry import (
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-def _first_party(name: str) -> ProviderCandidate:
-    (candidate,) = (
-        c for c in discover_candidates() if c.distribution == "untaped" and c.name == name
-    )
-    return candidate
-
-
 def test_first_party_commit_carries_its_entry_point() -> None:
-    result = compose(make_shell(), [_first_party("github")])
+    result = compose(make_shell(), [first_party_candidates()["github"]])
     (registered,) = result.capabilities
     assert registered.provider_ref == ProviderRef(
         distribution="untaped", entry_point="untaped.capabilities.github:provider"
@@ -61,7 +55,7 @@ def test_first_party_version_is_the_product_version() -> None:
         pytest.skip("untaped distribution metadata is not installed")
     declared = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert installed == declared["project"]["version"]
-    assert _first_party("jira").distribution_version == installed
+    assert first_party_candidates()["jira"].distribution_version == installed
 
 
 @pytest.mark.parametrize(
@@ -75,10 +69,10 @@ def test_first_party_version_is_the_product_version() -> None:
     ],
     ids=["wrong-group", "non-admitting", "malformed-requires", "name-mismatch", "no-distribution"],
 )
-def test_bad_external_metadata_quarantines(
+def test_bad_candidate_metadata_quarantines(
     distribution: str, name: str, kwargs: dict[str, object], named: list[str]
 ) -> None:
-    candidate = make_external(make_spec(name="real"), distribution, name=name, **kwargs)
+    candidate = make_candidate(make_spec(name="real"), distribution, name=name, **kwargs)
     result = compose(make_shell(), [candidate])
     assert result.capabilities == ()
     (record,) = result.quarantine
@@ -126,7 +120,7 @@ def _compose_with_sdk_version(
         return sdk_version if name == "untaped" else real_version(name)
 
     monkeypatch.setattr(registry.importlib_metadata, "version", fake_version)
-    candidate = make_external(
+    candidate = make_candidate(
         make_spec(name="pep440"), "example-dist", requires_dist=(requirement,)
     )
     return compose(make_shell(), [candidate])
@@ -168,8 +162,8 @@ def test_malformed_marker_quarantines(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_multi_entry_point_distribution_passes() -> None:
-    first = make_external(make_spec(name="alpha"), "multi-dist", distribution_version="1.2.3")
-    second = make_external(make_spec(name="beta"), "multi-dist", distribution_version="1.2.3")
+    first = make_candidate(make_spec(name="alpha"), "multi-dist", distribution_version="1.2.3")
+    second = make_candidate(make_spec(name="beta"), "multi-dist", distribution_version="1.2.3")
     result = compose(make_shell(), [second, first])
     assert [cap.spec.name for cap in result.capabilities] == ["alpha", "beta"]
     assert result.quarantine == ()
