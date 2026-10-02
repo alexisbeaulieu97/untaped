@@ -14,9 +14,9 @@ packs](#install-and-manage-packs)).
 Recipe verbs sit directly under `untaped recipe`; packs, hooks and backups
 have their own nouns (`recipe packs …`, `recipe hooks …`, `recipe backups …`).
 The packaged skill is the full reference:
-[applying](../../packages/untaped/src/untaped/capabilities/recipe/skills/untaped-recipe/references/apply.md),
-[packs, tests and backups](../../packages/untaped/src/untaped/capabilities/recipe/skills/untaped-recipe/references/library.md)
-and [authoring](../../packages/untaped/src/untaped/capabilities/recipe/skills/untaped-recipe/references/authoring.md).
+[applying](../../packages/untaped-recipe/src/untaped_recipe/skills/untaped-recipe/references/apply.md),
+[packs, tests and backups](../../packages/untaped-recipe/src/untaped_recipe/skills/untaped-recipe/references/library.md)
+and [authoring](../../packages/untaped-recipe/src/untaped_recipe/skills/untaped-recipe/references/authoring.md).
 
 ## Set up
 
@@ -80,7 +80,7 @@ untaped recipe apply acme/readme --stdin --input-from 'service={{ target.name }}
 required input still missing is prompted for at a terminal; otherwise the
 run fails naming it. Sensitive inputs show as `***` in rows, previews and
 backups, and their targets show no diff. The full precedence and prompt
-rules are in the [apply reference](../../packages/untaped/src/untaped/capabilities/recipe/skills/untaped-recipe/references/apply.md#inputs).
+rules are in the [apply reference](../../packages/untaped-recipe/src/untaped_recipe/skills/untaped-recipe/references/apply.md#inputs).
 
 ## Install and manage packs
 
@@ -89,7 +89,7 @@ sandbox, including during `apply --dry-run` and `--check`, since hooks compute
 the planned changes. Inspect a pack before you trust it (`recipe packs get`,
 `recipe validate`, `recipe test`). Hooks get a reduced environment without
 your tokens, but they run as you with full file access; the
-[environment list](../../packages/untaped/src/untaped/capabilities/recipe/skills/untaped-recipe/references/library.md#what-hooks-can-reach)
+[environment list](../../packages/untaped-recipe/src/untaped_recipe/skills/untaped-recipe/references/library.md#what-hooks-can-reach)
 says exactly what they can see.
 
 ```bash
@@ -151,7 +151,7 @@ steps:
 A `validate` step runs a hook that passes, fails or skips the target;
 `transform` rewrites file content through a hook; `template`, `copy` and
 `remove` render, copy and delete files. Step fields are in the
-[authoring reference](../../packages/untaped/src/untaped/capabilities/recipe/skills/untaped-recipe/references/authoring.md#recipe-files).
+[authoring reference](../../packages/untaped-recipe/src/untaped_recipe/skills/untaped-recipe/references/authoring.md#recipe-files).
 `globs` has no implicit excludes: add `exclude: [".git/**"]` when the
 targets are Git clones.
 

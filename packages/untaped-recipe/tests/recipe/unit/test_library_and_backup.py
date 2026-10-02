@@ -1,0 +1,483 @@
+"""Tests for recipe libraries, hook lookup, and backup restore."""
+
+from __future__ import annotations
+
+import json
+import stat
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+
+from untaped_recipe.application.apply_recipe import ApplyRecipe
+from untaped_recipe.domain.plan import FileChange
+from untaped_recipe.domain.recipe import Recipe
+from untaped_recipe.errors import HookNotFoundError
+from untaped_recipe.infrastructure.backup import (
+    BackupBundle,
+    BackupDraft,
+    BackupStore,
+    RestoreItem,
+    prune_selection,
+)
+from untaped_recipe.infrastructure.file_writer import flush_changes
+from untaped_recipe.infrastructure.hook_resolver import (
+    HookResolver,
+    UvHookRef,
+)
+from untaped_recipe.infrastructure.pack_store import PackLibrary, pack_content_hash
+
+
+def test_hook_resolver_uses_recipe_local_then_installed_pack(tmp_path: Path) -> None:
+    recipe_dir = tmp_path / "recipe"
+    library_root = tmp_path / "library"
+    pack_source = tmp_path / "pack-source"
+    _write_hook_project(recipe_dir, hook_name="pick", package="local_hooks")
+    _write_hook_project(pack_source, hook_name="pick", package="pack_hooks")
+    PackLibrary(library_root=library_root).add(
+        pack_source,
+        source=str(pack_source),
+        rev=None,
+        name="shared",
+        force=False,
+    )
+
+    local_ref = HookResolver(library_root=library_root).resolve("pick", recipe_dir)
+    installed_ref = HookResolver(library_root=library_root).resolve("pick", None)
+
+    assert isinstance(local_ref, UvHookRef)
+    assert local_ref.project_root == recipe_dir
+    assert local_ref.module == "local_hooks.hooks.pick"
+    assert isinstance(installed_ref, UvHookRef)
+    assert installed_ref.project_root == library_root / "packs" / "shared"
+    assert installed_ref.module == "pack_hooks.hooks.pick"
+
+
+def test_hook_resolver_bare_name_in_pack_does_not_fall_through_to_other_packs(
+    tmp_path: Path,
+) -> None:
+    own_pack = tmp_path / "own"
+    own_pack.mkdir()
+    library_root = tmp_path / "library"
+    other_source = tmp_path / "other-source"
+    _write_hook_project(other_source, hook_name="pick", package="other_hooks")
+    PackLibrary(library_root=library_root).add(
+        other_source,
+        source=str(other_source),
+        rev=None,
+        name="other",
+        force=False,
+    )
+    resolver = HookResolver(library_root=library_root)
+
+    with pytest.raises(HookNotFoundError, match="hook not found: 'pick'"):
+        resolver.resolve("pick", own_pack)
+    qualified = resolver.resolve("other/pick", own_pack)
+
+    assert isinstance(qualified, UvHookRef)
+    assert qualified.project_root == library_root / "packs" / "other"
+
+
+@pytest.mark.parametrize("name", ["nope", "acme/nope"])
+def test_hook_resolver_misses_raise_hook_not_found(name: str) -> None:
+    with pytest.raises(HookNotFoundError, match=f"hook not found: '{name}'"):
+        HookResolver().resolve(name, None)
+
+
+def test_hook_resolver_rejects_hook_paths_that_escape_recipe(tmp_path: Path) -> None:
+    recipe_dir = tmp_path / "recipe"
+    recipe_dir.mkdir()
+    with pytest.raises(ValueError, match="safe hook name"):
+        HookResolver(library_root=tmp_path / "library").resolve("../outside.py", recipe_dir)
+
+
+def _write_hook_project(
+    root: Path,
+    *,
+    hook_name: str,
+    package: str = "project_hooks",
+) -> None:
+    (root / "src" / package / "hooks").mkdir(parents=True, exist_ok=True)
+    (root / "src" / package / "__init__.py").write_text("")
+    (root / "src" / package / "hooks" / "__init__.py").write_text("")
+    (root / "src" / package / "hooks" / f"{hook_name}.py").write_text(
+        "def transform(content, *, inputs, target, file, args, helpers):\n    return content\n"
+    )
+    (root / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "project-hooks"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        "dependencies = []\n\n"
+        "[tool.untaped_recipe.hooks]\n"
+        f'"{hook_name}" = {{ module = "{package}.hooks.{hook_name}" }}\n'
+    )
+    (root / "uv.lock").write_text("version = 1\n")
+
+
+def test_pack_add_ignores_dev_and_build_junk(tmp_path: Path) -> None:
+    library_root = tmp_path / "library"
+    pack_source = tmp_path / "pack-source"
+    _write_hook_project(pack_source, hook_name="pick")
+    (pack_source / ".venv" / "bin").mkdir(parents=True)
+    (pack_source / ".venv" / "bin" / "python").write_text("")
+    (pack_source / "__pycache__").mkdir()
+    (pack_source / "__pycache__" / "junk.pyc").write_text("")
+    (pack_source / "dist").mkdir()
+    (pack_source / "dist" / "pack-0.1.0.tar.gz").write_text("")
+    (pack_source / "pack.egg-info").mkdir()
+    (pack_source / "pack.egg-info" / "PKG-INFO").write_text("")
+
+    PackLibrary(library_root=library_root).add(
+        pack_source,
+        source=str(pack_source),
+        rev=None,
+        name="clean",
+        force=False,
+    )
+
+    installed = library_root / "packs" / "clean"
+    assert (installed / "pyproject.toml").is_file()
+    assert (installed / "uv.lock").is_file()
+    assert not (installed / ".venv").exists()
+    assert not (installed / "__pycache__").exists()
+    assert not (installed / "dist").exists()
+    assert not (installed / "pack.egg-info").exists()
+
+
+@pytest.mark.parametrize("kind", ["file", "dir"])
+def test_pack_add_rejects_symlinks_instead_of_copying_their_targets(
+    tmp_path: Path, kind: str
+) -> None:
+    library_root = tmp_path / "library"
+    pack_source = tmp_path / "pack-source"
+    _write_hook_project(pack_source, hook_name="pick")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("secret\n")
+    link = pack_source / "src" / "project_hooks" / "leak"
+    link.symlink_to(outside / "secret.txt" if kind == "file" else outside)
+
+    with pytest.raises(ValueError, match="symlink") as excinfo:
+        _add_pack(library_root, pack_source, name="leaky")
+
+    assert "src/project_hooks/leak" in str(excinfo.value)
+    assert not (library_root / "packs" / "leaky").exists()
+
+
+def test_pack_add_allows_symlinks_inside_ignored_dev_directories(tmp_path: Path) -> None:
+    library_root = tmp_path / "library"
+    pack_source = tmp_path / "pack-source"
+    _write_hook_project(pack_source, hook_name="pick")
+    (pack_source / ".venv" / "bin").mkdir(parents=True)
+    (pack_source / ".venv" / "bin" / "python").symlink_to("/usr/bin/python3")
+
+    _add_pack(library_root, pack_source, name="venv")
+
+    assert not (library_root / "packs" / "venv" / ".venv").exists()
+
+
+def _add_pack(library_root: Path, source: Path, *, name: str, **kwargs: object) -> None:
+    PackLibrary(library_root=library_root).add(
+        source,
+        source=str(source),
+        rev=None,
+        name=name,
+        force=bool(kwargs.get("force", False)),
+        discard_edits=bool(kwargs.get("discard_edits", False)),
+    )
+
+
+def test_pack_add_rejects_index_rows_without_content_hash_before_mutation(tmp_path: Path) -> None:
+    library_root = tmp_path / "library"
+    pack_source = tmp_path / "pack-source"
+    _write_hook_project(pack_source, hook_name="pick")
+    _add_pack(library_root, pack_source, name="guarded")
+    index_path = library_root / "packs.toml"
+    index_path.write_text(
+        index_path.read_text(encoding="utf-8").replace("content_hash", "ignored_field"),
+        encoding="utf-8",
+    )
+    installed = library_root / "packs" / "guarded"
+    (installed / "src" / "project_hooks" / "hooks" / "pick.py").write_text(
+        "def transform(content, *, inputs, target, file, args, helpers):\n"
+        "    return content + 'edited'\n"
+    )
+
+    before_index = index_path.read_text(encoding="utf-8")
+    before_hook = (installed / "src" / "project_hooks" / "hooks" / "pick.py").read_text(
+        encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match=r"pack index row 'guarded' requires content_hash"):
+        _add_pack(library_root, pack_source, name="guarded", force=True, discard_edits=True)
+
+    assert index_path.read_text(encoding="utf-8") == before_index
+    assert (installed / "src" / "project_hooks" / "hooks" / "pick.py").read_text(
+        encoding="utf-8"
+    ) == before_hook
+
+
+def test_pack_content_hash_reports_unreadable_files_cleanly(tmp_path: Path) -> None:
+    import os
+
+    pack_source = tmp_path / "pack-source"
+    _write_hook_project(pack_source, hook_name="pick")
+    locked = pack_source / "uv.lock"
+    locked.chmod(0o000)
+    if os.access(locked, os.R_OK):  # running as root; permission bits are advisory
+        pytest.skip("cannot make files unreadable as root")
+    try:
+        with pytest.raises(ValueError, match=r"cannot hash pack file uv\.lock"):
+            pack_content_hash(pack_source)
+    finally:
+        locked.chmod(0o644)
+
+
+def test_pack_content_hash_ignores_junk_and_sees_edits(tmp_path: Path) -> None:
+    pack_source = tmp_path / "pack-source"
+    _write_hook_project(pack_source, hook_name="pick")
+    before = pack_content_hash(pack_source)
+
+    (pack_source / "__pycache__").mkdir()
+    (pack_source / "__pycache__" / "junk.pyc").write_text("junk")
+    assert pack_content_hash(pack_source) == before
+
+    (pack_source / "uv.lock").write_text("version = 2\n")
+    assert pack_content_hash(pack_source) != before
+
+
+class _UnusedHooks:
+    def validate(self, *args: object, **kwargs: object) -> object:
+        raise AssertionError("hook executor should not be used")
+
+    def transform(self, *args: object, **kwargs: object) -> object:
+        raise AssertionError("hook executor should not be used")
+
+
+def test_backup_store_plans_and_restores_touched_files_behind_a_hash_guard(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    existing = target / "config.yml"
+    created = target / "new.txt"
+    removed = target / "old.txt"
+    existing.write_text("before\n")
+    removed.write_text("old\n")
+    store = BackupStore(tmp_path / "backups")
+    bundle = _create_backup(
+        store,
+        recipe_name="demo",
+        inputs={"x": 1},
+        changes=[
+            FileChange(
+                target=target,
+                relative_path=Path("config.yml"),
+                before="before\n",
+                after="after\n",
+            ),
+            FileChange(target=target, relative_path=Path("new.txt"), before=None, after="new\n"),
+            FileChange(target=target, relative_path=Path("old.txt"), before="old\n", after=None),
+        ],
+    )
+    existing.write_text("after\n")
+    created.write_text("new\n")
+    removed.unlink()
+
+    assert store.plan_restore(bundle.id) == [
+        RestoreItem(path=existing, action="restore"),
+        RestoreItem(path=created, action="delete"),
+        RestoreItem(path=removed, action="create"),
+    ]
+    existing.write_text("user edit\n")
+    with pytest.raises(ValueError, match="changed since backup"):
+        store.plan_restore(bundle.id)
+    with pytest.raises(ValueError, match="changed since backup"):
+        store.restore(bundle.id[:8])
+    assert created.read_text() == "new\n"
+    assert not removed.exists()
+
+    store.restore("latest", force=True)
+
+    assert existing.read_text() == "before\n"
+    assert not created.exists()
+    assert removed.read_text() == "old\n"
+
+
+def test_backup_restore_of_crlf_file_does_not_false_trip_hash_guard(tmp_path: Path) -> None:
+    recipe_dir = tmp_path / "recipe"
+    recipe_dir.mkdir()
+    (recipe_dir / "template.txt").write_bytes(b"after one\r\nafter two\r\n")
+    target = tmp_path / "target"
+    target.mkdir()
+    config = target / "config.txt"
+    original = b"before one\r\nbefore two\r\n"
+    config.write_bytes(original)
+    recipe = Recipe.model_validate(
+        {
+            "version": 1,
+            "steps": [{"type": "template", "template": "template.txt", "dest": "config.txt"}],
+        }
+    )
+    planner = ApplyRecipe(_UnusedHooks())  # type: ignore[arg-type]
+    plan = planner(recipe=recipe, recipe_dir=recipe_dir, target=target, inputs={})
+    store = BackupStore(tmp_path / "backups")
+    draft = store.start(recipe_name="demo", inputs={})
+    reservation = draft.stage(plan.changes, inputs={})
+
+    flush_changes(plan.changes)
+    draft.commit(reservation)
+    store.restore(draft.id)
+
+    assert config.read_bytes() == original
+
+
+def test_backup_restore_rejects_symlink_escape(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    outside = tmp_path / "outside"
+    target.mkdir()
+    outside.mkdir()
+    (target / "link").symlink_to(outside, target_is_directory=True)
+    escaped = outside / "config.txt"
+    escaped.write_text("after\n")
+    store = BackupStore(tmp_path / "backups")
+    bundle = _create_backup(
+        store,
+        recipe_name="demo",
+        inputs={},
+        changes=[
+            FileChange(
+                target=target,
+                relative_path=Path("link/config.txt"),
+                before="before\n",
+                after="after\n",
+            )
+        ],
+    )
+
+    with pytest.raises(Exception, match="symlink"):
+        store.restore(bundle.id)
+
+    assert escaped.read_text() == "after\n"
+
+
+@pytest.mark.parametrize(
+    ("ids", "keep", "max_age_days", "pruned"),
+    [
+        pytest.param(
+            ["custom-name", "20200101T000000000000Z-aaaaaaaa"],
+            None,
+            30,
+            ["20200101T000000000000Z-aaaaaaaa"],
+            id="never-age-prunes-unparsable-ids",
+        ),
+        pytest.param(
+            ["aaa-custom", "20990101T000000000000Z-bbbbbbbb", "20200101T000000000000Z-cccccccc"],
+            1,
+            None,
+            ["20200101T000000000000Z-cccccccc"],
+            id="unparsable-ids-do-not-consume-keep-slots",
+        ),
+    ],
+)
+def test_prune_selection_leaves_unparsable_ids_alone(
+    tmp_path: Path,
+    ids: list[str],
+    keep: int | None,
+    max_age_days: int | None,
+    pruned: list[str],
+) -> None:
+    bundles = [BackupBundle(id=bundle_id, path=tmp_path / bundle_id) for bundle_id in ids]
+
+    selected = prune_selection(
+        bundles, keep=keep, max_age_days=max_age_days, now=datetime(2026, 7, 7, tzinfo=UTC)
+    )
+
+    assert [bundle.id for bundle in selected] == pruned
+
+
+def test_backup_draft_keeps_created_at_across_commits(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "a.txt").write_text("a\n")
+    store = BackupStore(tmp_path / "backups")
+    draft = store.start(recipe_name="demo", inputs={})
+    created_at = store.metadata(draft.id)["created_at"]
+
+    draft.commit(
+        draft.stage(
+            [FileChange(target=target, relative_path=Path("a.txt"), before="a\n", after="b\n")]
+        )
+    )
+
+    assert store.metadata(draft.id)["created_at"] == created_at
+
+
+def test_backup_bundles_are_private_to_the_owner(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "a.txt").write_text("secret\n")
+    store = BackupStore(tmp_path / "backups")
+
+    draft = _create_backup(
+        store,
+        recipe_name="demo",
+        inputs={},
+        changes=[
+            FileChange(target=target, relative_path=Path("a.txt"), before="secret\n", after="b\n")
+        ],
+    )
+
+    def mode(path: Path) -> int:
+        return stat.S_IMODE(path.stat().st_mode)
+
+    assert mode(tmp_path / "backups") == 0o700
+    assert mode(draft.path) == 0o700
+    assert mode(draft.files_dir) == 0o700
+    assert mode(draft.path / "metadata.json") == 0o600
+    assert [mode(path) for path in draft.files_dir.iterdir()] == [0o600]
+
+
+def test_backup_metadata_write_is_atomic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    store = BackupStore(tmp_path / "backups")
+    draft = store.start(recipe_name="demo", inputs={})
+    before = (draft.path / "metadata.json").read_text()
+
+    def failing_replace(src: object, dst: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr("untaped.fs.os.replace", failing_replace)
+    with pytest.raises(OSError, match="disk full"):
+        draft.commit(
+            draft.stage(
+                [FileChange(target=target, relative_path=Path("a.txt"), before=None, after="a\n")]
+            )
+        )
+
+    assert (draft.path / "metadata.json").read_text() == before
+    assert json.loads(before)["files"] == []
+    assert sorted(path.name for path in draft.path.iterdir()) == ["files", "metadata.json"]
+
+
+@pytest.mark.parametrize("content", ["{}", "not json", "[]", '{"files": [{"target": 1}]}'])
+def test_backup_restore_reports_corrupt_metadata(tmp_path: Path, content: str) -> None:
+    store = BackupStore(tmp_path / "backups")
+    draft = store.start(recipe_name="demo", inputs={})
+    (draft.path / "metadata.json").write_text(content)
+
+    with pytest.raises(ValueError, match="invalid backup metadata"):
+        store.plan_restore(draft.id)
+
+
+def _create_backup(
+    store: BackupStore,
+    *,
+    recipe_name: str,
+    inputs: dict[str, object],
+    changes: list[FileChange],
+) -> BackupDraft:
+    draft = store.start(recipe_name=recipe_name, inputs=inputs)
+    draft.commit(draft.stage(changes, inputs=inputs))
+    return draft

@@ -19,13 +19,13 @@ dependencies = [
     "pyyaml>=6.0.3",
     "rich>=15.0.0",
     "ruamel.yaml>=0.18.16",
-    "tomlkit>=0.13,<1",
     "truststore>=0.10.4",
 ]
 
 [project.optional-dependencies]
-all = ["untaped-jira==10.0.0a0"]
+all = ["untaped-jira==10.0.0a0", "untaped-recipe==10.0.0a0"]
 jira = ["untaped-jira==10.0.0a0"]
+recipe = ["untaped-recipe==10.0.0a0"]
 
 [project.scripts]
 untaped = "untaped.__main__:main"
@@ -34,7 +34,6 @@ untaped = "untaped.__main__:main"
 ansible = "untaped.capabilities.ansible:provider"
 awx = "untaped.capabilities.awx:provider"
 github = "untaped.capabilities.github:provider"
-recipe = "untaped.capabilities.recipe:provider"
 workspace = "untaped.capabilities.workspace:provider"
 
 [build-system]
