@@ -9,23 +9,22 @@ never per-capability.
 from __future__ import annotations
 
 import json
-import tomllib
-from collections.abc import Iterator
 from importlib import import_module
 from importlib import metadata as importlib_metadata
 from pathlib import Path
 
 import pytest
+import release
 from cyclopts import App
 
-from repo.support import FIRST_PARTY
+from repo.support import FIRST_PARTY, REPO_ROOT
 from test_capabilities.capharness import make_shell
 from untaped import bootstrap
 from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate, ProviderRef, compose
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, provider_candidate
 
-CORE = Path(__file__).resolve().parents[2] / "packages" / "untaped"
+pytestmark = pytest.mark.usefixtures("fresh_composition", "_isolated_config")
 
 
 @pytest.fixture(scope="module")
@@ -40,16 +39,6 @@ def specs(first_party_specs: tuple[CapabilitySpec, ...]) -> dict[str, Capability
     return {spec.name: spec for spec in first_party_specs}
 
 
-@pytest.fixture(autouse=True)
-def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
-    cfg = tmp_path / "config.yml"
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
-    bootstrap._clear_for_tests()
-    yield cfg
-    bootstrap._clear_for_tests()
-
-
 def _invoke(spec: CapabilitySpec, *args: str) -> str:
     root = bootstrap.build_root_app(candidates=(provider_candidate(spec),))
     result = CliInvoker().invoke(root.meta, list(args))
@@ -58,8 +47,8 @@ def _invoke(spec: CapabilitySpec, *args: str) -> str:
 
 
 def test_the_only_console_script_is_the_unified_shell() -> None:
-    data = tomllib.loads((CORE / "pyproject.toml").read_text())
-    assert data["project"]["scripts"] == {"untaped": "untaped.__main__:main"}
+    project = release.packages(REPO_ROOT)["untaped"]
+    assert project["scripts"] == {"untaped": "untaped.__main__:main"}
 
 
 def test_the_fixtures_hold_exactly_the_first_party_capabilities(
@@ -107,8 +96,7 @@ def test_first_party_version_is_the_product_version(
         installed = importlib_metadata.version("untaped")
     except importlib_metadata.PackageNotFoundError:
         pytest.skip("untaped distribution metadata is not installed")
-    declared = tomllib.loads((CORE / "pyproject.toml").read_text(encoding="utf-8"))
-    assert installed == declared["project"]["version"]
+    assert installed == release.packages(REPO_ROOT)["untaped"]["version"]
     assert candidates["jira"].distribution_version == installed
 
 
@@ -149,9 +137,9 @@ def test_first_party_profile_fields_are_configurable_and_state_is_not(
 
 
 def test_profile_scoped_capability_setting_resolves(
-    _isolate: Path, specs: dict[str, CapabilitySpec]
+    _isolated_config: Path, specs: dict[str, CapabilitySpec]
 ) -> None:
-    _isolate.write_text(
+    _isolated_config.write_text(
         "profiles:\n  default:\n    jira:\n      base_url: https://jira.example.com\n",
         encoding="utf-8",
     )

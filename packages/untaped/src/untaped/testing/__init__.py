@@ -115,7 +115,7 @@ def invoke_cli(
     previous_stdin = sys.stdin
     sys.stdin = TtyStringIO(input or "") if interactive else io.StringIO(input or "")
     token = set_prompt_backend_override(prompt_backend) if prompt_backend is not None else None
-    terminal_token = set_terminal_override(TtyStringIO if terminal else _no_terminal)
+    terminal_token = set_terminal_override(TtyStringIO if terminal else no_terminal)
     try:
         with redirect_stdout(stdout), redirect_stderr(stderr):
             try:
@@ -156,7 +156,7 @@ def invoke_root(argv: Sequence[str]) -> CliResult:
     return CliInvoker().invoke(build_root_app().meta, list(argv))
 
 
-def _no_terminal() -> TextIO:
+def no_terminal() -> TextIO:
     """Terminal opener for tests without a controlling terminal."""
     raise OSError("no controlling terminal (test harness)")
 

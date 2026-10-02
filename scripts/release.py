@@ -39,6 +39,7 @@ import time
 import tomllib
 import urllib.error
 import urllib.request
+from collections import Counter
 from collections.abc import Callable, Collection, Iterator, Sequence
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -378,23 +379,21 @@ def smoke_errors(
         return [*errors, "untaped capabilities --format json did not print a list of rows"]
     both = set(expected) & set(quarantined)
     errors += [f"capability {name} is both expected and quarantined" for name in sorted(both)]
-    twice = {name for name in names if names.count(name) > 1}
-    errors += [f"capability {name} is listed twice" for name in sorted(twice)]
-    for name, status in [
-        *((name, "ready") for name in sorted(set(expected) - both)),
-        *((name, "quarantined") for name in sorted(set(quarantined) - both)),
-    ]:
-        if name not in statuses:
-            errors.append(f"capability {name} is missing")
-        elif statuses[name] != status:
-            errors.append(f"capability {name} is {statuses[name]}" + _unless(status))
+    errors += [f"capability {name} is listed twice" for name in _duplicates(names)]
+    for status, wanted in (("ready", expected), ("quarantined", quarantined)):
+        for name in sorted(set(wanted) - both):
+            if name not in statuses:
+                errors.append(f"capability {name} is missing")
+            elif statuses[name] != status:
+                unless = "" if status == "ready" else f", not {status}"
+                errors.append(f"capability {name} is {statuses[name]}{unless}")
     unexpected = set(statuses) - set(expected) - set(quarantined)
     errors += [f"capability {name} is installed but not expected" for name in sorted(unexpected)]
     return errors
 
 
-def _unless(status: str) -> str:
-    return "" if status == "ready" else f", not {status}"
+def _duplicates(names: Collection[str]) -> list[str]:
+    return sorted(name for name, count in Counter(names).items() if count > 1)
 
 
 def skill_errors(skills_json: str, expected: Collection[str]) -> list[str]:
@@ -405,8 +404,7 @@ def skill_errors(skills_json: str, expected: Collection[str]) -> list[str]:
         sources = {row["name"]: Path(row["source"]) for row in rows}
     except ValueError, TypeError, KeyError:
         return ["untaped skills list --format json did not print a list of rows"]
-    twice = {name for name in names if names.count(name) > 1}
-    errors = [f"skill {name} is listed twice" for name in sorted(twice)]
+    errors = [f"skill {name} is listed twice" for name in _duplicates(names)]
     errors += [
         f"skill untaped-{name} is missing"
         for name in sorted(expected)

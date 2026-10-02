@@ -45,6 +45,7 @@ def capability_violations(
     a test can check a provider that is not installed. Lines are
     ``<where>::<rule>::<detail>``, sorted.
     """
+    candidates = list(discover_candidates()) if candidates is None else candidates
     root = build_root_app(candidates=candidates)
     spec = next(
         (
@@ -88,7 +89,7 @@ def _required(requirements: Sequence[str]) -> set[str]:
 
 
 def _boundary(
-    name: str, candidates: Sequence[ProviderCandidate] | None
+    name: str, candidates: Sequence[ProviderCandidate]
 ) -> tuple[dict[str, str], frozenset[str]]:
     """Capability packages (to distributions) and what capability ``name`` may import from.
 
@@ -97,7 +98,7 @@ def _boundary(
     always declared, so capabilities sharing a distribution may import each
     other's ``api``.
     """
-    found = list(candidates) if candidates is not None else list(discover_candidates())
+    found = list(candidates)
     packages: dict[str, str] = {
         candidate.target.partition(":")[0]: canonicalize_name(candidate.distribution)
         for candidate in found

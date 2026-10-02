@@ -16,7 +16,8 @@ from typing import Any
 import pytest
 import release
 
-REPO_ROOT = release.REPO_ROOT
+from repo.support import REPO_ROOT
+
 SCRIPT = REPO_ROOT / "scripts" / "release.py"
 
 
