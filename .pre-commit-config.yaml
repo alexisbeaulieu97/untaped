@@ -23,6 +23,11 @@ repos:
         args: [--fix]
       - id: ruff-format
 
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
   - repo: local
     hooks:
       # Strict-mypy gate at push time. Mypy is slow enough that running
