@@ -22,6 +22,8 @@ uv run pytest -n auto                           # tests, in parallel (add `--cov
 uv run ruff check --fix && uv run ruff format   # lint + format
 uv run mypy                                     # strict types
 uv run pre-commit run --all-files               # pre-commit hooks
+uv run python scripts/release.py check          # release metadata
+uv lock --check                                 # lock file is current
 ```
 
 ## Repository layout
@@ -67,8 +69,7 @@ packages/untaped-<name>/src/untaped_<name>/
 
 1. Add `packages/untaped-<name>/`, exposing `SPEC`, `build_app` and a nullary
    `provider()` returning `SPEC`. Set `SPEC.help` to the app's one-line help
-   so the capability is mounted lazily and `untaped --help` never imports
-   its CLI.
+   (see [Settings and the capability app](docs/plugins.md#settings-and-the-capability-app)).
 2. In its `pyproject.toml` (copy a sibling package's), add
    `<name> = "untaped_<name>:provider"` under
    `[project.entry-points."untaped.capabilities"]`.
@@ -84,9 +85,10 @@ packages/untaped-<name>/src/untaped_<name>/
    and its user guide as the package `README.md`, linked from the root
    `README.md` and `docs/getting-started.md`.
 
-Logic two capabilities need lives in exactly one place: one owner's `api.py`
-or core, never forked into both. Extract a protocol into core only when a
-second provider appears.
+Shared logic follows
+[Depending on another capability](docs/plugins.md#depending-on-another-capability);
+in this repository it may also live in core. Extract a protocol into core
+only when a second provider appears.
 
 ## Workflow
 
@@ -145,9 +147,11 @@ It touches these and nothing else:
 - `CHANGELOG.md`: rename `## Unreleased` to `## X.Y.Z`.
 
 A major release collects the breaking changes held back since the last one
-(see [Versioning](README.md#versioning)). Open its changelog section with an
-**Upgrading** list, one item for each Breaking bullet: what a user or script
-must do about it.
+(see [Versioning](README.md#versioning)), and its changelog section opens
+with `### Upgrading`: one item for each Breaking bullet, saying what a user
+or script must do about it. Changes add those items under `## Unreleased` as
+they land; the release PR checks the list is current before renaming the
+section.
 
 ### Rehearse
 
