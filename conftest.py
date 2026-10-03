@@ -141,7 +141,7 @@ def table_default_violations(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[s
 
     Records with more than four fields (``error`` aside) need default table
     columns: their type's ``table_columns`` or the command's ``table_columns=``
-    (``docs/plugins.md#output-records``).
+    (``docs/reference/conventions.md#output-records``).
     """
     found: list[str] = []
     emit_with = cli.emit_with
@@ -158,7 +158,7 @@ def table_default_violations(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[s
     if found:
         pytest.fail(
             "record collections emitted without default table columns (declare "
-            "`table_columns` on the record; see docs/plugins.md#output-records):\n"
+            "`table_columns` on the record; see docs/reference/conventions.md#output-records):\n"
             + "\n".join(f"  {line}" for line in sorted(set(found)))
         )
 

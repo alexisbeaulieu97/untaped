@@ -32,7 +32,7 @@ STATE_PATH_ENV = "UNTAPED_STATE"
 
 #: On-disk format of ``config.yml`` and ``state.yml``. A file without
 #: ``format_version`` is format 1. Bump only in a major release, when an older
-#: reader ignoring a new core key would change behaviour (see docs/configuration.md).
+#: reader ignoring a new core key would change behaviour (see CONTRIBUTING.md).
 FORMAT_VERSION = 1
 
 

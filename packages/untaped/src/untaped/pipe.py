@@ -8,7 +8,7 @@ fully self-describing so it survives ``head``/``grep``/concatenation::
 This module owns the contract (constants + parse/validate) with **no dependency
 on the rendering layer**, so the producer (:mod:`untaped.ui`) and the consumer
 (:mod:`untaped.stdin`) can both share it without an import cycle. Provider
-examples live in ``docs/plugins.md``.
+examples live in ``docs/reference/conventions.md#piping``.
 
 Record values are serialized with ``json.dumps(default=str)`` (same as
 ``--format json``), so non-JSON-native types (datetime, Decimal, enum) become
@@ -19,7 +19,7 @@ Pipe envelope **v1** — frozen and stable across every ``untaped`` SDK release
 (1.x, 2.x, and 3.x alike). The envelope is versioned independently of the SDK: any
 change to its shape is a major *envelope* event, not tied to the SDK major. This
 freeze lets capability commands interoperate as long as they emit the same
-envelope version (still v1). See ``docs/plugins.md`` for producer and consumer
+envelope version (still v1). See ``docs/reference/conventions.md#piping`` for producer and consumer
 examples.
 """
 
@@ -42,7 +42,7 @@ class PipeEnvelope:
 
     This is the **v1** envelope, versioned independently of the SDK; any change
     to its shape would bump the envelope version. See the module docstring and
-    ``docs/plugins.md``.
+    ``docs/reference/conventions.md#piping``.
     """
 
     kind: str | None

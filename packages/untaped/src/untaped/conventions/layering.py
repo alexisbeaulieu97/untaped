@@ -1,7 +1,7 @@
 """Import-boundary lint: layers inside one capability point one way.
 
 ``cli → application → domain`` and ``infrastructure → domain``
-(``docs/plugins.md#conventions``). A *runtime* import (``TYPE_CHECKING`` blocks are
+(``docs/reference/conventions.md``). A *runtime* import (``TYPE_CHECKING`` blocks are
 exempt) that crosses a layer the wrong way is flagged as
 ``<file>::layer::<from layer> -> <imported module>``:
 

@@ -1,7 +1,7 @@
 """Testing helpers for driving Cyclopts command apps with captured output.
 
 :func:`check_conventions` checks one installed capability against
-``docs/plugins.md#conventions``; its ``candidates`` argument composes a provider
+``docs/reference/conventions.md``; its ``candidates`` argument composes a provider
 passed in directly instead of one discovered through entry points.
 :func:`invoke_root` runs ``untaped ...`` in-process against the installed
 providers.
@@ -228,7 +228,9 @@ def check_conventions(
     tests_dir: Path | None = None,
     candidates: Sequence[ProviderCandidate] | None = None,
 ) -> None:
-    """Fail with every convention violation of ``capability`` (docs/plugins.md).
+    """Fail with every convention violation of ``capability``.
+
+    The rules are in ``docs/reference/conventions.md#enforcement``.
 
     Checks the installed capability's command subtree and its own source
     files: command grammar, stderr wording, package structure and layering.

@@ -83,7 +83,7 @@ skill. For clones you work in, use
 
 ## Reference
 
-The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-github/src/untaped_github/skills/untaped-github/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install github --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install-skills)); `untaped github COMMAND --help` lists each command's options.
+The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-github/src/untaped_github/skills/untaped-github/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install github --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)); `untaped github COMMAND --help` lists each command's options.
 
-- [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#github) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes)
+- [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#github) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/exit-codes.md)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#github)
