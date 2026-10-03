@@ -21,8 +21,9 @@ unscanned before reporting "none" or "all".
   terminal (it prompts and keeps the token out of `config.yml`), or points
   `github.token_command` at a command that prints it, such as
   `'["gh", "auth", "token"]'`. `GH_TOKEN`/`GITHUB_TOKEN` are the last
-  fallback. Never ask for or print a token, and never read
-  `~/.untaped/config.yml`.
+  fallback. Never ask for or print a token, never read
+  `~/.untaped/config.yml`, and never pass `--show-secrets`; `untaped auth
+  status` says where tokens come from.
 - `untaped github whoami` checks the token. A rejected token exits 4.
 - `sweep` and `cache` run `git`, which must be on `PATH`.
 

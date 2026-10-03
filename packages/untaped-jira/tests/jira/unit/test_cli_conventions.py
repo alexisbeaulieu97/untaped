@@ -319,7 +319,7 @@ def test_missing_issue_is_a_not_found_error() -> None:
     assert "error: issue not found: 'ABC-9'" in result.stderr.splitlines()
 
 
-def test_rejected_token_hints_at_config_set() -> None:
+def test_rejected_token_hints_at_auth_set() -> None:
     with respx.mock(base_url=BASE) as mock:
         mock.get("/rest/api/2/myself").mock(return_value=httpx.Response(401))
         result = invoke_cli(app, ["whoami"])

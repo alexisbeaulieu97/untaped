@@ -264,14 +264,9 @@ stdin, reads it back, and only then writes `<section>.token_command` (the
 store's read command) in the active profile, removing any plaintext
 `<section>.token`. Run it again to replace a rotated token. The entry is
 `<profile>/<section>` under the `untaped` service, so two config files on one
-machine (`UNTAPED_CONFIG`) share it.
-
-| Command | Does |
-|---|---|
-| `untaped auth set SECTION` | Store a token and point `<section>.token_command` at it |
-| `untaped auth migrate` | Do that for every plaintext token, in every profile (`--dry-run` lists them); a token that fails stays put |
-| `untaped auth status` | Where each profile's tokens come from and which stores work here; runs no command, so it cannot tell whether an entry still exists (`doctor --online` can) |
-| `untaped auth unset SECTION` | Delete what `auth set` stored and unset the command, in the selected profile only |
+machine (`UNTAPED_CONFIG`) share it. `untaped auth --help` lists the other
+commands: `migrate` moves every plaintext token, `status` says where each
+comes from, and `unset` removes a stored one.
 
 A store over SSH can fail on an unlock prompt nobody sees: unlock it first
 (`security unlock-keychain` on macOS). Store commands time out after 60s.

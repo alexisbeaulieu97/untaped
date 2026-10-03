@@ -35,7 +35,10 @@ with open(os.environ["STUB_LOG"], "a") as log:
     log.write(json.dumps({"argv": [name, *args], "stdin": stdin}) + "\n")
 
 
-def save(key, value):
+def save(key, value, replace=True):
+    if not replace and key in data:
+        print("The specified item already exists in the keychain.", file=sys.stderr)
+        sys.exit(45)
     if mode == "hang":
         time.sleep(30)
     if mode == "fail":
@@ -65,7 +68,7 @@ def after(flag):
 
 if name == "pass":
     if args[0] == "insert":
-        save(args[-1], stdin.rstrip("\n"))
+        save(args[-1], stdin.rstrip("\n"), replace="--force" in args)
     elif args[0] == "show":
         show(args[-1])
     elif args[0] == "rm":
@@ -88,7 +91,8 @@ elif name == "security":
         for line in stdin.splitlines():
             parts = line.split()
             account = parts[parts.index("-a") + 1].strip('"')
-            save(account, bytes.fromhex(parts[parts.index("-X") + 1]).decode())
+            token = bytes.fromhex(parts[parts.index("-X") + 1]).decode()
+            save(account, token, replace="-U" in parts)
     elif args[0] == "find-generic-password":
         show(after("-a"))
     elif args[0] == "delete-generic-password":

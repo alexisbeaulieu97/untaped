@@ -37,8 +37,9 @@ untaped doctor --online
 you pick (`awx`, `github`, `jira`) it asks for the base URL and how to get
 the token: store it with your password store (as `untaped auth set` does),
 move a plaintext one there, give a command that prints it (`token_command`),
-use an environment variable, or keep the current one. It checks the answers before writing any of them, then
-checks each service online and exits 1 if one fails. Naming a new profile creates it.
+use an environment variable, or keep the current one. It writes each
+service's answers as it goes, then checks each service online and exits 1 if
+one fails. Naming a new profile creates it.
 
 ```bash
 untaped setup
