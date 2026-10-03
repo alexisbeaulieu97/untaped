@@ -101,6 +101,13 @@ class DoctorResult:
     warned row, as a string (split like a shell would) or an argv list; a
     value the user supplies is a ``<NAME>`` placeholder. Doctor emits it as
     the row's ``fix`` argv and appends it to a table row's detail.
+
+    ``automatic=True`` says the fix is safe to run unattended: it needs no
+    ``<NAME>`` value, no terminal input and no confirmation, it is a
+    declared write (``@writes``) that takes ``--format``, and it carries any
+    ``--yes`` it needs itself. It also asks for and prints no secret, so an
+    agent may run it. Doctor fails the row when an automatic fix is missing
+    or has a placeholder.
     """
 
     id: str
@@ -108,6 +115,7 @@ class DoctorResult:
     detail: str
     warn: bool = False
     fix: str | list[str] | None = None
+    automatic: bool = False
 
 
 @dataclass(frozen=True)

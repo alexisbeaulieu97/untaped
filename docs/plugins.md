@@ -213,7 +213,8 @@ warned row, without the program name: a string (`"config set acme.base_url
 <URL>"`, split like a shell would) or an argv list. Write a value the user
 supplies as a `<NAME>` placeholder. `doctor` emits it as the row's `fix`
 argv, prefixed with `--profile NAME` unless it names one, so an agent can run
-it as is.
+it as is. Set `automatic=True` only on a fix that meets the rule in the
+`DoctorResult` docstring.
 
 ## Packaged skills
 

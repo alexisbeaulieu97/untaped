@@ -96,6 +96,7 @@ def test_outdated_installed_skill_warns(tmp_path: Path) -> None:
     row = _row(_rows(spec), "skills")
     assert row["status"] == "warn"
     assert row["fix"] == ["--profile", "default", "skills", "update"]
+    assert row["automatic"] is True
 
 
 def test_skill_no_longer_shipped_warns(tmp_path: Path) -> None:
@@ -115,6 +116,8 @@ def test_skill_no_longer_shipped_warns(tmp_path: Path) -> None:
     assert row["status"] == "warn"
     assert "orphaned:" in row["detail"]
     assert "untaped skills remove" in row["detail"]
+    # Orphaned skills alone have no fix, so nothing is automatic.
+    assert (row["fix"], row["automatic"]) == (None, False)
 
 
 @pytest.mark.parametrize(
