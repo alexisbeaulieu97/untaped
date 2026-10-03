@@ -5,21 +5,27 @@
 ### Added
 
 - dotfiles (experimental): a new capability, `untaped[dotfiles]`, that places
-  config files from subscribed dotfiles repos. ([#436](https://github.com/alexisbeaulieu97/untaped/pull/436))
+  config files from subscribed dotfiles repos.
+  ([#436](https://github.com/alexisbeaulieu97/untaped/pull/436))
 - `untaped auth set|unset|status|migrate` store API tokens in the machine's
-  password store instead of `config.yml`; see [Tokens](docs/configuration.md#tokens). ([#442](https://github.com/alexisbeaulieu97/untaped/pull/442))
+  password store instead of `config.yml`.
+  ([#442](https://github.com/alexisbeaulieu97/untaped/pull/442))
 
 ### Changed
 
-- `untaped setup` no longer writes a typed token to `config.yml`. ([#442](https://github.com/alexisbeaulieu97/untaped/pull/442))
-- A plaintext token in `config.yml` is deprecated: it still works, but warns
-  once per run. ([#442](https://github.com/alexisbeaulieu97/untaped/pull/442))
+- `untaped setup` no longer writes a typed awx, github or jira token to
+  `config.yml`.
+  ([#442](https://github.com/alexisbeaulieu97/untaped/pull/442))
+- A plaintext token in `config.yml` is deprecated: it still works but warns
+  once per run; `untaped auth migrate` moves it to the password store.
+  ([#442](https://github.com/alexisbeaulieu97/untaped/pull/442))
 
 ### Fixed
 
 - Every package requires Python 3.14.1 or newer, so a 3.14 release candidate
-  is never picked; plugins and recipe packs should raise
-  `requires-python` to `>=3.14.1`. ([#455](https://github.com/alexisbeaulieu97/untaped/pull/455))
+  is never picked; plugins and recipe packs should raise `requires-python`
+  to `>=3.14.1`.
+  ([#455](https://github.com/alexisbeaulieu97/untaped/pull/455))
 
 ## 10.0.0
 
