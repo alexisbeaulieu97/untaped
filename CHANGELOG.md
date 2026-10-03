@@ -29,6 +29,12 @@
   warning and the rejected- or missing-token hints now point at
   `untaped auth migrate` and `untaped auth set <section>`.
 
+### Fixed
+
+- Every package now requires Python 3.14.1 or newer, so an older uv can no
+  longer build the environment on a 3.14 release candidate, where pydantic
+  fails at import.
+
 ## 10.0.0
 
 untaped is now an SDK whose first-party capabilities are plugins: `untaped`
