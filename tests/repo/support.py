@@ -22,5 +22,5 @@ def markdown_files() -> list[Path]:
     readmes = sorted(PACKAGES.glob("*/README.md"))
     example = REPO_ROOT / "examples/untaped-hello/README.md"
     root = [REPO_ROOT / name for name in ("README.md", "AGENTS.md", "CONTRIBUTING.md")]
-    glossary = [path for path in [REPO_ROOT / "GLOSSARY.md"] if path.exists()]
-    return [*files, *skills, *readmes, example, *root, *glossary]
+    glossary = REPO_ROOT / "GLOSSARY.md"
+    return [*files, *skills, *readmes, example, *root, *([glossary] if glossary.exists() else [])]

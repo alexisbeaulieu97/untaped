@@ -135,9 +135,9 @@ only when a second provider appears.
 
 ## Designs
 
-New behavior or a public API change starts with a design, posted on its
-GitHub issue: the problem, the approach, rejected alternatives, public or
-breaking impact, and a test plan. Bugs (with a failing test first), and
+New behavior or a public API change starts with a design (the problem, the
+approach, rejected alternatives, public or breaking impact, and a test
+plan), posted on its GitHub issue. Bugs (with a failing test first), and
 follow-ups or audit items that change no public behavior, go straight to
 implementation. A design is reviewed like a pull request (below), and the
 maintainer approves it once the findings are fixed or answered.
