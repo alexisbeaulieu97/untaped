@@ -119,6 +119,7 @@ from untaped.stdin import (
 )
 from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context
+from untaped.yaml_roundtrip import yaml_mapping_indent
 
 __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_the_topic_groups_in_order
     # composition
@@ -226,6 +227,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "safe_path_segment",
     "same_origin",
     "scoped_auth_header",
+    "yaml_mapping_indent",
     # prompts and ui
     "PickCatalog",
     "PickItem",

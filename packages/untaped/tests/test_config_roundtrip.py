@@ -21,6 +21,7 @@ from untaped.config_file import (
     write_config_dict,
 )
 from untaped.profile.repository import ProfileFileRepository
+from untaped.sdk import yaml_mapping_indent
 
 COMMENTED = """\
 # untaped config -- hand edited
@@ -181,3 +182,18 @@ def test_keys_parsed_differently_are_rewritten_consistently(tmp_path: Path) -> N
     mutate_config(lambda data: data["flags"].__setitem__("x", 2), path)
 
     assert read_config_dict(path) == {"flags": {True: 1, "x": 2}}
+
+
+@pytest.mark.parametrize(
+    ("text", "indent"),
+    [
+        ("a:\n    b: 1\n  # comment\nc:\n  - x\n", 4),
+        ("a:\n  b:\n    c: 1\n", 2),
+        ("a: 1\nb: [1]\n", 2),
+        ("", 2),
+    ],
+)
+def test_yaml_mapping_indent_is_the_shallowest_indented_mapping_line(
+    text: str, indent: int
+) -> None:
+    assert yaml_mapping_indent(text) == indent
