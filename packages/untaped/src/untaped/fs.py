@@ -74,14 +74,17 @@ def _write_temp(
     create_mode = 0o666 if mode is None else 0o600
     tmp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.untaped.tmp")
     try:
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, create_mode)
-        if mode is not None:
-            os.chmod(fd, mode)
-        if isinstance(content, str) and newline not in ("", "\n"):
-            content = content.replace("\n", newline)
-        data = content.encode(encoding) if isinstance(content, str) else content
-        with open(fd, "wb") as handle:
-            handle.write(data)
+        text = isinstance(content, str)
+        with open(
+            tmp,
+            "x" if text else "xb",
+            encoding=encoding if text else None,
+            newline=newline if text else None,
+            opener=lambda name, flags: os.open(name, flags, create_mode),
+        ) as handle:
+            if mode is not None:
+                os.chmod(handle.fileno(), mode)
+            handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
     except BaseException:
