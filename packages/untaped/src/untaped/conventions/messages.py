@@ -9,7 +9,8 @@ An AST scan over a package's source flags:
   reports a per-item failure (an error line, with its category under JSON
   diagnostics);
 - ``warnings-warn`` — ``warnings.warn(…)`` bypasses stderr diagnostics:
-  take a ``warn`` callback or use ``ui.message("warning", …)``;
+  take a ``warn`` callback or use ``ui.message("warning", …)`` (a
+  ``DeprecationWarning`` for a Python API is fine);
 - ``capital-warning`` — a literal starting with ``Warning:``;
 - ``paren-s`` — ``(s)`` in a literal: use ``plural()``;
 - ``error-case`` — an error message that starts with a capitalized word
@@ -120,28 +121,37 @@ def tree_violations(tree: ast.Module) -> Iterator[tuple[int, str, str]]:
 
 def _echo_rule(text: str) -> str | None:
     """The rule an ``echo`` of ``text`` breaks: a status prefix only a helper prints."""
-    lowered = text.lstrip()
-    if lowered.startswith("error:"):
+    stripped = text.lstrip()
+    if stripped.startswith("error:"):
         return "echo-error"
-    if lowered.lower().startswith("warning:"):
+    if stripped.lower().startswith("warning:"):
         return "echo-warning"
-    if lowered.startswith("failed:"):
+    if stripped.startswith("failed:"):
         return "echo-failed"
     return None
 
 
-def _is_warnings_warn(func: ast.expr) -> bool:
-    return (
+_PYTHON_API_DEPRECATIONS = frozenset({"DeprecationWarning", "PendingDeprecationWarning"})
+
+
+def _is_warnings_warn(node: ast.Call) -> bool:
+    """A ``warnings.warn()`` call that isn't a Python API deprecation."""
+    func = node.func
+    if not (
         isinstance(func, ast.Attribute)
         and func.attr == "warn"
         and isinstance(func.value, ast.Name)
         and func.value.id == "warnings"
-    )
+    ):
+        return False
+    category = node.args[1] if len(node.args) > 1 else None
+    category = next((kw.value for kw in node.keywords if kw.arg == "category"), category)
+    return not (isinstance(category, ast.Name) and category.id in _PYTHON_API_DEPRECATIONS)
 
 
 def _call_violations(node: ast.Call) -> Iterator[tuple[str, str]]:
     name = callee(node)
-    if _is_warnings_warn(node.func):
+    if _is_warnings_warn(node):
         yield "warnings-warn", "warnings.warn()"
     if name == "print":
         yield "print", "print()"

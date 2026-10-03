@@ -262,6 +262,19 @@ def test_unknown_launch_field_warns() -> None:
     assert [w for w in warned if "frooks" in w]
 
 
+def test_a_defaults_typo_warns_once_however_many_cases_share_it() -> None:
+    warned: list[str] = []
+    resolver = ResolveCasePayload(
+        StubFkResolver(), catalog=AwxResourceCatalog(), warn=warned.append
+    )
+    defaults = Case.model_validate({"launch": {"frooks": 4}})
+    for name in ("a", "b"):
+        resolver(
+            JOB_TEMPLATE_SPEC, Case.model_validate({"launch": {"limit": name}}), defaults=defaults
+        )
+    assert warned == ["unknown launch field 'frooks' — typo? passing through to AWX"]
+
+
 def test_known_field_emits_no_warning() -> None:
     """Sanity check: every documented field should be in the allowlist."""
     warned: list[str] = []
