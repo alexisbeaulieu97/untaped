@@ -5,8 +5,8 @@ order: the profile itself, then each service's ``base_url`` and token (or
 its invalid settings), then (with ``--online``) each online check. A row's
 ``run`` is the complete argv to run after ``untaped`` (a ``<NAME>`` token
 is a value to ask the user for); ``by`` says who runs it: ``user`` for
-every step that handles a secret, so a token never passes through an
-agent. Service state comes from :mod:`untaped.management.setup_state`
+a step that asks for or reveals a token, so a token never passes through
+an agent. Service state comes from :mod:`untaped.management.setup_state`
 (shared with the wizard) and the online rows are the capabilities' own
 online doctor checks.
 """
@@ -142,7 +142,12 @@ def _service_rows(
 def _token_row(
     spec: CapabilitySpec, state: ServiceState, profile: str, *, store_name: str | None
 ) -> Row:
-    """The token step; every row that writes or moves a token is the user's."""
+    """The token step.
+
+    A step is the user's when a secret would pass through the agent's process
+    or terminal: ``auth set`` prompts for a token, while ``auth migrate``
+    moves one inside its own process and prints none.
+    """
     name, section = spec.name, spec.config_section
     step = f"{name}.token"
     takes_command = takes_token_command(spec.profile_model)
@@ -153,7 +158,7 @@ def _token_row(
         if takes_command and store_name is not None:
             # `auth migrate` moves every profile's plaintext tokens.
             run = command_argv("auth migrate", profile=profile)
-            return _row(step, name, "failed", f"{detail}; move it to {store_name}", run, by="user")
+            return _row(step, name, "failed", f"{detail}; move it to {store_name}", run)
         if takes_command:
             # No store here: the wizard replaces it with a command or a variable.
             run = command_argv(["setup", "--only", name], profile=holder)
@@ -217,7 +222,9 @@ def _failed_check(spec: CapabilitySpec, step: str, row: Row) -> Row:
         settings = spec.profile_model.model_construct()
         detail = f"{detail}; export {token_instead(settings, section=section)} with a working token"
         return _row(step, name, "failed", detail, by="user")
-    return _row(step, name, "failed", detail, run, by=_by(run))
+    return _row(
+        step, name, "failed", detail, run, by=_by(run, automatic=row.get("automatic") is True)
+    )
 
 
 def _command(run: list[str]) -> list[str]:
@@ -225,8 +232,13 @@ def _command(run: list[str]) -> list[str]:
     return run[2:] if run[:1] == ["--profile"] else run
 
 
-def _by(run: list[str] | None) -> Literal["agent", "user"]:
-    """A fix that writes a token (``auth …``, ``….token``) is the user's to run."""
+def _by(run: list[str] | None, *, automatic: bool) -> Literal["agent", "user"]:
+    """Who runs a fix: an automatic one is the agent's.
+
+    Any other fix that writes a token (``auth …``, ``….token``) is the user's.
+    """
+    if automatic:
+        return "agent"
     command = _command(run or [])
     secret = command[:1] == ["auth"] or any(
         arg.endswith((".token", ".token_command")) for arg in command

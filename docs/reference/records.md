@@ -31,12 +31,14 @@ validate, write nothing and print their outcome with `action` `planned`.
 
 A `doctor_check` row's `fix`, and a `setup_step` row's `run`, is the argv to
 run after `untaped`, `--profile NAME` first; a `<NAME>` token is a value to
-supply, and `fix` is null on a passing row. A `setup_step` row also has
-`step` (`profile`, `<service>.base_url`, `<service>.token`,
-`<service>.settings` when the service's settings are invalid, and
-`<service>.online.<check>` for each online check, such as `awx.online.api`),
+supply, and `fix` is null on a passing row. A `doctor_check` row's
+`automatic` is true when its fix needs no value and no input. A
+`setup_step` row also has `step` (`profile`, `<service>.base_url`,
+`<service>.token`, `<service>.settings` when the service's settings are
+invalid, and `<service>.online.<check>` for each online check, such as
+`awx.online.api`),
 `state` (`done`, `todo`, `failed`, `skipped`), `detail` and `by`: `user` for
-a step that handles a token, else `agent`.
+a step that asks for or reveals a token, else `agent`.
 
 ## workspace
 

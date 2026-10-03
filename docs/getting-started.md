@@ -52,8 +52,8 @@ To script the same settings, use `config set` as below.
 
 Any AI coding agent can do the setup with you; untaped calls no model
 itself. `untaped setup plan` lists what a profile still needs, with the
-command for each step, and marks every step that handles a token as yours to
-run, so a token never passes through the agent. Paste this into your agent:
+command for each step, and marks every step that asks for or reveals a token
+as yours to run, so a token never passes through the agent. Paste this into your agent:
 
 ```text
 Install untaped with `uv tool install 'untaped[all]'`, then read its
