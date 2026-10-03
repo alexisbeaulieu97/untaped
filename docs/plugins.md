@@ -267,6 +267,10 @@ Settings live under `profiles.<name>.CAPABILITY`. Set the token with
 
 ## Pitfalls
 
+- Read stderr as well as the rows; under `--format json` it is JSON Lines.
+  Pass on what the user would want to know about, with any hint, whatever
+  its `level`: a deprecated setting or flag, a skipped or partial result, a
+  clamped option. Leave out progress and routine lines.
 - A LIMIT, SURPRISING DEFAULT OR COMMON MISTAKE, with the reason.
 
 ## References
