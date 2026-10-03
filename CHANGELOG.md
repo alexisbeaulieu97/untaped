@@ -54,6 +54,10 @@
 - `setup plan` marks the plaintext-token step (`auth migrate`) `by: agent`: a
   step is the user's only when it asks for or reveals a token.
   ([#478](https://github.com/alexisbeaulieu97/untaped/pull/478))
+- `untaped doctor` and `untaped setup` print a checklist grouped by
+  capability, with each fix under its row and passing rows' detail shown;
+  `--columns` still prints the table, where `fix` is the command line.
+  ([#479](https://github.com/alexisbeaulieu97/untaped/pull/479))
 
 ### Fixed
 

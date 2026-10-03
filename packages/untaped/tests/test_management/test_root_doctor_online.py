@@ -313,11 +313,12 @@ def test_an_unparsable_fix_fails_its_row(_isolated_config: Path) -> None:
     assert row["fix"] is None
 
 
-def test_the_table_appends_the_fix_without_the_current_profile(_isolated_config: Path) -> None:
+def test_the_checklist_shows_the_fix_without_the_current_profile(_isolated_config: Path) -> None:
     spec = make_spec("svc", profile_model=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
     app = build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=compose(spec))
     result = CliInvoker().invoke(app, ["--format", "table", "--online"])
-    assert "token rejected; run `untaped auth set svc`" in " ".join(result.stdout.split())
+    assert "token rejected\n" in result.stdout
+    assert "→ untaped auth set svc\n" in result.stdout
 
 
 def test_the_table_keeps_a_profile_the_flag_chose(_isolated_config: Path) -> None:
@@ -326,4 +327,4 @@ def test_the_table_keeps_a_profile_the_flag_chose(_isolated_config: Path) -> Non
     with profile_scope("default"):
         result = CliInvoker().invoke(app, ["--format", "table", "--online"])
     # Without the flag the same line would act on the configured active profile.
-    assert "run `untaped --profile default auth set svc`" in " ".join(result.stdout.split())
+    assert "→ untaped --profile default auth set svc\n" in result.stdout

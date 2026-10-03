@@ -518,9 +518,14 @@ def _status_style(theme: ThemeSpec, column: str, value: Any, *, colorize: bool) 
     if not colorize or column not in _STATUS_COLUMNS or not isinstance(value, str):
         return None
     role = _STATUS_ROLES.get(value.lower())
-    if role is None:
-        return None
-    # A role the theme sets to "" turns the color off.
+    return status_role_style(theme, role) if role is not None else None
+
+
+def status_role_style(theme: ThemeSpec, role: str) -> str | None:
+    """The style of the ``success``/``warning``/``error`` role, green/yellow/red by default.
+
+    A role the theme sets to ``""`` turns the color off.
+    """
     style = theme.color_roles.get(role, _STATUS_FALLBACK[role])
     return style or None
 
@@ -584,6 +589,12 @@ def _styled_text(value: str, style: str | None) -> Text:
 
 #: Rich needs a width; output that is not a terminal gets one no line reaches.
 _UNBOUNDED_WIDTH = 1_000_000
+
+
+def output_width() -> int | None:
+    """The width styled output wraps at: ``COLUMNS`` or the terminal's; ``None`` when unbounded."""
+    width = _output_size()[0]
+    return None if width == _UNBOUNDED_WIDTH else width
 
 
 def _output_size() -> tuple[int, int]:
