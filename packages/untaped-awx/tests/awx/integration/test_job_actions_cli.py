@@ -10,8 +10,6 @@ import pytest
 from untaped.testing import CliInvoker, ScriptedPromptBackend
 from untaped_awx.cli import app
 
-pytestmark = pytest.mark.integration
-
 
 def _posts(fake: Any) -> list[str]:
     return [

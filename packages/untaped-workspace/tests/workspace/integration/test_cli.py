@@ -20,7 +20,7 @@ from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
 from workspace.conftest import add_submodule, commit_in, git, init_submodules
 
-pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("workspace_env")]
+pytestmark = pytest.mark.usefixtures("workspace_env")
 run = CliInvoker().invoke
 
 

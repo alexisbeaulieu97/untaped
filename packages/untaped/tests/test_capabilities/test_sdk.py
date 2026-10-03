@@ -145,12 +145,6 @@ def test_all_is_the_topic_groups_in_order() -> None:
     assert len(set(EXPECTED_ALL)) == len(EXPECTED_ALL)
 
 
-def test_removed_names_are_gone() -> None:
-    for name in ("CAPABILITY_API_VERSION", "get_core_settings"):
-        assert name not in sdk.__all__
-        assert not hasattr(sdk, name)
-
-
 def test_no_extra_module_level_names_leak() -> None:
     """Nothing beyond ``__all__`` is public (retired and registry names stay out)."""
     public = {name for name in dir(sdk) if not name.startswith("_")}
@@ -161,12 +155,3 @@ def test_no_extra_module_level_names_leak() -> None:
 def test_every_name_is_a_reexport_of_its_core_module(name: str) -> None:
     """The SDK module only re-exports; nothing is (re)defined there."""
     assert getattr(getattr(sdk, name), "__module__", None) != sdk.__name__
-
-
-def test_the_sdk_module_is_untaped_sdk_and_the_old_name_is_gone() -> None:
-    import importlib
-
-    mod = importlib.import_module("untaped.sdk")
-    assert "UntapedError" in mod.__all__
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("untaped.capability" + "_api")

@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
-from untaped import bootstrap
 from untaped.settings import register_profile_settings
 from untaped_jira.settings import JiraSettings
 
@@ -15,12 +13,9 @@ BASE = "https://jira.example.com"
 
 
 @pytest.fixture(autouse=True)
-def _register_jira_settings() -> Iterator[None]:
+def _register_jira_settings(fresh_composition: None) -> None:
     # Invoking the jira app directly skips the SDK profile-settings registration.
-    bootstrap._clear_for_tests()
     register_profile_settings("jira", JiraSettings)
-    yield
-    bootstrap._clear_for_tests()
 
 
 @pytest.fixture(autouse=True)

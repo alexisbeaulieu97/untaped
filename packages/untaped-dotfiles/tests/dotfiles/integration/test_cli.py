@@ -13,7 +13,7 @@ from dotfiles.conftest import commit_all, git, push, write_files
 from untaped.testing import CliInvoker, CliResult, ScriptedPromptBackend, invoke_root
 from untaped_dotfiles.cli import app
 
-pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("dotfiles_env")]
+pytestmark = pytest.mark.usefixtures("dotfiles_env")
 run = CliInvoker().invoke
 
 Upstream = Callable[..., tuple[Path, Path]]

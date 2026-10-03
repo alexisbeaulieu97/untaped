@@ -94,11 +94,12 @@ def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterato
 
 @pytest.fixture
 def fresh_composition() -> Iterator[None]:
-    """Forget the root composition (and its registered settings) after the test.
+    """Start without a root composition and forget it (and its settings) after the test.
 
     For tests that compose the root, such as convention checks, so the
     capabilities they register do not leak into later tests.
     """
+    bootstrap._clear_for_tests()
     yield
     bootstrap._clear_for_tests()
 

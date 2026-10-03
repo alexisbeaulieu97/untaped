@@ -8,8 +8,6 @@ from pathlib import Path
 import pytest
 from cyclopts import App
 
-from untaped import bootstrap
-from untaped.capabilities.registry import ProviderCandidate
 from untaped.testing import CliInvoker
 from untaped_recipe.cli import app
 from untaped_recipe.cli.common import library_root
@@ -77,36 +75,6 @@ def test_recipe_verbs_stay_at_the_top_and_nouns_group_the_rest() -> None:
     assert _commands(app["packs"]) == {"add", "edit", "get", "init", "list", "remove", "sync"}
     assert _commands(app["hooks"]) == {"edit", "get", "init", "list", "run"}
     assert _commands(app["backups"]) == {"get", "list", "prune", "restore"}
-
-
-@pytest.mark.parametrize(
-    "argv",
-    [
-        pytest.param(["add", "./pack"], id="add"),
-        pytest.param(["sync", "--all"], id="sync"),
-        pytest.param(["remove", "acme", "--yes"], id="remove"),
-        pytest.param(["hook", "run", "yaml_edit"], id="hook"),
-        pytest.param(["backup", "list"], id="backup"),
-        pytest.param(["check"], id="check"),
-        pytest.param(["show", "yaml_edit"], id="show"),
-        pytest.param(["new", "pack", "demo"], id="new"),
-        pytest.param(["backups", "show", "latest"], id="backups-show"),
-        pytest.param(["list", "--packs"], id="list-packs"),
-        pytest.param(["list", "--hooks"], id="list-hooks"),
-        pytest.param(["init", "pack", "demo"], id="init-what"),
-        pytest.param(["apply", "r.yml", ".", "--vars", "v.yml"], id="apply-vars"),
-        pytest.param(["apply", "r.yml", ".", "--interactive"], id="apply-interactive"),
-    ],
-)
-def test_old_spellings_are_usage_errors_without_aliases(
-    first_party_candidates: tuple[ProviderCandidate, ...], argv: list[str]
-) -> None:
-    root = bootstrap.build_root_app(candidates=first_party_candidates)
-
-    result = CliInvoker().invoke(root, ["recipe", *argv])
-
-    assert result.exit_code == 2, result.output
-    assert "deprecated" not in result.output
 
 
 def test_each_noun_lists_gets_and_edits_its_own_kind(

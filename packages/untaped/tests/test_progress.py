@@ -65,13 +65,16 @@ def test_non_tty_progress_emits_on_fraction_step_within_throttle_window() -> Non
 def test_tty_spinner_animates_while_the_main_thread_blocks() -> None:
     stream = TtyStringIO()
 
-    with progress_reporter("Work", stream=stream, verbose=False, isatty=True):
-        # Block longer than a couple of spinner ticks so the background thread
-        # advances the frame on its own, with no update() calls.
-        time.sleep(0.25)
+    def frames() -> set[str]:
+        return {ch for ch in stream.getvalue() if ch in _SPINNER_FRAMES}
 
-    frames = {ch for ch in stream.getvalue() if ch in _SPINNER_FRAMES}
-    assert len(frames) >= 2
+    with progress_reporter("Work", stream=stream, verbose=False, isatty=True):
+        # No update() calls: only the background thread can advance the frame.
+        deadline = time.monotonic() + 5
+        while len(frames()) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+    assert len(frames()) >= 2
 
 
 def test_tty_progress_animates_on_stderr_and_clears_line_on_exit() -> None:

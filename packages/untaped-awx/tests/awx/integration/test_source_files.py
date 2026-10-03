@@ -14,8 +14,6 @@ from untaped_awx.infrastructure.suites.source_files import (
     template_specs,
 )
 
-pytestmark = pytest.mark.integration
-
 _SUITE = (
     "kind: AwxTestSuite\njobTemplate: Deploy\n"
     "cases: {smoke: {launch: {extra_vars: {jt: !ref {kind: JobTemplate, name: X}}}}}\n"

@@ -6,38 +6,23 @@ import importlib
 
 import pytest
 
-EXPECTED_SURFACE = frozenset(
-    {
-        "CliInvoker",
-        "CliResult",
-        "PromptBackend",
-        "ScriptedPromptBackend",
-        "TtyStringIO",
-        "assert_destructive_contract",
-        "check_conventions",
-        "invoke_cli",
-        "invoke_root",
-        "provider_candidate",
-    }
-)
+EXPECTED_ALL = [
+    "CliInvoker",
+    "CliResult",
+    "PromptBackend",
+    "ScriptedPromptBackend",
+    "TtyStringIO",
+    "assert_destructive_contract",
+    "check_conventions",
+    "invoke_cli",
+    "invoke_root",
+    "provider_candidate",
+]
 
 
-def test_testing_declares_explicit_all() -> None:
+def test_testing_all_is_the_expected_surface() -> None:
     testing = importlib.import_module("untaped.testing")
-    assert isinstance(testing.__all__, list)
-    assert sorted(testing.__all__) == testing.__all__, "untaped.testing.__all__ must stay sorted"
-
-
-def test_testing_surface_contains_expected_names() -> None:
-    testing = importlib.import_module("untaped.testing")
-    missing = EXPECTED_SURFACE - set(testing.__all__)
-    assert not missing, f"untaped.testing is missing names: {sorted(missing)}"
-
-
-def test_testing_names_resolve() -> None:
-    testing = importlib.import_module("untaped.testing")
-    unresolved = [name for name in testing.__all__ if not hasattr(testing, name)]
-    assert not unresolved, f"untaped.testing.__all__ names that do not resolve: {unresolved}"
+    assert testing.__all__ == EXPECTED_ALL
 
 
 def test_testing_reexports_prompt_backend() -> None:

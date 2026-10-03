@@ -24,7 +24,6 @@ from untaped_workspace.errors import WorkspaceNotFoundError
 from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
 from workspace.conftest import commit_in, git
 
-pytestmark = pytest.mark.integration
 T0 = datetime(2026, 10, 1, tzinfo=UTC)
 
 

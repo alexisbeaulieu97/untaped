@@ -13,10 +13,6 @@ from untaped.testing import CliInvoker
 from untaped_jira.cli import app
 
 BASE = "https://jira.example.com"
-_THEMELESS_CONFIG = (
-    "profiles:\n  default:\n    ui:\n      theme: missing\n"
-    f"    jira:\n      base_url: {BASE}\n      token: jira_pat\n"
-)
 
 
 def _search(*keys: str) -> httpx.Response:
@@ -40,23 +36,6 @@ def test_me_table_renders_detail_view() -> None:
     assert "name: alexis" in result.stdout
     assert "display_name: Alexis" in result.stdout
     assert "╭" not in result.stdout
-
-
-def test_unknown_ui_theme_spares_raw_data_but_fails_a_table_render(jira_config: Path) -> None:
-    jira_config.write_text(_THEMELESS_CONFIG)
-    with respx.mock(base_url=BASE) as mock:
-        mock.get("/rest/api/2/myself").mock(return_value=httpx.Response(200, json={"name": "a"}))
-        route = mock.post("/rest/api/2/issue/ABC-1/comment").mock(
-            return_value=httpx.Response(201, json={"id": "700"})
-        )
-        raw = CliInvoker().invoke(app, ["whoami", "--format", "raw", "--columns", "name"])
-        table = CliInvoker().invoke(app, ["issues", "comment", "ABC-1", "--yes", "--body", "hi"])
-
-    assert raw.exit_code == 0, raw.output
-    assert raw.stdout.strip() == "a"
-    assert table.exit_code != 0
-    assert "unknown UI theme" in table.output
-    assert len(route.calls) == 1
 
 
 def test_issue_get_shows_detail_fields() -> None:

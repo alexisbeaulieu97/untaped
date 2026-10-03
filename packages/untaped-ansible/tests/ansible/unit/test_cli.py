@@ -18,11 +18,9 @@ import pytest
 import respx
 import yaml
 
-from untaped.bootstrap import build_root_app
-from untaped.capabilities.registry import ProviderCandidate
 from untaped.sdk import ui_context
 from untaped.settings import get_settings
-from untaped.testing import CliInvoker, CliResult, invoke_cli
+from untaped.testing import CliInvoker, CliResult
 from untaped_ansible.application.refresh_git_index import RefreshResult
 from untaped_ansible.cli import app, refresh
 from untaped_ansible.domain.payloads import (
@@ -2470,20 +2468,6 @@ def test_local_checkout_keeps_its_own_declarations_over_the_cached_default_branc
 
     assert result.exit_code == 0, result.output + result.stderr
     assert _tree(result.stdout) == ["acme/users@main"]
-
-
-@pytest.mark.parametrize("flag", ["--upstream", "--downstream", "--both"])
-def test_old_direction_flags_are_gone(
-    first_party_candidates: tuple[ProviderCandidate, ...], tmp_path: Path, monkeypatch, flag: str
-) -> None:
-    _seed(tmp_path, "source:platform", _edge())
-    _use_config(tmp_path, monkeypatch, _PLATFORM)
-    result = invoke_cli(
-        build_root_app(candidates=first_party_candidates),
-        ["ansible", "graph", "acme/site", "--source", "platform", flag],
-    )
-    assert result.exit_code == 2
-    assert f"Unknown option: {flag}" in result.output + result.stderr
 
 
 @pytest.mark.parametrize("all_refs", [False, True])

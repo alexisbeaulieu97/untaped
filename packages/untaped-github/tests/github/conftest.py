@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -16,13 +16,9 @@ from untaped_github.settings import GithubSettings
 
 
 @pytest.fixture(autouse=True)
-def _github_settings() -> Iterator[None]:
-    # Invoking the github app directly skips the SDK profile-settings
-    # registration, so mirror it (idempotent) and start from a clean cache.
+def _github_settings() -> None:
+    # Invoking the github app directly skips the SDK profile-settings registration.
     register_profile_settings("github", GithubSettings)
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
 
 
 def _git(cwd: Path, *args: str) -> str:

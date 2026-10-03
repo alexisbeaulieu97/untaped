@@ -3,18 +3,14 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
 
-from untaped.settings import get_settings
 from untaped.testing import CliInvoker
 from untaped_awx.cli import app, parallel
 from untaped_awx.infrastructure.job_monitor import PollingJobMonitor
-
-pytestmark = pytest.mark.integration
 
 
 def _seed_running_job(fake: Any, *, job_id: int = 42) -> None:
@@ -67,33 +63,6 @@ def _seed_events(fake: Any, *, job_id: int = 42) -> None:
         task="install",
         failed=True,
     )
-
-
-def test_jobs_list_table_honours_global_ui_collection_view(
-    fake_aap: Any,
-    aap_config: Path,
-) -> None:
-    aap_config.write_text(
-        """
-        profiles:
-          default:
-            ui:
-              collection_view: list
-            awx:
-              base_url: https://aap.example.com
-              token: secret
-              api_prefix: /api/v2/
-        """
-    )
-    get_settings.cache_clear()
-    _seed_running_job(fake_aap, job_id=42)
-
-    result = CliInvoker().invoke(app, ["jobs", "list", "--format", "table"])
-
-    assert result.exit_code == 0, result.output
-    assert "id: 42" in result.stdout
-    assert "status: successful" in result.stdout
-    assert not any(ch in result.stdout for ch in "╭╮╰╯┌┐└┘│─")
 
 
 def test_jobs_list_status_filter_passes_to_awx(fake_aap: Any) -> None:

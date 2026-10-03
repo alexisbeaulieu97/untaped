@@ -14,8 +14,6 @@ from untaped.settings import get_settings
 from untaped.testing import CliInvoker
 from untaped_awx.cli import app
 
-pytestmark = pytest.mark.integration
-
 
 def _flag_in_help(flag: str, help_text: str) -> bool:
     """True iff ``flag`` appears as a complete flag, not as a longer flag prefix."""
