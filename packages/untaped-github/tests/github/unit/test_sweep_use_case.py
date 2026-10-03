@@ -35,7 +35,7 @@ from untaped_github.domain import (
     RefSelector,
     SweepQuery,
 )
-from untaped_github.domain.errors import GitCorpusError
+from untaped_github.errors import GitCorpusError
 
 README = SweepQuery(has_files=("README.md",))
 

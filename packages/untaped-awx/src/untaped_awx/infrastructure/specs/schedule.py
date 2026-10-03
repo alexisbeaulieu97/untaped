@@ -49,7 +49,6 @@ SCHEDULE_SPEC = AwxResourceSpec(
             field="parent",
             polymorphic=True,
             kind_in_value="kind",
-            scope_field_in_value="organization",
         ),
         # Schedules can override the parent's inventory; org-scoped.
         FkRef(field="inventory", kind="Inventory", scope_field="organization"),

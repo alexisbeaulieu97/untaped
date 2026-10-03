@@ -106,7 +106,7 @@ def batch_apply[T, R](
     lines; ``describe(item)`` is the row used for the preview and ``planned_rows``.
 
     A **destructive** verb gates execution: with ``assume_yes`` it proceeds;
-    otherwise it previews then prompts through :meth:`UiContext.confirm_action`
+    otherwise it previews then prompts through :meth:`UiContext.confirm`
     — on ``ui.stdin`` when it is a TTY, else on the controlling terminal (stdin
     is the data pipe) — and a decline returns ``cancelled=True`` with no action
     run. With no terminal at all it raises :class:`UsageError` (exit 2; pass

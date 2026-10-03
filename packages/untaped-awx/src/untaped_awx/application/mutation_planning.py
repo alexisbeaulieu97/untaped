@@ -340,9 +340,7 @@ class MutationPlanner:
                 existing=existing_record,
             )
             if selected is not None and existing_record is not None:
-                _validate_selected_identity(
-                    spec, resource, existing_record, payload, parents[index]
-                )
+                _validate_selected_identity(spec, existing_record, payload, parents[index])
             membership_plans = self._membership.plan(
                 spec,
                 resource,
@@ -573,7 +571,6 @@ def _tokens_in(value: Any) -> set[str]:
 
 def _validate_selected_identity(
     spec: ResourceSpec,
-    resource: Resource,
     record: Mapping[str, Any],
     payload: Mapping[str, Any],
     parent: tuple[str, int | DeferredReference] | None,

@@ -7,7 +7,7 @@ import yaml
 from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import SettingsConfigDict
 
-from untaped.config import SetSetting, SettingsFileRepository, UnsetSetting
+from untaped.config import SettingsFileRepository
 from untaped.errors import ConfigError
 from untaped.settings import (
     Settings,
@@ -130,8 +130,7 @@ def test_set_writes_into_the_target_profile(
     expected: dict[str, Any],
 ) -> None:
     _write(_isolate_settings, initial)
-    result = SetSetting(SettingsFileRepository())(key, value, profile=profile)
-    assert result.profile == written_to
+    assert SettingsFileRepository().set_value(key, value, profile=profile) == written_to
     assert yaml.safe_load(_isolate_settings.read_text())["profiles"] == expected
 
 
@@ -144,7 +143,7 @@ def test_set_preserves_other_keys_and_state(_isolate_settings: Path) -> None:
         "workspace:\n  active:\n    - name: ws1\n"
         '      created_at: "2026-10-01T00:00:00Z"\n      repos: []\n'
     )
-    SetSetting(SettingsFileRepository())("demo.token", "tok")
+    SettingsFileRepository().set_value("demo.token", "tok")
     data = yaml.safe_load(_isolate_settings.read_text())
     default = data["profiles"]["default"]
     assert default["skills"] == {"updates": "auto"}
@@ -198,7 +197,7 @@ def test_set_rejects_without_writing(
 ) -> None:
     _write(_isolate_settings, initial)
     with pytest.raises(ConfigError, match=match) as excinfo:
-        SetSetting(SettingsFileRepository())(key, value, profile=profile)
+        SettingsFileRepository().set_value(key, value, profile=profile)
     assert "untaped-profile" not in str(excinfo.value)
     if initial is None:
         assert not _isolate_settings.exists()
@@ -214,7 +213,7 @@ def test_set_validation_isolated_from_env_overlay(
     break ``get_settings()`` the day the env var goes away)."""
     monkeypatch.setenv("UNTAPED_HTTP__VERIFY_SSL", "true")
     with pytest.raises(ConfigError, match="verify_ssl"):
-        SetSetting(SettingsFileRepository())("http.verify_ssl", "not-a-bool-or-anything")
+        SettingsFileRepository().set_value("http.verify_ssl", "not-a-bool-or-anything")
 
 
 # ── unset ────────────────────────────────────────────────────────────────────
@@ -291,9 +290,10 @@ def test_unset_removes_the_key(
     expected: dict[str, Any],
 ) -> None:
     _isolate_settings.write_text(initial)
-    result = UnsetSetting(SettingsFileRepository())(key, profile=profile)
-    assert result.removed is removed
-    assert result.profile == (profile or "default")
+    assert SettingsFileRepository().unset_value(key, profile=profile) == (
+        removed,
+        profile or "default",
+    )
     assert yaml.safe_load(_isolate_settings.read_text())["profiles"] == expected
 
 
@@ -301,7 +301,7 @@ def test_unset_rejects_unknown_target_profile(_isolate_settings: Path) -> None:
     original = "profiles:\n  default:\n    skills:\n      updates: auto\n"
     _isolate_settings.write_text(original)
     with pytest.raises(ConfigError, match="profile not found") as excinfo:
-        UnsetSetting(SettingsFileRepository())("skills.updates", profile="ghost")
+        SettingsFileRepository().unset_value("skills.updates", profile="ghost")
     assert "ghost" in str(excinfo.value)
     assert "untaped-profile" not in str(excinfo.value)
     assert _isolate_settings.read_text() == original
@@ -323,7 +323,7 @@ def test_unset_leaving_an_invalid_profile_fails_naming_key_and_profile(
     _isolate_settings.write_text(initial)
     repo = SettingsFileRepository(settings_cls=cast(type[Settings], StrictSettings))
     with pytest.raises(ConfigError) as exc_info:
-        UnsetSetting(repo)("mandatory")
+        repo.unset_value("mandatory")
     assert "mandatory" in str(exc_info.value)
     assert profile in str(exc_info.value)
     assert _isolate_settings.read_text() == initial

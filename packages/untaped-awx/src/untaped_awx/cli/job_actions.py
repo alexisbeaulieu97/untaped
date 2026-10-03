@@ -71,7 +71,7 @@ def register_job_actions(jobs_app: App) -> None:
         """
         rows: list[JobCancelOutcome] = []
         with report_errors(), open_context() as ctx:
-            ids, kinds = job_targets(job_ids, stdin=stdin, kind=kind)
+            ids, kinds = job_targets(job_ids, stdin=stdin)
             rows = [_cancel_plan(k, r) for k, r in _read_targets(ctx, ids, kinds, kind)]
             for row in rows:
                 if row.action == "planned":
@@ -123,7 +123,7 @@ def register_job_actions(jobs_app: App) -> None:
         hosts = "failed" if failed_hosts else "all"
         rows: list[JobRelaunchOutcome] = []
         with report_errors(), open_context() as ctx:
-            ids, kinds = job_targets(job_ids, stdin=stdin, kind=kind)
+            ids, kinds = job_targets(job_ids, stdin=stdin)
             for ident in ids:
                 _check_relaunchable(kinds.get(ident, kind), failed_hosts=failed_hosts)
             for job_kind, record in _read_targets(ctx, ids, kinds, kind):

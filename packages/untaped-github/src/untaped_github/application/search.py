@@ -31,7 +31,6 @@ WarnFn = Callable[[str], None]
 # user query characters.
 MAX_SEARCH_QUERY_TEXT_LENGTH = 256
 MAX_SEARCH_BOOLEAN_OPERATORS = 5
-MAX_TEAM_REPO_QUALIFIERS = MAX_SEARCH_BOOLEAN_OPERATORS + 1
 # GitHub allows 10 code-search and 30 other search requests per minute; stay
 # under those per invocation so large teams do not trip 403/429 responses.
 MAX_CODE_SEARCH_BATCHES = 9

@@ -158,8 +158,9 @@ answer each item, in order, in the PR template's **Drift review** section
 ### Dead code
 
 `vulture` (run by pre-commit) fails on code nothing uses. Delete it, or, for
-a false positive such as a command registered by string, add its name to
-`scripts/vulture_allowlist.py` with the reason.
+a false positive such as an emitted record field, add `Owner.name  # why` to
+`scripts/vulture_allowlist.py`. Decorator-registered code and fixed framework
+signatures are ignored in `[tool.vulture]`, not listed.
 
 ## Releasing
 

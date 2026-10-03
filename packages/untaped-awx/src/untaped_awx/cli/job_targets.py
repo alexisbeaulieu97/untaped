@@ -32,15 +32,13 @@ JobsStdinOption = Annotated[
 ]
 
 
-def job_targets(
-    job_ids: list[str] | None, *, stdin: bool, kind: JobKind
-) -> tuple[list[str], dict[str, str]]:
+def job_targets(job_ids: list[str] | None, *, stdin: bool) -> tuple[list[str], dict[str, str]]:
     """Identifiers plus each one's execution kind.
 
     Typed pipe records carry their own execution kind (``kind`` on action
     rows, ``type`` on AWX job records); it wins over ``--kind`` so a piped
     workflow job is read from ``workflow_jobs/`` rather than 404ing on
-    ``jobs/``. Bare identifiers use ``--kind``.
+    ``jobs/``. Bare identifiers get no entry: callers fall back to ``--kind``.
     """
     if stdin and not job_ids:
         piped = read_stdin_input(accept_kinds=JOB_PIPE_KINDS)
