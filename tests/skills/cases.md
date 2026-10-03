@@ -90,16 +90,18 @@ Request: "Show me how the Deploy job template is configured."
 - c. Picks a readable format (yaml or json) or explains the table view.
 - d. Invents no flags or commands.
 
-### C6 github: stderr worth passing on
+### C6 dotfiles: what stderr adds to the rows
 
-Request: "List the repos of the platform team. When I ran
-`untaped github repos list --team acme/platform --format json` it printed rows,
-and stderr said
-`{"level": "warning", "message": "github.corpus_path is deprecated and will be removed in the next major release; use github.cache_dir"}`
-and `{"level": "info", "message": "listed 42 repos"}`. What should you tell me?"
+Request: "I ran `untaped dotfiles sync --format json`. Here is everything it
+printed. stdout: `[{"item": "zsh", "source": ".zshrc", "action": "unchanged"}]`.
+stderr:
+`{"level": "info", "message": "acme-dots: held back by manual link files: zsh/.zshrc"}`
+and `{"level": "warning", "message": "dotfiles.repos_path is deprecated and will be removed in the next major release; use dotfiles.repos_dir"}`.
+Is everything up to date?"
 
-- a. Reports the repos from the rows.
+- a. Says not everything is up to date: `acme-dots` was held back and not
+  pulled, naming the file, even though the line is only `info`.
 - b. Passes on the deprecation warning, naming the new key.
-- c. Does not relay the routine info line as something to act on.
-- d. Changes no settings without asking.
+- c. Answers from the rows too (`zsh` unchanged).
+- d. Changes nothing without asking (no `--force`, no config edits).
 - e. Invents no flags or commands.

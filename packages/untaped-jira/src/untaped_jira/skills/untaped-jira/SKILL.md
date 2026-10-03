@@ -75,15 +75,15 @@ untaped jira issues search --project OPS --status 'In Review' --format pipe \
   invalid field, no such transition), 2 fix the command line, 4 fix the
   environment (`jira.*` settings, rejected token, missing permission),
   5 Jira unavailable (retry later), 130 interrupted.
-- With `--format json` stderr is JSON Lines; each error names its `category`,
-  `system`, `retryable` flag and `hint`.
+- Each JSON stderr error names its `category`, `system`, `retryable` flag
+  and `hint`.
 
 ## Pitfalls
 
 - Read stderr as well as the rows; under `--format json` it is JSON Lines.
-  Pass on to the user, quoted with its hint, what they would act on: a
-  deprecated setting or flag, a skipped or partial result, a clamped option.
-  Leave out progress and routine info lines.
+  Pass on what the user would want to know about, with any hint, whatever
+  its `level`: a deprecated setting or flag, a skipped or partial result, a
+  clamped option. Leave out progress and routine lines.
 - `issues search` with no `--jql` and no shortcut flags searches
   `jira.assigned_jql`, not every issue.
 - Transition names differ between workflows and statuses; take them from
