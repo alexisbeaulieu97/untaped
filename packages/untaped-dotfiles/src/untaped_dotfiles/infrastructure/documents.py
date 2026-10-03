@@ -13,6 +13,7 @@ import json
 from collections.abc import MutableMapping
 from typing import Any
 
+from untaped.sdk import yaml_mapping_indent
 from untaped_dotfiles.domain.models import MergeFormat
 from untaped_dotfiles.errors import DotfilesError
 
@@ -71,16 +72,5 @@ def _yaml(like: str) -> Any:
         else:
             if guessed_sequence is not None and guessed_offset is not None:
                 sequence, offset = guessed_sequence, guessed_offset
-    rt.indent(mapping=_mapping_indent(like), sequence=sequence, offset=offset)
+    rt.indent(mapping=yaml_mapping_indent(like), sequence=sequence, offset=offset)
     return rt
-
-
-def _mapping_indent(text: str) -> int:
-    """The mapping indent of ``text``: its shallowest indented line that is not a list item."""
-    widths = [
-        len(line) - len(line.lstrip(" "))
-        for line in text.splitlines()
-        if line.strip() and not line.lstrip().startswith(("#", "-"))
-    ]
-    positive = [width for width in widths if width > 0]
-    return min(positive) if positive else 2

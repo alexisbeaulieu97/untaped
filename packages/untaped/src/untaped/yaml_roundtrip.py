@@ -61,7 +61,7 @@ def _round_trip(original: str, before: Mapping[str, Any], after: dict[str, Any])
         return None
     _sync_map(doc, before, after)
     rt.indent(
-        mapping=_mapping_indent(original),
+        mapping=yaml_mapping_indent(original),
         sequence=seq_indent or 2,
         offset=seq_offset or 0,
     )
@@ -70,8 +70,13 @@ def _round_trip(original: str, before: Mapping[str, Any], after: dict[str, Any])
     return out.getvalue()
 
 
-def _mapping_indent(text: str) -> int:
-    """Guess the mapping indent: the shallowest indented, non-sequence line."""
+def yaml_mapping_indent(text: str) -> int:
+    """Guess the mapping indent of YAML ``text``: its shallowest indented line
+    that is neither a comment nor a list item (``2`` when nothing is indented).
+
+    Pass it to ``ruamel.yaml``'s ``YAML.indent(mapping=...)`` so a rewrite keeps
+    the original indentation; ``load_yaml_guess_indent`` only guesses sequences.
+    """
     widths = [
         len(line) - len(line.lstrip(" "))
         for line in text.splitlines()
