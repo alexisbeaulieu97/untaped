@@ -87,7 +87,7 @@ def test_contributed_passing_check_reports_detail(_isolated_config: Path) -> Non
     assert row["detail"] == "token valid"
 
 
-def test_table_blanks_a_pass_row_detail_that_the_record_keeps(_isolated_config: Path) -> None:
+def test_the_columns_table_shows_a_pass_row_detail(_isolated_config: Path) -> None:
     app = _doctor_app(
         make_spec(
             "ext",
@@ -97,11 +97,12 @@ def test_table_blanks_a_pass_row_detail_that_the_record_keeps(_isolated_config: 
             ),
         )
     )
-    table = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
+    columns = ["--columns", "check,status,detail,fix"]
+    table = CliInvoker().invoke(app, columns)  # type: ignore[arg-type]
     assert table.exit_code == 0, table.output
     header = [cell.strip() for cell in table.stdout.splitlines()[1].strip("│").split("│")]
-    assert header == ["check", "capability", "status", "title", "detail"]
-    assert "token valid" not in table.stdout
+    assert header == ["check", "status", "detail", "fix"]
+    assert "token valid" in table.stdout
     assert "old key set" in table.stdout
     listed = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
     row = next(r for r in json.loads(listed.stdout) if r["check"] == "ext.auth")
@@ -149,7 +150,7 @@ def test_failing_check_does_not_block_other_rows(_isolated_config: Path) -> None
     assert "ext.auth" in result.stdout
     assert "token rejected" in result.stdout
     assert "ext.latency" in result.stdout
-    assert "1 of" in result.stderr
+    assert "doctor:" in result.stderr and "1 fail" in result.stderr
 
 
 def test_raising_check_body_is_a_failed_row(_isolated_config: Path) -> None:
@@ -213,7 +214,7 @@ def test_invalid_capability_settings_fail_their_rows_only(_isolated_config: Path
     assert result.exit_code == 1
     assert "timeout" in result.stdout
     assert "github.auth" in result.stdout
-    assert any("github.auth" in line and "pass" in line for line in result.stdout.splitlines())
+    assert any("github.auth" in line and "✓" in line for line in result.stdout.splitlines())
 
 
 def test_missing_required_field_is_a_failed_row(_isolated_config: Path) -> None:
