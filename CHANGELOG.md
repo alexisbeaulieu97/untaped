@@ -33,7 +33,10 @@
 
 - Every package now requires Python 3.14.1 or newer, so an older uv can no
   longer build the environment on a 3.14 release candidate, where pydantic
-  fails at import.
+  fails at import. Plugins and recipe packs that declare
+  `requires-python = ">=3.14"` should raise it to `>=3.14.1`: otherwise uv
+  can't lock them against 10.1, or keeps 10.0.0 for part of the range.
+  `untaped recipe packs init` now writes the installed `untaped`'s floor.
 
 ## 10.0.0
 

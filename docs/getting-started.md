@@ -2,7 +2,7 @@
 
 ## Install
 
-`untaped` needs Python 3.14 and [uv](https://docs.astral.sh/uv/).
+`untaped` needs Python 3.14.1 or newer and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 uv tool install 'untaped[all]'   # or 'untaped[<name>]' for one capability, e.g. 'untaped[awx]'
