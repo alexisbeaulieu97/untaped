@@ -9,25 +9,17 @@ from untaped.config.use_cases import (
     GetSetting,
     ListAllProfilesSettings,
     ListSettings,
-    SetSetting,
-    SetSettingResult,
-    UnsetSetting,
-    UnsetSettingResult,
 )
 
 __all__ = [
     "GetSetting",
     "ListAllProfilesSettings",
     "ListSettings",
-    "SetSetting",
-    "SetSettingResult",
     "SettingEntry",
     "SettingsFileRepository",
     "SettingsReader",
     "SettingsRepository",
     "Source",
-    "UnsetSetting",
-    "UnsetSettingResult",
     "display_default",
     "display_value",
 ]

@@ -14,7 +14,7 @@ from pydantic import BaseModel, SecretStr
 
 from untaped.config_file import read_config_dict
 from untaped.management.profile import build_root_profile_app
-from untaped.profile_resolver import reset_profile_override, set_profile_override
+from untaped.profile_resolver import profile_scope
 from untaped.settings import FORMAT_VERSION, get_settings, register_profile_settings
 from untaped.testing import CliInvoker, ScriptedPromptBackend, TtyStringIO, invoke_cli
 
@@ -147,11 +147,8 @@ def test_show_redacts_secrets(app, _isolated_config: Path) -> None:
 def test_current_honours_root_profile_flag(_isolated_config: Path) -> None:
     _seed(_isolated_config)
     app = build_root_profile_app(command="untaped")
-    token = set_profile_override("stage")
-    try:
+    with profile_scope("stage"):
         result = CliInvoker().invoke(app, ["current"])
-    finally:
-        reset_profile_override(token)
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "stage"
     assert "(source: flag)" in result.stderr
@@ -160,11 +157,8 @@ def test_current_honours_root_profile_flag(_isolated_config: Path) -> None:
 def test_current_rejects_root_profile_flag_naming_missing_profile(_isolated_config: Path) -> None:
     _seed(_isolated_config)
     app = build_root_profile_app(command="untaped")
-    token = set_profile_override("typo")
-    try:
+    with profile_scope("typo"):
         result = CliInvoker().invoke(app, ["current"])
-    finally:
-        reset_profile_override(token)
     assert result.exit_code == 4  # the active profile is not defined: config
     assert "'typo' (from flag) is not defined" in result.stderr
 

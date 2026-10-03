@@ -92,7 +92,7 @@ class LocalGitWorktrees:
             self._set_upstream(cache, branch)
             return checkout
 
-    def status(self, dest: Path, *, branch: str | None, base: str) -> WorktreeStatus | None:
+    def status(self, dest: Path, *, branch: str | None) -> WorktreeStatus | None:
         """Git state of the worktree at ``dest``; ``None`` when it is missing."""
         if not dest.exists():
             return None

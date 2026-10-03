@@ -12,8 +12,8 @@ import respx
 from pydantic import SecretStr
 
 from untaped.sdk import UntapedError
-from untaped_github.domain.errors import GithubGraphqlError
 from untaped_github.domain.models import BatchRepoRefsResult
+from untaped_github.errors import GithubGraphqlError
 from untaped_github.infrastructure import GithubClient
 from untaped_github.settings import GithubSettings
 

@@ -77,9 +77,6 @@ class FkRef(BaseModel):
     kind_in_value: str | None = None
     """For polymorphic FKs, the key inside the value that holds the kind."""
 
-    scope_field_in_value: str | None = None
-    """For polymorphic FKs, the key inside the value that holds the scope."""
-
     @model_validator(mode="after")
     def _kind_required_unless_polymorphic(self) -> FkRef:
         """A non-polymorphic FK must name its ``kind``.
