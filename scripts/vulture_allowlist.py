@@ -207,6 +207,7 @@ profile_override  # unused function (packages/untaped/src/untaped/profile_resolv
 _._own_fields_first  # unused method (packages/untaped/src/untaped/records.py:178)
 _.settings_customise_sources  # unused method (packages/untaped/src/untaped/settings.py:120)
 dotenv_settings  # unused variable (packages/untaped/src/untaped/settings.py:126)
+env_settings  # unused variable (packages/untaped/src/untaped/settings.py:129)
 _.settings_customise_sources  # unused method (packages/untaped/src/untaped/settings.py:391)
 dotenv_settings  # unused variable (packages/untaped/src/untaped/settings.py:397)
 _.settings_customise_sources  # unused method (packages/untaped/src/untaped/settings.py:461)

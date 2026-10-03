@@ -346,10 +346,38 @@ profiles, and is never a user setting. The helpers keep other capabilities'
 sections intact under the shared lock, so never read or write either file
 directly.
 
+## Settings
+
+### Renaming a setting
+
+Declare a rename on the section's profile model, never on a nested model,
+with dotted paths relative to the section:
+
+```python
+renamed_keys: ClassVar[Mapping[str, str]] = {"sweep.sync_concurrency": "sweep.parallel"}
+retired_keys: ClassVar[Mapping[str, str]] = {}
+deprecated_settings: ClassVar[Mapping[str, str]] = {"legacy": "use mode: legacy is ignored"}
+```
+
+- A key in `renamed_keys`, and its `UNTAPED_*` variable, is read as the new
+  key, with a warning naming it, until the next major release. Then the
+  entry moves to `retired_keys`: the old key is no longer read.
+- A target is a current setting or another old key, so renames chain; a
+  renamed key never points at a retired one. Entries are never deleted and
+  old names never reused.
+- A rename keeps the meaning. A change of unit, type or choices is a new key,
+  and the old field becomes a `deprecated_settings` entry, still read with
+  its message as the warning, until the next major release.
+
+Each warning prints once per process. Composition quarantines a provider
+whose declarations break these rules (`bad-settings-keys`).
+
 ## SDK stability
 
 `untaped.sdk` and `untaped.testing` are stable within a major release: a
 minor or patch release adds to them and never breaks them.
 Providers import only `untaped.sdk`, plus `untaped.testing` in tests; other
 `untaped` modules are internal.
+A deprecated SDK attribute or callable is marked with `warnings.deprecated`
+and removed in the next major release.
 For what users can rely on, see [Versioning](../versioning.md).

@@ -29,6 +29,7 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion
 from pydantic import BaseModel
 
+from untaped.deprecated_keys import key_mappings, mapping_errors
 from untaped.errors import ConfigError
 from untaped.settings import (
     RESERVED_STATE_SECTIONS,
@@ -155,6 +156,7 @@ class ApplicationSpec:
         _check_spec_shape(
             self.name, self.config_section, self.profile_model, self.state_model, "shell"
         )
+        key_mappings(self.profile_model)  # a broken shell declaration is a core bug
         object.__setattr__(self, "skills", tuple(self.skills))
         object.__setattr__(self, "doctor_checks", tuple(self.doctor_checks))
 
@@ -232,6 +234,7 @@ VALID_REASONS = frozenset(
         "malformed-entry-point",
         "bad-app-factory",
         "bad-metadata",
+        "bad-settings-keys",
     }
 )
 
@@ -537,8 +540,15 @@ def _check_doctor_checks(spec: CapabilitySpec, state: _CompositionState) -> None
         seen_checks.add(check.id)
 
 
+def _check_key_mappings(spec: CapabilitySpec) -> None:
+    errors = mapping_errors(spec.profile_model)
+    if errors:
+        raise _Quarantine("bad-settings-keys", f"capability {spec.name!r}: {errors[0]}")
+
+
 def _check_rows_1_to_8(spec: CapabilitySpec, state: _CompositionState) -> None:
     _check_reserved_and_names(spec, state)
+    _check_key_mappings(spec)
     _check_state_model(spec, state)
     _check_duplicate_section(spec, state)
     _check_skills(spec, state)
