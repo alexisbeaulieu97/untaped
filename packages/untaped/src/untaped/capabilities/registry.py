@@ -104,8 +104,9 @@ class DoctorResult:
     ``automatic=True`` says the fix is safe to run unattended: it needs no
     ``<NAME>`` value, no terminal input and no confirmation, it is a
     declared write (``@writes``) that takes ``--format``, and it carries any
-    ``--yes`` it needs itself. Doctor fails the row when an automatic fix is
-    missing or has a placeholder.
+    ``--yes`` it needs itself. It also asks for and prints no secret, so an
+    agent may run it. Doctor fails the row when an automatic fix is missing
+    or has a placeholder.
     """
 
     id: str

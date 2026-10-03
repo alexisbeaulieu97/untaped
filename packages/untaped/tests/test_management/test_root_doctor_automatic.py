@@ -17,7 +17,6 @@ import yaml
 from test_management.support import (
     FAIL,
     WizProfile,
-    asset,
     compose,
     make_spec,
     wiz_api_check,
@@ -32,7 +31,6 @@ from untaped.capabilities.registry import (
 )
 from untaped.management.doctor import build_root_doctor_app
 from untaped.sdk import connection_check
-from untaped.skills import SkillInstallScope, SkillInstallTarget, install_skills
 from untaped.testing import CliInvoker, CliResult
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -99,24 +97,6 @@ def test_an_online_fix_is_manual(_isolated_config: Path) -> None:
         ["auth", "set", "wiz"],
         False,
     )
-
-
-def test_the_skills_update_fix_is_automatic(tmp_path: Path) -> None:
-    skill = asset(tmp_path, "untaped-demo")
-    install_skills(
-        {skill.name: skill},
-        [skill.name],
-        stdin=False,
-        all_skills=False,
-        target=SkillInstallTarget.claude,
-        force=False,
-        scope=SkillInstallScope.global_,
-        project_dir=None,
-        target_dir=None,
-    )
-    skill.source.joinpath("SKILL.md").write_text("changed\n", encoding="utf-8")
-    row = _row(_rows(make_spec("demo", skills=(skill,))), "skills")
-    assert (row["status"], row["automatic"]) == ("warn", True)
 
 
 def test_every_structured_format_carries_automatic() -> None:

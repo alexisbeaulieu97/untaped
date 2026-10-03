@@ -71,9 +71,10 @@ read `SKILL.md` there.
 
 Run `untaped doctor --format json`. A failed or warned row's `fix` is the
 argv to run after `untaped`, with the same `<NAME>` placeholders. A fix with
-`automatic: true` is safe to run as is. Any other fix with a `<NAME>` is a
-value to ask the user for, and one that asks for or reveals a token
-(`auth set`, `config set ….token --prompt`) is the user's to run.
+`automatic: true` is safe to run as is. In any other fix, a `<NAME>` is a
+value to ask the user for; substitute it and run the argv. A fix that asks
+for or reveals a token (`auth set`, `config set ….token --prompt`) is the
+user's to run.
 
 ## Safety
 
