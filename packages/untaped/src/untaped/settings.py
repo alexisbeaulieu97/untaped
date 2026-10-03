@@ -247,6 +247,12 @@ def _env_is_set(name: str) -> bool:
     return any(key.upper() == name for key in os.environ)
 
 
+def _env_spelling(section: str, key: str) -> str:
+    """How the environment spells ``key``: its variable when set, else a key in the JSON blob."""
+    name = _env_name(section, key)
+    return name if _env_is_set(name) else f"{key} in UNTAPED_{section.upper()}"
+
+
 class _RenamingEnvSource(EnvSettingsSource):
     """The ``UNTAPED_*`` environment source, with old key names renamed.
 
@@ -263,18 +269,14 @@ class _RenamingEnvSource(EnvSettingsSource):
                 continue
             data[section], uses = rename_keys(model, value)
             for use in uses:
-                old = _env_name(section, use.old)
-                if not _env_is_set(old):  # the value came from the section's JSON blob
-                    blob = f"UNTAPED_{section.upper()}"
-                    message = use_warning(
-                        use,
-                        old=f"{use.old} in {blob}",
-                        new=use.new,
-                        kept=f"{use.kept} in {blob}",
-                    )
-                else:
-                    kept = None if use.kept is None else _env_name(section, use.kept)
-                    message = use_warning(use, old=old, new=_env_name(section, use.new), kept=kept)
+                # The new key follows the old one's form: a variable or a blob key.
+                as_variable = _env_is_set(_env_name(section, use.old))
+                message = use_warning(
+                    use,
+                    old=_env_spelling(section, use.old),
+                    new=_env_name(section, use.new) if as_variable else use.new,
+                    kept=None if use.kept is None else _env_spelling(section, use.kept),
+                )
                 if message is not None:
                     warn_once(message)
         return data
@@ -567,12 +569,10 @@ def check_settings_field(name: str, node: Any, *, model: type[BaseModel] | None 
         raise ConfigError(settings_error_message(exc, checker)) from exc
 
 
-def settings_error_message(
-    exc: ValidationError, settings_cls: type[BaseModel] | None = None
-) -> str:
+def settings_error_message(exc: ValidationError, settings_cls: type[BaseModel]) -> str:
     """Describe a settings ``ValidationError``, naming an env var culprit.
 
-    With ``settings_cls``, an old-spelling variable of a renamed key is named
+    An old-spelling variable of a renamed key of ``settings_cls`` is named
     too (``UNTAPED_GITHUB__CORPUS_PATH`` for ``github.cache_dir``).
     """
     detail = first_validation_error(exc)
@@ -587,7 +587,7 @@ def settings_error_message(
     return f"invalid config in {path}: {detail}"
 
 
-def _env_culprit(exc: ValidationError, settings_cls: type[BaseModel] | None) -> str | None:
+def _env_culprit(exc: ValidationError, settings_cls: type[BaseModel]) -> str | None:
     errors = exc.errors()
     if not errors:
         return None
@@ -607,8 +607,8 @@ def _env_culprit(exc: ValidationError, settings_cls: type[BaseModel] | None) -> 
     return None
 
 
-def _readable_old_keys(settings_cls: type[BaseModel] | None, section: str) -> dict[str, str]:
-    model = None if settings_cls is None else _model_sections(settings_cls).get(section)
+def _readable_old_keys(settings_cls: type[BaseModel], section: str) -> dict[str, str]:
+    model = _model_sections(settings_cls).get(section)
     return {} if model is None else dict(key_mappings(model).readable)
 
 

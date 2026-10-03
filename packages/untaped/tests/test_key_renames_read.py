@@ -175,6 +175,20 @@ def test_new_env_variable_wins_over_the_old_one(
     ) in capsys.readouterr().err
 
 
+def test_mixed_env_forms_name_where_each_value_is(
+    config: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    register_profile_settings("demo", DemoSettings)
+    monkeypatch.setenv("UNTAPED_DEMO", json.dumps({"cache_dir": "/blob"}))
+    monkeypatch.setenv("UNTAPED_DEMO__CORPUS_PATH", "/old")
+
+    assert get_config_section("demo", DemoSettings).cache_dir == "/blob"
+    assert (
+        "warning: UNTAPED_DEMO__CORPUS_PATH is deprecated and ignored because cache_dir in "
+        "UNTAPED_DEMO is also set; use UNTAPED_DEMO__CACHE_DIR"
+    ) in capsys.readouterr().err
+
+
 def test_old_key_in_an_env_blob_names_the_blob(
     config: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

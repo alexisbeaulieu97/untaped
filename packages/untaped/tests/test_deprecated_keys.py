@@ -95,6 +95,14 @@ def test_a_model_without_declarations_maps_nothing() -> None:
         ),
         ({"renamed_keys": {"a": "b", "b": "a"}}, "the rename chain from 'a' is a cycle"),
         (
+            {"renamed_keys": {"proxy": "cache_dir", "proxy.host": "cache_dir"}},
+            "old key 'proxy.host' is below the old key 'proxy'",
+        ),
+        (
+            {"renamed_keys": {"proxy.host": "cache_dir"}, "retired_keys": {"proxy": "cache_dir"}},
+            "old key 'proxy.host' is below the old key 'proxy'",
+        ),
+        (
             {"renamed_keys": {"a": "cache_dir"}, "retired_keys": {"a": "cache_dir"}},
             "'a' is in both renamed_keys and retired_keys",
         ),

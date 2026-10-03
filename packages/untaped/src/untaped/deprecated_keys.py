@@ -27,7 +27,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from untaped.config_schema import walk_settings
+from untaped.config_schema import unwrap_optional
 from untaped.errors import ConfigError
 from untaped.messages import deprecated_message
 
@@ -84,6 +84,11 @@ def _declared(model: type[BaseModel], name: str) -> object:
     return getattr(model, name, {})
 
 
+def _valid(model: type[BaseModel], name: str) -> Mapping[str, str]:
+    """A declaration ``mapping_errors`` has already checked."""
+    return typing.cast(Mapping[str, str], _declared(model, name))
+
+
 def _nested_models(model: type[BaseModel]) -> list[type[BaseModel]]:
     """Every ``BaseModel`` class reachable through ``model``'s fields."""
     found: list[type[BaseModel]] = []
@@ -131,7 +136,9 @@ def mapping_errors(model: type[BaseModel]) -> list[str]:
         for name in DECLARATIONS
         if _declared(nested, name)
     )
-    leaves = {descriptor.key for descriptor in walk_settings(model, include_collections=True)}
+    if not any(declared.values()):
+        return errors
+    leaves = set(_leaf_paths(model))
     errors.extend(_mapping_errors(declared["renamed_keys"], declared["retired_keys"], leaves))
     for key, message in sorted(declared["deprecated_settings"].items()):
         if key not in leaves:
@@ -139,6 +146,22 @@ def mapping_errors(model: type[BaseModel]) -> list[str]:
         elif not message.strip():
             errors.append(f"deprecated setting {key!r} needs a message")
     return errors
+
+
+def _leaf_paths(model: type[BaseModel], prefix: str = "") -> list[str]:
+    """Every setting path of ``model``, as ``walk_settings`` finds them, without defaults.
+
+    Evaluating a ``default_factory`` here could raise, and these checks run
+    while composing every capability.
+    """
+    paths: list[str] = []
+    for name, field in model.model_fields.items():
+        annotation = unwrap_optional(field.annotation)
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            paths.extend(_leaf_paths(annotation, f"{prefix}{name}."))
+        else:
+            paths.append(f"{prefix}{name}")
+    return paths
 
 
 def _mapping_errors(
@@ -149,10 +172,17 @@ def _mapping_errors(
         f"{key!r} is in both renamed_keys and retired_keys"
         for key in sorted(renamed.keys() & retired.keys())
     ]
-    for key in sorted({*renamed, *retired}):
+    old_keys = sorted({*renamed, *retired})
+    for key in old_keys:
         clash = _clashing_leaf(key, leaves)
         if clash is not None:
             errors.append(f"old key {key!r} clashes with the current setting {clash!r}")
+    errors.extend(
+        f"old key {key!r} is below the old key {parent!r}; an old name is never reused"
+        for key in old_keys
+        for parent in old_keys
+        if key.startswith(f"{parent}.")
+    )
     for key, target in sorted(renamed.items()):
         if target in retired:
             errors.append(f"renamed key {key!r} points at the retired key {target!r}")
@@ -201,9 +231,9 @@ def key_mappings(model: type[BaseModel]) -> KeyMappings:
         raise ConfigError(f"invalid key declarations on {model.__name__}: {errors[0]}")
     if not any(_declared(model, name) for name in DECLARATIONS):
         return _EMPTY
-    renamed: Mapping[str, str] = _declared(model, "renamed_keys")  # type: ignore[assignment]
-    retired: Mapping[str, str] = _declared(model, "retired_keys")  # type: ignore[assignment]
-    deprecated: Mapping[str, str] = _declared(model, "deprecated_settings")  # type: ignore[assignment]
+    renamed = _valid(model, "renamed_keys")
+    retired = _valid(model, "retired_keys")
+    deprecated = _valid(model, "deprecated_settings")
     mapped = {**retired, **renamed}
     ends = {key: _chain_end(key, mapped) for key in mapped}
     migratable = {key: end[0] for key, end in ends.items() if end is not None}
@@ -325,7 +355,8 @@ def use_warning(use: KeyUse, *, old: str, new: str, kept: str | None = None) -> 
     if use.kind == "renamed":
         return deprecated_message(old, new)
     if use.kind == "ignored":
-        return f"{old} is deprecated and ignored because {kept} is also set; use {new}"
+        advice = "" if kept == new else f"; use {new}"
+        return f"{old} is deprecated and ignored because {kept} is also set{advice}"
     if use.kind == "deprecated":
         return f"{old} is deprecated and will be removed in the next major release; {use.message}"
     return None

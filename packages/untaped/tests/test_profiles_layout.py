@@ -91,7 +91,7 @@ def test_resolve_renames_layered_profiles_and_reports_their_uses() -> None:
         "default": {"github": (KeyUse("corpus_path", "cache_dir", "renamed"),)}
     }
     assert raw["profiles"]["default"] == {"github": {"corpus_path": "/d"}}  # type: ignore[index]
-    assert layout.provenance(raw, sections={}) == {
+    assert layout.resolve(raw, sections={}).provenance == {
         ("github", "corpus_path"): "default",
         ("github", "cache_dir"): "work",
     }
