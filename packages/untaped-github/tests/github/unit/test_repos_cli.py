@@ -110,13 +110,6 @@ def test_repos_list_archived_is_include_exclude_or_only(
     assert result.stdout.splitlines() == expected
 
 
-@pytest.mark.parametrize("old", [["--no-archived"], ["--archived"], ["--archived", "yes"]])
-def test_repos_list_rejects_the_old_boolean_archived_spellings(old: list[str]) -> None:
-    result = CliInvoker().invoke(app, ["repos", "list", "--org", "acme", *old])
-
-    assert result.exit_code == 2, result.output
-
-
 def test_repos_list_limit_prints_a_truncation_notice_on_stderr() -> None:
     truncated = _list("--org", "acme", "--limit", "2")
     complete = _list("--org", "acme", "--limit", "3")

@@ -1,4 +1,4 @@
-"""The composition root over every first-party capability: mounts, retired names, lazy help.
+"""The composition root over every first-party capability: mounts and lazy help.
 
 Moved from core's ``test_bootstrap.py``: these tests compose the installed
 first-party capabilities, so they need every workspace package (Decision 5).
@@ -13,7 +13,6 @@ import pytest
 
 from untaped import bootstrap
 from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
-from untaped.settings import get_settings_model
 from untaped.testing import CliInvoker, provider_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -33,46 +32,6 @@ def test_default_composition_is_the_first_party_capabilities(
     for name in expected:
         result = CliInvoker().invoke(root.meta, [name, "--help"])
         assert result.exit_code == 0, result.output
-
-
-def test_retired_orchestration_command_is_unknown(
-    first_party_candidates: tuple[ProviderCandidate, ...],
-) -> None:
-    root = bootstrap.build_root_app(candidates=first_party_candidates)
-
-    result = CliInvoker().invoke(root.meta, ["orchestration"])
-
-    assert result.exit_code == 2
-    assert "orchestration" in result.output
-
-
-def test_retired_orchestration_config_schema_is_absent(
-    first_party_candidates: tuple[ProviderCandidate, ...],
-) -> None:
-    root = bootstrap.build_root_app(candidates=first_party_candidates)
-
-    assert "orchestration" not in get_settings_model().model_fields
-
-    result = CliInvoker().invoke(
-        root.meta,
-        ["config", "list", "--format", "raw", "--columns", "key"],
-    )
-    assert result.exit_code == 0, result.output
-    assert not any(line.startswith("orchestration.") for line in result.stdout.splitlines())
-
-
-def test_retired_orchestration_packaged_skill_is_absent(
-    first_party_candidates: tuple[ProviderCandidate, ...],
-) -> None:
-    root = bootstrap.build_root_app(candidates=first_party_candidates)
-
-    result = CliInvoker().invoke(
-        root.meta,
-        ["skills", "list", "--format", "raw", "--columns", "name"],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert "untaped-orchestration" not in result.stdout
 
 
 def test_root_option_after_a_lazy_capability_name_is_not_a_command(

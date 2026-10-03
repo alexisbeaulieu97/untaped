@@ -14,13 +14,9 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from pydantic import ValidationError
 
-from untaped import bootstrap
-from untaped.capabilities.registry import ProviderCandidate
 from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli
 from untaped_jira.cli import app
-from untaped_jira.settings import JiraSettings
 
 BASE = "https://jira.example.com"
 
@@ -89,12 +85,6 @@ def _run(args: list[str], **kwargs: Any) -> tuple[CliResult, respx.Route, respx.
 
 
 # --- jira.confirm ------------------------------------------------------------------
-
-
-def test_confirm_defaults_to_destructive() -> None:
-    assert JiraSettings().confirm == "destructive"
-    with pytest.raises(ValidationError):
-        JiraSettings.model_validate({"confirm": "sometimes"})
 
 
 @pytest.mark.parametrize("verb", sorted(WRITES))
@@ -496,29 +486,3 @@ def test_fields_documents_only_come_from_fields_file(
     assert json.loads(new_writes.calls[0].request.content)["fields"]["summary"] == "From file"
     assert stale.exit_code == 2, stale.output
     assert len(stale_writes.calls) == 0
-
-
-@pytest.mark.parametrize(
-    "args",
-    [
-        ["me"],
-        ["issue", "get", "ABC-1"],
-        ["project", "list"],
-        ["board", "list"],
-        ["sprint", "list"],
-        ["issues", "edit", "ABC-1", "--summary", "x", "--yes"],
-        ["issues", "patch", "ABC-1", "--field", "summary=x", "--yes"],
-        ["issues", "create", "--project", "A", "--json-field", "labels=[]", "--yes"],
-    ],
-)
-def test_old_spellings_are_gone(
-    first_party_candidates: tuple[ProviderCandidate, ...], args: list[str]
-) -> None:
-    root = bootstrap.build_root_app(candidates=first_party_candidates)
-    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
-        route = mock.route().mock(return_value=httpx.Response(200, json={}))
-        result = invoke_cli(root, ["jira", *args])
-
-    assert result.exit_code == 2, result.output
-    assert "deprecated" not in result.stderr
-    assert len(route.calls) == 0

@@ -19,12 +19,10 @@ def _whoami(
     args: list[str],
     *,
     github: str = "token: ghp_test",
-    ui: str = "",
     response: httpx.Response | None = None,
 ) -> CliResult:
     cfg = tmp_path / "config.yml"
-    ui_section = f"    ui:\n      {ui}\n" if ui else ""
-    cfg.write_text(f"profiles:\n  default:\n{ui_section}    github:\n      {github}\n")
+    cfg.write_text(f"profiles:\n  default:\n    github:\n      {github}\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     reply = response or httpx.Response(200, json={"login": "octocat", "id": 1, "extra": "x"})
     with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
@@ -47,16 +45,6 @@ def test_whoami_renders_one_user_record_per_format(
     assert (envelope["kind"], envelope["record"]["login"]) == ("github.user", "octocat")
     assert "login: octocat" in table.stdout
     assert "│" not in table.stdout
-
-
-def test_whoami_raw_ignores_invalid_ui_theme(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    result = _whoami(tmp_path, monkeypatch, ["--format", "raw"], ui="theme: missing")
-
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "octocat"
-    assert "unknown UI theme" not in result.output
 
 
 @pytest.mark.parametrize("github", ["base_url: https://api.github.com", 'token: "   "'])

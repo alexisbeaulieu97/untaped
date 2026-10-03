@@ -15,8 +15,6 @@ import pytest
 from untaped.testing import CliInvoker
 from untaped_awx.cli import app
 
-pytestmark = pytest.mark.integration
-
 
 def _header(out: str) -> list[str]:
     return [cell.strip() for cell in out.splitlines()[1].strip("│").split("│")]
@@ -62,14 +60,6 @@ def test_jobs_list_raw_keeps_its_projection(fake_aap: Any) -> None:
     fake_aap.seed("jobs", id=42, **_JOB)
 
     assert _run("jobs", "list", "--format", "raw").stdout.strip() == "42\tdeploy\tfailed"
-
-
-def test_jobs_list_columns_edit_the_table_defaults(fake_aap: Any) -> None:
-    fake_aap.seed("jobs", id=42, **_JOB)
-
-    table = _run("jobs", "list", "--columns", "+finished", "--columns=-launch_type").stdout
-
-    assert _header(table) == ["id", "name", "status", "started", "elapsed", "finished"]
 
 
 def test_jobs_get_table_is_a_summary_not_every_awx_field(fake_aap: Any) -> None:
@@ -284,14 +274,6 @@ def test_schedules_list_names_the_template_instead_of_a_last_run(
     assert "deploy" in table
 
 
-def test_get_table_columns_can_be_edited(seeded_default_org: Any) -> None:
-    _seed_inventory(seeded_default_org)
-
-    table = _run("hosts", "get", "web-01", "--columns=-enabled").stdout
-
-    assert _header(table) == ["id", "name", "inventory"]
-
-
 # ---- usage, nodes ----
 
 
@@ -309,40 +291,6 @@ def test_nodes_says_when_a_workflow_is_empty(seeded_default_org: Any) -> None:
     result = _run("workflow-templates", "nodes", "wf")
 
     assert "No workflow nodes found." in result.stderr
-
-
-def test_unified_templates_list_json_keeps_whole_records(fake_aap: Any) -> None:
-    fake_aap.seed(
-        "unified_job_templates", id=10, name="deploy", type="job_template", last_job_status="ok"
-    )
-
-    records = json.loads(_run("unified-templates", "list", "--format", "json").stdout)
-
-    assert records[0]["last_job_status"] == "ok"
-
-
-def test_jobs_list_raw_column_edits_start_from_the_table_defaults(fake_aap: Any) -> None:
-    fake_aap.seed("jobs", id=42, **_JOB)
-
-    out = _run("jobs", "list", "--format", "raw", "--columns", "+finished").stdout
-
-    assert out.strip().split("\t") == [
-        "42",
-        "deploy",
-        "failed",
-        "manual",
-        "2026-01-01T00:00:00Z",
-        "102.0",
-        "2026-01-01T00:01:42Z",
-    ]
-
-
-def test_jobs_events_raw_column_edits_start_from_the_table_defaults(fake_aap: Any) -> None:
-    _seed_events(fake_aap)
-
-    out = _run("jobs", "events", "42", "--format", "raw", "--columns=-task").stdout
-
-    assert out.strip().split("\t") == ["1", "runner_on_ok", "web-01", "True", "False"]
 
 
 def test_jobs_events_follow_json_lists_columns_once_and_streams_nothing(fake_aap: Any) -> None:

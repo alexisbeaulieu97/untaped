@@ -13,8 +13,6 @@ from untaped.testing import CliInvoker
 from untaped_awx.cli import app
 from untaped_awx.domain import Resource
 
-pytestmark = pytest.mark.integration
-
 
 def _seed_basic(fake: Any) -> None:
     fake.seed("organizations", id=1, name="Default", description="")

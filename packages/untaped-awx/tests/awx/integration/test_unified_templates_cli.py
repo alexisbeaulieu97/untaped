@@ -12,12 +12,8 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from untaped.testing import CliInvoker
 from untaped_awx.cli import app
-
-pytestmark = pytest.mark.integration
 
 
 def _seed_all_kinds(fake: Any) -> None:

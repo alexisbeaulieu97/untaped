@@ -12,7 +12,7 @@ from untaped.testing import CliInvoker
 from untaped_workspace.cli import app
 from untaped_workspace.cli.common import run_argv
 
-pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("workspace_env")]
+pytestmark = pytest.mark.usefixtures("workspace_env")
 run = CliInvoker().invoke
 
 

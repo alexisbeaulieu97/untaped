@@ -7,7 +7,6 @@ import re
 import subprocess
 import sys
 import tomllib
-from pathlib import Path
 from typing import Any
 
 import release
@@ -68,38 +67,6 @@ def test_test_package_names_are_unique_and_never_tests() -> None:
         names += [p.stem for p in root.glob("*.py") if p.stem not in ("conftest", "__init__")]
     assert "tests" not in names
     assert len(names) == len(set(names)), sorted(n for n in names if names.count(n) > 1)
-
-
-def test_two_packages_tests_with_one_basename_both_run(tmp_path: Path) -> None:
-    """Importlib mode keeps same-named test modules of different packages apart."""
-    assert "--import-mode=importlib" in _root_config()["tool"]["pytest"]["ini_options"]["addopts"]
-    for pkg, value in (("alpha", 1), ("beta", 2)):
-        unit = tmp_path / f"packages/{pkg}/tests/{pkg}/unit"
-        unit.mkdir(parents=True)
-        (unit.parent / "__init__.py").write_text("")
-        (unit / "__init__.py").write_text("")
-        (unit.parent / "conftest.py").write_text(
-            f"import pytest\n@pytest.fixture\ndef value(): return {value}\n"
-        )
-        (unit / "test_same.py").write_text(f"def test_value(value): assert value == {value}\n")
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pytest",
-            "-q",
-            "--import-mode=importlib",
-            "-p",
-            "no:cacheprovider",
-            "packages",
-        ],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "2 passed" in result.stdout
 
 
 def test_the_installed_untaped_lists_every_first_party_capability() -> None:

@@ -16,8 +16,6 @@ import pytest
 from untaped.testing import CliInvoker, ScriptedPromptBackend
 from untaped_awx.cli import app
 
-pytestmark = pytest.mark.integration
-
 
 def _seed_jt(fake: Any, *, id_: int, name: str) -> None:
     fake.seed(

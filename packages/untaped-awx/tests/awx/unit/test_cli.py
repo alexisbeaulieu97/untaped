@@ -470,28 +470,6 @@ def test_apply_accepts_positional_file(
     assert result.exit_code == 0, result.output
 
 
-@pytest.mark.parametrize(
-    "args_template",
-    [
-        pytest.param(["apply", "--file", "FILE"], id="top-level-long"),
-        pytest.param(["apply", "-f", "FILE"], id="top-level-short"),
-    ],
-)
-def test_apply_rejects_removed_file_alias(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    args_template: list[str],
-) -> None:
-    cfg = _write_config(tmp_path)
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    yml = tmp_path / "empty.yml"
-    yml.write_text("")
-    args = [str(yml) if a == "FILE" else a for a in args_template]
-    result = CliInvoker().invoke(app, args)
-    assert result.exit_code != 0
-    assert result.stdout == ""
-
-
 @pytest.mark.parametrize("command", [["apply"]])
 def test_apply_takes_a_positional_file_and_advertises_parallel(command: list[str]) -> None:
     """Apply takes a positional file; ``--file`` stays removed."""

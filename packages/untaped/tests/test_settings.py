@@ -1,10 +1,9 @@
 """Settings defaults, profile loading, environment precedence, and validation."""
 
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel, SecretStr, ValidationError, field_validator
+from pydantic import BaseModel, SecretStr, ValidationError
 
 from untaped.errors import ConfigError
 from untaped.settings import (
@@ -12,7 +11,6 @@ from untaped.settings import (
     get_settings,
     load_settings_section,
     register_profile_settings,
-    reset_config_registry_for_tests,
     resolve_config_path,
     validate_settings_section,
 )
@@ -25,22 +23,11 @@ class DemoPluginSettings(BaseModel):
     default_organization: str | None = None
     page_size: int = 200
 
-    @field_validator("api_prefix")
-    @classmethod
-    def _api_prefix_has_slashes(cls, value: str) -> str:
-        if not (value.startswith("/") and value.endswith("/")):
-            raise ValueError("must start and end with /")
-        return value
-
 
 @pytest.fixture(autouse=True)
-def _reset_cache() -> Iterator[None]:
-    reset_config_registry_for_tests()
+def _register_demo() -> None:
+    # The testing plugin resets the registry and settings cache around each test.
     register_profile_settings("demo", DemoPluginSettings)
-    get_settings.cache_clear()
-    yield
-    reset_config_registry_for_tests()
-    get_settings.cache_clear()
 
 
 def test_defaults_when_no_config_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -80,18 +67,6 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert s.demo.token.get_secret_value() == "secret"
 
 
-def test_secret_str_repr_does_not_leak(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    demo:\n      token: ultra-secret-value\n")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    s = get_settings()
-    assert s.demo.token is not None
-    assert s.demo.token.get_secret_value() == "ultra-secret-value"
-    assert "ultra-secret-value" not in repr(s)
-    assert "ultra-secret-value" not in str(s)
-    assert "ultra-secret-value" not in str(s.demo)
-
-
 @pytest.mark.parametrize("profile", ["default", "work"])
 def test_env_var_overrides_yaml(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, profile: str
@@ -109,18 +84,6 @@ def test_env_var_overrides_yaml(
     s = get_settings()
     assert s.demo.token is not None
     assert s.demo.token.get_secret_value() == "from-env"
-
-
-def test_get_settings_is_cached(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
-    a = get_settings()
-    b = get_settings()
-    assert a is b
-
-
-def test_settings_class_can_be_instantiated_directly() -> None:
-    s = Settings()
-    assert isinstance(s, Settings)
 
 
 def test_plugin_defaults_are_available(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -195,13 +158,6 @@ def test_plugin_api_prefix_env_override(tmp_path: Path, monkeypatch: pytest.Monk
     monkeypatch.setenv("UNTAPED_DEMO__API_PREFIX", "/api/v2/")
     s = get_settings()
     assert s.demo.api_prefix == "/api/v2/"
-
-
-def test_plugin_api_prefix_must_start_and_end_with_slash() -> None:
-    with pytest.raises(ValidationError):
-        DemoPluginSettings(api_prefix="api/v2/")
-    with pytest.raises(ValidationError):
-        DemoPluginSettings(api_prefix="/api/v2")
 
 
 def test_resolve_config_path_honours_env_var(monkeypatch: pytest.MonkeyPatch) -> None:

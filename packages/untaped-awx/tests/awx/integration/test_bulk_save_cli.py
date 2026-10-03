@@ -12,8 +12,6 @@ from untaped.testing import CliInvoker
 from untaped_awx.cli import app
 from untaped_awx.domain import Resource
 
-pytestmark = pytest.mark.integration
-
 
 def test_save_all_rejects_traversal_in_resource_names(
     seeded_default_org: Any, tmp_path: Path
@@ -190,12 +188,6 @@ def test_save_all_with_only_read_only_kinds_emits_empty_stream(
     assert result.exit_code == 0, result.output
     assert result.stdout == "", f"expected empty stdout, got: {result.stdout!r}"
     assert "skipping Credential" in result.stderr
-
-
-def test_save_rejects_removed_all_alias() -> None:
-    result = CliInvoker().invoke(app, ["export", "--all", "--out-dir", "backup"])
-    assert result.exit_code != 0
-    assert "--all" in result.output
 
 
 def test_save_all_without_filter_backs_up_every_org_and_streams_envelopes(

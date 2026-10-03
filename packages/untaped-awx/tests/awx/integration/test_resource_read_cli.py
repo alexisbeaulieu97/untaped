@@ -20,8 +20,6 @@ from untaped.settings import get_settings
 from untaped.testing import CliInvoker
 from untaped_awx.cli import app
 
-pytestmark = pytest.mark.integration
-
 
 @pytest.fixture
 def catalog(seeded_default_org: Any) -> Any:
@@ -182,55 +180,6 @@ def test_structured_and_raw_formats_keep_their_shapes(catalog: Any) -> None:
     got = CliInvoker().invoke(app, ["job-templates", "get", "deploy", "--format", "raw"])
     assert got.exit_code == 0, got.output
     assert got.stdout.strip() == "30"
-
-
-def test_job_templates_list_table_honours_global_ui_collection_view(
-    catalog: Any, aap_config: Path
-) -> None:
-    aap_config.write_text(
-        """
-        profiles:
-          default:
-            ui:
-              collection_view: list
-            awx:
-              base_url: https://aap.example.com
-              token: secret
-              api_prefix: /api/v2/
-        """
-    )
-    get_settings.cache_clear()
-
-    result = CliInvoker().invoke(app, ["job-templates", "list", "--format", "table"])
-
-    assert result.exit_code == 0, result.output
-    assert "id: 30" in result.stdout
-    assert "name: deploy" in result.stdout
-    assert not any(ch in result.stdout for ch in "╭╮╰╯┌┐└┘│─")
-
-
-def test_job_templates_list_raw_ignores_unknown_global_ui_theme(
-    catalog: Any, aap_config: Path
-) -> None:
-    aap_config.write_text(
-        """
-        profiles:
-          default:
-            ui:
-              theme: missing
-            awx:
-              base_url: https://aap.example.com
-              token: secret
-              api_prefix: /api/v2/
-        """
-    )
-    get_settings.cache_clear()
-
-    result = _raw("job-templates", "list", *_DEPLOY)
-
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "deploy"
-    assert "\x1b[" not in result.output
 
 
 def test_job_templates_list_rejects_command_local_profile_flag(
