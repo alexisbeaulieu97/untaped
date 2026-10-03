@@ -25,7 +25,7 @@ from test_management.support import (
 )
 from untaped import bootstrap
 from untaped.config_file import read_config_dict
-from untaped.profile_resolver import classify_active_profile
+from untaped.profile_resolver import profile_override
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, provider_candidate
 
@@ -66,7 +66,7 @@ def test_management_commands_dispatch_through_root(_isolated_config: Path) -> No
     ):
         result = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
         assert result.exit_code == 0, (argv, result.output)
-    assert _flag_profile() is None
+    assert profile_override() is None
 
 
 def test_root_options_work_around_management_commands(_isolated_config: Path) -> None:
@@ -80,7 +80,7 @@ def test_root_options_work_around_management_commands(_isolated_config: Path) ->
         result = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
         assert result.exit_code == 0, (argv, result.output)
         assert "https://w" in result.stdout
-    assert _flag_profile() is None
+    assert profile_override() is None
 
 
 def test_jira_isolation_end_to_end(_isolated_config: Path) -> None:
@@ -215,9 +215,3 @@ def test_ctrl_c_at_a_config_prompt_exits_130() -> None:
         prompt_backend=ScriptedPromptBackend(interrupt=True),
     )
     assert result.exit_code == 130
-
-
-def _flag_profile() -> str | None:
-    """The ``--profile`` override in effect (``None`` once the invocation ends)."""
-    name, source = classify_active_profile({})
-    return name if source == "flag" else None
