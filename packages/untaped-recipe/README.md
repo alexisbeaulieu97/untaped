@@ -94,7 +94,7 @@ after a preview.
 
 ## Reference
 
-The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-recipe/src/untaped_recipe/skills/untaped-recipe/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install recipe --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install-skills)); `untaped recipe COMMAND --help` lists each command's options.
+The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-recipe/src/untaped_recipe/skills/untaped-recipe/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install recipe --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)); `untaped recipe COMMAND --help` lists each command's options.
 
-- [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#recipe) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes)
+- [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#recipe) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/exit-codes.md)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#recipe)

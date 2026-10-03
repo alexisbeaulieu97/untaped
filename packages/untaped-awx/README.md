@@ -7,7 +7,7 @@ To add it to an existing install, see [Getting started](https://github.com/alexi
 resources by name, launches and follows jobs, and tests playbook changes with
 declarative suites. It is for people and agents who manage a shared
 controller from the command line or from CI. `awx test` is
-[experimental](https://github.com/alexisbeaulieu97/untaped/blob/main/README.md#experimental)
+[experimental](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/versioning.md#experimental)
 and may change in a minor release.
 
 ## Set up
@@ -82,7 +82,7 @@ act, so an environment failure is not blamed on your change.
 
 ## Reference
 
-The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-awx/src/untaped_awx/skills/untaped-awx/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install awx --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install-skills)); `untaped awx COMMAND --help` lists each command's options.
+The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-awx/src/untaped_awx/skills/untaped-awx/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install awx --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)); `untaped awx COMMAND --help` lists each command's options.
 
-- [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#awx) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes)
+- [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#awx) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/exit-codes.md)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#awx)

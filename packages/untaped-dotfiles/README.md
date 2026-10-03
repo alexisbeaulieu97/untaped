@@ -11,7 +11,7 @@ decides when it enables the item: `sync` (new versions apply as they
 arrive), `once` (apply, then leave alone) or `manual` (report that a new
 version exists; apply when asked). Items not enabled are ignored.
 
-`dotfiles` is [experimental](https://github.com/alexisbeaulieu97/untaped/blob/main/README.md#experimental) and may change in
+`dotfiles` is [experimental](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/versioning.md#experimental) and may change in
 a minor release.
 
 ## Set up
@@ -78,7 +78,7 @@ user timer on Linux); `untaped dotfiles sync` is what it runs.
 ## Show it in the prompt
 
 `status` reads nothing from the network. It writes the
-[status files](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#dotfiles),
+[status files](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#dotfiles),
 so a prompt segment needs only the shell:
 
 ```toml
@@ -91,7 +91,7 @@ format = "[⇣ $output dotfiles]($style) "
 
 ## Reference
 
-The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/skills/untaped-dotfiles/SKILL.md) is the full reference: every command, the manifest, the policy table and the pitfalls. Install it for your agent with `untaped skills install dotfiles --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install-skills)); `untaped dotfiles COMMAND --help` lists each command's options.
+The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/skills/untaped-dotfiles/SKILL.md) is the full reference: every command, the manifest, the policy table and the pitfalls. Install it for your agent with `untaped skills install dotfiles --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)); `untaped dotfiles COMMAND --help` lists each command's options.
 
-- [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#dotfiles) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes)
+- [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#dotfiles) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/exit-codes.md)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#dotfiles)

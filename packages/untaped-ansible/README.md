@@ -92,8 +92,8 @@ alias applies only at the next scan, so run `source refresh` after either.
 
 ## Reference
 
-The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-ansible/src/untaped_ansible/skills/untaped-ansible/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install ansible --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install-skills)); `untaped ansible COMMAND --help` lists each command's options.
+The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-ansible/src/untaped_ansible/skills/untaped-ansible/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install ansible --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)); `untaped ansible COMMAND --help` lists each command's options.
 
-- [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#ansible) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes)
+- [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#ansible) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/exit-codes.md)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#ansible)
 - [GitHub](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-github/README.md)
