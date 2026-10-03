@@ -1,5 +1,4 @@
 import json
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -17,13 +16,6 @@ from untaped_awx.cli import app
 def _mock_me(mock: respx.Router, path: str = "/api/v2/me/") -> None:
     """``ping`` also authenticates through ``/me/``."""
     mock.get(path).mock(return_value=httpx.Response(200, json={"results": [{"username": "admin"}]}))
-
-
-@pytest.fixture(autouse=True)
-def _reset_settings_cache() -> Iterator[None]:
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
 
 
 def _write_config(tmp_path: Path, *, api_prefix: str | None = None) -> Path:

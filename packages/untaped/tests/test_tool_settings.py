@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -15,7 +13,6 @@ from untaped.settings import (
     get_settings_model,
     register_profile_settings,
     register_state_settings,
-    reset_config_registry_for_tests,
 )
 
 
@@ -33,16 +30,10 @@ class OverlappingDemoState(BaseModel):
 
 
 @pytest.fixture(autouse=True)
-def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
-    reset_config_registry_for_tests()
-    get_settings.cache_clear()
-    yield cfg
-    os.environ.pop("UNTAPED_PROFILE", None)
-    reset_config_registry_for_tests()
-    get_settings.cache_clear()
+    return cfg
 
 
 def test_plugin_profile_settings_are_walked_and_redacted(_isolated_config: Path) -> None:

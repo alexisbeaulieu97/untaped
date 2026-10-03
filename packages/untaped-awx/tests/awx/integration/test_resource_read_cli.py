@@ -182,6 +182,30 @@ def test_structured_and_raw_formats_keep_their_shapes(catalog: Any) -> None:
     assert got.stdout.strip() == "30"
 
 
+def test_job_templates_list_raw_ignores_unknown_global_ui_theme(
+    catalog: Any, aap_config: Path
+) -> None:
+    aap_config.write_text(
+        """
+        profiles:
+          default:
+            ui:
+              theme: missing
+            awx:
+              base_url: https://aap.example.com
+              token: secret
+              api_prefix: /api/v2/
+        """
+    )
+    get_settings.cache_clear()
+
+    result = _raw("job-templates", "list", *_DEPLOY)
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "deploy"
+    assert "\x1b[" not in result.output
+
+
 def test_job_templates_list_rejects_command_local_profile_flag(
     catalog: Any, aap_config: Path
 ) -> None:

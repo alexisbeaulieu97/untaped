@@ -17,7 +17,6 @@ from untaped import bootstrap, cli, repo_cache
 from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate, discover_candidates
 from untaped.git import GitResult
 from untaped.records import table_columns_of
-from untaped.settings import get_settings, reset_config_registry_for_tests
 
 pytest_plugins = ["untaped.testing.plugin"]
 
@@ -81,15 +80,11 @@ def _no_writes_to_the_repo_root() -> Iterator[None]:
 
 
 @pytest.fixture
-def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point the flattened config/profile stack at a temp config file."""
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    reset_config_registry_for_tests()
-    get_settings.cache_clear()
-    yield cfg
-    reset_config_registry_for_tests()
-    get_settings.cache_clear()
+    return cfg
 
 
 @pytest.fixture
