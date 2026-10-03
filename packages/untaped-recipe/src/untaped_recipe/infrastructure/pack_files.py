@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import tomllib
 from functools import cache
-from importlib.metadata import version
+from importlib.metadata import metadata, version
 from pathlib import Path
 
 from untaped_recipe.domain.hook_exports import hook_exports_from_source
@@ -28,6 +28,11 @@ from untaped_recipe.infrastructure.uv_project import check_lock
 def installed_dev_requirement() -> str:
     """The dev-only ``untaped[recipe]`` requirement matching the running installation."""
     return untaped_dev_requirement(version("untaped"))
+
+
+def installed_requires_python() -> str:
+    """The installed ``untaped``'s ``Requires-Python``; a pack locking against it needs it."""
+    return metadata("untaped")["Requires-Python"]
 
 
 def read_pack_manifest(project_root: Path) -> PackManifest:

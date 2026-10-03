@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import tomllib
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 import release
+from packaging.specifiers import SpecifierSet
+from packaging.version import Version
 
 from repo.support import FIRST_PARTY, PACKAGES, REPO_ROOT
 
@@ -127,6 +130,25 @@ def test_capability_packages_declare_their_entry_point_and_pin_core() -> None:
         f"{project['name']}=={version}" for project in projects.values()
     )
     assert "entry-points" not in core
+
+
+def test_every_project_and_the_plugin_template_share_a_python_floor_above_3_14_0() -> None:
+    # uv treats a 3.14.0rcN interpreter as 3.14.0, so a ">=3.14" floor lets it
+    # pick a release candidate. A plugin locking against untaped needs a floor
+    # at least as high as untaped's, so the example and the template match.
+    floors = {
+        name: project["requires-python"] for name, project in release.packages(REPO_ROOT).items()
+    }
+    example = tomllib.loads((REPO_ROOT / "examples/untaped-hello/pyproject.toml").read_text())
+    floors["examples/untaped-hello"] = example["project"]["requires-python"]
+    template = re.search(
+        r'^requires-python = "(.+)"$', (REPO_ROOT / "docs/plugins.md").read_text(), re.M
+    )
+    assert template is not None
+    floors["docs/plugins.md"] = template.group(1)
+    floor = floors["untaped"]
+    assert floors == dict.fromkeys(floors, floor)
+    assert Version("3.14.0") not in SpecifierSet(floor)
 
 
 def test_dependent_capabilities_pin_github() -> None:

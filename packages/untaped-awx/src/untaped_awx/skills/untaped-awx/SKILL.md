@@ -105,6 +105,10 @@ previews once and asks once, No by default.
 
 ## Pitfalls
 
+- Read stderr as well as the rows; under `--format json` it is JSON Lines.
+  Pass on what the user would want to know about, with any hint, whatever
+  its `level`: a deprecated setting or flag, a skipped or partial result, a
+  clamped option. Leave out progress and routine lines.
 - Read `--format json` or `yaml`, not tables. `--format pipe` feeds a
   `--stdin` consumer of the same kind.
 - Keep `$encrypted$` placeholders as they are; they preserve stored secrets.

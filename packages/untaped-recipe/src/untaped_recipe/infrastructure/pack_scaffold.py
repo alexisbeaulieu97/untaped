@@ -21,6 +21,7 @@ from untaped_recipe.domain.paths import safe_library_name
 from untaped_recipe.errors import RecipeError
 from untaped_recipe.infrastructure.pack_files import (
     installed_dev_requirement,
+    installed_requires_python,
     read_pack_manifest,
 )
 from untaped_recipe.infrastructure.project_toml import read_toml_document, toml_table
@@ -85,7 +86,7 @@ def scaffold_pack(dest: Path, name: str, *, lock: bool = True) -> Path:
             "[project]\n"
             f'name = "untaped-recipe-{pack_name}"\n'
             'version = "0.1.0"\n'
-            'requires-python = ">=3.14"\n'
+            f'requires-python = "{installed_requires_python()}"\n'
             "dependencies = []\n\n"
             "[dependency-groups]\n"
             f'dev = ["{_HOOK_API_DEV_REQUIREMENT}", "pytest"]\n\n'
