@@ -223,7 +223,15 @@ def build_root_app(
     _mount(root, build_root_config_app(shell=SHELL_SPEC, result=result), name="config")
     _mount(root, build_root_profile_app(command=SHELL_NAME), name="profile")
     _mount(root, build_root_skills_app(shell=SHELL_SPEC, result=result), name="skills")
-    _mount(root, build_root_doctor_app(shell=SHELL_SPEC, result=result), name="doctor")
+    _mount(
+        root,
+        build_root_doctor_app(
+            shell=SHELL_SPEC,
+            result=result,
+            builtin_for=lambda name: resolve_command(root, name),
+        ),
+        name="doctor",
+    )
     _mount(root, build_root_setup_app(shell=SHELL_SPEC, result=result), name="setup")
     _mount(root, build_root_auth_app(result=result), name="auth")
     _mount(

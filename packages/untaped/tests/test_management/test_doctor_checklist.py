@@ -58,7 +58,9 @@ def _specs() -> tuple[CapabilitySpec, ...]:
 
 
 def _doctor(*args: str) -> CliResult:
-    app = build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=compose(*_specs()))
+    app = build_root_doctor_app(
+        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(*_specs())
+    )
     return CliInvoker().invoke(app, list(args))
 
 
@@ -101,13 +103,14 @@ def test_a_fix_keeps_a_profile_the_flag_chose() -> None:
 def test_the_footer_counts_every_status_and_a_failure_exits_1() -> None:
     result = _doctor()
     assert result.exit_code == 1
-    footer = result.stderr.splitlines()[-1]
-    assert footer.startswith("doctor: ")
+    footer = next(line for line in result.stderr.splitlines() if line.startswith("doctor: "))
     assert footer.endswith(" pass, 1 warn, 1 fail")
 
 
 def test_a_healthy_run_prints_its_footer_too() -> None:
-    app = build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=compose())
+    app = build_root_doctor_app(
+        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose()
+    )
     result = CliInvoker().invoke(app, [])
     assert result.exit_code == 0, result.output
     assert result.stderr.splitlines()[-1].endswith(" pass")
@@ -170,8 +173,12 @@ def test_structured_rows_keep_their_shape_and_the_footer_is_a_json_line(
         "fix": ["--profile", "default", "skills", "update"],
         "automatic": True,
     }
-    footer = json.loads(result.stderr.splitlines()[-1])
-    assert footer["message"].startswith("doctor: ")
+    lines = [json.loads(line) for line in result.stderr.splitlines()]
+    assert lines[-2]["message"].startswith("doctor: ")
+    assert lines[-1] == {
+        "level": "hint",
+        "message": "run `untaped doctor fix` to apply 1 automatic fix; 1 fix needs you",
+    }
 
 
 @pytest.mark.parametrize("columns", ["80", "40"])
@@ -185,7 +192,9 @@ def test_a_long_detail_wraps_inside_its_group(
             check("alpha.long", warn=True, detail="a detail " * 12, title="alpha long"),
         ),
     )
-    app = build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=compose(spec))
+    app = build_root_doctor_app(
+        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(spec)
+    )
     lines = CliInvoker().invoke(app, []).stdout.splitlines()
     groups = [line for line in lines if line and not line.startswith(" ")]
     assert groups == ["untaped", "alpha"]

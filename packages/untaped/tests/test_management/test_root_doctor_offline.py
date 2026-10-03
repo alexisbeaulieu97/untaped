@@ -37,7 +37,9 @@ class ApiProfile(BaseModel):
 
 
 def _rows(*specs: Any) -> list[dict[str, Any]]:
-    app = build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=compose(*specs))
+    app = build_root_doctor_app(
+        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(*specs)
+    )
     result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
     rows: list[dict[str, Any]] = json.loads(result.stdout)
