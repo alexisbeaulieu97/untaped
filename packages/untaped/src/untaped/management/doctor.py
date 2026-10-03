@@ -5,11 +5,11 @@ capability's health checks OFFLINE — config-file reads plus in-process model
 validation only, never network I/O. ``--online`` adds the checks
 capabilities contribute with ``DoctorCheck(online=True)``, which contact the
 configured services. A check's ``DoctorResult.fix`` becomes the row's
-``fix``: a complete argv (``--profile`` first) to run after ``untaped``; a
-table appends it to the row's detail instead. A row's ``automatic`` says
-the fix is safe to run unattended (see ``DoctorResult``). Each row is
-isolated: invalid settings for one capability surface as failed rows while
-every other row still runs.
+``fix``: a complete argv (``--profile`` first) to run after ``untaped``;
+the human view shows it under its row as the command line to type. A row's
+``automatic`` says the fix is safe to run unattended (see ``DoctorResult``).
+Each row is isolated: invalid settings for one capability surface as failed
+rows while every other row still runs.
 Quarantine records render as failed rows (nonzero exit). A config file other
 users can read renders as a ``warn`` row, which does not fail the run; so do
 profile keys no settings model declares,
@@ -51,9 +51,9 @@ from untaped.config_file import read_config_dict
 from untaped.config_schema import walk_settings
 from untaped.errors import ConfigError, ExitCode, first_validation_error
 from untaped.http import resolve_verify
-from untaped.management._render import emit_isolated
+from untaped.management._render import emit_check_list, emit_isolated
 from untaped.management.skills import composed_skills
-from untaped.messages import command_argv, command_line, plural
+from untaped.messages import command_argv, command_line, summary
 from untaped.profile_resolver import (
     classify_active_profile,
     profile_override,
@@ -76,6 +76,7 @@ from untaped.theme import OutputFormat, UiSettings, resolve_theme
 _PASS = "pass"
 _FAIL = "fail"
 _WARN = "warn"
+_STATUSES = (_PASS, _WARN, _FAIL)
 _PLACEHOLDER = re.compile(r"<[A-Z][A-Z0-9_]*>")
 
 
@@ -133,35 +134,27 @@ def _run(
 def report_check_rows(
     rows: list[dict[str, object]], *, op: str, fmt: OutputFormat, columns: list[str] | None
 ) -> None:
-    """Emit ``untaped.doctor_check`` rows; exit 1 naming ``op`` when any failed.
+    """Emit ``untaped.doctor_check`` rows and an ``op`` footer; exit 1 when any failed.
 
-    A table leaves a passing row's detail blank; the record keeps it.
+    ``table`` prints the checklist; with ``--columns`` it prints the table,
+    whose ``fix`` is the command line to type.
     """
-    if fmt == "table":
-        profile = selected_profile()
-        shown = [_table_row(row, profile) for row in rows]
+    profile = selected_profile()
+    if fmt == "table" and columns is None:
+        emit_check_list(rows, run_line=lambda argv: run_line(argv, profile))
+        echo(err=True)
     else:
-        shown = rows
-    emit_isolated(
-        shown,
-        fmt=fmt,
-        columns=columns,
-        kind="untaped.doctor_check",
-        table_columns=["check", "capability", "status", "title", "detail"],
-    )
-    failed = [row for row in rows if row["status"] == _FAIL]
-    if failed:
-        echo(f"{op}: {len(failed)} of {plural(len(rows), 'check')} failed", err=True)
+        shown = [_table_row(row, profile) for row in rows] if fmt == "table" else rows
+        emit_isolated(shown, fmt=fmt, columns=columns, kind="untaped.doctor_check")
+    counts = {status: sum(row["status"] == status for row in rows) for status in _STATUSES}
+    echo(summary(op, counts), err=True)
+    if counts[_FAIL]:
         raise SystemExit(ExitCode.FAILURE)
 
 
 def _table_row(row: dict[str, object], profile: str) -> dict[str, object]:
-    if row["status"] == _PASS:
-        return {**row, "detail": ""}
     fix = row.get("fix")
-    if not isinstance(fix, list):
-        return row
-    return {**row, "detail": f"{row['detail']}; run `{run_line(fix, profile)}`"}
+    return {**row, "fix": run_line(fix, profile) if isinstance(fix, list) and fix else ""}
 
 
 def run_line(argv: list[str], profile: str) -> str:
