@@ -324,5 +324,5 @@ until the next major release.
 **Retired key**: an old name of a setting that is no longer read;
 `untaped config migrate` still renames it.
 
-**Deprecated setting**: a setting still read with its current meaning, with a
-warning, until the next major release removes it.
+**Deprecated setting**: a setting still read as before, with a warning,
+until the next major release removes it.

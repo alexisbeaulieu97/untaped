@@ -32,7 +32,7 @@ still renames it.
 
 Two installs that share one config file can disagree about a renamed setting:
 writes keep keys a version does not know, but an install older than the
-rename reads the new key's default. Run `config migrate` once every install
+rename ignores the new key and uses the default. Run `config migrate` once every install
 is upgraded, or give the second install its own `UNTAPED_CONFIG` (its state
 follows it); `untaped doctor` reports keys the running version ignores.
 
