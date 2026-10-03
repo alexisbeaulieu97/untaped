@@ -243,6 +243,29 @@ def test_an_inherited_token_command_hides_the_env_var(
     assert "env" not in backend.offered[0]
 
 
+def test_an_unreachable_replaced_store_only_warns(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "secret-tool", "pass")
+    envy = make_spec("envy", profile_model=EnvProfile)
+    assert _auth_set(envy, "old").exit_code == 0  # stored with secret-tool
+    # The Secret Service goes away: setup falls through to pass.
+    monkeypatch.setenv("STUB_MODE", "no-service")
+    backend = ChoiceRecorder(
+        texts=["default", "https://envy"],
+        multiselects=[["envy"]],
+        selections=["store"],
+        secrets=["new"],
+    )
+    result = _setup_specs(backend, envy)
+    assert result.exit_code == 0, result.output
+    assert "could not delete the replaced envy token from secret-tool" in result.stderr
+    assert "delete it yourself" in result.stderr
+    section = read_config_dict(_isolated_config)["profiles"]["default"]["envy"]
+    assert section["token_command"] == ["pass", "show", "untaped/default/envy"]
+    assert stores.entries() == {"default/envy": "old", "untaped/default/envy": "new"}
+
+
 def test_a_new_command_deletes_the_replaced_stored_token(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
