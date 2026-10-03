@@ -1,4 +1,4 @@
-"""Structure lint: every capability has the same shape (``docs/plugins.md#conventions``).
+"""Structure lint: every capability has the same shape (``docs/reference/conventions.md``).
 
 For one capability package this flags:
 

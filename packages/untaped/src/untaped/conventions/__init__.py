@@ -1,4 +1,6 @@
-"""Convention checks for capabilities and the root shell (``docs/plugins.md#enforcement``).
+"""Convention checks for capabilities and the root shell.
+
+See ``docs/reference/conventions.md#enforcement``.
 
 Each check reads one installed package: its command subtree from the real
 composition and its own source files, wherever they are installed, so a
