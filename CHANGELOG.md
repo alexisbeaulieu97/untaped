@@ -26,6 +26,10 @@
   is never picked; plugins and recipe packs should raise `requires-python`
   to `>=3.14.1`.
   ([#455](https://github.com/alexisbeaulieu97/untaped/pull/455))
+- awx: `apply`, `patch` and `edit` outcome records now list
+  `dropped_undeclared_secrets`, the `$encrypted$` placeholders dropped from
+  fields untaped doesn't treat as secrets.
+  ([#461](https://github.com/alexisbeaulieu97/untaped/pull/461))
 
 ## 10.0.0
 
