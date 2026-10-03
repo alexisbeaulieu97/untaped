@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from typing import Any
 
 import pytest
@@ -10,7 +9,6 @@ import pytest
 from untaped_awx.application.suites.resolver import (
     KNOWN_LAUNCH_FIELDS,
     ResolveCasePayload,
-    UnknownLaunchFieldWarning,
 )
 from untaped_awx.domain.suite import Case, RefSentinel
 from untaped_awx.errors import ResourceNotFoundError
@@ -34,12 +32,14 @@ class StubFkResolver:
 
 def _resolve(case_body: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
     fk = kwargs.pop("fk", StubFkResolver())
+    warn = kwargs.pop("warn", lambda _message: None)
     defaults_body = kwargs.pop("defaults", None)
     case = Case.model_validate(case_body)
     defaults = Case.model_validate(defaults_body) if defaults_body is not None else None
     resolver = ResolveCasePayload(
         fk,
         catalog=AwxResourceCatalog(),
+        warn=warn,
         default_organization=kwargs.pop("default_org", None),
     )
     return resolver(
@@ -255,52 +255,51 @@ def test_user_dict_with_name_kind_keys_left_alone() -> None:
 # ---- unknown-field warnings ---------------------------------------------
 
 
-def test_unknown_launch_field_emits_warning() -> None:
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        payload = _resolve({"launch": {"frooks": 4}})
+def test_unknown_launch_field_warns() -> None:
+    warned: list[str] = []
+    payload = _resolve({"launch": {"frooks": 4}}, warn=warned.append)
     assert payload["frooks"] == 4
-    assert any(
-        isinstance(w.message, UnknownLaunchFieldWarning) and "frooks" in str(w.message)
-        for w in caught
+    assert [w for w in warned if "frooks" in w]
+
+
+def test_a_defaults_typo_warns_once_however_many_cases_share_it() -> None:
+    warned: list[str] = []
+    resolver = ResolveCasePayload(
+        StubFkResolver(), catalog=AwxResourceCatalog(), warn=warned.append
     )
+    defaults = Case.model_validate({"launch": {"frooks": 4}})
+    for name in ("a", "b"):
+        resolver(
+            JOB_TEMPLATE_SPEC, Case.model_validate({"launch": {"limit": name}}), defaults=defaults
+        )
+    assert warned == ["unknown launch field 'frooks' — typo? passing through to AWX"]
 
 
 def test_known_field_emits_no_warning() -> None:
     """Sanity check: every documented field should be in the allowlist."""
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        _resolve({"launch": {"extra_vars": {}, "limit": "x", "job_tags": "smoke"}})
-    assert not any(isinstance(w.message, UnknownLaunchFieldWarning) for w in caught)
+    warned: list[str] = []
+    _resolve({"launch": {"extra_vars": {}, "limit": "x", "job_tags": "smoke"}}, warn=warned.append)
+    assert warned == []
 
 
 def test_resource_only_fk_emits_unknown_field_warning() -> None:
     """``project`` is a resource FK but not a launch field — must warn, not resolve."""
     fk = StubFkResolver()
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        payload = _resolve({"launch": {"project": "Some Project"}}, fk=fk)
+    warned: list[str] = []
+    payload = _resolve({"launch": {"project": "Some Project"}}, fk=fk, warn=warned.append)
     # Project string passes through (no resolution attempted).
     assert payload["project"] == "Some Project"
     assert fk.calls == []
-    # Unknown-field warning fires for resource-only FKs.
-    assert any(
-        isinstance(w.message, UnknownLaunchFieldWarning) and "project" in str(w.message)
-        for w in caught
-    )
+    assert [w for w in warned if "project" in w]
 
 
 def test_organization_resource_fk_does_not_resolve_at_launch() -> None:
     fk = StubFkResolver()
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        payload = _resolve({"launch": {"organization": "Default"}}, fk=fk)
+    warned: list[str] = []
+    payload = _resolve({"launch": {"organization": "Default"}}, fk=fk, warn=warned.append)
     assert payload["organization"] == "Default"
     assert fk.calls == []
-    assert any(
-        isinstance(w.message, UnknownLaunchFieldWarning) and "organization" in str(w.message)
-        for w in caught
-    )
+    assert [w for w in warned if "organization" in w]
 
 
 def test_known_launch_fields_includes_core_set() -> None:

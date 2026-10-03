@@ -8,7 +8,6 @@ that's the only path that descends into nested values.
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Callable, Mapping
 from functools import partial
 from typing import Any
@@ -21,7 +20,7 @@ from untaped_awx.domain.spec import FkRef
 from untaped_awx.domain.suite import WORKFLOW_TEMPLATE, Case, RefSentinel
 
 # v2.x AWX launch endpoint payload fields. Anything outside this set
-# (and not a declared FK) triggers an UnknownLaunchFieldWarning so users
+# (and not a declared FK) gets an "unknown launch field" warning so users
 # spot typos like ``extra_var:`` without us blocking new AWX additions.
 KNOWN_LAUNCH_FIELDS: frozenset[str] = frozenset(
     {
@@ -53,10 +52,6 @@ WORKFLOW_LAUNCH_FIELDS: frozenset[str] = frozenset(
 _KNOWN_BY_KIND = {WORKFLOW_TEMPLATE: WORKFLOW_LAUNCH_FIELDS}
 
 
-class UnknownLaunchFieldWarning(UserWarning):
-    """Emitted when a case body has a field outside AWX's documented set."""
-
-
 _LIST_MERGE_FIELDS = frozenset({"labels", "credentials", "instance_groups"})
 
 
@@ -66,11 +61,20 @@ class ResolveCasePayload:
         fk: FkLookup,
         *,
         catalog: Catalog,
+        warn: Callable[[str], None],
         default_organization: str | None = None,
     ) -> None:
         self._fk = fk
         self._catalog = catalog
+        self._warn = warn
+        self._warned: set[str] = set()
         self._default_org = default_organization
+
+    def _warn_once(self, message: str) -> None:
+        """Warn about each message once per run, not once per case that repeats it."""
+        if message not in self._warned:
+            self._warned.add(message)
+            self._warn(message)
 
     def __call__(
         self,
@@ -91,7 +95,7 @@ class ResolveCasePayload:
         )
         fk_index = self.fk_index_for(spec)
         known = _KNOWN_BY_KIND.get(spec.kind, KNOWN_LAUNCH_FIELDS)
-        _emit_unknown_field_warnings(merged, fk_index, known)
+        _warn_unknown_fields(merged, fk_index, known, self._warn_once)
         resolved_top = self._resolve_top_level_fks(merged, fk_index, organization)
         result: dict[str, Any] = _walk_and_resolve_refs(
             resolved_top, partial(self._resolve_ref, organization=organization)
@@ -116,7 +120,7 @@ class ResolveCasePayload:
           JobTemplate).
 
         Resource-only FKs left out of this index fall through to the
-        ``UnknownLaunchFieldWarning`` path, which is the correct
+        unknown-launch-field warning, which is the correct
         diagnostic for "AWX won't accept this on launch".
         """
         launch_action = next((a for a in spec.actions if a.name == "launch"), None)
@@ -267,20 +271,15 @@ def _dedup_key(value: Any) -> Any:
     return value
 
 
-def _emit_unknown_field_warnings(
-    payload: Mapping[str, Any], fk_index: Mapping[str, FkRef], known: frozenset[str]
+def _warn_unknown_fields(
+    payload: Mapping[str, Any],
+    fk_index: Mapping[str, FkRef],
+    known: frozenset[str],
+    warn: Callable[[str], None],
 ) -> None:
     for field in payload:
-        if field in known or field in fk_index:
-            continue
-        # ``stacklevel`` is intentionally the default — the
-        # :class:`UnknownLaunchFieldWarning` category, not the call site,
-        # is what users filter on.
-        warnings.warn(
-            f"unknown launch field {field!r} — typo? passing through to AWX",
-            UnknownLaunchFieldWarning,
-            stacklevel=2,
-        )
+        if field not in known and field not in fk_index:
+            warn(f"unknown launch field {field!r} — typo? passing through to AWX")
 
 
 def _walk_and_resolve_refs(

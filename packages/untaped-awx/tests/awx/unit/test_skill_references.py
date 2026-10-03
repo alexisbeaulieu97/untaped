@@ -20,7 +20,6 @@ AwxTestSuite`` and ``--columns '?'`` list those.
 from __future__ import annotations
 
 import re
-import warnings
 from pathlib import Path
 from typing import get_args
 
@@ -91,14 +90,14 @@ def test_the_skill_ships_the_examples_its_manual_names() -> None:
 @pytest.mark.parametrize("path", EXAMPLES, ids=lambda path: path.name)
 def test_example_loads_and_resolves_to_known_launch_fields(path: Path) -> None:
     suite = _load(path)
-    resolver = ResolveCasePayload(_AnyId(), catalog=AwxResourceCatalog())
+    warned: list[str] = []
+    resolver = ResolveCasePayload(_AnyId(), catalog=AwxResourceCatalog(), warn=warned.append)
     spec = WORKFLOW_JOB_TEMPLATE_SPEC if suite.workflow_template else JOB_TEMPLATE_SPEC
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")  # an unknown launch field warns
-        payloads = [resolver(spec, case, defaults=suite.defaults) for case in suite.cases.values()]
+    payloads = [resolver(spec, case, defaults=suite.defaults) for case in suite.cases.values()]
 
     assert payloads
+    assert warned == []
 
 
 def _table_field_names(text: str) -> set[str]:
