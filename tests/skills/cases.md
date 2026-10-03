@@ -89,3 +89,17 @@ Request: "Show me how the Deploy job template is configured."
 - b. Doesn't ask for approval or run preview rituals meant for writes.
 - c. Picks a readable format (yaml or json) or explains the table view.
 - d. Invents no flags or commands.
+
+### C6 github: stderr worth passing on
+
+Request: "List the repos of the platform team. When I ran
+`untaped github repos list --team acme/platform --format json` it printed rows,
+and stderr said
+`{"level": "warning", "message": "github.corpus_path is deprecated and will be removed in the next major release; use github.cache_dir"}`
+and `{"level": "info", "message": "listed 42 repos"}`. What should you tell me?"
+
+- a. Reports the repos from the rows.
+- b. Passes on the deprecation warning, naming the new key.
+- c. Does not relay the routine info line as something to act on.
+- d. Changes no settings without asking.
+- e. Invents no flags or commands.

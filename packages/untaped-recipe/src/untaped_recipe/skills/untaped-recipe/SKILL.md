@@ -102,6 +102,10 @@ Each `apply` row has the target's absolute `target_path` and an `action`:
 
 ## Pitfalls
 
+- Read stderr as well as the rows; under `--format json` it is JSON Lines.
+  Pass on to the user, quoted with its hint, what they would act on: a
+  deprecated setting or flag, a skipped or partial result, a clamped option.
+  Leave out progress and routine info lines.
 - `--dry-run` is not a way to inspect an untrusted pack: hooks run to compute
   the plan, and so do golden tests (`test`). Inspect with `packs get` and
   `validate`.

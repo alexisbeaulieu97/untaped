@@ -80,6 +80,10 @@ untaped jira issues search --project OPS --status 'In Review' --format pipe \
 
 ## Pitfalls
 
+- Read stderr as well as the rows; under `--format json` it is JSON Lines.
+  Pass on to the user, quoted with its hint, what they would act on: a
+  deprecated setting or flag, a skipped or partial result, a clamped option.
+  Leave out progress and routine info lines.
 - `issues search` with no `--jql` and no shortcut flags searches
   `jira.assigned_jql`, not every issue.
 - Transition names differ between workflows and statuses; take them from

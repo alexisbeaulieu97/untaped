@@ -108,6 +108,10 @@ strict; exit 5 never means "no results"), 130 interrupted.
 
 ## Pitfalls
 
+- Read stderr as well as the rows; under `--format json` it is JSON Lines.
+  Pass on to the user, quoted with its hint, what they would act on: a
+  deprecated setting or flag, a skipped or partial result, a clamped option.
+  Leave out progress and routine info lines.
 - Sweep patterns are POSIX extended regexes: `a|b` alternates, `\(` is a
   literal parenthesis, and `\d` does not work (use `[0-9]`).
 - `--any` ORs the positive predicates only; `--not-grep` and `--lacks-file`
