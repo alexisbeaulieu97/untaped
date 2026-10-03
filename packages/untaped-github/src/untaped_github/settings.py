@@ -15,8 +15,8 @@ class SweepSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    max_age_seconds: int = 3600
-    sync_concurrency: int = 12
+    max_age_seconds: int = Field(default=3600, ge=0)
+    sync_concurrency: int = Field(default=12, ge=1)
 
 
 class InventorySettings(BaseModel):
