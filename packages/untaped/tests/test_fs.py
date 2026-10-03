@@ -71,6 +71,13 @@ def test_atomic_write_preserves_crlf_verbatim(tmp_path: Path) -> None:
     assert target.read_bytes() == b"a\r\nb\r\n"
 
 
+def test_atomic_write_writes_bytes_verbatim(tmp_path: Path) -> None:
+    target = tmp_path / "blob.bin"
+    atomic_write(target, b"\xff\x00a\r\n", mode=0o700)
+    assert target.read_bytes() == b"\xff\x00a\r\n"
+    assert target.stat().st_mode & 0o777 == 0o700
+
+
 def test_atomic_write_leaves_no_temp_file_on_success(tmp_path: Path) -> None:
     atomic_write(tmp_path / "out.txt", "x")
     assert [p.name for p in tmp_path.iterdir()] == ["out.txt"]
