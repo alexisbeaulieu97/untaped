@@ -247,7 +247,7 @@ def test_a_hung_store_times_out_with_the_likely_cause(
     _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("STUB_MODE", "hang")
-    monkeypatch.setattr(auth, "COMMAND_TIMEOUT_SECONDS", 0.5)
+    monkeypatch.setattr(auth, "_TIMEOUT_SECONDS", 0.5)
     result = _auth("set", "svc", "--stdin", input="tok")
     assert result.exit_code == 5
     assert "timed out after 0.5s" in result.stderr
@@ -371,30 +371,59 @@ def test_unset_deletes_the_entry_and_the_command(
     assert _config(_isolated_config)["profiles"]["default"] == {}
 
 
+@pytest.mark.parametrize(
+    ("store", "macos", "command"),
+    [
+        ("pass", False, "[pass, show, untaped/default/svc]"),
+        ("secret-tool", False, "[secret-tool, lookup, service, untaped, account, default/svc]"),
+        ("security", True, "[security, find-generic-password, -s, untaped, -a, default/svc, -w]"),
+    ],
+)
 def test_unset_cleans_up_when_the_entry_is_already_gone(
-    _isolated_config: Path, stores: FakeStores
+    _isolated_config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    store: str,
+    macos: bool,
+    command: str,
 ) -> None:
+    install_fake_stores(tmp_path, monkeypatch, store, macos=macos)
     write_config(
-        _isolated_config,
-        "profiles:\n  default:\n    svc:\n      token_command: [pass, show, untaped/default/svc]\n",
+        _isolated_config, f"profiles:\n  default:\n    svc:\n      token_command: {command}\n"
     )
     result = _auth("unset", "svc", "--yes", "--format", "json")
     assert result.exit_code == 0, result.output
-    assert "the svc token was already gone from pass (untaped/default/svc)" in result.stderr
+    assert json.loads(result.stdout)["action"] == "gone"
+    assert "the svc token was already gone from" in result.stderr
+    assert "deleted" not in result.stderr
     assert _config(_isolated_config)["profiles"]["default"] == {}
+
+
+def test_unset_keeps_everything_when_the_store_is_unreachable(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "secret-tool")
+    assert _auth("set", "svc", "--stdin", input="tok").exit_code == 0
+    # No Secret Service: secret-tool exits 1, as for a missing item, but says why.
+    monkeypatch.setenv("STUB_MODE", "no-service")
+    result = _auth("unset", "svc", "--yes")
+    assert result.exit_code == 4
+    assert "'secret-tool' exited with status 1" in result.stderr
+    assert stores.entries() == {"default/svc": "tok"}
+    assert "token_command" in _config(_isolated_config)["profiles"]["default"]["svc"]
 
 
 def test_unset_when_the_store_tool_is_gone_keeps_the_command(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch)
+    command = "[secret-tool, lookup, service, untaped, account, default/svc]"
     write_config(
-        _isolated_config,
-        "profiles:\n  default:\n    svc:\n      token_command: [pass, show, untaped/default/svc]\n",
+        _isolated_config, f"profiles:\n  default:\n    svc:\n      token_command: {command}\n"
     )
     result = _auth("unset", "svc", "--yes")
     assert result.exit_code == 4
-    assert "'pass' not found on PATH" in result.stderr
+    assert "'secret-tool' not found on PATH" in result.stderr
     assert "token_command" in _config(_isolated_config)["profiles"]["default"]["svc"]
 
 

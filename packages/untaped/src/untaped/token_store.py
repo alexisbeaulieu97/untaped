@@ -42,6 +42,7 @@ _PROBE_TIMEOUT_SECONDS = 5.0
 _SEGMENT = r"[A-Za-z0-9_-][A-Za-z0-9._-]*"
 _ENTRY = re.compile(f"{_SEGMENT}/{_SEGMENT}")
 _LOCKED = "User interaction is not allowed"
+_SECURITY_NOT_FOUND = 44
 
 
 @dataclass(frozen=True)
@@ -85,9 +86,19 @@ class TokenStore:
                 "bad value; the config was not changed, so store the token again"
             )
 
-    def has(self, entry: str) -> bool:
-        """Whether the entry exists: its lookup exits 0 (a locked store raises)."""
-        return _run(self.read_argv(entry), check=False).returncode == 0
+    def gone(self, entry: str) -> bool:
+        """Whether the store itself reports the entry missing.
+
+        Only the store's own not-found signal counts, never an exit code an
+        unreachable store shares: ``security`` exits 44, ``secret-tool``
+        exits 1 with nothing on stderr, and ``pass`` has no ``.gpg`` file.
+        """
+        if self.name == "pass":
+            return not (_password_store() / SERVICE / f"{entry}.gpg").is_file()
+        completed = _run(self.read_argv(entry), check=False, capture_stderr=True)
+        if self.name == "security":
+            return completed.returncode == _SECURITY_NOT_FOUND
+        return completed.returncode == 1 and not completed.stderr.strip()
 
     def delete(self, entry: str) -> None:
         """Remove the entry."""
@@ -106,8 +117,7 @@ class TokenStore:
         if self.name == "security":
             return _is_macos()
         if self.name == "pass":
-            store = os.environ.get("PASSWORD_STORE_DIR") or str(Path.home() / ".password-store")
-            return (Path(store) / ".gpg-id").is_file()
+            return (_password_store() / ".gpg-id").is_file()
         # A missing item exits 1 silently; no Secret Service prints an error
         # (and may exit 1 too), so stderr decides.
         probe = ["secret-tool", "lookup", "service", f"{SERVICE}-probe", "account", "probe"]
@@ -189,19 +199,29 @@ def _candidate_entries(store: TokenStore, argv: Sequence[str]) -> list[str]:
     return [argv[i + 1] for i, part in enumerate(argv[:-1]) if part in ("-a", "account")]
 
 
+def _password_store() -> Path:
+    return Path(os.environ.get("PASSWORD_STORE_DIR") or Path.home() / ".password-store")
+
+
 def _is_macos() -> bool:
     return sys.platform == "darwin"
 
 
 def _run(
-    argv: list[str], *, stdin: str | None = None, check: bool = True
+    argv: list[str],
+    *,
+    stdin: str | None = None,
+    check: bool = True,
+    capture_stderr: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """Run a store command; ``check`` raises on a non-zero exit."""
     program = argv[0]
     # `security` is read for the locked-keychain message, and `-i` input
     # (the hex token) must never be echoed back.
     secure = program == "security"
-    completed = run_command(argv, label=repr(program), stdin=stdin, capture_stderr=secure)
+    completed = run_command(
+        argv, label=repr(program), stdin=stdin, capture_stderr=capture_stderr or secure
+    )
     if secure and (_LOCKED in completed.stderr or _LOCKED in completed.stdout):
         raise ConfigError(
             "the macOS keychain is locked; run `security unlock-keychain` and try again",

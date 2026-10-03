@@ -30,7 +30,7 @@ from untaped.config_file import read_config_dict
 from untaped.doctor_checks import service_configured
 from untaped.errors import ConfigError
 from untaped.management.auth import (
-    drop_token_command,
+    delete_stored_token,
     inherited_from_default,
     plaintext_token,
     save_token,
@@ -47,7 +47,7 @@ from untaped.profile_resolver import (
 from untaped.prompts import PromptChoice
 from untaped.settings import active_settings_layout
 from untaped.theme import OutputFormat
-from untaped.token_store import TokenStore, pick_store
+from untaped.token_store import TokenStore, entry_name, pick_store, preset_entry
 from untaped.ui import UiContext, ui_context
 
 _SERVICE_FIELDS = frozenset({"base_url", "token"})
@@ -88,7 +88,7 @@ def _run(
         values = _profile_view(raw, profile)
         own = active_settings_layout().profile_data(raw, profile) or {}
         current = {
-            name: _current(spec, values.get(spec.config_section), own, profile)
+            name: _current(spec, values.get(spec.config_section), own, profile, raw)
             for name, spec in services.items()
         }
         selected = ui.multiselect(
@@ -154,11 +154,11 @@ class _ServiceState:
     """Whether ``default``'s plaintext token wins over anything set in the profile."""
 
     inherited_command: bool = False
-    """Whether ``default``'s ``token_command`` applies to the profile."""
+    """Whether ``default`` has a ``token_command``, which applies once the profile's is gone."""
 
 
 def _current(
-    spec: CapabilitySpec, node: object, own: dict[str, Any], profile: str
+    spec: CapabilitySpec, node: object, own: dict[str, Any], profile: str, raw: dict[str, Any]
 ) -> _ServiceState:
     data = node if isinstance(node, dict) else {}
     stored = data.get("base_url")
@@ -178,8 +178,8 @@ def _current(
         service_configured(settings, section=section),
         plaintext_token(own, section),
         own_command or None,
-        inherited_from_default(section, profile, "token"),
-        own_command is None and inherited_from_default(section, profile, "token_command"),
+        inherited_from_default(section, profile, "token", raw),
+        inherited_from_default(section, profile, "token_command", raw),
     )
 
 
@@ -198,19 +198,20 @@ def _configure(
     if has_command and current.inherited_token:
         ui.message(
             "info",
-            f"{section}.token is set in profile {DEFAULT_PROFILE} and wins over any token "
-            f"set in profile {profile}; move it out of {DEFAULT_PROFILE} to change it\n"
-            f"{hint('auth migrate')}",
+            f"{section}.token is set in profile {DEFAULT_PROFILE}: switching profile {profile} "
+            f"to a stored token or a command would leave it in charge, so only keeping the "
+            f"current token is offered\n{hint('auth migrate')}",
         )
     choices = _token_choices(spec, current, store, has_command=has_command)
     how = ui.select(f"{spec.name} token", choices, default=choices[0].value)
     token = ui.secret(f"{spec.name} token").strip() if how in ("store", "enter") else None
     argv = _token_command(ui, spec) if how == "command" else None
     repo.set_value(f"{section}.base_url", url, profile=profile)
-    if how == "store" and token is not None and store is not None:
-        save_token(repo, section, profile, token, store)
-    elif how == "move" and current.plaintext is not None and store is not None:
-        save_token(repo, section, profile, current.plaintext, store)
+    if how in ("store", "move") and store is not None:
+        secret = token if how == "store" else current.plaintext
+        if secret is not None:
+            save_token(repo, section, profile, secret, store)
+            argv = store.read_argv(entry_name(profile, section))
     elif how == "enter" and token is not None:
         repo.set_value(f"{section}.token", token, profile=profile)
     elif argv is not None:
@@ -218,25 +219,28 @@ def _configure(
         # A stored token wins over the command; drop it so the command is used.
         repo.unset_value(f"{section}.token", profile=profile)
     elif how == "env":
-        _use_env(ui, repo, spec, profile, current)
+        # The token and the profile's own command would both win over the variable.
+        repo.unset_value(f"{section}.token", profile=profile)
+        if current.own_command is not None:
+            repo.unset_value(f"{section}.token_command", profile=profile)
+            ui.message("info", f"unset {section}.token_command in profile {profile}")
+        env = token_env_names(spec.profile_model.model_construct())[0]
+        ui.message("info", f"export ${env} in your shell for untaped {spec.name} to use it")
+    if how != "keep":
+        _retire(ui, section, current.own_command, argv)
 
 
-def _use_env(
-    ui: UiContext,
-    repo: SettingsFileRepository,
-    spec: CapabilitySpec,
-    profile: str,
-    current: _ServiceState,
+def _retire(
+    ui: UiContext, section: str, old: list[str] | None, replacement: list[str] | None
 ) -> None:
-    """Clear what would win over the conventional variable: the token and its command."""
-    section = spec.config_section
-    repo.unset_value(f"{section}.token", profile=profile)
-    if current.own_command is not None:
-        where = drop_token_command(repo, section, profile, current.own_command)
-        dropped = f"deleted the stored token from {where}" if where else "unset the command"
-        ui.message("info", f"{section}.token_command no longer applies; {dropped}")
-    env = token_env_names(spec.profile_model.model_construct())[0]
-    ui.message("info", f"export ${env} in your shell for untaped {spec.name} to use it")
+    """Delete the entry the profile's replaced preset command read, so none is orphaned."""
+    if old is None or old == replacement:
+        return
+    deleted, where = delete_stored_token(old)
+    if deleted == "deleted":
+        ui.message("info", f"deleted the replaced {section} token from {where}")
+    elif deleted == "gone":
+        ui.message("info", f"the replaced {section} token was already gone from {where}")
 
 
 def _token_choices(
@@ -265,8 +269,11 @@ def _token_choices(
     if has_command:
         choices.append(PromptChoice(value="command", label="Run a command that prints the token"))
         env = token_env_names(spec.profile_model.model_construct())
+        # default's command would win over the variable once the profile's is gone.
         if env and not current.inherited_command:
-            label = f"Use ${env[0]} (you export it; nothing is stored)"
+            stored = current.own_command is not None and preset_entry(current.own_command)
+            effect = "drops the stored token" if stored else "nothing is stored"
+            label = f"Use ${env[0]} (you export it; {effect})"
             choices.append(PromptChoice(value="env", label=label))
     else:
         choices.append(PromptChoice(value="enter", label="Enter a token (stored in config.yml)"))

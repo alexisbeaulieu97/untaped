@@ -89,10 +89,7 @@ def github_failures() -> Iterator[None]:
     except UntapedError as exc:
         if is_auth_failure(exc):
             raise rejected_token_error(
-                "github",
-                "GitHub rejected the configured token (HTTP 401)",
-                cause=exc,
-                takes_token_command=True,
+                "github", "GitHub rejected the configured token (HTTP 401)", cause=exc
             ) from exc
         if is_rate_limit_failure(exc):
             exc.category = ErrorCategory.UNAVAILABLE
