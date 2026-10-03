@@ -24,7 +24,7 @@ from untaped_github.domain import (
     RefSelector,
     covers,
 )
-from untaped_github.domain.errors import GitCorpusError
+from untaped_github.errors import GitCorpusError
 from untaped_github.infrastructure.git_corpus import GitCorpusCache
 
 #: One ``RepoCache`` git call seen by ``spy_run_git``: subcommand, auth header, auth URL.

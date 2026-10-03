@@ -46,7 +46,8 @@ from untaped_github.domain import (
     ref_matches,
     unchanged_upstream,
 )
-from untaped_github.domain.errors import GitCorpusError, is_global_github_failure
+from untaped_github.domain.errors import is_global_github_failure
+from untaped_github.errors import GitCorpusError
 
 InventoryResolver = Callable[[RepositoryInventoryScope], tuple[RepositoryInventoryItem, ...]]
 AuthHeaderSupplier = Callable[[], str | None]

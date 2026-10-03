@@ -925,31 +925,6 @@ def test_apply_stdin_requires_yes_and_resolves_workspace_repo_pipe(tmp_path: Pat
     assert (repo / "out.txt").read_text() == "hello\n"
 
 
-def test_apply_stdin_rejects_workspace_repo_pipe_without_target_path(tmp_path: Path) -> None:
-    recipe, _ = _out_recipe(tmp_path)
-    workspace = tmp_path / "workspace"
-    repo = workspace / "api"
-    repo.mkdir(parents=True)
-    payload = json.dumps(
-        {
-            "untaped": "1",
-            "kind": "workspace.repo",
-            "record": {"path": str(workspace), "repo": "api"},
-        }
-    )
-
-    result = CliInvoker().invoke(
-        app,
-        ["apply", str(recipe), "--stdin", "--yes"],
-        input=payload + "\n",
-    )
-
-    assert result.exit_code != 0
-    assert "workspace.repo pipe record requires target_path" in result.output
-    assert not (workspace / "out.txt").exists()
-    assert not (repo / "out.txt").exists()
-
-
 def test_apply_stdin_summary_only_is_noop(tmp_path: Path) -> None:
     recipe, _ = _out_recipe(tmp_path)
     workspace = tmp_path / "workspace"

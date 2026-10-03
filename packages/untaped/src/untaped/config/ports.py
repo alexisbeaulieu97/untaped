@@ -21,7 +21,7 @@ class SettingsReader(Protocol):
 
 
 class SettingsRepository(SettingsReader, Protocol):
-    """Read + write surface used by ``SetSetting`` / ``UnsetSetting``."""
+    """Read + write surface used by ``config set`` / ``config unset``."""
 
     def set_value(
         self, key: str, raw_value: str, *, profile: str | None = None, dry_run: bool = False

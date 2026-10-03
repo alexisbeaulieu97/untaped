@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import threading
 from contextlib import contextmanager
-from types import TracebackType
 from typing import TYPE_CHECKING
 
 from untaped.sdk import AppContext, UsageError, app_context
@@ -83,17 +82,6 @@ class AwxContext:
 
     def close(self) -> None:
         self.client.close()
-
-    def __enter__(self) -> AwxContext:
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        self.close()
 
 
 @contextmanager

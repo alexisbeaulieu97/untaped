@@ -45,11 +45,6 @@ def set_profile_override(name: str | None) -> Token[str | None]:
     return _profile_override.set(name)
 
 
-def reset_profile_override(token: Token[str | None]) -> None:
-    """Restore the invocation-scoped ``--profile`` override from ``token``."""
-    _profile_override.reset(token)
-
-
 @contextmanager
 def profile_scope(name: str) -> Iterator[None]:
     """Select ``name`` as this invocation's profile inside the block.
