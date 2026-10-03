@@ -47,6 +47,7 @@ RENAMED = (
     "warning: demo.corpus_path is deprecated and will be removed in the next major release; "
     "use demo.cache_dir"
 )
+MIGRATE_HINT = "hint: run `untaped config migrate` to rename it in config.yml"
 
 
 @pytest.fixture
@@ -74,7 +75,7 @@ def test_old_key_in_default_and_new_key_in_active_layer_as_one_key(
     )
 
     assert get_config_section("demo", DemoSettings).cache_dir == "/new"
-    assert RENAMED in capsys.readouterr().err
+    assert f"{RENAMED}\n{MIGRATE_HINT}" in capsys.readouterr().err
 
 
 def test_old_key_is_read_with_a_warning_once_per_process(
@@ -99,9 +100,9 @@ def test_both_spellings_in_one_profile_the_new_key_wins(
 
     assert get_config_section("demo", DemoSettings).cache_dir == "/new"
     assert (
-        "warning: demo.corpus_path is deprecated and ignored because demo.cache_dir is also set"
-        in capsys.readouterr().err
-    )
+        "warning: demo.corpus_path is deprecated and ignored because demo.cache_dir is also set\n"
+        "hint: run `untaped config migrate` to remove it from config.yml"
+    ) in capsys.readouterr().err
 
 
 def test_old_keys_in_a_profile_not_read_do_not_warn(
@@ -276,6 +277,5 @@ def test_the_warning_is_a_json_diagnostic(config: Path) -> None:
     result = invoke_cli(_demo_root(), ["demo", "show", "--format", "json"])
 
     lines = [json.loads(line) for line in result.stderr.splitlines()]
-    assert {"level": "warning", "message": RENAMED.removeprefix("warning: ")}.items() <= lines[
-        0
-    ].items()
+    message = f"{RENAMED.removeprefix('warning: ')}\n{MIGRATE_HINT}"
+    assert {"level": "warning", "message": message}.items() <= lines[0].items()

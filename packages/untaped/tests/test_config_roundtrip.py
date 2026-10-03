@@ -8,6 +8,7 @@ wrote it, and values it writes read back with the same types.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -197,3 +198,33 @@ def test_yaml_mapping_indent_is_the_shallowest_indented_mapping_line(
     text: str, indent: int
 ) -> None:
     assert yaml_mapping_indent(text) == indent
+
+
+def _rename(old: tuple[str, ...], new: tuple[str, ...]) -> None:
+    def _apply(data: dict[str, Any]) -> None:
+        parent = data
+        for part in old[:-1]:
+            parent = parent[part]
+        value = parent[old[-1]]
+        unset_at_path(data, old)
+        set_at_path(data, new, value)
+
+    mutate_config(_apply, renames=[(old, new)])
+
+
+def test_a_rename_hint_keeps_the_key_in_place_with_its_comment(cfg: Path) -> None:
+    _rename(("profiles", "default", "http", "verify_ssl"), ("profiles", "default", "http", "tls"))
+
+    assert cfg.read_text(encoding="utf-8") == _replace_line(
+        COMMENTED,
+        "verify_ssl: yes     # YAML 1.1 boolean",
+        "tls: yes            # YAML 1.1 boolean",
+    )
+
+
+def test_a_rename_to_another_mapping_is_removed_and_added(cfg: Path) -> None:
+    _rename(("profiles", "default", "http", "timeout"), ("profiles", "default", "timeout"))
+
+    text = cfg.read_text(encoding="utf-8")
+    assert "      timeout: 30\n" not in text
+    assert read_config_dict(cfg)["profiles"]["default"]["timeout"] == 30

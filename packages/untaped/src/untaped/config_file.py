@@ -16,7 +16,7 @@ import contextlib
 import copy
 import math
 import os
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -32,7 +32,7 @@ from untaped.settings import (
     resolve_config_path,
     resolve_state_path,
 )
-from untaped.yaml_roundtrip import plain_dump, render_preserving
+from untaped.yaml_roundtrip import KeyRename, plain_dump, render_preserving
 
 _DEFAULT_LOCK_TIMEOUT = 5.0
 
@@ -48,11 +48,15 @@ def read_config_dict(path: Path | None = None) -> dict[str, Any]:
     return load_config_yaml(path or resolve_config_path())
 
 
-def write_config_dict(data: dict[str, Any], path: Path | None = None) -> None:
+def write_config_dict(
+    data: dict[str, Any], path: Path | None = None, *, renames: Iterable[KeyRename] = ()
+) -> None:
     """Atomically write ``data`` back to the config file.
 
     Only keys that differ from the file's current content are rewritten;
     comments, key order and formatting of everything else are preserved.
+    ``renames`` names keys that moved (``(old_path, new_path)``); a key renamed
+    within its mapping keeps its position and comment.
     Creates parent directories if needed. The write goes through
     :func:`~untaped.fs.atomic_write` with permissions ``0o600`` (so secrets
     are never world-readable, even briefly): it is durable, writes through a
@@ -60,10 +64,10 @@ def write_config_dict(data: dict[str, Any], path: Path | None = None) -> None:
     and no temp file behind.
     """
     target = path or resolve_config_path()
-    atomic_write(target, _render(data, target), mode=0o600)
+    atomic_write(target, _render(data, target, tuple(renames)), mode=0o600)
 
 
-def _render(data: dict[str, Any], target: Path) -> str:
+def _render(data: dict[str, Any], target: Path, renames: tuple[KeyRename, ...] = ()) -> str:
     try:
         original = target.read_text(encoding="utf-8")
         before = load_config_yaml(target)
@@ -71,10 +75,15 @@ def _render(data: dict[str, Any], target: Path) -> str:
         raise
     except OSError, UnicodeDecodeError, ConfigError:
         return plain_dump(data)
-    return render_preserving(original, before, data)
+    return render_preserving(original, before, data, renames=renames)
 
 
-def mutate_config(fn: Callable[[dict[str, Any]], None], path: Path | None = None) -> None:
+def mutate_config(
+    fn: Callable[[dict[str, Any]], None],
+    path: Path | None = None,
+    *,
+    renames: Sequence[KeyRename] = (),
+) -> None:
     """Read, mutate, and write the config file under an advisory lock.
 
     Two concurrent CLI invocations both read-modify-writing the YAML can
@@ -82,7 +91,9 @@ def mutate_config(fn: Callable[[dict[str, Any]], None], path: Path | None = None
     load-mutate-store sequence behind a per-file lock so the second caller
     sees the first caller's commit, never an older snapshot.
 
-    The callback receives a mutable dict; mutate it in place. The atomic
+    The callback receives a mutable dict; mutate it in place. A callback that
+    renames keys appends them to the ``renames`` list it was given, read
+    after it returns (see :func:`write_config_dict`). The atomic
     write only runs after the callback returns successfully — exceptions
     leave the on-disk file untouched. The dict is also snapshot before
     the callback runs and the write is skipped when nothing changed, so
@@ -101,7 +112,7 @@ def mutate_config(fn: Callable[[dict[str, Any]], None], path: Path | None = None
         before = copy.deepcopy(data)
         fn(data)
         if data != before:
-            write_config_dict(data, target)
+            write_config_dict(data, target, renames=renames)
             get_settings.cache_clear()
 
 

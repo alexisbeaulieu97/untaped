@@ -12,7 +12,7 @@ from collections.abc import Callable
 from typing import Any
 
 import yaml
-from pydantic import SecretStr, TypeAdapter, ValidationError
+from pydantic import BaseModel, SecretStr, TypeAdapter, ValidationError
 
 from untaped.config_file import (
     mutate_config,
@@ -21,14 +21,27 @@ from untaped.config_file import (
     unset_at_path,
 )
 from untaped.config_schema import FieldDescriptor, find_descriptor, walk_settings
+from untaped.deprecated_keys import (
+    apply_move,
+    key_mappings,
+    migration_moves,
+    old_spellings,
+)
 from untaped.errors import ConfigError, first_validation_error
+from untaped.profile_resolver import DEFAULT_PROFILE
 from untaped.settings import (
     Settings,
     active_settings_layout,
+    env_var_name,
     get_profile_settings_model,
     load_settings_section,
     validate_settings_section,
 )
+from untaped.settings_layout import ResolvedConfig
+from untaped.yaml_roundtrip import KeyRename
+
+SpellingRemoved = Callable[[str], None]
+"""Called with each old spelling ``config set``/``unset`` removes (``section.key``)."""
 
 
 class SettingsFileRepository:
@@ -43,6 +56,7 @@ class SettingsFileRepository:
         self._settings_cls = settings_cls
         self._descriptors: list[FieldDescriptor] | None = None
         self._sections: dict[str, Any] = {}
+        self._resolved: ResolvedConfig | None = None
 
     def descriptors(self) -> list[FieldDescriptor]:
         if self._descriptors is None:
@@ -103,13 +117,72 @@ class SettingsFileRepository:
         return active_settings_layout().profile_data(self.yaml_dict(), name)
 
     def env_var_for(self, descriptor: FieldDescriptor) -> str:
-        return "UNTAPED_" + "__".join(descriptor.path).upper()
+        return env_var_name(descriptor.path)
 
     def env_value_for(self, descriptor: FieldDescriptor) -> str | None:
-        return os.environ.get(self.env_var_for(descriptor))
+        name = self.env_var_supplying(descriptor)
+        return None if name is None else os.environ.get(name)
+
+    def env_var_supplying(self, descriptor: FieldDescriptor) -> str | None:
+        """The set ``UNTAPED_*`` variable for ``descriptor``: its own, else an old spelling's."""
+        names = [self.env_var_for(descriptor)]
+        model = self.section_model(descriptor.path[0])
+        if model is not None:
+            readable = key_mappings(model).readable
+            names += [
+                env_var_name((descriptor.path[0], *old.split(".")))
+                for old in old_spellings(model, _relative(descriptor))
+                if old in readable
+            ]
+        return next((name for name in names if name in os.environ), None)
+
+    def _resolve(self) -> ResolvedConfig:
+        """The layered profiles with the old keys they used (read once per repository)."""
+        if self._resolved is None:
+            try:
+                self._resolved = active_settings_layout().resolve(
+                    self.yaml_dict(), sections=self._section_models()
+                )
+            except ConfigError:
+                self._resolved = ResolvedConfig({}, {}, {})
+        return self._resolved
+
+    def section_model(self, section: str) -> type[BaseModel] | None:
+        """The settings model of ``section``, if it is one."""
+        field = self._profile_model().model_fields.get(section)
+        annotation = None if field is None else field.annotation
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            return annotation
+        return None
+
+    def deprecated_source(self, descriptor: FieldDescriptor) -> str | None:
+        """The old key or variable that supplied ``descriptor``'s value, if any.
+
+        The environment wins, as it does for the value; otherwise only the
+        profile whose layer won counts.
+        """
+        name = self.env_var_supplying(descriptor)
+        if name is not None:
+            return None if name == self.env_var_for(descriptor) else name
+        section, key = descriptor.path[0], _relative(descriptor)
+        model = self.section_model(section)
+        if model is None or not key_mappings(model):
+            return None
+        resolved = self._resolve()
+        profile = resolved.provenance.get(descriptor.path)
+        for use in resolved.uses.get(profile or "", {}).get(section, ()):
+            if use.kind == "renamed" and use.new == key:
+                return f"{section}.{use.old}"
+        return None
 
     def set_value(
-        self, key: str, raw_value: str, *, profile: str | None = None, dry_run: bool = False
+        self,
+        key: str,
+        raw_value: str,
+        *,
+        profile: str | None = None,
+        dry_run: bool = False,
+        on_spelling_removed: SpellingRemoved | None = None,
     ) -> str:
         """Validate ``raw_value`` against the key's type, then persist.
 
@@ -121,7 +194,11 @@ class SettingsFileRepository:
         the write landed. ``dry_run`` validates the same way but writes nothing.
         """
         return self.update_value(
-            key, lambda _target, _current: raw_value, profile=profile, dry_run=dry_run
+            key,
+            lambda _target, _current: raw_value,
+            profile=profile,
+            dry_run=dry_run,
+            on_spelling_removed=on_spelling_removed,
         )
 
     def update_value(
@@ -131,6 +208,7 @@ class SettingsFileRepository:
         *,
         profile: str | None = None,
         dry_run: bool = False,
+        on_spelling_removed: SpellingRemoved | None = None,
     ) -> str:
         """Read-modify-write ``key`` in the target profile under one config lock.
 
@@ -141,6 +219,10 @@ class SettingsFileRepository:
         locked mutation, so a concurrent writer's change is never replaced
         from a stale read; raise from it to abort without writing. Returns the
         target profile name.
+
+        A value stored under an old spelling of the key counts as the key's
+        own; writing or removing the key removes every old spelling in the
+        target profile, each reported to ``on_spelling_removed``.
         """
         descriptor = self.descriptor(key)
         resolved: str | None = None
@@ -148,14 +230,21 @@ class SettingsFileRepository:
         def _apply(data: dict[str, Any]) -> None:
             nonlocal resolved
             target_data, resolved = active_settings_layout().write_profile(data, profile)
-            current: Any = target_data
-            for segment in descriptor.path:
-                current = current.get(segment) if isinstance(current, dict) else None
+            olds = self._old_paths(descriptor)
+            current = next(
+                (
+                    value
+                    for value in (_at_path(target_data, path) for path in [descriptor.path, *olds])
+                    if value is not None
+                ),
+                None,
+            )
             raw_value = update(resolved, current)
             if raw_value is None:
                 unset_at_path(target_data, descriptor.path)
             else:
                 set_at_path(target_data, descriptor.path, _coerce_value(key, descriptor, raw_value))
+            _remove_spellings(target_data, olds, on_spelling_removed)
             try:
                 self._validate_section(data, descriptor, profile=resolved)
             except ValidationError as exc:
@@ -171,15 +260,21 @@ class SettingsFileRepository:
         return resolved
 
     def unset_value(
-        self, key: str, *, profile: str | None = None, dry_run: bool = False
+        self,
+        key: str,
+        *,
+        profile: str | None = None,
+        dry_run: bool = False,
+        on_spelling_removed: SpellingRemoved | None = None,
     ) -> tuple[bool, str]:
-        """Remove ``key`` from the resolved write scope.
+        """Remove ``key``, and every old spelling of it, from the resolved write scope.
 
         Returns ``(removed, target)``; under ``dry_run`` ``removed`` says
         whether it would be removed and nothing is written. An explicit
         ``profile`` the layout cannot satisfy raises ``ConfigError``. Removing a key that
         simply isn't set in the resolved scope is a no-op
-        (``removed=False``).
+        (``removed=False``). Each old spelling removed is reported to
+        ``on_spelling_removed``.
         """
         descriptor = self.descriptor(key)
         removed = False
@@ -188,7 +283,9 @@ class SettingsFileRepository:
         def _apply(data: dict[str, Any]) -> None:
             nonlocal removed, resolved
             target_data, resolved = active_settings_layout().write_profile(data, profile)
-            if not unset_at_path(target_data, descriptor.path):
+            own = unset_at_path(target_data, descriptor.path)
+            olds = _remove_spellings(target_data, self._old_paths(descriptor), on_spelling_removed)
+            if not (own or olds):
                 return
             removed = True
             # Symmetric with ``set_value``: re-validate the key's section so a
@@ -210,6 +307,66 @@ class SettingsFileRepository:
         assert resolved is not None
         return removed, resolved
 
+    def migrate_keys(self, *, dry_run: bool = False) -> list[dict[str, str]]:
+        """Rename every renamed or retired key in every profile, under one lock.
+
+        Returns one row per change (``profile``, ``from``, ``to``, ``action``:
+        ``renamed`` or ``dropped``); ``dry_run`` writes nothing. Deprecated
+        settings and ``state.yml`` are left alone.
+        """
+        rows: list[dict[str, str]] = []
+        renames: list[KeyRename] = []
+
+        def _apply(data: dict[str, Any]) -> None:
+            profiles = data.get("profiles")
+            if not isinstance(profiles, dict):
+                return
+            for name in sorted(profiles, key=lambda name: (name != DEFAULT_PROFILE, str(name))):
+                profile_data = profiles[name]
+                if not isinstance(profile_data, dict):
+                    continue
+                for section, model in self._section_models().items():
+                    section_data = profile_data.get(section)
+                    if not isinstance(section_data, dict):
+                        continue
+                    for move in migration_moves(model, section_data):
+                        if not apply_move(section_data, move):
+                            continue
+                        rows.append(
+                            {
+                                "profile": str(name),
+                                "from": f"{section}.{move.old}",
+                                "to": f"{section}.{move.to}",
+                                "action": move.action,
+                            }
+                        )
+                        if move.action == "renamed":
+                            base = ("profiles", str(name), section)
+                            renames.append(
+                                ((*base, *move.old.split(".")), (*base, *move.to.split(".")))
+                            )
+
+        if dry_run:
+            _apply(read_config_dict())
+        else:
+            mutate_config(_apply, renames=renames)
+        return rows
+
+    def _section_models(self) -> dict[str, type[BaseModel]]:
+        return {
+            section: model
+            for section in self._profile_model().model_fields
+            if (model := self.section_model(section)) is not None
+        }
+
+    def _old_paths(self, descriptor: FieldDescriptor) -> list[tuple[str, ...]]:
+        """Absolute paths of every old spelling of ``descriptor``, closest first."""
+        section = descriptor.path[0]
+        model = self.section_model(section)
+        if model is None:
+            return []
+        return [(section, *old.split(".")) for old in old_spellings(model, _relative(descriptor))]
+
     def _profile_model(self) -> type[Settings]:
         return self._settings_cls or get_profile_settings_model()
 
@@ -225,6 +382,30 @@ class SettingsFileRepository:
         """
         effective = active_settings_layout().effective(data, profile=profile)
         validate_settings_section(effective, descriptor.path[0], self._profile_model())
+
+
+def _relative(descriptor: FieldDescriptor) -> str:
+    """``descriptor``'s key within its section (``sweep.parallel``)."""
+    return ".".join(descriptor.path[1:])
+
+
+def _at_path(data: Any, path: tuple[str, ...]) -> Any:
+    for segment in path:
+        data = data.get(segment) if isinstance(data, dict) else None
+    return data
+
+
+def _remove_spellings(
+    data: dict[str, Any], paths: list[tuple[str, ...]], report: SpellingRemoved | None
+) -> bool:
+    """Remove every path in ``paths`` present in ``data``; ``True`` when any was."""
+    removed = False
+    for path in paths:
+        if unset_at_path(data, path):
+            removed = True
+            if report is not None:
+                report(".".join(path))
+    return removed
 
 
 def _run(apply: Callable[[dict[str, Any]], None], *, dry_run: bool) -> None:

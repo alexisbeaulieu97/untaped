@@ -298,3 +298,31 @@ state. These steps are opt-in live writes against a disposable controller.
 Do not include secrets, real customer configurations, production logs, private
 workspace data, personal data, or other private data in issues, tests, fixtures,
 or examples. Use synthetic data for tests and examples.
+
+## Glossary
+
+Terms these docs and the code use; see the [README](README.md) for what
+untaped is.
+
+**Capability**: what users run: one command group under `untaped`, with its
+own config section.
+
+**Provider**: the Python package that supplies a capability.
+
+**Plugin**: the informal word for a capability or its provider.
+
+**Setting**: one value a user tunes, named `section.key`, set in a profile or
+by an `UNTAPED_*` environment variable.
+_Avoid_: option (a command-line flag).
+
+**Profile**: a named set of settings in `config.yml`; the selected profile is
+layered over `default`.
+
+**Renamed key**: an old name of a setting that still works, with a warning,
+until the next major release.
+
+**Retired key**: an old name of a setting that is no longer read;
+`untaped config migrate` still renames it.
+
+**Deprecated setting**: a setting still read with its current meaning, with a
+warning, until the next major release removes it.
