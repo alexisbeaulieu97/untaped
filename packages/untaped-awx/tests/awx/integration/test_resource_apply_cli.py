@@ -782,3 +782,18 @@ def test_apply_check_failure_wins_over_drift(fake_aap: Any, tmp_path: Path) -> N
     assert result.exit_code == 1, result.output
     assert _patches(fake_aap) == []
     assert _posts(fake_aap) == []
+
+
+def test_apply_reports_dropped_undeclared_secrets(fake_aap: Any, tmp_path: Path) -> None:
+    _seed_basic(fake_aap)
+    doc = tmp_path / "project.yml"
+    doc.write_text(
+        "kind: Project\n"
+        "metadata: { name: playbooks, organization: Default }\n"
+        "spec: { scm_type: git, scm_url: $encrypted$ }\n"
+    )
+
+    result = CliInvoker().invoke(app, ["apply", str(doc), "--yes", "--format", "json"])
+
+    assert result.exit_code == 0, result.output + (result.stderr or "")
+    assert json.loads(result.stdout)[0]["dropped_undeclared_secrets"] == ["scm_url"]
