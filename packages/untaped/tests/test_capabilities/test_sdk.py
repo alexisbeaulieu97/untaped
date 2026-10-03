@@ -119,6 +119,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "safe_path_segment",
         "same_origin",
         "scoped_auth_header",
+        "yaml_mapping_indent",
     ),
     "prompts and ui": (
         "PickCatalog",

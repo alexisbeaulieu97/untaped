@@ -19,7 +19,7 @@ from untaped.errors import ConfigError, ErrorCategory, UntapedError
 
 def atomic_write(
     path: Path,
-    content: str,
+    content: str | bytes,
     *,
     encoding: str = "utf-8",
     newline: str = "",
@@ -38,6 +38,8 @@ def atomic_write(
     directories, never those of a symlink's target: a link into a missing
     directory raises :class:`FileNotFoundError`. ``newline=""`` disables
     newline translation so the caller's line endings land on disk verbatim.
+    ``bytes`` content is written as is (``encoding`` and ``newline`` then do
+    nothing).
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     target = _write_target(path)
@@ -55,7 +57,7 @@ def _write_target(path: Path) -> Path:
 
 def _write_temp(
     target: Path,
-    content: str,
+    content: str | bytes,
     *,
     encoding: str = "utf-8",
     newline: str = "",
@@ -72,11 +74,12 @@ def _write_temp(
     create_mode = 0o666 if mode is None else 0o600
     tmp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.untaped.tmp")
     try:
+        text = isinstance(content, str)
         with open(
             tmp,
-            "x",
-            encoding=encoding,
-            newline=newline,
+            "x" if text else "xb",
+            encoding=encoding if text else None,
+            newline=newline if text else None,
             opener=lambda name, flags: os.open(name, flags, create_mode),
         ) as handle:
             if mode is not None:
