@@ -40,6 +40,9 @@ These may change in any release:
 - `--format raw` without `--columns`: it prints the first default column,
   which may change. Name the field, as in `--format raw --columns name`.
 - Commands and file formats marked experimental (below).
+- The rules `untaped.testing.check_conventions` applies: a minor release may
+  add one, so a plugin's convention test can start failing. Mark a line with
+  `# untaped: allow <rule>` to waive that rule there.
 - Anything not documented, including internal modules, except the record
   fields covered above.
 
