@@ -91,6 +91,15 @@ def hint(command: str) -> str:
     return f"hint: run `{command_line(command)}`"
 
 
+def deprecated_message(old: str, new: str) -> str:
+    """The deprecation sentence: ``<old> is deprecated and will be removed …; use <new>``.
+
+    One wording for every deprecated spelling (commands, flags, config keys
+    and their environment variables); callers pass the spellings as shown.
+    """
+    return f"{old} is deprecated and will be removed in the next major release; use {new}"
+
+
 def summary(operation: str, counts: Mapping[str, int]) -> str:
     """A batch summary line: ``<operation>: 2 cloned, 1 failed``.
 
@@ -101,4 +110,13 @@ def summary(operation: str, counts: Mapping[str, int]) -> str:
     return f"{operation}: {', '.join(parts) if parts else 'nothing to do'}"
 
 
-__all__ = ["command_argv", "command_line", "hint", "not_found", "plural", "q", "summary"]
+__all__ = [
+    "command_argv",
+    "command_line",
+    "deprecated_message",
+    "hint",
+    "not_found",
+    "plural",
+    "q",
+    "summary",
+]

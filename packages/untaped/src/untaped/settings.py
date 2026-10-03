@@ -20,10 +20,11 @@ from pydantic_settings import (
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
-from pydantic_settings.sources import InitSettingsSource
+from pydantic_settings.sources import EnvSettingsSource, InitSettingsSource
 
+from untaped.deprecated_keys import KeyUse, key_mappings, rename_keys, use_warning, warn_once
 from untaped.errors import ConfigError, first_validation_error
-from untaped.settings_layout import ProfilesSettingsLayout
+from untaped.settings_layout import ProfilesSettingsLayout, SectionModels
 from untaped.theme import CONFIG_WRITE_CONTEXT, UiSettings
 
 DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
@@ -33,6 +34,9 @@ STATE_PATH_ENV = "UNTAPED_STATE"
 #: On-disk format of ``config.yml`` and ``state.yml``. A file without
 #: ``format_version`` is format 1. Bump only in a major release, when an older
 #: reader ignoring a new core key would change behaviour (see CONTRIBUTING.md).
+#: A renamed key (``renamed_keys``) does not bump it: a bump would make an
+#: older release refuse the whole file, and ``untaped config migrate`` renames
+#: keys only when the user runs it.
 FORMAT_VERSION = 1
 
 
@@ -129,7 +133,7 @@ class _SettingsSources(BaseSettings):
         path = resolve_config_path()
         return (
             init_settings,
-            env_settings,
+            _RenamingEnvSource(settings_cls),
             LayoutSettingsSource(settings_cls, yaml_file=path),
             file_secret_settings,
         )
@@ -143,7 +147,20 @@ class Settings(_SettingsSources):
     skills: SkillsSettings = Field(default_factory=SkillsSettings)
 
 
-_PROFILES_LAYOUT = ProfilesSettingsLayout()
+def _model_sections(settings_cls: type[BaseModel]) -> dict[str, type[BaseModel]]:
+    """``section -> model`` for every field of ``settings_cls`` holding a model."""
+    return {
+        name: field.annotation
+        for name, field in settings_cls.model_fields.items()
+        if isinstance(field.annotation, type) and issubclass(field.annotation, BaseModel)
+    }
+
+
+def _profile_section_models() -> SectionModels:
+    return _model_sections(get_profile_settings_model())
+
+
+_PROFILES_LAYOUT = ProfilesSettingsLayout(sections=_profile_section_models)
 
 
 def active_settings_layout() -> ProfilesSettingsLayout:
@@ -203,12 +220,71 @@ class LayoutSettingsSource(InitSettingsSource):
 
     def __init__(self, settings_cls: type[BaseSettings], yaml_file: Path) -> None:
         raw = load_config_yaml(yaml_file)
-        effective = active_settings_layout().effective(raw)
+        resolved = active_settings_layout().resolve(raw, sections=_model_sections(settings_cls))
+        effective = resolved.effective
+        for sections in resolved.uses.values():
+            for section, uses in sections.items():
+                for use in uses:
+                    _warn_use(use, section=section)
         # Only splice (and so only validate) the state sections this model
         # actually declares: a broken state section must not block loading
         # an unrelated one (see :func:`load_settings_section`).
         splice_registered_state(effective, sections=settings_cls.model_fields)
         super().__init__(settings_cls, effective)
+
+
+def _warn_use(use: KeyUse, *, section: str) -> None:
+    """Warn once about an old key or deprecated setting read from ``config.yml``."""
+    message = use_warning(
+        use,
+        old=f"{section}.{use.old}",
+        new=f"{section}.{use.new}",
+        kept=f"{section}.{use.kept}",
+    )
+    if message is not None:
+        warn_once(message)
+
+
+def _env_name(section: str, key: str) -> str:
+    """The ``UNTAPED_*`` variable that sets ``key`` of ``section``."""
+    return "UNTAPED_" + "__".join([section, *key.split(".")]).upper()
+
+
+def _env_is_set(name: str) -> bool:
+    return any(key.upper() == name for key in os.environ)
+
+
+class _RenamingEnvSource(EnvSettingsSource):
+    """The ``UNTAPED_*`` environment source, with old key names renamed.
+
+    pydantic-settings builds each section's dict from its ``UNTAPED_<SECTION>__*``
+    variables (and an ``UNTAPED_<SECTION>`` JSON blob) without checking the
+    inner names, so old names arrive here and are renamed like YAML keys.
+    """
+
+    def __call__(self) -> dict[str, Any]:
+        data = super().__call__()
+        for section, model in _model_sections(self.settings_cls).items():
+            value = data.get(section)
+            if not isinstance(value, dict) or not key_mappings(model):
+                continue
+            data[section], uses = rename_keys(model, value)
+            for use in uses:
+                old = _env_name(section, use.old)
+                if not _env_is_set(old):  # the value came from the section's JSON blob
+                    blob = f"UNTAPED_{section.upper()}"
+                    message = use_warning(
+                        use,
+                        old=f"{use.old} in {blob}",
+                        new=use.new,
+                        kept=f"{use.kept} in {blob}",
+                    )
+                else:
+                    kept = None if use.kept is None else _env_name(section, use.kept)
+                    message = use_warning(use, old=old, new=_env_name(section, use.new), kept=kept)
+                if message is not None:
+                    warn_once(message)
+        return data
 
 
 def load_config_yaml(yaml_file: Path) -> dict[str, Any]:
@@ -378,10 +454,11 @@ def get_profile_settings_model() -> type[Settings]:
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Return the cached aggregate settings instance."""
+    settings_cls = get_settings_model()
     try:
-        return get_settings_model()()
+        return settings_cls()
     except ValidationError as exc:
-        raise ConfigError(settings_error_message(exc)) from exc
+        raise ConfigError(settings_error_message(exc, settings_cls)) from exc
 
 
 def validate_config_file(candidate: Path) -> None:
@@ -403,12 +480,13 @@ def validate_config_file(candidate: Path) -> None:
             file_secret_settings: PydanticBaseSettingsSource,
         ) -> tuple[PydanticBaseSettingsSource, ...]:
             layout = LayoutSettingsSource(settings_cls, candidate)
-            return (init_settings, env_settings, layout, file_secret_settings)
+            env = _RenamingEnvSource(settings_cls)
+            return (init_settings, env, layout, file_secret_settings)
 
     try:
         _Candidate()
     except ValidationError as exc:
-        raise ConfigError(settings_error_message(exc)) from exc
+        raise ConfigError(settings_error_message(exc, _Candidate)) from exc
 
 
 @lru_cache(maxsize=64)
@@ -451,7 +529,7 @@ def load_settings_section(name: str, settings_cls: type[Settings] | None = None)
     try:
         return getattr(loader(), name)
     except ValidationError as exc:
-        raise ConfigError(settings_error_message(exc)) from exc
+        raise ConfigError(settings_error_message(exc, loader)) from exc
 
 
 class _EnvOverInit(BaseSettings):
@@ -472,7 +550,7 @@ class _EnvOverInit(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        return (env_settings, init_settings)
+        return (_RenamingEnvSource(settings_cls), init_settings)
 
 
 def check_settings_field(name: str, node: Any, *, model: type[BaseModel] | None = None) -> Any:
@@ -493,13 +571,19 @@ def check_settings_field(name: str, node: Any, *, model: type[BaseModel] | None 
     try:
         return getattr(checker(**({} if node is None else {name: node})), name)
     except ValidationError as exc:
-        raise ConfigError(settings_error_message(exc)) from exc
+        raise ConfigError(settings_error_message(exc, checker)) from exc
 
 
-def settings_error_message(exc: ValidationError) -> str:
-    """Describe a settings ``ValidationError``, naming an env var culprit."""
+def settings_error_message(
+    exc: ValidationError, settings_cls: type[BaseModel] | None = None
+) -> str:
+    """Describe a settings ``ValidationError``, naming an env var culprit.
+
+    With ``settings_cls``, an old-spelling variable of a renamed key is named
+    too (``UNTAPED_GITHUB__CORPUS_PATH`` for ``github.cache_dir``).
+    """
     detail = first_validation_error(exc)
-    env_var = _env_culprit(exc)
+    env_var = _env_culprit(exc, settings_cls)
     if env_var is not None:
         return f"invalid value in environment variable {env_var}: {detail}"
     path = resolve_config_path()
@@ -510,18 +594,29 @@ def settings_error_message(exc: ValidationError) -> str:
     return f"invalid config in {path}: {detail}"
 
 
-def _env_culprit(exc: ValidationError) -> str | None:
+def _env_culprit(exc: ValidationError, settings_cls: type[BaseModel] | None) -> str | None:
     errors = exc.errors()
     if not errors:
         return None
     loc = [str(part) for part in errors[0].get("loc", ()) if isinstance(part, str)]
-    # The deepest set ``UNTAPED_A__B__C`` wins; a JSON blob in ``UNTAPED_A``
-    # can also supply a nested value.
+    readable = _readable_old_keys(settings_cls, loc[0]) if loc else {}
+    # The deepest set ``UNTAPED_A__B__C`` wins (or a variable spelling one of
+    # its old names); a JSON blob in ``UNTAPED_A`` can also supply a nested value.
     for depth in range(len(loc), 0, -1):
         candidate = "UNTAPED_" + "__".join(loc[:depth]).upper()
         if candidate in os.environ:
             return candidate
+        path = ".".join(loc[1:depth])
+        for old in sorted(old for old, new in readable.items() if new == path):
+            name = _env_name(loc[0], old)
+            if _env_is_set(name):
+                return name
     return None
+
+
+def _readable_old_keys(settings_cls: type[BaseModel] | None, section: str) -> dict[str, str]:
+    model = None if settings_cls is None else _model_sections(settings_cls).get(section)
+    return {} if model is None else dict(key_mappings(model).readable)
 
 
 def get_config_section[T: BaseModel](section: str, model_cls: type[T]) -> T:
