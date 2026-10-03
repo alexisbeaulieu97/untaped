@@ -90,7 +90,7 @@ def test_unreleased_reads_only_its_own_section() -> None:
 def test_contributing_lists_the_template_items() -> None:
     """The checklist in CONTRIBUTING.md and the template's lines name the same items."""
     text = (REPO_ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
-    section = text.split("## Before you open a PR", 1)[1].split("\n## ", 1)[0]
+    section = text.split("## Pull requests", 1)[1].split("\n## ", 1)[0]
     assert re.findall(r"^- \*\*([^*]+)\.\*\*", section, re.M) == list(check_pr.DRIFT_ITEMS)
 
 

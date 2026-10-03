@@ -2,7 +2,7 @@
 
 ## Drift review
 
-<!-- One line each: what you checked, or "n/a". The checklist is in CONTRIBUTING.md, "Before you open a PR". -->
+<!-- One line each: what you checked, or "n/a". The checklist is in CONTRIBUTING.md, "Pull requests". -->
 
 - Docs, skills and READMEs:
 - Changelog:

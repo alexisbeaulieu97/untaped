@@ -132,7 +132,7 @@ only when a second provider appears.
   `uv run python scripts/gen_config_reference.py`; a test fails while the
   reference is stale.
 
-## Before you open a PR
+## Pull requests
 
 Tasks live in this repository's GitHub issues. CI checks what a machine can:
 tests, coverage (95% overall, 90% of the lines a PR changes), types, lint,
@@ -153,9 +153,10 @@ answer each item, in order, in the PR template's **Drift review** section
 - **Issues.** `Closes #N` for the issue the PR finishes, and any open issue
   the diff makes stale or already finishes.
 
-When the PR opens, a reviewer other than its author (a person or a fresh
-agent session) reviews it while CI runs. The PR is ready to merge only once
-its findings are fixed and CI is green on that head.
+When you open the PR, ask someone who didn't write it (a person, or a fresh
+agent session) to review it against this checklist while CI runs. It is
+ready to merge once that review's findings are fixed or answered, and CI is
+green on its latest commit.
 
 ### Dead code
 

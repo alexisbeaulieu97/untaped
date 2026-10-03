@@ -9,7 +9,7 @@ not a merge. CI checks out with full history.
 
 - The body has a ``## Drift review`` section with a non-empty line for each of
   :data:`DRIFT_ITEMS` (the PR template's lines; the checklist itself lives in
-  CONTRIBUTING.md, "Before you open a PR").
+  CONTRIBUTING.md, "Pull requests").
 - A PR that changes shipped code (``packages/*/src/``) changes the
   ``## Unreleased`` section of CHANGELOG.md by adding a bullet, or its
   ``Changelog:`` line reads ``none, <why>``.
