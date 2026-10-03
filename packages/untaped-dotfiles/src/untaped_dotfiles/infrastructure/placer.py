@@ -80,21 +80,9 @@ class FilesystemPlacer:
         return str(destination)  # what the ``link`` record stores as target_hash
 
     def copy(self, data: bytes, target: Path, *, executable: bool) -> str:
-        target.parent.mkdir(parents=True, exist_ok=True)
         if target.is_symlink():
             target.unlink()
-        tmp = target.parent / f".{target.name}.{os.getpid()}.tmp"
-        tmp.unlink(missing_ok=True)  # left by an interrupted run
-        mode = 0o777 if executable else 0o666  # the kernel applies the umask
-        try:
-            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
-            with os.fdopen(fd, "wb") as handle:
-                handle.write(data)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(tmp, target)
-        finally:
-            tmp.unlink(missing_ok=True)
+        atomic_write(target, data, mode=(0o777 if executable else 0o666) & ~_umask())
         return content_hash(data)
 
     def parse(self, source: bytes, *, fmt: MergeFormat) -> dict[str, Any]:
@@ -143,3 +131,10 @@ class FilesystemPlacer:
             return target.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             return "<binary>\n"
+
+
+def _umask() -> int:
+    """The process umask (only readable by setting it; dotfiles runs single-threaded)."""
+    current = os.umask(0o022)
+    os.umask(current)
+    return current

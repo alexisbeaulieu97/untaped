@@ -71,6 +71,13 @@ def test_atomic_write_preserves_crlf_verbatim(tmp_path: Path) -> None:
     assert target.read_bytes() == b"a\r\nb\r\n"
 
 
+def test_atomic_write_writes_bytes_verbatim(tmp_path: Path) -> None:
+    target = tmp_path / "blob.bin"
+    atomic_write(target, b"\xff\x00a\r\n", mode=0o700)
+    assert target.read_bytes() == b"\xff\x00a\r\n"
+    assert target.stat().st_mode & 0o777 == 0o700
+
+
 def test_atomic_write_leaves_no_temp_file_on_success(tmp_path: Path) -> None:
     atomic_write(tmp_path / "out.txt", "x")
     assert [p.name for p in tmp_path.iterdir()] == ["out.txt"]
@@ -260,3 +267,14 @@ def test_read_structured_file_errors_name_the_flag_and_file(
 def test_read_structured_file_unreadable_is_not_reported_as_missing(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match=r"could not read --vars-file file .*: Is a directory"):
         read_structured_file(tmp_path, flag="--vars-file")
+
+
+def test_atomic_write_closes_the_temp_file_when_encoding_fails(tmp_path: Path) -> None:
+    target = tmp_path / "out.txt"
+    target.write_text("old")
+    open_fds = len(os.listdir("/dev/fd"))
+    with pytest.raises(UnicodeEncodeError):
+        atomic_write(target, "é", encoding="ascii")
+    assert len(os.listdir("/dev/fd")) == open_fds
+    assert target.read_text() == "old"
+    assert [p.name for p in tmp_path.iterdir()] == ["out.txt"]
