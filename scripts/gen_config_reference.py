@@ -128,6 +128,17 @@ DESCRIPTIONS: dict[str, str] = {
     "ansible.sources": "Saved sources. Managed by `ansible source` commands.",
     "ansible.aliases": "Role or Galaxy name to `owner/repo` aliases. Managed by "
     "`ansible source-alias` commands.",
+    "dotfiles.repos_dir": "Where `dotfiles subscribe URL` clones repos (`<repos_dir>/NAME`).",
+    "dotfiles.kept_dir": "Where `apply`, `sync` and `remove` keep local files they replace, "
+    "under `<repo>/<item>/<timestamp>/`.",
+    "dotfiles.state_dir": "Holds `status.json`, `attention` and the advisory lock.",
+    "dotfiles.tags": "This machine's tags, matched against `only` and `unless` in manifests.",
+    "dotfiles.os": "This machine's OS for `os` filters; detected when unset.",
+    "dotfiles.repos": "Subscribed repos. Managed by `dotfiles subscribe`/`unsubscribe`.",
+    "dotfiles.items": "Enabled items with their policy and skips. Managed by `dotfiles enable`/"
+    "`disable`.",
+    "dotfiles.applied": "One record per path the tool placed. Managed by `dotfiles apply`, "
+    "`sync` and `remove`.",
     "recipe.library_root": "Directory holding installed recipe packs.",
     "recipe.hook_timeout_seconds": "Per-hook request timeout; `0` disables it.",
     "recipe.hook_startup_timeout_seconds": "Timeout for preparing a hook environment.",

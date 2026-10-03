@@ -78,6 +78,24 @@ overridden for one process with the environment variable shown.
 | `awx.test_timeout` | number | `1800` | `UNTAPED_AWX__TEST_TIMEOUT` | Seconds a `test run` case waits before its job is cancelled, unless `--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it. |
 | `awx.test_parallel` | integer | `4` | `UNTAPED_AWX__TEST_PARALLEL` | Default `test run --parallel`. |
 
+## `dotfiles`
+
+| Key | Type | Default | Environment | Description |
+|---|---|---|---|---|
+| `dotfiles.repos_dir` | path | `~/.untaped/dotfiles/repos` | `UNTAPED_DOTFILES__REPOS_DIR` | Where `dotfiles subscribe URL` clones repos (`<repos_dir>/NAME`). |
+| `dotfiles.kept_dir` | path | `~/.untaped/dotfiles/kept` | `UNTAPED_DOTFILES__KEPT_DIR` | Where `apply`, `sync` and `remove` keep local files they replace, under `<repo>/<item>/<timestamp>/`. |
+| `dotfiles.state_dir` | path | `~/.untaped/dotfiles` | `UNTAPED_DOTFILES__STATE_DIR` | Holds `status.json`, `attention` and the advisory lock. |
+| `dotfiles.tags` | list | empty | `UNTAPED_DOTFILES__TAGS` | This machine's tags, matched against `only` and `unless` in manifests. |
+| `dotfiles.os` | `macos` \| `linux` \| `windows` (optional) | unset | `UNTAPED_DOTFILES__OS` | This machine's OS for `os` filters; detected when unset. |
+
+## `dotfiles` state
+
+| Key | Type | Description |
+|---|---|---|
+| `dotfiles.repos` | list | Subscribed repos. Managed by `dotfiles subscribe`/`unsubscribe`. |
+| `dotfiles.items` | list | Enabled items with their policy and skips. Managed by `dotfiles enable`/`disable`. |
+| `dotfiles.applied` | list | One record per path the tool placed. Managed by `dotfiles apply`, `sync` and `remove`. |
+
 ## `github`
 
 | Key | Type | Default | Environment | Description |
