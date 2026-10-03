@@ -75,7 +75,8 @@ def yaml_mapping_indent(text: str) -> int:
     that is neither a comment nor a list item (``2`` when nothing is indented).
 
     Pass it to ``ruamel.yaml``'s ``YAML.indent(mapping=...)`` so a rewrite keeps
-    the original indentation; ``load_yaml_guess_indent`` only guesses sequences.
+    the original indentation; ``load_yaml_guess_indent`` reports a block
+    sequence's indent, not the mapping's, when the file has one.
     """
     widths = [
         len(line) - len(line.lstrip(" "))
