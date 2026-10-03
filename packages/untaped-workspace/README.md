@@ -26,7 +26,7 @@ untaped config set github.inventory.orgs '["acme"]'
 ```
 
 Cloning private repos needs Git credentials set up in advance; see the
-skill's [pitfalls](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-workspace/src/untaped_workspace/skills/untaped-workspace/SKILL.md#pitfalls).
+skill's [setup](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-workspace/src/untaped_workspace/skills/untaped-workspace/SKILL.md#setup).
 Full git URLs skip the inventory. Directories, branch
 naming and parallelism are in the
 [configuration reference](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#workspace).

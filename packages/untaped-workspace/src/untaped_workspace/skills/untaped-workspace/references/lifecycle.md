@@ -112,7 +112,7 @@ and always exits 0.
 `--yes` (else exit 2). It discards uncommitted work and removes the
 directories, deleting a worktree git refuses to remove. Branch commits and
 stashes stay in the repo cache. Never run it without the four steps in
-[Pitfalls](../SKILL.md#pitfalls).
+[Safety](../SKILL.md#safety).
 
 If removing a repo fails, the workspace stays active so archive can be retried.
 Without `--force`, each repo is checked again just before it is removed:

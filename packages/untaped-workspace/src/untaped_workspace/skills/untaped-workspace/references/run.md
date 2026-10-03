@@ -65,7 +65,7 @@ warns on stderr and exits 0.
 
 ## Before you run
 
-`run` has no preview; follow [Pitfalls](../SKILL.md#pitfalls) before a
+`run` has no preview; follow [Safety](../SKILL.md#safety) before a
 command that rewrites history or pushes.
 
 ## Failures

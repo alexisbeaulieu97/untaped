@@ -1,4 +1,4 @@
-"""Convention checks for capabilities and the root shell.
+"""Convention checks for capabilities and the root app.
 
 See ``docs/reference/conventions.md#enforcement``.
 

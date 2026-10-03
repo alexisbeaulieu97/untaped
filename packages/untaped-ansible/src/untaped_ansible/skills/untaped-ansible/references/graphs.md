@@ -5,9 +5,8 @@ input, tree output, graph JSON, skipped files.
 
 ## Rows
 
-`deps` rows (`ansible.dependency`) and `impact` rows (`ansible.dependent`):
-
-`--columns '?'` lists the fields. What they do not say:
+`deps` rows (`ansible.dependency`) and `impact` rows (`ansible.dependent`)
+list their fields with `--columns '?'`. What the fields do not say:
 
 - `declared_ref` and `declared_in` are verbatim from the edge that reached the
   repo; `unresolved` is the declared name of a dependency that names no
@@ -17,7 +16,6 @@ input, tree output, graph JSON, skipped files.
   from.
 - `stopped` is `depth` or `not_cached` when the next level beyond this repo
   was not read, else `null`.
-
 - Each repo appears once per root ref, at its shortest path.
 - A table shortens `path` to its first and last hop (`a → … → z`); json,
   yaml, raw and pipe keep it whole.

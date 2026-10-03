@@ -88,7 +88,7 @@ reserved record field.
 
 stdout carries data only. With `--format json`, `yaml` or `pipe`, stderr
 carries JSON Lines: one object per error, per-item error, warning, hint or
-note. Progress spinners are silent in this mode.
+info message. Progress spinners are silent in this mode.
 
 - The format counts whether it comes from the flag, `UNTAPED_FORMAT` or
   `ui.format`. A command's own default, such as `export`'s YAML, does not.

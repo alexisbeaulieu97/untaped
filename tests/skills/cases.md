@@ -1,8 +1,8 @@
 # Skill behaviour cases
 
 Structure tests (`tests/repo/test_skill_files.py`, `tests/repo/test_docs.py`)
-check that the packaged skills parse and link. These cases check what an agent
-*does* with them. They live here, outside the skill directories, because
+check that the packaged skills parse, link and follow the template. These cases
+check what an agent *does* with them. They live here, outside the skill directories, because
 `untaped skills install` copies a whole skill folder.
 
 ## Method
