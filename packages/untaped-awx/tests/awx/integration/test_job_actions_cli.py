@@ -164,6 +164,25 @@ def test_relaunch_failed_hosts_posts_and_reports_the_new_job(fake_aap: Any) -> N
     assert row["hosts"] == "failed"
 
 
+def test_relaunch_refused_by_controller_is_a_failed_row(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    fake_aap.seed("jobs", id=41, name="deploy", status="failed")
+    fake_aap.seed("jobs", id=42, name="backup", status="failed")
+    fake_aap.refuse_relaunch_ids.add(41)
+
+    result = CliInvoker().invoke(app, ["jobs", "relaunch", "41", "42", "--yes", "--format", "json"])
+
+    assert result.exit_code == 4, result.output  # a permission failure
+    rows = json.loads(result.stdout)
+    assert [r["action"] for r in rows] == ["failed", "relaunched"]
+    assert rows[0]["error"]["category"] == "permission"
+    diagnostics = [json.loads(line) for line in result.stderr.splitlines() if line.startswith("{")]
+    errors = [d for d in diagnostics if d["level"] == "error"]
+    assert [(d["item"], d["system"]) for d in errors] == [("job 41 'deploy'", "awx")]
+
+
 def test_relaunch_dry_run_and_pipe_into_wait(fake_aap: Any) -> None:
     fake_aap.seed("jobs", id=41, name="deploy", status="failed")
 

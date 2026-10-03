@@ -67,7 +67,14 @@ class ResolveCasePayload:
         self._fk = fk
         self._catalog = catalog
         self._warn = warn
+        self._warned: set[str] = set()
         self._default_org = default_organization
+
+    def _warn_once(self, message: str) -> None:
+        """Warn about each message once per run, not once per case that repeats it."""
+        if message not in self._warned:
+            self._warned.add(message)
+            self._warn(message)
 
     def __call__(
         self,
@@ -88,7 +95,7 @@ class ResolveCasePayload:
         )
         fk_index = self.fk_index_for(spec)
         known = _KNOWN_BY_KIND.get(spec.kind, KNOWN_LAUNCH_FIELDS)
-        _warn_unknown_fields(merged, fk_index, known, self._warn)
+        _warn_unknown_fields(merged, fk_index, known, self._warn_once)
         resolved_top = self._resolve_top_level_fks(merged, fk_index, organization)
         result: dict[str, Any] = _walk_and_resolve_refs(
             resolved_top, partial(self._resolve_ref, organization=organization)
