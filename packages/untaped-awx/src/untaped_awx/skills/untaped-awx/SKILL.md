@@ -17,8 +17,10 @@ and redacts secrets. `--help` lists options; `--columns '?'` lists the columns o
 
 - Settings live under `profiles.<name>.awx`. Upstream AWX usually needs
   `untaped config set awx.api_prefix /api/v2/`; AAP uses the default.
-- Set the token with `untaped config set awx.token --prompt` or
-  `awx.token_command`. Never print or echo a token.
+- The user stores the token by running `untaped auth set awx` in their own
+  terminal (it prompts and keeps the token out of `config.yml`), or sets
+  `awx.token_command`. Never ask for, print or echo a token, and never read
+  `~/.untaped/config.yml`; `untaped auth status` says where tokens come from.
 - `untaped awx ping` checks the controller and token and names the
   authenticated `user`; run it first when the profile may be stale.
 

@@ -326,8 +326,7 @@ def test_rejected_token_hints_at_config_set() -> None:
 
     assert result.exit_code == 4, result.output
     assert result.stderr.endswith(
-        "error: Jira rejected the token (HTTP 401)\n"
-        "hint: run `untaped config set jira.token --prompt`\n"
+        "error: Jira rejected the token (HTTP 401)\nhint: run `untaped auth set jira`\n"
     )
 
 
@@ -341,7 +340,7 @@ def test_rejected_token_is_an_auth_diagnostic_under_json(monkeypatch: pytest.Mon
     record = json.loads(result.stderr.splitlines()[-1])
     assert record["message"] == "Jira rejected the token (HTTP 401)"
     assert (record["category"], record["system"]) == ("auth", "jira")
-    assert record["hint"] == "run `untaped config set jira.token --prompt`"
+    assert record["hint"] == "run `untaped auth set jira`"
 
 
 @pytest.mark.parametrize(

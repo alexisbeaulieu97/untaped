@@ -35,11 +35,12 @@ def aap_config_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[
           default:
             awx:
               base_url: https://aap.example.com
-              token: secret
               api_prefix: /api/v2/
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    # Not in the file: a plaintext token there warns on every run.
+    monkeypatch.setenv("UNTAPED_AWX__TOKEN", "secret")
     yield cfg
 
 
@@ -155,7 +156,7 @@ def test_run_exits_with_the_category_of_a_launch_failure(
     )
     assert failure["retryable"] is (status == 503)
     if status == 401:
-        assert "untaped config set awx.token" in failure["hint"]
+        assert "untaped auth set awx" in failure["hint"]
 
 
 def test_run_preflights_every_case_before_launching(

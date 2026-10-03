@@ -79,7 +79,7 @@ def test_whoami_rejected_token_hints_at_setting_a_new_one(
     assert result.exit_code == 4
     assert result.stderr.endswith(
         "error: GitHub rejected the configured token (HTTP 401)\n"
-        "hint: run `untaped config set github.token --prompt`\n"
+        "hint: run `untaped auth set github`\n"
     )
 
 
@@ -95,7 +95,7 @@ def test_rejected_token_is_an_auth_diagnostic_under_json(
     record = json.loads(result.stderr.splitlines()[-1])
     assert (record["category"], record["system"]) == ("auth", "github")
     assert record["message"] == "GitHub rejected the configured token (HTTP 401)"
-    assert record["hint"] == "run `untaped config set github.token --prompt`"
+    assert record["hint"] == "run `untaped auth set github`"
     assert record["details"]["status"] == 401
 
 

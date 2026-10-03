@@ -11,6 +11,23 @@
   policy. `apply` shows its plan and keeps replaced local files aside,
   `sync` is safe on a timer and exits 3 when something needs the user, and
   `status` writes a one-line `attention` file for prompt segments.
+- `untaped auth set|unset|status|migrate` keep API tokens out of `config.yml`.
+  `auth set awx` reads a token from a hidden prompt or `--stdin`, stores it
+  with this machine's password store (macOS `security`, `secret-tool`, then
+  `pass`), reads it back, and writes the `awx.token_command` that serves it;
+  `auth migrate` moves every plaintext token there, in every profile. See
+  [Tokens](docs/configuration.md#tokens).
+
+### Changed
+
+- `untaped setup` no longer stores a typed token in `config.yml`: it offers the
+  password store (or moving a plaintext token there), a `token_command`, or an
+  environment variable. A model without `token_command` still takes a typed
+  token.
+- A token stored in plain text in `config.yml` is deprecated, still read: using
+  one warns once per run, as does `config set <section>.token`. `doctor`'s
+  warning and the rejected- or missing-token hints now point at
+  `untaped auth migrate` and `untaped auth set <section>`.
 
 ## 10.0.0
 

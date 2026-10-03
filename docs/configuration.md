@@ -247,6 +247,41 @@ lists every `http.*` and `ui.*` setting.
 
 ## Tokens
 
+Keep tokens out of `config.yml`: agents read that file to learn a setup,
+people paste it into chats, and dotfile tools copy it. Store a token with this
+machine's password store instead:
+
+```bash
+untaped auth set awx                  # prompts; or: … | untaped auth set awx --stdin
+```
+
+`auth set` reads the token from a hidden prompt or `--stdin`, never from an
+argument. It uses the first store that works here: macOS `security` (the login
+keychain), `secret-tool` (a Secret Service such as GNOME Keyring), then `pass`
+(GPG, which works over SSH with gpg-agent; usually what a headless server or
+WSL2 ends up with). `--store` picks one. It hands the token to the store on
+stdin, reads it back, and only then writes `<section>.token_command` (the
+store's read command) in the active profile, removing any plaintext
+`<section>.token`. Run it again to replace a rotated token. The entry is
+`<profile>/<section>` under the `untaped` service, so two config files on one
+machine (`UNTAPED_CONFIG`) share it.
+
+| Command | Does |
+|---|---|
+| `untaped auth set SECTION` | Store a token and point `<section>.token_command` at it |
+| `untaped auth migrate` | Do that for every plaintext token, in every profile (`--dry-run` lists them); a token that fails stays put |
+| `untaped auth status` | Where each profile's tokens come from and which stores work here; runs no command, so it cannot tell whether an entry still exists (`doctor --online` can) |
+| `untaped auth unset SECTION` | Delete what `auth set` stored and unset the command, in the selected profile only |
+
+A store over SSH can fail on an unlock prompt nobody sees: unlock it first
+(`security unlock-keychain` on macOS). Store commands time out after 60s.
+
+What this protects: the token is no longer in a file read casually. It does
+not stop a program running as you, which can run `untaped` or the store's own
+command. Agents in particular should be denied reads of `~/.untaped/` and the
+password store in their harness; they can use `untaped config get`, which
+masks secrets.
+
 `github`, `jira` and `awx` read their API token from the first of these that
 is set:
 
@@ -261,9 +296,10 @@ sets neither `token` nor `token_command`, whatever its `base_url`. For the
 same reason, `doctor` and `setup` count one as configuring a service only
 when the section also has a `base_url`.
 
-`token_command` keeps the token out of `config.yml`. It is an argv list, run
-without a shell, at most once per process and only when a command first needs
-the token:
+`token_command` keeps the token out of `config.yml`; `auth set` writes one,
+and any password manager's command works too. It is an argv list, run without
+a shell, at most once per process and only when a command first needs the
+token:
 
 ```bash
 untaped config set github.token_command '["gh", "auth", "token"]'
@@ -280,10 +316,11 @@ goes straight to your terminal.
 `untaped` does not run `gh auth token` on its own. To reuse the GitHub CLI's
 login, set `github.token_command` as above.
 
-A token in `<section>.token` is stored in plain text in `config.yml`, which is
-what `config set <section>.token` and `untaped setup`'s "Enter a token"
-choice do. `untaped doctor` warns about it and names `token_command` and an
-environment variable to use instead.
+A token in `<section>.token` is stored in plain text in `config.yml`. That is
+deprecated but still read (a token file in a container or CI job is a fair
+use; `UNTAPED_<SECTION>__TOKEN` avoids the file altogether): loading one warns
+once per run, `config set <section>.token` warns, `untaped doctor` warns with
+`untaped auth migrate` as the fix, and `untaped setup` no longer offers it.
 
 ## Debug logs
 

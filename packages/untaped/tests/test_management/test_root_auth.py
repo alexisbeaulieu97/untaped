@@ -1,0 +1,578 @@
+"""``untaped auth``: store tokens outside ``config.yml`` and move plaintext ones there.
+
+Stores are fakes on a narrowed ``PATH`` (:mod:`test_management.stores`);
+no test touches a real keychain. The sentinel token must never appear in
+any output, error or argv.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import Any, ClassVar
+
+import pytest
+from pydantic import BaseModel, SecretStr
+
+from test_management.stores import FakeStores, install_fake_stores
+from test_management.support import make_spec, write_config
+from untaped import bootstrap, token_store
+from untaped.auth import clear_token_cache
+from untaped.config_file import read_config_dict
+from untaped.sdk import TokenCommand, TokenSources
+from untaped.settings import get_config_section
+from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli, provider_candidate
+
+pytestmark = pytest.mark.usefixtures("_isolated_config")
+
+SENTINEL = "s3cr3t-'quoted' \"and\" back\\slash"
+
+
+class SvcProfile(BaseModel):
+    """Token-bearing service double (section ``svc``)."""
+
+    token_sources: ClassVar[TokenSources] = TokenSources(env=("SVC_TOKEN",))
+
+    base_url: str | None = None
+    token: SecretStr | None = None
+    token_command: TokenCommand = None
+
+
+class OtherProfile(BaseModel):
+    """A second token-bearing service double (section ``other``)."""
+
+    token_sources: ClassVar[TokenSources] = TokenSources()
+
+    token: SecretStr | None = None
+    token_command: TokenCommand = None
+
+
+class PlainProfile(BaseModel):
+    """A service without ``token_command`` (section ``plain``): not ``auth``'s."""
+
+    token: SecretStr | None = None
+
+
+def _auth(*args: str, input: str | None = None, backend: Any = None) -> CliResult:
+    specs = (
+        make_spec("svc", profile_model=SvcProfile),
+        make_spec("other", profile_model=OtherProfile),
+        make_spec("plain", profile_model=PlainProfile),
+    )
+    root = bootstrap.build_root_app(candidates=tuple(provider_candidate(s) for s in specs))
+    return invoke_cli(
+        root.meta,
+        ["auth", *args],
+        input=input,
+        interactive=backend is not None,
+        prompt_backend=backend,
+    )
+
+
+def _config(path: Path) -> dict[str, Any]:
+    return read_config_dict(path)
+
+
+def _no_leak(result: CliResult, stores: FakeStores) -> None:
+    assert SENTINEL not in result.output
+    for call in stores.calls():
+        assert SENTINEL not in " ".join(call["argv"])  # type: ignore[arg-type]
+
+
+@pytest.fixture
+def stores(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeStores:
+    return install_fake_stores(tmp_path, monkeypatch, "pass")
+
+
+# --- auth set -----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("store", "macos", "command", "entry"),
+    [
+        ("pass", False, ["pass", "show", "untaped/default/svc"], "untaped/default/svc"),
+        (
+            "secret-tool",
+            False,
+            ["secret-tool", "lookup", "service", "untaped", "account", "default/svc"],
+            "default/svc",
+        ),
+        (
+            "security",
+            True,
+            ["security", "find-generic-password", "-s", "untaped", "-a", "default/svc", "-w"],
+            "default/svc",
+        ),
+    ],
+)
+def test_set_stores_on_stdin_and_writes_the_preset(
+    _isolated_config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    store: str,
+    macos: bool,
+    command: list[str],
+    entry: str,
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, store, macos=macos)
+    write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: old\n")
+    result = _auth("set", "svc", "--stdin", "--format", "json", input=f"  {SENTINEL}\n")
+    assert result.exit_code == 0, result.output
+    assert _config(_isolated_config)["profiles"]["default"]["svc"] == {"token_command": command}
+    assert stores.entries() == {entry: SENTINEL}
+    assert json.loads(result.stdout)["action"] == "stored"
+    assert "svc.token_command set in profile default" in result.stderr
+    _no_leak(result, stores)
+    # The written command serves the token at run time.
+    clear_token_cache()
+    token = get_config_section("svc", SvcProfile).token
+    assert token is not None
+    assert token.get_secret_value() == SENTINEL
+
+
+def test_security_gets_the_token_as_hex(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "security", macos=True)
+    assert _auth("set", "svc", "--stdin", input=SENTINEL).exit_code == 0
+    store_call = next(call for call in stores.calls() if call["argv"] == ["security", "-i"])
+    assert SENTINEL.encode().hex() in str(store_call["stdin"])
+    assert SENTINEL not in str(store_call["stdin"])
+
+
+def test_set_prefers_the_first_usable_store(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch, "secret-tool", "pass")
+    monkeypatch.setenv("STUB_MODE", "no-service")
+    result = _auth("set", "svc", "--stdin", input="tok")
+    assert result.exit_code == 0, result.output
+    command = _config(_isolated_config)["profiles"]["default"]["svc"]["token_command"]
+    assert command[0] == "pass", "a Secret Service probe that errors falls through to pass"
+
+
+def test_set_with_a_forced_store_that_is_unusable_fails(
+    _isolated_config: Path, stores: FakeStores
+) -> None:
+    result = _auth("set", "svc", "--stdin", "--store", "security", input="tok")
+    assert result.exit_code == 5
+    assert "security is not usable on this machine" in result.stderr
+    assert not _isolated_config.exists()
+
+
+def test_set_prompts_for_the_token(_isolated_config: Path, stores: FakeStores) -> None:
+    backend = ScriptedPromptBackend(secrets=[SENTINEL])
+    result = _auth("set", "svc", backend=backend)
+    assert result.exit_code == 0, result.output
+    assert backend.calls == [("secret", "svc token")]
+    assert stores.entries() == {"untaped/default/svc": SENTINEL}
+    _no_leak(result, stores)
+
+
+def test_set_without_a_terminal_or_stdin_refuses(
+    _isolated_config: Path, stores: FakeStores
+) -> None:
+    result = _auth("set", "svc")
+    assert result.exit_code == 2
+    assert "pipe it with --stdin" in result.stderr
+    assert stores.calls() == [] or all(call["argv"][1] != "insert" for call in stores.calls())
+
+
+@pytest.mark.parametrize("payload", ["", "  \n", "one\ntwo\n"])
+def test_set_rejects_empty_or_multiline_stdin(
+    _isolated_config: Path, stores: FakeStores, payload: str
+) -> None:
+    result = _auth("set", "svc", "--stdin", input=payload)
+    assert result.exit_code == 1
+    assert stores.entries() == {}
+    assert not _isolated_config.exists()
+
+
+def test_set_overwrites_on_rotation(_isolated_config: Path, stores: FakeStores) -> None:
+    assert _auth("set", "svc", "--stdin", input="first").exit_code == 0
+    assert _auth("set", "svc", "--stdin", input="second").exit_code == 0
+    assert stores.entries() == {"untaped/default/svc": "second"}
+    inserts = [call["argv"] for call in stores.calls() if call["argv"][1] == "insert"]  # type: ignore[index]
+    assert all("--force" in argv for argv in inserts)  # type: ignore[operator]
+
+
+@pytest.mark.parametrize(
+    ("mode", "message"),
+    [
+        ("fail", "'pass' exited with status 1"),
+        ("corrupt", "the stored token did not read back for default/svc"),
+        ("locked", "run `security unlock-keychain`"),
+    ],
+)
+def test_a_failed_store_changes_nothing(
+    _isolated_config: Path,
+    stores: FakeStores,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    message: str,
+) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: old\n")
+    monkeypatch.setenv("STUB_MODE", mode)
+    result = _auth("set", "svc", "--stdin", input=SENTINEL)
+    assert result.exit_code != 0
+    assert message in result.stderr
+    assert _config(_isolated_config)["profiles"]["default"]["svc"] == {"token": "old"}
+    _no_leak(result, stores)
+
+
+def test_a_hung_store_times_out_with_the_likely_cause(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "hang")
+    monkeypatch.setattr(token_store, "_TIMEOUT_SECONDS", 0.5)
+    result = _auth("set", "svc", "--stdin", input="tok")
+    assert result.exit_code == 5
+    assert "timed out after 0.5s" in result.stderr
+    assert "unlock prompt" in result.stderr
+    assert not _isolated_config.exists()
+
+
+def test_read_back_bypasses_the_token_cache(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert _auth("set", "svc", "--stdin", input="first").exit_code == 0
+    clear_token_cache()
+    token = get_config_section("svc", SvcProfile).token
+    assert token is not None
+    assert token.get_secret_value() == "first"  # now cached for this process
+    monkeypatch.setenv("STUB_MODE", "fail")
+    result = _auth("set", "svc", "--stdin", input="second")
+    assert result.exit_code == 4, "a cached read must not mask the failed store"
+
+
+def test_no_usable_store_names_the_other_routes(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch)
+    result = _auth("set", "svc", "--stdin", input="tok")
+    assert result.exit_code == 5
+    assert "no token store is usable on this machine" in result.stderr
+    assert "svc.token_command" in result.stderr
+    assert "$SVC_TOKEN" in result.stderr
+    assert not _isolated_config.exists()
+
+
+def test_an_uninitialised_password_store_is_not_usable(
+    _isolated_config: Path, stores: FakeStores, tmp_path: Path
+) -> None:
+    (tmp_path / "password-store" / ".gpg-id").unlink()
+    result = _auth("set", "svc", "--stdin", input="tok")
+    assert result.exit_code == 5
+    assert "no token store is usable" in result.stderr
+
+
+def test_set_in_a_named_profile_names_the_entry_after_it(
+    _isolated_config: Path, stores: FakeStores
+) -> None:
+    write_config(_isolated_config, "profiles:\n  default: {}\n  work: {}\n")
+    result = _auth("set", "svc", "--stdin", input="tok")
+    assert result.exit_code == 0
+    root = bootstrap.build_root_app(
+        candidates=(provider_candidate(make_spec("svc", profile_model=SvcProfile)),)
+    )
+    result = invoke_cli(
+        root.meta, ["--profile", "work", "auth", "set", "svc", "--stdin"], input="w"
+    )
+    assert result.exit_code == 0, result.output
+    assert stores.entries() == {"untaped/default/svc": "tok", "untaped/work/svc": "w"}
+
+
+def test_set_refuses_when_default_holds_a_plaintext_token(
+    _isolated_config: Path, stores: FakeStores
+) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    svc:\n      token: shared\n  work: {}\nactive: work\n",
+    )
+    result = _auth("set", "svc", "--stdin", input="tok")
+    assert result.exit_code == 4
+    assert "svc.token is set in profile default" in result.stderr
+    assert "untaped auth migrate" in result.stderr
+    assert stores.entries() == {}
+
+
+def test_set_warns_when_the_env_override_shadows_the_store(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_SVC__TOKEN", "env")
+    result = _auth("set", "svc", "--stdin", input="tok")
+    assert result.exit_code == 0
+    assert "$UNTAPED_SVC__TOKEN is set and wins over the stored token" in result.stderr
+
+
+@pytest.mark.parametrize("section", ["plain", "nope"])
+def test_set_rejects_a_section_without_token_command(
+    _isolated_config: Path, stores: FakeStores, section: str
+) -> None:
+    result = _auth("set", section, "--stdin", input="tok")
+    assert result.exit_code == 1
+    assert f"unknown token section {section!r}; known: other, svc" in result.stderr
+
+
+def test_set_rejects_a_profile_name_that_cannot_name_an_entry(
+    _isolated_config: Path, stores: FakeStores
+) -> None:
+    write_config(_isolated_config, "profiles:\n  default: {}\n  'my work': {}\nactive: my work\n")
+    result = _auth("set", "svc", "--stdin", input="tok")
+    assert result.exit_code == 1
+    assert "profile 'my work' cannot name a store entry" in result.stderr
+
+
+# --- auth unset ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("store", "macos"), [("pass", False), ("secret-tool", False), ("security", True)]
+)
+def test_unset_deletes_the_entry_and_the_command(
+    _isolated_config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    store: str,
+    macos: bool,
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, store, macos=macos)
+    assert _auth("set", "svc", "--stdin", "--store", store, input="tok").exit_code == 0
+    preview = _auth("unset", "svc", "--dry-run", "--format", "json")
+    assert json.loads(preview.stdout)["action"] == "planned"
+    assert len(stores.entries()) == 1
+    result = _auth("unset", "svc", "--yes", "--format", "json")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["action"] == "deleted"
+    assert stores.entries() == {}
+    assert _config(_isolated_config)["profiles"]["default"] == {}
+
+
+def test_unset_when_the_store_tool_is_gone_keeps_the_command(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch)
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    svc:\n      token_command: [pass, show, untaped/default/svc]\n",
+    )
+    result = _auth("unset", "svc", "--yes")
+    assert result.exit_code == 5
+    assert "'pass' not found on PATH" in result.stderr
+    assert "token_command" in _config(_isolated_config)["profiles"]["default"]["svc"]
+
+
+def test_a_hung_secret_service_probe_is_not_usable(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch, "secret-tool")
+    monkeypatch.setenv("STUB_MODE", "hang-probe")
+    monkeypatch.setattr(token_store, "_PROBE_TIMEOUT_SECONDS", 0.5)
+    result = _auth("set", "svc", "--stdin", input="tok")
+    assert result.exit_code == 5
+    assert "no token store is usable" in result.stderr
+
+
+def test_macos_detection_follows_the_platform() -> None:
+    assert token_store._is_macos() is (sys.platform == "darwin")
+
+
+def test_preset_entry_ignores_empty_and_foreign_commands() -> None:
+    assert token_store.preset_entry(None) is None
+    assert token_store.preset_entry(["pass", "show", "elsewhere/x"]) is None
+    assert token_store.preset_entry(["security", "-a", "default/svc"]) is None
+
+
+def test_unset_without_yes_or_terminal_refuses(_isolated_config: Path, stores: FakeStores) -> None:
+    assert _auth("set", "svc", "--stdin", input="tok").exit_code == 0
+    result = _auth("unset", "svc")
+    assert result.exit_code == 2
+    assert stores.entries() == {"untaped/default/svc": "tok"}
+
+
+def test_unset_leaves_an_inherited_command_alone(
+    _isolated_config: Path, stores: FakeStores
+) -> None:
+    assert _auth("set", "svc", "--stdin", input="tok").exit_code == 0
+    config = _config(_isolated_config)
+    config["profiles"]["work"] = {}
+    config["active"] = "work"
+    write_config(_isolated_config, json.dumps(config))
+    result = _auth("unset", "svc", "--yes", "--format", "json")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["action"] == "unchanged"
+    assert "inherited from profile default; profile work is unchanged" in result.stderr
+    assert "untaped --profile default auth unset svc" in result.stderr
+    assert stores.entries() == {"untaped/default/svc": "tok"}
+
+
+def test_unset_with_nothing_set_is_a_no_op(_isolated_config: Path, stores: FakeStores) -> None:
+    result = _auth("unset", "svc", "--yes", "--format", "json")
+    assert result.exit_code == 0
+    assert "svc.token_command is not set in profile default" in result.stderr
+
+
+def test_unset_leaves_a_foreign_command_alone(_isolated_config: Path, stores: FakeStores) -> None:
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    svc:\n      token_command: [op, read, x]\n"
+    )
+    result = _auth("unset", "svc", "--yes")
+    assert result.exit_code == 1
+    assert "was not written by untaped" in result.stderr
+    assert _config(_isolated_config)["profiles"]["default"]["svc"] == {
+        "token_command": ["op", "read", "x"]
+    }
+
+
+# --- auth status --------------------------------------------------------------
+
+
+def test_status_names_every_source_without_running_commands(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch, "pass")
+    write_config(
+        _isolated_config,
+        "profiles:\n"
+        "  default:\n"
+        "    svc:\n      token_command: [pass, show, untaped/default/svc]\n"
+        "    other:\n      token: plain-secret\n"
+        "  work:\n"
+        "    svc:\n      token_command: [op, read, x]\n",
+    )
+    monkeypatch.setenv("STUB_MODE", "fail")  # a run would fail; status must not run one
+    result = _auth("status", "--format", "json")
+    assert result.exit_code == 0, result.output
+    rows = {(row["profile"], row["section"]): row for row in json.loads(result.stdout)}
+    assert rows["default", "svc"]["source"] == "pass (untaped/default/svc)"
+    assert rows["default", "other"] == {
+        "profile": "default",
+        "section": "other",
+        "source": "config.yml (plain text)",
+        "set_in": "default",
+    }
+    assert rows["work", "svc"]["source"] == "token_command"
+    assert rows["work", "other"]["set_in"] == "default"
+    assert "token stores usable here: pass" in result.stderr
+    assert "plain-secret" not in result.output
+
+
+def test_status_reports_env_sources(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch)
+    monkeypatch.setenv("UNTAPED_SVC__TOKEN", "x")
+    monkeypatch.setenv("SVC_TOKEN", "y")
+    result = _auth("status", "--format", "json")
+    rows = {row["section"]: row for row in json.loads(result.stdout)}
+    assert rows["svc"]["source"] == "$UNTAPED_SVC__TOKEN"
+    assert rows["other"]["source"] == "none"
+    assert "token stores usable here: none" in result.stderr
+
+
+# --- auth migrate -------------------------------------------------------------
+
+
+_PLAINTEXT = (
+    "profiles:\n"
+    "  default:\n"
+    "    svc:\n      base_url: https://svc\n      token: d-svc\n"
+    "  work:\n"
+    "    svc:\n      token: w-svc\n"
+    "    other:\n      token: w-other\n"
+)
+
+
+def test_migrate_moves_every_plaintext_token(_isolated_config: Path, stores: FakeStores) -> None:
+    write_config(_isolated_config, _PLAINTEXT)
+    preview = _auth("migrate", "--dry-run", "--format", "json")
+    assert preview.exit_code == 0, preview.output
+    assert {row["action"] for row in json.loads(preview.stdout)} == {"planned"}
+    assert stores.entries() == {}
+    result = _auth("migrate", "--format", "json")
+    assert result.exit_code == 0, result.output
+    assert [
+        (row["profile"], row["section"], row["action"]) for row in json.loads(result.stdout)
+    ] == [
+        ("default", "svc", "moved"),
+        ("work", "other", "moved"),
+        ("work", "svc", "moved"),
+    ]
+    assert stores.entries() == {
+        "untaped/default/svc": "d-svc",
+        "untaped/work/svc": "w-svc",
+        "untaped/work/other": "w-other",
+    }
+    text = _isolated_config.read_text()
+    assert "d-svc" not in text and "w-svc" not in text and "w-other" not in text
+    assert _config(_isolated_config)["profiles"]["default"]["svc"]["base_url"] == "https://svc"
+    assert "moved 3 tokens to pass" in result.stderr
+    again = _auth("migrate", "--format", "json")
+    assert again.exit_code == 0
+    assert json.loads(again.stdout) == []
+    assert "nothing to move" in again.stderr
+
+
+def test_migrate_keeps_a_token_that_fails_and_exits_non_zero(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, _PLAINTEXT)
+    monkeypatch.setenv("STUB_MODE", "corrupt")
+    result = _auth("migrate", "--format", "json")
+    assert result.exit_code == 4
+    assert {row["action"] for row in json.loads(result.stdout)} == {"failed"}
+    assert "3 tokens could not be moved" in result.stderr
+    assert _config(_isolated_config)["profiles"]["work"]["other"] == {"token": "w-other"}
+
+
+def test_migrate_without_a_store_changes_nothing(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch)
+    write_config(_isolated_config, _PLAINTEXT)
+    result = _auth("migrate")
+    assert result.exit_code == 5
+    assert "no token store is usable" in result.stderr
+    assert "w-other" in _isolated_config.read_text()
+
+
+# --- deprecations ---------------------------------------------------------------
+
+
+def test_loading_a_plaintext_token_warns_once(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from untaped.settings import register_profile_settings
+
+    register_profile_settings("svc", SvcProfile)
+    write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: plain\n")
+    get_config_section("svc", SvcProfile)
+    get_config_section("svc", SvcProfile)
+    err = capsys.readouterr().err
+    assert err.count("svc.token is stored in plain text") == 1
+    assert "untaped auth migrate" in err
+    assert "plain\n" not in err
+
+
+def test_an_env_override_does_not_warn(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.settings import register_profile_settings
+
+    register_profile_settings("svc", SvcProfile)
+    monkeypatch.setenv("UNTAPED_SVC__TOKEN", "env")
+    get_config_section("svc", SvcProfile)
+    assert "plain text" not in capsys.readouterr().err
+
+
+def test_config_set_of_a_token_is_deprecated(_isolated_config: Path) -> None:
+    root = bootstrap.build_root_app(
+        candidates=(provider_candidate(make_spec("svc", profile_model=SvcProfile)),)
+    )
+    result = invoke_cli(root.meta, ["config", "set", "svc.token", "tok"])
+    assert result.exit_code == 0, result.output
+    assert "storing svc.token in plain text in config.yml is deprecated" in result.stderr
+    assert "untaped auth set svc" in result.stderr
+    quiet = invoke_cli(root.meta, ["config", "set", "svc.base_url", "https://svc"])
+    assert "deprecated" not in quiet.stderr

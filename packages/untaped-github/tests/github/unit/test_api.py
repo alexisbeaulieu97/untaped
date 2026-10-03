@@ -246,7 +246,7 @@ def test_repo_inventory_rejected_token_is_auth_with_a_hint() -> None:
     assert caught.value.category == "auth"
     assert caught.value.system == "github"
     assert caught.value.hint is not None
-    assert "github.token" in caught.value.hint
+    assert "auth set github" in caught.value.hint
 
 
 def test_repo_inventory_rate_limit_is_unavailable() -> None:

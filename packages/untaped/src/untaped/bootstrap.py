@@ -50,6 +50,7 @@ from untaped.diagnostics import diagnostics_scope
 from untaped.errors import ConfigError
 from untaped.management import (
     build_root_alias_app,
+    build_root_auth_app,
     build_root_capabilities_app,
     build_root_config_app,
     build_root_doctor_app,
@@ -208,6 +209,7 @@ def build_root_app(
     _mount(root, build_root_skills_app(shell=SHELL_SPEC, result=result), name="skills")
     _mount(root, build_root_doctor_app(shell=SHELL_SPEC, result=result), name="doctor")
     _mount(root, build_root_setup_app(shell=SHELL_SPEC, result=result), name="setup")
+    _mount(root, build_root_auth_app(result=result), name="auth")
     _mount(
         root,
         build_root_alias_app(builtin_for=lambda name: resolve_command(root, name)),
