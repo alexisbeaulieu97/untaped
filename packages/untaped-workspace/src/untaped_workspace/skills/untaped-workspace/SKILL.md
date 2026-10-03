@@ -75,9 +75,9 @@ on `create`); agents always pass it.
 ## Pitfalls
 
 - Read stderr as well as the rows; under `--format json` it is JSON Lines.
-  Pass on to the user, quoted with its hint, what they would act on: a
-  deprecated setting or flag, a skipped or partial result, a clamped option.
-  Leave out progress and routine info lines.
+  Pass on what the user would want to know about, with any hint, whatever
+  its `level`: a deprecated setting or flag, a skipped or partial result, a
+  clamped option. Leave out progress and routine lines.
 - `run`: quote the command; `-` reads a script from stdin (heredoc).
   Read-only repos are skipped unless `--include-read-only`.
 - An unknown repo name exits 2 and suggests close matches; an ambiguous one

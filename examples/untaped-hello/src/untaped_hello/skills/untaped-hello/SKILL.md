@@ -33,8 +33,8 @@ Settings live under `profiles.<name>.hello`. The only one is the greeting:
 ## Pitfalls
 
 - Read stderr as well as the rows; under `--format json` it is JSON Lines.
-  Pass on to the user, quoted with its hint, what they would act on: a
-  deprecated setting or flag, a skipped or partial result, a clamped option.
-  Leave out progress and routine info lines.
+  Pass on what the user would want to know about, with any hint, whatever
+  its `level`: a deprecated setting or flag, a skipped or partial result, a
+  clamped option. Leave out progress and routine lines.
 - A `hello` row that is `quarantined` means the plugin failed to load; the
   `untaped capabilities` reason says why.
