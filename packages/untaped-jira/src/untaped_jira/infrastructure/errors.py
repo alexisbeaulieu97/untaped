@@ -33,7 +33,9 @@ def to_jira_error(
     """The typed error for one failed Jira call (``noun``/``name`` name its target)."""
     status = err.status_code
     if status == 401:
-        return rejected_token_error("jira", "Jira rejected the token (HTTP 401)", cause=err)
+        return rejected_token_error(
+            "jira", "Jira rejected the token (HTTP 401)", cause=err, takes_token_command=True
+        )
     detail = _jira_detail(err.body)
     if status == 404 and noun is not None and name is not None:
         message = not_found(noun, name)

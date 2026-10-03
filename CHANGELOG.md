@@ -15,7 +15,8 @@
   `auth set awx` reads a token from a hidden prompt or `--stdin`, stores it
   with this machine's password store (macOS `security`, `secret-tool`, then
   `pass`), reads it back, and writes the `awx.token_command` that serves it;
-  `auth migrate` moves every plaintext token there, in every profile. See
+  `auth migrate` moves every plaintext token there, in every profile; `auth
+  unset` deletes a stored one, even when its entry is already gone. See
   [Tokens](docs/configuration.md#tokens).
 
 ### Changed
@@ -27,7 +28,9 @@
 - A token stored in plain text in `config.yml` is deprecated, still read: using
   one warns once per run, as does `config set <section>.token`. `doctor`'s
   warning and the rejected- or missing-token hints now point at
-  `untaped auth migrate` and `untaped auth set <section>`.
+  `untaped auth migrate` and `untaped auth set <section>` for sections whose
+  model has `token_command`; the SDK's `rejected_token_error` and
+  `missing_setting_error` take `takes_token_command=True` for that hint.
 
 ## 10.0.0
 

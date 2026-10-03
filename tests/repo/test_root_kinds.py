@@ -24,6 +24,7 @@ pytestmark = pytest.mark.usefixtures("fresh_composition")
         (["capabilities"], "untaped.capability"),
         (["doctor"], "untaped.doctor_check"),
         (["skills", "list"], "untaped.skill"),
+        (["auth", "status"], "untaped.token_source"),
         (["config", "set", "skills.updates", "auto"], "untaped.setting_outcome"),
         (["config", "unset", "skills.updates"], "untaped.setting_outcome"),
         (["profile", "create", "qa"], "untaped.profile_outcome"),

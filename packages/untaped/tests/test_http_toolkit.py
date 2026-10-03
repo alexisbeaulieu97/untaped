@@ -145,6 +145,12 @@ def test_a_missing_token_names_the_sources_that_keep_it_out_of_the_config_file()
     assert "demo.token_command or $DEMO_TOKEN" in message
 
 
+def test_a_missing_token_without_token_command_prompts_for_it() -> None:
+    error = format_error(missing_setting_error("demo", "token", secret=("token",)))
+    assert "`untaped config set demo.token --prompt`" in error
+    assert "auth set" not in error
+
+
 class NoUrlSettings(BaseModel):
     base_url: str | None = None
     token: SecretStr | None = SecretStr("sekret")
@@ -650,7 +656,9 @@ def test_paginate_offset_max_pages_bounds_non_converging_server() -> None:
 def test_a_rejected_token_is_an_auth_config_error_with_the_token_hint() -> None:
     cause = HttpError("HTTP 401", status_code=401, url="https://aap/api/v2/me/", system="awx")
 
-    error = rejected_token_error("awx", "AWX rejected the token (HTTP 401)", cause=cause)
+    error = rejected_token_error(
+        "awx", "AWX rejected the token (HTTP 401)", cause=cause, takes_token_command=True
+    )
 
     assert isinstance(error, ConfigError)
     assert (str(error), error.category, error.system) == (
@@ -660,3 +668,9 @@ def test_a_rejected_token_is_an_auth_config_error_with_the_token_hint() -> None:
     )
     assert error.hint == "run `untaped auth set awx`"
     assert dict(error.details) == {"status": 401, "url": "https://aap/api/v2/me/"}
+
+
+def test_a_rejected_token_without_token_command_hints_at_config_set() -> None:
+    # `auth set` refuses a section whose model has no token_command.
+    error = rejected_token_error("plain", "rejected")
+    assert error.hint == "run `untaped config set plain.token --prompt`"
