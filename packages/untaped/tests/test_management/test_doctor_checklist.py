@@ -27,6 +27,12 @@ from untaped.testing import CliInvoker, CliResult
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 
+@pytest.fixture(autouse=True)
+def _wide(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Wide enough that no line wraps, whatever terminal runs the tests."""
+    monkeypatch.setenv("COLUMNS", "500")
+
+
 def _fixing(check_id: str, fix: str, *, automatic: bool, ok: bool = False) -> DoctorCheck:
     def run(_ctx: CapabilityContext) -> DoctorResult:
         return DoctorResult(
@@ -166,3 +172,32 @@ def test_structured_rows_keep_their_shape_and_the_footer_is_a_json_line(
     }
     footer = json.loads(result.stderr.splitlines()[-1])
     assert footer["message"].startswith("doctor: ")
+
+
+@pytest.mark.parametrize("columns", ["80", "40"])
+def test_a_long_detail_wraps_inside_its_group(
+    monkeypatch: pytest.MonkeyPatch, columns: str
+) -> None:
+    monkeypatch.setenv("COLUMNS", columns)
+    spec = make_spec(
+        "alpha",
+        doctor_checks=(
+            check("alpha.long", warn=True, detail="a detail " * 12, title="alpha long"),
+        ),
+    )
+    app = build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=compose(spec))
+    lines = CliInvoker().invoke(app, []).stdout.splitlines()
+    groups = [line for line in lines if line and not line.startswith(" ")]
+    assert groups == ["untaped", "alpha"]
+    assert all(len(line) <= int(columns) for line in lines)
+    start = lines.index("alpha")
+    detail = " ".join(line.strip() for line in lines[start + 2 :])
+    assert detail.endswith(("a detail " * 12).strip())
+
+
+def test_glyphs_take_the_status_colours(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    stdout = _doctor().stdout
+    assert "\x1b[33m⚠" in stdout
+    assert "\x1b[31m✗" in stdout
+    assert "\x1b[32m✓" in stdout
