@@ -361,6 +361,23 @@ def test_validate_renders_without_launching(
     assert all(action != "launch" for _, _, action, _ in fake_aap.actions_called)
 
 
+def test_validate_warns_about_an_unknown_launch_field_as_a_diagnostic(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    _seed_jt(fake_aap)
+    test_file = _write(
+        tmp_path / "v.yml",
+        "kind: AwxTestSuite\nname: v\njobTemplate: Deploy app\n"
+        "cases:\n  c:\n    launch:\n      frooks: 4\n",
+    )
+
+    result = cli.invoke(app, ["test", "validate", str(test_file), "--non-interactive"])
+
+    lines = [json.loads(line) for line in (result.stderr or "").splitlines() if line]
+    assert [line["level"] for line in lines if "frooks" in line["message"]] == ["warning"]
+
+
 def test_validate_reports_launches_awx_would_reject(
     cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
 ) -> None:

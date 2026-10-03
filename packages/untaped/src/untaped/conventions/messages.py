@@ -5,6 +5,11 @@ An AST scan over a package's source flags:
 - ``echo-error`` / ``echo-warning`` — ``echo("error: …")`` or
   ``echo("warning: …")``: raise an ``UntapedError`` (``report_errors``
   prints it) or use ``ui.message("warning", …)``;
+- ``echo-failed`` — ``echo("failed: …")``: ``report_error(exc, item=…)``
+  reports a per-item failure (an error line, with its category under JSON
+  diagnostics);
+- ``warnings-warn`` — ``warnings.warn(…)`` bypasses stderr diagnostics:
+  take a ``warn`` callback or use ``ui.message("warning", …)``;
 - ``capital-warning`` — a literal starting with ``Warning:``;
 - ``paren-s`` — ``(s)`` in a literal: use ``plural()``;
 - ``error-case`` — an error message that starts with a capitalized word
@@ -113,8 +118,31 @@ def tree_violations(tree: ast.Module) -> Iterator[tuple[int, str, str]]:
                 yield node.lineno, "paren-s", _snippet(node.value)
 
 
+def _echo_rule(text: str) -> str | None:
+    """The rule an ``echo`` of ``text`` breaks: a status prefix only a helper prints."""
+    lowered = text.lstrip()
+    if lowered.startswith("error:"):
+        return "echo-error"
+    if lowered.lower().startswith("warning:"):
+        return "echo-warning"
+    if lowered.startswith("failed:"):
+        return "echo-failed"
+    return None
+
+
+def _is_warnings_warn(func: ast.expr) -> bool:
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "warn"
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "warnings"
+    )
+
+
 def _call_violations(node: ast.Call) -> Iterator[tuple[str, str]]:
     name = callee(node)
+    if _is_warnings_warn(node.func):
+        yield "warnings-warn", "warnings.warn()"
     if name == "print":
         yield "print", "print()"
     if name == "Console" and not any(kw.arg == "file" for kw in node.keywords):
@@ -124,12 +152,9 @@ def _call_violations(node: ast.Call) -> Iterator[tuple[str, str]]:
     text = _text(node.args[0])
     if text is None:
         return
-    if name == "echo":
-        lowered = text.lstrip()
-        if lowered.startswith("error:"):
-            yield "echo-error", _snippet(text)
-        elif lowered.lower().startswith("warning:"):
-            yield "echo-warning", _snippet(text)
+    rule = _echo_rule(text) if name == "echo" else None
+    if rule is not None:
+        yield rule, _snippet(text)
     if _is_error_class(name):
         if _error_case(text):
             yield "error-case", _snippet(text)

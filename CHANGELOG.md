@@ -41,6 +41,12 @@
   in each outcome record, so a `$encrypted$` placeholder dropped at a field
   untaped doesn't treat as a secret shows up in `--format json`/`yaml`, not
   only in the warning.
+- awx: a failed `jobs cancel` or `jobs relaunch` target is reported as a
+  per-item error (`error: <item>: …`, an error line with its category under
+  JSON diagnostics) instead of a `failed:` info line, and `test` warns about
+  an unknown launch field through stderr diagnostics instead of Python's
+  `warnings` module. The message lint now flags `echo("failed: …")` and
+  `warnings.warn()`.
 
 ## 10.0.0
 

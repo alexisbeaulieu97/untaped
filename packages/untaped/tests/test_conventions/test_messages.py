@@ -20,6 +20,8 @@ label = "Deleted 3 repo(s)"
 note = "Warning: careful"
 sys.stdin.read()
 print("x")
+echo(f"failed: {item}: {exc}", err=True)
+warnings.warn("careful")
 """
     found = sorted((lineno, rule) for lineno, rule, _ in tree_violations(ast.parse(source)))
     assert found == [
@@ -32,4 +34,6 @@ print("x")
         (10, "capital-warning"),
         (11, "sys-stdin"),
         (12, "print"),
+        (13, "echo-failed"),
+        (14, "warnings-warn"),
     ]
