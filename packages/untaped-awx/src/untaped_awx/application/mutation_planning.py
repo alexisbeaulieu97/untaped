@@ -377,6 +377,7 @@ class MutationPlanner:
                     changes=changes,
                     preserved_secrets=list(body.preserved),
                     dropped_undeclared_secrets=list(body.dropped_undeclared),
+                    dropped_secrets=list(body.dropped),
                 ),
                 spec,
             )

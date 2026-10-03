@@ -736,6 +736,19 @@ def test_schedule_create_drops_placeholders_with_a_warning(fake_aap: Any, tmp_pa
     assert created["unified_job_template"] == 30
 
 
+def test_schedule_create_reports_dropped_secrets(fake_aap: Any, tmp_path: Path) -> None:
+    _seed_basic(fake_aap)
+    doc = _schedule_doc(tmp_path, "{ db_password: $encrypted$, env: prod }")
+
+    result = CliInvoker().invoke(app, ["apply", str(doc), "--yes", "--format", "json"])
+
+    assert result.exit_code == 0, result.output + (result.stderr or "")
+    [row] = json.loads(result.stdout)
+    assert row["action"] == "created"
+    assert row["dropped_secrets"] == ["extra_data.db_password"]
+    assert row["preserved_secrets"] == []
+
+
 def test_schedule_apply_refuses_extra_data_change_beside_a_placeholder(
     fake_aap: Any, tmp_path: Path
 ) -> None:
@@ -795,3 +808,5 @@ def test_apply_reports_dropped_undeclared_secrets(fake_aap: Any, tmp_path: Path)
 
     assert result.exit_code == 0, result.output + (result.stderr or "")
     assert json.loads(result.stdout)[0]["dropped_undeclared_secrets"] == ["scm_url"]
+    assert "set the real value or remove the placeholder" in (result.stderr or "")
+    assert "secret_paths" not in (result.stderr or "")

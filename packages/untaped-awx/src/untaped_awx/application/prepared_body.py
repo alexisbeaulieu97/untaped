@@ -33,6 +33,8 @@ class PreparedBody:
     changes: tuple[FieldChange, ...] = field(repr=False)
     preserved: tuple[str, ...]
     dropped_undeclared: tuple[str, ...]
+    dropped: tuple[str, ...]
+    """Declared secret paths whose placeholders a create left out."""
 
 
 UNVERIFIED_KEPT = "continuing because --allow-unverified was set"
@@ -65,11 +67,12 @@ class BodyOperations:
         existing: dict[str, Any] | None,
     ) -> PreparedBody:
         write_payload = copy.deepcopy(payload)
-        preserved, dropped = strip_encrypted_in_place(write_payload, spec)
-        for path in dropped:
+        preserved, dropped_undeclared = strip_encrypted_in_place(write_payload, spec)
+        dropped: list[str] = []
+        for path in dropped_undeclared:
             self._warn(
                 f"undeclared $encrypted$ at {spec.kind}.{path} dropped — "
-                "declare in spec.secret_paths to silence"
+                "set the real value or remove the placeholder"
             )
         if existing is None and preserved:
             required = [
@@ -83,7 +86,8 @@ class BodyOperations:
                     f"at {', '.join(required)}; provide real values or pre-create "
                     "the resource in AWX first"
                 )
-            for path in dict.fromkeys(preserved):
+            dropped = list(dict.fromkeys(preserved))
+            for path in dropped:
                 self._warn(
                     f"{spec.kind} {resource.metadata.name!r}: {path} placeholders "
                     "dropped; the new resource starts without those secrets"
@@ -116,7 +120,13 @@ class BodyOperations:
                         f"{spec.kind}.{text_field} must be mapping or YAML/JSON text"
                     )
                 write_payload[text_field] = json.dumps(write_payload[text_field])
-        return PreparedBody(write_payload, tuple(changes), tuple(preserved), tuple(dropped))
+        return PreparedBody(
+            write_payload,
+            tuple(changes),
+            tuple(preserved),
+            tuple(dropped_undeclared),
+            tuple(dropped),
+        )
 
     def verify(
         self,
