@@ -30,6 +30,7 @@ _SOURCE = {"name": "prod", "repos": ["acme/site"]}
         (AnsibleSettings, {"source_refresh_backend": "mercurial"}),
         (AnsibleSettings, {"source_refresh_repo_batch_size": 0}),
         (AnsibleSettings, {"source_refresh_rate_limit_floor": -1}),
+        (AnsibleSettings, {"stale_after": -1}),
     ],
 )
 def test_models_reject_out_of_range_values(model: type[BaseModel], values: dict[str, Any]) -> None:
@@ -44,3 +45,11 @@ def test_source_definition_accepts_per_source_ref_scan_default_and_tag_only_scan
 
     assert (source.ref_kinds, source.ref_patterns) == (["tags"], [])
     assert source.ref_scan_default == "default_branch"
+
+
+def test_source_definition_is_frozen_and_normalized() -> None:
+    source = SourceDefinition(name="prod", repos=["acme/b", "acme/a", "acme/b"])
+
+    assert source.repos == ["acme/a", "acme/b"]
+    with pytest.raises(ValidationError):
+        source.name = "other"

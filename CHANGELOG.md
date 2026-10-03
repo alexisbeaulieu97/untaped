@@ -23,6 +23,9 @@
   `warnings.warn()`; report a per-item failure with `report_error(exc, item=…)`
   and warn with `ui.message("warning", …)`.
   ([#464](https://github.com/alexisbeaulieu97/untaped/pull/464))
+- awx: `awx.api_prefix` may now omit the trailing `/`, which untaped adds; it
+  still has to start with `/`.
+  ([#471](https://github.com/alexisbeaulieu97/untaped/pull/471))
 
 ### Fixed
 
@@ -38,6 +41,9 @@
   unknown-launch-field warning, are now `error` and `warning` lines under JSON
   stderr diagnostics.
   ([#464](https://github.com/alexisbeaulieu97/untaped/pull/464))
+- `github.sweep.max_age_seconds` and `ansible.stale_after` now reject negative
+  values, and `github.sweep.sync_concurrency` rejects values below 1.
+  ([#471](https://github.com/alexisbeaulieu97/untaped/pull/471))
 
 ## 10.0.0
 
