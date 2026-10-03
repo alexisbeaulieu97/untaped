@@ -298,3 +298,15 @@ state. These steps are opt-in live writes against a disposable controller.
 Do not include secrets, real customer configurations, production logs, private
 workspace data, personal data, or other private data in issues, tests, fixtures,
 or examples. Use synthetic data for tests and examples.
+
+## Glossary
+
+Terms these docs and the code use; see the [README](README.md) for what
+untaped is.
+
+**Fix**: the `untaped` command a doctor row names to resolve what it found.
+_Avoid_: repair, remedy.
+
+**Automatic fix**: a fix that needs no value and no input, so
+`untaped doctor fix` runs it.
+_Avoid_: autofix.
