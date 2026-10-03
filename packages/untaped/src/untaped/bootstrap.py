@@ -88,7 +88,7 @@ def _shell_app() -> App:
     return App(name=SHELL_NAME, help="Unified untaped developer CLI.")
 
 
-#: The unified shell application (spec §1). A singleton so repeated
+#: The root application. A singleton so repeated
 #: compositions re-register the identical models idempotently.
 SHELL_SPEC = ApplicationSpec(
     name=SHELL_NAME,

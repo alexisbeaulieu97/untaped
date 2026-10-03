@@ -10,13 +10,6 @@ Jira; it does not speak to Jira Cloud. Every write is visible to other people
 the moment it lands, so read the issue first, preview the write, and send it
 only once the user has approved that preview.
 
-This page is the map; the details ship next to it:
-
-| File | Read it when |
-|---|---|
-| [references/reading.md](references/reading.md) | searching or reading issues: how `assigned` and `search` build JQL, issue and link fields, comments, transitions, piping keys |
-| [references/writes.md](references/writes.md) | creating, patching, assigning, commenting, transitioning or linking: which writes ask, what the preview shows, setting arbitrary fields, the outcome record |
-
 ## Setup
 
 - Settings live under `profiles.<name>.jira`. Set the server with
@@ -47,7 +40,9 @@ This page is the map; the details ship next to it:
 `--help` on any command lists its options; `--columns '?'` lists a read
 command's fields.
 
-## Work a ticket
+## Workflows
+
+### Work a ticket
 
 1. `untaped jira issues get OPS-123 --format json`: read the status,
    assignee, description and links.
@@ -77,7 +72,7 @@ untaped jira issues search --project OPS --status 'In Review' --format pipe \
 - Exit codes: 0 success, 1 the request failed or was declined (missing issue,
   invalid field, no such transition), 2 fix the command line, 4 fix the
   environment (`jira.*` settings, rejected token, missing permission),
-  5 Jira unavailable (retry later).
+  5 Jira unavailable (retry later), 130 interrupted.
 - With `--format json` stderr is JSON Lines; each error names its `category`,
   `system`, `retryable` flag and `hint`.
 
@@ -93,3 +88,10 @@ untaped jira issues search --project OPS --status 'In Review' --format pipe \
   credentials; create, comment and link previews do not.
 - Writes are never retried automatically. After exit 5 on a write, run
   `issues get` to see whether it landed before sending it again.
+
+## References
+
+| File | Read it when |
+|---|---|
+| [references/reading.md](references/reading.md) | searching or reading issues: how `assigned` and `search` build JQL, issue and link fields, comments, transitions, piping keys |
+| [references/writes.md](references/writes.md) | creating, patching, assigning, commenting, transitioning or linking: which writes ask, what the preview shows, setting arbitrary fields, the outcome record |

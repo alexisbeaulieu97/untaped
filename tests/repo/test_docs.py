@@ -8,6 +8,8 @@
 - Every ``untaped`` example in a ``bash`` block must name a real command and
   only options that command accepts; every ``untaped …`` in inline code, and
   every command a setting description names, must name a real command.
+- Docs pages stay within :data:`DOCS_PAGE_BUDGET` lines, and Markdown avoids
+  the retired terms in :data:`RETIRED_TERMS`.
 """
 
 from __future__ import annotations
@@ -149,6 +151,8 @@ def _prose(path: Path) -> str:
 def _broken_links(path: Path) -> list[str]:
     text = _prose(path)
     broken: list[str] = []
+    # A line break inside a link target makes CommonMark render it as text.
+    broken += re.findall(r"\]\(([^)\s]*\n[^)]*)\)", text)
     for target in _LINK.findall(text):
         if re.match(r"^[a-z][a-z0-9+.-]*:", target):
             continue
@@ -212,6 +216,12 @@ def _relative_targets(text: str) -> list[str]:
 )
 def test_relative_targets_finds_every_link_form(text: str) -> None:
     assert _relative_targets(text) != []
+
+
+def test_broken_links_reports_a_wrapped_target(tmp_path: Path) -> None:
+    page = tmp_path / "page.md"
+    page.write_text("See [page.md](pa-\nge.md).\n", encoding="utf-8")
+    assert _broken_links(page) == ["pa-\nge.md"]
 
 
 def test_relative_targets_skips_absolute_urls() -> None:
@@ -394,6 +404,8 @@ DOCS_PAGES = [
 ]
 #: Longest a docs page may grow, in lines. An over-budget page is split, not exempted.
 DOCS_PAGE_BUDGET = 400
+#: Retired term -> the term to use instead.
+RETIRED_TERMS = {"root shell": "root", "unified shell": "root"}
 
 
 def test_records_page_has_a_section_per_capability(
@@ -407,6 +419,16 @@ def test_records_page_has_a_section_per_capability(
 def test_docs_pages_stay_within_budget(page: str) -> None:
     lines = len((REPO_ROOT / "docs" / page).read_text(encoding="utf-8").splitlines())
     assert lines <= DOCS_PAGE_BUDGET, f"docs/{page} has {lines} lines; split it by reader task"
+
+
+def test_docs_avoid_retired_terms() -> None:
+    found = [
+        f"{page.relative_to(REPO_ROOT)}: {term!r}, say {use!r}"
+        for page in markdown_files()
+        for term, use in RETIRED_TERMS.items()
+        if term in page.read_text(encoding="utf-8").lower()
+    ]
+    assert found == []
 
 
 def test_install_examples_use_the_extras() -> None:

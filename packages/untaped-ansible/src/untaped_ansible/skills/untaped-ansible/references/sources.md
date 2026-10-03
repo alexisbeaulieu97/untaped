@@ -39,7 +39,7 @@ failed and paused refreshes, the cache.
   `repo`). `action` is `created`, `updated`, `unchanged`, `deleted` or
   `planned` (with `--dry-run`).
 - `source remove` and `source-alias remove` confirm first; see
-  [Changing sources](../SKILL.md#changing-sources).
+  [Safety](../SKILL.md#safety).
 - `source status` reports `state` (`fresh`, `stale` or `not_refreshed`) and
   `scanned_at` in UTC.
 

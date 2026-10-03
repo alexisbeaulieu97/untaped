@@ -18,8 +18,9 @@ access, whenever a plan is computed.
 `uv` must be on `PATH`: pack hooks run in the pack's own environment through
 `uv run` (built-in hooks such as `yaml_edit` run in-process), and
 scaffolding locks packs ([authoring.md](references/authoring.md#scaffolding)).
-Without it, a run that needs a pack hook exits 4. Recipes come from installed packs, so `untaped recipe
-list` is empty until the user installs one.
+Without it, a run that needs a pack hook exits 4. Recipes come from
+installed packs, so `untaped recipe list` is empty until the user installs
+one.
 
 ## Commands
 

@@ -1,6 +1,6 @@
 """Generate ``docs/reference/config.md`` from the composed settings models.
 
-The page lists every setting of the root shell (``http.*``, ``ui.*``,
+The page lists every setting of the root app (``http.*``, ``ui.*``,
 ``skills.*``) and of each first-party capability's profile model, plus each
 capability's state model. Types, defaults and environment variables come from
 the Pydantic models; a description comes from ``Field(description=...)`` when
