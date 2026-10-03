@@ -8,10 +8,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
-from pydantic import BaseModel
+from cyclopts import App
+from pydantic import BaseModel, Field
 
 from test_capabilities.capharness import (
     OtherProfile,
@@ -22,12 +23,14 @@ from test_capabilities.capharness import (
     make_spec,
 )
 from untaped.capabilities.registry import (
+    ApplicationSpec,
     CapabilitySpec,
     DoctorCheck,
     ProviderCandidate,
     SkillAsset,
     compose,
 )
+from untaped.errors import ConfigError
 
 
 class TokenProfile(BaseModel):
@@ -387,3 +390,50 @@ def test_bad_entry_point_target_quarantines(
     if entry_point is not None:
         assert record.entry_point == entry_point
     assert named in record.detail
+
+
+class BadKeysProfile(BaseModel):
+    renamed_keys: ClassVar[dict[str, str]] = {"old": "nowhere"}
+    value: int = 1
+
+
+def test_broken_key_declarations_quarantine_only_that_capability() -> None:
+    bad = make_spec(name="bad", profile=BadKeysProfile)
+    good = make_spec(name="good", profile=TokenProfile)
+
+    result = compose(make_shell(), [make_candidate(bad), make_candidate(good)])
+
+    assert [c.spec.name for c in result.capabilities] == ["good"]
+    (record,) = result.quarantine
+    assert (record.reason, record.detail) == (
+        "bad-settings-keys",
+        "capability 'bad': renamed key 'old' points at 'nowhere', which is not a setting",
+    )
+
+
+def _unset_variable() -> str:
+    raise KeyError("NOPE")
+
+
+class LazyProfile(BaseModel):
+    renamed_keys: ClassVar[dict[str, str]] = {"old_dir": "cache_dir"}
+    cache_dir: str = Field(default_factory=_unset_variable)
+
+
+def test_a_raising_default_factory_is_not_called_while_composing() -> None:
+    lazy = make_spec(name="lazy", profile=LazyProfile)
+    good = make_spec(name="good", profile=TokenProfile)
+
+    result = compose(make_shell(), [make_candidate(lazy), make_candidate(good)])
+
+    assert ([c.spec.name for c in result.capabilities], result.quarantine) == (["good", "lazy"], ())
+
+
+def test_a_shell_with_broken_key_declarations_fails_loudly() -> None:
+    with pytest.raises(ConfigError, match="invalid key declarations on BadKeysProfile"):
+        ApplicationSpec(
+            name="untaped",
+            app_factory=lambda: App(),
+            config_section="shell",
+            profile_model=BadKeysProfile,
+        )

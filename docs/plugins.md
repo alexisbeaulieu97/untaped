@@ -84,7 +84,8 @@ version added or broke.
 
 A capability owns one config section. Profile fields are what users tune; a
 capability that writes managed data also declares a state model. The two
-field sets must be disjoint.
+field sets must be disjoint. To rename a setting, see
+[Settings](./reference/conventions.md#settings).
 
 A complete provider module, with a nullary app factory, one packaged skill
 and the callable the entry point above names:

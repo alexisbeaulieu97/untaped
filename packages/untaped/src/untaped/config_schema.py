@@ -63,7 +63,7 @@ def walk_settings(
     """
     entries: list[FieldDescriptor] = []
     for name, field in model_cls.model_fields.items():
-        annotation = _unwrap_optional(field.annotation)
+        annotation = unwrap_optional(field.annotation)
         path = (*_prefix, name)
 
         if isinstance(annotation, type) and issubclass(annotation, BaseModel):
@@ -158,7 +158,8 @@ def _redact_path(data: dict[str, Any], path: tuple[str, ...], placeholder: str) 
         cursor[leaf] = placeholder
 
 
-def _unwrap_optional(annotation: Any) -> Any:
+def unwrap_optional(annotation: Any) -> Any:
+    """``X`` for ``X | None`` (or ``Optional[X]``); any other annotation unchanged."""
     origin = get_origin(annotation)
     if origin is types.UnionType or origin is typing.Union:
         non_none = [a for a in get_args(annotation) if a is not type(None)]

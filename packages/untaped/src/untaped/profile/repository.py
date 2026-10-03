@@ -15,8 +15,8 @@ from untaped.profile_resolver import (
     ProfileSource,
     classify_active_profile,
     effective_active_profile_name,
-    resolve_profiles,
 )
+from untaped.settings import active_settings_layout
 
 
 def _profiles(config: dict[str, Any]) -> dict[str, Any]:
@@ -67,9 +67,11 @@ class ProfileFileRepository:
         return profile if isinstance(profile, dict) else None
 
     def resolved(self, name: str) -> dict[str, Any]:
-        """Return ``default`` ⤥ ``name`` as a merged dict (empty if neither set)."""
-        effective, _ = resolve_profiles(read_config_dict(), active_override=name)
-        return effective
+        """Return ``default`` ⤥ ``name`` as a merged dict (empty if neither set).
+
+        Renamed keys show under their current names.
+        """
+        return active_settings_layout().effective(read_config_dict(), profile=name)
 
     def write(self, name: str, data: dict[str, Any]) -> None:
         def _apply(config: dict[str, Any]) -> None:
