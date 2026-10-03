@@ -72,6 +72,8 @@ class FakeAap:
         self.forbidden_associate_ids: set[int] = set()
         # Execution ids whose ``cancel/`` POST AWX refuses (405 once finished).
         self.refuse_cancel_ids: set[int] = set()
+        # Execution ids whose ``relaunch/`` POST AWX refuses (e.g. no permission).
+        self.refuse_relaunch_ids: set[int] = set()
         # ``GET <template>/<id>/copy/`` answers per (api_path, id); default
         # ``{"can_copy": true}`` like AWX's job template copy check.
         self.copy_checks: dict[tuple[str, int], dict[str, Any]] = {}
@@ -564,6 +566,8 @@ class FakeAap:
             record["status"] = "canceled"
             return httpx.Response(202)
         kind = {"jobs": "job", "workflow_jobs": "workflow_job", "ad_hoc_commands": "ad_hoc_command"}
+        if id_ in self.refuse_relaunch_ids:
+            return _err(403, "You do not have permission to perform this action.")
         if api_path not in kind:
             return _err(405, 'Method "POST" not allowed.')
         new = self.seed(api_path, name=record.get("name"), status="successful")
