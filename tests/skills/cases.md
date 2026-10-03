@@ -89,3 +89,19 @@ Request: "Show me how the Deploy job template is configured."
 - b. Doesn't ask for approval or run preview rituals meant for writes.
 - c. Picks a readable format (yaml or json) or explains the table view.
 - d. Invents no flags or commands.
+
+### C6 dotfiles: what stderr adds to the rows
+
+Request: "I ran `untaped dotfiles sync --format json`. Here is everything it
+printed. stdout: `[{"item": "zsh", "source": ".zshrc", "action": "unchanged"}]`.
+stderr:
+`{"level": "info", "message": "acme-dots: held back by manual link files: zsh/.zshrc"}`
+and `{"level": "warning", "message": "dotfiles.repos_path is deprecated and will be removed in the next major release; use dotfiles.repos_dir"}`.
+Is everything up to date?"
+
+- a. Says not everything is up to date: `acme-dots` was held back and not
+  pulled, naming the file, even though the line is only `info`.
+- b. Passes on the deprecation warning, naming the new key.
+- c. Answers from the rows too (`zsh` unchanged).
+- d. Changes nothing without asking (no `--force`, no config edits).
+- e. Invents no flags or commands.
