@@ -20,6 +20,7 @@ def markdown_files() -> list[Path]:
     files = sorted((REPO_ROOT / "docs").rglob("*.md"))
     skills = sorted(REPO_ROOT.glob("packages/*/src/**/skills/**/*.md"))
     readmes = sorted(PACKAGES.glob("*/README.md"))
-    names = ("README.md", "AGENTS.md", "CONTRIBUTING.md", "GLOSSARY.md")
-    root = (REPO_ROOT / name for name in names if (REPO_ROOT / name).exists())
-    return [*files, *skills, *readmes, REPO_ROOT / "examples/untaped-hello/README.md", *root]
+    example = REPO_ROOT / "examples/untaped-hello/README.md"
+    root = [REPO_ROOT / name for name in ("README.md", "AGENTS.md", "CONTRIBUTING.md")]
+    glossary = [path for path in [REPO_ROOT / "GLOSSARY.md"] if path.exists()]
+    return [*files, *skills, *readmes, example, *root, *glossary]

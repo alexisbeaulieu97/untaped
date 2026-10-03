@@ -121,7 +121,8 @@ only when a second provider appears.
   `README.md` is a one-screen guide: set up, one example per workflow, and a
   `## Reference` section linking the skill), exit codes, record kinds and environment
   variables in [`docs/reference/`](docs/reference), settings in the
-  generated [config reference](docs/reference/config.md), history in
+  generated [config reference](docs/reference/config.md), terms in
+  `GLOSSARY.md` and design decisions in `docs/adr/` (see Designs), history in
   [`CHANGELOG.md`](CHANGELOG.md). Never copy `--help` output, default columns
   or API signatures into docs.
 - **Config and state format.** Within a major, a core-owned key may be added
@@ -131,6 +132,21 @@ only when a second provider appears.
 - **Config reference.** After changing a settings model, run
   `uv run python scripts/gen_config_reference.py`; a test fails while the
   reference is stale.
+
+## Designs
+
+New behavior or a public API change starts with a design, posted on its
+GitHub issue: the problem, the approach, rejected alternatives, public or
+breaking impact, and a test plan. Bugs (with a failing test first), and
+follow-ups or audit items that change no public behavior, go straight to
+implementation. A design is reviewed like a pull request (below), and the
+maintainer approves it once the findings are fixed or answered.
+
+Terms a design settles go in the root `GLOSSARY.md`, created with the first:
+each with a short definition and the words to avoid. A decision that is hard
+to reverse, surprising without context and the result of a real trade-off
+gets a short ADR in `docs/adr/NNNN-slug.md`: its context, the decision and
+why.
 
 ## Pull requests
 

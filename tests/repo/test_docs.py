@@ -425,6 +425,7 @@ def test_docs_avoid_retired_terms() -> None:
     found = [
         f"{page.relative_to(REPO_ROOT)}: {term!r}, say {use!r}"
         for page in markdown_files()
+        if page.name != "GLOSSARY.md"  # lists retired terms as words to avoid
         for term, use in RETIRED_TERMS.items()
         if term in page.read_text(encoding="utf-8").lower()
     ]
