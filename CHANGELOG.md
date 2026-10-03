@@ -93,6 +93,9 @@
   line naming the problem instead of pydantic's full error dump, and
   validation messages across untaped drop pydantic's `Value error, ` prefix.
   ([#483](https://github.com/alexisbeaulieu97/untaped/pull/483))
+- awx: `awx test` commands report an invalid suite file as one line naming the
+  field instead of pydantic's full error dump.
+  ([#487](https://github.com/alexisbeaulieu97/untaped/pull/487))
 
 ## 10.0.0
 
