@@ -20,12 +20,7 @@ from untaped_github.application.inventory import (
 )
 from untaped_github.application.inventory_cache import CachedRepoInventory
 from untaped_github.application.scopes import TeamScope, normalize_team_scopes
-from untaped_github.domain.errors import (
-    GithubGraphqlError,
-    GithubGraphqlErrorKind,
-    github_failures,
-    is_global_github_failure,
-)
+from untaped_github.domain.errors import github_failures, is_global_github_failure
 from untaped_github.domain.hosts import github_web_host
 from untaped_github.domain.inventory import RepoInventory
 from untaped_github.domain.models import (
@@ -34,7 +29,7 @@ from untaped_github.domain.models import (
     RepoRef,
     RepoRefs,
 )
-from untaped_github.errors import GithubError
+from untaped_github.errors import GithubError, GithubGraphqlError, GithubGraphqlErrorKind
 from untaped_github.infrastructure.github_client import GithubClient
 from untaped_github.infrastructure.inventory_store import JsonInventoryStore
 from untaped_github.settings import GithubSettings

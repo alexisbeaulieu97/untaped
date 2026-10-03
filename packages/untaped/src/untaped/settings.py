@@ -56,13 +56,6 @@ class SkillsSettings(BaseModel):
     updates: Literal["warn", "auto", "off"] = "warn"
 
 
-#: Built-in top-level *state* sections (tool-managed runtime data spliced in
-#: regardless of profile). ``http``/``ui`` used to live here but are now ordinary
-#: per-profile settings (base fields on :class:`Settings`); only a tool's own
-#: ``state_model`` registers here at runtime.
-BUILTIN_STATE_SECTIONS: dict[str, type[BaseModel]] = {}
-
-
 class _ConfigRegistry:
     """Mutable in-process registry of the running tool's config sections."""
 
@@ -72,7 +65,7 @@ class _ConfigRegistry:
 
     def reset(self) -> None:
         self.profile_sections = {}
-        self.state_sections = dict(BUILTIN_STATE_SECTIONS)
+        self.state_sections = {}
         get_settings.cache_clear()
         get_settings_model.cache_clear()
         get_profile_settings_model.cache_clear()

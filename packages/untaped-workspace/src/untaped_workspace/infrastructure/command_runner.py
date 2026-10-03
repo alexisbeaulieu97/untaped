@@ -65,11 +65,6 @@ class SubprocessRunner:
         self._cancelled = False
         self._lock = threading.Lock()
 
-    def active_count(self) -> int:
-        """How many commands are running right now."""
-        with self._lock:
-            return len(self._live)
-
     def _is_cancelled(self) -> bool:
         with self._lock:
             return self._cancelled
