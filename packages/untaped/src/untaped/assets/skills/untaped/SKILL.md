@@ -70,9 +70,10 @@ read `SKILL.md` there.
 ### Fix a failing doctor
 
 Run `untaped doctor --format json`. A failed or warned row's `fix` is the
-argv to run after `untaped`, with the same `<NAME>` placeholders. A fix
-whose command (after `--profile NAME`) is `auth …`, or that sets a `.token`
-or `.token_command`, writes a token: it is the user's to run.
+argv to run after `untaped`, with the same `<NAME>` placeholders. A fix with
+`automatic: true` is safe to run as is. Any other fix with a `<NAME>` is a
+value to ask the user for, and one that asks for or reveals a token
+(`auth set`, `config set ….token --prompt`) is the user's to run.
 
 ## Safety
 
@@ -81,9 +82,10 @@ or `.token_command`, writes a token: it is the user's to run.
 - Never open the config or state file directly; use `config list` and
   `config get`. Never pass `--show-secrets`.
 - Never run a `by: user` row yourself, even when it looks harmless: it
-  prompts for or moves a secret.
-- `untaped auth migrate` moves plaintext tokens into the password store; the
-  plan asks the user to run it when it finds one.
+  asks for or reveals a secret.
+- You may run `untaped auth migrate`: it moves plaintext tokens into the
+  password store inside its own process and prints none. Tell the user a
+  keychain unlock prompt may appear on their screen.
 
 ## Pitfalls
 
