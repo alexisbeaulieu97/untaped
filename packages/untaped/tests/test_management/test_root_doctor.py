@@ -49,7 +49,9 @@ def _doctor_app(*specs: object, quarantine: tuple[QuarantineRecord, ...] = ()) -
     result = compose(*specs)  # type: ignore[arg-type]
     if quarantine:
         result = CompositionResult(capabilities=result.capabilities, quarantine=quarantine)
-    return build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=result)
+    return build_root_doctor_app(
+        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=result
+    )
 
 
 def _quarantine() -> QuarantineRecord:

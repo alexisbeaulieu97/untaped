@@ -19,6 +19,7 @@ command runs and needs at least one row, so use it on a read command or add
 | `skills status` | `untaped.installed_skill` |
 | `skills update`, `skills remove` | `untaped.skill_outcome` |
 | `doctor`, `setup` | `untaped.doctor_check` |
+| `doctor fix` | `untaped.fix_outcome` |
 | `setup plan` | `untaped.setup_step` |
 | `capabilities` | `untaped.capability` |
 | `alias list` | `untaped.alias` |
@@ -26,8 +27,15 @@ command runs and needs at least one row, so use it on a read command or add
 
 `--stdin` on `skills install`, `status`, `update` and `remove` reads bare
 skill names, one per line. With `--dry-run`, `config set/unset`,
-`auth unset/migrate`, `profile create/delete/rename` and `alias set/remove`
-validate, write nothing and print their outcome with `action` `planned`.
+`auth unset/migrate`, `profile create/delete/rename`, `alias set/remove`
+and `doctor fix` validate, write nothing and print their outcome with
+`action` `planned`; `doctor fix`'s manual fixes stay `skipped` and its
+refused ones `failed`.
+
+A `fix_outcome` row has `fix` (the argv run after `untaped`), `checks` (the
+doctor checks it covers), `action` (`fixed`, `partial` when a check still
+warns or fails afterwards, `failed`, `skipped` for a fix that needs you,
+`planned`), `detail`, and `error` on a failed row.
 
 A `doctor_check` row's `fix`, and a `setup_step` row's `run`, is the argv to
 run after `untaped`, `--profile NAME` first; a `<NAME>` token is a value to
