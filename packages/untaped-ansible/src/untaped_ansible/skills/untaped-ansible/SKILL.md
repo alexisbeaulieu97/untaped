@@ -97,6 +97,10 @@ result only means "not within N levels".
 
 ## Pitfalls
 
+- Read stderr as well as the rows; under `--format json` it is JSON Lines.
+  Pass on what the user would want to know about, with any hint, whatever
+  its `level`: a deprecated setting or flag, a skipped or partial result, a
+  clamped option. Leave out progress and routine lines.
 - `repo@v1` and `repo@main` are different nodes; never merge them in a
   report. An unpinned dependency points at the default-branch node.
 - A partial refresh exits 1 (or 5 when a failure was transient) with

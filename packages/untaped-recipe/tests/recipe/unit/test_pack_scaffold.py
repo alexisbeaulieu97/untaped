@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tomllib
 from collections.abc import Callable
-from importlib.metadata import version
+from importlib.metadata import metadata, version
 from pathlib import Path
 
 import pytest
@@ -44,6 +44,7 @@ def test_scaffold_pack_writes_parseable_manifest_with_hook_api_floors(pack: Path
 
     assert read_pack_manifest(pack).name == "ansible"
     assert pyproject["project"]["name"] == "untaped-recipe-ansible"
+    assert pyproject["project"]["requires-python"] == metadata("untaped")["Requires-Python"]
     assert pyproject["tool"]["untaped_recipe"]["requires_hook_api"] == ">=0.10,<1"
     assert pyproject["dependency-groups"]["dev"] == [
         f"untaped[recipe]>={installed.public},<{installed.major + 1}",
