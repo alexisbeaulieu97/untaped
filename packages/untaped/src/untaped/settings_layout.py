@@ -8,7 +8,7 @@ through it.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel
@@ -31,7 +31,7 @@ class ResolvedConfig:
 
     effective: dict[str, Any]
     provenance: dict[tuple[str, ...], str]
-    uses: dict[str, dict[str, tuple[KeyUse, ...]]] = field(default_factory=dict)
+    uses: dict[str, dict[str, tuple[KeyUse, ...]]]
     """``profile -> section -> uses``, for the layered profiles only."""
 
 
@@ -50,21 +50,13 @@ class ProfilesSettingsLayout:
     def __init__(self, sections: Callable[[], SectionModels] | None = None) -> None:
         self._sections = sections
 
-    def effective(
-        self,
-        raw: dict[str, Any],
-        *,
-        profile: str | None = None,
-        sections: SectionModels | None = None,
-    ) -> dict[str, Any]:
+    def effective(self, raw: dict[str, Any], *, profile: str | None = None) -> dict[str, Any]:
         """Return the effective settings values for the active (or given) profile."""
-        return self.resolve(raw, profile=profile, sections=sections).effective
+        return self.resolve(raw, profile=profile).effective
 
-    def provenance(
-        self, raw: dict[str, Any], *, sections: SectionModels | None = None
-    ) -> dict[tuple[str, ...], str]:
+    def provenance(self, raw: dict[str, Any]) -> dict[tuple[str, ...], str]:
         """Return ``leaf path -> profile name`` for every value in ``effective``."""
-        return self.resolve(raw, sections=sections).provenance
+        return self.resolve(raw).provenance
 
     def resolve(
         self,
