@@ -54,6 +54,8 @@ says so. Currently experimental:
   `awx.test_parallel` settings with their environment variables.
 - `workspace`: its commands, record kinds, the `workspace.*` settings, and the
   `UNTAPED_*` variables `workspace run` sets.
+- `dotfiles`: its commands, the `dotfiles.yml` manifest, its record kinds,
+  the `status.json` and `attention` files, and the `dotfiles.*` settings.
 
 ## Breaking changes
 

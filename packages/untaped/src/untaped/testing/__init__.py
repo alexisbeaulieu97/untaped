@@ -228,7 +228,9 @@ def check_conventions(
     tests_dir: Path | None = None,
     candidates: Sequence[ProviderCandidate] | None = None,
 ) -> None:
-    """Fail with every convention violation of ``capability`` (docs/plugins.md).
+    """Fail with every convention violation of ``capability``.
+
+    The rules are in ``docs/reference/conventions.md#enforcement``.
 
     Checks the installed capability's command subtree and its own source
     files: command grammar, stderr wording, package structure and layering.

@@ -18,8 +18,8 @@ Every environment variable `untaped` reads or sets.
 | `CONTROLLER_OAUTH_TOKEN`, then `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN` | AWX/AAP token used when neither `awx.token` nor `awx.token_command` is set (read as the `ansible.controller` and `awx.awx` collections read them). |
 
 A setting's source order is in
-[File and layout](../configuration.md#file-and-layout). The [configuration reference](../reference/config.md) lists the variable for
-every setting. `untaped doctor` names the variable when an override holds an
+[File and layout](../configuration.md#file-and-layout). The
+[configuration reference](./config.md) lists the variable for every setting. `untaped doctor` names the variable when an override holds an
 invalid value.
 
 ## Workspace run
@@ -64,8 +64,7 @@ from environment variables.
 
 ## Git
 
-`untaped` runs `git` for workspaces, GitHub sweeps and Ansible source refresh.
-For each `git` call it:
+For every `git` call it makes, `untaped`:
 
 - sets `GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=never`, so a remote that
   needs credentials fails instead of waiting for input;

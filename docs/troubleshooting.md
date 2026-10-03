@@ -19,4 +19,4 @@ act. This page maps common symptoms to the section that explains them.
 To see what a command actually sent and ran, add `--verbose`: see
 [Debug logs](./configuration.md#debug-logs). Capability-specific failures
 (cloning private repos, an AWX job that will not launch, a recipe hook that
-fails) are in each capability's skill, under Pitfalls.
+fails) are in each capability's skill: its Pitfalls and the references it links.

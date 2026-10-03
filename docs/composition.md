@@ -28,13 +28,5 @@ over another's commands or settings, and the result does not depend on install
 order. Uninstall one to restore the other. A capability whose settings import
 another capability's `api` is quarantined with it when that import fails.
 
-## Depending on another capability
-
-A capability may import another only through that capability's public
-module, `<package>.api` (for example `untaped_github.api`), never its other
-internals, and only when its distribution depends on the other's (a
-dependency under an extra does not count). Dependencies are one-way, and
-imports of another capability stay lazy on CLI paths; a settings model that
-validates against the other capability may import it at module top. An `api`
-module keeps a closed `__all__`. Logic two capabilities need lives in exactly
-one owner's `api` module, never forked into both.
+The import rules between capabilities are in
+[Depending on another capability](./reference/conventions.md#depending-on-another-capability).

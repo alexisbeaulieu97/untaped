@@ -80,8 +80,9 @@ Each capability's guide: [workspace](./packages/untaped-workspace/README.md),
 
 `untaped` follows [semantic versioning](https://semver.org/). Commands, flags,
 exit codes, record fields, settings and environment variables stay stable
-within a major release; `awx test` and `workspace` are experimental and may
-change in a minor. [Versioning](./docs/versioning.md) lists what is covered.
+within a major release; some commands are
+[experimental](./docs/versioning.md#experimental) and may change in a minor.
+[Versioning](./docs/versioning.md) lists what is covered.
 
 ## Security
 

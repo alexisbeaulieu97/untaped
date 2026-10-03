@@ -7,11 +7,11 @@ discovers providers through the `untaped.capabilities` entry-point group and
 owns everything else: there is no second console script, config command or
 profile command.
 
-Provider code imports from `untaped.sdk` and nothing else in
-`untaped`; see [SDK stability](./reference/conventions.md#sdk-stability). First-party capabilities also
-use each other's declared `api.py` modules (see
-[Depending on another capability](./composition.md#depending-on-another-capability)); those
-are internal to `untaped` and not part of the provider API.
+Provider code imports from `untaped.sdk` and nothing else in `untaped`; see
+[SDK stability](./reference/conventions.md#sdk-stability). First-party
+capabilities also use each other's declared `api.py` modules (see
+[Depending on another capability](./reference/conventions.md#depending-on-another-capability));
+those are internal to `untaped` and not part of the provider API.
 
 [`examples/untaped-hello`](../examples/untaped-hello) in the repository is a
 complete, tested plugin; copy it to start.
@@ -202,8 +202,8 @@ The root supplies `--profile`, `--verbose` and `--quiet`. Raise errors inside
 [exit codes](./reference/exit-codes.md). Give your error classes a `category`
 and `system` (your section name) as class defaults; see
 [Raise with a category](./reference/conventions.md#raise-with-a-category-or-inherit-one).
-[Conventions](./reference/conventions.md) covers flags, messages, exit codes and record
-shapes.
+[Conventions](./reference/conventions.md) covers flags, messages, exit codes
+and record shapes.
 
 ## Packaged skills
 
@@ -218,8 +218,8 @@ untaped skills install --all --target all
 ```
 
 `SkillAsset.name` is the skill's full ID (`untaped-acme`; see
-[Install skills](./skills.md#install-skills)). There is no core skill; capability-specific guidance
-belongs in the capability's skill.
+[Install skills](./skills.md#install-skills)). There is no core skill;
+capability-specific guidance belongs in the capability's skill.
 
 Start from this template. Copy it to
 `src/<package>/skills/untaped-<capability>/SKILL.md`, replace every

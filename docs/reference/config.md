@@ -158,4 +158,4 @@ overridden for one process with the environment variable shown.
 ## See also
 
 - [Configuration](../configuration.md)
-- [Environment variables](../reference/environment.md)
+- [Environment variables](./environment.md)
