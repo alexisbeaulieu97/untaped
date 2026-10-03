@@ -7,7 +7,6 @@ error translation, and generic plugin state splicing from ``state.yml``.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -20,7 +19,6 @@ from untaped.settings import (
     get_settings_model,
     register_profile_settings,
     register_state_settings,
-    reset_config_registry_for_tests,
 )
 
 
@@ -36,13 +34,8 @@ class DemoStateSettings(BaseModel):
 
 
 @pytest.fixture(autouse=True)
-def _reset_cache() -> Iterator[None]:
-    reset_config_registry_for_tests()
+def _register_demo() -> None:
     register_profile_settings("demo", DemoProfileSettings)
-    get_settings.cache_clear()
-    yield
-    reset_config_registry_for_tests()
-    get_settings.cache_clear()
 
 
 def test_loads_profile_default_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

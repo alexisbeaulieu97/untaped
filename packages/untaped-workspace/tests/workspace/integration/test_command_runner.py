@@ -77,13 +77,14 @@ def _assert_stops(pid: int, limit: float = 10.0) -> None:
 
 def test_timeout_kills_the_process_tree_and_keeps_partial_output(tmp_path: Path) -> None:
     result = SubprocessRunner().run(
-        ["sh", "-c", "sleep 60 & echo $! > PID; echo partial; wait"],
+        # PID is staged then renamed, so the timeout never leaves it half-written.
+        ["sh", "-c", "sleep 60 & echo partial; echo $! > PID.tmp && mv PID.tmp PID; wait"],
         cwd=tmp_path,
         env={},
         timeout=0.5,
     )
     assert (result.timed_out, result.returncode) == (True, None)
-    # On a very slow host the shell may be killed before it starts the child.
+    # On a very slow host the shell may be killed before it gets that far.
     if (tmp_path / "PID").exists():
         assert "partial" in result.stdout
         _assert_stops(int((tmp_path / "PID").read_text()))
