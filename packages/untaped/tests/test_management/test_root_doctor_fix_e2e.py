@@ -3,7 +3,8 @@
 Each first-party automatic fix runs as the subprocess a user's run starts,
 under the test plugin's isolated ``HOME``, ``UNTAPED_CONFIG`` and
 ``UNTAPED_STATE``; the token store is the fake ``pass`` on a narrowed
-``PATH``.
+``PATH``. Core's tests run without any capability package, so a token check
+comes from a ``wiz`` capability installed on ``PYTHONPATH`` for the test.
 """
 
 from __future__ import annotations
@@ -21,6 +22,46 @@ from untaped.config_file import read_config_dict
 from untaped.testing import CliResult, invoke_cli
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
+
+
+_WIZ_MODULE = """
+from pydantic import BaseModel, SecretStr
+
+from untaped.cli import create_app
+from untaped.sdk import CapabilitySpec, TokenCommand, connection_check
+
+
+class WizProfile(BaseModel):
+    base_url: str | None = None
+    token: SecretStr | None = None
+    token_command: TokenCommand = None
+
+
+def provider() -> CapabilitySpec:
+    return CapabilitySpec(
+        name="wiz",
+        app_factory=lambda: create_app(name="wiz", help="wiz capability."),
+        config_section="wiz",
+        profile_model=WizProfile,
+        doctor_checks=(connection_check("wiz.connection", section="wiz"),),
+    )
+"""
+
+
+def _install_wiz(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Install a ``wiz`` capability for this process and the fixes' children."""
+    site = tmp_path / "site"
+    dist_info = site / "untaped_wiz-1.0.dist-info"
+    dist_info.mkdir(parents=True)
+    (site / "untaped_wiz.py").write_text(_WIZ_MODULE, encoding="utf-8")
+    (dist_info / "METADATA").write_text(
+        "Metadata-Version: 2.1\nName: untaped-wiz\nVersion: 1.0\n", encoding="utf-8"
+    )
+    (dist_info / "entry_points.txt").write_text(
+        "[untaped.capabilities]\nwiz = untaped_wiz:provider\n", encoding="utf-8"
+    )
+    monkeypatch.syspath_prepend(str(site))
+    monkeypatch.setenv("PYTHONPATH", str(site))
 
 
 def _untaped(*args: str) -> CliResult:
@@ -61,21 +102,22 @@ def test_skills_update_fixes_an_outdated_installed_skill(_isolated_config: Path)
 def test_auth_migrate_moves_a_plaintext_token(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _install_wiz(tmp_path, monkeypatch)
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
     write_config(
-        _isolated_config, "profiles:\n  default:\n    awx: {base_url: https://awx, token: s3cret}\n"
+        _isolated_config, "profiles:\n  default:\n    wiz: {base_url: https://wiz, token: s3cret}\n"
     )
-    assert _status("awx.connection") == "warn"
+    assert _status("wiz.connection") == "warn"
     result = _untaped("doctor", "fix", "--yes", "--format", "json")
     assert result.exit_code == 0, result.output
     [row] = _rows(result)
     assert (row["fix"][2:], row["checks"], row["action"]) == (
         ["auth", "migrate"],
-        ["awx.connection"],
+        ["wiz.connection"],
         "fixed",
     )
     assert row["detail"].startswith("1 ")
-    assert "token" not in read_config_dict(_isolated_config)["profiles"]["default"]["awx"]
-    assert stores.entries() == {"untaped/default/awx": "s3cret"}
-    assert _status("awx.connection") == "pass"
+    assert "token" not in read_config_dict(_isolated_config)["profiles"]["default"]["wiz"]
+    assert stores.entries() == {"untaped/default/wiz": "s3cret"}
+    assert _status("wiz.connection") == "pass"
     assert "s3cret" not in result.output
