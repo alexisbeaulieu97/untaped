@@ -227,22 +227,27 @@ class LayoutSettingsSource(InitSettingsSource):
         super().__init__(settings_cls, effective)
 
 
-def _warn_use(use: KeyUse, *, section: str) -> None:
-    """Warn once about an old key or deprecated setting read from ``config.yml``."""
+_MIGRATE_FIXES = {"renamed": "rename it in", "ignored": "remove it from"}
+
+
+def config_key_warning(use: KeyUse, *, section: str) -> str | None:
+    """The warning for an old key or deprecated setting read from ``config.yml``."""
     message = use_warning(
         use,
         old=f"{section}.{use.old}",
         new=f"{section}.{use.new}",
         kept=f"{section}.{use.kept}",
     )
-    if message is None:
-        return
-    if use.kind in _MIGRATE_FIXES:
+    if message is not None and use.kind in _MIGRATE_FIXES:
         message = f"{message}\n{hint('config migrate')} to {_MIGRATE_FIXES[use.kind]} config.yml"
-    warn_once(message)
+    return message
 
 
-_MIGRATE_FIXES = {"renamed": "rename it in", "ignored": "remove it from"}
+def _warn_use(use: KeyUse, *, section: str) -> None:
+    """Warn once about an old key or deprecated setting read from ``config.yml``."""
+    message = config_key_warning(use, section=section)
+    if message is not None:
+        warn_once(message, key=f"{section}.{use.old}")
 
 
 def env_var_name(path: Iterable[str]) -> str:

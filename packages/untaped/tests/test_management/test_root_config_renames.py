@@ -58,6 +58,18 @@ def test_get_an_old_key_reads_the_new_one_with_a_warning(_isolated_config: Path)
     ) in result.stderr
 
 
+def test_get_an_old_key_the_file_also_has_warns_once_with_the_hint(
+    _isolated_config: Path,
+) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    renamed:\n      corpus_path: /c\n")
+
+    result = _config("get", "renamed.corpus_path")
+
+    assert result.exit_code == 0, result.output
+    assert result.stderr.count("renamed.corpus_path is deprecated") == 1
+    assert "hint: run `untaped config migrate` to rename it in config.yml" in result.stderr
+
+
 def test_get_a_retired_key_is_an_unknown_setting(_isolated_config: Path) -> None:
     result = _config("get", "renamed.ancient_path")
 

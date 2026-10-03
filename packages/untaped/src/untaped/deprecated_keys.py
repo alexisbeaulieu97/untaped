@@ -284,6 +284,27 @@ def _place(data: dict[str, Any], path: str, value: Any) -> bool:
     return True
 
 
+def _spellings(
+    mappings: KeyMappings, old_keys: Mapping[str, str], data: Mapping[str, Any]
+) -> list[tuple[str, str, list[str]]]:
+    """``(field, keeper, old spellings)`` for each field with an old spelling in ``data``.
+
+    The one rule the reader and ``config migrate`` share: the current key
+    wins over an old spelling, and among old spellings the hop closest to
+    the current name wins. The old spellings are closest first.
+    """
+    found: dict[str, list[str]] = {}
+    for old, new in old_keys.items():
+        if _lookup(data, old) is not _MISSING:
+            found.setdefault(new, []).append(old)
+    result = []
+    for new, olds in sorted(found.items()):
+        ranked = sorted(olds, key=lambda old: (mappings.distance[old], old))
+        keeper = new if _lookup(data, new) is not _MISSING else ranked[0]
+        result.append((new, keeper, ranked))
+    return result
+
+
 def rename_keys(
     model: type[BaseModel], data: Mapping[str, Any]
 ) -> tuple[dict[str, Any], tuple[KeyUse, ...]]:
@@ -301,13 +322,7 @@ def rename_keys(
         return dict(data), ()
     result = copy.deepcopy(dict(data))
     uses: list[KeyUse] = []
-    found: dict[str, list[str]] = {}
-    for old, new in mappings.readable.items():
-        if _lookup(result, old) is not _MISSING:
-            found.setdefault(new, []).append(old)
-    for new, olds in sorted(found.items()):
-        ranked = sorted(olds, key=lambda old: (mappings.distance[old], old))
-        keeper = new if _lookup(result, new) is not _MISSING else ranked[0]
+    for new, keeper, ranked in _spellings(mappings, mappings.readable, result):
         for old in ranked:
             if old == keeper:
                 value = _lookup(result, old)
@@ -347,14 +362,8 @@ def migration_moves(model: type[BaseModel], data: Mapping[str, Any]) -> list[Key
     or a closer old spelling is also set, the other spelling is dropped.
     """
     mappings = key_mappings(model)
-    found: dict[str, list[str]] = {}
-    for old, new in mappings.migratable.items():
-        if _lookup(data, old) is not _MISSING:
-            found.setdefault(new, []).append(old)
     moves: list[KeyMove] = []
-    for new, olds in sorted(found.items()):
-        ranked = sorted(olds, key=lambda old: (mappings.distance[old], old))
-        keeper = new if _lookup(data, new) is not _MISSING else ranked[0]
+    for new, keeper, ranked in _spellings(mappings, mappings.migratable, data):
         for old in ranked:
             if old == keeper:
                 moves.append(KeyMove(old, new, "renamed"))
@@ -383,11 +392,16 @@ def old_spellings(model: type[BaseModel], key: str) -> list[str]:
 _warned: set[str] = set()
 
 
-def warn_once(message: str) -> None:
-    """Print ``message`` as a warning, once per process per text."""
-    if message in _warned:
+def warn_once(message: str, *, key: str | None = None) -> None:
+    """Print ``message`` as a warning, once per process per ``key`` (else per text).
+
+    Callers warning about one old key in different words pass the same
+    ``key``, so only the first of them prints.
+    """
+    seen = message if key is None else key
+    if seen in _warned:
         return
-    _warned.add(message)
+    _warned.add(seen)
     from untaped.ui import ui_context  # noqa: PLC0415 - keep settings imports light
 
     ui_context(strict=False).message("warning", message)

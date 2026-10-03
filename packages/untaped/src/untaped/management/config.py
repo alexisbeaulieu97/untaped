@@ -37,10 +37,16 @@ from untaped.config.models import SettingOutcome, setting_entry_row
 from untaped.config.prompting import resolve_set_value
 from untaped.config.repository import SettingsFileRepository
 from untaped.config.use_cases import GetSetting, ListAllProfilesSettings, ListSettings
+from untaped.config_file import read_config_dict
 from untaped.deprecated_keys import NO_KEY_MAPPINGS, KeyMappings, key_mappings, warn_once
 from untaped.errors import ConfigError
 from untaped.messages import deprecated_message, hint, plural
-from untaped.settings import Settings, resolve_config_path
+from untaped.settings import (
+    Settings,
+    active_settings_layout,
+    config_key_warning,
+    resolve_config_path,
+)
 from untaped.theme import OutputFormat
 from untaped.ui import ui_context
 
@@ -85,7 +91,7 @@ class RootConfigContext:
             return key
         if rest in scope.mappings.readable:
             new = f"{first}.{scope.mappings.readable[rest]}"
-            warn_once(deprecated_message(key, new))
+            warn_once(_file_warning(first, rest) or deprecated_message(key, new), key=key)
             return new
         if rest in scope.mappings.retired:
             new = f"{first}.{scope.mappings.migratable[rest]}"
@@ -104,6 +110,23 @@ class RootConfigContext:
             f"{key!r} is managed by untaped {scope.capability} and is not a configurable setting",
             category="invalid",
         )
+
+
+def _file_warning(section: str, old: str) -> str | None:
+    """The ``config.yml`` warning for ``old`` (with its migrate hint), if a layered profile has it.
+
+    Reading the file warns about the same key; both share one ``warn_once``
+    key, so a command that names an old key the file also has warns once.
+    """
+    try:
+        resolved = active_settings_layout().resolve(read_config_dict())
+    except ConfigError:
+        return None
+    for sections in resolved.uses.values():
+        for use in sections.get(section, ()):
+            if use.old == old:
+                return config_key_warning(use, section=section)
+    return None
 
 
 def _split_first(key: str) -> tuple[str, str | None]:
