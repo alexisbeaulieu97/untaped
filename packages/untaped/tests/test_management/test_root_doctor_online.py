@@ -51,7 +51,9 @@ class ProbeProfile(BaseModel):
 
 def _doctor(checks: tuple[DoctorCheck, ...], *args: str) -> CliResult:
     spec = make_spec("svc", profile_model=ProbeProfile, doctor_checks=checks)
-    app = build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=compose(spec))
+    app = build_root_doctor_app(
+        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(spec)
+    )
     return CliInvoker().invoke(app, ["--format", "json", *args])
 
 
@@ -134,7 +136,9 @@ def test_a_default_base_url_without_a_token_is_not_configured(_isolated_config: 
 
     check = online_check("github.api", section="github", probe=probe)
     spec = make_spec("github", profile_model=GithubProfile, doctor_checks=(check,))
-    app = build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=compose(spec))
+    app = build_root_doctor_app(
+        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(spec)
+    )
     result = CliInvoker().invoke(app, ["--online", "--format", "json"])
     assert result.exit_code == 0, result.output
     assert _row(result, "github.api")["detail"] == "not configured"
@@ -315,7 +319,9 @@ def test_an_unparsable_fix_fails_its_row(_isolated_config: Path) -> None:
 
 def test_the_checklist_shows_the_fix_without_the_current_profile(_isolated_config: Path) -> None:
     spec = make_spec("svc", profile_model=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
-    app = build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=compose(spec))
+    app = build_root_doctor_app(
+        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(spec)
+    )
     result = CliInvoker().invoke(app, ["--format", "table", "--online"])
     assert "token rejected\n" in result.stdout
     assert "→ untaped auth set svc\n" in result.stdout
@@ -323,7 +329,9 @@ def test_the_checklist_shows_the_fix_without_the_current_profile(_isolated_confi
 
 def test_the_table_keeps_a_profile_the_flag_chose(_isolated_config: Path) -> None:
     spec = make_spec("svc", profile_model=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
-    app = build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=compose(spec))
+    app = build_root_doctor_app(
+        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(spec)
+    )
     with profile_scope("default"):
         result = CliInvoker().invoke(app, ["--format", "table", "--online"])
     # Without the flag the same line would act on the configured active profile.

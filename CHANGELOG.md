@@ -35,6 +35,10 @@
   `config.yml`; `config set` and `config unset` also remove a key's old
   spelling, and `config list` notes a value still read from one.
   ([#482](https://github.com/alexisbeaulieu97/untaped/pull/482))
+- `untaped doctor fix` runs every automatic fix, re-checks, and reports what
+  it fixed; `--dry-run` only plans. `untaped doctor` and `untaped setup`
+  hint at it.
+  ([#480](https://github.com/alexisbeaulieu97/untaped/pull/480))
 
 ### Changed
 

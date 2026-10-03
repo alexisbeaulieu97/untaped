@@ -1,7 +1,7 @@
-"""Root ``untaped doctor`` command.
+"""Root ``untaped doctor`` command group.
 
-A terminal command (not a group): it runs the shell plus every composed
-capability's health checks OFFLINE — config-file reads plus in-process model
+Its default command runs the shell plus every composed capability's health
+checks OFFLINE — config-file reads plus in-process model
 validation only, never network I/O. ``--online`` adds the checks
 capabilities contribute with ``DoctorCheck(online=True)``, which contact the
 configured services. A check's ``DoctorResult.fix`` becomes the row's
@@ -14,7 +14,8 @@ Quarantine records render as failed rows (nonzero exit). A config file other
 users can read renders as a ``warn`` row, which does not fail the run; so do
 profile keys no settings model declares,
 installed skills that differ from their packaged copy, and a capability
-check that returns ``DoctorResult(..., warn=True)``.
+check that returns ``DoctorResult(..., warn=True)``. ``doctor fix``
+(:mod:`untaped.management.fix`) runs every automatic fix the checks name.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ import os
 import re
 import shlex
 import stat
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any
@@ -42,10 +43,13 @@ from untaped.capabilities.registry import (
 )
 from untaped.cli import (
     ColumnsOption,
+    DryRunOption,
     FormatOption,
+    YesOption,
     create_app,
     echo,
     report_errors,
+    writes,
 )
 from untaped.config_file import read_config_dict
 from untaped.config_schema import walk_settings
@@ -53,7 +57,7 @@ from untaped.errors import ConfigError, ExitCode, first_validation_error
 from untaped.http import resolve_verify
 from untaped.management._render import emit_check_list, emit_isolated
 from untaped.management.skills import composed_skills
-from untaped.messages import command_argv, command_line, summary
+from untaped.messages import command_argv, command_line, hint, plural, summary
 from untaped.profile_resolver import (
     classify_active_profile,
     profile_override,
@@ -91,8 +95,26 @@ class _SectionScope:
     checks: tuple[DoctorCheck, ...]
 
 
-def build_root_doctor_app(*, shell: ApplicationSpec, result: CompositionResult) -> App:
-    """Return the root ``doctor`` terminal command for one composition."""
+OnlineOption = Annotated[
+    bool,
+    Parameter(
+        name="--online",
+        negative="",
+        help="Also contact each configured service (tokens, URLs, TLS).",
+    ),
+]
+
+
+def build_root_doctor_app(
+    *,
+    shell: ApplicationSpec,
+    result: CompositionResult,
+    builtin_for: Callable[[str], str | None],
+) -> App:
+    """Return the root ``doctor`` command and its ``fix`` subcommand for one composition.
+
+    ``builtin_for`` resolves a root command name, as dispatch would.
+    """
     app = create_app(
         name="doctor",
         help="Check the health of the shell and every composed capability.",
@@ -100,21 +122,36 @@ def build_root_doctor_app(*, shell: ApplicationSpec, result: CompositionResult) 
 
     @app.default
     def run_command(
-        *,
-        online: Annotated[
-            bool,
-            Parameter(
-                name="--online",
-                negative="",
-                help="Also contact each configured service (tokens, URLs, TLS).",
-            ),
-        ] = False,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
+        *, online: OnlineOption = False, fmt: FormatOption = "table", columns: ColumnsOption = None
     ) -> None:
         """Run every health check and report one row per check."""
         with report_errors():
             _run(shell, result, online=online, fmt=fmt, columns=columns)
+
+    @app.command(name="fix")
+    @writes(destructive=True)
+    def fix_command(
+        *,
+        online: OnlineOption = False,
+        yes: YesOption = False,
+        dry_run: DryRunOption = False,
+        fmt: FormatOption = "table",
+        columns: ColumnsOption = None,
+    ) -> None:
+        """Run every automatic fix doctor found, after one confirmation."""
+        from untaped.management.fix import run_fixes  # noqa: PLC0415 - fix imports doctor
+
+        with report_errors():
+            run_fixes(
+                shell,
+                result,
+                online=online,
+                yes=yes,
+                dry_run=dry_run,
+                fmt=fmt,
+                columns=columns,
+                builtin_for=builtin_for,
+            )
 
     return app
 
@@ -148,8 +185,31 @@ def report_check_rows(
         emit_isolated(shown, fmt=fmt, columns=columns, kind="untaped.doctor_check")
     counts = {status: sum(row["status"] == status for row in rows) for status in _STATUSES}
     echo(summary(op, counts), err=True)
+    fix_hint = _fix_hint(rows, profile)
+    if fix_hint:
+        echo(fix_hint, err=True)
     if counts[_FAIL]:
         raise SystemExit(ExitCode.FAILURE)
+
+
+def _fix_hint(rows: list[dict[str, object]], profile: str) -> str | None:
+    """``hint: run `untaped doctor fix` …`` when an automatic fix exists, else ``None``.
+
+    Fixes are counted as ``doctor fix`` groups them; the command keeps the
+    rows' profile.
+    """
+    fixes = {argv: is_automatic(covered) for argv, covered in group_fixes(rows).items()}
+    automatic = [argv for argv, auto in fixes.items() if auto]
+    if not automatic:
+        return None
+    first = automatic[0]
+    target = first[1] if first[:1] == ("--profile",) and len(first) > 1 else profile
+    command = run_line(command_argv("doctor fix", profile=target), profile)
+    text = f"{hint(command)} to apply {plural(len(automatic), 'automatic fix', 'automatic fixes')}"
+    manual = len(fixes) - len(automatic)
+    if manual:
+        text = f"{text}; {plural(manual, 'fix', 'fixes')} {'needs' if manual == 1 else 'need'} you"
+    return text
 
 
 def _table_row(row: dict[str, object], profile: str) -> dict[str, object]:
@@ -192,6 +252,21 @@ def _row(
 def placeholders(argv: list[str]) -> list[str]:
     """The ``<NAME>`` values ``argv`` still needs, in order."""
     return [found for arg in argv for found in _PLACEHOLDER.findall(arg)]
+
+
+def group_fixes(rows: list[dict[str, object]]) -> dict[tuple[str, ...], list[dict[str, object]]]:
+    """Warned and failed rows with a fix, keyed by exact fix argv, first appearance first."""
+    grouped: dict[tuple[str, ...], list[dict[str, object]]] = {}
+    for row in rows:
+        fix = row.get("fix")
+        if row["status"] != _PASS and isinstance(fix, list) and fix:
+            grouped.setdefault(tuple(str(arg) for arg in fix), []).append(row)
+    return grouped
+
+
+def is_automatic(covered: list[dict[str, object]]) -> bool:
+    """A grouped fix is automatic only when every row naming it says so."""
+    return all(row.get("automatic") for row in covered)
 
 
 def _scopes(shell: ApplicationSpec, result: CompositionResult) -> list[_SectionScope]:
