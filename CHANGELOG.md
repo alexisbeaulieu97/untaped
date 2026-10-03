@@ -27,6 +27,10 @@
 - SDK: `atomic_write` also takes `bytes`, and `yaml_mapping_indent(text)` guesses
   a YAML file's mapping indent so a `ruamel.yaml` rewrite keeps it.
   ([#476](https://github.com/alexisbeaulieu97/untaped/pull/476))
+- Doctor rows carry `automatic`, and a doctor check marks a fix that needs no
+  value or input with `DoctorResult(automatic=True)`; `skills update` and
+  `auth migrate` are automatic.
+  ([#478](https://github.com/alexisbeaulieu97/untaped/pull/478))
 
 ### Changed
 
@@ -47,6 +51,9 @@
 - `awx.api_prefix` no longer needs its trailing `/`; untaped adds it, and the
   prefix must still start with `/`.
   ([#471](https://github.com/alexisbeaulieu97/untaped/pull/471))
+- `setup plan` marks the plaintext-token step (`auth migrate`) `by: agent`: a
+  step is the user's only when it asks for or reveals a token.
+  ([#478](https://github.com/alexisbeaulieu97/untaped/pull/478))
 
 ### Fixed
 

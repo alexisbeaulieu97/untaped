@@ -49,8 +49,9 @@ def connection_check(check_id: str, *, section: str) -> DoctorCheck:
 
     A section with neither is simply unused and passes; one with only half
     of the pair is a warning, and so is a token stored in plain text in the
-    config file (``<section>.token``): its fix is ``auth migrate`` when the
-    section takes a ``token_command``, else the alternatives are named.
+    config file (``<section>.token``): its fix is the automatic ``auth
+    migrate`` when the section takes a ``token_command``, else the
+    alternatives are named.
     ``token_command`` is reported, never run.
     """
 
@@ -84,7 +85,12 @@ def connection_check(check_id: str, *, section: str) -> DoctorCheck:
             )
             if takes_token_command(type(settings)):
                 return DoctorResult(
-                    id=check_id, ok=True, warn=True, detail=plaintext, fix="auth migrate"
+                    id=check_id,
+                    ok=True,
+                    warn=True,
+                    detail=plaintext,
+                    fix="auth migrate",
+                    automatic=True,
                 )
             alternatives = token_instead(settings, section=section)
             return DoctorResult(
