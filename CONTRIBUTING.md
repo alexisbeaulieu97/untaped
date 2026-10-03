@@ -304,8 +304,9 @@ or examples. Use synthetic data for tests and examples.
 Terms these docs and the code use; see the [README](README.md) for what
 untaped is.
 
-**Fix**: the `untaped` command a doctor row names to repair what it found.
+**Fix**: the `untaped` command a doctor row names to resolve what it found.
+_Avoid_: repair, remedy.
 
 **Automatic fix**: a fix that needs no value and no input, so
 `untaped doctor fix` runs it.
-_Avoid_: repair, remedy, autofix.
+_Avoid_: autofix.

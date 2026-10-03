@@ -195,14 +195,10 @@ def report_check_rows(
 def _fix_hint(rows: list[dict[str, object]], profile: str) -> str | None:
     """``hint: run `untaped doctor fix` …`` when an automatic fix exists, else ``None``.
 
-    Fixes are counted by unique argv; the command keeps the rows' profile.
+    Fixes are counted as ``doctor fix`` groups them; the command keeps the
+    rows' profile.
     """
-    fixes: dict[tuple[str, ...], bool] = {}
-    for row in rows:
-        fix = row.get("fix")
-        if row["status"] != _PASS and isinstance(fix, list) and fix:
-            argv = tuple(str(arg) for arg in fix)
-            fixes[argv] = fixes.get(argv, True) and bool(row.get("automatic"))
+    fixes = {argv: is_automatic(covered) for argv, covered in group_fixes(rows).items()}
     automatic = [argv for argv, auto in fixes.items() if auto]
     if not automatic:
         return None
@@ -256,6 +252,21 @@ def _row(
 def placeholders(argv: list[str]) -> list[str]:
     """The ``<NAME>`` values ``argv`` still needs, in order."""
     return [found for arg in argv for found in _PLACEHOLDER.findall(arg)]
+
+
+def group_fixes(rows: list[dict[str, object]]) -> dict[tuple[str, ...], list[dict[str, object]]]:
+    """Warned and failed rows with a fix, keyed by exact fix argv, first appearance first."""
+    grouped: dict[tuple[str, ...], list[dict[str, object]]] = {}
+    for row in rows:
+        fix = row.get("fix")
+        if row["status"] != _PASS and isinstance(fix, list) and fix:
+            grouped.setdefault(tuple(str(arg) for arg in fix), []).append(row)
+    return grouped
+
+
+def is_automatic(covered: list[dict[str, object]]) -> bool:
+    """A grouped fix is automatic only when every row naming it says so."""
+    return all(row.get("automatic") for row in covered)
 
 
 def _scopes(shell: ApplicationSpec, result: CompositionResult) -> list[_SectionScope]:

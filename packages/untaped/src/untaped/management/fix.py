@@ -33,7 +33,13 @@ from untaped.cli import echo
 from untaped.diagnostics import DIAGNOSTICS_ENV, ErrorInfo, note_failure
 from untaped.errors import ErrorCategory, ExitCode, UntapedError
 from untaped.management._render import emit_fix_list, emit_fix_plan, emit_isolated
-from untaped.management.doctor import collect_doctor_rows, placeholders, run_line
+from untaped.management.doctor import (
+    collect_doctor_rows,
+    group_fixes,
+    is_automatic,
+    placeholders,
+    run_line,
+)
 from untaped.messages import hint, not_found, summary
 from untaped.profile_resolver import selected_profile
 from untaped.theme import OutputFormat
@@ -114,8 +120,8 @@ def run_fixes(
     )
     if outcome.cancelled:
         finish(outcome)
-    runs = dict(outcome.results)
-    after = collect_doctor_rows(shell, result, online=online) if runs else rows
+    runs: dict[_Fix, ChildRun | UntapedError] = {**dict(outcome.results), **dict(outcome.failures)}
+    after = collect_doctor_rows(shell, result, online=online) if outcome.results else rows
     outcomes = [
         _outcome(fix, refusals[fix], runs.get(fix), after, dry_run=dry_run) for fix in fixes
     ]
@@ -129,20 +135,15 @@ def run_fixes(
 
 
 def _select(rows: list[dict[str, object]]) -> list[_Fix]:
-    """Warned and failed rows with a fix, grouped by exact argv, first appearance first."""
-    grouped: dict[tuple[str, ...], list[dict[str, object]]] = {}
-    for row in rows:
-        fix = row.get("fix")
-        if row["status"] != "pass" and isinstance(fix, list) and fix:
-            grouped.setdefault(tuple(str(arg) for arg in fix), []).append(row)
+    """One :class:`_Fix` per fix argv, grouped as doctor's hint counts them."""
     return [
         _Fix(
             argv=argv,
             keys=tuple(_key(row) for row in covered),
             checks=tuple(dict.fromkeys(str(row["check"]) for row in covered)),
-            automatic=all(row.get("automatic") for row in covered),
+            automatic=is_automatic(covered),
         )
-        for argv, covered in grouped.items()
+        for argv, covered in group_fixes(rows).items()
     ]
 
 
@@ -176,7 +177,10 @@ def _line(fix: _Fix, profile: str) -> str:
 
 
 def _run_one_fix(fix: _Fix) -> ChildRun:
-    return _run_one(fix.argv)
+    try:
+        return _run_one(fix.argv)
+    except OSError as exc:
+        raise UntapedError(f"could not start untaped: {exc}") from exc
 
 
 def _run_one(argv: Sequence[str]) -> ChildRun:
@@ -249,7 +253,7 @@ def _parse_lines(lines: list[str]) -> list[Row]:
 def _outcome(
     fix: _Fix,
     refusal: UntapedError | None,
-    run: ChildRun | None,
+    run: ChildRun | UntapedError | None,
     after: list[dict[str, object]],
     *,
     dry_run: bool,
@@ -260,8 +264,11 @@ def _outcome(
         return row | {"action": "failed", "detail": _error_detail(info), "error": _dump(info)}
     if not fix.automatic:
         return row | {"action": "skipped", "detail": f"{_needs(fix)}; run it yourself"}
-    if dry_run or run is None:
+    if dry_run:
         return row | {"action": "planned", "detail": f"would fix {', '.join(fix.checks)}"}
+    if not isinstance(run, ChildRun):
+        info = note_failure(run or UntapedError("did not run"))
+        return row | {"action": "failed", "detail": _error_detail(info), "error": _dump(info)}
     if run.code != 0:
         info = note_failure(_child_error(run))
         return row | {"action": "failed", "detail": _error_detail(info), "error": _dump(info)}

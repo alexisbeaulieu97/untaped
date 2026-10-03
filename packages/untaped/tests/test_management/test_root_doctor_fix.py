@@ -166,6 +166,18 @@ def test_a_fix_running_doctor_or_an_unknown_command_is_refused(
     assert RAN == []
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("--profile", "p", "skills", "update"),
+        ("--profile=p", "skills", "update"),
+        ("skills", "update"),
+    ],
+)
+def test_the_command_is_read_past_either_profile_spelling(argv: tuple[str, ...]) -> None:
+    assert fix._command(argv) == ["skills", "update"]
+
+
 def test_a_lazily_mounted_capability_command_resolves(monkeypatch: pytest.MonkeyPatch) -> None:
     spec = _spec(("svc.own", "svc repair", {}))
     result = _cli(spec, "--yes", "--format", "json", monkeypatch=monkeypatch)
@@ -231,6 +243,20 @@ def test_a_failed_fix_carries_the_childs_error_and_the_next_one_runs(
     }
     assert "error" not in rows[1]
     assert "error: untaped auth migrate" not in result.stderr
+
+
+def test_a_fix_that_cannot_start_fails_and_the_next_one_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "missing-python"))
+    spec = _spec(_MIGRATE, _UPDATE)
+    root = bootstrap.build_root_app(candidates=(provider_candidate(spec),))
+    result = invoke_cli(root.meta, ["doctor", "fix", "--yes", "--format", "json"])
+    assert result.exit_code == 1
+    rows = _rows(result)
+    assert [row["action"] for row in rows] == ["failed", "failed"]
+    assert all(row["detail"].startswith("could not start untaped: ") for row in rows)
+    assert "Traceback" not in result.stderr
 
 
 def test_a_child_failing_without_an_error_line_reads_its_status(
@@ -465,6 +491,31 @@ def test_the_hint_keeps_a_profile_the_flag_chose(_isolated_config: Path) -> None
     write_config(_isolated_config, "profiles:\n  default: {}\n  work: {}\n")
     stderr = _doctor(_spec(_MIGRATE), "--profile", "work").stderr
     assert "hint: run `untaped --profile work doctor fix`" in stderr
+
+
+def _stale_skill() -> None:
+    root = bootstrap.build_root_app()
+    installed = invoke_cli(root.meta, ["skills", "install", "untaped", "--target", "claude"])
+    assert installed.exit_code == 0, installed.output
+    skill = Path.home() / ".claude" / "skills" / "untaped" / "SKILL.md"
+    skill.write_text("stale\n", encoding="utf-8")
+
+
+#: Puts each shell row that can name a fix into its fixable state, by check id.
+_SHELL_FIX_TRIGGERS: dict[str, Callable[[], None]] = {"skills": _stale_skill}
+
+
+def test_every_shell_fix_row_has_a_check_id_of_its_own() -> None:
+    """``doctor fix`` re-checks a shell fix row by its check id, so no other shell row shares it."""
+    for trigger in _SHELL_FIX_TRIGGERS.values():
+        trigger()
+    root = bootstrap.build_root_app()
+    rows = json.loads(invoke_cli(root.meta, ["doctor", "--format", "json"]).stdout)
+    shell = [row for row in rows if row["capability"] == bootstrap.SHELL_SPEC.name]
+    fixable = {row["check"] for row in shell if row["fix"]}
+    assert fixable == set(_SHELL_FIX_TRIGGERS)
+    for check in fixable:
+        assert [row["check"] for row in shell].count(check) == 1, check
 
 
 def test_no_automatic_fix_no_hint() -> None:
