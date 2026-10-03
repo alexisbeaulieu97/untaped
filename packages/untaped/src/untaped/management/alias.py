@@ -36,7 +36,7 @@ from untaped.config.repository import SettingsFileRepository
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError, UsageError, first_validation_error
 from untaped.messages import hint, not_found, q
-from untaped.profile_resolver import DEFAULT_PROFILE, effective_active_profile_name
+from untaped.profile_resolver import selected_profile
 from untaped.records import OutcomeRecord, Record
 from untaped.settings import load_settings_section
 from untaped.shell_settings import ShellProfileSettings, alias_name_error
@@ -203,7 +203,7 @@ def _missing_alias(name: str, profile: str, own: dict[str, list[str]]) -> str:
 
 def _own_aliases() -> tuple[str, dict[str, list[str]]]:
     """The write profile's name and the aliases it defines itself (not inherited)."""
-    profile = effective_active_profile_name(read_config_dict()) or DEFAULT_PROFILE
+    profile = selected_profile(read_config_dict())
     data = SettingsFileRepository().profile_data(profile) or {}
     shell = data.get("shell")
     return profile, _parse_aliases(

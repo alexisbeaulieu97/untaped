@@ -108,6 +108,23 @@ def effective_active_profile_name(data: dict[str, Any]) -> str | None:
     return name
 
 
+def selected_profile(data: dict[str, Any] | None = None) -> str:
+    """The profile this invocation acts on: ``--profile``, ``UNTAPED_PROFILE``, ``active``.
+
+    Falls back to ``default``. ``data`` is the parsed config; without it the
+    config file is read, and an unreadable one counts as empty.
+    """
+    if data is None:
+        # Lazy: ``untaped.config_file`` imports ``untaped.settings``, which imports us.
+        from untaped.config_file import read_config_dict  # noqa: PLC0415
+
+        try:
+            data = read_config_dict()
+        except ConfigError:
+            data = {}
+    return effective_active_profile_name(data) or DEFAULT_PROFILE
+
+
 def resolve_profiles(
     config_data: dict[str, Any],
     *,

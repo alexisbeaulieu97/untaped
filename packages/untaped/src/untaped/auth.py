@@ -23,9 +23,11 @@ warns once per section per process and points at ``untaped auth migrate``.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -34,7 +36,8 @@ from pydantic import AfterValidator, BaseModel, SecretStr
 from untaped.errors import ConfigError
 
 _LOG = logging.getLogger("untaped.auth")
-_TIMEOUT_SECONDS = 60.0
+COMMAND_TIMEOUT_SECONDS = 60.0
+"""How long a ``token_command`` or token-store command may run."""
 _MASK = "**********"
 _cache: dict[tuple[str, ...], str] = {}
 _warned: set[str] = set()
@@ -138,9 +141,81 @@ def token_alternatives(settings: BaseModel, *, section: str) -> str:
     conventional variable, joined with ``or``; empty when the model has
     neither.
     """
-    names = [f"{section}.token_command"] if "token_command" in type(settings).model_fields else []
+    names = [f"{section}.token_command"] if takes_token_command(type(settings)) else []
     names.extend(f"${name}" for name in token_env_names(settings)[:1])
     return " or ".join(names)
+
+
+def token_instead(settings: BaseModel, *, section: str) -> str:
+    """What to use instead of a plaintext ``<section>.token``.
+
+    :func:`token_alternatives`, or the ``UNTAPED_<SECTION>__TOKEN`` override
+    when the model has neither a command nor a conventional variable.
+    """
+    return token_alternatives(settings, section=section) or f"${token_override_name(section)}"
+
+
+def takes_token_command(model: type[BaseModel]) -> bool:
+    """Whether ``model`` has a ``token_command`` field (so ``auth set`` serves it)."""
+    return "token_command" in model.model_fields
+
+
+def token_override_name(section: str) -> str:
+    """The ``UNTAPED_<SECTION>__TOKEN`` variable that overrides ``<section>.token``."""
+    return f"UNTAPED_{section.upper()}__TOKEN"
+
+
+def token_override_env(section: str) -> str | None:
+    """The environment variable that sets ``<section>.token`` right now, if any.
+
+    ``UNTAPED_<SECTION>__TOKEN``, or ``UNTAPED_<SECTION>`` when it holds a
+    JSON object with a ``token``; either one wins over the config file.
+    """
+    name = token_override_name(section)
+    if os.environ.get(name, "").strip():
+        return name
+    whole = name.removesuffix("__TOKEN")
+    try:
+        node = json.loads(os.environ.get(whole) or "null")
+    except ValueError:
+        return None
+    token = node.get("token") if isinstance(node, dict) else None
+    return whole if isinstance(token, str) and token.strip() else None
+
+
+def run_command(
+    argv: Sequence[str],
+    *,
+    label: str,
+    stdin: str | None = None,
+    capture_stderr: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    """Run ``argv`` without a shell, its stdout captured, and return it finished.
+
+    ``label`` starts every error, which never repeats the command's output or
+    arguments. stderr goes straight to the terminal unless ``capture_stderr``.
+    A non-zero exit is returned, not raised.
+    """
+    try:
+        return subprocess.run(
+            list(argv),
+            input=stdin or "",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE if capture_stderr else None,
+            text=True,
+            timeout=COMMAND_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except FileNotFoundError:
+        raise ConfigError(f"{label} not found on PATH") from None
+    except subprocess.TimeoutExpired:
+        raise ConfigError(
+            f"{label} timed out after {COMMAND_TIMEOUT_SECONDS:g}s; it may be waiting on an "
+            "unlock prompt on a screen nobody sees (over SSH, unlock the store first)",
+            category="unavailable",
+        ) from None
+    except OSError as exc:
+        raise ConfigError(f"{label} could not run: {exc.strerror}") from None
 
 
 def clear_token_cache() -> None:
@@ -152,14 +227,13 @@ def clear_token_cache() -> None:
 def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
     """Warn once that ``<section>.token`` comes from the config file in plain text.
 
-    An ``UNTAPED_<SECTION>__TOKEN`` (or ``UNTAPED_<SECTION>``) override is not
-    a file, so it never warns; nor does a model ``auth set`` cannot serve.
+    A token from the environment (:func:`token_override_env`) is not a file,
+    so it never warns; nor does a model ``auth set`` cannot serve.
     """
-    prefix = f"UNTAPED_{section.upper()}"
     if (
         section in _warned
-        or "token_command" not in type(settings).model_fields
-        or any(os.environ.get(name) for name in (prefix, f"{prefix}__TOKEN"))
+        or not takes_token_command(type(settings))
+        or token_override_env(section) is not None
     ):
         return
     _warned.add(section)
@@ -185,43 +259,32 @@ def _env_source(names: tuple[str, ...]) -> str | None:
 
 
 def _run_token_command(argv: tuple[str, ...], *, section: str) -> str:
-    key = f"{section}.token_command"
-    program = argv[0]
-    _LOG.debug("%s: running %s", key, program)
-    try:
-        completed = subprocess.run(
-            list(argv),
-            stdin=subprocess.DEVNULL,
-            # stderr goes straight to the terminal: the command explains its
-            # own failures, and untaped never captures or repeats them.
-            stdout=subprocess.PIPE,
-            text=True,
-            timeout=_TIMEOUT_SECONDS,
-            check=False,
-        )
-    except FileNotFoundError:
-        raise ConfigError(f"{key}: {program!r} not found on PATH") from None
-    except subprocess.TimeoutExpired:
-        raise ConfigError(
-            f"{key}: {program!r} timed out after {_TIMEOUT_SECONDS:g}s", category="unavailable"
-        ) from None
-    except OSError as exc:
-        raise ConfigError(f"{key}: {program!r} could not run: {exc.strerror}") from None
+    label = f"{section}.token_command: {argv[0]!r}"
+    _LOG.debug("%s.token_command: running %s", section, argv[0])
+    # stderr goes straight to the terminal: the command explains its own
+    # failures, and untaped never captures or repeats them.
+    completed = run_command(argv, label=label)
     if completed.returncode != 0:
-        raise ConfigError(f"{key}: {program!r} exited with status {completed.returncode}")
+        raise ConfigError(f"{label} exited with status {completed.returncode}")
     token = completed.stdout.strip()
     if not token:
-        raise ConfigError(f"{key}: {program!r} printed no token")
+        raise ConfigError(f"{label} printed no token")
     return token
 
 
 __all__ = [
+    "COMMAND_TIMEOUT_SECONDS",
     "CommandToken",
     "TokenCommand",
     "TokenSources",
     "clear_token_cache",
     "describe_token_source",
     "resolve_token",
+    "run_command",
+    "takes_token_command",
     "token_alternatives",
     "token_env_names",
+    "token_instead",
+    "token_override_env",
+    "token_override_name",
 ]

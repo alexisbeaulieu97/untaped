@@ -52,9 +52,10 @@ from untaped.management._render import emit_isolated
 from untaped.management.skills import composed_skills
 from untaped.messages import command_argv, command_line, plural
 from untaped.profile_resolver import (
-    DEFAULT_PROFILE,
     classify_active_profile,
-    effective_active_profile_name,
+    profile_override,
+    profile_scope,
+    selected_profile,
 )
 from untaped.settings import (
     RESERVED_STATE_SECTIONS,
@@ -156,10 +157,18 @@ def _table_row(row: dict[str, object], profile: str) -> dict[str, object]:
     fix = row.get("fix")
     if not isinstance(fix, list):
         return row
-    # The profile people are already on goes without saying.
-    if fix[:2] == ["--profile", profile]:
-        fix = fix[2:]
-    return {**row, "detail": f"{row['detail']}; run `{command_line(shlex.join(fix))}`"}
+    return {**row, "detail": f"{row['detail']}; run `{run_line(fix, profile)}`"}
+
+
+def run_line(argv: list[str], profile: str) -> str:
+    """A fix or step argv as the ``untaped …`` line a person types.
+
+    ``--profile <profile>`` goes without saying when no ``--profile`` flag
+    chose it: the same line then acts on that profile anyway.
+    """
+    if argv[:2] == ["--profile", profile] and profile_override() is None:
+        argv = argv[2:]
+    return command_line(shlex.join(argv))
 
 
 def _row(
@@ -178,15 +187,6 @@ def _row(
         "detail": detail,
         "fix": fix,
     }
-
-
-def selected_profile() -> str:
-    """The profile this invocation reads: ``--profile``, ``UNTAPED_PROFILE``, ``active``."""
-    try:
-        raw = read_config_dict()
-    except ConfigError:
-        raw = {}
-    return effective_active_profile_name(raw) or DEFAULT_PROFILE
 
 
 def _scopes(shell: ApplicationSpec, result: CompositionResult) -> list[_SectionScope]:
@@ -258,7 +258,7 @@ def collect_doctor_rows(
         contexts.append((scope, settings))
         if scope.state_model is not None:
             rows.append(_state_row(scope, scope.state_model, state))
-    profile = effective_active_profile_name(raw or {}) or DEFAULT_PROFILE
+    profile = selected_profile(raw or {})
     rows.extend(_check_rows(contexts, online=online, capabilities=capabilities, profile=profile))
     rows.append(_skills_row(shell, result))
     for record in result.quarantine:
@@ -270,6 +270,18 @@ def collect_doctor_rows(
         if isinstance(built, QuarantineRecord):
             rows.append(_quarantine_row(built))
     return rows
+
+
+def selected_check_rows(
+    shell: ApplicationSpec,
+    result: CompositionResult,
+    profile: str,
+    selected: frozenset[str],
+) -> list[dict[str, object]]:
+    """``selected`` capabilities' doctor rows for ``profile``, online checks included."""
+    with profile_scope(profile):
+        rows = collect_doctor_rows(shell, result, online=True, capabilities=selected)
+    return [row for row in rows if row["capability"] in selected]
 
 
 def _check_rows(
@@ -349,12 +361,13 @@ def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
     if not stale:
         return _row("skills", shell.name, _PASS, title, "no outdated skills")
     parts = [f"{item.state.value}: {item.path}" for item in stale]
+    fix = None
     if any(item.state is SkillState.outdated for item in stale):
-        parts.append("update with `untaped skills update`")
+        fix = command_argv("skills update", profile=selected_profile())
     if any(item.state is SkillState.orphaned for item in stale):
         parts.append("remove unshipped skills with `untaped skills remove NAME`")
     detail = "; ".join(parts)
-    return _row("skills", shell.name, _WARN, title, detail)
+    return _row("skills", shell.name, _WARN, title, detail, fix)
 
 
 def _config_row(shell: ApplicationSpec) -> tuple[dict[str, Any] | None, dict[str, object]]:
@@ -524,5 +537,5 @@ __all__ = [
     "build_root_doctor_app",
     "collect_doctor_rows",
     "report_check_rows",
-    "selected_profile",
+    "selected_check_rows",
 ]

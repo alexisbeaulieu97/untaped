@@ -20,6 +20,7 @@ from pydantic import BaseModel, SecretStr
 from test_management.support import GithubProfile, compose, make_spec, write_config
 from untaped import bootstrap
 from untaped.management.doctor import build_root_doctor_app
+from untaped.profile_resolver import profile_scope
 from untaped.sdk import (
     CapabilityContext,
     ConfigError,
@@ -317,3 +318,12 @@ def test_the_table_appends_the_fix_without_the_current_profile(_isolated_config:
     app = build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=compose(spec))
     result = CliInvoker().invoke(app, ["--format", "table", "--online"])
     assert "token rejected; run `untaped auth set svc`" in " ".join(result.stdout.split())
+
+
+def test_the_table_keeps_a_profile_the_flag_chose(_isolated_config: Path) -> None:
+    spec = make_spec("svc", profile_model=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
+    app = build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=compose(spec))
+    with profile_scope("default"):
+        result = CliInvoker().invoke(app, ["--format", "table", "--online"])
+    # Without the flag the same line would act on the configured active profile.
+    assert "run `untaped --profile default auth set svc`" in " ".join(result.stdout.split())

@@ -1,8 +1,10 @@
 """What ``untaped setup`` and ``untaped setup plan`` read about a profile's services.
 
 A service is a composed capability whose profile model has ``base_url`` and
-``token`` fields. Both commands resolve each one's current state here, so
-the wizard and the plan cannot disagree about what is set up.
+``token`` fields. Both commands resolve each one's current state here, the
+way ``doctor`` does (the profile's values with ``UNTAPED_*`` overrides
+layered on top), so the wizard, the plan and doctor cannot disagree about
+what is set up.
 """
 
 from __future__ import annotations
@@ -10,15 +12,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from untaped.auth import describe_token_source
 from untaped.capabilities.registry import CapabilitySpec, CompositionResult
 from untaped.doctor_checks import service_configured
 from untaped.errors import ConfigError, UsageError
+from untaped.management.auth import inherited_from_default, plaintext_token
 from untaped.messages import not_found
 from untaped.profile_resolver import DEFAULT_PROFILE
-from untaped.settings import active_settings_layout
+from untaped.settings import active_settings_layout, check_settings_field
 
 _SERVICE_FIELDS = frozenset({"base_url", "token"})
 
@@ -72,36 +75,48 @@ class ServiceState:
     """Whether the section is set up (:func:`untaped.doctor_checks.service_configured`)."""
 
     plaintext: str | None = None
-    """The token stored in plain text in the config, if any."""
+    """The token stored in plain text in the profile's own config, if any."""
+
+    own_command: list[str] | None = None
+    """The profile's own ``token_command``, if any."""
+
+    inherited_token: bool = False
+    """Whether ``default``'s plaintext token wins over anything set in the profile."""
+
+    inherited_command: bool = False
+    """Whether ``default``'s ``token_command`` applies to the profile."""
 
     invalid: str | None = None
-    """The validation error when the section's settings are invalid."""
+    """Why the section's settings (file plus environment) are invalid, if they are."""
 
 
-def service_state(spec: CapabilitySpec, node: object) -> ServiceState:
-    """Resolve one service section's ``node`` (its effective profile values)."""
+def service_state(
+    spec: CapabilitySpec, node: object, own: dict[str, Any], profile: str
+) -> ServiceState:
+    """Resolve one service: ``node`` is its effective section, ``own`` the profile's own data."""
     data = node if isinstance(node, dict) else {}
     stored = data.get("base_url")
     configured_url = stored if isinstance(stored, str) and stored.strip() else None
-    token = data.get("token")
-    plaintext = token.strip() if isinstance(token, str) and token.strip() else None
+    section = spec.config_section
+    plaintext = plaintext_token(own, section)
     try:
-        settings: BaseModel = spec.profile_model.model_validate(data)
-    except ValidationError as exc:
+        settings: BaseModel = check_settings_field(section, data, model=spec.profile_model)
+    except ConfigError as exc:
         return ServiceState(
-            configured_url,
-            None,
-            configured_url is not None,
-            plaintext,
-            invalid=str(exc.errors()[0]["msg"]) if exc.errors() else str(exc),
+            configured_url, None, configured_url is not None, plaintext, invalid=str(exc)
         )
     url = getattr(settings, "base_url", None)
-    section = spec.config_section
+    own_node = own.get(section)
+    command = own_node.get("token_command") if isinstance(own_node, dict) else None
+    own_command = [str(part) for part in command] if isinstance(command, list) else None
     return ServiceState(
         url if isinstance(url, str) and url else configured_url,
         describe_token_source(settings, section=section),
         service_configured(settings, section=section),
         plaintext,
+        own_command or None,
+        inherited_from_default(section, profile, "token"),
+        own_command is None and inherited_from_default(section, profile, "token_command"),
     )
 
 

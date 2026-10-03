@@ -24,26 +24,28 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.auth import token_env_names
+from untaped.auth import takes_token_command, token_env_names
 from untaped.batch import finish
 from untaped.capabilities.registry import ApplicationSpec, CapabilitySpec, CompositionResult
 from untaped.cli import ColumnsOption, FormatOption, create_app, report_errors
 from untaped.config.repository import SettingsFileRepository
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError
-from untaped.management.auth import refuse_inherited_token, save_token
-from untaped.management.doctor import collect_doctor_rows, report_check_rows, selected_profile
+from untaped.management.auth import drop_token_command, save_token
+from untaped.management.doctor import report_check_rows, selected_check_rows
 from untaped.management.setup_plan import emit_plan, pending, plan_rows
-from untaped.management.setup_state import ServiceState, profile_view, service_state, setup_services
+from untaped.management.setup_state import (
+    ServiceState,
+    profile_view,
+    service_state,
+    setup_services,
+)
 from untaped.messages import hint
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile.use_cases import CreateProfile
-from untaped.profile_resolver import (
-    DEFAULT_PROFILE,
-    effective_active_profile_name,
-    profile_scope,
-)
+from untaped.profile_resolver import DEFAULT_PROFILE, selected_profile
 from untaped.prompts import PromptChoice
+from untaped.settings import active_settings_layout
 from untaped.theme import OutputFormat
 from untaped.token_store import TokenStore, pick_store
 from untaped.ui import UiContext, ui_context
@@ -66,10 +68,7 @@ CheckOption = Annotated[
     Parameter(name="--check", negative="", help="Exit 3 when a step is still todo or failed."),
 ]
 
-_REFUSAL = (
-    "setup requires an interactive terminal; agents and scripts can read the steps "
-    f"from `setup plan`\n{hint('setup plan --format json')}"
-)
+_REFUSAL = f"setup requires an interactive terminal\n{hint('setup plan --format json')}"
 
 
 def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -> App:
@@ -96,8 +95,9 @@ def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -
         """List what the profile still needs, with the command for each step (read-only)."""
         with report_errors():
             services = setup_services(result, only)
-            rows = plan_rows(shell, result, services, selected_profile(), online=online)
-            emit_plan(rows, fmt=fmt, columns=columns)
+            profile = selected_profile()
+            rows = plan_rows(shell, result, services, profile, online=online)
+            emit_plan(rows, profile=profile, fmt=fmt, columns=columns)
         finish(False, predicate_hit=check and pending(rows))
 
     return app
@@ -115,11 +115,12 @@ def _run(
     services = setup_services(result, only)
     with ui.terminal(refusal=_REFUSAL):
         raw = read_config_dict()
-        active = effective_active_profile_name(raw) or DEFAULT_PROFILE
+        active = selected_profile()
         profile = ui.text("Profile to configure", default=active).strip()
         values = profile_view(raw, profile)
+        own = active_settings_layout().profile_data(raw, profile) or {}
         current = {
-            name: service_state(spec, values.get(spec.config_section))
+            name: service_state(spec, values.get(spec.config_section), own, profile)
             for name, spec in services.items()
         }
         if only:
@@ -138,9 +139,12 @@ def _run(
             CreateProfile(profiles)(profile)
             ui.success(f"created profile: {profile}")
         repo = SettingsFileRepository()
+        # One probe per run: a dead Secret Service costs its timeout once.
+        commands = any(takes_token_command(services[name].profile_model) for name in selected)
+        store = pick_store() if commands else None
         for name in selected:
-            _configure(ui, repo, services[name], profile, current[name])
-    rows = _check_rows(shell, result, profile, frozenset(selected))
+            _configure(ui, repo, services[name], profile, current[name], store)
+    rows = selected_check_rows(shell, result, profile, frozenset(selected))
     report_check_rows(rows, op="setup", fmt=fmt, columns=columns)
     if profile == active:
         ui.success(f"profile {profile} is ready")
@@ -157,18 +161,23 @@ def _configure(
     spec: CapabilitySpec,
     profile: str,
     current: ServiceState,
+    store: TokenStore | None,
 ) -> None:
     """Ask for one service's URL and token, validate every answer, then write."""
     section = spec.config_section
     url = ui.text(f"{spec.name} base URL", default=current.base_url).strip()
-    has_command = "token_command" in spec.profile_model.model_fields
-    store = pick_store() if has_command else None
+    has_command = takes_token_command(spec.profile_model)
+    if has_command and current.inherited_token:
+        ui.message(
+            "info",
+            f"{section}.token is set in profile {DEFAULT_PROFILE} and wins over any token "
+            f"set in profile {profile}; move it out of {DEFAULT_PROFILE} to change it\n"
+            f"{hint('auth migrate')}",
+        )
     choices = _token_choices(spec, current, store, has_command=has_command)
     how = ui.select(f"{spec.name} token", choices, default=choices[0].value)
     token = ui.secret(f"{spec.name} token").strip() if how in ("store", "enter") else None
-    argv = _token_command(ui, spec, profile) if how == "command" else None
-    if how in ("store", "move", "env"):
-        refuse_inherited_token(section, profile)
+    argv = _token_command(ui, spec) if how == "command" else None
     repo.set_value(f"{section}.base_url", url, profile=profile)
     if how == "store" and token is not None and store is not None:
         save_token(repo, section, profile, token, store)
@@ -181,9 +190,25 @@ def _configure(
         # A stored token wins over the command; drop it so the command is used.
         repo.unset_value(f"{section}.token", profile=profile)
     elif how == "env":
-        repo.unset_value(f"{section}.token", profile=profile)
-        env = token_env_names(spec.profile_model.model_construct())[0]
-        ui.message("info", f"export ${env} in your shell for untaped {spec.name} to use it")
+        _use_env(ui, repo, spec, profile, current)
+
+
+def _use_env(
+    ui: UiContext,
+    repo: SettingsFileRepository,
+    spec: CapabilitySpec,
+    profile: str,
+    current: ServiceState,
+) -> None:
+    """Clear what would win over the conventional variable: the token and its command."""
+    section = spec.config_section
+    repo.unset_value(f"{section}.token", profile=profile)
+    if current.own_command is not None:
+        where = drop_token_command(repo, section, profile, current.own_command)
+        dropped = f"deleted the stored token from {where}" if where else "unset the command"
+        ui.message("info", f"{section}.token_command no longer applies; {dropped}")
+    env = token_env_names(spec.profile_model.model_construct())[0]
+    ui.message("info", f"export ${env} in your shell for untaped {spec.name} to use it")
 
 
 def _token_choices(
@@ -193,19 +218,26 @@ def _token_choices(
     *,
     has_command: bool,
 ) -> list[PromptChoice[str]]:
-    """The token choices, the recommended one first; none stores plain text if avoidable."""
+    """The token choices, the recommended one first; none stores plain text if avoidable.
+
+    While ``default``'s plaintext token wins, keeping it is the only choice
+    that would work for a section ``auth`` serves.
+    """
     choices: list[PromptChoice[str]] = []
-    if current.plaintext is not None and store is not None:
-        choices.append(PromptChoice(value="move", label=f"Move the current token to {store.name}"))
     if current.token_source is not None:
         label = f"Keep the current token ({current.token_source})"
         choices.append(PromptChoice(value="keep", label=label))
+    if has_command and current.inherited_token:
+        return choices
+    if current.plaintext is not None and store is not None:
+        label = f"Move the current token to {store.name}"
+        choices.insert(0, PromptChoice(value="move", label=label))
     if store is not None:
         choices.append(PromptChoice(value="store", label=f"Store a token with {store.name}"))
     if has_command:
         choices.append(PromptChoice(value="command", label="Run a command that prints the token"))
         env = token_env_names(spec.profile_model.model_construct())
-        if env:
+        if env and not current.inherited_command:
             label = f"Use ${env[0]} (you export it; nothing is stored)"
             choices.append(PromptChoice(value="env", label=label))
     else:
@@ -213,7 +245,7 @@ def _token_choices(
     return choices
 
 
-def _token_command(ui: UiContext, spec: CapabilitySpec, profile: str) -> list[str]:
+def _token_command(ui: UiContext, spec: CapabilitySpec) -> list[str]:
     """Read and check a token command before anything is written for the service."""
     try:
         argv = shlex.split(ui.text(f"{spec.name} token command"))
@@ -221,22 +253,7 @@ def _token_command(ui: UiContext, spec: CapabilitySpec, profile: str) -> list[st
         raise ConfigError(f"invalid {spec.name} token command: {exc}", category="invalid") from exc
     if not argv:
         raise ConfigError(f"{spec.name} token command is empty", category="invalid")
-    # Only the target profile's own token is removed; default's would still
-    # win over the command (and be sent to this profile's URL).
-    refuse_inherited_token(spec.config_section, profile)
     return argv
-
-
-def _check_rows(
-    shell: ApplicationSpec,
-    result: CompositionResult,
-    profile: str,
-    selected: frozenset[str],
-) -> list[dict[str, object]]:
-    """The selected capabilities' doctor rows, online checks included, for ``profile``."""
-    with profile_scope(profile):
-        rows = collect_doctor_rows(shell, result, online=True, capabilities=selected)
-    return [row for row in rows if row["capability"] in selected]
 
 
 __all__ = ["build_root_setup_app"]

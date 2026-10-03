@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 from cyclopts import App
 from pydantic import BaseModel, SecretStr
@@ -17,6 +17,7 @@ from untaped.capabilities.registry import (
     SkillAsset,
 )
 from untaped.cli import create_app
+from untaped.sdk import HttpStatusError, TokenCommand, TokenSources, online_check
 from untaped.settings import get_settings
 from untaped.testing import provider_candidate
 
@@ -58,6 +59,42 @@ class ExtProfile(BaseModel):
     """Minimal profile model for generic capability doubles."""
 
     token: str = "default-token"
+
+
+class WizProfile(BaseModel):
+    """Service double for ``setup`` (section ``wiz``)."""
+
+    token_sources: ClassVar[TokenSources] = TokenSources(env=("WIZ_TOKEN",))
+
+    base_url: str | None = None
+    token: SecretStr | None = None
+    token_command: TokenCommand = None
+
+
+class LegacyProfile(BaseModel):
+    """Service double without ``token_command`` (section ``legacy``)."""
+
+    base_url: str | None = None
+    token: SecretStr | None = None
+
+
+#: Calls to :func:`wiz_probe`; tests clear it.
+PROBES: list[str] = []
+#: Non-empty makes :func:`wiz_probe` fail with HTTP 401; tests clear it.
+FAIL: list[bool] = []
+
+
+def wiz_probe() -> str:
+    """The ``wiz.api`` online probe: records the call, rejects the token on demand."""
+    PROBES.append("probed")
+    if FAIL:
+        raise HttpStatusError("HTTP 401 from https://wiz/me", status_code=401)
+    return "authenticated as alice"
+
+
+def wiz_api_check() -> DoctorCheck:
+    """The ``wiz.api`` online check over :func:`wiz_probe`."""
+    return online_check("wiz.api", section="wiz", probe=wiz_probe)
 
 
 def make_spec(
@@ -133,15 +170,21 @@ def check(
 
 
 __all__ = [
+    "FAIL",
+    "PROBES",
     "ExtProfile",
     "GithubProfile",
     "GithubState",
     "JiraProfile",
+    "LegacyProfile",
     "StrictProfile",
+    "WizProfile",
     "asset",
     "check",
     "compose",
     "make_spec",
     "skill_dir",
+    "wiz_api_check",
+    "wiz_probe",
     "write_config",
 ]

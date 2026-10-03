@@ -95,7 +95,7 @@ def test_outdated_installed_skill_warns(tmp_path: Path) -> None:
     skill.source.joinpath("SKILL.md").write_text("changed\n", encoding="utf-8")
     row = _row(_rows(spec), "skills")
     assert row["status"] == "warn"
-    assert "update with `untaped skills update`" in row["detail"]
+    assert row["fix"] == ["--profile", "default", "skills", "update"]
 
 
 def test_skill_no_longer_shipped_warns(tmp_path: Path) -> None:
