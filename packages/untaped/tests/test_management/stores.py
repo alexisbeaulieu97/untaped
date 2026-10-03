@@ -48,11 +48,18 @@ def save(key, value, replace=True):
         sys.exit(36)
     data[key] = "garbled" if mode == "corrupt" else value
     state_file.write_text(json.dumps(data))
+    if name == "pass":
+        gpg_file(key).parent.mkdir(parents=True, exist_ok=True)
+        gpg_file(key).write_text("encrypted")
 
 
-def show(key):
+def gpg_file(key):
+    return Path(os.environ["PASSWORD_STORE_DIR"]) / f"{key}.gpg"
+
+
+def show(key, missing=1):
     if key not in data:
-        sys.exit(1)
+        sys.exit(missing)
     print(data[key])
 
 
@@ -60,6 +67,8 @@ def drop(key):
     if data.pop(key, None) is None:
         sys.exit(1)
     state_file.write_text(json.dumps(data))
+    if name == "pass":
+        gpg_file(key).unlink()
 
 
 def after(flag):
@@ -94,7 +103,7 @@ elif name == "security":
             token = bytes.fromhex(parts[parts.index("-X") + 1]).decode()
             save(account, token, replace="-U" in parts)
     elif args[0] == "find-generic-password":
-        show(after("-a"))
+        show(after("-a"), missing=44)
     elif args[0] == "delete-generic-password":
         drop(after("-a"))
 """

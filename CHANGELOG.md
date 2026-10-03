@@ -46,8 +46,8 @@
   one warns once per run, as does `config set <section>.token`. `doctor`'s
   warning and the rejected- or missing-token hints now point at
   `untaped auth migrate` and `untaped auth set <section>` for sections whose
-  model has `token_command`; the SDK's `rejected_token_error` and
-  `missing_setting_error` take `takes_token_command=True` for that hint.
+  model has `token_command` (the SDK's `rejected_token_error` looks the
+  section's model up; `missing_setting_error` takes `auth_set=True`).
 
 ## 10.0.0
 

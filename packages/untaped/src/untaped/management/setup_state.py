@@ -84,16 +84,20 @@ class ServiceState:
     """Whether ``default``'s plaintext token wins over anything set in the profile."""
 
     inherited_command: bool = False
-    """Whether ``default``'s ``token_command`` applies to the profile."""
+    """Whether ``default`` has a ``token_command``, which applies once the profile's is gone."""
 
     invalid: str | None = None
     """Why the section's settings (file plus environment) are invalid, if they are."""
 
 
 def service_state(
-    spec: CapabilitySpec, node: object, own: dict[str, Any], profile: str
+    spec: CapabilitySpec, node: object, own: dict[str, Any], profile: str, raw: dict[str, Any]
 ) -> ServiceState:
-    """Resolve one service: ``node`` is its effective section, ``own`` the profile's own data."""
+    """Resolve one service.
+
+    ``node`` is its effective section, ``own`` the profile's own data and
+    ``raw`` the whole config.
+    """
     data = node if isinstance(node, dict) else {}
     stored = data.get("base_url")
     configured_url = stored if isinstance(stored, str) and stored.strip() else None
@@ -115,8 +119,8 @@ def service_state(
         service_configured(settings, section=section),
         plaintext,
         own_command or None,
-        inherited_from_default(section, profile, "token"),
-        own_command is None and inherited_from_default(section, profile, "token_command"),
+        inherited_from_default(section, profile, "token", raw),
+        inherited_from_default(section, profile, "token_command", raw),
     )
 
 

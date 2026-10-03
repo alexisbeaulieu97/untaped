@@ -22,7 +22,11 @@ from untaped.http import (
     rejected_token_error,
     same_origin,
 )
-from untaped.settings import HttpSettings, reset_config_registry_for_tests
+from untaped.settings import (
+    HttpSettings,
+    register_profile_settings,
+    reset_config_registry_for_tests,
+)
 
 
 class DemoSettings(BaseModel):
@@ -653,12 +657,13 @@ def test_paginate_offset_max_pages_bounds_non_converging_server() -> None:
     assert calls["n"] == 2
 
 
+@pytest.mark.usefixtures("_isolated_config")
 def test_a_rejected_token_is_an_auth_config_error_with_the_token_hint() -> None:
     cause = HttpError("HTTP 401", status_code=401, url="https://aap/api/v2/me/", system="awx")
 
-    error = rejected_token_error(
-        "awx", "AWX rejected the token (HTTP 401)", cause=cause, takes_token_command=True
-    )
+    register_profile_settings("awx", SourcedSettings)
+
+    error = rejected_token_error("awx", "AWX rejected the token (HTTP 401)", cause=cause)
 
     assert isinstance(error, ConfigError)
     assert (str(error), error.category, error.system) == (
@@ -670,7 +675,13 @@ def test_a_rejected_token_is_an_auth_config_error_with_the_token_hint() -> None:
     assert dict(error.details) == {"status": 401, "url": "https://aap/api/v2/me/"}
 
 
-def test_a_rejected_token_without_token_command_hints_at_config_set() -> None:
+@pytest.mark.usefixtures("_isolated_config")
+@pytest.mark.parametrize("model", [None, DemoSettings])
+def test_a_rejected_token_without_token_command_hints_at_config_set(
+    model: type[BaseModel] | None,
+) -> None:
     # `auth set` refuses a section whose model has no token_command.
+    if model is not None:
+        register_profile_settings("plain", model)
     error = rejected_token_error("plain", "rejected")
     assert error.hint == "run `untaped config set plain.token --prompt`"

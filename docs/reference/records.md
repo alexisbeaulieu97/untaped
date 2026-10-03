@@ -11,7 +11,7 @@ command runs and needs at least one row, so use it on a read command or add
 |---|---|
 | `config list`, `config get` | `untaped.setting` |
 | `config set`, `config unset` | `untaped.setting_outcome` (never the value) |
-| `auth set`, `auth unset`, `auth migrate` | `untaped.auth_outcome` (never the token) |
+| `auth set`, `auth unset`, `auth migrate` | `untaped.auth_outcome` (never the token; `action` `gone` when `unset` found the entry already deleted) |
 | `auth status` | `untaped.token_source` |
 | `profile list` | `untaped.profile` |
 | `profile create`, `profile delete`, `profile rename` | `untaped.profile_outcome` |
