@@ -427,6 +427,7 @@ def run_command(
             resolver=ResolveCasePayload(
                 ctx.fk,
                 catalog=ctx.catalog,
+                warn=partial(ctx.progress_ui().message, "warning"),
                 default_organization=ctx.default_organization,
             ),
             launcher=RunAction(ctx.repo),
@@ -753,10 +754,10 @@ def _validate(
                 report_error(exc)
                 any_errors = True
             scm_branch = source.sha
-        resolver = ResolveCasePayload(
-            ctx.fk, catalog=ctx.catalog, default_organization=ctx.default_organization
-        )
         warn = partial(ctx.progress_ui().message, "warning")
+        resolver = ResolveCasePayload(
+            ctx.fk, catalog=ctx.catalog, warn=warn, default_organization=ctx.default_organization
+        )
         for suite, case_name, case in selected:
             if suite.name in refused:
                 continue
