@@ -12,9 +12,11 @@ command token (:mod:`untaped.auth`). Stores, in the order they are tried:
 - ``pass``: the GPG password store, which works headless with gpg-agent.
 
 Every entry is named ``<profile>/<section>`` under the ``untaped``
-service, whichever config file is in use. The tools' output is never shown:
-a failure is reported by program and exit status, plus the fix for the
-causes worth naming (a locked keychain, a timeout on an unseen unlock prompt).
+service, whichever config file is in use. Their stdout is never shown, nor
+is ``security``'s stderr (its ``-i`` input carries the token): a failure is
+reported by program and exit status, plus the fix for the causes worth
+naming (a locked keychain, a timeout on an unseen unlock prompt). The other
+tools explain their own failures on stderr, which never sees the token.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from untaped.auth import run_command
 from untaped.errors import ConfigError
 
 StoreName = Literal["security", "secret-tool", "pass"]
@@ -36,9 +39,10 @@ StoreName = Literal["security", "secret-tool", "pass"]
 
 SERVICE = "untaped"
 _PROBE_TIMEOUT_SECONDS = 5.0
-_TIMEOUT_SECONDS = 60.0
-_ENTRY = re.compile(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
+_SEGMENT = r"[A-Za-z0-9_-][A-Za-z0-9._-]*"
+_ENTRY = re.compile(f"{_SEGMENT}/{_SEGMENT}")
 _LOCKED = "User interaction is not allowed"
+_SECURITY_NOT_FOUND = 44
 
 
 @dataclass(frozen=True)
@@ -67,23 +71,34 @@ class TokenStore:
             # `security -i` reads commands from stdin; the token goes as hex
             # (`-X`) so no character in it can break security's own parser.
             line = f'add-generic-password -U -s {SERVICE} -a "{entry}" -X {token.encode().hex()}\n'
-            _run(["security", "-i"], stdin=line, timeout=_TIMEOUT_SECONDS)
+            _run(["security", "-i"], stdin=line)
         elif self.name == "secret-tool":
             argv = ["secret-tool", "store", f"--label={SERVICE} {entry}"]
-            _run(
-                [*argv, "service", SERVICE, "account", entry], stdin=token, timeout=_TIMEOUT_SECONDS
-            )
+            _run([*argv, "service", SERVICE, "account", entry], stdin=token)
         else:
             argv = ["pass", "insert", "--multiline", "--force", f"{SERVICE}/{entry}"]
-            _run(argv, stdin=f"{token}\n", timeout=_TIMEOUT_SECONDS)
+            _run(argv, stdin=f"{token}\n")
         # A fresh run, never the per-process token_command cache, so a failed
         # store cannot hide behind an earlier read.
-        stored = _run(self.read_argv(entry), stdin=None, timeout=_TIMEOUT_SECONDS).strip()
-        if stored != token:
+        if _run(self.read_argv(entry)).stdout.strip() != token:
             raise ConfigError(
-                f"{self.name}: the stored token did not read back for {entry}; "
-                "nothing was changed in the config"
+                f"{self.name}: the token did not read back from {entry}, which may now hold a "
+                "bad value; the config was not changed, so store the token again"
             )
+
+    def gone(self, entry: str) -> bool:
+        """Whether the store itself reports the entry missing.
+
+        Only the store's own not-found signal counts, never an exit code an
+        unreachable store shares: ``security`` exits 44, ``secret-tool``
+        exits 1 with nothing on stderr, and ``pass`` has no ``.gpg`` file.
+        """
+        if self.name == "pass":
+            return not (_password_store() / SERVICE / f"{entry}.gpg").is_file()
+        completed = _run(self.read_argv(entry), check=False, capture_stderr=True)
+        if self.name == "security":
+            return completed.returncode == _SECURITY_NOT_FOUND
+        return completed.returncode == 1 and not completed.stderr.strip()
 
     def delete(self, entry: str) -> None:
         """Remove the entry."""
@@ -93,7 +108,7 @@ class TokenStore:
             argv = ["secret-tool", "clear", "service", SERVICE, "account", entry]
         else:
             argv = ["pass", "rm", "--force", f"{SERVICE}/{entry}"]
-        _run(argv, stdin=None, timeout=_TIMEOUT_SECONDS)
+        _run(argv)
 
     def usable(self) -> bool:
         """Whether this store works on this machine right now."""
@@ -102,8 +117,7 @@ class TokenStore:
         if self.name == "security":
             return _is_macos()
         if self.name == "pass":
-            store = os.environ.get("PASSWORD_STORE_DIR") or str(Path.home() / ".password-store")
-            return (Path(store) / ".gpg-id").is_file()
+            return (_password_store() / ".gpg-id").is_file()
         # A missing item exits 1 silently; no Secret Service prints an error
         # (and may exit 1 too), so stderr decides.
         probe = ["secret-tool", "lookup", "service", f"{SERVICE}-probe", "account", "probe"]
@@ -134,7 +148,8 @@ def entry_name(profile: str, section: str) -> str:
     if not _ENTRY.fullmatch(entry):
         raise ConfigError(
             f"profile {profile!r} cannot name a store entry (letters, digits, '.', '_' and "
-            f"'-' only); set {section}.token_command to your own command instead",
+            f"'-' only, not starting with '.'); set {section}.token_command to your own "
+            "command instead",
             category="invalid",
         )
     return entry
@@ -184,44 +199,40 @@ def _candidate_entries(store: TokenStore, argv: Sequence[str]) -> list[str]:
     return [argv[i + 1] for i, part in enumerate(argv[:-1]) if part in ("-a", "account")]
 
 
+def _password_store() -> Path:
+    return Path(os.environ.get("PASSWORD_STORE_DIR") or Path.home() / ".password-store")
+
+
 def _is_macos() -> bool:
     return sys.platform == "darwin"
 
 
-def _run(argv: list[str], *, stdin: str | None, timeout: float) -> str:
-    """Run a store command and return its stdout; never repeat its output on failure."""
+def _run(
+    argv: list[str],
+    *,
+    stdin: str | None = None,
+    check: bool = True,
+    capture_stderr: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    """Run a store command; ``check`` raises on a non-zero exit."""
     program = argv[0]
-    try:
-        completed = subprocess.run(
-            argv,
-            input=stdin if stdin is not None else "",
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-    except FileNotFoundError:
-        raise ConfigError(f"{program!r} not found on PATH", category="unavailable") from None
-    except subprocess.TimeoutExpired:
-        raise ConfigError(
-            f"{program!r} timed out after {timeout:g}s; it may be waiting on an unlock "
-            "prompt on a screen nobody sees (over SSH, unlock the store first)",
-            category="unavailable",
-        ) from None
-    except OSError as exc:
-        raise ConfigError(f"{program!r} could not run: {exc.strerror}") from None
-    if _LOCKED in completed.stderr or _LOCKED in completed.stdout:
+    # `security` is read for the locked-keychain message, and `-i` input
+    # (the hex token) must never be echoed back.
+    secure = program == "security"
+    completed = run_command(
+        argv, label=repr(program), stdin=stdin, capture_stderr=capture_stderr or secure
+    )
+    if secure and (_LOCKED in completed.stderr or _LOCKED in completed.stdout):
         raise ConfigError(
             "the macOS keychain is locked; run `security unlock-keychain` and try again",
             category="unavailable",
         )
-    if completed.returncode != 0:
+    if check and completed.returncode != 0:
         raise ConfigError(f"{program!r} exited with status {completed.returncode}")
-    return completed.stdout
+    return completed
 
 
 __all__ = [
-    "STORES",
     "StoreName",
     "TokenStore",
     "entry_name",

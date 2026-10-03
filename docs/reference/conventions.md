@@ -74,7 +74,7 @@ lists the categories. A capability's error classes declare them as class default
   `connected_client(section=…)`. A mapper that turns them into capability
   errors keeps both: `JiraApiError(msg, **attribution(err))`, and a 401 stays
   `auth` even when it becomes a `ConfigError` for its hint.
-- Put a follow-up command in `hint=` (``"run `untaped config set awx.token --prompt`"``)
+- Put a follow-up command in `hint=` (``"run `untaped auth set awx`"``)
   rather than in the message; text output prints it as a `hint:` line.
 - When a new error replaces a caught one, pass `**attribution(exc)` so the
   category, system, hint and details survive.
@@ -107,7 +107,7 @@ the helpers do this for you, so never print a JSON line yourself.
 | Not found | `<noun> not found: 'x'; known: a, b` | `not_found("profile", name, known=names)` |
 | Quoted name | `'name'` | `q(name)` |
 | Count | `3 repos`, never `repo(s)` | `plural(3, "repo")` |
-| Hint | ``hint: run `untaped …` `` (or a short instruction that is not a command, hand-built as `hint: …`, like the bare-install hint) | `hint("config set awx.token --prompt")` |
+| Hint | ``hint: run `untaped …` `` (or a short instruction that is not a command, hand-built as `hint: …`, like the bare-install hint) | `hint("auth set awx")` |
 | Warning | `warning: …` | `ui.message("warning", text)` |
 | Success | Muted by `-q` | `ui.success(text)` |
 | Summary | `<op>: 2 cloned, 1 failed` | `summary("sync", counts)` |

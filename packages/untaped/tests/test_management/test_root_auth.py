@@ -8,7 +8,6 @@ any output, error or argv.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -17,9 +16,10 @@ from pydantic import BaseModel, SecretStr
 
 from test_management.stores import FakeStores, install_fake_stores
 from test_management.support import make_spec, write_config
-from untaped import bootstrap, token_store
+from untaped import auth, bootstrap, token_store
 from untaped.auth import clear_token_cache
 from untaped.config_file import read_config_dict
+from untaped.errors import ConfigError
 from untaped.sdk import TokenCommand, TokenSources
 from untaped.settings import get_config_section
 from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli, provider_candidate
@@ -176,7 +176,7 @@ def test_set_without_a_terminal_or_stdin_refuses(
     result = _auth("set", "svc")
     assert result.exit_code == 2
     assert "pipe it with --stdin" in result.stderr
-    assert stores.calls() == [] or all(call["argv"][1] != "insert" for call in stores.calls())
+    assert stores.entries() == {}
 
 
 @pytest.mark.parametrize("payload", ["", "  \n", "one\ntwo\n"])
@@ -189,20 +189,29 @@ def test_set_rejects_empty_or_multiline_stdin(
     assert not _isolated_config.exists()
 
 
-def test_set_overwrites_on_rotation(_isolated_config: Path, stores: FakeStores) -> None:
+@pytest.mark.parametrize(
+    ("store", "macos"), [("pass", False), ("secret-tool", False), ("security", True)]
+)
+def test_set_overwrites_on_rotation(
+    _isolated_config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    store: str,
+    macos: bool,
+) -> None:
+    # Each fake refuses to replace an entry unless asked to (-U, --force).
+    stores = install_fake_stores(tmp_path, monkeypatch, store, macos=macos)
     assert _auth("set", "svc", "--stdin", input="first").exit_code == 0
-    assert _auth("set", "svc", "--stdin", input="second").exit_code == 0
-    assert stores.entries() == {"untaped/default/svc": "second"}
-    inserts = [call["argv"] for call in stores.calls() if call["argv"][1] == "insert"]  # type: ignore[index]
-    assert all("--force" in argv for argv in inserts)  # type: ignore[operator]
+    result = _auth("set", "svc", "--stdin", input="second")
+    assert result.exit_code == 0, result.output
+    assert list(stores.entries().values()) == ["second"]
 
 
 @pytest.mark.parametrize(
     ("mode", "message"),
     [
         ("fail", "'pass' exited with status 1"),
-        ("corrupt", "the stored token did not read back for default/svc"),
-        ("locked", "run `security unlock-keychain`"),
+        ("corrupt", "the token did not read back from default/svc"),
     ],
 )
 def test_a_failed_store_changes_nothing(
@@ -221,11 +230,24 @@ def test_a_failed_store_changes_nothing(
     _no_leak(result, stores)
 
 
+def test_a_locked_keychain_names_the_unlock_command(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "security", macos=True)
+    monkeypatch.setenv("STUB_MODE", "locked")
+    result = _auth("set", "svc", "--stdin", input=SENTINEL)
+    assert result.exit_code == 5
+    assert "run `security unlock-keychain`" in result.stderr
+    assert "SecKeychainItemCreateFromContent" not in result.stderr
+    assert not _isolated_config.exists()
+    _no_leak(result, stores)
+
+
 def test_a_hung_store_times_out_with_the_likely_cause(
     _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("STUB_MODE", "hang")
-    monkeypatch.setattr(token_store, "_TIMEOUT_SECONDS", 0.5)
+    monkeypatch.setattr(auth, "_TIMEOUT_SECONDS", 0.5)
     result = _auth("set", "svc", "--stdin", input="tok")
     assert result.exit_code == 5
     assert "timed out after 0.5s" in result.stderr
@@ -241,9 +263,9 @@ def test_read_back_bypasses_the_token_cache(
     token = get_config_section("svc", SvcProfile).token
     assert token is not None
     assert token.get_secret_value() == "first"  # now cached for this process
-    monkeypatch.setenv("STUB_MODE", "fail")
-    result = _auth("set", "svc", "--stdin", input="second")
-    assert result.exit_code == 4, "a cached read must not mask the failed store"
+    monkeypatch.setenv("STUB_MODE", "corrupt")
+    result = _auth("set", "svc", "--stdin", input="first")
+    assert result.exit_code == 4, "a cached read must not mask the garbled store"
 
 
 def test_no_usable_store_names_the_other_routes(
@@ -349,17 +371,59 @@ def test_unset_deletes_the_entry_and_the_command(
     assert _config(_isolated_config)["profiles"]["default"] == {}
 
 
+@pytest.mark.parametrize(
+    ("store", "macos", "command"),
+    [
+        ("pass", False, "[pass, show, untaped/default/svc]"),
+        ("secret-tool", False, "[secret-tool, lookup, service, untaped, account, default/svc]"),
+        ("security", True, "[security, find-generic-password, -s, untaped, -a, default/svc, -w]"),
+    ],
+)
+def test_unset_cleans_up_when_the_entry_is_already_gone(
+    _isolated_config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    store: str,
+    macos: bool,
+    command: str,
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch, store, macos=macos)
+    write_config(
+        _isolated_config, f"profiles:\n  default:\n    svc:\n      token_command: {command}\n"
+    )
+    result = _auth("unset", "svc", "--yes", "--format", "json")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["action"] == "gone"
+    assert "the svc token was already gone from" in result.stderr
+    assert "deleted" not in result.stderr
+    assert _config(_isolated_config)["profiles"]["default"] == {}
+
+
+def test_unset_keeps_everything_when_the_store_is_unreachable(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "secret-tool")
+    assert _auth("set", "svc", "--stdin", input="tok").exit_code == 0
+    # No Secret Service: secret-tool exits 1, as for a missing item, but says why.
+    monkeypatch.setenv("STUB_MODE", "no-service")
+    result = _auth("unset", "svc", "--yes")
+    assert result.exit_code == 4
+    assert "'secret-tool' exited with status 1" in result.stderr
+    assert stores.entries() == {"default/svc": "tok"}
+    assert "token_command" in _config(_isolated_config)["profiles"]["default"]["svc"]
+
+
 def test_unset_when_the_store_tool_is_gone_keeps_the_command(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch)
+    command = "[secret-tool, lookup, service, untaped, account, default/svc]"
     write_config(
-        _isolated_config,
-        "profiles:\n  default:\n    svc:\n      token_command: [pass, show, untaped/default/svc]\n",
+        _isolated_config, f"profiles:\n  default:\n    svc:\n      token_command: {command}\n"
     )
     result = _auth("unset", "svc", "--yes")
-    assert result.exit_code == 5
-    assert "'pass' not found on PATH" in result.stderr
+    assert result.exit_code == 4
+    assert "'secret-tool' not found on PATH" in result.stderr
     assert "token_command" in _config(_isolated_config)["profiles"]["default"]["svc"]
 
 
@@ -374,8 +438,10 @@ def test_a_hung_secret_service_probe_is_not_usable(
     assert "no token store is usable" in result.stderr
 
 
-def test_macos_detection_follows_the_platform() -> None:
-    assert token_store._is_macos() is (sys.platform == "darwin")
+@pytest.mark.parametrize("profile", ["..", ".hidden"])
+def test_an_entry_segment_cannot_start_with_a_dot(profile: str) -> None:
+    with pytest.raises(ConfigError, match=r"not starting with '\.'"):
+        token_store.entry_name(profile, "svc")
 
 
 def test_preset_entry_ignores_empty_and_foreign_commands() -> None:
@@ -431,7 +497,6 @@ def test_unset_leaves_a_foreign_command_alone(_isolated_config: Path, stores: Fa
 def test_status_names_every_source_without_running_commands(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    install_fake_stores(tmp_path, monkeypatch, "pass")
     write_config(
         _isolated_config,
         "profiles:\n"
@@ -441,9 +506,10 @@ def test_status_names_every_source_without_running_commands(
         "  work:\n"
         "    svc:\n      token_command: [op, read, x]\n",
     )
-    monkeypatch.setenv("STUB_MODE", "fail")  # a run would fail; status must not run one
+    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
     result = _auth("status", "--format", "json")
     assert result.exit_code == 0, result.output
+    assert stores.calls() == []
     rows = {(row["profile"], row["section"]): row for row in json.loads(result.stdout)}
     assert rows["default", "svc"]["source"] == "pass (untaped/default/svc)"
     assert rows["default", "other"] == {
@@ -546,24 +612,39 @@ def test_loading_a_plaintext_token_warns_once(
     from untaped.settings import register_profile_settings
 
     register_profile_settings("svc", SvcProfile)
-    write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: plain\n")
+    write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: tok-7f3a\n")
     get_config_section("svc", SvcProfile)
     get_config_section("svc", SvcProfile)
     err = capsys.readouterr().err
     assert err.count("svc.token is stored in plain text") == 1
     assert "untaped auth migrate" in err
-    assert "plain\n" not in err
+    assert "tok-7f3a" not in err
 
 
-def test_an_env_override_does_not_warn(
-    _isolated_config: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("name", "value", "warns"),
+    [
+        ("UNTAPED_SVC__TOKEN", "env", False),
+        ("UNTAPED_SVC", '{"token": "env"}', False),
+        # The file's token is still the one used, so it still warns.
+        ("UNTAPED_SVC", '{"base_url": "https://svc"}', True),
+    ],
+)
+def test_only_an_env_token_silences_the_warning(
+    _isolated_config: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    value: str,
+    warns: bool,
 ) -> None:
     from untaped.settings import register_profile_settings
 
     register_profile_settings("svc", SvcProfile)
-    monkeypatch.setenv("UNTAPED_SVC__TOKEN", "env")
+    write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: file\n")
+    monkeypatch.setenv(name, value)
     get_config_section("svc", SvcProfile)
-    assert "plain text" not in capsys.readouterr().err
+    assert ("plain text" in capsys.readouterr().err) is warns
 
 
 def test_config_set_of_a_token_is_deprecated(_isolated_config: Path) -> None:
@@ -576,3 +657,8 @@ def test_config_set_of_a_token_is_deprecated(_isolated_config: Path) -> None:
     assert "untaped auth set svc" in result.stderr
     quiet = invoke_cli(root.meta, ["config", "set", "svc.base_url", "https://svc"])
     assert "deprecated" not in quiet.stderr
+
+
+def test_a_malformed_section_override_is_not_a_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_SVC", "not json")
+    assert auth.token_override_env("svc") is None

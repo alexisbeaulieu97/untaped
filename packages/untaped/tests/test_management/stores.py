@@ -35,7 +35,10 @@ with open(os.environ["STUB_LOG"], "a") as log:
     log.write(json.dumps({"argv": [name, *args], "stdin": stdin}) + "\n")
 
 
-def save(key, value):
+def save(key, value, replace=True):
+    if not replace and key in data:
+        print("The specified item already exists in the keychain.", file=sys.stderr)
+        sys.exit(45)
     if mode == "hang":
         time.sleep(30)
     if mode == "fail":
@@ -45,11 +48,18 @@ def save(key, value):
         sys.exit(36)
     data[key] = "garbled" if mode == "corrupt" else value
     state_file.write_text(json.dumps(data))
+    if name == "pass":
+        gpg_file(key).parent.mkdir(parents=True, exist_ok=True)
+        gpg_file(key).write_text("encrypted")
 
 
-def show(key):
+def gpg_file(key):
+    return Path(os.environ["PASSWORD_STORE_DIR"]) / f"{key}.gpg"
+
+
+def show(key, missing=1):
     if key not in data:
-        sys.exit(1)
+        sys.exit(missing)
     print(data[key])
 
 
@@ -57,6 +67,8 @@ def drop(key):
     if data.pop(key, None) is None:
         sys.exit(1)
     state_file.write_text(json.dumps(data))
+    if name == "pass":
+        gpg_file(key).unlink()
 
 
 def after(flag):
@@ -65,7 +77,7 @@ def after(flag):
 
 if name == "pass":
     if args[0] == "insert":
-        save(args[-1], stdin.rstrip("\n"))
+        save(args[-1], stdin.rstrip("\n"), replace="--force" in args)
     elif args[0] == "show":
         show(args[-1])
     elif args[0] == "rm":
@@ -88,9 +100,10 @@ elif name == "security":
         for line in stdin.splitlines():
             parts = line.split()
             account = parts[parts.index("-a") + 1].strip('"')
-            save(account, bytes.fromhex(parts[parts.index("-X") + 1]).decode())
+            token = bytes.fromhex(parts[parts.index("-X") + 1]).decode()
+            save(account, token, replace="-U" in parts)
     elif args[0] == "find-generic-password":
-        show(after("-a"))
+        show(after("-a"), missing=44)
     elif args[0] == "delete-generic-password":
         drop(after("-a"))
 """

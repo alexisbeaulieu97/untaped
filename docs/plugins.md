@@ -239,9 +239,10 @@ and when another capability or tool fits better.
 
 ## Setup
 
-Settings live under `profiles.<name>.CAPABILITY`. Set the token with
-`untaped config set CAPABILITY.token --prompt` and check the connection with
-`untaped CAPABILITY whoami`. Never print, echo or log tokens.
+Settings live under `profiles.<name>.CAPABILITY`. The user stores the token
+by running `untaped auth set CAPABILITY` in their own terminal (the settings
+model needs a `token_command` field for that). Check the connection with
+`untaped CAPABILITY whoami`. Never ask for, print, echo or log tokens.
 
 ## Commands
 

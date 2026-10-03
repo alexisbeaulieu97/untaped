@@ -14,11 +14,11 @@ import json
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from cyclopts import App, Parameter
 
-from untaped.auth import token_env_names
+from untaped.auth import takes_token_command, token_env_names, token_override_env
 from untaped.capabilities.registry import CapabilitySpec, CompositionResult
 from untaped.cli import (
     ColumnsOption,
@@ -59,7 +59,7 @@ StoreOption = Annotated[
 
 
 @dataclass(frozen=True)
-class TokenSection:
+class _TokenSection:
     """A composed section that takes ``token`` and ``token_command``."""
 
     section: str
@@ -67,18 +67,19 @@ class TokenSection:
     """Its conventional token environment variables, in order."""
 
 
-def token_sections(result: CompositionResult) -> dict[str, TokenSection]:
+def _token_sections(result: CompositionResult) -> dict[str, _TokenSection]:
     """Every composed section whose profile model has ``token`` and ``token_command``."""
     return {
         registered.spec.config_section: _token_section(registered.spec)
         for registered in result.capabilities
-        if {"token", "token_command"} <= registered.spec.profile_model.model_fields.keys()
+        if "token" in registered.spec.profile_model.model_fields
+        and takes_token_command(registered.spec.profile_model)
     }
 
 
-def _token_section(spec: CapabilitySpec) -> TokenSection:
+def _token_section(spec: CapabilitySpec) -> _TokenSection:
     model = spec.profile_model
-    return TokenSection(spec.config_section, token_env_names(model.model_construct()))
+    return _TokenSection(spec.config_section, token_env_names(model.model_construct()))
 
 
 def save_token(
@@ -105,13 +106,24 @@ def save_token(
     return store.describe(entry)
 
 
+def inherited_from_default(
+    section: str, profile: str, key: str, raw: dict[str, Any] | None = None
+) -> bool:
+    """Whether ``profile`` would inherit ``<section>.<key>`` from ``default``.
+
+    ``raw`` is the config already read, if any.
+    """
+    if profile == DEFAULT_PROFILE:
+        return False
+    raw = read_config_dict() if raw is None else raw
+    default = active_settings_layout().profile_data(raw, DEFAULT_PROFILE) or {}
+    node = default.get(section)
+    return isinstance(node, dict) and bool(node.get(key))
+
+
 def refuse_inherited_token(section: str, profile: str) -> None:
     """Raise when ``default``'s plaintext token would win over ``profile``'s command."""
-    if profile == DEFAULT_PROFILE:
-        return
-    default = active_settings_layout().profile_data(read_config_dict(), DEFAULT_PROFILE) or {}
-    node = default.get(section)
-    if isinstance(node, dict) and node.get("token"):
+    if inherited_from_default(section, profile, "token"):
         raise ConfigError(
             f"{section}.token is set in profile {DEFAULT_PROFILE} and would override the "
             f"token command in profile {profile}; move it out of {DEFAULT_PROFILE} first\n"
@@ -119,10 +131,37 @@ def refuse_inherited_token(section: str, profile: str) -> None:
         )
 
 
-def env_override(section: str) -> str | None:
-    """The ``UNTAPED_<SECTION>__TOKEN`` override, when it is set."""
-    name = f"UNTAPED_{section.upper()}__TOKEN"
-    return name if os.environ.get(name, "").strip() else None
+Deleted = Literal["deleted", "gone", "foreign"]
+"""What :func:`delete_stored_token` found: it deleted the entry, the entry was
+already gone, or the command is not one untaped wrote (nothing deleted)."""
+
+
+def delete_stored_token(argv: Sequence[str]) -> tuple[Deleted, str | None]:
+    """Delete the entry a preset ``token_command`` reads, and say where it was.
+
+    An entry the store reports missing (:meth:`TokenStore.gone`) is not an
+    error; an unreachable store is. A command untaped did not write is left
+    alone (``"foreign"``, no location).
+    """
+    preset = preset_entry(argv)
+    if preset is None:
+        return "foreign", None
+    store, entry = preset
+    where = store.describe(entry)
+    try:
+        store.delete(entry)
+    except ConfigError:
+        if not store.gone(entry):
+            raise
+        return "gone", where
+    return "deleted", where
+
+
+def plaintext_token(data: dict[str, Any] | None, section: str) -> str | None:
+    """The plaintext ``<section>.token`` in one profile's own ``data``, if any."""
+    node = (data or {}).get(section)
+    token = node.get("token") if isinstance(node, dict) else None
+    return token.strip() if isinstance(token, str) and token.strip() else None
 
 
 def build_root_auth_app(*, result: CompositionResult) -> App:
@@ -204,8 +243,8 @@ def build_root_auth_app(*, result: CompositionResult) -> App:
     return app
 
 
-def _section(result: CompositionResult, section: str) -> TokenSection:
-    sections = token_sections(result)
+def _section(result: CompositionResult, section: str) -> _TokenSection:
+    sections = _token_sections(result)
     if section not in sections:
         known = ", ".join(sorted(sections)) or "(none)"
         raise ConfigError(f"unknown token section {section!r}; known: {known}", category="invalid")
@@ -262,7 +301,7 @@ def _prompt_token(ui: UiContext, section: str) -> str:
 
 
 def _warn_env_override(ui: UiContext, section: str) -> None:
-    override = env_override(section)
+    override = token_override_env(section)
     if override is not None:
         ui.message(
             "warning",
@@ -307,8 +346,7 @@ def _unset(
             f"remove it yourself\n{hint(f'config unset {section}.token_command')}",
             category="invalid",
         )
-    store, entry = preset
-    where = store.describe(entry)
+    where = preset[0].describe(preset[1])
     row["store"] = where
     if dry_run:
         emit({**row, "action": "planned"}, fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)
@@ -318,20 +356,27 @@ def _unset(
         f"in profile {profile}?",
         assume_yes=yes,
     )
-    store.delete(entry)
+    deleted, _ = delete_stored_token(argv)
     SettingsFileRepository().unset_value(f"{section}.token_command", profile=profile)
-    ui.success(f"deleted the {section} token from {where} (profile {profile})")
-    emit({**row, "action": "deleted"}, fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)
+    if deleted == "gone":
+        ui.success(
+            f"the {section} token was already gone from {where}; "
+            f"unset {section}.token_command (profile {profile})"
+        )
+    else:
+        ui.success(f"deleted the {section} token from {where} (profile {profile})")
+    emit({**row, "action": deleted}, fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)
 
 
 def _status(result: CompositionResult, *, fmt: Any, columns: list[str] | None) -> None:
     raw = read_config_dict()
     layout = active_settings_layout()
     profiles = layout.profile_names(raw) or [DEFAULT_PROFILE]
+    sections = _token_sections(result).values()
     rows: list[dict[str, object]] = []
     for profile in profiles:
         effective, provenance = resolve_profiles(raw, active_override=profile)
-        for spec in token_sections(result).values():
+        for spec in sections:
             node = effective.get(spec.section)
             source, key = _source(spec, node if isinstance(node, dict) else {})
             rows.append(
@@ -347,9 +392,9 @@ def _status(result: CompositionResult, *, fmt: Any, columns: list[str] | None) -
     emit(rows, fmt=fmt, columns=columns, kind="untaped.token_source")
 
 
-def _source(spec: TokenSection, node: dict[str, Any]) -> tuple[str, str | None]:
+def _source(spec: _TokenSection, node: dict[str, Any]) -> tuple[str, str | None]:
     """Name a section's token source and the config key that sets it, if any."""
-    override = env_override(spec.section)
+    override = token_override_env(spec.section)
     if override is not None:
         return f"${override}", None
     token = node.get("token")
@@ -376,11 +421,12 @@ def _migrate(
     names = layout.profile_names(raw)
     # `default` first: its token would otherwise win over another profile's command.
     ordered = sorted(names, key=lambda name: name != DEFAULT_PROFILE)
+    sections = _token_sections(result)
     pending = [
         (profile, section, token)
         for profile in ordered
-        for section in token_sections(result)
-        if (token := _plaintext(layout.profile_data(raw, profile), section)) is not None
+        for section in sections
+        if (token := plaintext_token(layout.profile_data(raw, profile), section)) is not None
     ]
     ui = ui_context(strict=False)
     if not pending:
@@ -389,7 +435,6 @@ def _migrate(
         return
     chosen = pick_store(store)
     if chosen is None:
-        sections = token_sections(result)
         raise ConfigError(
             no_store_message(pending[0][1], sections[pending[0][1]].env),
             category="unavailable",
@@ -423,20 +468,15 @@ def _move_all(
     return rows
 
 
-def _plaintext(data: dict[str, Any] | None, section: str) -> str | None:
-    node = (data or {}).get(section)
-    token = node.get("token") if isinstance(node, dict) else None
-    return token.strip() if isinstance(token, str) and token.strip() else None
-
-
 _AUTH_OUTCOME = "untaped.auth_outcome"
 
 
 __all__ = [
-    "TokenSection",
+    "Deleted",
     "build_root_auth_app",
-    "env_override",
+    "delete_stored_token",
+    "inherited_from_default",
+    "plaintext_token",
     "refuse_inherited_token",
     "save_token",
-    "token_sections",
 ]
