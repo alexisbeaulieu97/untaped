@@ -208,7 +208,19 @@ def _retire(
     """Delete the entry the profile's replaced preset command read, so none is orphaned."""
     if old is None or old == replacement:
         return
-    deleted, where = delete_stored_token(old)
+    try:
+        deleted, where = delete_stored_token(old)
+    except ConfigError as exc:
+        # The new source is already in place; an unreachable old store must
+        # not abort setup over a leftover entry.
+        preset = preset_entry(old)
+        where = preset[0].describe(preset[1]) if preset else f"{section}.token_command"
+        ui.message(
+            "warning",
+            f"could not delete the replaced {section} token from {where} ({exc}); "
+            "delete it yourself",
+        )
+        return
     if deleted == "deleted":
         ui.message("info", f"deleted the replaced {section} token from {where}")
     elif deleted == "gone":
