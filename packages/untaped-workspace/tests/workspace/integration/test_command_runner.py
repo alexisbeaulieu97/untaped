@@ -126,6 +126,18 @@ def test_cancel_kills_a_command_that_ignores_term(tmp_path: Path) -> None:
     assert time.monotonic() - started < 4
 
 
+def test_cancel_after_finished_runs_signals_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = SubprocessRunner()
+    runner.run(["true"], cwd=tmp_path, env={}, timeout=5)
+    runner.run(["sh", "-c", "sleep 5"], cwd=tmp_path, env={}, timeout=0.2)
+    signalled: list[int] = []
+    monkeypatch.setattr(command_runner.os, "killpg", lambda _pgid, sig: signalled.append(sig))
+    runner.cancel()
+    assert signalled == []
+
+
 def test_nothing_starts_after_cancel(tmp_path: Path) -> None:
     runner = SubprocessRunner()
     runner.cancel()
