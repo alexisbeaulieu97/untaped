@@ -164,7 +164,13 @@ def _broken_links(path: Path) -> list[str]:
     return broken
 
 
-@pytest.mark.parametrize("path", markdown_files(), ids=lambda p: str(p.relative_to(REPO_ROOT)))
+#: The changelog and its per-major archives: link-checked, but history, so no other docs checks.
+CHANGELOGS = [REPO_ROOT / "CHANGELOG.md", *sorted((REPO_ROOT / "changelog").glob("*.md"))]
+
+
+@pytest.mark.parametrize(
+    "path", [*markdown_files(), *CHANGELOGS], ids=lambda p: str(p.relative_to(REPO_ROOT))
+)
 def test_relative_links_resolve(path: Path) -> None:
     assert _broken_links(path) == []
 
