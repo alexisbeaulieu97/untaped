@@ -20,7 +20,7 @@ Root commands manage the tool itself: `setup`, `config`, `profile`, `alias`,
 
 ## Install
 
-Python 3.14 and [uv](https://docs.astral.sh/uv/) are required.
+Python 3.14.1 or newer and [uv](https://docs.astral.sh/uv/) are required.
 
 ```bash
 uv tool install 'untaped[all]'   # or 'untaped[<name>]' for one tool, e.g. 'untaped[awx]'
