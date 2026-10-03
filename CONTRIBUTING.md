@@ -301,8 +301,8 @@ or examples. Use synthetic data for tests and examples.
 
 ## Glossary
 
-untaped is one CLI that composes capability packages. These are the words
-its code, docs and messages use for its ideas.
+Terms these docs and the code use; see the [README](README.md) for what
+untaped is.
 
 **Fix**: the `untaped` command a doctor row names to repair what it found.
 
