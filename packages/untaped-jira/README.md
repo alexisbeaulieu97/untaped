@@ -60,7 +60,7 @@ them first. A piped batch continues past a failing key.
 
 ## Reference
 
-The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-jira/src/untaped_jira/skills/untaped-jira/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install jira --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install-skills)); `untaped jira COMMAND --help` lists each command's options.
+The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-jira/src/untaped_jira/skills/untaped-jira/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install jira --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)); `untaped jira COMMAND --help` lists each command's options.
 
-- [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#jira) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/scripting.md#exit-codes)
+- [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#jira) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/exit-codes.md)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#jira)

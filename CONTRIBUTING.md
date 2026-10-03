@@ -2,7 +2,7 @@
 
 This is the developer guide for the `untaped` repository. Rules that every
 capability provider follows, first-party or not, live in
-[`docs/plugins.md`](docs/plugins.md); this page covers what is specific to
+[`docs/reference/conventions.md`](docs/reference/conventions.md); this page covers what is specific to
 working in this repository.
 
 ## Local setup
@@ -33,7 +33,7 @@ uv lock --check                                 # lock file is current
   `README.md`, `LICENSE`, `src/` and `tests/`. Core is `packages/untaped/`: its
   `src/untaped/` holds the root shell and shared services. `sdk.py` is the
   public SDK surface; `capabilities/registry.py` is the internal composition
-  kernel (see [How composition works](docs/plugins.md#how-composition-works));
+  kernel (see [How composition works](docs/composition.md));
   `management/` holds the root's management commands. The implementation is
   the reference for composition and command behavior.
 - Each capability is its own package,
@@ -43,15 +43,17 @@ uv lock --check                                 # lock file is current
 - `examples/untaped-hello/` is a minimal third-party plugin with its own
   tests; it is not a workspace member and is never published. CI installs it
   beside the core wheel and runs its tests outside the repository.
-- `docs/` holds the user guides, the plugin guide and the generated config
-  reference.
+- `docs/` holds the user guides and the plugin guide; `docs/reference/`
+  holds lookup pages (settings, records, exit codes, environment variables,
+  conventions). Each page stays under 400 lines; split one by reader task
+  rather than letting it grow.
 - `tests/` verifies public behavior and release contracts: `tests/repo/`
   holds the cross-package tests and `tests/skills/` the skill evaluation
   cases; a capability's tests live in `packages/untaped-<name>/tests/<name>/`.
 
 ## Adding a first-party capability
 
-A first-party capability follows the [plugin rules](docs/plugins.md#conventions)
+A first-party capability follows the [plugin rules](docs/reference/conventions.md)
 and uses this layout:
 
 ```
@@ -91,7 +93,7 @@ packages/untaped-<name>/src/untaped_<name>/
 
 A capability whose settings import another's `api` (ansible imports
 github's) is quarantined with it when that import fails. Shared logic follows
-[Depending on another capability](docs/plugins.md#depending-on-another-capability);
+[Depending on another capability](docs/composition.md#depending-on-another-capability);
 in this repository it may also live in core. Extract a protocol into core
 only when a second provider appears.
 
@@ -117,7 +119,7 @@ only when a second provider appears.
   and other pages link to it: capability detail in its skill (the package
   `README.md` is a one-screen guide: set up, one example per workflow, and a
   `## Reference` section linking the skill), exit codes, record kinds and environment
-  variables in [`docs/scripting.md`](docs/scripting.md), settings in the
+  variables in [`docs/reference/`](docs/reference), settings in the
   generated [config reference](docs/reference/config.md), history in
   [`CHANGELOG.md`](CHANGELOG.md). Never copy `--help` output, default columns
   or API signatures into docs.
@@ -196,9 +198,9 @@ It touches these and nothing else:
 - `uv.lock` (`uv lock`);
 - `CHANGELOG.md`: rename `## Unreleased` to `## X.Y.Z`.
 
-A major release's changelog section (see
-[Versioning](README.md#versioning)) opens with `### Upgrading`: one item for each Breaking bullet, saying what a user
-or script must do about it. Changes add those items under `## Unreleased` as
+A major release's changelog section (see [Versioning](docs/versioning.md))
+opens with `### Upgrading`: one item for each Breaking bullet, saying what a
+user or script must do about it. Changes add those items under `## Unreleased` as
 they land; the release PR checks the list is current before renaming the
 section.
 

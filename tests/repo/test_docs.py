@@ -378,28 +378,37 @@ def test_inline_command_detector(
 
 
 DOCS_PAGES = [
+    "composition.md",
     "configuration.md",
     "getting-started.md",
     "plugins.md",
     "reference/config.md",
+    "reference/conventions.md",
+    "reference/environment.md",
+    "reference/exit-codes.md",
+    "reference/records.md",
     "scripting.md",
+    "skills.md",
+    "troubleshooting.md",
+    "versioning.md",
 ]
+#: Longest a docs page may grow, in lines. An over-budget page is split, not exempted.
+DOCS_PAGE_BUDGET = 400
 
 
-def test_scripting_keeps_an_anchor_per_capability(
-    first_party_specs: tuple[CapabilitySpec, ...],
-) -> None:
-    anchors = _anchors(REPO_ROOT / "docs" / "scripting.md")
-    for name in (
-        "exit-codes",
-        "categories",
-        "precedence",
-        "stderr-diagnostics",
-        "environment-variables",
-        "output-records",
-    ):
-        assert name in anchors
-    assert {spec.name for spec in first_party_specs} <= anchors
+def test_stable_anchors_exist(first_party_specs: tuple[CapabilitySpec, ...]) -> None:
+    """The anchors the versioning page, READMEs and error hints link to."""
+    docs = REPO_ROOT / "docs"
+    assert {"categories", "precedence"} <= _anchors(docs / "reference/exit-codes.md")
+    assert "stderr-diagnostics" in _anchors(docs / "scripting.md")
+    records = _anchors(docs / "reference/records.md")
+    assert {spec.name for spec in first_party_specs} <= records
+
+
+@pytest.mark.parametrize("page", DOCS_PAGES)
+def test_docs_pages_stay_within_budget(page: str) -> None:
+    lines = len((REPO_ROOT / "docs" / page).read_text(encoding="utf-8").splitlines())
+    assert lines <= DOCS_PAGE_BUDGET, f"docs/{page} has {lines} lines; split it by reader task"
 
 
 def test_install_examples_use_the_extras() -> None:

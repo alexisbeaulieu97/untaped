@@ -107,7 +107,7 @@ Things that surprise people:
 
 Both files are written atomically, owner-only (`0600`) and under a lock (see
 `UNTAPED_CONFIG_LOCK_TIMEOUT` in
-[Environment variables](./scripting.md#environment-variables)). A symlinked file stays a
+[Environment variables](./reference/environment.md)). A symlinked file stays a
 symlink. Writes rewrite only the keys they change and keep your comments, key
 order, quoting and indentation.
 
@@ -254,7 +254,7 @@ is set:
    `UNTAPED_<SECTION>__TOKEN` override;
 2. `<section>.token_command`, a command whose standard output is the token;
 3. the service's conventional environment variables, tried in the order the
-   [environment table](./scripting.md#untaped) lists them.
+   [environment table](./reference/environment.md#untaped) lists them.
 
 These variables are not tied to a profile: one applies to every profile that
 sets neither `token` nor `token_command`, whatever its `base_url`. For the

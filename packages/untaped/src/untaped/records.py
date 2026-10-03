@@ -1,7 +1,7 @@
 """Base models for the records commands emit, plus the timestamp type.
 
 Capability output models subclass these bases so every kind shares one shape
-for the fields the pipe contract fixes (``docs/plugins.md#output-records``):
+for the fields the pipe contract fixes (``docs/reference/conventions.md#output-records``):
 
 - :class:`OutcomeRecord` — a mutation result with an ``action`` from the
   outcome vocabulary (``created``, ``updated``, ``failed``, ...);
