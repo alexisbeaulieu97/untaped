@@ -115,8 +115,10 @@ the helpers do this for you, so never print a JSON line yourself.
 | Empty list | `No <plural> found.`, in table format only | `emit(rows, …, empty="No repos found.")` |
 | Styled line | A Rich `Text` line for streamed human output (live job events); not muted by `-q` | `ui.styled(text)`, or `ui.styled(text, err=True)` for stderr; see its docstring for `tail=` and `truncate=` |
 
-Do not call `echo()` for `error:` or `warning:` lines, `print()`, or build a
-`rich.console.Console` yourself.
+Do not call `echo()` for `error:`, `warning:` or `failed:` lines, `print()`,
+`warnings.warn()` (use `ui.message("warning", …)`, or have an inner layer take
+a `warn` callback), or build a `rich.console.Console` yourself. A
+`DeprecationWarning` for a Python API is the exception.
 
 ## Options
 

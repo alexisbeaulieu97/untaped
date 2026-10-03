@@ -19,6 +19,10 @@
 - A plaintext token in `config.yml` is deprecated: it still works but warns
   once per run; `untaped auth migrate` moves it to the password store.
   ([#442](https://github.com/alexisbeaulieu97/untaped/pull/442))
+- `untaped.testing.check_conventions` now flags `echo("failed: …")` and
+  `warnings.warn()`; report a per-item failure with `report_error(exc, item=…)`
+  and warn with `ui.message("warning", …)`.
+  ([#464](https://github.com/alexisbeaulieu97/untaped/pull/464))
 
 ### Fixed
 
@@ -30,6 +34,10 @@
   `dropped_undeclared_secrets`, the `$encrypted$` placeholders dropped from
   fields untaped doesn't treat as secrets.
   ([#461](https://github.com/alexisbeaulieu97/untaped/pull/461))
+- awx: a refused `jobs cancel` or `jobs relaunch` target, and `test`'s
+  unknown-launch-field warning, are now `error` and `warning` lines under JSON
+  stderr diagnostics.
+  ([#464](https://github.com/alexisbeaulieu97/untaped/pull/464))
 
 ## 10.0.0
 
