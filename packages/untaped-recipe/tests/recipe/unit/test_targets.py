@@ -27,7 +27,7 @@ def test_resolves_pipe_target_paths_and_generic_path_fallback() -> None:
         (
             2,
             _env(
-                "workspace.repo",
+                "workspace.status",
                 {"path": "/tmp/ws", "target_path": "/tmp/ws/api", "repo": "api"},
             ),
         ),
@@ -65,12 +65,12 @@ def test_rejects_malformed_or_unusable_pipe_records() -> None:
 
     with pytest.raises(ValueError, match="line 1: target_path must be absolute"):
         resolve_target_lines(
-            [(1, _env("workspace.repo", {"path": "/tmp/ws", "target_path": "api"}))]
+            [(1, _env("workspace.status", {"path": "/tmp/ws", "target_path": "api"}))]
         )
 
     with pytest.raises(ValueError, match="line 1: target_path must be a non-empty string"):
         resolve_target_lines(
-            [(1, _env("workspace.repo", {"path": "/tmp/ws", "target_path": "   "}))]
+            [(1, _env("workspace.status", {"path": "/tmp/ws", "target_path": "   "}))]
         )
 
     with pytest.raises(ValueError, match="line 1: record path is missing or blank"):

@@ -899,7 +899,7 @@ def test_apply_check_reports_drift_without_writing_or_backing_up(
     assert str(target / "out.txt") not in clean.stderr
 
 
-def test_apply_stdin_requires_yes_and_resolves_workspace_repo_pipe(tmp_path: Path) -> None:
+def test_apply_stdin_requires_yes_and_resolves_workspace_status_pipe(tmp_path: Path) -> None:
     recipe, _ = _out_recipe(tmp_path)
     workspace = tmp_path / "workspace"
     repo = workspace / "api"
@@ -907,7 +907,7 @@ def test_apply_stdin_requires_yes_and_resolves_workspace_repo_pipe(tmp_path: Pat
     payload = json.dumps(
         {
             "untaped": "1",
-            "kind": "workspace.repo",
+            "kind": "workspace.status",
             "record": {"path": str(workspace), "target_path": str(repo), "repo": "api"},
         }
     )
@@ -1938,7 +1938,7 @@ def test_apply_derives_inputs_from_pipe_record_and_input_from_override(
     payload = json.dumps(
         {
             "untaped": "1",
-            "kind": "workspace.repo",
+            "kind": "workspace.status",
             "record": {
                 "path": str(workspace),
                 "target_path": str(target),
@@ -1989,7 +1989,7 @@ def test_apply_derives_structured_input_from_pipe_record(
     payload = json.dumps(
         {
             "untaped": "1",
-            "kind": "workspace.repo",
+            "kind": "workspace.status",
             "record": {
                 "path": str(workspace),
                 "target_path": str(target),
