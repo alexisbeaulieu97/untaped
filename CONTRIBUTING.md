@@ -154,9 +154,13 @@ answer each item, in order, in the PR template's **Drift review** section
   the diff makes stale or already finishes.
 
 When you open the PR, ask someone who didn't write it (a person, or a fresh
-agent session) to review it against this checklist while CI runs. It is
-ready to merge once that review's findings are fixed or answered, and CI is
-green on its latest commit.
+agent session) to review it while CI runs, against this checklist and the
+approved design if there is one. Note a small drift from the design in the
+PR body; a bigger one goes back to the design. When you and the reviewer
+disagree, answer once; if you still disagree, the maintainer decides. The PR
+is ready to merge once the review's findings are fixed or answered and CI is
+green on its latest commit. The request to merge lists any check only the
+maintainer can make, such as one on their own machine.
 
 ### Dead code
 
@@ -171,8 +175,8 @@ next major; each issue sits in the milestone it should ship in. Features
 merge to `main` when ready, each with its changelog line, so `main` stays
 releasable as a minor. A breaking change waits in the next major's milestone,
 and its PR merges only once that major is the next release; where it can, a
-deprecation warning ships in a minor first. A release is cut when its
-milestone's issues are closed.
+deprecation warning ships in a minor first. Once a milestone's issues are
+all closed, its release PR is prepared.
 
 A release is a release PR, a TestPyPI rehearsal whenever the workflow, the
 build or the package set changed, and a `vX.Y.Z` tag on `main`.
