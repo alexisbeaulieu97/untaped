@@ -254,7 +254,7 @@ def test_source_validation_errors_print_one_readable_line(
     result = invoke_cli(app, ["source", *args])
 
     assert result.exit_code == exit_code
-    assert "repo must be owner/name: 'not-a-repo'" in result.stderr
+    assert "error: repo must be owner/name: 'not-a-repo'" in result.stderr
     assert "pydantic" not in result.stderr
     assert "validation error" not in result.stderr
 
