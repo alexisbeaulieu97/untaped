@@ -88,7 +88,9 @@ class LegacyProfile(BaseModel):
 class ChoiceRecorder(ScriptedPromptBackend):
     """Scripted backend that also records each select's choice values."""
 
-    offered: ClassVar[list[list[str]]] = []
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.offered: list[list[str]] = []
 
     def select(
         self,
@@ -106,7 +108,6 @@ class ChoiceRecorder(ScriptedPromptBackend):
 def _reset_probes() -> None:
     _PROBES.clear()
     _FAIL.clear()
-    ChoiceRecorder.offered.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -184,21 +185,104 @@ def test_setup_creates_a_new_profile_with_a_token_command(_isolated_config: Path
     assert "untaped profile use prod" in result.stderr
 
 
-def test_an_inherited_token_would_override_the_token_command(_isolated_config: Path) -> None:
+def test_an_inherited_plaintext_token_only_offers_keeping_it(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch, "pass")
     write_config(
         _isolated_config, "profiles:\n  default:\n    wiz:\n      token: shared\nactive: default\n"
     )
-    backend = ScriptedPromptBackend(
-        texts=["prod", "https://wiz.prod", "pass show wiz"],
-        multiselects=[["wiz"]],
-        selections=["command"],
+    backend = ChoiceRecorder(
+        texts=["prod", "https://wiz.prod"], multiselects=[["wiz"]], selections=["keep"]
     )
     result = _setup(backend)
-    assert result.exit_code == 4  # the stored config must change
-    assert "wiz.token is set in profile default" in result.stderr
+    assert result.exit_code == 0, result.output
+    # default's token wins over anything prod sets, so nothing else would work.
+    assert backend.offered == [["keep"]]
+    assert "would leave it in charge, so only keeping the current token" in result.stderr
     assert "untaped auth migrate" in result.stderr
-    assert "wiz" not in (read_config_dict(_isolated_config)["profiles"].get("prod") or {})
-    assert _PROBES == []
+    assert _wiz(_isolated_config, "prod") == {"base_url": "https://wiz.prod"}
+
+
+def test_using_the_env_var_drops_the_profiles_stored_token(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
+    envy = make_spec("envy", profile_model=EnvProfile)
+    assert _auth_set(envy, "tok").exit_code == 0
+    backend = ChoiceRecorder(
+        texts=["default", "https://envy"], multiselects=[["envy"]], selections=["env"]
+    )
+    result = _setup_specs(backend, envy)
+    assert result.exit_code == 0, result.output
+    # The command would win over $ENVY_TOKEN, so it and its entry go.
+    assert read_config_dict(_isolated_config)["profiles"]["default"]["envy"] == {
+        "base_url": "https://envy"
+    }
+    assert stores.entries() == {}
+    assert "deleted the replaced envy token from pass (untaped/default/envy)" in result.stderr
+
+
+@pytest.mark.parametrize("prod", ["{}", "{envy: {token_command: [pass, show, untaped/prod/envy]}}"])
+def test_an_inherited_token_command_hides_the_env_var(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, prod: str
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch, "pass")
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    envy:\n      token_command: [op, read, x]\n"
+        f"  prod: {prod}\nactive: default\n",
+    )
+    envy = make_spec("envy", profile_model=EnvProfile)
+    backend = ChoiceRecorder(
+        texts=["prod", "https://envy", "op read y"], multiselects=[["envy"]], selections=["command"]
+    )
+    result = _setup_specs(backend, envy)
+    assert result.exit_code == 0, result.output
+    # Dropping prod's own command would hand over to default's, not $ENVY_TOKEN.
+    assert "env" not in backend.offered[0]
+
+
+def test_an_unreachable_replaced_store_only_warns(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "secret-tool", "pass")
+    envy = make_spec("envy", profile_model=EnvProfile)
+    assert _auth_set(envy, "old").exit_code == 0  # stored with secret-tool
+    # The Secret Service goes away: setup falls through to pass.
+    monkeypatch.setenv("STUB_MODE", "no-service")
+    backend = ChoiceRecorder(
+        texts=["default", "https://envy"],
+        multiselects=[["envy"]],
+        selections=["store"],
+        secrets=["new"],
+    )
+    result = _setup_specs(backend, envy)
+    assert result.exit_code == 0, result.output
+    assert "could not delete the replaced envy token from secret-tool" in result.stderr
+    assert "delete it yourself" in result.stderr
+    section = read_config_dict(_isolated_config)["profiles"]["default"]["envy"]
+    assert section["token_command"] == ["pass", "show", "untaped/default/envy"]
+    assert stores.entries() == {"default/envy": "old", "untaped/default/envy": "new"}
+
+
+def test_a_new_command_deletes_the_replaced_stored_token(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
+    envy = make_spec("envy", profile_model=EnvProfile)
+    assert _auth_set(envy, "tok").exit_code == 0
+    backend = ChoiceRecorder(
+        texts=["default", "https://envy", "op read y"],
+        multiselects=[["envy"]],
+        selections=["command"],
+    )
+    result = _setup_specs(backend, envy)
+    assert result.exit_code == 0, result.output
+    assert stores.entries() == {}
+    assert "deleted the replaced envy token from pass (untaped/default/envy)" in result.stderr
+    section = read_config_dict(_isolated_config)["profiles"]["default"]["envy"]
+    assert section["token_command"] == ["op", "read", "y"]
 
 
 def test_a_malformed_token_command_writes_nothing(_isolated_config: Path) -> None:
@@ -254,6 +338,13 @@ def test_selecting_nothing_changes_nothing(_isolated_config: Path) -> None:
     assert not _isolated_config.exists()
 
 
+def _auth_set(spec: Any, token: str) -> CliResult:
+    """``auth set <spec>`` with ``token`` on stdin, for a starting state."""
+    root = bootstrap.build_root_app(candidates=(provider_candidate(spec),))
+    section = spec.config_section
+    return invoke_cli(root.meta, ["auth", "set", section, "--stdin"], input=token)
+
+
 def _setup_specs(backend: ScriptedPromptBackend, *specs: Any) -> CliResult:
     root = bootstrap.build_root_app(candidates=tuple(provider_candidate(s) for s in specs))
     return invoke_cli(
@@ -274,7 +365,7 @@ def test_a_plaintext_token_defaults_to_moving_it_to_the_store(
     )
     result = _setup(backend)
     assert result.exit_code == 0, result.output
-    assert ChoiceRecorder.offered == [["move", "keep", "store", "command"]]
+    assert backend.offered == [["move", "keep", "store", "command"]]
     assert _wiz(_isolated_config) == {
         "base_url": "https://wiz",
         "token_command": ["pass", "show", "untaped/default/wiz"],
@@ -290,7 +381,7 @@ def test_without_a_store_setup_never_offers_plain_text(_isolated_config: Path) -
     )
     result = _setup_specs(backend, envy)
     assert result.exit_code == 0, result.output
-    assert ChoiceRecorder.offered == [["command", "env"]]
+    assert backend.offered == [["command", "env"]]
     section = read_config_dict(_isolated_config)["profiles"]["default"]["envy"]
     assert section == {"base_url": "https://envy"}
     assert "export $ENVY_TOKEN" in result.stderr
@@ -306,7 +397,7 @@ def test_a_model_without_token_command_still_takes_a_typed_token(_isolated_confi
     )
     result = _setup_specs(backend, legacy)
     assert result.exit_code == 0, result.output
-    assert ChoiceRecorder.offered == [["enter"]]
+    assert backend.offered == [["enter"]]
     section = read_config_dict(_isolated_config)["profiles"]["default"]["legacy"]
     assert section == {"base_url": "https://legacy", "token": "tok"}
 
@@ -323,4 +414,4 @@ def test_choices_list_the_store_first_for_a_new_service(
     )
     result = _setup_specs(backend, envy)
     assert result.exit_code == 0, result.output
-    assert ChoiceRecorder.offered == [["store", "command", "env"]]
+    assert backend.offered == [["store", "command", "env"]]

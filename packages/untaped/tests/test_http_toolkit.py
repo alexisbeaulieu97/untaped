@@ -22,7 +22,11 @@ from untaped.http import (
     rejected_token_error,
     same_origin,
 )
-from untaped.settings import HttpSettings, reset_config_registry_for_tests
+from untaped.settings import (
+    HttpSettings,
+    register_profile_settings,
+    reset_config_registry_for_tests,
+)
 
 
 class DemoSettings(BaseModel):
@@ -143,6 +147,12 @@ def test_a_missing_token_names_the_sources_that_keep_it_out_of_the_config_file()
     message = format_error(caught.value)
     assert "`untaped auth set demo`" in message
     assert "demo.token_command or $DEMO_TOKEN" in message
+
+
+def test_a_missing_token_without_token_command_prompts_for_it() -> None:
+    error = format_error(missing_setting_error("demo", "token", secret=("token",)))
+    assert "`untaped config set demo.token --prompt`" in error
+    assert "auth set" not in error
 
 
 class NoUrlSettings(BaseModel):
@@ -647,8 +657,11 @@ def test_paginate_offset_max_pages_bounds_non_converging_server() -> None:
     assert calls["n"] == 2
 
 
+@pytest.mark.usefixtures("_isolated_config")
 def test_a_rejected_token_is_an_auth_config_error_with_the_token_hint() -> None:
     cause = HttpError("HTTP 401", status_code=401, url="https://aap/api/v2/me/", system="awx")
+
+    register_profile_settings("awx", SourcedSettings)
 
     error = rejected_token_error("awx", "AWX rejected the token (HTTP 401)", cause=cause)
 
@@ -660,3 +673,15 @@ def test_a_rejected_token_is_an_auth_config_error_with_the_token_hint() -> None:
     )
     assert error.hint == "run `untaped auth set awx`"
     assert dict(error.details) == {"status": 401, "url": "https://aap/api/v2/me/"}
+
+
+@pytest.mark.usefixtures("_isolated_config")
+@pytest.mark.parametrize("model", [None, DemoSettings])
+def test_a_rejected_token_without_token_command_hints_at_config_set(
+    model: type[BaseModel] | None,
+) -> None:
+    # `auth set` refuses a section whose model has no token_command.
+    if model is not None:
+        register_profile_settings("plain", model)
+    error = rejected_token_error("plain", "rejected")
+    assert error.hint == "run `untaped config set plain.token --prompt`"
