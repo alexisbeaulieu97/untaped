@@ -36,7 +36,8 @@ def test_list_unions_skills_across_capabilities(tmp_path: Path) -> None:
     app = _skills_app(tmp_path, "untaped-two", "untaped-one")
     result = CliInvoker().invoke(app, ["list", "--format", "raw", "--columns", "name"])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
-    assert result.output.splitlines() == ["untaped-one", "untaped-two"]
+    # The shell's own skill is listed with the capabilities'.
+    assert result.output.splitlines() == ["untaped", "untaped-one", "untaped-two"]
 
 
 def test_install_full_name(tmp_path: Path) -> None:
@@ -172,11 +173,12 @@ def test_status_reports_state_of_global_and_project_installs(
     rows = _json(app, "status")
 
     assert [(row["name"], row["scope"], row["target"], row["state"]) for row in rows] == [
+        ("untaped", "global", "codex", "current"),
         ("untaped-one", "global", "codex", "current"),
         ("untaped-two", "global", "codex", "outdated"),
         ("untaped-one", "local", "claude", "current"),
     ]
-    assert rows[2]["target_path"] == str(project / ".claude" / "skills" / "untaped-one")
+    assert rows[3]["target_path"] == str(project / ".claude" / "skills" / "untaped-one")
 
 
 def test_status_ignores_hand_made_skills_and_flags_unshipped_ones(tmp_path: Path) -> None:

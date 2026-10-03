@@ -36,8 +36,8 @@ from untaped.errors import ConfigError
 from untaped.messages import hint, plural
 from untaped.profile_resolver import (
     DEFAULT_PROFILE,
-    effective_active_profile_name,
     resolve_profiles,
+    selected_profile,
 )
 from untaped.settings import active_settings_layout
 from untaped.stdin import read_stdin_text
@@ -252,7 +252,7 @@ def _section(result: CompositionResult, section: str) -> _TokenSection:
 
 
 def _target_profile() -> str:
-    return effective_active_profile_name(read_config_dict()) or DEFAULT_PROFILE
+    return selected_profile(read_config_dict())
 
 
 def _set(

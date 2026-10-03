@@ -18,7 +18,8 @@ exception type.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+import shlex
+from collections.abc import Iterable, Mapping, Sequence
 
 _ROOT_COMMAND = "untaped"
 
@@ -64,6 +65,22 @@ def command_line(command: str) -> str:
     return text
 
 
+def command_argv(command: str | Sequence[str], *, profile: str) -> list[str]:
+    """``command`` as the argv an agent runs after ``untaped``.
+
+    A string is split like a shell would; a leading ``untaped`` is dropped.
+    ``--profile <profile>`` leads the argv unless the command already names
+    one, so it acts on the profile it was made for.
+    """
+    argv = shlex.split(command) if isinstance(command, str) else list(command)
+    if argv[:1] == [_ROOT_COMMAND]:
+        argv = argv[1:]
+    named = any(arg == "--profile" or arg.startswith("--profile=") for arg in argv)
+    if not named:
+        argv = ["--profile", profile, *argv]
+    return argv
+
+
 def hint(command: str) -> str:
     """A follow-up hint line: ``hint: run `untaped <command>```.
 
@@ -84,4 +101,4 @@ def summary(operation: str, counts: Mapping[str, int]) -> str:
     return f"{operation}: {', '.join(parts) if parts else 'nothing to do'}"
 
 
-__all__ = ["command_line", "hint", "not_found", "plural", "q", "summary"]
+__all__ = ["command_argv", "command_line", "hint", "not_found", "plural", "q", "summary"]

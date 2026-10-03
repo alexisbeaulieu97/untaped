@@ -20,6 +20,7 @@ from pydantic import BaseModel, SecretStr
 from test_management.support import GithubProfile, compose, make_spec, write_config
 from untaped import bootstrap
 from untaped.management.doctor import build_root_doctor_app
+from untaped.profile_resolver import profile_scope
 from untaped.sdk import (
     CapabilityContext,
     ConfigError,
@@ -89,7 +90,8 @@ def test_online_failure_names_its_fix(_isolated_config: Path) -> None:
     assert result.exit_code == 1
     row = _row(result, "svc.api")
     assert row["status"] == "fail"
-    assert row["detail"] == "token rejected; run `untaped config set svc.token --prompt`"
+    assert row["detail"] == "token rejected"
+    assert row["fix"] == ["--profile", "default", "config", "set", "svc.token", "--prompt"]
 
 
 def _probe_check(probe: Any) -> DoctorCheck:
@@ -189,43 +191,43 @@ def _rejected() -> Exception:
             {"base_url": "https://svc", "token": "t"},
             HttpTransportError("cannot connect to https://svc: name not resolved"),
             "cannot connect to https://svc: name not resolved",
-            "config set svc.base_url URL",
+            "config set svc.base_url <URL>",
         ),
         (
             {"base_url": "https://svc"},
             HttpTransportError("cannot connect to https://svc: connection refused"),
             "cannot connect to https://svc: connection refused",
-            "config set svc.base_url URL",
+            "config set svc.base_url <URL>",
         ),
         (
             {"base_url": "https://svc", "token": "t"},
             _tls(20),  # X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY
             "[SSL] handshake failed for https://svc",
-            "config set http.ca_bundle PATH",
+            "config set http.ca_bundle <PATH>",
         ),
         (
             {"base_url": "https://svc", "token": "t"},
             _tls(62),  # X509_V_ERR_HOSTNAME_MISMATCH: the URL names the wrong host
             "[SSL] handshake failed for https://svc",
-            "config set svc.base_url URL",
+            "config set svc.base_url <URL>",
         ),
         (
             {"base_url": "https://svc", "token": "t"},
             HttpTransportError("certificate problem mentioned, but no ssl cause"),
             "certificate problem mentioned, but no ssl cause",
-            "config set svc.base_url URL",
+            "config set svc.base_url <URL>",
         ),
         (
             {"base_url": "https://svc", "token": "t"},
             ValueError("1 validation error for SvcUser\nlogin\n  input_value={'body': 'secret'}"),
             "ValueError: 1 validation error for SvcUser",
-            "config set svc.base_url URL",
+            "config set svc.base_url <URL>",
         ),
         (
             {"token": "t"},
             None,
             "svc.base_url is not set",
-            "config set svc.base_url URL",
+            "config set svc.base_url <URL>",
         ),
     ],
     ids=[
@@ -253,7 +255,8 @@ def test_online_check_failures_name_the_fix(
     assert result.exit_code == 1
     row = _row(result, "svc.api")
     assert row["status"] == "fail"
-    assert row["detail"] == f"{detail}; run `untaped {fix}`"
+    assert row["detail"] == detail
+    assert row["fix"] == ["--profile", "default", *fix.split()]
 
 
 def test_online_probes_do_not_retry_and_use_a_short_timeout(_isolated_config: Path) -> None:
@@ -281,3 +284,46 @@ def test_online_check_is_skipped_when_settings_are_invalid(_isolated_config: Pat
     write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      base_url: [1]\n")
     result = _doctor((_probe_check(_raise(AssertionError("must not probe"))),), "--online")
     assert _row(result, "svc.api")["detail"] == "skipped: settings are invalid"
+
+
+def _fixing(fix: str | list[str]) -> DoctorCheck:
+    def run(_ctx: CapabilityContext) -> DoctorResult:
+        return DoctorResult(id="svc.api", ok=False, detail="token rejected", fix=fix)
+
+    return DoctorCheck(id="svc.api", title="svc API", run=run, online=True)
+
+
+@pytest.mark.parametrize(
+    "fix", ["untaped config set svc.base_url '<URL>'", ["config", "set", "svc.base_url", "<URL>"]]
+)
+def test_a_string_or_argv_fix_becomes_the_same_argv(_isolated_config: Path, fix: Any) -> None:
+    row = _row(_doctor((_fixing(fix),), "--online"), "svc.api")
+    assert row["fix"] == ["--profile", "default", "config", "set", "svc.base_url", "<URL>"]
+
+
+def test_a_fix_that_names_a_profile_keeps_only_its_own(_isolated_config: Path) -> None:
+    row = _row(_doctor((_fixing("--profile=prod auth set svc"),), "--online"), "svc.api")
+    assert row["fix"] == ["--profile=prod", "auth", "set", "svc"]
+
+
+def test_an_unparsable_fix_fails_its_row(_isolated_config: Path) -> None:
+    row = _row(_doctor((_fixing("config set 'svc.base_url"),), "--online"), "svc.api")
+    assert row["status"] == "fail"
+    assert row["detail"].startswith("check returned an unparsable fix")
+    assert row["fix"] is None
+
+
+def test_the_table_appends_the_fix_without_the_current_profile(_isolated_config: Path) -> None:
+    spec = make_spec("svc", profile_model=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
+    app = build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=compose(spec))
+    result = CliInvoker().invoke(app, ["--format", "table", "--online"])
+    assert "token rejected; run `untaped auth set svc`" in " ".join(result.stdout.split())
+
+
+def test_the_table_keeps_a_profile_the_flag_chose(_isolated_config: Path) -> None:
+    spec = make_spec("svc", profile_model=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
+    app = build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=compose(spec))
+    with profile_scope("default"):
+        result = CliInvoker().invoke(app, ["--format", "table", "--online"])
+    # Without the flag the same line would act on the configured active profile.
+    assert "run `untaped --profile default auth set svc`" in " ".join(result.stdout.split())

@@ -763,7 +763,11 @@ def test_smoke_skills_need_each_expected_skill_with_its_file(
 ) -> None:
     exe = _fake_untaped(tmp_path)
     rows = [{"name": "awx", "status": "ready"}, {"name": "jira", "status": "ready"}]
-    skills = [_skill(tmp_path, "untaped-awx"), _skill(tmp_path, "untaped-x", with_file=False)]
+    skills = [
+        _skill(tmp_path, "untaped"),
+        _skill(tmp_path, "untaped-awx"),
+        _skill(tmp_path, "untaped-x", with_file=False),
+    ]
     monkeypatch.setenv("FAKE_VERSION", "10.0.0a0")
     monkeypatch.setenv("FAKE_ROWS", json.dumps(rows))
     monkeypatch.setenv("FAKE_SKILLS", json.dumps(skills))
@@ -774,16 +778,21 @@ def test_smoke_skills_need_each_expected_skill_with_its_file(
         f"skill untaped-x has no SKILL.md in {tmp_path / 'skills' / 'untaped-x'}\n"
     )
     monkeypatch.setenv("FAKE_ROWS", json.dumps(rows[:1]))
-    monkeypatch.setenv("FAKE_SKILLS", json.dumps(skills[:1]))
+    monkeypatch.setenv("FAKE_SKILLS", json.dumps(skills[:2]))
     assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", "awx", "--skills"]) == 0
     assert capsys.readouterr().out == "smoke ok: untaped 10.0.0a0, 1 capabilities\n"
 
 
 def test_skill_errors_refuse_a_skill_listed_twice(tmp_path: Path) -> None:
-    skill = _skill(tmp_path, "untaped-awx")
-    assert release.skill_errors(json.dumps([skill, skill]), ["awx"]) == [
+    shell, skill = _skill(tmp_path, "untaped"), _skill(tmp_path, "untaped-awx")
+    assert release.skill_errors(json.dumps([shell, skill, skill]), ["awx"]) == [
         "skill untaped-awx is listed twice"
     ]
+
+
+def test_skill_errors_need_the_shells_own_skill(tmp_path: Path) -> None:
+    skill = _skill(tmp_path, "untaped-awx")
+    assert release.skill_errors(json.dumps([skill]), ["awx"]) == ["skill untaped is missing"]
 
 
 @pytest.mark.parametrize(
@@ -807,7 +816,7 @@ def test_smoke_skills_report_a_broken_listing(
     monkeypatch.setenv("FAKE_SKILLS", skills)
     monkeypatch.setenv("FAKE_SKILLS_EXIT", exit_code)
     assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", "", "--skills"]) == 1
-    assert capsys.readouterr().err == f"{error}\n"
+    assert capsys.readouterr().err.endswith(f"{error}\n")
 
 
 # --- GitHub release ---------------------------------------------------------

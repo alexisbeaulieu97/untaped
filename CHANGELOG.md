@@ -10,9 +10,23 @@
 - `untaped auth set|unset|status|migrate` store API tokens in the machine's
   password store instead of `config.yml`.
   ([#442](https://github.com/alexisbeaulieu97/untaped/pull/442))
+- `untaped setup plan` lists what a profile still needs, with the command for
+  each step and whether you or your agent runs it; `untaped setup --only`
+  preselects services in the wizard.
+  ([#457](https://github.com/alexisbeaulieu97/untaped/pull/457))
+- The `untaped` agent skill teaches any agent to install, set up and diagnose
+  untaped with you, without a token passing through it.
+  ([#457](https://github.com/alexisbeaulieu97/untaped/pull/457))
+- `doctor` rows carry a `fix` field: the command that repairs a failed or
+  warned check.
+  ([#457](https://github.com/alexisbeaulieu97/untaped/pull/457))
 
 ### Changed
 
+- `doctor` and `setup` JSON, YAML and pipe rows no longer append the fix
+  command to `detail`; read `fix` instead, and plugin code that reads
+  `DoctorResult.fix` must also handle an argv list.
+  ([#457](https://github.com/alexisbeaulieu97/untaped/pull/457))
 - `untaped setup` no longer writes a typed awx, github or jira token to
   `config.yml`.
   ([#442](https://github.com/alexisbeaulieu97/untaped/pull/442))

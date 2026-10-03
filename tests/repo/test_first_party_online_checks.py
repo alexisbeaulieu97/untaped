@@ -77,4 +77,4 @@ def test_a_rejected_token_names_the_fix(
         rows = _online_rows(first_party_candidates)
     row = rows["github.api"]
     assert row["status"] == "fail"
-    assert row["detail"].endswith("; run `untaped auth set github`")
+    assert row["fix"] == ["--profile", "default", "auth", "set", "github"]
