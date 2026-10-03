@@ -36,8 +36,7 @@ from pydantic import AfterValidator, BaseModel, SecretStr
 from untaped.errors import ConfigError
 
 _LOG = logging.getLogger("untaped.auth")
-COMMAND_TIMEOUT_SECONDS = 60.0
-"""How long a ``token_command`` or token-store command may run."""
+_TIMEOUT_SECONDS = 60.0
 _MASK = "**********"
 _cache: dict[tuple[str, ...], str] = {}
 _warned: set[str] = set()
@@ -203,14 +202,14 @@ def run_command(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE if capture_stderr else None,
             text=True,
-            timeout=COMMAND_TIMEOUT_SECONDS,
+            timeout=_TIMEOUT_SECONDS,
             check=False,
         )
     except FileNotFoundError:
         raise ConfigError(f"{label} not found on PATH") from None
     except subprocess.TimeoutExpired:
         raise ConfigError(
-            f"{label} timed out after {COMMAND_TIMEOUT_SECONDS:g}s; it may be waiting on an "
+            f"{label} timed out after {_TIMEOUT_SECONDS:g}s; it may be waiting on an "
             "unlock prompt on a screen nobody sees (over SSH, unlock the store first)",
             category="unavailable",
         ) from None
@@ -273,7 +272,6 @@ def _run_token_command(argv: tuple[str, ...], *, section: str) -> str:
 
 
 __all__ = [
-    "COMMAND_TIMEOUT_SECONDS",
     "CommandToken",
     "TokenCommand",
     "TokenSources",

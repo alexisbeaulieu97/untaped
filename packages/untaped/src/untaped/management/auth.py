@@ -14,7 +14,7 @@ import json
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from cyclopts import App, Parameter
 
@@ -106,11 +106,17 @@ def save_token(
     return store.describe(entry)
 
 
-def inherited_from_default(section: str, profile: str, key: str) -> bool:
-    """Whether ``profile`` would inherit ``<section>.<key>`` from ``default``."""
+def inherited_from_default(
+    section: str, profile: str, key: str, raw: dict[str, Any] | None = None
+) -> bool:
+    """Whether ``profile`` would inherit ``<section>.<key>`` from ``default``.
+
+    ``raw`` is the config already read, if any.
+    """
     if profile == DEFAULT_PROFILE:
         return False
-    default = active_settings_layout().profile_data(read_config_dict(), DEFAULT_PROFILE) or {}
+    raw = read_config_dict() if raw is None else raw
+    default = active_settings_layout().profile_data(raw, DEFAULT_PROFILE) or {}
     node = default.get(section)
     return isinstance(node, dict) and bool(node.get(key))
 
@@ -125,29 +131,30 @@ def refuse_inherited_token(section: str, profile: str) -> None:
         )
 
 
-def drop_token_command(
-    repo: SettingsFileRepository, section: str, profile: str, argv: Sequence[str]
-) -> str | None:
-    """Unset ``profile``'s own ``<section>.token_command``, deleting what it reads.
+Deleted = Literal["deleted", "gone", "foreign"]
+"""What :func:`delete_stored_token` found: it deleted the entry, the entry was
+already gone, or the command is not one untaped wrote (nothing deleted)."""
 
-    The entry is deleted only when untaped wrote the command (a preset); an
-    entry that is already gone is not an error. Returns the deleted entry's
-    description, or ``None`` for a command untaped did not write.
+
+def delete_stored_token(argv: Sequence[str]) -> tuple[Deleted, str | None]:
+    """Delete the entry a preset ``token_command`` reads, and say where it was.
+
+    An entry the store reports missing (:meth:`TokenStore.gone`) is not an
+    error; an unreachable store is. A command untaped did not write is left
+    alone (``"foreign"``, no location).
     """
     preset = preset_entry(argv)
-    where = None
-    if preset is not None:
-        store, entry = preset
-        where = store.describe(entry)
-        try:
-            store.delete(entry)
-        except ConfigError:
-            if store.has(entry):
-                raise
-            message = f"the {section} token was already gone from {where}"
-            ui_context(strict=False).message("info", message)
-    repo.unset_value(f"{section}.token_command", profile=profile)
-    return where
+    if preset is None:
+        return "foreign", None
+    store, entry = preset
+    where = store.describe(entry)
+    try:
+        store.delete(entry)
+    except ConfigError:
+        if not store.gone(entry):
+            raise
+        return "gone", where
+    return "deleted", where
 
 
 def plaintext_token(data: dict[str, Any] | None, section: str) -> str | None:
@@ -349,9 +356,16 @@ def _unset(
         f"in profile {profile}?",
         assume_yes=yes,
     )
-    drop_token_command(SettingsFileRepository(), section, profile, argv)
-    ui.success(f"deleted the {section} token from {where} (profile {profile})")
-    emit({**row, "action": "deleted"}, fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)
+    deleted, _ = delete_stored_token(argv)
+    SettingsFileRepository().unset_value(f"{section}.token_command", profile=profile)
+    if deleted == "gone":
+        ui.success(
+            f"the {section} token was already gone from {where}; "
+            f"unset {section}.token_command (profile {profile})"
+        )
+    else:
+        ui.success(f"deleted the {section} token from {where} (profile {profile})")
+    emit({**row, "action": deleted}, fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)
 
 
 def _status(result: CompositionResult, *, fmt: Any, columns: list[str] | None) -> None:
@@ -458,8 +472,9 @@ _AUTH_OUTCOME = "untaped.auth_outcome"
 
 
 __all__ = [
+    "Deleted",
     "build_root_auth_app",
-    "drop_token_command",
+    "delete_stored_token",
     "inherited_from_default",
     "plaintext_token",
     "refuse_inherited_token",

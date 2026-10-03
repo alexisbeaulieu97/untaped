@@ -41,7 +41,7 @@ from untaped.errors import (
 )
 from untaped.messages import command_line
 from untaped.redaction import redact_url_password
-from untaped.settings import HttpSettings, load_settings_section
+from untaped.settings import HttpSettings, load_settings_section, registered_profile_model
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -456,7 +456,7 @@ def missing_setting_error(
     *more_fields: str,
     secret: Collection[str] = (),
     token_sources: str = "",
-    takes_token_command: bool = False,
+    auth_set: bool = False,
 ) -> ConfigError:
     """Return the standard error for missing capability settings.
 
@@ -464,9 +464,8 @@ def missing_setting_error(
     var) that sets each one. Fields listed in ``secret`` suggest ``config set … --prompt`` so the
     value never lands in shell history. ``token_sources`` (from
     :func:`untaped.auth.token_alternatives`) names the sources that keep a
-    missing token out of the config file. ``takes_token_command`` (the
-    section's model has ``token_command``) makes the token's command
-    ``auth set <section>``.
+    missing token out of the config file. ``auth_set`` (the section's model
+    has ``token_command``) makes the token's command ``auth set <section>``.
     """
     tail = f"; to keep the token out of the config file, use {token_sources}"
     tail = tail if token_sources else ""
@@ -474,7 +473,7 @@ def missing_setting_error(
     keys = [f"{section}.{name}" for name in fields]
     commands = [
         f"`{command_line(f'auth set {section}')}`"
-        if name == "token" and takes_token_command
+        if name == "token" and auth_set
         else f"`untaped config set {section}.{name} --prompt`"
         if name in secret
         else f"`untaped config set {section}.{name} <{name.rsplit('_', maxsplit=1)[-1]}>`"
@@ -493,23 +492,19 @@ def missing_setting_error(
 
 
 def rejected_token_error(
-    section: str,
-    message: str,
-    *,
-    cause: BaseException | None = None,
-    takes_token_command: bool = False,
+    section: str, message: str, *, cause: BaseException | None = None
 ) -> ConfigError:
     """The standard error for a service rejecting ``<section>.token`` (HTTP 401).
 
     ``auth`` in ``section`` (exit ``4``). The hint is ``auth set <section>``
-    when the section's model has ``token_command`` (``takes_token_command``),
-    else ``config set <section>.token --prompt``. The ``cause``'s details
+    when the section's registered profile model has ``token_command``, else
+    ``config set <section>.token --prompt``. The ``cause``'s details
     (``status``, ``url``) are kept.
     """
     details = cause.details if isinstance(cause, UntapedError) else None
-    command = (
-        f"auth set {section}" if takes_token_command else f"config set {section}.token --prompt"
-    )
+    model = registered_profile_model(section)
+    auth_set = model is not None and takes_token_command(model)
+    command = f"auth set {section}" if auth_set else f"config set {section}.token --prompt"
     return ConfigError(
         message,
         category="auth",
@@ -566,7 +561,7 @@ def connected_client(
             *missing,
             secret=secret,
             token_sources=sources,
-            takes_token_command=takes_token_command(type(config)),
+            auth_set=takes_token_command(type(config)),
         )
 
     request_headers = dict(headers or {})

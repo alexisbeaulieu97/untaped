@@ -55,7 +55,7 @@ def plan_rows(
     store = pick_store() if commands else None
     ready: list[str] = []
     for name, spec in services.items():
-        state = service_state(spec, values.get(spec.config_section), own, profile)
+        state = service_state(spec, values.get(spec.config_section), own, profile, raw)
         steps = _service_rows(spec, state, profile, store_name=store.name if store else None)
         rows.extend(steps)
         if exists and all(row["state"] == "done" for row in steps):
