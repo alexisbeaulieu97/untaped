@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -14,7 +13,6 @@ from untaped.settings import (
     HttpSettings,
     get_settings,
     register_profile_settings,
-    reset_config_registry_for_tests,
 )
 from untaped.theme import BUILTIN_THEMES
 from untaped.ui import ui_context
@@ -25,14 +23,10 @@ class DemoSettings(BaseModel):
 
 
 @pytest.fixture(autouse=True)
-def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    reset_config_registry_for_tests()
-    get_settings.cache_clear()
-    yield cfg
-    reset_config_registry_for_tests()
-    get_settings.cache_clear()
+    return cfg
 
 
 def test_app_context_exposes_registered_section(_isolated_config: Path) -> None:

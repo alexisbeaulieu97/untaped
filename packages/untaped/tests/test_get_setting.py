@@ -1,4 +1,3 @@
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -9,7 +8,6 @@ from untaped.errors import ConfigError
 from untaped.settings import (
     get_settings,
     register_profile_settings,
-    reset_config_registry_for_tests,
 )
 
 
@@ -20,15 +18,12 @@ class DemoPluginSettings(BaseModel):
 
 
 @pytest.fixture(autouse=True)
-def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    # The testing plugin resets the registry and settings cache around each test.
     cfg = tmp_path / "config.yml"
-    reset_config_registry_for_tests()
     register_profile_settings("demo", DemoPluginSettings)
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    get_settings.cache_clear()
-    yield cfg
-    reset_config_registry_for_tests()
-    get_settings.cache_clear()
+    return cfg
 
 
 @pytest.mark.parametrize(

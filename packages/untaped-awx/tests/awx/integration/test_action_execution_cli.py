@@ -10,8 +10,6 @@ from untaped.testing import CliInvoker
 from untaped_awx.application import WatchJob
 from untaped_awx.cli import app, context, parallel
 
-pytestmark = pytest.mark.integration
-
 
 def seed_templates(fake: Any) -> None:
     fake.seed("organizations", id=1, name="Default")

@@ -12,7 +12,6 @@ from untaped_dotfiles.domain.hashing import content_hash
 from untaped_dotfiles.domain.status import TargetInfo
 from untaped_dotfiles.infrastructure import FilesystemPlacer
 
-pytestmark = pytest.mark.integration
 T0 = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
 
 

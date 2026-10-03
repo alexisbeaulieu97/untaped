@@ -17,8 +17,6 @@ from untaped_workspace.errors import GitError, WorkspaceError
 from untaped_workspace.infrastructure import LocalGitWorktrees, git_worktrees
 from workspace.conftest import add_submodule, commit_in, git, init_submodules
 
-pytestmark = pytest.mark.integration
-
 
 @pytest.fixture
 def worktrees(tmp_path: Path) -> LocalGitWorktrees:

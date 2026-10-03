@@ -15,8 +15,6 @@ from untaped_workspace.domain.records import RepoOutcome
 from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
 
-pytestmark = pytest.mark.integration
-
 
 class UrlCatalog:
     def resolve(self, ident: str) -> ResolvedRepo:

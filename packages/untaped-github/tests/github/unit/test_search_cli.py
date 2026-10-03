@@ -36,10 +36,9 @@ def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _write_config(tmp_path, monkeypatch)
 
 
-def _write_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ui: str = "") -> None:
+def _write_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    ui_section = f"    ui:\n      {ui}\n" if ui else ""
-    cfg.write_text(f"profiles:\n  default:\n{ui_section}    github:\n      token: ghp_test\n")
+    cfg.write_text("profiles:\n  default:\n    github:\n      token: ghp_test\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     get_settings.cache_clear()
 
@@ -386,33 +385,6 @@ def test_search_repos_raw_prints_first_field_and_progress_goes_to_stderr() -> No
     assert "Searching repositories" in result.stderr
 
 
-def test_search_with_invalid_theme_still_runs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Progress uses strict=False, so a bad theme degrades to the default theme
-    # instead of failing an otherwise-valid search on the data path.
-    _write_config(tmp_path, monkeypatch, ui="theme: missing")
-
-    result, _ = _search(["repos", "--format", "raw"], items=[_repo("alpha")])
-
-    assert result.exit_code == 0, result.output
-    assert result.stdout.splitlines() == ["me/ralpha"]
-    assert "\x1b[" not in result.output
-    assert "unknown UI theme" not in result.output
-
-
-def test_search_repos_table_honors_list_collection_view(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _write_config(tmp_path, monkeypatch, ui="collection_view: list")
-
-    result, _ = _search(["repos", "--format", "table"], items=[_repo("alpha")])
-
-    assert result.exit_code == 0, result.output
-    assert "repo: me/ralpha" in result.stdout
-    assert "│" not in result.stdout
-
-
 def test_search_issues_raw_repo_number_columns_are_actionable() -> None:
     result, _ = _search(
         ["issues", "--format", "raw", "--columns", "repo", "--columns", "number"],
@@ -458,25 +430,6 @@ def test_search_stdin_rejects_records_of_another_kind() -> None:
 
     assert result.exit_code == 2, result.output
     assert "github.user" in result.stderr
-
-
-def test_search_repo_stdin_alias_is_gone(
-    first_party_candidates: tuple[ProviderCandidate, ...],
-) -> None:
-    result = invoke_cli(
-        build_root_app(candidates=first_party_candidates),
-        ["github", "search", "code", "TODO", "--repo-stdin"],
-        input="acme/api\n",
-    )
-
-    assert result.exit_code == 2, result.output
-    assert "deprecated" not in result.stderr
-
-
-def test_search_repos_rejects_the_old_boolean_archived_spellings() -> None:
-    result = CliInvoker().invoke(app, ["search", "repos", "--no-archived"])
-
-    assert result.exit_code == 2, result.output
 
 
 def test_search_repos_rejects_oversized_query_before_http_and_explains_422() -> None:

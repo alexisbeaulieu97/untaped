@@ -9,8 +9,6 @@ import pytest
 from untaped.testing import CliInvoker, ScriptedPromptBackend
 from untaped_awx.cli import app, parallel
 
-pytestmark = pytest.mark.integration
-
 
 def seed(fake: Any) -> None:
     fake.seed("organizations", id=1, name="Default")
@@ -164,13 +162,6 @@ def test_launch_wait_rows_report_start_and_finish_as_utc_timestamps(
         "2026-01-02T03:05:06Z",
     )
     assert "started" not in row
-
-
-def test_projects_update_removed(fake_aap: Any) -> None:
-    seed(fake_aap)
-    result = CliInvoker().invoke(app, ["projects", "update", "playbooks"])
-    assert result.exit_code != 0
-    assert fake_aap.actions_called == []
 
 
 @pytest.mark.parametrize("kind,sources", [("smart", True), ("", False)])

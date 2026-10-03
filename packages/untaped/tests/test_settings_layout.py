@@ -9,23 +9,14 @@ bare top-level keys.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 from untaped.settings import (
     active_settings_layout,
     get_settings,
-    reset_config_registry_for_tests,
 )
 from untaped.settings_layout import ProfilesSettingsLayout
-
-
-@pytest.fixture(autouse=True)
-def _reset_registry() -> Any:
-    reset_config_registry_for_tests()
-    yield
-    reset_config_registry_for_tests()
 
 
 class TestDefaultLayout:

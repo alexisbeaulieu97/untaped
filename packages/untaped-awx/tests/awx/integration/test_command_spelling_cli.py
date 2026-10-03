@@ -1,36 +1,10 @@
-"""Renamed and removed AWX commands and flags are gone in 8.0: no deprecated aliases."""
+"""AWX help lists only the current command spellings; removed ones are in tests/repo."""
 
 from __future__ import annotations
-
-import pytest
 
 from untaped.bootstrap import build_root_app
 from untaped.capabilities.registry import ProviderCandidate
 from untaped.testing import invoke_cli
-
-pytestmark = pytest.mark.integration
-
-
-@pytest.mark.parametrize(
-    "old",
-    [
-        ["awx", "save", "--all-kinds", "--out-dir", "out"],
-        ["awx", "job-templates", "save", "deploy"],
-        ["awx", "job-templates", "usage", "deploy", "-r"],
-        ["awx", "workflow-templates", "nodes", "flow", "-r"],
-        ["awx", "job-templates", "launch", "deploy", "--limit", "web"],
-        ["awx", "job-templates", "launch", "deploy", "--track"],
-        ["awx", "projects", "sync", "playbooks", "-t"],
-        ["awx", "job-templates", "apply", "deploy.yml"],
-    ],
-)
-def test_old_spellings_are_usage_errors(
-    first_party_candidates: tuple[ProviderCandidate, ...], old: list[str]
-) -> None:
-    result = invoke_cli(build_root_app(candidates=first_party_candidates), old)
-
-    assert result.exit_code == 2, result.output
-    assert "deprecated" not in result.stderr
 
 
 def test_help_lists_only_the_current_spellings(

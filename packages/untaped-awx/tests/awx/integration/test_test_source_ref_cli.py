@@ -21,8 +21,6 @@ if TYPE_CHECKING:  # pragma: no cover — pytest --import-mode=importlib hides '
 else:
     FakeAap = object  # type: ignore[assignment,misc]
 
-pytestmark = pytest.mark.integration
-
 _DEPLOY = """\
 kind: JobTemplate
 metadata: {name: Deploy, organization: Default}

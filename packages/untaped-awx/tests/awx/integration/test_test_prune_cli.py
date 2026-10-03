@@ -17,8 +17,6 @@ if TYPE_CHECKING:  # pragma: no cover — pytest --import-mode=importlib hides '
 else:
     FakeAap = object  # type: ignore[assignment,misc]
 
-pytestmark = pytest.mark.integration
-
 
 def _copy(fake: FakeAap, path: str, name: str, run_id: str, age: timedelta) -> dict[str, Any]:
     marker = Marker(run_id=run_id, ref="feature/x", sha="1a2b3c4", created=datetime.now(UTC) - age)

@@ -13,8 +13,6 @@ import yaml
 from untaped.testing import CliInvoker
 from untaped_awx.cli import app
 
-pytestmark = pytest.mark.integration
-
 # Export order: from the roots down, ties by id.
 _GRAPH = [
     {
