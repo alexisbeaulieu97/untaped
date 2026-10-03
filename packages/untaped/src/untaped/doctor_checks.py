@@ -44,8 +44,9 @@ def connection_check(check_id: str, *, section: str) -> DoctorCheck:
 
     A section with neither is simply unused and passes; one with only half
     of the pair is a warning, and so is a token stored in plain text in the
-    config file (``<section>.token``), which names ``token_command`` and an
-    environment variable instead. ``token_command`` is reported, never run.
+    config file (``<section>.token``): its fix is ``auth migrate`` when the
+    section takes a ``token_command``, else the alternatives are named.
+    ``token_command`` is reported, never run.
     """
 
     def run(ctx: CapabilityContext) -> DoctorResult:
@@ -72,6 +73,14 @@ def connection_check(check_id: str, *, section: str) -> DoctorCheck:
                 ),
             )
         if _stored_token(section):
+            plaintext = (
+                f"{base_url}; {section}.token is stored in plain text in "
+                f"{resolve_config_path().name}"
+            )
+            if _takes_command(settings):
+                return DoctorResult(
+                    id=check_id, ok=True, warn=True, detail=plaintext, fix="auth migrate"
+                )
             alternatives = (
                 token_alternatives(settings, section=section)
                 or f"$UNTAPED_{section.upper()}__TOKEN"
@@ -80,10 +89,7 @@ def connection_check(check_id: str, *, section: str) -> DoctorCheck:
                 id=check_id,
                 ok=True,
                 warn=True,
-                detail=(
-                    f"{base_url}; {section}.token is stored in plain text in "
-                    f"{resolve_config_path().name}; use {alternatives} instead"
-                ),
+                detail=f"{plaintext}; use {alternatives} instead",
             )
         return DoctorResult(id=check_id, ok=True, detail=f"{base_url}; token from {source}")
 
@@ -155,9 +161,10 @@ def online_check(
                 detail = probe()
         except UntapedError as exc:
             detail = _first_line(exc) or type(exc).__name__
-            fix = _online_fix(exc, section=section, has_token=has_token)
+            token_fix = _token_fix(section, settings)
+            fix = _online_fix(exc, section=section, has_token=has_token, token_fix=token_fix)
             alternatives = token_alternatives(settings, section=section)
-            if fix == _token_fix(section) and alternatives:
+            if fix == token_fix and alternatives:
                 detail = f"{detail} (the token can also come from {alternatives})"
             return DoctorResult(id=check_id, ok=False, detail=detail, fix=fix)
         except Exception as exc:
@@ -179,17 +186,23 @@ def _first_line(exc: BaseException) -> str:
     return text.splitlines()[0] if text else ""
 
 
-def _token_fix(section: str) -> str:
+def _takes_command(settings: BaseModel) -> bool:
+    return "token_command" in type(settings).model_fields
+
+
+def _token_fix(section: str, settings: BaseModel) -> str:
+    if _takes_command(settings):
+        return f"auth set {section}"
     return f"config set {section}.token --prompt"
 
 
-def _online_fix(exc: BaseException, *, section: str, has_token: bool) -> str:
+def _online_fix(exc: BaseException, *, section: str, has_token: bool, token_fix: str) -> str:
     chain = list(_causes(exc))
     rejected = any(
         isinstance(error, HttpError) and error.status_code in (401, 403) for error in chain
     )
     if rejected:
-        return _token_fix(section)
+        return token_fix
     if any(
         isinstance(error, ssl.SSLCertVerificationError)
         and getattr(error, "verify_code", None) != _HOSTNAME_MISMATCH
@@ -198,7 +211,7 @@ def _online_fix(exc: BaseException, *, section: str, has_token: bool) -> str:
         return "config set http.ca_bundle PATH"
     # An unreachable service is a URL problem even when no token is set yet.
     if not has_token and not any(isinstance(error, HttpTransportError) for error in chain):
-        return _token_fix(section)
+        return token_fix
     return f"config set {section}.base_url URL"
 
 

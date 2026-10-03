@@ -3,8 +3,9 @@
 It asks which profile to configure (creating it when new), which service
 capabilities to set up — every composed capability whose profile model has
 ``base_url`` and ``token`` fields — then each one's URL and how to get its
-token: typed in (stored like ``config set KEY --prompt``), a
-``token_command``, or the current source kept. Writes go through the same
+token: stored with this machine's password store (``untaped auth set``),
+a plaintext token moved there, a ``token_command``, a conventional
+environment variable, or the current source kept. Writes go through the same
 validated settings repository as ``config set``. Finally it runs the
 selected capabilities' doctor checks against that profile, online ones
 included, and exits 1 when any fails. It needs a terminal (exit 2 without
@@ -21,15 +22,15 @@ from typing import Any
 from cyclopts import App
 from pydantic import BaseModel, ValidationError
 
-from untaped.auth import describe_token_source
+from untaped.auth import describe_token_source, token_env_names
 from untaped.capabilities.registry import ApplicationSpec, CapabilitySpec, CompositionResult
 from untaped.cli import ColumnsOption, FormatOption, create_app, report_errors
 from untaped.config.repository import SettingsFileRepository
 from untaped.config_file import read_config_dict
 from untaped.doctor_checks import service_configured
 from untaped.errors import ConfigError
+from untaped.management.auth import refuse_inherited_token, save_token
 from untaped.management.doctor import collect_doctor_rows, report_check_rows
-from untaped.messages import hint
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile.use_cases import CreateProfile
 from untaped.profile_resolver import (
@@ -40,6 +41,7 @@ from untaped.profile_resolver import (
 from untaped.prompts import PromptChoice
 from untaped.settings import active_settings_layout
 from untaped.theme import OutputFormat
+from untaped.token_store import TokenStore, pick_store
 from untaped.ui import UiContext, ui_context
 
 _SERVICE_FIELDS = frozenset({"base_url", "token"})
@@ -131,6 +133,9 @@ class _ServiceState:
     configured: bool
     """Whether the section is set up (:func:`untaped.doctor_checks.service_configured`)."""
 
+    plaintext: str | None = None
+    """The token stored in plain text in the config, if any."""
+
 
 def _current(spec: CapabilitySpec, node: object) -> _ServiceState:
     data = node if isinstance(node, dict) else {}
@@ -142,10 +147,12 @@ def _current(spec: CapabilitySpec, node: object) -> _ServiceState:
         return _ServiceState(configured_url, None, configured_url is not None)
     url = getattr(settings, "base_url", None)
     section = spec.config_section
+    token = data.get("token")
     return _ServiceState(
         url if isinstance(url, str) and url else configured_url,
         describe_token_source(settings, section=section),
         service_configured(settings, section=section),
+        token.strip() if isinstance(token, str) and token.strip() else None,
     )
 
 
@@ -158,45 +165,70 @@ def _configure(
 ) -> None:
     """Ask for one service's URL and token, validate every answer, then write."""
     section = spec.config_section
-    source = current.token_source
     url = ui.text(f"{spec.name} base URL", default=current.base_url).strip()
-    choices = [PromptChoice(value="enter", label="Enter a token (stored in config.yml)")]
-    if "token_command" in spec.profile_model.model_fields:
-        choices.append(PromptChoice(value="command", label="Run a command that prints the token"))
-    if source is not None:
-        choices.insert(0, PromptChoice(value="keep", label=f"Keep the current token ({source})"))
-    how = ui.select(f"{spec.name} token", choices, default="keep" if source else "enter")
-    token = ui.secret(f"{spec.name} token") if how == "enter" else None
+    has_command = "token_command" in spec.profile_model.model_fields
+    store = pick_store() if has_command else None
+    choices = _token_choices(spec, current, store, has_command=has_command)
+    how = ui.select(f"{spec.name} token", choices, default=choices[0].value)
+    token = ui.secret(f"{spec.name} token").strip() if how in ("store", "enter") else None
     argv = _token_command(ui, spec, profile) if how == "command" else None
+    if how in ("store", "move", "env"):
+        refuse_inherited_token(section, profile)
     repo.set_value(f"{section}.base_url", url, profile=profile)
-    if token is not None:
+    if how == "store" and token is not None and store is not None:
+        save_token(repo, section, profile, token, store)
+    elif how == "move" and current.plaintext is not None and store is not None:
+        save_token(repo, section, profile, current.plaintext, store)
+    elif how == "enter" and token is not None:
         repo.set_value(f"{section}.token", token, profile=profile)
-    if argv is not None:
+    elif argv is not None:
         repo.set_value(f"{section}.token_command", json.dumps(argv), profile=profile)
         # A stored token wins over the command; drop it so the command is used.
         repo.unset_value(f"{section}.token", profile=profile)
+    elif how == "env":
+        repo.unset_value(f"{section}.token", profile=profile)
+        env = token_env_names(spec.profile_model.model_construct())[0]
+        ui.message("info", f"export ${env} in your shell for untaped {spec.name} to use it")
+
+
+def _token_choices(
+    spec: CapabilitySpec,
+    current: _ServiceState,
+    store: TokenStore | None,
+    *,
+    has_command: bool,
+) -> list[PromptChoice[str]]:
+    """The token choices, the recommended one first; none stores plain text if avoidable."""
+    choices: list[PromptChoice[str]] = []
+    if current.plaintext is not None and store is not None:
+        choices.append(PromptChoice(value="move", label=f"Move the current token to {store.name}"))
+    if current.token_source is not None:
+        label = f"Keep the current token ({current.token_source})"
+        choices.append(PromptChoice(value="keep", label=label))
+    if store is not None:
+        choices.append(PromptChoice(value="store", label=f"Store a token with {store.name}"))
+    if has_command:
+        choices.append(PromptChoice(value="command", label="Run a command that prints the token"))
+        env = token_env_names(spec.profile_model.model_construct())
+        if env:
+            label = f"Use ${env[0]} (you export it; nothing is stored)"
+            choices.append(PromptChoice(value="env", label=label))
+    else:
+        choices.append(PromptChoice(value="enter", label="Enter a token (stored in config.yml)"))
+    return choices
 
 
 def _token_command(ui: UiContext, spec: CapabilitySpec, profile: str) -> list[str]:
     """Read and check a token command before anything is written for the service."""
-    section = spec.config_section
     try:
         argv = shlex.split(ui.text(f"{spec.name} token command"))
     except ValueError as exc:
         raise ConfigError(f"invalid {spec.name} token command: {exc}", category="invalid") from exc
     if not argv:
         raise ConfigError(f"{spec.name} token command is empty", category="invalid")
-    default = ProfileFileRepository().read(DEFAULT_PROFILE) or {}
-    inherited = default.get(section) if profile != DEFAULT_PROFILE else None
-    if isinstance(inherited, dict) and inherited.get("token"):
-        # Only the target profile's own token is removed; default's would still
-        # win over the command (and be sent to this profile's URL).
-        raise ConfigError(
-            f"{section}.token is set in profile {DEFAULT_PROFILE} and would override the "
-            f"token command in profile {profile}; enter the token instead, or remove it "
-            f"from {DEFAULT_PROFILE}\n"
-            f"{hint(f'--profile {DEFAULT_PROFILE} config unset {section}.token')}"
-        )
+    # Only the target profile's own token is removed; default's would still
+    # win over the command (and be sent to this profile's URL).
+    refuse_inherited_token(spec.config_section, profile)
     return argv
 
 

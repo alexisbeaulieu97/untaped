@@ -639,7 +639,7 @@ def test_a_partial_write_keeps_the_category_of_its_cause(
         "awx",
     )
     if status == 401:
-        assert "config set awx.token" in (row["error"]["hint"] or "")
+        assert "auth set awx" in (row["error"]["hint"] or "")
 
 
 def test_rejected_token_during_survey_write_still_stops_the_batch(

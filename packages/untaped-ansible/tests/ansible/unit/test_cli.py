@@ -71,7 +71,10 @@ def _use_config(
             **(ansible or {}),
         }
     }
-    github_section = {**({"token": "ghp_test"} if token else {}), **(github or {})}
+    if token:
+        # From the conventional variable, not the file: a plaintext token warns.
+        monkeypatch.setenv("GH_TOKEN", "ghp_test")
+    github_section = dict(github or {})
     if github_section:
         profile["github"] = github_section
     if ui is not None:

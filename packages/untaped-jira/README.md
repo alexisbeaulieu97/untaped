@@ -14,12 +14,12 @@ Create a personal access token in Jira, then:
 
 ```bash
 untaped config set jira.base_url https://jira.example.com
-untaped config set jira.token --prompt
+untaped auth set jira
 untaped jira whoami
 ```
 
-To keep the token out of `config.yml`, use `jira.token_command` or
-`JIRA_API_TOKEN`; see
+`auth set` stores the token with your password store, not in `config.yml`;
+`jira.token_command` or `JIRA_API_TOKEN` also work; see
 [Tokens](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md#tokens). Defaults such as `jira.default_project` and the
 `jira.assigned_jql` base query are in the
 [settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#jira).

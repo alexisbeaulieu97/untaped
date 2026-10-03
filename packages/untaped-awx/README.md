@@ -17,13 +17,15 @@ connection:
 
 ```bash
 untaped config set awx.base_url https://aap.example.com
-untaped config set awx.token --prompt
+untaped auth set awx
 untaped config set awx.api_prefix /api/v2/   # standalone AWX only
 untaped awx ping
 ```
 
-`ping` names the authenticated `user`. To keep the token out of `config.yml`,
-use `awx.token_command` or an environment variable; see the
+`ping` names the authenticated `user`. `auth set` stores the token with your
+password store, not in `config.yml`; an environment variable also works. See
+[Tokens](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md#tokens)
+and the
 [settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#awx).
 
 ## Find and change resources

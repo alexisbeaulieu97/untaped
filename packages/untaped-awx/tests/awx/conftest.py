@@ -1395,11 +1395,12 @@ def aap_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
           default:
             awx:
               base_url: https://aap.example.com
-              token: secret
               api_prefix: /api/v2/
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    # Not in the file: a plaintext token there warns on every run.
+    monkeypatch.setenv("UNTAPED_AWX__TOKEN", "secret")
     return cfg
 
 

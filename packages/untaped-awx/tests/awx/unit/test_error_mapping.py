@@ -28,7 +28,7 @@ from untaped_awx.errors import (
 )
 from untaped_awx.infrastructure.errors import map_awx_errors, to_awx_error
 
-_TOKEN_HINT = "hint: run `untaped config set awx.token --prompt`"
+_TOKEN_HINT = "hint: run `untaped auth set awx`"
 
 
 @pytest.mark.parametrize(

@@ -35,8 +35,9 @@ untaped doctor --online
 
 `untaped setup` walks you through one profile in a terminal. For each service
 you pick (`awx`, `github`, `jira`) it asks for the base URL and how to get
-the token: type it, give a command that prints it (`token_command`), or keep
-the current one. It checks the answers before writing any of them, then
+the token: store it with your password store (as `untaped auth set` does),
+move a plaintext one there, give a command that prints it (`token_command`),
+use an environment variable, or keep the current one. It checks the answers before writing any of them, then
 checks each service online and exits 1 if one fails. Naming a new profile creates it.
 
 ```bash
@@ -48,25 +49,27 @@ To script the same settings, use `config set` as below.
 ## Store your tokens
 
 Settings live in `~/.untaped/config.yml`. Write them with `untaped config set`
-rather than by hand, so they are validated. Use `--prompt` for tokens: the
-value is read without echo and stays out of your shell history.
+rather than by hand, so they are validated. Tokens do not belong there:
+`untaped auth set` reads one without echo and stores it with this machine's
+password store (macOS keychain, Secret Service or `pass`), and the config only
+names the command that reads it back.
 
 ```bash
-untaped config set github.token --prompt
+untaped auth set github
 untaped config set jira.base_url https://jira.example.com
-untaped config set jira.token --prompt
+untaped auth set jira
 untaped config set awx.base_url https://aap.example.com
-untaped config set awx.token --prompt
+untaped auth set awx
 ```
 
 In scripts, pipe the token in instead:
 
 ```bash
-printf '%s\n' "$GITHUB_TOKEN" | untaped config set github.token --stdin
+printf '%s\n' "$GITHUB_TOKEN" | untaped auth set github --stdin
 ```
 
-A token set this way is stored in plain text; to keep it out of
-`config.yml`, see [Tokens](./configuration.md#tokens).
+Already have tokens in `config.yml`? `untaped auth migrate` moves them all.
+More in [Tokens](./configuration.md#tokens).
 
 Check what is set. Secrets show as `***`:
 
@@ -86,7 +89,7 @@ override it field by field.
 ```bash
 untaped profile create prod --copy-from default
 untaped --profile prod config set awx.base_url https://aap.prod.example.com
-untaped --profile prod config set awx.token --prompt
+untaped --profile prod auth set awx
 
 untaped profile list
 untaped --profile prod awx ping

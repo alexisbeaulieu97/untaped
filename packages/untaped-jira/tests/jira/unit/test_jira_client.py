@@ -57,6 +57,7 @@ def test_token_falls_back_to_jira_api_token(
     jira_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     jira_config.write_text(f"profiles:\n  default:\n    jira:\n      base_url: {BASE}\n")
+    monkeypatch.delenv("UNTAPED_JIRA__TOKEN")
     monkeypatch.setenv("JIRA_API_TOKEN", "from-env")
     token = get_config_section("jira", JiraSettings).token
     assert token is not None
