@@ -23,8 +23,8 @@
   `warnings.warn()`; report a per-item failure with `report_error(exc, item=…)`
   and warn with `ui.message("warning", …)`.
   ([#464](https://github.com/alexisbeaulieu97/untaped/pull/464))
-- awx: `awx.api_prefix` may now omit the trailing `/`, which untaped adds; it
-  still has to start with `/`.
+- `awx.api_prefix` no longer needs its trailing `/`; untaped adds it, and the
+  prefix must still start with `/`.
   ([#471](https://github.com/alexisbeaulieu97/untaped/pull/471))
 
 ### Fixed

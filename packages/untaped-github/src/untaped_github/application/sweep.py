@@ -70,10 +70,6 @@ class SweepOptions:
     # Piped records complete enough to skip the per-repo API lookup.
     stdin_items: tuple[RepositoryInventoryItem, ...] = ()
 
-    def __post_init__(self) -> None:
-        if self.max_age_seconds < 0:
-            raise ValueError("max_age_seconds must be non-negative")
-
 
 @dataclass(frozen=True)
 class CorpusSyncOptions:
