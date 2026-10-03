@@ -14,9 +14,11 @@ only once the user has approved that preview.
 
 - Settings live under `profiles.<name>.jira`. Set the server with
   `untaped config set jira.base_url https://HOST`.
-- Set a personal access token with `untaped config set jira.token --prompt`
-  (or `--stdin`), or point `jira.token_command` at an argv list that prints
-  it; `JIRA_API_TOKEN` is the fallback. Never print or echo a token.
+- The user stores a personal access token by running `untaped auth set jira`
+  in their own terminal (it prompts and keeps the token out of `config.yml`),
+  or points `jira.token_command` at an argv list that prints it;
+  `JIRA_API_TOKEN` is the fallback. Never ask for, print or echo a token, and
+  never read `~/.untaped/config.yml`.
 - `untaped jira whoami` checks the URL and token. A rejected token exits 4.
 - Check effective defaults (`jira.assigned_jql`, `jira.default_project`,
   `jira.default_board_id`, `jira.confirm`) with `untaped config list` before

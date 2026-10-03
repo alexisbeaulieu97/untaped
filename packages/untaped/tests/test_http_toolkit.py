@@ -141,7 +141,7 @@ def test_a_missing_token_names_the_sources_that_keep_it_out_of_the_config_file()
     with pytest.raises(ConfigError) as caught:
         connected_client(SourcedSettings(), section="demo")
     message = format_error(caught.value)
-    assert "`untaped config set demo.token --prompt`" in message
+    assert "`untaped auth set demo`" in message
     assert "demo.token_command or $DEMO_TOKEN" in message
 
 
@@ -658,5 +658,5 @@ def test_a_rejected_token_is_an_auth_config_error_with_the_token_hint() -> None:
         "auth",
         "awx",
     )
-    assert error.hint == "run `untaped config set awx.token --prompt`"
+    assert error.hint == "run `untaped auth set awx`"
     assert dict(error.details) == {"status": 401, "url": "https://aap/api/v2/me/"}

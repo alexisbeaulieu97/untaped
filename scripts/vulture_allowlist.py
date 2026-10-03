@@ -191,6 +191,7 @@ show_command  # unused function (packages/untaped/src/untaped/management/capabil
 profile_fields  # unused variable (packages/untaped/src/untaped/management/config.py:52)
 set_command  # unused function (packages/untaped/src/untaped/management/config.py:168)
 unset_command  # unused function (packages/untaped/src/untaped/management/config.py:200)
+migrate_command  # registered by @app.command (packages/untaped/src/untaped/management/auth.py)
 setup_command  # unused function (packages/untaped/src/untaped/management/setup.py:52)
 install_command  # unused function (packages/untaped/src/untaped/management/skills.py:125)
 update_command  # unused function (packages/untaped/src/untaped/management/skills.py:178)

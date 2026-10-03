@@ -176,14 +176,14 @@ def _rejected() -> Exception:
             _rejected(),
             "svc rejected the configured token "
             "(the token can also come from svc.token_command or $SVC_TOKEN)",
-            "config set svc.token --prompt",
+            "auth set svc",
         ),
         (
             {"base_url": "https://svc"},
             HttpStatusError("HTTP 403 from https://svc/me", status_code=403),
             "HTTP 403 from https://svc/me "
             "(the token can also come from svc.token_command or $SVC_TOKEN)",
-            "config set svc.token --prompt",
+            "auth set svc",
         ),
         (
             {"base_url": "https://svc", "token": "t"},

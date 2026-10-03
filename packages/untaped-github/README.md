@@ -11,7 +11,7 @@ limits.
 ## Set up
 
 ```bash
-untaped config set github.token --prompt
+untaped auth set github
 untaped config set github.default_org acme
 untaped github whoami
 ```

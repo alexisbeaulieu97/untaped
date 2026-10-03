@@ -463,14 +463,18 @@ def missing_setting_error(
     var) that sets each one. Fields listed in ``secret`` suggest ``config set … --prompt`` so the
     value never lands in shell history. ``token_sources`` (from
     :func:`untaped.auth.token_alternatives`) names the sources that keep a
-    missing token out of the config file.
+    missing token out of the config file; when they include
+    ``<section>.token_command``, the token's command is ``auth set <section>``.
     """
     tail = f"; to keep the token out of the config file, use {token_sources}"
     tail = tail if token_sources else ""
     fields = (field, *more_fields)
     keys = [f"{section}.{name}" for name in fields]
+    stores = f"{section}.token_command" in token_sources
     commands = [
-        f"`untaped config set {section}.{name} --prompt`"
+        f"`{command_line(f'auth set {section}')}`"
+        if name == "token" and stores
+        else f"`untaped config set {section}.{name} --prompt`"
         if name in secret
         else f"`untaped config set {section}.{name} <{name.rsplit('_', maxsplit=1)[-1]}>`"
         for name in fields
@@ -492,15 +496,16 @@ def rejected_token_error(
 ) -> ConfigError:
     """The standard error for a service rejecting ``<section>.token`` (HTTP 401).
 
-    ``auth`` in ``section`` (exit ``4``), with the ``config set … --prompt``
-    hint; the ``cause``'s details (``status``, ``url``) are kept.
+    ``auth`` in ``section`` (exit ``4``), with the ``auth set <section>``
+    hint (a token section takes ``token_command``, so ``auth set`` serves
+    it); the ``cause``'s details (``status``, ``url``) are kept.
     """
     details = cause.details if isinstance(cause, UntapedError) else None
     return ConfigError(
         message,
         category="auth",
         system=section,
-        hint=f"run `{command_line(f'config set {section}.token --prompt')}`",
+        hint=f"run `{command_line(f'auth set {section}')}`",
         details=details,
     )
 
