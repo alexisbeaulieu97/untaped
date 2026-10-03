@@ -144,8 +144,10 @@ answer each item, in order, in the PR template's **Drift review** section
 - **Docs, skills and READMEs.** Every page that describes what changed still
   says something true, in the fact's one home (see Workflow), and names any
   new command, option or setting.
-- **Changelog.** A user-visible change has a line under `## Unreleased`; a
-  change to `packages/*/src` without one answers `none, <why>`.
+- **Changelog.** A user-visible change has one entry under `## Unreleased`:
+  a sentence a user would act on, ending with its PR link; details belong in
+  the PR and the docs. Refactors and test-only changes get none. A change to
+  `packages/*/src` without one answers `none, <why>`.
 - **Duplicated helpers.** Nothing new repeats a helper in `untaped.sdk`,
   core or another capability; move a misplaced helper instead of forking it.
 - **Repo rules.** The Workflow rules above that no linter checks: lazy
@@ -197,7 +199,9 @@ It touches these and nothing else:
   `packages/*/pyproject.toml`, and on a major `examples/untaped-hello`'s
   `untaped` range (`>=X,<X+1`);
 - `uv.lock` (`uv lock`);
-- `CHANGELOG.md`: rename `## Unreleased` to `## X.Y.Z`.
+- `CHANGELOG.md`: rename `## Unreleased` to `## X.Y.Z`; on a major, move the
+  previous major's sections to `changelog/<X-1>.x.md` and link it under
+  `## Older releases`.
 
 A major release's changelog section (see [Versioning](docs/versioning.md))
 opens with `### Upgrading`: one item for each Breaking bullet, saying what a
