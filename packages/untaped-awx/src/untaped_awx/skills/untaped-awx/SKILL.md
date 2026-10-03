@@ -67,8 +67,8 @@ Use the agent profile when one exists (`--profile agent`).
 3. Commit and push: AWX runs what the remote has.
 4. `untaped awx test validate` passes without launching anything.
 5. `untaped awx test run --scm-branch HEAD --compare /tmp/baseline.json --format json`.
-   When the change edits a spec under `.untaped/awx/`, use `--source-ref
-   HEAD` instead of `--scm-branch HEAD` in steps 4 and 5.
+   When the change edits a spec under `.untaped/awx/`, add `--source-ref
+   HEAD` to step 4 and use it instead of `--scm-branch HEAD` in step 5.
 6. Exit 0: no regression and no failing new case. Exit 1: each failing row's
    `failure.system` says who must act; fix, push, rerun. Exit 4 or 5: the
    environment, not the change.
@@ -84,7 +84,7 @@ previews once and asks once, No by default.
   only when the user asked for everything in scope; `list` the same selector
   first.
 - **Preview**: `--dry-run` never writes, even with `--yes`; `apply --check`
-  exits 3 on drift. Show the user each planned row (resource, field, old →
+  reports drift. Show the user each planned row (resource, field, old →
   new).
 - **Confirm**: pass `--yes` only after the user approves that preview.
   Without a terminal, a write needs `--yes` or `--dry-run` (else exit 2).

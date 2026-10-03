@@ -1,4 +1,4 @@
-"""Position-independent root-option machinery for the unified shell.
+"""Position-independent root-option machinery for the root app.
 
 The ``--profile`` / ``--verbose`` / ``--quiet`` option table and dispatch
 helpers live here so the bootstrap composition root has one implementation.

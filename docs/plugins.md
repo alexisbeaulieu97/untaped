@@ -262,7 +262,8 @@ Settings live under `profiles.<name>.CAPABILITY`. Set the token with
 - WHICH COMMANDS WRITE, which ask first, and how to preview each.
 - Exit codes: 0 success, 1 failure or declined (`cancelled; no changes
   made`), 2 usage (including a write without a terminal and without
-  `--yes`), 3 predicate hit, 4 fix the environment, 5 retry later.
+  `--yes`), 3 predicate hit, 4 fix the environment, 5 retry later, 130
+  interrupted.
 
 ## Pitfalls
 
@@ -277,10 +278,8 @@ Settings live under `profiles.<name>.CAPABILITY`. Set the token with
 
 Composition requires only a non-empty skill name and description; the rest
 of this section is guidance, and no test checks the description's length or
-voice. The first-party skills are also held to the template's section order
-and to a size budget: `SKILL.md` at most 500 lines, each reference at most
-300 (split an over-budget file by task). The content rule: a skill documents behaviour and judgement, not what
-the CLI prints. Say only what the agent cannot learn from the installed CLI,
+voice. Keep `SKILL.md` short and split a long reference by task. The content
+rule: a skill documents behaviour and judgement, not what the CLI prints. Say only what the agent cannot learn from the installed CLI,
 and make the risky paths hard to get wrong.
 `--help` and `--columns '?'` answer flags and fields; the skill says which
 commands form a workflow, which order is safe, what the output means and what

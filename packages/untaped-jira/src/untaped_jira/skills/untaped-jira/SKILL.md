@@ -72,7 +72,7 @@ untaped jira issues search --project OPS --status 'In Review' --format pipe \
 - Exit codes: 0 success, 1 the request failed or was declined (missing issue,
   invalid field, no such transition), 2 fix the command line, 4 fix the
   environment (`jira.*` settings, rejected token, missing permission),
-  5 Jira unavailable (retry later).
+  5 Jira unavailable (retry later), 130 interrupted.
 - With `--format json` stderr is JSON Lines; each error names its `category`,
   `system`, `retryable` flag and `hint`.
 

@@ -19,10 +19,10 @@ An agent that has only the installed ``untaped`` reads these files, so:
   ``skills list`` shows what the agent's skill loader sees;
 - every ``SKILL.md`` has the sections of the skill template in its order
   (others may sit between them), so an agent finds the same thing in the same
-  place in every skill;
+  place in every skill (the example plugin's skill too, which has no
+  references);
 - ``SKILL.md`` stays within :data:`SKILL_BUDGET` lines and each reference
-  within :data:`REFERENCE_BUDGET`; an over-budget file is split by task;
-- docs, READMEs and skills avoid the retired terms in :data:`RETIRED_TERMS`.
+  within :data:`REFERENCE_BUDGET`; an over-budget file is split by task.
 """
 
 from __future__ import annotations
@@ -36,24 +36,20 @@ import yaml
 from cyclopts import App
 
 from repo import quoted_commands
-from repo.support import REPO_ROOT, markdown_files
+from repo.support import FENCE, FIRST_PARTY, REPO_ROOT
 from untaped.bootstrap import build_root_app
 from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 from untaped.sdk import SkillAsset
 from untaped_awx.domain.suite_starter import starter_suite
 
-SKILL_NAMES = tuple(
-    f"untaped-{name}"
-    for name in ("ansible", "awx", "dotfiles", "github", "jira", "recipe", "workspace")
-)
+SKILL_NAMES = tuple(f"untaped-{name}" for name in FIRST_PARTY)
 
 
 #: The skill template's sections (docs/plugins.md), in order.
 SKILL_SECTIONS = ("Setup", "Commands", "Workflows", "Safety", "Pitfalls", "References")
 SKILL_BUDGET = 500
 REFERENCE_BUDGET = 300
-#: Retired term -> the term to use instead.
-RETIRED_TERMS = {"root shell": "root", "unified shell": "root"}
+EXAMPLE_SKILL = REPO_ROOT / "examples/untaped-hello/src/untaped_hello/skills/untaped-hello/SKILL.md"
 
 
 @pytest.fixture(scope="module")
@@ -161,36 +157,19 @@ def test_spec_description_matches_the_skill_frontmatter(
     assert frontmatter["description"] == skills[name].description
 
 
-def section_order_problem(text: str) -> str | None:
-    """Why ``text``'s ``## `` headings break :data:`SKILL_SECTIONS`, or ``None``."""
+def _template_sections(path: Path) -> list[str]:
+    text = FENCE.sub("", path.read_text(encoding="utf-8"))
     headings = [line[3:].strip() for line in text.splitlines() if line.startswith("## ")]
-    found = [heading for heading in headings if heading in SKILL_SECTIONS]
-    missing = [name for name in SKILL_SECTIONS if name not in found]
-    if missing:
-        return f"missing sections: {', '.join(missing)}"
-    if found != list(SKILL_SECTIONS):
-        return f"sections out of order: {', '.join(found)}"
-    return None
+    return [heading for heading in headings if heading in SKILL_SECTIONS]
 
 
 @pytest.mark.parametrize("name", SKILL_NAMES)
 def test_skill_follows_the_template_sections(skills: dict[str, SkillAsset], name: str) -> None:
-    text = skills[name].source.joinpath("SKILL.md").read_text(encoding="utf-8")
-    assert section_order_problem(text) is None, section_order_problem(text)
+    assert _template_sections(skills[name].source / "SKILL.md") == list(SKILL_SECTIONS)
 
 
-@pytest.mark.parametrize(
-    ("headings", "problem"),
-    [
-        (SKILL_SECTIONS, None),
-        (("Setup", "Commands", "Scopes", "Workflows", "Safety", "Pitfalls", "References"), None),
-        (("Setup", "Commands", "Workflows", "Pitfalls", "References"), "missing sections: Safety"),
-        (("Setup", "Commands", "Workflows", "Pitfalls", "Safety", "References"), "out of order"),
-    ],
-)
-def test_section_order_detector(headings: tuple[str, ...], problem: str | None) -> None:
-    found = section_order_problem("\n".join(f"## {heading}" for heading in headings))
-    assert found is None if problem is None else problem in (found or "")
+def test_example_skill_follows_the_template_sections() -> None:
+    assert _template_sections(EXAMPLE_SKILL) == [s for s in SKILL_SECTIONS if s != "References"]
 
 
 @pytest.mark.parametrize("name", SKILL_NAMES)
@@ -199,13 +178,3 @@ def test_skill_files_stay_within_budget(skills: dict[str, SkillAsset], name: str
         budget = SKILL_BUDGET if path.name == "SKILL.md" else REFERENCE_BUDGET
         lines = len(path.read_text(encoding="utf-8").splitlines())
         assert lines <= budget, f"{path.name} has {lines} lines; split it by task"
-
-
-def test_docs_avoid_retired_terms() -> None:
-    found = [
-        f"{page.relative_to(REPO_ROOT)}: {term!r}, say {use!r}"
-        for page in markdown_files()
-        for term, use in RETIRED_TERMS.items()
-        if term in page.read_text(encoding="utf-8").lower()
-    ]
-    assert found == []

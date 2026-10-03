@@ -31,7 +31,7 @@ uv lock --check                                 # lock file is current
   the `dev` group, no `[project]`); `uv.lock` locks the whole workspace.
 - `packages/<name>/` holds one distribution each: its `pyproject.toml`,
   `README.md`, `LICENSE`, `src/` and `tests/`. Core is `packages/untaped/`: its
-  `src/untaped/` holds the root and shared services. `sdk.py` is the
+  `src/untaped/` holds the root app and shared services. `sdk.py` is the
   public SDK surface; `capabilities/registry.py` is the internal composition
   kernel (see [How composition works](docs/composition.md));
   `management/` holds the root's management commands. The implementation is
@@ -86,10 +86,11 @@ packages/untaped-<name>/src/untaped_<name>/
 6. Call `untaped.testing.check_conventions` from its tests. The default
    table columns rule is enforced by this repository's own test suite, not by
    `check_conventions`, and `# untaped: allow` does not apply to it.
-7. Start its skill from the [skill template](docs/plugins.md#packaged-skills)
-   and its package `README.md` from a sibling's (the same section order,
-   ending in `## Reference`), linked from the root `README.md` and
-   `docs/getting-started.md`.
+7. Start its skill from the [skill template](docs/plugins.md#packaged-skills);
+   tests hold it to the template's section order, `SKILL.md` at most 500
+   lines and each reference at most 300. Start its package `README.md` from a
+   sibling's (the same section order, ending in `## Reference`), linked from
+   the root `README.md` and `docs/getting-started.md`.
 
 A capability whose settings import another's `api` (ansible imports
 github's) is quarantined with it when that import fails. Shared logic follows

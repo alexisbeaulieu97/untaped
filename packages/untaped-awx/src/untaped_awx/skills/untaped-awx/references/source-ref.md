@@ -3,13 +3,14 @@
 `--source-ref REF` reads specs as they are at a git ref instead of the working
 tree. `awx test` uses it to run suites against temporary copies of the
 templates a change edits; `awx apply` uses it to apply files from a tag or
-branch.
+branch. Either way, messages name the files read as `REF:PATH`.
 
-- [Temporary test sets: `--source-ref`](#temporary-test-sets---source-ref)
-- [Temporary copies](#temporary-copies)
+- [Test at a ref](#test-at-a-ref)
+- [What a run with copies reports](#what-a-run-with-copies-reports)
+- [Leftover copies](#leftover-copies)
 - [Apply from a git ref](#apply-from-a-git-ref)
 
-## Temporary test sets: `--source-ref`
+## Test at a ref
 
 `--scm-branch` runs a branch's playbooks with the templates AWX holds. When
 the branch also changes a template or workflow, keep its spec in the
@@ -19,14 +20,13 @@ describes it.
 
 1. REF (a branch, tag or commit; `HEAD` once pushed) is pinned to its
    commit, which a remote must have. Suites and specs are read at that
-   commit, never from the working tree; messages name files `REF:PATH`.
+   commit, never from the working tree.
 2. A suite binds to a spec by name: a `kind: JobTemplate` (for
    `jobTemplate`) or `kind: WorkflowJobTemplate` document anywhere under
    `.untaped/awx/` with the template's name and organization.
    - A copied workflow's nodes that run a template with a spec run that
      template's copy.
    - A spec in another organization does not bind, with a warning.
-   - stderr names each suite that runs a template AWX holds.
 3. Each copy is created as `apply` would create the spec, except:
    - its name is `NAME [untaped-test SHA RUN]` (7-digit commit and a random
      run id), so concurrent runs never collide;
@@ -55,29 +55,14 @@ describes it.
 - `--no-cancel` needs `--keep`: AWX cannot delete a template while its job
   runs.
 - `validate --source-ref REF` (or `run --source-ref REF --dry-run`) does
-  everything but the writes and prints the copies it would create. A case of
-  a copied template is checked against the spec.
+  everything but the writes. A case of a copied template is checked against
+  the spec.
 - The AWX user needs to create and delete templates
   ([agent-profile.md](agent-profile.md)).
-  [test-results.md](#temporary-copies) covers what the run
-  reports.
 
-### Leftover copies: `test prune`
+## What a run with copies reports
 
-`untaped awx test prune` deletes copies a killed run left behind: templates
-named like a copy whose description carries the matching marker, created
-more than `--older-than` ago.
-
-- An age below the longest run deletes copies of runs still going, whose
-  next launches then fail. Prune another run's copies only once it has ended;
-  `--run RUN` limits it to one run, as the teardown warning's hint does.
-- It lists the copies and asks once; preview with `--dry-run`.
-- It prints one `awx.prune_outcome` row per copy.
-
-## Temporary copies
-
-With `--source-ref` ([test-suites.md](#temporary-test-sets---source-ref)),
-the run creates its copies before any case launches. A case of a copied
+The run creates its copies before any case launches. A case of a copied
 template reports the copy's job, whose `scm_branch` is the commit. stderr
 names each suite that runs a template AWX holds (`deploy: runs AWX's
 JobTemplate 'Deploy' at 1a2b3c4 (no spec)`) and each copy created, with the
@@ -114,15 +99,28 @@ stderr; with `--keep` it is listed as `kept … (id N)`.
 - The cases' results and the exit code stand.
 
 `test validate --source-ref REF` (and `test run --source-ref REF --dry-run`)
-prints one `awx.provision_outcome` row per copy it would create (`planned`);
-`test prune` prints one `awx.prune_outcome` row per leftover copy (`planned`
-with `--dry-run`, then `deleted` or `failed`). Both print the fields
-of a `--format json` row (`--columns '?'` lists them under `--dry-run`).
-`id` is `null` for a planned copy; `path` (`REF:PATH`
-of its spec) and `prompts` are set on planned copies only. `created_at` is
-when the run started, not when the copy was created. A copy is named
-`NAME [untaped-test SHA RUN]`. A `failed` row's `error` carries the
-attributed failure (`category`, `system`, `retryable`, `message`, `hint`).
+prints one `awx.provision_outcome` row per copy it would create (`planned`).
+`id` is `null` for a planned copy; `path` (`REF:PATH` of its spec) and
+`prompts` are set on planned copies only. `created_at` is when the run
+started, not when the copy was created.
+
+## Leftover copies
+
+`untaped awx test prune` deletes copies a killed run left behind: templates
+named like a copy whose description carries the matching marker, created
+more than `--older-than` ago.
+
+- An age below the longest run deletes copies of runs still going, whose
+  next launches then fail. Prune another run's copies only once it has ended;
+  `--run RUN` limits it to one run, as the teardown warning's hint does.
+- It lists the copies and asks once; preview with `--dry-run`.
+- It prints one `awx.prune_outcome` row per leftover copy (`planned` with
+  `--dry-run`, then `deleted` or `failed`).
+
+Both `prune` and the `validate` preview print the fields of a `--format json`
+row (`--columns '?'` lists them under `--dry-run`). A `failed` row's `error`
+carries the attributed failure (`category`, `system`, `retryable`, `message`,
+`hint`).
 
 ## Apply from a git ref
 
@@ -135,7 +133,7 @@ untaped awx apply --source-ref v1.4.0 .untaped/awx/templates .untaped/awx/workfl
 ```
 
 - Paths are relative to the current directory. Local edits and untracked
-  files are never read, and messages name files as `REF:PATH`.
+  files are never read.
 - `HEAD` must be pushed to its upstream (as for `awx test run --scm-branch
   HEAD`); other refs need not be, since apply reads the files locally.
 - A symbolic link at the ref is refused rather than followed. Stdin (`-`)
@@ -150,7 +148,3 @@ a convention, since each document's `kind` decides what it is:
 ├── workflows/release.yml     # kind: WorkflowJobTemplate
 └── tests/deploy-smoke.yml    # kind: AwxTestSuite
 ```
-
-`untaped awx test run --source-ref REF` runs the suites against temporary
-copies of these specs, pinned to REF's commit (see
-[test-suites.md](#temporary-test-sets---source-ref)).

@@ -82,7 +82,7 @@ To check the matches out into a workspace, pipe them to
 ### Gate CI on a banned pattern
 
 Run `sweep --fail-on-match`, adding `--strict` when an unscanned repo
-should also fail the run; both exit 3 (see the exit codes under Safety).
+should also fail the run; both exit 3.
 
 ## Safety
 
@@ -99,10 +99,10 @@ should also fail the run; both exit 3 (see the exit codes under Safety).
 A named repo that is not cached fails with exit 1 before anything is
 deleted. A deleted repo is fetched again by the next sweep that covers it.
 
-- Exit codes: 0 success, 1 failure, 2 usage error, 3 `--fail-on-match`
-  matched or `--strict` left a repo unscanned, 4 fix the environment
-  (settings, token, permission), 5 retry later (search rate limits are
-  strict; exit 5 never means "no results"), 130 interrupted.
+Exit codes: 0 success, 1 failure, 2 usage error, 3 `--fail-on-match`
+matched or `--strict` left a repo unscanned, 4 fix the environment
+(settings, token, permission), 5 retry later (search rate limits are
+strict; exit 5 never means "no results"), 130 interrupted.
 
 ## Pitfalls
 

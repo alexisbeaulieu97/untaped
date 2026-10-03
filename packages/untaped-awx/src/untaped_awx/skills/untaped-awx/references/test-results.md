@@ -11,7 +11,7 @@ or `pipe`): the table leaves out the evidence and the host summaries.
 - [Idempotent cases](#idempotent-cases)
 - [Workflow cases](#workflow-cases)
 - [Comparing with a baseline](#comparing-with-a-baseline)
-- Runs with temporary copies: [source-ref.md](source-ref.md#temporary-copies)
+- Runs with temporary copies: [source-ref.md](source-ref.md#what-a-run-with-copies-reports)
 - [Verdicts](#verdicts)
 - [Useful follow-ups](#useful-follow-ups)
 
