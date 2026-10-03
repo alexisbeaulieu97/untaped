@@ -468,9 +468,10 @@ def test_docs_never_install_a_bare_capability_package(path: Path, *, fenced_only
 
 
 def test_docs_holds_only_the_reader_pages() -> None:
+    """``docs/`` holds the pinned reader pages, plus decision records in ``docs/adr/``."""
     docs = REPO_ROOT / "docs"
     pages = sorted(str(p.relative_to(docs)) for p in docs.rglob("*.md"))
-    assert pages == DOCS_PAGES
+    assert [page for page in pages if not page.startswith("adr/")] == DOCS_PAGES
 
 
 def test_agents_md_is_short_and_points_to_contributing() -> None:
