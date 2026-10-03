@@ -37,6 +37,10 @@
   `requires-python = ">=3.14"` should raise it to `>=3.14.1`: otherwise uv
   can't lock them against 10.1, or keeps 10.0.0 for part of the range.
   `untaped recipe packs init` now writes the installed `untaped`'s floor.
+- awx: `apply` and the other mutations now report
+  `dropped_undeclared_secrets` in each outcome record, so a `$encrypted$`
+  placeholder dropped because the spec doesn't declare it shows up in
+  `--format json`/`yaml`, not only in the warning.
 
 ## 10.0.0
 
