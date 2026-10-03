@@ -75,6 +75,7 @@ def test_exports_are_canonical_objects() -> None:
     import untaped_github.domain.hosts as hosts
     import untaped_github.domain.inventory as domain_inventory
     import untaped_github.domain.models as models
+    import untaped_github.errors as error_classes
     import untaped_github.infrastructure.github_client as client
     import untaped_github.settings as settings
 
@@ -84,8 +85,8 @@ def test_exports_are_canonical_objects() -> None:
     assert RepoInventory is domain_inventory.RepoInventory
     assert TeamScope is scopes.TeamScope
     assert normalize_team_scopes is scopes.normalize_team_scopes
-    assert GithubGraphqlError is errors.GithubGraphqlError
-    assert GithubGraphqlErrorKind is errors.GithubGraphqlErrorKind
+    assert GithubGraphqlError is error_classes.GithubGraphqlError
+    assert GithubGraphqlErrorKind is error_classes.GithubGraphqlErrorKind
     assert is_global_github_failure is errors.is_global_github_failure
     assert github_web_host is hosts.github_web_host
     assert BatchRepoRefsResult is models.BatchRepoRefsResult

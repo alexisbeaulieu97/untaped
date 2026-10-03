@@ -40,7 +40,6 @@ def test_polymorphic_fk_ref() -> None:
         field="parent",
         polymorphic=True,
         kind_in_value="kind",
-        scope_field_in_value="organization",
     )
     assert fk.polymorphic
     assert fk.kind is None  # polymorphic FKs don't fix a single kind

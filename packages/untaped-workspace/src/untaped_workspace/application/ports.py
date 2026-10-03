@@ -29,7 +29,7 @@ class GitWorktrees(Protocol):
         """Add a worktree at ``dest``: on ``branch``, or detached at the base when ``None``."""
         ...
 
-    def status(self, dest: Path, *, branch: str | None, base: str) -> WorktreeStatus | None:
+    def status(self, dest: Path, *, branch: str | None) -> WorktreeStatus | None:
         """Git state of the worktree at ``dest``; ``None`` when it is missing."""
         ...
 

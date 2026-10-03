@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Container
-from dataclasses import dataclass
 from typing import Any
 
 from untaped.config.models import SettingEntry, Source, display_default, display_value
-from untaped.config.ports import SettingsReader, SettingsRepository
+from untaped.config.ports import SettingsReader
 from untaped.config_schema import FieldDescriptor
 from untaped.errors import ConfigError
 from untaped.profile_resolver import DEFAULT_PROFILE
@@ -189,52 +188,3 @@ def _resolve_source(
     if current is None and not (descriptor.has_default and descriptor.default is not None):
         return Source(kind="unset")
     return Source(kind="default")
-
-
-@dataclass(frozen=True)
-class SetSettingResult:
-    """Resolved result of a config write."""
-
-    key: str
-    profile: str
-
-
-class SetSetting:
-    """Validate then persist ``key = value`` in the user's config file.
-
-    ``profile`` selects the target profile (defaults to the active one).
-    Returns the resolved config key and profile so callers can echo where
-    the write landed.
-    """
-
-    def __init__(self, repo: SettingsRepository) -> None:
-        self._repo = repo
-
-    def __call__(self, key: str, raw_value: str, *, profile: str | None = None) -> SetSettingResult:
-        resolved_profile = self._repo.set_value(key, raw_value, profile=profile)
-        return SetSettingResult(key=key, profile=resolved_profile)
-
-
-@dataclass(frozen=True)
-class UnsetSettingResult:
-    """Resolved result of a config removal."""
-
-    key: str
-    removed: bool
-    profile: str
-
-
-class UnsetSetting:
-    """Remove ``key`` from the named profile (default = active).
-
-    Returns the resolved key, whether anything was removed, and the resolved
-    profile name. An explicit ``profile`` the layout cannot satisfy
-    raises ``ConfigError`` — same contract as ``set``.
-    """
-
-    def __init__(self, repo: SettingsRepository) -> None:
-        self._repo = repo
-
-    def __call__(self, key: str, *, profile: str | None = None) -> UnsetSettingResult:
-        removed, resolved_profile = self._repo.unset_value(key, profile=profile)
-        return UnsetSettingResult(key=key, removed=removed, profile=resolved_profile)

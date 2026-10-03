@@ -44,7 +44,7 @@ def resolve_target_lines(lines: list[tuple[int, str]]) -> list[Target]:
             continue
         targets.append(
             Target(
-                path=_target_from_record(kind, env.record, lineno),
+                path=_target_from_record(env.record, lineno),
                 record=dict(env.record),
             )
         )
@@ -69,12 +69,10 @@ def dedupe_targets(targets: list[Target]) -> list[Target]:
     return unique
 
 
-def _target_from_record(kind: str | None, record: dict[str, object], lineno: int) -> Path:
+def _target_from_record(record: dict[str, object], lineno: int) -> Path:
     target_path = _target_path(record, lineno)
     if target_path is not None:
         return target_path
-    if kind == "workspace.repo":
-        raise ValueError(f"line {lineno}: workspace.repo pipe record requires target_path")
     path_value = _string_field(record, "path")
     if path_value is None:
         raise ValueError(f"line {lineno}: record path is missing or blank")
