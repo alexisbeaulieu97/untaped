@@ -73,7 +73,7 @@ Use the agent profile when one exists (`--profile agent`).
    `failure.system` says who must act; fix, push, rerun. Exit 4 or 5: the
    environment, not the change.
 
-## Destructive operations
+## Safety
 
 Every write (`patch`, `edit`, `apply`, `delete`, `copy`, `rename`,
 membership `add`/`remove`, `jobs cancel`, `jobs relaunch`, `test prune`)
@@ -88,8 +88,6 @@ previews once and asks once, No by default.
   new).
 - **Confirm**: pass `--yes` only after the user approves that preview.
   Without a terminal, a write needs `--yes` or `--dry-run` (else exit 2).
-- **Read the exit**: 1 is a decline (`cancelled; no changes made`) or a
-  failed row (read its `error`); 2 means nothing ran.
 - **Recover**: there is no rollback, and a failed batch keeps what it wrote.
   Reapply a prior export; a deleted resource returns with a new id and
   without its secrets, access or history (a recreated template needs a new
@@ -97,6 +95,10 @@ previews once and asks once, No by default.
   [references/specs.md#export](references/specs.md#export)).
 - A single named `launch` or `sync` submits at once; several targets or a
   query selection are listed and confirmed once.
+- Exit codes: 0 success, 1 a decline (`cancelled; no changes made`) or a
+  failed row (read its `error`), 2 usage error (nothing ran),
+  3 `apply --check` drift, 4 fix the environment (settings, token,
+  permission), 5 retry later, 130 interrupted.
 
 ## Pitfalls
 
@@ -113,19 +115,15 @@ previews once and asks once, No by default.
 
 ## References
 
-Read, when you are:
-
-- selecting, patching, editing, copying, renaming or piping resources:
-  [references/resources.md](references/resources.md);
-- writing or applying export documents or workflow node graphs:
-  [references/specs.md](references/specs.md);
-- launching, syncing, waiting on, cancelling or inspecting jobs:
-  [references/jobs.md](references/jobs.md);
-- writing a suite or testing with `--source-ref`:
-  [references/test-suites.md](references/test-suites.md);
-- reading a test run that exited non-zero, or a baseline comparison:
-  [references/test-results.md](references/test-results.md);
-- setting up the AWX user and profile an agent runs as:
-  [references/agent-profile.md](references/agent-profile.md);
-- starting a suite: [examples/](examples/) (smoke, variants, negative,
-  idempotent, workflow).
+| File | Read it when |
+|---|---|
+| [references/resources.md](references/resources.md) | selecting, patching, editing, copying, renaming or piping resources |
+| [references/specs.md](references/specs.md) | writing or applying export documents or workflow node graphs |
+| [references/jobs.md](references/jobs.md) | launching, syncing, waiting on, cancelling or inspecting jobs |
+| [references/test-suites.md](references/test-suites.md) | writing or validating a suite, or a workflow suite |
+| [references/test-cases.md](references/test-cases.md) | writing a case: its launch payload, `!ref`, expectations and timeouts |
+| [references/test-results.md](references/test-results.md) | reading a test run that exited non-zero, or a baseline comparison |
+| [references/test-result-fields.md](references/test-result-fields.md) | a result row's `failure`, `evidence`, `hosts`, `nodes` or `expectations` field |
+| [references/source-ref.md](references/source-ref.md) | testing or applying specs at a git ref (`--source-ref`), or cleaning up temporary copies |
+| [references/agent-profile.md](references/agent-profile.md) | setting up the AWX user and profile an agent runs as |
+| [examples/](examples/) | starting a suite (smoke, variants, negative, idempotent, workflow) |

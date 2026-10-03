@@ -8,7 +8,7 @@ between controllers and profiles, and keep it in a repository.
 - [Export](#export)
 - [Apply](#apply)
 - [Workflow templates and their nodes](#workflow-templates-and-their-nodes)
-- [Apply from a git ref](#apply-from-a-git-ref)
+- Applying from a git ref: [source-ref.md](source-ref.md#apply-from-a-git-ref)
 - [Copy a template's configuration](#copy-a-templates-configuration)
 
 ## The document
@@ -260,37 +260,6 @@ A node write that fails after the workflow itself was written leaves a
 Re-running the same apply picks up from what AWX then holds and finishes the
 graph. A graph that does not read back as declared fails with `workflow
 nodes did not converge: nodes[deploy].prompts.limit`.
-
-## Apply from a git ref
-
-`--source-ref REF` reads the given files and directories as they are at `REF`
-(a branch, tag or commit of the repository containing the current directory),
-never from the working tree, then applies them as usual:
-
-```bash
-untaped awx apply --source-ref v1.4.0 .untaped/awx/templates .untaped/awx/workflows --dry-run
-```
-
-- Paths are relative to the current directory. Local edits and untracked
-  files are never read, and messages name files as `REF:PATH`.
-- `HEAD` must be pushed to its upstream (as for `awx test run --scm-branch
-  HEAD`); other refs need not be, since apply reads the files locally.
-- A symbolic link at the ref is refused rather than followed. Stdin (`-`)
-  cannot be combined with `--source-ref`.
-
-A playbook repository keeps its specs beside its suites. Folder names are only
-a convention, since each document's `kind` decides what it is:
-
-```text
-.untaped/awx/
-├── templates/deploy.yml      # kind: JobTemplate
-├── workflows/release.yml     # kind: WorkflowJobTemplate
-└── tests/deploy-smoke.yml    # kind: AwxTestSuite
-```
-
-`untaped awx test run --source-ref REF` runs the suites against temporary
-copies of these specs, pinned to REF's commit (see
-[test-suites.md](test-suites.md#temporary-test-sets---source-ref)).
 
 ## Copy a template's configuration
 

@@ -5,7 +5,8 @@ A capability provider is a Python package that adds one capability to
 section, and optionally state, doctor checks and packaged skills. The root
 discovers providers through the `untaped.capabilities` entry-point group and
 owns everything else: there is no second console script, config command or
-profile command.
+profile command. The docs say *capability* for what users run and
+*provider* for the package; *plugin* is the informal word for either.
 
 Provider code imports from `untaped.sdk` and nothing else in `untaped`; see
 [SDK stability](./reference/conventions.md#sdk-stability). First-party
@@ -158,7 +159,7 @@ SPEC = CapabilitySpec(
 
 
 def provider() -> CapabilitySpec:
-    """Entry-point provider discovered by the unified shell."""
+    """Entry-point provider discovered by the root."""
     return SPEC
 ```
 
@@ -233,10 +234,8 @@ description: Operates SYSTEM through the `untaped CAPABILITY` command (TASKS IN 
 
 # untaped CAPABILITY
 
-## When to use
-
-One or two sentences: the job this capability does, and when another
-capability or tool fits better.
+One or two sentences: the job this capability does, the judgement it needs,
+and when another capability or tool fits better.
 
 ## Setup
 
@@ -256,12 +255,14 @@ Settings live under `profiles.<name>.CAPABILITY`. Set the token with
 
 1. STEP, ending on something the agent can check.
 2. Preview the change with `--dry-run` and show the user what it will touch.
-3. After the user approves, rerun with `--yes`. Exit 1 with
-   `cancelled; no changes made` means declined; other codes mean it failed.
+3. After the user approves, rerun with `--yes`.
 
-Read `--format json` rather than table output. Exit codes: 0 success, 1
-failure or declined, 2 usage (including a write without a terminal and
-without `--yes`), 3 predicate hit, 4 fix the environment, 5 retry later.
+## Safety
+
+- WHICH COMMANDS WRITE, which ask first, and how to preview each.
+- Exit codes: 0 success, 1 failure or declined (`cancelled; no changes
+  made`), 2 usage (including a write without a terminal and without
+  `--yes`), 3 predicate hit, 4 fix the environment, 5 retry later.
 
 ## Pitfalls
 
@@ -269,12 +270,16 @@ without `--yes`), 3 predicate hit, 4 fix the environment, 5 retry later.
 
 ## References
 
-- Read `references/TOPIC.md` when SITUATION.
+| File | Read it when |
+|---|---|
+| [references/TOPIC.md](references/TOPIC.md) | SITUATION |
 ```
 
 Composition requires only a non-empty skill name and description; the rest
 of this section is guidance, and no test checks the description's length or
-voice. The content rule: a skill documents behaviour and judgement, not what
+voice. The first-party skills are also held to the template's section order
+and to a size budget: `SKILL.md` at most 500 lines, each reference at most
+300 (split an over-budget file by task). The content rule: a skill documents behaviour and judgement, not what
 the CLI prints. Say only what the agent cannot learn from the installed CLI,
 and make the risky paths hard to get wrong.
 `--help` and `--columns '?'` answer flags and fields; the skill says which
