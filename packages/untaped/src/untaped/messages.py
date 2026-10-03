@@ -65,18 +65,18 @@ def command_line(command: str) -> str:
     return text
 
 
-def command_argv(command: str | Sequence[str], *, profile: str | None = None) -> list[str]:
+def command_argv(command: str | Sequence[str], *, profile: str) -> list[str]:
     """``command`` as the argv an agent runs after ``untaped``.
 
     A string is split like a shell would; a leading ``untaped`` is dropped.
-    With ``profile``, ``--profile <profile>`` leads the argv unless the
-    command already names one, so it acts on the profile it was made for.
+    ``--profile <profile>`` leads the argv unless the command already names
+    one, so it acts on the profile it was made for.
     """
     argv = shlex.split(command) if isinstance(command, str) else list(command)
     if argv[:1] == [_ROOT_COMMAND]:
         argv = argv[1:]
     named = any(arg == "--profile" or arg.startswith("--profile=") for arg in argv)
-    if profile is not None and not named:
+    if not named:
         argv = ["--profile", profile, *argv]
     return argv
 

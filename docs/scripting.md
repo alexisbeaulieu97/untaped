@@ -76,7 +76,7 @@ have no `error` key.
 | `system` | Who is responsible; see [categories](./reference/exit-codes.md#categories). |
 | `retryable` | `true` only for `unavailable` failures. |
 | `message` | The failure, as `detail` shows it. |
-| `hint` | A follow-up such as ``run `untaped config set awx.token --prompt` ``, or `null`. |
+| `hint` | A follow-up such as ``run `untaped auth set awx` ``, or `null`. |
 
 Tables leave `error` out (the `detail` column says the same); ask for it with
 `--columns error` or use `json`, `yaml` or `pipe`.
@@ -99,7 +99,7 @@ info message. Progress spinners are silent in this mode.
   on the command line or in `UNTAPED_FORMAT` switches them.
 
 ```json
-{"level": "error", "message": "AWX rejected the token (HTTP 401)", "category": "auth", "system": "awx", "retryable": false, "hint": "run `untaped config set awx.token --prompt`", "exit_code": 4, "details": {"status": 401, "url": "https://aap/api/v2/me/", "attempts": 1}}
+{"level": "error", "message": "AWX rejected the token (HTTP 401)", "category": "auth", "system": "awx", "retryable": false, "hint": "run `untaped auth set awx`", "exit_code": 4, "details": {"status": 401, "url": "https://aap/api/v2/me/", "attempts": 1}}
 {"level": "error", "item": "Deploy", "message": "HTTP 503 for https://aap/api/v2/job_templates/7/", "category": "unavailable", "system": "awx", "retryable": true, "hint": null, "exit_code": 5, "details": {"status": 503, "url": "https://aap/api/v2/job_templates/7/", "attempts": 3}}
 {"level": "warning", "message": "--parallel 64 clamped to 16 (2 * os.cpu_count())"}
 {"level": "hint", "message": "run `untaped skills install`"}

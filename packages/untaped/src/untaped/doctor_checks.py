@@ -15,7 +15,12 @@ from collections.abc import Callable, Iterator
 
 from pydantic import BaseModel
 
-from untaped.auth import describe_token_source, token_alternatives
+from untaped.auth import (
+    describe_token_source,
+    takes_token_command,
+    token_alternatives,
+    token_instead,
+)
 from untaped.capabilities.registry import CapabilityContext, DoctorCheck, DoctorResult
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError, HttpError, HttpTransportError, UntapedError
@@ -77,14 +82,11 @@ def connection_check(check_id: str, *, section: str) -> DoctorCheck:
                 f"{base_url}; {section}.token is stored in plain text in "
                 f"{resolve_config_path().name}"
             )
-            if _takes_command(settings):
+            if takes_token_command(type(settings)):
                 return DoctorResult(
                     id=check_id, ok=True, warn=True, detail=plaintext, fix="auth migrate"
                 )
-            alternatives = (
-                token_alternatives(settings, section=section)
-                or f"$UNTAPED_{section.upper()}__TOKEN"
-            )
+            alternatives = token_instead(settings, section=section)
             return DoctorResult(
                 id=check_id,
                 ok=True,
@@ -186,12 +188,8 @@ def _first_line(exc: BaseException) -> str:
     return text.splitlines()[0] if text else ""
 
 
-def _takes_command(settings: BaseModel) -> bool:
-    return "token_command" in type(settings).model_fields
-
-
 def _token_fix(section: str, settings: BaseModel) -> str:
-    if _takes_command(settings):
+    if takes_token_command(type(settings)):
         return f"auth set {section}"
     return f"config set {section}.token --prompt"
 

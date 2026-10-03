@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -16,29 +17,24 @@ import pytest
 from pydantic import BaseModel, SecretStr
 
 from test_management.stores import install_fake_stores
-from test_management.support import make_spec, write_config
+from test_management.support import (
+    FAIL,
+    PROBES,
+    LegacyProfile,
+    WizProfile,
+    make_spec,
+    wiz_api_check,
+    wiz_probe,
+    write_config,
+)
 from untaped import bootstrap
 from untaped.capabilities.registry import CapabilitySpec
-from untaped.sdk import (
-    HttpStatusError,
-    TokenCommand,
-    TokenSources,
-    connection_check,
-    online_check,
-)
-from untaped.testing import CliResult, invoke_cli, provider_candidate
+from untaped.management import setup_plan
+from untaped.prompts import PromptChoice
+from untaped.sdk import TokenCommand, TokenSources, connection_check, online_check
+from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli, provider_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
-
-
-class WizProfile(BaseModel):
-    """Service double (section ``wiz``)."""
-
-    token_sources: ClassVar[TokenSources] = TokenSources(env=("WIZ_TOKEN",))
-
-    base_url: str | None = None
-    token: SecretStr | None = None
-    token_command: TokenCommand = None
 
 
 class HubProfile(BaseModel):
@@ -51,29 +47,11 @@ class HubProfile(BaseModel):
     token_command: TokenCommand = None
 
 
-class LegacyProfile(BaseModel):
-    """Service double without ``token_command`` (section ``legacy``)."""
-
-    base_url: str | None = None
-    token: SecretStr | None = None
-
-
-_PROBES: list[str] = []
-_FAIL: list[bool] = []
-
-
-def _probe() -> str:
-    _PROBES.append("probed")
-    if _FAIL:
-        raise HttpStatusError("HTTP 401 from https://wiz/me", status_code=401)
-    return "authenticated as alice"
-
-
 @pytest.fixture(autouse=True)
 def _clean(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """No store, no ``gh`` and no ambient token unless a test adds one."""
-    _PROBES.clear()
-    _FAIL.clear()
+    PROBES.clear()
+    FAIL.clear()
     install_fake_stores(tmp_path, monkeypatch)
     for name in ("WIZ_TOKEN", "GH_TOKEN", "UNTAPED_PROFILE"):
         monkeypatch.delenv(name, raising=False)
@@ -85,7 +63,7 @@ def _wiz() -> CapabilitySpec:
         profile_model=WizProfile,
         doctor_checks=(
             connection_check("wiz.connection", section="wiz"),
-            online_check("wiz.api", section="wiz", probe=_probe),
+            wiz_api_check(),
         ),
     )
 
@@ -117,7 +95,12 @@ def _configure(path: Path, wiz: str, profile: str = "default") -> None:
 
 def test_an_empty_config_lists_every_step_with_its_command() -> None:
     rows = _plan()
-    assert [row["step"] for row in rows] == ["profile", "wiz.base_url", "wiz.token", "wiz.online"]
+    assert [row["step"] for row in rows] == [
+        "profile",
+        "wiz.base_url",
+        "wiz.token",
+        "wiz.online.api",
+    ]
     assert rows[0] == {
         "step": "profile",
         "capability": "untaped",
@@ -140,7 +123,7 @@ def test_an_empty_config_lists_every_step_with_its_command() -> None:
         *("--profile", "default", "config", "set"),
         *("wiz.token_command", "<COMMAND>"),
     ]
-    assert _step(rows, "wiz.online")["state"] == "skipped"
+    assert _step(rows, "wiz.online.api")["state"] == "skipped"
 
 
 def test_with_a_password_store_the_token_step_is_auth_set(
@@ -219,7 +202,7 @@ def test_a_missing_profile_is_created_first_and_every_step_targets_it() -> None:
     assert rows[0]["state"] == "todo"
     assert rows[0]["run"] == ["profile", "create", "work"]
     assert _step(rows, "wiz.base_url")["run"][:2] == ["--profile", "work"]
-    assert _step(rows, "wiz.online")["state"] == "skipped"
+    assert _step(rows, "wiz.online.api")["state"] == "skipped"
 
 
 def test_invalid_settings_fail_their_service_only(_isolated_config: Path) -> None:
@@ -251,27 +234,27 @@ def test_an_unknown_only_name_is_a_usage_error() -> None:
 
 def test_online_runs_the_services_own_online_check(_isolated_config: Path) -> None:
     _configure(_isolated_config, "{base_url: https://wiz, token_command: [x]}")
-    online = _step(_plan("--online"), "wiz.online")
+    online = _step(_plan("--online"), "wiz.online.api")
     assert (online["state"], online["detail"], online["run"]) == (
         "done",
         "authenticated as alice",
         [],
     )
-    assert _PROBES == ["probed"]
+    assert PROBES == ["probed"]
 
 
 def test_a_failed_online_check_carries_its_fix(_isolated_config: Path) -> None:
     _configure(_isolated_config, "{base_url: https://wiz, token_command: [x]}")
-    _FAIL.append(True)
-    online = _step(_plan("--online"), "wiz.online")
+    FAIL.append(True)
+    online = _step(_plan("--online"), "wiz.online.api")
     assert (online["state"], online["by"]) == ("failed", "user")
     assert online["run"] == ["--profile", "default", "auth", "set", "wiz"]
 
 
 def test_online_skips_services_that_are_not_ready() -> None:
-    online = _step(_plan("--online"), "wiz.online")
+    online = _step(_plan("--online"), "wiz.online.api")
     assert online["state"] == "skipped"
-    assert _PROBES == []
+    assert PROBES == []
 
 
 def test_check_exits_3_while_a_step_is_pending(_isolated_config: Path) -> None:
@@ -279,7 +262,7 @@ def test_check_exits_3_while_a_step_is_pending(_isolated_config: Path) -> None:
     _configure(_isolated_config, "{base_url: https://wiz, token_command: [x]}")
     assert _cli("setup", "plan", "--check", "--format", "json").exit_code == 0
     assert _cli("setup", "plan", "--check", "--online", "--format", "json").exit_code == 0
-    _FAIL.append(True)
+    FAIL.append(True)
     assert _cli("setup", "plan", "--check", "--online", "--format", "json").exit_code == 3
 
 
@@ -299,25 +282,180 @@ def test_running_the_agent_steps_completes_them(_isolated_config: Path) -> None:
     }
 
 
-def test_plan_wizard_state_and_doctor_agree(_isolated_config: Path) -> None:
-    for wiz, configured in (
-        ("{}", False),
-        ("{base_url: https://wiz}", True),
-        ("{base_url: https://wiz, token_command: [x]}", True),
-    ):
-        _configure(_isolated_config, wiz)
-        token_done = _step(_plan(), "wiz.token")["state"] == "done"
-        doctor = _cli("doctor", "--format", "json")
-        connection = next(
-            row for row in json.loads(doctor.stdout) if row["check"] == "wiz.connection"
+class DefaultsRecorder(ScriptedPromptBackend):
+    """Scripted backend that records the wizard's preselected services."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.defaults: list[Any] = []
+
+    def multiselect(
+        self, message: str, choices: Sequence[PromptChoice[Any]], *, defaults: Sequence[Any]
+    ) -> list[Any]:
+        self.defaults = list(defaults)
+        return super().multiselect(message, choices, defaults=defaults)
+
+
+@pytest.mark.parametrize(
+    ("wiz", "env", "configured", "rejected"),
+    [
+        ("{}", {}, False, False),
+        ("{base_url: https://wiz}", {}, True, False),
+        ("{base_url: https://wiz, token_command: [x]}", {}, True, False),
+        ("{base_url: https://wiz, token_command: [x]}", {}, True, True),
+        (
+            "{}",
+            {"UNTAPED_WIZ__BASE_URL": "https://wiz", "UNTAPED_WIZ__TOKEN_COMMAND": '["x"]'},
+            True,
+            False,
+        ),
+    ],
+)
+def test_plan_wizard_and_doctor_agree(
+    _isolated_config: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    wiz: str,
+    env: dict[str, str],
+    configured: bool,
+    rejected: bool,
+) -> None:
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    if rejected:
+        FAIL.append(True)
+    _configure(_isolated_config, wiz)
+    rows = _plan("--online")
+    doctor = {
+        row["check"]: row
+        for row in json.loads(_cli("doctor", "--online", "--format", "json").stdout)
+    }
+    connection, api = doctor["wiz.connection"], doctor["wiz.api"]
+    assert (connection["detail"] != "not configured") is configured
+    token_done = _step(rows, "wiz.token")["state"] == "done"
+    assert token_done is (connection["status"] == "pass" and configured)
+    online = _step(rows, "wiz.online.api")
+    if token_done:
+        assert (online["state"] == "failed") is (api["status"] == "fail")
+        assert online["run"] == (api["fix"] or [])
+    backend = DefaultsRecorder(texts=["default"], multiselects=[[]])
+    root = bootstrap.build_root_app(candidates=(provider_candidate(_wiz()),))
+    wizard = invoke_cli(root.meta, ["setup"], interactive=True, prompt_backend=backend)
+    assert wizard.exit_code == 0, wizard.output
+    assert backend.defaults == (["wiz"] if configured else [])
+
+
+def test_an_env_configured_service_completes_the_plan(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_WIZ__BASE_URL", "https://wiz")
+    monkeypatch.setenv("UNTAPED_WIZ__TOKEN_COMMAND", '["x"]')
+    rows = _plan()
+    assert _step(rows, "wiz.base_url")["state"] == "done"
+    assert _step(rows, "wiz.token")["state"] == "done"
+    assert _cli("setup", "plan", "--online", "--check", "--format", "json").exit_code == 0
+
+
+def test_a_plaintext_token_in_default_fails_the_profile_that_inherits_it(
+    _isolated_config: Path,
+) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    wiz: {token: s3cret}\n"
+        "  work:\n    wiz: {base_url: https://wiz, token_command: [x]}\n",
+    )
+    token = _step(_plan(profile="work"), "wiz.token")
+    assert (token["state"], token["by"]) == ("failed", "user")
+    assert "in profile default" in token["detail"]
+    assert token["run"] == ["--profile", "default", "setup", "--only", "wiz"]
+
+
+def test_a_plaintext_token_without_token_command_is_exported_instead(
+    _isolated_config: Path,
+) -> None:
+    legacy = make_spec("legacy", profile_model=LegacyProfile)
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    legacy: {base_url: https://l, token: t}\n"
+    )
+    token = _step(_plan(specs=(legacy,)), "legacy.token")
+    assert (token["state"], token["by"]) == ("failed", "user")
+    assert "export $UNTAPED_LEGACY__TOKEN" in token["detail"]
+    assert token["run"] == ["--profile", "default", "config", "unset", "legacy.token"]
+
+
+def test_a_rejected_token_without_token_command_is_never_stored_in_the_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    legacy = make_spec(
+        "legacy",
+        profile_model=LegacyProfile,
+        doctor_checks=(online_check("legacy.api", section="legacy", probe=wiz_probe),),
+    )
+    monkeypatch.setenv("UNTAPED_LEGACY__BASE_URL", "https://l")
+    monkeypatch.setenv("UNTAPED_LEGACY__TOKEN", "t")
+    FAIL.append(True)
+    online = _step(_plan("--online", specs=(legacy,)), "legacy.online.api")
+    assert (online["state"], online["by"], online["run"]) == ("failed", "user", [])
+    assert "export $UNTAPED_LEGACY__TOKEN with a working token" in online["detail"]
+
+
+@pytest.mark.parametrize(
+    ("run", "by"),
+    [
+        (["--profile", "auth", "config", "set", "wiz.base_url", "<URL>"], "agent"),
+        (["--profile", "work", "auth", "set", "wiz"], "user"),
+        (["--profile", "work", "config", "set", "wiz.token_command", "<COMMAND>"], "user"),
+    ],
+)
+def test_who_runs_a_fix_depends_on_its_command(run: list[str], by: str) -> None:
+    assert setup_plan._by(run) == by
+
+
+_VALUES = {"<URL>": "https://wiz.example", "<COMMAND>": '["x"]', "<PATH>": "/ca.pem"}
+
+
+def test_every_run_parses(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    legacy = make_spec("legacy", profile_model=LegacyProfile)
+    specs = (_wiz(), legacy)
+    root = bootstrap.build_root_app(candidates=tuple(provider_candidate(s) for s in specs))
+    runs: list[list[str]] = []
+    for stores in ((), ("pass",)):
+        install_fake_stores(tmp_path, monkeypatch, *stores)
+        for config in (
+            "profiles: {}\n",
+            "profiles:\n  default:\n    wiz: {base_url: https://w, token: t}\n"
+            "    legacy: {base_url: https://l, token: t}\n",
+        ):
+            write_config(_isolated_config, config)
+            runs += [row["run"] for row in _plan(specs=specs) if row["run"]]
+            runs += [row["run"] for row in _plan(profile="work", specs=specs) if row["run"]]
+    FAIL.append(True)
+    write_config(_isolated_config, "profiles:\n  default:\n    wiz: {base_url: https://w}\n")
+    monkeypatch.setenv("WIZ_TOKEN", "t")
+    runs += [row["run"] for row in _plan("--online", specs=specs) if row["run"]]
+    commands = {tuple(run[2:] if run[0] == "--profile" else run) for run in runs}
+    assert {command[0] for command in commands} >= {"auth", "config", "profile", "setup"}
+    for command in commands:
+        root.parse_args(
+            [_VALUES.get(arg, arg) for arg in command],
+            exit_on_error=False,
+            print_error=False,
+            help_on_error=False,
         )
-        assert (connection["detail"] != "not configured") is configured
-        assert token_done is (connection["status"] == "pass" and configured)
 
 
 def test_the_table_shows_each_command_line() -> None:
     result = _cli("setup", "plan", "--format", "table")
-    assert "untaped --profile default config set wiz.base_url '<URL>'" in result.stdout
+    assert result.exit_code == 0, result.output
+    # No `--profile` flag chose the profile, so the line goes without it.
+    assert "untaped config set wiz.base_url '<URL>'" in result.stdout
+    assert "--profile" not in result.stdout
+
+
+def test_the_table_works_before_the_profile_exists() -> None:
+    result = _cli("--profile", "work", "setup", "plan", "--check")
+    assert result.exit_code == 3, result.output
+    assert "untaped profile create work" in result.stdout
+    assert "untaped --profile work config set wiz.base_url '<URL>'" in result.stdout
 
 
 def test_a_github_style_service_suggests_gh_without_running_it(

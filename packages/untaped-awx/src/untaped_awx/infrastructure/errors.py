@@ -39,7 +39,9 @@ def to_awx_error(err: HttpError) -> UntapedError:
 
     source = attribution(err)
     if status == 401:
-        return rejected_token_error("awx", "AWX rejected the token (HTTP 401)", cause=err)
+        return rejected_token_error(
+            "awx", "AWX rejected the token (HTTP 401)", cause=err, takes_token_command=True
+        )
     if status == 403:
         return PermissionDeniedError(
             f"permission denied: {body_msg}",

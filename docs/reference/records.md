@@ -11,6 +11,8 @@ command runs and needs at least one row, so use it on a read command or add
 |---|---|
 | `config list`, `config get` | `untaped.setting` |
 | `config set`, `config unset` | `untaped.setting_outcome` (never the value) |
+| `auth set`, `auth unset`, `auth migrate` | `untaped.auth_outcome` (never the token) |
+| `auth status` | `untaped.token_source` |
 | `profile list` | `untaped.profile` |
 | `profile create`, `profile delete`, `profile rename` | `untaped.profile_outcome` |
 | `skills list` | `untaped.skill` |
@@ -24,15 +26,17 @@ command runs and needs at least one row, so use it on a read command or add
 
 `--stdin` on `skills install`, `status`, `update` and `remove` reads bare
 skill names, one per line. With `--dry-run`, `config set/unset`,
-`profile create/delete/rename` and `alias set/remove` validate, write nothing
-and print their outcome with `action` `planned`.
+`auth unset/migrate`, `profile create/delete/rename` and `alias set/remove`
+validate, write nothing and print their outcome with `action` `planned`.
 
 A `doctor_check` row's `fix`, and a `setup_step` row's `run`, is the argv to
 run after `untaped`, `--profile NAME` first; a `<NAME>` token is a value to
 supply, and `fix` is null on a passing row. A `setup_step` row also has
 `step` (`profile`, `<service>.base_url`, `<service>.token`,
-`<service>.online`), `state` (`done`, `todo`, `failed`, `skipped`), `detail`
-and `by`: `user` for a step that handles a token, else `agent`.
+`<service>.settings` when the service's settings are invalid, and
+`<service>.online.<check>` for each online check, such as `awx.online.api`),
+`state` (`done`, `todo`, `failed`, `skipped`), `detail` and `by`: `user` for
+a step that handles a token, else `agent`.
 
 ## workspace
 

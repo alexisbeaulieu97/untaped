@@ -35,7 +35,7 @@ every secret in their own terminal, so a token never passes through you.
 | create or switch profiles | `untaped profile create work`, `untaped profile use work`, `untaped profile list` |
 | check health and get each failure's fix | `untaped doctor --format json`, `untaped doctor --online --format json` |
 | see where tokens come from | `untaped auth status` |
-| install skills for an agent | `untaped skills install --all --target codex` |
+| install capability skills for an agent | `untaped skills install awx jira --target codex` |
 | keep installed skills current | `untaped skills status`, `untaped skills update` |
 
 ## Workflows
@@ -49,7 +49,7 @@ every secret in their own terminal, so a token never passes through you.
    `detail`, `run` and `by`.
 3. `run` is the complete argv to pass after `untaped`. A `<NAME>` token in it
    (`<URL>`, `<COMMAND>`) is a value to ask the user for; substitute it and
-   run nothing else. Run the `by: agent` rows that are `todo` or `failed`,
+   run the argv exactly as given. Run the `by: agent` rows that are `todo` or `failed`,
    in order. The `profile` row comes first, since the other rows name the
    profile.
 4. Collect the `by: user` rows. When there are several, ask the user to run
@@ -58,8 +58,9 @@ every secret in their own terminal, so a token never passes through you.
 5. Re-run the plan with `--online`. Repeat until `setup plan --online
    --check` exits 0. A failed online row's `detail` says what the service
    answered and `run` is its fix.
-6. Offer to install the capability skills for the user's agent:
-   `untaped skills install --all --target codex` (or `claude`, or `all`).
+6. Offer to install the skills of the capabilities they use, by name:
+   `untaped skills install awx jira --target codex` (or `claude`, or `all`).
+   This skill is already installed, so `--all` would stop on it.
 
 ### Read a skill without a skills folder
 
@@ -69,8 +70,9 @@ read `SKILL.md` there.
 ### Fix a failing doctor
 
 Run `untaped doctor --format json`. A failed or warned row's `fix` is the
-argv to run after `untaped`, with the same `<NAME>` placeholders. A fix that
-starts with `auth` writes a token: it is the user's to run.
+argv to run after `untaped`, with the same `<NAME>` placeholders. A fix
+whose command (after `--profile NAME`) is `auth …`, or that sets a `.token`
+or `.token_command`, writes a token: it is the user's to run.
 
 ## Safety
 
@@ -85,8 +87,8 @@ starts with `auth` writes a token: it is the user's to run.
 
 ## Pitfalls
 
-- Every `run` starts with `--profile NAME`. Keep it: dropping it acts on
-  the active profile instead.
+- Every `run` but `profile create` starts with `--profile NAME`. Keep it:
+  dropping it acts on the active profile instead.
 - Without a terminal, `untaped setup` exits 2; that is expected. Use
   `setup plan` and hand the wizard to the user.
 - Upstream AWX needs `untaped --profile NAME config set awx.api_prefix
