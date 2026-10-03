@@ -31,9 +31,9 @@ class AwxSettings(BaseModel):
     @field_validator("api_prefix")
     @classmethod
     def _api_prefix_shape(cls, v: str) -> str:
-        if not v.startswith("/") or not v.endswith("/"):
-            raise ValueError(f"api_prefix must start and end with '/' (got {v!r})")
-        return v
+        if not v.startswith("/"):
+            raise ValueError(f"api_prefix must start with '/' (got {v!r})")
+        return v.rstrip("/") + "/"
 
 
 __all__ = ["AwxSettings"]

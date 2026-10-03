@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from untaped_github.api import normalize_team_scopes
 
@@ -25,6 +25,8 @@ ALLOWED_REF_KINDS = ("heads", "tags")
 class SourceDefinition(BaseModel):
     """Named GitHub search boundary for index refresh and impact queries."""
 
+    model_config = ConfigDict(frozen=True)
+
     name: str
     orgs: list[str] = Field(default_factory=list)
     teams: list[str] = Field(default_factory=list)
@@ -34,14 +36,18 @@ class SourceDefinition(BaseModel):
     ref_patterns: list[str] = Field(default_factory=list)
     ref_scan_default: Literal["all", "default_branch"] | None = None
 
+    @field_validator("orgs", "repos", "dependency_paths", "ref_kinds", "ref_patterns")
+    @classmethod
+    def _dedupe(cls, values: list[str]) -> list[str]:
+        return _dedupe_sorted(values)
+
+    @field_validator("teams")
+    @classmethod
+    def _normalize_teams(cls, teams: list[str], info: ValidationInfo) -> list[str]:
+        return normalize_team_refs(_dedupe_sorted(teams), info.data.get("orgs", []))
+
     @model_validator(mode="after")
     def _validate_source(self) -> Self:
-        self.orgs = _dedupe_sorted(self.orgs)
-        self.teams = normalize_team_refs(_dedupe_sorted(self.teams), self.orgs)
-        self.repos = _dedupe_sorted(self.repos)
-        self.dependency_paths = _dedupe_sorted(self.dependency_paths)
-        self.ref_kinds = _dedupe_sorted(self.ref_kinds)
-        self.ref_patterns = _dedupe_sorted(self.ref_patterns)
         if not any((self.orgs, self.teams, self.repos)):
             raise ValueError("source requires --org, --team, or --repo")
         for repo in self.repos:
@@ -59,7 +65,7 @@ class AnsibleSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     index_path: Path = Path("~/.untaped/ansible-index.sqlite3")
-    stale_after: int = 86_400
+    stale_after: int = Field(default=86_400, ge=0)
     default_source: str | None = None
     ref_scan_default: Literal["all", "default_branch"] = "all"
     source_refresh_backend: Literal["auto", "graphql", "git"] = "auto"
