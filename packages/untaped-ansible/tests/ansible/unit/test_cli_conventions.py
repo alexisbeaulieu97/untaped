@@ -235,6 +235,30 @@ def test_source_patch_flag_problems_are_usage_errors(
     assert message in result.stderr
 
 
+@pytest.mark.parametrize(
+    ("args", "state", "exit_code"),
+    [
+        (["set", "prod", "--repo", "not-a-repo"], None, 2),
+        (["patch", "prod", "--add-repo", "not-a-repo"], _SOURCES, 1),
+    ],
+)
+def test_source_validation_errors_print_one_readable_line(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    args: list[str],
+    state: dict[str, object] | None,
+    exit_code: int,
+) -> None:
+    _config(tmp_path, monkeypatch, state=state)
+
+    result = invoke_cli(app, ["source", *args])
+
+    assert result.exit_code == exit_code
+    assert "repo must be owner/name: 'not-a-repo'" in result.stderr
+    assert "pydantic" not in result.stderr
+    assert "validation error" not in result.stderr
+
+
 # --- parallel / out flags -------------------------------------------------
 
 

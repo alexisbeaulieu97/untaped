@@ -7,6 +7,7 @@ import json
 from typing import Annotated, Literal
 
 from cyclopts import Parameter
+from pydantic import ValidationError
 
 from untaped.sdk import (
     ColumnsOption,
@@ -20,6 +21,7 @@ from untaped.sdk import (
     create_app,
     echo,
     emit,
+    first_validation_error,
     get_config_section,
     most_severe,
     not_found,
@@ -456,8 +458,8 @@ def _source_definition(
             ref_patterns=ref_patterns or [],
             ref_scan_default=ref_scan_default,
         )
-    except ValueError as exc:
-        raise UsageError(str(exc)) from exc
+    except ValidationError as exc:
+        raise UsageError(first_validation_error(exc)) from exc
 
 
 def _edit_source_definition(
@@ -583,8 +585,8 @@ def _edit_source_definition(
             ref_patterns=ref_patterns,
             ref_scan_default=edited_ref_scan_default,
         )
-    except ValueError as exc:
-        raise AnsibleError(str(exc), category="invalid") from exc
+    except ValidationError as exc:
+        raise AnsibleError(first_validation_error(exc), category="invalid") from exc
     return edited, changes
 
 
