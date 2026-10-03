@@ -20,7 +20,7 @@ changing something it should not.
    (`inventory: !ref …`, `credentials: …`). AWX refuses a prompted resource
    the launching user cannot use.
 4. For `awx test run --source-ref` (temporary copies of the repository's
-   specs, see [source-ref.md](source-ref.md#temporary-test-sets---source-ref)),
+   specs, see [source-ref.md](source-ref.md#test-at-a-ref)),
    the user creates and deletes templates in the organization. Grant:
    - the organization's **Job Template Admin** role and, for workflow
      suites, **Workflow Admin**;

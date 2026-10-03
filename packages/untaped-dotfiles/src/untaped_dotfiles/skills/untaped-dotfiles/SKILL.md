@@ -15,7 +15,7 @@ subscribes to repos, enables items with a policy, and places them with
 - Settings live under `profiles.<name>.dotfiles`: `repos_dir` (clones),
   `kept_dir` (local files set aside) and `state_dir` (`status.json`,
   `attention`). The defaults sit under `~/.untaped/dotfiles`.
-- Subscribing and syncing run `git`, which must be on `PATH`. Git never
+- `subscribe`, `apply` and `sync` run `git`, which must be on `PATH`. Git never
   prompts for credentials, so a private repo needs a credential helper or an
   SSH agent.
 
@@ -51,17 +51,17 @@ subscribes to repos, enables items with a policy, and places them with
 
 - `apply`, `remove` and `unsubscribe` preview and ask first. Run them with
   `--dry-run`, show the user the plan, and pass `--yes` only after approval.
-  `sync` never prompts and never overwrites a local edit.
-- Read `--format json` rather than table output. Exit codes: 0 success, 1
-  failure or declined (a `conflict` row counts), 2 usage (including a write
-  without a terminal and without `--yes`), 3 something needs the user
-  (`status --check`, `sync`), 4 fix the environment, 5 retry later.
-
-## Pitfalls
-
 - `apply` refuses a path edited on this machine (`modified`, `conflict`);
   `--force` replaces it and keeps the local version aside. Never pass
   `--force` without showing the user the `diff` first.
+- Exit codes: 0 success, 1 failure or declined (a `conflict` row counts), 2
+  usage (including a write without a terminal and without `--yes`), 3
+  something needs the user (`status --check`, `sync`), 4 fix the
+  environment, 5 retry later, 130 interrupted.
+
+## Pitfalls
+
+- Read `--format json` rather than table output.
 - `apply NAME` can move other items' link files: the plan lists them as
   `moves with the clone`. `sync` never prompts and never overwrites a
   local edit; it is the command for a timer, not `apply`. When a clone is

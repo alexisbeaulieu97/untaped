@@ -3,8 +3,6 @@
 The fields of an `awx.test_result` row. What a failing run means and what to
 do next is in [test-results.md](test-results.md).
 
-## The record
-
 The keys of a `--format json` row of the run you are already making list the
 fields (`--columns '?'` would run every suite first, and needs a row to
 inspect); the table shows the default ones. What the rest do not say:
@@ -28,20 +26,20 @@ inspect); the table shows the default ones. What the rest do not say:
   `null` for a `new` case.
 - `rerun_job_id` is `null` when no rerun was launched.
 
-### `failure`
+## `failure`
 
 The same shape as the `error` of any failed untaped row, plus `evidence`.
 
 | Field | Meaning |
 |---|---|
-| `system` | Who is responsible (the table above). |
+| `system` | Who is responsible ([the table](test-results.md#which-system-is-responsible-and-what-to-do)). |
 | `category` | What kind of failure: it selects the exit code. |
 | `retryable` | `true` only for `unavailable`: rerunning later may pass. |
 | `message` | One line: the task that failed and why, the update that failed first, or the expectation that did not hold. |
 | `hint` | What to do next, often an `untaped` command. |
 | `evidence` | What shows it (below). |
 
-### `evidence`
+## `evidence`
 
 Filled in `json`, `yaml` and `pipe` output; `--show-logs` also prints the
 failure, failed tasks and log tail to stderr in any format. Each field is
@@ -87,7 +85,7 @@ execution's events:
 | `msg` | The module's message (cut at 1000 characters). |
 | `stderr` | The last 1000 characters of the module's stderr, where command errors usually are. |
 
-### `hosts`
+## `hosts`
 
 One entry per host name, from the job's host summaries:
 
@@ -101,7 +99,7 @@ One entry per host name, from the job's host summaries:
 | `rescued` | Failures a `rescue` block handled. |
 | `ignored` | Failures `ignore_errors` let pass. |
 
-### `nodes`
+## `nodes`
 
 One entry per node of the workflow, in AWX's order:
 
@@ -112,7 +110,7 @@ One entry per node of the workflow, in AWX's order:
 | `job_id` | The job (approval, nested workflow job, update) the node started; `null` when it never ran. |
 | `status` | That job's status, or `never_ran`. |
 
-### `expectations`
+## `expectations`
 
 One entry per check, in this order: `status`, each `log.contains`,
 `log.not_contains` and `log.matches` entry, `changed`, each `hosts` bound,

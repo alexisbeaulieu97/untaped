@@ -1,4 +1,4 @@
-"""The per-run installed-skills check wired into the root shell.
+"""The per-run installed-skills check wired into the root app.
 
 After every root command, installed skills that no longer match this version
 are reported on stderr; ``skills.updates`` switches the check to updating

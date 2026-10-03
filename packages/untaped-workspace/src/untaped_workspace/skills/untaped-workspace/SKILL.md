@@ -69,15 +69,15 @@ on `create`); agents always pass it.
   and get approval before commands that rewrite history or push.
 - Exit codes: 0 success, 1 a `failed` row or a refused archive, 2 usage
   error, 3 `status --check` found a blocker, 4 fix the environment, 5 retry
-  later; details in [references/output.md](references/output.md#exit-codes).
+  later, 130 interrupted; details in
+  [references/output.md](references/output.md#exit-codes).
 
 ## Pitfalls
 
 - `run`: quote the command; `-` reads a script from stdin (heredoc).
   Read-only repos are skipped unless `--include-read-only`.
-- Repos are named `OWNER/NAME`, a unique bare `NAME`, or a full git URL. An
-  unknown name exits 2 and suggests close matches from the inventory; an
-  ambiguous one exits 2 and lists the candidates.
+- An unknown repo name exits 2 and suggests close matches; an ambiguous one
+  exits 2 and lists the candidates.
 - A branch can be checked out in one workspace at a time; a second workspace
   on the same branch gets a `conflict` row.
 - `archive` refuses while any repo has uncommitted changes, stashes made on

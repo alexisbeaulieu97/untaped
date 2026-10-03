@@ -139,7 +139,7 @@ def _check_spec_shape(
 
 @dataclass(frozen=True)
 class ApplicationSpec:
-    """The unified shell application (spec §1)."""
+    """The root application."""
 
     name: str
     app_factory: Callable[[], App]

@@ -90,9 +90,6 @@ result only means "not within N levels".
   `--dry-run`, show the user what goes, then pass `--yes` once approved.
   Without a terminal they need `--yes` or `--dry-run` (exit 2 otherwise);
   declining exits 1 with `cancelled; no changes made`.
-- `source set` replaces a source; use `source patch` to add or remove one
-  org, team or repo.
-- Source aliases apply at refresh: run `source refresh` after changing one.
 - Exit codes: 0 success, 1 failure (including a partial refresh), 2 usage
   error, 4 fix the environment (settings, a rejected token, `git` missing),
   5 retry later (timeout, network, rate limit, paused refresh), 130
@@ -109,6 +106,9 @@ result only means "not within N levels".
   where it left off when rerun.
 - Collections in requirements files are not followed; a warning lists them.
 - Cycles are found only within the depth that was walked.
+- `source set` replaces a source; use `source patch` to add or remove one
+  org, team or repo.
+- Source aliases apply at refresh: run `source refresh` after changing one.
 
 ## References
 

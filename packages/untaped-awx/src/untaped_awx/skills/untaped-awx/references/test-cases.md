@@ -1,14 +1,12 @@
 # Test cases
 
 What one case of a suite holds: its launch payload, resource references,
-expectations and timeouts. The suite around it is in [test-suites.md](test-
-suites.md).
-
-## Case body
+expectations and timeouts. The suite around it is in
+[test-suites.md](test-suites.md).
 
 `untaped awx schema AwxTestSuite` lists a case's fields.
 
-### `launch`: the launch payload
+## `launch`: the launch payload
 
 `launch` holds the fields of AWX's job template launch request:
 
@@ -39,7 +37,7 @@ Merging with `defaults.launch`, key by key:
 - Any other field in the case replaces the default's.
 - `untaped awx test run --scm-branch REF` replaces `scm_branch` in every case.
 
-### `!ref`: a resource by name
+## `!ref`: a resource by name
 
 `!ref {kind: KIND, name: NAME}` is replaced by that resource's id, anywhere in
 the body, including inside `extra_vars`:
@@ -58,7 +56,7 @@ launch:
   organization-scoped kind is looked up as `launch` names are.
 - Plain mappings are never treated as references.
 
-### `expect`: what the job must produce
+## `expect`: what the job must produce
 
 `untaped awx schema AwxTestSuite` lists the checks.
 
@@ -74,7 +72,7 @@ Every check must hold. Against `defaults.expect`:
 task and message that prove why (see `negative.yml`). `validate` warns about
 a `status: failed` case without them.
 
-#### `hosts`
+### `hosts`
 
 A `hosts` entry sets upper bounds on one host's PLAY RECAP counters; a
 counter it leaves out is not checked:
@@ -103,7 +101,7 @@ Log, `changed`, `hosts` and `failed_tasks` checks read what AWX writes from
 the job's events, so they wait until AWX has saved them. A job AWX is still
 saving is an `awx.controller` error (exit 5, retry later), never a pass.
 
-#### `failed_tasks`
+### `failed_tasks`
 
 An entry matches a failed task, as the result's
 `failure.evidence.failed_tasks` lists them, by `task`, `msg` or `matches`:
@@ -117,7 +115,7 @@ An entry matches a failed task, as the result's
   unhandled is not proven: an `awx.expectation` error (exit 1).
 - A job that succeeded has no failed task, so its entries fail.
 
-#### `idempotent`
+### `idempotent`
 
 `idempotent: true` proves a second run changes nothing:
 
@@ -134,7 +132,7 @@ An entry matches a failed task, as the result's
 
 [test-results.md](test-results.md#idempotent-cases) says how a rerun fails.
 
-### Timeouts and parallelism
+## Timeouts and parallelism
 
 - A case waits `--timeout` when given, else its own `timeout`, else
   `defaults.timeout`, else `awx.test_timeout` (1800 seconds).
