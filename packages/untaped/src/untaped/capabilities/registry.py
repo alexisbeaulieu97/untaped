@@ -99,7 +99,7 @@ class DoctorResult:
     ``untaped`` command (without the program name) that repairs a failed or
     warned row, as a string (split like a shell would) or an argv list; a
     value the user supplies is a ``<NAME>`` placeholder. Doctor emits it as
-    the row's ``fix`` argv and appends it to a table row's detail.
+    the row's ``fix`` argv and shows it under the row.
 
     ``automatic=True`` says the fix is safe to run unattended: it needs no
     ``<NAME>`` value, no terminal input and no confirmation, it is a

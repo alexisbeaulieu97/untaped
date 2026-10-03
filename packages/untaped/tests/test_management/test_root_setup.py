@@ -306,7 +306,7 @@ def test_a_failed_check_fails_setup_and_names_the_fix(
     assert result.exit_code == 1
     row = next(row for row in json.loads(result.stdout) if row["check"] == "wiz.api")
     assert row["fix"] == ["--profile", "default", "auth", "set", "wiz"]
-    assert "setup: 1 of" in result.stderr
+    assert "setup:" in result.stderr and "1 fail" in result.stderr
     assert stores.entries() == {"untaped/default/wiz": "bad"}
 
 
