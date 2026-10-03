@@ -153,9 +153,9 @@ answer each item, in order, in the PR template's **Drift review** section
 - **Issues.** `Closes #N` for the issue the PR finishes, and any open issue
   the diff makes stale or already finishes.
 
-Once CI is green, a reviewer other than the PR's author (a person or a fresh
-agent session) reviews it. The PR is ready to merge only after its findings
-are fixed and CI is green again.
+When the PR opens, a reviewer other than its author (a person or a fresh
+agent session) reviews it while CI runs. The PR is ready to merge only once
+its findings are fixed and CI is green on that head.
 
 ### Dead code
 

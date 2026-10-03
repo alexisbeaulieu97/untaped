@@ -11,8 +11,9 @@ Agent-only notes:
 - Tasks, roadmap and priorities live in this repository's GitHub issues. Do
   not keep a second backlog in the repository.
 - A feature starts with a design (problem, approach, rejected alternatives,
-  impact, test plan) that the maintainer approves; a bug starts with a
-  failing test. Put public behavioral changes and their validation in the
+  impact, test plan). An independent reviewer (a fresh session, not the
+  author) reviews it and the author fixes the findings before the maintainer
+  sees it; the maintainer approves it. A bug starts with a failing test. Put public behavioral changes and their validation in the
   implementation PR, and fill in the PR template's drift review.
 - Existing user authorization persists only for its concrete scope. An issue
   alone does not authorize remote publication or unrelated work.
