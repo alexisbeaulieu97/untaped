@@ -32,6 +32,10 @@ from untaped_awx.infrastructure import AwxResourceCatalog
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
+def _ignore(_message: str) -> None:
+    pass
+
+
 class StubFk:
     def __init__(self) -> None:
         self.calls: list[tuple[str, ...]] = []
@@ -220,7 +224,7 @@ def _make_runner(
     hosts: bool = False,
 ) -> RunTestSuite:
     resolver = ResolveCasePayload(
-        fk, catalog=AwxResourceCatalog(), default_organization=default_org
+        fk, catalog=AwxResourceCatalog(), warn=_ignore, default_organization=default_org
     )
     jt_scope = {"organization": default_org} if default_org is not None else None
     log_reader = log_reader or StubLogReader([])
@@ -263,7 +267,7 @@ def test_parallel_interrupt_stops_watchers_and_cancels_queued_cases() -> None:
     fk = StubFk()
     launcher = StubLauncher({"__default__": {"job": _job(id_=7, status="running")}})
     runner = RunTestSuite(
-        resolver=ResolveCasePayload(fk, catalog=AwxResourceCatalog()),
+        resolver=ResolveCasePayload(fk, catalog=AwxResourceCatalog(), warn=_ignore),
         launcher=cast(Launcher, launcher),
         watcher=cast(Watcher, BlockingWatcher()),
         specs=_specs,
@@ -742,7 +746,7 @@ def test_evidence_is_skipped_when_not_wanted_but_the_failure_is_attributed() -> 
     reader = StubLogReader(["boom"])
     events = StubEventReader([_event("runner_on_unreachable", failed=True, host="db1", msg="x")])
     runner = RunTestSuite(
-        resolver=ResolveCasePayload(StubFk(), catalog=AwxResourceCatalog()),
+        resolver=ResolveCasePayload(StubFk(), catalog=AwxResourceCatalog(), warn=_ignore),
         launcher=cast(Launcher, StubLauncher({})),
         watcher=cast(Watcher, StubWatcher(default=_job(status="failed"))),
         specs=_specs,
@@ -1363,7 +1367,7 @@ def _regression_runner(
         for id_, final in finals.items()
     }
     runner = RunTestSuite(
-        resolver=ResolveCasePayload(fk or StubFk(), catalog=AwxResourceCatalog()),
+        resolver=ResolveCasePayload(fk or StubFk(), catalog=AwxResourceCatalog(), warn=_ignore),
         launcher=cast(Launcher, launcher),
         watcher=cast(Watcher, watcher or StubWatcher(by_id=by_id)),
         specs=_specs,

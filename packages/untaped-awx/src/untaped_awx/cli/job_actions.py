@@ -24,6 +24,7 @@ from untaped.sdk import (
     plural,
     q,
     raise_usage,
+    report_error,
     report_errors,
     resolve_each,
     writes,
@@ -200,7 +201,7 @@ def _cancel_one(ctx: AwxContext, row: JobCancelOutcome) -> JobCancelOutcome:
     try:
         ctx.jobs.cancel(kind=row.kind, job_id=row.id)
     except UntapedError as exc:
-        echo(f"failed: {_label(row.kind, row.id, row.name)}: {exc}", err=True)
+        report_error(exc, item=_label(row.kind, row.id, row.name))
         return row.model_copy(update=_failure(exc))
     return row.model_copy(update={"action": "cancel_requested"})
 
@@ -230,7 +231,7 @@ def _relaunch_one(ctx: AwxContext, row: JobRelaunchOutcome) -> JobRelaunchOutcom
             hosts="failed" if row.hosts == "failed" else None,
         )
     except UntapedError as exc:
-        echo(f"failed: {_label(row.kind, row.target_id, row.name)}: {exc}", err=True)
+        report_error(exc, item=_label(row.kind, row.target_id, row.name))
         return row.model_copy(update=_failure(exc))
     new_kind = created.get("type")
     return row.model_copy(
