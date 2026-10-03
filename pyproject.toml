@@ -5,6 +5,7 @@ members = ["packages/*"]
 untaped = { workspace = true }
 untaped-ansible = { workspace = true }
 untaped-awx = { workspace = true }
+untaped-dotfiles = { workspace = true }
 untaped-github = { workspace = true }
 untaped-jira = { workspace = true }
 untaped-recipe = { workspace = true }
@@ -79,6 +80,7 @@ files = [
     "packages/untaped/src",
     "packages/untaped-ansible/src",
     "packages/untaped-awx/src",
+    "packages/untaped-dotfiles/src",
     "packages/untaped-github/src",
     "packages/untaped-jira/src",
     "packages/untaped-recipe/src",
@@ -90,6 +92,7 @@ mypy_path = [
     "packages/untaped/src",
     "packages/untaped-ansible/src",
     "packages/untaped-awx/src",
+    "packages/untaped-dotfiles/src",
     "packages/untaped-github/src",
     "packages/untaped-jira/src",
     "packages/untaped-recipe/src",
@@ -102,6 +105,7 @@ testpaths = [
     "packages/untaped/tests",
     "packages/untaped-ansible/tests",
     "packages/untaped-awx/tests",
+    "packages/untaped-dotfiles/tests",
     "packages/untaped-github/tests",
     "packages/untaped-jira/tests",
     "packages/untaped-recipe/tests",
@@ -113,6 +117,7 @@ pythonpath = [
     "packages/untaped/tests",
     "packages/untaped-ansible/tests",
     "packages/untaped-awx/tests",
+    "packages/untaped-dotfiles/tests",
     "packages/untaped-github/tests",
     "packages/untaped-jira/tests",
     "packages/untaped-recipe/tests",
@@ -135,6 +140,7 @@ paths = [
     "packages/untaped/src",
     "packages/untaped-ansible/src",
     "packages/untaped-awx/src",
+    "packages/untaped-dotfiles/src",
     "packages/untaped-github/src",
     "packages/untaped-jira/src",
     "packages/untaped-recipe/src",
@@ -149,6 +155,7 @@ source = [
     "packages/untaped/src",
     "packages/untaped-ansible/src",
     "packages/untaped-awx/src",
+    "packages/untaped-dotfiles/src",
     "packages/untaped-github/src",
     "packages/untaped-jira/src",
     "packages/untaped-recipe/src",
