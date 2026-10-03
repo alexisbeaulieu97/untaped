@@ -9,59 +9,96 @@ environment variable, or the current source kept. Writes go through the same
 validated settings repository as ``config set``. Finally it runs the
 selected capabilities' doctor checks against that profile, online ones
 included, and exits 1 when any fails. It needs a terminal (exit 2 without
-one).
+one, with a hint at ``setup plan``). ``--only`` preselects the services.
+
+``setup plan`` (:mod:`untaped.management.setup_plan`) is its read-only,
+non-interactive face for agents and scripts; both read service state
+through :mod:`untaped.management.setup_state`.
 """
 
 from __future__ import annotations
 
 import json
 import shlex
-from dataclasses import dataclass
-from typing import Any
+from typing import Annotated
 
-from cyclopts import App
-from pydantic import BaseModel, ValidationError
+from cyclopts import App, Parameter
 
-from untaped.auth import describe_token_source, takes_token_command, token_env_names
+from untaped.auth import takes_token_command, token_env_names
+from untaped.batch import finish
 from untaped.capabilities.registry import ApplicationSpec, CapabilitySpec, CompositionResult
 from untaped.cli import ColumnsOption, FormatOption, create_app, report_errors
 from untaped.config.repository import SettingsFileRepository
 from untaped.config_file import read_config_dict
-from untaped.doctor_checks import service_configured
 from untaped.errors import ConfigError
-from untaped.management.auth import (
-    delete_stored_token,
-    inherited_from_default,
-    plaintext_token,
-    save_token,
+from untaped.management.auth import delete_stored_token, save_token
+from untaped.management.doctor import report_check_rows, selected_check_rows
+from untaped.management.setup_plan import emit_plan, pending, plan_rows
+from untaped.management.setup_state import (
+    ServiceState,
+    profile_view,
+    service_state,
+    setup_services,
 )
-from untaped.management.doctor import collect_doctor_rows, report_check_rows
 from untaped.messages import hint
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile.use_cases import CreateProfile
-from untaped.profile_resolver import (
-    DEFAULT_PROFILE,
-    effective_active_profile_name,
-    profile_scope,
-)
+from untaped.profile_resolver import DEFAULT_PROFILE, selected_profile
 from untaped.prompts import PromptChoice
 from untaped.settings import active_settings_layout
 from untaped.theme import OutputFormat
 from untaped.token_store import TokenStore, entry_name, pick_store, preset_entry
 from untaped.ui import UiContext, ui_context
 
-_SERVICE_FIELDS = frozenset({"base_url", "token"})
+OnlyOption = Annotated[
+    list[str] | None,
+    Parameter(
+        name="--only",
+        negative="",
+        help="Services to set up (repeatable or comma-separated); default: every service.",
+        consume_multiple=False,
+    ),
+]
+OnlineOption = Annotated[
+    bool,
+    Parameter(name="--online", negative="", help="Also run each ready service's online check."),
+]
+CheckOption = Annotated[
+    bool,
+    Parameter(name="--check", negative="", help="Exit 3 when a step is still todo or failed."),
+]
+
+_REFUSAL = f"setup requires an interactive terminal\n{hint('setup plan --format json')}"
 
 
 def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -> App:
-    """Return the root ``setup`` terminal command for one composition."""
+    """Return the root ``setup`` command (the wizard) and its ``plan`` subcommand."""
     app = create_app(name="setup", help="Configure a profile's services interactively.")
 
     @app.default
-    def setup_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
+    def setup_command(
+        *, only: OnlyOption = None, fmt: FormatOption = "table", columns: ColumnsOption = None
+    ) -> None:
         """Pick services, enter their URLs and tokens, then check them online."""
         with report_errors():
-            _run(shell, result, fmt=fmt, columns=columns)
+            _run(shell, result, only=only, fmt=fmt, columns=columns)
+
+    @app.command(name="plan")
+    def plan_command(
+        *,
+        only: OnlyOption = None,
+        online: OnlineOption = False,
+        check: CheckOption = False,
+        fmt: FormatOption = "table",
+        columns: ColumnsOption = None,
+    ) -> None:
+        """List what the profile still needs, with the command for each step (read-only)."""
+        with report_errors():
+            services = setup_services(result, only)
+            profile = selected_profile()
+            rows = plan_rows(shell, result, services, profile, online=online)
+            emit_plan(rows, profile=profile, fmt=fmt, columns=columns)
+        finish(False, predicate_hit=check and pending(rows))
 
     return app
 
@@ -70,32 +107,30 @@ def _run(
     shell: ApplicationSpec,
     result: CompositionResult,
     *,
+    only: list[str] | None,
     fmt: OutputFormat,
     columns: list[str] | None,
 ) -> None:
     ui = ui_context(strict=False)
-    services = {
-        registered.spec.name: registered.spec
-        for registered in result.capabilities
-        if registered.spec.profile_model.model_fields.keys() >= _SERVICE_FIELDS
-    }
-    if not services:
-        raise ConfigError("no composed capability takes a base URL and token to set up")
-    with ui.terminal(refusal="setup requires an interactive terminal"):
+    services = setup_services(result, only)
+    with ui.terminal(refusal=_REFUSAL):
         raw = read_config_dict()
-        active = effective_active_profile_name(raw) or DEFAULT_PROFILE
+        active = selected_profile()
         profile = ui.text("Profile to configure", default=active).strip()
-        values = _profile_view(raw, profile)
+        values = profile_view(raw, profile)
         own = active_settings_layout().profile_data(raw, profile) or {}
         current = {
-            name: _current(spec, values.get(spec.config_section), own, profile, raw)
+            name: service_state(spec, values.get(spec.config_section), own, profile, raw)
             for name, spec in services.items()
         }
-        selected = ui.multiselect(
-            "Capabilities to configure",
-            [PromptChoice(value=name, label=name) for name in services],
-            defaults=[name for name, state in current.items() if state.configured],
-        )
+        if only:
+            selected = list(services)
+        else:
+            selected = ui.multiselect(
+                "Capabilities to configure",
+                [PromptChoice(value=name, label=name) for name in services],
+                defaults=[name for name, state in current.items() if state.configured],
+            )
         if not selected:
             ui.message("info", "no capabilities selected; no changes made")
             return
@@ -109,7 +144,7 @@ def _run(
         store = pick_store() if commands else None
         for name in selected:
             _configure(ui, repo, services[name], profile, current[name], store)
-    rows = _check_rows(shell, result, profile, frozenset(selected))
+    rows = selected_check_rows(shell, result, profile, frozenset(selected))
     report_check_rows(rows, op="setup", fmt=fmt, columns=columns)
     if profile == active:
         ui.success(f"profile {profile} is ready")
@@ -120,75 +155,12 @@ def _run(
         )
 
 
-def _profile_view(raw: dict[str, Any], profile: str) -> dict[str, Any]:
-    """The profile's effective values (a new profile starts from ``default``)."""
-    layout = active_settings_layout()
-    for candidate in (profile, DEFAULT_PROFILE):
-        try:
-            return layout.effective(raw, profile=candidate)
-        except ConfigError:
-            continue
-    return {}
-
-
-@dataclass(frozen=True)
-class _ServiceState:
-    """What a service section currently resolves to in the profile."""
-
-    base_url: str | None
-    """Effective URL (the model default when unset), offered as the prompt default."""
-
-    token_source: str | None
-    """Where the token would come from (``describe_token_source``), if anywhere."""
-
-    configured: bool
-    """Whether the section is set up (:func:`untaped.doctor_checks.service_configured`)."""
-
-    plaintext: str | None = None
-    """The token stored in plain text in the profile's own config, if any."""
-
-    own_command: list[str] | None = None
-    """The profile's own ``token_command``, if any."""
-
-    inherited_token: bool = False
-    """Whether ``default``'s plaintext token wins over anything set in the profile."""
-
-    inherited_command: bool = False
-    """Whether ``default`` has a ``token_command``, which applies once the profile's is gone."""
-
-
-def _current(
-    spec: CapabilitySpec, node: object, own: dict[str, Any], profile: str, raw: dict[str, Any]
-) -> _ServiceState:
-    data = node if isinstance(node, dict) else {}
-    stored = data.get("base_url")
-    configured_url = stored if isinstance(stored, str) and stored.strip() else None
-    try:
-        settings: BaseModel = spec.profile_model.model_validate(data)
-    except ValidationError:
-        return _ServiceState(configured_url, None, configured_url is not None)
-    url = getattr(settings, "base_url", None)
-    section = spec.config_section
-    own_node = own.get(section)
-    command = own_node.get("token_command") if isinstance(own_node, dict) else None
-    own_command = [str(part) for part in command] if isinstance(command, list) else None
-    return _ServiceState(
-        url if isinstance(url, str) and url else configured_url,
-        describe_token_source(settings, section=section),
-        service_configured(settings, section=section),
-        plaintext_token(own, section),
-        own_command or None,
-        inherited_from_default(section, profile, "token", raw),
-        inherited_from_default(section, profile, "token_command", raw),
-    )
-
-
 def _configure(
     ui: UiContext,
     repo: SettingsFileRepository,
     spec: CapabilitySpec,
     profile: str,
-    current: _ServiceState,
+    current: ServiceState,
     store: TokenStore | None,
 ) -> None:
     """Ask for one service's URL and token, validate every answer, then write."""
@@ -257,7 +229,7 @@ def _retire(
 
 def _token_choices(
     spec: CapabilitySpec,
-    current: _ServiceState,
+    current: ServiceState,
     store: TokenStore | None,
     *,
     has_command: bool,
@@ -301,18 +273,6 @@ def _token_command(ui: UiContext, spec: CapabilitySpec) -> list[str]:
     if not argv:
         raise ConfigError(f"{spec.name} token command is empty", category="invalid")
     return argv
-
-
-def _check_rows(
-    shell: ApplicationSpec,
-    result: CompositionResult,
-    profile: str,
-    selected: frozenset[str],
-) -> list[dict[str, object]]:
-    """The selected capabilities' doctor rows, online checks included, for ``profile``."""
-    with profile_scope(profile):
-        rows = collect_doctor_rows(shell, result, online=True, capabilities=selected)
-    return [row for row in rows if row["capability"] in selected]
 
 
 __all__ = ["build_root_setup_app"]

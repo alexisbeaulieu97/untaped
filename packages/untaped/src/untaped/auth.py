@@ -145,6 +145,15 @@ def token_alternatives(settings: BaseModel, *, section: str) -> str:
     return " or ".join(names)
 
 
+def token_instead(settings: BaseModel, *, section: str) -> str:
+    """What to use instead of a plaintext ``<section>.token``.
+
+    :func:`token_alternatives`, or the ``UNTAPED_<SECTION>__TOKEN`` override
+    when the model has neither a command nor a conventional variable.
+    """
+    return token_alternatives(settings, section=section) or f"${token_override_name(section)}"
+
+
 def takes_token_command(model: type[BaseModel]) -> bool:
     """Whether ``model`` has a ``token_command`` field (so ``auth set`` serves it)."""
     return "token_command" in model.model_fields
@@ -273,6 +282,7 @@ __all__ = [
     "takes_token_command",
     "token_alternatives",
     "token_env_names",
+    "token_instead",
     "token_override_env",
     "token_override_name",
 ]

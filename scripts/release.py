@@ -397,7 +397,8 @@ def _duplicates(names: Collection[str]) -> list[str]:
 
 
 def skill_errors(skills_json: str, expected: Collection[str]) -> list[str]:
-    """``untaped-<name>`` listed once for each expected capability; each has a SKILL.md."""
+    """The shell's ``untaped`` and ``untaped-<name>`` for each expected capability,
+    each listed once with a SKILL.md."""
     try:
         rows = json.loads(skills_json)
         names = [row["name"] for row in rows]
@@ -405,11 +406,8 @@ def skill_errors(skills_json: str, expected: Collection[str]) -> list[str]:
     except ValueError, TypeError, KeyError:
         return ["untaped skills list --format json did not print a list of rows"]
     errors = [f"skill {name} is listed twice" for name in _duplicates(names)]
-    errors += [
-        f"skill untaped-{name} is missing"
-        for name in sorted(expected)
-        if f"untaped-{name}" not in sources
-    ]
+    required = ["untaped", *(f"untaped-{name}" for name in sorted(expected))]
+    errors += [f"skill {name} is missing" for name in required if name not in sources]
     errors += [
         f"skill {name} has no SKILL.md in {source}"
         for name, source in sorted(sources.items())

@@ -15,48 +15,32 @@ import pytest
 from pydantic import BaseModel, SecretStr
 
 from test_management.stores import FakeStores, install_fake_stores
-from test_management.support import ExtProfile, make_spec, write_config
+from test_management.support import (
+    FAIL,
+    PROBES,
+    ExtProfile,
+    LegacyProfile,
+    WizProfile,
+    make_spec,
+    wiz_api_check,
+    write_config,
+)
 from untaped import bootstrap
 from untaped.config_file import read_config_dict
 from untaped.sdk import (
-    HttpStatusError,
     TokenCommand,
     TokenSources,
-    online_check,
 )
 from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli, provider_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 
-class WizProfile(BaseModel):
-    """Service profile double (section ``wiz``)."""
-
-    token_sources: ClassVar[TokenSources] = TokenSources()
-
-    base_url: str | None = None
-    token: SecretStr | None = None
-    token_command: TokenCommand = None
-
-
-_PROBES: list[str] = []
-
-
-def _probe() -> str:
-    _PROBES.append("probed")
-    if _FAIL:
-        raise HttpStatusError("HTTP 401 from https://wiz/me", status_code=401)
-    return "authenticated as alice"
-
-
-_FAIL: list[bool] = []
-
-
 def _setup(backend: ScriptedPromptBackend | None, *args: str) -> CliResult:
     wiz = make_spec(
         "wiz",
         profile_model=WizProfile,
-        doctor_checks=(online_check("wiz.api", section="wiz", probe=_probe),),
+        doctor_checks=(wiz_api_check(),),
     )
     plain = make_spec("plain", profile_model=ExtProfile)
     root = bootstrap.build_root_app(candidates=(provider_candidate(wiz), provider_candidate(plain)))
@@ -76,13 +60,6 @@ class EnvProfile(BaseModel):
     base_url: str | None = None
     token: SecretStr | None = None
     token_command: TokenCommand = None
-
-
-class LegacyProfile(BaseModel):
-    """Service double without ``token_command`` (section ``legacy``)."""
-
-    base_url: str | None = None
-    token: SecretStr | None = None
 
 
 class ChoiceRecorder(ScriptedPromptBackend):
@@ -106,8 +83,8 @@ class ChoiceRecorder(ScriptedPromptBackend):
 
 @pytest.fixture(autouse=True)
 def _reset_probes() -> None:
-    _PROBES.clear()
-    _FAIL.clear()
+    PROBES.clear()
+    FAIL.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -126,6 +103,7 @@ def test_setup_without_a_terminal_is_a_usage_error(_isolated_config: Path) -> No
     result = _setup(None)
     assert result.exit_code == 2
     assert "setup requires an interactive terminal" in result.stderr
+    assert "run `untaped setup plan --format json`" in result.stderr
     assert not _isolated_config.exists()
 
 
@@ -160,9 +138,10 @@ def test_setup_configures_the_service_and_checks_it(
         "status": "pass",
         "title": "wiz API reachable",
         "detail": "authenticated as alice",
+        "fix": None,
     }
     assert {row["capability"] for row in rows.values()} == {"wiz"}
-    assert _PROBES == ["probed"]
+    assert PROBES == ["probed"]
 
 
 def test_setup_creates_a_new_profile_with_a_token_command(_isolated_config: Path) -> None:
@@ -315,7 +294,7 @@ def test_a_failed_check_fails_setup_and_names_the_fix(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
-    _FAIL.append(True)
+    FAIL.append(True)
     backend = ScriptedPromptBackend(
         texts=["default", "https://wiz"],
         multiselects=[["wiz"]],
@@ -325,7 +304,7 @@ def test_a_failed_check_fails_setup_and_names_the_fix(
     result = _setup(backend)
     assert result.exit_code == 1
     row = next(row for row in json.loads(result.stdout) if row["check"] == "wiz.api")
-    assert row["detail"].endswith("run `untaped auth set wiz`")
+    assert row["fix"] == ["--profile", "default", "auth", "set", "wiz"]
     assert "setup: 1 of" in result.stderr
     assert stores.entries() == {"untaped/default/wiz": "bad"}
 
@@ -365,7 +344,7 @@ def test_a_plaintext_token_defaults_to_moving_it_to_the_store(
     )
     result = _setup(backend)
     assert result.exit_code == 0, result.output
-    assert backend.offered == [["move", "keep", "store", "command"]]
+    assert backend.offered == [["move", "keep", "store", "command", "env"]]
     assert _wiz(_isolated_config) == {
         "base_url": "https://wiz",
         "token_command": ["pass", "show", "untaped/default/wiz"],
@@ -415,3 +394,22 @@ def test_choices_list_the_store_first_for_a_new_service(
     result = _setup_specs(backend, envy)
     assert result.exit_code == 0, result.output
     assert backend.offered == [["store", "command", "env"]]
+
+
+def test_only_preselects_the_services_and_skips_the_multiselect(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch, "pass")
+    backend = ScriptedPromptBackend(
+        texts=["default", "https://wiz"], selections=["store"], secrets=["tok"]
+    )
+    result = _setup(backend, "--only", "wiz")
+    assert result.exit_code == 0, result.output
+    assert ("multiselect", "Capabilities to configure") not in backend.calls
+    assert _wiz(_isolated_config)["base_url"] == "https://wiz"
+
+
+def test_only_rejects_a_name_that_is_not_a_service(_isolated_config: Path) -> None:
+    result = _setup(ScriptedPromptBackend(), "--only", "plain")
+    assert result.exit_code == 2
+    assert "service not found: 'plain'; known: wiz" in result.stderr

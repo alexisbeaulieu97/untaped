@@ -4,8 +4,9 @@ A terminal command (not a group): it runs the shell plus every composed
 capability's health checks OFFLINE — config-file reads plus in-process model
 validation only, never network I/O. ``--online`` adds the checks
 capabilities contribute with ``DoctorCheck(online=True)``, which contact the
-configured services. A check's ``DoctorResult.fix`` is appended to its row
-detail as the command to run. Each row is isolated: invalid settings
+configured services. A check's ``DoctorResult.fix`` becomes the row's
+``fix``: a complete argv (``--profile`` first) to run after ``untaped``; a
+table appends it to the row's detail instead. Each row is isolated: invalid settings
 for one capability surface as failed rows while every other row still runs.
 Quarantine records render as failed rows (nonzero exit). A config file other
 users can read renders as a ``warn`` row, which does not fail the run; so do
@@ -17,6 +18,7 @@ check that returns ``DoctorResult(..., warn=True)``.
 from __future__ import annotations
 
 import os
+import shlex
 import stat
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -48,8 +50,13 @@ from untaped.errors import ConfigError, ExitCode, first_validation_error
 from untaped.http import resolve_verify
 from untaped.management._render import emit_isolated
 from untaped.management.skills import composed_skills
-from untaped.messages import command_line, plural
-from untaped.profile_resolver import classify_active_profile
+from untaped.messages import command_argv, command_line, plural
+from untaped.profile_resolver import (
+    classify_active_profile,
+    profile_override,
+    profile_scope,
+    selected_profile,
+)
 from untaped.settings import (
     RESERVED_STATE_SECTIONS,
     HttpSettings,
@@ -126,7 +133,11 @@ def report_check_rows(
 
     A table leaves a passing row's detail blank; the record keeps it.
     """
-    shown = [_table_row(row) for row in rows] if fmt == "table" else rows
+    if fmt == "table":
+        profile = selected_profile()
+        shown = [_table_row(row, profile) for row in rows]
+    else:
+        shown = rows
     emit_isolated(
         shown,
         fmt=fmt,
@@ -140,17 +151,41 @@ def report_check_rows(
         raise SystemExit(ExitCode.FAILURE)
 
 
-def _table_row(row: dict[str, object]) -> dict[str, object]:
-    return {**row, "detail": ""} if row["status"] == _PASS else row
+def _table_row(row: dict[str, object], profile: str) -> dict[str, object]:
+    if row["status"] == _PASS:
+        return {**row, "detail": ""}
+    fix = row.get("fix")
+    if not isinstance(fix, list):
+        return row
+    return {**row, "detail": f"{row['detail']}; run `{run_line(fix, profile)}`"}
 
 
-def _row(check: str, capability: str, status: str, title: str, detail: str) -> dict[str, object]:
+def run_line(argv: list[str], profile: str) -> str:
+    """A fix or step argv as the ``untaped …`` line a person types.
+
+    ``--profile <profile>`` goes without saying when no ``--profile`` flag
+    chose it: the same line then acts on that profile anyway.
+    """
+    if argv[:2] == ["--profile", profile] and profile_override() is None:
+        argv = argv[2:]
+    return command_line(shlex.join(argv))
+
+
+def _row(
+    check: str,
+    capability: str,
+    status: str,
+    title: str,
+    detail: str,
+    fix: list[str] | None = None,
+) -> dict[str, object]:
     return {
         "check": check,
         "capability": capability,
         "status": status,
         "title": title,
         "detail": detail,
+        "fix": fix,
     }
 
 
@@ -223,7 +258,8 @@ def collect_doctor_rows(
         contexts.append((scope, settings))
         if scope.state_model is not None:
             rows.append(_state_row(scope, scope.state_model, state))
-    rows.extend(_check_rows(contexts, online=online, capabilities=capabilities))
+    profile = selected_profile(raw or {})
+    rows.extend(_check_rows(contexts, online=online, capabilities=capabilities, profile=profile))
     rows.append(_skills_row(shell, result))
     for record in result.quarantine:
         rows.append(_quarantine_row(record))
@@ -236,15 +272,28 @@ def collect_doctor_rows(
     return rows
 
 
+def selected_check_rows(
+    shell: ApplicationSpec,
+    result: CompositionResult,
+    profile: str,
+    selected: frozenset[str],
+) -> list[dict[str, object]]:
+    """``selected`` capabilities' doctor rows for ``profile``, online checks included."""
+    with profile_scope(profile):
+        rows = collect_doctor_rows(shell, result, online=True, capabilities=selected)
+    return [row for row in rows if row["capability"] in selected]
+
+
 def _check_rows(
     contexts: list[tuple[_SectionScope, BaseModel | None]],
     *,
     online: bool,
     capabilities: frozenset[str] | None,
+    profile: str,
 ) -> list[dict[str, object]]:
     """Run the contributed checks (online ones only when ``online``)."""
     return [
-        _run_check(scope, check_item, settings)
+        _run_check(scope, check_item, settings, profile=profile)
         for scope, settings in contexts
         if capabilities is None or scope.capability in capabilities
         for check_item in scope.checks
@@ -312,12 +361,13 @@ def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
     if not stale:
         return _row("skills", shell.name, _PASS, title, "no outdated skills")
     parts = [f"{item.state.value}: {item.path}" for item in stale]
+    fix = None
     if any(item.state is SkillState.outdated for item in stale):
-        parts.append("update with `untaped skills update`")
+        fix = command_argv("skills update", profile=selected_profile())
     if any(item.state is SkillState.orphaned for item in stale):
         parts.append("remove unshipped skills with `untaped skills remove NAME`")
     detail = "; ".join(parts)
-    return _row("skills", shell.name, _WARN, title, detail)
+    return _row("skills", shell.name, _WARN, title, detail, fix)
 
 
 def _config_row(shell: ApplicationSpec) -> tuple[dict[str, Any] | None, dict[str, object]]:
@@ -425,7 +475,7 @@ def _validate_section(
 
 
 def _run_check(
-    scope: _SectionScope, check_item: DoctorCheck, settings: BaseModel | None
+    scope: _SectionScope, check_item: DoctorCheck, settings: BaseModel | None, *, profile: str
 ) -> dict[str, object]:
     ctx = CapabilityContext(
         capability=scope.capability,
@@ -462,13 +512,17 @@ def _run_check(
             check_item.title,
             f"check returned id {outcome.id!r}, expected {check_item.id!r}",
         )
-    detail = outcome.detail
+    fix = None
     if outcome.fix and (not outcome.ok or outcome.warn):
-        detail = f"{detail}; run `{command_line(outcome.fix)}`"
+        try:
+            fix = command_argv(outcome.fix, profile=profile)
+        except ValueError as exc:
+            detail = f"check returned an unparsable fix: {exc}"
+            return _row(check_item.id, scope.capability, _FAIL, check_item.title, detail)
     if not outcome.ok:
-        return _row(check_item.id, scope.capability, _FAIL, check_item.title, detail)
+        return _row(check_item.id, scope.capability, _FAIL, check_item.title, outcome.detail, fix)
     if outcome.warn:
-        return _row(check_item.id, scope.capability, _WARN, check_item.title, detail)
+        return _row(check_item.id, scope.capability, _WARN, check_item.title, outcome.detail, fix)
     return _row(check_item.id, scope.capability, _PASS, check_item.title, outcome.detail or "OK")
 
 
@@ -479,4 +533,9 @@ def _quarantine_row(record: QuarantineRecord) -> dict[str, object]:
     return _row("quarantine", record.name, _FAIL, record.reason, f"{record.detail} [{origin}]")
 
 
-__all__ = ["build_root_doctor_app", "collect_doctor_rows", "report_check_rows"]
+__all__ = [
+    "build_root_doctor_app",
+    "collect_doctor_rows",
+    "report_check_rows",
+    "selected_check_rows",
+]

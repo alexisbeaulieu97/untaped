@@ -97,14 +97,16 @@ class DoctorResult:
     ``warn=True`` is a ``warn`` row: worth attention (a deprecated setting,
     say) but not a failure, so doctor still exits 0. ``fix`` is the
     ``untaped`` command (without the program name) that repairs a failed or
-    warned row; doctor appends it to the row's detail.
+    warned row, as a string (split like a shell would) or an argv list; a
+    value the user supplies is a ``<NAME>`` placeholder. Doctor emits it as
+    the row's ``fix`` argv and appends it to a table row's detail.
     """
 
     id: str
     ok: bool
     detail: str
     warn: bool = False
-    fix: str | None = None
+    fix: str | list[str] | None = None
 
 
 @dataclass(frozen=True)

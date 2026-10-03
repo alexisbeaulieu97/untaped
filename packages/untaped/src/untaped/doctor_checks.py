@@ -19,7 +19,7 @@ from untaped.auth import (
     describe_token_source,
     takes_token_command,
     token_alternatives,
-    token_override_name,
+    token_instead,
 )
 from untaped.capabilities.registry import CapabilityContext, DoctorCheck, DoctorResult
 from untaped.config_file import read_config_dict
@@ -86,9 +86,7 @@ def connection_check(check_id: str, *, section: str) -> DoctorCheck:
                 return DoctorResult(
                     id=check_id, ok=True, warn=True, detail=plaintext, fix="auth migrate"
                 )
-            alternatives = (
-                token_alternatives(settings, section=section) or f"${token_override_name(section)}"
-            )
+            alternatives = token_instead(settings, section=section)
             return DoctorResult(
                 id=check_id,
                 ok=True,
@@ -153,7 +151,7 @@ def online_check(
             return DoctorResult(id=check_id, ok=True, detail="skipped: settings are invalid")
         if not service_configured(settings, section=section):
             return DoctorResult(id=check_id, ok=True, detail="not configured")
-        url_fix = f"config set {section}.base_url URL"
+        url_fix = f"config set {section}.base_url <URL>"
         if not str(getattr(settings, "base_url", None) or "").strip():
             detail = f"{section}.base_url is not set"
             return DoctorResult(id=check_id, ok=False, detail=detail, fix=url_fix)
@@ -208,11 +206,11 @@ def _online_fix(exc: BaseException, *, section: str, has_token: bool, token_fix:
         and getattr(error, "verify_code", None) != _HOSTNAME_MISMATCH
         for error in chain
     ):
-        return "config set http.ca_bundle PATH"
+        return "config set http.ca_bundle <PATH>"
     # An unreachable service is a URL problem even when no token is set yet.
     if not has_token and not any(isinstance(error, HttpTransportError) for error in chain):
         return token_fix
-    return f"config set {section}.base_url URL"
+    return f"config set {section}.base_url <URL>"
 
 
 def _causes(exc: BaseException) -> Iterator[BaseException]:

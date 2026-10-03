@@ -12,7 +12,9 @@ import inspect
 import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from importlib import metadata
+from importlib.resources import files
 from itertools import chain
+from pathlib import Path
 from typing import Annotated, Any
 
 from cyclopts import App, Parameter
@@ -35,6 +37,7 @@ from untaped.capabilities.registry import (
     ProviderCandidate,
     QuarantineRecord,
     RegisteredCapability,
+    SkillAsset,
     compose,
     discover_candidates,
     run_deferred_factory,
@@ -96,6 +99,19 @@ SHELL_SPEC = ApplicationSpec(
     app_factory=_shell_app,
     config_section=SHELL_SECTION,
     profile_model=ShellProfileSettings,
+    skills=(
+        SkillAsset(
+            name=SHELL_NAME,
+            source=Path(str(files("untaped").joinpath("assets", "skills", SHELL_NAME))),
+            description=(
+                "Installs, sets up and diagnoses the `untaped` CLI itself (profiles, service "
+                "URLs and tokens, `setup plan`, `doctor`, output formats and installed agent "
+                "skills). Use when the user asks to install or set up untaped, configure or "
+                "switch a profile, connect AWX/AAP, GitHub or Jira, fix a failing "
+                "`untaped doctor`, or install untaped's skills for an agent."
+            ),
+        ),
+    ),
 )
 
 _COMPOSED_RESULT: CompositionResult | None = None
