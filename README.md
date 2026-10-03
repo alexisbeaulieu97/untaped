@@ -31,8 +31,8 @@ untaped doctor
 ## Quick start
 
 ```bash
-# Store a token without echoing it
-untaped config set github.token --prompt
+# Store a token in your password store, not in config.yml
+untaped auth set github
 untaped github whoami
 
 # List an org's repos and check them out into a task workspace

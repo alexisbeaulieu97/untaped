@@ -218,8 +218,7 @@ def test_a_rejected_token_exits_4_with_the_token_hint(
 
     assert result.exit_code == 4
     assert result.stderr.endswith(
-        "error: AWX rejected the token (HTTP 401)\n"
-        "hint: run `untaped config set awx.token --prompt`\n"
+        "error: AWX rejected the token (HTTP 401)\nhint: run `untaped auth set awx`\n"
     )
 
 
@@ -239,7 +238,7 @@ def test_json_diagnostics_report_the_failure_attribution(
     record = _last_diagnostic(result)
     assert record["message"] == "AWX rejected the token (HTTP 401)"
     assert (record["category"], record["system"]) == ("auth", "awx")
-    assert record["hint"] == "run `untaped config set awx.token --prompt`"
+    assert record["hint"] == "run `untaped auth set awx`"
     assert record["details"]["status"] == 401
 
 

@@ -37,6 +37,7 @@ from untaped.config.prompting import resolve_set_value
 from untaped.config.repository import SettingsFileRepository
 from untaped.config.use_cases import GetSetting, ListAllProfilesSettings, ListSettings
 from untaped.errors import ConfigError
+from untaped.messages import hint
 from untaped.settings import Settings, resolve_config_path
 from untaped.theme import OutputFormat
 from untaped.ui import ui_context
@@ -269,6 +270,7 @@ def _set(
         repo = SettingsFileRepository()
         resolved = ctx.resolve_key(key)
         resolved_value = resolve_set_value(resolved, value, stdin=stdin, prompt=prompt, repo=repo)
+        _warn_plaintext_token(ctx, resolved)
         profile = repo.set_value(resolved, resolved_value, dry_run=dry_run)
         if not dry_run:
             message = f"set {resolved} in profile {profile} (config: {resolve_config_path()})"
@@ -276,6 +278,17 @@ def _set(
         action = "planned" if dry_run else "updated"
         outcome = SettingOutcome(key=resolved, profile=profile, action=action)
         emit(outcome, fmt=fmt, columns=columns, kind=_SETTING_OUTCOME)
+
+
+def _warn_plaintext_token(ctx: RootConfigContext, key: str) -> None:
+    """Deprecate ``config set <section>.token`` where ``auth set`` can store it instead."""
+    section, rest = _split_first(key)
+    scope = ctx.sections.get(section)
+    if rest == "token" and scope is not None and "token_command" in scope.profile_fields:
+        fix = hint(f"auth set {section}")
+        ui_context(strict=False).message(
+            "warning", f"storing {key} in plain text in config.yml is deprecated\n{fix}"
+        )
 
 
 def _unset(

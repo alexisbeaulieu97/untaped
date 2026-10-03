@@ -18,7 +18,7 @@ token first. Then save a source, refresh it once, and make it the default so
 you can leave out `--source`:
 
 ```bash
-untaped config set github.token --prompt
+untaped auth set github
 untaped ansible source set platform --org acme --team acme/platform
 untaped ansible source refresh platform
 untaped config set ansible.default_source platform

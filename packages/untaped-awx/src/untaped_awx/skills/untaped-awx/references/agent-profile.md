@@ -37,7 +37,9 @@ changing something it should not.
 
 ## In untaped
 
-Add a profile for the agent and keep the token out of `config.yml`:
+Add a profile for the agent and keep the token out of `config.yml` (the user
+runs `untaped --profile agent auth set awx` to store one, or names their own
+password manager's command):
 
 ```yaml
 profiles:

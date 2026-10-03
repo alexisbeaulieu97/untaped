@@ -17,10 +17,12 @@ unscanned before reporting "none" or "all".
   searches).
 - `base_url` defaults to `https://api.github.com`; GitHub Enterprise Server
   usually needs `untaped config set github.base_url https://HOST/api/v3`.
-- Set the token with `untaped config set github.token --prompt`, or point
+- The user stores the token by running `untaped auth set github` in their own
+  terminal (it prompts and keeps the token out of `config.yml`), or points
   `github.token_command` at a command that prints it, such as
   `'["gh", "auth", "token"]'`. `GH_TOKEN`/`GITHUB_TOKEN` are the last
-  fallback. Never print a token.
+  fallback. Never ask for or print a token, and never read
+  `~/.untaped/config.yml`.
 - `untaped github whoami` checks the token. A rejected token exits 4.
 - `sweep` and `cache` run `git`, which must be on `PATH`.
 

@@ -16,6 +16,9 @@ Precedence, first match wins:
 Token values never reach logs or error messages: a failing command is
 reported by program name and exit status only, never by its arguments or
 stdout. Its stderr goes straight to the terminal, uncaptured.
+
+A token stored in plain text in the config file is deprecated: using one
+warns once per section per process and points at ``untaped auth migrate``.
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ _LOG = logging.getLogger("untaped.auth")
 _TIMEOUT_SECONDS = 60.0
 _MASK = "**********"
 _cache: dict[tuple[str, ...], str] = {}
+_warned: set[str] = set()
 
 
 def _check_argv(value: list[str] | None) -> list[str] | None:
@@ -88,7 +92,10 @@ def resolve_token[T: BaseModel](settings: T, *, section: str) -> T:
     not run here; it runs when the token is first read.
     """
     sources = getattr(type(settings), "token_sources", None)
-    if not isinstance(sources, TokenSources) or _explicit_token(settings):
+    if not isinstance(sources, TokenSources):
+        return settings
+    if _explicit_token(settings):
+        _warn_plaintext(settings, section=section)
         return settings
     argv = getattr(settings, "token_command", None)
     if argv:
@@ -137,8 +144,33 @@ def token_alternatives(settings: BaseModel, *, section: str) -> str:
 
 
 def clear_token_cache() -> None:
-    """Forget every ``token_command`` result (tests and embedding callers)."""
+    """Forget every ``token_command`` result and plaintext warning (tests, embedding)."""
     _cache.clear()
+    _warned.clear()
+
+
+def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
+    """Warn once that ``<section>.token`` comes from the config file in plain text.
+
+    An ``UNTAPED_<SECTION>__TOKEN`` (or ``UNTAPED_<SECTION>``) override is not
+    a file, so it never warns; nor does a model ``auth set`` cannot serve.
+    """
+    prefix = f"UNTAPED_{section.upper()}"
+    if (
+        section in _warned
+        or "token_command" not in type(settings).model_fields
+        or any(os.environ.get(name) for name in (prefix, f"{prefix}__TOKEN"))
+    ):
+        return
+    _warned.add(section)
+    from untaped.messages import hint  # noqa: PLC0415 - keep auth imports light
+    from untaped.ui import ui_context  # noqa: PLC0415
+
+    ui_context(strict=False).message(
+        "warning",
+        f"{section}.token is stored in plain text in the config file, which is deprecated\n"
+        f"{hint('auth migrate')}",
+    )
 
 
 def _explicit_token(settings: BaseModel) -> bool:

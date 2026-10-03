@@ -21,7 +21,7 @@ set a GitHub token (see
 and the orgs or teams to list:
 
 ```bash
-untaped config set github.token --prompt
+untaped auth set github
 untaped config set github.inventory.orgs '["acme"]'
 ```
 
