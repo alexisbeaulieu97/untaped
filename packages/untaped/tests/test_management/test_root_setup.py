@@ -199,7 +199,7 @@ def test_an_inherited_plaintext_token_only_offers_keeping_it(
     assert result.exit_code == 0, result.output
     # default's token wins over anything prod sets, so nothing else would work.
     assert backend.offered == [["keep"]]
-    assert "wiz.token is set in profile default and wins" in result.stderr
+    assert "would leave it in charge, so only keeping the current token" in result.stderr
     assert "untaped auth migrate" in result.stderr
     assert _wiz(_isolated_config, "prod") == {"base_url": "https://wiz.prod"}
 
@@ -220,16 +220,18 @@ def test_using_the_env_var_drops_the_profiles_stored_token(
         "base_url": "https://envy"
     }
     assert stores.entries() == {}
-    assert "deleted the stored token from pass (untaped/default/envy)" in result.stderr
+    assert "deleted the replaced envy token from pass (untaped/default/envy)" in result.stderr
 
 
+@pytest.mark.parametrize("prod", ["{}", "{envy: {token_command: [pass, show, untaped/prod/envy]}}"])
 def test_an_inherited_token_command_hides_the_env_var(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, prod: str
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    envy:\n      token_command: [op, read, x]\nactive: default\n",
+        "profiles:\n  default:\n    envy:\n      token_command: [op, read, x]\n"
+        f"  prod: {prod}\nactive: default\n",
     )
     envy = make_spec("envy", profile_model=EnvProfile)
     backend = ChoiceRecorder(
@@ -237,7 +239,27 @@ def test_an_inherited_token_command_hides_the_env_var(
     )
     result = _setup_specs(backend, envy)
     assert result.exit_code == 0, result.output
-    assert backend.offered == [["keep", "store", "command"]]
+    # Dropping prod's own command would hand over to default's, not $ENVY_TOKEN.
+    assert "env" not in backend.offered[0]
+
+
+def test_a_new_command_deletes_the_replaced_stored_token(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
+    envy = make_spec("envy", profile_model=EnvProfile)
+    assert _auth_set(envy, "tok").exit_code == 0
+    backend = ChoiceRecorder(
+        texts=["default", "https://envy", "op read y"],
+        multiselects=[["envy"]],
+        selections=["command"],
+    )
+    result = _setup_specs(backend, envy)
+    assert result.exit_code == 0, result.output
+    assert stores.entries() == {}
+    assert "deleted the replaced envy token from pass (untaped/default/envy)" in result.stderr
+    section = read_config_dict(_isolated_config)["profiles"]["default"]["envy"]
+    assert section["token_command"] == ["op", "read", "y"]
 
 
 def test_a_malformed_token_command_writes_nothing(_isolated_config: Path) -> None:

@@ -156,6 +156,11 @@ def register_profile_settings(section: str, model: type[BaseModel]) -> None:
     _CONFIG_REGISTRY.register_profile_settings(section, model)
 
 
+def registered_profile_model(section: str) -> type[BaseModel] | None:
+    """The profile model registered for ``section``, if any."""
+    return _CONFIG_REGISTRY.profile_sections.get(section)
+
+
 def register_state_settings(section: str, model: type[BaseModel]) -> None:
     """Register a tool's top-level state section spliced into the effective config."""
     _CONFIG_REGISTRY.register_state_settings(section, model)
