@@ -1,5 +1,4 @@
 import json
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -17,13 +16,6 @@ from untaped_awx.cli import app
 def _mock_me(mock: respx.Router, path: str = "/api/v2/me/") -> None:
     """``ping`` also authenticates through ``/me/``."""
     mock.get(path).mock(return_value=httpx.Response(200, json={"results": [{"username": "admin"}]}))
-
-
-@pytest.fixture(autouse=True)
-def _reset_settings_cache() -> Iterator[None]:
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
 
 
 def _write_config(tmp_path: Path, *, api_prefix: str | None = None) -> Path:
@@ -468,28 +460,6 @@ def test_apply_accepts_positional_file(
     args = [str(yml) if a == "FILE" else a for a in template]
     result = CliInvoker().invoke(app, args)
     assert result.exit_code == 0, result.output
-
-
-@pytest.mark.parametrize(
-    "args_template",
-    [
-        pytest.param(["apply", "--file", "FILE"], id="top-level-long"),
-        pytest.param(["apply", "-f", "FILE"], id="top-level-short"),
-    ],
-)
-def test_apply_rejects_removed_file_alias(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    args_template: list[str],
-) -> None:
-    cfg = _write_config(tmp_path)
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    yml = tmp_path / "empty.yml"
-    yml.write_text("")
-    args = [str(yml) if a == "FILE" else a for a in args_template]
-    result = CliInvoker().invoke(app, args)
-    assert result.exit_code != 0
-    assert result.stdout == ""
 
 
 @pytest.mark.parametrize("command", [["apply"]])

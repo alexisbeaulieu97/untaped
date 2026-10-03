@@ -1,4 +1,3 @@
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -6,10 +5,8 @@ from pydantic import BaseModel, Field, SecretStr
 
 from untaped.config import ListAllProfilesSettings, ListSettings, SettingsFileRepository, Source
 from untaped.settings import (
-    get_settings,
     register_profile_settings,
     register_state_settings,
-    reset_config_registry_for_tests,
 )
 
 
@@ -27,16 +24,12 @@ class DemoStateSettings(BaseModel):
 
 
 @pytest.fixture(autouse=True)
-def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config.yml"
-    reset_config_registry_for_tests()
     register_profile_settings("demo", DemoProfileSettings)
     register_state_settings("demo", DemoStateSettings)
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    get_settings.cache_clear()
-    yield cfg
-    reset_config_registry_for_tests()
-    get_settings.cache_clear()
+    return cfg
 
 
 @pytest.mark.parametrize(

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -16,15 +15,10 @@ from untaped_ansible import SPEC
 
 
 @pytest.fixture(autouse=True)
-def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fresh_composition: None) -> Path:
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
-    bootstrap._clear_for_tests()
-    get_settings.cache_clear()
-    yield cfg
-    bootstrap._clear_for_tests()
-    get_settings.cache_clear()
+    return cfg
 
 
 _ANSIBLE_PROFILE = "profiles:\n  default:\n    ansible:\n      {}\n"

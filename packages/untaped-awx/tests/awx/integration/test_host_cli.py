@@ -5,12 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from untaped.testing import CliInvoker
 from untaped_awx.cli import app
-
-pytestmark = pytest.mark.integration
 
 
 def _seed_inventory_with_hosts(fake: Any) -> None:

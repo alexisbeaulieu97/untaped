@@ -11,8 +11,6 @@ import pytest
 from untaped.testing import CliInvoker
 from untaped_awx.cli import app
 
-pytestmark = pytest.mark.integration
-
 _TEMPLATE = """\
 kind: JobTemplate
 metadata: {name: Deploy, organization: Default}

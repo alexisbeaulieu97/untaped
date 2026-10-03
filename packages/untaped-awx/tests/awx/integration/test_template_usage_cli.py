@@ -15,8 +15,6 @@ import pytest
 from untaped.testing import CliInvoker
 from untaped_awx.cli import app
 
-pytestmark = pytest.mark.integration
-
 
 def _node(fake: Any, id_: int, *, wf: tuple[int, str], ujt: tuple[int, str], ujt_type: str) -> None:
     fake.seed(

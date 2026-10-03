@@ -15,8 +15,6 @@ import pytest
 from untaped.testing import CliInvoker
 from untaped_awx.cli import app
 
-pytestmark = pytest.mark.integration
-
 _UJT_TYPES = {10: "job", 11: "job", 12: "job", 100: "workflow_job", 200: "workflow_job"}
 _NAMES = {10: "smoke-test", 11: "db-backup", 12: "fs-backup", 100: "alpha", 200: "beta"}
 

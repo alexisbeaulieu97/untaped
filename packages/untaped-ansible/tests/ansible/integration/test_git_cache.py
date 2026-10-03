@@ -18,10 +18,7 @@ from untaped_ansible.infrastructure.git_cache import (
 #: One ``RepoCache`` git call seen by ``spy_run_git``: subcommand, auth header, auth URL.
 type GitCall = tuple[str, str | None, str | None]
 
-pytestmark = [
-    pytest.mark.integration,
-    pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed"),
-]
+pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 _REQS = "roles/requirements.yml"
 

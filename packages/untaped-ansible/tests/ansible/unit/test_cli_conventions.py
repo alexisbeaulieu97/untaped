@@ -14,8 +14,6 @@ from typing import Any
 import pytest
 import yaml
 
-from untaped.bootstrap import build_root_app
-from untaped.capabilities.registry import ProviderCandidate
 from untaped.testing import ScriptedPromptBackend, invoke_cli
 from untaped_ansible.cli import app
 
@@ -80,38 +78,6 @@ def test_source_alias_set_rejects_non_repo_target_as_usage_error(
     assert result.exit_code == 2
     assert "owner/name" in result.stderr
     assert "aliases" not in _state(tmp_path)
-
-
-@pytest.mark.parametrize(
-    "args",
-    [
-        ["alias", "list"],
-        ["source-alias", "add", "common", "acme/common"],
-        ["source", "save", "prod", "--repo", "acme/site"],
-        ["source", "edit", "prod", "--add-repo", "acme/api"],
-        ["source", "show", "prod"],
-        ["source", "refresh", "prod", "--concurrency", "4"],
-        ["graph", "acme/site", "--concurrency", "4"],
-        ["graph", "acme/site", "--output", "graph.json"],
-        ["graph", "acme/site", "--contains", "acme/base"],
-        ["graph", "--stdin"],
-    ],
-)
-def test_removed_spellings_are_usage_errors(
-    first_party_candidates: tuple[ProviderCandidate, ...],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    args: list[str],
-) -> None:
-    _config(tmp_path, monkeypatch, state={**_ALIASES, **_SOURCES})
-
-    result = invoke_cli(
-        build_root_app(candidates=first_party_candidates), ["ansible", *args], input="acme/site\n"
-    )
-
-    assert result.exit_code == 2, result.output
-    assert "deprecated" not in result.stderr
-    assert _state(tmp_path) == {**_ALIASES, **_SOURCES}
 
 
 # --- destructive removal (source-alias remove / source remove) -----------

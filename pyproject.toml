@@ -129,9 +129,6 @@ addopts = [
     "--strict-config",
     "--import-mode=importlib",
 ]
-markers = [
-    "integration: cross-package or external-service tests",
-]
 
 [tool.vulture]
 # Dead-code scan of shipped code (tests are left out: code only tests use is

@@ -1,6 +1,5 @@
 """Tests for the settings schema walker."""
 
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +17,6 @@ from untaped.settings import (
     get_settings_model,
     register_profile_settings,
     register_state_settings,
-    reset_config_registry_for_tests,
 )
 
 
@@ -32,11 +30,8 @@ class DemoStateSettings(BaseModel):
 
 
 @pytest.fixture(autouse=True)
-def _reset_registry() -> Iterator[None]:
-    reset_config_registry_for_tests()
+def _register_demo() -> None:
     register_profile_settings("demo", DemoProfileSettings)
-    yield
-    reset_config_registry_for_tests()
 
 
 def test_walks_nested_models() -> None:

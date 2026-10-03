@@ -37,11 +37,6 @@ def test_env_and_cwd(tmp_path: Path) -> None:
     assert result.stdout.strip() == f"acme/api {tmp_path.name}"
 
 
-def test_timeout(tmp_path: Path) -> None:
-    result = SubprocessRunner().run(["sh", "-c", "sleep 5"], cwd=tmp_path, env={}, timeout=0.2)
-    assert (result.timed_out, result.returncode) == (True, None)
-
-
 def test_undecodable_output_is_replaced(tmp_path: Path) -> None:
     result = SubprocessRunner().run(
         ["sh", "-c", "printf '\\377ok'"], cwd=tmp_path, env={}, timeout=10
@@ -58,19 +53,41 @@ def test_unrunnable_file_is_127(tmp_path: Path) -> None:
     assert result.returncode == 127
 
 
+def _is_dead(pid: int) -> bool:
+    """Gone, or a zombie waiting for a reaper (it no longer runs)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    stat = Path(f"/proc/{pid}/stat")
+    try:
+        return stat.read_text().rsplit(")", 1)[1].split()[0] == "Z"
+    except OSError, IndexError:
+        return not stat.parent.exists() and Path("/proc/self").exists()
+
+
+def _assert_stops(pid: int, limit: float = 10.0) -> None:
+    deadline = time.monotonic() + limit
+    while not _is_dead(pid):
+        if time.monotonic() > deadline:
+            os.kill(pid, 9)  # do not leak the sleeper past the test
+            pytest.fail(f"background process {pid} survived the run")
+        time.sleep(0.05)
+
+
 def test_timeout_kills_the_process_tree_and_keeps_partial_output(tmp_path: Path) -> None:
     result = SubprocessRunner().run(
-        ["sh", "-c", "(touch STARTED; sleep 3; touch MARKER) & echo partial; wait"],
+        # PID is staged then renamed, so the timeout never leaves it half-written.
+        ["sh", "-c", "sleep 60 & echo partial; echo $! > PID.tmp && mv PID.tmp PID; wait"],
         cwd=tmp_path,
         env={},
         timeout=0.5,
     )
     assert (result.timed_out, result.returncode) == (True, None)
-    # On a very slow host the shell may be killed before it gets to echo.
-    if (tmp_path / "STARTED").exists():
+    # On a very slow host the shell may be killed before it gets that far.
+    if (tmp_path / "PID").exists():
         assert "partial" in result.stdout
-    time.sleep(4)  # past the grandchild's sleep 3: it would have written MARKER by now
-    assert not (tmp_path / "MARKER").exists()
+        _assert_stops(int((tmp_path / "PID").read_text()))
 
 
 def test_bad_input_is_127_not_an_exception(tmp_path: Path) -> None:
@@ -172,31 +189,11 @@ def test_second_interrupt_during_cancel_still_kills(
 
 
 def test_background_child_is_stopped_after_the_leader_exits(tmp_path: Path) -> None:
-    started = time.monotonic()
     result = SubprocessRunner().run(
-        ["sh", "-c", "(sleep 6; touch MARKER) & echo started; exit 3"],
-        cwd=tmp_path,
-        env={},
-        timeout=60,
+        ["sh", "-c", "sleep 60 & echo $!; exit 3"], cwd=tmp_path, env={}, timeout=60
     )
     assert (result.returncode, result.timed_out) == (3, False)
-    assert "started" in result.stdout
-    # Past the background sleep: it would have written MARKER by now.
-    time.sleep(max(0.0, started + 7 - time.monotonic()))
-    assert not (tmp_path / "MARKER").exists()
-
-
-def _is_dead(pid: int) -> bool:
-    """Gone, or a zombie waiting for a reaper (it no longer runs)."""
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return True
-    stat = Path(f"/proc/{pid}/stat")
-    try:
-        return stat.read_text().rsplit(")", 1)[1].split()[0] == "Z"
-    except OSError, IndexError:
-        return not stat.parent.exists() and Path("/proc/self").exists()
+    _assert_stops(int(result.stdout.strip()))
 
 
 def test_background_process_that_closed_the_pipes_is_stopped(tmp_path: Path) -> None:
@@ -204,10 +201,4 @@ def test_background_process_that_closed_the_pipes_is_stopped(tmp_path: Path) -> 
         ["sh", "-c", "sleep 60 >/dev/null 2>&1 & echo $!"], cwd=tmp_path, env={}, timeout=30
     )
     assert (result.returncode, result.timed_out) == (0, False)
-    pid = int(result.stdout.strip())
-    deadline = time.monotonic() + 10
-    while not _is_dead(pid):
-        if time.monotonic() > deadline:
-            os.kill(pid, 9)  # do not leak the sleeper past the test
-            pytest.fail(f"background process {pid} survived the run")
-        time.sleep(0.05)
+    _assert_stops(int(result.stdout.strip()))

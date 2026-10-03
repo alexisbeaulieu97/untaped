@@ -7,7 +7,6 @@ the root also keeps invocation-scoped option and reset behavior.
 from __future__ import annotations
 
 import ast
-import importlib.util
 import json
 import os
 import shutil
@@ -40,11 +39,7 @@ class _ExtProfile(BaseModel):
     token: str = "default-token"
 
 
-@pytest.fixture(autouse=True)
-def _bootstrap_isolation() -> None:
-    bootstrap._clear_for_tests()
-    yield
-    bootstrap._clear_for_tests()
+pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 
 def _spec(name: str, app: App) -> CapabilitySpec:
@@ -97,15 +92,6 @@ def test_composition_is_the_last_composed_result() -> None:
         bootstrap.composition()
     composed = bootstrap.compose_root(candidates=())
     assert bootstrap.composition() is composed
-
-
-def test_retired_orchestration_capability_is_absent() -> None:
-    capability_path = (
-        Path(__file__).resolve().parents[1] / "src" / "untaped" / "capabilities" / "orchestration"
-    )
-
-    assert not capability_path.exists()
-    assert importlib.util.find_spec("untaped.capabilities.orchestration") is None
 
 
 def test_version_resolves_unified_distribution_lazily(

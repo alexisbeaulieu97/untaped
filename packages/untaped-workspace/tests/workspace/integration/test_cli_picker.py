@@ -17,7 +17,7 @@ from untaped_workspace.domain import RepoSpec, WorkspaceRecord
 from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
 from workspace.conftest import git
 
-pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("workspace_env")]
+pytestmark = pytest.mark.usefixtures("workspace_env")
 run = CliInvoker().invoke
 
 

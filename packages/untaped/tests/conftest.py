@@ -2,23 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-
-from untaped.settings import get_settings
-
-
-@pytest.fixture(autouse=True)
-def _isolated_install_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep tests blind to the developer machine's shared data dir.
-
-    Without this, anything touching the data dir reads the real
-    ``~/.local/share/untaped``. The config file is isolated by the hermetic
-    plugin.
-    """
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg-data"))
-    get_settings.cache_clear()
 
 
 @pytest.fixture(autouse=True)

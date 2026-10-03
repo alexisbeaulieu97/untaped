@@ -18,8 +18,6 @@ import pytest
 from untaped.testing import CliInvoker
 from untaped_awx.cli import app
 
-pytestmark = pytest.mark.integration
-
 
 def _seed_jt(fake: Any, *, id_: int = 30, name: str = "deploy", **extra: Any) -> None:
     fake.seed(

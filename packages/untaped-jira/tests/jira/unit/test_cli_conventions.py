@@ -14,7 +14,12 @@ import httpx
 import pytest
 import respx
 
-from untaped.testing import CliInvoker, ScriptedPromptBackend, invoke_cli
+from untaped.testing import (
+    CliInvoker,
+    ScriptedPromptBackend,
+    assert_destructive_contract,
+    invoke_cli,
+)
 from untaped_jira.cli import app
 
 BASE = "https://jira.example.com"
@@ -152,31 +157,15 @@ def confirm_always(jira_config: Path) -> None:
 
 @pytest.mark.usefixtures("confirm_always")
 @pytest.mark.parametrize("verb", sorted(WRITES))
-def test_writes_require_yes_when_not_interactive(verb: str) -> None:
+def test_writes_honour_the_destructive_contract(verb: str) -> None:
     args, _, _ = WRITES[verb]
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         route = _mock_writes(mock)
-        result = invoke_cli(app, args)
 
-    assert result.exit_code == 2, result.output
-    assert f"error: {verb} requires --yes when not interactive" in result.stderr
-    assert len(route.calls) == 0
+        def unchanged() -> None:
+            assert len(route.calls) == 0
 
-
-@pytest.mark.usefixtures("confirm_always")
-@pytest.mark.parametrize("verb", sorted(WRITES))
-def test_writes_prompt_and_honour_a_decline(verb: str) -> None:
-    args, method, path = WRITES[verb]
-    backend = ScriptedPromptBackend(confirms=[False])
-    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
-        route = _mock_writes(mock)
-        result = invoke_cli(app, args, terminal=True, prompt_backend=backend)
-
-    assert result.exit_code == 1, result.output
-    assert "cancelled; no changes made" in result.stderr
-    assert f"{method} /rest/api/2{path}" in result.stderr
-    assert backend.calls and backend.calls[0][0] == "confirm"
-    assert len(route.calls) == 0
+        assert_destructive_contract(app, args, assert_unchanged=unchanged)
 
 
 @pytest.mark.usefixtures("confirm_always")
