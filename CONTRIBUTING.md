@@ -298,3 +298,14 @@ state. These steps are opt-in live writes against a disposable controller.
 Do not include secrets, real customer configurations, production logs, private
 workspace data, personal data, or other private data in issues, tests, fixtures,
 or examples. Use synthetic data for tests and examples.
+
+## Glossary
+
+untaped is one CLI that composes capability packages. These are the words
+its code, docs and messages use for its ideas.
+
+**Fix**: the `untaped` command a doctor row names to repair what it found.
+
+**Automatic fix**: a fix that needs no value and no input, so
+`untaped doctor fix` runs it.
+_Avoid_: repair, remedy, autofix.

@@ -37,7 +37,9 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 
 def _doctor(*specs: CapabilitySpec, args: tuple[str, ...] = ("--format", "json")) -> CliResult:
-    app = build_root_doctor_app(shell=bootstrap.SHELL_SPEC, result=compose(*specs))
+    app = build_root_doctor_app(
+        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(*specs)
+    )
     return CliInvoker().invoke(app, list(args))
 
 

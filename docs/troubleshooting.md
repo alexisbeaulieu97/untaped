@@ -2,7 +2,8 @@
 
 Start with `untaped doctor` (add `--online` to authenticate against each
 configured service) and the exit code: each failure's category says who must
-act. This page maps common symptoms to the section that explains them.
+act. `untaped doctor fix` applies every automatic fix it names
+(`--dry-run` to preview). This page maps common symptoms to the section that explains them.
 
 | Symptom | Where to look |
 |---|---|

@@ -34,6 +34,7 @@ every secret in their own terminal, so a token never passes through you.
 | set a non-secret value | `untaped --profile work config set awx.base_url https://aap.example.com` |
 | create or switch profiles | `untaped profile create work`, `untaped profile use work`, `untaped profile list` |
 | check health and get each failure's fix | `untaped doctor --format json`, `untaped doctor --online --format json` |
+| apply every automatic fix | `untaped doctor fix --yes --format json` |
 | see where tokens come from | `untaped auth status` |
 | install capability skills for an agent | `untaped skills install awx jira --target codex` |
 | keep installed skills current | `untaped skills status`, `untaped skills update` |
@@ -69,12 +70,14 @@ read `SKILL.md` there.
 
 ### Fix a failing doctor
 
-Run `untaped doctor --format json`. A failed or warned row's `fix` is the
-argv to run after `untaped`, with the same `<NAME>` placeholders. A fix with
-`automatic: true` is safe to run as is. In any other fix, a `<NAME>` is a
-value to ask the user for; substitute it and run the argv. A fix that asks
-for or reveals a token (`auth set`, `config set ….token --prompt`) is the
-user's to run.
+Run `untaped doctor fix --dry-run --format json` to see the plan, then
+`untaped doctor fix --yes --format json`. `--yes` is safe: no token passes
+through you (`auth migrate` moves tokens inside its own process and prints
+none). Tell the user a keychain unlock prompt may appear on their screen.
+The `skipped` rows are what remains: each `fix` is the argv to run after
+`untaped`; ask the user for each `<NAME>` value and run it, except a fix
+that asks for or reveals a token (`auth set`, `config set ….token
+--prompt`), which is the user's to run.
 
 ## Safety
 
