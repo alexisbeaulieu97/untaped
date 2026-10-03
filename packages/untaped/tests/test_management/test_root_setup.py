@@ -414,3 +414,25 @@ def test_only_rejects_a_name_that_is_not_a_service(_isolated_config: Path) -> No
     result = _setup(ScriptedPromptBackend(), "--only", "plain")
     assert result.exit_code == 2
     assert "service not found: 'plain'; known: wiz" in result.stderr
+
+
+def test_setup_ends_with_the_checklist(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default: {}\nactive: default\n")
+    backend = ScriptedPromptBackend(
+        texts=["default", "https://wiz", "pass show wiz token"],
+        multiselects=[["wiz"]],
+        selections=["command"],
+    )
+    root = bootstrap.build_root_app(
+        candidates=(
+            provider_candidate(
+                make_spec("wiz", profile_model=WizProfile, doctor_checks=(wiz_api_check(),))
+            ),
+        )
+    )
+    result = invoke_cli(root.meta, ["setup"], interactive=True, prompt_backend=backend)
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    assert lines[0] == "wiz"
+    assert any(line.split()[:2] == ["✓", "wiz.api"] for line in lines)
+    assert "\nsetup: " in result.stderr
