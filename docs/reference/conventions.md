@@ -6,6 +6,9 @@ the helper rather than your own version.
 
 A provider also follows these rules:
 
+- Provider code imports only `untaped.sdk` (plus `untaped.testing` in
+  tests), and another capability only through its `api` module (see
+  [Depending on another capability](#depending-on-another-capability)).
 - A capability reads and writes only its own config section, state, skills
   and doctor checks.
 - Layering is `cli → application → domain`, with `infrastructure → domain`;
@@ -230,17 +233,28 @@ free, but a command that writes declares it with `@writes`, or
 
 `untaped.testing.check_conventions(NAME)` runs these checks for one
 capability; each capability's tests call it. Its `import-boundary` rule
-enforces the import limits in the introduction and in
-[Depending on another capability](../composition.md#depending-on-another-capability).
+enforces the import rules at the top of this page and in
+[Depending on another capability](#depending-on-another-capability).
 `# untaped: allow <rule>` on the flagged node's first line allows that one
 violation. It does not apply to the default-table-columns rule (see Output
 records).
+
+## Depending on another capability
+
+A capability may import another only through that capability's public
+module, `<package>.api` (for example `untaped_github.api`), never its other
+internals, and only when its distribution depends on the other's (a
+dependency under an extra does not count). Dependencies are one-way, and
+imports of another capability stay lazy on CLI paths; a settings model that
+validates against the other capability may import it at module top. An `api`
+module keeps a closed `__all__`. Logic two capabilities need lives in exactly
+one owner's `api` module, never forked into both.
 
 ## Stable helper surface
 
 [`sdk.py`](../../packages/untaped/src/untaped/sdk.py) lists every export,
 and each helper's docstring is its reference.
-[Conventions](./conventions.md) says which helper each rule uses. Beyond those:
+The sections above name the helper for each rule. Beyond those:
 
 - Read settings with `app_context().section(name, Model)` or
   `get_config_section(name, Model)`, which validate only your section, rather

@@ -73,7 +73,7 @@ have no `error` key.
 | Field | Meaning |
 |---|---|
 | `category` | What kind of failure it is; it selects the exit code. See [categories](./reference/exit-codes.md#categories). |
-| `system` | Who is responsible: `untaped`, `local`, `git`, `http` (an HTTP request no service owns), or a service such as `awx`. |
+| `system` | Who is responsible; see [categories](./reference/exit-codes.md#categories). |
 | `retryable` | `true` only for `unavailable` failures. |
 | `message` | The failure, as `detail` shows it. |
 | `hint` | A follow-up such as ``run `untaped config set awx.token --prompt` ``, or `null`. |
@@ -116,6 +116,23 @@ note. Progress spinners are silent in this mode.
 An `error` line that does not come from a raised failure (a plain
 `error: …` message) carries only `level`, `message` and `hint`; the exit code
 still follows the rules in [exit codes](./reference/exit-codes.md#precedence).
+
+## In CI
+
+The [commands that exit 3](./reference/exit-codes.md#commands-that-exit-3)
+let a CI step tell "the check found something" (3) apart from "the tool
+failed" (1), "fix the setup" (4) and "try again later" (5):
+
+```bash
+untaped github sweep --org acme --grep 'log4j' --fail-on-match --format raw --columns repo
+case $? in
+  0) echo "clean" ;;
+  3) echo "banned pattern found" ;;
+  4) echo "fix the token or config" ;;
+  5) echo "GitHub unavailable; retry later" ;;
+  *) echo "sweep failed" ;;
+esac
+```
 
 ## See also
 

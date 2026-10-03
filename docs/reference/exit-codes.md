@@ -63,23 +63,11 @@ pipe keeps its own exit code.
 | `untaped github sweep --strict` | Any repository could not be scanned. |
 | `untaped awx apply --check` | Any document would change the controller. |
 | `untaped recipe apply --check` | Any target would change. |
-| `untaped dotfiles sync`, `untaped dotfiles status --check` | A row needs the user (for example a local edit or a conflict). Experimental. |
+| `untaped dotfiles sync`, `untaped dotfiles status --check` | A row needs the user (for example a local edit or a conflict). |
 | `untaped skills status --check` | An installed skill is outdated or no longer shipped. |
 | `untaped workspace status --check` | Any repo would block `workspace archive` (uncommitted changes, stashes on its branch, unpushed commits, initialised submodules, or a missing repo cache). A repo whose git state cannot be read exits 1 instead. |
 
-Use these in CI to tell "the check found something" (3) apart from "the tool
-failed" (1), "fix the setup" (4) and "try again later" (5):
-
-```bash
-untaped github sweep --org acme --grep 'log4j' --fail-on-match --format raw --columns repo
-case $? in
-  0) echo "clean" ;;
-  3) echo "banned pattern found" ;;
-  4) echo "fix the token or config" ;;
-  5) echo "GitHub unavailable; retry later" ;;
-  *) echo "sweep failed" ;;
-esac
-```
+In CI, branch on these codes as [Scripting](../scripting.md#in-ci) shows.
 
 ## Codes inside records
 

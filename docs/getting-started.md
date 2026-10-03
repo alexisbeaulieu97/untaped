@@ -180,8 +180,8 @@ untaped awx job-templates list --format raw --columns name \
   | untaped awx job-templates get --stdin --format yaml
 ```
 
-[Scripting](./reference/records.md) says which commands read
-which records.
+[Output records](./reference/records.md) says which commands read which
+records.
 
 ## Commands that change things
 
@@ -202,7 +202,7 @@ Each capability ships an agent skill that teaches an AI coding agent to use
 it. Install every composed capability's skill for your agent:
 
 ```bash
-untaped skills install --all --target claude
+untaped skills install --all --target all
 ```
 
 [Agent skills](./skills.md) covers targets, scopes and keeping installed

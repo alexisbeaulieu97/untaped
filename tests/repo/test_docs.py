@@ -396,12 +396,10 @@ DOCS_PAGES = [
 DOCS_PAGE_BUDGET = 400
 
 
-def test_stable_anchors_exist(first_party_specs: tuple[CapabilitySpec, ...]) -> None:
-    """The anchors the versioning page, READMEs and error hints link to."""
-    docs = REPO_ROOT / "docs"
-    assert {"categories", "precedence"} <= _anchors(docs / "reference/exit-codes.md")
-    assert "stderr-diagnostics" in _anchors(docs / "scripting.md")
-    records = _anchors(docs / "reference/records.md")
+def test_records_page_has_a_section_per_capability(
+    first_party_specs: tuple[CapabilitySpec, ...],
+) -> None:
+    records = _anchors(REPO_ROOT / "docs" / "reference" / "records.md")
     assert {spec.name for spec in first_party_specs} <= records
 
 

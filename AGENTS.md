@@ -3,8 +3,8 @@
 `untaped` is one CLI that composes capability packages from this uv workspace.
 Read [CONTRIBUTING.md](CONTRIBUTING.md) (developer guide, including the
 [checklist before you open a PR](CONTRIBUTING.md#before-you-open-a-pr)) and
-[docs/reference/conventions.md](docs/reference/conventions.md) (plugin rules) before changing
-code.
+[docs/reference/conventions.md](docs/reference/conventions.md) (plugin rules)
+before changing code.
 
 Agent-only notes:
 

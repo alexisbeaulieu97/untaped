@@ -2,8 +2,8 @@
 
 This is the developer guide for the `untaped` repository. Rules that every
 capability provider follows, first-party or not, live in
-[`docs/reference/conventions.md`](docs/reference/conventions.md); this page covers what is specific to
-working in this repository.
+[`docs/reference/conventions.md`](docs/reference/conventions.md); this page
+covers what is specific to working in this repository.
 
 ## Local setup
 
@@ -45,7 +45,7 @@ uv lock --check                                 # lock file is current
   beside the core wheel and runs its tests outside the repository.
 - `docs/` holds the user guides and the plugin guide; `docs/reference/`
   holds lookup pages (settings, records, exit codes, environment variables,
-  conventions). Each page stays under 400 lines; split one by reader task
+  conventions). Each page stays at most 400 lines long; split one by reader task
   rather than letting it grow.
 - `tests/` verifies public behavior and release contracts: `tests/repo/`
   holds the cross-package tests and `tests/skills/` the skill evaluation
@@ -93,7 +93,7 @@ packages/untaped-<name>/src/untaped_<name>/
 
 A capability whose settings import another's `api` (ansible imports
 github's) is quarantined with it when that import fails. Shared logic follows
-[Depending on another capability](docs/composition.md#depending-on-another-capability);
+[Depending on another capability](docs/reference/conventions.md#depending-on-another-capability);
 in this repository it may also live in core. Extract a protocol into core
 only when a second provider appears.
 
