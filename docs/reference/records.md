@@ -29,7 +29,8 @@ command runs and needs at least one row, so use it on a read command or add
 skill names, one per line. With `--dry-run`, `config set/unset`,
 `auth unset/migrate`, `profile create/delete/rename`, `alias set/remove`
 and `doctor fix` validate, write nothing and print their outcome with
-`action` `planned`; `doctor fix`'s manual fixes stay `skipped`.
+`action` `planned`; `doctor fix`'s manual fixes stay `skipped` and its
+refused ones `failed`.
 
 A `fix_outcome` row has `fix` (the argv run after `untaped`), `checks` (the
 doctor checks it covers), `action` (`fixed`, `partial` when a check still

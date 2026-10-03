@@ -74,7 +74,8 @@ Run `untaped doctor fix --dry-run --format json` to see the plan, then
 `untaped doctor fix --yes --format json`. `--yes` is safe: no token passes
 through you (`auth migrate` moves tokens inside its own process and prints
 none). Tell the user a keychain unlock prompt may appear on their screen.
-The `skipped` rows are what remains: each `fix` is the argv to run after
+Pass on each `failed` or `partial` row's `detail` to the user. The
+`skipped` rows are what remains to run: each `fix` is the argv to run after
 `untaped`; ask the user for each `<NAME>` value and run it, except a fix
 that asks for or reveals a token (`auth set`, `config set ….token
 --prompt`), which is the user's to run.
