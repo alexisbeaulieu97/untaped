@@ -2,8 +2,13 @@
 
 Each capability ships an agent skill: a directory with `SKILL.md` and its
 reference files that teaches an AI coding agent to use that capability.
-`untaped skills` lists and installs the skills of every composed capability,
-first-party or third-party.
+untaped itself ships the `untaped` skill, which covers install, profiles,
+setup (`setup plan`), `doctor` and skills. `untaped skills` lists and installs
+the skills of every composed capability, first-party or third-party.
+
+An agent whose harness has no skills folder can read a skill in place: the
+`source` field of `untaped skills list --format json` is the directory that
+holds its `SKILL.md`.
 
 ## Install skills
 

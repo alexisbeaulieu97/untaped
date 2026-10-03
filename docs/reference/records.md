@@ -17,6 +17,7 @@ command runs and needs at least one row, so use it on a read command or add
 | `skills status` | `untaped.installed_skill` |
 | `skills update`, `skills remove` | `untaped.skill_outcome` |
 | `doctor`, `setup` | `untaped.doctor_check` |
+| `setup plan` | `untaped.setup_step` |
 | `capabilities` | `untaped.capability` |
 | `alias list` | `untaped.alias` |
 | `alias set`, `alias remove` | `untaped.alias_outcome` |
@@ -25,6 +26,13 @@ command runs and needs at least one row, so use it on a read command or add
 skill names, one per line. With `--dry-run`, `config set/unset`,
 `profile create/delete/rename` and `alias set/remove` validate, write nothing
 and print their outcome with `action` `planned`.
+
+A `doctor_check` row's `fix`, and a `setup_step` row's `run`, is the argv to
+run after `untaped`, `--profile NAME` first; a `<NAME>` token is a value to
+supply, and `fix` is null on a passing row. A `setup_step` row also has
+`step` (`profile`, `<service>.base_url`, `<service>.token`,
+`<service>.online`), `state` (`done`, `todo`, `failed`, `skipped`), `detail`
+and `by`: `user` for a step that handles a token, else `agent`.
 
 ## workspace
 
