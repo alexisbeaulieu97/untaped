@@ -148,6 +148,34 @@ paths = [
     "scripts/vulture_allowlist.py",
 ]
 min_confidence = 60
+# Framework-registered code looks unused to a static scan.
+ignore_decorators = [
+    "@*.command",  # cyclopts registers the command on its app
+    "@*.default",
+    "@model_validator",  # pydantic calls validators and serializers
+    "@field_validator",
+    "@model_serializer",
+    "@pytest.fixture",  # untaped.testing.plugin autouse fixtures
+    "@bindings.add",  # prompt_toolkit key bindings
+]
+# Fixed framework signatures, and attributes set on third-party objects.
+ignore_names = [
+    "exc_type",
+    "tb",
+    "__context",
+    "dotenv_settings",
+    "model_post_init",
+    "settings_customise_sources",
+    "__call__",
+    "row_factory",
+    "default_parameter",
+    "end_of_options_delimiter",
+    "ttimeoutlen",
+    "__signature__",
+    "__annotations__",
+    "code_generator_class",
+    "concat",
+]
 
 [tool.coverage.run]
 branch = true

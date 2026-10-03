@@ -29,7 +29,7 @@ from untaped.app_context import app_context
 from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 from untaped.cli import create_app, echo
 from untaped.errors import ConfigError
-from untaped.profile_resolver import profile_override, set_profile_override
+from untaped.profile_resolver import classify_active_profile, set_profile_override
 from untaped.quiet import is_quiet
 from untaped.settings import get_settings, reset_config_registry_for_tests
 from untaped.testing import CliInvoker, provider_candidate
@@ -201,7 +201,7 @@ def test_profile_option_resolves_in_any_position(_isolated_config: Path) -> None
         result = CliInvoker().invoke(root.meta, argv)
         assert result.exit_code == 0, result.output
         assert result.stdout.strip() == "WT"
-    assert profile_override() is None
+    assert _flag_profile() is None
 
 
 @pytest.mark.parametrize(
@@ -231,7 +231,7 @@ def test_root_options_apply_between_nested_command_names(
 
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "WT quiet=True"
-    assert profile_override() is None
+    assert _flag_profile() is None
     assert not is_quiet()
 
 
@@ -252,7 +252,7 @@ def test_root_options_after_end_of_options_reach_the_command(
     _isolated_config: Path,
 ) -> None:
     def run(cmd: str, /) -> None:
-        echo(f"{cmd} profile={profile_override()}")
+        echo(f"{cmd} profile={_flag_profile()}")
 
     ext = create_app(name="ext", help="ext capability.")
     ext.command(run, name="run")
@@ -288,7 +288,7 @@ def test_root_options_reset_after_invocation(_isolated_config: Path) -> None:
     result = CliInvoker().invoke(root.meta, ["--profile", "work", "ext", "who"])
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "WT"
-    assert profile_override() is None
+    assert _flag_profile() is None
     assert os.environ.get("UNTAPED_PROFILE") == env_before
 
 
@@ -462,7 +462,7 @@ def test_reset_restores_composed_state(_isolated_config: Path) -> None:
         app_context().section("ext", _ExtProfile)
 
     bootstrap.reset()
-    assert profile_override() is None
+    assert _flag_profile() is None
     assert app_context().section("ext", _ExtProfile).token == "default-token"
     assert not is_verbose()
     assert not is_quiet()
@@ -779,3 +779,9 @@ def test_root_help_install_hint(
 def test_bare_management_commands_work(argv: list[str]) -> None:
     root = bootstrap.build_root_app(candidates=[])
     assert CliInvoker().invoke(root.meta, argv).exit_code == 0
+
+
+def _flag_profile() -> str | None:
+    """The ``--profile`` override in effect (``None`` once the invocation ends)."""
+    name, source = classify_active_profile({})
+    return name if source == "flag" else None

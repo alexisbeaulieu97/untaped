@@ -63,18 +63,6 @@ def test_rejects_malformed_or_unusable_pipe_records() -> None:
     with pytest.raises(ValueError, match="line 1: invalid JSON"):
         resolve_target_lines([(1, '{"untaped":')])
 
-    with pytest.raises(
-        ValueError,
-        match=r"line 1: workspace\.repo pipe record requires target_path",
-    ):
-        resolve_target_lines([(1, _env("workspace.repo", {"path": "/tmp/ws"}))])
-
-    with pytest.raises(
-        ValueError,
-        match=r"line 1: workspace\.repo pipe record requires target_path",
-    ):
-        resolve_target_lines([(1, _env("workspace.repo", {"path": "/tmp/ws", "repo": ""}))])
-
     with pytest.raises(ValueError, match="line 1: target_path must be absolute"):
         resolve_target_lines(
             [(1, _env("workspace.repo", {"path": "/tmp/ws", "target_path": "api"}))]

@@ -1,8 +1,4 @@
-"""GitHub failure classification.
-
-The error classes live in :mod:`untaped_github.errors`; they are
-re-exported here for existing importers.
-"""
+"""GitHub failure classification (the error classes live in :mod:`untaped_github.errors`)."""
 
 from __future__ import annotations
 
@@ -10,18 +6,9 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from untaped.sdk import ErrorCategory, HttpError, UntapedError, rejected_token_error
-from untaped_github.errors import (
-    GitCorpusError,
-    GithubError,
-    GithubGraphqlError,
-    GithubGraphqlErrorKind,
-)
+from untaped_github.errors import GithubGraphqlError
 
 __all__ = [
-    "GitCorpusError",
-    "GithubError",
-    "GithubGraphqlError",
-    "GithubGraphqlErrorKind",
     "github_failures",
     "is_auth_failure",
     "is_global_github_failure",

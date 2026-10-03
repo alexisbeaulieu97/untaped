@@ -343,7 +343,7 @@ def jobs_get(
     records: list[dict[str, object]] = []
     any_failed = False
     with report_errors(), open_context() as ctx:
-        ids, kinds = _job_targets(job_ids, stdin=stdin, kind=kind)
+        ids, kinds = _job_targets(job_ids, stdin=stdin)
         records, any_failed = resolve_each(
             ids, lambda n: ctx.jobs.get(kind=kinds.get(n, kind), job_id=_as_job_id(n))
         )
@@ -401,7 +401,7 @@ def jobs_events(
     # Hoisted so post-``with`` exit dispatch is safe regardless of body outcome.
     any_failed = False
     with report_errors(), open_context() as ctx:
-        ids, kinds = _job_targets(job_ids, stdin=stdin, kind=kind)
+        ids, kinds = _job_targets(job_ids, stdin=stdin)
         show_breadcrumb = len(ids) > 1
 
         def _events_for_id(n: str) -> None:
@@ -616,7 +616,7 @@ def jobs_logs(
     # Hoisted so post-``with`` exit dispatch is safe regardless of body outcome.
     any_failed = False
     with report_errors(), open_context() as ctx:
-        ids, kinds = _job_targets(job_ids, stdin=stdin, kind=kind)
+        ids, kinds = _job_targets(job_ids, stdin=stdin)
         show_breadcrumb = len(ids) > 1
         # Log rows are ``{job, line}``; the line-oriented formats show the line.
         cols = columns or (["line"] if fmt == "raw" else None)
@@ -672,7 +672,7 @@ def jobs_wait(
     any_failed = False
     timed_out: list[int] = []
     with report_errors(), open_context() as ctx:
-        ids, kinds = _job_targets(job_ids, stdin=stdin, kind=kind)
+        ids, kinds = _job_targets(job_ids, stdin=stdin)
 
         def _wait_one(n: str) -> dict[str, object]:
             job_id = _as_job_id(n)
