@@ -139,6 +139,7 @@ def test_setup_configures_the_service_and_checks_it(
         "title": "wiz API reachable",
         "detail": "authenticated as alice",
         "fix": None,
+        "automatic": False,
     }
     assert {row["capability"] for row in rows.values()} == {"wiz"}
     assert PROBES == ["probed"]

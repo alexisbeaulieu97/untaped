@@ -1,8 +1,8 @@
 """``untaped setup plan``: a profile's remaining setup steps as rows an agent acts on.
 
 Every ``run`` is a complete argv (``--profile`` first, ``<NAME>``
-placeholders), every step that handles a secret is ``by: user``, and the
-online rows are the capabilities' own online doctor checks.
+placeholders), every step that asks for or reveals a secret is ``by:
+user``, and the online rows are the capabilities' own online doctor checks.
 """
 
 from __future__ import annotations
@@ -28,7 +28,12 @@ from test_management.support import (
     write_config,
 )
 from untaped import bootstrap
-from untaped.capabilities.registry import CapabilitySpec
+from untaped.capabilities.registry import (
+    CapabilityContext,
+    CapabilitySpec,
+    DoctorCheck,
+    DoctorResult,
+)
 from untaped.management import setup_plan
 from untaped.prompts import PromptChoice
 from untaped.sdk import TokenCommand, TokenSources, connection_check, online_check
@@ -143,7 +148,8 @@ def test_a_plaintext_token_fails_and_moves_with_auth_migrate(
     _configure(_isolated_config, "{base_url: https://wiz, token: s3cret}")
     result = _cli("setup", "plan", "--format", "json")
     token = _step(json.loads(result.stdout), "wiz.token")
-    assert (token["state"], token["by"]) == ("failed", "user")
+    # `auth migrate` moves the token inside its own process: no secret reaches the agent.
+    assert (token["state"], token["by"]) == ("failed", "agent")
     assert token["run"] == ["--profile", "default", "auth", "migrate"]
     for fmt in ("json", "yaml", "table", "pipe"):
         assert "s3cret" not in _cli("setup", "plan", "--format", fmt).output
@@ -404,8 +410,25 @@ def test_a_rejected_token_without_token_command_is_never_stored_in_the_config(
         (["--profile", "work", "config", "set", "wiz.token_command", "<COMMAND>"], "user"),
     ],
 )
-def test_who_runs_a_fix_depends_on_its_command(run: list[str], by: str) -> None:
-    assert setup_plan._by(run) == by
+def test_who_runs_a_manual_fix_depends_on_its_command(run: list[str], by: str) -> None:
+    assert setup_plan._by(run, automatic=False) == by
+
+
+@pytest.mark.parametrize(("automatic", "by"), [(True, "agent"), (False, "user")])
+def test_an_online_rows_runner_follows_the_doctor_rows_automatic(
+    _isolated_config: Path, automatic: bool, by: str
+) -> None:
+    def run(_ctx: CapabilityContext) -> DoctorResult:
+        return DoctorResult(
+            id="wiz.api", ok=False, detail="stale", fix="auth migrate", automatic=automatic
+        )
+
+    check = DoctorCheck(id="wiz.api", title="wiz API reachable", run=run, online=True)
+    wiz = make_spec("wiz", profile_model=WizProfile, doctor_checks=(check,))
+    _configure(_isolated_config, "{base_url: https://wiz, token_command: [x]}")
+    online = _step(_plan("--online", specs=(wiz,)), "wiz.online.api")
+    assert (online["state"], online["by"]) == ("failed", by)
+    assert online["run"] == ["--profile", "default", "auth", "migrate"]
 
 
 _VALUES = {"<URL>": "https://wiz.example", "<COMMAND>": '["x"]', "<PATH>": "/ca.pem"}
