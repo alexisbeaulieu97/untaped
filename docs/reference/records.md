@@ -11,6 +11,7 @@ command runs and needs at least one row, so use it on a read command or add
 |---|---|
 | `config list`, `config get` | `untaped.setting` |
 | `config set`, `config unset` | `untaped.setting_outcome` (never the value) |
+| `config migrate` | `untaped.config_migration_outcome` (`from`, `to`, `profile`; `action` `renamed` or `dropped`) |
 | `auth set`, `auth unset`, `auth migrate` | `untaped.auth_outcome` (never the token; `action` `gone` when `unset` found the entry already deleted) |
 | `auth status` | `untaped.token_source` |
 | `profile list` | `untaped.profile` |
@@ -25,7 +26,7 @@ command runs and needs at least one row, so use it on a read command or add
 | `alias set`, `alias remove` | `untaped.alias_outcome` |
 
 `--stdin` on `skills install`, `status`, `update` and `remove` reads bare
-skill names, one per line. With `--dry-run`, `config set/unset`,
+skill names, one per line. With `--dry-run`, `config set/unset/migrate`,
 `auth unset/migrate`, `profile create/delete/rename` and `alias set/remove`
 validate, write nothing and print their outcome with `action` `planned`.
 

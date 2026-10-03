@@ -58,6 +58,8 @@ class SettingEntry(BaseModel):
     source: Source
     profile: str | None = None
     """Set in ``--all-profiles`` mode to name the profile owning this row."""
+    note: str | None = None
+    """Why the value deserves a look, e.g. ``from deprecated github.corpus_path``."""
 
 
 class SettingOutcome(OutcomeRecord):
@@ -84,7 +86,14 @@ class SettingRow(Record):
     list as compact JSON, which is also valid input for ``config set``.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("key", "value", "default", "source", "profile")
+    table_columns: ClassVar[tuple[str, ...]] = (
+        "key",
+        "value",
+        "default",
+        "source",
+        "profile",
+        "note",
+    )
 
     key: str
     value: Annotated[object, _UNSET]
@@ -92,6 +101,8 @@ class SettingRow(Record):
     source: str
     profile: str | None
     """Set in ``--all-profiles`` mode to name the profile owning this row."""
+    note: str | None = None
+    """Set when the value came from a deprecated key or variable."""
 
 
 def setting_entry_row(entry: SettingEntry, *, human: bool) -> SettingRow:
@@ -106,6 +117,7 @@ def setting_entry_row(entry: SettingEntry, *, human: bool) -> SettingRow:
         default=_human(entry.default) if human else entry.default,
         source=entry.source.label,
         profile=entry.profile,
+        note=entry.note,
     )
 
 

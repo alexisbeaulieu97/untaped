@@ -31,6 +31,10 @@
   value or input with `DoctorResult(automatic=True)`; `skills update` and
   `auth migrate` are automatic.
   ([#478](https://github.com/alexisbeaulieu97/untaped/pull/478))
+- `untaped config migrate` renames deprecated keys in every profile of
+  `config.yml`; `config set` and `config unset` also remove a key's old
+  spelling, and `config list` notes a value still read from one.
+  ([#PR_B](https://github.com/alexisbeaulieu97/untaped/pull/PR_B))
 
 ### Changed
 

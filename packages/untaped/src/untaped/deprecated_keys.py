@@ -77,7 +77,7 @@ class KeyUse:
     """For a ``deprecated`` setting: its declared message."""
 
 
-_EMPTY = KeyMappings({}, {}, frozenset(), {}, {})
+NO_KEY_MAPPINGS = KeyMappings({}, {}, frozenset(), {}, {})
 
 
 def _declared(model: type[BaseModel], name: str) -> object:
@@ -230,7 +230,7 @@ def key_mappings(model: type[BaseModel]) -> KeyMappings:
     if errors:
         raise ConfigError(f"invalid key declarations on {model.__name__}: {errors[0]}")
     if not any(_declared(model, name) for name in DECLARATIONS):
-        return _EMPTY
+        return NO_KEY_MAPPINGS
     renamed = _valid(model, "renamed_keys")
     retired = _valid(model, "retired_keys")
     deprecated = _valid(model, "deprecated_settings")
@@ -328,6 +328,58 @@ def rename_keys(
     return result, tuple(uses)
 
 
+@dataclass(frozen=True)
+class KeyMove:
+    """One step of ``config migrate`` in one section of one profile."""
+
+    old: str
+    to: str
+    """Where the value lives afterwards: the current field, or for a drop the
+    spelling that kept the value."""
+
+    action: Literal["renamed", "dropped"]
+
+
+def migration_moves(model: type[BaseModel], data: Mapping[str, Any]) -> list[KeyMove]:
+    """What ``config migrate`` does to one section's data in one profile.
+
+    Every renamed or retired key moves to its current field; when the field
+    or a closer old spelling is also set, the other spelling is dropped.
+    """
+    mappings = key_mappings(model)
+    found: dict[str, list[str]] = {}
+    for old, new in mappings.migratable.items():
+        if _lookup(data, old) is not _MISSING:
+            found.setdefault(new, []).append(old)
+    moves: list[KeyMove] = []
+    for new, olds in sorted(found.items()):
+        ranked = sorted(olds, key=lambda old: (mappings.distance[old], old))
+        keeper = new if _lookup(data, new) is not _MISSING else ranked[0]
+        for old in ranked:
+            if old == keeper:
+                moves.append(KeyMove(old, new, "renamed"))
+            else:
+                moves.append(KeyMove(old, keeper, "dropped"))
+    return moves
+
+
+def apply_move(data: dict[str, Any], move: KeyMove) -> bool:
+    """Apply ``move`` to one section's data; ``False`` when it cannot be placed."""
+    value = _lookup(data, move.old)
+    _pop(data, move.old)
+    if move.action == "dropped" or _place(data, move.to, value):
+        return True
+    _place(data, move.old, value)
+    return False
+
+
+def old_spellings(model: type[BaseModel], key: str) -> list[str]:
+    """Every renamed or retired key of ``model`` that maps to field ``key``, closest first."""
+    mappings = key_mappings(model)
+    olds = [old for old, new in mappings.migratable.items() if new == key]
+    return sorted(olds, key=lambda old: (mappings.distance[old], old))
+
+
 _warned: set[str] = set()
 
 
@@ -363,10 +415,15 @@ def use_warning(use: KeyUse, *, old: str, new: str, kept: str | None = None) -> 
 
 
 __all__ = [
+    "NO_KEY_MAPPINGS",
     "KeyMappings",
+    "KeyMove",
     "KeyUse",
+    "apply_move",
     "key_mappings",
     "mapping_errors",
+    "migration_moves",
+    "old_spellings",
     "rename_keys",
     "reset_key_warnings",
     "use_warning",
