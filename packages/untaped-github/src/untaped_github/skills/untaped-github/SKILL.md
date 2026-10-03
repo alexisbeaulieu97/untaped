@@ -81,13 +81,13 @@ To check the matches out into a workspace, pipe them to
 
 ### Gate CI on a banned pattern
 
-`sweep --fail-on-match` exits 3 when any repo matches. Add `--strict` when
-an unscanned repo should also fail the run (exit 3).
+Run `sweep --fail-on-match`, adding `--strict` when an unscanned repo
+should also fail the run; both exit 3 (see the exit codes under Safety).
 
-## Deleting cached repos
+## Safety
 
-`cache delete` and `cache prune` remove local clones only; GitHub is never
-changed.
+`untaped github` never changes GitHub. Its only writes, `cache delete` and
+`cache prune`, remove local clones.
 
 1. Preview: `untaped github cache delete acme/api --dry-run`, or
    `untaped github cache prune --org acme --dry-run` for repos that left the
@@ -98,6 +98,11 @@ changed.
 
 A named repo that is not cached fails with exit 1 before anything is
 deleted. A deleted repo is fetched again by the next sweep that covers it.
+
+- Exit codes: 0 success, 1 failure, 2 usage error, 3 `--fail-on-match`
+  matched or `--strict` left a repo unscanned, 4 fix the environment
+  (settings, token, permission), 5 retry later (search rate limits are
+  strict; exit 5 never means "no results"), 130 interrupted.
 
 ## Pitfalls
 
@@ -110,10 +115,6 @@ deleted. A deleted repo is fetched again by the next sweep that covers it.
 - `search repos` rows (`github.repo_hit`) lack `clone_url` and `pushed_at`.
   Feed a sweep from `repos list` instead: its rows let the sweep skip the
   per-repo lookup and the fetch of an unchanged repo.
-- Exit codes: 0 success, 1 failure, 2 usage error, 3 `--fail-on-match`
-  matched or `--strict` left a repo unscanned, 4 fix the environment
-  (settings, token, permission), 5 retry later (search rate limits are
-  strict; exit 5 never means "no results"), 130 interrupted.
 
 ## References
 

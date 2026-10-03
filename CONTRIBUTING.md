@@ -31,7 +31,7 @@ uv lock --check                                 # lock file is current
   the `dev` group, no `[project]`); `uv.lock` locks the whole workspace.
 - `packages/<name>/` holds one distribution each: its `pyproject.toml`,
   `README.md`, `LICENSE`, `src/` and `tests/`. Core is `packages/untaped/`: its
-  `src/untaped/` holds the root shell and shared services. `sdk.py` is the
+  `src/untaped/` holds the root and shared services. `sdk.py` is the
   public SDK surface; `capabilities/registry.py` is the internal composition
   kernel (see [How composition works](docs/composition.md));
   `management/` holds the root's management commands. The implementation is

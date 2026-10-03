@@ -10,10 +10,14 @@ item lists files placed by `link`, `copy` or `merge`. The machine
 subscribes to repos, enables items with a policy, and places them with
 `apply`; `sync` keeps `sync` items current and reports the rest.
 
-| File | Read it when |
-|---|---|
-| [references/manifest.md](references/manifest.md) | writing or changing a manifest: entries, modes, per-machine filters, directory sources |
-| [references/policies.md](references/policies.md) | deciding what `sync` and `apply` do to a path in each state, and when a clone is pulled |
+## Setup
+
+- Settings live under `profiles.<name>.dotfiles`: `repos_dir` (clones),
+  `kept_dir` (local files set aside) and `state_dir` (`status.json`,
+  `attention`). The defaults sit under `~/.untaped/dotfiles`.
+- Subscribing and syncing run `git`, which must be on `PATH`. Git never
+  prompts for credentials, so a private repo needs a credential helper or an
+  SSH agent.
 
 ## Commands
 
@@ -29,7 +33,7 @@ subscribes to repos, enables items with a policy, and places them with
 | Stop managing an item | `untaped dotfiles disable NAME` (files stay) or `untaped dotfiles remove NAME` (files go) |
 | Drop a repo | `untaped dotfiles unsubscribe NAME` after disabling its items |
 
-## Workflow
+## Workflows
 
 1. `untaped dotfiles subscribe URL` clones the repo and lists its items;
    nothing is enabled. Read `--format json` to see suggested policies and
@@ -43,10 +47,15 @@ subscribes to repos, enables items with a policy, and places them with
 4. `untaped dotfiles apply` places the paths, then `untaped dotfiles
    status` reads `applied` for each of them.
 
-Read `--format json` rather than table output. Exit codes: 0 success, 1
-failure or declined (a `conflict` row counts), 2 usage (including a write
-without a terminal and without `--yes`), 3 something needs the user
-(`status --check`, `sync`), 4 fix the environment, 5 retry later.
+## Safety
+
+- `apply`, `remove` and `unsubscribe` preview and ask first. Run them with
+  `--dry-run`, show the user the plan, and pass `--yes` only after approval.
+  `sync` never prompts and never overwrites a local edit.
+- Read `--format json` rather than table output. Exit codes: 0 success, 1
+  failure or declined (a `conflict` row counts), 2 usage (including a write
+  without a terminal and without `--yes`), 3 something needs the user
+  (`status --check`, `sync`), 4 fix the environment, 5 retry later.
 
 ## Pitfalls
 
@@ -65,3 +74,10 @@ without a terminal and without `--yes`), 3 something needs the user
 - `status` is offline: its `behind` is as of the last `sync` or fetch.
 - A directory source places each file under it separately; files other
   programs write into the target directory are never touched.
+
+## References
+
+| File | Read it when |
+|---|---|
+| [references/manifest.md](references/manifest.md) | writing or changing a manifest: entries, modes, per-machine filters, directory sources |
+| [references/policies.md](references/policies.md) | deciding what `sync` and `apply` do to a path in each state, and when a clone is pulled |

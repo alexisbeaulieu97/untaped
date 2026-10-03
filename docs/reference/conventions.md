@@ -50,7 +50,7 @@ produce one:
 - 4: raise with category `config` (`ConfigError`), `auth` or `permission`.
 - 5: raise with category `unavailable` (`HttpTransportError` and 429/5xx
   statuses already are).
-- 130: handled by the root shell.
+- 130: handled by the root.
 
 `ExitCode` names these values.
 
@@ -149,7 +149,7 @@ To rename a command, group or flag, keep the old spelling as a hidden,
 deprecated alias until the next major release:
 `deprecated_alias(parent_app, "me", "whoami")` for a command or group, and
 `deprecated_alias(command_app, "--old-flag", "--new-flag")` for a flag. The
-root shell rewrites the old token and prints
+root rewrites the old token and prints
 ``warning: `me` is deprecated and will be removed in the next major release; use `whoami` ``.
 The old spelling never appears in `--help`. Aliases apply through the
 `untaped` root, so test them with `untaped.testing.invoke_root([...])`.
