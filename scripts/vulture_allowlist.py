@@ -29,6 +29,7 @@ _.validate_kind_shape  # unused method (packages/untaped-ansible/src/untaped_ans
 root_ref  # unused variable (packages/untaped-ansible/src/untaped_ansible/domain/reach.py:48)
 _.row_factory  # unused attribute (packages/untaped-ansible/src/untaped_ansible/infrastructure/sqlite_index.py:390)
 _._validate_source  # unused method (packages/untaped-ansible/src/untaped_ansible/settings.py:37)
+_._normalize_teams  # pydantic field validator (packages/untaped-ansible/src/untaped_ansible/settings.py)
 __call__  # unused function (packages/untaped-awx/src/untaped_awx/application/suites/ports.py:79)
 __call__  # unused function (packages/untaped-awx/src/untaped_awx/application/suites/ports.py:95)
 __call__  # unused function (packages/untaped-awx/src/untaped_awx/application/suites/ports.py:105)
