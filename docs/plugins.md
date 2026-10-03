@@ -39,7 +39,7 @@ The package requires the current product and declares the entry-point group:
 name = "acme-provider"
 version = "0.1.0"
 description = "Acme capability for untaped."
-requires-python = ">=3.14"
+requires-python = ">=3.14.1"
 dependencies = [
     "pydantic>=2.13.3,<3",
     "untaped>=10,<11",
