@@ -206,6 +206,14 @@ and `system` (your section name) as class defaults; see
 [Conventions](./reference/conventions.md) covers flags, messages, exit codes
 and record shapes.
 
+A doctor check (`DoctorCheck` on `CapabilitySpec.doctor_checks`) returns a
+`DoctorResult`. Its `fix` is the `untaped` command that repairs a failed or
+warned row, without the program name: a string (`"config set acme.base_url
+<URL>"`, split like a shell would) or an argv list. Write a value the user
+supplies as a `<NAME>` placeholder. `doctor` emits it as the row's `fix`
+argv, prefixed with `--profile NAME` unless it names one, so an agent can run
+it as is.
+
 ## Packaged skills
 
 A capability ships its agent skill as a directory holding `SKILL.md`. Declare

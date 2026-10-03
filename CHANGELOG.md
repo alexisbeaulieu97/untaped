@@ -17,8 +17,24 @@
   `pass`), reads it back, and writes the `awx.token_command` that serves it;
   `auth migrate` moves every plaintext token there, in every profile. See
   [Tokens](docs/configuration.md#tokens).
+- `untaped setup plan` lists what a profile still needs as rows an agent can
+  act on: each step's state, the complete command to run (`--profile` first,
+  `<NAME>` placeholders) and whether the agent or the user runs it; every step
+  that handles a token is the user's. `--only` narrows the services,
+  `--online` runs their online checks and `--check` exits 3 while a step is
+  pending. `untaped setup --only awx,jira` preselects services in the wizard,
+  and without a terminal `setup` now points at `setup plan`. See
+  [Set up with an agent](docs/getting-started.md#set-up-with-an-agent).
+- The `untaped` agent skill, shipped by untaped itself, teaches any agent to
+  install, set up and diagnose untaped with the user.
+- `doctor` rows carry a `fix` field: the argv that repairs a failed or warned
+  check. `DoctorResult.fix` also accepts an argv list.
 
 ### Changed
+
+- `doctor` and `setup` JSON, YAML and pipe rows no longer append
+  "; run `untaped …`" to `detail`; read the new `fix` field instead (the table
+  still shows it). Fix commands write placeholders as `<URL>` and `<PATH>`.
 
 - `untaped setup` no longer stores a typed token in `config.yml`: it offers the
   password store (or moving a plaintext token there), a `token_command`, or an

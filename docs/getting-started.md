@@ -42,9 +42,28 @@ checks each service online and exits 1 if one fails. Naming a new profile create
 
 ```bash
 untaped setup
+untaped --profile work setup --only awx,jira   # these services only
 ```
 
 To script the same settings, use `config set` as below.
+
+### Set up with an agent
+
+Any AI coding agent can do the setup with you; untaped calls no model
+itself. `untaped setup plan` lists what a profile still needs, with the
+command for each step, and marks every step that handles a token as yours to
+run, so a token never passes through the agent. Paste this into your agent:
+
+```text
+Install untaped with `uv tool install 'untaped[all]'`, then read its
+`untaped` skill: install it with `untaped skills install untaped --target
+codex` (or `claude`), or read SKILL.md in the `source` directory that
+`untaped skills list --format json` prints for `untaped`. Follow its
+"Set up a profile with the user" workflow.
+```
+
+`untaped setup plan --check` exits 3 while a step is still to do;
+`--online` also runs each ready service's online check.
 
 ## Store your tokens
 

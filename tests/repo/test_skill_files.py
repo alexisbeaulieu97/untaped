@@ -37,12 +37,13 @@ from cyclopts import App
 
 from repo import quoted_commands
 from repo.support import FENCE, FIRST_PARTY, REPO_ROOT
-from untaped.bootstrap import build_root_app
+from untaped.bootstrap import SHELL_SPEC, build_root_app
 from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 from untaped.sdk import SkillAsset
 from untaped_awx.domain.suite_starter import starter_suite
 
-SKILL_NAMES = tuple(f"untaped-{name}" for name in FIRST_PARTY)
+#: The shell's own skill, then each first-party capability's.
+SKILL_NAMES = ("untaped", *(f"untaped-{name}" for name in FIRST_PARTY))
 
 
 #: The skill template's sections (docs/plugins.md), in order.
@@ -54,8 +55,9 @@ EXAMPLE_SKILL = REPO_ROOT / "examples/untaped-hello/src/untaped_hello/skills/unt
 
 @pytest.fixture(scope="module")
 def skills(first_party_specs: tuple[CapabilitySpec, ...]) -> dict[str, SkillAsset]:
-    """Every first-party skill by name."""
-    return {skill.name: skill for spec in first_party_specs for skill in spec.skills}
+    """Every first-party skill by name, the shell's included."""
+    specs = (SHELL_SPEC, *first_party_specs)
+    return {skill.name: skill for spec in specs for skill in spec.skills}
 
 
 def _skill_files(skill: SkillAsset) -> list[Path]:

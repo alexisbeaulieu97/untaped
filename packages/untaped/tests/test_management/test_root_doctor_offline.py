@@ -128,8 +128,7 @@ def test_skill_no_longer_shipped_warns(tmp_path: Path) -> None:
             "{base_url: https://a, token: t}",
             {},
             "warn",
-            "https://a; api.token is stored in plain text in config.yml; "
-            "run `untaped auth migrate`",
+            "https://a; api.token is stored in plain text in config.yml",
         ),
         (
             "{base_url: https://a, token: t}",
