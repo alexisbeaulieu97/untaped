@@ -16,7 +16,10 @@ Agent-only notes:
   no decision is left open, write the design (problem, approach, rejected
   alternatives, impact, test plan). It is reviewed like a PR (see
   CONTRIBUTING.md) and approved by the maintainer once the findings are
-  fixed or answered. A bug starts with a failing test.
+  fixed or answered. After approval the work runs without check-ins until
+  its PR is ready to merge; a decision only the maintainer can make goes
+  back to the interview, which updates the design. A bug starts with a
+  failing test.
 - Add each term the design settles to the root `GLOSSARY.md` (create it with
   the first): the term, a one- or two-sentence definition, and the words to
   avoid. A decision that is hard to reverse, surprising without context and
