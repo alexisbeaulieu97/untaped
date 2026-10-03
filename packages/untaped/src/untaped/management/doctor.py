@@ -6,8 +6,10 @@ validation only, never network I/O. ``--online`` adds the checks
 capabilities contribute with ``DoctorCheck(online=True)``, which contact the
 configured services. A check's ``DoctorResult.fix`` becomes the row's
 ``fix``: a complete argv (``--profile`` first) to run after ``untaped``; a
-table appends it to the row's detail instead. Each row is isolated: invalid settings
-for one capability surface as failed rows while every other row still runs.
+table appends it to the row's detail instead. A row's ``automatic`` says
+the fix is safe to run unattended (see ``DoctorResult``). Each row is
+isolated: invalid settings for one capability surface as failed rows while
+every other row still runs.
 Quarantine records render as failed rows (nonzero exit). A config file other
 users can read renders as a ``warn`` row, which does not fail the run; so do
 profile keys no settings model declares,
@@ -18,6 +20,7 @@ check that returns ``DoctorResult(..., warn=True)``.
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import stat
 from collections.abc import Mapping
@@ -73,6 +76,7 @@ from untaped.theme import OutputFormat, UiSettings, resolve_theme
 _PASS = "pass"
 _FAIL = "fail"
 _WARN = "warn"
+_PLACEHOLDER = re.compile(r"<[A-Z][A-Z0-9_]*>")
 
 
 @dataclass(frozen=True)
@@ -178,6 +182,8 @@ def _row(
     title: str,
     detail: str,
     fix: list[str] | None = None,
+    *,
+    automatic: bool = False,
 ) -> dict[str, object]:
     return {
         "check": check,
@@ -186,7 +192,13 @@ def _row(
         "title": title,
         "detail": detail,
         "fix": fix,
+        "automatic": bool(automatic) and fix is not None,
     }
+
+
+def placeholders(argv: list[str]) -> list[str]:
+    """The ``<NAME>`` values ``argv`` still needs, in order."""
+    return [found for arg in argv for found in _PLACEHOLDER.findall(arg)]
 
 
 def _scopes(shell: ApplicationSpec, result: CompositionResult) -> list[_SectionScope]:
@@ -367,7 +379,7 @@ def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
     if any(item.state is SkillState.orphaned for item in stale):
         parts.append("remove unshipped skills with `untaped skills remove NAME`")
     detail = "; ".join(parts)
-    return _row("skills", shell.name, _WARN, title, detail, fix)
+    return _row("skills", shell.name, _WARN, title, detail, fix, automatic=True)
 
 
 def _config_row(shell: ApplicationSpec) -> tuple[dict[str, Any] | None, dict[str, object]]:
@@ -513,17 +525,25 @@ def _run_check(
             f"check returned id {outcome.id!r}, expected {check_item.id!r}",
         )
     fix = None
-    if outcome.fix and (not outcome.ok or outcome.warn):
+    # A passing row drops its fix, but an automatic one is still validated.
+    if outcome.fix and (not outcome.ok or outcome.warn or outcome.automatic):
         try:
             fix = command_argv(outcome.fix, profile=profile)
         except ValueError as exc:
             detail = f"check returned an unparsable fix: {exc}"
             return _row(check_item.id, scope.capability, _FAIL, check_item.title, detail)
-    if not outcome.ok:
-        return _row(check_item.id, scope.capability, _FAIL, check_item.title, outcome.detail, fix)
-    if outcome.warn:
-        return _row(check_item.id, scope.capability, _WARN, check_item.title, outcome.detail, fix)
-    return _row(check_item.id, scope.capability, _PASS, check_item.title, outcome.detail or "OK")
+    if outcome.automatic and (fix is None or placeholders(fix)):
+        needs = f"that needs {', '.join(placeholders(fix))}" if fix else "but no fix"
+        detail = f"check {check_item.id} declares an automatic fix {needs}"
+        return _row(check_item.id, scope.capability, _FAIL, check_item.title, detail)
+    title = check_item.title
+    if outcome.ok and not outcome.warn:
+        return _row(check_item.id, scope.capability, _PASS, title, outcome.detail or "OK")
+    status = _FAIL if not outcome.ok else _WARN
+    detail = outcome.detail
+    return _row(
+        check_item.id, scope.capability, status, title, detail, fix, automatic=outcome.automatic
+    )
 
 
 def _quarantine_row(record: QuarantineRecord) -> dict[str, object]:
