@@ -12,7 +12,8 @@ startup the root composes the capabilities in this order:
    `CapabilitySpec`.
 3. **Validation.** The declaration is checked: reserved root names, the
    entry-point name, duplicate names, sections, skills and doctor checks,
-   and overlapping profile and state fields.
+   overlapping profile and state fields, and the settings model's
+   [renamed keys](./reference/conventions.md#renaming-a-setting).
 4. **Commit.** The survivors are mounted under their names, lazily or not
    as [the capability app](./plugins.md#settings-and-the-capability-app) describes.
 

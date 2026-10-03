@@ -64,9 +64,12 @@ says so. Currently experimental:
 
 - A renamed command or flag keeps working as a hidden, deprecated alias until
   the next major release, and prints a warning naming the new spelling.
+- A renamed setting, and its `UNTAPED_*` variable, keeps working as a
+  deprecated key until the next major release, with a warning naming the new
+  key.
 - Anything else that breaks a stable contract waits for the next major
   release: a changed default, a removed command or flag, a changed positional
-  argument, and a renamed or removed setting, environment variable, record
-  kind or record field.
+  argument, a removed setting, and a renamed or removed environment variable,
+  record kind or record field.
 - Breaking changes are collected into the next major release, whose changelog
   opens with an upgrade section listing them.

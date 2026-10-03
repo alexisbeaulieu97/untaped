@@ -17,6 +17,7 @@ from cyclopts.exceptions import CycloptsError, UnknownOptionError
 
 from untaped.cli import deprecated_aliases, note_requested_format, raise_usage
 from untaped.errors import UntapedError
+from untaped.messages import deprecated_message
 from untaped.profile_resolver import profile_scope
 from untaped.quiet import enable as _enable_quiet
 from untaped.quiet import reset as _reset_quiet
@@ -346,10 +347,7 @@ def _consume_path_root_options(
 
 
 def _warn_deprecated(old: str, new: str) -> None:
-    ui_context(strict=False).message(
-        "warning",
-        f"`{old}` is deprecated and will be removed in the next major release; use `{new}`",
-    )
+    ui_context(strict=False).message("warning", deprecated_message(f"`{old}`", f"`{new}`"))
 
 
 def _loose_command_key(name: str) -> str:

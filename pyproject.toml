@@ -161,6 +161,7 @@ ignore_names = [
     "tb",
     "__context",
     "dotenv_settings",
+    "env_settings",
     "model_post_init",
     "settings_customise_sources",
     "__call__",

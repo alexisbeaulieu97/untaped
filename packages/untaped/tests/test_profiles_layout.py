@@ -6,8 +6,12 @@
 
 from __future__ import annotations
 
-import pytest
+from typing import ClassVar
 
+import pytest
+from pydantic import BaseModel
+
+from untaped.deprecated_keys import KeyUse
 from untaped.errors import ConfigError
 from untaped.settings_layout import ProfilesSettingsLayout
 
@@ -61,3 +65,33 @@ def test_write_profile_creates_default_but_rejects_unknown() -> None:
     assert data["profiles"]["default"] is target  # type: ignore[index]
     with pytest.raises(ConfigError):
         layout.write_profile(_config(), "does-not-exist")
+
+
+class _Renamed(BaseModel):
+    renamed_keys: ClassVar[dict[str, str]] = {"corpus_path": "cache_dir"}
+    cache_dir: str = ""
+
+
+def test_resolve_renames_layered_profiles_and_reports_their_uses() -> None:
+    raw = {
+        "active": "work",
+        "profiles": {
+            "default": {"github": {"corpus_path": "/d"}},
+            "work": {"github": {"cache_dir": "/w"}},
+            "other": {"github": {"corpus_path": "/o"}},
+        },
+    }
+    layout = ProfilesSettingsLayout(sections=lambda: {"github": _Renamed})
+
+    resolved = layout.resolve(raw)
+
+    assert resolved.effective == {"github": {"cache_dir": "/w"}}
+    assert resolved.provenance == {("github", "cache_dir"): "work"}
+    assert resolved.uses == {
+        "default": {"github": (KeyUse("corpus_path", "cache_dir", "renamed"),)}
+    }
+    assert raw["profiles"]["default"] == {"github": {"corpus_path": "/d"}}  # type: ignore[index]
+    assert layout.resolve(raw, sections={}).provenance == {
+        ("github", "corpus_path"): "default",
+        ("github", "cache_dir"): "work",
+    }

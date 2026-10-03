@@ -186,8 +186,8 @@ def deprecated_alias(app: App, old: str, new: str) -> None:
     command names (``deprecated_alias(jira_app, "me", "whoami")``). For a
     renamed option or short flag, ``app`` is the command itself and the names
     are flags (``deprecated_alias(logs_app, "-f", "--follow")``). The root
-    shell rewrites the old token to the new one before dispatch and prints
-    ``warning: `old` is deprecated; use `new``` on stderr, so the old spelling
+    shell rewrites the old token to the new one before dispatch and prints a
+    warning naming both on stderr, so the old spelling
     never appears in ``--help``. Aliases apply to invocations through the
     ``untaped`` root (test them with ``build_root_app``); they are removed in
     the next major release.
