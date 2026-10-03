@@ -63,6 +63,7 @@ pipe keeps its own exit code.
 | `untaped github sweep --strict` | Any repository could not be scanned. |
 | `untaped awx apply --check` | Any document would change the controller. |
 | `untaped recipe apply --check` | Any target would change. |
+| `untaped dotfiles sync`, `untaped dotfiles status --check` | A row needs the user (for example a local edit or a conflict). Experimental. |
 | `untaped skills status --check` | An installed skill is outdated or no longer shipped. |
 | `untaped workspace status --check` | Any repo would block `workspace archive` (uncommitted changes, stashes on its branch, unpushed commits, initialised submodules, or a missing repo cache). A repo whose git state cannot be read exits 1 instead. |
 

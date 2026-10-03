@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- dotfiles: a new capability (`untaped[dotfiles]`, experimental) that places
+  config files from subscribed dotfiles repos. A repo's `dotfiles.yml` lists
+  items of `link`, `copy` or `merge` (JSON/YAML) files with per-OS and per-tag
+  filters; each machine enables items with a `sync`, `once` or `manual`
+  policy. `apply` shows its plan and keeps replaced local files aside,
+  `sync` is safe on a timer and exits 3 when something needs the user, and
+  `status` writes a one-line `attention` file for prompt segments.
+
 ## 10.0.0
 
 untaped is now an SDK whose first-party capabilities are plugins: `untaped`

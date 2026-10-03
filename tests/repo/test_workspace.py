@@ -17,6 +17,7 @@ EXPECTED_MEMBERS = [
     "untaped",
     "untaped-ansible",
     "untaped-awx",
+    "untaped-dotfiles",
     "untaped-github",
     "untaped-jira",
     "untaped-recipe",

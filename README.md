@@ -1,7 +1,7 @@
 # untaped
 
 **untaped** is a batteries-included CLI for DevOps workflows. `untaped[all]`
-gives you six capabilities that share one config file, the same profiles, and
+gives you seven capabilities that share one config file, the same profiles, and
 the same output and piping rules:
 
 - **`workspace`**: task workspaces: one directory of git worktrees across
@@ -12,6 +12,8 @@ the same output and piping rules:
 - **`awx`**: inspect, change, launch, sync and test AWX/AAP resources.
 - **`ansible`**: Ansible role dependency graphs and upstream impact.
 - **`recipe`**: plan, preview and apply file changes across many directories.
+- **`dotfiles`**: place config files from dotfiles repos, with a policy per
+  item per machine (experimental).
 
 Root commands manage the tool itself: `setup`, `config`, `profile`, `alias`,
 `skills`, `doctor` and `capabilities`.
@@ -70,8 +72,9 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
 
 Each capability's guide: [workspace](./packages/untaped-workspace/README.md),
 [github](./packages/untaped-github/README.md), [jira](./packages/untaped-jira/README.md),
-[awx](./packages/untaped-awx/README.md), [ansible](./packages/untaped-ansible/README.md) and
-[recipe](./packages/untaped-recipe/README.md).
+[awx](./packages/untaped-awx/README.md), [ansible](./packages/untaped-ansible/README.md),
+[recipe](./packages/untaped-recipe/README.md) and
+[dotfiles](./packages/untaped-dotfiles/README.md).
 
 ## Versioning
 
