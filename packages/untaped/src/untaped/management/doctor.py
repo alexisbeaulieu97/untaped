@@ -7,8 +7,9 @@ capabilities contribute with ``DoctorCheck(online=True)``, which contact the
 configured services. A check's ``DoctorResult.fix`` becomes the row's
 ``fix``: a complete argv (``--profile`` first) to run after ``untaped``; a
 table appends it to the row's detail instead. A row's ``automatic`` says
-the fix is safe to run unattended (see ``DoctorResult``). Each row is isolated: invalid settings
-for one capability surface as failed rows while every other row still runs.
+the fix is safe to run unattended (see ``DoctorResult``). Each row is
+isolated: invalid settings for one capability surface as failed rows while
+every other row still runs.
 Quarantine records render as failed rows (nonzero exit). A config file other
 users can read renders as a ``warn`` row, which does not fail the run; so do
 profile keys no settings model declares,
@@ -191,7 +192,7 @@ def _row(
         "title": title,
         "detail": detail,
         "fix": fix,
-        "automatic": automatic and fix is not None,
+        "automatic": bool(automatic) and fix is not None,
     }
 
 

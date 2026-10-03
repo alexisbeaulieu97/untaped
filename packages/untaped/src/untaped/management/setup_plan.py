@@ -222,7 +222,9 @@ def _failed_check(spec: CapabilitySpec, step: str, row: Row) -> Row:
         settings = spec.profile_model.model_construct()
         detail = f"{detail}; export {token_instead(settings, section=section)} with a working token"
         return _row(step, name, "failed", detail, by="user")
-    return _row(step, name, "failed", detail, run, by=_by(run, automatic=row.get("automatic")))
+    return _row(
+        step, name, "failed", detail, run, by=_by(run, automatic=row.get("automatic") is True)
+    )
 
 
 def _command(run: list[str]) -> list[str]:
@@ -230,7 +232,7 @@ def _command(run: list[str]) -> list[str]:
     return run[2:] if run[:1] == ["--profile"] else run
 
 
-def _by(run: list[str] | None, *, automatic: object) -> Literal["agent", "user"]:
+def _by(run: list[str] | None, *, automatic: bool) -> Literal["agent", "user"]:
     """Who runs a fix: an automatic one is the agent's.
 
     Any other fix that writes a token (``auth …``, ``….token``) is the user's.
