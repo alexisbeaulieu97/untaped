@@ -35,6 +35,7 @@ from untaped.settings import (
     env_var_name,
     get_profile_settings_model,
     load_settings_section,
+    model_sections,
     validate_settings_section,
 )
 from untaped.settings_layout import ResolvedConfig
@@ -149,11 +150,7 @@ class SettingsFileRepository:
 
     def section_model(self, section: str) -> type[BaseModel] | None:
         """The settings model of ``section``, if it is one."""
-        field = self._profile_model().model_fields.get(section)
-        annotation = None if field is None else field.annotation
-        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-            return annotation
-        return None
+        return self._section_models().get(section)
 
     def deprecated_source(self, descriptor: FieldDescriptor) -> str | None:
         """The old key or variable that supplied ``descriptor``'s value, if any.
@@ -353,11 +350,7 @@ class SettingsFileRepository:
         return rows
 
     def _section_models(self) -> dict[str, type[BaseModel]]:
-        return {
-            section: model
-            for section in self._profile_model().model_fields
-            if (model := self.section_model(section)) is not None
-        }
+        return model_sections(self._profile_model())
 
     def _old_paths(self, descriptor: FieldDescriptor) -> list[tuple[str, ...]]:
         """Absolute paths of every old spelling of ``descriptor``, closest first."""

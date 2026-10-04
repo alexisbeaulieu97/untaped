@@ -30,6 +30,7 @@ from pydantic import BaseModel
 from untaped.config_schema import unwrap_optional
 from untaped.errors import ConfigError
 from untaped.messages import deprecated_message
+from untaped.profile_resolver import DEFAULT_PROFILE
 
 DECLARATIONS = ("renamed_keys", "retired_keys", "deprecated_settings")
 
@@ -344,6 +345,45 @@ def rename_keys(
 
 
 @dataclass(frozen=True)
+class FoundKey:
+    """An old key or deprecated setting in one profile of the raw config."""
+
+    profile: str
+    section: str
+    old: str
+    new: str
+    kind: Literal["renamed", "retired", "deprecated"]
+    message: str | None = None
+
+
+def scan_keys(raw: Mapping[str, Any], sections: Mapping[str, type[BaseModel]]) -> list[FoundKey]:
+    """Every old key and deprecated setting in every profile (``default`` first)."""
+    profiles = raw.get("profiles")
+    if not isinstance(profiles, Mapping):
+        return []
+    found: list[FoundKey] = []
+    for name in sorted(profiles, key=lambda name: (name != DEFAULT_PROFILE, str(name))):
+        data = profiles[name]
+        if not isinstance(data, Mapping):
+            continue
+        for section, model in sections.items():
+            section_data = data.get(section)
+            if not isinstance(section_data, Mapping):
+                continue
+            mappings = key_mappings(model)
+            for old, new in sorted(mappings.migratable.items()):
+                if _lookup(section_data, old) is not _MISSING:
+                    kind: Literal["renamed", "retired"] = (
+                        "retired" if old in mappings.retired else "renamed"
+                    )
+                    found.append(FoundKey(name, section, old, new, kind))
+            for key, message in sorted(mappings.deprecated.items()):
+                if _lookup(section_data, key) is not _MISSING:
+                    found.append(FoundKey(name, section, key, key, "deprecated", message))
+    return found
+
+
+@dataclass(frozen=True)
 class KeyMove:
     """One step of ``config migrate`` in one section of one profile."""
 
@@ -430,6 +470,7 @@ def use_warning(use: KeyUse, *, old: str, new: str, kept: str | None = None) -> 
 
 __all__ = [
     "NO_KEY_MAPPINGS",
+    "FoundKey",
     "KeyMappings",
     "KeyMove",
     "KeyUse",
@@ -440,6 +481,7 @@ __all__ = [
     "old_spellings",
     "rename_keys",
     "reset_key_warnings",
+    "scan_keys",
     "use_warning",
     "warn_once",
 ]
