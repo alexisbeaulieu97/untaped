@@ -20,11 +20,21 @@ The state file sits in the config file's directory and is named after it:
 `~/work.state.yml`, and sibling config files never share state.
 `UNTAPED_STATE` puts it elsewhere, but must not name the config file itself.
 
-Two installs of different major versions that share one config file can
-disagree about a renamed setting: writes keep keys a version does not know,
-but the older install reads a renamed key's default. Give the second install
-its own `UNTAPED_CONFIG` (its state follows it); `untaped doctor` reports
-keys the running version ignores.
+### Renamed settings
+
+A renamed setting keeps working under its old name until the next major
+release, with a warning naming the new one. `untaped config migrate` renames
+old keys in every profile of `config.yml` (`--dry-run` first shows what it
+would change); it does not touch environment variables, so rename an
+`UNTAPED_*` variable yourself. After the next major release an old key is
+retired: it is no longer read, `untaped doctor` names it, and `config migrate`
+still renames it.
+
+Two installs that share one config file can disagree about a renamed setting:
+writes keep keys a version does not know, but an install older than the
+rename ignores the new key and uses the default. Run `config migrate` once every install
+is upgraded, or give the second install its own `UNTAPED_CONFIG` (its state
+follows it); `untaped doctor` reports keys the running version ignores.
 
 ### File format
 

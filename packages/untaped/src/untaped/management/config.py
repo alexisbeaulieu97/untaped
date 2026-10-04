@@ -1,10 +1,10 @@
 """Root ``untaped config …`` command group.
 
 Key resolution is direct: a fully qualified ``section.key``
-selects its schema by ``section`` — SDK roots (``http``, ``ui``,
-``skills``) win first, then the section's own state fields raise the
-"managed by" error, and anything else passes through to the schema. Bare
-keys are never implicitly expanded to a capability section.
+selects its schema by ``section``. A renamed key resolves to its new name
+with a warning and a retired one is rejected; the section's own state fields
+raise the "managed by" error, and anything else passes through to the
+schema. Bare keys are never implicitly expanded to a capability section.
 
 All read/write logic (list/get/set/unset/edit) is imported from the existing
 config modules; only :class:`RootConfigContext` (the root resolution rule)
@@ -15,6 +15,7 @@ cannot block the other rows.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Annotated
@@ -36,9 +37,16 @@ from untaped.config.models import SettingOutcome, setting_entry_row
 from untaped.config.prompting import resolve_set_value
 from untaped.config.repository import SettingsFileRepository
 from untaped.config.use_cases import GetSetting, ListAllProfilesSettings, ListSettings
+from untaped.config_file import read_config_dict
+from untaped.deprecated_keys import NO_KEY_MAPPINGS, KeyMappings, key_mappings, warn_once
 from untaped.errors import ConfigError
-from untaped.messages import hint
-from untaped.settings import Settings, resolve_config_path
+from untaped.messages import deprecated_message, hint, plural
+from untaped.settings import (
+    Settings,
+    active_settings_layout,
+    config_key_warning,
+    resolve_config_path,
+)
 from untaped.theme import OutputFormat
 from untaped.ui import ui_context
 
@@ -56,14 +64,18 @@ class RootSectionScope:
     state_fields: frozenset[str]
     """Tool-managed field names of the section's state model (never settable)."""
 
+    mappings: KeyMappings = NO_KEY_MAPPINGS
+    """The section model's renamed, retired and deprecated keys."""
+
 
 @dataclass(frozen=True)
 class RootConfigContext:
     """Root key-resolution rule (spec §4, root half).
 
-    SDK roots win first; a fully qualified ``section.key`` then resolves
-    against that section's scope (state fields rejected); bare keys and
-    unknown sections pass through untouched so the schema reports them.
+    A fully qualified ``section.key`` resolves against that section's scope:
+    a renamed key becomes its new key (with a warning), a retired key and a
+    state field are rejected; bare keys and unknown sections pass through
+    untouched so the schema reports them.
     """
 
     sections: Mapping[str, RootSectionScope]
@@ -71,14 +83,22 @@ class RootConfigContext:
     def resolve_key(self, key: str) -> str:
         """Map a user key to the concrete config key without implicit expansion."""
         first, rest = _split_first(key)
-        if first in Settings.model_fields:
-            return key
         if rest is None:
             # Bare keys never expand to a capability section at the root.
             return key
         scope = self.sections.get(first)
         if scope is None:
             return key
+        if rest in scope.mappings.readable:
+            new = f"{first}.{scope.mappings.readable[rest]}"
+            warn_once(_file_warning(first, rest) or deprecated_message(key, new), key=key)
+            return new
+        if rest in scope.mappings.retired:
+            new = f"{first}.{scope.mappings.migratable[rest]}"
+            raise ConfigError(
+                f"unknown setting: {key!r} (retired; now {new})\n{hint('config migrate')}",
+                category="invalid",
+            )
         state_first, _ = _split_first(rest)
         if state_first in scope.state_fields:
             raise self._state_error(first, key)
@@ -92,6 +112,23 @@ class RootConfigContext:
         )
 
 
+def _file_warning(section: str, old: str) -> str | None:
+    """The ``config.yml`` warning for ``old`` (with its migrate hint), if a layered profile has it.
+
+    Reading the file warns about the same key; both share one ``warn_once``
+    key, so a command that names an old key the file also has warns once.
+    """
+    try:
+        resolved = active_settings_layout().resolve(read_config_dict())
+    except ConfigError:
+        return None
+    for sections in resolved.uses.values():
+        for use in sections.get(section, ()):
+            if use.old == old:
+                return config_key_warning(use, section=section)
+    return None
+
+
 def _split_first(key: str) -> tuple[str, str | None]:
     first, sep, rest = key.partition(".")
     return first, rest if sep else None
@@ -100,16 +137,24 @@ def _split_first(key: str) -> tuple[str, str | None]:
 def section_scopes(
     shell: ApplicationSpec, result: CompositionResult
 ) -> dict[str, RootSectionScope]:
-    """Build the root resolution scopes for the shell plus composed capabilities."""
+    """Build the root resolution scopes for core, the shell and composed capabilities."""
     scopes = {
-        shell.config_section: RootSectionScope(
+        section: RootSectionScope(
             capability=shell.name,
-            profile_fields=frozenset(shell.profile_model.model_fields),
-            state_fields=frozenset(
-                shell.state_model.model_fields if shell.state_model is not None else ()
-            ),
+            profile_fields=frozenset(field.annotation.model_fields),  # type: ignore[union-attr]
+            state_fields=frozenset(),
+            mappings=key_mappings(field.annotation),  # type: ignore[arg-type]
         )
+        for section, field in Settings.model_fields.items()
     }
+    scopes[shell.config_section] = RootSectionScope(
+        capability=shell.name,
+        profile_fields=frozenset(shell.profile_model.model_fields),
+        state_fields=frozenset(
+            shell.state_model.model_fields if shell.state_model is not None else ()
+        ),
+        mappings=key_mappings(shell.profile_model),
+    )
     for registered in result.capabilities:
         spec = registered.spec
         scopes[spec.config_section] = RootSectionScope(
@@ -118,6 +163,7 @@ def section_scopes(
             state_fields=frozenset(
                 spec.state_model.model_fields if spec.state_model is not None else ()
             ),
+            mappings=key_mappings(spec.profile_model),
         )
     return scopes
 
@@ -211,6 +257,22 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
         """Remove ``section.key`` from the active profile (or the root ``--profile``)."""
         _unset(ctx, key, dry_run=dry_run, fmt=fmt, columns=columns)
 
+    @app.command(name="migrate")
+    @writes
+    def migrate_command(
+        *,
+        dry_run: DryRunOption = False,
+        fmt: FormatOption = "table",
+        columns: ColumnsOption = None,
+    ) -> None:
+        """Rename deprecated keys in every profile of config.yml.
+
+        A key also set under its new name (or a closer old name) in the same
+        profile is dropped. Environment variables and ``state.yml`` are not
+        changed.
+        """
+        _migrate(dry_run=dry_run, fmt=fmt, columns=columns)
+
     @app.command(name="edit")
     def edit_command() -> None:
         """Open ``~/.untaped/config.yml`` in $VISUAL/$EDITOR and re-validate on save."""
@@ -271,10 +333,13 @@ def _set(
         resolved = ctx.resolve_key(key)
         resolved_value = resolve_set_value(resolved, value, stdin=stdin, prompt=prompt, repo=repo)
         _warn_plaintext_token(ctx, resolved)
-        profile = repo.set_value(resolved, resolved_value, dry_run=dry_run)
+        removed: list[str] = []
+        profile = repo.set_value(
+            resolved, resolved_value, dry_run=dry_run, on_spelling_removed=removed.append
+        )
         if not dry_run:
-            message = f"set {resolved} in profile {profile} (config: {resolve_config_path()})"
-            ui_context(strict=False).success(message)
+            message = f"set {resolved} in profile {profile}{_removed_note(removed)}"
+            ui_context(strict=False).success(f"{message} (config: {resolve_config_path()})")
         action = "planned" if dry_run else "updated"
         outcome = SettingOutcome(key=resolved, profile=profile, action=action)
         emit(outcome, fmt=fmt, columns=columns, kind=_SETTING_OUTCOME)
@@ -301,19 +366,46 @@ def _unset(
 ) -> None:
     with report_errors():
         resolved = ctx.resolve_key(key)
-        removed, profile = SettingsFileRepository().unset_value(resolved, dry_run=dry_run)
+        spellings: list[str] = []
+        removed, profile = SettingsFileRepository().unset_value(
+            resolved, dry_run=dry_run, on_spelling_removed=spellings.append
+        )
         ui = ui_context(strict=False)
         where = f"in profile {profile}"
         if not removed:
             ui.message("info", f"{resolved} was not set {where}")
         elif not dry_run:
-            ui.success(f"unset {resolved} {where}")
+            ui.success(f"unset {resolved} {where}{_removed_note(spellings)}")
         action = "unchanged" if not removed else "planned" if dry_run else "deleted"
         outcome = SettingOutcome(key=resolved, profile=profile, action=action)
         emit(outcome, fmt=fmt, columns=columns, kind=_SETTING_OUTCOME)
 
 
+def _removed_note(spellings: list[str]) -> str:
+    return f"; removed {', '.join(spellings)}" if spellings else ""
+
+
+def _migrate(*, dry_run: bool, fmt: OutputFormat, columns: list[str] | None) -> None:
+    with report_errors():
+        rows = SettingsFileRepository().migrate_keys(dry_run=dry_run)
+        ui = ui_context(strict=False)
+        if not rows:
+            ui.message("info", "no deprecated keys in the config")
+        else:
+            counts = Counter(row["action"] for row in rows)
+            renamed = plural(counts["renamed"], "key")
+            dropped = f", dropped {counts['dropped']}" if counts["dropped"] else ""
+            if dry_run:
+                ui.message("info", f"would rename {renamed}{dropped}")
+            else:
+                ui.success(f"renamed {renamed}{dropped}")
+        if dry_run:
+            rows = [{**row, "action": "planned"} for row in rows]
+        emit(rows, fmt=fmt, columns=columns, kind=_MIGRATION_OUTCOME)
+
+
 _SETTING_OUTCOME = "untaped.setting_outcome"
+_MIGRATION_OUTCOME = "untaped.config_migration_outcome"
 
 
 __all__ = [

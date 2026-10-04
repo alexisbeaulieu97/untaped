@@ -10,25 +10,35 @@ falls back to a plain dump otherwise. ``ruamel.yaml`` is imported lazily.
 
 from __future__ import annotations
 
+import copy
 import io
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 import yaml
 
+KeyRename = tuple[tuple[str, ...], tuple[str, ...]]
+"""``(old_path, new_path)``: a key that moved, as absolute key paths."""
+
 
 def render_preserving(
-    original: str | None, before: Mapping[str, Any], after: dict[str, Any]
+    original: str | None,
+    before: Mapping[str, Any],
+    after: dict[str, Any],
+    *,
+    renames: Iterable[KeyRename] = (),
 ) -> str:
     """Return YAML text for ``after``, keeping ``original``'s untouched formatting.
 
     ``before`` is what PyYAML read from ``original``. Without an original
     document (absent, empty, or unparseable by ``ruamel.yaml``) this is a
-    plain dump of ``after`` in insertion order.
+    plain dump of ``after`` in insertion order. A key in ``renames`` that
+    stays in its mapping keeps its position, comment and quoting; one that
+    moves elsewhere is removed and added like any other change.
     """
     if original:
         try:
-            text = _round_trip(original, before, after)
+            text = _round_trip(original, before, after, tuple(renames))
         except Exception:  # any ruamel failure falls back to a plain dump
             text = None
         if text is not None and _reads_back(text, after):
@@ -48,7 +58,12 @@ def _reads_back(text: str, expected: Mapping[str, Any]) -> bool:
         return False
 
 
-def _round_trip(original: str, before: Mapping[str, Any], after: dict[str, Any]) -> str | None:
+def _round_trip(
+    original: str,
+    before: Mapping[str, Any],
+    after: dict[str, Any],
+    renames: tuple[KeyRename, ...] = (),
+) -> str | None:
     from ruamel.yaml import YAML  # noqa: PLC0415
     from ruamel.yaml.comments import CommentedMap  # noqa: PLC0415
     from ruamel.yaml.util import load_yaml_guess_indent  # noqa: PLC0415
@@ -59,6 +74,8 @@ def _round_trip(original: str, before: Mapping[str, Any], after: dict[str, Any])
     doc, seq_indent, seq_offset = load_yaml_guess_indent(original, yaml=rt)
     if not isinstance(doc, CommentedMap):
         return None
+    if renames:
+        before = _rename_in_place(doc, before, renames)
     _sync_map(doc, before, after)
     rt.indent(
         mapping=yaml_mapping_indent(original),
@@ -130,6 +147,40 @@ def _carry_renames(node: Any, before: Mapping[Any, Any], after: Mapping[Any, Any
             node.ca.items[key] = comment
         carried.add(key)
     return carried
+
+
+def _rename_in_place(
+    doc: Any, before: Mapping[str, Any], renames: tuple[KeyRename, ...]
+) -> dict[str, Any]:
+    """Rename keys within their mapping in ``doc``; return ``before`` renamed alike."""
+    from ruamel.yaml.comments import CommentedMap  # noqa: PLC0415
+
+    renamed = copy.deepcopy(dict(before))
+    for old, new in renames:
+        if len(old) != len(new) or old[:-1] != new[:-1]:
+            continue  # a move to another mapping is an ordinary remove and add
+        node: Any = doc
+        plain: Any = renamed
+        for part in old[:-1]:
+            node = node.get(part) if isinstance(node, CommentedMap) else None
+            plain = plain.get(part) if isinstance(plain, dict) else None
+        if (
+            not isinstance(node, CommentedMap)
+            or not isinstance(plain, dict)
+            or old[-1] not in node
+            or old[-1] not in plain
+            or new[-1] in node
+            or new[-1] in plain
+        ):
+            continue
+        position = list(node).index(old[-1])
+        child = node.pop(old[-1])
+        comment = node.ca.items.pop(old[-1], None)
+        node.insert(position, new[-1], child)
+        if comment is not None:
+            node.ca.items[new[-1]] = comment
+        plain[new[-1]] = plain.pop(old[-1])
+    return renamed
 
 
 def _sync_seq(node: Any, before: list[Any], after: list[Any]) -> None:

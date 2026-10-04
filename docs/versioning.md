@@ -5,8 +5,8 @@
 ## Stable within a major release
 
 A minor or patch release never breaks these. Anything new is added alongside
-them. For two installs of different major versions, see
-[Configuration](./configuration.md#file-and-layout).
+them. For two installs that disagree about a renamed setting, see
+[Configuration](./configuration.md#renamed-settings).
 `config.yml` and `state.yml` carry an on-disk
 [file format](./configuration.md#file-format) that changes only in a major.
 
