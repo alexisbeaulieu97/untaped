@@ -45,6 +45,7 @@ from untaped.settings import (
     Settings,
     active_settings_layout,
     config_key_warning,
+    model_sections,
     resolve_config_path,
 )
 from untaped.theme import OutputFormat
@@ -141,11 +142,11 @@ def section_scopes(
     scopes = {
         section: RootSectionScope(
             capability=shell.name,
-            profile_fields=frozenset(field.annotation.model_fields),  # type: ignore[union-attr]
+            profile_fields=frozenset(model.model_fields),
             state_fields=frozenset(),
-            mappings=key_mappings(field.annotation),  # type: ignore[arg-type]
+            mappings=key_mappings(model),
         )
-        for section, field in Settings.model_fields.items()
+        for section, model in model_sections(Settings).items()
     }
     scopes[shell.config_section] = RootSectionScope(
         capability=shell.name,
