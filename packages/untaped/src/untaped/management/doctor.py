@@ -12,7 +12,8 @@ Each row is isolated: invalid settings for one capability surface as failed
 rows while every other row still runs.
 Quarantine records render as failed rows (nonzero exit). A config file other
 users can read renders as a ``warn`` row, which does not fail the run; so do
-profile keys no settings model declares,
+profile keys no settings model declares, renamed, retired or deprecated keys
+in any profile (fixed by ``config migrate``, except deprecated settings),
 installed skills that differ from their packaged copy, and a capability
 check that returns ``DoctorResult(..., warn=True)``. ``doctor fix``
 (:mod:`untaped.management.fix`) runs every automatic fix the checks name.
@@ -53,6 +54,7 @@ from untaped.cli import (
 )
 from untaped.config_file import read_config_dict
 from untaped.config_schema import walk_settings
+from untaped.deprecated_keys import key_mappings, scan_keys
 from untaped.errors import ConfigError, ExitCode, first_validation_error
 from untaped.http import resolve_verify
 from untaped.management._render import emit_check_list, emit_isolated
@@ -71,6 +73,7 @@ from untaped.settings import (
     active_settings_layout,
     check_settings_field,
     get_profile_settings_model,
+    profile_section_models,
     resolve_config_path,
     resolve_state_path,
 )
@@ -311,6 +314,7 @@ def collect_doctor_rows(
     if raw is not None:
         rows.append(_permissions_row(shell))
         rows.append(_unknown_keys_row(shell, raw))
+        rows.append(_deprecated_keys_row(shell, raw))
     state, state_file_row = _state_file_row(shell)
     rows.append(state_file_row)
     settings_error: str | None = None
@@ -361,7 +365,13 @@ def selected_check_rows(
     """``selected`` capabilities' doctor rows for ``profile``, online checks included."""
     with profile_scope(profile):
         rows = collect_doctor_rows(shell, result, online=True, capabilities=selected)
-    return [row for row in rows if row["capability"] in selected]
+    # Old keys concern every capability's settings, so setup shows them too.
+    return [
+        row
+        for row in rows
+        if row["capability"] in selected
+        or (row["check"] == "deprecated-keys" and row["status"] != _PASS)
+    ]
 
 
 def _check_rows(
@@ -404,6 +414,12 @@ def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[st
     title = "unknown config keys"
     model = get_profile_settings_model()
     leaves = {d.path for d in walk_settings(model, include_collections=True)}
+    # Old keys are the deprecated-keys row's to report.
+    leaves |= {
+        (section, *old.split("."))
+        for section, section_model in profile_section_models().items()
+        for old in key_mappings(section_model).migratable
+    }
     prefixes = {path[:depth] for path in leaves for depth in range(1, len(path))}
     unknown = [str(key) for key in raw if key not in RESERVED_STATE_SECTIONS]
     profiles = raw.get("profiles")
@@ -413,6 +429,26 @@ def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[st
     if unknown:
         return _row("unknown-keys", shell.name, _WARN, title, "ignored: " + ", ".join(unknown))
     return _row("unknown-keys", shell.name, _PASS, title, "no unknown keys")
+
+
+def _deprecated_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[str, object]:
+    """Warn about old keys and deprecated settings in any profile."""
+    title = "deprecated config keys"
+    found = scan_keys(raw, profile_section_models())
+    if not found:
+        return _row("deprecated-keys", shell.name, _PASS, title, "no deprecated keys")
+    parts = []
+    for item in found:
+        old = f"{item.section}.{item.old}"
+        if item.kind == "deprecated":
+            parts.append(f"{old} (profile {item.profile}, deprecated): {item.message}")
+        else:
+            retired = ", retired" if item.kind == "retired" else ""
+            parts.append(f"{old} (profile {item.profile}{retired}) → {item.section}.{item.new}")
+    fix = None
+    if any(item.kind != "deprecated" for item in found):
+        fix = command_argv("config migrate", profile=selected_profile(dict(raw)))
+    return _row("deprecated-keys", shell.name, _WARN, title, "; ".join(parts), fix, automatic=True)
 
 
 def _collect_unknown(

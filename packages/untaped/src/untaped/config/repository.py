@@ -26,15 +26,16 @@ from untaped.deprecated_keys import (
     key_mappings,
     migration_moves,
     old_spellings,
+    profile_sections,
 )
 from untaped.errors import ConfigError, first_validation_error
-from untaped.profile_resolver import DEFAULT_PROFILE
 from untaped.settings import (
     Settings,
     active_settings_layout,
     env_var_name,
     get_profile_settings_model,
     load_settings_section,
+    model_sections,
     validate_settings_section,
 )
 from untaped.settings_layout import ResolvedConfig
@@ -149,11 +150,7 @@ class SettingsFileRepository:
 
     def section_model(self, section: str) -> type[BaseModel] | None:
         """The settings model of ``section``, if it is one."""
-        field = self._profile_model().model_fields.get(section)
-        annotation = None if field is None else field.annotation
-        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-            return annotation
-        return None
+        return self._section_models().get(section)
 
     def deprecated_source(self, descriptor: FieldDescriptor) -> str | None:
         """The old key or variable that supplied ``descriptor``'s value, if any.
@@ -318,33 +315,25 @@ class SettingsFileRepository:
         renames: list[KeyRename] = []
 
         def _apply(data: dict[str, Any]) -> None:
-            profiles = data.get("profiles")
-            if not isinstance(profiles, dict):
-                return
-            for name in sorted(profiles, key=lambda name: (name != DEFAULT_PROFILE, str(name))):
-                profile_data = profiles[name]
-                if not isinstance(profile_data, dict):
-                    continue
-                for section, model in self._section_models().items():
-                    section_data = profile_data.get(section)
-                    if not isinstance(section_data, dict):
+            for name, section, model, section_data in profile_sections(
+                data, self._section_models()
+            ):
+                for move in migration_moves(model, section_data):
+                    if not apply_move(section_data, move):
                         continue
-                    for move in migration_moves(model, section_data):
-                        if not apply_move(section_data, move):
-                            continue
-                        rows.append(
-                            {
-                                "profile": str(name),
-                                "from": f"{section}.{move.old}",
-                                "to": f"{section}.{move.to}",
-                                "action": move.action,
-                            }
+                    rows.append(
+                        {
+                            "profile": name,
+                            "from": f"{section}.{move.old}",
+                            "to": f"{section}.{move.to}",
+                            "action": move.action,
+                        }
+                    )
+                    if move.action == "renamed":
+                        base = ("profiles", name, section)
+                        renames.append(
+                            ((*base, *move.old.split(".")), (*base, *move.to.split(".")))
                         )
-                        if move.action == "renamed":
-                            base = ("profiles", str(name), section)
-                            renames.append(
-                                ((*base, *move.old.split(".")), (*base, *move.to.split(".")))
-                            )
 
         if dry_run:
             _apply(read_config_dict())
@@ -353,11 +342,7 @@ class SettingsFileRepository:
         return rows
 
     def _section_models(self) -> dict[str, type[BaseModel]]:
-        return {
-            section: model
-            for section in self._profile_model().model_fields
-            if (model := self.section_model(section)) is not None
-        }
+        return model_sections(self._profile_model())
 
     def _old_paths(self, descriptor: FieldDescriptor) -> list[tuple[str, ...]]:
         """Absolute paths of every old spelling of ``descriptor``, closest first."""

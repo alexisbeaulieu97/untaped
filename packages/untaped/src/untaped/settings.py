@@ -141,7 +141,7 @@ class Settings(_SettingsSources):
     skills: SkillsSettings = Field(default_factory=SkillsSettings)
 
 
-def _model_sections(settings_cls: type[BaseModel]) -> dict[str, type[BaseModel]]:
+def model_sections(settings_cls: type[BaseModel]) -> dict[str, type[BaseModel]]:
     """``section -> model`` for every field of ``settings_cls`` holding a model."""
     return {
         name: field.annotation
@@ -150,11 +150,12 @@ def _model_sections(settings_cls: type[BaseModel]) -> dict[str, type[BaseModel]]
     }
 
 
-def _profile_section_models() -> SectionModels:
-    return _model_sections(get_profile_settings_model())
+def profile_section_models() -> SectionModels:
+    """``section -> model`` for every profile section: core, the shell and each capability."""
+    return model_sections(get_profile_settings_model())
 
 
-_PROFILES_LAYOUT = ProfilesSettingsLayout(sections=_profile_section_models)
+_PROFILES_LAYOUT = ProfilesSettingsLayout(sections=profile_section_models)
 
 
 def active_settings_layout() -> ProfilesSettingsLayout:
@@ -214,7 +215,7 @@ class LayoutSettingsSource(InitSettingsSource):
 
     def __init__(self, settings_cls: type[BaseSettings], yaml_file: Path) -> None:
         raw = load_config_yaml(yaml_file)
-        resolved = active_settings_layout().resolve(raw, sections=_model_sections(settings_cls))
+        resolved = active_settings_layout().resolve(raw, sections=model_sections(settings_cls))
         effective = resolved.effective
         for sections in resolved.uses.values():
             for section, uses in sections.items():
@@ -280,7 +281,7 @@ class _RenamingEnvSource(EnvSettingsSource):
 
     def __call__(self) -> dict[str, Any]:
         data = super().__call__()
-        for section, model in _model_sections(self.settings_cls).items():
+        for section, model in model_sections(self.settings_cls).items():
             value = data.get(section)
             if not isinstance(value, dict) or not key_mappings(model):
                 continue
@@ -625,7 +626,7 @@ def _env_culprit(exc: ValidationError, settings_cls: type[BaseModel]) -> str | N
 
 
 def _readable_old_keys(settings_cls: type[BaseModel], section: str) -> dict[str, str]:
-    model = _model_sections(settings_cls).get(section)
+    model = model_sections(settings_cls).get(section)
     return {} if model is None else dict(key_mappings(model).readable)
 
 

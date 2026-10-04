@@ -39,6 +39,9 @@
   it fixed; `--dry-run` only plans. `untaped doctor` and `untaped setup`
   hint at it.
   ([#480](https://github.com/alexisbeaulieu97/untaped/pull/480))
+- `untaped doctor` lists deprecated and retired config keys in every
+  profile, with `untaped config migrate` as an automatic fix.
+  ([#485](https://github.com/alexisbeaulieu97/untaped/pull/485))
 - awx: `apply` outcome records list `dropped_secrets`, the secret placeholders
   a create left out (a new workflow node's `$encrypted$` extra vars included),
   and the undeclared-placeholder warning now says to set the real value or
