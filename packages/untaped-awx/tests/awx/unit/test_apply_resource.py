@@ -518,9 +518,11 @@ def test_create_with_optional_placeholder_secret_drops_it() -> None:
         metadata=Metadata(name="deploy", organization="Default"),
         spec={"playbook": "deploy.yml", "host_config_key": "$encrypted$"},
     )
-    apply(resource, write=True)
+    outcome = apply(resource, write=True)
     assert strategy.created is not None
     assert "host_config_key" not in strategy.created
+    assert outcome.dropped_secrets == ["host_config_key"]
+    assert outcome.preserved_secrets == []
     assert any("host_config_key placeholders dropped" in w for w in warnings)
 
 
