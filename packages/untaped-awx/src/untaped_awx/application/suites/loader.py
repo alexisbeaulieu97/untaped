@@ -120,7 +120,9 @@ class LoadTestSuite:
             try:
                 specs[str(name)] = VariableSpec(name=str(name), **body_without_name)
             except ValidationError as exc:
-                raise ConfigError(f"variable {name!r}: {exc}", category="invalid") from exc
+                raise ConfigError(
+                    f"variable {name!r}: {first_validation_error(exc)}", category="invalid"
+                ) from exc
         return specs
 
 

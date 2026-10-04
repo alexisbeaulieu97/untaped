@@ -378,21 +378,33 @@ def test_validate_warns_about_an_unknown_launch_field_as_a_diagnostic(
     assert [line["level"] for line in lines if "frooks" in line["message"]] == ["warning"]
 
 
+@pytest.mark.parametrize(
+    ("body", "problem"),
+    [
+        (
+            "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\n"
+            "cases:\n  c:\n    expect:\n      status: bogus\n",
+            "cases.c.expect.status: ",
+        ),
+        (
+            "---\nvariables:\n  env:\n    type: number\n---\n"
+            "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\ncases:\n  c: {}\n",
+            "variable 'env': type: ",
+        ),
+    ],
+    ids=["case", "header variable"],
+)
 def test_validate_reports_an_invalid_suite_as_one_line(
-    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+    body: str, problem: str, cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
 ) -> None:
     _seed_jt(fake_aap)
-    test_file = _write(
-        tmp_path / "s.yml",
-        "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\n"
-        "cases:\n  c:\n    expect:\n      status: bogus\n",
-    )
+    test_file = _write(tmp_path / "s.yml", body)
 
     result = cli.invoke(app, ["test", "validate", str(test_file), "--non-interactive"])
 
     assert result.exit_code == 1
     [line] = result.stderr.splitlines()
-    assert "cases.c.expect.status" in line
+    assert line.startswith(f"error: {test_file}: {problem}")
     assert "pydantic" not in result.stderr
     assert "validation error" not in result.stderr
 
