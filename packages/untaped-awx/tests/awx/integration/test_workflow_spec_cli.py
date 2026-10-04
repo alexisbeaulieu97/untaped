@@ -456,9 +456,11 @@ def test_encrypted_node_extra_vars_are_dropped_on_create_and_match_on_update(
     # A placeholder cannot be sent to a new node: it is dropped with a warning.
     _nodes(document)["deploy"]["prompts"]["extra_vars"]["password"] = "$encrypted$"
     document["metadata"]["name"] = "Release copy"
-    copied = _apply(_write(tmp_path, document), "--yes")
+    copied = _apply(_write(tmp_path, document), "--yes", "--format", "json")
     assert copied.exit_code == 0, copied.output + (copied.stderr or "")
     assert "nodes[deploy] extra_vars.password is $encrypted$" in (copied.stderr or "")
+    [row] = json.loads(copied.stdout)
+    assert row["dropped_secrets"] == ["nodes[deploy].prompts.extra_vars.password"]
     assert _nodes(_export("Release copy"))["deploy"]["prompts"]["extra_vars"] == {"version": 3}
 
 
