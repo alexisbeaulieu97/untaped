@@ -24,6 +24,7 @@ from pydantic_settings.sources import EnvSettingsSource, InitSettingsSource
 
 from untaped.deprecated_keys import KeyUse, key_mappings, rename_keys, use_warning, warn_once
 from untaped.errors import ConfigError, first_validation_error
+from untaped.messages import hint
 from untaped.settings_layout import ProfilesSettingsLayout, SectionModels
 from untaped.theme import CONFIG_WRITE_CONTEXT, UiSettings
 
@@ -226,21 +227,37 @@ class LayoutSettingsSource(InitSettingsSource):
         super().__init__(settings_cls, effective)
 
 
-def _warn_use(use: KeyUse, *, section: str) -> None:
-    """Warn once about an old key or deprecated setting read from ``config.yml``."""
+_MIGRATE_FIXES = {"renamed": "rename it in", "ignored": "remove it from"}
+
+
+def config_key_warning(use: KeyUse, *, section: str) -> str | None:
+    """The warning for an old key or deprecated setting read from ``config.yml``."""
     message = use_warning(
         use,
         old=f"{section}.{use.old}",
         new=f"{section}.{use.new}",
         kept=f"{section}.{use.kept}",
     )
+    if message is not None and use.kind in _MIGRATE_FIXES:
+        message = f"{message}\n{hint('config migrate')} to {_MIGRATE_FIXES[use.kind]} config.yml"
+    return message
+
+
+def _warn_use(use: KeyUse, *, section: str) -> None:
+    """Warn once about an old key or deprecated setting read from ``config.yml``."""
+    message = config_key_warning(use, section=section)
     if message is not None:
-        warn_once(message)
+        warn_once(message, key=f"{section}.{use.old}")
+
+
+def env_var_name(path: Iterable[str]) -> str:
+    """The ``UNTAPED_*`` variable that sets the setting at ``path`` (``("github", "token")``)."""
+    return "UNTAPED_" + "__".join(path).upper()
 
 
 def _env_name(section: str, key: str) -> str:
     """The ``UNTAPED_*`` variable that sets ``key`` of ``section``."""
-    return "UNTAPED_" + "__".join([section, *key.split(".")]).upper()
+    return env_var_name([section, *key.split(".")])
 
 
 def _env_is_set(name: str) -> bool:
@@ -596,7 +613,7 @@ def _env_culprit(exc: ValidationError, settings_cls: type[BaseModel]) -> str | N
     # The deepest set ``UNTAPED_A__B__C`` wins (or a variable spelling one of
     # its old names); a JSON blob in ``UNTAPED_A`` can also supply a nested value.
     for depth in range(len(loc), 0, -1):
-        candidate = "UNTAPED_" + "__".join(loc[:depth]).upper()
+        candidate = env_var_name(loc[:depth])
         if candidate in os.environ:
             return candidate
         path = ".".join(loc[1:depth])

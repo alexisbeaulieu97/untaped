@@ -8,6 +8,7 @@ from typing import Any
 from untaped.config.models import SettingEntry, Source, display_default, display_value
 from untaped.config.ports import SettingsReader
 from untaped.config_schema import FieldDescriptor
+from untaped.deprecated_keys import rename_keys
 from untaped.errors import ConfigError
 from untaped.profile_resolver import DEFAULT_PROFILE
 
@@ -83,7 +84,7 @@ class ListAllProfilesSettings:
         descriptors_by_path = {d.path: d for d in self._repo.descriptors()}
         entries: list[SettingEntry] = []
         for profile_name in self._repo.profile_names():
-            profile = self._repo.profile_data(profile_name) or {}
+            profile, notes = self._current_names(self._repo.profile_data(profile_name) or {})
             for path, value in _iter_leaves(profile, (), stop_at=descriptors_by_path):
                 descriptor = descriptors_by_path.get(path)
                 if descriptor is None:
@@ -95,9 +96,27 @@ class ListAllProfilesSettings:
                         default=display_default(descriptor, reveal_secrets=reveal_secrets),
                         source=Source(kind="profile", profile=profile_name),
                         profile=profile_name,
+                        note=notes.get(path),
                     )
                 )
         return entries
+
+    def _current_names(
+        self, profile: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[tuple[str, ...], str]]:
+        """``profile`` with old keys at their new names, and a note per renamed leaf."""
+        current = dict(profile)
+        notes: dict[tuple[str, ...], str] = {}
+        for section, data in profile.items():
+            model = self._repo.section_model(section)
+            if model is None or not isinstance(data, dict):
+                continue
+            current[section], uses = rename_keys(model, data)
+            for use in uses:
+                if use.kind == "renamed":
+                    path = (section, *use.new.split("."))
+                    notes[path] = _deprecated_note(f"{section}.{use.old}")
+        return current, notes
 
 
 def setting_entry_for_descriptor(
@@ -126,13 +145,19 @@ def setting_entry_for_descriptor(
         descriptor,
         current,
     )
+    old = repo.deprecated_source(descriptor)
     return SettingEntry(
         key=descriptor.key,
         value=display_value(descriptor, current, reveal_secrets=reveal_secrets),
         default=display_default(descriptor, reveal_secrets=reveal_secrets),
         source=source,
         profile=source.profile if include_profile else None,
+        note=None if old is None else _deprecated_note(old),
     )
+
+
+def _deprecated_note(old: str) -> str:
+    return f"from deprecated {old}"
 
 
 def _iter_leaves(

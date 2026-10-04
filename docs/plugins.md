@@ -5,8 +5,8 @@ A capability provider is a Python package that adds one capability to
 section, and optionally state, doctor checks and packaged skills. The root
 discovers providers through the `untaped.capabilities` entry-point group and
 owns everything else: there is no second console script, config command or
-profile command. The docs say *capability* for what users run and
-*provider* for the package; *plugin* is the informal word for either.
+profile command. A *capability* is what users run and its *provider* is
+the package; the [Glossary](../CONTRIBUTING.md#glossary) has the rest.
 
 Provider code imports from `untaped.sdk` and nothing else in `untaped`; see
 [SDK stability](./reference/conventions.md#sdk-stability). First-party
