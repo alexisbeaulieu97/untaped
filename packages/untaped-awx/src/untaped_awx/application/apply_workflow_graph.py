@@ -116,6 +116,8 @@ class WorkflowGraphPlan:
     desired: tuple[NodeState, ...]
     current: tuple[NodeState, ...]
     changes: tuple[FieldChange, ...]
+    dropped: tuple[str, ...] = ()
+    """New nodes' ``$encrypted$`` extra vars, which a create leaves out."""
     label: str = ""
 
     @property
@@ -158,10 +160,16 @@ class WorkflowGraphReconciler:
         desired = resolve_graph(nodes, organization=organization, fk=fk)
         current = read_graph(self._nodes, workflow_id) if workflow_id is not None else []
         before = export_graph(current, organization=organization, fk=fk)
+        diff = diff_graph(desired, current)
         return WorkflowGraphPlan(
             desired=tuple(desired),
             current=tuple(current),
-            changes=_rows(diff_graph(desired, current), _documents(before), _documents(nodes)),
+            changes=_rows(diff, _documents(before), _documents(nodes)),
+            dropped=tuple(
+                f"nodes[{state.identifier}].prompts.extra_vars.{key}"
+                for state in diff.create
+                for key in _placeholders(state)
+            ),
             label=label,
         )
 
@@ -218,8 +226,7 @@ class WorkflowGraphReconciler:
 
     def _without_placeholders(self, plan: WorkflowGraphPlan, state: NodeState) -> NodeState:
         """A new node cannot take ``$encrypted$`` extra vars: drop them, with a warning."""
-        extra = state.fields.get("extra_data") or {}
-        masked = [key for key, value in extra.items() if value == ENCRYPTED]
+        masked = _placeholders(state)
         for key in masked:
             self._warn(
                 f"{plan.label}: nodes[{state.identifier}] extra_vars.{key} is {ENCRYPTED}, "
@@ -227,6 +234,7 @@ class WorkflowGraphReconciler:
             )
         if not masked:
             return state
+        extra = state.fields["extra_data"]
         kept = {key: value for key, value in extra.items() if key not in masked}
         return replace(state, fields={**state.fields, "extra_data": kept})
 
@@ -369,6 +377,12 @@ def changed_keys(current: NodeState, wanted: NodeState) -> tuple[str, ...]:
         if current.members_differ(wanted, relation)
     ]
     return tuple(keys)
+
+
+def _placeholders(state: NodeState) -> list[str]:
+    """The node's ``extra_vars`` keys set to ``$encrypted$``."""
+    extra = state.fields.get("extra_data") or {}
+    return [key for key, value in extra.items() if value == ENCRYPTED]
 
 
 def _needs_replacing(current: NodeState, wanted: NodeState) -> bool:
