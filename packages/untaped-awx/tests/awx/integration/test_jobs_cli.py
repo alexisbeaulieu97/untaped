@@ -376,6 +376,41 @@ def test_launch_follow_exits_one_on_job_failure(fake_aap: Any) -> None:
     assert result.exit_code == 1
 
 
+def test_launch_failed_job_is_a_warning_diagnostic(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    _seed_basic_jt(fake_aap, job_status="failed")
+
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "deploy", "--wait"])
+
+    assert result.exit_code == 1
+    records = [json.loads(line) for line in result.stderr.splitlines() if line.startswith("{")]
+    [record] = [r for r in records if "deploy" in r["message"]]
+    assert record["level"] == "warning"
+    assert record["message"] == "deploy: execution ended with status failed"
+
+
+def test_launch_worker_exception_is_an_attributed_error(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    _seed_basic_jt(fake_aap, job_status="successful")
+
+    def _boom(_monitor: Any, job: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(PollingJobMonitor, "stream_stdout", _boom)
+
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "deploy", "--follow"])
+
+    assert result.exit_code == 1
+    records = [json.loads(line) for line in result.stderr.splitlines() if line.startswith("{")]
+    [record] = [r for r in records if r.get("item") == "deploy"]
+    assert record["level"] == "error"
+    assert "RuntimeError: boom" in record["message"]
+
+
 def test_launch_follow_streams_the_log_to_stderr_ending_with_the_recap(fake_aap: Any) -> None:
     """One job's log streams unprefixed to stderr; stdout keeps only the result row."""
     _seed_basic_jt(fake_aap, job_status="failed")
@@ -387,7 +422,7 @@ def test_launch_follow_streams_the_log_to_stderr_ending_with_the_recap(fake_aap:
 
     assert result.exit_code == 1
     assert 'fatal: [web-01]: FAILED! => {"msg": "disk full"}' in result.stderr
-    log_lines = [line for line in result.stderr.splitlines() if not line.startswith("failed:")]
+    log_lines = [line for line in result.stderr.splitlines() if not line.startswith("warning:")]
     assert log_lines[-2:] == ["PLAY RECAP ******", "web-01 : ok=1 changed=0 unreachable=0 failed=1"]
     assert json.loads(result.stdout)[0]["status"] == "failed"
     assert "PLAY RECAP" not in result.stdout
@@ -549,7 +584,7 @@ def test_launch_follow_worker_exception_wraps_to_untaped_error(
     assert result.exit_code == 1, result.output
     # Single-prefix error row, with the original exception class name
     # preserved for debuggability.
-    assert "failed: deploy-a: RuntimeError: boom" in result.stderr
+    assert "error: deploy-a: RuntimeError: boom" in result.stderr
     # The other worker isn't aborted by deploy-a's failure: deploy-b's
     # log still streams with its prefix.
     assert "[deploy-b]" in result.stderr

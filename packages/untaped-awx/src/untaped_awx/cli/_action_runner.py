@@ -11,6 +11,7 @@ from rich.text import Text
 
 from untaped.sdk import (
     ColumnsOption,
+    ErrorInfo,
     FormatOption,
     UntapedError,
     echo,
@@ -19,6 +20,7 @@ from untaped.sdk import (
     hint,
     note_failure,
     raise_usage,
+    report_error,
 )
 from untaped_awx.application import RunAction
 from untaped_awx.application.abandon_jobs import AbandonJobs
@@ -128,13 +130,25 @@ def run_action_selection(
             abandon=abandon,
             error_detail=lambda exc, index: safe_error(exc, targets[index]),
         )
-    for row in rows:
-        if row.get("detail"):
-            echo(f"{row['action']}: {row['target_name']}: {row['detail']}", err=True)
+    _report_rows(ctx, rows)
     for kind, ids in unfinished.items():
         echo(hint(f"awx jobs wait {' '.join(ids)} --kind {kind}"), err=True)
     _emit_rows(rows, action=action, fmt=fmt, columns=columns)
     finish(any(row["action"] != "completed" for row in rows))
+
+
+def _report_rows(ctx: AwxContext, rows: list[dict[str, Any]]) -> None:
+    """Report each row that did not complete on stderr.
+
+    A row whose request raised is an attributed error; a job that ended
+    unsuccessfully, ran out of time or was skipped is a warning, since the
+    row and the exit code already carry the failure.
+    """
+    for row in rows:
+        if row.get("error"):
+            report_error(ErrorInfo.model_validate(row["error"]), item=row["target_name"])
+        elif row.get("detail"):
+            ctx.progress_ui().message("warning", f"{row['target_name']}: {row['detail']}")
 
 
 _TABLE_COLUMNS = ("target_name", "id", "status", "action", "detail", "payload")
