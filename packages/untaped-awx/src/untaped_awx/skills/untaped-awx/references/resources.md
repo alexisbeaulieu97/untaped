@@ -174,6 +174,8 @@ The preview, `--dry-run`, `--yes` and exit-code rules are in the skill's
   `--allow-unverified --yes` keeps it, still labelled unverified.
 - Deleting an inventory is asynchronous (`deletion_requested`).
 - Previews and results redact known secrets. `awx.apply_outcome` rows list
-  `fields_changed`, `preserved_secrets` and `dropped_undeclared_secrets`
+  `fields_changed`, `preserved_secrets`, `dropped_undeclared_secrets`
   (`$encrypted$` placeholders at fields untaped doesn't treat as secrets,
-  left out of the write).
+  left out of the write) and `dropped_secrets` (secret placeholders a create
+  left out, a new workflow node's `$encrypted$` extra vars included, so the
+  new resource or node starts without them).

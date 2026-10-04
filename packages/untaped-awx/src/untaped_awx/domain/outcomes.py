@@ -50,6 +50,7 @@ class ApplyOutcome(OutcomeRecord):
     changes: list[FieldChange] = Field(default_factory=list)
     preserved_secrets: list[str] = Field(default_factory=list)
     dropped_undeclared_secrets: list[str] = Field(default_factory=list)
+    dropped_secrets: list[str] = Field(default_factory=list)
     partial: bool = False
     unverified: bool = False
     detail: str | None = None
