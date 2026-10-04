@@ -336,11 +336,14 @@ class HttpTransportError(HttpError):
 
 
 def first_validation_error(exc: ValidationError) -> str:
-    """Format the first issue from a Pydantic ``ValidationError`` as ``loc: msg``."""
+    """Format the first issue from a Pydantic ``ValidationError`` as ``loc: msg``.
+
+    A validator's ``ValueError`` text appears without pydantic's ``Value error, `` prefix.
+    """
     errs = exc.errors()
     if not errs:
         return str(exc)
     err = errs[0]
     loc = ".".join(str(part) for part in err.get("loc", ()))
-    msg = err.get("msg", "invalid value")
+    msg = str(err.get("msg", "invalid value")).removeprefix("Value error, ")
     return f"{loc}: {msg}" if loc else msg
