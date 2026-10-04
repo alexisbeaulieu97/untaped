@@ -20,7 +20,7 @@ from __future__ import annotations
 import copy
 import types
 import typing
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from functools import cache
 from typing import Any, Literal
@@ -351,35 +351,47 @@ class FoundKey:
     profile: str
     section: str
     old: str
-    new: str
+    new: str | None
+    """The current field; ``None`` for a deprecated setting, which keeps its name."""
+
     kind: Literal["renamed", "retired", "deprecated"]
     message: str | None = None
 
 
-def scan_keys(raw: Mapping[str, Any], sections: Mapping[str, type[BaseModel]]) -> list[FoundKey]:
-    """Every old key and deprecated setting in every profile (``default`` first)."""
+def profile_sections(
+    raw: Mapping[str, Any], sections: Mapping[str, type[BaseModel]]
+) -> Iterator[tuple[str, str, type[BaseModel], dict[str, Any]]]:
+    """``(profile, section, model, section data)`` for every section set in every profile.
+
+    Profiles come ``default`` first, then by name. The section data is the
+    mapping in ``raw`` itself, so a caller may change it in place.
+    """
     profiles = raw.get("profiles")
-    if not isinstance(profiles, Mapping):
-        return []
-    found: list[FoundKey] = []
+    if not isinstance(profiles, dict):
+        return
     for name in sorted(profiles, key=lambda name: (name != DEFAULT_PROFILE, str(name))):
         data = profiles[name]
-        if not isinstance(data, Mapping):
+        if not isinstance(data, dict):
             continue
         for section, model in sections.items():
             section_data = data.get(section)
-            if not isinstance(section_data, Mapping):
-                continue
-            mappings = key_mappings(model)
-            for old, new in sorted(mappings.migratable.items()):
-                if _lookup(section_data, old) is not _MISSING:
-                    kind: Literal["renamed", "retired"] = (
-                        "retired" if old in mappings.retired else "renamed"
-                    )
-                    found.append(FoundKey(name, section, old, new, kind))
-            for key, message in sorted(mappings.deprecated.items()):
-                if _lookup(section_data, key) is not _MISSING:
-                    found.append(FoundKey(name, section, key, key, "deprecated", message))
+            if isinstance(section_data, dict):
+                yield str(name), section, model, section_data
+
+
+def scan_keys(raw: Mapping[str, Any], sections: Mapping[str, type[BaseModel]]) -> list[FoundKey]:
+    """Every old key ``config migrate`` would move, and every deprecated setting, per profile."""
+    found: list[FoundKey] = []
+    for profile, section, model, data in profile_sections(raw, sections):
+        mappings = key_mappings(model)
+        for move in migration_moves(model, data):
+            kind: Literal["renamed", "retired"] = (
+                "retired" if move.old in mappings.retired else "renamed"
+            )
+            found.append(FoundKey(profile, section, move.old, mappings.migratable[move.old], kind))
+        for key, message in sorted(mappings.deprecated.items()):
+            if _lookup(data, key) is not _MISSING:
+                found.append(FoundKey(profile, section, key, None, "deprecated", message))
     return found
 
 

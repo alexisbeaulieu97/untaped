@@ -26,9 +26,9 @@ from untaped.deprecated_keys import (
     key_mappings,
     migration_moves,
     old_spellings,
+    profile_sections,
 )
 from untaped.errors import ConfigError, first_validation_error
-from untaped.profile_resolver import DEFAULT_PROFILE
 from untaped.settings import (
     Settings,
     active_settings_layout,
@@ -315,33 +315,25 @@ class SettingsFileRepository:
         renames: list[KeyRename] = []
 
         def _apply(data: dict[str, Any]) -> None:
-            profiles = data.get("profiles")
-            if not isinstance(profiles, dict):
-                return
-            for name in sorted(profiles, key=lambda name: (name != DEFAULT_PROFILE, str(name))):
-                profile_data = profiles[name]
-                if not isinstance(profile_data, dict):
-                    continue
-                for section, model in self._section_models().items():
-                    section_data = profile_data.get(section)
-                    if not isinstance(section_data, dict):
+            for name, section, model, section_data in profile_sections(
+                data, self._section_models()
+            ):
+                for move in migration_moves(model, section_data):
+                    if not apply_move(section_data, move):
                         continue
-                    for move in migration_moves(model, section_data):
-                        if not apply_move(section_data, move):
-                            continue
-                        rows.append(
-                            {
-                                "profile": str(name),
-                                "from": f"{section}.{move.old}",
-                                "to": f"{section}.{move.to}",
-                                "action": move.action,
-                            }
+                    rows.append(
+                        {
+                            "profile": name,
+                            "from": f"{section}.{move.old}",
+                            "to": f"{section}.{move.to}",
+                            "action": move.action,
+                        }
+                    )
+                    if move.action == "renamed":
+                        base = ("profiles", name, section)
+                        renames.append(
+                            ((*base, *move.old.split(".")), (*base, *move.to.split(".")))
                         )
-                        if move.action == "renamed":
-                            base = ("profiles", str(name), section)
-                            renames.append(
-                                ((*base, *move.old.split(".")), (*base, *move.to.split(".")))
-                            )
 
         if dry_run:
             _apply(read_config_dict())
