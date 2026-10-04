@@ -13,7 +13,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from untaped.sdk import ConfigError, UsageError, attribution
+from untaped.sdk import ConfigError, UsageError, attribution, first_validation_error
 from untaped_awx.application.suites.ports import (
     Filesystem,
     Parser,
@@ -78,7 +78,7 @@ class LoadTestSuite:
             try:
                 return Suite.model_validate(data)
             except ValidationError as exc:
-                raise ConfigError(str(exc), category="invalid") from exc
+                raise ConfigError(first_validation_error(exc), category="invalid") from exc
 
     def parse_specs(self, path: Path) -> dict[str, VariableSpec]:
         """Read *path* and return its frontmatter variable specs only.
@@ -120,7 +120,9 @@ class LoadTestSuite:
             try:
                 specs[str(name)] = VariableSpec(name=str(name), **body_without_name)
             except ValidationError as exc:
-                raise ConfigError(f"variable {name!r}: {exc}", category="invalid") from exc
+                raise ConfigError(
+                    f"variable {name!r}: {first_validation_error(exc)}", category="invalid"
+                ) from exc
         return specs
 
 
