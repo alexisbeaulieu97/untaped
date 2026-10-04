@@ -74,6 +74,17 @@ def test_old_keys_in_every_profile_are_listed_with_the_migrate_fix(
     assert rows["unknown-keys"]["status"] == "pass"
 
 
+def test_the_fix_names_the_active_profile(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        "active: work\nprofiles:\n  default: {}\n  work:\n    old:\n      corpus_path: /c\n",
+    )
+
+    row = _rows(**{"deprecated-keys": ""})["deprecated-keys"]
+
+    assert row["fix"] == ["--profile", "work", "config", "migrate"]
+
+
 def test_the_table_shows_the_automatic_fix(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default:\n    old:\n      corpus_path: /c\n")
 

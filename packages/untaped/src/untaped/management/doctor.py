@@ -12,7 +12,8 @@ Each row is isolated: invalid settings for one capability surface as failed
 rows while every other row still runs.
 Quarantine records render as failed rows (nonzero exit). A config file other
 users can read renders as a ``warn`` row, which does not fail the run; so do
-profile keys no settings model declares,
+profile keys no settings model declares, renamed, retired or deprecated keys
+in any profile (fixed by ``config migrate``, except deprecated settings),
 installed skills that differ from their packaged copy, and a capability
 check that returns ``DoctorResult(..., warn=True)``. ``doctor fix``
 (:mod:`untaped.management.fix`) runs every automatic fix the checks name.
