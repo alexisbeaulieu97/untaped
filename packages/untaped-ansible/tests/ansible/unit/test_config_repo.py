@@ -24,7 +24,7 @@ from untaped_ansible.infrastructure import AliasRepository, SourceRepository
         (
             SourceRepository,
             {"sources": [{"name": "prod"}]},
-            r"invalid source 'prod': Value error, source requires --org, --team, or --repo",
+            r"invalid source 'prod': source requires --org, --team, or --repo",
         ),
     ],
 )

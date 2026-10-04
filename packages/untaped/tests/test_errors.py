@@ -1,5 +1,5 @@
 import pytest
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, field_validator
 
 from untaped.errors import (
     ConfigError,
@@ -94,6 +94,20 @@ def test_first_validation_error_omits_loc_prefix_when_loc_empty(
         lambda: [{"loc": (), "msg": "value is invalid"}],
     )
     assert first_validation_error(int_validation_error) == "value is invalid"
+
+
+def test_first_validation_error_shows_a_validator_message_without_pydantic_prefix() -> None:
+    class M(BaseModel):
+        name: str
+
+        @field_validator("name")
+        @classmethod
+        def _check(cls, value: str) -> str:
+            raise ValueError("name must be lowercase")
+
+    with pytest.raises(ValidationError) as ei:
+        M.model_validate({"name": "Bad"})
+    assert first_validation_error(ei.value) == "name: name must be lowercase"
 
 
 # --- failure attribution: category, system, hint, details -----------------
