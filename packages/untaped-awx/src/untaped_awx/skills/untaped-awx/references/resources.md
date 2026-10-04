@@ -177,4 +177,5 @@ The preview, `--dry-run`, `--yes` and exit-code rules are in the skill's
   `fields_changed`, `preserved_secrets`, `dropped_undeclared_secrets`
   (`$encrypted$` placeholders at fields untaped doesn't treat as secrets,
   left out of the write) and `dropped_secrets` (secret placeholders a create
-  left out, so the new resource starts without them).
+  left out, a new workflow node's `$encrypted$` extra vars included, so the
+  new resource or node starts without them).
