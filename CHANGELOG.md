@@ -100,6 +100,11 @@
   header variable, as one line naming the field instead of pydantic's full
   error dump.
   ([#487](https://github.com/alexisbeaulieu97/untaped/pull/487))
+- awx: `job-templates launch`, `projects sync` and `inventory-sources update`
+  report a job that failed, timed out or was skipped as a `warning` line naming
+  the target, and a failed request as an attributed `error` line, so JSON
+  diagnostics no longer label them `info`.
+  ([#488](https://github.com/alexisbeaulieu97/untaped/pull/488))
 
 ## 10.0.0
 
