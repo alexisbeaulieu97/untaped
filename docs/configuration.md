@@ -205,8 +205,9 @@ holds your edits. If the editor itself exits with an error, the edits are not
 checked: copy the file over `config.yml` yourself and run `untaped doctor`.
 
 `untaped doctor` checks offline, one row per check: the config and state
-files, the selected profile, every section, unknown keys, installed skills
-and each capability's own checks. `--online` also authenticates against each
+files, the selected profile, every section, unknown keys, renamed or
+deprecated keys in any profile, installed skills and each capability's own
+checks. `--online` also authenticates against each
 configured service. A failed check makes it exit nonzero; a `warn` row does
 not. To write a profile's service settings interactively, see
 [Getting started](./getting-started.md#set-up-your-services).
