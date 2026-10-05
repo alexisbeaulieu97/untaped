@@ -31,6 +31,7 @@ from untaped.sdk import (
     emit,
     finish,
     note_failure,
+    report_error,
     report_errors,
     writes,
 )
@@ -206,9 +207,9 @@ def _add_membership_verb(
                         row["action"] = "partial"
                         row["partial"] = True
                         row["detail"] = redact_error(exc, spec, selected_parent.record)
-                        row["error"] = note_failure(exc, message=row["detail"]).model_dump(
-                            mode="json"
-                        )
+                        error = note_failure(exc, message=row["detail"])
+                        row["error"] = error.model_dump(mode="json")
+                        report_error(error, item=f"{spec.kind}/{selected_parent.name}")
                         failed = True
                 emit(
                     [row],
