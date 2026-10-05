@@ -8,13 +8,14 @@ state lives in a separate ``state.yml`` (:func:`resolve_state_path`).
 from __future__ import annotations
 
 import os
+import warnings
 from collections.abc import Iterable, Mapping
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, ClassVar, Literal, cast
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, create_model
+from pydantic import BaseModel, Field, ValidationError, create_model, model_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -44,11 +45,34 @@ FORMAT_VERSION = 1
 class HttpSettings(BaseModel):
     """Cross-cutting HTTP behaviour for a tool's HTTP client (per-profile)."""
 
+    renamed_keys: ClassVar[Mapping[str, str]] = {"timeout": "timeout_seconds"}
+
     ca_bundle: Path | None = None
     verify_ssl: bool = True
     verify_hostname: bool = True
-    timeout: float = Field(default=30.0, gt=0)
+    timeout_seconds: float = Field(default=30.0, gt=0)
     proxy: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_timeout(cls, data: Any) -> Any:
+        """Accept the deprecated ``timeout=`` argument; ``timeout_seconds`` wins."""
+        if isinstance(data, Mapping) and "timeout" in data:
+            warnings.warn(
+                "HttpSettings(timeout=...) is deprecated; use timeout_seconds",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            data = dict(data)
+            timeout = data.pop("timeout")
+            data.setdefault("timeout_seconds", timeout)
+        return data
+
+    @property
+    @warnings.deprecated("use timeout_seconds")
+    def timeout(self) -> float:
+        """Deprecated alias of :attr:`timeout_seconds`, removed in the next major release."""
+        return self.timeout_seconds
 
 
 class SkillsSettings(BaseModel):

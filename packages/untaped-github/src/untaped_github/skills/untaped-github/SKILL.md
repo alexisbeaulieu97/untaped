@@ -12,7 +12,7 @@ unscanned before reporting "none" or "all".
 ## Setup
 
 - Settings live under `profiles.<name>.github`: `base_url`, `token` or
-  `token_command`, `default_org`, `corpus_path`, `sweep` freshness and
+  `token_command`, `default_org`, `cache_dir`, `sweep` freshness and
   concurrency, and `inventory` (the cached repo list the workspace picker
   searches).
 - `base_url` defaults to `https://api.github.com`; GitHub Enterprise Server

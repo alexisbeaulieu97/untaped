@@ -75,7 +75,7 @@ def test_unknown_keys_warn_with_their_full_path(_isolated_config: Path) -> None:
 
 
 def test_known_keys_pass(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    http:\n      timeout: 3\n")
+    write_config(_isolated_config, "profiles:\n  default:\n    http:\n      timeout_seconds: 3\n")
     assert _row(_rows(), "unknown-keys")["status"] == "pass"
 
 

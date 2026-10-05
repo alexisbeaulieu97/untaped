@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal, Self
+from typing import ClassVar, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
@@ -62,18 +63,25 @@ class SourceDefinition(BaseModel):
 class AnsibleSettings(BaseModel):
     """User-tunable profile settings."""
 
+    renamed_keys: ClassVar[Mapping[str, str]] = {
+        "stale_after": "stale_after_seconds",
+        "repo_cache_path": "cache_dir",
+        "git_fetch_concurrency": "git_fetch_parallel",
+        "probe_concurrency": "probe_parallel",
+    }
+
     model_config = ConfigDict(frozen=True)
 
     index_path: Path = Path("~/.untaped/ansible-index.sqlite3")
-    stale_after: int = Field(default=86_400, ge=0)
+    stale_after_seconds: int = Field(default=86_400, ge=0)
     default_source: str | None = None
     ref_scan_default: Literal["all", "default_branch"] = "all"
     source_refresh_backend: Literal["auto", "graphql", "git"] = "auto"
-    repo_cache_path: Path = Path("~/.untaped/ansible-cache")
+    cache_dir: Path = Path("~/.untaped/ansible-cache")
     git_clone_protocol: Literal["https", "ssh"] = "https"
     git_fetch_depth: int = Field(default=1, ge=0)
-    git_fetch_concurrency: int = Field(default=8, ge=1, le=32)
-    probe_concurrency: int = Field(default=8, ge=1, le=32)
+    git_fetch_parallel: int = Field(default=8, ge=1, le=32)
+    probe_parallel: int = Field(default=8, ge=1, le=32)
     source_refresh_repo_batch_size: int = Field(default=100, ge=1)
     source_refresh_rate_limit_floor: int = Field(default=500, ge=0)
     git_blob_filter: bool = True

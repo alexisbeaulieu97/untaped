@@ -168,7 +168,7 @@ Capability keys are always fully qualified (`awx.base_url`, never
 ```bash
 untaped config list --all-profiles
 untaped config get github.token --show-secrets
-untaped config set http.timeout 60 --dry-run
+untaped config set http.timeout_seconds 60 --dry-run
 untaped --profile prod config unset awx.token
 untaped config set ui.symbols '{"ok": "✓", "fail": "✗"}'
 untaped config edit
@@ -205,7 +205,7 @@ holds your edits. If the editor itself exits with an error, the edits are not
 checked: copy the file over `config.yml` yourself and run `untaped doctor`.
 
 `untaped doctor` checks offline, one row per check: the config and state
-files, the selected profile, every section, unknown keys, renamed or
+files, the selected profile, every section, unknown keys, renamed, retired or
 deprecated keys in any profile, installed skills and each capability's own
 checks. `--online` also authenticates against each
 configured service. A failed check makes it exit nonzero; a `warn` row does

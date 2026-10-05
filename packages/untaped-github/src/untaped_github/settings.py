@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import ClassVar
 
@@ -16,7 +17,7 @@ class SweepSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     max_age_seconds: int = Field(default=3600, ge=0)
-    sync_concurrency: int = Field(default=12, ge=1)
+    parallel: int = Field(default=12, ge=1)
 
 
 class InventorySettings(BaseModel):
@@ -34,6 +35,10 @@ class GithubSettings(BaseModel):
     """GitHub API settings."""
 
     token_sources: ClassVar[TokenSources] = TokenSources(env=("GH_TOKEN", "GITHUB_TOKEN"))
+    renamed_keys: ClassVar[Mapping[str, str]] = {
+        "corpus_path": "cache_dir",
+        "sweep.sync_concurrency": "sweep.parallel",
+    }
 
     model_config = ConfigDict(frozen=True)
 
@@ -41,6 +46,6 @@ class GithubSettings(BaseModel):
     token: SecretStr | None = None
     token_command: TokenCommand = None
     default_org: str | None = None
-    corpus_path: Path = Path("~/.untaped/github-cache")
+    cache_dir: Path = Path("~/.untaped/github-cache")
     sweep: SweepSettings = Field(default_factory=SweepSettings)
     inventory: InventorySettings = Field(default_factory=InventorySettings)

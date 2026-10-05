@@ -26,7 +26,7 @@ def settings() -> RecipeSettings:
 
 def library_root() -> Path:
     """Configured recipe library root."""
-    return settings().library_root.expanduser()
+    return settings().library_dir.expanduser()
 
 
 def merge_vars(

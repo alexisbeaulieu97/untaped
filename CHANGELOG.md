@@ -74,6 +74,19 @@
   capability, with each fix under its row and passing rows' detail shown;
   `--columns` still prints the table, where `fix` is the command line.
   ([#479](https://github.com/alexisbeaulieu97/untaped/pull/479))
+- Settings follow one naming scheme (`_dir` and `_path`, `parallel`, a unit on
+  every duration), so nine keys have new names, listed under Renamed settings
+  in the configuration reference.
+  ([#PR_D](https://github.com/alexisbeaulieu97/untaped/pull/PR_D))
+
+### Deprecated
+
+- The old names of those nine keys and their `UNTAPED_*` variables still work
+  with a warning until 11.0; `untaped config migrate` renames them in
+  `config.yml`.
+  ([#PR_D](https://github.com/alexisbeaulieu97/untaped/pull/PR_D))
+- `HttpSettings.timeout` is deprecated; use `timeout_seconds`.
+  ([#PR_D](https://github.com/alexisbeaulieu97/untaped/pull/PR_D))
 
 ### Fixed
 
@@ -89,8 +102,8 @@
   unknown-launch-field warning, are now `error` and `warning` lines under JSON
   stderr diagnostics.
   ([#464](https://github.com/alexisbeaulieu97/untaped/pull/464))
-- `github.sweep.max_age_seconds` and `ansible.stale_after` now reject negative
-  values, and `github.sweep.sync_concurrency` rejects values below 1.
+- `github.sweep.max_age_seconds` and `ansible.stale_after_seconds` now reject
+  negative values, and `github.sweep.parallel` rejects values below 1.
   ([#471](https://github.com/alexisbeaulieu97/untaped/pull/471))
 - ansible: `source set` and `source patch` report an invalid source as one
   line naming the problem instead of pydantic's full error dump, and

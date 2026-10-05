@@ -582,7 +582,7 @@ def test_run_timeout_and_parallel_default_to_settings(
         return real_call(self, suites, **kwargs)
 
     monkeypatch.setattr(RunTestSuite, "__call__", spy)
-    monkeypatch.setenv("UNTAPED_AWX__TEST_TIMEOUT", "0.01")
+    monkeypatch.setenv("UNTAPED_AWX__TEST_TIMEOUT_SECONDS", "0.01")
     monkeypatch.setenv("UNTAPED_AWX__TEST_PARALLEL", "3")
 
     result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "-f", "json"])
