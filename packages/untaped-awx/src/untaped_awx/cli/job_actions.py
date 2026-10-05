@@ -77,7 +77,9 @@ def register_job_actions(jobs_app: App) -> None:
                 if row.action == "planned":
                     echo(f"cancel {_label(row.kind, row.id, row.name)} ({row.status})", err=True)
                 else:
-                    echo(f"skipped: {_label(row.kind, row.id, row.name)}: {row.detail}", err=True)
+                    ctx.progress_ui().message(
+                        "warning", f"skipped: {_label(row.kind, row.id, row.name)}: {row.detail}"
+                    )
             pending = [index for index, row in enumerate(rows) if row.action == "planned"]
             if pending and not dry_run:
                 _confirm(ctx, verb="cancel", count=len(pending), yes=yes)

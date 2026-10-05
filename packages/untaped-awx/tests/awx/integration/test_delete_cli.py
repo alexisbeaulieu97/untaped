@@ -8,6 +8,7 @@ shape on partial failures.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -268,3 +269,32 @@ def test_delete_prompt_previews_then_asks_once(alpha_beta: Any, answer: bool) ->
     assert (10 in alpha_beta.store["job_templates"]) is not answer
     if not answer:
         assert "cancelled; no changes made" in result.stderr
+
+
+def test_delete_failure_is_an_error_and_a_skipped_target_a_warning(
+    alpha_beta: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """JSON diagnostics label a refused delete ``error`` and the target it stopped ``warning``."""
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    original = alpha_beta._delete
+
+    def conflict_on_10(api_path: str, id_: int) -> httpx.Response:
+        if id_ == 10:
+            return httpx.Response(409, json={"detail": "in use"})
+        return original(api_path, id_)
+
+    monkeypatch.setattr(alpha_beta, "_delete", conflict_on_10)
+    result = CliInvoker().invoke(app, ["job-templates", "delete", "--by-id", "10", "11", "--yes"])
+
+    assert result.exit_code == 1
+    *_previews, error, warning = [json.loads(line) for line in result.stderr.splitlines()]
+    assert {key: error[key] for key in ("level", "item", "category", "message")} == {
+        "level": "error",
+        "item": "JobTemplate#10",
+        "category": "conflict",
+        "message": "conflict: detail: in use",
+    }
+    assert warning == {
+        "level": "warning",
+        "message": "JobTemplate#11: skipped after a runtime failure",
+    }
