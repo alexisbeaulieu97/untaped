@@ -94,11 +94,11 @@ def run_edit(
                         raise  # the controller or setup failed, not the edited YAML
                     # Engine errors can include user-supplied field values; do not
                     # echo them before the secret policy has prepared the batch.
-                    echo(
-                        "Invalid edited batch; no changes written. Fix the YAML or field values.",
-                        err=True,
-                    )
                     ui = ctx.progress_ui()
+                    ui.message(
+                        "warning",
+                        "invalid edited batch; no changes written; fix the YAML or field values",
+                    )
                     with ui.terminal(refusal="edit requires a terminal to reopen the editor"):
                         reopen = ui.confirm("Reopen editor?", default=False)
                     if reopen:
