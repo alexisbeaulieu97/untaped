@@ -78,6 +78,9 @@
   every duration), so nine keys have new names, listed under Renamed settings
   in the configuration reference.
   ([#489](https://github.com/alexisbeaulieu97/untaped/pull/489))
+- `untaped.testing.check_conventions` now checks setting names
+  (`settings-naming`) and declared renames (`settings-renames`).
+  ([#PR_E](https://github.com/alexisbeaulieu97/untaped/pull/PR_E))
 
 ### Deprecated
 

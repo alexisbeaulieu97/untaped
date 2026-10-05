@@ -18,7 +18,7 @@ from pathlib import Path
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 
-from untaped.bootstrap import build_root_app, composition
+from untaped.bootstrap import SHELL_SPEC, build_root_app, composition
 from untaped.capabilities.registry import (
     CapabilitySpec,
     ProviderCandidate,
@@ -28,8 +28,10 @@ from untaped.conventions.help_tree import ROOT_COMMANDS, help_tree_violations
 from untaped.conventions.imports import import_boundary_violations
 from untaped.conventions.layering import layering_violations
 from untaped.conventions.messages import message_violations
+from untaped.conventions.settings_names import settings_violations
 from untaped.conventions.source import source_files
 from untaped.conventions.structure import structure_violations
+from untaped.settings import Settings, model_sections
 
 
 def capability_violations(
@@ -141,13 +143,23 @@ def _candidate_package(target: object) -> str | None:
 
 
 def core_violations() -> list[str]:
-    """Violations in the root commands and ``untaped.management`` (repo-internal)."""
+    """Violations in the root commands, ``untaped.management`` and core's sections.
+
+    Repo-internal.
+    """
     root = build_root_app(candidates=[])
     management = _source_dir("untaped.management")
+    sections = {**model_sections(Settings), SHELL_SPEC.config_section: SHELL_SPEC.profile_model}
+    src = _source_dir("untaped").parent
     return sorted(
         [
             *help_tree_violations(root, sorted(ROOT_COMMANDS)),
             *message_violations(management, list(source_files(management))),
+            *(
+                line
+                for section, model in sections.items()
+                for line in settings_violations(section, model, src)
+            ),
         ]
     )
 
