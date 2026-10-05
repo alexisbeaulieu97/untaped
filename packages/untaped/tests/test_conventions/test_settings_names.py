@@ -12,7 +12,7 @@ from pydantic import BaseModel, create_model
 
 from test_conventions.support import Install
 from untaped.capabilities.registry import CapabilitySpec
-from untaped.conventions.settings_names import name_problem, settings_violations
+from untaped.conventions.settings_names import name_problem, settings_name_violations
 from untaped.conventions.source import source_files
 from untaped.conventions.structure import structure_violations
 
@@ -155,7 +155,7 @@ def test_a_model_without_source_reports_renames_by_name() -> None:
     model = create_model("Made", cache=(Path, Path("c")))
     model.renamed_keys = {"old": "missing"}  # type: ignore[attr-defined]
 
-    assert settings_violations("made", model, Path("/nowhere")) == [
+    assert settings_name_violations("made", model, Path("/nowhere")) == [
         f"{model.__module__}.Made::settings-renames::"
         "renamed key 'old' points at 'missing', which is not a setting"
     ]
@@ -165,7 +165,7 @@ def test_a_model_outside_the_root_keeps_its_full_path() -> None:
     class Outside(BaseModel):
         timeout: float = 3.0
 
-    assert settings_violations("out", Outside, Path("/nowhere")) == [
+    assert settings_name_violations("out", Outside, Path("/nowhere")) == [
         f"{Path(__file__).as_posix()}:{Outside.__firstlineno__ + 1}::settings-naming::"
         f"out.timeout: {DURATION}"
     ]
