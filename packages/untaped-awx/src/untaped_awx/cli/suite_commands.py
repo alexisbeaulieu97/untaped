@@ -278,7 +278,7 @@ def run_command(
         Parameter(
             name="--timeout",
             help="Seconds each case waits before its job is cancelled (default: the case's "
-            "timeout:, else the suite's defaults.timeout, else awx.test_timeout).",
+            "timeout:, else the suite's defaults.timeout, else awx.test_timeout_seconds).",
             validator=Number(gt=0),
         ),
     ] = None,
@@ -458,7 +458,7 @@ def run_command(
                     case_filter=case_filter,
                     parallel=parallel if parallel is not None else ctx.settings.test_parallel,
                     timeout=timeout,
-                    default_timeout=ctx.settings.test_timeout,
+                    default_timeout=ctx.settings.test_timeout_seconds,
                     scm_branch=scm_branch,
                     baseline=baseline,
                     compare=saved,

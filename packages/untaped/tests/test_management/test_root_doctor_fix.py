@@ -8,6 +8,7 @@ would leave behind. Checks name real root commands of a test composition.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -501,8 +502,17 @@ def _stale_skill() -> None:
     skill.write_text("stale\n", encoding="utf-8")
 
 
+def _old_http_key() -> None:
+    write_config(
+        Path(os.environ["UNTAPED_CONFIG"]), "profiles:\n  default:\n    http:\n      timeout: 9\n"
+    )
+
+
 #: Puts each shell row that can name a fix into its fixable state, by check id.
-_SHELL_FIX_TRIGGERS: dict[str, Callable[[], None]] = {"skills": _stale_skill}
+_SHELL_FIX_TRIGGERS: dict[str, Callable[[], None]] = {
+    "skills": _stale_skill,
+    "deprecated-keys": _old_http_key,
+}
 
 
 def test_every_shell_fix_row_has_a_check_id_of_its_own() -> None:
@@ -516,6 +526,27 @@ def test_every_shell_fix_row_has_a_check_id_of_its_own() -> None:
     assert fixable == set(_SHELL_FIX_TRIGGERS)
     for check in fixable:
         assert [row["check"] for row in shell].count(check) == 1, check
+
+
+def test_doctor_fix_runs_config_migrate_for_an_old_key(_isolated_config: Path) -> None:
+    """End to end: the real child renames the key, and the re-check passes."""
+    _old_http_key()
+    root = bootstrap.build_root_app()
+
+    result = invoke_cli(root.meta, ["doctor", "fix", "--yes", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == [
+        {
+            "fix": ["--profile", "default", "config", "migrate"],
+            "checks": ["deprecated-keys"],
+            "action": "fixed",
+            "detail": "1 renamed",
+        }
+    ]
+    assert _isolated_config.read_text(encoding="utf-8") == (
+        "profiles:\n  default:\n    http:\n      timeout_seconds: 9\n"
+    )
 
 
 def test_no_automatic_fix_no_hint() -> None:

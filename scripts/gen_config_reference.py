@@ -37,7 +37,7 @@ DESCRIPTIONS: dict[str, str] = {
     "http.ca_bundle": "PEM file of extra CA certificates to trust instead of the OS trust store.",
     "http.verify_ssl": "Verify TLS certificates. `false` disables all certificate checks.",
     "http.verify_hostname": "Check the certificate host name. `false` keeps chain validation.",
-    "http.timeout": "HTTP request timeout in seconds.",
+    "http.timeout_seconds": "HTTP request timeout in seconds.",
     "http.proxy": "Proxy URL for HTTP clients. When unset, standard proxy variables apply.",
     "ui.format": "Default `--format` for commands whose default is `table`. "
     "`UNTAPED_FORMAT` wins over it; an explicit `--format` wins over both.",
@@ -71,11 +71,10 @@ DESCRIPTIONS: dict[str, str] = {
     "github.default_org": "Org scope for `repos list`, `search` (repos, code, issues), "
     "`sweep`, `cache sync` and `cache prune` when no scope flag is given. Without it, "
     "search uses `@me`.",
-    "github.corpus_path": "Local Git corpus that `github sweep` and `github cache` manage.",
+    "github.cache_dir": "Local Git corpus that `github sweep` and `github cache` manage.",
     "github.sweep.max_age_seconds": "`sweep` and `cache sync` refresh cached repos older than "
     "this that GitHub reports as pushed since.",
-    "github.sweep.sync_concurrency": "Default `sweep --parallel` and `cache sync --parallel` Git "
-    "workers.",
+    "github.sweep.parallel": "Default `sweep --parallel` and `cache sync --parallel` Git workers.",
     "github.inventory.path": "Cached repository list (metadata only) that workspace "
     "`create`/`add` resolve names from and the picker searches.",
     "github.inventory.orgs": "Orgs whose repositories the inventory lists. With no orgs "
@@ -105,20 +104,21 @@ DESCRIPTIONS: dict[str, str] = {
     "awx.default_organization": "Organization that scopes name lookups and `apply` documents "
     "without one.",
     "awx.page_size": "Results requested per AWX API page.",
-    "awx.test_timeout": "Seconds a `test run` case waits before its job is cancelled, unless "
-    "`--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it.",
+    "awx.test_timeout_seconds": "Seconds a `test run` case waits before its job is cancelled, "
+    "unless `--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it.",
     "awx.test_parallel": "Default `test run --parallel`.",
     "ansible.index_path": "SQLite cache of refreshed source data.",
-    "ansible.stale_after": "Seconds after which `source status` reports a source as `stale`.",
+    "ansible.stale_after_seconds": "Seconds after which `source status` reports a source as "
+    "`stale`.",
     "ansible.default_source": "Saved source `deps`, `impact`, `find` and `graph` use when "
     "no `--source` or inline selector is given.",
     "ansible.ref_scan_default": "Refs a source scans: `all` refs or each repo's default branch.",
     "ansible.source_refresh_backend": "Ref probe backend for source refresh.",
-    "ansible.repo_cache_path": "Git clone cache used by source refresh.",
+    "ansible.cache_dir": "Git clone cache used by source refresh.",
     "ansible.git_clone_protocol": "Protocol for source refresh clones.",
     "ansible.git_fetch_depth": "Git fetch depth for source refresh; `0` is full history.",
-    "ansible.git_fetch_concurrency": "Default `--parallel` for `source refresh` and `--refresh`.",
-    "ansible.probe_concurrency": "Concurrent ref probes during source refresh.",
+    "ansible.git_fetch_parallel": "Default `--parallel` for `source refresh` and `--refresh`.",
+    "ansible.probe_parallel": "Concurrent ref probes during source refresh.",
     "ansible.source_refresh_repo_batch_size": "Repos committed per source refresh batch.",
     "ansible.source_refresh_rate_limit_floor": "Stop a refresh (resumable) when the GraphQL "
     "budget drops below this.",
@@ -138,7 +138,7 @@ DESCRIPTIONS: dict[str, str] = {
     "`disable`.",
     "dotfiles.applied": "One record per path the tool placed. Managed by `dotfiles apply`, "
     "`sync` and `remove`.",
-    "recipe.library_root": "Directory holding installed recipe packs.",
+    "recipe.library_dir": "Directory holding installed recipe packs.",
     "recipe.hook_timeout_seconds": "Per-hook request timeout; `0` disables it.",
     "recipe.hook_startup_timeout_seconds": "Timeout for preparing a hook environment.",
     "recipe.backup_keep": "`backups prune` keeps this many newest bundles by default.",
@@ -250,7 +250,9 @@ def _default_text(value: Any) -> str:
 
 
 def _env_name(key: str) -> str:
-    return "UNTAPED_" + key.replace(".", "__").upper()
+    from untaped.settings import env_var_name  # noqa: PLC0415
+
+    return env_var_name(key.split("."))
 
 
 def collect_sections() -> list[tuple[str, str, type[BaseModel], bool]]:
@@ -320,6 +322,34 @@ def _section_rows(prefix: str, model: type[BaseModel]) -> list[Row]:
     return rows
 
 
+def _renamed_table() -> list[str]:
+    """The Renamed settings table: every declared rename, in section order."""
+    from untaped.deprecated_keys import key_mappings  # noqa: PLC0415
+    from untaped.settings import model_sections  # noqa: PLC0415
+
+    rows: list[str] = []
+    for _, prefix, model, is_state in collect_sections():
+        if is_state:
+            continue
+        sections = {prefix: model} if prefix else model_sections(model)
+        for section, section_model in sections.items():
+            mappings = key_mappings(section_model)
+            for old, new in sorted(mappings.migratable.items()):
+                kind = "retired" if old in mappings.retired else "deprecated"
+                key = f"{section}.{old}"
+                rows.append(f"| `{key}` | `{_env_name(key)}` | `{section}.{new}` | {kind} |")
+    if not rows:
+        return []
+    return [
+        "## Renamed settings\n",
+        "A deprecated key is still read with a warning; a retired one is no longer read. See "
+        "[Renamed settings](../configuration.md#renamed-settings).\n",
+        "| Old key | Old environment variable | New key | Status |\n|---|---|---|---|",
+        *rows,
+        "",
+    ]
+
+
 def render() -> str:
     """Return the full Markdown page."""
     parts = [_HEADER]
@@ -342,6 +372,7 @@ def render() -> str:
                     f"| `{_env_name(row.key)}` | {row.description} |"
                 )
         parts.append("")
+    parts.extend(_renamed_table())
     parts.append(_FOOTER)
     return "\n".join(parts)
 

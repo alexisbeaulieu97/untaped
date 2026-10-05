@@ -79,7 +79,7 @@ def status_command(
 
     with report_errors():
         settings = app_context().section("github", GithubSettings)
-        rows = StatusCorpus(GitCorpusCache(auth_host=None))(root=settings.corpus_path)
+        rows = StatusCorpus(GitCorpusCache(auth_host=None))(root=settings.cache_dir)
         records = [row.model_dump() for row in rows]
         emit(
             _status_display(records) if fmt == "table" and not columns else records,
@@ -159,7 +159,7 @@ def sync_command(
             max_age_seconds=settings.sweep.max_age_seconds,
             depth=depth,
             parallel=clamp_parallel(
-                parallel if parallel is not None else settings.sweep.sync_concurrency,
+                parallel if parallel is not None else settings.sweep.parallel,
                 cap=32,
                 policy="Git corpus worker cap",
             ),
@@ -168,7 +168,7 @@ def sync_command(
             outcomes = SyncCorpus(
                 inventory=ResolveRepositoryInventory(client),
                 corpus=GitCorpusCache(auth_host=github_web_host(settings.base_url)),
-                root=settings.corpus_path,
+                root=settings.cache_dir,
                 auth_header=corpus_auth_header(settings),
             )(options, progress=progress)
         emit(
@@ -265,7 +265,7 @@ def _select(
 
     settings = app_context().section("github", GithubSettings)
     cached = _in_orgs(
-        GitCorpusCache(auth_host=None).list_repos(root=settings.corpus_path), orgs=tuple(org or ())
+        GitCorpusCache(auth_host=None).list_repos(root=settings.cache_dir), orgs=tuple(org or ())
     )
     if prune:
         with open_client() as (client, ui), ui.progress("Resolving repository inventory…"):
@@ -304,7 +304,7 @@ def _delete(
     outcome = batch_apply(
         selected,
         # Measured just before deleting: each row reports the space it frees.
-        lambda row: cleaner(root=settings.corpus_path, repo=with_disk_bytes(row)),
+        lambda row: cleaner(root=settings.cache_dir, repo=with_disk_bytes(row)),
         verb="delete",
         noun="cached GitHub repo",
         label=lambda row: row.repo,
@@ -349,7 +349,7 @@ def worktree_command(
         with ui.progress("Materializing worktree…"):
             result = WorktreeCorpus(GitCorpusCache(auth_host=None))(
                 repo,
-                root=settings.corpus_path,
+                root=settings.cache_dir,
                 ref=ref,
             )
         emit(result, fmt=fmt, columns=columns, kind="github.worktree")
