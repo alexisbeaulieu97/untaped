@@ -53,7 +53,7 @@ def name_problem(name: str, annotation: Any) -> str | None:
     return None
 
 
-def settings_violations(section: str, model: type[BaseModel], root: Path) -> list[str]:
+def settings_name_violations(section: str, model: type[BaseModel], root: Path) -> list[str]:
     """Violations of ``model`` (the ``section`` model) and the models it reaches.
 
     Paths are relative to ``root`` when the model's file is under it.

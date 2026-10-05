@@ -36,7 +36,7 @@ from typing import Any
 
 from untaped.capabilities.registry import CapabilitySpec
 from untaped.conventions.allow import allowed
-from untaped.conventions.settings_names import settings_violations
+from untaped.conventions.settings_names import settings_name_violations
 from untaped.conventions.source import SourceFile, callee, source_files
 from untaped.errors import UntapedError
 
@@ -168,7 +168,7 @@ def structure_violations(
         *_runtime_violations(package),
         *_source_violations(source_dir, files, spec.config_section),
         *_settings_violations(spec),
-        *settings_violations(spec.config_section, spec.profile_model, source_dir.parent),
+        *settings_name_violations(spec.config_section, spec.profile_model, source_dir.parent),
     ]
     if tests_dir is not None:
         found.extend(_private_import_violations(tests_dir, package))

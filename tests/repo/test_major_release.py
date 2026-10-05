@@ -25,7 +25,7 @@ from repo.support import REPO_ROOT
 from untaped import bootstrap, sdk
 from untaped.capabilities.registry import ProviderCandidate
 from untaped.cli import deprecated_alias, deprecated_aliases
-from untaped.settings import Settings
+from untaped.settings import profile_section_models
 
 
 def is_major_release(version: str, changelog: str) -> bool:
@@ -71,6 +71,8 @@ def _deprecated(value: object) -> bool:
         value = value.fget
     elif isinstance(value, functools.cached_property):
         value = value.func
+    elif isinstance(value, staticmethod | classmethod):
+        value = value.__func__
     return getattr(value, "__deprecated__", None) is not None
 
 
@@ -81,14 +83,7 @@ def test_a_major_release_drops_deprecated_spellings(
     if not is_major_release(version, (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")):
         pytest.skip(f"{version} is not a major release being prepared")
     root = bootstrap.build_root_app(candidates=first_party_candidates)
-    sections: dict[str, type[BaseModel]] = {
-        name: field.annotation
-        for name, field in Settings.model_fields.items()
-        if isinstance(field.annotation, type)
-    }
-    sections[bootstrap.SHELL_SPEC.config_section] = bootstrap.SHELL_SPEC.profile_model
-    for capability in bootstrap.composition().capabilities:
-        sections[capability.spec.config_section] = capability.spec.profile_model
+    sections = profile_section_models()
     exports = {name: getattr(sdk, name) for name in sdk.__all__}
 
     leftovers = [*settings_leftovers(sections), *alias_leftovers(root), *sdk_leftovers(exports)]
@@ -164,11 +159,21 @@ class _Client:
     def c(self) -> int:
         return 1
 
+    @staticmethod
+    @warnings.deprecated("use f")
+    def e() -> int:
+        return 1
+
+    @classmethod
+    @warnings.deprecated("use h")
+    def g(cls) -> int:
+        return 1
+
     def current(self) -> int:
         return 1
 
 
-def test_sdk_leftovers_look_through_properties() -> None:
+def test_sdk_leftovers_look_through_properties_and_method_wrappers() -> None:
     namespace: dict[str, Any] = {"f": _old_function, "Client": _Client, "VALUE": 3}
 
-    assert sdk_leftovers(namespace) == ["f", "Client.a", "Client.c"]
+    assert sdk_leftovers(namespace) == ["f", "Client.a", "Client.c", "Client.e", "Client.g"]

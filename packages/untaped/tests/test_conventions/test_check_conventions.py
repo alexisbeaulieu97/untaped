@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
+from cyclopts import App
+from pydantic import BaseModel
 
 from test_conventions.support import Install
-from untaped.capabilities.registry import ProviderCandidate
+from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 from untaped.conventions import capability_violations
-from untaped.testing import check_conventions
+from untaped.testing import check_conventions, provider_candidate
 
 # A provider package outside src/untaped, one file per convention family:
 # an undeclared write (help tree), a print (messages, one allowed), a
@@ -122,6 +125,23 @@ def test_unknown_capability_raises() -> None:
     with pytest.raises(LookupError) as raised:
         check_conventions("no-such-capability", candidates=[])
     assert str(raised.value) == "no installed capability named 'no-such-capability'"
+
+
+class _BrokenRenames(BaseModel):
+    renamed_keys: ClassVar[dict[str, str]] = {"old": "missing"}
+
+
+def test_a_quarantined_capability_fails_with_why() -> None:
+    spec = CapabilitySpec(
+        name="bad", app_factory=App, config_section="bad", profile_model=_BrokenRenames
+    )
+
+    with pytest.raises(AssertionError) as raised:
+        check_conventions("bad", candidates=[provider_candidate(spec)])
+
+    [line] = str(raised.value).splitlines()[1:]
+    assert line.startswith("  bad::quarantined::bad-settings-keys: ")
+    assert "missing" in line
 
 
 def test_test_imports_are_checked_only_with_a_tests_dir(

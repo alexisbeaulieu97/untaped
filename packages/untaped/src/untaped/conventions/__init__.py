@@ -28,7 +28,7 @@ from untaped.conventions.help_tree import ROOT_COMMANDS, help_tree_violations
 from untaped.conventions.imports import import_boundary_violations
 from untaped.conventions.layering import layering_violations
 from untaped.conventions.messages import message_violations
-from untaped.conventions.settings_names import settings_violations
+from untaped.conventions.settings_names import settings_name_violations
 from untaped.conventions.source import source_files
 from untaped.conventions.structure import structure_violations
 from untaped.settings import Settings, model_sections
@@ -61,7 +61,12 @@ def capability_violations(
         None,
     )
     if spec is None:
-        raise LookupError(f"no installed capability named {name!r}")
+        record = next((r for r in composition().quarantine if r.name == name), None)
+        if record is None:
+            raise LookupError(f"no installed capability named {name!r}")
+        # A quarantined capability has no subtree to check; why it was refused
+        # (a broken settings-key declaration, say) is its one violation.
+        return [f"{name}::quarantined::{record.reason}: {record.detail}"]
     package, source_dir = _package_of(spec)
     files = list(source_files(source_dir))
     capability_packages, declared = _boundary(name, candidates)
@@ -158,7 +163,7 @@ def core_violations() -> list[str]:
             *(
                 line
                 for section, model in sections.items()
-                for line in settings_violations(section, model, src)
+                for line in settings_name_violations(section, model, src)
             ),
         ]
     )
