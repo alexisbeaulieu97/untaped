@@ -112,7 +112,7 @@ def test_a_controller_failure_while_preparing_is_not_an_invalid_batch(
     )
 
     assert result.exit_code == exit_code, result.output
-    assert "Invalid edited batch" not in result.output
+    assert "invalid edited batch" not in result.output
 
 
 @pytest.mark.parametrize("cli", ["organizations", "credentials", "credential-types"])
@@ -165,6 +165,7 @@ def test_invalid_edit_retains_owner_only_file_without_writes(
     )
     assert result.exit_code != 0, result.output
     assert fake_aap.get_record("projects", 10)["description"] == "old"
+    assert "warning: invalid edited batch; no changes written" in result.stderr
     assert str(paths[0]) in result.stderr
     assert paths[0].exists()
     assert stat.S_IMODE(paths[0].stat().st_mode) == 0o600
