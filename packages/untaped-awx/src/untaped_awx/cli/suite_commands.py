@@ -467,6 +467,7 @@ def run_command(
                 failed = _report_results(outcome, show_logs=show_logs, fmt=fmt, columns=columns)
         except KeyboardInterrupt:
             report_interrupted(
+                ctx.progress_ui(),
                 [(None, job) for job in runner.known_executions()],
                 cancelled=runner.cancelled,
             )
