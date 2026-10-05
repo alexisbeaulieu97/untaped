@@ -173,6 +173,9 @@ ignore_names = [
     "__annotations__",
     "code_generator_class",
     "concat",
+    "renamed_keys",  # settings ClassVars read by untaped.deprecated_keys
+    "retired_keys",
+    "deprecated_settings",
 ]
 
 [tool.coverage.run]

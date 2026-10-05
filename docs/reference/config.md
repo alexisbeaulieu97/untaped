@@ -20,7 +20,7 @@ overridden for one process with the environment variable shown.
 | `http.ca_bundle` | path (optional) | unset | `UNTAPED_HTTP__CA_BUNDLE` | PEM file of extra CA certificates to trust instead of the OS trust store. |
 | `http.verify_ssl` | boolean | `true` | `UNTAPED_HTTP__VERIFY_SSL` | Verify TLS certificates. `false` disables all certificate checks. |
 | `http.verify_hostname` | boolean | `true` | `UNTAPED_HTTP__VERIFY_HOSTNAME` | Check the certificate host name. `false` keeps chain validation. |
-| `http.timeout` | number | `30.0` | `UNTAPED_HTTP__TIMEOUT` | HTTP request timeout in seconds. |
+| `http.timeout_seconds` | number | `30.0` | `UNTAPED_HTTP__TIMEOUT_SECONDS` | HTTP request timeout in seconds. |
 | `http.proxy` | string (optional) | unset | `UNTAPED_HTTP__PROXY` | Proxy URL for HTTP clients. When unset, standard proxy variables apply. |
 | `ui.theme` | string | `default` | `UNTAPED_UI__THEME` | Built-in theme: `default`, `plain`, `compact`, `high-contrast`, `quiet`, `classic`. |
 | `ui.format` | `json` \| `yaml` \| `table` \| `raw` \| `pipe` (optional) | unset | `UNTAPED_UI__FORMAT` | Default `--format` for commands whose default is `table`. `UNTAPED_FORMAT` wins over it; an explicit `--format` wins over both. |
@@ -44,15 +44,15 @@ overridden for one process with the environment variable shown.
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
 | `ansible.index_path` | path | `~/.untaped/ansible-index.sqlite3` | `UNTAPED_ANSIBLE__INDEX_PATH` | SQLite cache of refreshed source data. |
-| `ansible.stale_after` | integer | `86400` | `UNTAPED_ANSIBLE__STALE_AFTER` | Seconds after which `source status` reports a source as `stale`. |
+| `ansible.stale_after_seconds` | integer | `86400` | `UNTAPED_ANSIBLE__STALE_AFTER_SECONDS` | Seconds after which `source status` reports a source as `stale`. |
 | `ansible.default_source` | string (optional) | unset | `UNTAPED_ANSIBLE__DEFAULT_SOURCE` | Saved source `deps`, `impact`, `find` and `graph` use when no `--source` or inline selector is given. |
 | `ansible.ref_scan_default` | `all` \| `default_branch` | `all` | `UNTAPED_ANSIBLE__REF_SCAN_DEFAULT` | Refs a source scans: `all` refs or each repo's default branch. |
 | `ansible.source_refresh_backend` | `auto` \| `graphql` \| `git` | `auto` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_BACKEND` | Ref probe backend for source refresh. |
-| `ansible.repo_cache_path` | path | `~/.untaped/ansible-cache` | `UNTAPED_ANSIBLE__REPO_CACHE_PATH` | Git clone cache used by source refresh. |
+| `ansible.cache_dir` | path | `~/.untaped/ansible-cache` | `UNTAPED_ANSIBLE__CACHE_DIR` | Git clone cache used by source refresh. |
 | `ansible.git_clone_protocol` | `https` \| `ssh` | `https` | `UNTAPED_ANSIBLE__GIT_CLONE_PROTOCOL` | Protocol for source refresh clones. |
 | `ansible.git_fetch_depth` | integer | `1` | `UNTAPED_ANSIBLE__GIT_FETCH_DEPTH` | Git fetch depth for source refresh; `0` is full history. |
-| `ansible.git_fetch_concurrency` | integer | `8` | `UNTAPED_ANSIBLE__GIT_FETCH_CONCURRENCY` | Default `--parallel` for `source refresh` and `--refresh`. |
-| `ansible.probe_concurrency` | integer | `8` | `UNTAPED_ANSIBLE__PROBE_CONCURRENCY` | Concurrent ref probes during source refresh. |
+| `ansible.git_fetch_parallel` | integer | `8` | `UNTAPED_ANSIBLE__GIT_FETCH_PARALLEL` | Default `--parallel` for `source refresh` and `--refresh`. |
+| `ansible.probe_parallel` | integer | `8` | `UNTAPED_ANSIBLE__PROBE_PARALLEL` | Concurrent ref probes during source refresh. |
 | `ansible.source_refresh_repo_batch_size` | integer | `100` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_REPO_BATCH_SIZE` | Repos committed per source refresh batch. |
 | `ansible.source_refresh_rate_limit_floor` | integer | `500` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_RATE_LIMIT_FLOOR` | Stop a refresh (resumable) when the GraphQL budget drops below this. |
 | `ansible.git_blob_filter` | boolean | `true` | `UNTAPED_ANSIBLE__GIT_BLOB_FILTER` | Fetch with a blob filter to download less. |
@@ -75,7 +75,7 @@ overridden for one process with the environment variable shown.
 | `awx.api_prefix` | string | `/api/controller/v2/` | `UNTAPED_AWX__API_PREFIX` | API prefix. Standalone AWX usually uses `/api/v2/`. |
 | `awx.default_organization` | string (optional) | unset | `UNTAPED_AWX__DEFAULT_ORGANIZATION` | Organization that scopes name lookups and `apply` documents without one. |
 | `awx.page_size` | integer | `200` | `UNTAPED_AWX__PAGE_SIZE` | Results requested per AWX API page. |
-| `awx.test_timeout` | number | `1800` | `UNTAPED_AWX__TEST_TIMEOUT` | Seconds a `test run` case waits before its job is cancelled, unless `--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it. |
+| `awx.test_timeout_seconds` | number | `1800` | `UNTAPED_AWX__TEST_TIMEOUT_SECONDS` | Seconds a `test run` case waits before its job is cancelled, unless `--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it. |
 | `awx.test_parallel` | integer | `4` | `UNTAPED_AWX__TEST_PARALLEL` | Default `test run --parallel`. |
 
 ## `dotfiles`
@@ -104,9 +104,9 @@ overridden for one process with the environment variable shown.
 | `github.token` | secret (optional) | unset | `UNTAPED_GITHUB__TOKEN` | GitHub token for API calls and Git fetches. Falls back to `token_command`, then `GH_TOKEN`, then `GITHUB_TOKEN`. |
 | `github.token_command` | list (optional) | unset | `UNTAPED_GITHUB__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `github.token` is unset. |
 | `github.default_org` | string (optional) | unset | `UNTAPED_GITHUB__DEFAULT_ORG` | Org scope for `repos list`, `search` (repos, code, issues), `sweep`, `cache sync` and `cache prune` when no scope flag is given. Without it, search uses `@me`. |
-| `github.corpus_path` | path | `~/.untaped/github-cache` | `UNTAPED_GITHUB__CORPUS_PATH` | Local Git corpus that `github sweep` and `github cache` manage. |
+| `github.cache_dir` | path | `~/.untaped/github-cache` | `UNTAPED_GITHUB__CACHE_DIR` | Local Git corpus that `github sweep` and `github cache` manage. |
 | `github.sweep.max_age_seconds` | integer | `3600` | `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS` | `sweep` and `cache sync` refresh cached repos older than this that GitHub reports as pushed since. |
-| `github.sweep.sync_concurrency` | integer | `12` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | Default `sweep --parallel` and `cache sync --parallel` Git workers. |
+| `github.sweep.parallel` | integer | `12` | `UNTAPED_GITHUB__SWEEP__PARALLEL` | Default `sweep --parallel` and `cache sync --parallel` Git workers. |
 | `github.inventory.path` | path | `~/.untaped/github-inventory.json` | `UNTAPED_GITHUB__INVENTORY__PATH` | Cached repository list (metadata only) that workspace `create`/`add` resolve names from and the picker searches. |
 | `github.inventory.orgs` | list | empty | `UNTAPED_GITHUB__INVENTORY__ORGS` | Orgs whose repositories the inventory lists. With no orgs or teams, `github.default_org`. |
 | `github.inventory.teams` | list | empty | `UNTAPED_GITHUB__INVENTORY__TEAMS` | Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else in `github.default_org`) whose repositories the inventory lists. |
@@ -131,7 +131,7 @@ overridden for one process with the environment variable shown.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `recipe.library_root` | path | `~/.untaped/untaped-recipes` | `UNTAPED_RECIPE__LIBRARY_ROOT` | Directory holding installed recipe packs. |
+| `recipe.library_dir` | path | `~/.untaped/untaped-recipes` | `UNTAPED_RECIPE__LIBRARY_DIR` | Directory holding installed recipe packs. |
 | `recipe.hook_timeout_seconds` | number | `60` | `UNTAPED_RECIPE__HOOK_TIMEOUT_SECONDS` | Per-hook request timeout; `0` disables it. |
 | `recipe.hook_startup_timeout_seconds` | number | `300` | `UNTAPED_RECIPE__HOOK_STARTUP_TIMEOUT_SECONDS` | Timeout for preparing a hook environment. |
 | `recipe.backup_keep` | integer (optional) | unset | `UNTAPED_RECIPE__BACKUP_KEEP` | `backups prune` keeps this many newest bundles by default. |
@@ -154,6 +154,22 @@ overridden for one process with the environment variable shown.
 |---|---|---|
 | `workspace.active` | list | Active workspaces. Managed by `workspace` commands. |
 | `workspace.archived` | list | Archived workspaces. Managed by `workspace` commands. |
+
+## Renamed settings
+
+A deprecated name is still read, with a warning, until the next major release; a retired one is no longer read. `untaped config migrate` renames both in `config.yml`; rename environment variables yourself.
+
+| Old key | Old environment variable | New key | Status |
+|---|---|---|---|
+| `http.timeout` | `UNTAPED_HTTP__TIMEOUT` | `http.timeout_seconds` | deprecated |
+| `ansible.git_fetch_concurrency` | `UNTAPED_ANSIBLE__GIT_FETCH_CONCURRENCY` | `ansible.git_fetch_parallel` | deprecated |
+| `ansible.probe_concurrency` | `UNTAPED_ANSIBLE__PROBE_CONCURRENCY` | `ansible.probe_parallel` | deprecated |
+| `ansible.repo_cache_path` | `UNTAPED_ANSIBLE__REPO_CACHE_PATH` | `ansible.cache_dir` | deprecated |
+| `ansible.stale_after` | `UNTAPED_ANSIBLE__STALE_AFTER` | `ansible.stale_after_seconds` | deprecated |
+| `awx.test_timeout` | `UNTAPED_AWX__TEST_TIMEOUT` | `awx.test_timeout_seconds` | deprecated |
+| `github.corpus_path` | `UNTAPED_GITHUB__CORPUS_PATH` | `github.cache_dir` | deprecated |
+| `github.sweep.sync_concurrency` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | `github.sweep.parallel` | deprecated |
+| `recipe.library_root` | `UNTAPED_RECIPE__LIBRARY_ROOT` | `recipe.library_dir` | deprecated |
 
 ## See also
 

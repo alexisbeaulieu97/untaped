@@ -48,7 +48,7 @@ profiles:
       base_url: https://aap.example.com
       token_command: [pass, show, aap/untaped-agent]
       default_organization: Default
-      test_timeout: 1200  # seconds a case may run before its job is cancelled
+      test_timeout_seconds: 1200  # seconds a case may run before its job is cancelled
 ```
 
 ```bash

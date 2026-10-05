@@ -244,7 +244,7 @@ def test_load_settings_section_isolated_from_invalid_sibling(
     cfg = tmp_path / "config.yml"
     cfg.write_text("profiles:\n  default:\n    demo:\n      page_size: lots\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    assert load_settings_section("http").timeout == 30.0
+    assert load_settings_section("http").timeout_seconds == 30.0
     with pytest.raises(ConfigError, match=r"demo\.page_size"):
         load_settings_section("demo")
 

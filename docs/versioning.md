@@ -53,7 +53,7 @@ and its guide. It may change in a minor release, with a changelog entry that
 says so. Currently experimental:
 
 - `awx test`: its commands, the suite file format, the `awx.test_case` and
-  `awx.test_result` records, and the `awx.test_timeout` and
+  `awx.test_result` records, and the `awx.test_timeout_seconds` and
   `awx.test_parallel` settings with their environment variables.
 - `workspace`: its commands, record kinds, the `workspace.*` settings, and the
   `UNTAPED_*` variables `workspace run` sets.
