@@ -348,6 +348,21 @@ directly.
 
 ## Settings
 
+### Names
+
+- A directory setting ends in `_dir`; a file setting ends in `_path`, or is a
+  nested setting named `path`.
+- A concurrency setting is named `parallel`, prefixed with the activity it
+  bounds when it does not apply to the whole section (`git_fetch_parallel`),
+  because the flag it defaults is `--parallel`.
+- A duration ends in its unit: `_seconds`, `_minutes`, `_hours`, `_days` or
+  `_ms`.
+
+`check_conventions` flags a profile model field that breaks one of these
+(`settings-naming`) and declarations that break the rules below
+(`settings-renames`). A name that is the established term for its value
+keeps it with `# untaped: allow settings-naming` on the field's line.
+
 ### Renaming a setting
 
 Declare a rename on the section's profile model, never on a nested model,

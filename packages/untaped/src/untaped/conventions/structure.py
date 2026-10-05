@@ -14,6 +14,8 @@ For one capability package this flags:
 - ``port-adapter-clash`` — a port and an infrastructure class share a name;
 - ``foreign-section`` — code reads another capability's config section;
 - ``settings-not-frozen`` — the profile or state model is mutable;
+- ``settings-naming`` and ``settings-renames`` — see
+  :mod:`untaped.conventions.settings_names`;
 - ``private-test-import`` — a test imports an ``_``-prefixed module or name
   of ``untaped`` or of the capability package.
 
@@ -34,6 +36,7 @@ from typing import Any
 
 from untaped.capabilities.registry import CapabilitySpec
 from untaped.conventions.allow import allowed
+from untaped.conventions.settings_names import settings_name_violations
 from untaped.conventions.source import SourceFile, callee, source_files
 from untaped.errors import UntapedError
 
@@ -165,6 +168,7 @@ def structure_violations(
         *_runtime_violations(package),
         *_source_violations(source_dir, files, spec.config_section),
         *_settings_violations(spec),
+        *settings_name_violations(spec.config_section, spec.profile_model, source_dir.parent),
     ]
     if tests_dir is not None:
         found.extend(_private_import_violations(tests_dir, package))

@@ -78,6 +78,10 @@
   every duration), so nine keys have new names, listed under Renamed settings
   in the configuration reference.
   ([#489](https://github.com/alexisbeaulieu97/untaped/pull/489))
+- `untaped.testing.check_conventions` now checks setting names
+  (`settings-naming`), and fails with the reason when the capability is
+  quarantined, a broken rename declaration included.
+  ([#492](https://github.com/alexisbeaulieu97/untaped/pull/492))
 
 ### Deprecated
 
