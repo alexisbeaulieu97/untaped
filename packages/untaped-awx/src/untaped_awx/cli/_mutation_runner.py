@@ -96,7 +96,7 @@ def confirm_batch(ctx: AwxContext, *, count: int, verb: str, yes: bool, dry_run:
 
 
 #: Outcome actions that fail the run: the write did not fully land.
-_UNFINISHED = frozenset({"failed", "partial", "conflict", "skipped"})
+UNFINISHED_ACTIONS = frozenset({"failed", "partial", "conflict", "skipped"})
 
 
 def emit_outcomes(
@@ -121,7 +121,10 @@ def emit_outcomes(
         kind="awx.apply_outcome",
     )
     finish(
-        any(o.action in _UNFINISHED or (o.unverified and not allow_unverified) for o in outcomes),
+        any(
+            o.action in UNFINISHED_ACTIONS or (o.unverified and not allow_unverified)
+            for o in outcomes
+        ),
         predicate_hit=predicate_hit,
     )
 
@@ -163,7 +166,7 @@ def _report_outcomes(ctx: AwxContext, outcomes: list[ApplyOutcome]) -> None:
         label = f"{outcome.kind}/{outcome.name}"
         if outcome.error is not None:
             report_error(outcome.error, item=label)
-        elif outcome.detail and outcome.action in _UNFINISHED:
+        elif outcome.detail and outcome.action in UNFINISHED_ACTIONS:
             ctx.progress_ui().message("warning", f"{label}: {outcome.detail}")
 
 

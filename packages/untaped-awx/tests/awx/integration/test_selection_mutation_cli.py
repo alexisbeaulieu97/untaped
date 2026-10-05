@@ -471,9 +471,9 @@ def test_patch_failure_is_an_attributed_error_and_the_skip_a_warning(
     assert result.exit_code != 0
     records = [json.loads(line) for line in result.stderr.splitlines() if line.startswith("{")]
     [error] = [r for r in records if r["level"] == "error"]
-    assert error["item"] == "Project/target"
+    assert (error["item"], error["category"]) == ("Project/target", "unavailable")
     [warning] = [r for r in records if r["level"] == "warning"]
-    assert warning["message"].startswith("Project/second: ")
+    assert warning["message"] == "Project/second: skipped after a runtime failure"
 
 
 @pytest.mark.parametrize("continue_", [False, True])
