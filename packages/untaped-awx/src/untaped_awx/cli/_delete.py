@@ -10,6 +10,7 @@ from untaped.sdk import (
     echo,
     emit,
     finish,
+    report_error,
     report_errors,
     writes,
 )
@@ -102,12 +103,11 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
                             row["action"] = outcome.action
                         row["detail"] = outcome.detail
                         row.update(outcome.row_error())
-                        if outcome.detail:
-                            echo(
-                                f"{outcome.action}: {outcome.target.kind}#{outcome.target.id}: "
-                                f"{outcome.detail}",
-                                err=True,
-                            )
+                        label = f"{outcome.target.kind}#{outcome.target.id}"
+                        if outcome.error_info is not None:
+                            report_error(outcome.error_info, item=label)
+                        elif outcome.detail:
+                            ctx.progress_ui().message("warning", f"{label}: {outcome.detail}")
                     failed = any(outcome.action != "completed" for outcome in outcomes)
                 emit(
                     rows,
