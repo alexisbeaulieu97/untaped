@@ -13,6 +13,7 @@ from untaped.sdk import (
     ColumnsOption,
     ErrorInfo,
     FormatOption,
+    UiContext,
     UntapedError,
     echo,
     emit,
@@ -107,6 +108,7 @@ def run_action_selection(
         continue_on_error=continue_on_error,
         error_detail=safe_error,
         abandon=abandon,
+        ui=ctx.progress_ui(),
     )
     launched: list[tuple[str, Job]] = []
     for index, outcome in enumerate(outcomes):
@@ -215,7 +217,7 @@ def _watch(
         for _, job in unmonitored:
             abandon_now(job)
     except KeyboardInterrupt:
-        _interrupted([*launched, *unmonitored], abandon)
+        _interrupted(ctx.progress_ui(), [*launched, *unmonitored], abandon)
     finals, errors = (
         _monitor(
             ctx,
@@ -314,6 +316,7 @@ def _submit(
     continue_on_error: bool,
     error_detail: Callable[[Exception, SelectedResource], str],
     abandon: AbandonJobs,
+    ui: UiContext,
 ) -> list[SelectedActionOutcome[Job]]:
     """Run the POST phase; Ctrl-C abandons and names the executions submitted so far."""
     try:
@@ -327,6 +330,7 @@ def _submit(
     except ActionsInterruptedError as interrupted:
         label_by_target = {id(item): label for item, label in zip(targets, labels, strict=True)}
         _interrupted(
+            ui,
             [
                 (label_by_target[id(outcome.target)], job)
                 for outcome in interrupted.outcomes
@@ -374,11 +378,15 @@ def _monitor(
         )
     except KeyboardInterrupt:
         _interrupted(
-            [(label, finished.get(label, job)) for label, job in launched] + unmonitored, abandon
+            ctx.progress_ui(),
+            [(label, finished.get(label, job)) for label, job in launched] + unmonitored,
+            abandon,
         )
 
 
-def _interrupted(executions: Sequence[tuple[str, Job]], abandon: AbandonJobs) -> NoReturn:
+def _interrupted(
+    ui: UiContext, executions: Sequence[tuple[str, Job]], abandon: AbandonJobs
+) -> NoReturn:
     """Abandon every execution not known to have ended, then name them; exit 130.
 
     Another Ctrl-C during the cancel requests stops them, but still names them.
@@ -387,6 +395,7 @@ def _interrupted(executions: Sequence[tuple[str, Job]], abandon: AbandonJobs) ->
         abandon.unfinished(job for _, job in executions)
     finally:
         report_interrupted(
+            ui,
             [(label, abandon.latest(job)) for label, job in executions],
             cancelled=abandon.cancelled,
         )
@@ -396,6 +405,7 @@ _ACTIVE_STATUSES = frozenset({"new", "pending", "waiting", "running"})
 
 
 def report_interrupted(
+    ui: UiContext,
     executions: Sequence[tuple[str | None, Job]],
     *,
     cancelled: Collection[tuple[str, int]] = (),
@@ -413,10 +423,10 @@ def report_interrupted(
             continue
         prefix = f"{label}: " if label else ""
         if (job.kind, job.id) in cancelled:
-            echo(f"interrupted: {prefix}{job.kind} {job.id} cancel requested", err=True)
+            ui.message("warning", f"interrupted: {prefix}{job.kind} {job.id} cancel requested")
             continue
         state = "keeps running" if job.status in _ACTIVE_STATUSES else "was launched"
-        echo(f"interrupted: {prefix}{job.kind} {job.id} {state}", err=True)
+        ui.message("warning", f"interrupted: {prefix}{job.kind} {job.id} {state}")
         by_kind.setdefault(job.kind, []).append(str(job.id))
     for kind, ids in by_kind.items():
         echo(f"hint: untaped awx jobs wait {' '.join(ids)} --kind {kind}", err=True)
