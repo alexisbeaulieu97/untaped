@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -31,31 +30,13 @@ def test_api_prefix_must_start_with_a_slash() -> None:
         AwxSettings(api_prefix="api/v2/")
 
 
-@pytest.mark.parametrize(
-    ("old", "value", "new", "attribute"),
-    [
-        ("test_timeout", 90.0, "test_timeout_seconds", lambda s: s.test_timeout_seconds),
-    ],
-)
-def test_an_old_key_is_read_as_the_new_one(
-    capsys: pytest.CaptureFixture[str],
-    old: str,
-    value: object,
-    new: str,
-    attribute: Callable[[AwxSettings], object],
-) -> None:
+def test_test_timeout_is_read_as_test_timeout_seconds(capsys: pytest.CaptureFixture[str]) -> None:
     config = Path(os.environ["UNTAPED_CONFIG"])
     config.parent.mkdir(parents=True, exist_ok=True)
-    data: dict[str, object] = {}
-    node = data
-    *parents, leaf = old.split(".")
-    for part in parents:
-        node = node.setdefault(part, {})  # type: ignore[assignment]
-    node[leaf] = value
-    config.write_text(yaml.safe_dump({"profiles": {"default": {"awx": data}}}))
+    config.write_text(yaml.safe_dump({"profiles": {"default": {"awx": {"test_timeout": 90.0}}}}))
 
-    assert attribute(get_config_section("awx", AwxSettings)) == value
+    assert get_config_section("awx", AwxSettings).test_timeout_seconds == 90.0
     assert (
-        f"warning: awx.{old} is deprecated and will be removed in the next major release; "
-        f"use awx.{new}"
+        "warning: awx.test_timeout is deprecated and will be removed in the next major release; "
+        "use awx.test_timeout_seconds"
     ) in capsys.readouterr().err

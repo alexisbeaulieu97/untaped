@@ -61,7 +61,8 @@ class HttpSettings(BaseModel):
             warnings.warn(
                 "HttpSettings(timeout=...) is deprecated; use timeout_seconds",
                 DeprecationWarning,
-                stacklevel=2,
+                # Past pydantic's ``__init__`` / ``model_validate`` to the caller.
+                stacklevel=3,
             )
             data = dict(data)
             timeout = data.pop("timeout")

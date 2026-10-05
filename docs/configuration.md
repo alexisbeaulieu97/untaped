@@ -28,7 +28,8 @@ old keys in every profile of `config.yml` (`--dry-run` first shows what it
 would change); it does not touch environment variables, so rename an
 `UNTAPED_*` variable yourself. After the next major release an old key is
 retired: it is no longer read, `untaped doctor` names it, and `config migrate`
-still renames it.
+still renames it. The [configuration reference](./reference/config.md#renamed-settings)
+lists every renamed setting.
 
 Two installs that share one config file can disagree about a renamed setting:
 writes keep keys a version does not know, but an install older than the

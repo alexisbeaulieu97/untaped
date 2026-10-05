@@ -250,7 +250,9 @@ def _default_text(value: Any) -> str:
 
 
 def _env_name(key: str) -> str:
-    return "UNTAPED_" + key.replace(".", "__").upper()
+    from untaped.settings import env_var_name  # noqa: PLC0415
+
+    return env_var_name(key.split("."))
 
 
 def collect_sections() -> list[tuple[str, str, type[BaseModel], bool]]:
@@ -320,42 +322,32 @@ def _section_rows(prefix: str, model: type[BaseModel]) -> list[Row]:
     return rows
 
 
-def renamed_rows() -> list[tuple[str, str, str]]:
-    """``(old key, new key, kind)`` for every declared rename, in section order."""
+def _renamed_table() -> list[str]:
+    """The Renamed settings table: every declared rename, in section order."""
     from untaped.deprecated_keys import key_mappings  # noqa: PLC0415
+    from untaped.settings import model_sections  # noqa: PLC0415
 
-    rows: list[tuple[str, str, str]] = []
+    rows: list[str] = []
     for _, prefix, model, is_state in collect_sections():
         if is_state:
             continue
-        if prefix:
-            sections = [(prefix, model)]
-        else:
-            sections = [
-                (name, model.model_fields[name].annotation) for name in ("http", "ui", "skills")
-            ]
-        for section, section_model in sections:
+        sections = {prefix: model} if prefix else model_sections(model)
+        for section, section_model in sections.items():
             mappings = key_mappings(section_model)
             for old, new in sorted(mappings.migratable.items()):
                 kind = "retired" if old in mappings.retired else "deprecated"
-                rows.append((f"{section}.{old}", f"{section}.{new}", kind))
-    return rows
-
-
-def _renamed_table() -> list[str]:
-    rows = renamed_rows()
+                key = f"{section}.{old}"
+                rows.append(f"| `{key}` | `{_env_name(key)}` | `{section}.{new}` | {kind} |")
     if not rows:
         return []
-    lines = [
+    return [
         "## Renamed settings\n",
-        "A deprecated name is still read, with a warning, until the next major release; "
-        "a retired one is no longer read. `untaped config migrate` renames both in "
-        "`config.yml`; rename environment variables yourself.\n",
+        "A deprecated key is still read with a warning; a retired one is no longer read. See "
+        "[Renamed settings](../configuration.md#renamed-settings).\n",
         "| Old key | Old environment variable | New key | Status |\n|---|---|---|---|",
+        *rows,
+        "",
     ]
-    lines += [f"| `{old}` | `{_env_name(old)}` | `{new}` | {kind} |" for old, new, kind in rows]
-    lines.append("")
-    return lines
 
 
 def render() -> str:

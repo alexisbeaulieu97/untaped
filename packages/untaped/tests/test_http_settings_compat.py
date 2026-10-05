@@ -12,12 +12,20 @@ from untaped.settings import HttpSettings, load_settings_section
 
 
 def test_the_timeout_argument_still_works_with_a_deprecation_warning() -> None:
-    with pytest.warns(DeprecationWarning, match="use timeout_seconds"):
+    with pytest.warns(DeprecationWarning, match="use timeout_seconds") as record:
         settings = HttpSettings(timeout=5)
 
     assert settings.timeout_seconds == 5
+    assert record[0].filename == __file__
     with pytest.warns(DeprecationWarning, match="use timeout_seconds"):
         assert settings.timeout == 5
+
+
+def test_the_warning_names_the_caller_of_model_validate() -> None:
+    with pytest.warns(DeprecationWarning) as record:
+        HttpSettings.model_validate({"timeout": 5})
+
+    assert record[0].filename == __file__
 
 
 def test_timeout_seconds_wins_over_timeout() -> None:
