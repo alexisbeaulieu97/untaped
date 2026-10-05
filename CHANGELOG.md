@@ -118,6 +118,10 @@
   `warning` line naming the target, and a failed request as an attributed
   `error` line, so JSON diagnostics no longer label them `info`.
   ([#488](https://github.com/alexisbeaulieu97/untaped/pull/488))
+- awx: after Ctrl-C, `launch`, `sync` and `test run` report each execution
+  they leave behind as a `warning` line, so JSON diagnostics no longer label
+  them `info`.
+  ([#491](https://github.com/alexisbeaulieu97/untaped/pull/491))
 
 ## 10.0.0
 
