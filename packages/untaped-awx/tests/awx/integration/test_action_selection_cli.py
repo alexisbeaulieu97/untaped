@@ -614,6 +614,7 @@ def test_cancel_cancels_the_execution_whose_polling_failed(fake_aap: Any) -> Non
     row = json.loads(result.stdout)[0]
     assert row["action"] == "failed"
     assert row["detail"].endswith("; cancel requested")
+    assert "error: deploy: permission denied: detail: denied; cancel requested" in result.stderr
     assert fake_aap.get_record("jobs", row["id"])["status"] == "canceled"
 
 
@@ -868,6 +869,7 @@ def test_refused_cancel_after_a_polling_error_says_so(fake_aap: Any) -> None:
     row = json.loads(result.stdout)[0]
     assert row["action"] == "failed"
     assert "; cancel failed: " in row["detail"]
+    assert "error: deploy: permission denied: detail: denied; cancel failed: " in result.stderr
 
 
 @pytest.mark.parametrize("cancel", [True, False])
@@ -890,6 +892,8 @@ def test_cancel_cancels_executions_awx_created_while_ignoring_fields(
     assert row["action"] == "failed"
     assert "limit" in row["detail"]
     assert row["detail"].endswith("; cancel requested") is cancel
+    [error] = [line for line in result.stderr.splitlines() if line.startswith("error: deploy: ")]
+    assert error.endswith("; cancel requested") is cancel
     assert fake_aap.get_record("jobs", row["id"])["status"] == ("canceled" if cancel else "running")
 
 
