@@ -481,7 +481,7 @@ def graph_command(
     Inline source selectors (--org, --team, --repo, --path, --ref-kind,
     --ref-pattern, --ref-scan-default) are cached under a deterministic
     fingerprint key, so repeated identical invocations reuse the same scan.
-    --parallel defaults to ansible.git_fetch_concurrency and is capped at 32.
+    --parallel defaults to ansible.git_fetch_parallel and is capped at 32.
 
     For example:
 
@@ -679,7 +679,7 @@ def _refresh_selected(env: _GraphEnv, options: GraphSourceOptions) -> list[str]:
         github_settings=env.github_settings,
         http=ctx.http,
         concurrency=clamp_parallel(
-            options.parallel or env.settings.git_fetch_concurrency,
+            options.parallel or env.settings.git_fetch_parallel,
             cap=GIT_PARALLEL_CAP,
             policy="Git fetch limit",
         ),
@@ -801,7 +801,7 @@ class _LiveReads:
                 aliases=self._aliases,
                 dependency_paths=self._settings.dependency_paths,
                 github_host=self._github_host,
-                concurrency=self._settings.probe_concurrency,
+                concurrency=self._settings.probe_parallel,
             )
         return self._index
 
@@ -852,7 +852,7 @@ def _target_graph(
             depth=env.depth,
             # A local checkout is one state of its repo, overlaid at the ref-less node.
             all_refs=env.all_refs or local_dependencies is not None,
-            stale_after=env.settings.stale_after,
+            stale_after=env.settings.stale_after_seconds,
             refresh_hint=refresh_hint,
         ),
         local=local_dependencies,

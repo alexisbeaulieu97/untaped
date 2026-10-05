@@ -29,7 +29,7 @@ from untaped_ansible.settings import AnsibleSettings, SourceDefinition
 from untaped_github.api import GithubClient, GithubSettings, github_web_host
 
 GIT_PARALLEL_CAP = 32
-"""Upper bound for ``--parallel`` Git fetches (matches ``ansible.git_fetch_concurrency``)."""
+"""Upper bound for ``--parallel`` Git fetches (matches ``ansible.git_fetch_parallel``)."""
 
 
 def run_source_refresh(
@@ -102,12 +102,12 @@ def refresh_source(
         git = GitRepositoryCache(auth_host=github_web_host(github_settings.base_url))
         selected_backend = backend or settings.source_refresh_backend
         auth_header = git_auth_header(token) if token else None
-        graphql_probe = GithubRefProbe(github, concurrency=settings.probe_concurrency)
+        graphql_probe = GithubRefProbe(github, concurrency=settings.probe_parallel)
         git_probe = GitRemoteRefProbe(
             git,
             clone_protocol=settings.git_clone_protocol,
             auth_header=auth_header,
-            concurrency=settings.probe_concurrency,
+            concurrency=settings.probe_parallel,
         )
         result = RefreshGitSourceIndex(
             github=github,
@@ -116,7 +116,7 @@ def refresh_source(
             index=index,
             aliases=aliases,
             default_dependency_paths=settings.dependency_paths,
-            repo_cache_path=settings.repo_cache_path,
+            repo_cache_path=settings.cache_dir,
             clone_protocol=settings.git_clone_protocol,
             fetch_depth=settings.git_fetch_depth,
             blob_filter=settings.git_blob_filter,

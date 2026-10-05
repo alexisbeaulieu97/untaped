@@ -1,7 +1,7 @@
 # Sweeps and the local corpus
 
 `untaped github sweep` answers grep-style questions over local clones kept in
-a managed corpus under `github.corpus_path`. Use `untaped workspace` for
+a managed corpus under `github.cache_dir`. Use `untaped workspace` for
 checkouts you edit.
 
 Contents: predicates, refs, freshness, the footer and failures, rows, piped

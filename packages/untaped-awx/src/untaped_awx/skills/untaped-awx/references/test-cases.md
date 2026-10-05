@@ -135,7 +135,7 @@ An entry matches a failed task, as the result's
 ## Timeouts and parallelism
 
 - A case waits `--timeout` when given, else its own `timeout`, else
-  `defaults.timeout`, else `awx.test_timeout` (1800 seconds).
+  `defaults.timeout`, else `awx.test_timeout_seconds` (1800 seconds).
 - A job still running then, or when polling fails or Ctrl-C stops the run, is
   cancelled; `--no-cancel` leaves it running.
 - `--parallel N` (default `awx.test_parallel`, 4) runs that many cases at

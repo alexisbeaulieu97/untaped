@@ -37,7 +37,7 @@ class DemoSettings(BaseModel):
 @pytest.mark.parametrize("bad", [0, -1, -0.5])
 def test_http_settings_rejects_non_positive_timeout(bad: float) -> None:
     with pytest.raises(ValidationError):
-        HttpSettings(timeout=bad)
+        HttpSettings(timeout_seconds=bad)
 
 
 @respx.mock
@@ -45,7 +45,7 @@ def test_connected_client_applies_settings_timeout() -> None:
     respx.get("https://api.example.com/user").mock(return_value=httpx.Response(200, json={}))
     config = DemoSettings(token=SecretStr("x"))
 
-    with connected_client(config, section="demo", http=HttpSettings(timeout=5.0)) as client:
+    with connected_client(config, section="demo", http=HttpSettings(timeout_seconds=5.0)) as client:
         client.get("/user")
 
     timeout = respx.calls.last.request.extensions["timeout"]
@@ -70,7 +70,7 @@ def test_connected_client_passes_proxy_and_timeout_to_httpx(
     with connected_client(
         config,
         section="demo",
-        http=HttpSettings(timeout=12.0, proxy="http://proxy.example:8080"),
+        http=HttpSettings(timeout_seconds=12.0, proxy="http://proxy.example:8080"),
     ):
         pass
 

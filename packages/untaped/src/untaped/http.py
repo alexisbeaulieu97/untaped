@@ -575,7 +575,7 @@ def connected_client(
         base_url=values[base_url_field].rstrip("/"),
         headers=request_headers,
         verify=resolve_verify(http_settings),
-        timeout=http_settings.timeout,
+        timeout=http_settings.timeout_seconds,
         proxy=http_settings.proxy,
         retry=retry,
         system=section,

@@ -22,7 +22,7 @@ def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         "profiles:\n  default:\n    github:\n      token: ghp_test\n"
-        f"      corpus_path: {tmp_path / 'corpus'}\n"
+        f"      cache_dir: {tmp_path / 'corpus'}\n"
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
 

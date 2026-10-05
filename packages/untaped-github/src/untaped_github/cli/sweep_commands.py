@@ -197,7 +197,7 @@ def sweep_command(
         except ValueError as exc:
             raise UsageError(str(exc)) from exc
         workers = clamp_parallel(
-            parallel if parallel is not None else settings.sweep.sync_concurrency,
+            parallel if parallel is not None else settings.sweep.parallel,
             cap=32,
             policy="Git corpus worker cap",
         )
@@ -224,7 +224,7 @@ def sweep_command(
                 report = Sweep(
                     inventory=lambda _scope: (),
                     corpus=corpus,
-                    root=settings.corpus_path,
+                    root=settings.cache_dir,
                     auth_header=lambda: None,
                 )(options, progress=progress)
         else:
@@ -232,7 +232,7 @@ def sweep_command(
                 report = Sweep(
                     inventory=ResolveRepositoryInventory(client),
                     corpus=corpus,
-                    root=settings.corpus_path,
+                    root=settings.cache_dir,
                     auth_header=corpus_auth_header(settings),
                 )(options, progress=progress)
 
@@ -296,7 +296,7 @@ def _validate_content_patterns(
         *[("--not-grep", pattern) for pattern in query.not_greps],
     ):
         error = corpus.validate_pattern(
-            root=settings.corpus_path,
+            root=settings.cache_dir,
             pattern=pattern,
             paths=paths,
             fixed_strings=fixed_strings,

@@ -60,7 +60,7 @@ def test_connected_client_http_default_ignores_invalid_sibling_section(
     register_profile_settings("paged", _PagedSettings)
     _isolated_config.write_text(
         "profiles:\n  default:\n"
-        "    http:\n      timeout: 7\n"
+        "    http:\n      timeout_seconds: 7\n"
         "    paged:\n      page_size: notanint\n",
         encoding="utf-8",
     )

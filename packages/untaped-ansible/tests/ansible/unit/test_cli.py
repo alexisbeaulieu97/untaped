@@ -65,7 +65,7 @@ def _use_config(
     profile: dict[str, object] = {
         "ansible": {
             "index_path": str(tmp_path / "index.sqlite3"),
-            "stale_after": 86400,
+            "stale_after_seconds": 86400,
             **(ansible or {}),
         }
     }
@@ -632,7 +632,7 @@ def test_source_status_classifies_sources_with_utc_timestamps(tmp_path: Path, mo
                 {"name": "stale", "repos": ["acme/base"]},
             ]
         },
-        ansible={"stale_after": 60},
+        ansible={"stale_after_seconds": 60},
     )
 
     result = _run("source", "status", "--format", "json")
@@ -981,7 +981,7 @@ def test_graph_with_sources_uses_cache_without_refreshing(
 
 def test_graph_stale_warning_includes_exact_refresh_command(tmp_path: Path, monkeypatch) -> None:
     _seed(tmp_path, "source:platform", _edge(), scanned_at=datetime(2026, 1, 1, tzinfo=UTC))
-    _use_config(tmp_path, monkeypatch, _PLATFORM, ansible={"stale_after": 60})
+    _use_config(tmp_path, monkeypatch, _PLATFORM, ansible={"stale_after_seconds": 60})
 
     result = _run("graph", "acme/base", "--source", "platform", "--direction=up", "--cached")
 

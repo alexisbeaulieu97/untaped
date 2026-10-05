@@ -62,7 +62,7 @@ def test_stdin_secret_keeps_hash_and_everything_after_it(_isolated_config: Path)
         # Typed fields are coerced from the raw string.
         ("http.verify_ssl", "no", False),
         ("http.verify_ssl", "true", True),
-        ("http.timeout", "5", 5.0),
+        ("http.timeout_seconds", "5", 5.0),
         ("http.ca_bundle", "/etc/ssl/ca.pem", "/etc/ssl/ca.pem"),
         ("github.mode", "on", "on"),
         ("ui.theme", "high-contrast", "high-contrast"),
@@ -82,9 +82,9 @@ def test_set_stores_the_value_for_the_field_type(
 @pytest.mark.parametrize(
     ("key", "raw", "detail"),
     [
-        ("http.timeout", "abc", ""),
-        ("http.timeout", "-1", ""),
-        ("http.timeout", "null", ""),
+        ("http.timeout_seconds", "abc", ""),
+        ("http.timeout_seconds", "-1", ""),
+        ("http.timeout_seconds", "null", ""),
         ("github.mode", "maybe", ""),
         ("ui.theme", "bogus", "unknown UI theme 'bogus'"),
         ("ui.symbols", "[1, 2]", ""),
@@ -111,8 +111,8 @@ _BROKEN_JIRA = "profiles:\n  default:\n    jira:\n      timeout: lots\n"
 @pytest.mark.parametrize(
     ("argv", "section", "stored"),
     [
-        (["get", "http.timeout"], None, None),
-        (["set", "http.timeout", "5"], "http", {"timeout": 5.0}),
+        (["get", "http.timeout_seconds"], None, None),
+        (["set", "http.timeout_seconds", "5"], "http", {"timeout_seconds": 5.0}),
         # The broken key itself can be repaired by set or unset.
         (["set", "jira.timeout", "10"], "jira", {"timeout": 10.0}),
         (["unset", "jira.timeout"], None, None),
@@ -157,16 +157,16 @@ def test_list_shows_raw_values_and_warns_for_invalid_section(_isolated_config: P
     assert warnings[0].startswith("warning: invalid config section 'jira' in ")
     assert warnings[0].count("'jira'") == 1
     assert warnings[0].endswith("(its keys show unvalidated values)")
-    assert "http.timeout" in result.stdout
+    assert "http.timeout_seconds" in result.stdout
     assert '"lots"' in result.stdout
 
 
 def test_null_profile_is_treated_as_empty(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default: null\n")
-    assert _invoke(["get", "http.timeout"]).exit_code == 0
-    result = _invoke(["set", "http.timeout", "5"])
+    assert _invoke(["get", "http.timeout_seconds"]).exit_code == 0
+    result = _invoke(["set", "http.timeout_seconds", "5"])
     assert result.exit_code == 0, result.output
-    assert _default_profile(_isolated_config) == {"http": {"timeout": 5.0}}
+    assert _default_profile(_isolated_config) == {"http": {"timeout_seconds": 5.0}}
 
 
 @pytest.mark.parametrize(
@@ -175,7 +175,7 @@ def test_null_profile_is_treated_as_empty(_isolated_config: Path) -> None:
 )
 def test_non_mapping_config_shapes_are_config_errors(_isolated_config: Path, text: str) -> None:
     write_config(_isolated_config, text)
-    result = _invoke(["get", "http.timeout"])
+    result = _invoke(["get", "http.timeout_seconds"])
     assert result.exit_code == 4  # the stored config is invalid
     assert result.stderr.startswith("error: ")
     assert "mapping" in result.stderr
@@ -228,7 +228,7 @@ def test_list_json_emits_native_values(_isolated_config: Path) -> None:
     result = _invoke(["list", "--format", "json"])
     assert result.exit_code == 0, result.output
     rows = {row["key"]: row for row in json.loads(result.stdout)}
-    assert rows["http.timeout"]["value"] == 30.0
+    assert rows["http.timeout_seconds"]["value"] == 30.0
     assert rows["http.ca_bundle"]["value"] is None
     assert rows["http.verify_ssl"]["value"] is True
     assert "—" not in result.stdout
@@ -247,8 +247,10 @@ def test_raw_prints_native_values_and_tables_show_glyphs(_isolated_config: Path)
 
 
 def test_tables_show_setting_values_verbatim(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    http:\n      timeout: 1.2345\n")
-    assert "1.2345" in _invoke(["get", "http.timeout", "--format", "table"]).stdout
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    http:\n      timeout_seconds: 1.2345\n"
+    )
+    assert "1.2345" in _invoke(["get", "http.timeout_seconds", "--format", "table"]).stdout
     assert "1.2345" in _invoke(["list", "--format", "table"]).stdout
 
 

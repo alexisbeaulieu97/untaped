@@ -1,7 +1,7 @@
 """Git ls-remote backed remote ref freshness probe.
 
 Runs ``git ls-remote --symref`` (Git 2.8+) once per repo with the normal Git
-timeout and ``ansible.probe_concurrency``, sharing the HTTPS auth-header
+timeout and ``ansible.probe_parallel``, sharing the HTTPS auth-header
 redaction path used by fetches. ``^{}`` lines give fully peeled tag targets.
 The ``git`` backend still expands sources through GitHub REST inventory, so
 private sources still need credentials; it only replaces the probe transport.

@@ -335,7 +335,7 @@ def source_status_command(
                 source_name,
                 index=index,
                 configured_sources=configured,
-                stale_after=settings.stale_after,
+                stale_after=settings.stale_after_seconds,
             )
             for source_name in names
         ]
@@ -359,7 +359,7 @@ def source_refresh_command(
 ) -> None:
     """Refresh a saved source from GitHub.
 
-    --parallel defaults to ansible.git_fetch_concurrency and is capped at 32.
+    --parallel defaults to ansible.git_fetch_parallel and is capped at 32.
     """
     with report_errors():
         ctx = app_context()
@@ -370,7 +370,7 @@ def source_refresh_command(
         settings = get_config_section("ansible", AnsibleSettings)
         aliases = AliasRepository().entries()
         git_parallel = clamp_parallel(
-            parallel or settings.git_fetch_concurrency,
+            parallel or settings.git_fetch_parallel,
             cap=GIT_PARALLEL_CAP,
             policy="Git fetch limit",
         )
