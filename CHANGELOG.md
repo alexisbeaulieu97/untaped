@@ -77,16 +77,16 @@
 - Settings follow one naming scheme (`_dir` and `_path`, `parallel`, a unit on
   every duration), so nine keys have new names, listed under Renamed settings
   in the configuration reference.
-  ([#PR_D](https://github.com/alexisbeaulieu97/untaped/pull/PR_D))
+  ([#489](https://github.com/alexisbeaulieu97/untaped/pull/489))
 
 ### Deprecated
 
 - The old names of those nine keys and their `UNTAPED_*` variables still work
   with a warning until 11.0; `untaped config migrate` renames them in
   `config.yml`.
-  ([#PR_D](https://github.com/alexisbeaulieu97/untaped/pull/PR_D))
+  ([#489](https://github.com/alexisbeaulieu97/untaped/pull/489))
 - `HttpSettings.timeout` is deprecated; use `timeout_seconds`.
-  ([#PR_D](https://github.com/alexisbeaulieu97/untaped/pull/PR_D))
+  ([#489](https://github.com/alexisbeaulieu97/untaped/pull/489))
 
 ### Fixed
 
