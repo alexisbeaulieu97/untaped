@@ -47,7 +47,7 @@ class HttpSettings(BaseModel):
 
     renamed_keys: ClassVar[Mapping[str, str]] = {"timeout": "timeout_seconds"}
 
-    ca_bundle: Path | None = None
+    ca_bundle: Path | None = None  # untaped: allow settings-naming
     verify_ssl: bool = True
     verify_hostname: bool = True
     timeout_seconds: float = Field(default=30.0, gt=0)
