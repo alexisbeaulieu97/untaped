@@ -122,6 +122,10 @@
   they leave behind as a `warning` line, so JSON diagnostics no longer label
   them `info`.
   ([#491](https://github.com/alexisbeaulieu97/untaped/pull/491))
+- awx: `jobs wait` timeouts, kinds a bulk `export` skips, finished executions
+  `jobs cancel` skips, and an invalid `edit` batch are now `warning` lines, so
+  JSON diagnostics no longer label them `info`.
+  ([#494](https://github.com/alexisbeaulieu97/untaped/pull/494))
 
 ## 10.0.0
 
