@@ -237,7 +237,8 @@ def check_conventions(
     ``tests_dir`` adds the private-test-import check over those tests.
     ``candidates`` replaces entry-point discovery, so a test can compose a
     provider that is not installed. ``# untaped: allow <rule>`` on the flagged
-    node's first line allows that one violation.
+    node's first line allows that one violation. A quarantined capability
+    fails with the reason it was refused, such as a broken rename declaration.
     """
     from untaped.conventions import capability_violations  # noqa: PLC0415
 

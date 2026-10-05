@@ -48,7 +48,8 @@ def capability_violations(
     check runs only when ``tests_dir`` is given. ``candidates`` replaces
     entry-point discovery (as in :func:`untaped.bootstrap.compose_root`), so
     a test can check a provider that is not installed. Lines are
-    ``<where>::<rule>::<detail>``, sorted.
+    ``<where>::<rule>::<detail>``, sorted. A quarantined capability's one
+    violation is the reason composition refused it.
     """
     candidates = list(discover_candidates()) if candidates is None else candidates
     root = build_root_app(candidates=candidates)
