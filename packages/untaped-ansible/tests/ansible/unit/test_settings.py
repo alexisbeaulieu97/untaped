@@ -7,7 +7,6 @@ Defaults are pinned by the generated ``docs/reference/config.md`` (see
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -61,32 +60,22 @@ def test_source_definition_is_frozen_and_normalized() -> None:
 
 
 @pytest.mark.parametrize(
-    ("old", "value", "new", "attribute"),
+    ("data", "old", "new", "value"),
     [
-        ("repo_cache_path", "/c", "cache_dir", lambda s: str(s.cache_dir)),
-        ("git_fetch_concurrency", 3, "git_fetch_parallel", lambda s: s.git_fetch_parallel),
-        ("probe_concurrency", 4, "probe_parallel", lambda s: s.probe_parallel),
-        ("stale_after", 60, "stale_after_seconds", lambda s: s.stale_after_seconds),
+        ({"repo_cache_path": "/c"}, "repo_cache_path", "cache_dir", Path("/c")),
+        ({"git_fetch_concurrency": 3}, "git_fetch_concurrency", "git_fetch_parallel", 3),
+        ({"probe_concurrency": 4}, "probe_concurrency", "probe_parallel", 4),
+        ({"stale_after": 60}, "stale_after", "stale_after_seconds", 60),
     ],
 )
 def test_an_old_key_is_read_as_the_new_one(
-    capsys: pytest.CaptureFixture[str],
-    old: str,
-    value: object,
-    new: str,
-    attribute: Callable[[AnsibleSettings], object],
+    capsys: pytest.CaptureFixture[str], data: dict[str, object], old: str, new: str, value: object
 ) -> None:
     config = Path(os.environ["UNTAPED_CONFIG"])
     config.parent.mkdir(parents=True, exist_ok=True)
-    data: dict[str, object] = {}
-    node = data
-    *parents, leaf = old.split(".")
-    for part in parents:
-        node = node.setdefault(part, {})  # type: ignore[assignment]
-    node[leaf] = value
     config.write_text(yaml.safe_dump({"profiles": {"default": {"ansible": data}}}))
 
-    assert attribute(get_config_section("ansible", AnsibleSettings)) == value
+    assert getattr(get_config_section("ansible", AnsibleSettings), new) == value
     assert (
         f"warning: ansible.{old} is deprecated and will be removed in the next major release; "
         f"use ansible.{new}"

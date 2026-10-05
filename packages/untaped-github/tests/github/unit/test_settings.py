@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from operator import attrgetter
 from pathlib import Path
 
 import pytest
@@ -32,30 +32,20 @@ def test_sweep_settings_reject_out_of_range_values(sweep: dict[str, int]) -> Non
 
 
 @pytest.mark.parametrize(
-    ("old", "value", "new", "attribute"),
+    ("data", "old", "new", "value"),
     [
-        ("corpus_path", "/c", "cache_dir", lambda s: str(s.cache_dir)),
-        ("sweep.sync_concurrency", 3, "sweep.parallel", lambda s: s.sweep.parallel),
+        ({"corpus_path": "/c"}, "corpus_path", "cache_dir", Path("/c")),
+        ({"sweep": {"sync_concurrency": 3}}, "sweep.sync_concurrency", "sweep.parallel", 3),
     ],
 )
 def test_an_old_key_is_read_as_the_new_one(
-    capsys: pytest.CaptureFixture[str],
-    old: str,
-    value: object,
-    new: str,
-    attribute: Callable[[GithubSettings], object],
+    capsys: pytest.CaptureFixture[str], data: dict[str, object], old: str, new: str, value: object
 ) -> None:
     config = Path(os.environ["UNTAPED_CONFIG"])
     config.parent.mkdir(parents=True, exist_ok=True)
-    data: dict[str, object] = {}
-    node = data
-    *parents, leaf = old.split(".")
-    for part in parents:
-        node = node.setdefault(part, {})  # type: ignore[assignment]
-    node[leaf] = value
     config.write_text(yaml.safe_dump({"profiles": {"default": {"github": data}}}))
 
-    assert attribute(get_config_section("github", GithubSettings)) == value
+    assert attrgetter(new)(get_config_section("github", GithubSettings)) == value
     assert (
         f"warning: github.{old} is deprecated and will be removed in the next major release; "
         f"use github.{new}"

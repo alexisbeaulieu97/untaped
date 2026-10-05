@@ -157,7 +157,7 @@ overridden for one process with the environment variable shown.
 
 ## Renamed settings
 
-A deprecated name is still read, with a warning, until the next major release; a retired one is no longer read. `untaped config migrate` renames both in `config.yml`; rename environment variables yourself.
+A deprecated key is still read with a warning; a retired one is no longer read. See [Renamed settings](../configuration.md#renamed-settings).
 
 | Old key | Old environment variable | New key | Status |
 |---|---|---|---|
