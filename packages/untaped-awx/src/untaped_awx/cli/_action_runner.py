@@ -285,9 +285,11 @@ def _fail_abandoned(
     abandon: AbandonJobs,
     fates: dict[tuple[str, int], str],
 ) -> None:
-    """Fail ``row``; with ``--cancel``, say what became of the cancelled ``job``."""
+    """Fail ``row``; with ``--cancel``, its detail and error say what became of ``job``."""
     if abandon.cancels:
-        detail = f"{detail}; {fates[job.kind, job.id]}"
+        fate = fates[job.kind, job.id]
+        detail = f"{detail}; {fate}"
+        row["error"]["message"] = f"{row['error']['message']}; {fate}"
         if (latest := abandon.latest(job)) is not job:
             row.update(latest.model_dump(mode="json"))
     row.update(action="failed", detail=detail)
