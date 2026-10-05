@@ -674,6 +674,28 @@ def test_ctrl_c_while_waiting_stops_promptly_and_lists_only_running_executions(
     assert f"untaped awx jobs wait {running} --kind job" in result.stderr
 
 
+def test_interrupted_executions_are_warning_diagnostics(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    seed(fake_aap)
+    fake_aap.next_action_status = "running"
+
+    def interrupt() -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(parallel, "idle", interrupt)
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "deploy", "--wait"])
+
+    assert result.exit_code == 130, result.output
+    (job,) = fake_aap.list_records("jobs")
+    records = [json.loads(line) for line in result.stderr.splitlines() if line.startswith("{")]
+    [record] = [r for r in records if "interrupted" in r["message"]]
+    assert record["level"] == "warning"
+    assert record["message"] == f"interrupted: deploy: job {job['id']} keeps running"
+    assert any(r["level"] == "hint" for r in records)
+
+
 def test_ctrl_c_during_submission_names_executions_already_submitted(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
