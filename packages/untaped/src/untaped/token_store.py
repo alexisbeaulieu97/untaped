@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from untaped.auth import run_command
+from untaped.auth import PASS_GPG_HINT, first_stderr_line, gpg_hint, run_command
 from untaped.errors import ConfigError
 
 StoreName = Literal["security", "secret-tool", "pass"]
@@ -39,10 +39,17 @@ StoreName = Literal["security", "secret-tool", "pass"]
 
 SERVICE = "untaped"
 _PROBE_TIMEOUT_SECONDS = 5.0
+_ROUND_TRIP_SECONDS = 60.0
+_OWN_COMMAND_HINT = "if `pass` itself works for you, set the section's token_command to your own"
+_PREFLIGHT_HINT_SUFFIX = f"; {_OWN_COMMAND_HINT} command"
 _SEGMENT = r"[A-Za-z0-9_-][A-Za-z0-9._-]*"
 _ENTRY = re.compile(f"{_SEGMENT}/{_SEGMENT}")
 _LOCKED = "User interaction is not allowed"
 _SECURITY_NOT_FOUND = 44
+
+
+class PassCommandError(ConfigError):
+    """``pass`` failed; it carries gpg's fix when the failure is gpg's."""
 
 
 @dataclass(frozen=True)
@@ -110,27 +117,50 @@ class TokenStore:
             argv = ["pass", "rm", "--force", f"{SERVICE}/{entry}"]
         _run(argv)
 
+    def preflight(self) -> None:
+        """Run the operation the store will need, on a throwaway value, or raise.
+
+        ``usable`` only looks (a key exists, the service answers); this really
+        encrypts and decrypts, or stores and reads back, so a missing pinentry
+        or a locked keyring stops ``auth set``, ``auth migrate`` and ``setup``
+        before any token is asked for or moved. ``security`` has its own locked-keychain
+        message and needs none. It may prompt for an unlock, so ``doctor``
+        never calls it.
+        """
+        if self.name == "pass":
+            _gpg_round_trip()
+        elif self.name == "secret-tool":
+            key = ["service", f"{SERVICE}-preflight", "account", "preflight"]
+            try:
+                _run(["secret-tool", "store", f"--label={SERVICE} preflight", *key], stdin="probe")
+                found = _run(["secret-tool", "lookup", *key]).stdout.strip()
+            finally:
+                cleared = _run(["secret-tool", "clear", *key], check=False).returncode == 0
+            if not cleared:
+                raise ConfigError(
+                    "secret-tool: could not remove its test entry; run "
+                    "`secret-tool clear service untaped-preflight account preflight`",
+                    category="unavailable",
+                )
+            if found != "probe":
+                raise ConfigError(
+                    "secret-tool: a test value did not read back; unlock the keyring and retry",
+                    category="unavailable",
+                )
+
     def usable(self) -> bool:
         """Whether this store works on this machine right now."""
+        if self.name == "pass":
+            return pass_problem() is None
         if shutil.which(self.name) is None:
             return False
         if self.name == "security":
             return _is_macos()
-        if self.name == "pass":
-            return (_password_store() / ".gpg-id").is_file()
         # A missing item exits 1 silently; no Secret Service prints an error
         # (and may exit 1 too), so stderr decides.
         probe = ["secret-tool", "lookup", "service", f"{SERVICE}-probe", "account", "probe"]
-        try:
-            completed = subprocess.run(
-                probe,
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                timeout=_PROBE_TIMEOUT_SECONDS,
-                check=False,
-            )
-        except OSError, subprocess.TimeoutExpired:
+        completed = _probe(probe)
+        if completed is None:
             return False
         return completed.returncode in (0, 1) and not completed.stderr.strip()
 
@@ -140,6 +170,110 @@ STORES: tuple[TokenStore, ...] = (
     TokenStore("secret-tool"),
     TokenStore("pass"),
 )
+
+
+def pass_problem(*, probe_key: bool = True) -> str | None:
+    """Why ``pass`` cannot store tokens here, with the fix, or ``None``.
+
+    The store must be initialised and, with ``probe_key``, gpg must hold a
+    secret key for one of its recipients. The probe lists keys without
+    decrypting (never a prompt), but gpg may create ``~/.gnupg`` and start
+    gpg-agent, so a check that calls this is not literally side-effect free.
+    A missing pinentry or agent shows only on a real decrypt, which
+    :data:`PASS_GPG_HINT` covers.
+    """
+    if shutil.which("pass") is None:
+        return "pass is not installed"
+    recipients = _gpg_recipients()
+    if not recipients:
+        return "the password store is not initialised (run `pass init <gpg-id>`)"
+    if not probe_key:
+        return None
+    if shutil.which("gpg") is None and shutil.which("gpg2") is None:
+        return "gpg is not installed"
+    for recipient in recipients:
+        completed = _probe(_gpg("--list-secret-keys", "--", recipient))
+        if completed is None:
+            return f"gpg did not answer within {_PROBE_TIMEOUT_SECONDS:g}s; check gpg-agent"
+        if completed.returncode == 0:
+            return None
+    return (
+        f"gpg holds no secret key for the password store's recipient ({', '.join(recipients)}); "
+        "import it with `gpg --import`, or run `pass init <gpg-id>` with a key you hold"
+    )
+
+
+def _gpg(*args: str) -> list[str]:
+    """A gpg command line built the way ``pass`` builds its own (see its ``GPG_OPTS``)."""
+    program = "gpg2" if shutil.which("gpg2") else "gpg"
+    options = os.environ.get("PASSWORD_STORE_GPG_OPTS", "").split()  # as pass does
+    fixed = [
+        "--quiet",
+        "--yes",
+        "--compress-algo=none",
+        "--no-encrypt-to",
+        "--batch",
+        "--use-agent",
+    ]
+    return [program, *options, *fixed, *args]
+
+
+def _gpg_round_trip() -> None:
+    """Encrypt then decrypt a throwaway string to the store's recipients, as ``pass`` would."""
+    recipients = [arg for ident in _gpg_recipients() for arg in ("-r", ident)]
+    steps = (
+        ("encrypt", _gpg("--auto-key-locate", "local", "-e", *recipients)),
+        ("decrypt", _gpg("-d")),
+    )
+    data = b"untaped-preflight"
+    for step, argv in steps:
+        try:
+            completed = subprocess.run(
+                argv, input=data, capture_output=True, timeout=_ROUND_TRIP_SECONDS, check=False
+            )
+        except subprocess.TimeoutExpired:
+            raise ConfigError(
+                f"gpg {step} timed out after {_ROUND_TRIP_SECONDS:g}s; a passphrase prompt may "
+                "still be open (stop it with `gpgconf --kill gpg-agent`)",
+                category="unavailable",
+                hint=f"{_OWN_COMMAND_HINT} command",
+            ) from None
+        except OSError as exc:
+            message = f"gpg could not run: {exc.strerror}"
+            raise ConfigError(message, category="unavailable") from None
+        if completed.returncode != 0:
+            stderr = completed.stderr.decode(errors="replace")
+            quote = first_stderr_line(stderr)
+            raise ConfigError(
+                f"gpg {step} failed for the pass store{f': {quote}' if quote else ''}",
+                category="unavailable",
+                hint=(gpg_hint(stderr) or PASS_GPG_HINT) + _PREFLIGHT_HINT_SUFFIX,
+            )
+        data = completed.stdout
+
+
+def _probe(argv: list[str]) -> subprocess.CompletedProcess[str] | None:
+    """Run a short usability probe; ``None`` when it cannot run or hangs."""
+    try:
+        return subprocess.run(
+            argv,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=_PROBE_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except OSError, subprocess.TimeoutExpired:
+        return None
+
+
+def _gpg_recipients() -> list[str]:
+    """The key ids in the store's ``.gpg-id``, read as ``pass`` does (``#`` starts a comment)."""
+    try:
+        text = (_password_store() / ".gpg-id").read_text(encoding="utf-8")
+    except OSError, UnicodeDecodeError:
+        return []
+    return [ident for line in text.splitlines() if (ident := line.split("#", 1)[0].strip())]
 
 
 def entry_name(profile: str, section: str) -> str:
@@ -159,8 +293,13 @@ def pick_store(name: StoreName | None = None) -> TokenStore | None:
     """The named store when usable (else an error), or the first usable one."""
     if name is not None:
         store = next(store for store in STORES if store.name == name)
-        if not store.usable():
-            raise ConfigError(f"{name} is not usable on this machine", category="unavailable")
+        # An explicit `--store pass` skips the key probe; pass then speaks for itself.
+        problem = pass_problem(probe_key=False) if name == "pass" else None
+        if problem is not None or (name != "pass" and not store.usable()):
+            message = problem or f"{name} is not usable on this machine"
+            if problem and not problem.startswith(name):
+                message = f"{name}: {problem}"
+            raise ConfigError(message, category="unavailable")
         return store
     return next((store for store in STORES if store.usable()), None)
 
@@ -185,9 +324,11 @@ def no_store_message(section: str, env: Sequence[str]) -> str:
     """Why nothing was stored, and the routes that remain."""
     routes = [f"set {section}.token_command to a password manager's command"]
     routes.extend(f"export ${name}" for name in env[:1])
+    skipped = pass_problem() if shutil.which("pass") else None
+    note = f" ({skipped})" if skipped else ""
     return (
         "no token store is usable on this machine (macOS security, secret-tool with a "
-        f"Secret Service, or an initialised pass); {' or '.join(routes)}"
+        f"Secret Service, or pass with a gpg key){note}; {' or '.join(routes)}"
     )
 
 
@@ -219,8 +360,9 @@ def _run(
     # `security` is read for the locked-keychain message, and `-i` input
     # (the hex token) must never be echoed back.
     secure = program == "security"
+    is_pass = program == "pass"
     completed = run_command(
-        argv, label=repr(program), stdin=stdin, capture_stderr=capture_stderr or secure
+        argv, label=repr(program), stdin=stdin, capture_stderr=capture_stderr or secure or is_pass
     )
     if secure and (_LOCKED in completed.stderr or _LOCKED in completed.stdout):
         raise ConfigError(
@@ -228,15 +370,24 @@ def _run(
             category="unavailable",
         )
     if check and completed.returncode != 0:
-        raise ConfigError(f"{program!r} exited with status {completed.returncode}")
+        message = f"{program!r} exited with status {completed.returncode}"
+        if is_pass:
+            # gpg repeats one error per call; the first non-empty line says what failed.
+            if quote := first_stderr_line(completed.stderr):
+                message += f": {quote}"
+            raise PassCommandError(message, hint=gpg_hint(completed.stderr))
+        raise ConfigError(message)
     return completed
 
 
 __all__ = [
+    "PASS_GPG_HINT",
+    "PassCommandError",
     "StoreName",
     "TokenStore",
     "entry_name",
     "no_store_message",
+    "pass_problem",
     "pick_store",
     "preset_entry",
     "usable_stores",
