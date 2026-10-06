@@ -215,6 +215,10 @@ interactively, see [Getting started](./getting-started.md#set-up-your-services).
 
 ## Command aliases
 
+> Deprecated: `untaped alias` and the `shell.aliases` setting are removed in
+> the next major release. Use a shell alias or function instead
+> (`alias failed='untaped awx jobs list --status failed'`).
+
 An alias is a shortcut for a longer command. Put the command after `--`:
 
 ```bash

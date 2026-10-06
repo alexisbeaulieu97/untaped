@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -41,9 +40,8 @@ StoreName = Literal["security", "secret-tool", "pass"]
 SERVICE = "untaped"
 _PROBE_TIMEOUT_SECONDS = 5.0
 _ROUND_TRIP_SECONDS = 60.0
-_PREFLIGHT_HINT_SUFFIX = (
-    "; if `pass` itself works for you, set the section's token_command to your own command"
-)
+_OWN_COMMAND_HINT = "if `pass` itself works for you, set the section's token_command to your own"
+_PREFLIGHT_HINT_SUFFIX = f"; {_OWN_COMMAND_HINT} command"
 _SEGMENT = r"[A-Za-z0-9_-][A-Za-z0-9._-]*"
 _ENTRY = re.compile(f"{_SEGMENT}/{_SEGMENT}")
 _LOCKED = "User interaction is not allowed"
@@ -208,7 +206,7 @@ def pass_problem(*, probe_key: bool = True) -> str | None:
 def _gpg(*args: str) -> list[str]:
     """A gpg command line built the way ``pass`` builds its own (see its ``GPG_OPTS``)."""
     program = "gpg2" if shutil.which("gpg2") else "gpg"
-    options = shlex.split(os.environ.get("PASSWORD_STORE_GPG_OPTS", ""))
+    options = os.environ.get("PASSWORD_STORE_GPG_OPTS", "").split()  # as pass does
     fixed = [
         "--quiet",
         "--yes",
@@ -223,7 +221,10 @@ def _gpg(*args: str) -> list[str]:
 def _gpg_round_trip() -> None:
     """Encrypt then decrypt a throwaway string to the store's recipients, as ``pass`` would."""
     recipients = [arg for ident in _gpg_recipients() for arg in ("-r", ident)]
-    steps = (("encrypt", _gpg("-e", *recipients)), ("decrypt", _gpg("-d")))
+    steps = (
+        ("encrypt", _gpg("--auto-key-locate", "local", "-e", *recipients)),
+        ("decrypt", _gpg("-d")),
+    )
     data = b"untaped-preflight"
     for step, argv in steps:
         try:
@@ -235,7 +236,7 @@ def _gpg_round_trip() -> None:
                 f"gpg {step} timed out after {_ROUND_TRIP_SECONDS:g}s; a passphrase prompt may "
                 "still be open (stop it with `gpgconf --kill gpg-agent`)",
                 category="unavailable",
-                hint=_PREFLIGHT_HINT_SUFFIX.lstrip("; "),
+                hint=f"{_OWN_COMMAND_HINT} command",
             ) from None
         except OSError as exc:
             message = f"gpg could not run: {exc.strerror}"
