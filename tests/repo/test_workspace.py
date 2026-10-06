@@ -41,6 +41,11 @@ def test_members_are_the_expected_packages_each_with_tests() -> None:
         assert (PACKAGES / name / "tests").is_dir()
 
 
+def test_contributing_install_from_git_lists_every_package() -> None:
+    text = (REPO_ROOT / "CONTRIBUTING.md").read_text()
+    assert set(re.findall(r"#subdirectory=packages/([\w-]+)", text)) == set(_members())
+
+
 def test_root_config_lists_every_package() -> None:
     config = _root_config()
     src = sorted(f"packages/{name}/src" for name in _members())

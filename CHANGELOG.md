@@ -91,6 +91,9 @@
   ([#489](https://github.com/alexisbeaulieu97/untaped/pull/489))
 - `HttpSettings.timeout` is deprecated; use `timeout_seconds`.
   ([#489](https://github.com/alexisbeaulieu97/untaped/pull/489))
+- `untaped alias` and the `shell.aliases` setting are deprecated and removed in
+  11.0; use a shell alias or function.
+  ([#507](https://github.com/alexisbeaulieu97/untaped/pull/507))
 
 ### Fixed
 
@@ -101,6 +104,9 @@
   fixes (also when a `pass` token command fails at use), and `doctor` fails a
   `pass` token command that gpg cannot serve here.
   ([#510](https://github.com/alexisbeaulieu97/untaped/issues/510))
+- `doctor` marks warned rows with `▲` instead of `⚠`, which some terminals
+  draw double-width and shift the row.
+  ([#508](https://github.com/alexisbeaulieu97/untaped/issues/508))
 - `workspace create NAME` with no repos makes an empty workspace instead of failing
   with "no repos given"; `add` still needs repos.
   ([#497](https://github.com/alexisbeaulieu97/untaped/issues/497))
