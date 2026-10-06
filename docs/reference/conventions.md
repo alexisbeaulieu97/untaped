@@ -156,6 +156,11 @@ root rewrites the old token and prints
 The old spelling never appears in `--help`. Aliases apply through the
 `untaped` root, so test them with `untaped.testing.invoke_root([...])`.
 
+A flag that is deprecated without a new spelling (its job moved to another
+command) is hidden with `show=False`, starts its help with `Deprecated:` and
+prints the deprecation warning when used; the major-release test fails while
+one still exists.
+
 Command names are kebab-case; use plural nouns for collections. Names are
 free, but a command that writes declares it with `@writes`, or
 `@writes(destructive=True)` when it deletes or overwrites data:

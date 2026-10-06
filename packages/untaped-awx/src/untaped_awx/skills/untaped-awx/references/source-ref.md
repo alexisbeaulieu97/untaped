@@ -54,8 +54,7 @@ describes it.
   (compare with `--compare`).
 - `--no-cancel` needs `--keep`: AWX cannot delete a template while its job
   runs.
-- `validate --source-ref REF` (or `run --source-ref REF --dry-run`) does
-  everything but the writes. A case of a copied template is checked against
+- `validate --source-ref REF` does everything but the writes. A case of a copied template is checked against
   the spec.
 - The AWX user needs to create and delete templates
   ([agent-profile.md](agent-profile.md)).
@@ -99,8 +98,8 @@ stderr; with `--keep` it is listed as `kept … (id N)`.
 - The cases' results and the exit code stand.
 
 `test validate --source-ref REF` prints one `awx.provision_outcome` row per copy
-it would create (`planned`). `id` is `null` for a planned copy; `path` (`REF:PATH` of its spec) and
-`prompts` are set on planned copies only. `created_at` is when the run
+it would create (`planned`). `id` is `null` for a planned copy; `path` (`REF:PATH`
+of its spec) and `prompts` are set on planned copies only. `created_at` is when the run
 started, not when the copy was created.
 
 ## Leftover copies
