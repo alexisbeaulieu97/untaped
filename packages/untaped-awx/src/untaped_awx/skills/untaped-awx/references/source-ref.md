@@ -98,9 +98,8 @@ stderr; with `--keep` it is listed as `kept … (id N)`.
   `untaped awx test prune --run k3x9 --older-than 0`.
 - The cases' results and the exit code stand.
 
-`test validate --source-ref REF` (and `test run --source-ref REF --dry-run`)
-prints one `awx.provision_outcome` row per copy it would create (`planned`).
-`id` is `null` for a planned copy; `path` (`REF:PATH` of its spec) and
+`test validate --source-ref REF` prints one `awx.provision_outcome` row per copy
+it would create (`planned`). `id` is `null` for a planned copy; `path` (`REF:PATH` of its spec) and
 `prompts` are set on planned copies only. `created_at` is when the run
 started, not when the copy was created.
 

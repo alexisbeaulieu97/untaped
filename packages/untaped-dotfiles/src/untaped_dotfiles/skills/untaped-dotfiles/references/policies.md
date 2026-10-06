@@ -60,8 +60,8 @@ the one-line count a prompt reads.
 `foreign`, `behind` and `missing` are applied, `orphan` is removed, and
 `modified` or `conflict` is refused (row action `conflict`, exit 1) unless
 `--force`, which keeps the local version aside. `apply --dry-run` shows the
-plan as rows; `--diff` shows a unified diff of `copy` and `merge` changes
-before the confirmation.
+plan as rows; `untaped dotfiles diff` shows what it would change in `copy` and
+`merge` files, as a unified diff.
 
 ## What `remove` does
 
