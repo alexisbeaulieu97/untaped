@@ -168,6 +168,7 @@ ignore_names = [
     "row_factory",
     "default_parameter",
     "end_of_options_delimiter",
+    "group_parameters",
     "ttimeoutlen",
     "__signature__",
     "__annotations__",
