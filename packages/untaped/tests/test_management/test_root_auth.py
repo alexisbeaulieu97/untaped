@@ -345,6 +345,69 @@ def test_a_hung_gpg_probe_is_not_usable(
     assert _auth("set", "svc", "--stdin", input="tok").exit_code == 5
 
 
+def test_set_stops_before_the_prompt_when_gpg_cannot_decrypt(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "gpg-roundtrip")
+    result = _auth("set", "svc", "--stdin", input=SENTINEL)
+    assert result.exit_code == 5
+    assert (
+        "gpg cannot decrypt for the pass store: gpg: public key decryption failed" in result.stderr
+    )
+    assert result.stderr.count("decryption failed") == 1 and "pinentry" in result.stderr
+    assert not [c for c in stores.calls() if c["argv"][0] == "pass"], "pass never ran"
+    assert not _isolated_config.exists()
+    _no_leak(result, stores)
+
+
+def test_migrate_stops_before_moving_anything_when_gpg_cannot_decrypt(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, _PLAINTEXT)
+    monkeypatch.setenv("STUB_MODE", "gpg-roundtrip")
+    before = _isolated_config.read_text()
+    result = _auth("migrate")
+    assert result.exit_code == 5
+    assert result.stderr.count("pinentry") == 1
+    assert _isolated_config.read_text() == before
+    assert stores.entries() == {}
+    assert _auth("migrate", "--dry-run").exit_code == 0, "a plan needs no preflight"
+
+
+def test_reading_a_pass_token_summarises_gpg_and_hints_once(
+    stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "gpg-decrypt")
+    token = auth.CommandToken(["pass", "show", "untaped/default/svc"], section="svc")
+    with pytest.raises(ConfigError) as caught:
+        token.get_secret_value()
+    assert str(caught.value) == (
+        "svc.token_command: 'pass' exited with status 2: "
+        "gpg: public key decryption failed: No such file or directory"
+    )
+    assert caught.value.hint == auth.PASS_GPG_HINT
+
+
+def test_a_secret_service_that_cannot_store_stops_set_early(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "secret-tool")
+    monkeypatch.setenv("STUB_MODE", "fail")
+    result = _auth("set", "svc", "--stdin", input=SENTINEL)
+    assert result.exit_code != 0
+    assert "'secret-tool' exited with status 1" in result.stderr
+    assert not _isolated_config.exists()
+    assert stores.entries() == {}
+
+
+def test_a_working_secret_service_leaves_no_preflight_entry(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "secret-tool")
+    assert _auth("set", "svc", "--stdin", input="tok").exit_code == 0
+    assert list(stores.entries().values()) == ["tok"]
+
+
 def test_a_pass_that_cannot_decrypt_is_reported_once_with_the_fix(
     _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
 ) -> None:

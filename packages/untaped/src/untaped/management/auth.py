@@ -272,6 +272,7 @@ def _set(
     chosen = pick_store(store)
     if chosen is None:
         raise ConfigError(no_store_message(section, spec.env), category="unavailable")
+    chosen.preflight()
     ui = ui_context(strict=False)
     token = _read_stdin_token() if stdin else _prompt_token(ui, section)
     where = save_token(SettingsFileRepository(), section, profile, token, chosen)
@@ -440,6 +441,8 @@ def _migrate(
             no_store_message(pending[0][1], sections[pending[0][1]].env),
             category="unavailable",
         )
+    if not dry_run:
+        chosen.preflight()
     rows, store_hint = _move_all(pending, chosen, dry_run=dry_run)
     emit(rows, fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)
     failed = sum(row["action"] == "failed" for row in rows)

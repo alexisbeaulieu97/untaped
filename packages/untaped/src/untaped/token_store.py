@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from untaped.auth import run_command
+from untaped.auth import PASS_GPG_HINT, first_stderr_line, run_command
 from untaped.errors import ConfigError
 
 StoreName = Literal["security", "secret-tool", "pass"]
@@ -39,17 +39,11 @@ StoreName = Literal["security", "secret-tool", "pass"]
 
 SERVICE = "untaped"
 _PROBE_TIMEOUT_SECONDS = 5.0
+_ROUND_TRIP_SECONDS = 60.0
 _SEGMENT = r"[A-Za-z0-9_-][A-Za-z0-9._-]*"
 _ENTRY = re.compile(f"{_SEGMENT}/{_SEGMENT}")
 _LOCKED = "User interaction is not allowed"
 _SECURITY_NOT_FOUND = 44
-_STDERR_QUOTE = 120
-
-PASS_GPG_HINT = (
-    "check that gpg works on its own (`echo test | gpg -e -r <gpg-id> | gpg -d`); usual causes: "
-    "no pinentry program installed, GPG_TTY unset (`export GPG_TTY=$(tty)`), or gpg-agent not "
-    "running (`gpgconf --launch gpg-agent`)"
-)
 
 
 class PassCommandError(ConfigError):
@@ -121,6 +115,31 @@ class TokenStore:
             argv = ["pass", "rm", "--force", f"{SERVICE}/{entry}"]
         _run(argv)
 
+    def preflight(self) -> None:
+        """Run the operation the store will need, on a throwaway value, or raise.
+
+        ``usable`` only looks (a key exists, the service answers); this really
+        encrypts and decrypts, or stores and reads back, so a missing pinentry
+        or a locked keyring stops ``auth set`` and ``auth migrate`` before any
+        token is asked for or moved. ``security`` has its own locked-keychain
+        message and needs none. It may prompt for an unlock, so ``doctor``
+        never calls it.
+        """
+        if self.name == "pass":
+            _gpg_round_trip()
+        elif self.name == "secret-tool":
+            key = ["service", f"{SERVICE}-preflight", "account", "preflight"]
+            _run(["secret-tool", "store", f"--label={SERVICE} preflight", *key], stdin="probe")
+            try:
+                found = _run(["secret-tool", "lookup", *key]).stdout.strip()
+            finally:
+                _run(["secret-tool", "clear", *key], check=False)
+            if found != "probe":
+                raise ConfigError(
+                    "secret-tool: a test value did not read back; unlock the keyring and retry",
+                    category="unavailable",
+                )
+
     def usable(self) -> bool:
         """Whether this store works on this machine right now."""
         if self.name == "pass":
@@ -167,13 +186,47 @@ def pass_problem(*, probe_key: bool = True) -> str | None:
     for recipient in recipients:
         completed = _probe(["gpg", "--batch", "--list-secret-keys", "--", recipient])
         if completed is None:
-            return f"gpg did not answer within {_PROBE_TIMEOUT_SECONDS:g}s"
+            return f"gpg did not answer within {_PROBE_TIMEOUT_SECONDS:g}s; check gpg-agent"
         if completed.returncode == 0:
             return None
     return (
         f"gpg holds no secret key for the password store's recipient ({', '.join(recipients)}); "
         "import it with `gpg --import`, or run `pass init <gpg-id>` with a key you hold"
     )
+
+
+def _gpg_round_trip() -> None:
+    """Encrypt then decrypt a throwaway string to the store's recipients, as ``pass`` would."""
+    recipients = [arg for ident in _gpg_recipients() for arg in ("-r", ident)]
+    steps = [
+        ["gpg", "--batch", "--quiet", "--yes", "-e", *recipients],
+        ["gpg", "--batch", "--quiet", "-d"],
+    ]
+    data = b"untaped-preflight"
+    for argv in steps:
+        try:
+            completed = subprocess.run(
+                argv, input=data, capture_output=True, timeout=_ROUND_TRIP_SECONDS, check=False
+            )
+        except subprocess.TimeoutExpired:
+            raise ConfigError(
+                f"gpg timed out after {_ROUND_TRIP_SECONDS:g}s; it may be waiting on a "
+                "passphrase prompt nobody sees",
+                category="unavailable",
+                hint=PASS_GPG_HINT,
+            ) from None
+        except OSError as exc:
+            raise ConfigError(
+                f"gpg could not run: {exc.strerror}", category="unavailable"
+            ) from None
+        if completed.returncode != 0:
+            quote = first_stderr_line(completed.stderr.decode(errors="replace"))
+            raise ConfigError(
+                f"gpg cannot decrypt for the pass store{f': {quote}' if quote else ''}",
+                category="unavailable",
+                hint=PASS_GPG_HINT,
+            )
+        data = completed.stdout
 
 
 def _probe(argv: list[str]) -> subprocess.CompletedProcess[str] | None:
@@ -220,7 +273,9 @@ def pick_store(name: StoreName | None = None) -> TokenStore | None:
         # An explicit `--store pass` skips the key probe; pass then speaks for itself.
         problem = pass_problem(probe_key=False) if name == "pass" else None
         if problem is not None or (name != "pass" and not store.usable()):
-            message = f"{name}: {problem}" if problem else f"{name} is not usable on this machine"
+            message = problem or f"{name} is not usable on this machine"
+            if problem and not problem.startswith(name):
+                message = f"{name}: {problem}"
             raise ConfigError(message, category="unavailable")
         return store
     return next((store for store in STORES if store.usable()), None)
@@ -293,13 +348,10 @@ def _run(
         )
     if check and completed.returncode != 0:
         message = f"{program!r} exited with status {completed.returncode}"
-        if is_pass:
+        if is_pass and argv[1] in ("insert", "show"):
             # gpg repeats one error per call; the first non-empty line says what failed.
-            first = next(
-                (line.strip() for line in completed.stderr.splitlines() if line.strip()), ""
-            )
-            if first:
-                message += f": {first[:_STDERR_QUOTE]}"
+            if quote := first_stderr_line(completed.stderr):
+                message += f": {quote}"
             raise PassCommandError(message, hint=PASS_GPG_HINT)
         raise ConfigError(message)
     return completed
