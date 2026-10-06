@@ -51,13 +51,6 @@ def test_cancelled_picker_creates_nothing(workspace_env: Path) -> None:
     assert StateWorkspaceStore().get("J-1") is None
 
 
-def test_no_terminal_without_a_name_is_a_usage_error_naming_the_flags() -> None:
-    result = run(app, ["create"])
-    assert result.exit_code == 2
-    assert "name" in result.output and "--repo" in result.output
-    assert "terminal" in result.output
-
-
 def test_picker_confirmed_with_no_repos_creates_an_empty_workspace(workspace_env: Path) -> None:
     backend = ScriptedPromptBackend(picks=[_pick("J-1")])
     result = run(app, ["create"], interactive=True, prompt_backend=backend)

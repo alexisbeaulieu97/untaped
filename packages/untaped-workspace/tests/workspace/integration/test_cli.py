@@ -93,8 +93,8 @@ def test_create_without_repos_makes_an_empty_workspace(workspace_env: Path) -> N
     assert record is not None and not record.repos
 
 
-def test_add_without_repos_is_usage(make_upstream: Callable[..., Path]) -> None:
-    run(app, ["create", "J-1"])
+def test_add_without_repos_is_usage() -> None:
+    assert run(app, ["create", "J-1"]).exit_code == 0
     result = run(app, ["add", "J-1"])
     assert result.exit_code == 2
     assert "--repo" in result.output

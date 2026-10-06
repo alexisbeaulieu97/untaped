@@ -105,7 +105,8 @@ def create_command(
 ) -> None:
     """Create a workspace and check out its repos as git worktrees.
 
-    Without --repo, --read-only or --stdin, a terminal opens the repo picker.
+    Without --repo, --read-only or --stdin, a terminal opens the repo picker;
+    without a terminal, `create NAME` makes an empty workspace to `add` to.
     In table format the workspace path is the last stdout line (the only one
     with -q), so `cd "$(untaped -q workspace create ...)"` works.
     """
@@ -145,7 +146,8 @@ def add_command(
 ) -> None:
     """Check out more repos into an existing workspace; present ones report unchanged.
 
-    Without --repo, --read-only or --stdin, a terminal opens the repo picker.
+    Without --repo, --read-only or --stdin, a terminal opens the repo picker;
+    without a terminal, `create NAME` makes an empty workspace to `add` to.
     """
     with report_errors():
         settings = workspace_settings()
