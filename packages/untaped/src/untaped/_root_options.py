@@ -15,13 +15,22 @@ from typing import Annotated, Any
 from cyclopts import App, Parameter
 from cyclopts.exceptions import CycloptsError, UnknownOptionError
 
-from untaped.cli import deprecated_aliases, note_requested_format, raise_usage
+from untaped.cli import note_requested_format, raise_usage
+from untaped.deprecated_keys import warn_once
 from untaped.errors import UntapedError
 from untaped.messages import deprecated_message
 from untaped.profile_resolver import profile_scope
 from untaped.quiet import enable as _enable_quiet
 from untaped.quiet import reset as _reset_quiet
 from untaped.settings import load_settings_section
+from untaped.stability import (
+    Deprecated,
+    deprecated_aliases,
+    enable_show_deprecated,
+    mark_of,
+    replacement_text,
+    reset_show_deprecated,
+)
 from untaped.ui import ui_context
 from untaped.verbose import enable as _enable_verbose
 from untaped.verbose import reset as _reset_verbose
@@ -35,6 +44,11 @@ _PROFILE_HELP = (
 )
 _VERBOSE_HELP = "Stream underlying tool output live and enable debug logging."
 _QUIET_HELP = "Suppress progress and success/info messages (errors still print)."
+_DEPRECATED_HELP = "Show deprecated commands (and settings) too."
+
+#: Tokens that make a run print help or the version instead of running a command.
+_HELP_FLAGS = ("--help", "-h")
+_HELP_OR_VERSION = (*_HELP_FLAGS, "--version")
 
 
 @dataclass(frozen=True)
@@ -81,6 +95,12 @@ def _root_options() -> dict[str, _RootOption]:
             help=_QUIET_HELP,
             handler=_enable_quiet,
             resetter=_reset_quiet,
+        ),
+        "--deprecated": _RootOption(
+            name="--deprecated",
+            help=_DEPRECATED_HELP,
+            handler=enable_show_deprecated,
+            resetter=reset_show_deprecated,
         ),
     }
 
@@ -153,6 +173,39 @@ def _consume_leading_root_options(
     return tokens
 
 
+def _before_separator(tokens: Sequence[str]) -> Sequence[str]:
+    """``tokens`` up to a ``--``: what follows it is data for the command, never an option."""
+    return tokens[: tokens.index("--")] if "--" in tokens else tokens
+
+
+def _apply_help_root_options(
+    tokens: list[str],
+    root_options: dict[str, _RootOption],
+    applied_tokens: list[tuple[_RootOption, object]],
+) -> list[str]:
+    """Apply and strip every root option wherever it sits when the run prints help.
+
+    Cyclopts prints help and ignores the tokens after ``--help``, and
+    :func:`_consume_path_root_options` leaves an option between the command path
+    and ``--help``; either way ``untaped awx --deprecated --help`` and
+    ``untaped --help --deprecated`` would drop the option. Tokens after ``--``
+    are never touched.
+    """
+    if not any(token in _HELP_FLAGS for token in _before_separator(tokens)):
+        return tokens
+    remaining = list(tokens)
+    index = 0
+    while index < len(_before_separator(remaining)):
+        name = remaining[index].partition("=")[0]
+        spec = _match_option(name, root_options)
+        if spec is None:
+            index += 1
+            continue
+        value, remaining = _consume_option_at(remaining, index, spec, name)
+        _apply_root_option(spec, value, applied_tokens)
+    return remaining
+
+
 def _dispatch_with_root_options(
     app: App,
     command_tokens: list[str],
@@ -167,6 +220,7 @@ def _dispatch_with_root_options(
     errors surface before the command body runs, so a retry never repeats
     side effects.
     """
+    command_tokens = _apply_help_root_options(command_tokens, root_options, applied_tokens)
     remaining = canonical_command_tokens(
         app, _consume_path_root_options(app, command_tokens, root_options, applied_tokens)
     )
@@ -218,28 +272,50 @@ def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
     rewritten = list(tokens)
     current = app
     index = 0
+    chain: list[tuple[tuple[str, ...], App]] = []
+    consumed = True
     for index, token in enumerate(rewritten):
         if token.startswith("-"):
+            consumed = False
             break
         name = _command_name(current, token)
         if name is None:
+            consumed = False
             break
         if token not in current and token in deprecated_aliases(current):
             _warn_deprecated(token, name)
         token = rewritten[index] = name
         current = current[token]
-    else:
-        return rewritten
-    options = {old: new for old, new in deprecated_aliases(current).items() if old[0] == "-"}
-    if options:
-        for position in range(index, len(rewritten)):
-            name, separator, value = rewritten[position].partition("=")
-            if name == "--":
-                break
-            if name in options:
-                _warn_deprecated(name, options[name])
-                rewritten[position] = f"{options[name]}{separator}{value}"
+        chain.append(((*(chain[-1][0] if chain else ()), token), current))
+    if not consumed:
+        _rewrite_option_aliases(current, rewritten, index)
+    if not any(token in _HELP_OR_VERSION for token in _before_separator(rewritten)):
+        _warn_deprecated_command(app, chain)
     return rewritten
+
+
+def _rewrite_option_aliases(command: App, tokens: list[str], start: int) -> None:
+    """Rewrite ``command``'s deprecated option spellings in ``tokens[start:]`` (up to a ``--``)."""
+    options = {old: new for old, new in deprecated_aliases(command).items() if old[0] == "-"}
+    if not options:
+        return
+    for position in range(start, len(tokens)):
+        name, separator, value = tokens[position].partition("=")
+        if name == "--":
+            break
+        if name in options:
+            _warn_deprecated(name, options[name])
+            tokens[position] = f"{options[name]}{separator}{value}"
+
+
+def _warn_deprecated_command(root: App, chain: Sequence[tuple[tuple[str, ...], App]]) -> None:
+    """Warn that the run uses a deprecated command, naming the innermost deprecated node."""
+    for path, node in reversed(chain):
+        mark = mark_of(node)
+        if isinstance(mark, Deprecated):
+            replacement = replacement_text(mark, root)
+            warn_once(deprecated_message(f"`untaped {' '.join(path)}`", replacement))
+            return
 
 
 def resolve_command(app: App, token: str) -> str | None:

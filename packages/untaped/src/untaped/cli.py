@@ -6,7 +6,6 @@ import json
 import os
 import re
 import sys
-import weakref
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from functools import cache
@@ -35,6 +34,7 @@ from untaped.diagnostics import (
 from untaped.errors import ExitCode, OperationCancelledError, UntapedError, UsageError
 from untaped.records import TableGlyph, table_columns_of
 from untaped.render import column_value
+from untaped.stability import Stability, check_stability, mark_app
 from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context
 
@@ -174,38 +174,6 @@ LimitOption = Annotated[
 """Shared ``--limit N`` (``>= 1``; ``None`` means no limit)."""
 
 
-# Keyed by ``id(app)``: cyclopts apps are unhashable. A finalizer drops the
-# entry with the app, so a recycled id never inherits stale aliases.
-_DEPRECATED_ALIASES: dict[int, dict[str, str]] = {}
-
-
-def deprecated_alias(app: App, old: str, new: str) -> None:
-    """Keep ``old`` working as a hidden, deprecated spelling of ``new`` on ``app``.
-
-    For a renamed command or group, ``app`` is its parent and the names are
-    command names (``deprecated_alias(jira_app, "me", "whoami")``). For a
-    renamed option or short flag, ``app`` is the command itself and the names
-    are flags (``deprecated_alias(logs_app, "-f", "--follow")``). The root
-    shell rewrites the old token to the new one before dispatch and prints a
-    warning naming both on stderr, so the old spelling
-    never appears in ``--help``. Aliases apply to invocations through the
-    ``untaped`` root (test them with ``build_root_app``); they are removed in
-    the next major release.
-    """
-    if old.startswith("-") != new.startswith("-"):
-        raise ValueError(f"alias {old!r} -> {new!r} mixes a command and an option")
-    key = id(app)
-    if key not in _DEPRECATED_ALIASES:
-        _DEPRECATED_ALIASES[key] = {}
-        weakref.finalize(app, _DEPRECATED_ALIASES.pop, key, None)
-    _DEPRECATED_ALIASES[key][old] = new
-
-
-def deprecated_aliases(app: App) -> Mapping[str, str]:
-    """The ``{old: new}`` deprecated spellings registered on ``app``."""
-    return _DEPRECATED_ALIASES.get(id(app), {})
-
-
 _WRITES_ATTR = "__untaped_writes__"
 WriteKind = Literal["write", "destructive"]
 
@@ -238,9 +206,20 @@ def write_kind(func: object) -> WriteKind | None:
     return getattr(func, _WRITES_ATTR, None)
 
 
-def create_app(*, name: str, help: str = "") -> App:
-    """Create a Cyclopts app with the suite's default command-group settings."""
-    return App(name=name, help=help)
+def create_app(*, name: str, help: str = "", stability: Stability | None = None) -> App:
+    """Create a Cyclopts app with the suite's default command-group settings.
+
+    ``stability`` marks the group experimental (``stability=experimental``) or
+    deprecated (``stability=deprecated(replacement=...)``): core lists it in
+    its stability panel and ends its ``--help`` with the matching line. Mark a
+    whole capability on its ``CapabilitySpec`` instead, never on the app its
+    factory returns.
+    """
+    mark = check_stability(stability, where=f"create_app({name!r})")
+    app = App(name=name, help=help)
+    if mark is not None:
+        mark_app(app, mark, source="own")
+    return app
 
 
 def echo(message: object = "", *, err: bool = False, nl: bool = True) -> None:
