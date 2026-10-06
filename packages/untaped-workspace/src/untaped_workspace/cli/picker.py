@@ -149,7 +149,8 @@ def choose_repos(
     """The workspace name and repos: from the flags, else from the picker in a terminal.
 
     ``record`` is the workspace ``add`` targets (``None`` for ``create``).
-    Without a terminal and without flags this is a usage error naming them.
+    Without a terminal and without flags, ``create`` makes an empty workspace
+    and ``add`` is a usage error naming the flags.
     """
     name = record.name if record is not None else name
     flags = bool(repo or read_only or stdin)
@@ -158,7 +159,9 @@ def choose_repos(
             hint = "pass NAME before the options" if flags else NO_NAME_HINT
             raise UsageError("a workspace name is required", hint=hint)
         if not flags:
-            raise UsageError("no repos given", hint=NO_REPOS_HINT)
+            if record is not None:
+                raise UsageError("no repos given", hint=NO_REPOS_HINT)
+            return name, []  # create NAME alone: an empty workspace
         return name, flag_repo_args(repo, read_only, branch=branch, base=base, stdin=stdin)
     return _pick(ui, settings, store, name=name, record=record, branch=branch, base=base)
 

@@ -80,17 +80,13 @@ class ProvisionRepos:
         *,
         on_done: Callable[[RepoOutcome, int, int], None] | None = None,
     ) -> list[RepoOutcome]:
-        """Create workspace ``name`` and check out ``repos`` into it.
+        """Create workspace ``name`` and check out ``repos`` into it (none: an empty workspace).
 
         ``on_done(row, done, total)`` runs (on the calling thread) as each
         checkout finishes; ``total`` counts the checkouts started (repos
         already present or requested twice are not).
         """
         validate_workspace_name(name)
-        if not repos:
-            raise UsageError(
-                "no repos given", hint=f"run `untaped workspace create {name} --repo REPO`"
-            )
         resolved = self._resolve(repos)
         with self._store.locked(name):
             refuse_occupied(self._store, self._workspaces_dir, name)
