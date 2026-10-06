@@ -24,8 +24,8 @@ from pydantic import BaseModel
 from repo.support import REPO_ROOT
 from untaped import bootstrap, sdk
 from untaped.capabilities.registry import ProviderCandidate
-from untaped.cli import deprecated_alias, deprecated_aliases
 from untaped.settings import profile_section_models
+from untaped.stability import deprecated_alias, deprecated_aliases
 
 
 def is_major_release(version: str, changelog: str) -> bool:

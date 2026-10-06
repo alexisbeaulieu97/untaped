@@ -36,6 +36,7 @@ from untaped.settings import (
     Settings,
     validate_disjoint_settings_sections,
 )
+from untaped.stability import Stability, check_stability
 
 #: Distribution whose version ``Requires-Dist: untaped`` is checked against.
 _CORE_DISTRIBUTION = "untaped"
@@ -178,6 +179,10 @@ class CapabilitySpec:
     so its CLI import tree) runs only when the command is dispatched. Without
     it, the factory runs during composition and the listing falls back to
     the built app's own help.
+
+    ``stability`` marks the whole capability ``experimental`` or
+    ``deprecated(...)``. It sits here, never on the app the factory returns:
+    a lazy mount reads only the spec.
     """
 
     name: str
@@ -188,6 +193,7 @@ class CapabilitySpec:
     skills: tuple[SkillAsset, ...] = ()
     doctor_checks: tuple[DoctorCheck, ...] = ()
     help: str | None = None
+    stability: Stability | None = None
 
     def __post_init__(self) -> None:
         _check_spec_shape(
@@ -197,6 +203,10 @@ class CapabilitySpec:
             self.state_model,
             f"capability {self.name!r}",
         )
+        try:
+            check_stability(self.stability, where=f"capability {self.name!r}")
+        except TypeError as exc:
+            raise ConfigError(str(exc)) from exc
         if self.help is not None and (
             not isinstance(self.help, str) or not self.help.strip() or "\n" in self.help
         ):
