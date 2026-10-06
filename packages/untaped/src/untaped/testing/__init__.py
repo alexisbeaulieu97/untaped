@@ -31,6 +31,7 @@ from untaped.prompts import (
     set_prompt_backend_override,
     set_terminal_override,
 )
+from untaped.stability import apply_marks
 
 if TYPE_CHECKING:
     from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
@@ -102,6 +103,10 @@ def invoke_cli(
     terminal: bool = False,
 ) -> CliResult:
     """Invoke a Cyclopts app or launcher while capturing terminal streams.
+
+    A bare app is given the panels and help lines its marks ask for first, as
+    the root would when mounting it (a nested sub-app computes the path of its
+    replacement from its own name only).
 
     ``interactive=True`` swaps stdin for a :class:`TtyStringIO` so TTY gates
     open; ``prompt_backend`` installs a scripted backend for the invocation
@@ -339,6 +344,11 @@ def _call_command(
     error_console = _console(stderr)
     if isinstance(command, App):
         target = command.meta if command.meta.default_command is not None else command
+        if target is command and command._meta_parent is None:
+            # A composed root (or its meta app) marked its commands when it
+            # mounted them; a bare capability app did not. Never resolves a
+            # lazy capability.
+            apply_marks(command, path=() if command.name == ("untaped",) else command.name[:1])
         run_cyclopts_app(
             target,
             args,
