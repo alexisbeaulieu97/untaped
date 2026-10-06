@@ -700,13 +700,18 @@ def test_run_root_reports_a_failing_lazy_factory_as_json_with_exit_4(
     )
 
 
-#: Private cyclopts internals ``_LazyCapabilityCommand`` relies on. Drift here
+#: Private cyclopts internals ``_LazyCapabilityCommand`` and ``apply_marks`` rely on. Drift here
 #: (a cyclopts upgrade within ``>=4.16,<5``) must fail loudly, not render oddly.
 _CYCLOPTS_PRIVATE_INTERNALS = (
     "cyclopts.core._apply_parent_defaults_to_app",
     "cyclopts.core.App._commands",
     "cyclopts.core.App._name_transform",
     "cyclopts.command_spec.CommandSpec._resolved",
+    "cyclopts.command_spec.CommandSpec.is_resolved",
+    "cyclopts.command_spec.CommandSpec.group",
+    "cyclopts.core.App._get_item",
+    "cyclopts.core.App._meta_parent",
+    "cyclopts.core.App.group",
 )
 
 
@@ -725,6 +730,11 @@ def test_cyclopts_private_internals_used_by_lazy_mounts_exist() -> None:
                 isinstance(getattr(app, "_commands", None), dict),
                 hasattr(app, "_name_transform"),
                 hasattr(spec, "_resolved"),
+                hasattr(spec, "is_resolved"),
+                hasattr(spec, "group"),
+                callable(getattr(app, "_get_item", None)),
+                hasattr(app, "_meta_parent"),
+                isinstance(app.group, tuple),
             ),
             strict=True,
         )

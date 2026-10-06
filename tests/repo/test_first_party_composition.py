@@ -13,6 +13,7 @@ import pytest
 
 from untaped import bootstrap
 from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
+from untaped.messages import EXPERIMENTAL_LINE
 from untaped.testing import CliInvoker, provider_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -78,3 +79,75 @@ def test_first_party_help_matches_app_summary(
     for spec in first_party_specs:
         assert spec.help is not None, spec.name
         assert spec.help == spec.app_factory().help, spec.name
+
+
+def _panels(text: str) -> dict[str, str]:
+    """``{panel title: panel text}`` of a rendered ``--help``."""
+    panels: dict[str, str] = {}
+    title = ""
+    for line in text.splitlines():
+        if line.startswith("╭"):
+            title = line.strip("╭─ ").split(" ─")[0]
+            panels[title] = ""
+        elif title:
+            panels[title] += line + "\n"
+    return panels
+
+
+def test_experimental_capabilities_sit_in_the_root_experimental_panel(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
+
+    result = CliInvoker().invoke(root.meta, ["--help"])
+
+    panels = _panels(result.stdout)
+    assert list(panels)[-2:] == ["Experimental", "Parameters"]
+    assert "Deprecated" not in panels
+    experimental = panels["Experimental"]
+    assert "workspace" in experimental and "dotfiles" in experimental
+    assert "awx" not in experimental
+    assert "workspace" not in panels["Commands"] and "dotfiles" not in panels["Commands"]
+
+
+def test_awx_test_sits_in_awxs_experimental_panel(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
+
+    panels = _panels(CliInvoker().invoke(root.meta, ["awx", "--help"]).stdout)
+
+    assert list(panels)[:1] == ["Commands"] and list(panels)[-2:] == ["Experimental", "Parameters"]
+    assert panels["Experimental"].split()[1] == "test"
+    assert "test" not in panels["Commands"].split()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["workspace", "--help"],
+        ["workspace", "list", "--help"],
+        ["dotfiles", "--help"],
+        ["dotfiles", "status", "--help"],
+        ["awx", "test", "--help"],
+        ["awx", "test", "run", "--help"],
+    ],
+)
+def test_every_experimental_help_ends_with_the_experimental_line(
+    first_party_candidates: tuple[ProviderCandidate, ...], argv: list[str]
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
+
+    result = CliInvoker().invoke(root.meta, argv)
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.rstrip().endswith(EXPERIMENTAL_LINE)
+
+
+@pytest.mark.parametrize("argv", [["awx", "jobs", "list", "--help"], ["awx", "ping", "--help"]])
+def test_stable_commands_do_not_carry_the_experimental_line(
+    first_party_candidates: tuple[ProviderCandidate, ...], argv: list[str]
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
+
+    assert EXPERIMENTAL_LINE not in CliInvoker().invoke(root.meta, argv).stdout
