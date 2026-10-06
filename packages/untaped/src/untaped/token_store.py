@@ -133,7 +133,13 @@ class TokenStore:
             try:
                 found = _run(["secret-tool", "lookup", *key]).stdout.strip()
             finally:
-                _run(["secret-tool", "clear", *key], check=False)
+                cleared = _run(["secret-tool", "clear", *key], check=False).returncode == 0
+            if not cleared:
+                raise ConfigError(
+                    "secret-tool: could not remove its test entry; run "
+                    "`secret-tool clear service untaped-preflight account preflight`",
+                    category="unavailable",
+                )
             if found != "probe":
                 raise ConfigError(
                     "secret-tool: a test value did not read back; unlock the keyring and retry",
