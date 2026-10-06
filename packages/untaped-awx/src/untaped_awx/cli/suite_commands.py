@@ -508,6 +508,11 @@ def _report_results(
     return bool(counted)
 
 
+def _refuse_scm_branch_with_source_ref(source_ref: str | None, scm_branch: str | None) -> None:
+    if source_ref is not None and scm_branch is not None:
+        raise_usage("--source-ref and --scm-branch cannot be combined: the copies run the commit")
+
+
 def _check_run_flags(
     source_ref: str | None,
     *,
@@ -534,8 +539,7 @@ def _check_run_flags(
         if keep:
             raise_usage("--keep applies to --source-ref only")
         return
-    if scm_branch is not None:
-        raise_usage("--source-ref and --scm-branch cannot be combined: the copies run the commit")
+    _refuse_scm_branch_with_source_ref(source_ref, scm_branch)
     if baseline is not None:
         raise_usage("--source-ref and --baseline cannot be combined; compare with --compare")
     if not cancel and not keep:
@@ -694,8 +698,7 @@ def validate_command(
 
     Experimental: may change in a minor release.
     """
-    if source_ref is not None and scm_branch is not None:
-        raise_usage("--source-ref and --scm-branch cannot be combined: the copies run the commit")
+    _refuse_scm_branch_with_source_ref(source_ref, scm_branch)
     _validate(
         paths,
         var=var,
