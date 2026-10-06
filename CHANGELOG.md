@@ -8,8 +8,9 @@
   config files from subscribed dotfiles repos.
   ([#436](https://github.com/alexisbeaulieu97/untaped/pull/436))
 - `untaped auth set|unset|status|migrate` store API tokens in the machine's
-  password store instead of `config.yml`.
-  ([#442](https://github.com/alexisbeaulieu97/untaped/pull/442))
+  password store instead of `config.yml`; `auth status` lists each token once.
+  ([#442](https://github.com/alexisbeaulieu97/untaped/pull/442),
+  [#503](https://github.com/alexisbeaulieu97/untaped/issues/503))
 - `untaped setup plan` lists what a profile still needs, with the command for
   each step and whether you or your agent runs it; `untaped setup --only`
   preselects services in the wizard.
