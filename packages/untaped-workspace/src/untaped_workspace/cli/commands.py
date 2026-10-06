@@ -146,8 +146,7 @@ def add_command(
 ) -> None:
     """Check out more repos into an existing workspace; present ones report unchanged.
 
-    Without --repo, --read-only or --stdin, a terminal opens the repo picker;
-    without a terminal, `create NAME` makes an empty workspace to `add` to.
+    Without --repo, --read-only or --stdin, a terminal opens the repo picker.
     """
     with report_errors():
         settings = workspace_settings()
