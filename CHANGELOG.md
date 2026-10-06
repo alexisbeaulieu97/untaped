@@ -94,6 +94,9 @@
 
 ### Fixed
 
+- `doctor` marks warned rows with `▲` instead of `⚠`, which some terminals
+  draw double-width and shift the row.
+  ([#508](https://github.com/alexisbeaulieu97/untaped/issues/508))
 - `workspace create NAME` with no repos makes an empty workspace instead of failing
   with "no repos given"; `add` still needs repos.
   ([#497](https://github.com/alexisbeaulieu97/untaped/issues/497))
