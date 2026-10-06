@@ -191,15 +191,15 @@ def test_dry_run_checks_like_validate_and_launches_nothing(aap: FakeAap, repo: P
     assert (aap.list_records("job_templates"), _launches(aap)) == ([], [])
 
 
-def test_dry_run_without_source_ref_checks_the_scm_branch_it_would_pass(
+def test_validate_without_source_ref_checks_the_scm_branch_it_would_pass(
     aap: FakeAap, repo: Path
 ) -> None:
     prompts = {"ask_limit_on_launch": True, "ask_inventory_on_launch": True}
     aap.seed("job_templates", name="Deploy", organization=1, project=5, **prompts)
     suite = ".untaped/awx/tests/deploy.yml"
 
-    assert _invoke("run", suite, "--dry-run").exit_code == 0
-    result = _invoke("run", suite, "--dry-run", "--scm-branch", "main")
+    assert _invoke("validate", suite).exit_code == 0
+    result = _invoke("validate", suite, "--scm-branch", "main")
 
     assert result.exit_code == 1
     assert "does not prompt for scm_branch" in result.stderr
