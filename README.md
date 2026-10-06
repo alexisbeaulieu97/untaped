@@ -15,7 +15,7 @@ the same output and piping rules:
 - **`dotfiles`**: place config files from dotfiles repos, with a policy per
   item per machine (experimental).
 
-Root commands manage the tool itself: `setup`, `config`, `profile`, `alias`,
+Root commands manage the tool itself: `setup`, `config`, `profile`,
 `skills`, `doctor` and `capabilities`.
 
 ## Install
