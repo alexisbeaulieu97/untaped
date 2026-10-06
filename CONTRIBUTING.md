@@ -14,6 +14,20 @@ uv sync
 The root `dev` dependency group installs `untaped[all]`, so every first-party
 capability is available to `uv run untaped`.
 
+To try unreleased changes without a checkout, install from git. The repo root
+is a workspace with no package of its own, so the bare repository URL cannot be
+built, and `untaped[all]` would take the capability packages from PyPI. Point at
+each package directory instead:
+
+```bash
+R=https://github.com/alexisbeaulieu97/untaped
+uv tool install --force "git+$R#subdirectory=packages/untaped" \
+  $(for p in ansible awx dotfiles github jira recipe workspace; do
+      echo --with "git+$R#subdirectory=packages/untaped-$p"; done)
+```
+
+Append `@<branch-or-sha>` to `R` to pick a ref.
+
 ## Test, lint and type-check
 
 ```bash
