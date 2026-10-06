@@ -100,7 +100,28 @@ def test_a_pass_preset_that_cannot_decrypt_is_a_failed_row(
     assert result.exit_code != 0
     [row] = [r for r in json.loads(result.stdout) if r["title"] == "pass token store"]
     assert row["status"] == "fail"
-    assert "no secret key" in row["detail"] and "pinentry" in row["detail"]
+    assert "no secret key" in row["detail"] and "pass init" in row["detail"]
+    assert "pinentry" not in row["detail"]
+
+
+def test_a_working_pass_and_a_missing_pass_are_reported(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch, "pass")
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    github:\n      base_url: https://g\n"
+        "      token_command: [pass, show, hand/written]\n",
+    )
+    get_settings.cache_clear()
+    app = _doctor_app(make_spec("github", profile_model=GithubProfile))
+    result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
+    [row] = [r for r in json.loads(result.stdout) if r["title"] == "pass token store"]
+    assert row["status"] == "pass", "a hand-written pass command counts too"
+    (tmp_path / "fake-bin" / "pass").unlink()
+    result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
+    [row] = [r for r in json.loads(result.stdout) if r["title"] == "pass token store"]
+    assert (row["status"], row["detail"]) == ("fail", "pass is not installed")
 
 
 def test_an_unused_pass_adds_no_doctor_row(

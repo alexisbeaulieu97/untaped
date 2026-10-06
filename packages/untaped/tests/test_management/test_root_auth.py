@@ -299,6 +299,52 @@ def test_a_password_store_without_a_secret_key_is_not_usable(
     assert stores.entries() == {}
 
 
+def test_a_skipped_pass_says_why(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "no-secret-key")
+    result = _auth("set", "svc", "--stdin", input="tok")
+    assert "holds no secret key" in result.stderr and "pass init" in result.stderr
+    assert "pinentry" not in result.stderr
+    forced = _auth("set", "svc", "--stdin", "--store", "pass", input="tok")
+    assert forced.exit_code == 0, "an explicit --store pass skips the key probe"
+
+
+def test_an_explicit_pass_on_an_uninitialised_store_says_so(
+    _isolated_config: Path, stores: FakeStores, tmp_path: Path
+) -> None:
+    (tmp_path / "password-store" / ".gpg-id").unlink()
+    result = _auth("set", "svc", "--stdin", "--store", "pass", input="tok")
+    assert result.exit_code == 5
+    assert "pass: the password store is not initialised" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "gpg_id", ["test@example.com # laptop\n", "# note\n\nother@example.com\ntest@example.com\n"]
+)
+def test_gpg_id_is_read_like_pass_does(
+    _isolated_config: Path, stores: FakeStores, tmp_path: Path, gpg_id: str
+) -> None:
+    (tmp_path / "password-store" / ".gpg-id").write_text(gpg_id, encoding="utf-8")
+    assert token_store.pass_problem() is None
+
+
+def test_pass_without_gpg_is_not_usable(
+    _isolated_config: Path, stores: FakeStores, tmp_path: Path
+) -> None:
+    (tmp_path / "fake-bin" / "gpg").unlink()
+    assert token_store.pass_problem() == "gpg is not installed"
+
+
+def test_a_hung_gpg_probe_is_not_usable(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "hang-gpg")
+    monkeypatch.setattr(token_store, "_PROBE_TIMEOUT_SECONDS", 0.5)
+    assert "did not answer" in (token_store.pass_problem() or "")
+    assert _auth("set", "svc", "--stdin", input="tok").exit_code == 5
+
+
 def test_a_pass_that_cannot_decrypt_is_reported_once_with_the_fix(
     _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -620,11 +666,30 @@ def test_migrate_with_a_pass_that_cannot_decrypt_does_not_flood(
 ) -> None:
     write_config(_isolated_config, _PLAINTEXT)
     monkeypatch.setenv("STUB_MODE", "gpg-decrypt")
-    result = _auth("migrate")
+    result = _auth("migrate", "--format", "json")
     assert result.exit_code == 4
-    assert result.stderr.count("public key decryption failed") <= 3, "one per token at most"
+    rows = json.loads(result.stdout)
+    quote = "'pass' exited with status 2: gpg: public key decryption failed: No such file"
+    details = [row["detail"] for row in rows]
+    assert details.count(quote + " or directory") == 2
+    assert sum("would override the token command" in detail for detail in details) == 1
+    assert "gpg:" not in result.stderr, "gpg's own stderr never reaches the terminal"
     assert result.stderr.count("pinentry") == 1, "the fix is named once, not per token"
     assert "w-other" in _isolated_config.read_text()
+
+
+def test_migrate_names_no_gpg_fix_for_a_failure_that_is_not_gpg(
+    _isolated_config: Path, stores: FakeStores
+) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    svc:\n      token: d-svc\n"
+        "  my work:\n    svc:\n      token: w-svc\n",
+    )
+    result = _auth("migrate", "--format", "json")
+    assert result.exit_code == 4
+    assert {row["action"] for row in json.loads(result.stdout)} == {"moved", "failed"}
+    assert "pinentry" not in result.stderr and "GPG_TTY" not in result.stderr
 
 
 def test_migrate_without_a_store_changes_nothing(
