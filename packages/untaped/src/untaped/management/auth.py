@@ -379,7 +379,8 @@ def _status(result: CompositionResult, *, fmt: Any, columns: list[str] | None) -
         for spec in sections:
             node = effective.get(spec.section)
             source, key = _source(spec, node if isinstance(node, dict) else {})
-            # Other profiles inherit `default`; list them only for a token of their own.
+            # Other profiles inherit `default`; list them only for a token of their own
+            # (one that default's plaintext token shadows drops out too).
             if profile != DEFAULT_PROFILE and (
                 key is None or provenance.get((spec.section, key)) != profile
             ):
