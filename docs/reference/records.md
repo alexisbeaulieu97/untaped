@@ -128,7 +128,7 @@ Resource kinds are `awx.<snake_case kind>`: `awx.organization`,
 | `awx workflow-templates nodes` | `awx.workflow_node` |
 | `awx test list` | `awx.test_case` |
 | `awx test run` | `awx.test_result` |
-| `awx test validate --source-ref`, `awx test run --dry-run --source-ref` | `awx.provision_outcome` |
+| `awx test validate --source-ref` | `awx.provision_outcome` |
 | `awx test prune` | `awx.prune_outcome` |
 | `awx ping` | `awx.status` |
 
