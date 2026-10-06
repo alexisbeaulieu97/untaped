@@ -265,13 +265,34 @@ PASS_GPG_HINT = (
 )
 """The usual fixes when ``pass`` cannot decrypt; named once per failing command."""
 
+TRUST_HINT = (
+    "gpg does not trust the key yet: run `gpg --edit-key <gpg-id> trust` and pick 5 "
+    "(ultimate), or `gpg --import-ownertrust`"
+)
+"""The fix when gpg refuses an imported key whose ownertrust is unknown."""
+
 _STDERR_QUOTE = 120
+
+
+def gpg_hint(stderr: str) -> str | None:
+    """The fix to name for a failure whose stderr is gpg's, else ``None``.
+
+    A ``pass`` that fails for its own reasons (no such entry, a protected
+    one) gets no gpg advice.
+    """
+    if not any(line.startswith("gpg:") for line in stderr.splitlines()):
+        return None
+    if "no assurance" in stderr or "Unusable public key" in stderr:
+        return TRUST_HINT
+    return PASS_GPG_HINT
 
 
 def first_stderr_line(stderr: str) -> str:
     """The first non-empty stderr line, cut short: what a repeating tool failed on."""
-    line = next((line.strip() for line in stderr.splitlines() if line.strip()), "")
-    return line[:_STDERR_QUOTE]
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    # gpg may open with a note (a trust warning); the failure is the line saying so.
+    line = next((line for line in lines if "failed" in line or "error" in line.lower()), "")
+    return (line or next(iter(lines), ""))[:_STDERR_QUOTE]
 
 
 def _run_token_command(argv: tuple[str, ...], *, section: str) -> str:
@@ -287,7 +308,7 @@ def _run_token_command(argv: tuple[str, ...], *, section: str) -> str:
         if is_pass:
             if quote := first_stderr_line(completed.stderr):
                 message += f": {quote}"
-            raise ConfigError(message, hint=PASS_GPG_HINT)
+            raise ConfigError(message, hint=gpg_hint(completed.stderr))
         raise ConfigError(message)
     token = completed.stdout.strip()
     if not token:
@@ -297,12 +318,14 @@ def _run_token_command(argv: tuple[str, ...], *, section: str) -> str:
 
 __all__ = [
     "PASS_GPG_HINT",
+    "TRUST_HINT",
     "CommandToken",
     "TokenCommand",
     "TokenSources",
     "clear_token_cache",
     "describe_token_source",
     "first_stderr_line",
+    "gpg_hint",
     "resolve_token",
     "run_command",
     "takes_token_command",

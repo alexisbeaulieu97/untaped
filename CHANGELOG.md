@@ -94,7 +94,7 @@
 
 ### Fixed
 
-- `auth set` and `auth migrate` test the chosen store with a throwaway value
+- `auth set`, `auth migrate` and `setup` test the chosen store with a throwaway value
   first (`pass`: gpg encrypt and decrypt; `secret-tool`: store and read back) and
   stop with the cause instead of failing token by token; `pass` is skipped when
   gpg holds no key for it, gpg's repeated errors are quoted once with the usual
