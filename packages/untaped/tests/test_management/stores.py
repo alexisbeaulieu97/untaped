@@ -7,7 +7,9 @@ touched. ``STUB_MODE`` injects a fault: ``fail`` (store exits 1), ``corrupt``
 (store keeps a different value), ``locked`` (the macOS locked-keychain
 message), ``hang`` (store sleeps past the timeout), ``hang-probe``
 (``secret-tool``'s probe sleeps), ``no-service`` (``secret-tool`` reports no
-Secret Service).
+Secret Service), ``no-secret-key`` (the fake ``gpg`` holds no key for the
+store), ``gpg-decrypt`` (``pass`` stores, but every read fails with gpg's
+repeated decryption errors on stderr).
 """
 
 from __future__ import annotations
@@ -79,9 +81,19 @@ if name == "pass":
     if args[0] == "insert":
         save(args[-1], stdin.rstrip("\n"), replace="--force" in args)
     elif args[0] == "show":
+        if mode == "gpg-decrypt":
+            for _ in range(2):
+                err = "No such file or directory"
+                print("gpg: public key decryption failed: " + err, file=sys.stderr)
+                print("gpg: decryption failed: " + err, file=sys.stderr)
+            sys.exit(2)
         show(args[-1])
     elif args[0] == "rm":
         drop(args[-1])
+elif name == "gpg":
+    if mode == "no-secret-key":
+        print("gpg: error reading key: No secret key", file=sys.stderr)
+        sys.exit(2)
 elif name == "secret-tool":
     if mode == "hang-probe" and "untaped-probe" in args:
         time.sleep(30)
@@ -131,10 +143,13 @@ def install_fake_stores(
     *names: str,
     macos: bool = False,
 ) -> FakeStores:
-    """Put fakes for ``names`` (and nothing else) on ``PATH``; ``pass`` is initialised."""
+    """Put fakes for ``names`` (and nothing else) on ``PATH``.
+
+    ``pass`` is initialised and comes with a fake ``gpg`` holding its key.
+    """
     bin_dir = tmp_path / "fake-bin"
     bin_dir.mkdir(exist_ok=True)
-    for name in names:
+    for name in (*names, *(("gpg",) if "pass" in names else ())):
         script = bin_dir / name
         script.write_text(f"#!{sys.executable}\n{_STUB}", encoding="utf-8")
         script.chmod(0o755)

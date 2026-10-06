@@ -289,6 +289,29 @@ def test_an_uninitialised_password_store_is_not_usable(
     assert "no token store is usable" in result.stderr
 
 
+def test_a_password_store_without_a_secret_key_is_not_usable(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "no-secret-key")
+    result = _auth("set", "svc", "--stdin", input="tok")
+    assert result.exit_code == 5
+    assert "no token store is usable" in result.stderr
+    assert stores.entries() == {}
+
+
+def test_a_pass_that_cannot_decrypt_is_reported_once_with_the_fix(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: old\n")
+    monkeypatch.setenv("STUB_MODE", "gpg-decrypt")
+    result = _auth("set", "svc", "--stdin", input=SENTINEL)
+    assert result.exit_code != 0
+    assert result.stderr.count("decryption failed") == 1, "gpg's repeated stderr is summarised"
+    assert "pinentry" in result.stderr and "GPG_TTY" in result.stderr
+    assert _config(_isolated_config)["profiles"]["default"]["svc"] == {"token": "old"}
+    _no_leak(result, stores)
+
+
 def test_set_in_a_named_profile_names_the_entry_after_it(
     _isolated_config: Path, stores: FakeStores
 ) -> None:
@@ -509,7 +532,7 @@ def test_status_names_every_source_without_running_commands(
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
     result = _auth("status", "--format", "json")
     assert result.exit_code == 0, result.output
-    assert stores.calls() == []
+    assert [c["argv"][0] for c in stores.calls()] == ["gpg"], "only the usability probe runs"
     rows = {(row["profile"], row["section"]): row for row in json.loads(result.stdout)}
     assert rows["default", "svc"]["source"] == "pass (untaped/default/svc)"
     assert rows["default", "other"] == {
@@ -590,6 +613,18 @@ def test_migrate_keeps_a_token_that_fails_and_exits_non_zero(
     assert {row["action"] for row in json.loads(result.stdout)} == {"failed"}
     assert "3 tokens could not be moved" in result.stderr
     assert _config(_isolated_config)["profiles"]["work"]["other"] == {"token": "w-other"}
+
+
+def test_migrate_with_a_pass_that_cannot_decrypt_does_not_flood(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, _PLAINTEXT)
+    monkeypatch.setenv("STUB_MODE", "gpg-decrypt")
+    result = _auth("migrate")
+    assert result.exit_code == 4
+    assert result.stderr.count("public key decryption failed") <= 3, "one per token at most"
+    assert result.stderr.count("pinentry") == 1, "the fix is named once, not per token"
+    assert "w-other" in _isolated_config.read_text()
 
 
 def test_migrate_without_a_store_changes_nothing(
