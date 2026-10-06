@@ -29,7 +29,7 @@ from untaped.ui import UiContext, ui_context
 _UNICODE_GLYPHS = {
     "pass": "✓",
     "fixed": "✓",
-    "warn": "⚠",
+    "warn": "▲",
     "partial": "◐",
     "fail": "✗",
     "failed": "✗",
