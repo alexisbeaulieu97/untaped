@@ -34,8 +34,9 @@ from untaped.cli import (
 )
 from untaped.config.repository import SettingsFileRepository
 from untaped.config_file import read_config_dict
+from untaped.deprecated_keys import warn_once
 from untaped.errors import ConfigError, UsageError, first_validation_error
-from untaped.messages import hint, not_found, q
+from untaped.messages import deprecated_message, hint, not_found, q
 from untaped.profile_resolver import selected_profile
 from untaped.records import OutcomeRecord, Record
 from untaped.settings import load_settings_section
@@ -92,6 +93,7 @@ def build_root_alias_app(*, builtin_for: Callable[[str], str | None]) -> App:
     ) -> None:
         """Save ``untaped NAME`` as a shortcut for ``untaped COMMAND…`` in the profile."""
         with report_errors():
+            warn_once(deprecated_message("untaped alias", "a shell alias or function"))
             _check_name(name, builtin_for)
             if not command:
                 raise UsageError("alias set requires a command after NAME (`-- COMMAND ARGS…`)")

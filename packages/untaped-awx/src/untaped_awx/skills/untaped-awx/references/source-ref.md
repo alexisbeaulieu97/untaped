@@ -54,8 +54,8 @@ describes it.
   (compare with `--compare`).
 - `--no-cancel` needs `--keep`: AWX cannot delete a template while its job
   runs.
-- `validate --source-ref REF` does everything but the writes. A case of a copied template is checked against
-  the spec.
+- `validate --source-ref REF` does everything but the writes. A case of a copied
+  template is checked against the spec.
 - The AWX user needs to create and delete templates
   ([agent-profile.md](agent-profile.md)).
 
