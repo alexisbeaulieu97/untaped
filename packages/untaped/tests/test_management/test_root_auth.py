@@ -528,11 +528,14 @@ def test_status_names_every_source_without_running_commands(
 def test_status_reports_env_sources(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    write_config(_isolated_config, "profiles:\n  default: {}\n  work: {}\n")
     install_fake_stores(tmp_path, monkeypatch)
     monkeypatch.setenv("UNTAPED_SVC__TOKEN", "x")
     monkeypatch.setenv("SVC_TOKEN", "y")
     result = _auth("status", "--format", "json")
-    rows = {row["section"]: row for row in json.loads(result.stdout)}
+    listed = json.loads(result.stdout)
+    assert {row["profile"] for row in listed} == {"default"}
+    rows = {row["section"]: row for row in listed}
     assert rows["svc"]["source"] == "$UNTAPED_SVC__TOKEN"
     assert rows["other"]["source"] == "none"
     assert "token stores usable here: none" in result.stderr
