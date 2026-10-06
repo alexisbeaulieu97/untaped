@@ -21,7 +21,7 @@ from untaped.capabilities.registry import (
     DoctorCheck,
     DoctorResult,
 )
-from untaped.management._render import _UNICODE_GLYPHS
+from untaped.management._render import _ASCII_GLYPHS, _UNICODE_GLYPHS
 from untaped.management.doctor import build_root_doctor_app, report_check_rows
 from untaped.profile_resolver import profile_scope
 from untaped.testing import CliInvoker, CliResult
@@ -214,13 +214,14 @@ def test_glyphs_take_the_status_colours(monkeypatch: pytest.MonkeyPatch) -> None
     assert "\x1b[32m✓" in stdout
 
 
-#: Glyphs that no terminal renders as an emoji; U+26A0 ``⚠`` (and ``✔``, ``⚡``…)
-#: have an emoji form that terminals draw two cells wide and misalign rows.
-_TEXT_ONLY_GLYPHS = set("✓✗▲◐○→")
-
-
-def test_status_glyphs_are_one_cell_and_never_emoji() -> None:
+def test_status_glyphs_are_one_cell_and_have_no_emoji_form() -> None:
+    # U+26A0 ``⚠`` and ``✔`` measure one cell but have an emoji form that terminals
+    # draw two cells wide and misalign rows; the variation selector exposes it.
     for status, glyph in _UNICODE_GLYPHS.items():
-        assert len(glyph) == 1, status
         assert cell_len(glyph) == 1, status
-        assert glyph in _TEXT_ONLY_GLYPHS, f"{status}: {glyph!r} may render as a wide emoji"
+        assert cell_len(glyph + "\ufe0f") == 1, f"{status}: {glyph!r} has an emoji form"
+
+
+def test_ascii_glyphs_cover_every_status() -> None:
+    assert _ASCII_GLYPHS.keys() == _UNICODE_GLYPHS.keys()
+    assert all(glyph.isascii() for glyph in _ASCII_GLYPHS.values())
