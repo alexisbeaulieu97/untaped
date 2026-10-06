@@ -91,6 +91,9 @@
   ([#489](https://github.com/alexisbeaulieu97/untaped/pull/489))
 - `HttpSettings.timeout` is deprecated; use `timeout_seconds`.
   ([#489](https://github.com/alexisbeaulieu97/untaped/pull/489))
+- awx: `awx test run --dry-run` is deprecated until 11.0; use `awx test
+  validate`, which now also takes `--case` and `--scm-branch`.
+  ([#515](https://github.com/alexisbeaulieu97/untaped/pull/515))
 - `untaped alias` and the `shell.aliases` setting are deprecated and removed in
   11.0; use a shell alias or function.
   ([#507](https://github.com/alexisbeaulieu97/untaped/pull/507))

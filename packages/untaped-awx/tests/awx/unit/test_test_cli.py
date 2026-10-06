@@ -427,6 +427,52 @@ def test_validate_reports_launches_awx_would_reject(
     assert "v/ok" not in result.stderr
 
 
+_BAD_AND_OK = (
+    "kind: AwxTestSuite\nname: v\njobTemplate: Deploy app\n"
+    "cases:\n  bad:\n    launch:\n      limit: x\n  ok: {}\n"
+)
+
+
+def test_validate_checks_only_the_cases_named_by_case(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    fake_aap.seed("job_templates", name="Deploy app")
+    test_file = _write(tmp_path / "v.yml", _BAD_AND_OK)
+
+    ok = cli.invoke(app, ["test", "validate", str(test_file), "--case", "ok"])
+    bad = cli.invoke(app, ["test", "validate", str(test_file), "--case", "bad"])
+    missed = cli.invoke(app, ["test", "validate", str(test_file), "--case", "nope"])
+
+    assert ok.exit_code == 0, ok.stderr
+    assert bad.exit_code == 1
+    assert "error: v/bad: " in bad.stderr
+    assert missed.exit_code != 0
+    assert "no case matched --case 'nope'" in missed.stderr
+
+
+def test_validate_refuses_scm_branch_with_source_ref(cli: CliInvoker, tmp_path: Path) -> None:
+    result = cli.invoke(app, ["test", "validate", "--source-ref", "HEAD", "--scm-branch", "main"])
+
+    assert result.exit_code == 2
+    assert "--source-ref and --scm-branch cannot be combined" in result.stderr
+
+
+def test_run_dry_run_is_deprecated_in_favour_of_validate(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    fake_aap.seed("job_templates", name="Deploy app")
+    test_file = _write(tmp_path / "v.yml", _BAD_AND_OK)
+
+    result = cli.invoke(app, ["test", "run", str(test_file), "--case", "bad", "--dry-run"])
+
+    assert result.exit_code == 1
+    assert "`awx test run --dry-run` is deprecated" in result.stderr
+    assert "use `awx test validate`" in result.stderr
+    assert "error: v/bad: " in result.stderr
+    assert all(action != "launch" for _, _, action, _ in fake_aap.actions_called)
+    assert "--dry-run" not in cli.invoke(app, ["test", "run", "--help"]).stdout
+
+
 def test_validate_reports_each_case_as_an_attributed_error(
     cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
