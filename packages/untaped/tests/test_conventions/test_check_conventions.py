@@ -192,3 +192,19 @@ def test_an_app_factory_outside_any_package_names_the_capability(
     with pytest.raises(LookupError) as raised:
         check_conventions("demo", candidates=demo)
     assert str(raised.value) == "capability 'demo': its app factory is not defined in a package"
+
+
+def test_stability_rules_run_with_the_other_checks(
+    demo: list[ProviderCandidate], install: Install
+) -> None:
+    marked = (
+        _PLUGIN["demo_plugin/cli.py"]
+        .replace(
+            'create_app(name="demo", help="Demo commands.")',
+            'create_app(name="demo", help="Demo commands.", stability=experimental)',
+        )
+        .replace("import YesOption, create_app", "import YesOption, create_app, experimental")
+    )
+    install({"demo_plugin/cli.py": marked})
+
+    assert "demo::mark-on-spec::demo" in capability_violations("demo", candidates=demo)
