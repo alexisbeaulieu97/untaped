@@ -94,6 +94,10 @@
 
 ### Fixed
 
+- `auth set` and `auth migrate` skip a `pass` that gpg cannot decrypt with, quote
+  gpg's first error instead of repeating it per token and name the usual fixes
+  once; `doctor` fails a `pass` token command that cannot work here.
+  ([#510](https://github.com/alexisbeaulieu97/untaped/issues/510))
 - `workspace create NAME` with no repos makes an empty workspace instead of failing
   with "no repos given"; `add` still needs repos.
   ([#497](https://github.com/alexisbeaulieu97/untaped/issues/497))

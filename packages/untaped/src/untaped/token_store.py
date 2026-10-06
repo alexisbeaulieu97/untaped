@@ -43,6 +43,17 @@ _SEGMENT = r"[A-Za-z0-9_-][A-Za-z0-9._-]*"
 _ENTRY = re.compile(f"{_SEGMENT}/{_SEGMENT}")
 _LOCKED = "User interaction is not allowed"
 _SECURITY_NOT_FOUND = 44
+_STDERR_QUOTE = 120
+
+PASS_GPG_HINT = (
+    "check that gpg works on its own (`echo test | gpg -e -r <gpg-id> | gpg -d`); usual causes: "
+    "no pinentry program installed, GPG_TTY unset (`export GPG_TTY=$(tty)`), or gpg-agent not "
+    "running (`gpgconf --launch gpg-agent`)"
+)
+
+
+class PassCommandError(ConfigError):
+    """``pass`` failed (usually through gpg); callers add :data:`PASS_GPG_HINT` once."""
 
 
 @dataclass(frozen=True)
@@ -117,7 +128,7 @@ class TokenStore:
         if self.name == "security":
             return _is_macos()
         if self.name == "pass":
-            return (_password_store() / ".gpg-id").is_file()
+            return pass_problem() is None
         # A missing item exits 1 silently; no Secret Service prints an error
         # (and may exit 1 too), so stderr decides.
         probe = ["secret-tool", "lookup", "service", f"{SERVICE}-probe", "account", "probe"]
@@ -140,6 +151,45 @@ STORES: tuple[TokenStore, ...] = (
     TokenStore("secret-tool"),
     TokenStore("pass"),
 )
+
+
+def pass_problem() -> str | None:
+    """Why ``pass`` cannot store tokens here, or ``None``.
+
+    The store must be initialised and gpg must hold a secret key for one of
+    its recipients. A missing pinentry or agent shows only on a real decrypt,
+    which :data:`PASS_GPG_HINT` covers.
+    """
+    if shutil.which("pass") is None:
+        return "pass is not installed"
+    recipients = _gpg_recipients()
+    if not recipients:
+        return "the password store is not initialised (run `pass init <gpg-id>`)"
+    if shutil.which("gpg") is None:
+        return "gpg is not installed"
+    for recipient in recipients:
+        try:
+            completed = subprocess.run(
+                ["gpg", "--batch", "--list-secret-keys", "--", recipient],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=_PROBE_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except OSError, subprocess.TimeoutExpired:
+            return "gpg did not answer"
+        if completed.returncode == 0:
+            return None
+    return f"gpg has no secret key for the password store's recipient ({', '.join(recipients)})"
+
+
+def _gpg_recipients() -> list[str]:
+    try:
+        lines = (_password_store() / ".gpg-id").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    return [line.strip() for line in lines if line.strip() and not line.startswith("#")]
 
 
 def entry_name(profile: str, section: str) -> str:
@@ -219,8 +269,9 @@ def _run(
     # `security` is read for the locked-keychain message, and `-i` input
     # (the hex token) must never be echoed back.
     secure = program == "security"
+    pass_ = program == "pass"
     completed = run_command(
-        argv, label=repr(program), stdin=stdin, capture_stderr=capture_stderr or secure
+        argv, label=repr(program), stdin=stdin, capture_stderr=capture_stderr or secure or pass_
     )
     if secure and (_LOCKED in completed.stderr or _LOCKED in completed.stdout):
         raise ConfigError(
@@ -228,15 +279,27 @@ def _run(
             category="unavailable",
         )
     if check and completed.returncode != 0:
-        raise ConfigError(f"{program!r} exited with status {completed.returncode}")
+        message = f"{program!r} exited with status {completed.returncode}"
+        if program == "pass":
+            # gpg repeats one error per call; the first line says what failed.
+            first = next(
+                (line.strip() for line in completed.stderr.splitlines() if line.strip()), ""
+            )
+            if first:
+                message += f": {first[:_STDERR_QUOTE]}"
+            raise PassCommandError(message)
+        raise ConfigError(message)
     return completed
 
 
 __all__ = [
+    "PASS_GPG_HINT",
+    "PassCommandError",
     "StoreName",
     "TokenStore",
     "entry_name",
     "no_store_message",
+    "pass_problem",
     "pick_store",
     "preset_entry",
     "usable_stores",

@@ -42,6 +42,8 @@ from untaped.profile_resolver import (
 from untaped.settings import active_settings_layout
 from untaped.stdin import read_stdin_text
 from untaped.token_store import (
+    PASS_GPG_HINT,
+    PassCommandError,
     StoreName,
     TokenStore,
     entry_name,
@@ -273,7 +275,10 @@ def _set(
         raise ConfigError(no_store_message(section, spec.env), category="unavailable")
     ui = ui_context(strict=False)
     token = _read_stdin_token() if stdin else _prompt_token(ui, section)
-    where = save_token(SettingsFileRepository(), section, profile, token, chosen)
+    try:
+        where = save_token(SettingsFileRepository(), section, profile, token, chosen)
+    except PassCommandError as exc:
+        raise ConfigError(f"{exc}\n{PASS_GPG_HINT}") from None
     ui.success(
         f"stored the {section} token in {where}; {section}.token_command set in profile {profile}"
     )
@@ -443,7 +448,10 @@ def _migrate(
     emit(rows, fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)
     failed = sum(row["action"] == "failed" for row in rows)
     if failed:
-        raise ConfigError(f"{plural(failed, 'token')} could not be moved and stay in the config")
+        message = f"{plural(failed, 'token')} could not be moved and stay in the config"
+        if chosen.name == "pass":
+            message += f"\n{PASS_GPG_HINT}"
+        raise ConfigError(message)
     if not dry_run:
         ui.success(f"moved {plural(len(rows), 'token')} to {chosen.name}")
 
