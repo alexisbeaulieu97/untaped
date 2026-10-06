@@ -42,7 +42,6 @@ from untaped.profile_resolver import (
 from untaped.settings import active_settings_layout
 from untaped.stdin import read_stdin_text
 from untaped.token_store import (
-    PassCommandError,
     StoreName,
     TokenStore,
     entry_name,
@@ -470,7 +469,7 @@ def _move_all(
                 continue
             where = save_token(repo, section, profile, token, store)
         except ConfigError as exc:
-            store_hint = store_hint or (exc.hint if isinstance(exc, PassCommandError) else None)
+            store_hint = store_hint or exc.hint
             rows.append({**row, "store": None, "action": "failed", "detail": str(exc)})
             continue
         rows.append({**row, "store": where, "action": "moved"})

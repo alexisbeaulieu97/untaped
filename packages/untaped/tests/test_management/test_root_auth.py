@@ -352,7 +352,7 @@ def test_set_stops_before_the_prompt_when_gpg_cannot_decrypt(
     result = _auth("set", "svc", "--stdin", input=SENTINEL)
     assert result.exit_code == 5
     assert (
-        "gpg cannot decrypt for the pass store: gpg: public key decryption failed" in result.stderr
+        "gpg decrypt failed for the pass store: gpg: public key decryption failed" in result.stderr
     )
     assert result.stderr.count("decryption failed") == 1 and "pinentry" in result.stderr
     assert not [c for c in stores.calls() if c["argv"][0] == "pass"], "pass never ran"
@@ -400,6 +400,64 @@ def test_a_secret_service_that_cannot_store_stops_set_early(
     assert stores.entries() == {}
 
 
+def test_an_untrusted_key_is_named_with_the_trust_fix(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "untrusted-key")
+    result = _auth("set", "svc", "--stdin", input=SENTINEL)
+    assert result.exit_code == 5
+    assert "gpg encrypt failed for the pass store: gpg: [stdin]: encryption failed" in result.stderr
+    assert "gpg --edit-key" in result.stderr and "pinentry" not in result.stderr
+    assert "set the section's token_command to your own command" in result.stderr
+
+
+def test_the_preflight_runs_gpg_with_the_options_pass_would(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PASSWORD_STORE_GPG_OPTS", "--homedir /elsewhere")
+    assert _auth("set", "svc", "--stdin", input="tok").exit_code == 0
+    gpg_calls = [c["argv"] for c in stores.calls() if c["argv"][0] == "gpg"]
+    assert gpg_calls and all(
+        "--homedir" in argv and "--no-encrypt-to" in argv for argv in gpg_calls
+    )
+
+
+def test_a_missing_pass_entry_gets_no_gpg_advice(
+    stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "not-in-store")
+    token = auth.CommandToken(["pass", "show", "untaped/default/nope"], section="svc")
+    with pytest.raises(ConfigError) as caught:
+        token.get_secret_value()
+    assert str(caught.value).endswith("Error: untaped/default/nope is not in the password store.")
+    assert caught.value.hint is None
+    store = token_store.TokenStore("pass")
+    monkeypatch.setenv("STUB_MODE", "protected")
+    with pytest.raises(ConfigError, match="protected entry") as protected:
+        store.delete("default/svc")
+    assert protected.value.hint is None
+
+
+def test_gpg_that_cannot_run_is_reported_with_no_entry_left(
+    stores: FakeStores, tmp_path: Path
+) -> None:
+    (tmp_path / "fake-bin" / "gpg").chmod(0o644)
+    with pytest.raises(ConfigError, match="gpg could not run"):
+        token_store.TokenStore("pass").preflight()
+    assert stores.entries() == {}
+
+
+def test_a_secret_service_that_garbles_the_test_value_is_reported(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "secret-tool")
+    monkeypatch.setenv("STUB_MODE", "corrupt")
+    result = _auth("set", "svc", "--stdin", input=SENTINEL)
+    assert result.exit_code == 5
+    assert "a test value did not read back" in result.stderr
+    assert stores.entries() == {}
+
+
 def test_a_hung_gpg_round_trip_times_out_before_any_token_moves(
     _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -407,7 +465,7 @@ def test_a_hung_gpg_round_trip_times_out_before_any_token_moves(
     monkeypatch.setattr(token_store, "_ROUND_TRIP_SECONDS", 0.5)
     result = _auth("set", "svc", "--stdin", input=SENTINEL)
     assert result.exit_code == 5
-    assert "gpg timed out" in result.stderr and "pinentry" in result.stderr
+    assert "gpg encrypt timed out" in result.stderr and "gpgconf --kill" in result.stderr
     assert not _isolated_config.exists() and stores.entries() == {}
 
 

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -31,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from untaped.auth import PASS_GPG_HINT, first_stderr_line, run_command
+from untaped.auth import PASS_GPG_HINT, first_stderr_line, gpg_hint, run_command
 from untaped.errors import ConfigError
 
 StoreName = Literal["security", "secret-tool", "pass"]
@@ -40,6 +41,9 @@ StoreName = Literal["security", "secret-tool", "pass"]
 SERVICE = "untaped"
 _PROBE_TIMEOUT_SECONDS = 5.0
 _ROUND_TRIP_SECONDS = 60.0
+_PREFLIGHT_HINT_SUFFIX = (
+    "; if `pass` itself works for you, set the section's token_command to your own command"
+)
 _SEGMENT = r"[A-Za-z0-9_-][A-Za-z0-9._-]*"
 _ENTRY = re.compile(f"{_SEGMENT}/{_SEGMENT}")
 _LOCKED = "User interaction is not allowed"
@@ -47,7 +51,7 @@ _SECURITY_NOT_FOUND = 44
 
 
 class PassCommandError(ConfigError):
-    """``pass`` failed (usually through gpg); it carries :data:`PASS_GPG_HINT`."""
+    """``pass`` failed; it carries gpg's fix when the failure is gpg's."""
 
 
 @dataclass(frozen=True)
@@ -120,8 +124,8 @@ class TokenStore:
 
         ``usable`` only looks (a key exists, the service answers); this really
         encrypts and decrypts, or stores and reads back, so a missing pinentry
-        or a locked keyring stops ``auth set`` and ``auth migrate`` before any
-        token is asked for or moved. ``security`` has its own locked-keychain
+        or a locked keyring stops ``auth set``, ``auth migrate`` and ``setup``
+        before any token is asked for or moved. ``security`` has its own locked-keychain
         message and needs none. It may prompt for an unlock, so ``doctor``
         never calls it.
         """
@@ -129,8 +133,8 @@ class TokenStore:
             _gpg_round_trip()
         elif self.name == "secret-tool":
             key = ["service", f"{SERVICE}-preflight", "account", "preflight"]
-            _run(["secret-tool", "store", f"--label={SERVICE} preflight", *key], stdin="probe")
             try:
+                _run(["secret-tool", "store", f"--label={SERVICE} preflight", *key], stdin="probe")
                 found = _run(["secret-tool", "lookup", *key]).stdout.strip()
             finally:
                 cleared = _run(["secret-tool", "clear", *key], check=False).returncode == 0
@@ -187,10 +191,10 @@ def pass_problem(*, probe_key: bool = True) -> str | None:
         return "the password store is not initialised (run `pass init <gpg-id>`)"
     if not probe_key:
         return None
-    if shutil.which("gpg") is None:
+    if shutil.which("gpg") is None and shutil.which("gpg2") is None:
         return "gpg is not installed"
     for recipient in recipients:
-        completed = _probe(["gpg", "--batch", "--list-secret-keys", "--", recipient])
+        completed = _probe(_gpg("--list-secret-keys", "--", recipient))
         if completed is None:
             return f"gpg did not answer within {_PROBE_TIMEOUT_SECONDS:g}s; check gpg-agent"
         if completed.returncode == 0:
@@ -201,36 +205,48 @@ def pass_problem(*, probe_key: bool = True) -> str | None:
     )
 
 
+def _gpg(*args: str) -> list[str]:
+    """A gpg command line built the way ``pass`` builds its own (see its ``GPG_OPTS``)."""
+    program = "gpg2" if shutil.which("gpg2") else "gpg"
+    options = shlex.split(os.environ.get("PASSWORD_STORE_GPG_OPTS", ""))
+    fixed = [
+        "--quiet",
+        "--yes",
+        "--compress-algo=none",
+        "--no-encrypt-to",
+        "--batch",
+        "--use-agent",
+    ]
+    return [program, *options, *fixed, *args]
+
+
 def _gpg_round_trip() -> None:
     """Encrypt then decrypt a throwaway string to the store's recipients, as ``pass`` would."""
     recipients = [arg for ident in _gpg_recipients() for arg in ("-r", ident)]
-    steps = [
-        ["gpg", "--batch", "--quiet", "--yes", "-e", *recipients],
-        ["gpg", "--batch", "--quiet", "-d"],
-    ]
+    steps = (("encrypt", _gpg("-e", *recipients)), ("decrypt", _gpg("-d")))
     data = b"untaped-preflight"
-    for argv in steps:
+    for step, argv in steps:
         try:
             completed = subprocess.run(
                 argv, input=data, capture_output=True, timeout=_ROUND_TRIP_SECONDS, check=False
             )
         except subprocess.TimeoutExpired:
             raise ConfigError(
-                f"gpg timed out after {_ROUND_TRIP_SECONDS:g}s; it may be waiting on a "
-                "passphrase prompt nobody sees",
+                f"gpg {step} timed out after {_ROUND_TRIP_SECONDS:g}s; a passphrase prompt may "
+                "still be open (stop it with `gpgconf --kill gpg-agent`)",
                 category="unavailable",
-                hint=PASS_GPG_HINT,
+                hint=_PREFLIGHT_HINT_SUFFIX.lstrip("; "),
             ) from None
         except OSError as exc:
-            raise ConfigError(
-                f"gpg could not run: {exc.strerror}", category="unavailable"
-            ) from None
+            message = f"gpg could not run: {exc.strerror}"
+            raise ConfigError(message, category="unavailable") from None
         if completed.returncode != 0:
-            quote = first_stderr_line(completed.stderr.decode(errors="replace"))
+            stderr = completed.stderr.decode(errors="replace")
+            quote = first_stderr_line(stderr)
             raise ConfigError(
-                f"gpg cannot decrypt for the pass store{f': {quote}' if quote else ''}",
+                f"gpg {step} failed for the pass store{f': {quote}' if quote else ''}",
                 category="unavailable",
-                hint=PASS_GPG_HINT,
+                hint=(gpg_hint(stderr) or PASS_GPG_HINT) + _PREFLIGHT_HINT_SUFFIX,
             )
         data = completed.stdout
 
@@ -354,11 +370,11 @@ def _run(
         )
     if check and completed.returncode != 0:
         message = f"{program!r} exited with status {completed.returncode}"
-        if is_pass and argv[1] in ("insert", "show"):
+        if is_pass:
             # gpg repeats one error per call; the first non-empty line says what failed.
             if quote := first_stderr_line(completed.stderr):
                 message += f": {quote}"
-            raise PassCommandError(message, hint=PASS_GPG_HINT)
+            raise PassCommandError(message, hint=gpg_hint(completed.stderr))
         raise ConfigError(message)
     return completed
 
