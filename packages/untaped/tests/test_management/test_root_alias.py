@@ -349,6 +349,9 @@ def test_using_a_stored_alias_warns_once(_isolated_config: Path) -> None:
     assert f"shell.aliases {_DEPRECATION}" in ran.stderr
 
 
-def test_an_unrelated_command_does_not_warn(_isolated_config: Path) -> None:
+def test_any_command_warns_once_while_an_alias_is_stored(_isolated_config: Path) -> None:
     write_config(_isolated_config, _CONFIG)
     assert "deprecated" not in _invoke("config", "list").stderr
+    assert _invoke("alias", "set", "gb", "--", "config", "list").exit_code == 0
+    listed = _invoke("config", "list")
+    assert listed.stderr.count(f"shell.aliases {_DEPRECATION}") == 1
