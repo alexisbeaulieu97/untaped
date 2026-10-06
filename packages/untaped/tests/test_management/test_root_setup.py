@@ -145,6 +145,25 @@ def test_setup_configures_the_service_and_checks_it(
     assert PROBES == ["probed"]
 
 
+def test_setup_tests_the_store_before_asking_for_the_token(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
+    monkeypatch.setenv("STUB_MODE", "gpg-roundtrip")
+    backend = ScriptedPromptBackend(
+        texts=["default", "https://wiz"],
+        multiselects=[["wiz"]],
+        selections=["store"],
+        secrets=["tok"],
+    )
+    result = _setup(backend)
+    assert result.exit_code == 5
+    assert "gpg decrypt failed for the pass store" in result.stderr
+    assert ("secret", "wiz token") not in backend.calls
+    assert stores.entries() == {}
+    assert not _isolated_config.exists() or "wiz" not in _isolated_config.read_text()
+
+
 def test_setup_creates_a_new_profile_with_a_token_command(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default: {}\nactive: default\n")
     backend = ScriptedPromptBackend(

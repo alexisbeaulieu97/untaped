@@ -13,11 +13,11 @@ import functools
 import re
 import warnings
 from collections.abc import Iterator, Mapping
-from typing import Any, ClassVar
+from typing import Annotated, Any, ClassVar
 
 import pytest
 import release  # scripts/release.py (``pythonpath = ["scripts"]``)
-from cyclopts import App
+from cyclopts import App, Parameter
 from packaging.version import Version
 from pydantic import BaseModel
 
@@ -55,6 +55,19 @@ def alias_leftovers(app: App, path: tuple[str, ...] = ()) -> Iterator[str]:
             yield from alias_leftovers(app[name], (*path, name))
 
 
+def option_leftovers(app: App, path: tuple[str, ...] = ()) -> Iterator[str]:
+    """Every hidden option whose help starts with ``Deprecated:`` on a command below ``app``."""
+    where = " ".join(path) or "untaped"
+    if app.default_command is not None:
+        for argument in app.assemble_argument_collection():
+            help_text = argument.parameter.help or ""
+            if not argument.show and help_text.startswith("Deprecated:"):
+                yield f"{where}: deprecated option {' '.join(argument.names)}"
+    for name in app:
+        if not name.startswith("-"):
+            yield from option_leftovers(app[name], (*path, name))
+
+
 def sdk_leftovers(namespace: Mapping[str, object]) -> list[str]:
     """Each export, or attribute of an exported class, marked ``@warnings.deprecated``."""
     found = [name for name, value in namespace.items() if _deprecated(value)]
@@ -86,7 +99,12 @@ def test_a_major_release_drops_deprecated_spellings(
     sections = profile_section_models()
     exports = {name: getattr(sdk, name) for name in sdk.__all__}
 
-    leftovers = [*settings_leftovers(sections), *alias_leftovers(root), *sdk_leftovers(exports)]
+    leftovers = [
+        *settings_leftovers(sections),
+        *alias_leftovers(root),
+        *option_leftovers(root),
+        *sdk_leftovers(exports),
+    ]
 
     assert not leftovers, f"remove before releasing {version}:\n" + "\n".join(leftovers)
 
@@ -144,6 +162,35 @@ def test_alias_leftovers_name_the_command() -> None:
     ]
 
 
+def test_option_leftovers_name_hidden_deprecated_options_only() -> None:
+    root = App(name="untaped")
+    group = App(name="awx")
+
+    @group.command(name="run")
+    def run(
+        *,
+        old: Annotated[
+            bool, Parameter(name="--old", negative="", show=False, help="Deprecated: use new.")
+        ] = False,
+        hidden: Annotated[bool, Parameter(name="--hidden", negative="", show=False)] = False,
+        shown: Annotated[
+            bool, Parameter(name="--shown", negative="", help="Deprecated: still visible.")
+        ] = False,
+    ) -> None: ...
+
+    root.command(group)
+
+    assert list(option_leftovers(root)) == ["awx run: deprecated option --old"]
+
+
+def test_option_leftovers_see_the_first_party_deprecated_dry_run(
+    first_party_candidates: tuple[ProviderCandidate, ...], fresh_composition: None
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
+
+    assert "awx test run: deprecated option --dry-run" in list(option_leftovers(root))
+
+
 @warnings.deprecated("use g")
 def _old_function() -> None: ...
 
@@ -177,3 +224,11 @@ def test_sdk_leftovers_look_through_properties_and_method_wrappers() -> None:
     namespace: dict[str, Any] = {"f": _old_function, "Client": _Client, "VALUE": 3}
 
     assert sdk_leftovers(namespace) == ["f", "Client.a", "Client.c", "Client.e", "Client.g"]
+
+
+def test_the_deprecated_shell_aliases_setting_blocks_a_major_release(
+    first_party_candidates: tuple[ProviderCandidate, ...], fresh_composition: None
+) -> None:
+    bootstrap.build_root_app(candidates=first_party_candidates)
+
+    assert "shell: deprecated_settings ['aliases']" in settings_leftovers(profile_section_models())

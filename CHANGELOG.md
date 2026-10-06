@@ -92,9 +92,25 @@
   ([#489](https://github.com/alexisbeaulieu97/untaped/pull/489))
 - `HttpSettings.timeout` is deprecated; use `timeout_seconds`.
   ([#489](https://github.com/alexisbeaulieu97/untaped/pull/489))
+- awx: `awx test run --dry-run` is deprecated until 11.0; use `awx test
+  validate`, which now also takes `--case` and `--scm-branch`.
+  ([#515](https://github.com/alexisbeaulieu97/untaped/pull/515))
+- `untaped alias` and the `shell.aliases` setting are deprecated and removed in
+  11.0; use a shell alias or function.
+  ([#507](https://github.com/alexisbeaulieu97/untaped/pull/507))
 
 ### Fixed
 
+- `auth set`, `auth migrate` and `setup` test the chosen store with a throwaway value
+  first (`pass`: gpg encrypt and decrypt; `secret-tool`: store and read back) and
+  stop with the cause instead of failing token by token; `pass` is skipped when
+  gpg holds no key for it, gpg's repeated errors are quoted once with the usual
+  fixes (also when a `pass` token command fails at use), and `doctor` fails a
+  `pass` token command that gpg cannot serve here.
+  ([#510](https://github.com/alexisbeaulieu97/untaped/issues/510))
+- `doctor` marks warned rows with `▲` instead of `⚠`, which some terminals
+  draw double-width and shift the row.
+  ([#508](https://github.com/alexisbeaulieu97/untaped/issues/508))
 - `workspace create NAME` with no repos makes an empty workspace instead of failing
   with "no repos given"; `add` still needs repos.
   ([#497](https://github.com/alexisbeaulieu97/untaped/issues/497))

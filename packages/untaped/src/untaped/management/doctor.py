@@ -79,6 +79,7 @@ from untaped.settings import (
 )
 from untaped.skills import SkillState, outdated_skills, project_root
 from untaped.theme import OutputFormat, UiSettings, resolve_theme
+from untaped.token_store import pass_problem
 
 _PASS = "pass"
 _FAIL = "fail"
@@ -312,9 +313,7 @@ def collect_doctor_rows(
     raw, config_row = _config_row(shell)
     rows.append(config_row)
     if raw is not None:
-        rows.append(_permissions_row(shell))
-        rows.append(_unknown_keys_row(shell, raw))
-        rows.append(_deprecated_keys_row(shell, raw))
+        rows.extend(_config_file_rows(shell, raw))
     state, state_file_row = _state_file_row(shell)
     rows.append(state_file_row)
     settings_error: str | None = None
@@ -402,6 +401,40 @@ def _permissions_row(shell: ApplicationSpec) -> dict[str, object]:
         detail = f"{path} has mode {mode:04o}; restrict it with `chmod 600 {path}`"
         return _row("config", shell.name, _WARN, title, detail)
     return _row("config", shell.name, _PASS, title, f"mode {mode:04o}")
+
+
+def _config_file_rows(shell: ApplicationSpec, raw: dict[str, Any]) -> list[dict[str, object]]:
+    rows = [
+        _permissions_row(shell),
+        _unknown_keys_row(shell, raw),
+        _deprecated_keys_row(shell, raw),
+    ]
+    if (store_row := _token_store_row(shell, raw)) is not None:
+        rows.append(store_row)
+    return rows
+
+
+def _token_store_row(shell: ApplicationSpec, raw: dict[str, Any]) -> dict[str, object] | None:
+    """Fail when a ``pass`` token command cannot work here (no key, no gpg).
+
+    Only checked once a profile's ``token_command`` runs ``pass``, so
+    installing ``pass`` alone never adds a row.
+    """
+    layout = active_settings_layout()
+    uses_pass = any(
+        isinstance(node, dict)
+        and isinstance(argv := node.get("token_command"), list)
+        and argv
+        and Path(str(argv[0])).name == "pass"
+        for profile in layout.profile_names(raw)
+        for node in (layout.profile_data(raw, profile) or {}).values()
+    )
+    if not uses_pass:
+        return None
+    title = "pass token store"
+    if (problem := pass_problem()) is not None:
+        return _row("config", shell.name, _FAIL, title, problem)
+    return _row("config", shell.name, _PASS, title, "gpg holds a key for the password store")
 
 
 def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[str, object]:

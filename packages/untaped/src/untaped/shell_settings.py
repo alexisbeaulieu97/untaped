@@ -9,6 +9,7 @@ share one validation.
 from __future__ import annotations
 
 import re
+from typing import ClassVar
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -39,10 +40,12 @@ def check_aliases(value: dict[str, list[str]]) -> dict[str, list[str]]:
 class ShellProfileSettings(BaseModel):
     """Shell-level profile-scoped settings (the ``shell`` section)."""
 
+    deprecated_settings: ClassVar[dict[str, str]] = {"aliases": "use a shell alias or function"}
+
     aliases: dict[str, list[str]] = Field(
         default_factory=dict,
         description="Command aliases: `untaped NAME [ARGS…]` runs the argv stored under NAME. "
-        "Managed by `alias` commands.",
+        "Managed by `alias` commands. Deprecated: use a shell alias or function.",
     )
 
     @field_validator("aliases")

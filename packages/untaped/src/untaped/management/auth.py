@@ -271,6 +271,7 @@ def _set(
     chosen = pick_store(store)
     if chosen is None:
         raise ConfigError(no_store_message(section, spec.env), category="unavailable")
+    chosen.preflight()
     ui = ui_context(strict=False)
     token = _read_stdin_token() if stdin else _prompt_token(ui, section)
     where = save_token(SettingsFileRepository(), section, profile, token, chosen)
@@ -438,20 +439,26 @@ def _migrate(
             no_store_message(pending[0][1], sections[pending[0][1]].env),
             category="unavailable",
         )
-    rows = _move_all(pending, chosen, dry_run=dry_run)
+    if not dry_run:
+        chosen.preflight()
+    rows, store_hint = _move_all(pending, chosen, dry_run=dry_run)
     emit(rows, fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)
     failed = sum(row["action"] == "failed" for row in rows)
     if failed:
-        raise ConfigError(f"{plural(failed, 'token')} could not be moved and stay in the config")
+        raise ConfigError(
+            f"{plural(failed, 'token')} could not be moved and stay in the config", hint=store_hint
+        )
     if not dry_run:
         ui.success(f"moved {plural(len(rows), 'token')} to {chosen.name}")
 
 
 def _move_all(
     pending: Sequence[tuple[str, str, str]], store: TokenStore, *, dry_run: bool
-) -> list[dict[str, object]]:
+) -> tuple[list[dict[str, object]], str | None]:
+    """Move each token; also the store's fix hint when a failure carried one."""
     repo = SettingsFileRepository()
     rows: list[dict[str, object]] = []
+    store_hint: str | None = None
     for profile, section, token in pending:
         row: dict[str, object] = {"section": section, "profile": profile}
         try:
@@ -461,10 +468,11 @@ def _move_all(
                 continue
             where = save_token(repo, section, profile, token, store)
         except ConfigError as exc:
+            store_hint = store_hint or exc.hint
             rows.append({**row, "store": None, "action": "failed", "detail": str(exc)})
             continue
         rows.append({**row, "store": where, "action": "moved"})
-    return rows
+    return rows, store_hint
 
 
 _AUTH_OUTCOME = "untaped.auth_outcome"
