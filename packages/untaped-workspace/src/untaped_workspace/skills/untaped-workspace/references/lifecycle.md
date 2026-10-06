@@ -34,8 +34,9 @@ URL the inventory supplies.
 ## The picker
 
 In a terminal, `create` and `add` with no `--repo`, `--read-only` or
-`--stdin` open an interactive picker; without a terminal they exit 2 and
-name those flags. Agents never rely on it.
+`--stdin` open an interactive picker. Without a terminal, `add` exits 2 and names
+those flags, `create` with no NAME exits 2, and `create NAME` makes an empty
+workspace. Agents never rely on the picker.
 
 - `create` with no NAME asks for one first, refusing invalid names, active
   workspace names and non-empty existing directories.
