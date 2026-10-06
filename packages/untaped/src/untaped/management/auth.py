@@ -380,14 +380,13 @@ def _status(result: CompositionResult, *, fmt: Any, columns: list[str] | None) -
         for spec in sections:
             node = effective.get(spec.section)
             source, key = _source(spec, node if isinstance(node, dict) else {})
-            rows.append(
-                {
-                    "profile": profile,
-                    "section": spec.section,
-                    "source": source,
-                    "set_in": provenance.get((spec.section, key)) if key else None,
-                }
-            )
+            # Other profiles inherit `default`; list them only for a token of their own
+            # (one that default's plaintext token shadows drops out too).
+            if profile != DEFAULT_PROFILE and (
+                key is None or provenance.get((spec.section, key)) != profile
+            ):
+                continue
+            rows.append({"profile": profile, "section": spec.section, "source": source})
     stores = ", ".join(store.name for store in usable_stores()) or "none"
     ui_context(strict=False).message("info", f"token stores usable here: {stores}")
     emit(rows, fmt=fmt, columns=columns, kind="untaped.token_source")
