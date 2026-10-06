@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import json
 import shlex
+from collections.abc import Callable
+from functools import cache
 from typing import Annotated
 
 from cyclopts import App, Parameter
@@ -142,8 +144,10 @@ def _run(
         # One probe per run: a dead Secret Service costs its timeout once.
         commands = any(takes_token_command(services[name].profile_model) for name in selected)
         store = pick_store() if commands else None
+        # Tested once, just before the first token goes to the store.
+        preflight = cache(store.preflight) if store is not None else _no_preflight
         for name in selected:
-            _configure(ui, repo, services[name], profile, current[name], store)
+            _configure(ui, repo, services[name], profile, current[name], store, preflight)
     rows = selected_check_rows(shell, result, profile, frozenset(selected))
     report_check_rows(rows, op="setup", fmt=fmt, columns=columns)
     if profile == active:
@@ -155,6 +159,10 @@ def _run(
         )
 
 
+def _no_preflight() -> None:
+    """Nothing to test: no store was picked."""
+
+
 def _configure(
     ui: UiContext,
     repo: SettingsFileRepository,
@@ -162,6 +170,7 @@ def _configure(
     profile: str,
     current: ServiceState,
     store: TokenStore | None,
+    preflight: Callable[[], None],
 ) -> None:
     """Ask for one service's URL and token, validate every answer, then write."""
     section = spec.config_section
@@ -176,6 +185,8 @@ def _configure(
         )
     choices = _token_choices(spec, current, store, has_command=has_command)
     how = ui.select(f"{spec.name} token", choices, default=choices[0].value)
+    if how in ("store", "move"):
+        preflight()
     token = ui.secret(f"{spec.name} token").strip() if how in ("store", "enter") else None
     argv = _token_command(ui, spec) if how == "command" else None
     repo.set_value(f"{section}.base_url", url, profile=profile)
