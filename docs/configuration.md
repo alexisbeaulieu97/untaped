@@ -207,8 +207,8 @@ checked: copy the file over `config.yml` yourself and run `untaped doctor`.
 
 `untaped doctor` checks offline, one row per check: the config and state
 files, the selected profile, every section, unknown keys, renamed, retired or
-deprecated keys in any profile, installed skills and each capability's own
-checks. `--online` also authenticates against each
+deprecated keys in any profile, a `pass` token command that gpg cannot serve
+here, installed skills and each capability's own checks. `--online` also authenticates against each
 configured service. A failed check makes it exit nonzero; a `warn` row does
 not. To write a profile's service settings interactively, see
 [Getting started](./getting-started.md#set-up-your-services).
@@ -271,7 +271,8 @@ untaped auth set awx                  # prompts; or: … | untaped auth set awx 
 argument. It uses the first store that works here: macOS `security` (the login
 keychain), `secret-tool` (a Secret Service such as GNOME Keyring), then `pass`
 (GPG, which works over SSH with gpg-agent; usually what a headless server or
-WSL2 ends up with). `--store` picks one. It hands the token to the store on
+WSL2 ends up with; it needs an initialised store, a gpg secret key for it and a
+working pinentry, with `GPG_TTY` set in a terminal). `--store` picks one. It hands the token to the store on
 stdin, reads it back, and only then writes `<section>.token_command` (the
 store's read command) in the active profile, removing any plaintext
 `<section>.token`. Run it again to replace a rotated token. The entry is

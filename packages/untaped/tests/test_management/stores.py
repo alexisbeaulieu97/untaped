@@ -9,7 +9,8 @@ message), ``hang`` (store sleeps past the timeout), ``hang-probe``
 (``secret-tool``'s probe sleeps), ``no-service`` (``secret-tool`` reports no
 Secret Service), ``no-secret-key`` (the fake ``gpg`` holds no key for the
 store), ``gpg-decrypt`` (``pass`` stores, but every read fails with gpg's
-repeated decryption errors on stderr).
+repeated decryption errors on stderr), ``hang-gpg`` (the key listing
+sleeps past the probe timeout). The fake ``gpg`` knows only ``test@example.com``.
 """
 
 from __future__ import annotations
@@ -91,7 +92,9 @@ if name == "pass":
     elif args[0] == "rm":
         drop(args[-1])
 elif name == "gpg":
-    if mode == "no-secret-key":
+    if mode == "hang-gpg":
+        time.sleep(30)
+    if mode == "no-secret-key" or args[-1] != "test@example.com":
         print("gpg: error reading key: No secret key", file=sys.stderr)
         sys.exit(2)
 elif name == "secret-tool":

@@ -79,7 +79,7 @@ from untaped.settings import (
 )
 from untaped.skills import SkillState, outdated_skills, project_root
 from untaped.theme import OutputFormat, UiSettings, resolve_theme
-from untaped.token_store import PASS_GPG_HINT, pass_problem, preset_entry
+from untaped.token_store import pass_problem
 
 _PASS = "pass"
 _FAIL = "fail"
@@ -415,17 +415,17 @@ def _config_file_rows(shell: ApplicationSpec, raw: dict[str, Any]) -> list[dict[
 
 
 def _token_store_row(shell: ApplicationSpec, raw: dict[str, Any]) -> dict[str, object] | None:
-    """Fail when a token command points at a ``pass`` that cannot decrypt here.
+    """Fail when a ``pass`` token command cannot work here (no key, no gpg).
 
-    Only checked once a profile uses a ``pass`` preset, so installing ``pass``
-    alone never adds a row.
+    Only checked once a profile's ``token_command`` runs ``pass``, so
+    installing ``pass`` alone never adds a row.
     """
     layout = active_settings_layout()
     uses_pass = any(
         isinstance(node, dict)
         and isinstance(argv := node.get("token_command"), list)
-        and (preset := preset_entry([str(part) for part in argv])) is not None
-        and preset[0].name == "pass"
+        and argv
+        and Path(str(argv[0])).name == "pass"
         for profile in layout.profile_names(raw)
         for node in (layout.profile_data(raw, profile) or {}).values()
     )
@@ -433,7 +433,7 @@ def _token_store_row(shell: ApplicationSpec, raw: dict[str, Any]) -> dict[str, o
         return None
     title = "pass token store"
     if (problem := pass_problem()) is not None:
-        return _row("config", shell.name, _FAIL, title, f"{problem}; {PASS_GPG_HINT}")
+        return _row("config", shell.name, _FAIL, title, problem)
     return _row("config", shell.name, _PASS, title, "gpg holds a key for the password store")
 
 
