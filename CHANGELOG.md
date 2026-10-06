@@ -94,9 +94,12 @@
 
 ### Fixed
 
-- `auth set` and `auth migrate` skip a `pass` that gpg holds no key for, quote
-  gpg's first error instead of repeating it per token and name the usual fixes
-  once; `doctor` fails a `pass` token command that gpg cannot serve here.
+- `auth set` and `auth migrate` test the chosen store with a throwaway value
+  first (`pass`: gpg encrypt and decrypt; `secret-tool`: store and read back) and
+  stop with the cause instead of failing token by token; `pass` is skipped when
+  gpg holds no key for it, gpg's repeated errors are quoted once with the usual
+  fixes (also when a `pass` token command fails at use), and `doctor` fails a
+  `pass` token command that gpg cannot serve here.
   ([#510](https://github.com/alexisbeaulieu97/untaped/issues/510))
 - `workspace create NAME` with no repos makes an empty workspace instead of failing
   with "no repos given"; `add` still needs repos.

@@ -29,6 +29,7 @@ import os
 import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, SecretStr
@@ -257,14 +258,37 @@ def _env_source(names: tuple[str, ...]) -> str | None:
     return next((name for name in names if os.environ.get(name, "").strip()), None)
 
 
+PASS_GPG_HINT = (
+    "check that gpg works on its own (`echo test | gpg -e -r <gpg-id> | gpg -d`); usual causes: "
+    "no pinentry program installed, GPG_TTY unset (`export GPG_TTY=$(tty)`), or gpg-agent not "
+    "running (`gpgconf --launch gpg-agent`)"
+)
+"""The usual fixes when ``pass`` cannot decrypt; named once per failing command."""
+
+_STDERR_QUOTE = 120
+
+
+def first_stderr_line(stderr: str) -> str:
+    """The first non-empty stderr line, cut short: what a repeating tool failed on."""
+    line = next((line.strip() for line in stderr.splitlines() if line.strip()), "")
+    return line[:_STDERR_QUOTE]
+
+
 def _run_token_command(argv: tuple[str, ...], *, section: str) -> str:
     label = f"{section}.token_command: {argv[0]!r}"
     _LOG.debug("%s.token_command: running %s", section, argv[0])
     # stderr goes straight to the terminal: the command explains its own
-    # failures, and untaped never captures or repeats them.
-    completed = run_command(argv, label=label)
+    # failures, and untaped never captures or repeats them. Except `pass`,
+    # whose gpg repeats one error per call: the first line and one hint do.
+    is_pass = Path(argv[0]).name == "pass"
+    completed = run_command(argv, label=label, capture_stderr=is_pass)
     if completed.returncode != 0:
-        raise ConfigError(f"{label} exited with status {completed.returncode}")
+        message = f"{label} exited with status {completed.returncode}"
+        if is_pass:
+            if quote := first_stderr_line(completed.stderr):
+                message += f": {quote}"
+            raise ConfigError(message, hint=PASS_GPG_HINT)
+        raise ConfigError(message)
     token = completed.stdout.strip()
     if not token:
         raise ConfigError(f"{label} printed no token")
@@ -272,11 +296,13 @@ def _run_token_command(argv: tuple[str, ...], *, section: str) -> str:
 
 
 __all__ = [
+    "PASS_GPG_HINT",
     "CommandToken",
     "TokenCommand",
     "TokenSources",
     "clear_token_cache",
     "describe_token_source",
+    "first_stderr_line",
     "resolve_token",
     "run_command",
     "takes_token_command",
