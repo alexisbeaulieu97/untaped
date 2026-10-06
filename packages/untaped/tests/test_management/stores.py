@@ -10,8 +10,9 @@ message), ``hang`` (store sleeps past the timeout), ``hang-probe``
 Secret Service), ``no-secret-key`` (the fake ``gpg`` holds no key for the
 store), ``gpg-decrypt`` (``pass`` stores, but every read fails with gpg's
 repeated decryption errors on stderr), ``hang-gpg`` (the key listing
-sleeps past the probe timeout), ``gpg-roundtrip`` (gpg lists its key but cannot
-decrypt, as with no pinentry). The fake ``gpg`` knows only ``test@example.com``.
+sleeps past the probe timeout), ``hang-roundtrip`` (gpg's encrypt sleeps),
+``no-clear`` (``secret-tool clear`` fails), ``gpg-roundtrip`` (gpg lists its
+key but cannot decrypt, as with no pinentry). The fake ``gpg`` knows only ``test@example.com``.
 """
 
 from __future__ import annotations
@@ -96,6 +97,8 @@ elif name == "gpg":
     if mode == "hang-gpg":
         time.sleep(30)
     if "-e" in args or "-d" in args:
+        if "-e" in args and mode == "hang-roundtrip":
+            time.sleep(30)
         if "-d" in args and mode == "gpg-roundtrip":
             print("gpg: public key decryption failed: No such file or directory", file=sys.stderr)
             print("gpg: decryption failed: No such file or directory", file=sys.stderr)
@@ -117,6 +120,8 @@ elif name == "secret-tool":
     elif args[0] == "lookup":
         show(key)
     elif args[0] == "clear":
+        if mode == "no-clear":
+            sys.exit(1)
         drop(key)
 elif name == "security":
     if args[0] == "-i":

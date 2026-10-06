@@ -400,6 +400,28 @@ def test_a_secret_service_that_cannot_store_stops_set_early(
     assert stores.entries() == {}
 
 
+def test_a_hung_gpg_round_trip_times_out_before_any_token_moves(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "hang-roundtrip")
+    monkeypatch.setattr(token_store, "_ROUND_TRIP_SECONDS", 0.5)
+    result = _auth("set", "svc", "--stdin", input=SENTINEL)
+    assert result.exit_code == 5
+    assert "gpg timed out" in result.stderr and "pinentry" in result.stderr
+    assert not _isolated_config.exists() and stores.entries() == {}
+
+
+def test_a_secret_tool_test_entry_that_cannot_be_removed_is_reported(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch, "secret-tool")
+    monkeypatch.setenv("STUB_MODE", "no-clear")
+    result = _auth("set", "svc", "--stdin", input=SENTINEL)
+    assert result.exit_code == 5
+    assert "could not remove its test entry" in result.stderr
+    assert not _isolated_config.exists()
+
+
 def test_a_working_secret_service_leaves_no_preflight_entry(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
