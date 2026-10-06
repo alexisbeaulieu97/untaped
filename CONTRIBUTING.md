@@ -15,18 +15,16 @@ The root `dev` dependency group installs `untaped[all]`, so every first-party
 capability is available to `uv run untaped`.
 
 To try unreleased changes without a checkout, install from git. The repo root
-is a workspace with no package of its own, so the bare repository URL cannot be
-built, and `untaped[all]` would take the capability packages from PyPI. Point at
-each package directory instead:
+is a workspace with no package of its own, so the bare repository URL fails to
+build, and `untaped[all]` would take the capability packages from PyPI. Point at
+each package directory instead (one line, so it pastes unchanged in bash and
+PowerShell):
 
-```bash
-R=https://github.com/alexisbeaulieu97/untaped
-uv tool install --force "git+$R#subdirectory=packages/untaped" \
-  $(for p in ansible awx dotfiles github jira recipe workspace; do
-      echo --with "git+$R#subdirectory=packages/untaped-$p"; done)
+```
+uv tool install --force "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-ansible" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-awx" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-dotfiles" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-github" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-jira" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-recipe" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-workspace"
 ```
 
-Append `@<branch-or-sha>` to `R` to pick a ref.
+To pick a ref, put `@<branch-or-sha>` before `#subdirectory=` in each URL.
 
 ## Test, lint and type-check
 
