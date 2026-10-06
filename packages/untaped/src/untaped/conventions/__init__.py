@@ -30,6 +30,7 @@ from untaped.conventions.layering import layering_violations
 from untaped.conventions.messages import message_violations
 from untaped.conventions.settings_names import settings_name_violations
 from untaped.conventions.source import source_files
+from untaped.conventions.stability import stability_violations
 from untaped.conventions.structure import structure_violations
 from untaped.settings import Settings, model_sections
 
@@ -43,8 +44,8 @@ def capability_violations(
     """Every convention violation of the installed capability ``name``.
 
     Builds the root once (from discovered candidates), finds the
-    registered capability, and runs help_tree, messages, structure, layering
-    and import-boundary over its command subtree and package. The private-test-import
+    registered capability, and runs help_tree, stability, messages, structure,
+    layering and import-boundary over its command subtree and package. The private-test-import
     check runs only when ``tests_dir`` is given. ``candidates`` replaces
     entry-point discovery (as in :func:`untaped.bootstrap.compose_root`), so
     a test can check a provider that is not installed. Lines are
@@ -74,6 +75,7 @@ def capability_violations(
     return sorted(
         [
             *help_tree_violations(root, [name]),
+            *stability_violations(root, composition(), [name], spec=spec),
             *message_violations(source_dir, files),
             *structure_violations(spec, package, source_dir, files, tests_dir=tests_dir),
             *layering_violations(package, source_dir, files),
@@ -154,12 +156,14 @@ def core_violations() -> list[str]:
     Repo-internal.
     """
     root = build_root_app(candidates=[])
+    result = composition()
     management = _source_dir("untaped.management")
     sections = {**model_sections(Settings), SHELL_SPEC.config_section: SHELL_SPEC.profile_model}
     src = _source_dir("untaped").parent
     return sorted(
         [
             *help_tree_violations(root, sorted(ROOT_COMMANDS)),
+            *stability_violations(root, result, ROOT_COMMANDS),
             *message_violations(management, list(source_files(management))),
             *(
                 line

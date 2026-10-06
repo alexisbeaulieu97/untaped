@@ -236,8 +236,8 @@ def _ensure_epilogue(app: App, line: str, *, own_only: bool) -> None:
 
 # --- replacements ------------------------------------------------------------
 
-_COMMAND_TEXT = re.compile(r"^untaped(?: [a-z0-9][a-z0-9-]*)+$")
-_KEY_TEXT = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$")
+COMMAND_TEXT = re.compile(r"^untaped(?: [a-z0-9][a-z0-9-]*)+$")
+KEY_TEXT = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$")
 
 
 def _children(app: App, *, resolve: bool) -> Iterator[tuple[str, App]]:
@@ -303,7 +303,7 @@ def replacement_text(
     if isinstance(replacement, str):
         return (
             f"`{replacement}`"
-            if _COMMAND_TEXT.match(replacement) or _KEY_TEXT.match(replacement)
+            if COMMAND_TEXT.match(replacement) or KEY_TEXT.match(replacement)
             else replacement
         )
     path = None if tree is None else replacement_path(tree, replacement, prefix=prefix)
