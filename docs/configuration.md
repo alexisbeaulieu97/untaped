@@ -273,9 +273,10 @@ keychain), `secret-tool` (a Secret Service such as GNOME Keyring), then `pass`
 (GPG, which works over SSH with gpg-agent; usually what a headless server or
 WSL2 ends up with; it needs an initialised store, a gpg secret key for it and a
 working pinentry, with `GPG_TTY` set in a terminal). `--store` picks one. Before
-asking for a token (here and in `setup`) it tests the store with a throwaway value (`pass`: a gpg
-encrypt and decrypt; `secret-tool`: a store and read back) and stops with the
-cause if that fails; tokens read later through `pass` report gpg's first error
+asking for a token (here and in `setup`) it tests the store with a throwaway
+value (`pass`: a gpg encrypt and decrypt, run with your `PASSWORD_STORE_GPG_OPTS`;
+`secret-tool`: a store and read back) and stops with the cause if that fails;
+tokens read later through `pass` report gpg's first error
 and the same fixes. It hands the token to the store on stdin, reads it back, and
 only then writes `<section>.token_command` (the store's read command) in the
 active profile, removing any plaintext `<section>.token`. Run it again to
