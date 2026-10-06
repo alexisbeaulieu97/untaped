@@ -94,6 +94,9 @@
 
 ### Fixed
 
+- `auth status` lists each token once instead of repeating a token set in
+  `default` under every profile, and no longer has a `set_in` column.
+  ([#503](https://github.com/alexisbeaulieu97/untaped/issues/503))
 - `workspace create NAME` with no repos makes an empty workspace instead of failing
   with "no repos given"; `add` still needs repos.
   ([#497](https://github.com/alexisbeaulieu97/untaped/issues/497))

@@ -510,16 +510,17 @@ def test_status_names_every_source_without_running_commands(
     result = _auth("status", "--format", "json")
     assert result.exit_code == 0, result.output
     assert stores.calls() == []
-    rows = {(row["profile"], row["section"]): row for row in json.loads(result.stdout)}
+    listed = json.loads(result.stdout)
+    rows = {(row["profile"], row["section"]): row for row in listed}
+    assert len(rows) == len(listed)
     assert rows["default", "svc"]["source"] == "pass (untaped/default/svc)"
     assert rows["default", "other"] == {
         "profile": "default",
         "section": "other",
         "source": "config.yml (plain text)",
-        "set_in": "default",
     }
     assert rows["work", "svc"]["source"] == "token_command"
-    assert rows["work", "other"]["set_in"] == "default"
+    assert ("work", "other") not in rows  # inherited from default, not a separate entry
     assert "token stores usable here: pass" in result.stderr
     assert "plain-secret" not in result.output
 
