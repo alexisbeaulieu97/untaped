@@ -177,3 +177,11 @@ def test_sdk_leftovers_look_through_properties_and_method_wrappers() -> None:
     namespace: dict[str, Any] = {"f": _old_function, "Client": _Client, "VALUE": 3}
 
     assert sdk_leftovers(namespace) == ["f", "Client.a", "Client.c", "Client.e", "Client.g"]
+
+
+def test_the_deprecated_shell_aliases_setting_blocks_a_major_release(
+    first_party_candidates: tuple[ProviderCandidate, ...], fresh_composition: None
+) -> None:
+    bootstrap.build_root_app(candidates=first_party_candidates)
+
+    assert "shell: deprecated_settings ['aliases']" in settings_leftovers(profile_section_models())

@@ -154,10 +154,6 @@ untaped dotfiles subscribe https://github.com/acme/dotfiles
 untaped dotfiles items
 ```
 
-Shorten a command you repeat with an [alias](./configuration.md#command-aliases):
-`untaped alias set failed -- awx jobs list --status failed`, then
-`untaped failed`.
-
 ## Output and piping
 
 Most commands take `--format table|json|yaml|raw|pipe` and `--columns`:
