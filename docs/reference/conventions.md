@@ -155,6 +155,8 @@ root rewrites the old token and prints
 ``warning: `me` is deprecated and will be removed in the next major release; use `whoami` ``.
 The old spelling never appears in `--help`. Aliases apply through the
 `untaped` root, so test them with `untaped.testing.invoke_root([...])`.
+A flag deprecated without a new spelling is hidden (`show=False`), starts its
+help with `Deprecated:` and warns when used; the major-release test fails on it.
 
 Command names are kebab-case; use plural nouns for collections. Names are
 free, but a command that writes declares it with `@writes`, or

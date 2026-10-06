@@ -118,7 +118,7 @@ _CASE_OPT = Annotated[
     list[str] | None,
     Parameter(
         name="--case",
-        help="Run only this case, as CASE (in every suite) or SUITE/CASE (repeatable).",
+        help="Only this case, as CASE (in every suite) or SUITE/CASE (repeatable).",
         consume_multiple=False,
         negative="",
     ),
@@ -341,8 +341,9 @@ def run_command(
         Parameter(
             name="--dry-run",
             negative="",
-            help="Check the selected cases as validate does; with --source-ref also print the "
-            "copies it would create. Launches nothing; exits 1 on problems.",
+            show=False,
+            help="Deprecated: use `awx test validate`. Checks the selected cases as it does "
+            "and launches nothing.",
         ),
     ] = False,
     fmt: FormatOption = "table",
@@ -381,6 +382,11 @@ def run_command(
     )
     case_filter = set(cases) if cases else None
     if dry_run:
+        ui_context(strict=False).message(
+            "warning",
+            "`awx test run --dry-run` is deprecated and will be removed in the next major "
+            "release; use `awx test validate`",
+        )
         _validate(
             paths,
             var=var,
@@ -502,6 +508,11 @@ def _report_results(
     return bool(counted)
 
 
+def _refuse_scm_branch_with_source_ref(source_ref: str | None, scm_branch: str | None) -> None:
+    if source_ref is not None and scm_branch is not None:
+        raise_usage("--source-ref and --scm-branch cannot be combined: the copies run the commit")
+
+
 def _check_run_flags(
     source_ref: str | None,
     *,
@@ -528,8 +539,7 @@ def _check_run_flags(
         if keep:
             raise_usage("--keep applies to --source-ref only")
         return
-    if scm_branch is not None:
-        raise_usage("--source-ref and --scm-branch cannot be combined: the copies run the commit")
+    _refuse_scm_branch_with_source_ref(source_ref, scm_branch)
     if baseline is not None:
         raise_usage("--source-ref and --baseline cannot be combined; compare with --compare")
     if not cancel and not keep:
@@ -669,6 +679,15 @@ def validate_command(
     vars_file: _VARS_FILE_OPT = None,
     non_interactive: _NON_INTERACTIVE_OPT = False,
     source_ref: _SOURCE_REF_OPT = None,
+    cases: _CASE_OPT = None,
+    scm_branch: Annotated[
+        str | None,
+        Parameter(
+            name="--scm-branch",
+            help="Check every case as if its job ran on this branch, tag or commit (templates "
+            "must prompt for it); HEAD is the current branch, once pushed.",
+        ),
+    ] = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -679,13 +698,15 @@ def validate_command(
 
     Experimental: may change in a minor release.
     """
+    _refuse_scm_branch_with_source_ref(source_ref, scm_branch)
     _validate(
         paths,
         var=var,
         vars_file=vars_file,
         non_interactive=non_interactive,
-        case_filter=None,
+        case_filter=set(cases) if cases else None,
         source_ref=source_ref,
+        scm_branch=scm_branch,
         fmt=fmt,
         columns=columns,
     )
