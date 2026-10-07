@@ -15,16 +15,25 @@ from untaped.sdk import (
     Cancel,
     Check,
     Cmd,
+    Form,
     Frame,
     Key,
+    ListItem,
     NextField,
+    Panes,
     Paste,
     Pressed,
     Quit,
     Screen,
+    SearchList,
     SecretInput,
+    Submitted,
+    Tags,
     TextInput,
+    Tree,
+    TreeRow,
     UiContext,
+    Viewport,
     field_for,
 )
 from untaped.testing import ScreenKeys, ScriptedPromptBackend, TtyStringIO, drive_screen
@@ -165,3 +174,55 @@ def _solo_screen(component: Check) -> Screen[Check, None]:
         command="untaped acme check",
         alternative="untaped acme check --flag",
     )
+
+
+def _panes_screen() -> Screen[Panes, tuple[str, str]]:
+    """A two-pane screen from SDK names only: a searchable list beside a form that submits."""
+    repos = tuple(ListItem(name, name) for name in ("acme/api", "acme/web", "legacy/docs"))
+    form = Form((("branch", TextInput("Branch", "main")), ("tags", Tags("Tags", repos))))
+
+    def update(model: Panes, message: object) -> tuple[Panes, Sequence[Cmd]]:
+        if isinstance(message, Submitted):
+            return model, [Cmd.send(Quit((str(model.left.value), str(message.values["branch"]))))]
+        return model.update(message)
+
+    return Screen(
+        init=lambda: (
+            Panes(SearchList("", repos), form, left_title="Repos", right_title="Edit"),
+            [],
+        ),
+        update=update,
+        view=lambda model, frame: model.view(frame, focused=True),
+        title="Repos",
+        command="untaped acme repos",
+        alternative="untaped acme repos --branch BRANCH",
+    )
+
+
+def test_a_plugin_builds_panes_a_search_list_and_a_form_from_sdk_names() -> None:
+    run = drive_screen(_panes_screen(), [*"web", "enter", "tab", *"-2", "ctrl-s"])
+
+    assert run.result == ("acme/web", "main-2")
+    assert "Repos" in run.frames[0]
+    assert "Edit" in run.frames[0]
+    assert "type to filter" in run.frames[0]
+
+
+def test_a_plugin_can_use_a_tree_and_a_viewport_from_sdk_names() -> None:
+    tree = Tree("Settings", (TreeRow("a", "alpha", "x", (TreeRow("b", "beta"),)),))
+    view = Viewport(content_height=100)
+    run = drive_screen(
+        Screen(
+            init=lambda: (tree, []),
+            update=lambda model, message: model.update(message),
+            view=lambda model, frame: model.view(frame, focused=True, width=30),
+            title="Tree",
+            command="untaped acme tree",
+            alternative="untaped acme tree --flag",
+        ),
+        ["right", "down"],
+    )
+
+    assert "▾ alpha" in run.frame
+    assert run.model.value == "b"
+    assert view.centred(50, 10).start(10) == 45
