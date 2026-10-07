@@ -1,26 +1,38 @@
-"""Scrolling and layout: ``Viewport``, ``window`` and the line-windowed stack of a form.
+"""Scrolling and layout: ``Viewport``, ``window``, the line-windowed stack and ``Panes``.
 
 A view never draws a long list whole. :class:`Viewport` is the arithmetic of a
 window over ``content_height`` rows (which rows show, how a key scrolls it,
 how it follows a cursor); :func:`window` slices a sequence the same way, so a
 list builds row text only for the rows that are on screen. :func:`windowed`
 stacks blocks of any height and shows the window that keeps one of them in
-sight, which is how a form taller than the terminal stays usable.
+sight, which is how a form taller than the terminal stays usable. :class:`Panes`
+puts two components in bordered panes side by side, or stacked on a narrow
+terminal, with focus moving between them.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
+from typing import Self
 
-from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
+from rich.console import Console, ConsoleOptions, Group, RenderableType, RenderResult
+from rich.panel import Panel
 from rich.segment import Segment
+from rich.text import Text
 
-from untaped.screen.components.draw import window_start
-from untaped.screen.core import Key
+from untaped.screen.components.draw import role_style, unboxed, window_start
+from untaped.screen.components.fields import Field
+from untaped.screen.core import Cmd, Frame, Key, NextField, PrevField
 from untaped.stability import experimental
 
-__all__ = ["Viewport", "window", "windowed"]
+__all__ = ["WIDE", "Panes", "Viewport", "window", "windowed"]
+
+#: The terminal width from which ``Panes`` sit side by side; narrower, they stack.
+WIDE = 100
+#: The narrowest a pane is made side by side, and the fewest rows one gets when stacked.
+MIN_PANE_WIDTH = 12
+MIN_PANE_ROWS = 3
 
 
 @experimental
@@ -144,3 +156,185 @@ def _joined(lines: Iterable[list[Segment]]) -> Iterator[Segment]:
         if number:
             yield Segment.line()
         yield from line
+
+
+@experimental
+@dataclass(frozen=True)
+class Panes:
+    """Two components in bordered panes: side by side from :data:`WIDE` columns, stacked below.
+
+    ``left`` and ``right`` are any components (a list, a :class:`Form`); ``focus``
+    is ``0`` for the left pane and ``1`` for the right. Messages go to the focused
+    one, and a ``NextField`` or ``PrevField`` it did not use (a form at its last or
+    first field, a list, which has no use for them) moves focus to the other pane.
+    The focused pane has the ``screen.focus`` border and its title is bright.
+    ``split`` is the left pane's share of the width side by side.
+
+    A pane's component is drawn without a box of its own when ``left_bare`` or
+    ``right_bare`` is set (the default for the left, a list the pane's border
+    already frames), so its label is better left empty; a form on the right keeps
+    its boxed fields. ``value`` maps ``"left"`` and ``"right"`` to the components'
+    values.
+    """
+
+    left: Field
+    right: Field
+    focus: int = 0
+    left_title: str = ""
+    right_title: str = ""
+    split: float = 0.35
+    left_bare: bool = True
+    right_bare: bool = False
+    error: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "focus", 0 if self.focus <= 0 else 1)
+
+    @property
+    def value(self) -> dict[str, object]:
+        """``{"left": ..., "right": ...}``: what each pane's component holds."""
+        return {"left": self.left.value, "right": self.right.value}
+
+    def with_error(self, text: str) -> Self:
+        """These panes showing ``text`` under them (empty clears it)."""
+        return replace(self, error=text)
+
+    def validate(self) -> str:
+        """The first error of the two components (empty when both are fine); sets nothing."""
+        return self.left.validate() or self.right.validate()
+
+    def update(self, message: object) -> tuple[Self, list[Cmd]]:
+        """Give ``message`` to the focused pane; focus moves to the other when it passed on tab."""
+        child = self.left if self.focus == 0 else self.right
+        updated, cmds = child.update(message)
+        if updated is not child or cmds:
+            if self.focus == 0:
+                return replace(self, left=updated), list(cmds)
+            return replace(self, right=updated), list(cmds)
+        if isinstance(message, NextField | PrevField):
+            return replace(self, focus=1 - self.focus), []
+        return self, []
+
+    def view(
+        self, frame: Frame, *, focused: bool = False, width: int | None = None
+    ) -> RenderableType:
+        """The panes: equally tall side by side, or stacked (the focused one taller) when narrow."""
+        total = width or frame.width
+        side = total >= WIDE
+        boxed = frame.box() is not None
+        gap = 4 if boxed else 2  # the cells a border (and its padding) or a gutter takes
+        chrome = 2 if boxed else 1  # the rows a border or a title line takes
+        if side:
+            left_width = max(MIN_PANE_WIDTH, min(round(total * self.split), total - MIN_PANE_WIDTH))
+            widths = (left_width, total - left_width)
+            rows = (max(MIN_PANE_ROWS, frame.height - chrome),) * 2
+        else:
+            widths = (total, total)
+            spare = max(2 * MIN_PANE_ROWS, frame.height - 2 * chrome - (0 if boxed else 1))
+            other = max(MIN_PANE_ROWS, spare // 3)
+            rows = (spare - other, other) if self.focus == 0 else (other, spare - other)
+        panes = tuple(
+            self._pane(
+                frame, index, widths[index], max(1, widths[index] - gap), rows[index], focused
+            )
+            for index in (0, 1)
+        )
+        shown: RenderableType = _PanesRender(frame, panes, side)
+        if self.error:
+            shown = Group(shown, Text(self.error, style=role_style(frame, "screen.error")))
+        return shown
+
+    def _pane(
+        self, frame: Frame, index: int, width: int, inner: int, rows: int, focused: bool
+    ) -> _Pane:
+        on = focused and index == self.focus
+        bare = self.left_bare if index == 0 else self.right_bare
+        child = self.left if index == 0 else self.right
+        child_frame = replace(frame, width=inner, height=rows)
+        body = child.view(unboxed(child_frame) if bare else child_frame, focused=on, width=inner)
+        title = self.left_title if index == 0 else self.right_title
+        return _Pane(title, body, width, inner, on)
+
+
+@dataclass(frozen=True)
+class _Pane:
+    """One pane ready to draw: its title and body, its cells (border included) and its focus."""
+
+    title: str
+    body: RenderableType
+    width: int
+    inner: int
+    focused: bool
+
+
+@dataclass(frozen=True)
+class _Lines:
+    """Lines already rendered, drawn again as they are (so a pane can be sized to its body)."""
+
+    lines: tuple[list[Segment], ...]
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        yield from _joined(self.lines)
+
+
+@dataclass(frozen=True)
+class _PanesRender:
+    """The panes of a :class:`Panes`, measured when drawn: equal height side by side."""
+
+    frame: Frame
+    panes: tuple[_Pane, ...]
+    side: bool
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        bodies = [
+            console.render_lines(pane.body, options.update(width=pane.inner, height=None), pad=True)
+            for pane in self.panes
+        ]
+        height = max((len(lines) for lines in bodies), default=0)
+        blocks = [
+            self._block(console, options, pane, lines, height if self.side else len(lines))
+            for pane, lines in zip(self.panes, bodies, strict=True)
+        ]
+        if self.side:
+            yield from _joined(
+                [segment for block in blocks for segment in block[row]]
+                for row in range(len(blocks[0]))
+            )
+            return
+        gap = [] if self.frame.box() is not None else [[Segment(" ")]]
+        stacked = [*blocks[0], *gap, *blocks[1]]
+        yield from _joined(stacked)
+
+    def _block(
+        self,
+        console: Console,
+        options: ConsoleOptions,
+        pane: _Pane,
+        body: list[list[Segment]],
+        rows: int,
+    ) -> list[list[Segment]]:
+        """The pane as lines ``pane.width`` cells wide: bordered, or a title line and a gutter."""
+        frame = self.frame
+        title_style = role_style(frame, "screen.accent" if pane.focused else "screen.value")
+        sized = options.update(width=pane.width, height=None)
+        if (outline := frame.box()) is not None:
+            panel = Panel(
+                _Lines(tuple(body)),
+                title=Text(pane.title, style=title_style) if pane.title else None,
+                title_align="left",
+                box=outline,
+                border_style=role_style(frame, "screen.focus" if pane.focused else "screen.border"),
+                width=pane.width,
+                height=rows + 2,
+                padding=(0, 1),
+            )
+            return console.render_lines(panel, sized, pad=True)
+        title = console.render_lines(
+            Text(pane.title, style=title_style),
+            options.update(width=pane.inner, height=None),
+            pad=True,
+        )
+        blank = [Segment(" " * pane.inner)]
+        padded = [*body, *([blank] * (rows - len(body)))]
+        gutter = Segment(" " * (pane.width - pane.inner))
+        return [[*line, gutter] for line in (*title, *padded)]
