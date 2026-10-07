@@ -81,6 +81,9 @@
   ([#526](https://github.com/alexisbeaulieu97/untaped/pull/526))
 - Screens (experimental): `SearchList`, `Viewport`, `Tree`, `Tags`, `Form` and
   `Panes`. ([#527](https://github.com/alexisbeaulieu97/untaped/pull/527))
+- SDK: `PickRequest` takes optional `command` and `alternative`, which
+  `ui.pick_many` names when there is no terminal to draw on.
+  ([#PR](https://github.com/alexisbeaulieu97/untaped/pull/PR))
 
 ### Changed
 
@@ -143,6 +146,11 @@
 - `PromptBackend` gains `run_screen`; a custom backend needs the method to
   type-check (it may set `needs_terminal = False`, as `ScriptedPromptBackend`
   does, to run screens without a terminal). ([#525](https://github.com/alexisbeaulieu97/untaped/pull/525))
+- The workspace picker (`workspace create`, `workspace add`) is full screen and
+  follows the theme's colors, symbols and border style (`ui.symbols` gains
+  `heading` and `dash`); it draws on the controlling terminal when stdin is
+  piped, and esc outside the search asks before discarding a selection.
+  ([#PR](https://github.com/alexisbeaulieu97/untaped/pull/PR))
 
 ### Deprecated
 
