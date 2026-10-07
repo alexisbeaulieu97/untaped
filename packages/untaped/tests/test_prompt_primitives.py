@@ -336,6 +336,95 @@ def test_prompt_toolkit_ctrl_c_interrupts_and_ctrl_d_ends_the_prompt(
         ask(backend)
 
 
+def _record(backend: PromptToolkitPromptBackend) -> str:
+    stderr = backend.stderr
+    assert isinstance(stderr, io.StringIO)
+    return stderr.getvalue()
+
+
+def test_an_answered_prompt_leaves_one_plain_record_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    choices = [
+        PromptChoice(value=1, label="alpha", description="first"),
+        PromptChoice(value=2, label="[bold]beta[/bold]"),
+        PromptChoice(value=2, label="gamma"),
+    ]
+    with _real_terminal(monkeypatch, _ENTER) as backend:
+        backend.text("Name", default="dev")
+        assert _record(backend) == "Name: dev\n"
+    with _real_terminal(monkeypatch, "y\r") as backend:
+        backend.confirm("Remove alias?", default=False)
+        assert _record(backend) == "Remove alias? [y/N]: y\n"
+    with _real_terminal(monkeypatch, _ENTER) as backend:
+        backend.confirm("Remove alias?", default=True)
+        assert _record(backend) == "Remove alias? [Y/n]: y\n"
+    with _real_terminal(monkeypatch, "n\r") as backend:
+        backend.confirm("Remove alias?", default=True)
+        assert _record(backend) == "Remove alias? [Y/n]: n\n"
+    # a label, never its description, and never read as markup
+    with _real_terminal(monkeypatch, _DOWN + _ENTER) as backend:
+        backend.select("Pick", choices, default=None, search=False)
+        assert _record(backend) == "Pick: [bold]beta[/bold]\n"
+    with _real_terminal(monkeypatch, "gam" + _ENTER) as backend:
+        backend.select("Pick", choices, default=None, search=True)
+        assert _record(backend) == "Pick: gamma\n"
+    with _real_terminal(monkeypatch, f" {_DOWN}{_DOWN} {_ENTER}") as backend:
+        backend.multiselect("Pick", choices, defaults=[])
+        assert _record(backend) == "Pick: alpha, gamma\n"
+    with _real_terminal(monkeypatch, _ENTER) as backend:
+        backend.multiselect("Pick", choices, defaults=[])
+        assert _record(backend) == "Pick: \n"
+
+
+def test_a_secrets_record_line_is_the_mask_never_the_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with _real_terminal(
+        monkeypatch, "hunter2\rhunter2\r", theme=BUILTIN_THEMES["plain"]
+    ) as backend:
+        assert backend.secret("Token", confirmation=True) == "hunter2"
+        record = _record(backend)
+    assert record == "Token: *******\nConfirm value: *******\n"
+    assert "hunter2" not in record
+    with _real_terminal(monkeypatch, "hunter2\r") as backend:
+        backend.secret("Token", confirmation=False)
+        record = _record(backend)
+    assert record == "Token: \u2022\u2022\u2022\u2022\u2022\u2022\u2022\n"
+    assert "hunter2" not in record
+
+
+def test_a_record_line_drops_control_characters() -> None:
+    from untaped.screen.core import Quit
+
+    backend = PromptToolkitPromptBackend(stdin=TtyStringIO(), stderr=TtyStringIO())
+    backend.run_screen = lambda screen, *, theme: Quit("a\x1b[31mb\r")  # type: ignore[method-assign,assignment]
+    assert backend.text("Name", default=None) == "a\x1b[31mb\r"
+    assert _record(backend) == "Name: a[31mb\n"
+
+
+@pytest.mark.parametrize("method", ["confirm", "text", "secret", "select", "multiselect"])
+@pytest.mark.parametrize("keys", [_CTRL_C, _CTRL_D])
+def test_a_cancelled_or_interrupted_prompt_leaves_no_record(
+    monkeypatch: pytest.MonkeyPatch, method: str, keys: str
+) -> None:
+    choices = [PromptChoice(value="one", label="One")]
+    with (
+        _real_terminal(monkeypatch, keys) as backend,
+        pytest.raises((EOFError, KeyboardInterrupt, ConfigError)),
+    ):
+        match method:
+            case "confirm":
+                backend.confirm("Go?", default=False)
+            case "text":
+                backend.text("Name", default=None)
+            case "secret":
+                backend.secret("Token", confirmation=False)
+            case "select":
+                backend.select("Pick", choices, default=None, search=False)
+            case _:
+                backend.multiselect("Pick", choices, defaults=[])
+    assert _record(backend) == ""
+
+
 def test_a_prompt_through_ui_context_ends_like_every_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

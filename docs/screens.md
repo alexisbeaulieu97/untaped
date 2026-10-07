@@ -65,7 +65,10 @@ screen returns a value only by sending `Quit(result)`; `Cancel()` or an
 unhandled esc ends it without one, and an unhandled ctrl-c ends it as an
 interrupt. `layout` is `"full"` (the default: the alternate screen, the whole
 terminal) or `"inline"` (below the cursor, erased when done); use inline only
-for a single question.
+for a single question. An inline screen leaves nothing behind; the built-in
+prompts (`ui.text`, `ui.confirm`, ...) print the answer as one plain
+`question: answer` line after they close, and a screen that wants a record does
+the same.
 
 ## Messages and keys
 

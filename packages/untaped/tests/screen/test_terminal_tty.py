@@ -214,3 +214,31 @@ def test_a_termination_signal_restores_the_terminal_and_exits(
         signal.signal(sig, before)
         os.close(master)
         os.close(slave)
+
+
+def test_an_answered_inline_prompt_leaves_its_record_line_on_the_terminal() -> None:
+    from untaped.prompts import PromptToolkitPromptBackend
+
+    master, slave = os.openpty()
+    path = os.ttyname(slave)
+    with open(path, encoding="utf-8") as tty_in, open(path, "w", encoding="utf-8") as tty_out:
+        result: list[object] = []
+
+        def work() -> None:
+            backend = PromptToolkitPromptBackend(stdin=tty_in, stderr=tty_out)
+            try:
+                result.append(backend.text("Name", default=None))
+            except BaseException as error:
+                result.append(error)
+
+        thread = threading.Thread(target=work, daemon=True)
+        thread.start()
+        _drain(master, until=b"Name")
+        os.write(master, b"dev\r")
+        seen = _drain(master, until=b"Name: dev\n")
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+    os.close(master)
+    os.close(slave)
+    assert result == ["dev"]
+    assert seen.endswith(b"Name: dev\r\n")
