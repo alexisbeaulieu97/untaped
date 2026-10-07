@@ -276,17 +276,12 @@ def select_screen(
     reached by typing. The ``default`` (a position) is marked and starts under the cursor.
     """
     items = _items(choices)
-    default_index = default
 
     def init() -> tuple[_Choose, list[Cmd]]:
         if search:
-            picked = frozenset() if default_index is None else frozenset({str(default_index)})
-            return _Choose(
-                SearchList(message, items, cursor=default_index or 0, selected=picked)
-            ), []
-        return _Choose(
-            SingleList(message, items, "" if default_index is None else str(default_index))
-        ), []
+            picked = frozenset() if default is None else frozenset({str(default)})
+            return _Choose(SearchList(message, items, cursor=default or 0, selected=picked)), []
+        return _Choose(SingleList(message, items, "" if default is None else str(default))), []
 
     def update(model: _Choose, msg: object) -> tuple[_Choose, list[Cmd]]:
         match msg:

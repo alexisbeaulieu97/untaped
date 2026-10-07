@@ -157,7 +157,8 @@
   `question: answer` line (a secret as its mask, a multiselect as the chosen
   labels), nothing is left when the prompt is cancelled. With stderr redirected
   (`2>log`) a prompt draws on the controlling terminal instead of the file, as
-  `ui.run` does, and a long list is cut to a short terminal's height.
+  `ui.run` does, and refuses (exit 2) when there is no controlling terminal to
+  draw on; a long list is cut to a short terminal's height.
   ([#532](https://github.com/alexisbeaulieu97/untaped/pull/532))
 - The workspace picker (`workspace create`, `workspace add`) is full screen and
   follows the theme's colors, symbols and border style (`ui.symbols` gains
