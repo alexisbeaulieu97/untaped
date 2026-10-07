@@ -131,7 +131,8 @@ def test_core_ssh_command_is_read_through_a_bare_git_dir(
     monkeypatch.delenv("GIT_SSH", raising=False)
     bare = tmp_path / "cache.git"
     subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
-    subprocess.run(["git", "config", "--global", "core.sshCommand", "ssh -i k"], check=True)
+    command = ["git", "--git-dir", str(bare), "config", "core.sshCommand", "ssh -i k"]
+    subprocess.run(command, check=True)
     assert "GIT_SSH_COMMAND" not in git_env(git_path="git", cwd=bare, git_dir=bare)
 
 

@@ -11,9 +11,9 @@ leaves the root.
 serialize and the lock is never inside the repository. Every git call on it
 goes through ``run_git`` with ``--git-dir`` naming the cache (so git never
 has to discover a bare repository, which ``safe.bareRepository=explicit``
-refuses) and carries the auth header only when the cache's
-origin is an ``https://`` URL on the trusted ``auth_host``; ssh, ``file``
-and other-host origins never see it.
+refuses) and carries the auth header only when the cache's origin is an
+``https://`` URL on the trusted ``auth_host``; ssh, ``file`` and other-host
+origins never see it.
 
 The cache owns mechanics only. Each capability keeps its own root, its ref
 policy (what to fetch, what to prune) and its error mapping.
