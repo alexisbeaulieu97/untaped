@@ -335,6 +335,20 @@ class UiContext:
             terminal_in.close()
             terminal_out.close()
 
+    def _terminal_for(self, *, command: str, alternative: str) -> AbstractContextManager[UiContext]:
+        """The terminal a screen needs, or none when the prompt backend needs none.
+
+        An injected backend can declare ``needs_terminal = False`` (an optional
+        attribute); the default one always needs a terminal, see
+        :meth:`_screen_terminal`.
+        """
+        injected = (
+            self._prompt_backend if self._prompt_backend is not None else prompt_backend_override()
+        )
+        if getattr(injected, "needs_terminal", True):
+            return self._screen_terminal(command=command, alternative=alternative)
+        return nullcontext(self)
+
     @experimental
     def run[M, R](self, screen: Screen[M, R]) -> R:
         """Run an interactive screen and return its result.
@@ -350,16 +364,7 @@ class UiContext:
         """
         from untaped.screen.core import Quit  # noqa: PLC0415 - keeps screens off the startup path
 
-        # An injected backend can say it needs no terminal; the default one always does.
-        injected = (
-            self._prompt_backend if self._prompt_backend is not None else prompt_backend_override()
-        )
-        needs_terminal = getattr(injected, "needs_terminal", True)
-        with (
-            self._screen_terminal(command=screen.command, alternative=screen.alternative)
-            if needs_terminal
-            else nullcontext(self)
-        ):
+        with self._terminal_for(command=screen.command, alternative=screen.alternative):
             try:
                 # Read inside the block: the default backend is built on the swapped streams.
                 outcome = self.prompt_backend.run_screen(screen, theme=self.theme)
@@ -445,7 +450,7 @@ class UiContext:
         """Run the two-pane multi-select picker, a full-screen screen like every other.
 
         With piped stdin or a redirected stderr it draws on the controlling
-        terminal (see :meth:`screen_terminal`). Raises
+        terminal (see :meth:`_screen_terminal`). Raises
         :class:`OperationCancelledError` when the user quits, and
         :class:`UsageError` naming ``request.command`` and ``request.alternative``
         (a generic message when unset) when there is no terminal at all.
@@ -457,16 +462,9 @@ class UiContext:
             raise ConfigError(
                 "picker items must have unique ids", category="failed", system="untaped"
             )
-        # An injected backend can say it needs no terminal; the default one always does.
-        injected = self._prompt_backend or prompt_backend_override()
-        needs_terminal = getattr(injected, "needs_terminal", True)
-        with (
-            self.screen_terminal(
-                command=request.command or GENERIC_COMMAND,
-                alternative=request.alternative or GENERIC_ALTERNATIVE,
-            )
-            if needs_terminal
-            else nullcontext(self)
+        with self._terminal_for(
+            command=request.command or GENERIC_COMMAND,
+            alternative=request.alternative or GENERIC_ALTERNATIVE,
         ):
             try:
                 picked = self.prompt_backend.pick_many(request)

@@ -455,7 +455,10 @@ class _SelectedPane(_Drawn):
             setting_for(state, key).label,
             state.editing or "",
             help=f"enter save {frame.symbol('separator')} esc cancel",
-            complete=lambda _text: completions(state),
+            # The reducer owns the candidates (and tab takes the first), so the input only
+            # shows them: handed over with the text they were computed for.
+            matches=tuple(c for c in completions(state) if c != state.editing),
+            matched=state.editing or "",
         )
 
     def _button(self, frame: Frame, inner: int, *, boxed: bool, focused: bool) -> RenderableType:

@@ -290,7 +290,8 @@ class ScriptedPromptBackend:
     :func:`drive_screen` with commands run synchronously, so a command-level
     test can run a real screen). ``ran`` keeps the screens it was asked to
     run. The backend never touches a terminal, so ``UiContext.run`` and
-    ``UiContext.pick_many`` do not require one: a command test needs no ``terminal=True`` and no TTY stdin.
+    ``UiContext.pick_many`` do not require one: a command test needs no
+    ``terminal=True`` and no TTY stdin.
     """
 
     needs_terminal = False
