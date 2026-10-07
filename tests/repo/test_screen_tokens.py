@@ -36,6 +36,7 @@ from untaped.theme import BUILTIN_THEMES
 SCREEN_MODULES = (
     "packages/untaped/src/untaped/screen/components/*.py",
     "packages/untaped/src/untaped/picker/screen.py",
+    "packages/untaped/src/untaped/management/setup_screen.py",
 )
 EXEMPT_HOMES = (
     "packages/untaped/src/untaped/screen/core.py",
