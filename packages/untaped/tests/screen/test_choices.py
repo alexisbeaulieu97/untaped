@@ -1,12 +1,17 @@
-"""The choice components: Select, SingleList, MultiList, Check and Cycle."""
+"""The choice components (Select, SingleList, MultiList, Check, Cycle), Tabs and Buttons."""
 
 from __future__ import annotations
+
+from dataclasses import replace
 
 import pytest
 
 from screen.gallery import field_of, lines, render_styled, role, run_solo, style_of
+from untaped.screen.components.buttons import Button, Buttons, Pressed
 from untaped.screen.components.choices import Check, Cycle, ListItem, MultiList, Select, SingleList
-from untaped.screen.core import Activate, Cancel, Frame, Key
+from untaped.screen.components.inputs import NumberInput, SecretInput, TextInput
+from untaped.screen.components.tabs import Tab, Tabs
+from untaped.screen.core import Activate, Cancel, Frame, Key, NextField, PrevField
 from untaped.stability import Experimental, function_mark
 from untaped.theme import BUILTIN_THEMES
 
@@ -378,4 +383,275 @@ def test_an_unrelated_message_returns_the_same_object(index: int) -> None:
 
 def test_the_choice_components_are_marked_experimental() -> None:
     for cls in (Check, Cycle, ListItem, MultiList, Select, SingleList):
+        assert isinstance(function_mark(cls), Experimental)
+
+
+# --- Tabs -------------------------------------------------------------------------
+
+
+def _token_tabs(**changes: object) -> Tabs:
+    base = Tabs(
+        "Token source",
+        (
+            Tab(
+                "keychain",
+                "Keychain",
+                (("token", SecretInput("Token", help="Stored in your keychain, never shown.")),),
+            ),
+            Tab("enter", "Enter"),
+            Tab(
+                "command",
+                "Command",
+                (
+                    ("command", TextInput("Command", "op read x", help="Prints the token.")),
+                    ("timeout", NumberInput("Timeout", "30", minimum=1, maximum=600)),
+                ),
+            ),
+            Tab("env", "Env", note="Read from the environment."),
+        ),
+    )
+    return replace(base, **changes) if changes else base
+
+
+def test_tabs_switch_their_own_fields() -> None:
+    keychain = run_solo(_token_tabs(), size=(60, 20))
+    assert "Token" in keychain.frame
+    assert "Stored in your keychain" in keychain.frame
+    assert "Command" in keychain.frame  # the tab name only
+    assert "Prints the token." not in keychain.frame
+
+    command = run_solo(_token_tabs(), "right", "right")
+    assert "op read x" in command.frame
+    assert "Prints the token." in command.frame
+    assert "Stored in your keychain" not in command.frame
+    assert field_of(command).active == "command"
+
+    env = run_solo(_token_tabs(), "right", "right", "right")
+    assert "Read from the environment." in env.frame
+    assert "op read x" not in env.frame
+
+
+def test_the_active_tab_is_underlined_with_the_active_token_and_the_others_with_the_inactive() -> (
+    None
+):
+    first = lines(run_solo(_token_tabs()).frame)[2]
+    assert first.startswith("│ ━") and first.count("━") > 5 and "─" in first
+
+    plain = lines(run_solo(_token_tabs(), theme=BUILTIN_THEMES["plain"]).frame)[2]
+    assert "=" in plain and "-" in plain
+    segments = _segments(_token_tabs(), width=46)
+    assert style_of(segments, "━").color == role(DEFAULT, "screen.accent").color
+    underline = _row(segments, "━")
+    assert style_of(underline, "─").color == role(DEFAULT, "screen.border").color
+
+
+def test_hidden_tabs_keep_what_their_fields_hold() -> None:
+    run = run_solo(_token_tabs(), "tab", *"abc", "shift-tab", "right", "left")
+
+    assert field_of(run).active == "keychain"
+    assert field_of(run).tabs[0].fields[0][1].value.get_secret_value() == "abc"
+    assert field_of(run).value["token"].get_secret_value() == "abc"
+
+
+def test_tabs_value_is_the_active_tab_and_its_fields_and_validation_covers_only_those() -> None:
+    tabs = _token_tabs()
+    tabs = replace(
+        tabs,
+        tabs=(
+            replace(
+                tabs.tabs[0],
+                fields=(
+                    (
+                        "token",
+                        SecretInput("Token", validator=lambda v: "Token needed."),
+                    ),
+                ),
+            ),
+            *tabs.tabs[1:],
+        ),
+    )
+
+    assert tabs.value == {"tab": "keychain", "token": tabs.tabs[0].fields[0][1].value}
+    assert tabs.validate() == "Token needed."
+    command = replace(tabs, active="command")
+    assert command.value == {"tab": "command", "command": "op read x", "timeout": 30}
+    assert command.validate() == ""  # the keychain tab's error does not count while hidden
+    bad = replace(
+        command,
+        tabs=tuple(
+            replace(
+                tab,
+                fields=(
+                    (
+                        "command",
+                        TextInput("Command", validator=lambda v: "No."),
+                    ),
+                ),
+            )
+            if tab.id == "command"
+            else tab
+            for tab in command.tabs
+        ),
+    )
+    assert bad.validate() == "No."
+    assert _token_tabs(active="env").value == {"tab": "env"}
+
+
+def test_left_and_right_change_the_tab_only_while_the_header_has_focus() -> None:
+    tabs = _token_tabs()
+    assert tabs.update(Key("right"))[0].active == "enter"
+    assert tabs.update(Key("left"))[0] is tabs  # already on the first tab
+    assert _token_tabs(active="env").update(Key("right"))[0].active == "env"
+
+    run = run_solo(_token_tabs(active="command"), "tab", "left", "left", "x")  # in the field
+    assert field_of(run).active == "command"
+    assert field_of(run).tabs[2].fields[0][1].value == "op readx x"
+
+
+def test_a_field_in_a_tab_gets_keys_before_the_strip() -> None:
+    run = run_solo(_token_tabs(active="command"), "tab", "end", *"!?", "left")
+
+    command = field_of(run).tabs[2].fields[0][1]
+    assert command.value == "op read x!?"
+    assert command.cursor == len("op read x!")
+    assert field_of(run).focus == 1
+    assert field_of(run).active == "command"  # left moved the caret, not the tab
+
+
+def test_tab_walks_the_header_then_each_field_and_hands_focus_to_the_parent_at_the_ends() -> None:
+    run = run_solo(_token_tabs(active="command"), "tab")
+    assert field_of(run).focus == 1
+    run = run_solo(_token_tabs(active="command"), "tab", "tab")
+    assert field_of(run).focus == 2
+    assert run.model.unhandled == ()
+    run = run_solo(_token_tabs(active="command"), "tab", "tab", "tab")
+    assert field_of(run).focus == 2  # the last slot: the strip passed on the move
+    assert run.model.unhandled == (NextField(),)
+
+    run = run_solo(_token_tabs(active="command", focus=2), "shift-tab", "shift-tab", "shift-tab")
+    assert field_of(run).focus == 0
+    assert run.model.unhandled == (PrevField(),)
+
+    header = _token_tabs()
+    assert header.update(PrevField())[0] is header
+    no_fields = _token_tabs(active="enter")
+    assert no_fields.update(NextField())[0] is no_fields
+    last = _token_tabs(active="command", focus=2)
+    assert last.update(NextField())[0] is last
+
+
+def test_the_focus_ring_follows_the_slot_and_a_field_draws_without_its_own_box() -> None:
+    focused = _segments(_token_tabs(active="command", focus=2), width=46)
+    unfocused = _segments(_token_tabs(active="command", focus=2), focused=False, width=46)
+
+    assert style_of(focused, "╭").color == role(DEFAULT, "screen.focus").color
+    assert style_of(unfocused, "╭").color == role(DEFAULT, "screen.border").color
+    frame = run_solo(_token_tabs(active="command", focus=1), width=46).frame
+    assert frame.count("╭") == 1  # only the strip's own box
+    carets = [s for s in focused if s.style is not None and s.style.reverse]
+    assert carets  # the focused field draws its caret
+
+
+def test_a_tab_edit_clears_the_strips_error_and_a_secret_never_shows() -> None:
+    secret = "tok-123-secret"
+    run = run_solo(_token_tabs().with_error("Token needed."), "tab", *secret)
+
+    assert "Token needed." not in run.frame  # the edit made the message stale
+    assert all(secret not in frame for frame in run.frames)
+    assert secret not in repr(field_of(run))
+    shown = run_solo(_token_tabs().with_error("Token needed."))
+    assert "Token needed." in shown.frame
+
+
+def test_tabs_need_a_tab_and_fall_back_to_the_first_for_an_unknown_one() -> None:
+    with pytest.raises(ValueError, match="at least one tab"):
+        Tabs("T", ())
+    assert _token_tabs(active="nope").active == "keychain"
+    assert _token_tabs(focus=9).focus == 1
+
+
+# --- Buttons ----------------------------------------------------------------------
+
+
+def _buttons() -> Buttons:
+    return Buttons(
+        (
+            Button("save", "Save", "primary"),
+            Button("anyway", "Save anyway"),
+            Button("cancel", "Cancel", "ghost"),
+        )
+    )
+
+
+def test_buttons_activate_sends_pressed() -> None:
+    run = run_solo(_buttons(), "enter")
+    assert run.model.seen == (Pressed("save"),)
+
+    run = run_solo(_buttons(), "right", "enter")
+    assert run.model.seen == (Pressed("anyway"),)
+    assert field_of(run).value == "anyway"
+    run = run_solo(_buttons(), "right", "right", "right", "enter")  # clamped at the last
+    assert run.model.seen == (Pressed("cancel"),)
+
+
+def test_buttons_move_with_left_and_right_and_ignore_everything_else() -> None:
+    buttons = _buttons()
+    assert buttons.update(Key("left"))[0] is buttons
+    assert buttons.update(Key("right"))[0].focus == 1
+    for key in ("up", "tab", "x", " ", "esc"):
+        assert buttons.update(Key(key))[0] is buttons
+    assert buttons.update(Key("enter"))[0] is buttons  # enter is Activate's, after the keys
+    assert Buttons(()).update(Activate()) == (Buttons(()), [])
+    assert Buttons(()).value == ""
+
+
+def test_primary_and_secondary_are_boxed_and_ghost_is_plain_text() -> None:
+    frame = run_solo(_buttons(), size=(60, 8)).frame
+
+    assert frame.count("╭") == 2
+    assert "Cancel" in frame
+    assert "│ Cancel" not in frame
+    assert lines(frame)[0].count("╭") == 2
+
+
+def test_the_focused_button_has_the_focus_border_and_the_accent_label() -> None:
+    segments = render_styled(_buttons().view(Frame(60, 8, DEFAULT), focused=True), width=60)
+
+    assert style_of(segments, "╭").color == role(DEFAULT, "screen.focus").color
+    assert style_of(segments, "Save").color == role(DEFAULT, "screen.accent").color
+    assert style_of(segments, "Cancel").color == role(DEFAULT, "screen.muted").color
+    unfocused = render_styled(_buttons().view(Frame(60, 8, DEFAULT), focused=False), width=60)
+    assert style_of(unfocused, "╭").color == role(DEFAULT, "screen.border").color
+    assert style_of(unfocused, "Save").bold  # primary stays bold
+
+
+def test_without_a_box_buttons_are_a_line_with_the_chosen_symbol_before_the_focused_one() -> None:
+    run = run_solo(_buttons(), "right", theme=BUILTIN_THEMES["quiet"])
+
+    assert lines(run.frame) == ["  Save  ▶ Save anyway    Cancel"]
+
+
+def test_a_buttons_error_shows_under_the_row() -> None:
+    run = run_solo(_buttons().with_error("Check failed."), size=(60, 8))
+
+    assert "Check failed." in run.frame
+
+
+@pytest.mark.parametrize("theme", THEMES)
+@pytest.mark.parametrize("size", [(100, 30), (40, 12), (20, 8)])
+def test_every_builtin_theme_renders_tabs_and_buttons(theme: str, size: tuple[int, int]) -> None:
+    for component in (_token_tabs(), _token_tabs(active="command", focus=2), _buttons()):
+        for focused in (True, False):
+            run = run_solo(component, theme=BUILTIN_THEMES[theme], size=size, focused=focused)
+            assert all(len(line) <= size[0] for line in run.frame.splitlines())
+
+
+def test_plain_tabs_and_buttons_frames_are_pure_ascii() -> None:
+    for component in (_token_tabs(), _token_tabs(active="command", focus=2), _buttons()):
+        frame = run_solo(component, theme=BUILTIN_THEMES["plain"]).frame
+        assert frame.isascii(), frame
+
+
+def test_tabs_and_buttons_are_marked_experimental() -> None:
+    for cls in (Tab, Tabs, Button, Buttons, Pressed):
         assert isinstance(function_mark(cls), Experimental)
