@@ -474,7 +474,8 @@ def _deprecated_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict
     for item in found:
         old = f"{item.section}.{item.old}"
         if item.kind == "deprecated":
-            parts.append(f"{old} (profile {item.profile}, deprecated): {item.message}")
+            advice = f": use {item.message}" if item.message else ""
+            parts.append(f"{old} (profile {item.profile}, deprecated){advice}")
         else:
             retired = ", retired" if item.kind == "retired" else ""
             parts.append(f"{old} (profile {item.profile}{retired}) → {item.section}.{item.new}")

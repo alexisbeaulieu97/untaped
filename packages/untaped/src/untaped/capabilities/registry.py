@@ -36,7 +36,7 @@ from untaped.settings import (
     Settings,
     validate_disjoint_settings_sections,
 )
-from untaped.stability import Stability, check_stability
+from untaped.stability import Stability, check_stability, mark_errors
 
 #: Distribution whose version ``Requires-Dist: untaped`` is checked against.
 _CORE_DISTRIBUTION = "untaped"
@@ -501,6 +501,9 @@ def _check_duplicate_section(spec: CapabilitySpec, state: _CompositionState) -> 
 def _check_state_model(spec: CapabilitySpec, state: _CompositionState) -> None:
     if spec.state_model is None:
         return
+    marked = mark_errors(spec.state_model, state=True)
+    if marked:
+        raise _Quarantine("bad-settings-keys", f"capability {spec.name!r}: {marked[0]}")
     try:
         validate_disjoint_settings_sections(
             spec.config_section, spec.profile_model, spec.state_model
