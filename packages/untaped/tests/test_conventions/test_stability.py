@@ -388,6 +388,10 @@ class _BadKey(BaseModel):
     other: Annotated[bool, deprecated(replacement="untaped nothing here")] = False
 
 
+class _PydanticDeprecated(BaseModel):
+    old: Annotated[int, warnings.deprecated("old")] = 0
+
+
 class _Nested(BaseModel):
     trial: Annotated[int, experimental] = 1
     old: Annotated[bool, deprecated()] = False
@@ -413,6 +417,12 @@ def test_experimental_under_experimental_is_nested_but_deprecated_is_not() -> No
 
 def test_hand_typed_mark_in_a_settings_description() -> None:
     assert _setting_violations(_HandTyped) == ["svc.trial::hand-typed-mark::description"]
+
+
+def test_wrong_deprecated_on_a_settings_field() -> None:
+    assert _setting_violations(_PydanticDeprecated) == [
+        "svc.old::wrong-deprecated::uses pydantic's deprecated=; use untaped's deprecated(...)"
+    ]
 
 
 def test_bad_replacement_on_a_setting_mark() -> None:

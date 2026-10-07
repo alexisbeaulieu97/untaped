@@ -7,7 +7,8 @@ Checks every command of a subtree against ``docs/plugins.md``:
   description (core writes the line from the mark; a hidden option's help is
   exempt);
 - ``wrong-deprecated`` — a command function carries Python's
-  ``warnings.deprecated`` instead of untaped's ``@deprecated(...)``;
+  ``warnings.deprecated``, or a settings field pydantic's ``deprecated=``,
+  instead of untaped's ``@deprecated(...)``;
 - ``nested-mark`` — a mark under a mark that makes it redundant or
   contradictory: experimental under experimental, or anything under
   deprecated (deprecated under experimental is allowed); a settings field
@@ -52,6 +53,7 @@ from untaped.stability import (
     field_descriptions,
     mark_of,
     marks,
+    pydantic_deprecated_fields,
     replacement_path,
 )
 
@@ -119,6 +121,11 @@ def _setting_violations(
         for path, text in field_descriptions(models[section]).items():
             if _HAND_TYPED.search(text):
                 yield f"{section}.{path}::hand-typed-mark::description"
+        for path in pydantic_deprecated_fields(models[section]):
+            yield (
+                f"{section}.{path}::wrong-deprecated::"
+                "uses pydantic's deprecated=; use untaped's deprecated(...)"
+            )
     capability = {
         capability.spec.config_section: capability.spec.stability
         for capability in result.capabilities

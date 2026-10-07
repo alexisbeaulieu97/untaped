@@ -30,7 +30,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from untaped.config_schema import unwrap_optional
+from untaped.config_schema import unwrap_optional, walk_settings
 from untaped.errors import ConfigError
 from untaped.messages import deprecated_message
 from untaped.profile_resolver import DEFAULT_PROFILE
@@ -412,22 +412,13 @@ def scan_keys(
                 item.old for item in found if (item.profile, item.section) == (profile, section)
             }
             use = replacement_text(capability, None)
+            keys = (".".join(d.path) for d in walk_settings(model, include_collections=True))
             found.extend(
                 FoundKey(profile, section, key, None, "deprecated", use)
-                for key in _leaf_keys(data)
-                if key not in reported
+                for key in keys
+                if key not in reported and _lookup(data, key) is not _MISSING
             )
     return found
-
-
-def _leaf_keys(data: Mapping[str, Any], prefix: str = "") -> Iterator[str]:
-    """The dotted path of every leaf set in ``data``, in order."""
-    for key, value in data.items():
-        path = f"{prefix}{key}"
-        if isinstance(value, Mapping) and value:
-            yield from _leaf_keys(value, f"{path}.")
-        else:
-            yield path
 
 
 @dataclass(frozen=True)

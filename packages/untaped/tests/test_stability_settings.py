@@ -15,7 +15,14 @@ from untaped.capabilities.registry import CapabilitySpec
 from untaped.conventions.settings_names import settings_name_violations
 from untaped.deprecated_keys import key_mappings, mapping_errors
 from untaped.errors import ConfigError
-from untaped.stability import Deprecated, deprecated, experimental, field_marks, mark_errors
+from untaped.stability import (
+    Deprecated,
+    deprecated,
+    experimental,
+    field_marks,
+    mark_errors,
+    pydantic_deprecated_fields,
+)
 from untaped.testing import provider_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -100,7 +107,6 @@ class ObjectReplacement(BaseModel):
         (UnionMark, "sits inside its type"),
         (NestedMark, "sits inside its type"),
         (ModelMark, "'inner' is a model; mark its fields instead"),
-        (PythonDeprecated, "uses pydantic's deprecated="),
         (TwoMarks, "more than one stability mark"),
         (ObjectReplacement, "replacement of the mark on setting 'value' must be text"),
     ],
@@ -110,6 +116,17 @@ def test_a_misplaced_mark_is_refused_loudly(model: type[BaseModel], error: str) 
     assert any(error in sentence for sentence in mapping_errors(model))
     with pytest.raises(ConfigError, match="invalid key declarations"):
         key_mappings(model)
+
+
+def test_a_pydantic_deprecated_field_still_loads_but_is_a_lint_error() -> None:
+    assert mark_errors(PythonDeprecated) == []
+    assert pydantic_deprecated_fields(PythonDeprecated) == ["old"]
+
+    composition = bootstrap.compose_root(
+        candidates=[provider_candidate(make_spec(name="svc", profile=PythonDeprecated))]
+    )
+
+    assert [capability.spec.name for capability in composition.capabilities] == ["svc"]
 
 
 def test_a_misplaced_mark_quarantines_its_provider() -> None:

@@ -176,7 +176,6 @@ ignore_names = [
     "concat",
     "renamed_keys",  # settings ClassVars read by untaped.deprecated_keys
     "retired_keys",
-    "deprecated_settings",
 ]
 
 [tool.coverage.run]
