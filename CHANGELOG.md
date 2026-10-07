@@ -60,6 +60,9 @@
   and a capability's settings inherit its mark. `config list` and `config get`
   report each setting's `stability`.
   ([#519](https://github.com/alexisbeaulieu97/untaped/pull/519))
+- `ui.symbols` and `ui.color_roles` gain the names screens use (`chosen`,
+  `checked`, ..., `screen.accent`, ...); `config list` and the config reference
+  list them. ([#PR](https://github.com/alexisbeaulieu97/untaped/pull/PR))
 
 ### Changed
 
@@ -112,6 +115,9 @@
   `deprecated_settings` declaration; the `shell.aliases`, `awx.test_timeout_seconds`
   and `awx.test_parallel` settings are marked.
   ([#519](https://github.com/alexisbeaulieu97/untaped/pull/519))
+- `config set ui.symbols|ui.color_roles` and `doctor` reject names that no
+  theme defines; a stray name already in `config.yml` keeps working.
+  ([#PR](https://github.com/alexisbeaulieu97/untaped/pull/PR))
 
 ### Deprecated
 
