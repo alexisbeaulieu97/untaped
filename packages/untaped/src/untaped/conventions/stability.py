@@ -3,24 +3,26 @@
 Checks every command of a subtree against ``docs/plugins.md``:
 
 - ``hand-typed-mark`` — an ``Experimental:`` or ``Deprecated:`` line in an app
-  help, a command docstring or a visible parameter's help (core writes the
-  line into the epilogue from the mark; a hidden option's help is exempt);
+  help, a command docstring, a visible parameter's help or a settings field's
+  description (core writes the line from the mark; a hidden option's help is
+  exempt);
 - ``wrong-deprecated`` — a command function carries Python's
   ``warnings.deprecated`` instead of untaped's ``@deprecated(...)``;
 - ``nested-mark`` — a mark under a mark that makes it redundant or
   contradictory: experimental under experimental, or anything under
-  deprecated (deprecated under experimental is allowed);
+  deprecated (deprecated under experimental is allowed); a settings field
+  sits under its capability;
 - ``bad-replacement`` — a ``deprecated`` replacement that is not mounted, is
   itself deprecated, or is text naming a command that does not resolve, a
   command of the capability itself (pass the object), or a setting that does
-  not exist;
+  not exist (a setting's replacement is always text);
 - ``mark-on-spec`` — a capability's top app carries a mark of its own, which a
   lazy mount cannot see (mark the ``CapabilitySpec`` instead);
 - ``reserved-panel`` — a group named ``Experimental`` or ``Deprecated`` that is
   not core's panel.
 
-Lines are ``<command path>::<rule>::<detail>``; they carry no source line, so
-no inline marker can suppress them.
+Lines are ``<command path or setting key>::<rule>::<detail>``; they carry no
+source line, so no inline marker can suppress them.
 """
 
 from __future__ import annotations
@@ -34,7 +36,7 @@ from cyclopts import App, Group
 from untaped._root_options import resolve_command
 from untaped.capabilities.registry import CapabilitySpec, CompositionResult
 from untaped.config_schema import walk_settings
-from untaped.settings import get_profile_settings_model
+from untaped.settings import get_profile_settings_model, profile_section_models
 from untaped.stability import (
     COMMAND_TEXT,
     DEPRECATED_GROUP,
@@ -46,6 +48,7 @@ from untaped.stability import (
     Mark,
     Stability,
     app_mark,
+    field_descriptions,
     mark_of,
     marks,
     replacement_path,
@@ -77,15 +80,18 @@ def stability_violations(
     names: Iterable[str],
     *,
     spec: CapabilitySpec | None = None,
+    sections: Iterable[str] = (),
 ) -> list[str]:
     """``["<command path>::<rule>::<detail>", ...]`` for the subtrees ``root[name]``.
 
-    ``spec`` is the checked capability's, for the rule that needs it. The
-    marks come from :func:`untaped.stability.marks` over the whole
+    ``spec`` is the checked capability's, for the rule that needs it; its
+    settings section is checked too, as are the ``sections`` named (core's).
+    The marks come from :func:`untaped.stability.marks` over the whole
     composition (every lazy capability resolved), so a replacement can be
     looked up anywhere.
     """
     wanted = frozenset(names)
+    settings = frozenset(sections) | ({spec.config_section} if spec is not None else frozenset())
     found: list[str] = []
     for top in sorted(wanted):
         subtree = root[top]
@@ -98,7 +104,8 @@ def stability_violations(
                 found.append(f"{where}::wrong-deprecated::{path[-1]} uses warnings.deprecated")
             found.extend(f"{where}::reserved-panel::{name}" for name in _reserved_panels(app))
     every = marks(root, result, resolve=True)
-    for mark in every:
+    found.extend(_setting_violations(root, result, settings, every))
+    for mark in (mark for mark in every if mark.target != "setting"):
         if mark.where.split()[0] in wanted:
             found.extend(f"{mark.where}::nested-mark::{d}" for d in _nested(mark, every))
             if isinstance(mark.stability, Deprecated):
@@ -107,6 +114,35 @@ def stability_violations(
                     for d in _bad_replacement(root, mark.stability, spec.name if spec else None)
                 )
     return sorted(found)
+
+
+def _setting_violations(
+    root: App, result: CompositionResult, sections: frozenset[str], every: list[Mark]
+) -> Iterator[str]:
+    """The rules for the descriptions and marks of the settings of ``sections``."""
+    models = profile_section_models()
+    for section in sorted(sections & models.keys()):
+        for path, text in field_descriptions(models[section]).items():
+            if _HAND_TYPED.search(text):
+                yield f"{section}.{path}::hand-typed-mark::description"
+    capability = {
+        capability.spec.config_section: capability.spec.stability
+        for capability in result.capabilities
+    }
+    for mark in every:
+        section = mark.where.partition(".")[0]
+        if mark.target != "setting" or section not in sections:
+            continue
+        above = capability.get(section)
+        if isinstance(above, Deprecated):
+            yield f"{mark.where}::nested-mark::{_kind(mark.stability)} under deprecated {section}"
+        elif isinstance(above, Experimental) and isinstance(mark.stability, Experimental):
+            yield f"{mark.where}::nested-mark::experimental under experimental {section}"
+        if isinstance(mark.stability, Deprecated) and isinstance(mark.stability.replacement, str):
+            yield from (
+                f"{mark.where}::bad-replacement::{detail}"
+                for detail in _bad_text(root, mark.stability.replacement, None)
+            )
 
 
 def _spec_violations(spec: CapabilitySpec, top: App) -> Iterator[str]:

@@ -366,19 +366,22 @@ class Mark:
     """One mark: where it sits, what it marks, and what it says."""
 
     where: str
-    """The command path (``awx test``) or capability name."""
-    target: Literal["capability", "group", "command"]
+    """The command path (``awx test``), capability name or setting key (``awx.test_parallel``)."""
+    target: Literal["capability", "group", "command", "setting"]
     stability: Stability
     replacement: str | None
     """The replacement as help shows it, or ``None``."""
 
 
 def marks(root: App, result: CompositionResult, *, resolve: bool = False) -> list[Mark]:
-    """Every mark in the composition: capability specs, groups and commands.
+    """Every mark in the composition: capability specs, groups, commands and settings.
 
     Takes the composition, not only the app, because a spec mark is not on a
-    lazy app. ``resolve=True`` imports every lazy capability first (tests and
-    generators only). Holds no state outside its arguments.
+    lazy app. A setting is recorded only for a mark of its own field; one
+    inherited from its capability is that capability's record (ask
+    :func:`setting_mark` for a setting's effective mark). ``resolve=True``
+    imports every lazy capability first (tests and generators only); the
+    settings come from the sections the composition registered.
     """
     found: list[Mark] = []
     for capability in result.capabilities:
@@ -387,7 +390,16 @@ def marks(root: App, result: CompositionResult, *, resolve: bool = False) -> lis
             found.append(_record(spec.name, "capability", spec.stability, root))
     capabilities = frozenset(capability.spec.name for capability in result.capabilities)
     _collect(root, root, (), capabilities, found, resolve=resolve)
+    found.extend(_setting_marks(root))
     return found
+
+
+def _setting_marks(root: App) -> Iterator[Mark]:
+    from untaped.settings import profile_section_models  # noqa: PLC0415
+
+    for section, model in profile_section_models().items():
+        for path, stability in field_marks(model).items():
+            yield _record(f"{section}.{path}", "setting", stability, root)
 
 
 def _record(where: str, target: Any, stability: Stability, root: App) -> Mark:
@@ -448,6 +460,15 @@ def _section_fields(
         yield f"{prefix}{name}", field, is_model
         if is_model:
             yield from _section_fields(nested, f"{prefix}{name}.")
+
+
+def field_descriptions(model: type[BaseModel]) -> dict[str, str]:
+    """The ``description`` of each described leaf field of a section ``model``, by dotted path."""
+    return {
+        path: field.description
+        for path, field, is_model in _section_fields(model)
+        if field.description and not is_model
+    }
 
 
 def field_marks(model: type[BaseModel]) -> dict[str, Stability]:
@@ -515,8 +536,8 @@ def setting_mark(
     """The effective mark of setting ``key`` (``section.field``), or ``None`` when stable.
 
     The field's own mark wins; otherwise the setting inherits the mark of the
-    capability that owns its section. Pure: the registry-reading wrapper is
-    :func:`untaped.settings.setting_stability`.
+    capability that owns its section. Pure: ``section_stability`` is what
+    :func:`untaped.settings.section_stabilities` returns.
     """
     section, _, rest = key.partition(".")
     model = sections.get(section)
@@ -529,16 +550,6 @@ def stability_name(mark: Stability | None) -> SettingStability:
     if mark is None:
         return "stable"
     return "experimental" if isinstance(mark, Experimental) else "deprecated"
-
-
-def stability_of(
-    key: str,
-    *,
-    sections: Mapping[str, type[BaseModel]],
-    section_stability: Mapping[str, Stability | None],
-) -> SettingStability:
-    """The effective stability of setting ``key``: :func:`setting_mark` as a word."""
-    return stability_name(setting_mark(key, sections=sections, section_stability=section_stability))
 
 
 # --- renamed commands and options -------------------------------------------

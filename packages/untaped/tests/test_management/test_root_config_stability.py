@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Annotated, Any, ClassVar
 
@@ -15,18 +15,24 @@ from untaped import bootstrap
 from untaped.config.models import SettingEntry, Source
 from untaped.management.config import _emit_split_tables, build_root_config_app
 from untaped.management.doctor import build_root_doctor_app
-from untaped.settings import setting_stability
+from untaped.settings import profile_section_models, section_stabilities
 from untaped.stability import (
     deprecated,
     enable_show_deprecated,
     experimental,
     reset_show_deprecated,
     setting_mark,
-    stability_of,
+    stability_name,
 )
 from untaped.testing import CliInvoker, CliResult
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
+
+
+def stability_of(
+    key: str, *, sections: Mapping[str, type[BaseModel]], section_stability: Mapping[str, Any]
+) -> str:
+    return stability_name(setting_mark(key, sections=sections, section_stability=section_stability))
 
 
 class Trial(BaseModel):
@@ -283,8 +289,13 @@ def test_the_pure_lookup_prefers_the_field_over_the_section() -> None:
     )
 
 
-def test_the_registry_wrapper_reads_the_composed_sections() -> None:
+def test_the_registry_holds_the_composed_sections_and_their_marks() -> None:
     _compose()
+
+    def setting_stability(key: str) -> str:
+        return stability_of(
+            key, sections=profile_section_models(), section_stability=section_stabilities()
+        )
 
     assert setting_stability("sunset.port") == "deprecated"
     assert setting_stability("beta.size") == "experimental"
