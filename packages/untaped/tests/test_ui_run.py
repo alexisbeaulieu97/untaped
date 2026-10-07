@@ -310,6 +310,21 @@ def test_a_scripted_quit_returns_its_result_and_an_exception_class_is_raised() -
         ui.run(_screen())
 
 
+def test_a_scripted_cancel_class_is_a_cancel() -> None:
+    ui = _interactive(ScriptedPromptBackend(screens=[Cancel]))
+    with pytest.raises(OperationCancelledError):
+        ui.run(_screen())
+
+
+def test_a_falsy_injected_backend_is_still_the_one_asked_about_the_terminal() -> None:
+    class Falsy(ScriptedPromptBackend):
+        def __bool__(self) -> bool:
+            return False
+
+    ui = UiContext(stdin=io.StringIO(), prompt_backend=Falsy(screens=["x"]))
+    assert ui.run(_screen()) == "x"  # needs_terminal=False read from it, not from the override
+
+
 def test_scripted_keys_that_do_not_end_the_screen_fail_loudly() -> None:
     backend = ScriptedPromptBackend(screens=[ScreenKeys("a")])
     with pytest.raises(ConfigError, match="did not end screen"):

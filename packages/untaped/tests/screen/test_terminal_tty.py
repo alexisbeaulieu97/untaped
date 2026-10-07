@@ -6,12 +6,13 @@ import os
 import select
 import signal
 import sys
-import termios
 import threading
 import time
 from typing import TextIO
 
 import pytest
+
+termios = pytest.importorskip("termios")  # POSIX only
 
 pytestmark = pytest.mark.skipif(
     sys.platform == "win32" or not hasattr(os, "openpty"), reason="needs a POSIX pseudo-terminal"

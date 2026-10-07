@@ -12,6 +12,7 @@ import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from typing import Any
 
 import pytest
 from prompt_toolkit.data_structures import Size
@@ -20,6 +21,7 @@ from prompt_toolkit.input import PipeInput, create_pipe_input
 from prompt_toolkit.output import ColorDepth, DummyOutput, Output
 from prompt_toolkit.output.vt100 import Vt100_Output
 
+from untaped.screen import terminal
 from untaped.screen.core import Cancel, Cmd, Frame, Key, Paste, Quit, Resize, Screen
 from untaped.screen.terminal import TerminalHost, build_application, run_terminal_screen
 from untaped.theme import BUILTIN_THEMES
@@ -454,6 +456,36 @@ def test_the_first_frame_after_a_resize_is_painted_at_the_new_size() -> None:
         assert runtime.size == (50, 10)
 
 
+def test_the_console_that_paints_has_the_terminal_size_after_a_resize(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sizes: list[tuple[int, int]] = []
+    real = terminal.capture_console
+
+    def spy(width: int, height: int, **kwargs: Any) -> Any:
+        sizes.append((width, height))
+        return real(width, height, **kwargs)
+
+    monkeypatch.setattr(terminal, "capture_console", spy)
+    recorder = Recorder(size=(80, 24))
+    typing = Typing()
+    with create_pipe_input() as pipe:
+        application, _host, runtime = build_application(
+            typing.screen, input=pipe, output=recorder.output, theme=THEME, environ={}
+        )
+        runtime.start()
+        control = application.layout.current_control
+        control.text()  # type: ignore[attr-defined]
+        assert sizes[-1] == (80, 24)
+        recorder.size = Size(rows=10, columns=50)
+
+        async def repaint() -> None:
+            control.text()  # type: ignore[attr-defined]
+
+        asyncio.run(repaint())
+    assert sizes[-1] == (50, 10)
+
+
 def test_an_inline_screen_erases_itself_and_a_full_one_owns_the_screen() -> None:
     with create_pipe_input() as pipe:
         inline, _, _ = build_application(
@@ -593,3 +625,110 @@ def test_the_host_finishes_the_application_once() -> None:
             host.finish()  # a second finish must not try to exit again
 
         assert application.run(pre_run=start) == Quit("done")
+
+
+# --- termination signals ----------------------------------------------------------
+
+_TERMINATING = [
+    sig for sig in (getattr(signal, "SIGTERM", None), getattr(signal, "SIGHUP", None)) if sig
+]
+posix_signals = pytest.mark.skipif(sys.platform == "win32", reason="needs POSIX signals")
+
+
+def _guard(number: int, _frame: object) -> None:  # pragma: no cover - must never run
+    raise AssertionError(f"signal {number} reached the handler installed before the screen")
+
+
+@pytest.fixture
+def termination_installs(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[int]]:
+    """The termination signals the adapter tries to handle; every one starts as ``_guard``."""
+    attempts: list[int] = []
+    real = asyncio.AbstractEventLoop.add_signal_handler
+
+    def spy(self: Any, sig: int, *args: Any) -> None:
+        if sig in _TERMINATING:
+            attempts.append(sig)
+            raise RuntimeError("recorded")  # keep the test's own handlers out of it
+        real(self, sig, *args)
+
+    previous = {sig: signal.signal(sig, _guard) for sig in _TERMINATING}
+    monkeypatch.setattr(type(asyncio.new_event_loop()), "add_signal_handler", spy)
+    try:
+        yield attempts
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
+@posix_signals
+@pytest.mark.parametrize("error", [NotImplementedError, RuntimeError, ValueError])
+def test_a_loop_that_cannot_install_a_signal_handler_still_runs_the_screen(
+    monkeypatch: pytest.MonkeyPatch, error: type[Exception]
+) -> None:
+    if threading.current_thread() is not threading.main_thread():
+        pytest.skip("signal handlers are installed on the main thread only")
+    previous = {sig: signal.signal(sig, _guard) for sig in _TERMINATING}
+    real = type(asyncio.new_event_loop()).add_signal_handler
+    attempts: list[int] = []
+
+    def refuse(self: Any, sig: int, *args: Any) -> None:
+        if sig not in _TERMINATING:
+            real(self, sig, *args)
+            return
+        attempts.append(sig)
+        raise error("no signal handlers here")
+
+    monkeypatch.setattr(type(asyncio.new_event_loop()), "add_signal_handler", refuse)
+    try:
+        assert _run(Typing(), "ok" + ENTER) == Quit("ok")
+        assert attempts == _TERMINATING
+        assert {sig: signal.getsignal(sig) for sig in _TERMINATING} == dict.fromkeys(
+            _TERMINATING, _guard
+        )
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
+@posix_signals
+def test_no_termination_handler_is_installed_off_the_main_thread(
+    termination_installs: list[int],
+) -> None:
+    typing = Typing()
+    with _threaded(typing) as (pipe, thread, outcome):
+        pipe.send_text("ok" + ENTER)
+        thread.join(timeout=3)
+        assert outcome == [Quit("ok")]
+    assert termination_installs == []  # not even tried
+    assert all(signal.getsignal(sig) is _guard for sig in _TERMINATING)
+
+
+@posix_signals
+def test_a_signal_ignored_on_purpose_stays_ignored() -> None:
+    """Under ``nohup`` SIGHUP is ``SIG_IGN``; the screen must not start reacting to it."""
+    if threading.current_thread() is not threading.main_thread():
+        pytest.skip("signal handlers are installed on the main thread only")
+    ignored = _TERMINATING[0]
+    previous = {sig: signal.signal(sig, _guard) for sig in _TERMINATING}
+    signal.signal(ignored, signal.SIG_IGN)
+    attempts: list[int] = []
+    cls = type(asyncio.new_event_loop())
+    real = cls.add_signal_handler
+
+    def spy(self: Any, sig: int, *args: Any) -> None:
+        attempts.append(sig)
+        real(self, sig, *args)
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr(cls, "add_signal_handler", spy)
+    try:
+        assert _run(Typing(), "ok" + ENTER) == Quit("ok")
+        assert ignored not in attempts
+        assert signal.getsignal(ignored) is signal.SIG_IGN
+        for sig in _TERMINATING[1:]:
+            assert sig in attempts  # the others are still handled
+            assert signal.getsignal(sig) is _guard  # and put back
+    finally:
+        mp.undo()
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)

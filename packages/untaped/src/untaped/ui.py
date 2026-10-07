@@ -350,7 +350,9 @@ class UiContext:
         from untaped.screen.core import Quit  # noqa: PLC0415 - keeps screens off the startup path
 
         # An injected backend can say it needs no terminal; the default one always does.
-        injected = self._prompt_backend or prompt_backend_override()
+        injected = (
+            self._prompt_backend if self._prompt_backend is not None else prompt_backend_override()
+        )
         needs_terminal = getattr(injected, "needs_terminal", True)
         with (
             self._screen_terminal(command=screen.command, alternative=screen.alternative)
