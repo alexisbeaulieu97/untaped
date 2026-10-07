@@ -6,9 +6,17 @@ errors and exit codes, settings, HTTP, git, stdin/pipe, files and locks, state, 
 concurrency, shared options, message wording, record bases, token sources
 and doctor-check factories).
 Additions are backwards compatible; removals or signature breaks are a major release.
+
+The screen names (``Screen``, ``Cmd``, ``Key``, ...) are exported lazily, on first
+use, so ``import untaped.sdk`` loads no screen code and no prompt_toolkit and
+stays within the startup import budget; they are experimental
+(``docs/versioning.md``).
 """
 
 from __future__ import annotations
+
+import importlib as _importlib
+import typing as _typing
 
 from untaped.app_context import AppContext, app_context
 from untaped.auth import TokenCommand, TokenSources
@@ -120,6 +128,51 @@ from untaped.stdin import (
 from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context
 from untaped.yaml_roundtrip import yaml_mapping_indent
+
+if _typing.TYPE_CHECKING:
+    from untaped.screen.core import (
+        Activate,
+        Back,
+        Binding,
+        Cancel,
+        Cmd,
+        CmdError,
+        Footer,
+        Frame,
+        Interrupt,
+        Key,
+        NextField,
+        Paste,
+        PrevField,
+        Quit,
+        Resize,
+        Screen,
+        Submit,
+    )
+
+#: Screen names, resolved on first access (PEP 562) from the module that defines them.
+_SCREEN_EXPORTS: dict[str, str] = dict.fromkeys(
+    (
+        "Activate",
+        "Back",
+        "Binding",
+        "Cancel",
+        "Cmd",
+        "CmdError",
+        "Footer",
+        "Frame",
+        "Interrupt",
+        "Key",
+        "NextField",
+        "Paste",
+        "PrevField",
+        "Quit",
+        "Resize",
+        "Screen",
+        "Submit",
+    ),
+    "untaped.screen.core",
+)
 
 __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_the_topic_groups_in_order
     # composition
@@ -252,4 +305,36 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "plural",
     "q",
     "writes",
+    # screens (experimental)
+    "Activate",
+    "Back",
+    "Binding",
+    "Cancel",
+    "Cmd",
+    "CmdError",
+    "Footer",
+    "Frame",
+    "Interrupt",
+    "Key",
+    "NextField",
+    "Paste",
+    "PrevField",
+    "Quit",
+    "Resize",
+    "Screen",
+    "Submit",
 ]
+
+
+def __getattr__(name: str) -> object:
+    """Resolve a screen name on first use and keep it, so later lookups are plain."""
+    module = _SCREEN_EXPORTS.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(_importlib.import_module(module), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *_SCREEN_EXPORTS})
