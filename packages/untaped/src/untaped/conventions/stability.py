@@ -48,6 +48,7 @@ from untaped.stability import (
     Mark,
     Stability,
     app_mark,
+    children,
     field_descriptions,
     mark_of,
     marks,
@@ -62,14 +63,7 @@ def _kind(stability: Stability) -> str:
 
 
 def _walk(app: App, path: tuple[str, ...]) -> Iterator[tuple[tuple[str, ...], App]]:
-    seen: set[int] = set()
-    for name in app:
-        if name.startswith("-"):
-            continue
-        sub = app[name]
-        if id(sub) in seen:
-            continue
-        seen.add(id(sub))
+    for name, sub in children(app, resolve=False):
         yield (*path, name), sub
         yield from _walk(sub, (*path, name))
 
@@ -87,8 +81,8 @@ def stability_violations(
     ``spec`` is the checked capability's, for the rule that needs it; its
     settings section is checked too, as are the ``sections`` named (core's).
     The marks come from :func:`untaped.stability.marks` over the whole
-    composition (every lazy capability resolved), so a replacement can be
-    looked up anywhere.
+    composition: the checked capability's subtree is resolved by ``root[name]``;
+    a lazy sibling is never imported (its spec mark is still seen).
     """
     wanted = frozenset(names)
     settings = frozenset(sections) | ({spec.config_section} if spec is not None else frozenset())
@@ -103,7 +97,7 @@ def stability_violations(
             if getattr(app.default_command, "__deprecated__", None) is not None:
                 found.append(f"{where}::wrong-deprecated::{path[-1]} uses warnings.deprecated")
             found.extend(f"{where}::reserved-panel::{name}" for name in _reserved_panels(app))
-    every = marks(root, result, resolve=True)
+    every = marks(root, result)
     found.extend(_setting_violations(root, result, settings, every))
     for mark in (mark for mark in every if mark.target != "setting"):
         if mark.where.split()[0] in wanted:
