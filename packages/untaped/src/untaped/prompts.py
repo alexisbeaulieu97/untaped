@@ -35,8 +35,8 @@ class PromptBackend(Protocol):
 
     A backend may also set ``needs_terminal = False`` (an optional attribute,
     read with a default of ``True``) to say it never draws on a terminal, so
-    :meth:`UiContext.run` and :meth:`UiContext.pick_many` do not look for one before
-    handing it a screen or a request.
+    :class:`UiContext` does not look for one before handing it a prompt, a screen
+    (:meth:`UiContext.run`) or a request (:meth:`UiContext.pick_many`).
     """
 
     def confirm(self, message: str, *, default: bool) -> bool: ...
@@ -190,11 +190,8 @@ class PromptToolkitPromptBackend:
 
         # The screen answers with a row's position, so the record names the row chosen even
         # when two rows share a value.
-        rows = [
-            PromptChoice(index, item.label, item.description) for index, item in enumerate(choices)
-        ]
         default_row = next((i for i, item in enumerate(choices) if item.value == default), None)
-        index = self._answer(select_screen(message, rows, default_row, search=search))
+        index = self._answer(select_screen(message, choices, default_row, search=search))
         self._record(message, choices[index].label)
         return choices[index].value
 
@@ -207,12 +204,9 @@ class PromptToolkitPromptBackend:
     ) -> list[T]:
         from untaped.screen.prompts import multiselect_screen  # noqa: PLC0415
 
-        rows = [
-            PromptChoice(index, item.label, item.description) for index, item in enumerate(choices)
-        ]
         checked = [i for i, item in enumerate(choices) if item.value in defaults]
         picked = self._answer(
-            multiselect_screen(message, rows, checked), cancelled=_cancelled_error
+            multiselect_screen(message, choices, checked), cancelled=_cancelled_error
         )
         self._record(message, ", ".join(choices[index].label for index in picked))
         return [choices[index].value for index in picked]
