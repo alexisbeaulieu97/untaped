@@ -68,9 +68,10 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `Quit`, `Cancel`, `Back`, `Interrupt`, `NextField`, `PrevField`, `Activate`
   and `Submit`), the components (`Field`, `field_for`, `TextInput`,
   `PathInput`, `SecretInput`, `NumberInput`, `Check`, `Select`, `SingleList`,
-  `MultiList`, `ListItem`, `Cycle`, `Tabs`, `Tab`, `Buttons`, `Button` and
-  `Pressed`), `UiContext.run`, and `untaped.testing.drive_screen` with
-  `untaped.testing.ScreenKeys` and `untaped.testing.ScreenRun`. See
+  `MultiList`, `ListItem`, `Cycle`, `Tabs`, `Tab`, `Buttons`, `Button`,
+  `Pressed`, `SearchList`, `Tree`, `TreeRow`, `Tags`, `Viewport`, `Form`,
+  `Submitted` and `Panes`), `UiContext.run`, and `untaped.testing.drive_screen`
+  with `untaped.testing.ScreenKeys` and `untaped.testing.ScreenRun`. See
   [Screens](./screens.md).
 
 ## Breaking changes

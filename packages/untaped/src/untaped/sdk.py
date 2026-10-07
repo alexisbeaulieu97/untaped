@@ -140,7 +140,10 @@ if _typing.TYPE_CHECKING:
         SingleList,
     )
     from untaped.screen.components.fields import Field, field_for
+    from untaped.screen.components.form import Form, Submitted
     from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput, TextInput
+    from untaped.screen.components.layout import Panes, Viewport
+    from untaped.screen.components.lists import SearchList, Tags, Tree, TreeRow
     from untaped.screen.components.tabs import Tab, Tabs
     from untaped.screen.core import (
         Activate,
@@ -195,6 +198,9 @@ _SCREEN_MODULES: dict[str, tuple[str, ...]] = {
     "untaped.screen.components.tabs": ("Tab", "Tabs"),
     "untaped.screen.components.buttons": ("Button", "Buttons", "Pressed"),
     "untaped.screen.components.fields": ("Field", "field_for"),
+    "untaped.screen.components.form": ("Form", "Submitted"),
+    "untaped.screen.components.layout": ("Panes", "Viewport"),
+    "untaped.screen.components.lists": ("SearchList", "Tags", "Tree", "TreeRow"),
 }
 _SCREEN_EXPORTS: dict[str, str] = {
     name: module for module, names in _SCREEN_MODULES.items() for name in names
@@ -344,6 +350,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Cycle",
     "Field",
     "Footer",
+    "Form",
     "Frame",
     "Interrupt",
     "Key",
@@ -351,6 +358,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "MultiList",
     "NextField",
     "NumberInput",
+    "Panes",
     "Paste",
     "PathInput",
     "Pressed",
@@ -358,13 +366,19 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Quit",
     "Resize",
     "Screen",
+    "SearchList",
     "SecretInput",
     "Select",
     "SingleList",
     "Submit",
+    "Submitted",
     "Tab",
     "Tabs",
+    "Tags",
     "TextInput",
+    "Tree",
+    "TreeRow",
+    "Viewport",
     "field_for",
 ]
 

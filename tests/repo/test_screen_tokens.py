@@ -174,6 +174,13 @@ def test_every_listed_pattern_matches_a_module_and_exempt_homes_are_not_listed()
         assert (REPO_ROOT / home).is_file()
 
 
+def test_the_list_layout_and_form_modules_are_held_to_the_rule() -> None:
+    files = screen_files()
+
+    for module in ("lists", "layout", "form"):
+        assert f"packages/untaped/src/untaped/screen/components/{module}.py" in files
+
+
 def test_the_default_and_plain_symbol_sets_are_what_the_rule_checks() -> None:
     assert {"▶", ">", "...", "•", "*"} <= _SYMBOLS
 
