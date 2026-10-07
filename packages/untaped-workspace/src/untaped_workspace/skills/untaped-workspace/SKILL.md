@@ -39,8 +39,11 @@ In a terminal, `untaped workspace create` or `add` with no repos opens a
 [picker](references/lifecycle.md#the-picker); agents pass `--repo` or `--stdin`.
 `untaped workspace create NAME --empty` makes an empty workspace.
 
-Inside a workspace directory, NAME defaults to the current workspace (except
-on `create`); agents always pass it.
+When the current directory is under `workspace.workspaces_dir`, you are in a
+workspace: work in the checkouts already there, never clone the repos again
+elsewhere, and omit NAME (it defaults to the current workspace, except on
+`create`). `untaped workspace path` with no NAME prints the workspace
+directory, and exits 2 outside one.
 
 ## Workflows
 
