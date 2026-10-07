@@ -37,7 +37,7 @@ archive it.
 
 In a terminal, `untaped workspace create` or `add` with no repos opens a
 [picker](references/lifecycle.md#the-picker); agents pass `--repo` or `--stdin`.
-`untaped workspace create NAME` alone makes an empty workspace.
+`untaped workspace create NAME --empty` makes an empty workspace.
 
 Inside a workspace directory, NAME defaults to the current workspace (except
 on `create`); agents always pass it.

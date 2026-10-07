@@ -96,14 +96,23 @@ def create_command(
     branch: BranchOption = None,
     base: BaseOption = None,
     stdin: StdinOption = False,
+    empty: Annotated[
+        bool,
+        Parameter(
+            name="--empty",
+            negative="",
+            help="Make an empty workspace to `add` repos to later, without the picker.",
+        ),
+    ] = False,
     parallel: WorkspaceParallelOption | None = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Create a workspace and check out its repos as git worktrees.
 
-    Without --repo, --read-only or --stdin, a terminal opens the repo picker;
-    without a terminal, `create NAME` makes an empty workspace to `add` to.
+    Without --repo, --read-only or --stdin, a terminal opens the repo picker,
+    which also confirms with no repos selected; without a terminal, or with
+    --empty, `create NAME` makes an empty workspace to `add` to.
     In table format the workspace path is the last stdout line (the only one
     with -q), so `cd "$(untaped -q workspace create ...)"` works.
     """
@@ -120,6 +129,7 @@ def create_command(
             branch=branch,
             base=base,
             stdin=stdin,
+            empty=empty,
         )
         provision = provisioner(settings, parallel)
         with ui.progress(f"Creating workspace {name}…") as progress:
