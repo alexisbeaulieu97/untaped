@@ -136,6 +136,18 @@ def _is_box(node: ast.AST) -> bool:
     return False
 
 
+_EMPHASIS_KEYWORDS = {"bold", "reverse", "underline"}
+
+
+def _is_attribute_style(node: ast.AST) -> bool:
+    """A ``Style(bold=True)`` style: emphasis is a theme role, not a component's choice."""
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
+    return name == "Style" and any(kw.arg in _EMPHASIS_KEYWORDS for kw in node.keywords)
+
+
 def token_violations(source: str) -> list[str]:
     """``line: what`` for every hard-coded glyph, colour or box in ``source``."""
     tree = ast.parse(source)
@@ -149,6 +161,11 @@ def token_violations(source: str) -> list[str]:
                 found.append(f"{node.lineno}: hard-coded colour {node.value!r}; use frame.style()")
         elif _is_box(node):
             found.append(f"{node.lineno}: hard-coded box; use frame.box()")
+        elif _is_attribute_style(node):
+            found.append(
+                f"{node.lineno}: hard-coded bold/reverse/underline; "
+                "use the screen.emphasis, screen.caret or screen.match role"
+            )
     return sorted(found, key=lambda line: int(line.split(":")[0]))
 
 
@@ -226,6 +243,18 @@ def test_a_hard_coded_symbol_fails(source: str) -> None:
 )  # fmt: skip
 def test_a_hard_coded_colour_fails(source: str) -> None:
     assert "hard-coded colour" in "".join(token_violations(source))
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "STYLE = Style(bold=True)",
+        "STYLE = rich.style.Style(reverse=True, color=x)",
+        "STYLE = Style(underline=1)",
+    ],
+)
+def test_a_hard_coded_emphasis_style_fails(source: str) -> None:
+    assert "hard-coded bold/reverse/underline" in "".join(token_violations(source))
 
 
 @pytest.mark.parametrize(

@@ -225,6 +225,34 @@ def test_esc_goes_back_even_while_an_error_is_showing() -> None:
     assert _run(_request(title_label="name"), "ctrl-s", "esc").outcome == Cancel()
 
 
+def test_the_screen_confirms_no_selection_when_the_request_allows_it() -> None:
+    run = _run(_request(allow_empty=True), "ctrl-s")
+
+    assert isinstance(run.outcome, Quit)
+    assert _picked_ids(run) == []
+
+
+def test_the_create_button_confirms_no_selection_when_the_request_allows_it() -> None:
+    run = _run(_request(allow_empty=True), "tab", "down", "down", "enter")
+
+    assert isinstance(run.outcome, Quit)
+    assert _picked_ids(run) == []
+
+
+def test_the_screen_refuses_no_selection_unless_the_request_allows_it() -> None:
+    run = _run(_request(), "ctrl-s")
+
+    assert run.outcome is None
+    assert "select at least one item" in run.frame
+
+
+def test_allow_empty_on_the_screen_still_requires_the_title() -> None:
+    run = _run(_request(allow_empty=True, title_label="name"), "ctrl-s")
+
+    assert run.outcome is None
+    assert "name is required" in run.frame
+
+
 def test_the_error_stays_until_a_key_that_does_something() -> None:
     run = _run(_request(), "ctrl-s", "home")
     assert "select at least one item" in run.frame
