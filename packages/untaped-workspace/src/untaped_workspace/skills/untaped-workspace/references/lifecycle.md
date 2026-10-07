@@ -37,7 +37,8 @@ In a terminal, `create` and `add` with no `--repo`, `--read-only` or
 `--stdin` open an interactive picker. Without a terminal, `add` exits 2 and names
 those flags, `create` with no NAME exits 2, and `create NAME` makes an empty
 workspace. `create NAME --empty` makes an empty workspace without the picker,
-in a terminal or not, and exits 2 with any repo flag. Agents never rely on the
+in a terminal or not, and exits 2 with `--repo`, `--read-only`, `--stdin`,
+`--branch` or `--base`. Agents never rely on the
 picker.
 
 - `create` with no NAME asks for one first, refusing invalid names, active

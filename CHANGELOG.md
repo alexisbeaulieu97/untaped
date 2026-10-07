@@ -64,7 +64,7 @@
   the picker, and the picker now creates one when confirmed with no repos
   selected. SDK: `PickRequest(allow_empty=True)` lets a picker confirm an
   empty selection.
-  ([#523](https://github.com/alexisbeaulieu97/untaped/issues/523))
+  ([#524](https://github.com/alexisbeaulieu97/untaped/pull/524))
 - `ui.symbols` and `ui.color_roles` gain the names screens use (`chosen`,
   `checked`, ..., `screen.accent`, ...); the config reference
   lists them. ([#521](https://github.com/alexisbeaulieu97/untaped/pull/521))

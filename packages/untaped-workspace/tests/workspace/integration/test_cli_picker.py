@@ -156,11 +156,20 @@ def test_empty_flag_needs_a_name() -> None:
     assert backend.calls == []
 
 
-@pytest.mark.parametrize("flag", [["--repo", "acme/api"], ["--read-only", "acme/api"], ["--stdin"]])
+@pytest.mark.parametrize(
+    "flag",
+    [
+        ["--repo", "acme/api"],
+        ["--read-only", "acme/api"],
+        ["--stdin"],
+        ["--branch", "b"],
+        ["--base", "main"],
+    ],
+)
 def test_empty_flag_refuses_repo_flags(flag: list[str]) -> None:
     result = run(app, ["create", "J-1", "--empty", *flag])
     assert result.exit_code == 2
-    assert "--empty" in result.output
+    assert "--empty takes no repos" in result.output
     assert StateWorkspaceStore().get("J-1") is None
 
 
