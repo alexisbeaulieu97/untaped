@@ -71,6 +71,7 @@ KEY_NAMES: tuple[str, ...] = (
     "ctrl-w",
     "ctrl-s",
     "ctrl-c",
+    "ctrl-d",
     "ctrl-r",
 )
 
