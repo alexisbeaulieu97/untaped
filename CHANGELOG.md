@@ -60,6 +60,11 @@
   and a capability's settings inherit its mark. `config list` and `config get`
   report each setting's `stability`.
   ([#519](https://github.com/alexisbeaulieu97/untaped/pull/519))
+- `untaped workspace create NAME --empty` makes an empty workspace without
+  the picker, and the picker now creates one when confirmed with no repos
+  selected. SDK: `PickRequest(allow_empty=True)` lets a picker confirm an
+  empty selection.
+  ([#523](https://github.com/alexisbeaulieu97/untaped/issues/523))
 - `ui.symbols` and `ui.color_roles` gain the names screens use (`chosen`,
   `checked`, ..., `screen.accent`, ...); the config reference
   lists them. ([#521](https://github.com/alexisbeaulieu97/untaped/pull/521))

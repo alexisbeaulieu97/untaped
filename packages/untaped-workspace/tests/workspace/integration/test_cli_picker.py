@@ -125,6 +125,45 @@ class _Capture(ScriptedPromptBackend):
         return super().pick_many(request)
 
 
+def test_create_picker_allows_confirming_no_repos(workspace_env: Path) -> None:
+    backend = _Capture(_pick("J-1"))
+    result = run(app, ["create"], interactive=True, prompt_backend=backend)
+    assert result.exit_code == 0, result.output
+    assert [request.allow_empty for request in backend.requests] == [True]
+
+
+def test_add_picker_requires_a_repo(make_upstream: Callable[..., Path]) -> None:
+    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+    backend = _Capture(None)
+    run(app, ["add", "J-1"], interactive=True, prompt_backend=backend)
+    assert [request.allow_empty for request in backend.requests] == [False]
+
+
+def test_empty_flag_skips_the_picker(workspace_env: Path) -> None:
+    backend = ScriptedPromptBackend()
+    result = run(app, ["create", "J-1", "--empty"], interactive=True, prompt_backend=backend)
+    assert result.exit_code == 0, result.output
+    assert backend.calls == []
+    assert (workspace_env / "J-1").is_dir()
+    assert StateWorkspaceStore().get("J-1") is not None
+
+
+def test_empty_flag_needs_a_name() -> None:
+    backend = ScriptedPromptBackend()
+    result = run(app, ["create", "--empty"], interactive=True, prompt_backend=backend)
+    assert result.exit_code == 2
+    assert "workspace name is required" in result.output
+    assert backend.calls == []
+
+
+@pytest.mark.parametrize("flag", [["--repo", "acme/api"], ["--read-only", "acme/api"], ["--stdin"]])
+def test_empty_flag_refuses_repo_flags(flag: list[str]) -> None:
+    result = run(app, ["create", "J-1", "--empty", *flag])
+    assert result.exit_code == 2
+    assert "--empty" in result.output
+    assert StateWorkspaceStore().get("J-1") is None
+
+
 def test_add_does_not_offer_repos_already_in_the_workspace(workspace_env: Path) -> None:
     cache = workspace_env.parent / "cache" / "github.com" / "acme"
     for name in ("api", "web"):
