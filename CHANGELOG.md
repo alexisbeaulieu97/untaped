@@ -65,7 +65,7 @@
   lists them. ([#521](https://github.com/alexisbeaulieu97/untaped/pull/521))
 - SDK (experimental): screens, an Elm-style runtime for full-screen terminal UIs
   (`Screen`, `Cmd`, `UiContext.run`, `untaped.testing.drive_screen`); see
-  [Screens](docs/screens.md). ([#PR](https://github.com/alexisbeaulieu97/untaped/pull/PR))
+  [Screens](docs/screens.md). ([#525](https://github.com/alexisbeaulieu97/untaped/pull/525))
 
 ### Changed
 
@@ -122,7 +122,7 @@
   theme defines; a stray name already in `config.yml` keeps working.
   ([#521](https://github.com/alexisbeaulieu97/untaped/pull/521))
 - `PromptBackend` gains `run_screen`; a custom backend needs the method to
-  type-check. ([#PR](https://github.com/alexisbeaulieu97/untaped/pull/PR))
+  type-check. ([#525](https://github.com/alexisbeaulieu97/untaped/pull/525))
 
 ### Deprecated
 
