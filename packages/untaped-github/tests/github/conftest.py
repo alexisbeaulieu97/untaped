@@ -21,8 +21,17 @@ def _github_settings() -> None:
     register_profile_settings("github", GithubSettings)
 
 
+def _git_dir(cwd: Path) -> list[str]:
+    """``--git-dir`` for a bare repository: the suite runs with ``safe.bareRepository=explicit``."""
+    return (
+        ["--git-dir", str(cwd)] if (cwd / "HEAD").is_file() and (cwd / "objects").is_dir() else []
+    )
+
+
 def _git(cwd: Path, *args: str) -> str:
-    result = subprocess.run(["git", *args], cwd=cwd, text=True, capture_output=True, check=False)
+    result = subprocess.run(
+        ["git", *_git_dir(cwd), *args], cwd=cwd, text=True, capture_output=True, check=False
+    )
     assert result.returncode == 0, result.stderr
     return result.stdout.strip()
 

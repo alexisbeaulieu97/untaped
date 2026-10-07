@@ -79,6 +79,22 @@ def _no_writes_to_the_repo_root() -> Iterator[None]:
         pytest.fail(f"test left files at the repository root: {', '.join(leaked)}")
 
 
+@pytest.fixture(autouse=True)
+def _explicit_bare_repositories(
+    _hermetic_environment: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Run every test the way hardened agent shells run untaped.
+
+    GitHub Copilot CLI injects ``safe.bareRepository=explicit`` through
+    ``GIT_CONFIG_COUNT``; git then refuses a bare repository it would find
+    from ``cwd``, so a cache call that forgets ``--git-dir`` fails here
+    first. A test that sets its own ``GIT_CONFIG_COUNT`` replaces this one.
+    """
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "safe.bareRepository")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "explicit")
+
+
 @pytest.fixture
 def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point the flattened config/profile stack at a temp config file."""

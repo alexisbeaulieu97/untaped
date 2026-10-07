@@ -9,7 +9,9 @@ leaves the root.
 :class:`RepoCache` is one such bare repository. Its lock is the sibling file
 ``<cache>.lock`` (via ``file_lock``), so two untaped processes on one cache
 serialize and the lock is never inside the repository. Every git call on it
-goes through ``run_git`` and carries the auth header only when the cache's
+goes through ``run_git`` with ``--git-dir`` naming the cache (so git never
+has to discover a bare repository, which ``safe.bareRepository=explicit``
+refuses) and carries the auth header only when the cache's
 origin is an ``https://`` URL on the trusted ``auth_host``; ssh, ``file``
 and other-host origins never see it.
 
@@ -263,7 +265,11 @@ class RepoCache:
         retry: bool = False,
         locale_c: bool = True,
     ) -> GitResult:
-        """Run ``git <args>`` in the cache (or ``cwd``) with host-scoped auth."""
+        """Run ``git <args>`` on the cache with host-scoped auth.
+
+        With ``cwd`` git runs there instead and finds its repository itself
+        (``init`` in the parent, a command in one of the cache's worktrees).
+        """
         origin: str | None = None
         header: str | None = None
         if self._auth_header is not None and self._auth_host is not None:
@@ -274,6 +280,7 @@ class RepoCache:
             return run_git(
                 args,
                 cwd=self._path if cwd is None else cwd,
+                git_dir=self._path if cwd is None else None,
                 git=self._git,
                 timeout=self._timeout if timeout is None else timeout,
                 capture=capture,
