@@ -237,6 +237,15 @@ def test_value_validate_and_error_follow_the_two_components() -> None:
     assert worse.validate() == "Right bad."
 
 
+@pytest.mark.parametrize("width", [WIDE, WIDE - 1])
+def test_whatever_follows_the_panes_starts_on_its_own_line(width: int) -> None:
+    run = run_solo(_panes().with_error("Check failed."), size=(width, 30))
+
+    below = lines(run.frame)[-1]
+    assert below.strip() == "Check failed."
+    assert lines(run.frame)[-2].startswith("╰")
+
+
 def test_an_error_shows_under_the_panes_in_the_error_colour() -> None:
     segments = _styled(_panes().with_error("Check failed."))
 
@@ -277,3 +286,22 @@ def test_without_a_box_the_panes_are_titles_over_their_content() -> None:
 
 def test_panes_are_marked_experimental() -> None:
     assert isinstance(function_mark(Panes), Experimental)
+
+
+def test_a_pane_can_be_a_drawing_of_a_model_the_screen_owns() -> None:
+    seen: list[tuple[int, int, bool]] = []
+
+    def draw(frame: Frame, focused: bool) -> str:
+        seen.append((frame.width, frame.height, focused))
+        return "drawn only"
+
+    panes = Panes(draw, TextInput("B"), left_title="Left", focus=0)
+    shown = _styled(panes)
+    assert "drawn only" in "".join(segment.text for segment in shown)
+    assert seen[0][2] is True  # the focused pane is told so
+    assert panes.value == {"left": "", "right": ""}
+    assert panes.validate() == ""
+    assert panes.update(Key("x")) == (panes, [])  # a drawing takes no input, and nothing moves
+    moved, _ = panes.update(NextField())
+    assert moved.focus == 1  # tab passes on to the other pane like any component that ignores it
+    assert moved.left is draw

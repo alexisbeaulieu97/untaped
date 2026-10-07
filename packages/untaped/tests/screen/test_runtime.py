@@ -19,6 +19,7 @@ from untaped.screen.core import (
     Cancel,
     Cmd,
     CmdError,
+    Help,
     Interrupt,
     Key,
     NextField,
@@ -739,7 +740,7 @@ def test_help_overlay_closes_and_swallows_other_keys(closer: str) -> None:
     runtime.send(Key("?"))
     runtime.send(Key("x"))
     runtime.send(Paste("pasted"))
-    assert probe.seen == [Key("?")]
+    assert probe.seen == [Key("?"), Help()]
     runtime.send(Key(closer))
     assert not runtime.help_open
     assert runtime.outcome is None

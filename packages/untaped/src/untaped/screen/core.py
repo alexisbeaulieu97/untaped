@@ -13,7 +13,7 @@ screen is :mod:`untaped.screen.runtime`.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -36,6 +36,7 @@ __all__ = [
     "CmdError",
     "Footer",
     "Frame",
+    "Help",
     "Interrupt",
     "Key",
     "NextField",
@@ -225,6 +226,16 @@ class Activate:
 
 @experimental
 @dataclass(frozen=True)
+class Help:
+    """``?`` opened the help overlay (nothing before it wanted the key).
+
+    Delivered to ``update`` for its news only: the overlay opens whatever
+    ``update`` returns, so a screen can dismiss a message on any key.
+    """
+
+
+@experimental
+@dataclass(frozen=True)
 class Submit:
     """Ctrl-s after the focused component and the screen's bindings passed on it."""
 
@@ -347,7 +358,13 @@ class Screen[M, R]:
     ``command`` and ``alternative`` are required: when there is no terminal the
     runtime fails with ``command`` needs a terminal; use ``alternative``.
     ``keys`` are the screen's own bindings; the shared keys (:data:`SHARED_KEYS`)
-    belong to the SDK and cannot be rebound. ``layout`` is ``"full"`` (the
+    belong to the SDK and cannot be rebound. ``shared_labels`` says what a shared
+    key does *on this screen*, for the footer and the help overlay (``ctrl-s``
+    "create" where the default says "submit"); it never changes what the key
+    does. A value is a label, or a function of the model returning one (``None``
+    for the default label, left out of the footer). The footer lists only the
+    shared keys that have a label here, between the screen's bindings and
+    ``esc back``; the overlay lists them all. ``layout`` is ``"full"`` (the
     whole terminal) or ``"inline"`` (below the cursor, erased when done).
     """
 
@@ -358,6 +375,9 @@ class Screen[M, R]:
     command: str
     alternative: str
     keys: tuple[Binding, ...] = ()
+    shared_labels: Mapping[str, str | Callable[[M], str | None]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
     layout: Literal["full", "inline"] = "full"
 
     def __post_init__(self) -> None:
@@ -369,6 +389,12 @@ class Screen[M, R]:
             )
         if self.layout not in ("full", "inline"):
             raise ValueError(f"layout must be 'full' or 'inline', not {self.layout!r}")
+        for key in self.shared_labels:
+            if key not in SHARED_KEYS or key == "?":
+                raise ValueError(
+                    f"{key!r} cannot be relabelled; shared keys: "
+                    f"{', '.join(k for k in SHARED_KEYS if k != '?')}"
+                )
         for binding in self.keys:
             if binding.key in SHARED_KEYS:
                 raise ValueError(
@@ -388,40 +414,69 @@ class Footer:
     """The key hints under a screen and the help overlay, both built from bindings.
 
     ``bindings`` are the screen's active ones (the runtime filters on ``when``).
-    The footer lists them, then ``esc back`` and ``? help``; while the runtime
-    waits for a write after the screen quit, it reads ``saving`` and the
-    ellipsis token instead. The separator and ellipsis are theme tokens, and
-    keys appear as words, never arrow glyphs.
+    ``labels`` are the screen's shared-key labels in force (see
+    :attr:`Screen.shared_labels`): the footer lists the bindings, then the
+    shared keys with a label, then ``esc back`` (or its label) and ``? help``;
+    the overlay writes every shared key with its label, or the default one.
+    While the runtime waits for a write after the screen quit, the footer reads
+    ``saving`` and the ellipsis token instead. The separator and ellipsis are
+    theme tokens, and keys appear as words, never arrow glyphs.
     """
 
     bindings: tuple[Binding, ...] = ()
     saving: bool = False
+    labels: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
+
+    def _label(self, shared: SharedKey) -> str:
+        return self.labels.get(shared.key, shared.label)
 
     def entries(self) -> tuple[tuple[str, str], ...]:
         """The ``(key, label)`` pairs the footer shows, in order."""
+        relabelled = (
+            (shared.key, self.labels[shared.key])
+            for shared in SHARED_KEYS.values()
+            if shared.key in self.labels and shared.key != "esc"
+        )
         return (
             *((key_label(binding.key), binding.label) for binding in self.bindings),
-            ("esc", SHARED_KEYS["esc"].label),
+            *relabelled,
+            ("esc", self._label(SHARED_KEYS["esc"])),
             ("?", SHARED_KEYS["?"].label),
         )
 
     def line(self, frame: Frame) -> Text:
-        """The footer as one line of exactly ``frame.width`` cells."""
+        """The footer as one line of exactly ``frame.width`` cells.
+
+        When the entries do not fit, the last ones before ``esc back`` and
+        ``? help`` are dropped one by one (they stay in the help overlay), so
+        those two always show.
+        """
         from rich.text import Text  # noqa: PLC0415 - keeps Rich out of import time
 
         from untaped.screen.fit import fit_text  # noqa: PLC0415
 
-        line = Text()
         if self.saving:
-            line.append(f"saving{frame.ellipsis()}", style=frame.style("screen.accent"))
-        else:
-            separator = f" {frame.symbol('separator')} "
-            for index, (key, label) in enumerate(self.entries()):
-                if index:
-                    line.append(separator, style=frame.style("screen.border"))
-                line.append(key, style=frame.style("screen.accent"))
-                line.append(f" {label}", style=frame.style("screen.muted"))
-        return fit_text(line, frame.width, frame.ellipsis())
+            line = Text(f"saving{frame.ellipsis()}", style=frame.style("screen.accent"))
+            return fit_text(line, frame.width, frame.ellipsis())
+        entries = list(self.entries())
+        while True:
+            line = self._joined(frame, entries)
+            if line.cell_len <= frame.width or len(entries) <= 2:
+                return fit_text(line, frame.width, frame.ellipsis())
+            del entries[-3]  # the entry just before ``esc`` and ``?``
+
+    @staticmethod
+    def _joined(frame: Frame, entries: Sequence[tuple[str, str]]) -> Text:
+        from rich.text import Text  # noqa: PLC0415
+
+        line = Text()
+        separator = f" {frame.symbol('separator')} "
+        for index, (key, label) in enumerate(entries):
+            if index:
+                line.append(separator, style=frame.style("screen.border"))
+            line.append(key, style=frame.style("screen.accent"))
+            line.append(f" {label}", style=frame.style("screen.muted"))
+        return line
 
     def overlay(self, frame: Frame) -> RenderableType:
         """The help overlay: every active binding and every shared key, one per line."""
@@ -442,5 +497,5 @@ class Footer:
         for binding in self.bindings:
             table.add_row(Text(key_label(binding.key)), Text(binding.label))
         for shared in SHARED_KEYS.values():
-            table.add_row(Text(shared.key), Text(shared.label))
+            table.add_row(Text(shared.key), Text(self._label(shared)))
         return table

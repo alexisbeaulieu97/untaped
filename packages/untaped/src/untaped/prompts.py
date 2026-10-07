@@ -42,7 +42,8 @@ class PromptBackend(Protocol):
 
     A backend may also set ``needs_terminal = False`` (an optional attribute,
     read with a default of ``True``) to say it never draws on a terminal, so
-    :meth:`UiContext.run` does not look for one before handing it a screen.
+    :meth:`UiContext.run` and :meth:`UiContext.pick_many` do not look for one before
+    handing it a screen or a request.
     """
 
     def confirm(self, message: str, *, default: bool) -> bool: ...
@@ -145,10 +146,12 @@ class PromptToolkitPromptBackend:
         stdin: TextIO | None = None,
         stderr: TextIO | None = None,
         style: Style | None = None,
+        theme: ThemeSpec | None = None,
     ) -> None:
         self.stdin = stdin or sys.stdin
         self.stderr = stderr or sys.stderr
         self.style = style
+        self.theme = theme
 
     def confirm(self, message: str, *, default: bool) -> bool:
         suffix = " [Y/n]: " if default else " [y/N]: "
@@ -230,18 +233,23 @@ class PromptToolkitPromptBackend:
         return [choices[index].value for index in selected_indexes]
 
     def pick_many(self, request: PickRequest) -> PickResult | None:
-        """Run the two-pane picker on this backend's terminal streams."""
-        from prompt_toolkit.input.defaults import create_input  # noqa: PLC0415
-        from prompt_toolkit.output.defaults import create_output  # noqa: PLC0415
+        """Run the two-pane picker as a screen on this backend's terminal streams.
 
-        from untaped.picker.app import run_picker  # noqa: PLC0415
+        Returns ``None`` when the user cancelled; an interrupt raises
+        :class:`KeyboardInterrupt`, which ``UiContext`` maps like every prompt.
+        """
+        from untaped.picker.screen import picker_screen  # noqa: PLC0415
+        from untaped.screen.core import Quit  # noqa: PLC0415
+        from untaped.theme import BUILTIN_THEMES  # noqa: PLC0415
 
-        return run_picker(
-            request,
-            input=create_input(self.stdin),
-            output=create_output(self.stderr),
-            style=self.style,
+        outcome = self.run_screen(
+            picker_screen(request), theme=self.theme or BUILTIN_THEMES["default"]
         )
+        if isinstance(outcome, Quit):
+            return outcome.result
+        if outcome.interrupted:
+            raise KeyboardInterrupt
+        return None
 
     def run_screen[M, R](self, screen: Screen[M, R], *, theme: ThemeSpec) -> Quit[R] | Cancel:
         """Run ``screen`` on this backend's terminal streams (input stdin, drawing on stderr)."""
@@ -307,22 +315,12 @@ class PromptToolkitPromptBackend:
 
 
 def prompt_style_from_roles(color_roles: dict[str, str]) -> Style:
-    """Build a prompt_toolkit style from conservative UI color roles.
-
-    Picker classes are only emitted for roles that resolve to a style, so the
-    picker's own defaults stay in effect for the rest.
-    """
+    """Build a prompt_toolkit style from conservative UI color roles."""
     from prompt_toolkit.styles import Style  # noqa: PLC0415
 
     key = _prompt_toolkit_style(color_roles.get("key") or color_roles.get("header"))
     value = _prompt_toolkit_style(color_roles.get("value"))
     border = _prompt_toolkit_style(color_roles.get("border"))
-    error = _prompt_toolkit_style(color_roles.get("error"))
-    picker = {
-        **dict.fromkeys(("cursor", "mark", "border.focus", "subtitle"), key),
-        "border": border,
-        "error": error,
-    }
     return Style.from_dict(
         {
             "prompt": key,
@@ -330,7 +328,6 @@ def prompt_style_from_roles(color_roles: dict[str, str]) -> Style:
             "selected-option": value,
             "frame.border": border,
             "dialog.body": "",
-            **{f"picker.{name}": style for name, style in picker.items() if style},
         }
     )
 

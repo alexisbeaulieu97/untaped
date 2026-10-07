@@ -98,6 +98,13 @@ def test_tag_tokens_have_a_glyph_and_an_ascii_fallback() -> None:
     assert (plain["tag.add"], plain["tag.remove"]) == ("+", "x")
 
 
+def test_picker_tokens_have_a_glyph_and_an_ascii_fallback() -> None:
+    default = BUILTIN_THEMES["default"].symbols
+    plain = BUILTIN_THEMES["plain"].symbols
+    assert (default["heading"], default["dash"]) == ("\u25c6", "\u2014")
+    assert (plain["heading"], plain["dash"]) == ("*", "-")
+
+
 @pytest.mark.parametrize("name", THEMES)
 def test_screen_roles_are_valid_rich_styles(name: str) -> None:
     roles = BUILTIN_THEMES[name].color_roles
