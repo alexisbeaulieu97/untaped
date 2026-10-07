@@ -222,6 +222,12 @@ itself gets the controlling terminal when stdin is piped; `workspace create`
 and `workspace add` check `ui.can_prompt` first and take their flag path
 instead, so only a redirected stderr is something they now draw through.
 
+The one-shot prompts (`ui.text`, `ui.secret`, `ui.select`, `ui.multiselect`,
+`ui.confirm`) are inline screens built from `TextInput`, `SecretInput`,
+`SingleList`, `SearchList` and `MultiList`, so they look and key like every
+other screen. ctrl-d on an empty answer ends a prompt without one, as on a line
+prompt.
+
 `field_for(descriptor, value=..., help=...)` maps a setting's type to its
 component (a `Literal` to a list or `Select`, `bool` to `Check`, numbers to
 `NumberInput`, paths to `PathInput`, `SecretStr` to `SecretInput`, `str` to
