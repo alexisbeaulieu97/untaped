@@ -133,7 +133,8 @@ a theme change reaches every screen. The names are declared; the
 Every glyph and colour a component draws is a token, the caret and bold
 emphasis too: `screen.caret` (reverse by default) styles the caret and the
 character under it, and `screen.emphasis` (bold by default) the chosen value,
-the on/off symbols and the primary button's label, so a theme can restyle them.
+the on/off symbols and the primary button's label, and `screen.match` (bold and
+underlined by default) the letters a search matched, so a theme can restyle them.
 Two things stay structural text and are not tokens: the `[` and `]` around a
 `MultiList` mark, and the terminal's `dim` attribute, which a dimmed item layers
 over the muted colour.

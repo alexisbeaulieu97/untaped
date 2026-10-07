@@ -30,7 +30,6 @@ from untaped.screen.components.choices import (
     moved_to,
 )
 from untaped.screen.components.draw import (
-    BOLD,
     divider,
     inner_width,
     option_row,
@@ -482,7 +481,10 @@ class Tags:
         labels = {item.id: item.label for item in self.items}
         cells = [
             Text.assemble(
-                (labels.get(item_id, item_id), role_style(frame, "screen.value") + BOLD),
+                (
+                    labels.get(item_id, item_id),
+                    role_style(frame, "screen.value", "screen.emphasis"),
+                ),
                 " ",
                 (frame.symbol("tag.remove"), role_style(frame, "screen.muted")),
             )

@@ -183,14 +183,12 @@ def test_keys_go_only_to_the_focused_pane() -> None:
 
 
 def test_a_child_that_consumes_tab_keeps_it() -> None:
-    panes = Panes(
-        TextInput("A", "a", complete=lambda text: ["apple"] * (text == "a")), TextInput("B")
-    )
+    panes = Panes(TextInput("A", complete=lambda text: ["apple"] * (text == "a")), TextInput("B"))
 
-    first = run_solo(panes, "tab")
+    first = run_solo(panes, "a", "tab")  # completions open once the text is edited
     assert field_of(first).focus == 0  # the completion took the tab
     assert field_of(first).left.value == "apple"
-    assert field_of(run_solo(panes, "tab", "tab")).focus == 1
+    assert field_of(run_solo(panes, "a", "tab", "tab")).focus == 1
 
 
 def test_a_command_from_a_pane_reaches_the_screen() -> None:
