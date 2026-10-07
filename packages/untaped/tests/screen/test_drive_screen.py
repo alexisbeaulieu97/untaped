@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import contextvars
+import copy
+import pickle
 from dataclasses import dataclass, replace
 
 import pytest
 from rich.text import Text
 
+from screen.support import make_screen
 from untaped.screen.core import Binding, Cancel, Cmd, Frame, Key, Paste, Quit, Resize, Screen
+from untaped.stability import Experimental, function_mark
 from untaped.testing import ScreenKeys, ScreenRun, drive_screen
 from untaped.testing.screens import rendered_text
 from untaped.theme import BUILTIN_THEMES
@@ -60,13 +64,10 @@ def _screen(**overrides: object) -> Screen[Counter, int]:
         "init": lambda: (Counter(), []),
         "update": _update,
         "view": _view,
-        "title": "Counter",
-        "command": "untaped count",
-        "alternative": "untaped count --format json",
         "keys": (Binding("l", "load", None),),
     }
     fields.update(overrides)
-    return Screen(**fields)  # type: ignore[arg-type]
+    return make_screen(**fields)
 
 
 def test_frames_after_each_key() -> None:
@@ -164,6 +165,16 @@ def test_a_stub_returning_none_sends_nothing() -> None:
     assert run.model.notes == ()
 
 
+def test_a_stub_that_matches_no_command_is_an_error_naming_it() -> None:
+    with pytest.raises(ValueError, match=r"never run: 'lode'; commands that ran: 'load'"):
+        drive_screen(_screen(), ["l"], commands={"load": Loaded("ok"), "lode": Loaded("typo")})
+
+
+def test_a_stub_for_a_command_that_never_got_issued_is_an_error() -> None:
+    with pytest.raises(ValueError, match=r"'load'.*commands that ran: none"):
+        drive_screen(_screen(), ["up"], commands={"load": Loaded("never")})
+
+
 def test_commands_must_be_sync_or_a_mapping() -> None:
     with pytest.raises(ValueError, match="commands"):
         drive_screen(_screen(), [], commands="async")  # type: ignore[arg-type]
@@ -209,6 +220,30 @@ def test_screen_keys_is_a_tuple_script() -> None:
     assert script == ("up", "up", Paste("x"), Resize(30, 5))
     run = drive_screen(_screen(), script)
     assert (run.model.count, run.model.width) == (2, 30)
+
+
+def test_screen_keys_survive_copy_and_pickle_unchanged() -> None:
+    script = ScreenKeys("up", Paste("x"), Resize(30, 5), " ")
+    for clone in (copy.copy(script), copy.deepcopy(script), pickle.loads(pickle.dumps(script))):
+        assert type(clone) is ScreenKeys
+        assert clone == script
+        assert len(clone) == 4
+
+
+def test_drive_screen_is_marked_experimental() -> None:
+    assert isinstance(function_mark(drive_screen), Experimental)
+
+
+def test_commands_start_in_the_order_they_were_issued() -> None:
+    def update(model: Counter, message: object) -> tuple[Counter, list[Cmd]]:
+        if message == Key("g"):
+            return model, [
+                Cmd(lambda: None, write=True, name="w"),
+                Cmd(lambda: None, name="b"),
+            ]
+        return model, []
+
+    assert drive_screen(_screen(update=update), ["g"]).commands_run == ("w", "b")
 
 
 def test_a_write_command_completes_before_the_run_returns() -> None:

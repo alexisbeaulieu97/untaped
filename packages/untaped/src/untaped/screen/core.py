@@ -12,12 +12,13 @@ screen is :mod:`untaped.screen.runtime`.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 from untaped.stability import experimental
-from untaped.theme import BUILTIN_THEMES, ROLE_NAMES, SYMBOL_NAMES, ThemeSpec
+from untaped.theme import BUILTIN_THEMES, SCREEN_ROLE_NAMES, SYMBOL_NAMES, ThemeSpec
 
 if TYPE_CHECKING:
     from rich.box import Box
@@ -46,6 +47,8 @@ __all__ = [
     "SharedKey",
     "Submit",
     "is_inline",
+    "is_key_name",
+    "key_label",
 ]
 
 #: Key names a ``Key`` message can carry besides a printable character (which is
@@ -71,14 +74,24 @@ KEY_NAMES: tuple[str, ...] = (
 )
 
 
+def is_key_name(name: str) -> bool:
+    """Whether ``name`` can be a key: one of :data:`KEY_NAMES` or one printable character."""
+    return name in KEY_NAMES or (len(name) == 1 and name.isprintable())
+
+
+def key_label(key: str) -> str:
+    """How the footer and help overlay write ``key``: the space bar is ``space``, not blank."""
+    return "space" if key == " " else key
+
+
 # --- commands -----------------------------------------------------------------
 
 
+@dataclass(frozen=True)
 class _Send:
     """The function of an inline command: hands back its message without work."""
 
-    def __init__(self, message: object) -> None:
-        self.message = message
+    message: object
 
     def __call__(self) -> object:
         return self.message
@@ -236,18 +249,20 @@ class SharedKey:
 
 
 #: The keys every screen shares, in the order the footer and help overlay show them.
-SHARED_KEYS: dict[str, SharedKey] = {
-    shared.key: shared
-    for shared in (
-        SharedKey("esc", "back", Back(), Cancel()),
-        SharedKey("ctrl-c", "quit", Interrupt(), Cancel(interrupted=True)),
-        SharedKey("tab", "next field", NextField()),
-        SharedKey("shift-tab", "previous field", PrevField()),
-        SharedKey("enter", "activate", Activate()),
-        SharedKey("ctrl-s", "submit", Submit()),
-        SharedKey("?", "help", None),
-    )
-}
+SHARED_KEYS: Mapping[str, SharedKey] = MappingProxyType(
+    {
+        shared.key: shared
+        for shared in (
+            SharedKey("esc", "back", Back(), Cancel()),
+            SharedKey("ctrl-c", "quit", Interrupt(), Cancel(interrupted=True)),
+            SharedKey("tab", "next field", NextField()),
+            SharedKey("shift-tab", "previous field", PrevField()),
+            SharedKey("enter", "activate", Activate()),
+            SharedKey("ctrl-s", "submit", Submit()),
+            SharedKey("?", "help", None),
+        )
+    }
+)
 
 
 # --- bindings, frame, screen -------------------------------------------------
@@ -260,8 +275,9 @@ class Binding:
 
     ``label`` is the footer text. ``message=None`` is a footer-only entry that
     documents a key a component handles. ``when`` limits the binding (and its
-    footer entry) to models for which it returns true. ``key`` is never one of
-    :data:`SHARED_KEYS`; :class:`Screen` refuses that.
+    footer entry) to models for which it returns true. ``key`` is a name from
+    :data:`KEY_NAMES` or one printable character (the space bar is ``" "``) and
+    never one of :data:`SHARED_KEYS`; :class:`Screen` refuses anything else.
     """
 
     key: str
@@ -287,15 +303,22 @@ class Frame:
     def symbol(self, name: str) -> str:
         """The theme's glyph for ``name``, or the default theme's when it defines none."""
         if name not in SYMBOL_NAMES:
-            raise KeyError(f"unknown symbol {name!r}; declared symbols: {', '.join(SYMBOL_NAMES)}")
+            raise ValueError(
+                f"unknown symbol {name!r}; declared symbols: {', '.join(SYMBOL_NAMES)}"
+            )
         if name in self.theme.symbols:
             return self.theme.symbols[name]
         return BUILTIN_THEMES["default"].symbols.get(name, "")
 
     def style(self, role: str) -> str:
-        """The Rich style of the colour role ``role`` (empty when no theme styles it)."""
-        if role not in ROLE_NAMES:
-            raise KeyError(f"unknown color role {role!r}; declared roles: {', '.join(ROLE_NAMES)}")
+        """The Rich style of the screen colour role ``role`` (empty when no theme styles it).
+
+        Only the ``screen.*`` roles are served: a screen never reads the table roles.
+        """
+        if role not in SCREEN_ROLE_NAMES:
+            raise ValueError(
+                f"unknown screen color role {role!r}; screen roles: {', '.join(SCREEN_ROLE_NAMES)}"
+            )
         if role in self.theme.color_roles:
             return self.theme.color_roles[role]
         return BUILTIN_THEMES["default"].color_roles.get(role, "")
@@ -352,6 +375,11 @@ class Screen[M, R]:
                     f"key {binding.key!r} is shared by every screen and cannot be bound; "
                     f"shared keys: {', '.join(SHARED_KEYS)}"
                 )
+            if not is_key_name(binding.key):
+                raise ValueError(
+                    f"key {binding.key!r} is not a key name or a single printable character "
+                    f"(a space is ' '); key names: {', '.join(KEY_NAMES)}"
+                )
 
 
 @experimental
@@ -372,7 +400,7 @@ class Footer:
     def entries(self) -> tuple[tuple[str, str], ...]:
         """The ``(key, label)`` pairs the footer shows, in order."""
         return (
-            *((binding.key, binding.label) for binding in self.bindings),
+            *((key_label(binding.key), binding.label) for binding in self.bindings),
             ("esc", SHARED_KEYS["esc"].label),
             ("?", SHARED_KEYS["?"].label),
         )
@@ -412,7 +440,7 @@ class Footer:
         table.add_column(style=frame.style("screen.accent"), no_wrap=True)
         table.add_column(style=frame.style("screen.value"))
         for binding in self.bindings:
-            table.add_row(Text(binding.key), Text(binding.label))
+            table.add_row(Text(key_label(binding.key)), Text(binding.label))
         for shared in SHARED_KEYS.values():
             table.add_row(Text(shared.key), Text(shared.label))
         return table

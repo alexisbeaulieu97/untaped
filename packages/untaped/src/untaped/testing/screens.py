@@ -14,7 +14,18 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal, Self
 
-from untaped.screen.core import KEY_NAMES, Cancel, Cmd, Key, Paste, Quit, Resize, Screen, is_inline
+from untaped.screen.core import (
+    KEY_NAMES,
+    Cancel,
+    Cmd,
+    Key,
+    Paste,
+    Quit,
+    Resize,
+    Screen,
+    is_inline,
+    is_key_name,
+)
 from untaped.screen.runtime import Runtime, SyncHost, capture_console
 from untaped.stability import experimental
 from untaped.theme import BUILTIN_THEMES, ThemeSpec
@@ -34,6 +45,10 @@ class ScreenKeys(tuple[ScreenKey, ...]):
 
     def __new__(cls, *keys: ScreenKey) -> Self:
         return super().__new__(cls, keys)
+
+    def __getnewargs__(self) -> tuple[ScreenKey, ...]:
+        # Without this, copy and pickle call ``__new__`` with the tuple as one key.
+        return tuple(self)
 
 
 @experimental
@@ -62,12 +77,13 @@ class ScreenRun[M, R]:
 
 def rendered_text(renderable: RenderableType, width: int, height: int) -> str:
     """``renderable`` as plain text on the screen console, trailing blanks trimmed."""
-    console = capture_console(width, height)
+    console = capture_console(width, height, color_system=None, no_color=True)
     console.print(renderable, end="")
     text = console.file.getvalue()  # type: ignore[attr-defined]
     return "\n".join(line.rstrip() for line in text.removesuffix("\n").split("\n"))
 
 
+@experimental
 def drive_screen[M, R](
     screen: Screen[M, R],
     keys: Iterable[ScreenKey] = (),
@@ -83,8 +99,9 @@ def drive_screen[M, R](
     any other string raises ``ValueError``, so a typo fails loudly. Commands run
     synchronously after each key, under the caller's context; ``commands`` as a
     mapping stubs a command by its ``Cmd.name`` (the value is the message, or a
-    callable returning it) and every other command still runs. Keys the screen
-    gets after it ended are ignored.
+    callable returning it) and every other command still runs; a stub name that
+    matched no command raises ``ValueError`` once the run is over. Keys the
+    screen gets after it ended are ignored.
     """
     messages = [_message(key) for key in keys]
     stubs = _stubs(commands)
@@ -99,6 +116,12 @@ def drive_screen[M, R](
             runtime.send(message)
             host.pump()
         frames.append(_frame(runtime))
+    unmatched = [name for name in stubs if name not in ran]
+    if unmatched:
+        raise ValueError(
+            f"commands stubbed but never run: {', '.join(map(repr, unmatched))}; "
+            f"commands that ran: {', '.join(map(repr, ran)) or 'none'}"
+        )
     outcome = runtime.outcome
     return ScreenRun(
         result=outcome.result if isinstance(outcome, Quit) else None,
@@ -117,7 +140,7 @@ def _frame[M, R](runtime: Runtime[M, R]) -> str:
 def _message(key: ScreenKey) -> object:
     if isinstance(key, Paste | Resize):
         return key
-    if isinstance(key, str) and (len(key) == 1 or key in KEY_NAMES):
+    if isinstance(key, str) and is_key_name(key):
         return Key(key)
     raise ValueError(
         f"unknown key {key!r}; use a key name ({', '.join(KEY_NAMES)}), a single character "

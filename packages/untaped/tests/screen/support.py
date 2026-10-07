@@ -1,17 +1,16 @@
-"""Shared helpers for the screen tests: a recording host and a small configurable screen."""
+"""Shared helpers for the screen tests: a recording host and small configurable screens."""
 
 from __future__ import annotations
 
 import queue
 import threading
 from collections.abc import Callable, Sequence
+from contextvars import copy_context
 from dataclasses import dataclass, replace
-
-from rich.console import RenderableType
+from typing import Any
 
 from untaped.screen.core import Binding, Cmd, Frame, Screen
 from untaped.screen.runtime import CmdKind
-from untaped.testing.screens import rendered_text
 
 
 class FakeHost:
@@ -20,6 +19,11 @@ class FakeHost:
     With ``threads=False`` a spawned job waits until the test calls
     :meth:`run_jobs`. Calls the jobs post are collected and run by the test
     thread through :meth:`deliver`, standing in for the event loop thread.
+
+    :meth:`post` models ``loop.call_soon_threadsafe``: the callback runs in a
+    copy of the *poster's* context (an empty one on a Python 3.14 worker
+    thread), not in the loop thread's, so a runtime that relies on the host to
+    carry context variables fails against it.
     """
 
     def __init__(self, *, threads: bool = False) -> None:
@@ -41,7 +45,8 @@ class FakeHost:
             self._pending.append(job)
 
     def post(self, call: Callable[[], None]) -> None:
-        self._posted.put(call)
+        context = copy_context()
+        self._posted.put(lambda: context.run(call))
 
     def redraw(self) -> None:
         self.redraws += 1
@@ -100,7 +105,7 @@ class Probe:
         self.seen: list[object] = []
         self.threads: list[str] = []
         self._handler = handler
-        self.screen: Screen[Model, str] = Screen(
+        self.screen: Screen[Model, str] = make_screen(
             init=lambda: (Model(), init),
             update=self._update,
             view=self._view,
@@ -130,9 +135,18 @@ def logged(model: Model, message: object, *cmds: Cmd) -> tuple[Model, list[Cmd]]
     return replace(model, log=(*model.log, message)), list(cmds)
 
 
-def frame_text(renderable: RenderableType, width: int, height: int) -> str:
-    """``renderable`` as plain text (what ``drive_screen`` frames hold)."""
-    return rendered_text(renderable, width, height)
+def make_screen(**overrides: object) -> Screen[Any, Any]:
+    """A valid screen (an ``int`` model as text, no commands); ``overrides`` replace fields."""
+    fields: dict[str, object] = {
+        "init": lambda: (0, []),
+        "update": lambda model, message: (model, []),
+        "view": lambda model, frame: str(model),
+        "title": "Counter",
+        "command": "untaped count",
+        "alternative": "untaped count --format json",
+    }
+    fields.update(overrides)
+    return Screen(**fields)  # type: ignore[arg-type]
 
 
 class ImmediateHost(FakeHost):
