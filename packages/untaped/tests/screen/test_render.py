@@ -105,7 +105,9 @@ def test_the_help_overlay_names_the_space_bar() -> None:
     runtime.start()
     runtime.send(Key("?"))
     lines = rendered_text(runtime.renderable(), 40, 14).splitlines()
-    assert any("space" in line and "toggle" in line for line in lines)
+    # The pinned footer (the last line) also says "space toggle"; look at the overlay only.
+    overlay = lines[:-1]
+    assert any("│ space" in line and "toggle" in line for line in overlay)
 
 
 def test_capture_console_needs_its_colour_choices_spelled_out() -> None:
