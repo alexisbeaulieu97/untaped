@@ -33,13 +33,18 @@ untaped doctor --online
 
 ## Set up your services
 
-`untaped setup` walks you through one profile in a terminal. For each service
-you pick (`awx`, `github`, `jira`) it asks for the base URL and how to get
-the token: store it with your password store (as `untaped auth set` does),
+`untaped setup` is one full-screen screen for one profile, in a terminal. The
+services (`awx`, `github`, `jira`) are listed on the left with their status;
+the selected one's form is on the right: the base URL and how to get the
+token (tabs): store it with your password store (as `untaped auth set` does),
 move a plaintext one there, give a command that prints it (`token_command`),
-use an environment variable, or keep the current one. It writes each
-service's answers as it goes, then checks each service online and exits 1 if
-one fails. Naming a new profile creates it.
+use an environment variable, or keep the current one. Saving checks the
+service online with what you typed before anything is written; if the check
+fails, the reason is shown under the form and you can fix the values, or
+`Save anyway`. Esc leaves the screen; ctrl-c leaves it too and exits 130.
+Naming a new profile in the profile field creates it on its first save.
+Afterwards `setup` prints what it wrote and the doctor checks of the services
+you configured, and exits 1 if one fails.
 
 ```bash
 untaped setup
