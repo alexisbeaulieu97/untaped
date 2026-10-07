@@ -12,13 +12,13 @@ screen), which passes it to ``view``.
 from __future__ import annotations
 
 from pathlib import PurePath
-from typing import Annotated, Any, Literal, Protocol, Self, get_args, get_origin
+from typing import Annotated, Any, Literal, NamedTuple, Protocol, Self, get_args, get_origin
 
 from pydantic import SecretStr
 from rich.console import RenderableType
 
-from untaped.config_schema import FieldDescriptor
-from untaped.screen.components.choices import Check, ListItem, Select, SingleList
+from untaped.config_schema import FieldDescriptor, annotated_metadata
+from untaped.screen.components.choices import Check, Cycle, ListItem, Select, SingleList
 from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput, TextInput
 from untaped.screen.core import Cmd, Frame
 from untaped.stability import experimental
@@ -67,16 +67,21 @@ def field_for(descriptor: FieldDescriptor, *, value: object = None, help: str = 
     """The component that edits the setting ``descriptor`` describes.
 
     ``Literal[...]`` of strings is a ``SingleList`` (four choices or fewer) or a
-    ``Select``, ``bool`` a ``Check``, ``int`` and ``float`` a ``NumberInput`` (the
-    bounds come from ``Annotated`` metadata such as ``Ge``/``Le`` when the
-    annotation carries it), a path type a ``PathInput``, ``SecretStr`` a
-    ``SecretInput`` and ``str`` a ``TextInput``. ``value`` is the starting
-    value (the setting's default when ``None``) and ``help`` its help line,
-    since a descriptor has no description. The label is the setting's key.
-    Any other type raises ``TypeError`` naming the key, so a setting nobody
-    mapped is an error instead of a silently missing field.
+    ``Select``, ``bool`` a ``Check`` (an optional ``bool | None`` a three-state
+    ``Cycle``: unset, on, off, holding ``None``, ``True`` or ``False``), ``int``
+    and ``float`` a ``NumberInput``, a path type a ``PathInput``, ``SecretStr``
+    a ``SecretInput`` and ``str`` a ``TextInput``. A number's bounds come from
+    the descriptor's ``metadata`` (``Ge``/``Le``/``Gt``/``Lt``, also those of an
+    ``Annotated`` type); an optional number may be left empty (unset, ``None``),
+    a required one may not. ``value`` is the starting value (the setting's
+    default when ``None``) and ``help`` its help line (the setting's
+    ``description`` when empty). The label is the setting's key. Any other type
+    raises ``TypeError`` naming the key, so a setting nobody mapped is an error
+    instead of a silently missing field.
     """
-    base, metadata = _unannotated(descriptor.annotation)
+    base, extras = _unannotated(descriptor.annotation)
+    metadata = (*descriptor.metadata, *extras)
+    help = help or descriptor.description or ""
     initial = (
         value if value is not None else (descriptor.default if descriptor.has_default else None)
     )
@@ -94,15 +99,26 @@ def field_for(descriptor: FieldDescriptor, *, value: object = None, help: str = 
             return SingleList(label, items, current, help=help)
         return Select(label, items, current, help=help)
     if base is bool:
+        if descriptor.optional:
+            return Cycle(
+                label,
+                (None, True, False),
+                initial if isinstance(initial, bool) else None,
+                labels=_TRISTATE_LABELS,
+                help=help,
+            )
         return Check(label, initial is True, help=help)
     if base is int or base is float:
-        minimum, maximum = _bounds(metadata, integer=base is int)
+        bounds = _bounds(metadata, integer=base is int)
         return NumberInput(
             label,
             text=_number_text(initial),
-            minimum=minimum,
-            maximum=maximum,
+            minimum=bounds.minimum,
+            maximum=bounds.maximum,
+            above=bounds.above,
+            below=bounds.below,
             integer=base is int,
+            required=not descriptor.optional,
             help=help,
         )
     if isinstance(base, type) and issubclass(base, PurePath):
@@ -117,37 +133,51 @@ def field_for(descriptor: FieldDescriptor, *, value: object = None, help: str = 
     )
 
 
+#: The words of the three states of an optional ``bool`` (``None``, ``True``, ``False``).
+_TRISTATE_LABELS = ("unset", "on", "off")
+
+
 def _unannotated(annotation: Any) -> tuple[Any, tuple[Any, ...]]:
     """The type under ``Annotated[...]`` and its metadata (pydantic ``Field`` constraints too)."""
     if get_origin(annotation) is not Annotated:
         return annotation, ()
-    base, *extras = get_args(annotation)
-    metadata: list[Any] = []
-    for extra in extras:
-        metadata.append(extra)
-        metadata.extend(getattr(extra, "metadata", ()))
-    return base, tuple(metadata)
+    return get_args(annotation)[0], annotated_metadata(annotation)
 
 
-def _bounds(metadata: tuple[Any, ...], *, integer: bool) -> tuple[float | None, float | None]:
-    """The inclusive minimum and maximum the ``ge``/``gt``/``le``/``lt`` metadata set.
+class _Bounds(NamedTuple):
+    minimum: float | None = None
+    maximum: float | None = None
+    above: float | None = None
+    below: float | None = None
 
-    An exclusive bound counts only for an integer (``gt=0`` is a minimum of 1); a
-    float's exclusive bound cannot be written as an inclusive one, so it is left
-    to the setting's own validation.
+
+def _bounds(metadata: tuple[Any, ...], *, integer: bool) -> _Bounds:
+    """The limits the ``ge``/``gt``/``le``/``lt`` metadata set, the tightest of each kind.
+
+    An integer's exclusive bound is the next integer (``gt=0`` is a minimum of 1);
+    a float keeps it exclusive (``above``/``below``), since no inclusive bound
+    says it.
     """
     minimum: float | None = None
     maximum: float | None = None
+    above: float | None = None
+    below: float | None = None
     for item in metadata:
         if (ge := getattr(item, "ge", None)) is not None:
             minimum = ge if minimum is None else max(minimum, ge)
-        if (gt := getattr(item, "gt", None)) is not None and integer:
-            minimum = gt + 1 if minimum is None else max(minimum, gt + 1)
+        if (gt := getattr(item, "gt", None)) is not None:
+            if integer:
+                minimum = gt + 1 if minimum is None else max(minimum, gt + 1)
+            else:
+                above = gt if above is None else max(above, gt)
         if (le := getattr(item, "le", None)) is not None:
             maximum = le if maximum is None else min(maximum, le)
-        if (lt := getattr(item, "lt", None)) is not None and integer:
-            maximum = lt - 1 if maximum is None else min(maximum, lt - 1)
-    return minimum, maximum
+        if (lt := getattr(item, "lt", None)) is not None:
+            if integer:
+                maximum = lt - 1 if maximum is None else min(maximum, lt - 1)
+            else:
+                below = lt if below is None else min(below, lt)
+    return _Bounds(minimum, maximum, above, below)
 
 
 def _number_text(value: object) -> str:

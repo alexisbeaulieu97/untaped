@@ -2,10 +2,10 @@
 
 Every glyph, colour and box a component draws comes from the :class:`Frame` it
 is given; this module is where a role name becomes a Rich style and where a
-row of text is cut or padded to the cells it has. The two emphasis attributes
-below (bold, reverse) are the only styling that is not a theme role: the
-cursor is by definition the inversion of the text under it, and emphasis
-layers over whatever colour the theme chose.
+row of text is cut or padded to the cells it has. The caret is the
+``screen.caret`` role (reverse by default) and bold emphasis is
+``screen.emphasis``, both layered over whatever colour the theme chose.
+:data:`DIM` is the one attribute that is not a role.
 """
 
 from __future__ import annotations
@@ -21,8 +21,6 @@ from untaped.screen.core import Frame
 from untaped.screen.fit import fit_text
 
 __all__ = [
-    "BOLD",
-    "CARET",
     "DIM",
     "divider",
     "inner_width",
@@ -32,10 +30,9 @@ __all__ = [
     "window_start",
 ]
 
-BOLD = Style(bold=True)
+#: The one attribute that is not a theme role: a dimmed item is the muted colour with the
+#: terminal's dim attribute over it, so it stays a step apart from a plain muted one on any theme.
 DIM = Style(dim=True)
-#: The caret and the character it sits on: the text colour inverted.
-CARET = Style(reverse=True)
 
 
 def role_style(frame: Frame, *roles: str) -> Style:
@@ -125,11 +122,13 @@ def text_line(
     """
     muted = role_style(frame, "screen.muted")
     value = role_style(frame, "screen.value")
+    caret = role_style(frame, "screen.caret")
+    on_caret = role_style(frame, "screen.value", "screen.caret")
     if not text:
         line = Text()
         shown = placeholder
         if focused:
-            line.append(shown[:1] or " ", style=value + CARET)
+            line.append(shown[:1] or " ", style=on_caret)
             shown = shown[1:]
         line.append(shown, style=muted)
         return fit_text(line, inner, frame.ellipsis())
@@ -142,7 +141,7 @@ def text_line(
     # would otherwise be stretched over the ellipsis by ``fit_text``.
     offset = cursor - start
     if offset < _kept_chars(visible, inner, frame.ellipsis()):
-        line.stylize(CARET, offset, offset + 1)
+        line.stylize(caret, offset, offset + 1)
     return line
 
 

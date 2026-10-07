@@ -412,6 +412,24 @@ def test_number_bounds_and_parse_errors() -> None:
     )
 
 
+def test_a_required_number_is_invalid_when_empty_and_an_optional_one_is_not() -> None:
+    assert NumberInput("N").validate() == ""
+    assert NumberInput("N", required=True).validate() == "Enter a whole number."
+    assert NumberInput("N", integer=False, required=True).validate() == "Enter a number."
+    assert NumberInput("N", text="  ", required=True).validate() != ""
+    assert NumberInput("N", text="3", required=True).validate() == ""
+    assert NumberInput("N", required=True).value is None
+
+
+def test_a_number_outside_an_exclusive_bound_is_invalid() -> None:
+    low = NumberInput("N", text="0", integer=False, above=0)
+    assert low.validate() == "Must be greater than 0."
+    assert NumberInput("N", text="0.1", integer=False, above=0).validate() == ""
+    high = NumberInput("N", text="10", integer=False, below=10)
+    assert high.validate() == "Must be less than 10."
+    assert NumberInput("N", text="9.9", integer=False, below=10).validate() == ""
+
+
 def test_a_number_error_is_drawn_and_cleared_by_typing() -> None:
     component = NumberInput("Timeout", "700", minimum=1, maximum=600)
     run = run_solo(component.with_error(component.validate()), width=40)

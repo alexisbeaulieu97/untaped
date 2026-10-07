@@ -130,6 +130,14 @@ a theme change reaches every screen. The names are declared; the
 [settings reference](./reference/config.md) lists `ui.symbols` and
 `ui.color_roles`. Tables and detail views do not read the `screen.*` roles.
 
+Every glyph and colour a component draws is a token, the caret and bold
+emphasis too: `screen.caret` (reverse by default) styles the caret and the
+character under it, and `screen.emphasis` (bold by default) the chosen value,
+the on/off symbols and the primary button's label, so a theme can restyle them.
+Two things stay structural text and are not tokens: the `[` and `]` around a
+`MultiList` mark, and the terminal's `dim` attribute, which a dimmed item layers
+over the muted colour.
+
 One color decision (`NO_COLOR`, `COLORTERM`, `TERM`) reaches both Rich and the
 terminal library. Under `NO_COLOR` the cursor row keeps only bold, so a screen
 must not rely on color alone.
@@ -160,12 +168,17 @@ is text, tab accepts a completion before it moves focus, esc closes an open
 | `SingleList`, `MultiList` | one or many choices, all showing, as `ListItem` rows |
 | `Cycle` | a value changed with left and right, or inherited |
 | `Tabs`, `Tab` | tabs that each show their own fields; `value` is the active tab's |
-| `Buttons`, `Button` | actions; activating one sends `Pressed(id)` |
+| `Buttons`, `Button` | actions; activating one sends `Pressed(id)`. A primary button always has the bright ring and a bold label, a secondary one the muted border, a ghost one is plain text; focus is the cursor highlight on the focused button's label row |
 
 `field_for(descriptor, value=..., help=...)` maps a setting's type to its
 component (a `Literal` to a list or `Select`, `bool` to `Check`, numbers to
 `NumberInput`, paths to `PathInput`, `SecretStr` to `SecretInput`, `str` to
 `TextInput`) and raises `TypeError` naming the setting for any other type.
+It reads the descriptor's `metadata`, `optional` and `description`: a number's
+`ge`/`gt`/`le`/`lt` bounds are enforced, a number that is not optional cannot be
+left empty while an optional one (`int | None`) may be (its value is `None`),
+an optional `bool` is a three-state `Cycle` (unset, on, off; `None`, `True`,
+`False`), and the field's description is the help line when you pass none.
 
 The look comes from the theme: the label sits in the top border, the caret is
 drawn, help is muted below, an error is a red border and message, and the only
