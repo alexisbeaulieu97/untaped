@@ -52,17 +52,28 @@ SCREEN = Screen(
 name = ui_context().run(SCREEN)
 ```
 
+`init` returns the first model and the commands to start with (`[]` for
+none); it runs once, when the screen opens. `title` names the screen: the
+runtime does not draw it (draw your own heading in `view`), but it labels the
+screen where a test backend records or reports one. `command` and
+`alternative` are what the user sees when there is no terminal (see
+[Without a terminal](#without-a-terminal)).
+
 `ui.run` raises `OperationCancelledError` when the user backs out, and
 `PromptInterruptedError` (exit 130) on an interrupt, as every prompt does. A
-screen ends only by returning `Cmd.send(Quit(result))` or `Cmd.send(Cancel())`.
-`layout` is `"full"` (the default: the alternate screen, the whole terminal) or
-`"inline"` (below the cursor, erased when done); use inline only for a single
-question.
+screen returns a value only by sending `Quit(result)`; `Cancel()` or an
+unhandled esc ends it without one, and an unhandled ctrl-c ends it as an
+interrupt. `layout` is `"full"` (the default: the alternate screen, the whole
+terminal) or `"inline"` (below the cursor, erased when done); use inline only
+for a single question.
 
 ## Messages and keys
 
 `update` receives `Key(name)` (a printable character is its own name, a space
-is `" "`), `Paste(text)`, `Resize(width, height)`, a command's message and
+is `" "`; any other key is one of `up`, `down`, `left`, `right`, `home`, `end`,
+`tab`, `shift-tab`, `enter`, `esc`, `backspace`, `delete`, `ctrl-u`, `ctrl-w`,
+`ctrl-s`, `ctrl-c` or `ctrl-r`, the names a `Binding` and `drive_screen` also
+accept), `Paste(text)`, `Resize(width, height)`, a command's message and
 `CmdError(error)` when a command raised. The shared keys are the SDK's, and a
 screen cannot rebind them:
 
@@ -133,14 +144,17 @@ other string raises, so a typo fails loudly. Commands run synchronously after
 each key; pass `commands={name: message}` to stub one by its `Cmd.name`.
 
 A command's own test does not run the screen: give the scripted backend a
-result, a `Cancel()`, an exception to raise or `ScreenKeys("a", "enter")` to
-replay through the real screen.
+result, a `Quit(result)`, a `Cancel()`, an exception (instance or class) to
+raise or `ScreenKeys("a", "enter")` to replay through the real screen. The
+scripted backend never touches a terminal, so `ui.run` does not look for one:
+`invoke_cli(command, args, prompt_backend=ScriptedPromptBackend(screens=[...]))`
+needs no `terminal=True` and no TTY stdin.
 
 ```python
-from untaped.sdk import UiContext
-from untaped.testing import ScreenKeys, ScriptedPromptBackend, TtyStringIO
+from untaped.testing import CliInvoker, ScreenKeys, ScriptedPromptBackend
 
 backend = ScriptedPromptBackend(screens=[ScreenKeys("a", "b", "enter")])
-ui = UiContext(stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=backend)
-assert ui.run(SCREEN) == "ab"
+result = CliInvoker().invoke(app, ["name"], prompt_backend=backend)
+assert result.exit_code == 0
+assert backend.calls == [("run_screen", "Name it")]
 ```

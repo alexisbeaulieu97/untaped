@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager
@@ -37,7 +38,12 @@ class PromptChoice[T_co]:
 
 
 class PromptBackend(Protocol):
-    """Backend boundary for interactive prompt implementations."""
+    """Backend boundary for interactive prompt implementations.
+
+    A backend may also set ``needs_terminal = False`` (an optional attribute,
+    read with a default of ``True``) to say it never draws on a terminal, so
+    :meth:`UiContext.run` does not look for one before handing it a screen.
+    """
 
     def confirm(self, message: str, *, default: bool) -> bool: ...
 
@@ -112,7 +118,10 @@ def open_controlling_terminal(*, write: bool = False) -> TextIO:
     override = _terminal_override.get()
     if override is not None:
         return override()
-    return open(_CONTROLLING_TERMINAL, "w" if write else "r", encoding="utf-8")
+    if write:
+        # Never ``O_CREAT``: where there is no terminal this must fail, not create a file.
+        return os.fdopen(os.open(_CONTROLLING_TERMINAL, os.O_WRONLY), "w", encoding="utf-8")
+    return open(_CONTROLLING_TERMINAL, encoding="utf-8")
 
 
 def set_terminal_override(

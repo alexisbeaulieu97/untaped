@@ -4,7 +4,8 @@ It runs a screen's :class:`~untaped.screen.runtime.Runtime` in a
 prompt_toolkit ``Application``: key presses become ``Key`` and ``Paste``
 messages, the runtime's Rich renderable is painted through one capture console
 (ANSI in a ``FormattedTextControl``), and commands run on threads that post
-their messages back to the event loop. Nothing else in the workspace may
+their messages back to the event loop. A SIGTERM or SIGHUP ends the screen like an
+exception, so the terminal is restored before the process exits. Nothing else in the workspace may
 import prompt_toolkit (``tests/repo/test_terminal_boundary.py`` and the
 ``terminal-boundary`` convention check), so a different terminal library can
 replace this module without touching a screen.
@@ -22,8 +23,9 @@ import asyncio
 import contextlib
 import contextvars
 import os
+import signal
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from typing import Any, TextIO
 
 from prompt_toolkit.application import Application, run_in_terminal
@@ -194,18 +196,22 @@ def run_terminal_screen[M, R](
 ) -> Outcome[R]:
     """Run ``screen`` on ``input`` and ``output`` and return how it ended.
 
-    Raises ``KeyboardInterrupt`` for an external SIGINT, ``EOFError`` when the
-    input closes, and whatever a screen's own code raised.
+    Raises ``KeyboardInterrupt`` for an external SIGINT, ``SystemExit`` (128 +
+    the signal) for SIGTERM or SIGHUP, ``EOFError`` when the input closes, and
+    whatever a screen's own code raised. The terminal is restored in every case.
     """
     application, host, runtime = build_application(
         screen, input=input, output=output, theme=theme, environ=environ
     )
 
-    def start() -> None:
-        host.bind_loop()
-        host.apply(runtime.start)
+    with _exit_on_termination() as watch:
 
-    return application.run(pre_run=start)
+        def start() -> None:
+            host.bind_loop()
+            watch(application)
+            host.apply(runtime.start)
+
+        return application.run(pre_run=start)
 
 
 def run_screen_on[M, R](
@@ -239,6 +245,49 @@ def _paint[M, R](
     return ANSI(text)
 
 
+#: The signals that end the process without a key press: ``kill`` and a closing terminal.
+_TERMINATION = tuple(
+    sig for sig in (getattr(signal, "SIGTERM", None), getattr(signal, "SIGHUP", None)) if sig
+)
+
+
+@contextlib.contextmanager
+def _exit_on_termination() -> Iterator[Callable[[Application[Any]], None]]:
+    """Yield a function that makes SIGTERM and SIGHUP end an application, then undo it.
+
+    Left to the default action, those signals kill the process with the terminal
+    still in the alternate screen and raw mode. The handler instead exits the
+    application with ``SystemExit(128 + signal)`` so prompt_toolkit restores the
+    terminal on the way out; the handlers installed before are put back after.
+    Only the main thread can handle signals; anywhere else this does nothing.
+    """
+    previous: dict[signal.Signals, Any] = {}
+
+    def watch(application: Application[Any]) -> None:
+        if threading.current_thread() is not threading.main_thread():
+            return
+        loop = asyncio.get_running_loop()
+        for sig in _TERMINATION:
+            before = signal.getsignal(sig)
+            try:
+                loop.add_signal_handler(sig, _terminate, application, sig)
+            except NotImplementedError, RuntimeError, ValueError:
+                continue  # no signal handlers on this platform or loop
+            previous[sig] = before
+
+    try:
+        yield watch
+    finally:
+        for sig, before in previous.items():
+            if before is not None:  # None: installed outside Python; nothing to put back
+                signal.signal(sig, before)
+
+
+def _terminate(application: Application[Any], sig: signal.Signals) -> None:
+    if not application.is_done:
+        application.exit(exception=SystemExit(128 + sig))
+
+
 def _interrupt(application: Application[Any]) -> None:
     """An external SIGINT (``kill -INT``): the ctrl-c *key* is a ``Key`` message instead."""
     if not application.is_done:
@@ -248,7 +297,7 @@ def _interrupt(application: Application[Any]) -> None:
 def _bindings(*, on_sigint: Callable[[], None], send: Callable[[object], None]) -> KeyBindings:
     bindings = KeyBindings()
     for ptk_key, name in _KEYS.items():
-        bindings.add(ptk_key, eager=True)(_named(send, name))
+        bindings.add(ptk_key)(_named(send, name))
 
     def feed(text: str) -> None:
         for char in text:

@@ -121,7 +121,10 @@ def invoke_cli(
     (reaching even ``UiContext``s the command builds itself). The
     controlling terminal (``/dev/tty``, used for prompts while stdin is
     piped) is simulated: absent by default, present with ``terminal=True``
-    (prompts then go to ``prompt_backend``).
+    (prompts then go to ``prompt_backend``). A command that runs a screen
+    (``ui.run``) needs neither with a :class:`ScriptedPromptBackend`, which
+    never touches a terminal: ``prompt_backend=ScriptedPromptBackend(screens=[...])``
+    is enough (and ``interactive=True`` only if the command checks for a TTY itself).
     """
     stdout = io.StringIO()
     stderr = io.StringIO()
@@ -281,11 +284,16 @@ class ScriptedPromptBackend:
     simulating Ctrl-C.
 
     ``screens`` answers :meth:`UiContext.run`: each entry is the screen's
-    result (returned as ``Quit(entry)``), a :class:`Cancel`, an exception
-    (raised), or :class:`ScreenKeys` (replayed through :func:`drive_screen`
-    with commands run synchronously, so a command-level test can run a real
-    screen). ``ran`` keeps the screens it was asked to run.
+    result (returned as ``Quit(entry)``), a :class:`Quit` (its result is
+    returned, like the screen's own), a :class:`Cancel`, an exception
+    instance or class (raised), or :class:`ScreenKeys` (replayed through
+    :func:`drive_screen` with commands run synchronously, so a command-level
+    test can run a real screen). ``ran`` keeps the screens it was asked to
+    run. The backend never touches a terminal, so ``UiContext.run`` does not
+    require one: a command test needs no ``terminal=True`` and no TTY stdin.
     """
+
+    needs_terminal = False
 
     def __init__(
         self,
@@ -352,10 +360,12 @@ class ScriptedPromptBackend:
     def run_screen[M, R](self, screen: Screen[M, R], *, theme: ThemeSpec) -> Quit[R] | Cancel:
         self.ran.append(screen)
         entry = self._next(self._screens, "run_screen", screen.title)
-        if isinstance(entry, BaseException):
+        if isinstance(entry, BaseException) or (
+            isinstance(entry, type) and issubclass(entry, BaseException)
+        ):
             raise entry
-        if isinstance(entry, Cancel):
-            return entry
+        if isinstance(entry, Quit | Cancel):
+            return cast("Quit[R] | Cancel", entry)
         if isinstance(entry, ScreenKeys):
             run = drive_screen(screen, entry, theme=theme, commands="sync")
             if run.outcome is None:

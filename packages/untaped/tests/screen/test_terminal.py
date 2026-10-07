@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import os
 import signal
@@ -21,12 +22,12 @@ from prompt_toolkit.output.vt100 import Vt100_Output
 
 from untaped.screen.core import Cancel, Cmd, Frame, Key, Paste, Quit, Resize, Screen
 from untaped.screen.terminal import TerminalHost, build_application, run_terminal_screen
-from untaped.testing.screens import rendered_text
 from untaped.theme import BUILTIN_THEMES
 
 THEME = BUILTIN_THEMES["default"]
 ENTER = "\r"
 ESC = "\x1b"
+REACTION_LIMIT = 0.4  # a held-back key takes half a second or more; a normal reaction ~0.06
 F1 = "\x1bOP"  # an escape sequence no screen binds
 ALT_SCREEN_ON = "\x1b[?1049h"
 ALT_SCREEN_OFF = "\x1b[?1049l"
@@ -201,16 +202,43 @@ def test_the_ctrl_c_key_is_a_message_the_screen_can_handle() -> None:
     assert [m.name for m in typing.seen if isinstance(m, Key)] == ["a", "ctrl-c", "ctrl-s", "enter"]
 
 
+def test_the_escape_timeout_is_short() -> None:
+    with create_pipe_input() as pipe:
+        application, _host, _runtime = build_application(
+            Typing().screen, input=pipe, output=DummyOutput(), theme=THEME
+        )
+    assert application.ttimeoutlen <= 0.1  # prompt_toolkit's default of 0.5 s feels like lag
+
+
+def _reaction_time(typing: Typing, keys: str) -> tuple[float, list[object]]:
+    """Seconds from sending ``keys`` (no closing) to the screen ending, and how it ended."""
+    recorder = Recorder()
+    with _threaded(typing, recorder.output) as (pipe, thread, outcome):
+        _wait_for(lambda: "typed:" in recorder.text(), what="the first frame")
+        started = time.monotonic()
+        pipe.send_text(keys)
+        thread.join(timeout=5)
+        return time.monotonic() - started, outcome
+
+
 def test_an_unhandled_escape_cancels_at_once() -> None:
-    typing = Typing()
-    with _threaded(typing) as (pipe, thread, outcome):
-        pipe.send_text(ESC)  # no closing: the escape timeout alone must tell it from a sequence
-        thread.join(timeout=3)
-        assert outcome == [Cancel()]
+    # The pipe stays open: only the escape timeout tells a lone escape from a sequence.
+    elapsed, outcome = _reaction_time(Typing(), ESC)
+    assert outcome == [Cancel()]
+    assert elapsed < REACTION_LIMIT
 
 
 def test_an_unhandled_ctrl_c_key_cancels_as_an_interrupt() -> None:
     assert _run(Typing(), "\x03") == Cancel(interrupted=True)
+
+
+def test_a_named_key_is_not_held_back_waiting_for_a_longer_sequence() -> None:
+    # No binding of the application extends a named key (prompt_toolkit's emacs chords
+    # like ctrl-c ">" are inactive without a focused buffer), so none waits out the
+    # one-second key timeout: a chord added later must not make esc or ctrl-c lag.
+    elapsed, outcome = _reaction_time(Typing(), "\x03")
+    assert outcome == [Cancel(interrupted=True)]
+    assert elapsed < REACTION_LIMIT
 
 
 def test_closed_input_raises_eof() -> None:
@@ -371,9 +399,21 @@ def test_no_color_keeps_bold() -> None:
     assert "38;" not in recorder.text()
 
 
-def test_the_console_is_the_one_the_driver_uses() -> None:
-    """A view string is literal text in the adapter too (markup, emoji and highlight off)."""
-    text = "[WIP] fix [/] :smile: 42"
+def _control_text(screen: Screen[object, object], environ: dict[str, str]) -> str:
+    """The raw ANSI the application's own control paints for ``screen`` (the adapter's path)."""
+    with create_pipe_input() as pipe:
+        application, _host, runtime = build_application(
+            screen, input=pipe, output=DummyOutput(), theme=THEME, environ=environ
+        )
+        runtime.start()
+        text = application.layout.current_control.text()  # type: ignore[attr-defined]
+        assert isinstance(text, ANSI)
+        return text.value
+
+
+def test_a_view_string_is_literal_text_through_the_adapter() -> None:
+    """Markup, emoji and highlight stay off on the adapter's own console, not only the driver's."""
+    text = "[WIP] fix [/] :smile: 42 https://example.com"
     screen: Screen[None, None] = Screen(
         init=lambda: (None, []),
         update=lambda model, message: (model, []),
@@ -382,12 +422,48 @@ def test_the_console_is_the_one_the_driver_uses() -> None:
         command="untaped literal",
         alternative="untaped literal --format json",
     )
+    painted = _control_text(screen, {"TERM": "xterm-256color"})  # type: ignore[arg-type]
+    assert text in painted  # no escapes inside it: no highlight, no markup, no emoji
+
+
+def test_the_first_frame_after_a_resize_is_painted_at_the_new_size() -> None:
+    """Not one frame at the old size until the ``Resize`` message gets through."""
+    recorder = Recorder(size=(80, 24))
+    screen: Screen[None, None] = Screen(
+        init=lambda: (None, []),
+        update=lambda model, message: (model, []),  # ignores Resize: only the paint can know
+        view=lambda model, frame: f"size {frame.width}x{frame.height}",
+        title="Size",
+        command="untaped size",
+        alternative="untaped size --format json",
+    )
     with create_pipe_input() as pipe:
-        _application, _host, runtime = build_application(
-            screen, input=pipe, output=DummyOutput(), theme=THEME, environ={}
+        application, _host, runtime = build_application(
+            screen, input=pipe, output=recorder.output, theme=THEME, environ={}
         )
         runtime.start()
-        assert text in rendered_text(runtime.renderable(), 80, 24)
+        control = application.layout.current_control
+        assert "size 80x23" in control.text().value  # type: ignore[attr-defined]
+        recorder.size = Size(rows=10, columns=50)
+
+        async def repaint() -> str:
+            frame: str = control.text().value  # type: ignore[attr-defined]
+            return frame
+
+        assert "size 50x9" in asyncio.run(repaint())
+        assert runtime.size == (50, 10)
+
+
+def test_an_inline_screen_erases_itself_and_a_full_one_owns_the_screen() -> None:
+    with create_pipe_input() as pipe:
+        inline, _, _ = build_application(
+            Typing(layout="inline").screen, input=pipe, output=DummyOutput(), theme=THEME
+        )
+        full, _, _ = build_application(
+            Typing(layout="full").screen, input=pipe, output=DummyOutput(), theme=THEME
+        )
+    assert (inline.erase_when_done, inline.full_screen) == (True, False)
+    assert (full.erase_when_done, full.full_screen) == (False, True)
 
 
 # --- commands ---------------------------------------------------------------------
@@ -398,7 +474,10 @@ def test_a_write_command_survives_quit() -> None:
     started = threading.Event()
     finished = threading.Event()
 
+    daemon: list[bool] = []
+
     def write() -> object:
+        daemon.append(threading.current_thread().daemon)
         started.set()
         assert release.wait(timeout=5)
         finished.set()
@@ -422,6 +501,7 @@ def test_a_write_command_survives_quit() -> None:
         thread.join(timeout=5)
         assert finished.is_set()
         assert outcome == [Cancel()]
+    assert daemon == [False]  # the interpreter must not kill a write half-way
 
 
 def test_a_suspend_command_runs_with_the_screen_left() -> None:
@@ -458,7 +538,10 @@ def test_a_late_background_result_after_quit_is_ignored() -> None:
     release = threading.Event()
     done = threading.Event()
 
+    daemon: list[bool] = []
+
     def slow() -> object:
+        daemon.append(threading.current_thread().daemon)
         assert release.wait(timeout=5)
         done.set()
         return Late()
@@ -471,6 +554,8 @@ def test_a_late_background_result_after_quit_is_ignored() -> None:
     typing = Typing(extra=on_key)
     outcome = _run(typing, "b" + ENTER, close=False)
     assert outcome == Quit("")  # quit did not wait for the command
+    _wait_for(lambda: bool(daemon), what="the command to start")
+    assert daemon == [True]  # a background command never keeps the interpreter alive
     release.set()
     assert done.wait(timeout=5)
     time.sleep(0.05)  # the result has nowhere to go: no error, no delivery

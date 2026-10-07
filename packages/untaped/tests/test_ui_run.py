@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -89,6 +90,44 @@ def test_run_without_a_terminal_names_the_command_and_alternative() -> None:
     assert "`untaped demo` needs a terminal; use `untaped demo --name NAME`" in result.stderr
 
 
+def test_a_command_test_runs_a_screen_through_the_scripted_backend_without_a_terminal() -> None:
+    app = create_app(name="demo")
+
+    @app.default
+    def go() -> None:
+        with report_errors():
+            name = UiContext().run(_screen())  # the context the command builds itself
+            sys.stdout.write(f"hello {name}\n")
+
+    backend = ScriptedPromptBackend(screens=[ScreenKeys("a", "b", "enter")])
+    result = CliInvoker().invoke(app, [], prompt_backend=backend)  # no interactive, no terminal
+    assert (result.exit_code, result.stdout) == (0, "hello ab\n")
+    assert result.stderr == ""
+    assert backend.calls == [("run_screen", "Name it")]
+
+
+def test_a_command_test_with_an_interactive_stdin_needs_no_terminal_for_a_screen() -> None:
+    app = create_app(name="demo")
+
+    @app.default
+    def go() -> None:
+        with report_errors():
+            sys.stdout.write(f"{UiContext().run(_screen())}\n")
+
+    backend = ScriptedPromptBackend(screens=["typed"])
+    result = CliInvoker().invoke(app, [], interactive=True, prompt_backend=backend)
+    assert (result.exit_code, result.stdout) == (0, "typed\n")
+
+
+def test_a_backend_that_needs_a_terminal_still_gets_the_refusal() -> None:
+    class Plain(ScriptedPromptBackend):
+        needs_terminal = True
+
+    ui = UiContext(stdin=io.StringIO(), prompt_backend=Plain(screens=["x"]))
+    with pytest.raises(UsageError, match="needs a terminal"):
+        ui.run(_screen())
+
+
 def test_the_no_terminal_message_is_built_in_one_place() -> None:
     assert no_terminal_message("untaped x", "untaped x plan") == (
         "`untaped x` needs a terminal; use `untaped x plan`"
@@ -111,6 +150,8 @@ class Opened:
 
 class _Spy(ScriptedPromptBackend):
     """A scripted backend that remembers the streams the context pointed it at."""
+
+    needs_terminal = True  # the terminal rules are what these tests are about
 
     def __init__(self, ui_holder: list[UiContext], answer: object = "ok") -> None:
         super().__init__(screens=[answer])
@@ -190,7 +231,7 @@ def test_a_terminal_that_opens_for_input_but_not_output_is_closed_and_refused(
         return handles[-1]
 
     monkeypatch.setattr("untaped.ui.open_controlling_terminal", opener)
-    ui = UiContext(stdin=io.StringIO(), prompt_backend=ScriptedPromptBackend(screens=["x"]))
+    ui = UiContext(stdin=io.StringIO(), prompt_backend=_Spy([], "x"))
     with pytest.raises(UsageError, match="needs a terminal"):
         ui.run(_screen())
     assert handles[0].closed
@@ -212,6 +253,22 @@ def test_the_controlling_terminal_opens_read_only_or_write_only(
     finally:
         reset_terminal_override(token)
     assert device.read_text() == "drawn"
+
+
+def test_the_controlling_terminal_is_never_created_for_writing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    missing = tmp_path / "no-tty"
+    monkeypatch.setattr("untaped.prompts._CONTROLLING_TERMINAL", str(missing))
+    token = set_terminal_override(None)
+    try:
+        with pytest.raises(OSError):
+            open_controlling_terminal(write=True)
+        with pytest.raises(OSError):
+            open_controlling_terminal()
+    finally:
+        reset_terminal_override(token)
+    assert not missing.exists()
 
 
 def test_the_terminal_override_serves_both_modes() -> None:
@@ -241,6 +298,16 @@ def test_scripted_screens_result_cancel_exception_and_keys() -> None:
     assert ui.run(screen) == "ab"  # the keys ran through the real screen
     assert backend.ran == [screen] * 4
     assert backend.calls == [("run_screen", "Name it")] * 4
+
+
+def test_a_scripted_quit_returns_its_result_and_an_exception_class_is_raised() -> None:
+    backend = ScriptedPromptBackend(screens=[Quit("x"), RuntimeError, KeyboardInterrupt])
+    ui = _interactive(backend)
+    assert ui.run(_screen()) == "x"  # not Quit(Quit("x"))
+    with pytest.raises(RuntimeError):
+        ui.run(_screen())
+    with pytest.raises(PromptInterruptedError):
+        ui.run(_screen())
 
 
 def test_scripted_keys_that_do_not_end_the_screen_fail_loudly() -> None:
