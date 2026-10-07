@@ -10,10 +10,9 @@ saved; writes go through the same validated settings repository as
 ``config set`` (:mod:`untaped.management.setup_write`). After the screen
 closes this command prints what the screen wrote, then the doctor checks of
 the capabilities it configured, online ones included, and exits 1 when any
-fails; ctrl-c exits 130 after that. It needs a terminal (exit 2 without one,
-naming ``setup plan``). ``--only`` limits the capabilities listed.
-
-``setup plan``). ``--only`` preselects the services.
+fails; ctrl-c exits 130 after that. It needs a terminal: without one it exits 2,
+naming ``setup plan``, before it reads the config or the password store.
+``--only`` limits the capabilities listed.
 
 ``setup plan`` (:mod:`untaped.management.setup_plan`) is its read-only,
 non-interactive face for agents and scripts; both read service state
@@ -33,7 +32,13 @@ from untaped.cli import ColumnsOption, FormatOption, create_app, report_errors
 from untaped.config_file import read_config_dict
 from untaped.errors import PromptInterruptedError
 from untaped.management.doctor import report_check_rows, selected_check_rows
-from untaped.management.setup_plan import emit_plan, pending, plan_rows
+from untaped.management.setup_plan import (
+    SETUP_ALTERNATIVE,
+    SETUP_COMMAND,
+    emit_plan,
+    pending,
+    plan_rows,
+)
 from untaped.management.setup_state import service_states, setup_services
 from untaped.profile_resolver import selected_profile
 from untaped.theme import OutputFormat
@@ -45,7 +50,7 @@ OnlyOption = Annotated[
     Parameter(
         name="--only",
         negative="",
-        help="Services to set up (repeatable or comma-separated); default: every service.",
+        help="Only these services (repeatable or comma-separated); default: every service.",
         consume_multiple=False,
     ),
 ]
@@ -60,14 +65,14 @@ CheckOption = Annotated[
 
 
 def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -> App:
-    """Return the root ``setup`` command (the wizard) and its ``plan`` subcommand."""
+    """Return the root ``setup`` command (the setup screen) and its ``plan`` subcommand."""
     app = create_app(name="setup", help="Configure a profile's services interactively.")
 
     @app.default
     def setup_command(
         *, only: OnlyOption = None, fmt: FormatOption = "table", columns: ColumnsOption = None
     ) -> None:
-        """Pick services, enter their URLs and tokens, then check them online."""
+        """Set up a profile on one screen: URLs and tokens, checked online before saving."""
         with report_errors():
             _run(shell, result, only=only, fmt=fmt, columns=columns)
 
@@ -103,6 +108,8 @@ def _run(
     from untaped.management.setup_screen import setup_screen  # noqa: PLC0415
 
     ui = ui_context(strict=False)
+    # Before anything is read or probed: with no terminal this exits 2 having touched nothing.
+    ui.require_screen_terminal(command=SETUP_COMMAND, alternative=SETUP_ALTERNATIVE)
     services = setup_services(result, only)
     raw = read_config_dict()
     active = selected_profile()

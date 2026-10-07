@@ -346,6 +346,17 @@ class UiContext:
             terminal_out.close()
 
     @experimental
+    def require_screen_terminal(self, *, command: str, alternative: str) -> None:
+        """Raise :class:`UsageError` naming ``command`` and ``alternative`` without a terminal.
+
+        For a command that does work before it builds its screen (reading the config, probing
+        a token store): ask first, so a run without a terminal touches nothing. :meth:`run`
+        asks again.
+        """
+        with self._screen_terminal(command=command, alternative=alternative):
+            pass
+
+    @experimental
     def run[M, R](self, screen: Screen[M, R]) -> R:
         """Run an interactive screen and return its result.
 
