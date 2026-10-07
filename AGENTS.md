@@ -4,7 +4,9 @@
 Read [CONTRIBUTING.md](CONTRIBUTING.md) (developer guide, including the
 [checklist before you open a PR](CONTRIBUTING.md#before-you-open-a-pr)) and
 [docs/reference/conventions.md](docs/reference/conventions.md) (plugin rules)
-before changing code.
+before changing code. Nothing in the repository, its CI or its tooling may
+require a particular AI harness or subscription: AI assistance stays optional
+and replaceable, in harness-neutral files such as this one.
 
 ## What we care about
 
@@ -30,6 +32,3 @@ we notice.
   implementation PR, and fill in the PR template's drift review.
 - Existing user authorization persists only for its concrete scope. An issue
   alone does not authorize remote publication or unrelated work.
-- Nothing in the repository, its CI or its tooling may require a particular
-  AI harness or subscription. AI assistance stays optional and replaceable,
-  in harness-neutral files such as this one.
