@@ -91,6 +91,11 @@ class SearchList:
     ``selected`` holds the picked ids; ``value`` is them in item order (a tuple
     when ``multi``, the one id or ``""`` otherwise). ``note`` is shown after the
     counts. Only the window of rows around the cursor is built.
+
+    ``caret`` and ``highlight`` choose which half of a focused list is drawn:
+    the caret in the search line and the highlighted cursor row. Both are on by
+    default; a screen that tells typing from browsing (the picker) draws one at
+    a time. They change only the view.
     """
 
     label: str
@@ -103,6 +108,8 @@ class SearchList:
     placeholder: str = "type to filter"
     help: str = ""
     error: str = ""
+    caret: bool = True
+    highlight: bool = True
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "cursor", clamped(self.cursor, len(self.matches)))
@@ -179,14 +186,16 @@ class SearchList:
                 inner,
                 self.query,
                 len(self.query),
-                focused=focused,
+                focused=focused and self.caret,
                 placeholder=self.placeholder,
             )
         ]
         if (rule := divider(frame, inner)) is not None:
             body.append(rule)
         rows = [
-            self._row(frame, inner, entry, focused and first + offset == self.cursor)
+            self._row(
+                frame, inner, entry, focused and self.highlight and first + offset == self.cursor
+            )
             for offset, entry in enumerate(shown)
         ]
         if not matches:
