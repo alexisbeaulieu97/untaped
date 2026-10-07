@@ -172,7 +172,7 @@ def test_unbound_escape_sequences_do_not_type() -> None:
 
 def test_named_keys_arrive_by_name() -> None:
     typing = Typing()
-    keys = "\x1b[A\x1b[B\x1b[D\x1b[C\x1b[H\x1b[F\t\x1b[Z\x7f\x1b[3~\x15\x17\x12" + ENTER
+    keys = "\x1b[A\x1b[B\x1b[D\x1b[C\x1b[H\x1b[F\t\x1b[Z\x7f\x1b[3~\x15\x17\x04\x12" + ENTER
     _run(typing, keys)
     names = [m.name for m in typing.seen if isinstance(m, Key)]
     assert names == [
@@ -188,6 +188,7 @@ def test_named_keys_arrive_by_name() -> None:
         "delete",
         "ctrl-u",
         "ctrl-w",
+        "ctrl-d",
         "ctrl-r",
         "enter",
     ]
