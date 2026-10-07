@@ -123,6 +123,18 @@ def test_core_ssh_command_is_probed_in_the_target_repository(
     assert git_env(git_path="git", cwd=plain)["GIT_SSH_COMMAND"] == "ssh -o BatchMode=yes"
 
 
+def test_core_ssh_command_is_read_through_a_bare_git_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Under ``safe.bareRepository=explicit`` the probe names the bare repo, not just its cwd."""
+    monkeypatch.delenv("GIT_SSH_COMMAND", raising=False)
+    monkeypatch.delenv("GIT_SSH", raising=False)
+    bare = tmp_path / "cache.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+    subprocess.run(["git", "config", "--global", "core.sshCommand", "ssh -i k"], check=True)
+    assert "GIT_SSH_COMMAND" not in git_env(git_path="git", cwd=bare, git_dir=bare)
+
+
 def test_ceiling_stops_discovery_above_cwd(tmp_path: Path) -> None:
     env = git_env(cwd=tmp_path / "ws" / "repo", ceiling=True)
     assert os.path.abspath(tmp_path / "ws") in env["GIT_CEILING_DIRECTORIES"].split(os.pathsep)
