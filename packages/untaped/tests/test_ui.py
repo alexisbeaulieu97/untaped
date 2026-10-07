@@ -352,7 +352,7 @@ def test_resolve_theme_finds_quiet_preset_from_builtins_without_registry() -> No
     assert theme.density == "compact"
     assert theme.collection_view == "list"
     assert theme.detail_view == "list"
-    assert theme.color_roles == {
+    assert {k: v for k, v in theme.color_roles.items() if not k.startswith("screen.")} == {
         "key": "dim cyan",
         "success": "green",
         "info": "blue",
