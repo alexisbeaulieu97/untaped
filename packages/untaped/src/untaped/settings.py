@@ -7,15 +7,18 @@ state lives in a separate ``state.yml`` (:func:`resolve_state_path`).
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import os
 import warnings
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, ClassVar, Literal, cast
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, create_model, model_validator
+from pydantic import BaseModel, Field, SecretStr, ValidationError, create_model, model_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -26,7 +29,8 @@ from pydantic_settings.sources import EnvSettingsSource, InitSettingsSource
 from untaped.deprecated_keys import KeyUse, key_mappings, rename_keys, use_warning, warn_once
 from untaped.errors import ConfigError, first_validation_error
 from untaped.messages import hint
-from untaped.settings_layout import ProfilesSettingsLayout, SectionModels
+from untaped.profile_resolver import DEFAULT_PROFILE, effective_active_profile_name
+from untaped.settings_layout import ProfilesSettingsLayout, ResolvedConfig, SectionModels
 from untaped.stability import Stability
 from untaped.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
 
@@ -252,12 +256,96 @@ def reset_config_registry_for_tests() -> None:
     _CONFIG_REGISTRY.reset()
 
 
+@dataclass(frozen=True)
+class SettingsOverlay:
+    """Candidate values for one section of one profile, layered over the loaded config.
+
+    A ``None`` value means "unset this key" (a command token source removes the
+    ``token``). Internal: ``setup`` checks a capability against what the user
+    typed before anything is written.
+    """
+
+    profile: str
+    section: str
+    values: Mapping[str, object]
+
+
+_overlay: contextvars.ContextVar[SettingsOverlay | None] = contextvars.ContextVar(
+    "untaped_settings_overlay", default=None
+)
+
+
+@contextlib.contextmanager
+def settings_overlay(
+    profile: str, section: str, values: Mapping[str, object]
+) -> Iterator[SettingsOverlay]:
+    """Read ``values`` as ``profile``'s ``section`` inside the block, in this context only.
+
+    Both seams read it: the settings loader (:class:`LayoutSettingsSource`,
+    which every section load goes through) and :func:`get_settings`, which
+    skips its cache while an overlay is set, so candidate values are never
+    cached and the main thread never sees them. A thread sees it only when its
+    context was copied inside the block (the screen runtime's commands are).
+    Nothing is written: no config file, no keychain.
+    """
+    overlay = SettingsOverlay(profile, section, dict(values))
+    token = _overlay.set(overlay)
+    try:
+        yield overlay
+    finally:
+        _overlay.reset(token)
+
+
+def active_overlay() -> SettingsOverlay | None:
+    """The overlay set in this context, if any."""
+    return _overlay.get()
+
+
+def apply_overlay(effective: dict[str, Any], *, profile: str) -> dict[str, Any]:
+    """``effective`` with the overlay's section updated, when it is for ``profile``.
+
+    Returns ``effective`` itself when there is no overlay or it is for another
+    profile; otherwise a copy (``effective`` is never mutated). A ``SecretStr``
+    is unwrapped because the layout feeds validation, which takes plain values.
+    """
+    overlay = _overlay.get()
+    if overlay is None or overlay.profile != profile:
+        return effective
+    node = effective.get(overlay.section)
+    section = dict(node) if isinstance(node, dict) else {}
+    for key, value in overlay.values.items():
+        if value is None:
+            section.pop(key, None)
+        else:
+            section[key] = value.get_secret_value() if isinstance(value, SecretStr) else value
+    return {**effective, overlay.section: section}
+
+
+def resolve_with_overlay(
+    raw: dict[str, Any], *, sections: SectionModels | None = None
+) -> ResolvedConfig:
+    """The layout's resolution of ``raw`` with the active overlay laid over it.
+
+    The overlay's profile may not exist in ``raw`` yet (``setup`` checks a new
+    profile before creating it); it then resolves as the empty profile it will
+    be, over ``default``.
+    """
+    overlay = _overlay.get()
+    profiles = raw.get("profiles")
+    known = profiles if isinstance(profiles, dict) else {}
+    if overlay is not None and (profiles is None or known) and overlay.profile not in known:
+        raw = {**raw, "profiles": {**known, overlay.profile: {}}}
+    resolved = active_settings_layout().resolve(raw, sections=sections)
+    selected = effective_active_profile_name(raw) or DEFAULT_PROFILE
+    return replace(resolved, effective=apply_overlay(resolved.effective, profile=selected))
+
+
 class LayoutSettingsSource(InitSettingsSource):
     """Pydantic-settings source reading YAML through the active settings layout."""
 
     def __init__(self, settings_cls: type[BaseSettings], yaml_file: Path) -> None:
         raw = load_config_yaml(yaml_file)
-        resolved = active_settings_layout().resolve(raw, sections=model_sections(settings_cls))
+        resolved = resolve_with_overlay(raw, sections=model_sections(settings_cls))
         effective = resolved.effective
         for sections in resolved.uses.values():
             for section, uses in sections.items():
@@ -506,14 +594,42 @@ def get_profile_settings_model() -> type[Settings]:
     return _build_settings_model(_CONFIG_REGISTRY.profile_sections, {})
 
 
-@lru_cache(maxsize=1)
-def get_settings() -> Settings:
-    """Return the cached aggregate settings instance."""
+def _build_settings() -> Settings:
     settings_cls = get_settings_model()
     try:
         return settings_cls()
     except ValidationError as exc:
         raise ConfigError(settings_error_message(exc, settings_cls)) from exc
+
+
+class _SettingsGetter:
+    """``get_settings``: the cached aggregate settings, uncached while an overlay is set.
+
+    The cache is process-global, so candidate values must never reach it: with
+    an overlay set the settings are built fresh and returned without being
+    stored. Keeps ``cache_clear`` and ``cache_info`` of the ``lru_cache`` it
+    wraps (many call sites drop the cache).
+    """
+
+    def __init__(self) -> None:
+        self._cached = lru_cache(maxsize=1)(_build_settings)
+
+    def __call__(self) -> Settings:
+        """Return the cached aggregate settings instance."""
+        if _overlay.get() is not None:
+            return _build_settings()
+        return self._cached()
+
+    def cache_clear(self) -> None:
+        """Drop the cached settings."""
+        self._cached.cache_clear()
+
+    def cache_info(self) -> Any:
+        """The cache's hit and size counters (``functools.lru_cache``'s)."""
+        return self._cached.cache_info()
+
+
+get_settings = _SettingsGetter()
 
 
 def validate_config_file(candidate: Path) -> None:
