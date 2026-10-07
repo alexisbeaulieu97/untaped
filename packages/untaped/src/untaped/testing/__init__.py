@@ -32,6 +32,7 @@ from untaped.prompts import (
     set_terminal_override,
 )
 from untaped.stability import apply_marks
+from untaped.testing.screens import ScreenKeys, ScreenRun, drive_screen
 
 if TYPE_CHECKING:
     from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
@@ -41,10 +42,13 @@ __all__ = [
     "CliInvoker",
     "CliResult",
     "PromptBackend",
+    "ScreenKeys",
+    "ScreenRun",
     "ScriptedPromptBackend",
     "TtyStringIO",
     "assert_destructive_contract",
     "check_conventions",
+    "drive_screen",
     "invoke_cli",
     "invoke_root",
     "provider_candidate",
