@@ -49,6 +49,8 @@ SCREEN_SYMBOLS: dict[str, str] = {
     "tree.closed": "\u25b8",
     "tag.add": "+",
     "tag.remove": "\u2715",
+    "heading": "\u25c6",
+    "dash": "\u2014",
 }
 
 #: ASCII fallbacks the ``plain`` theme layers over :data:`SCREEN_SYMBOLS`
@@ -72,6 +74,8 @@ PLAIN_SCREEN_SYMBOLS: dict[str, str] = {
     "tree.closed": ">",
     "tag.add": "+",
     "tag.remove": "x",
+    "heading": "*",
+    "dash": "-",
 }
 
 DEFAULT_SYMBOLS: dict[str, str] = {**STATUS_SYMBOLS, **SCREEN_SYMBOLS}

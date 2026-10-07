@@ -65,8 +65,8 @@ command) is marked with `@experimental` in the code and listed here, not in a
   the `status.json` and `attention` files, and the `dotfiles.*` settings.
 - Screens: the runtime in `untaped.sdk` (`Screen`, `Binding`, `Cmd`, `Frame`,
   `Footer` and the message classes `Key`, `Paste`, `Resize`, `CmdError`,
-  `Quit`, `Cancel`, `Back`, `Interrupt`, `NextField`, `PrevField`, `Activate`
-  and `Submit`), the components (`Field`, `field_for`, `TextInput`,
+  `Quit`, `Cancel`, `Back`, `Interrupt`, `NextField`, `PrevField`, `Activate`,
+  `Submit` and `Help`), the components (`Field`, `field_for`, `TextInput`,
   `PathInput`, `SecretInput`, `NumberInput`, `Check`, `Select`, `SingleList`,
   `MultiList`, `ListItem`, `Cycle`, `Tabs`, `Tab`, `Buttons`, `Button`,
   `Pressed`, `SearchList`, `Tree`, `TreeRow`, `Tags`, `Viewport`, `Form`,

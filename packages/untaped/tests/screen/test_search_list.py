@@ -152,6 +152,21 @@ def test_an_unfocused_list_shows_no_cursor_row_and_no_caret() -> None:
     assert not any(s.style is not None and s.style.bgcolor == fill for s in segments)
 
 
+def test_caret_and_highlight_can_be_drawn_one_at_a_time() -> None:
+    fill = role(DEFAULT, "screen.highlight").bgcolor
+
+    def parts(**flags: bool) -> tuple[bool, bool]:
+        segments = _view(SearchList("Repos", REPOS, query="web", **flags))
+        return (
+            any(s.style is not None and s.style.reverse for s in segments),
+            any(s.style is not None and s.style.bgcolor == fill for s in segments),
+        )
+
+    assert parts() == (True, True)
+    assert parts(highlight=False) == (True, False)
+    assert parts(caret=False) == (False, True)
+
+
 # --- keys --------------------------------------------------------------------------
 
 
@@ -318,6 +333,28 @@ def test_a_tall_frame_shows_at_most_ten_rows_and_a_short_one_never_fewer_than_th
 
 def test_a_frame_that_fits_only_the_minimum_rows_shows_exactly_those() -> None:
     assert _rows(SearchList("All", MANY), lists._CHROME + lists.MIN_ROWS) == lists.MIN_ROWS
+
+
+def test_window_rows_sets_the_window_whatever_the_frame_height() -> None:
+    for height in (5, 12, 60):
+        assert _rows(SearchList("All", MANY, window_rows=4), height) == 4
+        assert _rows(SearchList("All", MANY, window_rows=1), height) == 1
+
+
+def test_ranked_entries_are_drawn_as_given_instead_of_ranking_the_items() -> None:
+    from untaped.screen.fuzzy import Ranked
+
+    items = REPOS[:3]
+    entries = (Ranked(items[2], (0,)), Ranked(items[0], ()))
+    shown = SearchList("All", items, query="zzz", entries=entries)
+    assert [entry.item.id for entry in shown.matches] == ["acme/web", "acme/api"]
+    text = _view(shown)
+    frame = "".join(segment.text for segment in text)
+    assert frame.index("acme/web") < frame.index("acme/api")
+    assert "acme/api-gateway" not in frame
+    assert "2 of 3" in frame
+    assert _matched(text) == ["a"]
+    assert SearchList("All", items, entries=()).matches == ()
 
 
 def test_a_narrowing_query_pads_to_the_same_height_in_any_frame() -> None:

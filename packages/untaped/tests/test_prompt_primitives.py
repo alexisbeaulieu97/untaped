@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import io
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any, TypeVar
 
 import pytest
-from prompt_toolkit.styles import Style, merge_styles
 
 from untaped.errors import ConfigError, OperationCancelledError, PromptInterruptedError, UsageError
 from untaped.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult
-from untaped.picker.app import DEFAULT_STYLE
 from untaped.prompts import PromptToolkitPromptBackend, prompt_style_from_roles
+from untaped.screen.core import Cancel
+from untaped.theme import BUILTIN_THEMES, ThemeSpec
 from untaped.ui import PromptChoice, UiContext
 
 T = TypeVar("T")
@@ -253,23 +253,6 @@ def test_prompt_style_preserves_white_and_bright_white_distinction() -> None:
     assert style.get_attrs_for_style_str("class:input-selection").color == "ansiwhite"
 
 
-def test_prompt_style_colours_the_picker_from_the_roles() -> None:
-    def picker_style(roles: dict[str, str]) -> Style:
-        return merge_styles([Style.from_dict(DEFAULT_STYLE), prompt_style_from_roles(roles)])
-
-    themed = picker_style({"key": "magenta", "border": "blue", "error": "yellow"})
-    for name in ("cursor", "mark", "border.focus", "subtitle"):
-        assert themed.get_attrs_for_style_str(f"class:picker.{name}").color == "ansimagenta"
-    assert themed.get_attrs_for_style_str("class:picker.border").color == "ansiblue"
-    assert themed.get_attrs_for_style_str("class:picker.error").color == "ansiyellow"
-    assert themed.get_attrs_for_style_str("class:picker.cursor").bold is True
-
-    plain = picker_style({})
-    assert plain.get_attrs_for_style_str("class:picker.cursor").color == "ansicyan"
-    assert plain.get_attrs_for_style_str("class:picker.border").color == "ansibrightblack"
-    assert plain.get_attrs_for_style_str("class:picker.error").color == "ansired"
-
-
 def test_prompt_toolkit_multiselect_handles_cancelled_dialog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -324,20 +307,16 @@ _REQUEST = PickRequest(heading="Pick", catalog=PickCatalog((PickItem(id="a", lab
 def test_pick_many_returns_the_backend_result() -> None:
     picked = PickResult(title="", defaults={}, picks=(Picked(item=PickItem(id="a", label="a")),))
     backend = FakePromptBackend(pick=picked)
-    ui = UiContext(stdin=TtyStringIO(), prompt_backend=backend)
+    ui = UiContext(stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=backend)
     assert ui.pick_many(_REQUEST) is picked
     assert backend.calls == ["pick_many:Pick"]
 
 
 def test_pick_many_cancelled_raises_operation_cancelled() -> None:
-    ui = UiContext(stdin=TtyStringIO(), prompt_backend=FakePromptBackend(pick=None))
+    ui = UiContext(
+        stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=FakePromptBackend(pick=None)
+    )
     with pytest.raises(OperationCancelledError):
-        ui.pick_many(_REQUEST)
-
-
-def test_pick_many_requires_a_tty() -> None:
-    ui = UiContext(stdin=io.StringIO(), prompt_backend=FakePromptBackend())
-    with pytest.raises(UsageError, match="requires a TTY"):
         ui.pick_many(_REQUEST)
 
 
@@ -346,32 +325,77 @@ def test_pick_many_rejects_duplicate_item_ids() -> None:
         heading="Pick",
         catalog=PickCatalog((PickItem(id="a", label="a"), PickItem(id="a", label="b"))),
     )
-    ui = UiContext(stdin=TtyStringIO(), prompt_backend=FakePromptBackend())
+    ui = UiContext(stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=FakePromptBackend())
     with pytest.raises(ConfigError, match="unique ids"):
         ui.pick_many(duplicate)
 
 
 def test_pick_many_ctrl_c_interrupt_maps_to_exit_130() -> None:
-    ui = UiContext(stdin=TtyStringIO(), prompt_backend=FakePromptBackend(exc=KeyboardInterrupt()))
+    ui = UiContext(
+        stdin=TtyStringIO(),
+        stderr=TtyStringIO(),
+        prompt_backend=FakePromptBackend(exc=KeyboardInterrupt()),
+    )
     with pytest.raises(PromptInterruptedError):
         ui.pick_many(_REQUEST)
 
 
-def test_prompt_toolkit_backend_runs_the_real_picker(monkeypatch: pytest.MonkeyPatch) -> None:
+@contextmanager
+def _real_picker(
+    monkeypatch: pytest.MonkeyPatch, keys: str
+) -> Iterator[PromptToolkitPromptBackend]:
+    """A real backend whose terminal reads ``keys`` from a pipe and draws nowhere."""
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.output import DummyOutput
 
     with create_pipe_input() as pipe:
-        pipe.send_text("\x1b[B \x13")  # down, space, ctrl-s
-        pipe.close()
-        monkeypatch.setattr("prompt_toolkit.input.defaults.create_input", lambda _stream: pipe)
-        monkeypatch.setattr(
-            "prompt_toolkit.output.defaults.create_output", lambda _stream: DummyOutput()
-        )
-        backend = PromptToolkitPromptBackend(stdin=TtyStringIO(), stderr=TtyStringIO())
+        pipe.send_text(keys)
+        pipe.close()  # a picker that is not finished reads EOF instead of hanging
+        monkeypatch.setattr("untaped.screen.terminal.create_input", lambda _stream: pipe)
+        monkeypatch.setattr("untaped.screen.terminal.create_output", lambda _stream: DummyOutput())
+        yield PromptToolkitPromptBackend(stdin=TtyStringIO(), stderr=TtyStringIO())
+
+
+def test_prompt_toolkit_backend_runs_the_real_picker(monkeypatch: pytest.MonkeyPatch) -> None:
+    with _real_picker(monkeypatch, "\x1b[B \x13") as backend:  # down, space, ctrl-s
         picked = backend.pick_many(_REQUEST)
     assert picked is not None
     assert [p.item.id for p in picked.picks] == ["a"]
+
+
+def test_prompt_toolkit_backend_returns_none_when_the_picker_is_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with _real_picker(monkeypatch, "\x03") as backend:  # ctrl-c with nothing picked
+        assert backend.pick_many(_REQUEST) is None
+
+
+def test_prompt_toolkit_backend_raises_keyboard_interrupt_for_an_interrupted_picker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    keys = "\t?\x03"  # tab, help, ctrl-c in the help
+    with _real_picker(monkeypatch, keys) as backend, pytest.raises(KeyboardInterrupt):
+        backend.pick_many(_REQUEST)
+
+
+def test_the_backend_draws_the_picker_in_its_theme(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[ThemeSpec] = []
+    backend = PromptToolkitPromptBackend(
+        stdin=TtyStringIO(), stderr=TtyStringIO(), theme=BUILTIN_THEMES["plain"]
+    )
+
+    def run_screen(screen: object, *, theme: ThemeSpec) -> Cancel:
+        seen.append(theme)
+        return Cancel()
+
+    monkeypatch.setattr(backend, "run_screen", run_screen)
+    assert backend.pick_many(_REQUEST) is None
+    assert seen == [BUILTIN_THEMES["plain"]]
+
+    default_backend = PromptToolkitPromptBackend(stdin=TtyStringIO(), stderr=TtyStringIO())
+    monkeypatch.setattr(default_backend, "run_screen", run_screen)
+    default_backend.pick_many(_REQUEST)
+    assert seen[-1] == BUILTIN_THEMES["default"]
 
 
 def test_scripted_backend_answers_pick_many() -> None:

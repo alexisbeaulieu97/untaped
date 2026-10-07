@@ -912,3 +912,18 @@ def test_the_active_tab_is_accented_only_while_the_header_has_focus() -> None:
     assert style_of(fields, "One").color == value
     assert style_of(fields, "One").bold
     assert style_of(header, "Two").color == role(DEFAULT, "screen.muted").color
+
+
+def test_buttons_say_the_width_boxes_need_and_the_rows() -> None:
+    from rich.cells import cell_len
+
+    from untaped.screen.components.buttons import BOX_ROWS
+
+    for buttons in (
+        Buttons((Button("a", "Create", "primary"),)),
+        Buttons((Button("a", "Save", "primary"), Button("c", "x", "ghost"), Button("b", "界面"))),
+    ):
+        drawn = render_styled(buttons.view(Frame(80, 10, DEFAULT)), width=80)
+        rows = "".join(segment.text for segment in drawn).splitlines()
+        assert len(rows) == BOX_ROWS
+        assert max(cell_len(row.rstrip()) for row in rows) == buttons.boxed_width

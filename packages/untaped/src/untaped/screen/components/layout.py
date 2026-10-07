@@ -12,9 +12,9 @@ terminal, with focus moving between them.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
-from typing import Self
+from typing import Self, cast
 
 from rich.console import Console, ConsoleOptions, Group, RenderableType, RenderResult
 from rich.panel import Panel
@@ -26,7 +26,7 @@ from untaped.screen.components.fields import Field
 from untaped.screen.core import Cmd, Frame, Key, NextField, PrevField
 from untaped.stability import experimental
 
-__all__ = ["WIDE", "Panes", "Viewport", "window", "windowed"]
+__all__ = ["WIDE", "Drawing", "Panes", "Viewport", "window", "windowed"]
 
 #: The terminal width from which ``Panes`` sit side by side; narrower, they stack.
 WIDE = 100
@@ -158,12 +158,52 @@ def _joined(lines: Iterable[list[Segment]]) -> Iterator[Segment]:
         yield from line
 
 
+type Drawing = Callable[[Frame, bool], RenderableType]
+"""A pane's body drawn from a model the screen owns: ``draw(frame, focused)``.
+
+``frame`` is the room the pane's body has (its inner width and the rows it was
+given). A pane built from one takes no input, holds no value and has no error;
+the screen keeps the state and routes the keys.
+"""
+
+
+@dataclass(frozen=True)
+class _Drawn:
+    """A :data:`Drawing` as the component a pane holds: it draws and answers nothing else."""
+
+    draw: Drawing
+    value: object = ""
+    error: str = ""
+
+    def update(self, message: object) -> tuple[Self, list[Cmd]]:
+        return self, []
+
+    def with_error(self, text: str) -> Self:
+        return self
+
+    def validate(self) -> str:
+        return ""
+
+    def view(
+        self, frame: Frame, *, focused: bool = False, width: int | None = None
+    ) -> RenderableType:
+        return self.draw(frame, focused)
+
+
+def _field(child: Field | Drawing) -> Field:
+    """The component a pane holds: ``child`` itself, or a drawing wrapped as one."""
+    if hasattr(child, "update"):
+        return cast(Field, child)
+    return _Drawn(child)
+
+
 @experimental
 @dataclass(frozen=True)
 class Panes:
     """Two components in bordered panes: side by side from :data:`WIDE` columns, stacked below.
 
-    ``left`` and ``right`` are any components (a list, a :class:`Form`); ``focus``
+    ``left`` and ``right`` are any components (a list, a :class:`Form`) or, for a
+    pane that only draws a model it does not own, a :data:`Drawing`; ``focus``
     is ``0`` for the left pane and ``1`` for the right. Messages go to the focused
     one, and a ``NextField`` or ``PrevField`` it did not use (a form at its last or
     first field, a list, which has no use for them) moves focus to the other pane.
@@ -177,8 +217,8 @@ class Panes:
     values.
     """
 
-    left: Field
-    right: Field
+    left: Field | Drawing
+    right: Field | Drawing
     focus: int = 0
     left_title: str = ""
     right_title: str = ""
@@ -193,7 +233,7 @@ class Panes:
     @property
     def value(self) -> dict[str, object]:
         """``{"left": ..., "right": ...}``: what each pane's component holds."""
-        return {"left": self.left.value, "right": self.right.value}
+        return {"left": _field(self.left).value, "right": _field(self.right).value}
 
     def with_error(self, text: str) -> Self:
         """These panes showing ``text`` under them (empty clears it)."""
@@ -201,11 +241,11 @@ class Panes:
 
     def validate(self) -> str:
         """The first error of the two components (empty when both are fine); sets nothing."""
-        return self.left.validate() or self.right.validate()
+        return _field(self.left).validate() or _field(self.right).validate()
 
     def update(self, message: object) -> tuple[Self, list[Cmd]]:
         """Give ``message`` to the focused pane; focus moves to the other when it passed on tab."""
-        child = self.left if self.focus == 0 else self.right
+        child = _field(self.left if self.focus == 0 else self.right)
         updated, cmds = child.update(message)
         if updated is not child or cmds:
             if self.focus == 0:
@@ -249,7 +289,7 @@ class Panes:
     ) -> _Pane:
         on = focused and index == self.focus
         bare = self.left_bare if index == 0 else self.right_bare
-        child = self.left if index == 0 else self.right
+        child = _field(self.left if index == 0 else self.right)
         child_frame = replace(frame, width=inner, height=rows)
         body = child.view(unboxed(child_frame) if bare else child_frame, focused=on, width=inner)
         title = self.left_title if index == 0 else self.right_title
@@ -300,10 +340,12 @@ class _PanesRender:
                 [segment for block in blocks for segment in block[row]]
                 for row in range(len(blocks[0]))
             )
+            yield Segment.line()  # end the last row, so whatever follows starts on its own line
             return
         gap = [] if self.frame.box() is not None else [[Segment(" ")]]
         stacked = [*blocks[0], *gap, *blocks[1]]
         yield from _joined(stacked)
+        yield Segment.line()
 
     def _block(
         self,
