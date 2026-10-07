@@ -72,6 +72,16 @@ class WizProfile(BaseModel):
     token_command: TokenCommand = None
 
 
+class EnvProfile(BaseModel):
+    """Service double with a conventional token variable (section ``envy``)."""
+
+    token_sources: ClassVar[TokenSources] = TokenSources(env=("ENVY_TOKEN",))
+
+    base_url: str | None = None
+    token: SecretStr | None = None
+    token_command: TokenCommand = None
+
+
 class LegacyProfile(BaseModel):
     """Service double without ``token_command`` (section ``legacy``)."""
 
@@ -175,6 +185,7 @@ def check(
 __all__ = [
     "FAIL",
     "PROBES",
+    "EnvProfile",
     "ExtProfile",
     "GithubProfile",
     "GithubState",

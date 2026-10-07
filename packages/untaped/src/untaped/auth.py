@@ -218,6 +218,15 @@ def run_command(
         raise ConfigError(f"{label} could not run: {exc.strerror}") from None
 
 
+def forget_token_command(argv: list[str]) -> None:
+    """Forget the cached result of ``argv``, so its next read runs the command again.
+
+    For a caller that checks a token it was just given (``setup``): a retry after a rejected
+    token must run the command again, not read the rejected result back.
+    """
+    _cache.pop(tuple(argv), None)
+
+
 def clear_token_cache() -> None:
     """Forget every ``token_command`` result and plaintext warning (tests, embedding)."""
     _cache.clear()
@@ -230,6 +239,12 @@ def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
     A token from the environment (:func:`token_override_env`) is not a file,
     so it never warns; nor does a model ``auth set`` cannot serve.
     """
+    from untaped.settings import active_overlay  # noqa: PLC0415 - imports each other lazily
+
+    # ``setup`` checks a candidate token that is not written yet, possibly on a
+    # worker thread over its screen: nothing to warn about, nowhere to print it.
+    if active_overlay() is not None:
+        return
     if (
         section in _warned
         or not takes_token_command(type(settings))
@@ -325,6 +340,7 @@ __all__ = [
     "clear_token_cache",
     "describe_token_source",
     "first_stderr_line",
+    "forget_token_command",
     "gpg_hint",
     "resolve_token",
     "run_command",
