@@ -458,3 +458,26 @@ def test_a_box_free_error_replaces_the_help_and_names_the_label_in_the_error_sty
 def test_the_text_components_are_marked_experimental() -> None:
     for cls in (TextInput, PathInput, SecretInput, NumberInput):
         assert isinstance(function_mark(cls), Experimental)
+
+
+def test_a_number_moves_its_caret_and_edits_in_place() -> None:
+    run = run_solo(NumberInput("N", "123"), "left", "left", "9", "right", "home", "delete")
+
+    assert field_of(run).text == "923"
+    assert field_of(run).cursor == 0
+    moved = run_solo(NumberInput("N", "123"), "left")
+    assert (field_of(moved).text, field_of(moved).cursor) == ("123", 2)
+
+
+def test_other_keys_while_a_completion_list_is_open_still_edit_the_text() -> None:
+    run = run_solo(TextInput("Fruit", "a", complete=_fruit), "left", "ctrl-r", "p")
+
+    assert field_of(run).value == "pa"
+    assert field_of(run).cursor == 1
+    assert field_of(run).completing is False  # nothing starts with "pa"
+
+
+def test_a_box_free_field_without_a_label_draws_only_its_value() -> None:
+    run = run_solo(TextInput("", "just value"), theme=BUILTIN_THEMES["quiet"])
+
+    assert lines(run.frame) == ["just value"]
