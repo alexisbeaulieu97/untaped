@@ -150,12 +150,14 @@
   ([#525](https://github.com/alexisbeaulieu97/untaped/pull/525))
 - `PromptBackend` gains `run_screen`; a custom backend needs the method to
   type-check (it may set `needs_terminal = False`, as `ScriptedPromptBackend`
-  does, to run screens without a terminal). ([#525](https://github.com/alexisbeaulieu97/untaped/pull/525))
+  does, to run screens and prompts without a terminal). ([#525](https://github.com/alexisbeaulieu97/untaped/pull/525))
 - Prompts (text, secret, select, multiselect, confirm) share the screens' look
   and the theme's colors: a labelled box with the keys of every other screen
   (esc cancels); the answer stays in the scrollback as one plain
   `question: answer` line (a secret as its mask, a multiselect as the chosen
-  labels), nothing is left when the prompt is cancelled.
+  labels), nothing is left when the prompt is cancelled. With stderr redirected
+  (`2>log`) a prompt draws on the controlling terminal instead of the file, as
+  `ui.run` does, and a long list is cut to a short terminal's height.
   ([#532](https://github.com/alexisbeaulieu97/untaped/pull/532))
 - The workspace picker (`workspace create`, `workspace add`) is full screen and
   follows the theme's colors, symbols and border style (`ui.symbols` gains

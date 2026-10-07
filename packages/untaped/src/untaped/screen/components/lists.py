@@ -58,6 +58,12 @@ _TREE_CHROME = 5
 
 type _Entry = Ranked[ListItem]
 
+
+def default_rows(frame: Frame) -> int:
+    """The rows a ``SearchList`` shows by default: up to :data:`MAX_ROWS`, fewer when short."""
+    return max(MIN_ROWS, min(MAX_ROWS, frame.height - _CHROME))
+
+
 #: The last few rankings, keyed by the query and the very ``items`` tuple (kept here, so an
 #: identity check stays valid): a key press ranks once, not in ``update`` and again in ``view``.
 _RANKINGS: list[tuple[str, tuple[ListItem, ...], list[_Entry]]] = []
@@ -189,7 +195,7 @@ class SearchList:
         """The box: the search line, a window of rows around the cursor and the count line."""
         inner = inner_width(frame, width)
         matches = self.matches
-        size = self.window_rows or max(MIN_ROWS, min(MAX_ROWS, frame.height - _CHROME))
+        size = self.window_rows or default_rows(frame)
         first, shown = window(matches, self.cursor, size)
         body: list[RenderableType] = [
             text_line(

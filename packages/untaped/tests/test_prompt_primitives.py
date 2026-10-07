@@ -25,6 +25,8 @@ class TtyStringIO(io.StringIO):
 
 
 class FakePromptBackend:
+    needs_terminal = False
+
     def __init__(
         self,
         *,
@@ -172,6 +174,91 @@ def test_non_interactive_stdin_fails_before_invoking_backend() -> None:
         ui.confirm("continue?")
 
     assert backend.calls == []
+
+
+class _DrawingBackend(FakePromptBackend):
+    """A fake backend that, like the real one, draws on the streams of its context."""
+
+    needs_terminal = True
+
+    def __init__(self, holder: list[UiContext]) -> None:
+        super().__init__()
+        self.holder = holder
+        self.streams: list[tuple[object, object]] = []
+
+    def confirm(self, message: str, *, default: bool) -> bool:
+        self.streams.append((self.holder[0].stdin, self.holder[0].stderr))
+        return super().confirm(message, default=default)
+
+
+def _drawing_ui(
+    monkeypatch: pytest.MonkeyPatch, *, stderr: io.StringIO
+) -> tuple[UiContext, _DrawingBackend, list[TtyStringIO]]:
+    opened: list[TtyStringIO] = []
+
+    def opener(*, write: bool = False) -> TtyStringIO:
+        opened.append(TtyStringIO())
+        return opened[-1]
+
+    monkeypatch.setattr("untaped.ui.open_controlling_terminal", opener)
+    holder: list[UiContext] = []
+    backend = _DrawingBackend(holder)
+    ui = UiContext(stdin=TtyStringIO(), stderr=stderr, prompt_backend=backend)
+    holder.append(ui)
+    return ui, backend, opened
+
+
+def test_a_prompt_draws_on_the_controlling_terminal_when_stderr_is_redirected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stderr = io.StringIO()
+    ui, backend, opened = _drawing_ui(monkeypatch, stderr=stderr)
+    stdin = ui.stdin
+
+    assert ui.confirm("go?") is True
+
+    assert backend.streams == [(opened[0], opened[1])]
+    assert (ui.stdin, ui.stderr) == (stdin, stderr)  # put back
+    assert all(handle.closed for handle in opened)
+
+
+def test_a_prompt_uses_its_streams_when_both_are_terminals(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui, backend, opened = _drawing_ui(monkeypatch, stderr=TtyStringIO())
+
+    ui.confirm("go?")
+
+    assert backend.streams == [(ui.stdin, ui.stderr)]
+    assert opened == []
+
+
+def test_a_prompt_with_stderr_redirected_and_no_terminal_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def no_terminal(*, write: bool = False) -> TtyStringIO:
+        raise OSError("no controlling terminal")
+
+    monkeypatch.setattr("untaped.ui.open_controlling_terminal", no_terminal)
+    backend = _DrawingBackend([])
+    ui = UiContext(stdin=TtyStringIO(), stderr=io.StringIO(), prompt_backend=backend)
+
+    with pytest.raises(UsageError, match="requires a terminal"):
+        ui.confirm("go?")
+
+    assert backend.calls == []
+
+
+def test_a_prompt_with_piped_stdin_is_refused_without_opening_a_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui, backend, opened = _drawing_ui(monkeypatch, stderr=io.StringIO())
+    ui.stdin = io.StringIO("piped")
+
+    with pytest.raises(UsageError, match="TTY on stdin"):
+        ui.confirm("go?")
+
+    assert opened == [] and backend.calls == []
 
 
 def test_select_requires_choices_and_preserves_original_value_type() -> None:

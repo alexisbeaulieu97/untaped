@@ -38,9 +38,9 @@ def _all_screens() -> list[Callable[[], Screen[Any, Any]]]:
     return [
         lambda: text_screen("Name", "dev"),
         lambda: secret_screen("Token", confirmation=True),
-        lambda: select_screen("Pick", CHOICES, CHOICES[1].value),
+        lambda: select_screen("Pick", CHOICES, 1),
         lambda: select_screen("Pick", CHOICES, None, search=True),
-        lambda: multiselect_screen("Pick many", CHOICES, [CHOICES[0].value]),
+        lambda: multiselect_screen("Pick many", CHOICES, [0]),
         lambda: confirm_screen("Continue?", True),
     ]
 
@@ -65,6 +65,22 @@ def test_esc_cancels_and_ctrl_c_interrupts(build: Callable[[], Screen[Any, Any]]
 
 
 @pytest.mark.parametrize("build", _all_screens())
+def test_every_prompt_footer_says_esc_cancels(build: Callable[[], Screen[Any, Any]]) -> None:
+    footer = _drive(build()).frames[0].splitlines()[-1]
+
+    assert "esc cancel" in footer
+    assert "esc back" not in footer
+
+
+def test_the_search_footer_says_esc_clears_while_a_query_is_typed() -> None:
+    run = _drive(select_screen("Pick", CHOICES, None, search=True), "g", "esc")
+
+    assert "esc cancel" in run.frames[0].splitlines()[-1]
+    assert "esc clear" in run.frames[1].splitlines()[-1]
+    assert "esc cancel" in run.frames[2].splitlines()[-1]
+
+
+@pytest.mark.parametrize("build", _all_screens())
 def test_ctrl_c_in_the_help_overlay_interrupts(build: Callable[[], Screen[Any, Any]]) -> None:
     run = _drive(build(), "?", "ctrl-c")
     assert run.outcome == Cancel(interrupted=True)
@@ -78,7 +94,8 @@ def test_every_builtin_theme_draws_every_prompt(
     run = _drive(build(), "down", "x", theme=theme)
 
     assert all(frame.strip() for frame in run.frames)
-    assert "esc back" in run.frames[0]
+    assert "esc cancel" in run.frames[0]
+    assert "esc back" not in run.frames[0]
 
 
 @pytest.mark.parametrize("build", _all_screens())
@@ -243,30 +260,24 @@ def test_ctrl_d_cancels_an_empty_secret_only() -> None:
 
 
 def test_select_marks_the_default_and_starts_the_cursor_on_it() -> None:
-    run = _drive(select_screen("Pick", CHOICES, CHOICES[1].value), "enter")
+    run = _drive(select_screen("Pick", CHOICES, 1), "enter")
 
     assert "▶ Beta" in run.frames[0]
     assert re.search(r"  Alpha +the first", run.frames[0])  # the description is the row's detail
-    assert run.result == ("repo", 2)  # enter answers with the row under the cursor
+    assert run.result == 1  # enter answers with the position of the row under the cursor
 
 
-def test_select_moves_the_cursor_and_returns_the_typed_value_of_that_row() -> None:
-    assert _drive(select_screen("Pick", CHOICES, None), "down", "down", "enter").result == (
-        "repo",
-        3,
-    )
-    assert _drive(select_screen("Pick", CHOICES, None), "enter").result == ("repo", 1)
-    assert _drive(select_screen("Pick", CHOICES, CHOICES[2].value), "up", "enter").result == (
-        "repo",
-        2,
-    )
+def test_select_moves_the_cursor_and_returns_the_position_of_that_row() -> None:
+    assert _drive(select_screen("Pick", CHOICES, None), "down", "down", "enter").result == 2
+    assert _drive(select_screen("Pick", CHOICES, None), "enter").result == 0
+    assert _drive(select_screen("Pick", CHOICES, 2), "up", "enter").result == 1
 
 
-def test_select_with_an_unknown_default_marks_nothing() -> None:
-    run = _drive(select_screen("Pick", CHOICES, ("repo", 99)), "enter")
+def test_select_without_a_default_marks_nothing() -> None:
+    run = _drive(select_screen("Pick", CHOICES, None), "enter")
 
     assert "▶" not in run.frames[0]
-    assert run.result == ("repo", 1)
+    assert run.result == 0
 
 
 def test_select_cancels_on_ctrl_d() -> None:
@@ -278,20 +289,20 @@ def test_search_select_filters_as_you_type_and_enter_takes_the_best_match() -> N
 
     assert "Gamma" in run.frames[3]
     assert "Alpha" not in run.frames[3]
-    assert run.result == ("repo", 3)
+    assert run.result == 2
 
 
 def test_search_select_also_matches_the_description() -> None:
     run = _drive(select_screen("Pick", CHOICES, None, search=True), *"first", "enter")
 
-    assert run.result == ("repo", 1)
+    assert run.result == 0
 
 
 def test_search_select_starts_on_the_default_and_enter_takes_it() -> None:
-    run = _drive(select_screen("Pick", CHOICES, CHOICES[1].value, search=True), "enter")
+    run = _drive(select_screen("Pick", CHOICES, 1, search=True), "enter")
 
     assert "▶ Beta" in run.frames[0]
-    assert run.result == ("repo", 2)
+    assert run.result == 1
 
 
 def test_search_select_with_no_match_stays_open() -> None:
@@ -320,24 +331,24 @@ def test_search_select_ctrl_d_waits_while_a_query_is_typed() -> None:
 
 
 def test_multiselect_preselects_the_defaults() -> None:
-    run = _drive(multiselect_screen("Pick many", CHOICES, [CHOICES[2].value]), "enter")
+    run = _drive(multiselect_screen("Pick many", CHOICES, [2]), "enter")
 
     assert re.search(r"\[ \] Alpha +the first", run.frames[0])
     assert "[✓] Gamma" in run.frames[0]
-    assert run.result == [("repo", 3)]
+    assert run.result == [2]
 
 
-def test_multiselect_toggles_with_space_and_returns_the_checked_values_in_order() -> None:
+def test_multiselect_toggles_with_space_and_returns_the_checked_positions_in_order() -> None:
     run = _drive(
         multiselect_screen("Pick many", CHOICES, []),
         "down", "down", " ", "up", "up", " ", "enter",
     )  # fmt: skip
 
-    assert run.result == [("repo", 1), ("repo", 3)]
+    assert run.result == [0, 2]
 
 
 def test_multiselect_can_end_with_nothing_checked() -> None:
-    run = _drive(multiselect_screen("Pick many", CHOICES, [CHOICES[0].value]), " ", "enter")
+    run = _drive(multiselect_screen("Pick many", CHOICES, [0]), " ", "enter")
 
     assert run.result == []
 
@@ -399,3 +410,41 @@ def test_a_prefilled_answer_is_not_offered() -> None:
 def test_ctrl_d_cancels_an_empty_confirmation_only() -> None:
     assert _drive(confirm_screen("Continue?", True), "ctrl-d").outcome == Cancel()
     assert _drive(confirm_screen("Continue?", True), "y", "ctrl-d").outcome is None
+
+
+# --- short terminals ------------------------------------------------------------
+
+MANY = [PromptChoice(index, f"Choice {index:02}") for index in range(20)]
+
+
+@pytest.mark.parametrize(
+    ("build", "height"),
+    [
+        (lambda: select_screen("Pick", MANY, None), 4),
+        (lambda: select_screen("Pick", MANY, None), 5),
+        (lambda: select_screen("Pick", MANY, None, search=True), 7),
+        (lambda: select_screen("Pick", MANY, None, search=True), 8),
+        (lambda: multiselect_screen("Pick many", MANY, []), 4),
+        (lambda: multiselect_screen("Pick many", MANY, []), 5),
+    ],
+)
+def test_a_list_prompt_never_draws_more_lines_than_the_terminal_has(
+    build: Callable[[], Screen[Any, Any]], height: int
+) -> None:
+    run = _drive(build(), *["down"] * 7, size=(60, height))
+
+    assert all(len(frame.splitlines()) <= height for frame in run.frames)
+    assert "Choice 07" in run.frame  # the window still follows the cursor
+
+
+def test_a_long_question_above_the_box_is_counted_in_the_height() -> None:
+    question = "Which of the many workspaces should this repository be added to right now?"
+    run = _drive(select_screen(question, MANY, None), "down", size=(60, 6))
+
+    assert all(len(frame.splitlines()) <= 6 for frame in run.frames)
+
+
+def test_a_tall_terminal_keeps_the_usual_window() -> None:
+    frame = _drive(select_screen("Pick", MANY, None), size=(60, 40)).frames[0]
+
+    assert len(frame.splitlines()) == 8 + 3  # the rows, the border and the footer
