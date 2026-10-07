@@ -70,10 +70,7 @@ from untaped_workspace.settings import WorkspaceSettings
 
 app = create_app(
     name="workspace",
-    help=(
-        "Create and archive task workspaces (git worktrees of several repos). "
-        "Experimental: may change in a minor release."
-    ),
+    help="Create and archive task workspaces (git worktrees of several repos).",
 )
 
 REPO_OUTCOME = "workspace.repo_outcome"

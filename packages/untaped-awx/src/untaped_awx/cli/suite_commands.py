@@ -32,6 +32,7 @@ from untaped.sdk import (
     echo,
     emit,
     existing_file,
+    experimental,
     finish,
     git_toplevel,
     hint,
@@ -79,10 +80,8 @@ if TYPE_CHECKING:
 
 app = create_app(
     name="test",
-    help=(
-        "Run declarative AWX-job test suites (parameterized launch matrices). "
-        "Experimental: may change in a minor release."
-    ),
+    help="Run declarative AWX-job test suites (parameterized launch matrices).",
+    stability=experimental,
 )
 
 
@@ -354,7 +353,6 @@ def run_command(
     With --source-ref, temporary copies of the templates with specs are created
     first (no confirmation) and deleted after the run, even when interrupted.
 
-    Experimental: may change in a minor release.
     """
     from untaped_awx.application import RunAction, WatchJob  # noqa: PLC0415
     from untaped_awx.application.suites.preflight import (  # noqa: PLC0415
@@ -642,10 +640,7 @@ def list_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """List the cases that would run, without launching anything.
-
-    Experimental: may change in a minor release.
-    """
+    """List the cases that would run, without launching anything."""
     cli_vars = parse_kv_pairs(var, flag="--var")
     files = _expand_paths(paths)
 
@@ -696,7 +691,6 @@ def validate_command(
     With --source-ref, also check the temporary copies a run would create (every
     link, name and project branch override) and print them.
 
-    Experimental: may change in a minor release.
     """
     _refuse_scm_branch_with_source_ref(source_ref, scm_branch)
     _validate(
@@ -856,7 +850,6 @@ def prune_command(
     A copy is a job template or workflow named `NAME [untaped-test SHA RUN]` whose
     description carries the matching `untaped-test run=…` marker.
 
-    Experimental: may change in a minor release.
     """
     from untaped_awx.cli import _temporary_sets as copies  # noqa: PLC0415
     from untaped_awx.domain.temporary_set import parse_age  # noqa: PLC0415
@@ -932,10 +925,7 @@ def init_command(
         ),
     ] = False,
 ) -> None:
-    """Write a starter suite for a job template or workflow from its survey and launch prompts.
-
-    Experimental: may change in a minor release.
-    """
+    """Write a starter suite for a job template or workflow from its survey and launch prompts."""
     from untaped_awx.application.suites.preflight import (  # noqa: PLC0415
         PreflightLaunch,
     )

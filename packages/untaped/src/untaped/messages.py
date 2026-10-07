@@ -91,13 +91,25 @@ def hint(command: str) -> str:
     return f"hint: run `{command_line(command)}`"
 
 
-def deprecated_message(old: str, new: str) -> str:
-    """The deprecation sentence: ``<old> is deprecated and will be removed …; use <new>``.
+def deprecated_message(old: str, new: str | None = None) -> str:
+    """The deprecation sentence: ``<old> is deprecated and will be removed …[; use <new>]``.
 
     One wording for every deprecated spelling (commands, flags, config keys
     and their environment variables); callers pass the spellings as shown.
+    Without a replacement the sentence ends at "next major release".
     """
-    return f"{old} is deprecated and will be removed in the next major release; use {new}"
+    message = f"{old} is deprecated and will be removed in the next major release"
+    return message if new is None else f"{message}; use {new}"
+
+
+EXPERIMENTAL_LINE = "Experimental: may change in a minor release."
+"""The help line every experimental command ends with."""
+
+
+def deprecated_line(replacement: str | None = None) -> str:
+    """The help line every deprecated command ends with: ``Deprecated: removed …[; use <new>].``"""
+    suffix = "" if replacement is None else f"; use {replacement}"
+    return f"Deprecated: removed in the next major release{suffix}."
 
 
 def summary(operation: str, counts: Mapping[str, int]) -> str:
@@ -111,8 +123,10 @@ def summary(operation: str, counts: Mapping[str, int]) -> str:
 
 
 __all__ = [
+    "EXPERIMENTAL_LINE",
     "command_argv",
     "command_line",
+    "deprecated_line",
     "deprecated_message",
     "hint",
     "not_found",

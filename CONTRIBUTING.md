@@ -336,6 +336,17 @@ until the next major release.
 **Retired key**: an old name of a setting that is no longer read;
 `untaped config migrate` still renames it.
 
+**Stability**: whether a command or setting is stable, experimental or
+deprecated.
+_Avoid_: status, maturity.
+
+**Experimental**: may change or go away in a minor release; said in its
+`--help`.
+_Avoid_: beta, preview, unstable.
+
+**Deprecated command**: a command that still works, with a warning, until the
+next major release removes it.
+
 **Deprecated setting**: a setting still read as before, with a warning,
 until the next major release removes it.
 

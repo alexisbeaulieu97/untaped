@@ -48,6 +48,13 @@
   and the undeclared-placeholder warning now says to set the real value or
   remove the placeholder.
   ([#486](https://github.com/alexisbeaulieu97/untaped/pull/486))
+- Plugins can mark a command, group or whole capability `experimental` or
+  `deprecated(replacement=…)` once (`@experimental`, `create_app(stability=…)`,
+  `CapabilitySpec(stability=…)`). Experimental ones sit in an Experimental
+  panel in `--help` and end their help with a line saying so; deprecated ones
+  are listed by the new `untaped --deprecated --help` and warn once per run.
+  `check_conventions` checks the marks.
+  ([#518](https://github.com/alexisbeaulieu97/untaped/pull/518))
 
 ### Changed
 
@@ -83,6 +90,15 @@
   (`settings-naming`), and fails with the reason when the capability is
   quarantined, a broken rename declaration included.
   ([#492](https://github.com/alexisbeaulieu97/untaped/pull/492))
+- The experimental notice moves from the one-line command summaries to the
+  last line of each command's `--help`, and `workspace`, `dotfiles` and
+  `awx test` move to an Experimental panel; `alias list` and `alias remove`
+  now warn too, deprecated commands leave shell completion, and `alias` leaves
+  the root `--help` listing unless you pass `--deprecated`.
+  ([#518](https://github.com/alexisbeaulieu97/untaped/pull/518))
+- Root options placed around `--help` now apply (`untaped awx --deprecated
+  --help`, `untaped --help --verbose`).
+  ([#518](https://github.com/alexisbeaulieu97/untaped/pull/518))
 
 ### Deprecated
 

@@ -333,11 +333,32 @@ _DEPRECATION = (
 )
 
 
-def test_alias_set_warns_that_aliases_are_deprecated(_isolated_config: Path) -> None:
-    write_config(_isolated_config, _CONFIG)
-    result = _invoke("alias", "set", "gb", "--", "config", "list")
+_COMMAND_WARNING = f"warning: `untaped alias` {_DEPRECATION}\n"
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("alias", "set", "gb", "--", "config", "list"),
+        ("alias", "list"),
+        ("alias", "remove", "gb", "--yes"),
+    ],
+)
+def test_every_alias_command_warns_once_that_the_command_is_deprecated(
+    _isolated_config: Path, argv: tuple[str, ...]
+) -> None:
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    shell:\n      aliases:\n        gb: [x]\n"
+    )
+    result = _invoke(*argv)
     assert result.exit_code == 0, result.output
-    assert f"warning: untaped alias {_DEPRECATION}" in result.stderr
+    assert result.stderr.count(_COMMAND_WARNING) == 1
+
+
+def test_alias_help_and_version_print_no_deprecation_warning(_isolated_config: Path) -> None:
+    write_config(_isolated_config, _CONFIG)
+    for argv in (("alias", "--help"), ("alias", "set", "--help"), ("--version",)):
+        assert "deprecated" not in _invoke(*argv).stderr
 
 
 def test_using_a_stored_alias_warns_once(_isolated_config: Path) -> None:

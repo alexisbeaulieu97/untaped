@@ -13,6 +13,7 @@ import functools
 import re
 import warnings
 from collections.abc import Iterator, Mapping
+from dataclasses import replace
 from typing import Annotated, Any, ClassVar
 
 import pytest
@@ -22,10 +23,20 @@ from packaging.version import Version
 from pydantic import BaseModel
 
 from repo.support import REPO_ROOT
+from test_capabilities.capharness import make_spec
 from untaped import bootstrap, sdk
-from untaped.capabilities.registry import ProviderCandidate
-from untaped.cli import deprecated_alias, deprecated_aliases
+from untaped.capabilities.registry import CompositionResult, ProviderCandidate
+from untaped.cli import create_app
 from untaped.settings import profile_section_models
+from untaped.stability import (
+    Deprecated,
+    deprecated,
+    deprecated_alias,
+    deprecated_aliases,
+    experimental,
+    marks,
+)
+from untaped.testing import provider_candidate
 
 
 def is_major_release(version: str, changelog: str) -> bool:
@@ -42,6 +53,15 @@ def settings_leftovers(sections: Mapping[str, type[BaseModel]]) -> list[str]:
         for section, model in sections.items()
         for declaration in ("renamed_keys", "deprecated_settings")
         if getattr(model, declaration, None)
+    ]
+
+
+def mark_leftovers(root: App, result: CompositionResult) -> list[str]:
+    """Every capability, group or command marked ``deprecated``."""
+    return [
+        f"untaped {mark.where}: deprecated {mark.target}"
+        for mark in marks(root, result, resolve=True)
+        if isinstance(mark.stability, Deprecated)
     ]
 
 
@@ -101,6 +121,7 @@ def test_a_major_release_drops_deprecated_spellings(
 
     leftovers = [
         *settings_leftovers(sections),
+        *mark_leftovers(root, bootstrap.composition()),
         *alias_leftovers(root),
         *option_leftovers(root),
         *sdk_leftovers(exports),
@@ -146,6 +167,38 @@ def test_settings_leftovers_name_each_section_but_not_retired_keys() -> None:
         "a: renamed_keys ['old']",
         "b: deprecated_settings ['legacy']",
     ]
+
+
+def test_mark_leftovers_report_a_deprecated_capability_group_and_command() -> None:
+    def factory() -> App:
+        app = create_app(name="svc", help="Service.")
+        app.command(create_app(name="sunset", help="Sunset.", stability=deprecated()))
+
+        @app.command(name="old")
+        @deprecated()
+        def old() -> None: ...
+
+        @app.command(name="trial")
+        @experimental
+        def trial() -> None: ...
+
+        return app
+
+    spec = replace(make_spec(name="svc", factory=factory), stability=deprecated())
+    root = bootstrap.build_root_app(candidates=[provider_candidate(spec)])
+
+    found = mark_leftovers(root, bootstrap.composition())
+    assert [line for line in found if line.startswith("untaped svc")] == [
+        "untaped svc: deprecated capability",
+        "untaped svc sunset: deprecated command",
+        "untaped svc old: deprecated command",
+    ]
+
+
+def test_the_deprecated_alias_command_blocks_a_major_release() -> None:
+    root = bootstrap.build_root_app(candidates=[])
+
+    assert "untaped alias: deprecated group" in mark_leftovers(root, bootstrap.composition())
 
 
 def test_alias_leftovers_name_the_command() -> None:

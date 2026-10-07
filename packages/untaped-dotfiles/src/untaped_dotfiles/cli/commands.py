@@ -56,10 +56,7 @@ from untaped_dotfiles.domain.status import needs_attention
 
 app = create_app(
     name="dotfiles",
-    help=(
-        "Place dotfiles from subscribed repos, with a policy per item per machine. "
-        "Experimental: may change in a minor release."
-    ),
+    help="Place dotfiles from subscribed repos, with a policy per item per machine.",
 )
 
 ITEM = "dotfiles.item"
