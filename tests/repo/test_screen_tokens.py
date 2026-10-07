@@ -35,6 +35,7 @@ from untaped.theme import BUILTIN_THEMES
 #: Repo-relative globs of the modules held to the rule.
 SCREEN_MODULES = (
     "packages/untaped/src/untaped/screen/components/*.py",
+    "packages/untaped/src/untaped/screen/prompts.py",
     "packages/untaped/src/untaped/picker/screen.py",
     "packages/untaped/src/untaped/management/setup_screen.py",
 )
