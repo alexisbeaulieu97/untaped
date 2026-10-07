@@ -301,6 +301,32 @@ def test_the_height_stays_put_while_the_query_narrows_the_list() -> None:
     assert len(wide.frame.splitlines()) == len(narrow.frame.splitlines())
 
 
+def _rows(component: SearchList, height: int) -> int:
+    """The item rows (and padding) drawn between the divider and the count line."""
+    text = "".join(segment.text for segment in _view(component, height=height))
+    body = text.splitlines()
+    divider = next(n for n, line in enumerate(body) if n and "───" in line)
+    return len(body) - divider - 3  # the count line and the bottom edge close the box
+
+
+def test_a_tall_frame_shows_at_most_ten_rows_and_a_short_one_never_fewer_than_three() -> None:
+    assert _rows(SearchList("All", MANY), 60) == lists.MAX_ROWS
+    assert _rows(SearchList("All", MANY), 12) == 12 - lists._CHROME
+    assert _rows(SearchList("All", MANY), 5) == lists.MIN_ROWS
+    assert _rows(SearchList("All", MANY), 1) == lists.MIN_ROWS
+
+
+def test_a_frame_that_fits_only_the_minimum_rows_shows_exactly_those() -> None:
+    assert _rows(SearchList("All", MANY), lists._CHROME + lists.MIN_ROWS) == lists.MIN_ROWS
+
+
+def test_a_narrowing_query_pads_to_the_same_height_in_any_frame() -> None:
+    for height in (5, 12, 60):
+        wide = _rows(SearchList("All", MANY), height)
+        narrow = _rows(SearchList("All", MANY, query="0042"), height)
+        assert narrow == wide
+
+
 # --- look --------------------------------------------------------------------------
 
 

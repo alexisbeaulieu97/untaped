@@ -9,7 +9,7 @@ from untaped.screen.components.buttons import Button, Buttons, Pressed
 from untaped.screen.components.choices import ListItem, SingleList
 from untaped.screen.components.form import Form
 from untaped.screen.components.inputs import TextInput
-from untaped.screen.components.layout import WIDE, Panes
+from untaped.screen.components.layout import MIN_PANE_WIDTH, WIDE, Panes
 from untaped.screen.core import Frame, Key, NextField, PrevField
 from untaped.stability import Experimental, function_mark
 from untaped.theme import BUILTIN_THEMES
@@ -71,6 +71,14 @@ def test_the_left_pane_takes_its_share_of_the_width() -> None:
 
     even = lines(run_solo(_panes(split=0.5), size=(100, 24)).frame)[0]
     assert even.index("╮") + 1 == 50
+
+
+def test_a_split_never_squeezes_either_pane_below_the_minimum_width() -> None:
+    small = lines(run_solo(_panes(split=0.01), size=(100, 24)).frame)[0]
+    assert small.index("╮") + 1 == MIN_PANE_WIDTH
+
+    large = lines(run_solo(_panes(split=0.99), size=(100, 24)).frame)[0]
+    assert large.index("╮") + 1 == 100 - MIN_PANE_WIDTH
 
 
 def test_side_by_side_panes_are_equally_tall() -> None:

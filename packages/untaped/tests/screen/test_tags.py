@@ -6,6 +6,8 @@ import pytest
 
 from screen.gallery import field_of, lines, render_styled, role, run_solo, style_of
 from untaped.screen.components.choices import ListItem
+from untaped.screen.components.form import Form, Submitted
+from untaped.screen.components.inputs import TextInput
 from untaped.screen.components.lists import SearchList, Tags
 from untaped.screen.core import Cancel, Frame, Key
 from untaped.stability import Experimental, function_mark
@@ -96,6 +98,42 @@ def test_enter_opens_the_menu_of_the_items_not_chosen_yet() -> None:
     assert lines(run.frame)[1].startswith("│ awx ✕")
 
 
+def test_the_menu_offers_only_the_items_not_chosen_yet() -> None:
+    opened = field_of(run_solo(_tags(selected=("awx", "jira")), "enter"))
+
+    assert [item.id for item in opened.menu.items] == ["github", "ansible", "workspace"]
+    assert all(entry.item.id not in ("awx", "jira") for entry in opened.menu.matches)
+
+
+def test_enter_in_an_open_menu_with_no_match_is_kept_so_a_form_does_not_submit() -> None:
+    form = Form((("name", TextInput("Name", "x")), ("caps", _tags())), focus=1)
+    run = run_solo(form, "enter", *"zzz", "enter")
+
+    assert not [m for m in run.model.seen if isinstance(m, Submitted)]
+    assert not run.model.unhandled
+    assert field_of(run).fields[1][1].menu_open
+
+
+def test_tab_in_an_open_menu_closes_it_and_then_moves_focus_on() -> None:
+    form = Form((("caps", _tags()), ("name", TextInput("Name", "x"))))
+    run = run_solo(form, "enter", "tab")
+
+    assert field_of(run).focus == 1
+    assert not field_of(run).fields[0][1].menu_open
+    back = run_solo(form, "enter", "tab", "shift-tab")
+    assert field_of(back).focus == 0
+    assert not field_of(back).fields[0][1].menu_open
+    assert "github" not in back.frame  # the menu is not drawn again on return
+
+
+def test_shift_tab_in_an_open_menu_closes_it_and_moves_focus_back() -> None:
+    form = Form((("name", TextInput("Name", "x")), ("caps", _tags())), focus=1)
+    run = run_solo(form, "enter", "shift-tab")
+
+    assert field_of(run).focus == 0
+    assert not field_of(run).fields[1][1].menu_open
+
+
 def test_the_menu_filters_and_enter_adds_a_badge_and_closes_it() -> None:
     run = run_solo(_tags(selected=("awx",)), "enter", *"git", "enter")
 
@@ -167,6 +205,14 @@ def test_an_open_menu_hands_back_the_same_object_for_a_key_it_ignores() -> None:
 
     assert opened.update(Key("left"))[0] is opened
     assert opened.update(Key("tab"))[0] is opened
+
+
+def test_enter_in_an_open_menu_with_nothing_to_pick_is_consumed() -> None:
+    opened = _tags(menu_open=True).update(Key("z"))[0]
+    after = opened.update(Key("enter"))[0]
+
+    assert after == opened
+    assert after.menu_open
 
 
 def test_an_edit_clears_a_stale_error() -> None:
