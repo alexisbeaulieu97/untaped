@@ -74,7 +74,7 @@
   ([#525](https://github.com/alexisbeaulieu97/untaped/pull/525))
 - Screens (experimental): input components (`TextInput`, `SecretInput`,
   `Select`, `Tabs`, ...) and `field_for`, which maps a setting's type to its
-  component. ([#PR](https://github.com/alexisbeaulieu97/untaped/pull/PR))
+  component. ([#526](https://github.com/alexisbeaulieu97/untaped/pull/526))
 
 ### Changed
 
