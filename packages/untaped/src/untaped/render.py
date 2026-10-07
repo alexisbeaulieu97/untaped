@@ -243,7 +243,7 @@ def _format_table(
     if not rows:
         return ""
     compact = theme.density == "compact"
-    box_style = _resolve_box(theme.border)
+    box_style = resolve_box(theme.border)
     table = Table(
         show_header=True,
         header_style=_role_style(theme, "header", colorize=colorize) or "",
@@ -377,7 +377,8 @@ def _format_record_line(key: str, value: object, *, theme: ThemeSpec, colorize: 
     return _render_text(line, colorize=colorize)
 
 
-def _resolve_box(border: BorderStyle) -> box.Box | None:
+def resolve_box(border: BorderStyle) -> box.Box | None:
+    """The Rich box a theme's ``border`` names; ``None`` for ``none`` (no frame)."""
     if border == "rounded":
         return box.ROUNDED
     if border == "square":
