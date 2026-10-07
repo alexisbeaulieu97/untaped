@@ -7,7 +7,9 @@ stderr parsing is locale-independent, inherited repository-redirecting
 variables dropped), transient scoped HTTP auth via a private include file,
 timeout and exit-status mapping to :class:`GitCommandError` with the auth
 header redacted, a bounded retry for transient transport failures, and the
-work-tree root lookup.
+work-tree root lookup. A bare repository is always named with ``--git-dir``
+(``git_dir=``), never found from ``cwd``: hardened shells such as GitHub
+Copilot CLI set ``safe.bareRepository=explicit``, which refuses that discovery.
 """
 
 from __future__ import annotations
@@ -200,6 +202,7 @@ def git_env(
     *,
     git_path: str | None = None,
     cwd: Path | None = None,
+    git_dir: Path | None = None,
     auth_config: Path | None = None,
     locale_c: bool = True,
     batch_ssh: bool = True,
@@ -212,8 +215,9 @@ def git_env(
     inherited repository-redirecting variables. ``locale_c`` forces
     untranslated messages; ``batch_ssh`` stops ssh prompting unless the user
     set ``GIT_SSH_COMMAND``/``GIT_SSH``/``core.sshCommand``; ``ceiling`` stops
-    repository discovery above ``cwd``; ``auth_config`` includes a
-    :func:`scoped_auth_config` file and scrubs trace variables that could log it.
+    repository discovery above ``cwd``; ``git_dir`` is the repository whose
+    ``core.sshCommand`` counts (else the one at ``cwd``); ``auth_config``
+    includes a :func:`scoped_auth_config` file and scrubs trace variables that could log it.
     """
     env = dict(os.environ if base is None else base)
     for name in _REPO_REDIRECT_ENV:
@@ -227,7 +231,9 @@ def git_env(
         batch_ssh
         and "GIT_SSH_COMMAND" not in env
         and "GIT_SSH" not in env
-        and not _core_ssh_command_set(git_path, _config_scope(env), _probe_dir(cwd))
+        and not _core_ssh_command_set(
+            git_path, _config_scope(env), _probe_dir(cwd), _probe_git_dir(git_dir)
+        )
     ):
         env["GIT_SSH_COMMAND"] = _BATCH_SSH_COMMAND
     if ceiling and cwd is not None:
@@ -253,6 +259,7 @@ def run_git(
     *,
     timeout: float,
     cwd: Path | None = None,
+    git_dir: Path | None = None,
     git: str = "git",
     capture: bool = False,
     stdin: bytes | str | None = None,
@@ -271,9 +278,11 @@ def run_git(
     stdout is captured only with ``capture`` (otherwise discarded so git
     chatter never reaches the CLI's own output); stderr is always captured.
     Raises :class:`GitCommandError` when git is missing, cannot start, times
-    out, or (with ``check``) exits non-zero. ``retry_transient`` retries
-    transport failures up to ``attempts`` times with 1s, 2s, ... backoff; use
-    it only for idempotent network commands (fetch, ls-remote).
+    out, or (with ``check``) exits non-zero. ``git_dir`` names the repository
+    with ``--git-dir`` (required for a bare one; see the module docstring).
+    ``retry_transient`` retries transport failures up to ``attempts`` times
+    with 1s, 2s, ... backoff; use it only for idempotent network commands
+    (fetch, ls-remote).
     """
     argv = list(args)
     label = f"git {argv[0]}" if argv else "git"
@@ -285,6 +294,7 @@ def run_git(
         env = git_env(
             git_path=git_path,
             cwd=cwd,
+            git_dir=git_dir,
             auth_config=auth_config,
             locale_c=locale_c,
             batch_ssh=batch_ssh,
@@ -294,7 +304,7 @@ def run_git(
             started = time.monotonic()
             try:
                 completed = subprocess.run(
-                    [git_path, *argv],
+                    [git_path, *_git_dir_option(git_dir), *argv],
                     cwd=cwd,
                     env=env,
                     # With no payload, close stdin so git never reads the terminal.
@@ -436,6 +446,15 @@ def _config_scope(env: Mapping[str, str]) -> tuple[tuple[str, str], ...]:
     return tuple(sorted((k, v) for k, v in env.items() if k in keys or k.startswith("GIT_CONFIG")))
 
 
+def _git_dir_option(git_dir: Path | None) -> list[str]:
+    return [] if git_dir is None else [f"--git-dir={os.path.abspath(git_dir)}"]
+
+
+def _probe_git_dir(git_dir: Path | None) -> str | None:
+    """The repository the ``core.sshCommand`` probe names with ``--git-dir``, when it exists."""
+    return os.path.abspath(git_dir) if git_dir is not None and os.path.isdir(git_dir) else None
+
+
 def _probe_dir(cwd: Path | None) -> str | None:
     """The directory whose repository config the ``core.sshCommand`` probe reads."""
     return str(cwd) if cwd is not None and os.path.isdir(cwd) else None
@@ -443,23 +462,32 @@ def _probe_dir(cwd: Path | None) -> str | None:
 
 @functools.lru_cache(maxsize=256)
 def _core_ssh_command_set(
-    git_path: str | None, scope: tuple[tuple[str, str], ...], cwd: str | None
+    git_path: str | None,
+    scope: tuple[tuple[str, str], ...],
+    cwd: str | None,
+    git_dir: str | None,
 ) -> bool:
     """Whether git config sets ``core.sshCommand`` (probed once per scope and repo).
 
     ``GIT_SSH_COMMAND`` outranks ``core.sshCommand``, so the BatchMode
     default must not be injected over a user's configured ssh command. The
     probe runs in the command's ``cwd`` (the process cwd when there is none)
-    so it reads that repository's config, never one inherited ``GIT_DIR``
-    points at. It uses ``Popen`` directly so it stays out of the
-    ``subprocess.run`` path that callers and tests observe.
+    and names ``git_dir`` when given, so it reads that repository's config,
+    never one inherited ``GIT_DIR`` points at. It uses ``Popen`` directly so
+    it stays out of the ``subprocess.run`` path that callers and tests observe.
     """
     if git_path is None:
         return False
     inherited = {k: v for k, v in os.environ.items() if k not in _REPO_REDIRECT_ENV}
     try:
         proc = subprocess.Popen(
-            [git_path, "config", "--get", "core.sshCommand"],
+            [
+                git_path,
+                *([f"--git-dir={git_dir}"] if git_dir is not None else []),
+                "config",
+                "--get",
+                "core.sshCommand",
+            ],
             cwd=cwd,
             env={**inherited, **dict(scope), "GIT_TERMINAL_PROMPT": "0"},
             stdin=subprocess.DEVNULL,

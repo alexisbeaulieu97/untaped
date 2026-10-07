@@ -27,7 +27,7 @@ def _fake_batch_git(
     def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
         cmd = args[0]
         assert isinstance(cmd, list)
-        if cmd[1] == "ls-tree":
+        if "ls-tree" in cmd:
             return subprocess.CompletedProcess(cmd, 0, stdout=listing, stderr="")
         timeouts.append(kwargs.get("timeout"))
         return subprocess.CompletedProcess(cmd, 0, stdout=batch_stdout, stderr=b"")
