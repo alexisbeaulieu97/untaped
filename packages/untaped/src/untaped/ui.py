@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable, Iterator, Sequence
-from contextlib import AbstractContextManager, contextmanager, nullcontext
+from contextlib import AbstractContextManager, contextmanager
 from typing import TYPE_CHECKING, TextIO
 
 from untaped.diagnostics import json_diagnostics, write_record
@@ -285,7 +285,8 @@ class UiContext:
     ) -> Iterator[UiContext]:
         """Point prompts at a terminal for the duration of the block.
 
-        A TTY stdin is used as-is; piped stdin is swapped for the controlling
+        For a screen use :meth:`run` or :meth:`pick_many`, which also cover
+        stderr. A TTY stdin is used as-is; piped stdin is swapped for the controlling
         terminal (``/dev/tty``) and restored afterwards. Raises
         :class:`UsageError` with ``refusal`` when no terminal is available.
         """
@@ -308,13 +309,22 @@ class UiContext:
     def _screen_terminal(self, *, command: str, alternative: str) -> Iterator[UiContext]:
         """Point a screen at a terminal for the duration of the block.
 
-        stdin and stderr are used as they are when both are terminals. Otherwise
-        (piped stdin, redirected stderr) the controlling terminal is opened for
-        input and again for output, swapped in for the block and closed after,
-        so a screen never paints into a file. Raises :class:`UsageError` naming
-        ``command`` and ``alternative`` when no terminal can be opened.
+        What :meth:`run` and :meth:`pick_many` wrap a screen in; :meth:`terminal`
+        is its input-only sibling for prompts. stdin and stderr are used as they
+        are when both are terminals. Otherwise (piped stdin, redirected stderr)
+        the controlling terminal is opened for input and again for output,
+        swapped in for the block and closed after, so a screen never paints into
+        a file. A prompt backend that declares ``needs_terminal = False`` (an
+        optional attribute; the scripted backend does) gets the screen as it is.
+        Raises :class:`UsageError` naming ``command`` and ``alternative`` when
+        no terminal can be opened.
         """
-        if self.can_prompt and stream_is_tty(self.stderr):
+        injected = (
+            self._prompt_backend if self._prompt_backend is not None else prompt_backend_override()
+        )
+        if not getattr(injected, "needs_terminal", True) or (
+            self.can_prompt and stream_is_tty(self.stderr)
+        ):
             yield self
             return
         try:
@@ -335,20 +345,6 @@ class UiContext:
             terminal_in.close()
             terminal_out.close()
 
-    def _terminal_for(self, *, command: str, alternative: str) -> AbstractContextManager[UiContext]:
-        """The terminal a screen needs, or none when the prompt backend needs none.
-
-        An injected backend can declare ``needs_terminal = False`` (an optional
-        attribute); the default one always needs a terminal, see
-        :meth:`_screen_terminal`.
-        """
-        injected = (
-            self._prompt_backend if self._prompt_backend is not None else prompt_backend_override()
-        )
-        if getattr(injected, "needs_terminal", True):
-            return self._screen_terminal(command=command, alternative=alternative)
-        return nullcontext(self)
-
     @experimental
     def run[M, R](self, screen: Screen[M, R]) -> R:
         """Run an interactive screen and return its result.
@@ -364,7 +360,7 @@ class UiContext:
         """
         from untaped.screen.core import Quit  # noqa: PLC0415 - keeps screens off the startup path
 
-        with self._terminal_for(command=screen.command, alternative=screen.alternative):
+        with self._screen_terminal(command=screen.command, alternative=screen.alternative):
             try:
                 # Read inside the block: the default backend is built on the swapped streams.
                 outcome = self.prompt_backend.run_screen(screen, theme=self.theme)
@@ -455,16 +451,13 @@ class UiContext:
         :class:`UsageError` naming ``request.command`` and ``request.alternative``
         (a generic message when unset) when there is no terminal at all.
         """
-        from untaped.picker import GENERIC_ALTERNATIVE, GENERIC_COMMAND  # noqa: PLC0415
-
         ids = [item.id for item in request.catalog.items]
         if len(set(ids)) != len(ids):
             raise ConfigError(
                 "picker items must have unique ids", category="failed", system="untaped"
             )
-        with self._terminal_for(
-            command=request.command or GENERIC_COMMAND,
-            alternative=request.alternative or GENERIC_ALTERNATIVE,
+        with self._screen_terminal(
+            command=request.terminal_command, alternative=request.terminal_alternative
         ):
             try:
                 picked = self.prompt_backend.pick_many(request)

@@ -9,6 +9,8 @@ application, now through ``drive_screen``; the adapter cases it also held
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 from rich.cells import cell_len
 
@@ -22,8 +24,8 @@ from untaped.picker import (
     PickResult,
     PickSetting,
 )
-from untaped.picker.screen import _SearchPane, _SelectedPane, picker_screen
-from untaped.picker.state import PickerState, handle, initial_state, visible
+from untaped.picker.screen import _Refresh, picker_screen
+from untaped.picker.state import PickerState, handle, initial_state, press, visible
 from untaped.screen.core import Back, Cancel, Frame, Interrupt, Key, Paste, Quit
 from untaped.testing import ScreenRun, drive_screen
 from untaped.testing.screens import rendered_text
@@ -253,10 +255,35 @@ def test_allow_empty_on_the_screen_still_requires_the_title() -> None:
     assert "name is required" in run.frame
 
 
-def test_the_error_stays_until_a_key_that_does_something() -> None:
-    run = _run(_request(), "ctrl-s", "home")
-    assert "select at least one item" in run.frame
-    assert "select at least one item" not in _run(_request(), "ctrl-s", "a").frame
+def test_any_key_dismisses_the_error() -> None:
+    assert "select at least one item" in _run(_request(), "ctrl-s").frame
+    for key in ("a", "home", "shift-tab", "down"):
+        run = _run(_request(), "ctrl-s", key)
+        assert "select at least one item" not in run.frame, key
+    # keys the focused pane does not use, and keys the SDK shares, dismiss it just the same
+    on_settings = ("down", " ", "tab")
+    for key in ("home", "x", "shift-tab"):
+        run = _run(_request(allow_empty=False), *on_settings, "tab", "tab", "ctrl-s", key)
+        assert "select at least one item" not in run.frame, key
+
+
+def test_a_key_the_picker_has_no_use_for_is_left_to_the_shared_keys() -> None:
+    state = initial_state(_request())
+    on_settings = replace(state, focus="selected")
+    assert press(on_settings, "home") == (on_settings, False)
+    assert press(on_settings, "x") == (on_settings, False)
+    assert press(state, "x")[1] is True  # typed into the search
+    assert press(state, "tab")[1] is True
+    assert press(replace(state, outcome="confirmed"), "x") == (
+        replace(state, outcome="confirmed"),
+        False,
+    )
+    errored = replace(on_settings, error="boom")
+    assert press(errored, "home") == (on_settings, False)
+
+
+def test_ctrl_r_dismisses_the_error_even_without_a_refresh_source() -> None:
+    assert "select at least one item" not in _run(_request(), "ctrl-s", "ctrl-r").frame
 
 
 def test_back_and_interrupt_ask_like_ctrl_c() -> None:
@@ -336,6 +363,20 @@ def test_narrow_terminals_stack_the_panes() -> None:
     selected = next(i for i, line in enumerate(lines) if "Selected 0" in line)
     assert selected > search
     assert "Selected" not in lines[search]
+
+
+def test_a_stacked_terminal_gives_the_focused_pane_the_room() -> None:
+    searching = _lines(_run(_many(), size=(60, 20)).frame)
+    assert len(searching) == 20
+    assert sum(" acme/r" in line for line in searching) >= 6
+    assert any("Create" in line for line in searching)
+
+    selecting = _lines(_run(_many(), "down", " ", "tab", size=(60, 20)).frame)
+    assert len(selecting) == 20
+    assert "▸ acme/r00" in "\n".join(selecting)
+    assert any("Create" in line for line in selecting)
+    # the list keeps its rows while the settings have the focus
+    assert sum(" acme/r" in line for line in selecting) >= 3
 
 
 def test_every_line_fits_the_width() -> None:
@@ -425,15 +466,6 @@ def test_the_count_line_says_while_a_refresh_runs() -> None:
     assert "30 · refreshed 2h ago · refreshing…" in frame
 
 
-def test_the_panes_ask_nothing_of_the_drawn_state() -> None:
-    state = initial_state(_many())
-    for pane in (_SearchPane(state), _SelectedPane(state)):
-        assert pane.update(Key("a")) == (pane, [])
-        assert pane.with_error("no") is pane
-        assert pane.validate() == ""
-        assert (pane.value, pane.error) == ("", "")
-
-
 def test_a_failed_refresh_stays_marked_until_one_succeeds() -> None:
     calls = 0
 
@@ -478,11 +510,32 @@ def test_the_footer_lists_the_keys_that_apply() -> None:
     assert "right next" in on_choice
 
 
+def test_the_footer_says_what_the_shared_keys_do_here() -> None:
+    searching = _lines(_run(_many()).frame)[-1]
+    assert "tab pane" in searching
+    assert "ctrl-s create" in searching
+    assert "esc back" in searching
+
+
+def test_the_footer_offers_enter_where_it_edits_or_creates() -> None:
+    # all items row: a text setting is two rows down, and enter opens its editor
+    on_text = _lines(_run(_many(), "tab", "down", "down").frame)[-1]
+    assert "enter edit" in on_text
+    on_choice = _lines(_run(_many(), "tab", "down").frame)[-1]
+    assert "enter" not in on_choice
+    assert "enter" not in _lines(_run(_many(), "tab").frame)[-1]
+    on_create = _lines(_run(_many(), "tab", *["down"] * 3).frame)[-1]
+    assert "enter create" in on_create
+    editing = _lines(_run(_many(), "tab", "down", "down", "enter").frame)[-1]
+    assert "enter" not in editing
+
+
 def test_the_help_overlay_lists_the_pickers_keys_and_the_shared_ones() -> None:
     frame = _run(_many(), "down", "tab", "?").frame
     assert "Keys" in frame
-    for entry in ("ctrl-s", "submit", "tab", "ctrl-c"):
+    for entry in ("ctrl-s", "create", "tab", "pane", "ctrl-c", "quit"):
         assert entry in frame
+    assert "submit" not in frame
 
 
 def test_a_question_mark_in_the_search_is_text() -> None:
@@ -519,6 +572,8 @@ def test_below_ten_inner_columns_the_create_button_loses_its_box() -> None:
     assert any("Create" in line and "│ Create │" in line for line in wide)
     assert not any("│ Create │" in line for line in narrow)
     assert any("Create" in line for line in narrow)
+    edge = _lines(_run(_many(), "tab", size=(14, 40)).frame)
+    assert any("│ Create │" in line for line in edge)
 
 
 def test_the_list_ranks_like_the_reducer_does() -> None:
@@ -704,3 +759,24 @@ def test_only_the_state_is_the_models_key_press() -> None:
         state = handle(state, key)
     assert run.model == state
     assert Key("w") == Key("w")
+
+
+def test_a_request_resolves_its_terminal_command_and_alternative_once() -> None:
+    assert (_request().terminal_command, _request().terminal_alternative) == (
+        GENERIC_COMMAND,
+        GENERIC_ALTERNATIVE,
+    )
+    named = _request(command="untaped workspace create", alternative="--repo")
+    assert (named.terminal_command, named.terminal_alternative) == (
+        "untaped workspace create",
+        "--repo",
+    )
+
+
+def test_ctrl_r_while_a_refresh_runs_still_dismisses_the_error() -> None:
+    screen = picker_screen(_many(refresh=lambda _force: PickCatalog(MANY)))
+    state, _cmds = screen.init()  # refreshing, nothing landed yet
+    assert state.refreshing
+    errored = replace(state, error="select at least one item")
+    after, cmds = screen.update(errored, _Refresh())
+    assert (after.error, after.refreshing, cmds) == ("", True, [])

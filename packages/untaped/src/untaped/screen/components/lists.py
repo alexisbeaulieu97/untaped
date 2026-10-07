@@ -13,6 +13,7 @@ items to show.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from functools import cached_property
 from itertools import chain
@@ -93,9 +94,15 @@ class SearchList:
     counts. Only the window of rows around the cursor is built.
 
     ``caret`` and ``highlight`` choose which half of a focused list is drawn:
-    the caret in the search line and the highlighted cursor row. Both are on by
-    default; a screen that tells typing from browsing (the picker) draws one at
-    a time. They change only the view.
+    the caret in the search line (typing) and the highlighted cursor row
+    (browsing). Both are on by default; a screen whose focus is in one mode or
+    the other turns the other off. They change only the view.
+
+    ``window_rows`` is the window's height (by default it follows the frame: up to
+    :data:`MAX_ROWS`, less in a short one). ``entries`` are the matches already
+    ranked, best first, for a screen that ranks the items itself and wants one
+    ranking, not two; the list then ranks nothing and ``query`` is only shown
+    and edited.
     """
 
     label: str
@@ -110,13 +117,17 @@ class SearchList:
     error: str = ""
     caret: bool = True
     highlight: bool = True
+    window_rows: int | None = None
+    entries: tuple[_Entry, ...] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "cursor", clamped(self.cursor, len(self.matches)))
 
     @property
-    def matches(self) -> list[_Entry]:
+    def matches(self) -> Sequence[_Entry]:
         """The items matching the query, best first, each with its highlighted positions."""
+        if self.entries is not None:
+            return self.entries
         return _ranked(self.query, self.items)
 
     @property
@@ -162,7 +173,7 @@ class SearchList:
             return self
         return replace(self, query=edited.text, cursor=0, error="")
 
-    def _picked(self, matches: list[_Entry]) -> Self:
+    def _picked(self, matches: Sequence[_Entry]) -> Self:
         if not matches:
             return self
         item_id = matches[self.cursor].item.id
@@ -178,7 +189,7 @@ class SearchList:
         """The box: the search line, a window of rows around the cursor and the count line."""
         inner = inner_width(frame, width)
         matches = self.matches
-        size = max(MIN_ROWS, min(MAX_ROWS, frame.height - _CHROME))
+        size = self.window_rows or max(MIN_ROWS, min(MAX_ROWS, frame.height - _CHROME))
         first, shown = window(matches, self.cursor, size)
         body: list[RenderableType] = [
             text_line(
@@ -288,7 +299,9 @@ class Tree:
     parent of a closed one), enter toggles a row that has children. A key a row
     cannot use, such as right on a leaf, is left to the parent, so a screen can
     give left and right another meaning there. ``value`` is the id of the row
-    under the cursor (``""`` for an empty tree).
+    under the cursor (``""`` for an empty tree). ``window_rows`` is the number
+    of rows shown at once (by default it follows the frame, as a
+    :class:`SearchList`'s does).
     """
 
     label: str
@@ -297,6 +310,7 @@ class Tree:
     cursor: int = 0
     help: str = ""
     error: str = ""
+    window_rows: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "cursor", clamped(self.cursor, len(self._on_screen)))
@@ -350,7 +364,7 @@ class Tree:
     ) -> RenderableType:
         """The box: one line per visible row, indented by depth, in a window around the cursor."""
         inner = inner_width(frame, width)
-        size = max(MIN_ROWS, min(MAX_ROWS, frame.height - _TREE_CHROME))
+        size = self.window_rows or max(MIN_ROWS, min(MAX_ROWS, frame.height - _TREE_CHROME))
         first, shown = window(self._on_screen, self.cursor, size)
         rows = [
             self._row(frame, inner, entry, focused and first + offset == self.cursor)

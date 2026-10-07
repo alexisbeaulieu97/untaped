@@ -89,6 +89,16 @@ class PickRequest:
     command: str = ""
     alternative: str = ""
 
+    @property
+    def terminal_command(self) -> str:
+        """The command the no-terminal refusal names: ``command``, or the generic one."""
+        return self.command or GENERIC_COMMAND
+
+    @property
+    def terminal_alternative(self) -> str:
+        """The alternative that refusal offers: ``alternative``, or the generic one."""
+        return self.alternative or GENERIC_ALTERNATIVE
+
 
 @dataclass(frozen=True)
 class Picked:

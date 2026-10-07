@@ -15,9 +15,8 @@ comes from the theme through the frame.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
-from typing import Self
 
 from rich.align import Align
 from rich.cells import cell_len
@@ -25,8 +24,6 @@ from rich.console import Group, RenderableType
 from rich.text import Text
 
 from untaped.picker import (
-    GENERIC_ALTERNATIVE,
-    GENERIC_COMMAND,
     PickCatalog,
     PickItem,
     PickRequest,
@@ -42,21 +39,25 @@ from untaped.picker.state import (
     handle,
     initial_state,
     is_inherited,
+    press,
     refresh_failed,
     result,
     row_index,
     rows,
     setting_for,
     setting_value,
+    visible,
     with_catalog,
 )
-from untaped.screen.components.buttons import Button, Buttons
+from untaped.screen.components.buttons import BOX_ROWS, Button, Buttons
 from untaped.screen.components.choices import ListItem
 from untaped.screen.components.draw import role_style, text_line, unboxed
 from untaped.screen.components.inputs import TextInput
 from untaped.screen.components.layout import Panes
 from untaped.screen.components.lists import SearchList, Tree, TreeRow
 from untaped.screen.core import (
+    SHARED_KEYS,
+    Activate,
     Back,
     Binding,
     Cancel,
@@ -65,29 +66,27 @@ from untaped.screen.core import (
     Frame,
     Interrupt,
     Key,
+    NextField,
     Paste,
+    PrevField,
     Quit,
     Screen,
+    Submit,
 )
 from untaped.screen.fit import fit_text
+from untaped.screen.fuzzy import Ranked
 
 __all__ = ["picker_screen"]
 
 LIST_ROWS = 10
 """Most list rows the search pane shows; the right pane is sized to match it."""
 
-#: ``SearchList`` and ``Tree`` size their window from ``frame.height`` minus the rows they
-#: expect around it (a box, the search and count lines): 8 and 5. Bare in a pane the search
-#: list needs only its search and count lines and the tree none, so the view hands each a
-#: frame taller by the difference and gets exactly the window it asks for.
-_SEARCH_CHROME = 8
 _SEARCH_LINES = 2
-_TREE_CHROME = 5
-#: A boxed button is three rows tall and ten cells wide; below that the pane draws it plain.
-_BOX_ROWS = 3
-_BOX_MIN_WIDTH = 10
-_BOX_MIN_ROWS = 12
+"""The search pane's rows besides its list: the search line and the count line."""
+_BOX_MIN_ROWS = LIST_ROWS + _SEARCH_LINES
+"""The pane height from which the Create button keeps its box: as tall as the search pane."""
 _EDITOR_BOX_MIN_ROWS = 18
+"""The pane height from which the field being edited keeps its box and its candidates' rule."""
 _ID_SEPARATOR = "\x00"
 """Joins an owner and a setting key into one tree row id (neither contains it)."""
 
@@ -124,9 +123,10 @@ def picker_screen(request: PickRequest) -> Screen[PickerState, PickResult]:
         update=update,
         view=_view,
         title=request.heading,
-        command=request.command or GENERIC_COMMAND,
-        alternative=request.alternative or GENERIC_ALTERNATIVE,
+        command=request.terminal_command,
+        alternative=request.terminal_alternative,
         keys=_KEYS,
+        shared_labels=_SHARED_LABELS,
         layout="full",
     )
 
@@ -155,12 +155,14 @@ def _update(
             new = refresh_failed(state, str(error) or type(error).__name__)
         case _Refresh():
             if request.refresh is None or state.refreshing:
-                return state, []
+                return (replace(state, error="") if state.error else state), []
             new = replace(begin_refresh(state), error="")  # a retry answers "refresh failed"
             cmds.append(_refresh(request.refresh, force=True))
         case Back() | Interrupt():
             # Esc and ctrl-c nothing else wanted: ask before discarding a selection.
             new = handle(state, "ctrl-c")
+        case NextField() | PrevField() | Activate() | Submit():
+            new = replace(state, error="") if state.error else state  # any key dismisses it
         case _:
             return state, []
     if state.outcome == "running":
@@ -185,12 +187,12 @@ def _paste(state: PickerState, text: str) -> PickerState:
 
 
 def _key(state: PickerState, name: str) -> PickerState:
-    if name == "ctrl-r":
+    if name == "ctrl-r" and state.request.refresh is not None:
         return state  # the screen's own binding, not a key the reducer knows
-    new = handle(state, name)
-    if state.error and new == replace(state, error=""):
-        return state  # the key did nothing but dismiss the message: leave it to the shared keys
-    return new
+    new, used = press(state, name)
+    if used or name not in SHARED_KEYS:
+        return new  # a key the picker used, or one nobody else wants: the error is dismissed
+    return state  # a shared key it has no use for: the SDK's message follows (and dismisses it)
 
 
 # --- keys ----------------------------------------------------------------------
@@ -235,6 +237,27 @@ _KEYS = (
     Binding("right", "next", None, when=_on_choice),
     Binding("ctrl-r", "refresh", _Refresh(), when=_can_refresh),
 )
+
+
+def _enter_label(state: PickerState) -> str | None:
+    """What enter does where it is worth saying: edit a text setting, press Create."""
+    owner, key = state.row
+    if state.focus != "selected" or state.editing is not None:
+        return None
+    if owner == CREATE:
+        return "create"
+    if key is not None and not setting_for(state, key).choices:
+        return "edit"
+    return None
+
+
+#: What the shared keys do here, for the footer and the help overlay. They stay the SDK's
+#: keys; the screen only says what they mean in the picker.
+_SHARED_LABELS: Mapping[str, str | Callable[[PickerState], str | None]] = {
+    "tab": "pane",
+    "enter": _enter_label,
+    "ctrl-s": "create",
+}
 
 
 # --- the view ------------------------------------------------------------------
@@ -300,67 +323,57 @@ def _message(state: PickerState, frame: Frame) -> Text | None:
     )
 
 
-class _Drawn:
-    """What ``Panes`` asks of a pane's component, for a pane that only draws the state."""
-
-    value: object = ""
-    error: str = ""
-
-    def __init__(self, state: PickerState) -> None:
-        self.state = state
-
-    def update(self, message: object) -> tuple[Self, list[Cmd]]:
-        return self, []
-
-    def with_error(self, text: str) -> Self:
-        return self
-
-    def validate(self) -> str:
-        return ""
+_listing: list[
+    tuple[list[Ranked[PickItem]], tuple[ListItem, ...], tuple[Ranked[ListItem], ...]]
+] = []
+"""One slot: the list items (and the ranking of them) last built for the reducer's ranking."""
 
 
-_listing: list[tuple[tuple[PickItem, ...], tuple[ListItem, ...]]] = []
-"""One slot: the items last turned into list items, keyed by the identity of their source."""
+def _list_items(state: PickerState) -> tuple[tuple[ListItem, ...], tuple[Ranked[ListItem], ...]]:
+    """The picker's items, and the reducer's ranking of them, as the search list draws them.
 
-
-def _list_items(pool: tuple[PickItem, ...]) -> tuple[ListItem, ...]:
-    """The picker's items as list items, the same tuple while ``pool`` is the same tuple.
-
-    Staying put matters: the search list ranks by the identity of its items, so
-    a key press ranks once instead of once per frame.
+    The reducer ranks once; the list takes that ranking as it is. The same
+    objects come back while the reducer's ranking is the same one, so a key
+    press builds them once instead of once per frame.
     """
-    if _listing and _listing[0][0] is pool:
-        return _listing[0][1]
-    items = tuple(
-        ListItem(
+    ranking = visible(state)
+    if _listing and _listing[0][0] is ranking:
+        return _listing[0][1], _listing[0][2]
+    built = {
+        id(item): ListItem(
             item.id,
             item.label,
             detail=item.description,
             description=item.description,
             dimmed=item.dimmed,
         )
-        for item in pool
-    )
-    _listing[:] = [(pool, items)]
-    return items
+        for item in candidates(state)
+    }
+    items = tuple(built.values())
+    entries = tuple(Ranked(built[id(match.item)], match.positions) for match in ranking)
+    _listing[:] = [(ranking, items, entries)]
+    return items, entries
 
 
-class _SearchPane(_Drawn):
+@dataclass(frozen=True)
+class _SearchPane:
     """The left pane: the search line and the matching items, from the state."""
 
-    def view(
-        self, frame: Frame, *, focused: bool = False, width: int | None = None
-    ) -> RenderableType:
+    state: PickerState
+
+    def __call__(self, frame: Frame, focused: bool) -> RenderableType:
         state = self.state
         notes = [state.note] if state.note else []
         if state.refreshing:
             notes.append(f"refreshing{frame.ellipsis()}")
         elif state.stale:
             notes.append("refresh failed")
-        rows_wanted = max(1, min(LIST_ROWS, frame.height - _SEARCH_LINES))
+        items, entries = _list_items(state)
         search = SearchList(
             "",
-            _list_items(candidates(state)),
+            items,
+            entries=entries,
+            window_rows=max(1, min(LIST_ROWS, frame.height - _SEARCH_LINES)),
             query=state.query,
             cursor=state.cursor,
             selected=frozenset(state.selected),
@@ -369,24 +382,27 @@ class _SearchPane(_Drawn):
             caret=state.focus == "search",
             highlight=state.focus == "list",
         )
-        sized = replace(frame, height=rows_wanted + _SEARCH_CHROME)
-        return search.view(sized, focused=focused, width=width)
+        return search.view(frame, focused=focused)
 
 
-class _SelectedPane(_Drawn):
+@dataclass(frozen=True)
+class _SelectedPane:
     """The right pane: the owners and their settings as a tree, an editor, the Create button."""
 
-    def view(
-        self, frame: Frame, *, focused: bool = False, width: int | None = None
-    ) -> RenderableType:
+    state: PickerState
+
+    def __call__(self, frame: Frame, focused: bool) -> RenderableType:
         state = self.state
-        inner = width or frame.width
+        inner = frame.width
         bare = unboxed(frame)
         on_create = state.row[0] == CREATE
+        button = Buttons((Button("create", "Create", "primary"),))
         boxed = (
-            frame.box() is not None and inner >= _BOX_MIN_WIDTH and frame.height >= _BOX_MIN_ROWS
+            frame.box() is not None
+            and inner >= button.boxed_width
+            and frame.height >= _BOX_MIN_ROWS
         )
-        button_rows = _BOX_ROWS if boxed else 1
+        button_rows = BOX_ROWS if boxed else 1
         # The field being edited keeps its box while the pane has the rows for it.
         boxed_editor = frame.box() is not None and frame.height >= _EDITOR_BOX_MIN_ROWS
         editor_frame = frame if boxed_editor else bare
@@ -407,20 +423,15 @@ class _SelectedPane(_Drawn):
             self._tree_rows(frame),
             expanded=frozenset({state.row[0]}),
             cursor=row_index(state),
+            window_rows=window,
         )
-        parts: list[RenderableType] = [
-            tree.view(
-                replace(bare, height=window + _TREE_CHROME),
-                focused=focused and not on_create,
-                width=inner,
-            )
-        ]
+        parts: list[RenderableType] = [tree.view(bare, focused=focused and not on_create)]
         shown = min(window, len(rows(state)) - 1)
         parts.extend(Text("") for _ in range(window - shown))
         if editor is not None:
             parts.append(editor.view(editor_frame, focused=True, width=inner))
         parts.append(Text(""))
-        parts.append(self._button(frame, inner, boxed=boxed, focused=focused and on_create))
+        parts.append(self._button(button, frame, inner, boxed=boxed, focused=focused and on_create))
         return Group(*parts)
 
     def _tree_rows(self, frame: Frame) -> tuple[TreeRow, ...]:
@@ -461,8 +472,9 @@ class _SelectedPane(_Drawn):
             matched=state.editing or "",
         )
 
-    def _button(self, frame: Frame, inner: int, *, boxed: bool, focused: bool) -> RenderableType:
-        buttons = Buttons((Button("create", "Create", "primary"),))
+    def _button(
+        self, buttons: Buttons, frame: Frame, inner: int, *, boxed: bool, focused: bool
+    ) -> RenderableType:
         drawn = buttons.view(frame if boxed else unboxed(frame), focused=focused, width=inner)
         return Align.center(drawn, width=inner)
 

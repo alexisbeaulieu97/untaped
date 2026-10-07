@@ -168,7 +168,9 @@ class Runtime[M, R]:
         """The current frame: the view (or the help overlay) above a pinned footer."""
         width, height = self.size
         frame = Frame(width, max(1, height - 1), self.theme)
-        footer = Footer(tuple(self._active_bindings()), saving=self.saving)
+        footer = Footer(
+            tuple(self._active_bindings()), saving=self.saving, labels=self._shared_labels()
+        )
         inline = self.screen.layout == "inline"
         if self.help_open:
             overlay = footer.overlay(frame)
@@ -240,6 +242,15 @@ class Runtime[M, R]:
             self.help_open = False
         elif name == "ctrl-c":
             self._inbox.append(Cancel(interrupted=True))
+
+    def _shared_labels(self) -> dict[str, str]:
+        """The screen's shared-key labels for the current model (a function may decline)."""
+        labels: dict[str, str] = {}
+        for key, label in self.screen.shared_labels.items():
+            text = label(self.model) if callable(label) else label
+            if text is not None:
+                labels[key] = text
+        return labels
 
     def _active_bindings(self) -> list[Binding]:
         return [b for b in self.screen.keys if b.when is None or b.when(self.model)]

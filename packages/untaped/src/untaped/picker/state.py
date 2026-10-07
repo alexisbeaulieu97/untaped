@@ -90,7 +90,7 @@ def candidates(state: PickerState) -> tuple[PickItem, ...]:
     """The items the query is matched against: the catalog, with the ad-hoc item first (memoised).
 
     The same tuple object comes back while the query and the catalog stay put, so
-    a view can rank it again (to highlight what matched) and hit its own cache.
+    a view can key what it builds from the items on it.
     """
     return _memoised(state)[0]
 
@@ -203,20 +203,31 @@ def refresh_failed(state: PickerState, message: str) -> PickerState:
 
 def handle(state: PickerState, key: str) -> PickerState:
     """Apply one key: a key name or one printable character; ignored once decided."""
+    return press(state, key)[0]
+
+
+def press(state: PickerState, key: str) -> tuple[PickerState, bool]:
+    """Apply one key, and say whether the picker had a use for it.
+
+    Whatever the key, the error on screen is dismissed in the state returned.
+    Unused keys are those the focus does not bind and does not type (a letter
+    while the settings are focused, ``home``), so a screen can leave them to
+    the keys it shares with every other screen.
+    """
     if state.outcome != "running":
-        return state
+        return state, False
     if state.error:
         state = replace(state, error="")
     if state.quitting:
-        return _answer_quit(state, key)
+        return _answer_quit(state, key), True
     if state.editing is not None:
-        return _edit_key(state, key)
+        return _edit_key(state, key), True
     action = _GLOBAL.get(key) or _BY_FOCUS[state.focus].get(key)
     if action is not None:
-        return action(state)
-    if len(key) == 1 and key.isprintable():
-        return _type(state, key)
-    return state
+        return action(state), True
+    if len(key) == 1 and key.isprintable() and state.focus != "selected":
+        return _type(state, key), True
+    return state, False
 
 
 def _edit_text(text: str, key: str) -> str:

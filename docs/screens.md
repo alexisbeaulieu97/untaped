@@ -94,6 +94,14 @@ different model object or any command, so return the same model for a key you
 ignore. The footer and the help overlay are built from the bindings; a binding
 with `message=None` only documents a key a component handles.
 
+A screen cannot rebind a shared key, but it can say what the key does there:
+`Screen(shared_labels={"ctrl-s": "create", "tab": "pane"})` relabels it in the
+help overlay and adds it to the footer (the overlay otherwise says "submit" and
+"next field", and the footer lists only the bindings, `esc` and `?`). A value
+may be a function of the model returning the label, or `None` for the default
+label and no footer entry, so `enter` can read "edit" only where it edits. It
+changes only what is written, never what the key does.
+
 ## Commands
 
 A `Cmd` is a function that returns a message (or `None`). It runs off the event
@@ -193,7 +201,10 @@ views.
 `SearchList`, `Tree`, `TextInput` and `Buttons`; its `PickRequest` names the
 `command` and `alternative` the no-terminal refusal shows (generic ones when it
 leaves them unset). `allow_empty` lets it confirm with nothing selected; a
-request that has a title still requires one.
+request that has a title still requires one. A caller that calls `ui.pick_many`
+itself gets the controlling terminal when stdin is piped; `workspace create`
+and `workspace add` check `ui.can_prompt` first and take their flag path
+instead, so only a redirected stderr is something they now draw through.
 
 `field_for(descriptor, value=..., help=...)` maps a setting's type to its
 component (a `Literal` to a list or `Select`, `bool` to `Check`, numbers to
@@ -222,7 +233,8 @@ each key; pass `commands={name: message}` to stub one by its `Cmd.name`.
 A command's own test does not run the screen: give the scripted backend a
 result, a `Quit(result)`, a `Cancel()`, an exception (instance or class) to
 raise or `ScreenKeys("a", "enter")` to replay through the real screen. The
-scripted backend never touches a terminal, so `ui.run` and `ui.pick_many` do not look for one:
+scripted backend never touches a terminal, so `ui.run` and `ui.pick_many` do
+not look for one:
 `invoke_cli(command, args, prompt_backend=ScriptedPromptBackend(screens=[...]))`
 needs no `terminal=True` and no TTY stdin.
 
