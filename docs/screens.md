@@ -100,9 +100,9 @@ help overlay and adds it to the footer (the overlay otherwise says "submit" and
 "next field", and the footer lists only the bindings, `esc` and `?`). A value
 may be a function of the model returning the label, or `None` for the default
 label and no footer entry, so `enter` can read "edit" only where it edits. It
-changes only what is written, never what the key does. When the footer is too narrow, the last entries before
-`esc back` and `? help` are dropped (they stay in the overlay), so those two
-always show.
+changes only what is written, never what the key does. When the footer is too
+narrow, the last entries before `esc back` and `? help` are dropped (they stay
+in the overlay), so those two always show.
 
 ## Commands
 
