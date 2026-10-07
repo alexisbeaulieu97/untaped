@@ -237,6 +237,15 @@ def test_value_validate_and_error_follow_the_two_components() -> None:
     assert worse.validate() == "Right bad."
 
 
+@pytest.mark.parametrize("width", [WIDE, WIDE - 1])
+def test_whatever_follows_the_panes_starts_on_its_own_line(width: int) -> None:
+    run = run_solo(_panes().with_error("Check failed."), size=(width, 30))
+
+    below = lines(run.frame)[-1]
+    assert below.strip() == "Check failed."
+    assert lines(run.frame)[-2].startswith("╰")
+
+
 def test_an_error_shows_under_the_panes_in_the_error_colour() -> None:
     segments = _styled(_panes().with_error("Check failed."))
 
