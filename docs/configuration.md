@@ -171,7 +171,7 @@ untaped config list --all-profiles
 untaped config get github.token --show-secrets
 untaped config set http.timeout_seconds 60 --dry-run
 untaped --profile prod config unset awx.token
-untaped config set ui.symbols '{"ok": "✓", "fail": "✗"}'
+untaped config set ui.symbols '{"success": "✓", "error": "✗"}'
 untaped config edit
 ```
 
@@ -265,7 +265,9 @@ untaped --profile work config set http.verify_hostname false
 `http.verify_ssl: false` disables certificate validation; keep it for a
 controlled network. `ui.theme` picks a built-in theme and `ui.format` the
 default `--format`; the [configuration reference](./reference/config.md#root)
-lists every `http.*` and `ui.*` setting.
+lists every `http.*` and `ui.*` setting, including the names `ui.symbols` and
+`ui.color_roles` accept. `config set` and `doctor` reject any other name; a
+stray name already in `config.yml` keeps working.
 
 ## Tokens
 

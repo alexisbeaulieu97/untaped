@@ -28,7 +28,7 @@ from untaped.errors import ConfigError, first_validation_error
 from untaped.messages import hint
 from untaped.settings_layout import ProfilesSettingsLayout, SectionModels
 from untaped.stability import Stability
-from untaped.theme import CONFIG_WRITE_CONTEXT, UiSettings
+from untaped.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
 
 DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
 STATE_FILE_NAME = "state.yml"
@@ -557,18 +557,27 @@ def _section_models(
 
 
 def validate_settings_section(
-    data: Mapping[str, Any], name: str, settings_cls: type[Settings] | None = None
+    data: Mapping[str, Any],
+    name: str,
+    settings_cls: type[Settings] | None = None,
+    *,
+    written_key: str | None = None,
 ) -> Any:
     """Validate only the top-level field ``name`` of ``data`` (no disk/env reads).
 
     A missing key validates the field's default (so a required field that is
     absent is reported). Write-time checks (``CONFIG_WRITE_CONTEXT``) run
-    too, e.g. an unknown ``ui.theme`` is rejected. Raises :class:`pydantic.ValidationError`; error
-    locations start with ``name``.
+    too, e.g. an unknown ``ui.theme`` is rejected. ``written_key`` (the full
+    key being written) limits the per-key declared-name checks to that key, so
+    a stray value in another key does not block the write. Raises
+    :class:`pydantic.ValidationError`; error locations start with ``name``.
     """
     validator, _ = _section_models(settings_cls or get_settings_model(), name)
     payload = {name: data[name]} if name in data else {}
-    validated = validator.model_validate(payload, context={CONFIG_WRITE_CONTEXT: True})
+    validated = validator.model_validate(
+        payload,
+        context={CONFIG_WRITE_CONTEXT: True, CONFIG_WRITTEN_KEY_CONTEXT: written_key},
+    )
     return getattr(validated, name)
 
 
