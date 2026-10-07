@@ -6,10 +6,11 @@ statement, function-level ones included) over each package's ``src``, the
 example plugin and ``scripts`` fails on any other module that imports
 ``prompt_toolkit`` or one of its submodules.
 
-One module predates the adapter and keeps its own prompt_toolkit code until
-the one-shot prompts become screens. Each exception carries its reason and is
-checked for staleness: it fails once its module stops importing prompt_toolkit,
-so the change that removes the import must delete the entry.
+A module that must import prompt_toolkit besides the adapter is listed in
+``EXCEPTIONS`` with its reason (none today: the one-shot prompts are screens
+too). Each exception is checked for staleness: it fails once its module stops
+importing prompt_toolkit, so the change that removes the import must delete the
+entry.
 """
 
 from __future__ import annotations
@@ -21,12 +22,7 @@ from repo.support import PACKAGES, REPO_ROOT
 
 ADAPTER = "packages/untaped/src/untaped/screen/terminal.py"
 #: Module path (from the repo root) -> why it may still import prompt_toolkit.
-EXCEPTIONS: dict[str, str] = {
-    "packages/untaped/src/untaped/prompts.py": (
-        "the one-shot prompts (text, secret, select, multiselect, confirm) still run on "
-        "prompt_toolkit until they are rebuilt as screens"
-    ),
-}
+EXCEPTIONS: dict[str, str] = {}
 
 
 def imports_prompt_toolkit(tree: ast.AST) -> list[int]:

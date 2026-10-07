@@ -5,13 +5,13 @@ from __future__ import annotations
 import io
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from typing import Any, TypeVar
+from typing import TypeVar
 
 import pytest
 
 from untaped.errors import ConfigError, OperationCancelledError, PromptInterruptedError, UsageError
 from untaped.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult
-from untaped.prompts import PromptToolkitPromptBackend, prompt_style_from_roles
+from untaped.prompts import PromptToolkitPromptBackend
 from untaped.screen.core import Cancel
 from untaped.theme import BUILTIN_THEMES, ThemeSpec
 from untaped.ui import PromptChoice, UiContext
@@ -196,86 +196,68 @@ def test_multiselect_enforces_min_count() -> None:
         ui.multiselect("repos", choices, min_count=1)
 
 
-def test_prompt_toolkit_select_uses_stderr_session_and_returns_typed_value(
+@contextmanager
+def _real_terminal(
+    monkeypatch: pytest.MonkeyPatch, keys: str, *, theme: ThemeSpec | None = None
+) -> Iterator[PromptToolkitPromptBackend]:
+    """A real backend whose terminal reads ``keys`` from a pipe and draws nowhere."""
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    with create_pipe_input() as pipe:
+        pipe.send_text(keys)
+        pipe.close()  # a prompt that is not finished reads EOF instead of hanging
+        monkeypatch.setattr("untaped.screen.terminal.create_input", lambda _stream: pipe)
+        monkeypatch.setattr("untaped.screen.terminal.create_output", lambda _stream: DummyOutput())
+        yield PromptToolkitPromptBackend(stdin=TtyStringIO(), stderr=TtyStringIO(), theme=theme)
+
+
+_ENTER = "\r"
+_DOWN = "\x1b[B"
+_CTRL_C = "\x03"
+_CTRL_D = "\x04"
+
+
+def test_prompt_toolkit_select_returns_the_typed_value_of_the_chosen_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    stdin = TtyStringIO()
-    stderr = TtyStringIO()
     choices = [
         PromptChoice(value=("repo", 1), label="first", description="primary"),
         PromptChoice(value=("repo", 2), label="second"),
     ]
-    seen: dict[str, Any] = {}
-
-    monkeypatch.setattr(
-        "prompt_toolkit.input.defaults.create_input", lambda stream: ("input", stream)
-    )
-    monkeypatch.setattr(
-        "prompt_toolkit.output.defaults.create_output", lambda stream: ("output", stream)
-    )
-
-    @contextmanager
-    def _app_session(**kwargs: object) -> Any:
-        seen["app_session"] = kwargs
-        yield
-
-    def _choice(**kwargs: object) -> int:
-        seen["choice"] = kwargs
-        return 0
-
-    monkeypatch.setattr("prompt_toolkit.application.current.create_app_session", _app_session)
-    monkeypatch.setattr("prompt_toolkit.shortcuts.choice", _choice)
-
-    selected = PromptToolkitPromptBackend(stdin=stdin, stderr=stderr).select(
-        "Pick repo",
-        choices,
-        default=("repo", 2),
-        search=False,
-    )
-
-    assert selected == ("repo", 1)
-    assert seen["app_session"] == {
-        "input": ("input", stdin),
-        "output": ("output", stderr),
-    }
-    assert seen["choice"] == {
-        "message": "Pick repo:",
-        "options": [(0, "first - primary"), (1, "second")],
-        "default": 1,
-        "style": None,
-    }
+    with _real_terminal(monkeypatch, _ENTER) as backend:
+        # the default starts under the cursor
+        assert backend.select("Pick repo", choices, default=("repo", 2), search=False) == (
+            "repo",
+            2,
+        )
+    with _real_terminal(monkeypatch, _DOWN + _ENTER) as backend:
+        assert backend.select("Pick repo", choices, default=None, search=False) == ("repo", 2)
 
 
-def test_prompt_style_preserves_white_and_bright_white_distinction() -> None:
-    style = prompt_style_from_roles({"key": "white", "value": "bright_white"})
-
-    assert style.get_attrs_for_style_str("class:prompt").color == "ansigray"
-    assert style.get_attrs_for_style_str("class:input-selection").color == "ansiwhite"
-
-
-def test_prompt_toolkit_multiselect_handles_cancelled_dialog(
+def test_prompt_toolkit_search_select_filters_then_returns_the_match(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("prompt_toolkit.input.defaults.create_input", lambda stream: stream)
-    monkeypatch.setattr("prompt_toolkit.output.defaults.create_output", lambda stream: stream)
+    choices = [PromptChoice(value=1, label="alpha"), PromptChoice(value=2, label="beta")]
+    with _real_terminal(monkeypatch, "bet" + _ENTER) as backend:
+        assert backend.select("Pick", choices, default=None, search=True) == 2
 
-    @contextmanager
-    def _app_session(**_: object) -> Any:
-        yield
 
-    class _Dialog:
-        def run(self) -> None:
-            return None
+def test_prompt_toolkit_multiselect_returns_the_checked_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    choices = [PromptChoice(value=n, label=f"n{n}") for n in (1, 2, 3)]
+    with _real_terminal(monkeypatch, f" {_DOWN}{_DOWN} {_ENTER}") as backend:
+        assert backend.multiselect("Pick", choices, defaults=[2]) == [1, 2, 3]
 
-    monkeypatch.setattr("prompt_toolkit.application.current.create_app_session", _app_session)
-    monkeypatch.setattr(
-        "prompt_toolkit.shortcuts.checkboxlist_dialog",
-        lambda **_: _Dialog(),
-    )
 
-    backend = PromptToolkitPromptBackend(stdin=TtyStringIO(), stderr=TtyStringIO())
-
-    with pytest.raises(ConfigError, match="prompt cancelled"):
+def test_prompt_toolkit_multiselect_handles_a_cancelled_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with (
+        _real_terminal(monkeypatch, _CTRL_D) as backend,
+        pytest.raises(ConfigError, match="prompt cancelled"),
+    ):
         backend.multiselect("Pick repos", [PromptChoice(value="one", label="One")], defaults=[])
 
 
@@ -286,19 +268,115 @@ def test_prompt_toolkit_multiselect_handles_cancelled_dialog(
 def test_prompt_toolkit_confirm_takes_a_typed_answer_over_the_default(
     monkeypatch: pytest.MonkeyPatch, keys: str, default: bool, expected: bool
 ) -> None:
-    from prompt_toolkit.input import create_pipe_input
-    from prompt_toolkit.output import DummyOutput
-
-    with create_pipe_input() as pipe:
-        pipe.send_text(keys)
-        pipe.close()  # a re-prompt reads EOF instead of hanging
-        monkeypatch.setattr("prompt_toolkit.input.defaults.create_input", lambda _stream: pipe)
-        monkeypatch.setattr(
-            "prompt_toolkit.output.defaults.create_output", lambda _stream: DummyOutput()
-        )
-        backend = PromptToolkitPromptBackend(stdin=TtyStringIO(), stderr=TtyStringIO())
-
+    with _real_terminal(monkeypatch, keys) as backend:
         assert backend.confirm("Remove alias?", default=default) is expected
+
+
+def test_prompt_toolkit_confirm_asks_again_after_an_unknown_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with _real_terminal(monkeypatch, "maybe\r\x7f\x7f\x7f\x7f\x7f" + "yes\r") as backend:
+        assert backend.confirm("Remove alias?", default=False) is True
+
+
+def test_prompt_toolkit_text_returns_the_default_or_what_was_typed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with _real_terminal(monkeypatch, _ENTER) as backend:
+        assert backend.text("Name", default="dev") == "dev"
+    with _real_terminal(monkeypatch, "\x7f\x7fx y" + _ENTER) as backend:
+        assert backend.text("Name", default="dev") == "dx y"
+
+
+@pytest.mark.parametrize(
+    ("keys", "expected"),
+    [("abc\rabc\r", "abc"), ("abc\r", "abc")],
+)
+def test_prompt_toolkit_secret_returns_the_typed_value(
+    monkeypatch: pytest.MonkeyPatch, keys: str, expected: str
+) -> None:
+    with _real_terminal(monkeypatch, keys) as backend:
+        assert backend.secret("Token", confirmation=keys.count("\r") == 2) == expected
+
+
+def test_prompt_toolkit_secret_confirmation_mismatch_is_an_invalid_config_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with (
+        _real_terminal(monkeypatch, "abc\rabd\r") as backend,
+        pytest.raises(ConfigError, match="prompt values did not match") as raised,
+    ):
+        backend.secret("Token", confirmation=True)
+    assert raised.value.category == "invalid"
+
+
+@pytest.mark.parametrize("method", ["confirm", "text", "secret", "select", "multiselect"])
+def test_prompt_toolkit_ctrl_c_interrupts_and_ctrl_d_ends_the_prompt(
+    monkeypatch: pytest.MonkeyPatch, method: str
+) -> None:
+    choices = [PromptChoice(value="one", label="One")]
+
+    def ask(backend: PromptToolkitPromptBackend) -> object:
+        match method:
+            case "confirm":
+                return backend.confirm("Go?", default=False)
+            case "text":
+                return backend.text("Name", default=None)
+            case "secret":
+                return backend.secret("Token", confirmation=False)
+            case "select":
+                return backend.select("Pick", choices, default=None, search=False)
+            case _:
+                return backend.multiselect("Pick", choices, defaults=[])
+
+    with _real_terminal(monkeypatch, _CTRL_C) as backend, pytest.raises(KeyboardInterrupt):
+        ask(backend)
+    expected = ConfigError if method == "multiselect" else EOFError
+    with _real_terminal(monkeypatch, _CTRL_D) as backend, pytest.raises(expected):
+        ask(backend)
+
+
+def test_a_prompt_through_ui_context_ends_like_every_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for keys, error, exit_code in (
+        (_CTRL_C, PromptInterruptedError, 130),
+        (_CTRL_D, ConfigError, 1),
+    ):
+        with _real_terminal(monkeypatch, keys) as backend:
+            ui = UiContext(stdin=backend.stdin, stderr=backend.stderr, prompt_backend=backend)
+            with pytest.raises(error, match="prompt cancelled") as raised:
+                ui.text("Name")
+            assert raised.value.exit_code == exit_code
+
+
+def test_the_backend_draws_every_prompt_in_its_theme(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[ThemeSpec] = []
+
+    def run_screen(screen: object, *, theme: ThemeSpec) -> Cancel:
+        seen.append(theme)
+        return Cancel()
+
+    plain = PromptToolkitPromptBackend(
+        stdin=TtyStringIO(), stderr=TtyStringIO(), theme=BUILTIN_THEMES["plain"]
+    )
+    monkeypatch.setattr(plain, "run_screen", run_screen)
+    choices = [PromptChoice(value="one", label="One")]
+    for ask in (
+        lambda: plain.text("t", default=None),
+        lambda: plain.secret("s", confirmation=False),
+        lambda: plain.select("p", choices, default=None, search=False),
+        lambda: plain.confirm("c", default=False),
+    ):
+        with pytest.raises(EOFError):
+            ask()
+    assert seen == [BUILTIN_THEMES["plain"]] * 4
+
+    default = PromptToolkitPromptBackend(stdin=TtyStringIO(), stderr=TtyStringIO())
+    monkeypatch.setattr(default, "run_screen", run_screen)
+    with pytest.raises(EOFError):
+        default.text("t", default=None)
+    assert seen[-1] == BUILTIN_THEMES["default"]
 
 
 _REQUEST = PickRequest(heading="Pick", catalog=PickCatalog((PickItem(id="a", label="a"),)))
@@ -340,24 +418,8 @@ def test_pick_many_ctrl_c_interrupt_maps_to_exit_130() -> None:
         ui.pick_many(_REQUEST)
 
 
-@contextmanager
-def _real_picker(
-    monkeypatch: pytest.MonkeyPatch, keys: str
-) -> Iterator[PromptToolkitPromptBackend]:
-    """A real backend whose terminal reads ``keys`` from a pipe and draws nowhere."""
-    from prompt_toolkit.input import create_pipe_input
-    from prompt_toolkit.output import DummyOutput
-
-    with create_pipe_input() as pipe:
-        pipe.send_text(keys)
-        pipe.close()  # a picker that is not finished reads EOF instead of hanging
-        monkeypatch.setattr("untaped.screen.terminal.create_input", lambda _stream: pipe)
-        monkeypatch.setattr("untaped.screen.terminal.create_output", lambda _stream: DummyOutput())
-        yield PromptToolkitPromptBackend(stdin=TtyStringIO(), stderr=TtyStringIO())
-
-
-def test_prompt_toolkit_backend_runs_the_real_picker(monkeypatch: pytest.MonkeyPatch) -> None:
-    with _real_picker(monkeypatch, "\x1b[B \x13") as backend:  # down, space, ctrl-s
+def test_prompt_toolkit_backend_runs_the_real_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
+    with _real_terminal(monkeypatch, "\x1b[B \x13") as backend:  # down, space, ctrl-s
         picked = backend.pick_many(_REQUEST)
     assert picked is not None
     assert [p.item.id for p in picked.picks] == ["a"]
@@ -366,7 +428,7 @@ def test_prompt_toolkit_backend_runs_the_real_picker(monkeypatch: pytest.MonkeyP
 def test_prompt_toolkit_backend_returns_none_when_the_picker_is_cancelled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    with _real_picker(monkeypatch, "\x03") as backend:  # ctrl-c with nothing picked
+    with _real_terminal(monkeypatch, "\x03") as backend:  # ctrl-c with nothing picked
         assert backend.pick_many(_REQUEST) is None
 
 
@@ -374,7 +436,7 @@ def test_prompt_toolkit_backend_raises_keyboard_interrupt_for_an_interrupted_pic
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     keys = "\t?\x03"  # tab, help, ctrl-c in the help
-    with _real_picker(monkeypatch, keys) as backend, pytest.raises(KeyboardInterrupt):
+    with _real_terminal(monkeypatch, keys) as backend, pytest.raises(KeyboardInterrupt):
         backend.pick_many(_REQUEST)
 
 
