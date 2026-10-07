@@ -403,6 +403,7 @@ DOCS_PAGES = [
     "reference/environment.md",
     "reference/exit-codes.md",
     "reference/records.md",
+    "screens.md",
     "scripting.md",
     "skills.md",
     "troubleshooting.md",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager
@@ -19,6 +20,8 @@ if TYPE_CHECKING:
     from prompt_toolkit.styles import Style
 
     from untaped.picker import PickRequest, PickResult
+    from untaped.screen.core import Cancel, Quit, Screen
+    from untaped.theme import ThemeSpec
 
 
 T = TypeVar("T")
@@ -35,7 +38,12 @@ class PromptChoice[T_co]:
 
 
 class PromptBackend(Protocol):
-    """Backend boundary for interactive prompt implementations."""
+    """Backend boundary for interactive prompt implementations.
+
+    A backend may also set ``needs_terminal = False`` (an optional attribute,
+    read with a default of ``True``) to say it never draws on a terminal, so
+    :meth:`UiContext.run` does not look for one before handing it a screen.
+    """
 
     def confirm(self, message: str, *, default: bool) -> bool: ...
 
@@ -61,6 +69,10 @@ class PromptBackend(Protocol):
     ) -> list[T]: ...
 
     def pick_many(self, request: PickRequest) -> PickResult | None: ...
+
+    def run_screen[M, R](self, screen: Screen[M, R], *, theme: ThemeSpec) -> Quit[R] | Cancel:
+        """Run ``screen`` and return how it ended (``ui.run`` turns that into a result)."""
+        ...
 
 
 _backend_override: ContextVar[PromptBackend | None] = ContextVar(
@@ -92,17 +104,23 @@ _terminal_override: ContextVar[Callable[[], TextIO] | None] = ContextVar(
 )
 
 
-def open_controlling_terminal() -> TextIO:
+def open_controlling_terminal(*, write: bool = False) -> TextIO:
     """Open the process's controlling terminal for prompting.
 
     Used when stdin carries piped data, so a confirmation can still reach
-    the user. Raises :class:`OSError` when there is no controlling terminal
-    (CI, cron, detached sessions). The test harness installs an override via
-    :func:`set_terminal_override` so tests never touch the real terminal.
+    the user; opened read-only, or with ``write=True`` for drawing on it (a
+    terminal cannot be opened ``r+``, so a screen opens it twice). Raises
+    :class:`OSError` when there is no controlling terminal (CI, cron, detached
+    sessions). The test harness installs an override via
+    :func:`set_terminal_override`, whose handle serves both modes, so tests
+    never touch the real terminal.
     """
     override = _terminal_override.get()
     if override is not None:
         return override()
+    if write:
+        # Never ``O_CREAT``: where there is no terminal this must fail, not create a file.
+        return os.fdopen(os.open(_CONTROLLING_TERMINAL, os.O_WRONLY), "w", encoding="utf-8")
     return open(_CONTROLLING_TERMINAL, encoding="utf-8")
 
 
@@ -224,6 +242,12 @@ class PromptToolkitPromptBackend:
             output=create_output(self.stderr),
             style=self.style,
         )
+
+    def run_screen[M, R](self, screen: Screen[M, R], *, theme: ThemeSpec) -> Quit[R] | Cancel:
+        """Run ``screen`` on this backend's terminal streams (input stdin, drawing on stderr)."""
+        from untaped.screen.terminal import run_screen_on  # noqa: PLC0415
+
+        return run_screen_on(screen, stdin=self.stdin, stderr=self.stderr, theme=theme)
 
     def _search_select(
         self,

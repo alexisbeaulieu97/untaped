@@ -205,7 +205,7 @@ errors inside `report_errors()` so the root prints its standard diagnostics and
 and `system` (your section name) as class defaults; see
 [Raise with a category](./reference/conventions.md#raise-with-a-category-or-inherit-one).
 [Conventions](./reference/conventions.md) covers flags, messages, exit codes
-and record shapes.
+and record shapes; interactive screens are in [Screens](./screens.md).
 
 A doctor check (`DoctorCheck` on `CapabilitySpec.doctor_checks`) returns a
 `DoctorResult`. Its `fix` is the `untaped` command that repairs a failed or
