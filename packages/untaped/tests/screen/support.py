@@ -7,8 +7,11 @@ import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
+from rich.console import RenderableType
+
 from untaped.screen.core import Binding, Cmd, Frame, Screen
-from untaped.screen.runtime import CmdKind, capture_console
+from untaped.screen.runtime import CmdKind
+from untaped.testing.screens import rendered_text
 
 
 class FakeHost:
@@ -127,13 +130,9 @@ def logged(model: Model, message: object, *cmds: Cmd) -> tuple[Model, list[Cmd]]
     return replace(model, log=(*model.log, message)), list(cmds)
 
 
-def frame_text(renderable: object, width: int, height: int) -> str:
-    """``renderable`` as plain text, one string per frame, trailing blanks trimmed."""
-    console = capture_console(width, height)
-    console.print(renderable, end="")
-    assert console.file is not None
-    text = console.file.getvalue()  # type: ignore[attr-defined]
-    return "\n".join(line.rstrip() for line in text.removesuffix("\n").split("\n"))
+def frame_text(renderable: RenderableType, width: int, height: int) -> str:
+    """``renderable`` as plain text (what ``drive_screen`` frames hold)."""
+    return rendered_text(renderable, width, height)
 
 
 class ImmediateHost(FakeHost):
