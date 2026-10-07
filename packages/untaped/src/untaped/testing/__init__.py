@@ -106,7 +106,9 @@ def invoke_cli(
 
     A bare app is given the panels and help lines its marks ask for first, as
     the root would when mounting it (a nested sub-app computes the path of its
-    replacement from its own name only).
+    replacement from its own name only). A mark on a ``CapabilitySpec`` is
+    applied only by a composed root, so assert a spec-marked capability's help
+    through :func:`invoke_root`, not through its own app.
 
     ``interactive=True`` swaps stdin for a :class:`TtyStringIO` so TTY gates
     open; ``prompt_backend`` installs a scripted backend for the invocation

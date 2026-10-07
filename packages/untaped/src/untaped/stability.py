@@ -43,9 +43,8 @@ _ROOT_NAME = "untaped"
 _FUNCTION_ATTR = "__untaped_stability__"
 
 
-@dataclass(frozen=True)
-class Experimental:
-    """The ``experimental`` marker: may change or go away in a minor release."""
+class _Marker:
+    """What both markers share: applied to a command function, they record themselves on it."""
 
     def __call__[F: Callable[..., Any]](self, target: F, /) -> F:
         """Mark a command function and return it unchanged (apply under ``@app.command``)."""
@@ -54,7 +53,12 @@ class Experimental:
 
 
 @dataclass(frozen=True)
-class Deprecated:
+class Experimental(_Marker):
+    """The ``experimental`` marker: may change or go away in a minor release."""
+
+
+@dataclass(frozen=True)
+class Deprecated(_Marker):
     """The ``deprecated`` marker: still works, with a warning, until the next major release.
 
     ``replacement`` is a command function or :class:`~cyclopts.App` (untaped
@@ -73,11 +77,6 @@ class Deprecated:
                 "deprecated(replacement=...) takes a command function, an App or non-empty "
                 f"text, not {replacement!r}"
             )
-
-    def __call__[F: Callable[..., Any]](self, target: F, /) -> F:
-        """Mark a command function and return it unchanged (apply under ``@app.command``)."""
-        setattr(target, _FUNCTION_ATTR, self)
-        return target
 
 
 experimental = Experimental()
@@ -240,7 +239,7 @@ COMMAND_TEXT = re.compile(r"^untaped(?: [a-z0-9][a-z0-9-]*)+$")
 KEY_TEXT = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$")
 
 
-def _children(app: App, *, resolve: bool) -> Iterator[tuple[str, App]]:
+def children(app: App, *, resolve: bool) -> Iterator[tuple[str, App]]:
     """The mounted subcommands of ``app``, the way cyclopts' ``groups_from_app`` walks them.
 
     An unresolved lazy command is skipped unless ``resolve`` (reading it would
@@ -276,7 +275,7 @@ def _find(
     if id(app) in visited:
         return None
     visited.add(id(app))
-    for name, sub in _children(app, resolve=False):
+    for name, sub in children(app, resolve=False):
         here = (*path, name)
         if sub is replacement or (
             sub.default_command is not None and sub.default_command is replacement
@@ -350,11 +349,14 @@ def _apply(
         inherited = stability_line(mark, tree, prefix)
     elif inherited is not None:
         _ensure_epilogue(node, inherited, own_only=True)
-    for _, sub in _children(node, resolve=False):
+    for _, sub in children(node, resolve=False):
         _apply(sub, tree, prefix, inherited, visited)
 
 
 # --- the query ---------------------------------------------------------------
+
+
+type MarkTarget = Literal["capability", "group", "command"]
 
 
 @dataclass(frozen=True)
@@ -363,7 +365,7 @@ class Mark:
 
     where: str
     """The command path (``awx test``) or capability name."""
-    target: Literal["capability", "group", "command"]
+    target: MarkTarget
     stability: Stability
     replacement: str | None
     """The replacement as help shows it, or ``None``."""
@@ -386,7 +388,7 @@ def marks(root: App, result: CompositionResult, *, resolve: bool = False) -> lis
     return found
 
 
-def _record(where: str, target: Any, stability: Stability, root: App) -> Mark:
+def _record(where: str, target: MarkTarget, stability: Stability, root: App) -> Mark:
     text = replacement_text(stability, root) if isinstance(stability, Deprecated) else None
     return Mark(where=where, target=target, stability=stability, replacement=text)
 
@@ -400,15 +402,16 @@ def _collect(
     *,
     resolve: bool,
 ) -> None:
-    for name, sub in _children(app, resolve=resolve):
+    for name, sub in children(app, resolve=resolve):
         here = (*path, name)
         mark = mark_of(sub)
         entry = app_mark(sub)
         if mark is not None and not (entry is not None and entry.source == "spec"):
-            if not path:
-                target = "capability" if name in capabilities else "command"
-            else:
-                target = "group" if any(True for _ in _children(sub, resolve=False)) else "command"
+            target: MarkTarget = (
+                "capability"
+                if not path and name in capabilities
+                else ("group" if any(True for _ in children(sub, resolve=False)) else "command")
+            )
             found.append(_record(" ".join(here), target, mark, root))
         _collect(sub, root, here, capabilities, found, resolve=resolve)
 
