@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable, Iterator, Sequence
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from typing import TYPE_CHECKING, TextIO
 
 from untaped.diagnostics import json_diagnostics, write_record
-from untaped.errors import ConfigError, OperationCancelledError, UsageError
+from untaped.errors import (
+    ConfigError,
+    OperationCancelledError,
+    PromptInterruptedError,
+    UsageError,
+)
 from untaped.messages import plural
 from untaped.progress import ProgressHandle, progress_reporter
 from untaped.prompts import (
@@ -30,6 +35,7 @@ from untaped.render import (
     should_colorize,
     stream_is_tty,
 )
+from untaped.stability import experimental
 from untaped.theme import (
     BUILTIN_THEMES,
     OutputFormat,
@@ -42,6 +48,7 @@ if TYPE_CHECKING:
     from rich.text import Text
 
     from untaped.picker import PickRequest, PickResult
+    from untaped.screen.core import Screen
 
 
 class UiContext:
@@ -296,6 +303,73 @@ class UiContext:
             self.stdin = original
             terminal.close()
 
+    @contextmanager
+    def _screen_terminal(self, *, command: str, alternative: str) -> Iterator[UiContext]:
+        """Point a screen at a terminal for the duration of the block.
+
+        stdin and stderr are used as they are when both are terminals. Otherwise
+        (piped stdin, redirected stderr) the controlling terminal is opened for
+        input and again for output, swapped in for the block and closed after,
+        so a screen never paints into a file. Raises :class:`UsageError` naming
+        ``command`` and ``alternative`` when no terminal can be opened.
+        """
+        if self.can_prompt and stream_is_tty(self.stderr):
+            yield self
+            return
+        try:
+            terminal_in = open_controlling_terminal()
+        except OSError as exc:
+            raise UsageError(no_terminal_message(command, alternative)) from exc
+        try:
+            terminal_out = open_controlling_terminal(write=True)
+        except OSError as exc:
+            terminal_in.close()
+            raise UsageError(no_terminal_message(command, alternative)) from exc
+        original = (self.stdin, self.stderr)
+        self.stdin, self.stderr = terminal_in, terminal_out
+        try:
+            yield self
+        finally:
+            self.stdin, self.stderr = original
+            terminal_in.close()
+            terminal_out.close()
+
+    @experimental
+    def run[M, R](self, screen: Screen[M, R]) -> R:
+        """Run an interactive screen and return its result.
+
+        The screen draws on the terminal (stdin and stderr when both are
+        terminals, otherwise the controlling terminal), with
+        :class:`UsageError` naming its ``command`` and ``alternative`` when
+        there is none. A prompt backend that declares ``needs_terminal = False``
+        (the scripted backend of :mod:`untaped.testing`, which never touches a
+        terminal) gets the screen without one. A user who quits without a
+        result raises :class:`OperationCancelledError`; an interrupt raises
+        :class:`PromptInterruptedError` (exit 130), like every prompt.
+        """
+        from untaped.screen.core import Quit  # noqa: PLC0415 - keeps screens off the startup path
+
+        # An injected backend can say it needs no terminal; the default one always does.
+        injected = (
+            self._prompt_backend if self._prompt_backend is not None else prompt_backend_override()
+        )
+        needs_terminal = getattr(injected, "needs_terminal", True)
+        with (
+            self._screen_terminal(command=screen.command, alternative=screen.alternative)
+            if needs_terminal
+            else nullcontext(self)
+        ):
+            try:
+                # Read inside the block: the default backend is built on the swapped streams.
+                outcome = self.prompt_backend.run_screen(screen, theme=self.theme)
+            except (ConfigError, EOFError, KeyboardInterrupt) as exc:
+                raise handle_prompt_exception(exc) from exc
+        if isinstance(outcome, Quit):
+            return outcome.result
+        if outcome.interrupted:
+            raise PromptInterruptedError("prompt cancelled")
+        raise OperationCancelledError
+
     def text(
         self,
         message: str,
@@ -407,6 +481,11 @@ class UiContext:
             raise ConfigError(
                 "prompt choices must have unique labels", category="failed", system="untaped"
             )
+
+
+def no_terminal_message(command: str, alternative: str) -> str:
+    """The error for a screen with no terminal to draw on: the one place its text lives."""
+    return f"`{command}` needs a terminal; use `{alternative}`"
 
 
 def ui_context(

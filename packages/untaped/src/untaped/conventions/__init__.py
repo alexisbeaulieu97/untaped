@@ -32,6 +32,7 @@ from untaped.conventions.settings_names import settings_name_violations
 from untaped.conventions.source import source_files
 from untaped.conventions.stability import stability_violations
 from untaped.conventions.structure import structure_violations
+from untaped.conventions.terminal_boundary import terminal_boundary_violations
 from untaped.settings import Settings, model_sections
 
 
@@ -45,12 +46,12 @@ def capability_violations(
 
     Builds the root once (from discovered candidates), finds the
     registered capability, and runs help_tree, stability, messages, structure,
-    layering and import-boundary over its command subtree and package. The private-test-import
-    check runs only when ``tests_dir`` is given. ``candidates`` replaces
-    entry-point discovery (as in :func:`untaped.bootstrap.compose_root`), so
-    a test can check a provider that is not installed. Lines are
-    ``<where>::<rule>::<detail>``, sorted. A quarantined capability's one
-    violation is the reason composition refused it.
+    layering, terminal-boundary and import-boundary over its command subtree
+    and package. The private-test-import check runs only when ``tests_dir`` is
+    given. ``candidates`` replaces entry-point discovery (as in
+    :func:`untaped.bootstrap.compose_root`), so a test can check a provider
+    that is not installed. Lines are ``<where>::<rule>::<detail>``, sorted. A
+    quarantined capability's one violation is the reason composition refused it.
     """
     candidates = list(discover_candidates()) if candidates is None else candidates
     root = build_root_app(candidates=candidates)
@@ -79,6 +80,7 @@ def capability_violations(
             *message_violations(source_dir, files),
             *structure_violations(spec, package, source_dir, files, tests_dir=tests_dir),
             *layering_violations(package, source_dir, files),
+            *terminal_boundary_violations(source_dir, files),
             *import_boundary_violations(
                 package,
                 source_dir,

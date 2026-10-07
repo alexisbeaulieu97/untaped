@@ -144,6 +144,25 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "q",
         "writes",
     ),
+    "screens": (
+        "Activate",
+        "Back",
+        "Binding",
+        "Cancel",
+        "Cmd",
+        "CmdError",
+        "Footer",
+        "Frame",
+        "Interrupt",
+        "Key",
+        "NextField",
+        "Paste",
+        "PrevField",
+        "Quit",
+        "Resize",
+        "Screen",
+        "Submit",
+    ),
 }
 EXPECTED_ALL = [name for group in SURFACE_GROUPS.values() for name in group]
 
@@ -163,3 +182,14 @@ def test_no_extra_module_level_names_leak() -> None:
 def test_every_name_is_a_reexport_of_its_core_module(name: str) -> None:
     """The SDK module only re-exports; nothing is (re)defined there."""
     assert getattr(getattr(sdk, name), "__module__", None) != sdk.__name__
+
+
+def test_an_unknown_attribute_is_an_attribute_error() -> None:
+    with pytest.raises(AttributeError, match="no attribute 'Nope'"):
+        sdk.Nope  # noqa: B018
+
+
+def test_screen_names_resolve_lazily_and_are_listed() -> None:
+    assert {"Screen", "Cmd", "Quit"} <= set(dir(sdk))
+    assert sdk.Screen.__name__ == "Screen"
+    assert vars(sdk)["Screen"] is sdk.Screen  # kept after the first lookup

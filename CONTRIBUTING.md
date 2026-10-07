@@ -356,3 +356,6 @@ _Avoid_: repair, remedy.
 **Automatic fix**: a fix that needs no value and no input, so
 `untaped doctor fix` runs it.
 _Avoid_: autofix.
+
+**Screen**: an interactive terminal UI built on the SDK's runtime.
+_Avoid_: TUI app, program, view.
